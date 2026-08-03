@@ -126,8 +126,14 @@ jobs:
   # dist-electron release assets as a workflow artifact for the publish job.
   build-macos:
     needs: resolve
-    # Revert to macos-14 (GitHub-hosted) if m1mac is unavailable.
-    runs-on: [self-hosted, macOS, ARM64, m1mac]
+    # TEMPORARY: routed to GitHub-hosted macos-latest while the self-hosted
+    # m1mac runner is offline (intent-hq/monorepo#1342); revert to
+    # [self-hosted, macOS, ARM64, m1mac] when it is back online. Hosted
+    # macos-latest is also Apple silicon (arm64), so the sidecar target and
+    # dist:mac output are unchanged. The self-hosted-hygiene steps below
+    # (temp keychain, cleanup, per-runner pnpm dest) are harmless no-ops on
+    # an ephemeral hosted runner and are kept for the revert.
+    runs-on: macos-latest
     timeout-minutes: 90
 
     steps:
@@ -174,7 +180,8 @@ jobs:
           INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
         run: node scripts/fetch-sidecar.cjs
 
-      # The runner is non-ephemeral, so signing must never touch the login
+      # Written for the non-ephemeral m1mac runner (and equally valid on an
+      # ephemeral hosted one): signing must never touch the login
       # keychain: the certificate goes into a throwaway keychain under
       # RUNNER_TEMP, the pre-existing user search list is captured and the
       # temp keychain prepended to it (rather than replacing the list
@@ -206,9 +213,9 @@ jobs:
           while IFS= read -r kc; do KEYCHAINS+=("$kc"); done < "$RUNNER_TEMP/keychain-list.orig"
           security list-keychains -d user -s "$KEYCHAIN_PATH" "${KEYCHAINS[@]}"
 
-      # The self-hosted runner is non-ephemeral; drop build output left by a
-      # previous run so the artifact upload can't pick up stale files (same
-      # as the Windows and Linux arm64 jobs).
+      # Drop build output left by a previous run so the artifact upload can't
+      # pick up stale files on a non-ephemeral self-hosted runner (same as the
+      # Windows and Linux jobs; no-op on an ephemeral hosted runner).
       - name: Clean previous build output
         run: rm -rf dist-electron
 
@@ -223,11 +230,13 @@ jobs:
         run: pnpm run dist:mac
         env:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
-          # even with sourcemaps disabled (monorepo#1340); same bundle here.
-          # Assumes the self-hosted m1mac runner has enough RAM for a 12288
-          # heap plus node overhead (>=16 GB unified memory; this leg passed
-          # at 12288 in the v2.13.0 rebuild, run 30764745052). Drop to 10240
-          # like the hosted Linux x64 leg if the OS ever kills the build.
+          # even with sourcemaps disabled (monorepo#1340); same bundle here
+          # (this leg passed at 12288 on m1mac in the v2.13.0 rebuild, run
+          # 30764745052 — don't drop below ~10240). Hosted macos-latest has
+          # only 7 GB RAM (3-core M1), so the ~8-9 GB peak overshoots
+          # physical memory; unlike the Linux hosted leg there is no OOM
+          # killer to trip — macOS compressed memory/swap absorbs it at some
+          # speed cost (monorepo#1342).
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
           # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
@@ -421,18 +430,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # node_heap: per-arch --max-old-space-size (MB). ubuntu-latest has
-          # 16 GB total. Measured boundary in the v2.13.0 rebuilds
-          # (monorepo#1340): 8192 JS-heap-OOMs (run 30767000964, after passing
-          # at 8192 earlier the same day — the bundle sits right at the
-          # limit), and 12288 plus node/vite overhead trips the OS OOM killer
-          # (run 30764745052). 10240 leaves ~5.5 GB for the OS and other
-          # processes.
+          # node_heap: per-arch --max-old-space-size (MB).
+          #
+          # x64 runs on the self-hosted tinybox pool: the bundle outgrew the
+          # 16 GB ubuntu-latest hosted runner in the v2.13.0 rebuilds
+          # (monorepo#1340) — 8192 JS-heap-OOMs (run 30767000964, after
+          # passing at 8192 earlier the same day; the bundle sits right at
+          # that limit), while 12288 (run 30764745052) and later 10240 plus
+          # node/vite overhead trip the OS OOM killer. tinybox has the RAM
+          # for the same 12288 cap as the other self-hosted legs. Fall back
+          # to a hosted runner only if it offers well over 16 GB.
           - arch: x64
-            runner: ubuntu-latest
+            runner: [self-hosted, Linux, X64, tinybox]
             intentd_target: x86_64-unknown-linux-musl
             targets: AppImage:x64 deb:x64
-            node_heap: 10240
+            node_heap: 12288
           # arm64 builds natively on the self-hosted arm64 Linux runner. If it
           # is unavailable, fall back to cross-building by switching `runner`
           # to ubuntu-latest — INTENTD_TARGET is set explicitly below, so the
@@ -495,11 +507,32 @@ jobs:
           INTENTD_TARGET: ${{ matrix.intentd_target }}
         run: node scripts/fetch-sidecar.cjs
 
-      # The arm64 runner is non-ephemeral; drop build output left by a
-      # previous run so the artifact upload can't pick up stale files
+      # The self-hosted runners are non-ephemeral; drop build output left by
+      # a previous run so the artifact upload can't pick up stale files
       # (no-op on ephemeral hosted runners).
       - name: Clean previous build output
         run: rm -rf dist-electron
+
+      # electron-builder's bundled fpm builds the deb by shelling out to host
+      # tools — `ar` (binutils), tar, and xz (electron-builder defaults deb
+      # compression to xz, so fpm produces data.tar.xz via tar/xz) —
+      # preinstalled on ubuntu-latest but not guaranteed on a bare
+      # self-hosted box. Fail fast with a clear message instead of a cryptic
+      # fpm error mid-package. AppImage needs no system packages
+      # (app-builder is self-contained — the arm64 leg already builds
+      # AppImages on self-hosted with no extra setup).
+      - name: Verify deb packaging prerequisites
+        if: contains(matrix.targets, 'deb')
+        run: |
+          MISSING=""
+          for TOOL in ar tar xz; do
+            command -v "$TOOL" >/dev/null 2>&1 || MISSING="${MISSING:+$MISSING, }$TOOL"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing tool(s) required by fpm for the deb target: ${MISSING}. Install binutils/tar/xz-utils on this runner (labels: self-hosted, Linux, X64, tinybox)."
+            exit 1
+          fi
+          echo "deb packaging prerequisites present (ar, tar, xz)"
 
       # Same rationale as the macOS job: keeps the workflow_dispatch fallback
       # able to rebuild older tags (intent-hq/monorepo#1046).
@@ -523,9 +556,9 @@ jobs:
           ${{ matrix.targets }}
           -c.linux.maintainer='Intent HQ <intent-hq@users.noreply.github.com>'
         env:
-          # Per-arch heap cap — see the matrix node_heap comments: 10240 on
-          # the 16 GB hosted x64 runner (8192 JS-OOMs, 12288 trips the OS OOM
-          # killer), 12288 on the self-hosted arm64 runner (monorepo#1340).
+          # Per-arch heap cap — see the matrix node_heap comments: 12288 on
+          # both self-hosted legs now that x64 is off the 16 GB hosted
+          # runner (monorepo#1340).
           NODE_OPTIONS: '--max-old-space-size=${{ matrix.node_heap }}'
           # Sourcemap generation multiplies rollup's peak heap past the
           # cap (same OOM as monorepo#1074; both Linux legs died at ~7.6 GB in
