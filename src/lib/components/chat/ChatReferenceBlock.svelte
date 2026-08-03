@@ -30,7 +30,12 @@
   const fileName = $derived(
     filePath.split('/').pop() || reference.semanticId || m.chat_messageContent_reference_fallback(),
   );
-  const line = $derived(parsedId?.startLine);
+  // Line anchors are 1-based by convention, but ReferenceTargetSchema allows
+  // 0-based ranges and getSemanticId() can derive "#L0" from them. Clamp to 1
+  // so the jump target survives downstream truthy checks (e.g. FileTabType).
+  const line = $derived(
+    parsedId?.startLine !== undefined ? Math.max(1, parsedId.startLine) : undefined,
+  );
   const clickable = $derived(Boolean(filePath && onOpenFile));
 
   function handleClick(event: MouseEvent) {

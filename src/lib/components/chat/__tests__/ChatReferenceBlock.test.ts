@@ -45,6 +45,25 @@ describe('ChatReferenceBlock', () => {
     });
   });
 
+  it('clamps a 0-based "#L0" anchor to line 1 so the jump target is not dropped', async () => {
+    const onOpenFile = vi.fn();
+    render(ChatReferenceBlock, {
+      props: {
+        reference: { semanticId: 'src/lib/bar.ts#L0' },
+        onOpenFile,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(onOpenFile).toHaveBeenCalledWith({
+      path: 'src/lib/bar.ts',
+      line: 1,
+      openInAdjacentPanel: false,
+      sourcePanelId: undefined,
+    });
+  });
+
   it('derives the file path from a symbol semanticId', async () => {
     const onOpenFile = vi.fn();
     render(ChatReferenceBlock, {
