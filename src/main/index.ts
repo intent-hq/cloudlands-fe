@@ -111,6 +111,7 @@ import { initializeWarningSuppression } from './utils/suppress-warnings';
 import { runWithHardExitTimeout } from './utils/hard-exit-timeout';
 import { setupWebviewSecurity } from './webview-security';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
+import { requestHardwareConsoleLightingClear } from '../features/hardware-console/main/clear-lighting-shutdown';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
 
 // No custom protocol needed - we'll use file:// protocol
@@ -387,6 +388,13 @@ async function gracefulShutdown() {
 
 async function performGracefulShutdown() {
   try {
+    // Ask renderers to clear hardware-console lighting FIRST, while the
+    // windows (which own the WebHID connection) are still alive. Bounded
+    // (750ms overall ack timeout) and fail-soft — never throws, never delays
+    // shutdown beyond the timeout, and stays well within the hard-exit
+    // watchdog above.
+    await requestHardwareConsoleLightingClear(BrowserWindow.getAllWindows(), ipcMain);
+
     // Cleanup terminals gracefully - this properly cleans up PTY processes
     // to prevent Napi::Error crashes during shutdown
     await cleanupTerminals();

@@ -28,3 +28,11 @@ export {
   installHardwareConsoleLedStatus,
   type LedStatusDeps,
 } from './led-status-service';
+export {
+  DEFAULT_CLEAR_LIGHTING_TIMEOUT_MS,
+  clearHardwareConsoleLighting,
+  installHardwareConsoleClearLightingListener,
+  type ClearHardwareConsoleLightingOptions,
+  type ClearLightingIpcLike,
+  type ClearLightingListenerDeps,
+} from './clear-lighting';

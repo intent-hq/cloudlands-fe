@@ -523,6 +523,8 @@ const ALLOWED_CHANNELS = [
   "backend:status",
   "backend:spawn-sidecar",
   "backend:get-sidecar-run-log",
+  "hardware-console:clear-lighting",
+  "hardware-console:clear-lighting-done",
   "event:workspace:created",
   "event:workspace:updated",
   "event:workspace:deleted",
@@ -669,7 +671,8 @@ const ALLOWED_CHANNELS = [
   "websocket-api:discovery-auto-disabled",
   "token-usage:changed",
   "backend:notification",
-  "backend:status"
+  "backend:status",
+  "hardware-console:clear-lighting"
 ];
 
 // Dynamic channel patterns that are matched with startsWith()
@@ -839,7 +842,8 @@ const EVENT_CHANNELS = [
   "websocket-api:discovery-auto-disabled",
   "token-usage:changed",
   "backend:notification",
-  "backend:status"
+  "backend:status",
+  "hardware-console:clear-lighting"
 ];
 
 /**
