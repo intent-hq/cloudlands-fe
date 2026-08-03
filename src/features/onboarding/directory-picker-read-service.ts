@@ -17,8 +17,11 @@
  * `agent-read-service`, and `lifecycle-ipc-read-service` for the post-saga
  * read path.
  *
- * READ-ONLY: this module never invokes a mutation. Refreshes are coalesced per
- * requested path so rapid dispatches collapse into a single fetch.
+ * Refreshes are coalesced per requested path so rapid dispatches collapse
+ * into a single fetch. The one mutation this module owns is the picker's
+ * `createDirectoryRequested` → `host.createDirectory` round-trip (the modal's
+ * "New Folder" action), which on success feeds back into the read path by
+ * dispatching `loadDirectoryRequested(createdPath)`.
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
 import { m } from "$shared/paraglide/messages.js";
@@ -26,6 +29,8 @@ import { backendRequest } from "$lib/client/live/backend-transport";
 import { store as appStore } from "$store/renderer/store";
 import { createLogger } from "$lib/utils/client-logger";
 import {
+  createDirectoryFailed,
+  createDirectoryRequested,
   directoryListingFailed,
   directoryListingLoaded,
   loadDirectoryRequested,
@@ -121,6 +126,27 @@ async function navigateToTypedPath(path: string): Promise<void> {
   }
 }
 
+/**
+ * Create a directory via `host.createDirectory` (the modal's "New Folder"
+ * action). On success the daemon echoes the fully expanded created path, and
+ * the picker navigates into it by dispatching `loadDirectoryRequested`. On
+ * failure `createDirectoryFailed` keeps the current listing so the modal can
+ * render an inline hint next to the name input.
+ */
+async function createDirectoryAt(path: string): Promise<void> {
+  try {
+    const created = await backendRequest<{ path: string }>(
+      "host.createDirectory",
+      { path },
+    );
+    appStore.dispatch(loadDirectoryRequested(created.path));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn("host.createDirectory failed", { path, error: message });
+    appStore.dispatch(createDirectoryFailed(path, message));
+  }
+}
+
 /** First tuple-payload element, treated as an optional path string. */
 function requestedPathOf(action: { payload?: unknown }): string | null {
   if (!Array.isArray(action.payload)) return null;
@@ -130,8 +156,8 @@ function requestedPathOf(action: { payload?: unknown }): string | null {
 
 /**
  * Middleware that observes `loadDirectoryRequested` /
- * `navigateToPathRequested` and triggers the IPC fetch. Fire-and-forget —
- * dispatch stays synchronous.
+ * `navigateToPathRequested` / `createDirectoryRequested` and triggers the IPC
+ * call. Fire-and-forget — dispatch stays synchronous.
  */
 export function createDirectoryPickerReadMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
@@ -141,6 +167,9 @@ export function createDirectoryPickerReadMiddleware(): StoreMiddleware {
     } else if (action && action.type === navigateToPathRequested.type) {
       const path = requestedPathOf(action);
       if (path) void navigateToTypedPath(path);
+    } else if (action && action.type === createDirectoryRequested.type) {
+      const path = requestedPathOf(action);
+      if (path) void createDirectoryAt(path);
     }
     return result;
   };
