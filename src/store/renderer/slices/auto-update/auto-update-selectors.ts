@@ -29,6 +29,16 @@ export const selectIsDownloading = store.createSelector(
 );
 
 export const selectIsReadyToInstall = store.createSelector(
-  (state) => state.autoUpdate.status === "downloaded",
+  (state) =>
+    state.autoUpdate.status === "downloaded" ||
+    state.autoUpdate.status === "waiting-for-idle",
+);
+
+export const selectRespondingAgentCount = store.createSelector(
+  (state) => state.autoUpdate.respondingAgentCount,
+);
+
+export const selectIsWaitingForIdle = store.createSelector(
+  (state) => state.autoUpdate.status === "waiting-for-idle",
 );
 

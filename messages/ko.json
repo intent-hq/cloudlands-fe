@@ -5183,5 +5183,14 @@
   "settings_hardware_promptLimit_description": "조이스틱 방사형 메뉴에 표시되는 최근 프롬프트의 최대 개수입니다.",
   "settings_hardware_cycleScope_label": "순환 시 하위 에이전트 포함",
   "settings_hardware_cycleScope_description": "선택한 순환 동작은 위임된 하위 에이전트도 순환합니다. 선택하지 않으면 최상위 에이전트만 순환합니다.",
-  "settings_hardware_cycleScope_include_ariaLabel": "{action}에 하위 에이전트 포함"
+  "settings_hardware_cycleScope_include_ariaLabel": "{action}에 하위 에이전트 포함",
+  "ui_updateToast_waitingForIdle_label": "Waiting for agents to finish...",
+  "ui_updateToast_waitingForIdle_description_one": "Installing when 1 agent is idle",
+  "ui_updateToast_waitingForIdle_description_many": "Installing when {count} agents are idle",
+  "ui_updateToast_waitingForIdle_description_zero": "Installing now...",
+  "ui_updateToast_cancelInstall_label": "Cancel",
+  "settings_footer_waitingForIdle": "Waiting for agents to finish...",
+  "settings_footer_cancelInstall": "Cancel install",
+  "autoUpdate_client_cancelInstallFailed_error": "Failed to cancel pending install",
+  "autoUpdate_mutation_cancelInstallFailed_error": "Failed to cancel pending install"
 }

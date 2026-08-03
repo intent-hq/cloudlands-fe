@@ -91,9 +91,9 @@
     // Don't react if status hasn't changed
     if (status === previousStatus) return;
 
-    // ALWAYS show toast for downloading states
+    // ALWAYS show toast for downloading / waiting-for-idle states
     // For downloaded: respect the 24h dismiss cooldown
-    if (status === 'downloading') {
+    if (status === 'downloading' || status === 'waiting-for-idle') {
       if (currentToastId === undefined) {
         showUpdateToast();
       }

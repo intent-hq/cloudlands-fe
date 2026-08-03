@@ -11,6 +11,7 @@ export const initialState: AutoUpdateState = {
   progress: null,
   error: null,
   channel: 'stable',
+  respondingAgentCount: null,
   toastVisible: false,
   downloadedToastDismissedAt: null,
 };
@@ -66,8 +67,11 @@ export const checkForUpdatesManual = createAction('autoUpdate/checkForUpdatesMan
 /** Trigger: download the available update */
 export const downloadUpdate = createAction('autoUpdate/downloadUpdate');
 
-/** Trigger: install the downloaded update */
+/** Trigger: install the downloaded update (waits for agents idle) */
 export const installUpdate = createAction('autoUpdate/installUpdate');
+
+/** Trigger: cancel a pending wait-for-idle install */
+export const cancelPendingInstall = createAction('autoUpdate/cancelPendingInstall');
 
 /** Trigger: set the channel via IPC */
 export const setChannelIPC = createAction<[channel: UpdateChannel]>('autoUpdate/setChannelIPC');
@@ -86,6 +90,7 @@ export const autoUpdateReducer = createReducer<AutoUpdateState>(initialState)
     progress: updateState.progress,
     error: updateState.error,
     channel: updateState.channel,
+    respondingAgentCount: updateState.respondingAgentCount ?? null,
   }))
   .with(setProgress, (state, { payload: [progress] }) => ({
     ...state,

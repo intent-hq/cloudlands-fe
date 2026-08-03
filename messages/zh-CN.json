@@ -5183,5 +5183,14 @@
   "settings_hardware_promptLimit_description": "摇杆径向菜单中显示的最近提示词的最大数量。",
   "settings_hardware_cycleScope_label": "循环切换时包含子代理",
   "settings_hardware_cycleScope_description": "勾选的循环操作也会遍历委派的子代理；未勾选的仅循环顶级代理。",
-  "settings_hardware_cycleScope_include_ariaLabel": "在{action}中包含子代理"
+  "settings_hardware_cycleScope_include_ariaLabel": "在{action}中包含子代理",
+  "ui_updateToast_waitingForIdle_label": "Waiting for agents to finish...",
+  "ui_updateToast_waitingForIdle_description_one": "Installing when 1 agent is idle",
+  "ui_updateToast_waitingForIdle_description_many": "Installing when {count} agents are idle",
+  "ui_updateToast_waitingForIdle_description_zero": "Installing now...",
+  "ui_updateToast_cancelInstall_label": "Cancel",
+  "settings_footer_waitingForIdle": "Waiting for agents to finish...",
+  "settings_footer_cancelInstall": "Cancel install",
+  "autoUpdate_client_cancelInstallFailed_error": "Failed to cancel pending install",
+  "autoUpdate_mutation_cancelInstallFailed_error": "Failed to cancel pending install"
 }

@@ -53,7 +53,7 @@ export function setupAutoUpdateIPC(): void {
     ),
   );
 
-  // Install update (quit and install)
+  // Install update (wait for agents idle, then quit and install)
   ipcMain.handle(
     AUTO_UPDATE_CHANNELS.INSTALL,
     createSafeValidatedHandler(
@@ -63,6 +63,19 @@ export function setupAutoUpdateIPC(): void {
         return { success: true };
       },
       AUTO_UPDATE_CHANNELS.INSTALL,
+    ),
+  );
+
+  // Cancel a pending wait-for-idle install
+  ipcMain.handle(
+    AUTO_UPDATE_CHANNELS.CANCEL_INSTALL,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async () => {
+        autoUpdateService.cancelPendingInstall();
+        return { success: true };
+      },
+      AUTO_UPDATE_CHANNELS.CANCEL_INSTALL,
     ),
   );
 

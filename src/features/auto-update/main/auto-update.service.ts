@@ -12,6 +12,7 @@ import { DEFAULTS } from '../../../shared/constants';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { saveWindowSessions } from '../../../main/window';
+import { listRespondingAgents } from '../../../main/running-agents';
 import type { UpdateChannel, UpdateState, UpdateStatus } from '../types';
 
 const { autoUpdater } = electronUpdater;
@@ -30,6 +31,8 @@ const FOCUS_RESUME_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const UPDATE_CHECK_TIMEOUT_MS = 30 * 1000;
 // Maximum time a check can be in 'checking' state before being considered stuck
 const CHECK_STUCK_TIMEOUT_MS = 30_000;
+// How often to re-check agent.isResponding while an install is armed
+const IDLE_POLL_INTERVAL_MS = 1500;
 
 /**
  * Get the update base URL
@@ -47,6 +50,7 @@ class AutoUpdateService {
     progress: null,
     error: null,
     channel: 'stable',
+    respondingAgentCount: null,
   };
 
   private mainWindow: BrowserWindow | null = null;
@@ -57,6 +61,11 @@ class AutoUpdateService {
   private lastCheckAt: number | null = null;
   private onWindowFocus: (() => void) | null = null;
   private onResume: (() => void) | null = null;
+
+  /** Bumped on cancel / re-arm so an in-flight poll cannot quitAndInstall. */
+  private installWaitGeneration = 0;
+  private idlePollTimer: NodeJS.Timeout | null = null;
+  private installInFlight = false;
 
   async initialize(mainWindow: BrowserWindow) {
     if (this.initialized) {
@@ -119,6 +128,7 @@ class AutoUpdateService {
    */
   cleanup() {
     this.clearCheckTimeout();
+    this.stopIdleWaiter();
     if (this.updateCheckInterval) {
       clearInterval(this.updateCheckInterval);
       this.updateCheckInterval = null;
@@ -201,7 +211,10 @@ class AutoUpdateService {
 
     autoUpdater.on('update-downloaded', (info: ElectronUpdateInfo) => {
       logger.info('Update downloaded', { version: info.version });
-      this.updateStatus('downloaded');
+      // Do not clobber an armed wait-for-idle if another download finishes.
+      if (this.state.status !== 'waiting-for-idle') {
+        this.updateStatus('downloaded');
+      }
     });
 
     autoUpdater.on('error', (error: Error) => {
@@ -235,8 +248,12 @@ class AutoUpdateService {
   }
 
   private async checkForUpdates(): Promise<UpdateState> {
-    // Skip if downloading or already downloaded
-    if (this.state.status === 'downloading' || this.state.status === 'downloaded') {
+    // Skip if downloading, already downloaded, or waiting to install
+    if (
+      this.state.status === 'downloading' ||
+      this.state.status === 'downloaded' ||
+      this.state.status === 'waiting-for-idle'
+    ) {
       logger.debug('Skipping update check - already in progress or complete', {
         status: this.state.status,
       });
@@ -283,6 +300,13 @@ class AutoUpdateService {
    * This will send an "up to date" notification if no updates are available
    */
   async checkForUpdatesManual(): Promise<UpdateState> {
+    // If install is armed, surface the waiting state
+    if (this.state.status === 'waiting-for-idle') {
+      logger.info('Manual check: Install waiting for agents to go idle');
+      this.sendToRenderer('auto-update:status-changed', this.state);
+      return this.state;
+    }
+
     // If update is already downloaded, just notify the user
     if (this.state.status === 'downloaded') {
       logger.info('Manual check: Update already downloaded');
@@ -325,16 +349,125 @@ class AutoUpdateService {
     await autoUpdater.downloadUpdate();
   }
 
+  /**
+   * Arm install: wait until no daemon agents report isResponding, then
+   * quitAndInstall. Returns once the waiter is armed (or install has started
+   * if already idle). Double-click while waiting is a no-op success.
+   */
   async installUpdate(): Promise<void> {
+    if (this.state.status === 'waiting-for-idle') {
+      logger.info('Install already waiting for agents to go idle');
+      return;
+    }
     if (this.state.status !== 'downloaded') {
       throw new Error('No update downloaded to install');
     }
+    if (this.installInFlight) {
+      logger.info('Install already in flight');
+      return;
+    }
 
-    logger.info('Saving window sessions before installing update...');
+    logger.info('Saving window sessions before arming install...');
     await saveWindowSessions();
-    isInstallingUpdate = true;
 
-    logger.info('Installing update and restarting...');
+    const generation = ++this.installWaitGeneration;
+    this.state.respondingAgentCount = null;
+    this.updateStatus('waiting-for-idle');
+
+    await this.pollAndInstallWhenIdle(generation);
+  }
+
+  /**
+   * Cancel a pending wait-for-idle install and return to downloaded.
+   */
+  cancelPendingInstall(): void {
+    if (this.state.status !== 'waiting-for-idle') {
+      logger.debug('cancelPendingInstall: nothing to cancel', { status: this.state.status });
+      return;
+    }
+    logger.info('Cancelling pending install wait');
+    this.installWaitGeneration += 1;
+    this.stopIdleWaiter();
+    this.state.respondingAgentCount = null;
+    this.updateStatus('downloaded');
+  }
+
+  private stopIdleWaiter() {
+    if (this.idlePollTimer) {
+      clearTimeout(this.idlePollTimer);
+      this.idlePollTimer = null;
+    }
+  }
+
+  private async pollAndInstallWhenIdle(generation: number): Promise<void> {
+    const tick = async () => {
+      if (generation !== this.installWaitGeneration) {
+        logger.debug('Idle waiter generation invalidated; stopping', { generation });
+        return;
+      }
+
+      let count = 0;
+      try {
+        const { getBackendClient } = await import('../../backend/main/backend.ipc');
+        const agents = await listRespondingAgents(getBackendClient());
+        count = agents.length;
+      } catch (error) {
+        // listRespondingAgents already fail-opens; client lookup should too.
+        logger.warn('Idle check failed; treating as idle', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        count = 0;
+      }
+
+      if (generation !== this.installWaitGeneration) {
+        return;
+      }
+
+      this.state.respondingAgentCount = count;
+      this.sendToRenderer('auto-update:status-changed', this.getState());
+
+      if (count === 0) {
+        await this.performQuitAndInstall(generation);
+        return;
+      }
+
+      logger.info('Waiting for agents to go idle before install', {
+        respondingAgentCount: count,
+      });
+      this.idlePollTimer = setTimeout(() => {
+        void tick();
+      }, IDLE_POLL_INTERVAL_MS);
+    };
+
+    await tick();
+  }
+
+  private async performQuitAndInstall(generation: number): Promise<void> {
+    if (generation !== this.installWaitGeneration) {
+      logger.debug('Skipping quitAndInstall; generation invalidated');
+      return;
+    }
+    if (this.installInFlight) {
+      return;
+    }
+    this.installInFlight = true;
+    this.stopIdleWaiter();
+
+    try {
+      await saveWindowSessions();
+    } catch (error) {
+      logger.warn('Final session save before install failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    if (generation !== this.installWaitGeneration) {
+      this.installInFlight = false;
+      return;
+    }
+
+    isInstallingUpdate = true;
+    logger.info('All agents idle - installing update and restarting...');
     autoUpdater.quitAndInstall(false, true);
   }
 
@@ -349,6 +482,9 @@ class AutoUpdateService {
     }
     if (status === 'idle' || status === 'checking') {
       this.state.progress = null;
+    }
+    if (status !== 'waiting-for-idle') {
+      this.state.respondingAgentCount = null;
     }
     this.sendToRenderer('auto-update:status-changed', this.state);
   }

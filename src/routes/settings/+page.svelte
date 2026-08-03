@@ -5,9 +5,11 @@
   import {
     selectIsReadyToInstall,
     selectAutoUpdateStatus,
+    selectIsWaitingForIdle,
   } from '$store/renderer/slices/auto-update/auto-update-selectors';
   import {
     installUpdate,
+    cancelPendingInstall,
     simulateSetState,
   } from '$store/renderer/slices/auto-update/auto-update-slice';
   import { autoUpdateClient } from '$features/auto-update/auto-update.client';
@@ -79,6 +81,7 @@
 
   const isReadyToInstall$ = selectIsReadyToInstall();
   const autoUpdateStatus$ = selectAutoUpdateStatus();
+  const isWaitingForIdle$ = selectIsWaitingForIdle();
   const betaUpdatesEnabled$ = selectBetaUpdatesEnabled();
   const noteFontStyle = selectNoteFontStyle();
   const isNoteMonospace = selectIsNoteMonospace();
@@ -834,7 +837,17 @@
         <strong class="text-foreground">Intent</strong>
         <span class="ml-2">
           v{appVersion || '...'}
-          {#if $isReadyToInstall$}
+          {#if $isWaitingForIdle$}
+            <span class="mx-2">·</span>
+            <span class="text-subtle">{m.settings_footer_waitingForIdle()}</span>
+            <span class="mx-2">·</span>
+            <button
+              class="font-medium underline text-primary hover:text-primary/80 cursor-pointer bg-transparent border-none p-0"
+              onclick={() => appStore.dispatch(cancelPendingInstall())}
+            >
+              {m.settings_footer_cancelInstall()}
+            </button>
+          {:else if $isReadyToInstall$}
             <span class="mx-2">·</span>
             <button
               class="font-medium underline text-primary hover:text-primary/80 cursor-pointer bg-transparent border-none p-0"

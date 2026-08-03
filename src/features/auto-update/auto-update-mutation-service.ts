@@ -27,6 +27,7 @@ import {
   initAutoUpdate,
   downloadUpdate,
   installUpdate,
+  cancelPendingInstall,
   setUpdateState,
   setProgress,
   setUpdateError,
@@ -132,8 +133,9 @@ async function handleDownloadUpdate(): Promise<void> {
 }
 
 /**
- * Install the downloaded update. On success the app quits and restarts, so
- * there is nothing to dispatch; failures are surfaced as a slice error.
+ * Arm install: main waits for agents to go idle then quitAndInstall.
+ * Status transitions (waiting-for-idle) arrive via status-changed IPC.
+ * Failures before the waiter arms are surfaced as a slice error.
  */
 async function handleInstallUpdate(): Promise<void> {
   try {
@@ -149,12 +151,28 @@ async function handleInstallUpdate(): Promise<void> {
 }
 
 /**
+ * Cancel a pending wait-for-idle install. Main flips status back to downloaded.
+ */
+async function handleCancelPendingInstall(): Promise<void> {
+  try {
+    await autoUpdateClient.cancelPendingInstall();
+  } catch (error) {
+    logger.error('Failed to cancel pending install', error);
+    appStore.dispatch(
+      setUpdateError(
+        error instanceof Error ? error.message : m.autoUpdate_mutation_cancelInstallFailed_error(),
+      ),
+    );
+  }
+}
+
+/**
  * Middleware that gives the orphaned auto-update triggers real handlers: after
- * an action passes through the (no-op) reducer, `initAutoUpdate` routes to
- * `handleInitAutoUpdate` (registers IPC listeners once and fetches initial
- * state), and `downloadUpdate` / `installUpdate` route to the corresponding
- * IPC invokes. Errors inside the handlers are caught and logged so the
- * dispatch chain itself never throws.
+ * an action passes through the (no-op) reducer, initAutoUpdate routes to
+ * handleInitAutoUpdate (registers IPC listeners once and fetches initial
+ * state), and downloadUpdate / installUpdate / cancelPendingInstall route to
+ * the corresponding IPC invokes. Errors inside the handlers are caught and
+ * logged so the dispatch chain itself never throws.
  */
 export function createAutoUpdateMutationMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
@@ -167,15 +185,13 @@ export function createAutoUpdateMutationMiddleware(): StoreMiddleware {
       void handleDownloadUpdate();
     } else if (type === installUpdate.type) {
       void handleInstallUpdate();
+    } else if (type === cancelPendingInstall.type) {
+      void handleCancelPendingInstall();
     }
     return result;
   };
 }
 
-/**
- * Test-only reset function to clear the `listenersRegistered` flag between tests.
- * @internal
- */
 export function __resetAutoUpdateMiddlewareForTests(): void {
   listenersRegistered = false;
 }

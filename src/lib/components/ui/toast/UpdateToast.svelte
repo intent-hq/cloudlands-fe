@@ -26,8 +26,9 @@
   selectAutoUpdateInfo,
   selectAutoUpdateCurrentVersion,
   selectAutoUpdateError,
+  selectRespondingAgentCount,
 } from '$store/renderer/slices/auto-update/auto-update-selectors';
-  import { downloadUpdate, installUpdate } from '$store/renderer/slices/auto-update/auto-update-slice';
+  import { downloadUpdate, installUpdate, cancelPendingInstall } from '$store/renderer/slices/auto-update/auto-update-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber, formatInteger } from '$lib/i18n/format';
@@ -51,6 +52,7 @@
   const updateInfo$ = selectAutoUpdateInfo();
   const currentVersion$ = selectAutoUpdateCurrentVersion();
   const error$ = selectAutoUpdateError();
+  const respondingCount$ = selectRespondingAgentCount();
 
   // Derived state from selectors
   let progressPercent = $derived($progress$ ? Math.round($progress$.percent) : 0);
@@ -75,9 +77,20 @@
     appStore.dispatch(installUpdate());
   }
 
+  function handleCancelInstall() {
+    appStore.dispatch(cancelPendingInstall());
+  }
+
   function handleDownload() {
     appStore.dispatch(downloadUpdate());
   }
+
+  let waitingDescription = $derived.by(() => {
+    const count = $respondingCount$ ?? 0;
+    if (count <= 0) return m.ui_updateToast_waitingForIdle_description_zero();
+    if (count === 1) return m.ui_updateToast_waitingForIdle_description_one();
+    return m.ui_updateToast_waitingForIdle_description_many({ count: formatInteger(count) });
+  });
 
   // Auto-dismiss when up-to-date or error after a delay
   $effect(() => {
@@ -92,7 +105,7 @@
 </script>
 
 <div class="update-toast">
-  {#if $status$ === 'downloaded' || $status$ === 'downloading' || $status$ === 'error'}
+  {#if $status$ === 'downloaded' || $status$ === 'downloading' || $status$ === 'waiting-for-idle' || $status$ === 'error'}
     <button class="close-btn" onclick={handleClose} aria-label={m.ui_updateToast_close_ariaLabel()}>
       <Fa icon={faXmark} size="xs" />
     </button>
@@ -140,6 +153,21 @@
       <div class="progress-bar">
         <div class="progress-fill" style="width: {progressPercent}%"></div>
       </div>
+    </div>
+  {:else if $status$ === 'waiting-for-idle'}
+    <div class="flex items-center gap-3">
+      <div class="icon checking">
+        <Fa icon={faArrowsRotate} class="animate-spin" />
+      </div>
+      <div class="text flex-1">
+        <div class="title">{m.ui_updateToast_waitingForIdle_label()}</div>
+        <div class="description">
+          {waitingDescription}
+        </div>
+      </div>
+      <button class="action-btn cancel" onclick={handleCancelInstall}>
+        {m.ui_updateToast_cancelInstall_label()}
+      </button>
     </div>
   {:else if $status$ === 'downloaded'}
     <div class="flex items-center gap-3">
@@ -301,6 +329,16 @@
 
   .action-btn.success:hover {
     background: hsl(142 76% 30%);
+  }
+
+
+  .action-btn.cancel {
+    background: hsl(var(--muted));
+    color: hsl(var(--foreground));
+  }
+
+  .action-btn.cancel:hover {
+    background: hsl(var(--muted) / 0.8);
   }
 
 </style>

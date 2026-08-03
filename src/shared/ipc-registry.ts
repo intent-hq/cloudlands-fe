@@ -766,6 +766,7 @@ export const IPC_CHANNELS = {
     CHECK_MANUAL: 'auto-update:check-manual',
     DOWNLOAD: 'auto-update:download',
     INSTALL: 'auto-update:install',
+    CANCEL_INSTALL: 'auto-update:cancel-install',
     GET_STATE: 'auto-update:get-state',
     SET_CHANNEL: 'auto-update:set-channel',
     // Event channels (main → renderer)

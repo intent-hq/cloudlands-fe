@@ -5183,5 +5183,14 @@
   "settings_hardware_promptLimit_description": "Maximum number of recent prompts shown in the joystick radial menu.",
   "settings_hardware_cycleScope_label": "Include sub-agents when cycling",
   "settings_hardware_cycleScope_description": "Checked cycle actions also step through delegated sub-agents; unchecked ones cycle top-level agents only.",
-  "settings_hardware_cycleScope_include_ariaLabel": "Include sub-agents in {action}"
+  "settings_hardware_cycleScope_include_ariaLabel": "Include sub-agents in {action}",
+  "ui_updateToast_waitingForIdle_label": "Waiting for agents to finish...",
+  "ui_updateToast_waitingForIdle_description_one": "Installing when 1 agent is idle",
+  "ui_updateToast_waitingForIdle_description_many": "Installing when {count} agents are idle",
+  "ui_updateToast_waitingForIdle_description_zero": "Installing now...",
+  "ui_updateToast_cancelInstall_label": "Cancel",
+  "settings_footer_waitingForIdle": "Waiting for agents to finish...",
+  "settings_footer_cancelInstall": "Cancel install",
+  "autoUpdate_client_cancelInstallFailed_error": "Failed to cancel pending install",
+  "autoUpdate_mutation_cancelInstallFailed_error": "Failed to cancel pending install"
 }

@@ -63,6 +63,16 @@ export const autoUpdateClient = {
   },
 
   /**
+   * Cancel a pending wait-for-idle install and return to the downloaded state.
+   */
+  async cancelPendingInstall(): Promise<void> {
+    const response = await invokeIpc<AutoUpdateResponse>(AUTO_UPDATE_CHANNELS.CANCEL_INSTALL);
+    if (!response.success) {
+      throw new Error(response.error?.message || m.autoUpdate_client_cancelInstallFailed_error());
+    }
+  },
+
+  /**
    * Get the current update state
    */
   async getState(): Promise<UpdateState> {

@@ -13,6 +13,7 @@ export type UpdateStatus =
   | 'not-available'
   | 'downloading'
   | 'downloaded'
+  | 'waiting-for-idle'
   | 'error';
 
 export interface UpdateInfo {
@@ -35,6 +36,12 @@ export interface UpdateState {
   progress: UpdateProgress | null;
   error: string | null;
   channel: UpdateChannel;
+  /**
+   * When status is waiting-for-idle, how many agents the daemon currently
+   * reports as isResponding. Zero once the waiter is about to install.
+   * Null when not waiting.
+   */
+  respondingAgentCount: number | null;
 }
 
 /**
@@ -45,6 +52,7 @@ export const AUTO_UPDATE_CHANNELS = {
   CHECK_MANUAL: 'auto-update:check-manual',
   DOWNLOAD: 'auto-update:download',
   INSTALL: 'auto-update:install',
+  CANCEL_INSTALL: 'auto-update:cancel-install',
   GET_STATE: 'auto-update:get-state',
   SET_CHANNEL: 'auto-update:set-channel',
   // Event channels (main → renderer)

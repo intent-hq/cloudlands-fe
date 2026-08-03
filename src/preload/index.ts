@@ -490,6 +490,7 @@ const ALLOWED_CHANNELS = [
   "auto-update:check-manual",
   "auto-update:download",
   "auto-update:install",
+  "auto-update:cancel-install",
   "auto-update:get-state",
   "auto-update:set-channel",
   "auto-update:status-changed",

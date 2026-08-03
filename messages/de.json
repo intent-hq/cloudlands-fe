@@ -5183,5 +5183,14 @@
   "settings_hardware_promptLimit_description": "Maximale Anzahl der zuletzt verwendeten Prompts im radialen Joystick-Menü.",
   "settings_hardware_cycleScope_label": "Sub-Agenten beim Durchschalten einbeziehen",
   "settings_hardware_cycleScope_description": "Aktivierte Durchschalt-Aktionen wechseln auch durch delegierte Sub-Agenten; deaktivierte nur durch Top-Level-Agenten.",
-  "settings_hardware_cycleScope_include_ariaLabel": "Sub-Agenten in {action} einbeziehen"
+  "settings_hardware_cycleScope_include_ariaLabel": "Sub-Agenten in {action} einbeziehen",
+  "ui_updateToast_waitingForIdle_label": "Waiting for agents to finish...",
+  "ui_updateToast_waitingForIdle_description_one": "Installing when 1 agent is idle",
+  "ui_updateToast_waitingForIdle_description_many": "Installing when {count} agents are idle",
+  "ui_updateToast_waitingForIdle_description_zero": "Installing now...",
+  "ui_updateToast_cancelInstall_label": "Cancel",
+  "settings_footer_waitingForIdle": "Waiting for agents to finish...",
+  "settings_footer_cancelInstall": "Cancel install",
+  "autoUpdate_client_cancelInstallFailed_error": "Failed to cancel pending install",
+  "autoUpdate_mutation_cancelInstallFailed_error": "Failed to cancel pending install"
 }

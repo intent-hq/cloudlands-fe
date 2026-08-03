@@ -5183,5 +5183,14 @@
   "settings_hardware_promptLimit_description": "Número máximo de prompts recientes que se muestran en el menú radial del joystick.",
   "settings_hardware_cycleScope_label": "Incluir subagentes al alternar",
   "settings_hardware_cycleScope_description": "Las acciones de alternancia marcadas también recorren los subagentes delegados; las no marcadas solo recorren los agentes de nivel superior.",
-  "settings_hardware_cycleScope_include_ariaLabel": "Incluir subagentes en {action}"
+  "settings_hardware_cycleScope_include_ariaLabel": "Incluir subagentes en {action}",
+  "ui_updateToast_waitingForIdle_label": "Waiting for agents to finish...",
+  "ui_updateToast_waitingForIdle_description_one": "Installing when 1 agent is idle",
+  "ui_updateToast_waitingForIdle_description_many": "Installing when {count} agents are idle",
+  "ui_updateToast_waitingForIdle_description_zero": "Installing now...",
+  "ui_updateToast_cancelInstall_label": "Cancel",
+  "settings_footer_waitingForIdle": "Waiting for agents to finish...",
+  "settings_footer_cancelInstall": "Cancel install",
+  "autoUpdate_client_cancelInstallFailed_error": "Failed to cancel pending install",
+  "autoUpdate_mutation_cancelInstallFailed_error": "Failed to cancel pending install"
 }
