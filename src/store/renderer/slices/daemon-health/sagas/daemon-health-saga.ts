@@ -1,8 +1,7 @@
-import { END, buffers, type EventChannel, type Task } from 'redux-saga';
+import { buffers, type EventChannel } from 'redux-saga';
 import {
   actionChannel,
   call,
-  cancel,
   delay,
   fork,
   put,
@@ -15,6 +14,7 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { createElectronChannel } from '$store/renderer/utils/ipc-channel';
+import { takeWithBackoff } from '$store/renderer/utils/take-with-backoff';
 import {
   connectionStatusChanged,
   fetchSidecarRunLogFailed,
@@ -119,16 +119,14 @@ export function* daemonStatusSaga() {
     },
   );
   let versionMismatchNotified = false;
-  let lastStatus: string | null = null;
-  let disconnectedBackoffMs = INITIAL_DISCONNECTED_BACKOFF_MS;
-  let pendingDisconnectedTask: Task | null = null;
+  let initialStatus: BackendStatusPayload | null = null;
   try {
     // The channel is installed before GET_STATUS so a push racing the snapshot
     // is buffered and applied after the older boot snapshot.
     try {
       const snapshot = yield* call(invokeGetBackendStatus);
       yield* put(statusAction(snapshot, true));
-      lastStatus = snapshot.status;
+      initialStatus = snapshot;
       versionMismatchNotified = yield* call(
         maybeNotifyVersionMismatch,
         snapshot.transport,
@@ -138,34 +136,25 @@ export function* daemonStatusSaga() {
       // Push events and system.status polling still converge the state.
     }
 
-    while (true) {
-      const payload: BackendStatusPayload = yield* take(channel);
-      if (payload === (END as unknown as BackendStatusPayload)) break;
-      if (payload.status === 'disconnected' && lastStatus === 'disconnected') {
-        if (pendingDisconnectedTask) yield* cancel(pendingDisconnectedTask);
-        const delayMs = disconnectedBackoffMs;
-        disconnectedBackoffMs = Math.min(delayMs * 2, MAX_DISCONNECTED_BACKOFF_MS);
-        pendingDisconnectedTask = yield* fork(function* delayedDisconnectedStatus() {
-          yield* delay(delayMs);
-          yield* put(statusAction(payload, false));
-        });
-      } else {
-        if (pendingDisconnectedTask) {
-          yield* cancel(pendingDisconnectedTask);
-          pendingDisconnectedTask = null;
-        }
+    yield* takeWithBackoff(
+      channel,
+      function* handleStatusPayload(payload: BackendStatusPayload) {
         yield* put(statusAction(payload, false));
-        if (payload.status !== 'disconnected') disconnectedBackoffMs = INITIAL_DISCONNECTED_BACKOFF_MS;
-      }
-      lastStatus = payload.status;
-      versionMismatchNotified = yield* call(
-        maybeNotifyVersionMismatch,
-        payload.transport,
-        versionMismatchNotified,
-      );
-    }
+        versionMismatchNotified = yield* call(
+          maybeNotifyVersionMismatch,
+          payload.transport,
+          versionMismatchNotified,
+        );
+      },
+      {
+        initialDelayMs: INITIAL_DISCONNECTED_BACKOFF_MS,
+        maxDelayMs: MAX_DISCONNECTED_BACKOFF_MS,
+        initialPrevious: initialStatus,
+        shouldBackoff: (payload, previous) =>
+          payload.status === 'disconnected' && previous?.status === 'disconnected',
+      },
+    );
   } finally {
-    if (pendingDisconnectedTask) yield* cancel(pendingDisconnectedTask);
     channel.close();
   }
 }
