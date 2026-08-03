@@ -4707,6 +4707,7 @@
   "diffs_service_stopTrackingFailed_error": "停止跟蹤智慧體執行失敗",
   "scripts_client_statusFailed_error": "讀取指令碼狀態失敗",
   "scripts_client_notFound_error": "未找到指令碼：{scriptId}",
+  "scripts_client_updateRunning_error": "「{name}」正在執行 — 變更未套用。請先停止它，然後重試。",
   "scripts_detect_skippedRunning_one": "「{name}」正在執行 — 偵測到的變更未套用。請先停止它，然後重新執行偵測以更新。",
   "scripts_detect_skippedRunning_many": "{count} 個正在執行的指令碼（{names}）未套用偵測到的變更。請先停止它們，然後重新執行偵測。",
   "context_types_addNote_description": "新增新筆記",

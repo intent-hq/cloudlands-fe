@@ -4707,6 +4707,7 @@
   "diffs_service_stopTrackingFailed_error": "에이전트 실행 추적을 중지하지 못했습니다",
   "scripts_client_statusFailed_error": "스크립트 상태를 읽지 못했습니다",
   "scripts_client_notFound_error": "스크립트를 찾을 수 없음: {scriptId}",
+  "scripts_client_updateRunning_error": "\"{name}\"이(가) 실행 중이어서 변경 사항이 적용되지 않았습니다. 중지한 후 다시 시도하세요.",
   "scripts_detect_skippedRunning_one": "\"{name}\"이(가) 실행 중이어서 감지된 변경 사항이 적용되지 않았습니다. 중지한 후 다시 감지를 실행하세요.",
   "scripts_detect_skippedRunning_many": "실행 중인 스크립트 {count}개({names})가 감지된 변경 사항으로 업데이트되지 않았습니다. 중지한 후 다시 감지를 실행하세요.",
   "context_types_addNote_description": "새 노트 추가",

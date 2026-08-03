@@ -4707,6 +4707,7 @@
   "diffs_service_stopTrackingFailed_error": "Error al detener el seguimiento de ejecución del agente",
   "scripts_client_statusFailed_error": "Error al leer el estado del script",
   "scripts_client_notFound_error": "Script no encontrado: {scriptId}",
+  "scripts_client_updateRunning_error": "\"{name}\" está en ejecución: los cambios no se aplicaron. Deténlo e inténtalo de nuevo.",
   "scripts_detect_skippedRunning_one": "\"{name}\" está en ejecución: los cambios detectados no se aplicaron. Deténlo y vuelve a ejecutar la detección para actualizarlo.",
   "scripts_detect_skippedRunning_many": "{count} scripts en ejecución ({names}) no se actualizaron con los cambios detectados. Deténlos y vuelve a ejecutar la detección.",
   "context_types_addNote_description": "Agregar una nueva nota",
