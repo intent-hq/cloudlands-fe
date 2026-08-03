@@ -37,7 +37,10 @@ function makeAgent(overrides: Partial<HudCardAgent>): HudCardAgent {
   };
 }
 
-function makeCard(agents: HudCardAgent[]): HudWorkspaceCardModel {
+function makeCard(
+  agents: HudCardAgent[],
+  overrides: Partial<HudWorkspaceCardModel> = {},
+): HudWorkspaceCardModel {
   return {
     workspaceId: 'ws-1',
     title: 'Sidecar auto-update',
@@ -50,6 +53,7 @@ function makeCard(agents: HudCardAgent[]): HudWorkspaceCardModel {
     tasks: { total: 4, completed: 1, inProgress: 1 },
     tokens: 1200,
     agents,
+    ...overrides,
   };
 }
 
@@ -108,5 +112,44 @@ describe('HudWorkspaceCard agent-row elapsed timer', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].querySelector('.hud-ws-card-agent-elapsed')).toBeNull();
     expect(rows[1].querySelector('.hud-ws-card-agent-elapsed')?.textContent).toBe('00:01:25');
+  });
+});
+
+describe('HudWorkspaceCard failed attention strip', () => {
+  it("renders the failing agent's error, not the workspace status message", () => {
+    const { container } = render(HudWorkspaceCard, {
+      props: {
+        card: makeCard([makeAgent({ bucket: 'failed' })], {
+          stateKey: 'failed',
+          statusMessage: 'Wiring the release-channel fetch',
+          attentionSnippet: {
+            kind: 'failed',
+            text: 'Provider stream disconnected (upstream 529)',
+          },
+        }),
+        nowMs: NOW_MS,
+      },
+    });
+
+    const strip = container.querySelector('.hud-ws-card-question');
+    expect(strip?.textContent?.trim()).toBe('ERR: Provider stream disconnected (upstream 529)');
+    expect(container.textContent).not.toContain('Wiring the release-channel fetch');
+  });
+
+  it('renders the generic failed line when no stopReason is known', () => {
+    const { container } = render(HudWorkspaceCard, {
+      props: {
+        card: makeCard([makeAgent({ bucket: 'failed' })], {
+          stateKey: 'failed',
+          statusMessage: 'Wiring the release-channel fetch',
+          attentionSnippet: { kind: 'failed', text: '' },
+        }),
+        nowMs: NOW_MS,
+      },
+    });
+
+    const strip = container.querySelector('.hud-ws-card-question');
+    expect(strip?.textContent?.trim()).toBe('ERR: agent failed');
+    expect(container.textContent).not.toContain('Wiring the release-channel fetch');
   });
 });

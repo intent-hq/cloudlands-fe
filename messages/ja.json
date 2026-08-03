@@ -2335,6 +2335,8 @@
   "hud_card_attnBlocker_label": "ブロッカー: {text}",
   "hud_card_attnDiscussion_label": "相談依頼: {text}",
   "hud_card_attnPending_label": "質問: 回答待ち",
+  "hud_card_attnFailed_label": "ERR: {text}",
+  "hud_card_attnFailedPending_label": "ERR: エージェントが失敗しました",
   "hud_card_open_ariaLabel": "ワークスペース {title} を開く",
   "hud_grid_empty_label": "ワークスペースなし",
   "hud_filter_allWorkspaces_label": "すべてのワークスペース",

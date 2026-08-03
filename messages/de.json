@@ -2335,6 +2335,8 @@
   "hud_card_attnBlocker_label": "Blocker: {text}",
   "hud_card_attnDiscussion_label": "Diskussion angefragt: {text}",
   "hud_card_attnPending_label": "F: wartet auf Ihre Antwort",
+  "hud_card_attnFailed_label": "ERR: {text}",
+  "hud_card_attnFailedPending_label": "ERR: Agent fehlgeschlagen",
   "hud_card_open_ariaLabel": "Arbeitsbereich {title} öffnen",
   "hud_grid_empty_label": "KEINE ARBEITSBEREICHE",
   "hud_filter_allWorkspaces_label": "Alle Arbeitsbereiche",

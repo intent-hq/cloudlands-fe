@@ -26,13 +26,13 @@
  * tail and the failure is logged — no event is dispatched.
  */
 import { Logger } from '$shared/logger';
-import { goto } from '$app/navigation';
 import type { AgentMessage } from '$shared/types';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { replaceMessages } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { dispatchWindowEvent } from './window-events';
+import { navigateToRoute } from './navigation.client';
 
 const logger = new Logger('OpenMessage');
 
@@ -148,7 +148,8 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
     window.location.pathname !== `/workspace/${workspaceId}`
   ) {
     try {
-      await goto(`/workspace/${workspaceId}`);
+      // navigateToRoute no-ops in the HUD pop-out window (never leaves /hud).
+      await navigateToRoute(`/workspace/${workspaceId}`);
     } catch (error) {
       logger.warn('[openMessage] Workspace navigation failed', { workspaceId, error });
     }

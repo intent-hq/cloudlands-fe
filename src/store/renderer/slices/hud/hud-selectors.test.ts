@@ -2171,6 +2171,43 @@ describe('selectHudWorkspaceCards', () => {
     expect(card.attentionSnippet).toEqual({ kind: 'pending', text: '' });
   });
 
+  it('failed card snippet carries the failing agent stopReason', () => {
+    const state = gatedState({
+      root: {
+        status: 'error',
+        stopReason: 'Provider stream disconnected (upstream 529)',
+        messages: [],
+      },
+    });
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.stateKey).toBe('failed');
+    expect(card.attentionSnippet).toEqual({
+      kind: 'failed',
+      text: 'Provider stream disconnected (upstream 529)',
+    });
+  });
+
+  it('failed card without a known stopReason falls back to the empty failed snippet (never the status text)', () => {
+    // Summary-only hydration: no tracked session carries a stopReason. The
+    // strip must still swap to the generic failed line — the workspace
+    // status message never masks the failure.
+    const state = mockState([
+      makeWorkspace('ws-1', {
+        displayStatus: 'in_progress',
+        statusMessage: 'Wiring the release-channel fetch',
+        agentSummary: {
+          count: 1,
+          agentIds: ['a1'],
+          agents: [{ id: 'a1', name: 'Implementor', status: 'error' }],
+        } as Workspace['agentSummary'],
+      }),
+    ]);
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.stateKey).toBe('failed');
+    expect(card.statusMessage).toBe('Wiring the release-channel fetch');
+    expect(card.attentionSnippet).toEqual({ kind: 'failed', text: '' });
+  });
+
   it('a dismissed question stops pending on the agent row and the ATTN count', () => {
     // The captured question trails message msg-42; the waiting top-level agent
     // shows NEEDS ATTENTION until the dismissal marker arrives in metadata.
