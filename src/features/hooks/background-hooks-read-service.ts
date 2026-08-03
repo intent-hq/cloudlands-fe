@@ -22,7 +22,7 @@
  * "service middleware" pattern used by `stats-read-service` and
  * `directory-picker-read-service`.
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
+import type { StoreMiddleware } from "@augmentcode/themis/types";
 import { store as appStore } from "$store/renderer/store";
 import { createLogger } from "$lib/utils/client-logger";
 import {
@@ -58,6 +58,12 @@ function hookRefOf(action: { payload?: unknown }): [string, string] | null {
   return [workspaceId, hookId];
 }
 
+function actionTypeOf(action: unknown): string {
+	return typeof (action as { type?: unknown })?.type === "string"
+		? (action as { type: string }).type
+		: "";
+}
+
 /**
  * Middleware servicing the background-hooks triggers. Fire-and-forget —
  * dispatch stays synchronous; the slice converges via `backgroundHooksUpdated`.
@@ -68,10 +74,11 @@ export function createBackgroundHooksMiddleware(): StoreMiddleware {
 
   return () => (next) => (action) => {
     const result = next(action);
-    if (!action) return result;
+		const type = actionTypeOf(action);
+		if (!type) return result;
 
-    if (action.type === backgroundHooksSubscribeRequested.type) {
-      const workspaceId = workspaceIdOf(action);
+		if (type === backgroundHooksSubscribeRequested.type) {
+			const workspaceId = workspaceIdOf(action as { payload?: unknown });
       if (workspaceId) {
         const entry = active.get(workspaceId);
         if (entry) {
@@ -83,8 +90,8 @@ export function createBackgroundHooksMiddleware(): StoreMiddleware {
           active.set(workspaceId, { count: 1, subscription });
         }
       }
-    } else if (action.type === backgroundHooksUnsubscribeRequested.type) {
-      const workspaceId = workspaceIdOf(action);
+		} else if (type === backgroundHooksUnsubscribeRequested.type) {
+			const workspaceId = workspaceIdOf(action as { payload?: unknown });
       if (workspaceId) {
         const entry = active.get(workspaceId);
         if (entry) {
@@ -96,19 +103,19 @@ export function createBackgroundHooksMiddleware(): StoreMiddleware {
           }
         }
       }
-    } else if (action.type === backgroundHooksRefetchRequested.type) {
-      const workspaceId = workspaceIdOf(action);
+		} else if (type === backgroundHooksRefetchRequested.type) {
+			const workspaceId = workspaceIdOf(action as { payload?: unknown });
       if (workspaceId) active.get(workspaceId)?.subscription.refetch();
-    } else if (action.type === runBackgroundHookRequested.type) {
-      const ref = hookRefOf(action);
+		} else if (type === runBackgroundHookRequested.type) {
+			const ref = hookRefOf(action as { payload?: unknown });
       if (ref) {
         const [workspaceId, hookId] = ref;
         void runHookNow(workspaceId, hookId).catch((error) => {
           logger.error("hook.runNow failed", { workspaceId, hookId, error });
         });
       }
-    } else if (action.type === cancelBackgroundHookRequested.type) {
-      const ref = hookRefOf(action);
+		} else if (type === cancelBackgroundHookRequested.type) {
+			const ref = hookRefOf(action as { payload?: unknown });
       if (ref) {
         const [workspaceId, hookId] = ref;
         void cancelHook(workspaceId, hookId).catch((error) => {

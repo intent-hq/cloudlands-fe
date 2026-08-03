@@ -5,6 +5,7 @@ import type {
   ChatStateSlice,
   StatusEvent,
   LastAttemptedMessage,
+	LiveStreamPhase,
   ModelUnavailableInfo,
   QueuedRetryRecord,
   SendMessagePayload,
@@ -45,6 +46,7 @@ export const emptyChatAgentState: ChatAgentState = {
   isRebinding: false,
   lastMessageTime: 0,
   lastChunkReceivedAt: 0,
+	liveStreamPhase: null,
 };
 
 export const initialState: ChatStateSlice = {
@@ -588,6 +590,16 @@ export const chatStreamingReconciled = createAction(
 
 // --- Streaming event actions ---
 
+/** Live stream activity tick (`agent:stream:activity` / `agent:tool:call`). */
+export const streamActivityReceived = createAction(
+  'chatState/streamActivityReceived',
+  (
+    agentId: string,
+    isStreamActivity: boolean,
+    timestamp = Date.now(),
+  ): [string, boolean, number] => [agentId, isStreamActivity, timestamp],
+);
+
 /** Stream completed — finalize streaming flags (messages now in agent-session) */
 export const streamCompleted = createAction<
   [
@@ -653,6 +665,11 @@ export const transcriptHydrationStarted = createAction<[agentId: string]>(
 export const transcriptHydrationSettled = createAction<[agentId: string]>(
   'chatState/transcriptHydrationSettled',
 );
+
+/** Standing chat.subscribe lifecycle phase reported by the live client. */
+export const chatLiveStreamPhaseChanged = createAction<
+	[agentId: string, phase: LiveStreamPhase | null]
+>('chatState/liveStreamPhaseChanged');
 
 // --- Initialize chat saga trigger (no reducer state change) ---
 
@@ -827,6 +844,9 @@ chatStateReducer.with(chatStreamingReconciled, (state, { payload: { agentId, tim
 chatStateReducer.with(agentStreamUpdateReceived, (state, { payload: [payload] }) =>
   reduceAgentStreamUpdate(state, payload),
 );
+chatStateReducer.with(streamActivityReceived, (state, { payload: [agentId, isStreamActivity, timestamp] }) =>
+  reduceChunkReceived(state, agentId, isStreamActivity, timestamp),
+);
 chatStateReducer.with(streamCompleted, (state, { payload: [agentId, data] }) =>
   updateAgent(state, agentId, {
     streamingStartTime: null,
@@ -874,6 +894,10 @@ chatStateReducer.with(transcriptHydrationStarted, (state, { payload: [agentId] }
 chatStateReducer.with(transcriptHydrationSettled, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { agentId, transcriptHydration: 'settled' }),
 );
+chatStateReducer.with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, phase] }) => {
+	if (phase === null && !state.byAgentId[agentId]) return state;
+	return updateAgent(state, agentId, { agentId, liveStreamPhase: phase });
+});
 chatStateReducer.with(eventReceived, (state, { payload: [, event] }) => {
   if (event.type !== 'agent:idle') return state;
   const data: unknown = event.data;

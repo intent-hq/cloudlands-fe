@@ -356,10 +356,14 @@ function* lifecycleReadWorker(
   }
   if (action.type === hydrateAgentsRequested.type) return yield* call(hydrateAgents, workspaceId);
   if (action.type === hydrateTerminalsRequested.type) {
-    const terminals: Awaited<ReturnType<typeof appClient.terminals.list>> = yield* call(
+		const result: Awaited<ReturnType<typeof appClient.terminals.list>> = yield* call(
       [appClient.terminals, appClient.terminals.list], workspaceId,
     );
-    yield* put(loadWorkspaceTerminals(workspaceId, terminals));
+      yield* put(
+        Array.isArray(result)
+          ? loadWorkspaceTerminals(workspaceId, result)
+          : loadWorkspaceTerminals(workspaceId, result.terminals, null, result.daemonBootId),
+      );
   }
 }
 
