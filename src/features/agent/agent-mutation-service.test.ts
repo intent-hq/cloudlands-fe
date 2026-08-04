@@ -36,6 +36,18 @@ vi.mock("svelte-sonner", () => ({
   }),
 }));
 
+// The undo handler lazily imports the subscription read service to refetch the
+// workspace's entries. Override ONLY that export (importOriginal keeps
+// `createAgentSubscriptionReadMiddleware` real for the configured store's
+// middleware chain) so the test can assert the refetch without a wire call.
+const { refreshWorkspaceSubscriptionEntries } = vi.hoisted(() => ({
+  refreshWorkspaceSubscriptionEntries: vi.fn(),
+}));
+vi.mock("./agent-subscription-read-service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./agent-subscription-read-service")>();
+  return { ...actual, refreshWorkspaceSubscriptionEntries };
+});
+
 import { store as appStore } from "$store/renderer/store";
 import { toast } from "svelte-sonner";
 import {
@@ -58,7 +70,12 @@ import {
   stopAgentSessionRequested,
   undoAgentDeletionRequested,
 } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
-import { cancelAgentSubscriptionsRequested } from "$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice";
+import {
+  cancelAgentSubscriptionsRequested,
+  makeKey,
+  setSubscriptionSnapshot,
+} from "$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice";
+import type { AgentSubscriptionUIEntry } from "$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types";
 import {
   closeTab,
   initializeLayout,
@@ -336,7 +353,47 @@ describe("agentMutationService — deletion (soft-hide-then-commit)", () => {
     list.mockReset();
     toastMock.warning.mockClear();
     toastMock.error.mockClear();
+    refreshWorkspaceSubscriptionEntries.mockClear();
   });
+
+  /** Seed a parent agent's subscription-UI entry watching `childId`. */
+  function seedSubscriptionEntry(wsId: string, parentId: string, childId: string): void {
+    appStore.dispatch(
+      setSubscriptionSnapshot(wsId, parentId, {
+        subscriptions: [
+          {
+            id: "watch-1",
+            agentId: parentId,
+            eventTypes: ["agent:completed"],
+            actorIds: [childId],
+            createdAt: "2026-01-01T00:00:00Z",
+            description: "Completion watch",
+          },
+        ],
+        delegationGroups: [
+          {
+            groupId: "g-1",
+            awaitMode: "all",
+            expectedAgentIds: [childId, "agent-other"],
+            completedAgentIds: [childId],
+            deletedAgentIds: [],
+            agentStatuses: { [childId]: "responding", "agent-other": "idle" },
+            delivered: false,
+          },
+        ],
+        agentStatuses: { [childId]: "responding", "agent-other": "idle" },
+        waitingState: "waiting",
+      }),
+    );
+  }
+
+  function readSubscriptionEntry(wsId: string, parentId: string): AgentSubscriptionUIEntry {
+    return (
+      appStore.state as {
+        agentSubscriptionUI: { entries: Record<string, AgentSubscriptionUIEntry> };
+      }
+    ).agentSubscriptionUI.entries[makeKey(wsId, parentId)];
+  }
 
   it("soft-hides the session and shows an undo toast WITHOUT calling the daemon", async () => {
     const WS = "ws-del-undo";
@@ -498,6 +555,31 @@ describe("agentMutationService — deletion (soft-hide-then-commit)", () => {
     // best-effort lazily-imported affordance and is not asserted here.)
     expect(del).toHaveBeenCalledWith(AGENT, WS);
     expect(readSession(AGENT)?.name).toBe("Survivor");
+    // A failed delete emits no daemon event, so the restore itself must
+    // refetch the subscription entries the soft-hide optimistically pruned.
+    expect(refreshWorkspaceSubscriptionEntries).toHaveBeenCalledWith(WS);
+  });
+
+  it("deleteAgentSessionRequested (no-undo path) restores the session and refetches subscriptions when the delete fails", async () => {
+    const WS = "ws-del-now-fail";
+    const PARENT = "agent-del-now-fail-parent";
+    const AGENT = "agent-del-now-fail-child";
+    seedSession(makeSession(AGENT, WS, { name: "Survivor" }));
+    seedSubscriptionEntry(WS, PARENT, AGENT);
+    del.mockResolvedValueOnce({ success: false, error: "boom" });
+
+    const action = deleteAgentSessionRequested(WS, AGENT);
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("boom");
+    await flush();
+
+    // The soft-hide pruned the parent's watch on this agent...
+    expect(readSubscriptionEntry(WS, PARENT).subscriptions).toHaveLength(0);
+    // ...and the failed delete (no daemon event) restores the session and
+    // triggers the subscription refetch so the footer converges again.
+    expect(del).toHaveBeenCalledWith(AGENT, WS);
+    expect(readSession(AGENT)?.name).toBe("Survivor");
+    expect(refreshWorkspaceSubscriptionEntries).toHaveBeenCalledWith(WS);
   });
 
   it("deleteAgentSessionRequested soft-hides and commits the daemon delete immediately", async () => {
@@ -611,6 +693,69 @@ describe("agentMutationService — deletion (soft-hide-then-commit)", () => {
         .select(appStore.state, WS)
         .some((e) => e.tab.type === "agent" && e.tab.agentId === AGENT),
     ).toBe(false);
+  });
+
+  it("delete-with-undo optimistically removes the agent from subscription-UI entries", async () => {
+    const WS = "ws-del-subui-undo";
+    const PARENT = "agent-subui-undo-parent";
+    const AGENT = "agent-subui-undo-child";
+    seedSession(makeSession(AGENT, WS));
+    seedSubscriptionEntry(WS, PARENT, AGENT);
+
+    const action = deleteAgentWithUndoRequested(WS, AGENT);
+    appStore.dispatch(action);
+    await action.promise;
+
+    const entry = readSubscriptionEntry(WS, PARENT);
+    expect(entry.subscriptions).toHaveLength(0);
+    expect(entry.delegationGroups[0].expectedAgentIds).toEqual(["agent-other"]);
+    expect(entry.delegationGroups[0].completedAgentIds).toEqual([]);
+    expect(entry.delegationGroups[0].agentStatuses).toEqual({ "agent-other": "idle" });
+    expect(entry.agentStatuses).toEqual({ "agent-other": "idle" });
+    expect(del).not.toHaveBeenCalled();
+
+    // Clean up the armed commit timer.
+    appStore.dispatch(undoAgentDeletionRequested(WS, AGENT));
+  });
+
+  it("deleteAgentSessionRequested (no-undo path) also removes the agent from subscription-UI entries", async () => {
+    const WS = "ws-del-subui-now";
+    const PARENT = "agent-subui-now-parent";
+    const AGENT = "agent-subui-now-child";
+    seedSession(makeSession(AGENT, WS));
+    seedSubscriptionEntry(WS, PARENT, AGENT);
+    del.mockResolvedValueOnce({ success: true });
+
+    const action = deleteAgentSessionRequested(WS, AGENT);
+    appStore.dispatch(action);
+    await action.promise;
+    await flush();
+
+    const entry = readSubscriptionEntry(WS, PARENT);
+    expect(entry.subscriptions).toHaveLength(0);
+    expect(entry.delegationGroups[0].expectedAgentIds).toEqual(["agent-other"]);
+    expect(entry.agentStatuses).toEqual({ "agent-other": "idle" });
+    expect(del).toHaveBeenCalledWith(AGENT, WS);
+  });
+
+  it("undo refetches the workspace's subscription entries so the daemon's live watch repopulates", async () => {
+    const WS = "ws-del-subui-refetch";
+    const AGENT = "agent-subui-refetch-child";
+    seedSession(makeSession(AGENT, WS));
+
+    const action = deleteAgentWithUndoRequested(WS, AGENT);
+    appStore.dispatch(action);
+    await action.promise;
+    expect(refreshWorkspaceSubscriptionEntries).not.toHaveBeenCalled();
+
+    const undo = undoAgentDeletionRequested(WS, AGENT);
+    appStore.dispatch(undo);
+    await expect(undo.promise).resolves.toBe(true);
+    // The refetch rides a lazy dynamic import; drain the microtask queue.
+    await flush();
+
+    expect(refreshWorkspaceSubscriptionEntries).toHaveBeenCalledWith(WS);
+    expect(del).not.toHaveBeenCalled();
   });
 });
 

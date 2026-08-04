@@ -75,6 +75,18 @@ export const deleteSubscriptionUI = createAction<[workspaceId: string, agentId: 
   'agentSubscriptionUI/deleteSubscriptionUI',
 );
 
+/**
+ * Optimistically drop a (soft-)deleted agent from every subscription-UI entry
+ * in the workspace: its membership in watches (a subscription whose actorIds
+ * empties is dropped, multi-actor watches survive pruned), its membership in
+ * delegation groups (a group whose expectedAgentIds empties is dropped), and
+ * its status rows. Dispatched by the agent-deletion soft-hide; on undo the
+ * daemon's still-live watch repopulates via a workspace refetch.
+ */
+export const removeWatchedAgent = createAction<[workspaceId: string, watchedAgentId: string]>(
+  'agentSubscriptionUI/removeWatchedAgent',
+);
+
 /** Dispatched by the AgentSubscriptions component to request an initial fetch
  *  when the component mounts or the agentId changes. The saga handles the
  *  actual IPC call so no side effects live in the component. */
@@ -194,4 +206,77 @@ export const agentSubscriptionUIReducer = createReducer<AgentSubscriptionUIState
       ...state,
       entries: rest,
     };
+  })
+  .with(removeWatchedAgent, (state, { payload: [workspaceId, watchedAgentId] }) => {
+    const prefix = `${workspaceId}:`;
+    let changed = false;
+    const entries = { ...state.entries };
+    for (const [key, entry] of Object.entries(state.entries)) {
+      if (!key.startsWith(prefix)) continue;
+
+      let subsChanged = false;
+      const subscriptions: Subscription[] = [];
+      for (const sub of entry.subscriptions) {
+        if (!sub.actorIds.includes(watchedAgentId)) {
+          subscriptions.push(sub);
+          continue;
+        }
+        subsChanged = true;
+        const actorIds = sub.actorIds.filter((id) => id !== watchedAgentId);
+        // Drop a subscription whose actor list emptied out; a multi-actor
+        // watch survives with the deleted agent pruned (mirroring the
+        // delegation-group treatment below).
+        if (actorIds.length === 0) continue;
+        subscriptions.push({ ...sub, actorIds });
+      }
+
+      let groupsChanged = false;
+      const delegationGroups: DelegationGroupStatus[] = [];
+      for (const group of entry.delegationGroups) {
+        const touchesGroup =
+          group.expectedAgentIds.includes(watchedAgentId) ||
+          group.completedAgentIds.includes(watchedAgentId) ||
+          group.deletedAgentIds.includes(watchedAgentId) ||
+          watchedAgentId in group.agentStatuses;
+        if (!touchesGroup) {
+          delegationGroups.push(group);
+          continue;
+        }
+        groupsChanged = true;
+        const expectedAgentIds = group.expectedAgentIds.filter((id) => id !== watchedAgentId);
+        // Drop a group whose expected membership emptied out.
+        if (expectedAgentIds.length === 0) continue;
+        const { [watchedAgentId]: _droppedGroupStatus, ...groupStatuses } = group.agentStatuses;
+        delegationGroups.push({
+          ...group,
+          expectedAgentIds,
+          completedAgentIds: group.completedAgentIds.filter((id) => id !== watchedAgentId),
+          deletedAgentIds: group.deletedAgentIds.filter((id) => id !== watchedAgentId),
+          agentStatuses: groupStatuses,
+        });
+      }
+
+      const statusChanged = watchedAgentId in entry.agentStatuses;
+      if (!subsChanged && !groupsChanged && !statusChanged) continue;
+
+      let agentStatuses = entry.agentStatuses;
+      if (statusChanged) {
+        const { [watchedAgentId]: _droppedStatus, ...rest } = entry.agentStatuses;
+        agentStatuses = rest;
+      }
+      const finalGroups = groupsChanged ? delegationGroups : entry.delegationGroups;
+      const finalSubs = subsChanged ? subscriptions : entry.subscriptions;
+      changed = true;
+      entries[key] = {
+        ...entry,
+        subscriptions: finalSubs,
+        delegationGroups: finalGroups,
+        agentStatuses,
+        waitingState:
+          entry.waitingState === 'waiting' && finalSubs.length === 0 && finalGroups.length === 0
+            ? 'idle'
+            : entry.waitingState,
+      };
+    }
+    return changed ? { ...state, entries } : state;
   });
