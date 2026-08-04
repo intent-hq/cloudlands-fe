@@ -44,6 +44,8 @@
   import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
   import HookWakeAttributionHeader from './HookWakeAttributionHeader.svelte';
   import { getHookWakeAttribution, stripHookWakePrefix } from '$lib/utils/hook-wake-attribution';
+  import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
+  import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
@@ -218,6 +220,9 @@
 
   // Daemon-persisted attention-request row (meta.kind "discussion-request"/"blocker-report")
   let attentionNotice = $derived(getAttentionNotice(message));
+
+  // Daemon-delivered dismissal notification row (metadata type "questions_dismissed")
+  let questionsDismissedNotice = $derived(getQuestionsDismissedNotice(message));
 
   let shouldShowStoppedIndicator = $derived.by(() => {
     return resolveShouldShowStoppedIndicator({
@@ -969,6 +974,9 @@
 {:else if modelChangeNotice}
   <!-- Daemon-persisted model-change notice row - centered inline divider -->
   <ModelChangeNotice notice={modelChangeNotice} fallbackText={extractAllContent(message) || undefined} />
+{:else if questionsDismissedNotice}
+  <!-- Daemon-delivered dismissal notification row - compact centered chip -->
+  <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
 {:else if questionOnlyTurn && !shouldShowStoppedIndicator}
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div

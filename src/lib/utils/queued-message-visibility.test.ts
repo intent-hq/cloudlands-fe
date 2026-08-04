@@ -43,6 +43,21 @@ describe('isUserQueuedMessage', () => {
     expect(isUserQueuedMessage(makeMessage({ source: 'system' }))).toBe(false);
   });
 
+  it('hides undelivered dismissal notifications (type questions_dismissed)', () => {
+    // Full PROTOCOL shape delivered by agent.dismissQuestions.
+    expect(
+      isUserQueuedMessage(
+        makeMessage({
+          type: 'questions_dismissed',
+          source: 'system',
+          dismissedQuestionsMessageId: 'msg-q1',
+        }),
+      ),
+    ).toBe(false);
+    // Explicit type rule holds even without the source tag.
+    expect(isUserQueuedMessage(makeMessage({ type: 'questions_dismissed' }))).toBe(false);
+  });
+
   it('hides entries with a daemon-stamped fromAgentId and no type', () => {
     expect(isUserQueuedMessage(makeMessage({ fromAgentId: 'agent-2' }))).toBe(false);
   });
