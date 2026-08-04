@@ -46,7 +46,7 @@ export class HardwareConsoleManager {
   private readonly logListeners = new Set<(text: string) => void>();
   private started = false;
   private opening = false;
-  private openInFlight: Promise<unknown> | null = null;
+  private openInFlight: Promise<boolean> | null = null;
   /**
    * Lifecycle generation token, incremented by every start()/stop(). Async
    * lifecycle paths capture it before awaiting and bail when it has moved
@@ -231,7 +231,10 @@ export class HardwareConsoleManager {
    * replug (intent-hq/monorepo#1438).
    */
   private async rescanForLiveGeneration(): Promise<void> {
-    if (!this.platform) return;
+    // Defensive: the single call site already checks these synchronously
+    // with the generation capture below; keep the guard so a future call
+    // site cannot silently break that invariant.
+    if (!this.platform || !this.started || this.device || this.opening) return;
     const generation = this.generation;
     const granted = await this.platform.getDevices();
     // Mirrors start()'s guard: a stop() during the await must not let this
