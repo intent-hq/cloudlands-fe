@@ -349,7 +349,7 @@ describe('buildHardwareLedSnapshot', () => {
     expect(buildHardwareLedSnapshot(state).keys[0]).toBe('idle');
   });
 
-  it('an in-progress push-to-talk recording drives ambient recording, outranking attention', () => {
+  it('an in-progress push-to-talk recording drives ambient recording, outranking blocked', () => {
     const state = makeState({
       workspaces: [makeWorkspace('ws-1')],
       agentsByWorkspace: { 'ws-1': ['agent-1'] },
@@ -359,7 +359,7 @@ describe('buildHardwareLedSnapshot', () => {
     const snapshot = buildHardwareLedSnapshot(state);
     expect(snapshot.ambient).toEqual({ kind: 'recording' });
     // Key states are unaffected by the recording indicator.
-    expect(snapshot.keys[0]).toBe('attention');
+    expect(snapshot.keys[0]).toBe('blocked');
   });
 
   describe('daemon disconnected', () => {
