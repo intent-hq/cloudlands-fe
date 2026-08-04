@@ -866,9 +866,18 @@ describe('actionSlotIcons', () => {
     ]);
   });
 
-  it('exposes label as a getter so it re-evaluates on locale change', () => {
+  it('exposes label as a getter delegating to the registry so it re-evaluates on locale change', () => {
     const [slot] = actionSlotIcons(['new-agent']);
     const descriptor = Object.getOwnPropertyDescriptor(slot, 'label');
     expect(descriptor?.get).toBeTypeOf('function');
+
+    const definition = getActionKeyDefinition('new-agent');
+    const spy = vi.spyOn(definition, 'label', 'get').mockReturnValue('Nouvel agent');
+    try {
+      expect(slot.label).toBe('Nouvel agent');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(slot.label).toBe(definition.label);
   });
 });

@@ -440,6 +440,7 @@
     {#each actionKeys as key (key.slot)}
       {@const capIcon = codex ? CODEX_CAP_ICONS[key.slot] : null}
       {@const slotIcon = codex ? null : (actionSlots?.[key.slot]?.icon ?? null)}
+      {@const faceIcon = slotIcon ?? capIcon}
       {@const slotLabel = actionSlots?.[key.slot]?.label ?? null}
       <g
         role="button"
@@ -464,17 +465,10 @@
             ? 'fill-primary/25 stroke-primary'
             : 'fill-primary/10 stroke-primary/50 group-hover:fill-primary/20 group-focus-visible:stroke-primary'}
         />
-        {#if slotIcon}
+        {#if faceIcon}
           <path
-            d={iconPath(slotIcon)}
-            transform={iconTransform(slotIcon, key.x + KEY_SIZE / 2, key.y + KEY_SIZE / 2, 20)}
-            class={'pointer-events-none ' +
-              (selectedSlot === key.slot ? 'fill-primary' : 'fill-foreground/70')}
-          />
-        {:else if capIcon}
-          <path
-            d={iconPath(capIcon)}
-            transform={iconTransform(capIcon, key.x + KEY_SIZE / 2, key.y + KEY_SIZE / 2, 20)}
+            d={iconPath(faceIcon)}
+            transform={iconTransform(faceIcon, key.x + KEY_SIZE / 2, key.y + KEY_SIZE / 2, 20)}
             class={'pointer-events-none ' +
               (selectedSlot === key.slot ? 'fill-primary' : 'fill-foreground/70')}
           />
