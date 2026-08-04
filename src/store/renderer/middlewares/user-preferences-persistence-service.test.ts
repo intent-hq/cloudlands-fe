@@ -6,6 +6,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 // persistence observable.
 import { store as appStore } from "$store/renderer/store";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
+import { SYSTEM_CHANNELS } from "$shared/ipc/channels";
+import { createUserPreferencesPersistenceMiddleware } from "./user-preferences-persistence-service";
 import {
   setSpellcheckEnabled,
   toggleShowArchived,
@@ -14,6 +16,7 @@ import {
   setAgentFontStyle,
   setNoteFontStyle,
   setCodeFontFamily,
+  setSystemFonts,
   saveActivityLogPreset,
   setLanguagePreference,
   type ActivityLogPresetPreference,
@@ -156,4 +159,88 @@ describe("userPreferencesPersistenceService (real store)", () => {
   // Isolated hydration tests would require a fresh store instance per test, which
   // conflicts with the singleton real-store pattern. The validation logic is
   // exercised by the malformed-value rejection behavior in the middleware itself.
+});
+
+// System-font hydration needs a fresh middleware instance per test (the real
+// store's one-shot hydration already ran with isElectron() mocked to false),
+// so exercise the exported factory directly with a fake middleware api.
+describe("userPreferencesPersistenceService system-font hydration", () => {
+  function runFreshHydration(): { dispatched: any[] } {
+    const dispatched: any[] = [];
+    const middleware = createUserPreferencesPersistenceMiddleware();
+    const handler = middleware({
+      dispatch: (action: any) => dispatched.push(action),
+      getState: () => ({ userPreferences: {} }),
+    })((action: any) => action);
+    handler({ type: "test/boot" });
+    return { dispatched };
+  }
+
+  afterEach(() => {
+    vi.mocked(isElectron).mockReturnValue(false);
+  });
+
+  it("invokes system:list-fonts once on boot and dispatches setSystemFonts with the result", async () => {
+    vi.mocked(isElectron).mockReturnValue(true);
+    const invokeMock = vi.mocked(window.electronAPI.invoke);
+    invokeMock.mockClear();
+    invokeMock.mockResolvedValueOnce({
+      success: true,
+      data: ["Fira Code", "JetBrains Mono", "Menlo"],
+    });
+
+    const { dispatched } = runFreshHydration();
+
+    await vi.waitFor(() => {
+      expect(dispatched).toContainEqual(
+        setSystemFonts(["Fira Code", "JetBrains Mono", "Menlo"])
+      );
+    });
+    const fontCalls = invokeMock.mock.calls.filter(
+      ([channel]) => channel === SYSTEM_CHANNELS.LIST_FONTS
+    );
+    expect(fontCalls).toEqual([[SYSTEM_CHANNELS.LIST_FONTS, {}]]);
+  });
+
+  it("falls back to an empty font list when the IPC call fails", async () => {
+    vi.mocked(isElectron).mockReturnValue(true);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const invokeMock = vi.mocked(window.electronAPI.invoke);
+    invokeMock.mockRejectedValueOnce(new Error("boom"));
+
+    try {
+      const { dispatched } = runFreshHydration();
+      await vi.waitFor(() => {
+        expect(dispatched).toContainEqual(setSystemFonts([]));
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("falls back to an empty font list on a failure envelope", async () => {
+    vi.mocked(isElectron).mockReturnValue(true);
+    const invokeMock = vi.mocked(window.electronAPI.invoke);
+    invokeMock.mockResolvedValueOnce({ success: false, error: "no fonts" });
+
+    const { dispatched } = runFreshHydration();
+    await vi.waitFor(() => {
+      expect(dispatched).toContainEqual(setSystemFonts([]));
+    });
+  });
+
+  it("skips the fetch entirely outside Electron (mock-driven path)", async () => {
+    // isElectron() is mocked to false by test-setup / afterEach.
+    const invokeMock = vi.mocked(window.electronAPI.invoke);
+    invokeMock.mockClear();
+
+    const { dispatched } = runFreshHydration();
+
+    await Promise.resolve();
+    const fontCalls = invokeMock.mock.calls.filter(
+      ([channel]) => channel === SYSTEM_CHANNELS.LIST_FONTS
+    );
+    expect(fontCalls).toHaveLength(0);
+    expect(dispatched.filter((a) => a.type === setSystemFonts.type)).toHaveLength(0);
+  });
 });
