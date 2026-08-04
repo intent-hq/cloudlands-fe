@@ -5,8 +5,10 @@
    * Footer for what an agent is currently waiting on: a collapsible one-shot
    * watch section on top (a "Waiting for…" header above individual AgentCards
    * with per-row actions), followed by one collapsible DelegationGroupSection
-   * per `after_all` delegation group. Also shows a brief "Woken up" indicator
-   * when an agent is woken by a subscription.
+   * per multi-agent `after_all` delegation group. Single-agent groups merge
+   * into the one-shot rows (with a group-scoped cancel) unless their wake is
+   * delivery-pending, which keeps the group chrome for the warning. Also shows
+   * a brief "Woken up" indicator when an agent is woken by a subscription.
    *
    * All subscription data comes from Redux selectors (populated by the
    * agent-subscription-ui read middleware). No IPC listeners, polling, or
@@ -96,8 +98,26 @@
 
   // ── Derived display values ───────────────────────────────────────────
 
-  // `after_all` delegation groups, each rendered as its own section
-  const delegationGroups = $derived($groups$.filter((g) => g.awaitMode === 'all'));
+  // `after_all` delegation groups, each rendered as its own section.
+  // Single-agent groups merge into the one-shot watch rows below unless their
+  // aggregated wake is delivery-pending (that warning needs the group chrome).
+  const delegationGroups = $derived(
+    $groups$.filter(
+      (g) => g.awaitMode === 'all' && (g.expectedAgentIds.length > 1 || isGroupDeliveryPending(g)),
+    ),
+  );
+
+  // Single-agent `after_all` groups rendered as one-shot rows, keyed by their
+  // sole expected agent so row actions stay group-aware (group-scoped cancel)
+  const mergedGroupByAgentId = $derived.by(() => {
+    const map = new Map<string, DelegationGroupStatus>();
+    for (const group of $groups$) {
+      if (group.awaitMode !== 'all') continue;
+      if (group.expectedAgentIds.length !== 1 || isGroupDeliveryPending(group)) continue;
+      map.set(group.expectedAgentIds[0], group);
+    }
+    return map;
+  });
 
   // Agent IDs from delegation groups (authoritative for "Waiting for all")
   const delegationWatchedIds = $derived.by(() => {
@@ -113,13 +133,15 @@
   // ungrouped watches — there is no client-side oneShot flag or fired-ID
   // tracking; removal is driven entirely by daemon subscription snapshots. The
   // daemon guarantees watch uniqueness per (parent, target, event), so no
-  // client-side dedup beyond the Set here.
+  // client-side dedup beyond the Set here. Merged single-agent groups render
+  // here too, so their agents are counted in the "Waiting for…" header.
   const oneShotWatchedIds = $derived.by(() => {
     const ids = new Set<string>();
     for (const sub of $subs$) {
       if (sub.delegationGroup?.awaitMode === 'all') continue;
       for (const actorId of sub.actorIds || []) ids.add(actorId);
     }
+    for (const id of mergedGroupByAgentId.keys()) ids.add(id);
     return Array.from(ids);
   });
 
@@ -195,10 +217,17 @@
 
   /**
    * One-shot row cancel: scoped `agent.cancelSubscriptions { subscriptionId }`
-   * for the parent's completion watch on this agent.
+   * for the parent's completion watch on this agent. Rows sourced from a
+   * merged single-agent group cancel the whole group (`{ groupId }`) instead,
+   * so the daemon removes the group plus its grouped watches together.
    */
   async function cancelWatch(watchedAgentId: string) {
     if (!workspaceId || !agentId) return;
+    const mergedGroup = mergedGroupByAgentId.get(watchedAgentId);
+    if (mergedGroup) {
+      await cancelGroup(mergedGroup);
+      return;
+    }
     const watch = $subs$.find(
       (sub) =>
         sub.delegationGroup?.awaitMode !== 'all' && (sub.actorIds || []).includes(watchedAgentId),
