@@ -172,16 +172,15 @@ let installed = false;
 
 /**
  * Lazily install on the first dispatched action (same pattern as
- * `createAgentFailureToastMiddleware`): starts the shared manager —
- * idempotent, a no-op without WebHID — and subscribes the toasts.
+ * `createAgentFailureToastMiddleware`): subscribes the toasts to the shared
+ * manager. The manager itself is started by the integration-toggle
+ * middleware once the persisted enabled flag hydrates on.
  */
 export function createHardwareConsoleConnectionToastMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     if (!installed) {
       installed = true;
-      const manager = getHardwareConsoleManager();
-      installHardwareConsoleConnectionToasts(manager);
-      void manager.start();
+      installHardwareConsoleConnectionToasts(getHardwareConsoleManager());
     }
     return next(action);
   };

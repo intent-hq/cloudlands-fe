@@ -287,12 +287,13 @@ let installed = false;
 
 /**
  * Lazily install on the first dispatched action (same pattern as the
- * key-switch middleware): starts the shared manager — idempotent, a no-op
- * without WebHID — wires action-key handling, hydrates the mapping from the
- * daemon bag, and persists mapping changes (deferred until hydration
- * settles, mirroring the key-pin persistence service). Also drives the
- * action-HUD inactivity timer from the `actionHudShown` action itself
- * (mirrors the encoder-HUD timer): rapid presses re-arm it.
+ * key-switch middleware): wires action-key handling, hydrates the mapping
+ * from the daemon bag, and persists mapping changes (deferred until
+ * hydration settles, mirroring the key-pin persistence service). The shared
+ * manager is started by the integration-toggle middleware once the
+ * persisted enabled flag hydrates on. Also drives the action-HUD inactivity
+ * timer from the `actionHudShown` action itself (mirrors the encoder-HUD
+ * timer): rapid presses re-arm it.
  */
 export function createHardwareConsoleActionKeyMiddleware(): StoreMiddleware {
   let hydrationStarted = false;
@@ -350,9 +351,7 @@ export function createHardwareConsoleActionKeyMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     if (!installed) {
       installed = true;
-      const manager = getHardwareConsoleManager();
-      installHardwareConsoleActionKeys(manager);
-      void manager.start();
+      installHardwareConsoleActionKeys(getHardwareConsoleManager());
     }
     if (!hydrationStarted) {
       hydrationStarted = true;

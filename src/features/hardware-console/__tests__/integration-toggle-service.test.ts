@@ -69,7 +69,7 @@ describe('parseEnabled', () => {
 });
 
 describe('createHardwareConsoleIntegrationToggleMiddleware', () => {
-  it('hydrates the enabled flag from the shared hardwareConsole.state bag', async () => {
+  it('hydrates the enabled flag from the shared hardwareConsole.state bag and starts the manager once', async () => {
     (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       path: 'hardwareConsole.state',
       value: { keyPins: ['ws-1'], enabled: true },
@@ -81,11 +81,12 @@ describe('createHardwareConsoleIntegrationToggleMiddleware', () => {
       expect(dispatched).toContainEqual(
         expect.objectContaining({ type: 'hardwareConsole/hydrateEnabled', payload: [true] }),
       );
+      expect(managerStart).toHaveBeenCalledTimes(1);
     });
     expect(managerStop).not.toHaveBeenCalled();
   });
 
-  it('stops the shared manager when the persisted flag is off', async () => {
+  it('never starts the shared manager when the persisted flag is off', async () => {
     (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       path: 'hardwareConsole.state',
       value: { enabled: false },
@@ -99,6 +100,37 @@ describe('createHardwareConsoleIntegrationToggleMiddleware', () => {
       );
       expect(managerStop).toHaveBeenCalled();
     });
+    expect(managerStart).not.toHaveBeenCalled();
+  });
+
+  it('starts the manager once when the flag is missing from the bag (backward compatible)', async () => {
+    (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      path: 'hardwareConsole.state',
+      value: { keyPins: ['ws-1'] },
+    });
+    const invoke = invokeChain();
+
+    invoke({ type: 'any/action' });
+    await vi.waitFor(() => {
+      expect(managerStart).toHaveBeenCalledTimes(1);
+    });
+    expect(managerStop).not.toHaveBeenCalled();
+  });
+
+  it('starts the manager once when hydration fails (defaults to enabled)', async () => {
+    (appClient.settings.get as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('daemon unreachable'),
+    );
+    const invoke = invokeChain();
+
+    invoke({ type: 'any/action' });
+    await vi.waitFor(() => {
+      expect(dispatched).toContainEqual(
+        expect.objectContaining({ type: 'hardwareConsole/hydrateEnabled', payload: [true] }),
+      );
+      expect(managerStart).toHaveBeenCalledTimes(1);
+    });
+    expect(managerStop).not.toHaveBeenCalled();
   });
 
   it('persists toggle changes read-modify-write, preserving sibling fields', async () => {
