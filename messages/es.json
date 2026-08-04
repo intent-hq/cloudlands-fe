@@ -4421,6 +4421,8 @@
   "agent_chatSend_queueFailed_error": "Error al poner el mensaje en cola: {error}",
   "agent_chatSend_sendNowRejected_error": "sendQueuedMessageNow rechazado",
   "agent_chatSend_nothingToRetry_toast": "Nada que reintentar: envíe un mensaje para iniciar un turno nuevo.",
+  "agent_chatSend_archivedWorkspace_toast": "Este espacio está archivado. Su mensaje se entregará de todos modos.",
+  "agent_chatSend_archivedWorkspace_unarchive_label": "Desarchivar",
   "agent_ipc_activeStreamsFailed_error": "Error al obtener las transmisiones activas",
   "agent_ipc_circuitBreakerResetFailed_error": "Error al restablecer el interruptor de circuito",
   "agent_ipc_unknown_error": "Error desconocido",
