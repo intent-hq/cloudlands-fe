@@ -1274,6 +1274,8 @@
   "workspace_diskUsagePill_scopeNote_label": "Couvre tout le répertoire du workspace, y compris les sandboxes des sous-agents et les sorties d'outils.",
   "workspace_diskUsagePill_shrink_label": "Essayer de réduire ce workspace",
   "workspace_diskUsagePill_shrinkAgent_name": "Réduire le workspace",
+  "workspace_diskUsagePill_loading_ariaLabel": "Chargement de l'utilisation du disque",
+  "workspace_diskUsagePill_refreshing_ariaLabel": "Actualisation de l'utilisation du disque",
   "workspace_progressCopy_allDone_headline": "Tout est terminé !",
   "workspace_progressCopy_changesStaged_actionLabel": "Valider",
   "workspace_progressCopy_changesStaged_actionTooltip": "Ouvre le panneau des modifications pour valider vos modifications indexées.",

@@ -1274,6 +1274,8 @@
   "workspace_diskUsagePill_scopeNote_label": "Umfasst das gesamte Workspace-Verzeichnis, einschließlich Sub-Agent-Sandboxes und Tool-Ausgaben.",
   "workspace_diskUsagePill_shrink_label": "Diesen Workspace verkleinern",
   "workspace_diskUsagePill_shrinkAgent_name": "Workspace verkleinern",
+  "workspace_diskUsagePill_loading_ariaLabel": "Festplattennutzung wird geladen",
+  "workspace_diskUsagePill_refreshing_ariaLabel": "Festplattennutzung wird aktualisiert",
   "workspace_progressCopy_allDone_headline": "Alles erledigt!",
   "workspace_progressCopy_changesStaged_actionLabel": "Committen",
   "workspace_progressCopy_changesStaged_actionTooltip": "Öffnet das Änderungen-Panel, um Ihre bereitgestellten Änderungen zu committen.",

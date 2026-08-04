@@ -11,7 +11,12 @@
  * daemon and fold outcomes into `MutationResult`.
  */
 import { WorkspaceStatus, createWorkspaceId } from "$shared/types";
-import type { CreateWorkspaceRequest, UpdateWorkspaceRequest, Workspace } from "$shared/types";
+import type {
+  CreateWorkspaceRequest,
+  UpdateWorkspaceRequest,
+  Workspace,
+  WorkspaceDiskUsage,
+} from "$shared/types";
 import type { TokenUsage } from "$features/token-usage/token-usage-types";
 import type { ContextItem } from "$features/context/types";
 import type {
@@ -19,9 +24,11 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
   WorkspaceCreateResult,
+  WorkspaceDiskUsageResult,
   WorkspacesClient,
   WorkspaceUpdateResult,
 } from "../app-client";
+import { BackendError } from "./backend-transport-types";
 import { backendRequest } from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
 import { extractConflict, newIdempotencyKey, runMutation } from "./live-support";
@@ -277,6 +284,33 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     );
     const usage = result?.tokenUsage;
     return usage && typeof usage === "object" ? usage : null;
+  }
+
+  /**
+   * `workspace.diskUsage` (PROTOCOL §5.1): on-demand cached footprint of the
+   * workspace's daemon-managed directory — `{ diskUsage?, refreshing }`.
+   * `null` when the daemon predates the method (-32601 METHOD_NOT_FOUND) so
+   * callers can fall back; every other error propagates.
+   */
+  async diskUsage(workspaceId: string): Promise<WorkspaceDiskUsageResult | null> {
+    try {
+      const result = await backendRequest<{
+        diskUsage?: WorkspaceDiskUsage;
+        refreshing?: boolean;
+      }>("workspace.diskUsage", { workspaceId });
+      const usage = result?.diskUsage;
+      const poll: WorkspaceDiskUsageResult = { refreshing: result?.refreshing === true };
+      if (usage && typeof usage === "object") poll.diskUsage = usage;
+      return poll;
+    } catch (error) {
+      if (
+        error instanceof BackendError &&
+        (error.rpcCode === -32601 || error.code === "METHOD_NOT_FOUND")
+      ) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   /**

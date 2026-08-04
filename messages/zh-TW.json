@@ -1274,6 +1274,8 @@
   "workspace_diskUsagePill_scopeNote_label": "涵蓋整個工作區目錄，包括子代理沙箱與工具輸出。",
   "workspace_diskUsagePill_shrink_label": "嘗試縮減此工作區",
   "workspace_diskUsagePill_shrinkAgent_name": "縮減工作區",
+  "workspace_diskUsagePill_loading_ariaLabel": "正在載入磁碟使用量",
+  "workspace_diskUsagePill_refreshing_ariaLabel": "正在重新整理磁碟使用量",
   "workspace_progressCopy_allDone_headline": "全部完成！",
   "workspace_progressCopy_changesStaged_actionLabel": "提交",
   "workspace_progressCopy_changesStaged_actionTooltip": "開啟更改面板以提交你已暫存的更改。",

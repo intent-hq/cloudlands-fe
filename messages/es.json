@@ -1274,6 +1274,8 @@
   "workspace_diskUsagePill_scopeNote_label": "Cubre todo el directorio del workspace, incluidos los sandboxes de subagentes y las salidas de herramientas.",
   "workspace_diskUsagePill_shrink_label": "Intentar reducir este workspace",
   "workspace_diskUsagePill_shrinkAgent_name": "Reducir workspace",
+  "workspace_diskUsagePill_loading_ariaLabel": "Cargando uso de disco",
+  "workspace_diskUsagePill_refreshing_ariaLabel": "Actualizando uso de disco",
   "workspace_progressCopy_allDone_headline": "¡Todo listo!",
   "workspace_progressCopy_changesStaged_actionLabel": "Confirmar",
   "workspace_progressCopy_changesStaged_actionTooltip": "Abre el panel de cambios para confirmar sus cambios preparados.",
