@@ -413,7 +413,9 @@
           >
             <Fa icon={faHourglass} size="13" />
             {oneShotWatchedIds.length === 1
-              ? m.chat_agentSubscriptions_waitingForAgents_one({ count: formatInteger(1) })
+              ? m.chat_agentSubscriptions_waitingForAgents_one({
+                  count: formatInteger(oneShotWatchedIds.length),
+                })
               : m.chat_agentSubscriptions_waitingForAgents_many({
                   count: formatInteger(oneShotWatchedIds.length),
                 })}
