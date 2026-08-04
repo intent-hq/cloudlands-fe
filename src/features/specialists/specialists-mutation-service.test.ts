@@ -430,6 +430,21 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
         "/ws/path",
       );
     });
+
+    it("skips a project-scope pinned specialist when no workspace path resolves", () => {
+      const projectPinned: FileSpecialist = {
+        ...pinnedReviewer,
+        id: "proj-spec",
+        source: "project",
+        filePath: "/ws/path/.intent/specialists/proj-spec.md",
+      };
+
+      const payloads = buildResetToInheritPayloads([projectPinned, pinnedReviewer], () => undefined);
+
+      // The project-scope specialist is skipped (writeSpecialistFile rejects
+      // project writes without a workspacePath); the user-scope one remains.
+      expect(payloads.map((p) => p.id)).toEqual(["reviewer"]);
+    });
   });
 
   describe("create-specialist defaults to inherit", () => {

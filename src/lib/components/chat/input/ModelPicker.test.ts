@@ -1054,6 +1054,44 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     expect(dispatchedTypes()).not.toContain(selectModel.type);
   });
 
+  it('picking "Default model" drops a deferred update queued during streaming', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
+
+    const { rerender } = render(ModelPicker, {
+      props: {
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        updateGlobalStore: true,
+        deferUpdate: true,
+        showDefaultOption: true,
+        portal: false,
+      },
+    });
+
+    // Pick an explicit model while streaming — the backend update is deferred.
+    await pickModelOne();
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+
+    // Then pick "Default model" — this must clear the queued deferred update.
+    await fireEvent.click(screen.getAllByRole('button')[0]);
+    await fireEvent.click(await screen.findByRole('option', { name: /Default model/ }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Streaming ends: the stale deferred update must not apply.
+    await rerender({
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      updateGlobalStore: true,
+      deferUpdate: false,
+      showDefaultOption: true,
+      portal: false,
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
   it('settings context (updateGlobalDefault): a pick dispatches the global selectModel', async () => {
     render(ModelPicker, {
       props: { updateGlobalDefault: true, portal: false },

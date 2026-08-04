@@ -21,6 +21,8 @@ export function hasExplicitModelPin(fileSpecialists: FileSpecialist[]): boolean 
 /**
  * Build one clearing `saveFileSpecialist` payload per pinned file specialist,
  * preserving every other field. Unpinned specialists are skipped entirely.
+ * Project-scoped specialists are also skipped when no workspace path can be
+ * resolved, since `writeSpecialistFile` rejects project writes without one.
  */
 export function buildResetToInheritPayloads(
   fileSpecialists: FileSpecialist[],
@@ -29,6 +31,11 @@ export function buildResetToInheritPayloads(
   const payloads: FileSpecialistWritePayload[] = [];
   for (const fileSpec of fileSpecialists) {
     if (!fileSpec.model) continue;
+    let workspacePath: string | undefined;
+    if (fileSpec.source === 'project') {
+      workspacePath = getWorkspacePath();
+      if (!workspacePath) continue;
+    }
     payloads.push({
       id: fileSpec.id,
       name: fileSpec.name,
@@ -38,7 +45,7 @@ export function buildResetToInheritPayloads(
       roleReminder: fileSpec.roleReminder,
       behaviorPrompt: fileSpec.behaviorPrompt,
       scope: fileSpec.source,
-      workspacePath: fileSpec.source === 'project' ? getWorkspacePath() : undefined,
+      workspacePath,
     });
   }
   return payloads;

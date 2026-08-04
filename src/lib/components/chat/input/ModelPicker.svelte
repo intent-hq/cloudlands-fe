@@ -526,6 +526,9 @@
       // "Use default" picked — notify the parent with an empty string so it
       // can clear an explicit pin (consumers with explicit-model semantics
       // guard on falsy values; no agent/global updates apply to "default").
+      // Drop any deferred update queued during streaming so it cannot apply
+      // later and override this selection.
+      pendingModelUpdate = null;
       onModelChange?.('');
       return;
     }
