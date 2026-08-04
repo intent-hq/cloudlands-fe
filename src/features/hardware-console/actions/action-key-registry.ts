@@ -291,7 +291,8 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
     getEmptyHint: () => m.hardwareConsole_actionKey_noUnreadAgents_message(),
     getSingleCandidateHint: () => m.hardwareConsole_actionKey_noOtherUnreadAgents_message(),
     collect: (state) => {
-      // Union of two walks, deduped by agent id (workspace order preserved):
+      // Union of two walks, deduped by agent id — each walk is in workspace
+      // order, and unread-workspace entries precede attention-only entries:
       // (a) the top-level agents of each unread workspace (unread is
       // workspace-level, BE-owned `workspace.attention`) — a fixed top-level
       // walk; and (b) every attention-requesting agent (the LED attention
