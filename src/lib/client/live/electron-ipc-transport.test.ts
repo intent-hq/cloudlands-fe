@@ -133,6 +133,26 @@ describe("electron-ipc-transport onReconnected fan-out", () => {
     expect(api.listenerCount(STATUS)).toBe(0);
   });
 
+  it("keeps duplicate subscriptions of the same handler independent", () => {
+    const api = installFakeApi();
+    const transport = createElectronIpcBackendTransport();
+
+    const handler = vi.fn();
+    const disposeFirst = transport.onReconnected(handler);
+    const disposeSecond = transport.onReconnected(handler);
+
+    api.emit(STATUS, { status: "connected", reconnected: true });
+    expect(handler).toHaveBeenCalledTimes(2);
+
+    disposeFirst();
+    api.emit(STATUS, { status: "connected", reconnected: true });
+    expect(handler).toHaveBeenCalledTimes(3);
+    expect(api.listenerCount(STATUS)).toBe(1);
+
+    disposeSecond();
+    expect(api.listenerCount(STATUS)).toBe(0);
+  });
+
   it("makes disposers idempotent (double-dispose cannot drop a later subscriber)", () => {
     const api = installFakeApi();
     const transport = createElectronIpcBackendTransport();

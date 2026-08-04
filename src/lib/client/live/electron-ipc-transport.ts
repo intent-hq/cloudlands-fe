@@ -129,12 +129,16 @@ export function createElectronIpcBackendTransport(): BackendTransport {
       const api = electronAPI();
       if (!api) return () => {};
       ensureStatusListener(api);
-      reconnectedHandlers.add(handler);
+      // Wrap in a per-subscription entry so subscribing the same handler
+      // twice yields two independent subscriptions (Set semantics would
+      // otherwise dedupe them and one disposer would silently drop both).
+      const entry = () => handler();
+      reconnectedHandlers.add(entry);
       let disposed = false;
       return () => {
         if (disposed) return;
         disposed = true;
-        reconnectedHandlers.delete(handler);
+        reconnectedHandlers.delete(entry);
         if (reconnectedHandlers.size === 0 && statusListener) {
           statusListener.api.offById(BACKEND.STATUS, statusListener.id);
           statusListener = null;
