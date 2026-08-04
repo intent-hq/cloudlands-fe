@@ -390,9 +390,7 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
           : [...SIDEBAR_TAB_IDS];
       const selected = state.sidebarNav.multiSelectSelectedTabIdsByWorkspaceId[wsId] ?? [];
       const currentIndex = selected.length === 1 ? order.indexOf(selected[0]) : -1;
-      dispatch(
-        setMultiSelectSidebarSelectedTabs(wsId, [order[(currentIndex + 1) % order.length]]),
-      );
+      dispatch(setMultiSelectSidebarSelectedTabs(wsId, [order[(currentIndex + 1) % order.length]]));
     },
   },
   {
@@ -460,4 +458,27 @@ export function getActionKeyDefinition(id: ActionKeyActionId): ActionKeyDefiniti
   const definition = ACTION_KEY_REGISTRY.find((entry) => entry.id === id);
   if (!definition) throw new Error(`Unknown action key action: ${id}`);
   return definition;
+}
+
+/**
+ * Per-slot key faces resolved from an action mapping, for the settings
+ * device graphic: the assigned action's icon plus its label for the hover
+ * tooltip (`none` = blank face, no tooltip). Labels are getters delegating
+ * to the registry so they re-evaluate on locale change.
+ */
+export function actionSlotIcons(
+  mapping: readonly ActionKeyActionId[],
+): { icon: IconDefinition | null; readonly label: string | null }[] {
+  return mapping.map((actionId) => {
+    const definition =
+      actionId === 'none'
+        ? null
+        : (ACTION_KEY_REGISTRY.find((entry) => entry.id === actionId) ?? null);
+    return {
+      icon: definition?.icon ?? null,
+      get label() {
+        return definition?.label ?? null;
+      },
+    };
+  });
 }
