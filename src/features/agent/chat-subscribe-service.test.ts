@@ -815,6 +815,40 @@ describe("chatSubscribeService (fake seam, real store)", () => {
       expect(wsSub.unsubscribe).not.toHaveBeenCalled();
     });
 
+    it("a scoped chief clear while the chief agent is itself viewed spares the workspace subscription (applied clear + chief branch)", () => {
+      const workspaceAgent = "agent-sub-chief-viewed-clear";
+      seedChiefSession(CHIEF_AGENT);
+      seedSession(workspaceAgent);
+      const chiefSub = openChiefChat(CHIEF_AGENT);
+      const wsSub = openChat(workspaceAgent);
+      appStore.dispatch(markAgentAsViewed(CHIEF_AGENT));
+
+      // ChiefCard collapse while focused: the reducer applies the clear
+      // (viewed → null) AND the chief branch runs — the workspace chat's
+      // still-mounted panel must keep its subscription (no close-all).
+      appStore.dispatch(clearCurrentlyViewedAgent(CHIEF_AGENT));
+      expect(chiefSub.unsubscribe).toHaveBeenCalledTimes(1);
+      expect(wsSub.unsubscribe).not.toHaveBeenCalled();
+    });
+
+    it("classifies the chief agent from its stored session when no subscription entry exists (readSession fallback)", () => {
+      const workspaceAgent = "agent-sub-chief-session-fallback";
+      seedChiefSession(CHIEF_AGENT);
+      seedSession(workspaceAgent);
+      const wsSub = openChat(workspaceAgent);
+      appStore.dispatch(markAgentAsViewed(workspaceAgent));
+
+      // Chief agent viewed with a seeded session but NO prior chief
+      // subscription: the swap must classify it as chief via the session's
+      // workspaceId — sparing the workspace subscription — and (re)open the
+      // chief subscription.
+      appStore.dispatch(markAgentAsViewed(CHIEF_AGENT));
+      expect(wsSub.unsubscribe).not.toHaveBeenCalled();
+      expect(
+        chatApi.subscribe.mock.calls.filter(([id]) => id === CHIEF_AGENT),
+      ).toHaveLength(1);
+    });
+
     it("still closes chief subscriptions on removeWorkspaceSessions for the chief workspace", () => {
       seedChiefSession(CHIEF_AGENT);
       const chiefSub = openChiefChat(CHIEF_AGENT);

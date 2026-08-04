@@ -385,10 +385,7 @@ export function createChatSubscribeMiddleware(): StoreMiddleware {
         }
       } else if (type === clearCurrentlyViewedAgent.type) {
         const [scopeAgentId] = (action as { payload: [string?] }).payload ?? [];
-        if (
-          typeof scopeAgentId === "string" &&
-          subscriptions.get(scopeAgentId)?.wsId === CHIEF_WORKSPACE_ID
-        ) {
+        if (typeof scopeAgentId === "string" && isChiefChatAgent(scopeAgentId)) {
           // The swap exempts chief-workspace subscriptions, so this scoped
           // clear (ChiefCard collapse / thread-switch destroy) is their only
           // viewed-lifecycle teardown — close exactly this subscription, even
