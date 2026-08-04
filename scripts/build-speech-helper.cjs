@@ -36,7 +36,8 @@ try {
 if (
   fs.existsSync(destBin) &&
   fs.statSync(destBin).mtimeMs > fs.statSync(sourceFile).mtimeMs &&
-  fs.statSync(destBin).mtimeMs > fs.statSync(infoPlist).mtimeMs
+  fs.statSync(destBin).mtimeMs > fs.statSync(infoPlist).mtimeMs &&
+  fs.statSync(destBin).mtimeMs > fs.statSync(__filename).mtimeMs
 ) {
   console.log(`Speech helper up to date: ${destBin}`);
   process.exit(0);

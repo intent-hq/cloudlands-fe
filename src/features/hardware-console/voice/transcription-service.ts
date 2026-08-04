@@ -235,7 +235,12 @@ function transcribeWithSelectedEngine(
   return appClient.voice.transcribe(audio, mimeType, context);
 }
 
-/** Matches the daemon's descriptive no-API-key message (intent-voice registry). */
+/**
+ * Matches the daemon's descriptive no-API-key message (intent-voice registry).
+ * PROTOCOL §5.41 carries no structured code for this case today, so message
+ * sniffing is the only option; intent-hq/monorepo#1448 tracks adding an
+ * `error.data.code` (`voice-no-api-key`) so this can match on the code instead.
+ */
 function isNoApiKeyError(error: unknown): boolean {
   const parts: unknown[] = [
     (error as { message?: unknown })?.message,

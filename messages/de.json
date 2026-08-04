@@ -5269,7 +5269,7 @@
   "settings_voice_vocabulary_tooLong_error": "Vokabelbegriffe dürfen höchstens 50 Zeichen lang sein.",
   "settings_voice_vocabulary_saveFailed_error": "Vokabular konnte nicht gespeichert werden.",
   "settings_voice_osEngine_label": "OS-Diktat",
-  "settings_voice_osEngine_description": "Sprache wird lokal mit der macOS-Spracherkennung transkribiert. Kein API-Schlüssel nötig — Audio verlässt diesen Mac nie.",
+  "settings_voice_osEngine_description": "Sprache wird mit der macOS-Spracherkennung transkribiert — wenn möglich auf diesem Mac, andernfalls über Apples serverbasierte Erkennung. Kein API-Schlüssel nötig.",
   "settings_voice_osEngineUnavailable_error": "OS-Diktat ist auf diesem Gerät nicht verfügbar.",
   "settings_voice_osEngine_helperMissing_description": "Sprach-Helfer nicht verfügbar",
   "settings_voice_osEngine_permissionNote": "macOS fragt beim ersten Aktivieren nach der Berechtigung zur Spracherkennung — das Diktat funktioniert erst, wenn sie erteilt wurde."

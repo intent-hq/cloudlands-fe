@@ -5269,7 +5269,7 @@
   "settings_voice_vocabulary_tooLong_error": "Les termes du vocabulaire doivent comporter 50 caractères ou moins.",
   "settings_voice_vocabulary_saveFailed_error": "Échec de l'enregistrement du vocabulaire.",
   "settings_voice_osEngine_label": "Dictée du système",
-  "settings_voice_osEngine_description": "La voix est transcrite localement avec la reconnaissance vocale de macOS. Aucune clé API requise — l'audio ne quitte jamais ce Mac.",
+  "settings_voice_osEngine_description": "La voix est transcrite avec la reconnaissance vocale de macOS — sur ce Mac lorsque c'est possible, sinon via la reconnaissance sur les serveurs d'Apple. Aucune clé API requise.",
   "settings_voice_osEngineUnavailable_error": "La dictée du système n'est pas disponible sur cet appareil.",
   "settings_voice_osEngine_helperMissing_description": "Assistant vocal indisponible",
   "settings_voice_osEngine_permissionNote": "macOS demandera l'autorisation de reconnaissance vocale à la première activation — la dictée ne fonctionnera pas tant qu'elle n'est pas accordée."

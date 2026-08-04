@@ -165,4 +165,11 @@ describe('default-session media permission gate', () => {
       false,
     );
   });
+
+  it('permission check: audio blocked for non-app-shell origins (mirrors request gate)', () => {
+    const { check } = getHandlers();
+    expect(check(appWindowContents, 'media', 'https://example.com', { mediaType: 'audio' })).toBe(
+      false,
+    );
+  });
 });

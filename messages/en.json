@@ -5269,7 +5269,7 @@
   "settings_voice_vocabulary_tooLong_error": "Vocabulary terms must be 50 characters or fewer.",
   "settings_voice_vocabulary_saveFailed_error": "Failed to save the vocabulary.",
   "settings_voice_osEngine_label": "OS dictation",
-  "settings_voice_osEngine_description": "Speech is transcribed locally with macOS speech recognition. No API key needed — audio never leaves this Mac.",
+  "settings_voice_osEngine_description": "Speech is transcribed with macOS speech recognition — on this Mac when possible, falling back to Apple's server-based recognition. No API key needed.",
   "settings_voice_osEngineUnavailable_error": "OS dictation is not available on this device.",
   "settings_voice_osEngine_helperMissing_description": "Speech helper unavailable",
   "settings_voice_osEngine_permissionNote": "macOS will ask for speech recognition permission the first time you enable this — dictation won't work until it's allowed."

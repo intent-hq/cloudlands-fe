@@ -93,8 +93,11 @@ describe('transcribeWithOsHelper', () => {
     expect(helperPath).toContain('intent-speech-helper');
     expect(args[0]).toMatch(/intent-dictation-.*\.wav$/);
     expect(args.slice(1)).toEqual(['--contextual-strings', JSON.stringify(['intentd'])]);
-    // The decoded audio bytes were written to the temp file passed to the helper.
-    expect(mockFs.writeFile).toHaveBeenCalledWith(args[0], Buffer.from([1, 2, 3]));
+    // The decoded audio bytes were written to the temp file passed to the
+    // helper, owner-readable only (recorded speech is sensitive).
+    expect(mockFs.writeFile).toHaveBeenCalledWith(args[0], Buffer.from([1, 2, 3]), {
+      mode: 0o600,
+    });
     expect(mockFs.unlink).toHaveBeenCalledWith(args[0]);
   });
 

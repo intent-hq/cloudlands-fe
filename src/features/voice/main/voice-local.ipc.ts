@@ -169,7 +169,8 @@ export async function transcribeWithOsHelper(
     `intent-dictation-${Date.now()}-${Math.random().toString(36).slice(2)}${extensionForMime(mimeType)}`,
   );
   try {
-    await fs.writeFile(tempFile, Buffer.from(audioBase64, 'base64'));
+    // Recorded speech is sensitive — owner-only perms for the transcription window.
+    await fs.writeFile(tempFile, Buffer.from(audioBase64, 'base64'), { mode: 0o600 });
     const args = [tempFile];
     if (contextualStrings && contextualStrings.length > 0) {
       args.push('--contextual-strings', JSON.stringify(contextualStrings));

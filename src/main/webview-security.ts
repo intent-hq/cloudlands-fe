@@ -530,13 +530,14 @@ function setupPermissionHandlers(ses: Electron.Session): void {
     }
     // Audio capture for voice dictation (navigator.permissions / device
     // enumeration checks before the actual getUserMedia request). Video
-    // capture stays blocked, as does any webview-originated media check —
-    // consistent with the request handler above.
+    // capture stays blocked, as does any webview-originated media check, and
+    // the grant is reported only to the app shell's own origin — mirroring
+    // the request handler's gate above.
     if (permission === 'media') {
       if (webContents?.getType() === 'webview') {
         return false;
       }
-      return details.mediaType !== 'video';
+      return details.mediaType !== 'video' && isAppShellUrl(requestingOrigin);
     }
     return false;
   });

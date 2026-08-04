@@ -85,9 +85,11 @@
   });
 
   function handleSetProviderDefault(target: VoiceProvider) {
-    // Engine + provider are independent flows; each no-ops when unchanged.
-    appStore.dispatch(changeVoiceEngine('daemon'));
+    // Provider first (daemon write, rolls back on failure), engine flip after —
+    // so a failed provider write never leaves the engine flipped to `daemon`
+    // with the old provider. Each flow no-ops when unchanged.
     appStore.dispatch(changeVoiceProvider(target));
+    appStore.dispatch(changeVoiceEngine('daemon'));
   }
 
   function handleSetOsDefault() {
