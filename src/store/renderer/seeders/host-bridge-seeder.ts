@@ -28,6 +28,7 @@ import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { MINIMUM_NODE_VERSION } from "$shared/constants/auggie";
 import { meetsMinimumVersion } from "$shared/utils/version-compare";
 import { backendRequest } from "$lib/client/live/backend-transport";
+import { mockUserPreferences } from "$lib/client/mock/fixtures";
 import { openExternalUrl } from "$lib/utils/open-external";
 import { EDITOR_REGISTRY } from "$shared/editors/editor-registry";
 import type { InstalledEditor } from "$store/renderer/slices/external-editors/external-editors-slice";
@@ -168,6 +169,25 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_NODE, async () => {
   } catch {
     return { success: true, data: { available: false, versionOk: false } };
   }
+});
+
+/**
+ * `system:list-fonts` — installed monospace font enumeration. Font detection
+ * is CLIENT-machine work (the Electron main process runs `font-list` in
+ * system.ipc.ts LIST_FONTS), not a daemon concern, so there is no `host.*`
+ * RPC to forward to. In the live app the boot-time hydration
+ * (user-preferences-persistence-service.ts) invokes the REAL preload bridge
+ * (`window.electronAPI.invoke`) directly and reaches that handler; this
+ * mock-router arm covers the bridge-less mock path with the fixture fonts,
+ * wrapped in the same `{ success, data }` envelope the main handler returns —
+ * matching what the settings seeder dispatches into `systemFonts`.
+ */
+registerMockIpcHandler(IPC_CHANNELS.SYSTEM.LIST_FONTS, async () => {
+  const bridge = typeof window !== "undefined" ? window.electronAPI : undefined;
+  if (bridge && typeof bridge.invoke === "function") {
+    return bridge.invoke(IPC_CHANNELS.SYSTEM.LIST_FONTS, {});
+  }
+  return { success: true, data: [...mockUserPreferences.systemFonts] };
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
