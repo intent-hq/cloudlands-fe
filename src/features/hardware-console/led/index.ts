@@ -2,6 +2,7 @@ export {
   AGENT_KEY_LED_COUNT,
   LED_EFFECT_BREATH,
   LED_EFFECT_OFF,
+  LED_EFFECT_SNAKE,
   LED_EFFECT_SOLID,
   buildRgbcfgParams,
   buildThStatusParams,
