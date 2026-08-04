@@ -4,12 +4,12 @@ import type { HardwareLedSnapshot } from '../frames';
 
 const IDLE_SNAPSHOT: HardwareLedSnapshot = {
   keys: ['idle', 'idle', 'unassigned', 'unassigned', 'unassigned', 'unassigned'],
-  ambient: 'dark',
+  ambient: { kind: 'dark' },
 };
 
 const RUNNING_SNAPSHOT: HardwareLedSnapshot = {
   keys: ['running', 'idle', 'unassigned', 'unassigned', 'unassigned', 'unassigned'],
-  ambient: 'breath',
+  ambient: { kind: 'running', runningCount: 1 },
 };
 
 function makeCaller(behavior: (method: string) => Promise<unknown> = () => Promise.resolve({ ok: 1 })) {

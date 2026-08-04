@@ -52,7 +52,7 @@ export async function clearHardwareConsoleLighting(
     client.call('v.oai.thstatus', buildThStatusParams(OFF_KEYS)).catch((error: unknown) => {
       logger.warn('v.oai.thstatus off-frame failed', { error: String(error) });
     }),
-    client.call('v.oai.rgbcfg', buildRgbcfgParams('dark')).catch((error: unknown) => {
+    client.call('v.oai.rgbcfg', buildRgbcfgParams({ kind: 'dark' })).catch((error: unknown) => {
       logger.warn('v.oai.rgbcfg off-frame failed', { error: String(error) });
     }),
   ]);
