@@ -119,6 +119,36 @@ describe('ActiveStreamsTracker refresh coalescing', () => {
 
     expect(bridge.invoke).toHaveBeenCalledTimes(1);
     firstScan.resolve({ success: true, data: [] });
-    await vi.waitFor(() => expect(bridge.invoke.mock.calls.length).toBeLessThanOrEqual(2));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(bridge.invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('stopPolling during an in-flight refresh drops the trailing scan and map updates', async () => {
+    const firstScan = deferred<ActiveStreamsResponse>();
+    bridge.invoke
+      .mockImplementationOnce(() => firstScan.promise)
+      .mockResolvedValue({ success: true, data: [] });
+
+    tracker.startPolling();
+    const statusChanged = bridge.handlers.get('agent:status-changed');
+    expect(statusChanged).toBeDefined();
+
+    // Queue a trailing refresh while the initial scan is still in flight.
+    statusChanged?.({ agentId: 'agent-1' });
+    const inFlight = tracker.fetchActiveStreams();
+    expect(bridge.invoke).toHaveBeenCalledTimes(1);
+
+    tracker.stopPolling();
+
+    firstScan.resolve({
+      success: true,
+      data: [{ agentId: 'agent-1', sessionId: 'agent-1', workspaceId: 'ws-1', startTime: 1 }],
+    });
+    await inFlight;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(bridge.invoke).toHaveBeenCalledTimes(1);
+    expect(tracker.isAgentStreaming('agent-1')).toBe(false);
+    expect(tracker.getStreamingAgentIdsForWorkspace('ws-1')).toEqual([]);
   });
 });

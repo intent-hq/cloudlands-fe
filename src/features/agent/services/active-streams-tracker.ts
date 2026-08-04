@@ -47,6 +47,10 @@ class ActiveStreamsTracker {
   private inFlight: Promise<void> | null = null;
   private pendingRefresh = false;
 
+  // Bumped by stopPolling() so refreshes in flight when polling stops neither
+  // run a trailing scan nor mutate the maps after listeners are removed.
+  private refreshGeneration = 0;
+
   /**
    * Start listening for stream events from the backend.
    * This replaces the old polling approach with event-driven updates.
@@ -94,6 +98,9 @@ class ActiveStreamsTracker {
       this.idleHandler = null;
     }
 
+    this.pendingRefresh = false;
+    this.refreshGeneration++;
+
     this.isListening = false;
     logger.info('Stopped listening for active stream events');
   }
@@ -130,10 +137,13 @@ class ActiveStreamsTracker {
   }
 
   private async fetchActiveStreamsOnce(): Promise<void> {
+    const generation = this.refreshGeneration;
     try {
       const result = await invokeIpc<{ success: boolean; data?: unknown }>(
         'agent:get-active-streams',
       );
+
+      if (generation !== this.refreshGeneration) return;
 
       if (result.success && Array.isArray(result.data)) {
         this.updateStreams(result.data);
