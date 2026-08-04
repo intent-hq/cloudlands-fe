@@ -45,6 +45,30 @@ function unwrap<T>(response: BackendResult<T> | undefined): T {
  * the live `window.electronAPI` state, matching the legacy module behavior.
  */
 export function createElectronIpcBackendTransport(): BackendTransport {
+  // Reconnect fan-out: all onReconnected subscribers share ONE underlying
+  // `backend:status` IPC listener, so the preload-bridge listener count stays
+  // constant no matter how many modules subscribe (intent-hq/monorepo#1424).
+  const reconnectedHandlers = new Set<() => void>();
+  let statusListener: { api: NonNullable<Window["electronAPI"]>; id: string } | null = null;
+
+  function ensureStatusListener(api: NonNullable<Window["electronAPI"]>): void {
+    if (statusListener) return;
+    const id = api.on(
+      BACKEND.STATUS,
+      (payload: { status?: string; reconnected?: boolean } | undefined) => {
+        if (payload?.status !== "connected" || payload.reconnected !== true) return;
+        for (const handler of [...reconnectedHandlers]) {
+          try {
+            handler();
+          } catch (error) {
+            console.warn("[electron-ipc-transport] onReconnected handler threw", error);
+          }
+        }
+      },
+    );
+    statusListener = { api, id };
+  }
+
   return {
     isAvailable(): boolean {
       return !!electronAPI();
@@ -97,18 +121,25 @@ export function createElectronIpcBackendTransport(): BackendTransport {
     /**
      * Fires when the main-process JSON-RPC client re-establishes the socket
      * after a drop (`{ status: 'connected', reconnected: true }` marker
-     * broadcast by `backend.ipc.ts`).
+     * broadcast by `backend.ipc.ts`). Subscribers fan out from a single
+     * shared IPC listener; the listener is removed when the last subscriber
+     * disposes and re-registered on the next subscribe.
      */
     onReconnected(handler: () => void): () => void {
       const api = electronAPI();
       if (!api) return () => {};
-      const listenerId = api.on(
-        BACKEND.STATUS,
-        (payload: { status?: string; reconnected?: boolean } | undefined) => {
-          if (payload?.status === "connected" && payload.reconnected === true) handler();
-        },
-      );
-      return () => api.offById(BACKEND.STATUS, listenerId);
+      ensureStatusListener(api);
+      reconnectedHandlers.add(handler);
+      let disposed = false;
+      return () => {
+        if (disposed) return;
+        disposed = true;
+        reconnectedHandlers.delete(handler);
+        if (reconnectedHandlers.size === 0 && statusListener) {
+          statusListener.api.offById(BACKEND.STATUS, statusListener.id);
+          statusListener = null;
+        }
+      };
     },
   };
 }
