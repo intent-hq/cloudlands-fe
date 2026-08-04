@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import type { Workspace } from '$shared/types';
+import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import {
   ACTION_KEY_REGISTRY,
   getActionKeyDefinition,
@@ -88,6 +89,29 @@ function makeState(options: StateOptions = {}): ActionKeyState {
       multiSelectSelectedTabIdsByWorkspaceId: options.selectedTabs ?? {},
     },
   };
+}
+
+/** An assistant message carrying a pending wizard question resource block. */
+function questionMessage(messageId: string) {
+  return {
+    id: messageId,
+    role: 'assistant',
+    contentBlocks: [
+      {
+        type: 'resource',
+        resource: {
+          mimeType: QUESTION_RESOURCE_MIME_TYPE,
+          uri: 'intent-question:1',
+          text: JSON.stringify({
+            attachmentId: 'tar-1',
+            header: 'Choice',
+            question: 'Which one?',
+            options: [{ label: 'A' }, { label: 'B' }],
+          }),
+        },
+      },
+    ],
+  } as never;
 }
 
 function makeContext(state: ActionKeyState) {
@@ -244,7 +268,7 @@ describe('global cycle family', () => {
     );
   });
 
-  it('cycle-unread-agents cycles only agents of workspaces marked unread', () => {
+  it('cycle-unread-agents cycles agents of workspaces marked unread', () => {
     const state = makeState({
       workspaces: ['ws-1', 'ws-2'],
       agentsByWorkspace: {
@@ -328,6 +352,111 @@ describe('global cycle family', () => {
         }),
       );
     }
+  });
+});
+
+describe('cycle-unread-agents union (unread workspaces + attention requests)', () => {
+  it('includes an attention-requesting agent whose workspace is not unread', () => {
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'], activeAgentId: null },
+        'ws-2': { ids: ['a-2'], activeAgentId: null },
+      },
+      sessionOverrides: { 'a-2': { attentionRequestKind: 'blocker' } },
+    });
+    const { context, dispatch, navigate } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    // Available even though no workspace is unread (DoD: attention-only).
+    expect(definition.isAvailable(context)).toBe(true);
+    definition.execute(context);
+    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(activeAgentDispatches(dispatch)).toEqual([['ws-2', 'a-2']]);
+    // No attention-clearing side effect — only focus/HUD dispatches.
+    const types = dispatch.mock.calls.map(([action]) => (action as { type: string }).type);
+    expect(new Set(types)).toEqual(
+      new Set([
+        'hardwareConsole/actionHudShown',
+        'workspaceAgents/setActiveAgentId',
+        'appLayout/openAgentTabRequested',
+      ]),
+    );
+  });
+
+  it('includes an agent with a pending wizard question (no unread workspace)', () => {
+    const state = makeState({
+      agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'a-2'], activeAgentId: null } },
+      sessionOverrides: { 'a-2': { messages: [questionMessage('msg-1')] } },
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    expect(definition.isAvailable(context)).toBe(true);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([['ws-1', 'a-2']]);
+  });
+
+  it('unions unread-workspace agents with attention agents without duplicates', () => {
+    // a-1 sits in an unread workspace AND requests attention — it must
+    // appear once; the walk alternates between it and the attention-only b-1.
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'], activeAgentId: null },
+        'ws-2': { ids: ['b-1'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-1'],
+      sessionOverrides: {
+        'a-1': { attentionRequestKind: 'discussion' },
+        'b-1': { attentionRequestKind: 'blocker' },
+      },
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-1', 'a-1'],
+      ['ws-2', 'b-1'],
+      ['ws-1', 'a-1'],
+    ]);
+  });
+
+  it("the attention portion honors the 'cycle-attention-agents' scope", () => {
+    const makeSubAgentState = (scope: CycleScope) =>
+      makeState({
+        agentsByWorkspace: { 'ws-1': { ids: [], subAgentIds: ['sub-1'], activeAgentId: null } },
+        sessionOverrides: { 'sub-1': { attentionRequestKind: 'blocker' } },
+        cycleScopes: { 'cycle-attention-agents': scope },
+      });
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+
+    const topLevel = makeContext(makeSubAgentState('top-level'));
+    expect(definition.isAvailable(topLevel.context)).toBe(false);
+
+    const all = makeContext(makeSubAgentState('all'));
+    expect(definition.isAvailable(all.context)).toBe(true);
+    definition.execute(all.context);
+    expect(activeAgentDispatches(all.dispatch)).toEqual([['ws-1', 'sub-1']]);
+  });
+
+  it("the unread-workspace portion stays top-level even with attention scope 'all'", () => {
+    const state = makeState({
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'], subAgentIds: ['sub-1'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-1'],
+      cycleScopes: { 'cycle-attention-agents': 'all' },
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    // sub-1 needs no attention → never cycled into; only the top-level walk.
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-1', 'a-1'],
+      ['ws-1', 'a-1'],
+    ]);
   });
 });
 
