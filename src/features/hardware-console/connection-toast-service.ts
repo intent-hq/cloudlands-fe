@@ -21,7 +21,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { formatNumber } from '$lib/i18n/format';
 import type { HardwareConsoleManager } from './device/device-manager';
 import {
-  inferTransportFromCollectionCount,
+  inferTransportFromCollections,
   type HardwareConsoleTransport,
 } from './device/transport-heuristic';
 import { probeConnectedDevice, type DeviceConnectionSnapshot } from './codex-probe';
@@ -110,14 +110,14 @@ async function handleConnected(manager: HardwareConsoleManager): Promise<void> {
   const device = manager.connectedDevice;
   const client = manager.client;
   if (!device || !client) return;
-  const [snapshot, collectionCount, toast] = await Promise.all([
+  const [snapshot, collections, toast] = await Promise.all([
     probeConnectedDevice(client),
-    manager.connectedCollectionCount().catch(() => 0),
+    manager.connectedCollections().catch(() => []),
     getToast(),
   ]);
   // Unplugged while probing — the disconnect handler owns the toast now.
   if (manager.status !== 'connected') return;
-  const transport = transportLabel(inferTransportFromCollectionCount(collectionCount));
+  const transport = transportLabel(inferTransportFromCollections(collections));
   const title = transport
     ? m.hardwareConsole_connectionToast_connectedWithTransport_message({
         name: device.name,
