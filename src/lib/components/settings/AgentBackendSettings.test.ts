@@ -20,15 +20,20 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
+vi.mock('svelte-fa', async () => {
+  const MockFa = (await import('../ui/__tests__/mocks/Fa.svelte')).default;
+  return { default: MockFa, Fa: MockFa };
+});
+
 const MAX_CONCURRENT_PATH = 'agents.maxConcurrent';
 const FLUSH_PATH = 'agents.flushQueuedMessages';
-const FLUSH_LABEL = /Flush queued messages together/;
+const FLUSH_TRIGGER = { name: /Flush queued messages/ };
 
 /** settings.list mock; `flush: undefined` = daemon does not report the setting. */
 function mockSettings({
   maxConcurrent = 0,
   flush,
-}: { maxConcurrent?: number; flush?: boolean } = {}) {
+}: { maxConcurrent?: number; flush?: string | boolean } = {}) {
   mocks.mockSettingsList.mockResolvedValue([
     { path: MAX_CONCURRENT_PATH, value: maxConcurrent },
     ...(flush === undefined ? [] : [{ path: FLUSH_PATH, value: flush }]),
@@ -172,7 +177,7 @@ describe('AgentBackendSettings', () => {
   });
 });
 
-describe('AgentBackendSettings — flush queued messages toggle', () => {
+describe('AgentBackendSettings — flush queued messages mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -181,115 +186,160 @@ describe('AgentBackendSettings — flush queued messages toggle', () => {
     cleanup();
   });
 
-  it('defaults to on when the daemon has no value for the setting', async () => {
+  it('defaults to "All Queued Messages" when the daemon has no value for the setting', async () => {
     mockSettings({ flush: undefined });
 
     render(AgentBackendSettings);
 
-    const toggle = await waitFor(
-      () => screen.getByRole('switch', { name: FLUSH_LABEL }) as HTMLButtonElement,
-    );
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    expect(trigger.textContent).toContain('All Queued Messages');
   });
 
-  it('renders off when the daemon reports false', async () => {
-    mockSettings({ flush: false });
-
-    render(AgentBackendSettings);
-
-    const toggle = await waitFor(
-      () => screen.getByRole('switch', { name: FLUSH_LABEL }) as HTMLButtonElement,
-    );
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
-  });
-
-  it('persists a toggle-off via settings.update with the exact payload', async () => {
+  it('defaults to "All Queued Messages" when the daemon reports a legacy boolean', async () => {
     mockSettings({ flush: true });
-    mocks.mockSettingsUpdate.mockResolvedValue([{ path: FLUSH_PATH, value: false }]);
 
     render(AgentBackendSettings);
 
-    const toggle = await waitFor(
-      () => screen.getByRole('switch', { name: FLUSH_LABEL }) as HTMLButtonElement,
-    );
-    await fireEvent.click(toggle);
+    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    expect(trigger.textContent).toContain('All Queued Messages');
+  });
+
+  it('renders "System Messages Only" when the daemon reports systemOnly', async () => {
+    mockSettings({ flush: 'systemOnly' });
+
+    render(AgentBackendSettings);
+
+    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    expect(trigger.textContent).toContain('System Messages Only');
+  });
+
+  it('renders "Off (FIFO)" when the daemon reports off', async () => {
+    mockSettings({ flush: 'off' });
+
+    render(AgentBackendSettings);
+
+    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    expect(trigger.textContent).toContain('Off (FIFO)');
+  });
+
+  it('persists a selection of systemOnly via settings.update with the exact payload', async () => {
+    mockSettings({ flush: 'all' });
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: FLUSH_PATH, value: 'systemOnly' }]);
+
+    render(AgentBackendSettings);
+
+    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    await fireEvent.click(trigger);
+
+    const option = await waitFor(() => screen.getByRole('button', { name: 'System Messages Only' }));
+    await fireEvent.click(option);
 
     await waitFor(() => {
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
-        { path: FLUSH_PATH, value: false },
+        { path: FLUSH_PATH, value: 'systemOnly' },
       ]);
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
     });
+    expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain(
+      'System Messages Only',
+    );
   });
 
-  it('persists a toggle-on via settings.update with the exact payload', async () => {
-    mockSettings({ flush: false });
-    mocks.mockSettingsUpdate.mockResolvedValue([{ path: FLUSH_PATH, value: true }]);
+  it('persists a selection of off via settings.update with the exact payload', async () => {
+    mockSettings({ flush: 'all' });
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: FLUSH_PATH, value: 'off' }]);
 
     render(AgentBackendSettings);
 
-    const toggle = await waitFor(
-      () => screen.getByRole('switch', { name: FLUSH_LABEL }) as HTMLButtonElement,
-    );
-    await fireEvent.click(toggle);
+    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    await fireEvent.click(trigger);
+
+    const option = await waitFor(() => screen.getByRole('button', { name: 'Off (FIFO)' }));
+    await fireEvent.click(option);
 
     await waitFor(() => {
-      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: FLUSH_PATH, value: true }]);
-      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: FLUSH_PATH, value: 'off' }]);
     });
+    expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain('Off (FIFO)');
+  });
+
+  it('persists a selection of all via settings.update with the exact payload', async () => {
+    mockSettings({ flush: 'off' });
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: FLUSH_PATH, value: 'all' }]);
+
+    render(AgentBackendSettings);
+
+    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    await fireEvent.click(trigger);
+
+    const option = await waitFor(() => screen.getByRole('button', { name: 'All Queued Messages' }));
+    await fireEvent.click(option);
+
+    await waitFor(() => {
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: FLUSH_PATH, value: 'all' }]);
+    });
+    expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain(
+      'All Queued Messages',
+    );
   });
 
   it('keeps the current value and shows an error when the update fails', async () => {
-    mockSettings({ flush: true });
+    mockSettings({ flush: 'all' });
     mocks.mockSettingsUpdate.mockRejectedValue(new Error('Network error'));
 
     render(AgentBackendSettings);
 
-    const toggle = await waitFor(
-      () => screen.getByRole('switch', { name: FLUSH_LABEL }) as HTMLButtonElement,
-    );
-    await fireEvent.click(toggle);
+    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    await fireEvent.click(trigger);
+
+    const option = await waitFor(() => screen.getByRole('button', { name: 'Off (FIFO)' }));
+    await fireEvent.click(option);
 
     await waitFor(() => {
       expect(screen.getByText('Failed to save agent settings.')).toBeTruthy();
-      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain(
+        'All Queued Messages',
+      );
     });
   });
 
   it('keeps the current value and shows an error when the daemon does not apply the path', async () => {
-    mockSettings({ flush: true });
+    mockSettings({ flush: 'all' });
     mocks.mockSettingsUpdate.mockResolvedValue([]);
 
     render(AgentBackendSettings);
 
-    const toggle = await waitFor(
-      () => screen.getByRole('switch', { name: FLUSH_LABEL }) as HTMLButtonElement,
-    );
-    await fireEvent.click(toggle);
+    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    await fireEvent.click(trigger);
+
+    const option = await waitFor(() => screen.getByRole('button', { name: 'Off (FIFO)' }));
+    await fireEvent.click(option);
 
     await waitFor(() => {
       expect(screen.getByText('Failed to save agent settings.')).toBeTruthy();
-      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain(
+        'All Queued Messages',
+      );
     });
   });
 
   it('commits the daemon-applied value rather than the requested one', async () => {
-    mockSettings({ flush: true });
-    // Daemon acknowledges the path but reports it kept the setting on.
-    mocks.mockSettingsUpdate.mockResolvedValue([{ path: FLUSH_PATH, value: true }]);
+    mockSettings({ flush: 'all' });
+    // Daemon acknowledges the path but reports it kept the setting at "all".
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: FLUSH_PATH, value: 'all' }]);
 
     render(AgentBackendSettings);
 
-    const toggle = await waitFor(
-      () => screen.getByRole('switch', { name: FLUSH_LABEL }) as HTMLButtonElement,
-    );
-    await fireEvent.click(toggle);
+    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    await fireEvent.click(trigger);
+
+    const option = await waitFor(() => screen.getByRole('button', { name: 'Off (FIFO)' }));
+    await fireEvent.click(option);
 
     await waitFor(() => {
-      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
-        { path: FLUSH_PATH, value: false },
-      ]);
-      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: FLUSH_PATH, value: 'off' }]);
+      expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain(
+        'All Queued Messages',
+      );
     });
   });
 });
