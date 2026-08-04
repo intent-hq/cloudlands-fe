@@ -90,8 +90,9 @@ export function isHudTrackedAttentionValue(value: string): boolean {
  * the HUD attention refinements (`wait` also when the live attention flag is
  * raised, `blocked` when a top-level non-background agent's pending request
  * is specifically a blocker, `failed` when a card agent is in the failed
- * bucket, and the non-urgent `unread` blue-dot state that sits just above
- * `idle` — it never masks urgent/active states).
+ * bucket, and the non-urgent `unread` blue-dot state that outranks only
+ * `idle`/`not_started` and the terminal `complete`/`pr_merged` — it never
+ * masks urgent/active states).
  */
 export const HUD_CARD_STATE_KEYS = [
   'in_progress',

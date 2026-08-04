@@ -135,30 +135,36 @@ describe('selectHudWorkspaceStateBars', () => {
     });
   });
 
-  it("an 'unread' flag buckets as UNREAD only on otherwise-idle cards", () => {
+  it("an 'unread' flag buckets as UNREAD on idle and terminal cards, never active ones", () => {
     const state = mockState(
       [
-        // Idle + unread → UNREAD; in_progress + unread stays PROGRESS.
+        // Idle/absent + unread → UNREAD; in_progress + unread stays PROGRESS;
+        // the terminal complete / pr_merged + unread fold to UNREAD too
+        // (bar counts follow the card stateKey).
         withStatus('ws-1', 'idle'),
         withStatus('ws-2', 'in_progress'),
         withStatus('ws-3'),
+        withStatus('ws-4', 'complete'),
+        withStatus('ws-5', 'pr_merged'),
       ],
       [
         ['ws-1', 'unread'],
         ['ws-2', 'unread'],
         ['ws-3', 'unread'],
+        ['ws-4', 'unread'],
+        ['ws-5', 'unread'],
       ],
     );
     expect(selectHudWorkspaceStateBars.select(state)).toEqual({
       idle: 0,
-      unread: 2,
+      unread: 4,
       progress: 1,
       attention: 0,
       prOpen: 0,
       prMerged: 0,
       failed: 0,
       completed: 0,
-      total: 3,
+      total: 5,
     });
   });
 
@@ -1828,17 +1834,11 @@ describe('selectHudWorkspaceCards', () => {
     expect(card.attention).toBe('unread');
   });
 
-  it("'unread' sits just above idle: urgent/active states are never masked", () => {
-    // failed / blocked / wait / in_progress / PR / complete all outrank the
-    // blue-dot flag; only idle / not_started (and absent) fall to UNREAD.
-    for (const displayStatus of [
-      'in_progress',
-      'pr_open',
-      'pr_ready',
-      'pr_merged',
-      'complete',
-      'needs_attention',
-    ] as const) {
+  it("'unread' never masks urgent/active states", () => {
+    // failed / blocked / wait / in_progress / pr_open / pr_ready all outrank
+    // the blue-dot flag; only idle / not_started (and absent) plus the
+    // terminal complete / pr_merged fall to UNREAD.
+    for (const displayStatus of ['in_progress', 'pr_open', 'pr_ready', 'needs_attention'] as const) {
       const state = cardState(
         [makeWorkspace('ws-1', { displayStatus })],
         [['ws-1', 'unread']],
@@ -1864,6 +1864,48 @@ describe('selectHudWorkspaceCards', () => {
       [['ws-1', 'unread']],
     );
     expect(selectHudWorkspaceCards.select(failed)[0].stateKey).toBe('failed');
+  });
+
+  it("an unread 'complete' / 'pr_merged' card renders UNREAD; without the flag they render verbatim", () => {
+    // The terminal states carry no pending action — the unseen-result signal
+    // wins; marking seen (no flag) falls back to COMPLETE / PR MERGED.
+    for (const displayStatus of ['complete', 'pr_merged'] as const) {
+      const unread = cardState(
+        [makeWorkspace('ws-1', { displayStatus })],
+        [['ws-1', 'unread']],
+      );
+      expect(selectHudWorkspaceCards.select(unread)[0].stateKey).toBe('unread');
+      const seen = cardState([makeWorkspace('ws-1', { displayStatus })]);
+      expect(selectHudWorkspaceCards.select(seen)[0].stateKey).toBe(displayStatus);
+    }
+  });
+
+  it("the entity's daemon-served attention renders UNREAD with no live event (app start)", () => {
+    // `workspace.list`/`workspace.get` serve `attention` on the entity
+    // (§5.1); a workspace already unread at launch must render UNREAD
+    // without waiting for a live `workspace:attention-changed` event.
+    for (const displayStatus of ['idle', 'complete'] as const) {
+      const state = cardState([makeWorkspace('ws-1', { displayStatus, attention: 'unread' })]);
+      const [card] = selectHudWorkspaceCards.select(state);
+      expect(card.stateKey).toBe('unread');
+      expect(card.attention).toBe('unread');
+    }
+  });
+
+  it('a live clear never falls back to a stale entity attention (bridge keeps both fresh)', () => {
+    // markSeen: the live 'none' event deletes the flag map entry and the
+    // events bridge writes `attention: "none"` onto the entity (§9.9) — the
+    // card must not resurrect UNREAD from the entity fallback.
+    const state = cardState(
+      [makeWorkspace('ws-1', { displayStatus: 'idle', attention: 'none' })],
+      [
+        ['ws-1', 'unread'],
+        ['ws-1', 'none', '2026-07-30T12:05:00Z'],
+      ],
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.stateKey).toBe('idle');
+    expect(card.attention).toBeNull();
   });
 
   it("marking seen (attention 'none') recomputes the UNREAD card back to idle", () => {
