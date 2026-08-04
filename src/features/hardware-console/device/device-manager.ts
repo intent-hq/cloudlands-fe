@@ -47,6 +47,16 @@ export class HardwareConsoleManager {
   private started = false;
   private opening = false;
   private openInFlight: Promise<void> | null = null;
+  /**
+   * Lifecycle generation token, incremented by every start()/stop(). Async
+   * lifecycle paths capture it before awaiting and bail when it has moved
+   * on, so a stop() (or rapid stop→start toggle) racing an in-flight await
+   * can never let a stale continuation attach a connection or tear down a
+   * newer generation's connection (intent-hq/monorepo#1434). Deliberately
+   * not a `started` check: requestConnect() must keep working on a
+   * never-started manager.
+   */
+  private generation = 0;
 
   constructor(
     private readonly platform: HidPlatform | null = createWebHidPlatform(),
@@ -121,12 +131,16 @@ export class HardwareConsoleManager {
    */
   async start(): Promise<void> {
     if (!this.platform || this.started) return;
+    const generation = ++this.generation;
     this.started = true;
     this.platformUnsubs.push(
       this.platform.onConnect((device) => void this.handleDeviceArrival(device)),
       this.platform.onDisconnect((device) => this.handleDeviceRemoval(device)),
     );
     const granted = await this.platform.getDevices();
+    // A stop() during the await already unsubscribed our hotplug listeners;
+    // opening now would attach a connection on a stopped manager.
+    if (generation !== this.generation) return;
     const candidate = selectVendorDevice(granted);
     if (candidate) await this.openDevice(candidate);
   }
@@ -146,6 +160,7 @@ export class HardwareConsoleManager {
 
   /** Tear down the connection and stop listening for hotplug events. */
   async stop(): Promise<void> {
+    const generation = ++this.generation;
     for (const unsub of this.platformUnsubs) unsub();
     this.platformUnsubs = [];
     this.started = false;
@@ -153,6 +168,9 @@ export class HardwareConsoleManager {
     // awaits settle; tearing down before it completes would read null fields
     // and leak the freshly opened connection. Wait for it to finish first.
     if (this.openInFlight) await this.openInFlight.catch(() => undefined);
+    // A start() during the await owns any connection attached since; tearing
+    // it down here would leave started === true with a closed device.
+    if (generation !== this.generation) return;
     await this.teardown('manager stopped');
   }
 
@@ -218,11 +236,27 @@ export class HardwareConsoleManager {
   }
 
   private async performOpen(device: HidDeviceLike): Promise<void> {
+    const generation = this.generation;
     this.setStatus('connecting');
     try {
       if (!device.opened) await device.open();
     } catch (error) {
       logger.warn('Failed to open device', { error: String(error) });
+      this.setStatus('disconnected');
+      return;
+    }
+    if (generation !== this.generation) {
+      // A stop() (or stop→start toggle) superseded this open while
+      // device.open() was in flight: release the device instead of attaching
+      // to the stale lifecycle, and never emit the 'connected' blip status
+      // listeners would otherwise see.
+      if (device.opened) {
+        try {
+          await device.close();
+        } catch {
+          // Already gone (e.g. unplugged) — nothing to release.
+        }
+      }
       this.setStatus('disconnected');
       return;
     }

@@ -173,7 +173,13 @@ describe('HardwareConsoleManager', () => {
     await flushMicrotasks();
     expect(manager.status).toBe('connected');
     expect(usb.opened).toBe(true);
-    expect(statuses).toEqual(['connecting', 'connected', 'disconnected', 'connecting', 'connected']);
+    expect(statuses).toEqual([
+      'connecting',
+      'connected',
+      'disconnected',
+      'connecting',
+      'connected',
+    ]);
   });
 
   it('stays disconnected after removal when no other granted device remains', async () => {
@@ -297,6 +303,113 @@ describe('HardwareConsoleManager', () => {
     manager.onRawMessage((m) => raw.push(m));
     device.emitRpc({ a: 0.5, d: 0 });
     expect(raw).toEqual([]);
+  });
+
+  it("stop during start()'s getDevices await never opens the device", async () => {
+    // Regression (intent-hq/monorepo#1434, race 1): openDevice() did not
+    // re-check the lifecycle after start() awaited getDevices(), so a stop()
+    // arriving in that window let the open attach a connection on a stopped
+    // manager.
+    const { hid, manager, statuses } = makeManager();
+    const device = new FakeHidDevice(CM2.vendorId, CM2.productId);
+    hid.devices = [device];
+    let release: (() => void) | undefined;
+    hid.getDevices = () =>
+      new Promise((resolve) => {
+        release = () => resolve([device]);
+      });
+    const startPromise = manager.start();
+    await flushMicrotasks();
+    const stopPromise = manager.stop();
+    await flushMicrotasks();
+    release!();
+    await startPromise;
+    await stopPromise;
+    await flushMicrotasks();
+    expect(device.opened).toBe(false);
+    expect(manager.status).toBe('disconnected');
+    expect(manager.client).toBeNull();
+    expect(statuses).not.toContain('connected');
+  });
+
+  it("start during stop()'s await never ends started with a silently closed device", async () => {
+    // Regression (intent-hq/monorepo#1434, race 2): a rapid OFF→ON toggle
+    // parked stop() on the in-flight open while start() re-armed hotplug;
+    // stop's trailing teardown then closed the device on a manager that
+    // believed itself started, until a replug or another toggle cycle.
+    const { hid, manager, statuses } = makeManager();
+    const device = new FakeHidDevice(CM2.vendorId, CM2.productId);
+    const resolvers: (() => void)[] = [];
+    device.open = () =>
+      new Promise((resolve) => {
+        resolvers.push(() => {
+          device.opened = true;
+          resolve();
+        });
+      });
+    hid.devices = [device];
+    const startPromise = manager.start();
+    await flushMicrotasks();
+    const stopPromise = manager.stop();
+    const restartPromise = manager.start();
+    await flushMicrotasks();
+    for (const resolve of resolvers.splice(0)) resolve();
+    await Promise.all([startPromise, stopPromise, restartPromise]);
+    await flushMicrotasks();
+    // The superseded open released the device without a connected blip, and
+    // stop's trailing teardown did not destroy the restarted generation.
+    expect(statuses).not.toContain('connected');
+    expect(manager.status).toBe('disconnected');
+    expect(manager.client).toBeNull();
+    expect(device.opened).toBe(false);
+    // The restart left hotplug armed: a connect event reconnects normally.
+    hid.emitConnect(device);
+    await flushMicrotasks();
+    for (const resolve of resolvers.splice(0)) resolve();
+    await flushMicrotasks();
+    expect(manager.status).toBe('connected');
+    expect(device.opened).toBe(true);
+    expect(manager.client).not.toBeNull();
+  });
+
+  it('emits no connected blip when stop supersedes an in-flight open', async () => {
+    // Regression (intent-hq/monorepo#1434, race 3): the completing
+    // performOpen reached setStatus('connected') before stop's teardown
+    // flipped it back, so status listeners saw a momentary connected blip
+    // right after a runtime disable.
+    const { hid, manager, statuses } = makeManager();
+    const device = new FakeHidDevice(CM2.vendorId, CM2.productId);
+    const resolvers: (() => void)[] = [];
+    device.open = () =>
+      new Promise((resolve) => {
+        resolvers.push(() => {
+          device.opened = true;
+          resolve();
+        });
+      });
+    hid.devices = [device];
+    const startPromise = manager.start();
+    await flushMicrotasks();
+    const stopPromise = manager.stop();
+    await flushMicrotasks();
+    for (const resolve of resolvers) resolve();
+    await startPromise;
+    await stopPromise;
+    await flushMicrotasks();
+    expect(statuses).toEqual(['connecting', 'disconnected']);
+    expect(manager.status).toBe('disconnected');
+    expect(device.opened).toBe(false);
+  });
+
+  it('requestConnect works on a never-started manager', async () => {
+    // The lifecycle guard must not be a naive started check: requestConnect
+    // never sets `started`, yet its open must still attach.
+    const { hid, manager } = makeManager();
+    const device = new FakeHidDevice(CODEX.vendorId, CODEX.productId);
+    hid.requestDeviceResult = [device];
+    await expect(manager.requestConnect()).resolves.toBe(true);
+    expect(manager.status).toBe('connected');
+    expect(device.opened).toBe(true);
   });
 
   it('stop closes the device and unsubscribes from hotplug', async () => {
