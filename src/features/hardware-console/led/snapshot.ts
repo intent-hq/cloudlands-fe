@@ -30,7 +30,12 @@ import {
 /** The narrow slice of the app store state the LED derivation reads. */
 export interface LedSnapshotState {
   workspace: { workspaces: Collection<Workspace, 'id'> };
-  hardwareConsole: { keyPins: (string | null)[]; excludedWorkspaceIds?: readonly string[] };
+  hardwareConsole: {
+    keyPins: (string | null)[];
+    excludedWorkspaceIds?: readonly string[];
+    /** True while a push-to-talk recording is in progress. */
+    pttRecording?: boolean;
+  };
   workspaceAgents: {
     byWorkspaceId: Record<string, { foregroundAgentIds: readonly (string | number)[] }>;
   };
@@ -181,6 +186,7 @@ export function buildHardwareLedSnapshot(state: LedSnapshotState): HardwareLedSn
   // outranks `running` so unseen output stays visible even while other
   // workspaces are still running; `complete` is terminal (every completion
   // passes through unread first) and only wins once nothing is running.
+  // An in-progress push-to-talk recording outranks everything.
   let anyFailed = false;
   let anyBlocked = false;
   let anyAttention = false;
@@ -197,7 +203,8 @@ export function buildHardwareLedSnapshot(state: LedSnapshotState): HardwareLedSn
     if (isWorkspaceComplete(workspace)) anyComplete = true;
   }
   let ambient: AmbientLedState;
-  if (anyFailed) ambient = { kind: 'failed' };
+  if (state.hardwareConsole.pttRecording === true) ambient = { kind: 'recording' };
+  else if (anyFailed) ambient = { kind: 'failed' };
   else if (anyBlocked) ambient = { kind: 'blocked' };
   else if (anyAttention) ambient = { kind: 'question' };
   else if (anyUnread) ambient = { kind: 'unread' };

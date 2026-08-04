@@ -3,6 +3,28 @@ import { createCollection } from '$lib/store-shim/utils/collections/collection-u
 import { m } from '$shared/paraglide/messages.js';
 import type { Workspace } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+
+vi.mock('../../voice/voice-recorder', () => ({
+  isVoiceRecordingSupported: vi.fn(() => true),
+}));
+
+vi.mock('../../voice/ptt-controller', () => ({
+  handleVoiceKeyDown: vi.fn(),
+  handleVoiceKeyUp: vi.fn(),
+  isPttRecordingActive: vi.fn(() => false),
+}));
+
+vi.mock('../../voice/voice-setup-toast', () => ({
+  showVoiceSetupToast: vi.fn(),
+}));
+
+import { isVoiceRecordingSupported } from '../../voice/voice-recorder';
+import {
+  handleVoiceKeyDown,
+  handleVoiceKeyUp,
+  isPttRecordingActive,
+} from '../../voice/ptt-controller';
+import { showVoiceSetupToast } from '../../voice/voice-setup-toast';
 import {
   ACTION_KEY_REGISTRY,
   actionSlotIcons,
@@ -44,6 +66,7 @@ interface StateOptions {
   unreadWorkspaceIds?: string[];
   selectedTabs?: Record<string, string[]>;
   cycleScopes?: Partial<Record<CycleScopeFamilyId, CycleScope>>;
+  voiceSettings?: Partial<ActionKeyState['voiceSettings']>;
 }
 
 function makeState(options: StateOptions = {}): ActionKeyState {
@@ -84,6 +107,14 @@ function makeState(options: StateOptions = {}): ActionKeyState {
     sidebarNav: {
       multiSelectTabOrder: [],
       multiSelectSelectedTabIdsByWorkspaceId: options.selectedTabs ?? {},
+    },
+    voiceSettings: {
+      isLoading: false,
+      engine: 'daemon',
+      osEngineAvailable: false,
+      provider: 'elevenlabs',
+      keyConfigured: { elevenlabs: true, openai: false },
+      ...options.voiceSettings,
     },
   };
 }
@@ -130,6 +161,7 @@ function activeAgentDispatches(dispatch: ReturnType<typeof vi.fn>): unknown[] {
 
 beforeEach(() => {
   resetActionKeyCycleCursors();
+  vi.clearAllMocks();
 });
 
 describe('ACTION_KEY_REGISTRY', () => {
@@ -841,6 +873,69 @@ describe('execute dispatch', () => {
     getActionKeyDefinition('none').execute(context);
     expect(dispatch).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('push-to-talk (hold-capable)', () => {
+  it('is the only hold-capable entry in the registry', () => {
+    for (const entry of ACTION_KEY_REGISTRY) {
+      expect(entry.executeUp !== undefined, entry.id).toBe(entry.id === 'push-to-talk');
+    }
+  });
+
+  it('availability follows recording support, with a specific hint', () => {
+    const { context } = makeContext(makeState());
+    const definition = getActionKeyDefinition('push-to-talk');
+    expect(definition.isAvailable(context)).toBe(true);
+    (isVoiceRecordingSupported as ReturnType<typeof vi.fn>).mockReturnValueOnce(false);
+    expect(definition.isAvailable(context)).toBe(false);
+    expect(definition.getUnavailableHint?.(context)).toBe(
+      m.hardwareConsole_ptt_unavailable_message(),
+    );
+  });
+
+  it('execute feeds the gesture keydown; executeUp the keyup', () => {
+    const { context } = makeContext(makeState());
+    const definition = getActionKeyDefinition('push-to-talk');
+    definition.execute(context);
+    expect(handleVoiceKeyDown).toHaveBeenCalledWith(context);
+    expect(handleVoiceKeyUp).not.toHaveBeenCalled();
+    definition.executeUp?.(context);
+    expect(handleVoiceKeyUp).toHaveBeenCalledWith(context);
+  });
+
+  it('gates keydown with the setup toast when no engine can transcribe', () => {
+    const { context } = makeContext(
+      makeState({ voiceSettings: { keyConfigured: { elevenlabs: false, openai: false } } }),
+    );
+    const definition = getActionKeyDefinition('push-to-talk');
+    definition.execute(context);
+    expect(showVoiceSetupToast).toHaveBeenCalledTimes(1);
+    expect(handleVoiceKeyDown).not.toHaveBeenCalled();
+  });
+
+  it('does not gate when the missing key falls back to the OS engine', () => {
+    const { context } = makeContext(
+      makeState({
+        voiceSettings: {
+          keyConfigured: { elevenlabs: false, openai: false },
+          osEngineAvailable: true,
+        },
+      }),
+    );
+    getActionKeyDefinition('push-to-talk').execute(context);
+    expect(showVoiceSetupToast).not.toHaveBeenCalled();
+    expect(handleVoiceKeyDown).toHaveBeenCalledWith(context);
+  });
+
+  it('never gates a live (latched) session — the stop-tap must land', () => {
+    (isPttRecordingActive as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
+    const { context } = makeContext(
+      makeState({ voiceSettings: { keyConfigured: { elevenlabs: false, openai: false } } }),
+    );
+    getActionKeyDefinition('push-to-talk').execute(context);
+    expect(showVoiceSetupToast).not.toHaveBeenCalled();
+    expect(handleVoiceKeyDown).toHaveBeenCalledWith(context);
   });
 });
 

@@ -3,7 +3,7 @@
  * workspace top-level agents, the global cross-workspace cycle family
  * (in-progress, attention, idle, unread, failed agents), stop agent, see
  * spec, toggle workspace sidebar tabs, new agent, new workspace, switch
- * panel layouts, and none/unassigned.
+ * panel layouts, push to talk (hold-capable), and none/unassigned.
  *
  * Each entry carries a label (i18n getter), an icon, an availability
  * predicate, and an execute function. Both evaluate against an
@@ -22,6 +22,7 @@ import {
   faEnvelope,
   faFileLines,
   faFolderPlus,
+  faMicrophone,
   faMoon,
   faPersonRunning,
   faRobot,
@@ -48,6 +49,17 @@ import {
   setActiveAgentId,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { openWorkspaceNote } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+import {
+  resolveEffectiveVoiceEngine,
+  type EffectiveVoiceEngineInputs,
+} from '$features/voice/effective-voice-engine';
+import { isVoiceRecordingSupported } from '../voice/voice-recorder';
+import {
+  handleVoiceKeyDown,
+  handleVoiceKeyUp,
+  isPttRecordingActive,
+} from '../voice/ptt-controller';
+import { showVoiceSetupToast } from '../voice/voice-setup-toast';
 import type { ActionKeyActionId } from './action-mapping';
 import {
   collectCycleAgents,
@@ -83,6 +95,8 @@ export interface ActionKeyState {
     multiSelectTabOrder: string[];
     multiSelectSelectedTabIdsByWorkspaceId: Record<string, string[]>;
   };
+  /** Engine preference + configuration reality for the push-to-talk gate. */
+  voiceSettings: EffectiveVoiceEngineInputs;
 }
 
 /** Everything an action needs to check availability and run. */
@@ -110,6 +124,17 @@ export interface ActionKeyDefinition {
    */
   getUnavailableHint?(context: ActionKeyContext): string | null;
   execute(context: ActionKeyContext): void;
+  /**
+   * Optional hold support: when present, the action is hold-capable —
+   * `execute` runs on `keydown` (hold start) and `executeUp` on the
+   * matching `keyup` (hold end). Actions without it keep the existing
+   * press-only behavior (`execute` on keydown, keyup ignored). Release
+   * runs without an availability re-check so an in-progress hold always
+   * ends cleanly, and it must be idempotent — the Codex Micro's factory
+   * 2U Mic keycap presses ACT10 + ACT11 together, so two slots mapped to
+   * the same hold action deliver duplicate keydown/keyup pairs.
+   */
+  executeUp?(context: ActionKeyContext): void;
 }
 
 /** Mirror of the sidebar TAB_DEFINITIONS ids (MultiSelectTabbedSidebar). */
@@ -436,6 +461,43 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       const next = ((layoutPresetCursor.get(wsId) ?? -1) + 1) % LAYOUT_PRESETS.length;
       layoutPresetCursor.set(wsId, next);
       dispatch(applyPreset(wsId, LAYOUT_PRESETS[next]));
+    },
+  },
+  {
+    id: 'push-to-talk',
+    get label() {
+      return m.hardwareConsole_actionKey_pushToTalk_label();
+    },
+    icon: faMicrophone,
+    isAvailable() {
+      return isVoiceRecordingSupported();
+    },
+    getUnavailableHint() {
+      return m.hardwareConsole_ptt_unavailable_message();
+    },
+    execute(context) {
+      // No engine can transcribe ('unavailable': key missing on a host
+      // with no OS dictation — Windows/Linux or a helper-missing mac, see
+      // effective-voice-engine): surface the actionable setup toast
+      // instead of recording audio that could never be transcribed. A
+      // capable mac always resolves `os` (even pre-authorization, so the
+      // permission prompt can fire) and is never gated here. A live
+      // (latched) session is never gated — its stop-tap must always land.
+      if (
+        !isPttRecordingActive() &&
+        resolveEffectiveVoiceEngine(context.state.voiceSettings) === 'unavailable'
+      ) {
+        showVoiceSetupToast();
+        return;
+      }
+      // Keydown feeds the gesture decoder (hold = PTT, tap = latch, double
+      // press = send, double press & hold = PTT + send); recording starts
+      // on the first keydown. Permission denial surfaces via the
+      // controller's error hint (getUserMedia only fails on first use).
+      handleVoiceKeyDown(context);
+    },
+    executeUp(context) {
+      handleVoiceKeyUp(context);
     },
   },
   {

@@ -30,6 +30,7 @@ import { createHardwareConsoleKeySwitchMiddleware } from "$features/hardware-con
 import { createHardwareConsoleLedStatusMiddleware } from "$features/hardware-console/led/led-status-service";
 import { createHardwareConsolePromptPickerMiddleware } from "$features/hardware-console/prompt-picker/prompt-picker-service";
 import { createHardwareConsoleActionKeyMiddleware } from "$features/hardware-console/actions/action-key-service";
+import { createVoiceTranscriptionMiddleware } from "$features/hardware-console/voice/transcription-service";
 import { createHardwareConsoleEncoderMiddleware } from "$features/hardware-console/encoder/encoder-service";
 import { createSettingsHydrationMiddleware } from "$features/settings/settings-hydration-service";
 import { createModelSelectionPersistenceMiddleware } from "$features/settings/model-selection-persistence-service";
@@ -55,6 +56,7 @@ import { createNotesReadMiddleware } from "$features/notes/notes-read-service";
 import { createGitHubAuthMiddleware } from "$features/github-auth/github-auth-store-service";
 import { createSentryAuthMiddleware } from "$features/sentry-auth/sentry-auth-store-service";
 import { createLinearAuthMiddleware } from "$features/linear-auth/linear-auth-store-service";
+import { createVoiceSettingsMiddleware } from "$features/voice/voice-settings-store-service";
 import { createMcpManagementMiddleware } from "$features/mcp/mcp-management-service";
 import { createWorkspaceOperationsMiddleware } from "$features/workspace/workspace-operations-service";
 import { createDirectoryPickerReadMiddleware } from "$features/onboarding/directory-picker-read-service";
@@ -170,6 +172,13 @@ function buildMiddleware(): StoreMiddleware[] {
         // hint. The mapping hydrates from the shared hardwareConsole.state bag
         // and persists changes (read-modify-write so sibling fields survive).
         createHardwareConsoleActionKeyMiddleware(),
+        // Push-to-talk transcription: on `pttRecordingFinished`, call the
+        // daemon's `voice.transcribe` (PROTOCOL §5.41) with lightweight
+        // store-derived context and insert the transcript at the cursor of
+        // the active agent's composer (insert-for-review, never auto-send).
+        // HUD shows "Transcribing…" while in flight; errors surface as
+        // toasts (no-key hint → Settings, provider failure → error).
+        createVoiceTranscriptionMiddleware(),
         // Encoder behaviors: rotate cycles the active workspace by activity
         // (one step per detent, direction honored, clamped at the list ends,
         // small HUD while rotating); click opens the All-workspaces sidebar
@@ -355,6 +364,9 @@ function buildMiddleware(): StoreMiddleware[] {
     createGitHubAuthMiddleware(),
     createSentryAuthMiddleware(),
     createLinearAuthMiddleware(),
+    // Give the voice settings triggers (initialize + provider change +
+    // save/clear API key) handlers that run against the daemon settings seam.
+    createVoiceSettingsMiddleware(),
     // Give the (post-saga) MCP settings triggers (loadServers + add/remove/
     // update/toggle/import/restart) real handlers so the MCP panel loads and
     // persists servers via the `appClient.settings` seam again.

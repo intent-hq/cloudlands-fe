@@ -21,6 +21,8 @@ files:
   - node_modules/**/*
   - resources/**/*
   - "!resources/sidecar/**"
+  # Speech helper ships via mac.extraResources (speech-helper/), not asar.
+  - "!resources/speech-helper/**"
 
 # Bundle the intentd binary into the packaged app
 # Runtime path: process.resourcesPath/intentd/intentd (intentd.exe on Windows)
@@ -66,6 +68,19 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # Bundle the macOS speech transcription helper (built by
+  # scripts/build-speech-helper.cjs; signed by the afterPack hook).
+  # Runtime path: process.resourcesPath/speech-helper/intent-speech-helper
+  extraResources:
+    - from: resources/speech-helper
+      to: speech-helper
+  # Microphone usage string shown by the one-time macOS TCC prompt
+  # (voice dictation; pairs with com.apple.security.device.audio-input)
+  extendInfo:
+    NSMicrophoneUsageDescription: Intent uses the microphone to transcribe your voice into text for dictation.
+    # Speech recognition usage string for the OS dictation engine (local
+    # Speech.framework transcription via the bundled speech helper).
+    NSSpeechRecognitionUsageDescription: Intent uses macOS speech recognition to transcribe your voice into text for dictation.
   # Code signing - requires Apple Developer certificate
   # Set APPLE_ID and APPLE_APP_SPECIFIC_PASSWORD env vars for notarization
   # identity: "Developer ID Application: Your Name (TEAM_ID)"

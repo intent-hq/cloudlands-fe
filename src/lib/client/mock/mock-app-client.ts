@@ -34,7 +34,9 @@ type MigratedDomain =
   | "files"
   // `providers` was born live (`providers.catalog`, PROTOCOL §5.38) — it never
   // had a mock fixture era, so it is likewise absent here.
-  | "providers";
+  | "providers"
+  // `voice` was born live too (`voice.transcribe`, PROTOCOL §5.41).
+  | "voice";
 
 /** Emit the snapshot once, then return an idle disposer. */
 function emitOnce<T>(handler: SubscriptionHandler<T>, snapshot: T): Unsubscribe {

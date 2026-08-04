@@ -421,6 +421,16 @@ export const IPC_CHANNELS = {
     OPEN: 'dialog:open',
   },
 
+  // Voice (local OS transcription — macOS Speech.framework helper)
+  VOICE: {
+    /** Whether the local OS transcription engine is available on this host */
+    LOCAL_AVAILABLE: 'voice:local-available',
+    /** Transcribe recorded audio with the bundled macOS speech helper */
+    TRANSCRIBE_LOCAL: 'voice:transcribe-local',
+    /** Request macOS speech-recognition authorization (enable-time TCC prompt) */
+    REQUEST_LOCAL_AUTHORIZATION: 'voice:request-local-authorization',
+  },
+
   // Shell
   SHELL: {
     OPEN: 'shell:open',

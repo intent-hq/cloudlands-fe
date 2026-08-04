@@ -26,6 +26,13 @@ const mockState: {
   workspaceAgents: { byWorkspaceId: {} },
   agentSessions: { byAgentId: {} },
   sidebarNav: { multiSelectTabOrder: [], multiSelectSelectedTabIdsByWorkspaceId: {} },
+  voiceSettings: {
+    isLoading: false,
+    engine: 'daemon',
+    osEngineAvailable: false,
+    provider: 'elevenlabs',
+    keyConfigured: { elevenlabs: true, openai: false },
+  },
 };
 
 const dispatched: { type: string; payload?: unknown }[] = [];
@@ -60,11 +67,29 @@ vi.mock('$lib/utils/window-events', () => ({
   dispatchWindowEvent: vi.fn(),
 }));
 
+vi.mock('../../voice/voice-recorder', () => ({
+  isVoiceRecordingSupported: vi.fn(() => true),
+}));
+
+vi.mock('../../voice/ptt-controller', () => ({
+  handleVoiceKeyDown: vi.fn(),
+  handleVoiceKeyUp: vi.fn(),
+  cancelPttRecording: vi.fn(),
+  isPttRecordingActive: vi.fn(() => false),
+}));
+
 import { appClient } from '$lib/client';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
+import { isVoiceRecordingSupported } from '../../voice/voice-recorder';
+import {
+  cancelPttRecording,
+  handleVoiceKeyDown,
+  handleVoiceKeyUp,
+} from '../../voice/ptt-controller';
 import {
   COMPOSER_FOCUS_DELAYS_MS,
   handleActionKeyPress,
+  handleActionKeyRelease,
   installHardwareConsoleActionKeys,
 } from '../action-key-service';
 
@@ -117,9 +142,10 @@ describe('handleActionKeyPress', () => {
   });
 
   it('no-ops with the no-attention-agents hint when no agents need attention', () => {
-    // Slot 5 (ACT11) = cycle-attention-agents; nothing needing attention → unavailable.
+    // Codex slot 1 (ACT07 checkmark) = cycle-attention-agents; nothing
+    // needing attention → unavailable.
     const showUnavailableHint = vi.fn();
-    const result = handleActionKeyPress('ACT11', { showUnavailableHint });
+    const result = handleActionKeyPress('ACT07', { showUnavailableHint }, 'codex-micro');
     expect(result).toBeNull();
     expect(showUnavailableHint).toHaveBeenCalledTimes(1);
     expect(showUnavailableHint).toHaveBeenCalledWith(
@@ -129,9 +155,9 @@ describe('handleActionKeyPress', () => {
   });
 
   it('no-ops with the no-in-progress-agents hint when no agents are in progress', () => {
-    // Slot 4 (ACT10) = cycle-in-progress-agents; no in-progress agents anywhere.
+    // Slot 5 (ACT11) = cycle-in-progress-agents; no in-progress agents anywhere.
     const showUnavailableHint = vi.fn();
-    const result = handleActionKeyPress('ACT10', { showUnavailableHint });
+    const result = handleActionKeyPress('ACT11', { showUnavailableHint });
     expect(result).toBeNull();
     expect(showUnavailableHint).toHaveBeenCalledTimes(1);
     expect(showUnavailableHint).toHaveBeenCalledWith(
@@ -219,7 +245,7 @@ describe('handleActionKeyPress', () => {
   });
 
   it('cycling to an unread agent focuses its chat composer', () => {
-    // Codex slot 4 (ACT10) = cycle-unread-agents.
+    // Codex slot 6 (ACT12 logo) = cycle-unread-agents.
     mockState.workspaceAgents.byWorkspaceId = {
       'ws-1': { agentIds: ['a-1'], foregroundAgentIds: ['a-1'], activeAgentId: null },
     };
@@ -230,7 +256,7 @@ describe('handleActionKeyPress', () => {
       { id: 'ws-1', attention: 'unread' } as never,
     ]);
     const focusComposer = vi.fn();
-    const result = handleActionKeyPress('ACT10', { focusComposer }, 'codex-micro');
+    const result = handleActionKeyPress('ACT12', { focusComposer }, 'codex-micro');
     expect(result).toBe('cycle-unread-agents');
     expect(focusComposer).toHaveBeenCalledWith('a-1');
     expect(dispatched).toContainEqual(
@@ -246,8 +272,8 @@ describe('handleActionKeyPress', () => {
       'a-1': { id: 'a-1', status: 'active', isProcessing: true, messages: [] } as never,
     };
     const showUnavailableHint = vi.fn();
-    // Slot 4 (ACT10) = cycle-in-progress-agents on the CM2.
-    const result = handleActionKeyPress('ACT10', { showUnavailableHint });
+    // Slot 5 (ACT11) = cycle-in-progress-agents on the CM2.
+    const result = handleActionKeyPress('ACT11', { showUnavailableHint });
     expect(result).toBe('cycle-in-progress-agents');
     expect(showUnavailableHint).toHaveBeenCalledWith(
       m.hardwareConsole_actionKey_noOtherInProgressAgents_message(),
@@ -256,7 +282,7 @@ describe('handleActionKeyPress', () => {
   });
 
   it('a successful cycle press shows the action HUD with the action label', () => {
-    // Codex slot 4 (ACT10) = cycle-unread-agents.
+    // Codex slot 6 (ACT12 logo) = cycle-unread-agents.
     mockState.workspaceAgents.byWorkspaceId = {
       'ws-1': { agentIds: ['a-1'], foregroundAgentIds: ['a-1'], activeAgentId: null },
     };
@@ -266,7 +292,7 @@ describe('handleActionKeyPress', () => {
     mockState.workspace.workspaces = createCollection('id', [
       { id: 'ws-1', attention: 'unread' } as never,
     ]);
-    const result = handleActionKeyPress('ACT10', {}, 'codex-micro');
+    const result = handleActionKeyPress('ACT12', {}, 'codex-micro');
     expect(result).toBe('cycle-unread-agents');
     expect(dispatched).toContainEqual(
       expect.objectContaining({
@@ -277,11 +303,75 @@ describe('handleActionKeyPress', () => {
   });
 
   it('does not show the action HUD on unavailable cycle presses', () => {
-    // Slot 5 (ACT11) = cycle-workspace-agents; no agents anywhere → hint only.
+    // Slot 5 (ACT11) = cycle-in-progress-agents; no agents anywhere → hint only.
     const showUnavailableHint = vi.fn();
     expect(handleActionKeyPress('ACT11', { showUnavailableHint })).toBeNull();
     expect(showUnavailableHint).toHaveBeenCalledTimes(1);
     expect(dispatched).toHaveLength(0);
+  });
+});
+
+describe('hold actions (push-to-talk)', () => {
+  function mapPttToSlot0(): void {
+    mockState.hardwareConsole.actionMappingByModel['creator-micro-2'] = normalizeActionMapping([
+      'push-to-talk',
+      'none',
+      'none',
+      'none',
+      'none',
+      'none',
+      'none',
+    ]);
+  }
+
+  it('keydown on a PTT-mapped key feeds the voice-key gesture handler', () => {
+    mapPttToSlot0();
+    expect(handleActionKeyPress('ACT06')).toBe('push-to-talk');
+    expect(handleVoiceKeyDown).toHaveBeenCalledTimes(1);
+    expect(handleVoiceKeyUp).not.toHaveBeenCalled();
+  });
+
+  it('keyup on a PTT-mapped key routes without an availability re-check', () => {
+    mapPttToSlot0();
+    (isVoiceRecordingSupported as ReturnType<typeof vi.fn>).mockReturnValue(false);
+    try {
+      expect(handleActionKeyRelease('ACT06')).toBe('push-to-talk');
+    } finally {
+      (isVoiceRecordingSupported as ReturnType<typeof vi.fn>).mockReturnValue(true);
+    }
+    expect(handleVoiceKeyUp).toHaveBeenCalledTimes(1);
+    expect(handleVoiceKeyDown).not.toHaveBeenCalled();
+  });
+
+  it('keyup on a press-only action is a no-op', () => {
+    // Slot 0 (ACT06) = new-workspace on the CM2 defaults (no executeUp).
+    expect(handleActionKeyRelease('ACT06')).toBeNull();
+    expect(dispatched).toHaveLength(0);
+  });
+
+  it('keyup on non-action keys and none-mapped slots is a no-op', () => {
+    expect(handleActionKeyRelease('AG00')).toBeNull();
+    expect(handleActionKeyRelease('ENC_CLK')).toBeNull();
+    mockState.hardwareConsole.actionMappingByModel['creator-micro-2'] = normalizeActionMapping(
+      new Array(7).fill('none'),
+    );
+    expect(handleActionKeyRelease('ACT06')).toBeNull();
+    expect(handleVoiceKeyUp).not.toHaveBeenCalled();
+  });
+
+  it('unavailable PTT keydown hints instead of recording', () => {
+    mapPttToSlot0();
+    (isVoiceRecordingSupported as ReturnType<typeof vi.fn>).mockReturnValue(false);
+    const showUnavailableHint = vi.fn();
+    try {
+      expect(handleActionKeyPress('ACT06', { showUnavailableHint })).toBeNull();
+    } finally {
+      (isVoiceRecordingSupported as ReturnType<typeof vi.fn>).mockReturnValue(true);
+    }
+    expect(showUnavailableHint).toHaveBeenCalledWith(
+      m.hardwareConsole_ptt_unavailable_message(),
+    );
+    expect(handleVoiceKeyDown).not.toHaveBeenCalled();
   });
 });
 
@@ -417,6 +507,38 @@ describe('installHardwareConsoleActionKeys', () => {
     expect(dispatched).toHaveLength(0);
     teardown();
   });
+
+  it('routes keydown/keyup of a PTT-mapped key to start/stop recording', () => {
+    mockState.hardwareConsole.actionMappingByModel['creator-micro-2'] = normalizeActionMapping([
+      'push-to-talk',
+      'none',
+      'none',
+      'none',
+      'none',
+      'none',
+      'none',
+    ]);
+    const manager = makeFakeManager('connected');
+    const teardown = installHardwareConsoleActionKeys(
+      manager as unknown as HardwareConsoleManager,
+    );
+    manager.emitRaw({ m: 'v.oai.hid', p: { k: 'ACT06', act: 1 } });
+    expect(handleVoiceKeyDown).toHaveBeenCalledTimes(1);
+    manager.emitRaw({ m: 'v.oai.hid', p: { k: 'ACT06', act: 0 } });
+    expect(handleVoiceKeyUp).toHaveBeenCalledTimes(1);
+    teardown();
+  });
+
+  it('cancels an in-flight recording on disconnect and on teardown', () => {
+    const manager = makeFakeManager('connected');
+    const teardown = installHardwareConsoleActionKeys(
+      manager as unknown as HardwareConsoleManager,
+    );
+    manager.setStatus('disconnected');
+    expect(cancelPttRecording).toHaveBeenCalledTimes(1);
+    teardown();
+    expect(cancelPttRecording).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('persistence key on the daemon bag', () => {
@@ -490,6 +612,18 @@ describe('persistence key on the daemon bag', () => {
         'cycle-attention-agents',
       ],
     ],
+    [
+      'pre-PTT (row-4 cycling) defaults',
+      [
+        'new-workspace',
+        'new-agent',
+        'see-spec',
+        'switch-window-layouts',
+        'cycle-in-progress-agents',
+        'cycle-attention-agents',
+        'cycle-unread-agents',
+      ],
+    ],
   ])('migrates a persisted CM2 mapping equal to the %s and writes it back', async (_label, priorDefaults) => {
     (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       path: 'hardwareConsole.state',
@@ -522,6 +656,67 @@ describe('persistence key on the daemon bag', () => {
         },
       ]);
     });
+  });
+
+  it('migrates a persisted Codex mapping equal to the pre-PTT defaults and writes it back', async () => {
+    const priorDefaults = [
+      'cycle-in-progress-agents',
+      'cycle-attention-agents',
+      'stop-agent',
+      'new-workspace',
+      'cycle-unread-agents',
+      'none',
+      'new-agent',
+    ];
+    (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      path: 'hardwareConsole.state',
+      value: { actionMappingByModel: { 'codex-micro': priorDefaults } },
+    });
+    const { createHardwareConsoleActionKeyMiddleware } = await import('../action-key-service');
+    const middleware = createHardwareConsoleActionKeyMiddleware();
+    const invoke = middleware({} as never)(vi.fn((action) => action));
+
+    invoke({ type: 'any/action' });
+    await vi.waitFor(() => {
+      expect(dispatched).toContainEqual(
+        expect.objectContaining({
+          type: 'hardwareConsole/hydrateActionMapping',
+          payload: [
+            expect.objectContaining({
+              'codex-micro': [...DEFAULT_ACTION_MAPPINGS['codex-micro']],
+            }),
+          ],
+        }),
+      );
+      expect(appClient.settings.update).toHaveBeenCalledWith([
+        {
+          path: 'hardwareConsole.state',
+          value: expect.objectContaining({
+            actionMappingByModel: expect.objectContaining({
+              'codex-micro': [...DEFAULT_ACTION_MAPPINGS['codex-micro']],
+            }),
+          }),
+        },
+      ]);
+    });
+  });
+
+  it('does not write back when the persisted Codex mapping is customized', async () => {
+    (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      path: 'hardwareConsole.state',
+      value: { actionMappingByModel: { 'codex-micro': new Array(7).fill('see-spec') } },
+    });
+    const { createHardwareConsoleActionKeyMiddleware } = await import('../action-key-service');
+    const middleware = createHardwareConsoleActionKeyMiddleware();
+    const invoke = middleware({} as never)(vi.fn((action) => action));
+
+    invoke({ type: 'any/action' });
+    await vi.waitFor(() => {
+      expect(dispatched).toContainEqual(
+        expect.objectContaining({ type: 'hardwareConsole/hydrateActionMapping' }),
+      );
+    });
+    expect(appClient.settings.update).not.toHaveBeenCalled();
   });
 
   it('does not write back when the persisted CM2 mapping is customized', async () => {

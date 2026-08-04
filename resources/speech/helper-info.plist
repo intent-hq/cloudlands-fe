@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Embedded into intent-speech-helper via -sectcreate __TEXT __info_plist
+     (build-speech-helper.cjs). A process requesting SFSpeechRecognizer
+     authorization ABORTS unless its responsible bundle declares
+     NSSpeechRecognitionUsageDescription; embedding it here keeps the helper
+     runnable standalone (tests, terminals) in addition to the Intent.app
+     parent, whose Info.plist carries the same key via electron-builder
+     extendInfo. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>app.cloudlands.intent.speech-helper</string>
+  <key>CFBundleName</key>
+  <string>intent-speech-helper</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Intent uses macOS speech recognition to transcribe your voice into text for dictation.</string>
+</dict>
+</plist>

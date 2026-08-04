@@ -291,6 +291,7 @@ import { listRespondingAgents } from './running-agents';
 import { m } from '../shared/paraglide/messages.js';
 
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
+import { registerVoiceLocalHandlers } from '../features/voice/main/voice-local.ipc';
 import { cleanupStaleTempFiles } from '../shared/main/temp-files';
 import { initSpecialistsService } from '../features/agent/main/specialists.service';
 import { initAppSettingsService } from '../features/workspace/main/app-settings.service';
@@ -1373,6 +1374,7 @@ app.whenReady().then(async () => {
     setupFirstVisitStateIPC();
     setupPanelLayoutHistoryIPC();
     setupUserActivityIPC();
+    registerVoiceLocalHandlers(); // Local OS transcription (macOS speech helper)
 
     // MINIMAL REFACTOR: Commenting out duplicate IPC handler
     registerAgentContextHandlers();

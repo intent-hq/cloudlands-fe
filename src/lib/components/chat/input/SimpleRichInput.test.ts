@@ -22,6 +22,7 @@ vi.mock('svelte-fa', async () => {
 
 vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faMagicWandSparkles: { iconName: 'magic-wand' },
+  faMicrophone: { iconName: 'microphone' },
   faPaperclip: { iconName: 'paperclip' },
   faPaperPlane: { iconName: 'paper-plane' },
   faSpinner: { iconName: 'spinner' },
@@ -149,11 +150,29 @@ const mockReduxState = vi.hoisted(
   (): {
     workspaceAgents: { byWorkspaceId: Record<string, any> };
     providerSettings: { activeProviderId: string };
+    hardwareConsole: { pttRecording: boolean; voiceTranscribing: boolean };
+    voiceSettings: {
+      isLoading: boolean;
+      engine: string;
+      osEngineAvailable: boolean;
+      provider: string;
+      keyConfigured: Record<string, boolean>;
+    };
     providerCatalog?: unknown;
   } => ({
     workspaceAgents: { byWorkspaceId: {} },
     // Unset active provider — the §5.31 gate treats this as auggie (default)
     providerSettings: { activeProviderId: '' },
+    // The composer mic button subscribes to these hardware-console flags
+    hardwareConsole: { pttRecording: false, voiceTranscribing: false },
+    // Mic visibility reads the effective voice engine off this slice
+    voiceSettings: {
+      isLoading: false,
+      engine: 'daemon',
+      osEngineAvailable: false,
+      provider: 'elevenlabs',
+      keyConfigured: { elevenlabs: true, openai: false },
+    },
   }),
 );
 const mockReduxDispatch = vi.hoisted(() => vi.fn());
@@ -859,5 +878,152 @@ describe('SimpleRichInput enhance-button provider gate (§5.31)', () => {
     await waitFor(() => {
       expect(enhancePromptMock).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('SimpleRichInput mic-button visibility (effective voice engine)', () => {
+  const baseProps = () => ({
+    value: '',
+    contextItems: [],
+    workspace: {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/tmp/workspace',
+      createdAt: new Date().toISOString(),
+    } as any,
+    agentId: 'agent-1',
+    selectedModel: 'gpt5.4',
+  });
+
+  // The mocked Button strips data-testid/aria-label — locate the mic
+  // affordance via the Fa icon mock's data-icon (faMicrophone → microphone).
+  function micButton(): HTMLButtonElement | null {
+    const icon = document.body.querySelector('[data-icon="microphone"]');
+    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    addMockSession('ws-1', createSession());
+  });
+
+  afterEach(() => {
+    cleanup();
+    removeMockSession('ws-1', 'agent-1');
+    mockReduxState.voiceSettings = {
+      isLoading: false,
+      engine: 'daemon',
+      osEngineAvailable: false,
+      provider: 'elevenlabs',
+      keyConfigured: { elevenlabs: true, openai: false },
+    };
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+  });
+
+  it('renders the mic button when the daemon key is configured', () => {
+    render(SimpleRichInput, { props: baseProps() });
+    expect(micButton()).not.toBeNull();
+  });
+
+  it('renders the mic button when the key is missing but the OS engine exists (macOS fallback)', () => {
+    mockReduxState.voiceSettings.keyConfigured = { elevenlabs: false, openai: false };
+    mockReduxState.voiceSettings.osEngineAvailable = true;
+    render(SimpleRichInput, { props: baseProps() });
+    expect(micButton()).not.toBeNull();
+  });
+
+  it('hides the mic button when no engine can transcribe at all (no key, no OS dictation)', () => {
+    mockReduxState.voiceSettings.keyConfigured = { elevenlabs: false, openai: false };
+    mockReduxState.voiceSettings.osEngineAvailable = false;
+    render(SimpleRichInput, { props: baseProps() });
+    expect(micButton()).toBeNull();
+  });
+
+  it('keeps the mic button while the initial settings read is loading (never hide on unsettled state)', () => {
+    mockReduxState.voiceSettings.isLoading = true;
+    mockReduxState.voiceSettings.keyConfigured = { elevenlabs: false, openai: false };
+    render(SimpleRichInput, { props: baseProps() });
+    expect(micButton()).not.toBeNull();
+  });
+});
+
+describe('SimpleRichInput mic-button cancel-while-transcribing', () => {
+  // The transcribing spinner button (located via the Fa mock's data-icon).
+  function transcribingButton(): HTMLButtonElement | null {
+    const icon = document.body.querySelector('[data-icon="spinner"]');
+    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    addMockSession('ws-1', createSession());
+    mockReduxState.hardwareConsole.voiceTranscribing = true;
+  });
+
+  afterEach(() => {
+    cleanup();
+    removeMockSession('ws-1', 'agent-1');
+    mockReduxState.hardwareConsole.voiceTranscribing = false;
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+  });
+
+  it('renders an enabled cancel control (not a disabled spinner) while transcribing', async () => {
+    const { m } = await import('$shared/paraglide/messages.js');
+    render(SimpleRichInput, {
+      props: {
+        value: '',
+        contextItems: [],
+        workspace: {
+          id: 'ws-1',
+          name: 'Workspace',
+          path: '/tmp/workspace',
+          createdAt: new Date().toISOString(),
+        } as any,
+        agentId: 'agent-1',
+        selectedModel: 'gpt5.4',
+      },
+    });
+    const button = transcribingButton();
+    expect(button).not.toBeNull();
+    expect(button!.disabled).toBe(false);
+    expect(button!.getAttribute('aria-label')).toBe(
+      m.chat_richInput_micCancelTranscribing_label(),
+    );
+  });
+
+  it('clicking the cancel control abandons the in-flight transcription session', async () => {
+    const { beginTranscriptionSession, hasActiveTranscriptionSession, resetTranscriptionCancellation } =
+      await import('$features/hardware-console/voice/transcription-cancellation');
+    const onCancel = vi.fn();
+    beginTranscriptionSession(onCancel);
+
+    render(SimpleRichInput, {
+      props: {
+        value: '',
+        contextItems: [],
+        workspace: {
+          id: 'ws-1',
+          name: 'Workspace',
+          path: '/tmp/workspace',
+          createdAt: new Date().toISOString(),
+        } as any,
+        agentId: 'agent-1',
+        selectedModel: 'gpt5.4',
+      },
+    });
+    await fireEvent.click(transcribingButton()!);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(hasActiveTranscriptionSession()).toBe(false);
+    resetTranscriptionCancellation();
   });
 });
