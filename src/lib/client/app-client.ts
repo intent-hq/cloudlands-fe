@@ -1399,7 +1399,7 @@ export interface SkillsClient {
  * Wire `SpecialistDef` (`specialist.list`, PROTOCOL §5.11): the resolved view
  * of one definition. `source` is the winning tier (project > user > bundled)
  * and `path` the file it resolved from (omitted for `bundled`). The optional
- * frontmatter scalars (`codingAgent`/`model`/`modelTier`/`roleReminder`/
+ * frontmatter scalars (`codingAgent`/`model`/`roleReminder`/
  * `agentType`/`hidden`) are carried through verbatim when present;
  * `behaviorPrompt` mirrors `prompt` (the markdown body). `hidden: true`
  * excludes the specialist from picker surfaces (absent ⇒ not hidden).
@@ -1410,7 +1410,6 @@ export interface SpecialistDef {
   description: string;
   codingAgent?: string;
   model?: string;
-  modelTier?: string;
   roleReminder?: string;
   agentType?: string;
   hidden?: boolean;

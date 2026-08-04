@@ -89,33 +89,24 @@ describe('Specialist Prompts Verification', () => {
       expect(verifier!.defaultBehaviorPrompt).toContain('VERIFIED');
     });
 
-    it('should use appropriate model tiers for each specialist', () => {
+    it('should not pin a model on any built-in specialist', () => {
+      // Absent defaultModel means inherit the global default.
       const specWriter = getSpecialistById('spec-writer');
       const implementor = getSpecialistById('implementor');
       const verifier = getSpecialistById('verifier');
       const prReviewer = getSpecialistById('pr-reviewer');
       const uiDesigner = getSpecialistById('ui-designer');
 
-      // spec-writer needs high capability for planning
-      expect(specWriter!.defaultModelTier).toBe('smart');
-
-      // implementor uses smart model to match coordinator
-      expect(implementor!.defaultModelTier).toBe('smart');
-
-      // verifier needs high capability for thorough review
-      expect(verifier!.defaultModelTier).toBe('smart');
-
-      // pr-reviewer needs high capability for thorough review
-      expect(prReviewer!.defaultModelTier).toBe('smart');
-
-      // ui-designer uses smart model like other specialists
-      expect(uiDesigner!.defaultModelTier).toBe('smart');
+      expect(specWriter!.defaultModel).toBeUndefined();
+      expect(implementor!.defaultModel).toBeUndefined();
+      expect(verifier!.defaultModel).toBeUndefined();
+      expect(prReviewer!.defaultModel).toBeUndefined();
+      expect(uiDesigner!.defaultModel).toBeUndefined();
     });
 
     it('chief-of-staff should use the user default model and document app workflows', () => {
       const chief = getSpecialistById('chief-of-staff');
       expect(chief).toBeDefined();
-      expect(chief!.defaultModelTier).toBeUndefined();
       expect(chief!.defaultModel).toBeUndefined();
       expect(chief!.defaultBehaviorPrompt).toContain('Chief of Staff');
       expect(chief!.defaultBehaviorPrompt).toContain('ws.app.workspaces.*');

@@ -11,7 +11,7 @@
  * any dispatch site: `createSpecialistsMutationMiddleware()` observes
  * dispatched actions and services each trigger by calling the
  * `appClient.specialists` seam, refetching `specialist.list`, and dispatching
- * the result back to the store so derived UI (the "Use for all specialists"
+ * the result back to the store so derived UI (the "Reset all to default"
  * button hiding) reacts.
  *
  * Save chooses `specialist.create` vs `.edit` by checking whether a file
@@ -45,7 +45,7 @@ import {
   type FileSpecialist,
 } from '$store/renderer/slices/specialists/specialists-slice';
 import { SPECIALISTS } from '$lib/constants/specialists';
-import type { ModelTier, SpecialistFileScope } from '$shared/specialist-file-types';
+import type { SpecialistFileScope } from '$shared/specialist-file-types';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -79,14 +79,6 @@ function readBundledSpecialist(id: string): (typeof SPECIALISTS)[number] | undef
   return (bundled?.length ? bundled : SPECIALISTS).find((s) => s.id === id);
 }
 
-const MODEL_TIERS = new Set<ModelTier>(['fast', 'balanced', 'smart']);
-
-function toModelTier(value: string | undefined): ModelTier | undefined {
-  return value !== undefined && MODEL_TIERS.has(value as ModelTier)
-    ? (value as ModelTier)
-    : undefined;
-}
-
 /** Map a bundled-tier wire `SpecialistDef` (PROTOCOL §5.11) to the store's `Specialist`. */
 function toBundledSpecialist(def: SpecialistDef): (typeof SPECIALISTS)[number] {
   return {
@@ -95,7 +87,6 @@ function toBundledSpecialist(def: SpecialistDef): (typeof SPECIALISTS)[number] {
     description: def.description,
     codingAgent: def.codingAgent,
     defaultModel: def.model,
-    defaultModelTier: toModelTier(def.modelTier),
     defaultBehaviorPrompt: def.behaviorPrompt ?? def.prompt ?? '',
     roleReminder: def.roleReminder,
     source: 'bundled' as const,
@@ -114,7 +105,6 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
     description: def.description,
     codingAgent: def.codingAgent,
     model: def.model ?? '',
-    modelTier: toModelTier(def.modelTier),
     behaviorPrompt: def.behaviorPrompt ?? def.prompt ?? '',
     roleReminder: def.roleReminder,
     filePath: def.path ?? '',
@@ -204,8 +194,10 @@ async function handleSaveFileSpecialist(
       name: payload.name,
       description: payload.description,
       codingAgent: payload.codingAgent,
-      model: payload.model,
-      modelTier: payload.modelTier,
+      // Empty model means "inherit": the wire key must be OMITTED
+      // (undefined serializes away) — an explicit "" would instead write a
+      // clearing `model: ""` frontmatter key (PROTOCOL §5.11 config scalars).
+      model: payload.model || undefined,
       roleReminder: payload.roleReminder,
       behaviorPrompt: payload.behaviorPrompt,
       source: (payload.scope ?? 'user') as 'user' | 'project',
@@ -255,7 +247,6 @@ async function handleExportBuiltinToFile(
       description: bundled.description,
       codingAgent: bundled.codingAgent,
       model: bundled.defaultModel,
-      modelTier: bundled.defaultModelTier,
       roleReminder: bundled.roleReminder,
       behaviorPrompt: bundled.defaultBehaviorPrompt,
       source: 'user',
@@ -277,7 +268,7 @@ async function handleLoadFileSpecialists(): Promise<void> {
 /**
  * Middleware giving the specialist slice's write actions a real handler.
  * After each write succeeds, refetch `specialist.list` and update the store so
- * derived UI (the "Use for all specialists" button hiding) reacts.
+ * derived UI (the "Reset all to default" button hiding) reacts.
  */
 export function createSpecialistsMutationMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {

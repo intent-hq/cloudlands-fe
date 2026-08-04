@@ -87,7 +87,6 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
                 description: file.description,
                 codingAgent: file.codingAgent,
                 defaultModel: file.model || undefined,
-                defaultModelTier: file.modelTier,
                 defaultBehaviorPrompt: file.behaviorPrompt,
                 roleReminder: file.roleReminder,
                 source: file.source,
@@ -177,6 +176,17 @@ export const selectEffectiveModel = store.createSelector((state, specialistId: s
         return specialist.defaultModel;
     }
     return specialist.resolvedModel ?? '';
+});
+
+/**
+ * Get the explicit frontmatter model for a specialist, or undefined when the
+ * specialist inherits (no `model:` key in any winning tier). Distinct from
+ * `selectEffectiveModel`, which falls back to the daemon-resolved preview.
+ */
+export const selectExplicitModel = store.createSelector((state, specialistId: string): string | undefined => {
+    const specialists = selectSpecialists.select(state);
+    const specialist = specialists.find((s: Specialist) => s.id === specialistId);
+    return specialist?.defaultModel || undefined;
 });
 
 /** Get the effective behavior prompt for a specialist (file override → bundled default) */

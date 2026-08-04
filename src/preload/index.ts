@@ -401,7 +401,6 @@ const ALLOWED_CHANNELS = [
   "specialists:read-file",
   "specialists:write-file",
   "specialists:delete-file",
-  "specialists:open-folder",
   "specialists:get-folder-path",
   "specialists:export-builtin",
   "specialists:file-exists",

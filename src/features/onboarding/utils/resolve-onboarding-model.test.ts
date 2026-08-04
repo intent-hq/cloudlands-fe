@@ -14,7 +14,6 @@ interface MockSpecialist {
   description: string;
   codingAgent?: string;
   defaultModel?: string;
-  defaultModelTier?: 'fast' | 'balanced' | 'smart';
   defaultBehaviorPrompt?: string;
 }
 
@@ -45,7 +44,6 @@ const mockState = vi.hoisted(() => ({
       id: 'spec-writer',
       name: 'Coordinator',
       description: 'Plans work',
-      defaultModelTier: 'smart' as const,
       defaultBehaviorPrompt: 'coordinator-prompt',
     },
   ] as MockSpecialist[],
@@ -174,7 +172,6 @@ describe('resolveOnboardingModel', () => {
         id: 'spec-writer',
         name: 'Coordinator',
         description: 'Plans work',
-        defaultModelTier: 'smart',
         defaultBehaviorPrompt: 'coordinator-prompt',
       },
     ];
