@@ -21,6 +21,7 @@
   addTerminal,
   openTerminalOverlay,
   toggleTerminalOverlay,
+  terminalCreated,
 } from '$store/renderer/slices/terminals/terminals-slice';
   import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -73,18 +74,27 @@
 
   async function installRtk() {
     try {
-      // Create a new terminal tab and open the overlay
-      const termId = `terminal-${Date.now()}`;
+      // Daemon-first create (`terminal.create`, PROTOCOL §5.13): key the tab
+      // by the daemon-assigned id so hydration/writes address the real PTY.
+      const result = await appClient.terminals.create({
+        workspaceId: ROOT_WORKSPACE_ID,
+        cols: 80,
+        rows: 24,
+      });
+      if (!result.success || !result.id) {
+        appStore.dispatch(toggleTerminalOverlay(ROOT_WORKSPACE_ID));
+        return;
+      }
+      const termId = result.id;
       appStore.dispatch(addTerminal(ROOT_WORKSPACE_ID, termId, m.settings_rtk_installTerminalTitle()));
+      appStore.dispatch(terminalCreated(ROOT_WORKSPACE_ID));
       appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, termId));
 
       // Wait briefly for the terminal to initialize, then write the command
+      // via `terminal.write` (PROTOCOL §5.13) using the daemon-assigned id.
       setTimeout(async () => {
         try {
-          await invoke('terminal:professional:write', {
-            terminalId: termId,
-            data: 'brew install rtk\n',
-          });
+          await appClient.terminals.write(termId, 'brew install rtk\n');
         } catch {
           // Terminal might not be ready yet - user can type manually
         }

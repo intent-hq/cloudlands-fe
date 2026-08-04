@@ -40,6 +40,23 @@ export const selectTerminals = store.createSelector((state) => {
   return getItems(getActiveWs(state).terminals);
 });
 
+/**
+ * Selected script tab for the active workspace, validated against the scripts
+ * slice: once scripts are initialized for the workspace, a selection pointing
+ * at a missing script (deleted, or a stale persisted id) reads as null. While
+ * scripts are still hydrating the raw id is returned so a restored script tab
+ * isn't dropped before `script.list` lands.
+ */
+export const selectSelectedScriptId = store.createSelector((state) => {
+  const wsId = state.workspace.activeWorkspaceId;
+  if (!wsId) return null;
+  const selectedScriptId = getWsById(state, wsId).selectedScriptId;
+  if (!selectedScriptId) return null;
+  const scriptsWs = state.scripts.byWorkspaceId[wsId];
+  if (scriptsWs?.initialized && !scriptsWs.scripts[selectedScriptId]) return null;
+  return selectedScriptId;
+});
+
 export const selectIsTerminalOverlayOpenForWorkspace = store.createSelector((state, wsId: string) => {
   return getWsById(state, wsId).isOpen;
 });
@@ -88,11 +105,6 @@ export const selectTerminalDisplayName = store.createSelector(
 export const selectTerminalsLoaded = store.createSelector((state, wsId: string) => {
   const ws = state.terminals.workspaces[wsId] || emptyWorkspaceState;
   return ws.terminalsLoaded;
-});
-
-export const selectRecentlyCreatedTerminals = store.createSelector((state, wsId: string) => {
-  const ws = state.terminals.workspaces[wsId] || emptyWorkspaceState;
-  return ws.recentlyCreatedTerminals;
 });
 
 export const selectLoadedWorkspaceTerminals = store.createSelector((state, wsId: string) => {

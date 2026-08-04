@@ -34,8 +34,11 @@
   removeTerminal,
   setTerminalOverlayHeight,
   renameTerminal,
+  terminalCreated,
   type TerminalTab,
 } from '$store/renderer/slices/terminals/terminals-slice';
+  import { appClient } from '$lib/client';
+  import { toast } from '$lib/components/ui/toast';
   // RootQuakeTerminalOverlay uses ROOT_WORKSPACE_ID as its workspace ID
 
   import Terminal from './Terminal.svelte';
@@ -181,23 +184,41 @@
 
   let overlayContainer = $state<HTMLDivElement>();
 
-  function createNewTerminal() {
-    const newId = `terminal-root-${Date.now()}`;
-    appStore.dispatch(
-      addTerminal(
-        ROOT_WORKSPACE_ID,
-        newId,
-        m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
-      ),
-    );
-    if (!$isOpen) {
-      appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, newId));
+  async function createNewTerminal() {
+    try {
+      // Daemon-first create (`terminal.create`, PROTOCOL §5.13): the daemon
+      // assigns the PTY id and the Redux tab is keyed by it, so hydration
+      // (`terminal.list`) always matches the tab id.
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- AppClient mutation (terminal.create), not a domain data fetch; the daemon-assigned id must be awaited before the tab enters Redux (monorepo#1411).
+      const result = await appClient.terminals.create({
+        workspaceId: ROOT_WORKSPACE_ID,
+        cols: 80,
+        rows: 24,
+      });
+      if (!result.success || !result.id) {
+        toast.error(m.terminal_adapter_openFailed_error());
+        return;
+      }
+      appStore.dispatch(
+        addTerminal(
+          ROOT_WORKSPACE_ID,
+          result.id,
+          m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
+        ),
+      );
+      // Correct any in-flight terminal.list snapshot that predates the create.
+      appStore.dispatch(terminalCreated(ROOT_WORKSPACE_ID));
+      if (!$isOpen) {
+        appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, result.id));
+      }
+      // Focus the overlay container immediately so keyboard shortcuts
+      // route to the terminal before xterm is ready
+      requestAnimationFrame(() => {
+        overlayContainer?.focus();
+      });
+    } catch {
+      toast.error(m.terminal_adapter_openFailed_error());
     }
-    // Focus the overlay container immediately so keyboard shortcuts
-    // route to the terminal before xterm is ready
-    requestAnimationFrame(() => {
-      overlayContainer?.focus();
-    });
   }
 
   function closeTerminal(termId: string, e?: MouseEvent) {

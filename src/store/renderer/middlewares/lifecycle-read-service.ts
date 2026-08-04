@@ -115,6 +115,7 @@ import {
 import {
   hydrateTerminalsRequested,
   loadWorkspaceTerminals,
+  terminalCreated,
 } from "../slices/terminals/terminals-slice";
 import {
   workspaceDeleted,
@@ -476,6 +477,15 @@ function hydrateWorkspaceAgents(wsId: string): void {
 }
 
 /**
+ * Per-workspace terminal-hydration generation. A successful `terminal.create`
+ * (`terminalCreated`) bumps it and evicts the in-flight `terminals:{wsId}`
+ * entry, so (a) the post-create refetch is not coalesced away behind a fetch
+ * whose snapshot predates the create, and (b) that stale pre-create response
+ * is discarded when it resolves late instead of clobbering the new tab.
+ */
+const terminalsHydrationGeneration = new Map<string, number>();
+
+/**
  * Hydrate a workspace's terminals on mount, mirroring the boot
  * `terminals-scripts-seeder` terminal section. A successful non-empty fetch
  * dispatches `loadWorkspaceTerminals` to converge the store; an empty list
@@ -489,9 +499,25 @@ function hydrateWorkspaceAgents(wsId: string): void {
  */
 function hydrateWorkspaceTerminals(wsId: string): void {
   coalesce(`terminals:${wsId}`, async () => {
+    const generation = terminalsHydrationGeneration.get(wsId) ?? 0;
     const { terminals, daemonBootId } = await appClient.terminals.list(wsId);
+    // A create landed mid-flight: this snapshot predates the new PTY — drop
+    // it and let the post-create refetch converge the store.
+    if ((terminalsHydrationGeneration.get(wsId) ?? 0) !== generation) return;
     appStore.dispatch(loadWorkspaceTerminals(wsId, terminals, undefined, daemonBootId));
   });
+}
+
+/**
+ * Post-create refetch: a `terminal.create` succeeded, so any in-flight
+ * `terminal.list` snapshot predates the new PTY. Bump the generation (the
+ * stale response is discarded on resolve), evict the in-flight entry so the
+ * refetch is not coalesced away, and fetch the fresh list.
+ */
+function refetchTerminalsAfterCreate(wsId: string): void {
+  terminalsHydrationGeneration.set(wsId, (terminalsHydrationGeneration.get(wsId) ?? 0) + 1);
+  inFlight.delete(`terminals:${wsId}`);
+  hydrateWorkspaceTerminals(wsId);
 }
 
 /** First array-payload element as a non-empty workspace id, else undefined. */
@@ -616,6 +642,11 @@ export function createLifecycleReadMiddleware(): StoreMiddleware {
         case hydrateTerminalsRequested.type: {
           const wsId = wsIdOf(action);
           if (wsId) hydrateWorkspaceTerminals(wsId);
+          break;
+        }
+        case terminalCreated.type: {
+          const wsId = wsIdOf(action);
+          if (wsId) refetchTerminalsAfterCreate(wsId);
           break;
         }
       }

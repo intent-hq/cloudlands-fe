@@ -34,6 +34,8 @@ import {
   closeTerminalOverlay,
   toggleTerminalOverlay,
   selectTerminal,
+  selectScript,
+  clearScriptSelection,
   addTerminal,
   loadWorkspaceTerminals,
   hydrateHeight,
@@ -252,6 +254,7 @@ function saveWorkspaceState(
   states[wsId] = {
     isOpen: state.isOpen,
     activeTerminalId: state.activeTerminalId,
+    selectedScriptId: state.selectedScriptId ?? null,
   };
   safeLocalStorage.setJSON(WORKSPACE_STATE_STORAGE_KEY, states);
 }
@@ -266,6 +269,8 @@ const WORKSPACE_STATE_PERSIST_ACTIONS = new Set<string>([
   closeTerminalOverlay.type,
   toggleTerminalOverlay.type,
   selectTerminal.type,
+  selectScript.type,
+  clearScriptSelection.type,
   addTerminal.type,
   removeTerminal.type,
   loadWorkspaceTerminals.type,
@@ -275,10 +280,12 @@ const WORKSPACE_STATE_PERSIST_ACTIONS = new Set<string>([
  * GAP-5 guard: an empty-list `loadWorkspaceTerminals` never durably
  * overwrites a saved open state. Restart/legacy/unknown-boot empties are
  * transient (monorepo#1330) — the reducer preserves existing live tabs and
- * only forces isOpen=false in memory on the empty-over-empty pass. Even a
- * same-boot authoritative empty (converge-to-zero, monorepo#1334) skips the
- * persist: the in-memory close is enough, and keeping the saved open state
- * lets the panel restore when terminals reappear.
+ * forces isOpen=false in memory only on the empty-over-empty pass with no
+ * script tab holding the panel (a script-held panel keeps isOpen,
+ * monorepo#1411). Even a same-boot authoritative empty (converge-to-zero,
+ * monorepo#1334) skips the persist: the in-memory close is enough, and
+ * keeping the saved open state lets the panel restore when terminals
+ * reappear.
  */
 function isEmptyTerminalsHydration(action: {
   type: string;
@@ -375,6 +382,7 @@ export function createTerminalPersistenceMiddleware(): StoreMiddleware {
           saveWorkspaceState(wsId, {
             isOpen: ws.isOpen,
             activeTerminalId: ws.activeTerminalId,
+            selectedScriptId: ws.selectedScriptId,
           });
         }
       }

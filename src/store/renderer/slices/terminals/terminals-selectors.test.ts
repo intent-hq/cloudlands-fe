@@ -21,8 +21,8 @@ function terminalState(terminals: TerminalTab[]): TerminalOverlayState {
         terminals: createCollection<TerminalTab, "id">("id", terminals),
         terminalsLoaded: true,
         isLoadingTerminals: false,
-        recentlyCreatedTerminals: [],
         daemonBootId: null,
+        selectedScriptId: null,
       },
     },
   };

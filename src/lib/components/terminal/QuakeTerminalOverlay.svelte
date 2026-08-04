@@ -25,17 +25,22 @@
   selectTerminalOverlayHeight,
   selectActiveTerminalId,
   selectTerminals,
+  selectSelectedScriptId,
 } from '$store/renderer/slices/terminals/terminals-selectors';
   import {
   openTerminalOverlay,
   closeTerminalOverlay,
   selectTerminal,
+  selectScript,
+  clearScriptSelection,
   addTerminal,
   removeTerminal,
   setTerminalOverlayHeight,
   renameTerminal,
+  terminalCreated,
   type TerminalTab,
 } from '$store/renderer/slices/terminals/terminals-slice';
+  import { appClient } from '$lib/client';
 
   import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
   import Terminal from './Terminal.svelte';
@@ -112,6 +117,7 @@
   const terminals = selectTerminals();
   const scriptEntries$ = selectScriptEntries();
   const scriptsInitialized$ = selectScriptsInitialized();
+  const selectedScriptId$ = selectSelectedScriptId();
 
   // Workspace ID from props (required)
   const workspaceId = $derived(propWorkspaceId);
@@ -134,7 +140,9 @@
   let editingValue = $state('');
   let isEditingHeaderName = $state(false);
   let headerEditValue = $state('');
-  let selectedScriptId = $state<string | null>(null);
+  // Selected script tab lives in the terminals slice (per-workspace) so it
+  // survives workspace switches/remounts; read-only alias for the template.
+  const selectedScriptId = $derived($selectedScriptId$);
   let editingScriptTabId = $state<string | null>(null);
   let editingScriptTabValue = $state('');
 
@@ -278,7 +286,7 @@
     else if (action === 'delete') {
       await scriptsClient.remove(workspaceId, scriptId);
       appStore.dispatch(removeScript(workspaceId!, scriptId));
-      if (selectedScriptId === scriptId) selectedScriptId = null;
+      if (selectedScriptId === scriptId) appStore.dispatch(clearScriptSelection(workspaceId));
     }
   }
 
@@ -638,25 +646,44 @@
 
   let overlayContainer = $state<HTMLDivElement>();
 
-  function createNewTerminal() {
+  async function createNewTerminal() {
     if (!workspaceId) return;
-    const newId = `terminal-${Date.now()}`;
-    selectedScriptId = null;
-    appStore.dispatch(
-      addTerminal(
+    try {
+      // Daemon-first create (`terminal.create`, PROTOCOL §5.13): the daemon
+      // assigns the PTY id and the Redux tab is keyed by it, so hydration
+      // (`terminal.list`) always matches the tab id — no local placeholder
+      // ids that a workspace-switch hydration would drop.
+      const result = await appClient.terminals.create({
         workspaceId,
-        newId,
-        m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
-      ),
-    );
-    if (!$isOpen) {
-      appStore.dispatch(openTerminalOverlay(workspaceId, newId));
+        cols: 80,
+        rows: 24,
+      });
+      if (!result.success || !result.id) {
+        logger.error('Failed to create terminal', { error: result.success ? 'missing id' : result.error });
+        toast.error(m.terminal_adapter_openFailed_error());
+        return;
+      }
+      appStore.dispatch(
+        addTerminal(
+          workspaceId,
+          result.id,
+          m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
+        ),
+      );
+      // Correct any in-flight terminal.list snapshot that predates the create.
+      appStore.dispatch(terminalCreated(workspaceId));
+      if (!$isOpen) {
+        appStore.dispatch(openTerminalOverlay(workspaceId, result.id));
+      }
+      // Focus the overlay container immediately so keyboard shortcuts
+      // (Cmd+T, Cmd+W) route to the terminal before xterm is ready
+      requestAnimationFrame(() => {
+        overlayContainer?.focus();
+      });
+    } catch (error) {
+      logger.error('Failed to create terminal', error);
+      toast.error(m.terminal_adapter_openFailed_error());
     }
-    // Focus the overlay container immediately so keyboard shortcuts
-    // (Cmd+T, Cmd+W) route to the terminal before xterm is ready
-    requestAnimationFrame(() => {
-      overlayContainer?.focus();
-    });
   }
 
   function closeTerminal(termId: string, e?: MouseEvent) {
@@ -685,11 +712,11 @@
     pendingClickTimeout = setTimeout(() => {
       pendingClickTimeout = null;
       const wasShowingScript = selectedScriptId !== null;
-      selectedScriptId = null;
       if (termId === $activeTerminalId && $isOpen && !wasShowingScript) {
         handleClose();
       } else {
         if (workspaceId) {
+          // selectTerminal also clears the script-tab selection in the reducer
           appStore.dispatch(selectTerminal(workspaceId, termId));
           if (!$isOpen) {
             appStore.dispatch(openTerminalOverlay(workspaceId, termId));
@@ -1030,7 +1057,7 @@
                   {workspaceId}
                   class="flex-1"
                   onDelete={() => {
-                    selectedScriptId = null;
+                    if (workspaceId) appStore.dispatch(clearScriptSelection(workspaceId));
                   }}
                 />
               {/key}
@@ -1054,9 +1081,12 @@
             <TerminalSidebar
               {workspaceId}
               {selectedScriptId}
-              onSelectScript={(id) => (selectedScriptId = id)}
+              onSelectScript={(id) => {
+                if (!workspaceId) return;
+                appStore.dispatch(id ? selectScript(workspaceId, id) : clearScriptSelection(workspaceId));
+              }}
               onSelectTerminal={(id) => {
-                selectedScriptId = null;
+                // selectTerminal also clears the script-tab selection in the reducer
                 if (workspaceId) appStore.dispatch(selectTerminal(workspaceId, id));
               }}
               onCreateTerminal={createNewTerminal}
@@ -1144,12 +1174,13 @@
               isScriptActive && 'text-foreground bg-sidebar shadow-sm',
             )}
             onclick={() => {
+              if (!workspaceId) return;
               if (isScriptActive) {
                 handleClose();
-                selectedScriptId = null;
+                appStore.dispatch(clearScriptSelection(workspaceId));
               } else {
-                selectedScriptId = script.id;
-                if (!$isOpen && workspaceId) {
+                appStore.dispatch(selectScript(workspaceId, script.id));
+                if (!$isOpen) {
                   appStore.dispatch(openTerminalOverlay(workspaceId));
                 }
               }
@@ -1256,15 +1287,20 @@
             <button
               type="button"
               class="flex items-center justify-center h-full px-2 text-muted-foreground/50 cursor-pointer hover:text-foreground transition-colors text-muted-foreground/75 relative"
-              onclick={() => {
+              onclick={async () => {
                 if ($isOpen) {
                   handleClose();
                 } else if (workspaceId) {
-                  if ($terminals.length === 0) createNewTerminal();
-                  appStore.dispatch(openTerminalOverlay(workspaceId));
+                  if ($terminals.length === 0) {
+                    // Daemon-first create opens the overlay keyed by the
+                    // daemon id once the create resolves.
+                    await createNewTerminal();
+                  } else {
+                    appStore.dispatch(openTerminalOverlay(workspaceId));
+                  }
                   const entries = selectScriptEntries.select(appStore.state);
-                  if (entries.length > 0 && !selectedScriptId) {
-                    selectedScriptId = entries[0].id;
+                  if (entries.length > 0 && !selectSelectedScriptId.select(appStore.state)) {
+                    appStore.dispatch(selectScript(workspaceId, entries[0].id));
                   }
                 }
               }}
@@ -1295,8 +1331,9 @@
                       subtitleClass="leading-none"
                       active={selectedScriptId === script.id}
                       onclick={() => {
-                        selectedScriptId = script.id;
-                        if (!$isOpen && workspaceId) {
+                        if (!workspaceId) return;
+                        appStore.dispatch(selectScript(workspaceId, script.id));
+                        if (!$isOpen) {
                           appStore.dispatch(openTerminalOverlay(workspaceId));
                         }
                       }}
