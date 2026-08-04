@@ -59,6 +59,19 @@ vi.mock('$store/renderer/slices/hardware-console/hardware-console-selectors', ()
   selectWorkspaceResolvedKeySlot: { select: resolvedKeySlotSelectMock },
 }));
 
+// The custom toast component imports AuggieAvatar, whose selector modules
+// (theme + agent-session) also call store.createSelector at load time — mock
+// them so the lazy component import doesn't throw under the store mock above
+// (a throw would silently degrade every badge test to the plain toast).
+vi.mock('$store/renderer/slices/theme/theme-selectors', () => ({
+  selectIsDarkTheme: vi.fn(),
+}));
+
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentIsThinking: vi.fn(),
+  selectAgentProvider: vi.fn(),
+}));
+
 vi.mock('$lib/electron-bridge', () => ({
   isElectron: mockIsElectron,
 }));
@@ -317,6 +330,68 @@ describe('createNotificationIpcMiddleware', () => {
         expect(options.componentProps.title).toBe('Agent');
         expect(options.componentProps.description).toBe('Finished');
         expect(options.componentProps.keySlot).toBe(3);
+      });
+
+      it('passes the structured payload through to the custom toast', async () => {
+        microStatusMock.value = 'connected';
+        resolvedKeySlotSelectMock.mockImplementation(() => 3);
+        const structured = {
+          agentId: 'agent-1',
+          workspaceTitle: 'My Workspace',
+          specialist: 'spec-writer',
+          specialistDisplayName: 'Coordinator',
+          taskTitle: 'Fix toast styling',
+          provider: 'auggie',
+        };
+        const { showHandler } = setupMiddleware();
+
+        await showHandler({
+          title: 'Agent',
+          body: 'Finished',
+          timestamp: 't',
+          navigateTarget: { workspaceId: 'ws-123' },
+          structured,
+        });
+
+        expect(mockToastCustom).toHaveBeenCalledTimes(1);
+        const options = mockToastCustom.mock.calls[0][1] as {
+          componentProps: Record<string, unknown>;
+        };
+        expect(options.componentProps.structured).toEqual(structured);
+      });
+
+      it('passes structured through as undefined when the payload lacks it (old daemon / chief)', async () => {
+        microStatusMock.value = 'connected';
+        resolvedKeySlotSelectMock.mockImplementation(() => 3);
+
+        await show();
+
+        expect(mockToastCustom).toHaveBeenCalledTimes(1);
+        const options = mockToastCustom.mock.calls[0][1] as {
+          componentProps: Record<string, unknown>;
+        };
+        expect(options.componentProps.structured).toBeUndefined();
+      });
+
+      it('structured payload does not alter the plain-toast fallback path', async () => {
+        microStatusMock.value = 'connected';
+        resolvedKeySlotSelectMock.mockImplementation(() => null);
+        const { showHandler } = setupMiddleware();
+
+        await showHandler({
+          title: 'Agent',
+          body: 'Finished',
+          timestamp: 't',
+          navigateTarget: { workspaceId: 'ws-123' },
+          structured: { specialistDisplayName: 'Coordinator' },
+        });
+
+        expect(mockToastCustom).not.toHaveBeenCalled();
+        expect(mockToast).toHaveBeenCalledTimes(1);
+        expect(mockToast).toHaveBeenCalledWith(
+          'Agent',
+          expect.objectContaining({ description: 'Finished' }),
+        );
       });
 
       it('custom-toast action dismisses the toast and navigates with the exact payload', async () => {

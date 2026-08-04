@@ -55,6 +55,7 @@ const {
   const agentListResponse: {
     agents: Array<{
       id?: string;
+      provider?: string;
       isStreaming?: boolean;
       isResponding?: boolean;
       metadata?: { isBackground?: boolean; specialist?: string };
@@ -1829,5 +1830,124 @@ describe('NotificationService native id-based replacement', () => {
       ([channel]) => channel === 'notification:show',
     );
     expect(soundCalls).toHaveLength(2);
+  });
+});
+
+describe('NotificationService structured notification:show payload', () => {
+  function buildIdleEvent(overrides: Partial<AgentIdleEvent['data']> = {}): AgentIdleEvent {
+    return {
+      type: 'agent:idle',
+      workspaceId: 'workspace-1',
+      timestamp: new Date().toISOString(),
+      data: {
+        agentId: 'agent-self',
+        agentName: 'Self Agent',
+        isBackground: false,
+        ...overrides,
+      } as AgentIdleEvent['data'],
+    } as AgentIdleEvent;
+  }
+
+  function createMockWindow(id: number) {
+    return {
+      id,
+      webContents: { send: vi.fn(), isDestroyed: () => false },
+      focus: vi.fn(),
+      show: vi.fn(),
+      restore: vi.fn(),
+      isMinimized: () => false,
+      isFocused: () => false,
+      isDestroyed: () => false,
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetNotificationCacheForTesting();
+    mockNotificationIsSupported.value = true;
+    mockNotificationInstances.length = 0;
+    agentListResponse.agents = [];
+    for (const key of Object.keys(settingsValues)) delete settingsValues[key];
+    // App not frontmost — the OS-banner path runs and notification:show
+    // falls back to getAllWindows()[0].
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([]);
+    vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(undefined);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(null as never);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([] as never);
+  });
+
+  afterEach(() => {
+    mockNotificationIsSupported.value = false;
+    agentListResponse.agents = [];
+  });
+
+  function showPayload(window: ReturnType<typeof createMockWindow>) {
+    const calls = window.webContents.send.mock.calls.filter(
+      ([channel]) => channel === 'notification:show',
+    );
+    expect(calls).toHaveLength(1);
+    return calls[0][1] as Record<string, unknown>;
+  }
+
+  it('workspace notifications carry structured parts (untruncated) while title/body stay unchanged', async () => {
+    const onlyWindow = createMockWindow(51);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([onlyWindow] as never);
+    agentListResponse.agents = [
+      { id: 'agent-self', provider: 'claude-code', metadata: { specialist: 'spec-writer' } },
+    ];
+    const longTaskTitle = 't'.repeat(50);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent({ taskTitle: longTaskTitle }));
+
+    const payload = showPayload(onlyWindow);
+    // Existing concatenated (truncated) title/body are byte-identical.
+    expect(payload.title).toBe(`Test Workspace - Coordinator: ${'t'.repeat(37)}...`);
+    expect(payload.body).toBe('Task completed');
+    // Structured parts are untruncated — the renderer truncates via CSS.
+    expect(payload.structured).toEqual({
+      workspaceTitle: 'Test Workspace',
+      specialist: 'spec-writer',
+      specialistDisplayName: 'Coordinator',
+      taskTitle: longTaskTitle,
+      provider: 'claude-code',
+      // Seeds AuggieAvatar's deterministic gradient colors in the toast.
+      agentId: 'agent-self',
+    });
+  });
+
+  it('omits optional structured fields when unavailable (no task, unknown agent → no provider)', async () => {
+    const onlyWindow = createMockWindow(52);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([onlyWindow] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    const payload = showPayload(onlyWindow);
+    expect(payload.structured).toEqual({
+      workspaceTitle: 'Test Workspace',
+      specialistDisplayName: 'Agent',
+      agentId: 'agent-self',
+    });
+  });
+
+  it('chief notifications carry NO structured field', async () => {
+    const onlyWindow = createMockWindow(53);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([onlyWindow] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle({
+      type: 'agent:idle',
+      workspaceId: CHIEF_WORKSPACE_ID,
+      timestamp: new Date().toISOString(),
+      data: {
+        agentId: 'chief-agent-1',
+        agentName: 'Morning planning',
+        isBackground: false,
+      },
+    } as AgentIdleEvent);
+
+    const payload = showPayload(onlyWindow);
+    expect(payload).not.toHaveProperty('structured');
   });
 });
