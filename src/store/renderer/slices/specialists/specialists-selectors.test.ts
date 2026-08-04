@@ -38,7 +38,7 @@ import {
   selectSpecialistSourceLabel,
 } from "./specialists-selectors";
 import { createCollection } from "$lib/store-shim/utils/collections/collection-utils";
-import { initialState } from "./specialists-slice";
+import { initialState, type FileSpecialist } from "./specialists-slice";
 import type { StoreState } from "../../types";
 import { SPECIALISTS } from "$lib/constants/specialists";
 import { seedProviderCatalog } from "../../../../test/fixtures/provider-catalog.fixture";
@@ -345,6 +345,67 @@ describe("specialists selectors", () => {
       expect(ids[2]).toBe("verifier");
       // Custom at the very end (after all bundled/hardcoded)
       expect(ids[ids.length - 1]).toBe("my-custom");
+    });
+  });
+
+  describe("selectHasOverrides (diff-based Modified state, monorepo#1450)", () => {
+    const implementor = SPECIALISTS.find((s) => s.id === "implementor")!;
+
+    function overrideFile(overrides: Partial<FileSpecialist> = {}): FileSpecialist {
+      return {
+        id: "implementor",
+        name: implementor.name,
+        description: implementor.description,
+        model: "",
+        behaviorPrompt: implementor.defaultBehaviorPrompt,
+        roleReminder: implementor.roleReminder,
+        filePath: "/Users/test/.intent/specialists/implementor.md",
+        source: "user" as const,
+        ...overrides,
+      };
+    }
+
+    it("is false when the user override file is identical to the bundled defaults", () => {
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection("id", [overrideFile()]),
+      });
+      expect(selectHasOverrides.select(state, "implementor")).toBe(false);
+    });
+
+    it("is true when the override pins an explicit model", () => {
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection("id", [
+          overrideFile({ model: "claude-code:opus4.5" }),
+        ]),
+      });
+      expect(selectHasOverrides.select(state, "implementor")).toBe(true);
+    });
+
+    it("is true when the override customizes the prompt", () => {
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection("id", [
+          overrideFile({ behaviorPrompt: "Custom prompt." }),
+        ]),
+      });
+      expect(selectHasOverrides.select(state, "implementor")).toBe(true);
+    });
+
+    it("is false when no override file exists", () => {
+      const state = mockState({ bundledSpecialists: SPECIALISTS });
+      expect(selectHasOverrides.select(state, "implementor")).toBe(false);
+    });
+
+    it("is false for non-built-in specialists", () => {
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection("id", [
+          overrideFile({ id: "my-custom", model: "gpt-4" }),
+        ]),
+      });
+      expect(selectHasOverrides.select(state, "my-custom")).toBe(false);
     });
   });
 

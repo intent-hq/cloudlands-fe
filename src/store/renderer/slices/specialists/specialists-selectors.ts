@@ -12,6 +12,7 @@ import {
 import { selectActiveProviderId } from "../provider-settings/provider-settings-selectors";
 import type { FileSpecialist, SpecialistOverrides } from "./specialists-slice";
 import { selectGitHubAuthIsAuthenticated } from "../github-auth/github-auth-selectors";
+import { isRedundantBuiltInOverride } from "$lib/components/settings/utils/builtin-override-redundancy";
 // ============================================================================
 // Basic state selectors
 // ============================================================================
@@ -206,12 +207,18 @@ export const selectIsBuiltIn = store.createSelector((state, specialistId: string
 export const selectIsFileBased = store.createSelector((state, specialistId: string): boolean => {
     return !!getItem(state.specialists.fileSpecialists, specialistId);
 });
-/** Check if a built-in specialist has been overridden by a user file */
+/**
+ * Check if a built-in specialist has been overridden by a user file that
+ * actually differs from the bundled defaults. A lingering override file that
+ * is identical to the bundled definition (no model pin, all compared fields
+ * equal) never reads as "Modified" (monorepo#1450).
+ */
 export const selectHasOverrides = store.createSelector((state, specialistId: string): boolean => {
     const isBuiltIn = state.specialists.bundledSpecialists.some((s: Specialist) => s.id === specialistId);
     if (!isBuiltIn) return false;
     const file = getItem(state.specialists.fileSpecialists, specialistId);
-    return !!file && file.source === 'user';
+    if (!file || file.source !== 'user') return false;
+    return !isRedundantBuiltInOverride(file, state.specialists.bundledSpecialists);
 });
 /** Get a file specialist by ID */
 export const selectGetFileSpecialist = store.createSelector((state, specialistId: string): FileSpecialist | undefined => {
