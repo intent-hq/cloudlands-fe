@@ -57,7 +57,7 @@ export const VOICE_VOCABULARY_SETTING_PATH = "voice.vocabulary";
 export const VOICE_VOCABULARY_TERM_MAX_LENGTH = 50;
 
 export interface VoiceSettingsSnapshot {
-  /** Whether the connected daemon exposes the voice settings catalog (v4.1+). */
+  /** Whether the connected daemon exposes the voice settings catalog (v4.3+). */
   available: boolean;
   /** Selected provider; the daemon default (`elevenlabs`) when unset. */
   provider: VoiceProvider;
@@ -91,7 +91,7 @@ function parseVocabulary(value: unknown): string[] | null {
 
 /**
  * Read the current voice settings from the daemon. A `null` provider entry
- * means the daemon predates the voice catalog (pre-4.1) — surfaced as
+ * means the daemon predates the voice catalog (pre-4.3) — surfaced as
  * `available: false` so the panel can say so instead of failing writes.
  */
 export async function loadVoiceSettings(): Promise<VoiceSettingsSnapshot> {
