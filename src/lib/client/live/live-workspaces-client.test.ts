@@ -12,6 +12,7 @@ vi.mock("./backend-transport", () => ({
 }));
 
 import { backendRequest } from "./backend-transport";
+import { BackendError } from "./backend-transport-types";
 import { LiveWorkspacesClient } from "./live-workspaces-client";
 
 const mockedRequest = vi.mocked(backendRequest);
@@ -491,6 +492,66 @@ describe("LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)",
     const client = new LiveWorkspacesClient();
 
     expect(await client.getTokenUsage("ws-abc")).toBeNull();
+  });
+});
+
+describe("LiveWorkspacesClient.diskUsage (PROTOCOL §5.1, fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("sends workspace.diskUsage with the workspaceId and surfaces { diskUsage, refreshing }", async () => {
+    // PROTOCOL §5.1 response shape, verbatim (background refresh in flight).
+    const diskUsage = {
+      bytes: 2_330_000_000,
+      fileCount: 12345,
+      computedAt: "2026-08-01T12:00:00Z",
+      breakdown: [{ name: "repo", bytes: 2_000_000_000, fileCount: 12000 }],
+    };
+    mockedRequest.mockResolvedValueOnce({ diskUsage, refreshing: true });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.diskUsage("ws-abc")).toEqual({ diskUsage, refreshing: true });
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.diskUsage", {
+      workspaceId: "ws-abc",
+    });
+  });
+
+  it("omits diskUsage while the first walk runs (refreshing only)", async () => {
+    mockedRequest.mockResolvedValueOnce({ refreshing: true });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.diskUsage("ws-abc")).toEqual({ refreshing: true });
+  });
+
+  it("returns refreshing:false when the daemon settles with no usage", async () => {
+    mockedRequest.mockResolvedValueOnce({ refreshing: false });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.diskUsage("ws-abc")).toEqual({ refreshing: false });
+  });
+
+  it("returns null when the daemon predates the method (-32601 METHOD_NOT_FOUND)", async () => {
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({
+        code: "METHOD_NOT_FOUND",
+        message: "method not found",
+        rpcCode: -32601,
+      }),
+    );
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.diskUsage("ws-abc")).toBeNull();
+  });
+
+  it("propagates non-METHOD_NOT_FOUND errors", async () => {
+    const error = new BackendError({
+      code: "INVALID_PARAMS",
+      message: "bad params",
+      rpcCode: -32602,
+    });
+    mockedRequest.mockRejectedValueOnce(error);
+    const client = new LiveWorkspacesClient();
+
+    await expect(client.diskUsage("ws-abc")).rejects.toBe(error);
   });
 });
 
