@@ -134,14 +134,15 @@ function buildMiddleware(): StoreMiddleware[] {
   const hardwareConsoleMiddleware: StoreMiddleware[] = isHudWindowRenderer()
     ? []
     : [
-        // Start the shared hardware-console manager (WebHID; no-op where WebHID
-        // is unavailable) and surface connect/disconnect toasts with firmware,
-        // battery, transport, and Codex-mode readiness for supported devices.
+        // Surface connect/disconnect toasts with firmware, battery, transport,
+        // and Codex-mode readiness for supported devices.
         createHardwareConsoleConnectionToastMiddleware(),
         // Hydrate the hardware-console integration enable/disable flag from the
         // shared `hardwareConsole.state` daemon settings bag, persist toggle
         // changes (read-modify-write so sibling fields survive), and stop/start
-        // the shared manager to match the flag.
+        // the shared manager to match the flag. Sole owner of the boot-time
+        // manager start (WebHID; no-op where WebHID is unavailable): the manager
+        // starts only after hydration settles with the flag on.
         createHardwareConsoleIntegrationToggleMiddleware(),
         // Hydrate the hardware-console agent-key pins from the shared
         // `hardwareConsole.state` daemon settings bag and persist pin changes

@@ -238,16 +238,15 @@ let installed = false;
 
 /**
  * Lazily install on the first dispatched action (same pattern as the
- * connection-toast middleware): starts the shared manager — idempotent, a
- * no-op without WebHID — and wires agent-key switching.
+ * connection-toast middleware): wires agent-key switching to the shared
+ * manager. The manager itself is started by the integration-toggle
+ * middleware once the persisted enabled flag hydrates on.
  */
 export function createHardwareConsoleKeySwitchMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     if (!installed) {
       installed = true;
-      const manager = getHardwareConsoleManager();
-      installHardwareConsoleKeySwitching(manager);
-      void manager.start();
+      installHardwareConsoleKeySwitching(getHardwareConsoleManager());
     }
     return next(action);
   };

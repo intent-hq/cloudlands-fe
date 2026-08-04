@@ -264,6 +264,41 @@ describe('HardwareConsoleManager', () => {
     expect(manager.status).toBe('disconnected');
   });
 
+  it('stop during an in-flight open tears down the completed connection', async () => {
+    // Regression: stop() used to tear down immediately while openDevice()
+    // was still awaiting device.open(); the completing open then attached
+    // the transport/client and set status connected — a leaked live
+    // connection on a stopped manager.
+    const { hid, manager } = makeManager();
+    const device = new FakeHidDevice(CM2.vendorId, CM2.productId);
+    const resolvers: (() => void)[] = [];
+    device.open = () =>
+      new Promise((resolve) => {
+        resolvers.push(() => {
+          device.opened = true;
+          resolve();
+        });
+      });
+    hid.devices = [device];
+    const startPromise = manager.start();
+    await flushMicrotasks();
+    const stopPromise = manager.stop();
+    await flushMicrotasks();
+    for (const resolve of resolvers) resolve();
+    await startPromise;
+    await stopPromise;
+    await flushMicrotasks();
+    expect(manager.status).toBe('disconnected');
+    expect(device.opened).toBe(false);
+    expect(manager.client).toBeNull();
+    // No transport must remain attached: an inbound message on a leaked
+    // subscription would still reach raw listeners.
+    const raw: unknown[] = [];
+    manager.onRawMessage((m) => raw.push(m));
+    device.emitRpc({ a: 0.5, d: 0 });
+    expect(raw).toEqual([]);
+  });
+
   it('stop closes the device and unsubscribes from hotplug', async () => {
     const { hid, manager } = makeManager();
     const device = new FakeHidDevice(CM2.vendorId, CM2.productId);

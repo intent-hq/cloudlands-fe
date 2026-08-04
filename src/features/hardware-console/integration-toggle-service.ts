@@ -7,11 +7,14 @@
  * — sibling fields like `keyPins`, `promptUsage`, and `actionMapping`
  * survive), mirroring the key-pin persistence service.
  *
- * The toggle also drives the shared manager lifecycle: disabling stops it
- * (tears down the connection and hotplug listeners), enabling starts it
- * again. The per-feature `onStatusChange` subscriptions in the other
- * hardware-console services survive a stop/start cycle, so re-enabling
- * restores full functionality without reinstalling anything.
+ * The toggle owns the shared manager lifecycle, including the boot start:
+ * the manager starts only after hydration settles with the flag on (or
+ * hydration fails — the default is enabled), so a persisted OFF never opens
+ * the device. Disabling stops the manager (tears down the connection and
+ * hotplug listeners), enabling starts it again. The per-feature
+ * `onStatusChange` subscriptions in the other hardware-console services are
+ * installed eagerly and survive a stop/start cycle, so re-enabling restores
+ * full functionality without reinstalling anything.
  *
  * Dependency-light middleware module per src/store/renderer/AGENTS.md: no
  * selector imports — state is read directly off `appStore.state`.
@@ -81,10 +84,11 @@ function applyManagerLifecycle(enabled: boolean): void {
 
 /**
  * Lazily hydrates the enabled flag from the daemon bag on the first
- * dispatched action (key-pin persistence precedent), stopping the shared
- * manager when the persisted flag is off (the other hardware-console
- * middlewares start it eagerly). Toggle changes persist (deferred until
- * hydration settles) and start/stop the manager immediately.
+ * dispatched action (key-pin persistence precedent), then applies the
+ * manager lifecycle once hydration settles — the sole boot-time
+ * `manager.start()` call; the per-feature middlewares install their wiring
+ * eagerly but never start the manager. Toggle changes persist (deferred
+ * until hydration settles) and start/stop the manager immediately.
  */
 export function createHardwareConsoleIntegrationToggleMiddleware(): StoreMiddleware {
   let hydrationStarted = false;
@@ -115,7 +119,7 @@ export function createHardwareConsoleIntegrationToggleMiddleware(): StoreMiddlew
           const shouldFlush = persistQueued && hydrated;
           persistQueued = false;
           if (shouldFlush) persist();
-          if (!appStore.state.hardwareConsole.enabled) applyManagerLifecycle(false);
+          applyManagerLifecycle(appStore.state.hardwareConsole.enabled);
         });
     }
 
