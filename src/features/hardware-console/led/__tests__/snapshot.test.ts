@@ -312,7 +312,7 @@ describe('buildHardwareLedSnapshot', () => {
     expect(snapshot.ambient).toEqual({ kind: 'dark' });
   });
 
-  it('ambient attention comes from ANY assignable workspace, not just assigned keys', () => {
+  it('ambient blocked comes from a blocker in ANY assignable workspace, not just assigned keys', () => {
     const workspaces = Array.from({ length: 7 }, (_, index) => makeWorkspace(`ws-${index}`));
     const state = makeState({
       workspaces,
