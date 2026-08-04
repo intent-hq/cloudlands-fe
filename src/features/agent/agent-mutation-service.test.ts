@@ -555,6 +555,31 @@ describe("agentMutationService — deletion (soft-hide-then-commit)", () => {
     // best-effort lazily-imported affordance and is not asserted here.)
     expect(del).toHaveBeenCalledWith(AGENT, WS);
     expect(readSession(AGENT)?.name).toBe("Survivor");
+    // A failed delete emits no daemon event, so the restore itself must
+    // refetch the subscription entries the soft-hide optimistically pruned.
+    expect(refreshWorkspaceSubscriptionEntries).toHaveBeenCalledWith(WS);
+  });
+
+  it("deleteAgentSessionRequested (no-undo path) restores the session and refetches subscriptions when the delete fails", async () => {
+    const WS = "ws-del-now-fail";
+    const PARENT = "agent-del-now-fail-parent";
+    const AGENT = "agent-del-now-fail-child";
+    seedSession(makeSession(AGENT, WS, { name: "Survivor" }));
+    seedSubscriptionEntry(WS, PARENT, AGENT);
+    del.mockResolvedValueOnce({ success: false, error: "boom" });
+
+    const action = deleteAgentSessionRequested(WS, AGENT);
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("boom");
+    await flush();
+
+    // The soft-hide pruned the parent's watch on this agent...
+    expect(readSubscriptionEntry(WS, PARENT).subscriptions).toHaveLength(0);
+    // ...and the failed delete (no daemon event) restores the session and
+    // triggers the subscription refetch so the footer converges again.
+    expect(del).toHaveBeenCalledWith(AGENT, WS);
+    expect(readSession(AGENT)?.name).toBe("Survivor");
+    expect(refreshWorkspaceSubscriptionEntries).toHaveBeenCalledWith(WS);
   });
 
   it("deleteAgentSessionRequested soft-hides and commits the daemon delete immediately", async () => {

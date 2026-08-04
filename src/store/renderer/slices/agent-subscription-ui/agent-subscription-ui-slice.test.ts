@@ -218,6 +218,31 @@ describe('agentSubscriptionUIReducer', () => {
       expect(entry.waitingState).toBe('waiting');
     });
 
+    it('prunes the deleted agent from a multi-actor watch instead of dropping it', () => {
+      const multi: Subscription = {
+        ...watchOn('sub-multi', 'child-1'),
+        actorIds: ['child-1', 'child-2'],
+      };
+      let state = agentSubscriptionUIReducer(
+        initialState,
+        setSubscriptionSnapshot(WS, AGENT, {
+          subscriptions: [multi],
+          delegationGroups: [],
+          agentStatuses: { 'child-1': 'responding' },
+          waitingState: 'waiting',
+        }),
+      );
+      state = agentSubscriptionUIReducer(state, removeWatchedAgent(WS, 'child-1'));
+      const entry = state.entries[makeKey(WS, AGENT)];
+      // The watch survives with the deleted agent pruned from actorIds; it
+      // only drops once actorIds empties (see the single-actor tests).
+      expect(entry.subscriptions.map((s) => s.id)).toEqual(['sub-multi']);
+      expect(entry.subscriptions[0].actorIds).toEqual(['child-2']);
+      expect(entry.agentStatuses).toEqual({});
+      // A live subscription remains, so the entry keeps waiting.
+      expect(entry.waitingState).toBe('waiting');
+    });
+
     it('prunes delegation-group membership, drops emptied groups, leaves other workspaces untouched', () => {
       const soloGroup: DelegationGroupStatus = {
         groupId: 'g-solo',

@@ -406,9 +406,21 @@ function softHideSession(wsId: string, agentId: string): void {
   appStore.dispatch(removeWatchedAgent(wsId, agentId));
 }
 
-/** Re-add a soft-hidden session to both stores (mirror of softHideSession). */
-function restoreHiddenSession(session: AgentSession): void {
+/**
+ * True mirror of softHideSession: re-add the session to both stores AND
+ * refetch the workspace's subscription entries to repopulate what the
+ * soft-hide optimistically pruned. The refetch is essential on the
+ * failure-restore paths — a failed `agent.delete` emits no daemon event, so
+ * nothing else would bring the pruned rows back even though the daemon still
+ * holds the live watches. Lazily imported (like the toast lib) to keep this
+ * middleware-reachable module's static graph light.
+ */
+function restoreHiddenSession(wsId: string, session: AgentSession): void {
   persistSession(session);
+  void import('./agent-subscription-read-service').then(
+    ({ refreshWorkspaceSubscriptionEntries }) => refreshWorkspaceSubscriptionEntries(wsId),
+    (error) => logger.error('Failed to refresh subscriptions after restore', error),
+  );
 }
 
 /** Surface a deletion error to the user (best-effort; never throws). */
@@ -439,7 +451,7 @@ async function commitAgentDeletion(agentId: string): Promise<void> {
   try {
     const result = await appClient.agents.delete(pending.agentId, pending.wsId);
     if (!result.success) {
-      restoreHiddenSession(pending.snapshot);
+      restoreHiddenSession(pending.wsId, pending.snapshot);
       await showDeletionError(result.error || m.agent_mutation_deleteFailed_error());
       return;
     }
@@ -449,7 +461,7 @@ async function commitAgentDeletion(agentId: string): Promise<void> {
     appStore.dispatch(pruneRecentlyClosed(pending.wsId, { agentId: pending.agentId }));
   } catch (error) {
     logger.error('Failed to commit agent deletion', error);
-    restoreHiddenSession(pending.snapshot);
+    restoreHiddenSession(pending.wsId, pending.snapshot);
     await showDeletionError(errorMessage(error, m.agent_mutation_deleteFailed_error()));
   }
 }
@@ -516,7 +528,7 @@ async function handleDeleteSession(
     softHideSession(wsId, agentId);
     const result = await appClient.agents.delete(agentId, wsId);
     if (!result.success) {
-      if (snapshot) restoreHiddenSession(snapshot);
+      if (snapshot) restoreHiddenSession(wsId, snapshot);
       await showDeletionError(result.error || m.agent_mutation_deleteFailed_error());
       appStore.dispatch(
         action.failure(new Error(result.error || m.agent_mutation_deleteFailed_error())),
@@ -526,7 +538,7 @@ async function handleDeleteSession(
     appStore.dispatch(action.success(undefined as never));
   } catch (error) {
     logger.error('Failed to delete agent session', error);
-    if (snapshot) restoreHiddenSession(snapshot);
+    if (snapshot) restoreHiddenSession(wsId, snapshot);
     appStore.dispatch(action.failure(toError(error, m.agent_mutation_deleteSessionFailed_error())));
   }
 }
@@ -546,16 +558,10 @@ function handleUndoDeletion(action: ReturnType<typeof undoAgentDeletionRequested
     }
     if (pending.timer) clearTimeout(pending.timer);
     removePendingAgentDeletion(agentId);
-    restoreHiddenSession(pending.snapshot);
     // The delete never reached the daemon, so its watches are still live —
-    // refetch the workspace's subscription entries to repopulate what the
-    // soft-hide optimistically pruned. Lazily imported (like the toast lib)
-    // to keep this middleware-reachable module's static graph light.
-    void import('./agent-subscription-read-service').then(
-      ({ refreshWorkspaceSubscriptionEntries }) =>
-        refreshWorkspaceSubscriptionEntries(pending.wsId),
-      (error) => logger.error('Failed to refresh subscriptions after undo', error),
-    );
+    // restoreHiddenSession's subscription refetch repopulates what the
+    // soft-hide optimistically pruned.
+    restoreHiddenSession(pending.wsId, pending.snapshot);
     appStore.dispatch(action.success(true));
   } catch (error) {
     logger.error('Failed to undo agent deletion', error);

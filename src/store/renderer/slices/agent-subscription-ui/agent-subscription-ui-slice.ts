@@ -77,10 +77,11 @@ export const deleteSubscriptionUI = createAction<[workspaceId: string, agentId: 
 
 /**
  * Optimistically drop a (soft-)deleted agent from every subscription-UI entry
- * in the workspace: one-shot watches on it, its membership in delegation
- * groups (a group whose expectedAgentIds empties is dropped), and its status
- * rows. Dispatched by the agent-deletion soft-hide; on undo the daemon's
- * still-live watch repopulates via a workspace refetch.
+ * in the workspace: its membership in watches (a subscription whose actorIds
+ * empties is dropped, multi-actor watches survive pruned), its membership in
+ * delegation groups (a group whose expectedAgentIds empties is dropped), and
+ * its status rows. Dispatched by the agent-deletion soft-hide; on undo the
+ * daemon's still-live watch repopulates via a workspace refetch.
  */
 export const removeWatchedAgent = createAction<[workspaceId: string, watchedAgentId: string]>(
   'agentSubscriptionUI/removeWatchedAgent',
@@ -213,10 +214,21 @@ export const agentSubscriptionUIReducer = createReducer<AgentSubscriptionUIState
     for (const [key, entry] of Object.entries(state.entries)) {
       if (!key.startsWith(prefix)) continue;
 
-      const subscriptions = entry.subscriptions.filter(
-        (sub) => !sub.actorIds.includes(watchedAgentId),
-      );
-      const subsChanged = subscriptions.length !== entry.subscriptions.length;
+      let subsChanged = false;
+      const subscriptions: Subscription[] = [];
+      for (const sub of entry.subscriptions) {
+        if (!sub.actorIds.includes(watchedAgentId)) {
+          subscriptions.push(sub);
+          continue;
+        }
+        subsChanged = true;
+        const actorIds = sub.actorIds.filter((id) => id !== watchedAgentId);
+        // Drop a subscription whose actor list emptied out; a multi-actor
+        // watch survives with the deleted agent pruned (mirroring the
+        // delegation-group treatment below).
+        if (actorIds.length === 0) continue;
+        subscriptions.push({ ...sub, actorIds });
+      }
 
       let groupsChanged = false;
       const delegationGroups: DelegationGroupStatus[] = [];
