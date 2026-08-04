@@ -1947,6 +1947,7 @@
   "chat_modelChangeNotice_fallback_label": "Modelo cambiado",
   "chat_modelChangeNotice_switched_label": "Se cambió de {from} a {to}",
   "chat_modelChangeNotice_defaultModel_label": "Modelo predeterminado de {provider}",
+  "chat_questionsDismissedNotice_dismissed_label": "Preguntas descartadas",
   "chat_modelSwitchDialog_switchProvider_title": "¿Cambiar de proveedor a mitad de conversación?",
   "chat_modelSwitchDialog_switchModel_title": "¿Cambiar de modelo a mitad de conversación?",
   "chat_modelSwitchDialog_close_ariaLabel": "Cerrar",

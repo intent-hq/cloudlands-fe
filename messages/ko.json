@@ -1947,6 +1947,7 @@
   "chat_modelChangeNotice_fallback_label": "모델이 변경되었습니다",
   "chat_modelChangeNotice_switched_label": "{from}에서 {to}(으)로 전환됨",
   "chat_modelChangeNotice_defaultModel_label": "{provider} 기본 모델",
+  "chat_questionsDismissedNotice_dismissed_label": "질문이 무시되었습니다",
   "chat_modelSwitchDialog_switchProvider_title": "대화 도중에 공급자를 전환할까요?",
   "chat_modelSwitchDialog_switchModel_title": "대화 도중에 모델을 전환할까요?",
   "chat_modelSwitchDialog_close_ariaLabel": "닫기",

@@ -24,6 +24,11 @@ export function isUserQueuedMessage(message: QueuedMessage): boolean {
   const metadata = message.messageMetadata;
   if (!metadata || typeof metadata !== 'object') return true;
   const md = metadata as Record<string, unknown>;
+  // Explicit contract pin for dismissal notifications (`agent.dismissQuestions`,
+  // `{ type: 'questions_dismissed', source: 'system', dismissedQuestionsMessageId }`):
+  // the undelivered entry never renders in the queued-message list. Redundant
+  // with the generic string-`type` rule below, kept as belt-and-braces.
+  if (md.type === 'questions_dismissed') return false;
   if (typeof md.type === 'string') return false;
   if (typeof md.fromAgentId === 'string' && md.fromAgentId.trim() !== '') return false;
   if (md.source === 'system') return false;

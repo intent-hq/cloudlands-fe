@@ -1947,6 +1947,7 @@
   "chat_modelChangeNotice_fallback_label": "模型已更改",
   "chat_modelChangeNotice_switched_label": "已从 {from} 切换到 {to}",
   "chat_modelChangeNotice_defaultModel_label": "{provider} 默认模型",
+  "chat_questionsDismissedNotice_dismissed_label": "问题已被忽略",
   "chat_modelSwitchDialog_switchProvider_title": "在对话中途切换提供商？",
   "chat_modelSwitchDialog_switchModel_title": "在对话中途切换模型？",
   "chat_modelSwitchDialog_close_ariaLabel": "关闭",
