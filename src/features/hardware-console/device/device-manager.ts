@@ -46,6 +46,7 @@ export class HardwareConsoleManager {
   private readonly logListeners = new Set<(text: string) => void>();
   private started = false;
   private opening = false;
+  private openInFlight: Promise<void> | null = null;
 
   constructor(
     private readonly platform: HidPlatform | null = createWebHidPlatform(),
@@ -148,6 +149,10 @@ export class HardwareConsoleManager {
     for (const unsub of this.platformUnsubs) unsub();
     this.platformUnsubs = [];
     this.started = false;
+    // An in-flight openDevice() assigns the connection fields only after its
+    // awaits settle; tearing down before it completes would read null fields
+    // and leak the freshly opened connection. Wait for it to finish first.
+    if (this.openInFlight) await this.openInFlight.catch(() => undefined);
     await this.teardown('manager stopped');
   }
 
@@ -200,42 +205,51 @@ export class HardwareConsoleManager {
     // down (duplicate clients → "unknown or stale id" warnings).
     if (this.device || this.opening) return;
     this.opening = true;
+    // Also expose the in-flight open so stop() can await it before teardown
+    // (otherwise a stop() racing this open would leak the new connection).
+    const open = this.performOpen(device);
+    this.openInFlight = open;
     try {
-      this.setStatus('connecting');
-      try {
-        if (!device.opened) await device.open();
-      } catch (error) {
-        logger.warn('Failed to open device', { error: String(error) });
-        this.setStatus('disconnected');
-        return;
-      }
-      const transport = new VendorChannelTransport(device);
-      const client = new HardwareRpcClient(
-        { sendMessage: (message) => transport.sendRpcMessage(message) },
-        { requestTimeoutMs: this.options.requestTimeoutMs },
-      );
-      const focusedAppProvider = this.options.focusedAppProvider ?? (() => ({ name: 'Intent' }));
-      client.setRequestHandler('host.focused_app', () => focusedAppProvider());
-      this.connectionUnsubs = [
-        transport.onRpcMessage((message) => {
-          for (const listener of this.rawMessageListeners) listener(message);
-          client.handleMessage(message);
-        }),
-        client.onNotification((notification) => {
-          for (const listener of this.notificationListeners) listener(notification);
-        }),
-        transport.onLog((text) => {
-          for (const listener of this.logListeners) listener(text);
-        }),
-      ];
-      transport.attach();
-      this.device = device;
-      this.transport = transport;
-      this.rpcClient = client;
-      this.setStatus('connected');
+      await open;
     } finally {
       this.opening = false;
+      if (this.openInFlight === open) this.openInFlight = null;
     }
+  }
+
+  private async performOpen(device: HidDeviceLike): Promise<void> {
+    this.setStatus('connecting');
+    try {
+      if (!device.opened) await device.open();
+    } catch (error) {
+      logger.warn('Failed to open device', { error: String(error) });
+      this.setStatus('disconnected');
+      return;
+    }
+    const transport = new VendorChannelTransport(device);
+    const client = new HardwareRpcClient(
+      { sendMessage: (message) => transport.sendRpcMessage(message) },
+      { requestTimeoutMs: this.options.requestTimeoutMs },
+    );
+    const focusedAppProvider = this.options.focusedAppProvider ?? (() => ({ name: 'Intent' }));
+    client.setRequestHandler('host.focused_app', () => focusedAppProvider());
+    this.connectionUnsubs = [
+      transport.onRpcMessage((message) => {
+        for (const listener of this.rawMessageListeners) listener(message);
+        client.handleMessage(message);
+      }),
+      client.onNotification((notification) => {
+        for (const listener of this.notificationListeners) listener(notification);
+      }),
+      transport.onLog((text) => {
+        for (const listener of this.logListeners) listener(text);
+      }),
+    ];
+    transport.attach();
+    this.device = device;
+    this.transport = transport;
+    this.rpcClient = client;
+    this.setStatus('connected');
   }
 
   private async teardown(reason: string): Promise<void> {
