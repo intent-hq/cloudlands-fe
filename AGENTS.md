@@ -140,6 +140,27 @@ treat it as the single source of truth.
 - Caches in the renderer are read-through views of BE responses, invalidated by BE-driven
   events, never an alternative source of truth.
 
+### Event-driven refetches — single-flight and coalesced
+
+Daemon events arrive in bursts (agent lifecycle, file changes, task updates). Any handler
+that refetches state in response to daemon events **MUST** be single-flight with trailing
+coalesce:
+
+- **Single-flight**: all triggers share one in-flight promise — never start a second
+  concurrent refetch of the same data.
+- **Trailing coalesce**: events arriving while a refetch is in flight collapse into at
+  most **one** trailing refetch after the current one settles. The leading edge stays
+  immediate (the first event triggers a fetch right away) so freshness is not sacrificed.
+- N events during a fetch must produce at most 1 follow-up fetch, not N.
+
+Do **not** fan out per-workspace daemon RPC loops from an event handler — e.g.
+`workspace.list` followed by a per-workspace RPC for each result multiplies every event
+burst into `O(workspaces)` daemon calls (precedent:
+[intent-hq/monorepo#1395](https://github.com/intent-hq/monorepo/issues/1395), the
+active-streams fan-out). Prefer a targeted query for the affected workspace, or a
+daemon-side aggregate that returns everything in one RPC — if none exists, request one
+on the BE rather than looping on the client.
+
 ### Mutation middleware & soft-hide-then-commit
 
 Some async-action triggers (`*Requested` actions with a `.promise`) lost their handlers
