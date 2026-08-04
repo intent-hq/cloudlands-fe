@@ -35,6 +35,7 @@ import {
   hasExplicitModelPin,
   buildResetToInheritPayloads,
 } from "$lib/components/settings/utils/reset-specialists-to-inherit";
+import { isRedundantBuiltInOverride } from "$lib/components/settings/utils/builtin-override-redundancy";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -384,8 +385,13 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
       edit.mockResolvedValue({} as any);
       appStore.dispatch(setFileSpecialists([pinnedReviewer, inheriting]));
 
-      const payloads = buildResetToInheritPayloads([pinnedReviewer, inheriting], () => undefined);
-      for (const payload of payloads) {
+      const { saves, deletes } = buildResetToInheritPayloads(
+        [pinnedReviewer, inheriting],
+        SPECIALISTS,
+        () => undefined,
+      );
+      expect(deletes).toEqual([]);
+      for (const payload of saves) {
         appStore.dispatch(saveFileSpecialist(payload));
       }
       await flush();
@@ -417,8 +423,8 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
       edit.mockResolvedValue({} as any);
       appStore.dispatch(setFileSpecialists([projectPinned]));
 
-      const payloads = buildResetToInheritPayloads([projectPinned], () => "/ws/path");
-      for (const payload of payloads) {
+      const { saves } = buildResetToInheritPayloads([projectPinned], SPECIALISTS, () => "/ws/path");
+      for (const payload of saves) {
         appStore.dispatch(saveFileSpecialist(payload));
       }
       await flush();
@@ -439,11 +445,187 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
         filePath: "/ws/path/.intent/specialists/proj-spec.md",
       };
 
-      const payloads = buildResetToInheritPayloads([projectPinned, pinnedReviewer], () => undefined);
+      const { saves, deletes } = buildResetToInheritPayloads(
+        [projectPinned, pinnedReviewer],
+        SPECIALISTS,
+        () => undefined,
+      );
 
       // The project-scope specialist is skipped (writeSpecialistFile rejects
       // project writes without a workspacePath); the user-scope one remains.
-      expect(payloads.map((p) => p.id)).toEqual(["reviewer"]);
+      expect(saves.map((p) => p.id)).toEqual(["reviewer"]);
+      expect(deletes).toEqual([]);
+    });
+
+    it("classifies a pinned built-in override as a delete when clearing the pin leaves it redundant (monorepo#1450)", async () => {
+      const implementor = SPECIALISTS.find((s) => s.id === "implementor")!;
+      const redundantPinned: FileSpecialist = {
+        id: "implementor",
+        name: implementor.name,
+        description: implementor.description,
+        codingAgent: "claude-code",
+        model: "claude-code:opus4.5",
+        behaviorPrompt: implementor.defaultBehaviorPrompt,
+        roleReminder: implementor.roleReminder,
+        filePath: "/home/u/.intent/specialists/implementor.md",
+        source: "user",
+      };
+      deleteSpec.mockResolvedValue({ success: true });
+      appStore.dispatch(setFileSpecialists([redundantPinned]));
+
+      const { saves, deletes } = buildResetToInheritPayloads(
+        [redundantPinned, pinnedReviewer],
+        SPECIALISTS,
+        () => undefined,
+      );
+
+      // The redundant built-in override becomes a delete; the custom
+      // (non-built-in) pinned one keeps the clearing save.
+      expect(deletes).toEqual([{ id: "implementor", scope: "user" }]);
+      expect(saves.map((p) => p.id)).toEqual(["reviewer"]);
+
+      for (const ref of deletes) {
+        appStore.dispatch(deleteFileSpecialist(ref));
+      }
+      await flush();
+
+      // Wire-level: `specialist.delete` sent for the redundant override.
+      expect(deleteSpec).toHaveBeenCalledWith("implementor", "user", undefined);
+      expect(edit).not.toHaveBeenCalled();
+    });
+
+    it("keeps the clearing save for a pinned built-in override with a customized prompt", async () => {
+      const implementor = SPECIALISTS.find((s) => s.id === "implementor")!;
+      const customizedPinned: FileSpecialist = {
+        id: "implementor",
+        name: implementor.name,
+        description: implementor.description,
+        codingAgent: "claude-code",
+        model: "claude-code:opus4.5",
+        behaviorPrompt: "My custom implementor prompt.",
+        roleReminder: implementor.roleReminder,
+        filePath: "/home/u/.intent/specialists/implementor.md",
+        source: "user",
+      };
+      edit.mockResolvedValue({} as any);
+      appStore.dispatch(setFileSpecialists([customizedPinned]));
+
+      const { saves, deletes } = buildResetToInheritPayloads(
+        [customizedPinned],
+        SPECIALISTS,
+        () => undefined,
+      );
+
+      expect(deletes).toEqual([]);
+      expect(saves.map((p) => p.id)).toEqual(["implementor"]);
+
+      for (const payload of saves) {
+        appStore.dispatch(saveFileSpecialist(payload));
+      }
+      await flush();
+
+      // Wire-level: `specialist.edit` rewrites the file with the model
+      // omitted and the customized prompt preserved.
+      expect(deleteSpec).not.toHaveBeenCalled();
+      expect(edit).toHaveBeenCalledTimes(1);
+      const sentSpec = edit.mock.calls[0][1] as SpecialistDef;
+      expect(JSON.stringify(sentSpec)).not.toContain('"model"');
+      expect(sentSpec.behaviorPrompt).toBe("My custom implementor prompt.");
+    });
+  });
+
+  describe("isRedundantBuiltInOverride (redundancy helper)", () => {
+    const implementor = SPECIALISTS.find((s) => s.id === "implementor")!;
+    const identicalOverride: FileSpecialist = {
+      id: "implementor",
+      name: implementor.name,
+      description: implementor.description,
+      model: "",
+      behaviorPrompt: implementor.defaultBehaviorPrompt,
+      roleReminder: implementor.roleReminder,
+      filePath: "/home/u/.intent/specialists/implementor.md",
+      source: "user",
+    };
+
+    it("is true for a user override identical to the bundled defaults (no pin)", () => {
+      expect(isRedundantBuiltInOverride(identicalOverride, SPECIALISTS)).toBe(true);
+    });
+
+    it("is false when an explicit model pin remains", () => {
+      const pinned = { ...identicalOverride, model: "claude-code:opus4.5" };
+      expect(isRedundantBuiltInOverride(pinned, SPECIALISTS)).toBe(false);
+      // …unless the pin is about to be cleared.
+      expect(isRedundantBuiltInOverride(pinned, SPECIALISTS, { ignoreModelPin: true })).toBe(true);
+    });
+
+    it("is false when the prompt differs from the bundled default", () => {
+      const customized = { ...identicalOverride, behaviorPrompt: "Custom prompt." };
+      expect(isRedundantBuiltInOverride(customized, SPECIALISTS)).toBe(false);
+    });
+
+    it("is false when name, description, or roleReminder differ", () => {
+      expect(
+        isRedundantBuiltInOverride({ ...identicalOverride, name: "Renamed" }, SPECIALISTS),
+      ).toBe(false);
+      expect(
+        isRedundantBuiltInOverride(
+          { ...identicalOverride, description: "Changed" },
+          SPECIALISTS,
+        ),
+      ).toBe(false);
+      expect(
+        isRedundantBuiltInOverride(
+          { ...identicalOverride, roleReminder: "Changed reminder" },
+          SPECIALISTS,
+        ),
+      ).toBe(false);
+    });
+
+    it("treats undefined and empty string as equal", () => {
+      // '' on the file side must match undefined on the bundled side (and
+      // vice versa). All real bundled specialists define roleReminder, so
+      // build a fixture without one (spreading evaluates the i18n getters
+      // into plain values).
+      const bundledNoReminder = [{ ...implementor, roleReminder: undefined }];
+      expect(
+        isRedundantBuiltInOverride({ ...identicalOverride, roleReminder: "" }, bundledNoReminder),
+      ).toBe(true);
+      expect(
+        isRedundantBuiltInOverride(
+          { ...identicalOverride, roleReminder: undefined },
+          bundledNoReminder,
+        ),
+      ).toBe(true);
+      // undefined on the file side matches a defined-but-empty bundled value.
+      const bundledEmptyReminder = [{ ...implementor, roleReminder: "" }];
+      expect(
+        isRedundantBuiltInOverride(
+          { ...identicalOverride, roleReminder: undefined },
+          bundledEmptyReminder,
+        ),
+      ).toBe(true);
+    });
+
+    it("is false for project-scope files and non-built-in ids", () => {
+      expect(
+        isRedundantBuiltInOverride({ ...identicalOverride, source: "project" }, SPECIALISTS),
+      ).toBe(false);
+      expect(
+        isRedundantBuiltInOverride({ ...identicalOverride, id: "my-custom" }, SPECIALISTS),
+      ).toBe(false);
+    });
+
+    it("treats a baked codingAgent like a model pin on the badge path (legacy files)", () => {
+      // Legacy pre-fix "Reset all" rewrites cleared `model:` but preserved the
+      // baked codingAgent — such a file still pins the provider (PROTOCOL
+      // §5.11 inherit-on-omit) and must keep reading as Modified.
+      const legacyBaked = { ...identicalOverride, codingAgent: "claude-code" };
+      expect(isRedundantBuiltInOverride(legacyBaked, SPECIALISTS)).toBe(false);
+      // …but the reset/delete paths (ignoreModelPin) still classify it as
+      // redundant, since deleting the file removes the stale codingAgent too.
+      expect(
+        isRedundantBuiltInOverride(legacyBaked, SPECIALISTS, { ignoreModelPin: true }),
+      ).toBe(true);
     });
   });
 

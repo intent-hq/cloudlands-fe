@@ -17,11 +17,13 @@
   selectExplicitModel,
   selectEffectiveBehaviorPrompt,
   selectGetFileSpecialist,
+  selectHasOverrides,
   selectSpecialistFilePath,
   selectSpecialistSourceLabel,
   selectSpecialistsFolderPath,
   selectEffectiveCodingAgent,
   selectFileSpecialists,
+  selectBundledSpecialists,
 } from '$store/renderer/slices/specialists/specialists-selectors';
   import {
   deleteFileSpecialist as deleteFileSpecialistAction,
@@ -43,6 +45,7 @@
     hasExplicitModelPin,
     buildResetToInheritPayloads,
   } from './utils/reset-specialists-to-inherit';
+  import { isRedundantBuiltInOverride } from './utils/builtin-override-redundancy';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
@@ -131,12 +134,15 @@
       : false,
   );
 
-  /** A built-in specialist is "modified" if there's a user file that overrides it */
+  /**
+   * A built-in specialist is "modified" only when its user override file
+   * actually differs from the bundled defaults — a lingering identical file
+   * never shows "Modified" (diff-based, monorepo#1450).
+   */
   const hasOverrides = $derived.by(() => {
     void $fileSpecialists$; // track file specialist changes for reactivity
     if (!currentSpecialist) return false;
-    const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
-    return !!fileSpec && fileSpec.source === 'user' && isBuiltIn;
+    return selectHasOverrides.select(appStore.state, currentSpecialist.id);
   });
 
   const specialistFilePath = $derived(
@@ -193,6 +199,16 @@
         currentSpecialist.id,
       );
       if (!fileSpec || !fileSpec.model) return;
+      // If clearing the pin leaves the override identical to the bundled
+      // defaults, delete the file instead of rewriting it — a redundant file
+      // would keep the built-in reading as "Modified" (monorepo#1450).
+      const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
+      if (isRedundantBuiltInOverride(fileSpec, bundledSpecialists, { ignoreModelPin: true })) {
+        appStore.dispatch(
+          deleteFileSpecialistAction({ id: fileSpec.id, scope: fileSpec.source }),
+        );
+        return;
+      }
       const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
       appStore.dispatch(
         saveFileSpecialist({
@@ -428,20 +444,29 @@
   /**
    * Clear the explicit model pin from every file specialist that
    * has one so they all inherit the global default. Built-ins without an
-   * override file already inherit — no file is created for them.
+   * override file already inherit — no file is created for them. Built-in
+   * overrides that become identical to the bundled defaults once the pin
+   * is cleared are deleted instead of rewritten (monorepo#1450).
    */
   function resetAllSpecialistsToInherit() {
-    const payloads = buildResetToInheritPayloads($fileSpecialists$, getCurrentWorkspacePath);
-    for (const payload of payloads) {
+    const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
+    const { saves, deletes } = buildResetToInheritPayloads(
+      $fileSpecialists$,
+      bundledSpecialists,
+      getCurrentWorkspacePath,
+    );
+    for (const payload of saves) {
       appStore.dispatch(saveFileSpecialist(payload));
+    }
+    for (const ref of deletes) {
+      appStore.dispatch(deleteFileSpecialistAction(ref));
     }
   }
 
-  /** Check if a built-in specialist has been customized (has a user file override) */
+  /** Check if a built-in specialist has been customized (its user override differs from defaults) */
   function hasFileOverride(): boolean {
     if (!currentSpecialist) return false;
-    const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
-    return !!fileSpec && fileSpec.source === 'user';
+    return selectHasOverrides.select(appStore.state, currentSpecialist.id);
   }
 </script>
 
