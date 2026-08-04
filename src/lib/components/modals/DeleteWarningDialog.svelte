@@ -105,22 +105,20 @@
 
         <div id={dialogDescriptionId} class="space-y-4 px-6 py-5">
           <div class="rounded-xl border border-destructive-foreground/15 bg-destructive/45 p-4">
-            {#if agentNames.length > 0 || hookNames.length === 0}
+            {#if agentNames.length > 0}
               <p class="text-sm font-medium text-foreground">
                 {agentNames.length === 1
                   ? m.modals_deleteWarning_agentsStopped_one({ count: formatInteger(agentNames.length) })
                   : m.modals_deleteWarning_agentsStopped_many({ count: formatInteger(agentNames.length) })}
               </p>
-              {#if agentNames.length > 0}
-                <ul class="mt-3 max-h-32 space-y-2 overflow-auto pr-1">
-                  {#each agentNames as name}
-                    <li class="flex items-center gap-2 text-sm text-subtle">
-                      <span class="size-1.5 rounded-full bg-destructive-foreground"></span>
-                      <span class="truncate">{name}</span>
-                    </li>
-                  {/each}
-                </ul>
-              {/if}
+              <ul class="mt-3 max-h-32 space-y-2 overflow-auto pr-1">
+                {#each agentNames as name}
+                  <li class="flex items-center gap-2 text-sm text-subtle">
+                    <span class="size-1.5 rounded-full bg-destructive-foreground"></span>
+                    <span class="truncate">{name}</span>
+                  </li>
+                {/each}
+              </ul>
             {/if}
             {#if hookNames.length > 0}
               <p

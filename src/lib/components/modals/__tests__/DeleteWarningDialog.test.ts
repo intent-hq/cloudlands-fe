@@ -70,6 +70,21 @@ describe('DeleteWarningDialog', () => {
     expect(screen.queryByText(/active agent/)).toBeNull();
   });
 
+  it('never renders a "0 active agents" line when both lists are empty', async () => {
+    const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+    render(DeleteWarningDialog, {
+      props: {
+        open: true,
+        agentNames: [],
+        hookNames: [],
+      },
+    });
+
+    expect(screen.queryByText(/active agent/)).toBeNull();
+    expect(screen.queryByText(/background hook/)).toBeNull();
+  });
+
   it('renders archive copy and confirm label in archive mode', async () => {
     const onDeleteAnyway = vi.fn();
     const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
