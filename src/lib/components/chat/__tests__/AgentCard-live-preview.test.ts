@@ -330,18 +330,62 @@ describe('AgentCard this-turn live text vs previous-turn report (monorepo#1327)'
     expect(screen.queryByText('old completion report from turn one')).toBeNull();
   });
 
-  it('keeps the previous-turn report before any this-turn text streams (pre-first-token fallback)', async () => {
-    // The stale report remains the last-resort fallback while responding
-    // until fresher content exists (no receivedFirstChunk flip yet).
+  it('suppresses previous-turn summaries in the busy no-text window (falls to the tool preview)', async () => {
+    // Regression: child completed with reportToParent (completionReport in
+    // metadata + transcript digest), parent sent a follow-up, and the new
+    // turn does tool-only work — no text yet, so no receivedFirstChunk flip.
+    // While responding, the stale summaries must never be the preview; the
+    // chain falls through to the latest tool_use preview instead.
+    seedSession({
+      isStreaming: true,
+      messages: [
+        assistantMessage('wrapped up <agent_digest>old transcript digest</agent_digest>', {
+          contentBlocks: [
+            {
+              type: 'text',
+              text: 'wrapped up <agent_digest>old transcript digest</agent_digest>',
+            },
+            { type: 'tool_use', id: 'tool-1', name: 'view', input: { path: 'src/foo.ts' } },
+          ],
+        }),
+      ],
+      metadata: { completionReport: 'report from the last turn' } as AgentSession['metadata'],
+    });
+
+    render(AgentCard, {
+      props: { agentId, lastResponseSummary: 'summary from the last turn' },
+    });
+
+    // Pin the preview to the tool label (classifyTool subject for the seeded
+    // tool_use) so a regression to lastResponse/lastUserMsg cannot pass.
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toMatch(/foo\.ts/);
+    expect(screen.queryByText(/old transcript digest/)).toBeNull();
+    expect(screen.queryByText('report from the last turn')).toBeNull();
+    expect(screen.queryByText('summary from the last turn')).toBeNull();
+  });
+
+  it('shows no stale report while responding with no fresher content at all', async () => {
+    // Busy no-text window with nothing fresher to show: an empty preview
+    // beats resurrecting the previous turn's report/summary.
     seedSession({
       isStreaming: true,
       messages: [],
       metadata: { completionReport: 'report from the last turn' } as AgentSession['metadata'],
     });
 
-    render(AgentCard, { props: { agentId } });
+    render(AgentCard, {
+      props: {
+        agentId,
+        completionReport: 'prop completion report',
+        lastResponseSummary: 'prop summary',
+      },
+    });
 
-    expect(await screen.findByText('report from the last turn')).toBeTruthy();
+    await screen.findByText('Watched Agent');
+    expect(screen.queryByText('report from the last turn')).toBeNull();
+    expect(screen.queryByText('prop completion report')).toBeNull();
+    expect(screen.queryByText('prop summary')).toBeNull();
     expect(screen.queryByTestId('agent-card-preview')).toBeNull();
   });
 

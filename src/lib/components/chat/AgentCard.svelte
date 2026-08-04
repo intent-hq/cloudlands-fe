@@ -499,15 +499,16 @@
   // 2. Completion report from report_to_parent tool (prop from event data)
   // 3. Completion report from agent metadata
   // 4. lastResponseSummary (fallback from event data)
-  // While this turn has live text (liveResponseLine, gated on the per-turn
-  // `receivedFirstChunk` flag), sources 1-4 are previous-turn summaries and
-  // must not outrank it (monorepo#1327): the derivation yields undefined so
-  // the render chain falls through to the live text. They remain the
-  // fallback for idle agents between turns.
+  // Sources 1-4 are previous-turn summaries: while the agent is responding
+  // they must never be the preview (monorepo#1327) — including the tool-only
+  // no-text window where no `receivedFirstChunk` flip has happened yet — so
+  // the derivation yields undefined and the render chain falls through to
+  // live text / newest user message / tool preview. They remain the fallback
+  // for idle agents between turns.
   const effectiveCompletionReport = $derived.by(() => {
-    const liveDigest = $agentIsResponding$ ? $agent$?.digest : undefined;
-    if (liveDigest) return liveDigest;
-    if (liveResponseLine) return undefined;
+    if ($agentIsResponding$) {
+      return $agent$?.digest || undefined;
+    }
     return (
       agentData?.digest || completionReport || agentData?.completionReport || lastResponseSummary
     );
