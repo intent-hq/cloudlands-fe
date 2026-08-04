@@ -468,6 +468,66 @@ jobs:
           gh release edit stable --repo intent-hq/cloudlands-releases --notes-file "$RUNNER_TEMP/aggregated-notes.md"
           echo "✓ Stable release notes updated"
 
+      # Re-stamps published_at on the rolling stable release (GitHub renders
+      # its "released N ago" from that field, which otherwise sticks at first
+      # publication) by toggling draft on→off via the REST API. Reading state
+      # and entering draft are fail-soft — the refresh is cosmetic and must
+      # never block a promotion — but once the release is drafted its download
+      # URLs (auto-updater feeds) 404, so the un-draft retries with backoff
+      # and fails the job loudly if the release is left drafted.
+      - name: Refresh published date on rolling stable release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          REPO=intent-hq/cloudlands-releases
+          TAG=stable
+
+          # Read current state so the un-draft re-applies it (re-publishing
+          # defaults make_latest to true; the stable release must keep its
+          # current Latest badge behavior)
+          if ! STATE=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '[.id, .prerelease] | @tsv'); then
+            echo "::warning::Could not read rolling '${TAG}' release state; skipping published date refresh"
+            exit 0
+          fi
+          IFS=$'\t' read -r RELEASE_ID PRERELEASE <<< "$STATE"
+
+          MAKE_LATEST=false
+          if [ "$PRERELEASE" = "false" ]; then
+            LATEST_ID=$(gh api "repos/${REPO}/releases/latest" --jq '.id' 2>/dev/null || echo "")
+            if [ -z "$LATEST_ID" ]; then
+              echo "::warning::Could not determine the repo's latest release; skipping published date refresh"
+              exit 0
+            fi
+            if [ "$LATEST_ID" = "$RELEASE_ID" ]; then
+              MAKE_LATEST=true
+            fi
+          fi
+
+          # Enter draft (fail-soft: the release is still published if this fails)
+          if ! gh api -X PATCH "repos/${REPO}/releases/${RELEASE_ID}" -F draft=true >/dev/null; then
+            echo "::warning::Could not draft rolling '${TAG}' release; skipping published date refresh"
+            exit 0
+          fi
+
+          # Re-publish (mandatory from here: a drafted rolling release 404s
+          # the auto-updater feed URLs)
+          MAX_RETRIES=5
+          RETRY_DELAY=2
+          for i in $(seq 1 "$MAX_RETRIES"); do
+            if gh api -X PATCH "repos/${REPO}/releases/${RELEASE_ID}" \
+                -F draft=false -F prerelease="$PRERELEASE" -f make_latest="$MAKE_LATEST" >/dev/null; then
+              echo "✓ Rolling '${TAG}' release re-published (published_at refreshed; prerelease=${PRERELEASE}, make_latest=${MAKE_LATEST})"
+              exit 0
+            fi
+            echo "::warning::Attempt $i/$MAX_RETRIES: failed to re-publish rolling '${TAG}' release"
+            if [ "$i" -lt "$MAX_RETRIES" ]; then
+              sleep "$RETRY_DELAY"
+              RETRY_DELAY=$((RETRY_DELAY * 2))
+            fi
+          done
+          echo "::error::Rolling '${TAG}' release is stuck in draft after ${MAX_RETRIES} attempts - its download URLs 404 until re-published. Fix manually: gh api -X PATCH repos/${REPO}/releases/${RELEASE_ID} -F draft=false -F prerelease=${PRERELEASE} -f make_latest=${MAKE_LATEST}"
+          exit 1
+
       # Comments on the intent-hq/monorepo issues fixed in the promoted range
       # (previous stable, promoted tag]. Fail-soft: skips with a warning when
       # MONOREPO_ISSUES_TOKEN is absent, on a first promotion (no previous
