@@ -152,8 +152,8 @@ importers:
         specifier: ^4.4.0
         version: 4.4.0
       diff:
-        specifier: ^8.0.2
-        version: 8.0.4
+        specifier: ^9.0.0
+        version: 9.0.0
       dompurify:
         specifier: ^3.4.12
         version: 3.4.12
@@ -2916,10 +2916,6 @@ packages:
   devtools-protocol@0.0.1173815:
     resolution: {integrity: sha512-CmsjkudmgCMeae8FSJB4GV8COZwOk6dJKyE9HS2F/ih/sA8uTdbPKHg5F7DsrOYLEET/QKK00LJCU4YoyG+uHg==}
 
-  diff@8.0.4:
-    resolution: {integrity: sha512-DPi0FmjiSU5EvQV0++GFDOJ9ASQUVFh5kD+OzOnYdi7n3Wpm9hWWGfB/O2blfHcMVTL5WkQXSnRiK9makhrcnw==}
-    engines: {node: '>=0.3.1'}
-
   diff@9.0.0:
     resolution: {integrity: sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw==}
     engines: {node: '>=0.3.1'}
@@ -5250,6 +5246,18 @@ packages:
 
   ws@8.21.1:
     resolution: {integrity: sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
+  ws@8.21.2:
+    resolution: {integrity: sha512-54dMVAo4WIe6SKy3vBgN+9bJZqqQ8IMRevAkOLQALhi49qkkQDQfWdAZ8KQlXiEabw88ARXXdUrlvtbKQX+aKw==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -7806,8 +7814,6 @@ snapshots:
 
   devtools-protocol@0.0.1173815: {}
 
-  diff@8.0.4: {}
-
   diff@9.0.0: {}
 
   dijkstrajs@1.0.3: {}
@@ -8491,7 +8497,7 @@ snapshots:
       '@types/ws': 8.18.1
       entities: 7.0.0
       whatwg-mimetype: 3.0.0
-      ws: 8.21.1
+      ws: 8.21.2
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -10334,6 +10340,9 @@ snapshots:
   ws@7.5.13: {}
 
   ws@8.21.1: {}
+
+  ws@8.21.2:
+    optional: true
 
   xml-name-validator@5.0.0: {}
 

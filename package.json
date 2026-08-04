@@ -274,7 +274,7 @@
     "chrome-remote-interface": "^0.34.0",
     "d3": "^7.9.0",
     "date-fns": "^4.4.0",
-    "diff": "^8.0.2",
+    "diff": "^9.0.0",
     "dompurify": "^3.4.12",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.9",
