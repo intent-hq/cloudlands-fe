@@ -76,9 +76,7 @@ describe('HardwareConsoleDeviceSvg', () => {
     const dialog = result.getByRole('dialog', {
       name: m.settings_hardware_joystickExplainer_label(),
     });
-    expect(dialog.textContent).toContain(
-      m.settings_hardware_joystickExplainer_hold_description(),
-    );
+    expect(dialog.textContent).toContain(m.settings_hardware_joystickExplainer_hold_description());
     expect(dialog.textContent).toContain(
       m.settings_hardware_joystickExplainer_cancel_description(),
     );
@@ -105,16 +103,16 @@ describe('HardwareConsoleDeviceSvg', () => {
     ]) {
       expect(rowOf(m.settings_hardware_agentKey_ariaLabel({ number, name }))).toBe(SECOND_ROW_Y);
     }
-    expect(
-      rowOf(m.settings_hardware_agentKey_ariaLabel({ number: '5', name: 'Epsilon' })),
-    ).toBe(TOP_ROW_Y);
-    expect(
-      rowOf(m.settings_hardware_agentKeyUnassigned_ariaLabel({ number: '6' })),
-    ).toBe(TOP_ROW_Y);
+    expect(rowOf(m.settings_hardware_agentKey_ariaLabel({ number: '5', name: 'Epsilon' }))).toBe(
+      TOP_ROW_Y,
+    );
+    expect(rowOf(m.settings_hardware_agentKeyUnassigned_ariaLabel({ number: '6' }))).toBe(
+      TOP_ROW_Y,
+    );
 
-    const badgeNumbers = Array.from(
-      result.container.querySelectorAll('foreignObject'),
-    ).map((node) => node.textContent?.trim());
+    const badgeNumbers = Array.from(result.container.querySelectorAll('foreignObject')).map(
+      (node) => node.textContent?.trim(),
+    );
     expect(badgeNumbers).toEqual(['1', '2', '3', '4', '5', '6']);
   });
 
@@ -257,20 +255,73 @@ describe('HardwareConsoleDeviceSvg', () => {
     expect(result.container.querySelectorAll('foreignObject')).toHaveLength(0);
   });
 
-  it('renders numeric key labels 1-7 on the CM2 (no printed caps)', async () => {
+  it('renders assigned-action icons on the CM2 key faces, keeping "Key N" in aria-labels only', async () => {
     const { HardwareConsoleDeviceSvg, m } = await loadComponent();
-    const result = render(HardwareConsoleDeviceSvg);
+    const { faFolderPlus, faRobot } = await import('@fortawesome/free-solid-svg-icons');
+    const iconD = (icon: typeof faRobot) =>
+      Array.isArray(icon.icon[4]) ? icon.icon[4].join(' ') : icon.icon[4];
+    const result = render(HardwareConsoleDeviceSvg, {
+      props: {
+        selectedSlot: 0,
+        actionSlots: [
+          { icon: faFolderPlus, label: 'New workspace' },
+          { icon: faRobot, label: 'New agent' },
+          { icon: null, label: null },
+        ],
+      },
+    });
 
     expect(
       result.getByRole('group', { name: m.settings_hardware_deviceGraphic_ariaLabel() }),
     ).toBeTruthy();
-    for (let n = 1; n <= 7; n += 1) {
-      expect(
-        result.getByRole('button', {
-          name: m.settings_hardware_actionKey_ariaLabel({ number: String(n) }),
-        }),
-      ).toBeTruthy();
-    }
+    const keyButton = (n: number) =>
+      result.getByRole('button', {
+        name: m.settings_hardware_actionKey_ariaLabel({ number: String(n) }),
+      });
+    for (let n = 1; n <= 7; n += 1) expect(keyButton(n)).toBeTruthy();
+
+    // No numbers on the key faces.
+    expect(result.container.querySelectorAll('text')).toHaveLength(0);
+
+    // Assigned slots show their action's icon; the selected key keeps the
+    // primary highlight, unselected keys the muted fill.
+    expect(keyButton(1).querySelector('path')?.getAttribute('d')).toBe(iconD(faFolderPlus));
+    expect(keyButton(1).querySelector('path')?.getAttribute('class')).toContain('fill-primary');
+    expect(keyButton(2).querySelector('path')?.getAttribute('d')).toBe(iconD(faRobot));
+    expect(keyButton(2).querySelector('path')?.getAttribute('class')).toContain(
+      'fill-foreground/70',
+    );
+
+    // A none/unassigned slot and slots past the provided list render blank.
+    expect(keyButton(3).querySelector('path')).toBeNull();
+    expect(keyButton(7).querySelector('path')).toBeNull();
+
+    // Assigned slots show the action label as a hover tooltip; none/absent
+    // slots have no tooltip.
+    expect(keyButton(1).querySelector('title')?.textContent).toBe('New workspace');
+    expect(keyButton(2).querySelector('title')?.textContent).toBe('New agent');
+    expect(keyButton(3).querySelector('title')).toBeNull();
+    expect(keyButton(7).querySelector('title')).toBeNull();
+  });
+
+  it('updates action-key tooltips when the assignment changes', async () => {
+    const { HardwareConsoleDeviceSvg, m } = await loadComponent();
+    const { faRobot, faFolderPlus } = await import('@fortawesome/free-solid-svg-icons');
+    const result = render(HardwareConsoleDeviceSvg, {
+      props: { actionSlots: [{ icon: faRobot, label: 'New agent' }] },
+    });
+
+    const keyButton = () =>
+      result.getByRole('button', {
+        name: m.settings_hardware_actionKey_ariaLabel({ number: '1' }),
+      });
+    expect(keyButton().querySelector('title')?.textContent).toBe('New agent');
+
+    await result.rerender({ actionSlots: [{ icon: faFolderPlus, label: 'New workspace' }] });
+    expect(keyButton().querySelector('title')?.textContent).toBe('New workspace');
+
+    await result.rerender({ actionSlots: [{ icon: null, label: null }] });
+    expect(keyButton().querySelector('title')).toBeNull();
   });
 
   it('renders printed-cap action keys on the Codex Micro, mic pair as two keys under a linked outline', async () => {
@@ -278,7 +329,14 @@ describe('HardwareConsoleDeviceSvg', () => {
     const { codexCapLabel } = await import('./HardwareConsoleDeviceSvg.svelte');
     const onSelectKey = vi.fn();
     const result = render(HardwareConsoleDeviceSvg, {
-      props: { model: 'codex-micro', onSelectKey },
+      props: {
+        model: 'codex-micro',
+        onSelectKey,
+        actionSlots: [
+          { icon: null, label: 'Stop agent' },
+          { icon: null, label: null },
+        ],
+      },
     });
 
     expect(
@@ -293,6 +351,11 @@ describe('HardwareConsoleDeviceSvg', () => {
         }),
       });
     for (let slot = 0; slot < 7; slot += 1) expect(capButton(slot)).toBeTruthy();
+
+    // Assigned-action tooltips apply on the Codex too (printed caps don't
+    // convey the current assignment).
+    expect(capButton(0).querySelector('title')?.textContent).toBe('Stop agent');
+    expect(capButton(1).querySelector('title')).toBeNull();
 
     // The linked Mic pair stays two individually selectable keys.
     await fireEvent.click(capButton(4));

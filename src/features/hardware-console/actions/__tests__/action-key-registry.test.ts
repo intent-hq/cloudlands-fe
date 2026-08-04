@@ -5,17 +5,14 @@ import type { Workspace } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import {
   ACTION_KEY_REGISTRY,
+  actionSlotIcons,
   getActionKeyDefinition,
   resetActionKeyCycleCursors,
   type ActionKeyContext,
   type ActionKeyState,
 } from '../action-key-registry';
-import { ACTION_KEY_ACTION_IDS } from '../action-mapping';
-import {
-  DEFAULT_CYCLE_SCOPES,
-  type CycleScope,
-  type CycleScopeFamilyId,
-} from '../cycle-scope';
+import { ACTION_KEY_ACTION_IDS, DEFAULT_ACTION_MAPPINGS } from '../action-mapping';
+import { DEFAULT_CYCLE_SCOPES, type CycleScope, type CycleScopeFamilyId } from '../cycle-scope';
 
 function makeWorkspace(id: string, attention?: 'unread'): Workspace {
   return { id, attention } as unknown as Workspace;
@@ -212,9 +209,7 @@ describe('availability', () => {
 
 describe('unavailable hints', () => {
   it('cycle-in-progress-agents hints that no agents are in progress when all are idle', () => {
-    const { context } = makeContext(
-      makeState({ agentsByWorkspace: { 'ws-1': { ids: ['a-1'] } } }),
-    );
+    const { context } = makeContext(makeState({ agentsByWorkspace: { 'ws-1': { ids: ['a-1'] } } }));
     expect(getActionKeyDefinition('cycle-in-progress-agents').getUnavailableHint?.(context)).toBe(
       m.hardwareConsole_actionKey_noInProgressAgents_message(),
     );
@@ -250,7 +245,10 @@ describe('global cycle family', () => {
     definition.execute(context);
     expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspaceAgents/setActiveAgentId', payload: ['ws-2', 'a-2'] }),
+      expect.objectContaining({
+        type: 'workspaceAgents/setActiveAgentId',
+        payload: ['ws-2', 'a-2'],
+      }),
     );
   });
 
@@ -264,7 +262,10 @@ describe('global cycle family', () => {
     expect(definition.isAvailable(context)).toBe(true);
     definition.execute(context);
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspaceAgents/setActiveAgentId', payload: ['ws-1', 'a-2'] }),
+      expect.objectContaining({
+        type: 'workspaceAgents/setActiveAgentId',
+        payload: ['ws-1', 'a-2'],
+      }),
     );
   });
 
@@ -283,7 +284,10 @@ describe('global cycle family', () => {
     definition.execute(context);
     expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspaceAgents/setActiveAgentId', payload: ['ws-2', 'a-2'] }),
+      expect.objectContaining({
+        type: 'workspaceAgents/setActiveAgentId',
+        payload: ['ws-2', 'a-2'],
+      }),
     );
   });
 
@@ -297,7 +301,10 @@ describe('global cycle family', () => {
     expect(definition.isAvailable(context)).toBe(true);
     definition.execute(context);
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspaceAgents/setActiveAgentId', payload: ['ws-1', 'a-2'] }),
+      expect.objectContaining({
+        type: 'workspaceAgents/setActiveAgentId',
+        payload: ['ws-1', 'a-2'],
+      }),
     );
   });
 
@@ -314,7 +321,10 @@ describe('global cycle family', () => {
     getActionKeyDefinition('cycle-in-progress-agents').execute(context);
     // a-2 idled more recently → it is first in the cycle.
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspaceAgents/setActiveAgentId', payload: ['ws-1', 'a-2'] }),
+      expect.objectContaining({
+        type: 'workspaceAgents/setActiveAgentId',
+        payload: ['ws-1', 'a-2'],
+      }),
     );
   });
 
@@ -726,7 +736,10 @@ describe('execute dispatch', () => {
     );
     getActionKeyDefinition('cycle-workspace-agents').execute(context);
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspaceAgents/setActiveAgentId', payload: ['ws-1', 'a-2'] }),
+      expect.objectContaining({
+        type: 'workspaceAgents/setActiveAgentId',
+        payload: ['ws-1', 'a-2'],
+      }),
     );
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -750,7 +763,10 @@ describe('execute dispatch', () => {
     getActionKeyDefinition('cycle-in-progress-agents').execute(context);
     expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspaceAgents/setActiveAgentId', payload: ['ws-2', 'a-2'] }),
+      expect.objectContaining({
+        type: 'workspaceAgents/setActiveAgentId',
+        payload: ['ws-2', 'a-2'],
+      }),
     );
   });
 
@@ -780,9 +796,7 @@ describe('execute dispatch', () => {
   });
 
   it('toggle-sidebar-tabs cycles to the next single-selected tab', () => {
-    const { context, dispatch } = makeContext(
-      makeState({ selectedTabs: { 'ws-1': ['agents'] } }),
-    );
+    const { context, dispatch } = makeContext(makeState({ selectedTabs: { 'ws-1': ['agents'] } }));
     getActionKeyDefinition('toggle-sidebar-tabs').execute(context);
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -827,5 +841,43 @@ describe('execute dispatch', () => {
     getActionKeyDefinition('none').execute(context);
     expect(dispatch).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('actionSlotIcons', () => {
+  it('resolves each assigned action to its registry icon and label, in slot order', () => {
+    const mapping = DEFAULT_ACTION_MAPPINGS['creator-micro-2'];
+    expect(actionSlotIcons(mapping)).toEqual(
+      mapping.map((actionId) => ({
+        icon: getActionKeyDefinition(actionId).icon,
+        label: getActionKeyDefinition(actionId).label,
+      })),
+    );
+  });
+
+  it('maps none to a null icon and label (blank key face, no tooltip)', () => {
+    expect(actionSlotIcons(['none', 'new-agent', 'none'])).toEqual([
+      { icon: null, label: null },
+      {
+        icon: getActionKeyDefinition('new-agent').icon,
+        label: getActionKeyDefinition('new-agent').label,
+      },
+      { icon: null, label: null },
+    ]);
+  });
+
+  it('exposes label as a getter delegating to the registry so it re-evaluates on locale change', () => {
+    const [slot] = actionSlotIcons(['new-agent']);
+    const descriptor = Object.getOwnPropertyDescriptor(slot, 'label');
+    expect(descriptor?.get).toBeTypeOf('function');
+
+    const definition = getActionKeyDefinition('new-agent');
+    const spy = vi.spyOn(definition, 'label', 'get').mockReturnValue('Nouvel agent');
+    try {
+      expect(slot.label).toBe('Nouvel agent');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(slot.label).toBe(definition.label);
   });
 });
