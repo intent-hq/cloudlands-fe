@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import { Select } from '$lib/components/ui/select';
   import {
     findAppSettingDefinition,
     formatSettingValue,
@@ -143,13 +144,17 @@
     return value === null || value === undefined ? '' : String(value);
   }
 
-  function handleEnumEdit(row: DisplayRow, event: Event) {
+  function handleEnumEdit(row: DisplayRow, value: string) {
     const definition = getRowDefinition(row);
-    const value = (event.currentTarget as HTMLSelectElement).value;
     editedFields = {
       ...editedFields,
       [row.key]: definition?.nullable === true && value === '' ? null : value,
     };
+  }
+
+  function enumValueLabel(definition: AppSettingDefinition, value: string): string {
+    if (value === '') return definition.nullLabel ?? m.chat_shared_valueNone_label();
+    return definition.enumLabels?.[value] ?? value;
   }
 
   function formatTimeAgo(deltaMs: number): string {
@@ -235,19 +240,30 @@
             {@const definition = getRowDefinition(row)}
             {#if definition}
               <label class="sr-only" for={`settings-change-${row.key}`}>{row.label}</label>
-              <select
-                id={`settings-change-${row.key}`}
-                class="mt-2 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
-                value={selectedEnumValue(row)}
-                onchange={(event) => handleEnumEdit(row, event)}
-              >
-                {#if definition.nullable}
-                  <option value="">{definition.nullLabel ?? m.chat_shared_valueNone_label()}</option>
-                {/if}
-                {#each definition.enumValues ?? [] as option}
-                  <option value={option}>{definition.enumLabels?.[option] ?? option}</option>
-                {/each}
-              </select>
+              <div class="mt-2">
+                <Select.Root
+                  value={selectedEnumValue(row)}
+                  onchange={(value) => handleEnumEdit(row, value)}
+                >
+                  <Select.Trigger id={`settings-change-${row.key}`} class="py-1.5">
+                    <span class="truncate">{enumValueLabel(definition, selectedEnumValue(row))}</span>
+                  </Select.Trigger>
+                  <Select.Content portal class="max-h-[300px]">
+                    {#if definition.nullable}
+                      <Select.Item value="">
+                        <span class="truncate"
+                          >{definition.nullLabel ?? m.chat_shared_valueNone_label()}</span
+                        >
+                      </Select.Item>
+                    {/if}
+                    {#each definition.enumValues ?? [] as option (option)}
+                      <Select.Item value={option}>
+                        <span class="truncate">{definition.enumLabels?.[option] ?? option}</span>
+                      </Select.Item>
+                    {/each}
+                  </Select.Content>
+                </Select.Root>
+              </div>
             {/if}
           {/if}
         </div>
