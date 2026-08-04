@@ -1434,7 +1434,6 @@ export const SpecialistWriteSchema = z
     description: z.string().min(1, 'Description is required'),
     codingAgent: z.string().optional(),
     model: z.string().optional(),
-    modelTier: z.enum(['fast', 'balanced', 'smart']).optional(),
     roleReminder: z.string().optional(),
     hidden: z.boolean().optional(),
     behaviorPrompt: z.string().min(1, 'Behavior prompt is required'),

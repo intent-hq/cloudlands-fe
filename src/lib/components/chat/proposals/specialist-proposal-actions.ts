@@ -89,7 +89,6 @@ function buildCurrentSpecialistPayload(
     // Explicit frontmatter model only — the daemon's resolvedModel preview
     // must never be baked into the file (it would pin a floating default).
     model: fileSpec?.model || current.defaultModel,
-    modelTier: fileSpec?.modelTier ?? current.defaultModelTier,
     roleReminder: fileSpec?.roleReminder ?? current.roleReminder,
     behaviorPrompt: fileSpec?.behaviorPrompt ?? selectEffectiveBehaviorPrompt.select(state, id),
     scope,
@@ -180,8 +179,6 @@ export async function applySpecialistProposalWork(
     'prompt',
     current ? selectEffectiveBehaviorPrompt.select(state, current.id) : '',
   );
-  const modelChanged = !!current && model !== fallbackModel;
-
   appStore.dispatch(
     saveFileSpecialist({
       id,
@@ -191,7 +188,6 @@ export async function applySpecialistProposalWork(
         payload.codingAgent ??
         (current ? selectEffectiveCodingAgent.select(state, current.id) : providerId),
       model,
-      modelTier: modelChanged ? undefined : current?.defaultModelTier,
       roleReminder: payload.roleReminder ?? current?.roleReminder,
       behaviorPrompt: prompt,
       scope,

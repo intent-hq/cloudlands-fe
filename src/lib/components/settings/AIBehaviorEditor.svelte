@@ -14,7 +14,7 @@
   selectSpecialists,
   selectIsBuiltIn,
   selectIsFileBased,
-  selectEffectiveModel,
+  selectExplicitModel,
   selectEffectiveBehaviorPrompt,
   selectGetFileSpecialist,
   selectSpecialistFilePath,
@@ -39,6 +39,10 @@
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
+  import {
+    hasExplicitModelPin,
+    buildResetToInheritPayloads,
+  } from './utils/reset-specialists-to-inherit';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
@@ -69,33 +73,21 @@
     return parseCompoundModelIdWithDefault(compoundModelId, $defaultProviderId$);
   }
 
-  // Check if all specialists already use the currently selected default model
-  const allSpecialistsUseSelectedModel = $derived.by(() => {
-    void $fileSpecialists$; // track file specialist changes for reactivity
-    const specs = $specialists;
-    return (
-      specs.length > 0 &&
-      specs.every(
-        (s) => selectEffectiveModel.select(appStore.state, s.id) === $selectedModel,
-      )
-    );
-  });
-
-  // Get the default model for new specialists - use the user's current selection
-  function getDefaultModel(): string {
-    return $selectedModel;
-  }
+  // Show the reset-all button when any specialist pins an explicit
+  // frontmatter model instead of inheriting.
+  const anySpecialistHasExplicitModel = $derived(hasExplicitModelPin($fileSpecialists$));
 
   function getCurrentWorkspacePath(): string | undefined {
     const workspace = selectActiveWorkspace.select(appStore.state);
     return workspace?.path ?? workspace?.worktreePath ?? workspace?.repositoryPath;
   }
 
-  // New specialist form state
+  // New specialist form state. Model defaults to inherit (undefined) — a
+  // created specialist file has no `model:` key unless the user picks one.
   let newName = $state('');
   let newDescription = $state('');
-  let newCodingAgent = $state($activeProviderId$);
-  let newModel = $state(getDefaultModel());
+  let newCodingAgent = $state<string | undefined>(undefined);
+  let newModel = $state<string | undefined>(undefined);
   let newPrompt = $state(m.settings_aiBehavior_newPromptTemplate());
 
   // Character limits
@@ -116,8 +108,8 @@
     if (activeView.type === 'create-specialist') {
       newName = '';
       newDescription = '';
-      newCodingAgent = $activeProviderId$;
-      newModel = getDefaultModel();
+      newCodingAgent = undefined;
+      newModel = undefined;
       newPrompt = m.settings_aiBehavior_newPromptTemplate();
     }
   });
@@ -163,17 +155,17 @@
 
   // Local state for specialist model/coding agent selection
   let _specialistCodingAgentValue = $state('');
-  let specialistModelValue = $state('');
+  let specialistModelValue = $state<string | undefined>(undefined);
 
-  // Sync specialist model value when specialist changes or file specialists change
+  // Sync specialist model value when specialist changes or file specialists
+  // change. The picker's selected value is the EXPLICIT frontmatter model
+  // only — undefined when inheriting (the daemon resolvedModel preview is
+  // shown via the picker's default-option plumbing instead).
   $effect(() => {
     if (currentSpecialist) {
       void $fileSpecialists$; // track file specialist changes
       _specialistCodingAgentValue = selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id);
-      specialistModelValue = selectEffectiveModel.select(
-        appStore.state,
-        currentSpecialist.id,
-      );
+      specialistModelValue = selectExplicitModel.select(appStore.state, currentSpecialist.id);
     }
   });
 
@@ -187,7 +179,36 @@
   }
 
   function handleSpecialistModelChange(compoundModelId: string) {
-    if (!currentSpecialist || !compoundModelId) return;
+    if (!currentSpecialist) return;
+
+    // Empty string = the inherit ("use global default") option was picked:
+    // clear the explicit pin so the saved file has no `model:` key. On a
+    // built-in with no override file this is a no-op (nothing to clear —
+    // creating a file would only pin other fields).
+    if (!compoundModelId) {
+      specialistModelValue = undefined;
+      if (!isFileBased) return;
+      const fileSpec = selectGetFileSpecialist.select(
+        appStore.state,
+        currentSpecialist.id,
+      );
+      if (!fileSpec || !fileSpec.model) return;
+      const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: fileSpec.id,
+          name: fileSpec.name,
+          description: fileSpec.description,
+          codingAgent: fileSpec.codingAgent,
+          model: undefined,
+          roleReminder: fileSpec.roleReminder,
+          behaviorPrompt: fileSpec.behaviorPrompt,
+          scope: fileSpec.source,
+          workspacePath,
+        }),
+      );
+      return;
+    }
 
     const { providerId: newProvider } = parseCompoundModelId(compoundModelId);
     _specialistCodingAgentValue = newProvider;
@@ -208,7 +229,6 @@
             description: fileSpec.description,
             codingAgent: newProvider,
             model: compoundModelId,
-            modelTier: undefined,
             roleReminder: fileSpec.roleReminder,
             behaviorPrompt: fileSpec.behaviorPrompt,
             scope: fileSpec.source,
@@ -229,7 +249,6 @@
           description: currentSpecialist.description,
           codingAgent: newProvider,
           model: compoundModelId,
-          modelTier: undefined,
           roleReminder: currentSpecialist.roleReminder,
           behaviorPrompt: effectivePrompt || currentSpecialist.defaultBehaviorPrompt,
           scope: 'user',
@@ -239,7 +258,12 @@
   }
 
   function handleCreateModelChange(compoundModelId: string) {
-    if (!compoundModelId) return;
+    // Empty string = the inherit ("use global default") option was picked.
+    if (!compoundModelId) {
+      newCodingAgent = undefined;
+      newModel = undefined;
+      return;
+    }
     const { providerId } = parseCompoundModelId(compoundModelId);
     newCodingAgent = providerId;
     newModel = compoundModelId;
@@ -261,7 +285,6 @@
             description: fileSpec.description,
             codingAgent: fileSpec.codingAgent,
             model: fileSpec.model,
-            modelTier: fileSpec.modelTier,
             roleReminder: fileSpec.roleReminder,
             behaviorPrompt: prompt,
             scope: fileSpec.source,
@@ -285,7 +308,6 @@
           description: currentSpecialist.description,
           codingAgent: effectiveCodingAgent,
           model: currentSpecialist.defaultModel,
-          modelTier: currentSpecialist.defaultModelTier,
           roleReminder: currentSpecialist.roleReminder,
           behaviorPrompt: prompt,
           scope: 'user',
@@ -309,7 +331,6 @@
         // Explicit frontmatter model only — never bake the daemon's resolved
         // preview into the file (it would pin a floating default).
         model: currentSpecialist.defaultModel,
-        modelTier: currentSpecialist.defaultModelTier,
         roleReminder: currentSpecialist.roleReminder,
         behaviorPrompt: selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id),
         scope: fileSpec?.source ?? 'user',
@@ -333,7 +354,6 @@
         // Explicit frontmatter model only — never bake the daemon's resolved
         // preview into the file (it would pin a floating default).
         model: currentSpecialist.defaultModel,
-        modelTier: currentSpecialist.defaultModelTier,
         roleReminder: currentSpecialist.roleReminder,
         behaviorPrompt: selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id),
         scope: fileSpec?.source ?? 'user',
@@ -399,10 +419,22 @@
   function discardNewSpecialist() {
     newName = '';
     newDescription = '';
-    newCodingAgent = $activeProviderId$;
-    newModel = getDefaultModel();
+    newCodingAgent = undefined;
+    newModel = undefined;
     newPrompt = m.settings_aiBehavior_newPromptTemplate();
     onDiscard?.();
+  }
+
+  /**
+   * Clear the explicit model pin from every file specialist that
+   * has one so they all inherit the global default. Built-ins without an
+   * override file already inherit — no file is created for them.
+   */
+  function resetAllSpecialistsToInherit() {
+    const payloads = buildResetToInheritPayloads($fileSpecialists$, getCurrentWorkspacePath);
+    for (const payload of payloads) {
+      appStore.dispatch(saveFileSpecialist(payload));
+    }
   }
 
   /** Check if a built-in specialist has been customized (has a user file override) */
@@ -430,34 +462,13 @@
           size="sm"
           updateGlobalDefault
         />
-        {#if !allSpecialistsUseSelectedModel}
+        {#if anySpecialistHasExplicitModel}
           <button
             type="button"
-            onclick={() => {
-              const { providerId: newProvider } = parseCompoundModelId($selectedModel);
-              // Save each specialist as a user file with the selected model
-              for (const s of $specialists) {
-                const fileSpec = selectGetFileSpecialist.select(appStore.state, s.id);
-                const effectivePrompt = selectEffectiveBehaviorPrompt.select(appStore.state, s.id);
-                appStore.dispatch(
-                  saveFileSpecialist({
-                    id: s.id,
-                    name: s.name,
-                    description: s.description,
-                    codingAgent: newProvider,
-                    model: $selectedModel,
-                    modelTier: undefined,
-                    roleReminder: s.roleReminder,
-                    behaviorPrompt: effectivePrompt || s.defaultBehaviorPrompt,
-                    scope: fileSpec?.source ?? 'user',
-                    workspacePath: fileSpec?.source === 'project' ? getCurrentWorkspacePath() : undefined,
-                  }),
-                );
-              }
-            }}
+            onclick={resetAllSpecialistsToInherit}
             class="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer whitespace-nowrap"
           >
-            {m.settings_aiBehavior_useForAllSpecialists()}
+            {m.settings_aiBehavior_resetAllSpecialists()}
           </button>
         {/if}
       </div>
@@ -552,8 +563,13 @@
         <ModelPicker
           selectedModel={specialistModelValue}
           onModelChange={handleSpecialistModelChange}
-          showDefaultOption={false}
+          showDefaultOption={true}
+          defaultModelId={currentSpecialist.resolvedModel}
           defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
+          defaultOptionLabel={m.settings_aiBehavior_inheritModel_label()}
+          defaultOptionDescription={m.settings_aiBehavior_inheritModel_description()}
+          formatDefaultModelLabel={(model) =>
+            m.settings_aiBehavior_inheritModelPreview_label({ model })}
           size="sm"
           variant="default"
         />
@@ -649,7 +665,12 @@
         <ModelPicker
           selectedModel={newModel}
           onModelChange={handleCreateModelChange}
-          showDefaultOption={false}
+          showDefaultOption={true}
+          defaultModelId={$selectedModel}
+          defaultOptionLabel={m.settings_aiBehavior_inheritModel_label()}
+          defaultOptionDescription={m.settings_aiBehavior_inheritModel_description()}
+          formatDefaultModelLabel={(model) =>
+            m.settings_aiBehavior_inheritModelPreview_label({ model })}
           variant="default"
           size="sm"
         />

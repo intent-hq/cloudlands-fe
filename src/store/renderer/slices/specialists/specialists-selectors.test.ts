@@ -34,6 +34,7 @@ import {
   selectHasOverrides,
   selectEffectiveCodingAgent,
   selectEffectiveModel,
+  selectExplicitModel,
   selectSpecialistSourceLabel,
 } from "./specialists-selectors";
 import { createCollection } from "$lib/store-shim/utils/collections/collection-utils";
@@ -375,22 +376,18 @@ describe("specialists selectors", () => {
     });
   });
 
-  describe("selectEffectiveModel precedence (model before tier)", () => {
+  describe("selectEffectiveModel precedence (explicit model before daemon preview)", () => {
     // These tests ingest PROTOCOL §5.11-shaped `specialist.list` defs through
     // the REAL configured store via `dispatchSpecialistList`, mirroring the
     // daemon's model-first precedence (`resolve_model`).
     beforeAll(() => appStore.init());
 
-    it("returns the explicit model when a user-tier def carries both model and an inherited modelTier", () => {
-      // The daemon inherits `modelTier` from the bundled parent when the user
-      // file omits it, so the wire def carries BOTH the explicit compound
-      // model AND modelTier: "smart". The explicit model must win.
+    it("returns the explicit model when a user def carries a model pin", () => {
       const userDef: SpecialistDef = {
         id: "implementor",
         name: "Implementor",
         description: "Executes implementation tasks, writes code",
         model: "claude-code:opus-custom",
-        modelTier: "smart",
         behaviorPrompt: "You implement.",
         source: "user",
         path: "/Users/test/.intent/specialists/implementor.md",
@@ -402,24 +399,23 @@ describe("specialists selectors", () => {
       );
     });
 
-    it("surfaces the daemon resolvedModel preview for tier-only specialists (no client tier resolution)", () => {
+    it("surfaces the daemon resolvedModel preview for inheriting specialists (no client resolution)", () => {
       seedProviderCatalog(appStore);
-      const tierOnlyDef: SpecialistDef = {
-        id: "tier-only-custom",
-        name: "Tier Only",
-        description: "custom tier-only specialist",
-        modelTier: "smart",
+      const inheritingDef: SpecialistDef = {
+        id: "inheriting-custom",
+        name: "Inheriting",
+        description: "custom inheriting specialist",
         behaviorPrompt: "prompt",
         source: "user",
-        path: "/Users/test/.intent/specialists/tier-only-custom.md",
+        path: "/Users/test/.intent/specialists/inheriting-custom.md",
         resolvedModel: "opus4.7",
         resolvedProvider: "auggie",
       };
-      dispatchSpecialistList([tierOnlyDef]);
+      dispatchSpecialistList([inheritingDef]);
 
       // The wire's daemon-computed preview is surfaced verbatim — the client
-      // never resolves the tier against the catalog tables itself.
-      expect(selectEffectiveModel.select(appStore.state, "tier-only-custom")).toBe(
+      // never resolves the default against the catalog tables itself.
+      expect(selectEffectiveModel.select(appStore.state, "inheriting-custom")).toBe(
         "opus4.7",
       );
     });
@@ -430,7 +426,6 @@ describe("specialists selectors", () => {
         id: "cli-default-custom",
         name: "CLI Default",
         description: "custom specialist without a resolvable model",
-        modelTier: "smart",
         behaviorPrompt: "prompt",
         source: "user",
         path: "/Users/test/.intent/specialists/cli-default-custom.md",
@@ -440,6 +435,50 @@ describe("specialists selectors", () => {
       // Omitted resolvedModel means the daemon resolution fell through to the
       // provider CLI default; consumers render "Provider default".
       expect(selectEffectiveModel.select(appStore.state, "cli-default-custom")).toBe("");
+    });
+  });
+
+  describe("selectExplicitModel (explicit frontmatter model only, no resolved preview)", () => {
+    beforeAll(() => appStore.init());
+
+    it("returns the explicit model when the wire def carries a model key (pinned)", () => {
+      const pinnedDef: SpecialistDef = {
+        id: "implementor",
+        name: "Implementor",
+        description: "Executes implementation tasks, writes code",
+        model: "claude-code:opus-custom",
+        behaviorPrompt: "You implement.",
+        source: "user",
+        path: "/Users/test/.intent/specialists/implementor.md",
+      };
+      dispatchSpecialistList([pinnedDef]);
+
+      expect(selectExplicitModel.select(appStore.state, "implementor")).toBe(
+        "claude-code:opus-custom",
+      );
+    });
+
+    it("returns undefined when the model key is omitted, even with a resolvedModel preview (inheriting)", () => {
+      const inheritingDef: SpecialistDef = {
+        id: "implementor",
+        name: "Implementor",
+        description: "Executes implementation tasks, writes code",
+        behaviorPrompt: "You implement.",
+        source: "user",
+        path: "/Users/test/.intent/specialists/implementor.md",
+        resolvedModel: "opus4.7",
+        resolvedProvider: "auggie",
+      };
+      dispatchSpecialistList([inheritingDef]);
+
+      // The daemon preview must never leak into the explicit value —
+      // selectEffectiveModel is the preview-aware counterpart.
+      expect(selectExplicitModel.select(appStore.state, "implementor")).toBeUndefined();
+      expect(selectEffectiveModel.select(appStore.state, "implementor")).toBe("opus4.7");
+    });
+
+    it("returns undefined for an unknown specialist", () => {
+      expect(selectExplicitModel.select(appStore.state, "no-such-specialist")).toBeUndefined();
     });
   });
 });
