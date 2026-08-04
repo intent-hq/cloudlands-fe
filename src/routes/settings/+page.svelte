@@ -250,6 +250,7 @@
     integrations: 'accounts',
     'mcp-servers': 'setup',
     'git-workspace': 'setup',
+    'agent-features': 'setup',
     'utility-default-model': 'setup',
     notifications: 'setup',
     'websocket-api': 'general',
