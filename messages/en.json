@@ -4422,6 +4422,8 @@
   "agent_chatSend_queueFailed_error": "Failed to queue message: {error}",
   "agent_chatSend_sendNowRejected_error": "sendQueuedMessageNow rejected",
   "agent_chatSend_nothingToRetry_toast": "Nothing to retry — send a message to start a new turn.",
+  "agent_chatSend_archivedWorkspace_toast": "This space is archived. Your message will still be delivered.",
+  "agent_chatSend_archivedWorkspace_unarchive_label": "Unarchive",
   "agent_ipc_activeStreamsFailed_error": "Failed to get active streams",
   "agent_ipc_circuitBreakerResetFailed_error": "Failed to reset circuit breaker",
   "agent_ipc_unknown_error": "Unknown error",

@@ -4421,6 +4421,8 @@
   "agent_chatSend_queueFailed_error": "Nachricht konnte nicht in die Warteschlange eingereiht werden: {error}",
   "agent_chatSend_sendNowRejected_error": "sendQueuedMessageNow abgelehnt",
   "agent_chatSend_nothingToRetry_toast": "Nichts zu wiederholen — senden Sie eine Nachricht, um eine neue Runde zu starten.",
+  "agent_chatSend_archivedWorkspace_toast": "Dieser Space ist archiviert. Ihre Nachricht wird dennoch zugestellt.",
+  "agent_chatSend_archivedWorkspace_unarchive_label": "Aus dem Archiv holen",
   "agent_ipc_activeStreamsFailed_error": "Aktive Streams konnten nicht abgerufen werden",
   "agent_ipc_circuitBreakerResetFailed_error": "Circuit Breaker konnte nicht zurückgesetzt werden",
   "agent_ipc_unknown_error": "Unbekannter Fehler",
