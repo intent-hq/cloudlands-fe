@@ -333,7 +333,7 @@ describe('AttachmentPreview thumbnail lightbox', () => {
     // The test passing without throwing proves the isConnected check works
   });
 
-  it('traps focus with Tab key cycling between close button and dialog', async () => {
+  it('traps focus with Tab key wrapping between first and last focusable elements', async () => {
     render(AttachmentPreview, {
       props: {
         id: 'test-img',
@@ -357,13 +357,41 @@ describe('AttachmentPreview thumbnail lightbox', () => {
     });
 
     const closeButton = screen.getByRole('button', { name: /close preview/i });
+    const resetZoomButton = screen.getByRole('button', { name: /reset zoom/i });
 
-    // Tab from close button should wrap to close button (only focusable element)
-    await fireEvent.keyDown(closeButton, { key: 'Tab' });
-    expect(document.activeElement).toBe(closeButton);
-
-    // Shift+Tab from close button should also stay on close button
+    // Shift+Tab from close button (first focusable) should wrap to the last
+    // focusable element (the reset zoom button in the zoom controls)
     await fireEvent.keyDown(closeButton, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(resetZoomButton);
+
+    // Tab from the last focusable element should wrap back to the close button
+    await fireEvent.keyDown(resetZoomButton, { key: 'Tab' });
     expect(document.activeElement).toBe(closeButton);
+  });
+
+  it('renders zoom controls in the lightbox', async () => {
+    render(AttachmentPreview, {
+      props: {
+        id: 'test-img',
+        name: 'test.png',
+        type: 'image/png',
+        imageData: mockImageData,
+        imageMimeType: mockImageMimeType,
+        variant: 'thumbnail',
+      },
+    });
+
+    // Open the lightbox
+    const thumbnailButton = screen.getByRole('button', { name: /view test\.png full size/i });
+    await fireEvent.click(thumbnailButton);
+
+    // Zoom controls should render inside the lightbox
+    await waitFor(() => {
+      expect(screen.getByRole('toolbar', { name: /zoom controls/i })).toBeTruthy();
+    });
+    expect(screen.getByRole('slider', { name: /zoom level/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /zoom in/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /zoom out/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /reset zoom/i })).toBeTruthy();
   });
 });
