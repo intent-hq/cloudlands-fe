@@ -43,10 +43,6 @@
 } from 'svelte';
   import { writable } from 'svelte/store';
   import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
-  import {
-    createMultiPanelContextDispatchPlan,
-    type MultiPanelContextDispatchState,
-  } from './multi-panel-context-dispatch';
   import type { AgentMessage } from '$shared/types';
   import { saveAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
@@ -1306,35 +1302,17 @@
     });
   });
 
-  let multiPanelContextDispatchState: MultiPanelContextDispatchState = {
-    workspaceId: null,
-    panelsSignature: null,
-  };
-
   // Update the multi-panel context store when available panels change
-  // Guard dispatches by semantic panel-context data so Redux subscriber notifications
-  // from unrelated/no-op actions do not create a self-sustaining update loop.
   $effect(() => {
     const workspaceId = workspace?.id ?? null;
-    const panels = availablePanelContexts;
-    const dispatchPlan = createMultiPanelContextDispatchPlan(
-      multiPanelContextDispatchState,
-      workspaceId,
-      panels,
-    );
-    multiPanelContextDispatchState = dispatchPlan.nextState;
-
-    if (!workspaceId || (!dispatchPlan.shouldSetWorkspace && !dispatchPlan.shouldUpdatePanels)) {
+    if (!workspaceId || !isActive) {
       return;
     }
 
+    const panels = availablePanelContexts;
     untrack(() => {
-      if (dispatchPlan.shouldSetWorkspace) {
-        appStore.dispatch(setMultiPanelWorkspace(workspaceId));
-      }
-      if (dispatchPlan.shouldUpdatePanels) {
-        appStore.dispatch(updateMultiPanels(panels));
-      }
+      appStore.dispatch(setMultiPanelWorkspace(workspaceId));
+      appStore.dispatch(updateMultiPanels(panels));
     });
   });
 

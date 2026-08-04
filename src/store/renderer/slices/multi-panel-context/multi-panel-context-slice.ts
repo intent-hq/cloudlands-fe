@@ -10,6 +10,7 @@ import {
   updateItem,
   upsertItem,
 } from "@augmentcode/themis/utils/collections/collection-utils";
+import { deepEqual } from "fast-equals";
 
 // ============================================================================
 // Types
@@ -129,15 +130,18 @@ multiPanelContextReducer.with(updatePanels, (state, { payload: [panels] }) => {
       .filter((p) => p.checked)
       .map((p) => p.id),
   );
+  const nextPanels = panels.map((p) => ({
+    ...p,
+    checked: checkedIds.has(p.id) || p.checked,
+  }));
+
+  if (deepEqual(getItems(state.panels), nextPanels)) {
+    return state;
+  }
+
   return {
     ...state,
-    panels: createCollection<PanelContextItem, 'id'>(
-      'id',
-      panels.map((p) => ({
-        ...p,
-        checked: checkedIds.has(p.id) || p.checked,
-      })),
-    ),
+    panels: createCollection<PanelContextItem, 'id'>('id', nextPanels),
   };
 });
 multiPanelContextReducer.with(togglePanel, (state, { payload: [id] }) => {
