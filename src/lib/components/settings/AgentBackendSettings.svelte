@@ -12,16 +12,35 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import { Input } from '$lib/components/ui/input';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { Select } from '$lib/components/ui/select';
+
+  type FlushQueuedMessagesMode = 'all' | 'systemOnly' | 'off';
+
+  const FLUSH_MODES: FlushQueuedMessagesMode[] = ['all', 'systemOnly', 'off'];
+
+  function isFlushMode(value: unknown): value is FlushQueuedMessagesMode {
+    return typeof value === 'string' && (FLUSH_MODES as string[]).includes(value);
+  }
 
   // Settings state
   let maxConcurrent = $state(0);
   let inputValue = $state('');
-  let flushQueuedMessages = $state(true);
+  let flushQueuedMessages = $state<FlushQueuedMessagesMode>('all');
   let settingsError = $state('');
 
   const SETTING_PATH = 'agents.maxConcurrent';
   const FLUSH_SETTING_PATH = 'agents.flushQueuedMessages';
+
+  const flushModeOptions = $derived([
+    { value: 'all', label: m.settings_agentBackend_flushQueuedMessages_all_label() },
+    { value: 'systemOnly', label: m.settings_agentBackend_flushQueuedMessages_systemOnly_label() },
+    { value: 'off', label: m.settings_agentBackend_flushQueuedMessages_off_label() },
+  ]);
+
+  const flushModeLabel = $derived(
+    flushModeOptions.find((option) => option.value === flushQueuedMessages)?.label ??
+      flushQueuedMessages,
+  );
 
   onMount(async () => {
     await loadSettings();
@@ -43,25 +62,34 @@
     maxConcurrent = typeof value === 'number' ? value : 0;
     // Display empty for 0 (Auto)
     inputValue = maxConcurrent === 0 ? '' : String(maxConcurrent);
-    // Default on: only an explicit `false` turns the flush off.
-    flushQueuedMessages = byPath.get(FLUSH_SETTING_PATH) !== false;
+    // Legacy boolean values map to their nearest enum equivalent (`true` ->
+    // `all`, `false` -> `off`); any other unknown/absent value falls back to
+    // the daemon default of `all`.
+    const flushValue = byPath.get(FLUSH_SETTING_PATH);
+    if (isFlushMode(flushValue)) {
+      flushQueuedMessages = flushValue;
+    } else if (flushValue === false) {
+      flushQueuedMessages = 'off';
+    } else {
+      flushQueuedMessages = 'all';
+    }
   }
 
-  async function handleFlushToggle() {
-    const requested = !flushQueuedMessages;
+  async function handleFlushModeChange(value: string) {
+    if (!isFlushMode(value) || value === flushQueuedMessages) return;
     try {
       const applied = await appClient.settings.update([
-        { path: FLUSH_SETTING_PATH, value: requested },
+        { path: FLUSH_SETTING_PATH, value },
       ]);
       // Only commit local state from the daemon-acknowledged value; a success
       // response that did not apply this path (e.g. an older daemon) keeps the
       // current state and surfaces the save error.
       const entry = applied.find((change) => change.path === FLUSH_SETTING_PATH);
-      if (!entry) {
+      if (!entry || !isFlushMode(entry.value)) {
         settingsError = m.settings_agentBackend_saveError();
         return;
       }
-      flushQueuedMessages = entry.value !== false;
+      flushQueuedMessages = entry.value;
       settingsError = '';
     } catch (error) {
       settingsError = m.settings_agentBackend_saveError();
@@ -157,20 +185,26 @@
   <!-- Flush Queued Messages -->
   <div class="flex items-center justify-between gap-4">
     <div class="flex-1 min-w-0">
-      <p class="text-sm font-medium text-foreground">
+      <label for="flushQueuedMessages" class="text-sm font-medium text-foreground">
         {m.settings_agentBackend_flushQueuedMessages_label()}
-      </p>
+      </label>
       <p class="text-xs text-subtle mt-0.5">
         {m.settings_agentBackend_flushQueuedMessages_description()}
       </p>
     </div>
-    <Toggle
-      pressed={flushQueuedMessages}
-      onclick={handleFlushToggle}
-      variant="indicator"
-      size="xs"
-      class="mb-auto"
-      ariaLabel={m.settings_agentBackend_flushQueuedMessages_label()}
-    />
+    <div class="shrink-0 w-48">
+      <Select.Root value={flushQueuedMessages} onchange={handleFlushModeChange}>
+        <Select.Trigger id="flushQueuedMessages" class="py-1.5">
+          <span class="truncate">{flushModeLabel}</span>
+        </Select.Trigger>
+        <Select.Content portal class="max-h-[300px] w-48">
+          {#each flushModeOptions as option (option.value)}
+            <Select.Item value={option.value}>
+              <span class="truncate">{option.label}</span>
+            </Select.Item>
+          {/each}
+        </Select.Content>
+      </Select.Root>
+    </div>
   </div>
 </div>
