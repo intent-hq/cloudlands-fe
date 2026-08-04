@@ -1273,6 +1273,8 @@
   "workspace_diskUsagePill_scopeNote_label": "サブエージェントのサンドボックスやツール出力を含む、ワークスペースディレクトリ全体が対象です。",
   "workspace_diskUsagePill_shrink_label": "このワークスペースの縮小を試す",
   "workspace_diskUsagePill_shrinkAgent_name": "ワークスペースを縮小",
+  "workspace_diskUsagePill_loading_ariaLabel": "ディスク使用量を読み込み中",
+  "workspace_diskUsagePill_refreshing_ariaLabel": "ディスク使用量を更新中",
   "workspace_progressCopy_allDone_headline": "すべて完了！",
   "workspace_progressCopy_changesStaged_actionLabel": "コミット",
   "workspace_progressCopy_changesStaged_actionTooltip": "変更パネルを開いて、ステージ済みの変更をコミットします。",

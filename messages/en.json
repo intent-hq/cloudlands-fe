@@ -1274,6 +1274,8 @@
   "workspace_diskUsagePill_scopeNote_label": "Covers the whole workspace directory, including sub-agent sandboxes and tool outputs.",
   "workspace_diskUsagePill_shrink_label": "Try to shrink this workspace",
   "workspace_diskUsagePill_shrinkAgent_name": "Shrink workspace",
+  "workspace_diskUsagePill_loading_ariaLabel": "Loading disk usage",
+  "workspace_diskUsagePill_refreshing_ariaLabel": "Refreshing disk usage",
   "workspace_progressCopy_allDone_headline": "All done!",
   "workspace_progressCopy_changesStaged_actionLabel": "Commit",
   "workspace_progressCopy_changesStaged_actionTooltip": "Opens the changes panel to commit your staged changes.",

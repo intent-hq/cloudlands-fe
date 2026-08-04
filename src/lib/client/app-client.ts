@@ -27,6 +27,7 @@ import type {
   TaskStatus,
   UpdateWorkspaceRequest,
   Workspace,
+  WorkspaceDiskUsage,
   WorkspaceTask,
   WorkspaceTaskStats,
 } from "$shared/types";
@@ -295,6 +296,17 @@ export interface WorkspaceCreateResult extends MutationResult {
   errorCode?: string;
 }
 
+/**
+ * Result of the on-demand `workspace.diskUsage` poll (PROTOCOL §5.1).
+ * `diskUsage` is omitted until the daemon's first walk completes and for
+ * rows without a daemon-managed directory; `refreshing: true` means a
+ * background walk is in flight so callers may poll again shortly.
+ */
+export interface WorkspaceDiskUsageResult {
+  diskUsage?: WorkspaceDiskUsage;
+  refreshing: boolean;
+}
+
 export interface WorkspacesClient {
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]>;
   get(id: string): Promise<Workspace | null>;
@@ -340,6 +352,14 @@ export interface WorkspacesClient {
    * `workspace:tokenUsage-changed` event (§6.5).
    */
   getTokenUsage(workspaceId: string): Promise<TokenUsage | null>;
+  /**
+   * `workspace.diskUsage` (PROTOCOL §5.1): on-demand cached footprint of the
+   * workspace's daemon-managed directory — `{ diskUsage?, refreshing }`.
+   * Never populated on list/get rows (monorepo#1396); clients fetch it here
+   * when needed. Returns `null` when the daemon predates the method
+   * (-32601 METHOD_NOT_FOUND) so callers can fall back gracefully.
+   */
+  diskUsage(workspaceId: string): Promise<WorkspaceDiskUsageResult | null>;
   /**
    * `workspace.getContext` (PROTOCOL §5.1): the daemon-owned chat-context
    * attachment list for one workspace (notes, linear / github / sentry issues,
