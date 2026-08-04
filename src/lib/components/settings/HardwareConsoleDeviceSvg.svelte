@@ -46,7 +46,8 @@
    * (top-right), and 6 lighted agent-status keys across rows 1-2; the 7
    * action keys (ACT06–ACT12) in rows 3-4 are interactive and highlighted.
    * Clicking (or keyboard-activating) an action key selects its 0-based
-   * slot via `onSelectKey`. On the CM2 the action keys are labeled 1–7; on
+   * slot via `onSelectKey`. On the CM2 each action-key face shows its
+   * assigned action's icon from `actionSlots` (blank when unassigned); on
    * the Codex Micro they carry the printed caps (lightning, checkmark,
    * x-mark, branching; the factory-linked 2U Mic pair rendered as two
    * keycaps under a shared outline; terminal-in-hexagon logo).
@@ -71,12 +72,26 @@
     name: string | null;
   }
 
+  /** Resolved icon and tooltip label of one action-key slot's assigned action. */
+  interface ActionKeySlot {
+    icon: IconDefinition | null;
+    /** Localized label of the assigned action; null (or absent) = no tooltip. */
+    readonly label?: string | null;
+  }
+
   interface Props {
     /** Device model to render; controls the action-key faces. */
     model?: HardwareDeviceModel;
     /** 0-based selected action-key slot, or null when none is selected. */
     selectedSlot?: number | null;
     onSelectKey?: (slot: number) => void;
+    /**
+     * Assigned-action key faces in slot order (0-6). Icons render on the
+     * CM2 key faces (a null icon renders a blank face) and are ignored on
+     * the Codex Micro (printed caps); labels render as hover tooltips on
+     * both models.
+     */
+    actionSlots?: readonly ActionKeySlot[];
     /** Resolved agent-key assignments in slot order (0-5); null entry = unassigned. */
     agentSlots?: readonly AgentKeySlot[];
     /** Whether the agent keys are interactive (a device is connected). */
@@ -93,6 +108,7 @@
     model = 'creator-micro-2',
     selectedSlot = null,
     onSelectKey,
+    actionSlots,
     agentSlots,
     agentKeysInteractive = false,
     agentKeyStatusLabel,
@@ -364,9 +380,7 @@
           aria-controls={workspaceId !== null ? 'hardware-console-agent-key-popover' : undefined}
           class={workspaceId !== null ? 'cursor-pointer outline-none group' : 'outline-none'}
           onclick={workspaceId !== null ? () => toggleAgentKeyPopover(slot) : undefined}
-          onkeydown={workspaceId !== null
-            ? (event) => handleAgentKeydown(event, slot)
-            : undefined}
+          onkeydown={workspaceId !== null ? (event) => handleAgentKeydown(event, slot) : undefined}
         >
           {#if assignment?.workspaceId}
             <title>{assignment.name || m.workspace_links_untitled_label()}</title>
@@ -422,9 +436,11 @@
       />
     {/if}
 
-    <!-- Action keys (highlighted, click-to-select; CM2 labeled 1-7, Codex printed caps) -->
+    <!-- Action keys (highlighted, click-to-select; CM2 assigned-action icons, Codex printed caps) -->
     {#each actionKeys as key (key.slot)}
       {@const capIcon = codex ? CODEX_CAP_ICONS[key.slot] : null}
+      {@const slotIcon = codex ? null : (actionSlots?.[key.slot]?.icon ?? null)}
+      {@const slotLabel = actionSlots?.[key.slot]?.label ?? null}
       <g
         role="button"
         tabindex="0"
@@ -434,6 +450,9 @@
         onclick={() => onSelectKey?.(key.slot)}
         onkeydown={(event) => handleKeydown(event, key.slot)}
       >
+        {#if slotLabel}
+          <title>{slotLabel}</title>
+        {/if}
         <rect
           x={key.x}
           y={key.y}
@@ -445,17 +464,13 @@
             ? 'fill-primary/25 stroke-primary'
             : 'fill-primary/10 stroke-primary/50 group-hover:fill-primary/20 group-focus-visible:stroke-primary'}
         />
-        {#if !codex}
-          <text
-            x={key.x + KEY_SIZE / 2}
-            y={key.y + KEY_SIZE / 2}
-            text-anchor="middle"
-            dominant-baseline="central"
-            class={'text-[13px] font-semibold pointer-events-none ' +
+        {#if slotIcon}
+          <path
+            d={iconPath(slotIcon)}
+            transform={iconTransform(slotIcon, key.x + KEY_SIZE / 2, key.y + KEY_SIZE / 2, 20)}
+            class={'pointer-events-none ' +
               (selectedSlot === key.slot ? 'fill-primary' : 'fill-foreground/70')}
-          >
-            {key.slot + 1}
-          </text>
+          />
         {:else if capIcon}
           <path
             d={iconPath(capIcon)}
@@ -463,7 +478,7 @@
             class={'pointer-events-none ' +
               (selectedSlot === key.slot ? 'fill-primary' : 'fill-foreground/70')}
           />
-        {:else if key.slot === 6}
+        {:else if codex && key.slot === 6}
           <!-- Codex logo key: terminal inside a hexagon -->
           <polygon
             points={hexagonPoints(logoCenter.cx, logoCenter.cy, 17)}
