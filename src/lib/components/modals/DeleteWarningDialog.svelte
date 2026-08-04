@@ -28,8 +28,9 @@
     onCancel,
   }: Props = $props();
 
-  const dialogTitleId = 'delete-warning-dialog-title';
-  const dialogDescriptionId = 'delete-warning-dialog-description';
+  // Mode-derived ids so the delete and archive hosts never collide in the DOM.
+  const dialogTitleId = $derived(`${mode}-warning-dialog-title`);
+  const dialogDescriptionId = $derived(`${mode}-warning-dialog-description`);
 
   const isArchive = $derived(mode === 'archive');
   const closeAriaLabel = $derived(
