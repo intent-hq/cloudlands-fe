@@ -1947,6 +1947,7 @@
   "chat_modelChangeNotice_fallback_label": "モデルが変更されました",
   "chat_modelChangeNotice_switched_label": "{from} から {to} に切り替えました",
   "chat_modelChangeNotice_defaultModel_label": "{provider} のデフォルトモデル",
+  "chat_questionsDismissedNotice_dismissed_label": "質問が却下されました",
   "chat_modelSwitchDialog_switchProvider_title": "会話の途中でプロバイダーを切り替えますか？",
   "chat_modelSwitchDialog_switchModel_title": "会話の途中でモデルを切り替えますか？",
   "chat_modelSwitchDialog_close_ariaLabel": "閉じる",

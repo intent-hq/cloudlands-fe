@@ -1947,6 +1947,7 @@
   "chat_modelChangeNotice_fallback_label": "Modell geändert",
   "chat_modelChangeNotice_switched_label": "Von {from} zu {to} gewechselt",
   "chat_modelChangeNotice_defaultModel_label": "{provider}-Standardmodell",
+  "chat_questionsDismissedNotice_dismissed_label": "Fragen verworfen",
   "chat_modelSwitchDialog_switchProvider_title": "Anbieter mitten in der Konversation wechseln?",
   "chat_modelSwitchDialog_switchModel_title": "Modell mitten in der Konversation wechseln?",
   "chat_modelSwitchDialog_close_ariaLabel": "Schließen",

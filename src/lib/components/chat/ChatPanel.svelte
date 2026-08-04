@@ -211,6 +211,8 @@
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
+  import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
+  import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import { resolveHydratedInputModel } from './input-hydration';
   import {
   deriveQueuedMessagesVisibility,
@@ -651,6 +653,9 @@
     if (msg.role === 'user') {
       if (msg.metadata?.type === 'event_notification') return '';
       if (extractAllContent(msg).trimStart().startsWith('[WORKSPACE EVENTS]')) return '';
+      // Dismissal rows render as a compact chip; the raw delivered text never
+      // reaches the DOM, so keep it out of the search index too.
+      if (getQuestionsDismissedNotice(msg)) return '';
     }
     const grouped = groupContentBlocks(blocks, !!msg.isStreaming);
     const lastIndex = grouped.length - 1;
@@ -3695,9 +3700,11 @@
                           extractAllContent(turn.userMessage)
                             .trim()
                             .startsWith('[WORKSPACE EVENTS]'))}
+                      <!-- Daemon-delivered dismissal rows render as a compact chip, not a user bubble -->
+                      {@const isQuestionsDismissed = !!getQuestionsDismissedNotice(turn.userMessage)}
                       <!-- Sticky compact user message header - shows when scrolled past expanded message -->
                       <!-- Positioned BEFORE expanded message in DOM so it's naturally behind it -->
-                      {#if shouldEnableSticky && turn.userMessage && !isEventNotification}
+                      {#if shouldEnableSticky && turn.userMessage && !isEventNotification && !isQuestionsDismissed}
                         <div class="sticky -top-px w-full z-10 h-0 overflow-visible">
                           <div
                             class="h-fit min-w-0 px-2 pt-2 pb-2 text-subtle whitespace-nowrap text-ellipsis leading-normal bg-sidebar rounded-xs w-full max-w-full truncate"
@@ -3707,7 +3714,18 @@
                         </div>
                       {/if}
 
-                      {#if turn.userMessage && !isEventNotification}
+                      {#if turn.userMessage && isQuestionsDismissed}
+                        <!-- Compact centered chip outside the user-bubble wrapper (no user margins/background) -->
+                        <div
+                          data-message-id={turn.userMessage.id}
+                          data-message-index={getMessageIndex(turn.userMessage.id)}
+                          class="message-nav-target px-2"
+                        >
+                          <QuestionsDismissedNotice
+                            title={extractAllContent(turn.userMessage) || undefined}
+                          />
+                        </div>
+                      {:else if turn.userMessage && !isEventNotification}
                         {@const message = turn.userMessage}
                         {@const globalIndex = getMessageIndex(message.id)}
                         <!-- z-20 and bg-sidebar to cover the sticky compact header when in view -->

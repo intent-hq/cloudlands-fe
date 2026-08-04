@@ -1948,6 +1948,7 @@
   "chat_modelChangeNotice_fallback_label": "Model changed",
   "chat_modelChangeNotice_switched_label": "Switched from {from} to {to}",
   "chat_modelChangeNotice_defaultModel_label": "{provider} default model",
+  "chat_questionsDismissedNotice_dismissed_label": "Questions dismissed",
   "chat_modelSwitchDialog_switchProvider_title": "Switch provider mid-conversation?",
   "chat_modelSwitchDialog_switchModel_title": "Switch model mid-conversation?",
   "chat_modelSwitchDialog_close_ariaLabel": "Close",
