@@ -110,6 +110,33 @@
       ? m.chat_backgroundHooks_running_label()
       : m.chat_backgroundHooks_state_scheduled_label();
   }
+
+  /**
+   * Compact TTL duration (`expiresAt − createdAt`): "60m" / "12m 30s" / "45s"
+   * — the seconds part is omitted when zero.
+   */
+  function ttlDuration(hook: BackgroundHook): string {
+    const totalSeconds = Math.max(
+      0,
+      Math.round((new Date(hook.expiresAt!).getTime() - new Date(hook.createdAt).getTime()) / 1000),
+    );
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes === 0) {
+      return m.chat_backgroundHooks_hover_ttlDurationSeconds_label({
+        seconds: formatInteger(seconds),
+      });
+    }
+    if (seconds === 0) {
+      return m.chat_backgroundHooks_hover_ttlDurationMinutes_label({
+        minutes: formatInteger(minutes),
+      });
+    }
+    return m.chat_backgroundHooks_hover_ttlDurationMinutesSeconds_label({
+      minutes: formatInteger(minutes),
+      seconds: formatInteger(seconds),
+    });
+  }
 </script>
 
 {#if agentHooks.length > 0}
@@ -152,6 +179,15 @@
                     <span
                       >{m.chat_backgroundHooks_hover_nextRun_label({
                         time: formatTime(hook.nextRunAt, { seconds: true }),
+                      })}</span
+                    >
+                  {/if}
+                  {#if hook.expiresAt}
+                    <span class="mx-1" aria-hidden="true">·</span>
+                    <span
+                      >{m.chat_backgroundHooks_hover_ttl_label({
+                        duration: ttlDuration(hook),
+                        time: formatTime(hook.expiresAt, { seconds: true }),
                       })}</span
                     >
                   {/if}
