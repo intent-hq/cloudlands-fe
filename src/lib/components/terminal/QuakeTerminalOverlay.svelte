@@ -26,6 +26,7 @@
   selectActiveTerminalId,
   selectTerminals,
   selectSelectedScriptId,
+  selectWorkspaceTerminalState,
 } from '$store/renderer/slices/terminals/terminals-selectors';
   import {
   openTerminalOverlay,
@@ -275,7 +276,9 @@
     return actions;
   }
 
-  async function handleScriptAction(
+  // Instance export: the 'delete' branch has no template trigger yet, so
+  // unit tests drive it via the component instance.
+  export async function handleScriptAction(
     action: 'start' | 'stop' | 'restart' | 'delete',
     scriptId: string,
   ) {
@@ -285,8 +288,16 @@
     else if (action === 'restart') await scriptsClient.restart(workspaceId, scriptId);
     else if (action === 'delete') {
       await scriptsClient.remove(workspaceId, scriptId);
-      appStore.dispatch(removeScript(workspaceId!, scriptId));
-      if (selectedScriptId === scriptId) appStore.dispatch(clearScriptSelection(workspaceId));
+      // Capture the raw selection BEFORE removeScript: the validated
+      // selectedScriptId $derived reads null once the script leaves the
+      // scripts slice, which would skip the clear and strand a stale id in
+      // Redux/localStorage (logically holding the panel open with nothing
+      // renderable until the next script.list hydration).
+      const wasSelected =
+        selectWorkspaceTerminalState.select(appStore.state, workspaceId).selectedScriptId ===
+        scriptId;
+      appStore.dispatch(removeScript(workspaceId, scriptId));
+      if (wasSelected) appStore.dispatch(clearScriptSelection(workspaceId));
     }
   }
 

@@ -184,7 +184,13 @@
 
   let overlayContainer = $state<HTMLDivElement>();
 
+  // In-flight guard: a double-click on the new-terminal button must not
+  // issue two `terminal.create` calls (two daemon PTYs).
+  let isCreatingTerminal = false;
+
   async function createNewTerminal() {
+    if (isCreatingTerminal) return;
+    isCreatingTerminal = true;
     try {
       // Daemon-first create (`terminal.create`, PROTOCOL §5.13): the daemon
       // assigns the PTY id and the Redux tab is keyed by it, so hydration
@@ -218,6 +224,8 @@
       });
     } catch {
       toast.error(m.terminal_adapter_openFailed_error());
+    } finally {
+      isCreatingTerminal = false;
     }
   }
 
