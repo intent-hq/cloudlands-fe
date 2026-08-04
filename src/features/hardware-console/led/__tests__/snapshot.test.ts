@@ -220,13 +220,13 @@ describe('buildHardwareLedSnapshot', () => {
     expect(snapshot.ambient).toEqual({ kind: 'unread' });
   });
 
-  it('running outranks unread on the key and ambient', () => {
+  it('running outranks unread on the key, but ambient prefers unread', () => {
     const state = makeState({
       workspaces: [makeWorkspace('ws-1', { activity: 'agent_running', attention: 'unread' })],
     });
     const snapshot = buildHardwareLedSnapshot(state);
     expect(snapshot.keys[0]).toBe('running');
-    expect(snapshot.ambient).toEqual({ kind: 'running', runningCount: 1 });
+    expect(snapshot.ambient).toEqual({ kind: 'unread' });
   });
 
   it('ambient running carries the fleet-wide running-workspace count', () => {
@@ -264,11 +264,21 @@ describe('buildHardwareLedSnapshot', () => {
     expect(buildHardwareLedSnapshot(state).ambient).toEqual({ kind: 'unread' });
   });
 
-  it('ambient running outranks unread across workspaces', () => {
+  it('ambient unread outranks running across workspaces', () => {
     const state = makeState({
       workspaces: [
         makeWorkspace('ws-run', { activity: 'agent_running' }),
         makeWorkspace('ws-new', { attention: 'unread' }),
+      ],
+    });
+    expect(buildHardwareLedSnapshot(state).ambient).toEqual({ kind: 'unread' });
+  });
+
+  it('ambient running outranks complete across workspaces', () => {
+    const state = makeState({
+      workspaces: [
+        makeWorkspace('ws-run', { activity: 'agent_running' }),
+        makeWorkspace('ws-done', { displayStatus: 'pr_merged' }),
       ],
     });
     expect(buildHardwareLedSnapshot(state).ambient).toEqual({ kind: 'running', runningCount: 1 });
