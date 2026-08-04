@@ -81,17 +81,14 @@ vi.mock('$features/terminal/terminal-history-tracker', () => ({
 import RootQuakeTerminalOverlay from '../RootQuakeTerminalOverlay.svelte';
 import { store as appStore } from '$store/renderer/store';
 import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { dispatchWindowEvent } from '$lib/utils/window-events';
 
 function dispatchedTypes(): string[] {
   return (appStore as any).__dispatched.map((action: { type: string }) => action.type);
 }
 
 function fireCreateNewEvent() {
-  window.dispatchEvent(
-    new CustomEvent('workspace:new-terminal', {
-      detail: { workspaceId: ROOT_WORKSPACE_ID },
-    }),
-  );
+  dispatchWindowEvent('workspace:new-terminal', { workspaceId: ROOT_WORKSPACE_ID });
 }
 
 describe('RootQuakeTerminalOverlay createNewTerminal (PR #705 review)', () => {
