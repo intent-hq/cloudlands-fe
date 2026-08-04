@@ -12,6 +12,22 @@ export const selectRunningAgentNamesForDelete = store.createSelector((state) => 
   return state.workspaceOperations.runningAgentNamesForDelete;
 });
 
+export const selectActiveHookNamesForDelete = store.createSelector((state) => {
+  return state.workspaceOperations.activeHookNamesForDelete;
+});
+
+export const selectShowArchiveWarning = store.createSelector((state) => {
+  return state.workspaceOperations.showArchiveWarning;
+});
+
+export const selectRunningAgentNamesForArchive = store.createSelector((state) => {
+  return state.workspaceOperations.runningAgentNamesForArchive;
+});
+
+export const selectActiveHookNamesForArchive = store.createSelector((state) => {
+  return state.workspaceOperations.activeHookNamesForArchive;
+});
+
 export const selectShowBulkArchiveConfirm = store.createSelector((state) => {
   return state.workspaceOperations.showBulkArchiveConfirm;
 });

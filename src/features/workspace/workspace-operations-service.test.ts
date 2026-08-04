@@ -28,6 +28,9 @@ vi.mock("svelte-sonner", () => ({
 vi.mock("$lib/utils/delete-warning-utils", () => ({
   hasRunningAgents: vi.fn(() => false),
   getRunningAgentNames: vi.fn(() => [] as string[]),
+  getActiveWorkNames: vi.fn(() =>
+    Promise.resolve({ agentNames: [] as string[], hookNames: [] as string[] })
+  ),
 }));
 
 // FAKE raw-IPC bridge: only `invoke` is stubbed (the remove-repo path routes
@@ -49,7 +52,7 @@ vi.mock("$lib/client/live/backend-transport", async () => {
 import { workspaceClient } from "$store/renderer/slices/workspace/utils/workspace.client";
 import { installMockBackend } from "../../test/mocks/backend-transport.mock";
 import { flushPendingWorkspaceDeletions } from "./workspace-operations-service";
-import { hasRunningAgents } from "$lib/utils/delete-warning-utils";
+import { getActiveWorkNames, hasRunningAgents } from "$lib/utils/delete-warning-utils";
 import { invoke } from "$lib/electron-bridge";
 import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
 import type { KnownRepo } from "$shared/types/known-repo";
@@ -62,8 +65,12 @@ import {
 import { setRepos } from "$store/renderer/slices/known-repos/known-repos-slice";
 import {
   applyWorkspaceProposal,
+  closeArchiveWarning,
+  closeDeleteWarning,
+  confirmArchiveWorkspace,
   confirmBulkArchive,
   confirmBulkDeleteArchived,
+  confirmDeleteWorkspace,
   confirmRemoveRepo,
   openBulkArchiveConfirm,
   openBulkDeleteArchivedConfirm,
@@ -77,6 +84,7 @@ import type { BulkOperationProposal, WorkspaceCreateProposal } from "$shared/typ
 
 const ws = workspaceClient as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const agents = vi.mocked(hasRunningAgents);
+const activeWork = vi.mocked(getActiveWorkNames);
 const bridgeInvoke = vi.mocked(invoke);
 const UNDO_MS = 15000;
 // Handlers chain several awaits (dynamic imports of the toast/nav/agent utils)
@@ -118,6 +126,7 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
     vi.useRealTimers();
     vi.clearAllMocks();
     agents.mockReturnValue(false);
+    activeWork.mockResolvedValue({ agentNames: [], hookNames: [] });
     ws.archive.mockResolvedValue({ ok: true } as never);
     ws.unarchive.mockResolvedValue({ ok: true } as never);
     ws.delete.mockResolvedValue({ ok: true } as never);
@@ -127,6 +136,8 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
     } as never);
     appStore.dispatch(resetWorkspaceState());
     appStore.dispatch(hydrateProposalLifecycle({}));
+    appStore.dispatch(closeDeleteWarning());
+    appStore.dispatch(closeArchiveWarning());
   });
 
   it("archives via the client seam and converges the store to Archived", async () => {
@@ -250,17 +261,158 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
     });
   });
 
-  it("routes a running-agents delete to the warning modal instead of deleting", async () => {
-    agents.mockReturnValue(true);
-    seed(makeWorkspace({ id: "ws-w" }));
+  describe("delete gating on active work (agents / hooks)", () => {
+    it("routes an agents-only delete to the warning modal instead of deleting", async () => {
+      activeWork.mockResolvedValue({ agentNames: ["Agent One"], hookNames: [] });
+      seed(makeWorkspace({ id: "ws-w" }));
 
-    appStore.dispatch(requestDeleteWorkspace("ws-w"));
-    await flush();
-    await vi.advanceTimersByTimeAsync(UNDO_MS);
+      appStore.dispatch(requestDeleteWorkspace("ws-w"));
+      await flush();
+      await vi.advanceTimersByTimeAsync(UNDO_MS);
 
-    expect(ws.delete).not.toHaveBeenCalled();
-    expect(stored("ws-w")).toBeDefined();
-    expect(appStore.state.workspaceOperations.showDeleteWarning).toBe(true);
+      expect(ws.delete).not.toHaveBeenCalled();
+      expect(stored("ws-w")).toBeDefined();
+      expect(appStore.state.workspaceOperations.showDeleteWarning).toBe(true);
+      expect(appStore.state.workspaceOperations.runningAgentNamesForDelete).toEqual([
+        "Agent One",
+      ]);
+      expect(appStore.state.workspaceOperations.activeHookNamesForDelete).toEqual([]);
+    });
+
+    it("routes a hooks-only delete to the warning modal instead of deleting", async () => {
+      activeWork.mockResolvedValue({ agentNames: [], hookNames: ["ci-watch"] });
+      seed(makeWorkspace({ id: "ws-w" }));
+
+      appStore.dispatch(requestDeleteWorkspace("ws-w"));
+      await flush();
+      await vi.advanceTimersByTimeAsync(UNDO_MS);
+
+      expect(ws.delete).not.toHaveBeenCalled();
+      expect(stored("ws-w")).toBeDefined();
+      expect(appStore.state.workspaceOperations.showDeleteWarning).toBe(true);
+      expect(appStore.state.workspaceOperations.activeHookNamesForDelete).toEqual(["ci-watch"]);
+    });
+
+    it("routes an agents-and-hooks delete to the warning modal with both lists", async () => {
+      activeWork.mockResolvedValue({ agentNames: ["Agent One"], hookNames: ["ci-watch"] });
+      seed(makeWorkspace({ id: "ws-w" }));
+
+      appStore.dispatch(requestDeleteWorkspace("ws-w"));
+      await flush();
+      await vi.advanceTimersByTimeAsync(UNDO_MS);
+
+      expect(ws.delete).not.toHaveBeenCalled();
+      expect(appStore.state.workspaceOperations.showDeleteWarning).toBe(true);
+      expect(appStore.state.workspaceOperations.runningAgentNamesForDelete).toEqual([
+        "Agent One",
+      ]);
+      expect(appStore.state.workspaceOperations.activeHookNamesForDelete).toEqual(["ci-watch"]);
+    });
+
+    it("deletes without a warning when no agents or hooks are active", async () => {
+      activeWork.mockResolvedValue({ agentNames: [], hookNames: [] });
+      seed(makeWorkspace({ id: "ws-w" }));
+
+      appStore.dispatch(requestDeleteWorkspace("ws-w"));
+      await flush();
+      await vi.advanceTimersByTimeAsync(UNDO_MS);
+
+      expect(appStore.state.workspaceOperations.showDeleteWarning).toBe(false);
+      expect(ws.delete).toHaveBeenCalledWith("ws-w");
+    });
+
+    it("'Delete anyway' proceeds with delete-with-undo for the pending workspace", async () => {
+      activeWork.mockResolvedValue({ agentNames: ["Agent One"], hookNames: ["ci-watch"] });
+      seed(makeWorkspace({ id: "ws-w" }));
+
+      appStore.dispatch(requestDeleteWorkspace("ws-w"));
+      await flush();
+      expect(appStore.state.workspaceOperations.showDeleteWarning).toBe(true);
+
+      appStore.dispatch(confirmDeleteWorkspace());
+      await flush();
+
+      expect(appStore.state.workspaceOperations.showDeleteWarning).toBe(false);
+      // Optimistic soft-delete now; the wire delete commits after the undo window.
+      expect(stored("ws-w")).toBeUndefined();
+      expect(ws.delete).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(UNDO_MS);
+      expect(ws.delete).toHaveBeenCalledWith("ws-w");
+    });
+  });
+
+  describe("archive gating on active work (agents / hooks)", () => {
+    it("routes an agents-only archive to the warning modal instead of archiving", async () => {
+      activeWork.mockResolvedValue({ agentNames: ["Agent One"], hookNames: [] });
+      seed(makeWorkspace({ id: "ws-a" }));
+
+      appStore.dispatch(requestArchiveWorkspace("ws-a"));
+      await flush();
+
+      expect(ws.archive).not.toHaveBeenCalled();
+      expect(stored("ws-a")?.status).toBe(WorkspaceStatusEnum.Active);
+      expect(appStore.state.workspaceOperations.showArchiveWarning).toBe(true);
+      expect(appStore.state.workspaceOperations.runningAgentNamesForArchive).toEqual([
+        "Agent One",
+      ]);
+      expect(appStore.state.workspaceOperations.activeHookNamesForArchive).toEqual([]);
+    });
+
+    it("routes a hooks-only archive to the warning modal instead of archiving", async () => {
+      activeWork.mockResolvedValue({ agentNames: [], hookNames: ["ci-watch"] });
+      seed(makeWorkspace({ id: "ws-a" }));
+
+      appStore.dispatch(requestArchiveWorkspace("ws-a"));
+      await flush();
+
+      expect(ws.archive).not.toHaveBeenCalled();
+      expect(appStore.state.workspaceOperations.showArchiveWarning).toBe(true);
+      expect(appStore.state.workspaceOperations.activeHookNamesForArchive).toEqual(["ci-watch"]);
+    });
+
+    it("routes an agents-and-hooks archive to the warning modal with both lists", async () => {
+      activeWork.mockResolvedValue({ agentNames: ["Agent One"], hookNames: ["ci-watch"] });
+      seed(makeWorkspace({ id: "ws-a" }));
+
+      appStore.dispatch(requestArchiveWorkspace("ws-a"));
+      await flush();
+
+      expect(ws.archive).not.toHaveBeenCalled();
+      expect(appStore.state.workspaceOperations.showArchiveWarning).toBe(true);
+      expect(appStore.state.workspaceOperations.runningAgentNamesForArchive).toEqual([
+        "Agent One",
+      ]);
+      expect(appStore.state.workspaceOperations.activeHookNamesForArchive).toEqual(["ci-watch"]);
+    });
+
+    it("archives without a warning when no agents or hooks are active", async () => {
+      activeWork.mockResolvedValue({ agentNames: [], hookNames: [] });
+      seed(makeWorkspace({ id: "ws-a" }));
+
+      appStore.dispatch(requestArchiveWorkspace("ws-a"));
+      await flush();
+
+      expect(appStore.state.workspaceOperations.showArchiveWarning).toBe(false);
+      expect(ws.archive).toHaveBeenCalledWith("ws-a");
+      expect(stored("ws-a")?.status).toBe(WorkspaceStatusEnum.Archived);
+    });
+
+    it("'Archive anyway' proceeds with archive-with-undo for the pending workspace", async () => {
+      activeWork.mockResolvedValue({ agentNames: [], hookNames: ["ci-watch"] });
+      seed(makeWorkspace({ id: "ws-a" }));
+
+      appStore.dispatch(requestArchiveWorkspace("ws-a"));
+      await flush();
+      expect(appStore.state.workspaceOperations.showArchiveWarning).toBe(true);
+      expect(ws.archive).not.toHaveBeenCalled();
+
+      appStore.dispatch(confirmArchiveWorkspace());
+      await flush();
+
+      expect(appStore.state.workspaceOperations.showArchiveWarning).toBe(false);
+      expect(ws.archive).toHaveBeenCalledWith("ws-a");
+      expect(stored("ws-a")?.status).toBe(WorkspaceStatusEnum.Archived);
+    });
   });
 
   it("bulk-archives every active workspace for the pending repo", async () => {
