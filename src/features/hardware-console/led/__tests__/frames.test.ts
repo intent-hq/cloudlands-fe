@@ -169,6 +169,12 @@ describe('buildRgbcfgParams', () => {
     expect(params.ambient.s).toBeGreaterThan(0);
   });
 
+  it('recording pulses red in both zones', () => {
+    const params = buildRgbcfgParams({ kind: 'recording' });
+    expect(params.keys).toMatchObject({ e: LED_EFFECT_BREATH, c: 0xff3b30 });
+    expect(params.ambient).toMatchObject({ e: LED_EFFECT_BREATH, c: 0xff3b30 });
+  });
+
   it('zones carry the {e, b, s, m, c} wire shape', () => {
     const params = buildRgbcfgParams({ kind: 'running', runningCount: 1 });
     expect(Object.keys(params.keys).sort()).toEqual(['b', 'c', 'e', 'm', 's']);

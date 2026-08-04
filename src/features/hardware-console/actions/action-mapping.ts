@@ -52,6 +52,7 @@ export const ACTION_KEY_ACTION_IDS = [
   'new-agent',
   'new-workspace',
   'switch-window-layouts',
+  'push-to-talk',
   'none',
 ] as const;
 
@@ -75,14 +76,16 @@ export const CODEX_MIC_LINKED_SLOT = 5;
 /**
  * Per-model default mappings on ACT06–ACT12.
  *
- * CM2 (7 discrete keys): creation/navigation actions first, then the
- * agent-cycling actions on ACT10–ACT12 (Settings-graphic row 4) —
- * in-progress, attention, unread; `cycle-workspace-agents`, `stop-agent`,
- * and `toggle-sidebar-tabs` ship unassigned (all stay assignable).
+ * CM2 (7 discrete keys): creation/navigation actions first, then row 4
+ * (ACT10–ACT12, Settings-graphic keys 2/3/4) = push-to-talk, in-progress
+ * cycling, unread cycling; `cycle-workspace-agents`,
+ * `cycle-attention-agents`, `stop-agent`, and `toggle-sidebar-tabs` ship
+ * unassigned (all stay assignable).
  *
  * Codex Micro (6 printed caps): row 3 = lightning (ACT06), checkmark
  * (ACT07), x-mark (ACT08), branching (ACT09); row 4 = the linked 2U Mic
- * pair (action on ACT10, ACT11 unset by default) and the logo key (ACT12).
+ * pair (push-to-talk on ACT10, ACT11 unset by default) and the logo key
+ * (ACT12 = unread cycling).
  */
 export const DEFAULT_ACTION_MAPPINGS: Record<
   HardwareDeviceModel,
@@ -93,8 +96,8 @@ export const DEFAULT_ACTION_MAPPINGS: Record<
     'new-agent',
     'see-spec',
     'switch-window-layouts',
+    'push-to-talk',
     'cycle-in-progress-agents',
-    'cycle-attention-agents',
     'cycle-unread-agents',
   ],
   'codex-micro': [
@@ -102,9 +105,9 @@ export const DEFAULT_ACTION_MAPPINGS: Record<
     'cycle-attention-agents',
     'stop-agent',
     'new-workspace',
-    'cycle-unread-agents',
+    'push-to-talk',
     'none',
-    'new-agent',
+    'cycle-unread-agents',
   ],
 };
 
@@ -137,29 +140,98 @@ export const PREVIOUS_CM2_DEFAULT_ACTION_MAPPING: readonly ActionKeyActionId[] =
   'cycle-attention-agents',
 ];
 
+/**
+ * CM2 defaults before push-to-talk landed on slot 4 (ACT10) — row 4 was
+ * in-progress / attention / unread cycling. Used only by the one-shot
+ * hydration migration below.
+ */
+export const PRE_PTT_CM2_DEFAULT_ACTION_MAPPING: readonly ActionKeyActionId[] = [
+  'new-workspace',
+  'new-agent',
+  'see-spec',
+  'switch-window-layouts',
+  'cycle-in-progress-agents',
+  'cycle-attention-agents',
+  'cycle-unread-agents',
+];
+
 /** Every prior CM2 default generation the migration recognizes. */
 const PRIOR_CM2_DEFAULT_ACTION_MAPPINGS: readonly (readonly ActionKeyActionId[])[] = [
   LEGACY_CM2_DEFAULT_ACTION_MAPPING,
   PREVIOUS_CM2_DEFAULT_ACTION_MAPPING,
+  PRE_PTT_CM2_DEFAULT_ACTION_MAPPING,
 ];
 
 /**
+ * Codex Micro defaults before push-to-talk landed on slot 4 (ACT10) — the
+ * Mic pair carried unread cycling and the logo key (ACT12) new-agent. Used
+ * only by the one-shot hydration migration below.
+ */
+export const PRE_PTT_CODEX_DEFAULT_ACTION_MAPPING: readonly ActionKeyActionId[] = [
+  'cycle-in-progress-agents',
+  'cycle-attention-agents',
+  'stop-agent',
+  'new-workspace',
+  'cycle-unread-agents',
+  'none',
+  'new-agent',
+];
+
+/** Every prior Codex Micro default generation the migration recognizes. */
+const PRIOR_CODEX_DEFAULT_ACTION_MAPPINGS: readonly (readonly ActionKeyActionId[])[] = [
+  PRE_PTT_CODEX_DEFAULT_ACTION_MAPPING,
+];
+
+/**
+ * Migrate one model's persisted mapping when it still equals a prior
+ * default generation (never customized). Whole-mapping equality keeps
+ * user-customized mappings untouched — a user who changed any slot keeps
+ * their layout and can pick up the new default via reset-to-defaults.
+ * Returns true when the record was changed.
+ */
+function migratePriorDefaultActionMapping(
+  mappings: Record<HardwareDeviceModel, ActionKeyActionId[]>,
+  model: HardwareDeviceModel,
+  priors: readonly (readonly ActionKeyActionId[])[],
+): boolean {
+  const mapping = mappings[model];
+  const isPriorDefault = priors.some(
+    (prior) =>
+      mapping.length === prior.length && mapping.every((id, slot) => id === prior[slot]),
+  );
+  if (!isPriorDefault) return false;
+  mappings[model] = [...DEFAULT_ACTION_MAPPINGS[model]];
+  return true;
+}
+
+/**
  * Migrate a persisted CM2 mapping that still equals a prior default
- * generation (never customized) to the current defaults. Whole-mapping
- * equality keeps user-customized mappings untouched — a user who changed
- * any slot keeps their layout and can pick up the new default via
- * reset-to-defaults. Returns true when the record was changed.
+ * generation (never customized) to the current defaults. Returns true when
+ * the record was changed.
  */
 export function migrateLegacyCm2DefaultActionMapping(
   mappings: Record<HardwareDeviceModel, ActionKeyActionId[]>,
 ): boolean {
-  const cm2 = mappings['creator-micro-2'];
-  const isPriorDefault = PRIOR_CM2_DEFAULT_ACTION_MAPPINGS.some(
-    (prior) => cm2.length === prior.length && cm2.every((id, slot) => id === prior[slot]),
+  return migratePriorDefaultActionMapping(
+    mappings,
+    'creator-micro-2',
+    PRIOR_CM2_DEFAULT_ACTION_MAPPINGS,
   );
-  if (!isPriorDefault) return false;
-  mappings['creator-micro-2'] = [...DEFAULT_ACTION_MAPPINGS['creator-micro-2']];
-  return true;
+}
+
+/**
+ * Migrate a persisted Codex Micro mapping that still equals a prior default
+ * generation (never customized) to the current defaults. Returns true when
+ * the record was changed.
+ */
+export function migrateLegacyCodexDefaultActionMapping(
+  mappings: Record<HardwareDeviceModel, ActionKeyActionId[]>,
+): boolean {
+  return migratePriorDefaultActionMapping(
+    mappings,
+    'codex-micro',
+    PRIOR_CODEX_DEFAULT_ACTION_MAPPINGS,
+  );
 }
 
 /** CM2 defaults — the legacy single-model seam, kept for existing consumers. */

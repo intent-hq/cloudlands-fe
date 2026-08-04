@@ -33,7 +33,8 @@ export type AgentKeyLedState =
 /**
  * Ambient/keys backlight state (spec "Ambient state mapping (v1)").
  * Discriminated union so `running` can carry the fleet-wide count of running
- * workspaces, which scales the breath speed.
+ * workspaces, which scales the breath speed. `recording` = push-to-talk
+ * capture in progress (red pulse, outranks all).
  */
 export type AmbientLedState =
   | { kind: 'dark' }
@@ -43,6 +44,7 @@ export type AmbientLedState =
   | { kind: 'question' }
   | { kind: 'blocked' }
   | { kind: 'failed' }
+  | { kind: 'recording' }
   | { kind: 'disconnected' };
 
 /** Host-side lighting state snapshot: 6 key states + the ambient state. */
@@ -152,6 +154,7 @@ const AMBIENT_PALETTE: Record<Exclude<AmbientLedState['kind'], 'running'>, Rgbcf
   question: { e: LED_EFFECT_BREATH, b: 0.8, s: FAST_BREATH_SPEED, m: 0, c: COLOR_YELLOW },
   blocked: { e: LED_EFFECT_BREATH, b: 0.8, s: FAST_BREATH_SPEED, m: 0, c: COLOR_ORANGE },
   failed: { e: LED_EFFECT_BREATH, b: 0.8, s: FAST_BREATH_SPEED, m: 0, c: COLOR_RED },
+  recording: { e: LED_EFFECT_BREATH, b: 0.8, s: FAST_BREATH_SPEED, m: 0, c: COLOR_RED },
   disconnected: {
     e: LED_EFFECT_SNAKE,
     b: 0.2,

@@ -37,7 +37,10 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } = await import(
     '$store/renderer/utils/test-helpers/store-mock'
   );
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
+  return createAppStoreMockModule({
+    state: () => ({ hardwareConsole: { pttRecording: false, voiceTranscribing: false } }),
+    dispatch: mocks.dispatch,
+  });
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({

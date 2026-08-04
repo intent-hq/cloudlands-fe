@@ -377,6 +377,14 @@
                 {/each}
               </Select.Content>
             </Select.Root>
+            {#if selectedActionId === 'push-to-talk'}
+              <ul class="text-xs text-subtle mt-2 space-y-0.5">
+                <li>{m.settings_hardware_pttHint_hold_description()}</li>
+                <li>{m.settings_hardware_pttHint_tap_description()}</li>
+                <li>{m.settings_hardware_pttHint_doublePress_description()}</li>
+                <li>{m.settings_hardware_pttHint_doubleHold_description()}</li>
+              </ul>
+            {/if}
             {#if showLinkedKeyWarning}
               <p class="text-xs text-amber-500/90 mt-2">
                 {m.settings_hardware_linkedKey_warning()}

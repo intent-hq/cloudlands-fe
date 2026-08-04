@@ -31,12 +31,27 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import Fa from 'svelte-fa';
   import {
   faMagicWandSparkles,
+  faMicrophone,
   faPaperclip,
   faPaperPlane,
+  faSpinner,
   faXmark,
   faLayerGroup,
   faStop,
 } from '@fortawesome/free-solid-svg-icons';
+  import {
+  selectPttRecording,
+  selectVoiceTranscribing,
+} from '$store/renderer/slices/hardware-console/hardware-console-selectors';
+  import {
+  cancelComposerMicRecording,
+  isComposerMicRecording,
+  toggleComposerMicRecording,
+} from '$features/hardware-console/voice/composer-mic-controller';
+  import { cancelActiveTranscription } from '$features/hardware-console/voice/transcription-cancellation';
+  import { showVoiceSetupToast } from '$features/hardware-console/voice/voice-setup-toast';
+  import { selectEffectiveVoiceEngine } from '$store/renderer/slices/voice-settings/voice-settings-selectors';
+  import type { PttContext } from '$features/hardware-console/voice/ptt-controller';
   import Button from '../../ui/button/button.svelte';
   import TipTapEditor from './TipTapEditor.svelte';
   import ModelPicker from './ModelPicker.svelte';
@@ -62,6 +77,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   const defaultProviderId$ = selectCatalogDefaultProviderId();
   const activeProviderId$ = selectActiveProviderId();
+  const pttRecording$ = selectPttRecording();
+  const voiceTranscribing$ = selectVoiceTranscribing();
+  const effectiveVoiceEngine$ = selectEffectiveVoiceEngine();
 
   // Catalog-backed local shims for the legacy provider-config helpers.
   function normalizeProviderId(providerId: string): string {
@@ -222,6 +240,52 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   // no turn to stop while a parent is idle-waiting, and that affordance lives
   // on sidebar/list surfaces (IDLE-1).
   let showStopButton = $derived(isStreaming || isResponding);
+
+  // Mic latch button: "recording" renders only for the session THIS button
+  // started (ownership via the controller's session token) — a live hardware
+  // PTT session leaves the button idle-looking, and a click then hints
+  // instead of hijacking it. `$pttRecording$` drives re-evaluation (it flips
+  // exactly when a session starts/ends); transcribing disables the button
+  // with a spinner while `voice.transcribe` is in flight.
+  const micRecording = $derived($pttRecording$ && isComposerMicRecording());
+  const micTranscribing = $derived($voiceTranscribing$);
+
+  /** Dispatch + hint context for the shared PTT session API. */
+  const micContext: PttContext = {
+    dispatch: (action) => appStore.dispatch(action as { type: string }),
+    showHint: (message) => toast.info(message),
+  };
+
+  function handleMicClick() {
+    // The button is hidden while the effective engine is 'unavailable'
+    // (no engine can transcribe at all — non-mac or helper-missing mac
+    // with no cloud key), so this gate only catches the render race where
+    // a click lands before the template reacts to a settings change. A
+    // live recording is never gated — its stop-click must always land.
+    if (
+      !micRecording &&
+      selectEffectiveVoiceEngine.select(appStore.state) === 'unavailable'
+    ) {
+      showVoiceSetupToast();
+      return;
+    }
+    toggleComposerMicRecording(micContext);
+  }
+
+  function handleMicEscape(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || !micRecording) return;
+    if (cancelComposerMicRecording(micContext)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }
+
+  // Cancel-while-transcribing: abandon the in-flight session so a hung or
+  // slow transcribe can never insert a late result — the transcribing state
+  // clears immediately and a new recording can start right away.
+  function handleMicCancelTranscription() {
+    cancelActiveTranscription();
+  }
 
   $effect(() => {
     const justEnabled = previousDisabled && !disabled;
@@ -990,6 +1054,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   });
 </script>
 
+<!-- Esc cancels an in-progress composer mic recording (discard, no
+     transcription). Capture phase so the editor's own Escape handling
+     never wins while dictation is live; a no-op unless this instance owns
+     the recording session. -->
+<svelte:window onkeydowncapture={handleMicEscape} />
+
 <div
   bind:this={containerRef}
   class={cn(
@@ -1226,6 +1296,57 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           <Fa icon={faPaperclip} size="sm" />
         </Button>
       </TooltipShortcut>
+
+      <!-- Mic latch button: click starts dictation, click again (Esc cancels)
+           stops and transcribes into the composer at the caret. Hidden when
+           no engine can transcribe at all ('unavailable': Windows/Linux or
+           helper-missing mac with no cloud key — see effective-voice-engine);
+           on macOS the button stays visible pre-authorization and the click
+           proceeds down the OS path so the permission prompt can fire. -->
+      {#if micTranscribing}
+        <!-- Clickable while transcribing: cancel abandons the in-flight
+             session (a hung provider's late result is discarded) and
+             returns the button to idle immediately. -->
+        <TooltipShortcut label={m.chat_richInput_micCancelTranscribing_label()} side="top">
+          <Button
+            variant="ghost-light"
+            size="icon-sm"
+            onclick={handleMicCancelTranscription}
+            aria-label={m.chat_richInput_micCancelTranscribing_label()}
+            data-testid="composer-mic-button"
+          >
+            <Fa icon={faSpinner} size="sm" class="animate-spin" />
+          </Button>
+        </TooltipShortcut>
+      {:else if micRecording}
+        <TooltipShortcut label={m.chat_richInput_micStop_label()} shortcut="Escape" side="top">
+          <Button
+            variant="ghost-light"
+            size="icon-sm"
+            onclick={handleMicClick}
+            aria-label={m.chat_richInput_micStop_label()}
+            aria-pressed="true"
+            class="text-destructive-foreground animate-pulse"
+            data-testid="composer-mic-button"
+          >
+            <Fa icon={faMicrophone} size="sm" />
+          </Button>
+        </TooltipShortcut>
+      {:else if $effectiveVoiceEngine$ !== 'unavailable'}
+        <TooltipShortcut label={m.chat_richInput_micStart_label()} side="top">
+          <Button
+            variant="ghost-light"
+            size="icon-sm"
+            {disabled}
+            onclick={handleMicClick}
+            aria-label={m.chat_richInput_micStart_label()}
+            aria-pressed="false"
+            data-testid="composer-mic-button"
+          >
+            <Fa icon={faMicrophone} size="sm" />
+          </Button>
+        </TooltipShortcut>
+      {/if}
 
       {#if enhanceAvailable}
         {#if isEnhancing}

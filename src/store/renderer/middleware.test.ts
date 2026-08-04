@@ -33,6 +33,8 @@ const mocks = vi.hoisted(() => {
   const hardwareConsolePromptPickerMiddleware = createPassthroughMiddleware();
   const hardwareConsoleActionKeyMiddleware = createPassthroughMiddleware();
   const hardwareConsoleEncoderMiddleware = createPassthroughMiddleware();
+  const voiceTranscriptionMiddleware = createPassthroughMiddleware();
+  const voiceSettingsMiddleware = createPassthroughMiddleware();
   const daemonHealthMiddleware = createPassthroughMiddleware();
   const settingsHydrationMiddleware = createPassthroughMiddleware();
   const modelSelectionPersistenceMiddleware = createPassthroughMiddleware();
@@ -121,6 +123,8 @@ const mocks = vi.hoisted(() => {
     ),
     createHardwareConsoleActionKeyMiddleware: vi.fn(() => hardwareConsoleActionKeyMiddleware),
     createHardwareConsoleEncoderMiddleware: vi.fn(() => hardwareConsoleEncoderMiddleware),
+    createVoiceTranscriptionMiddleware: vi.fn(() => voiceTranscriptionMiddleware),
+    createVoiceSettingsMiddleware: vi.fn(() => voiceSettingsMiddleware),
     createDaemonHealthMiddleware: vi.fn(() => daemonHealthMiddleware),
     createSettingsHydrationMiddleware: vi.fn(() => settingsHydrationMiddleware),
     createModelSelectionPersistenceMiddleware: vi.fn(() => modelSelectionPersistenceMiddleware),
@@ -207,6 +211,8 @@ const mocks = vi.hoisted(() => {
     hardwareConsolePromptPickerMiddleware,
     hardwareConsoleActionKeyMiddleware,
     hardwareConsoleEncoderMiddleware,
+    voiceTranscriptionMiddleware,
+    voiceSettingsMiddleware,
     daemonHealthMiddleware,
     settingsHydrationMiddleware,
     modelSelectionPersistenceMiddleware,
@@ -314,6 +320,12 @@ vi.mock("$features/hardware-console/actions/action-key-service", () => ({
 }));
 vi.mock("$features/hardware-console/encoder/encoder-service", () => ({
   createHardwareConsoleEncoderMiddleware: mocks.createHardwareConsoleEncoderMiddleware,
+}));
+vi.mock("$features/hardware-console/voice/transcription-service", () => ({
+  createVoiceTranscriptionMiddleware: mocks.createVoiceTranscriptionMiddleware,
+}));
+vi.mock("$features/voice/voice-settings-store-service", () => ({
+  createVoiceSettingsMiddleware: mocks.createVoiceSettingsMiddleware,
 }));
 vi.mock("./middlewares/daemon-health-service", () => ({
   createDaemonHealthMiddleware: mocks.createDaemonHealthMiddleware,
@@ -554,6 +566,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.hardwareConsoleLedStatusMiddleware,
       mocks.hardwareConsolePromptPickerMiddleware,
       mocks.hardwareConsoleActionKeyMiddleware,
+      mocks.voiceTranscriptionMiddleware,
       mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
       mocks.settingsHydrationMiddleware,
@@ -579,6 +592,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
+      mocks.voiceSettingsMiddleware,
       mocks.mcpManagementMiddleware,
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
@@ -641,6 +655,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.hardwareConsoleLedStatusMiddleware,
       mocks.hardwareConsolePromptPickerMiddleware,
       mocks.hardwareConsoleActionKeyMiddleware,
+      mocks.voiceTranscriptionMiddleware,
       mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
       mocks.settingsHydrationMiddleware,
@@ -666,6 +681,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
+      mocks.voiceSettingsMiddleware,
       mocks.mcpManagementMiddleware,
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
@@ -728,6 +744,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.hardwareConsoleLedStatusMiddleware,
       mocks.hardwareConsolePromptPickerMiddleware,
       mocks.hardwareConsoleActionKeyMiddleware,
+      mocks.voiceTranscriptionMiddleware,
       mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
       mocks.settingsHydrationMiddleware,
@@ -753,6 +770,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
+      mocks.voiceSettingsMiddleware,
       mocks.mcpManagementMiddleware,
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
@@ -816,6 +834,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.hardwareConsoleLedStatusMiddleware,
       mocks.hardwareConsolePromptPickerMiddleware,
       mocks.hardwareConsoleActionKeyMiddleware,
+      mocks.voiceTranscriptionMiddleware,
       mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
       mocks.settingsHydrationMiddleware,
@@ -841,6 +860,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
+      mocks.voiceSettingsMiddleware,
       mocks.mcpManagementMiddleware,
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
@@ -921,6 +941,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.hardwareConsoleLedStatusMiddleware,
       mocks.hardwareConsolePromptPickerMiddleware,
       mocks.hardwareConsoleActionKeyMiddleware,
+      mocks.voiceTranscriptionMiddleware,
       mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
       mocks.settingsHydrationMiddleware,
@@ -946,6 +967,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
+      mocks.voiceSettingsMiddleware,
       mocks.mcpManagementMiddleware,
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
@@ -991,6 +1013,7 @@ describe("hardware-console middleware gating in the HUD window", () => {
     mocks.createHardwareConsoleLedStatusMiddleware,
     mocks.createHardwareConsolePromptPickerMiddleware,
     mocks.createHardwareConsoleActionKeyMiddleware,
+    mocks.createVoiceTranscriptionMiddleware,
     mocks.createHardwareConsoleEncoderMiddleware,
   ];
 
@@ -1002,6 +1025,7 @@ describe("hardware-console middleware gating in the HUD window", () => {
     mocks.hardwareConsoleLedStatusMiddleware,
     mocks.hardwareConsolePromptPickerMiddleware,
     mocks.hardwareConsoleActionKeyMiddleware,
+    mocks.voiceTranscriptionMiddleware,
     mocks.hardwareConsoleEncoderMiddleware,
   ];
 

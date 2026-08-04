@@ -22,5 +22,8 @@
         <!-- Required for clipboard access in hardened runtime -->
         <key>com.apple.security.automation.apple-events</key>
         <true/>
+        <!-- Required: microphone capture for voice dictation -->
+        <key>com.apple.security.device.audio-input</key>
+        <true/>
     </dict>
 </plist>

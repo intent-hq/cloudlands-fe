@@ -47,10 +47,12 @@ import { HARDWARE_CONSOLE_SETTINGS_PATH } from '../assignment/key-pin-persistenc
 import {
   actionKeyToSlot,
   migrateLegacyCm2DefaultActionMapping,
+  migrateLegacyCodexDefaultActionMapping,
   normalizeActionMappingsByModel,
   type ActionKeyActionId,
 } from './action-mapping';
 import { normalizeCycleScopeByFamily } from './cycle-scope';
+import { cancelPttRecording } from '../voice/ptt-controller';
 import { getActionKeyDefinition, type ActionKeyContext } from './action-key-registry';
 import { ENCODER_HUD_HIDE_MS } from '../encoder/encoder-service';
 
@@ -183,6 +185,34 @@ export function handleActionKeyPress(
 }
 
 /**
+ * Handle one action-key release against the given model's mapping. Only
+ * hold-capable actions (registry entries with `executeUp`) react; releases
+ * of press-only actions stay ignored. No availability re-check on release —
+ * an in-progress hold must always end cleanly. Exported for tests. Returns
+ * the executed action id, or null when the release was a no-op.
+ */
+export function handleActionKeyRelease(
+  key: LogicalKeyId,
+  deps: ActionKeyDeps = {},
+  model: HardwareDeviceModel = 'creator-micro-2',
+): ActionKeyActionId | null {
+  const slot = actionKeyToSlot(key);
+  if (slot === null) return null;
+  const actionId = appStore.state.hardwareConsole.actionMappingByModel[model]?.[slot] ?? 'none';
+  if (actionId === 'none') return null;
+
+  const definition = getActionKeyDefinition(actionId);
+  if (!definition.executeUp) return null;
+  try {
+    definition.executeUp(buildContext(deps));
+  } catch (error) {
+    logger.warn('Action key release execution failed', { key, actionId, error });
+    return null;
+  }
+  return actionId;
+}
+
+/**
  * Wire action-key handling to a manager. Returns the teardown function.
  * Exported for tests; production installs via the middleware below.
  */
@@ -204,22 +234,31 @@ export function installHardwareConsoleActionKeys(
     const offKeydown = decoder.on('keydown', ({ key }) => {
       handleActionKeyPress(key, deps, model);
     });
+    const offKeyup = decoder.on('keyup', ({ key }) => {
+      handleActionKeyRelease(key, deps, model);
+    });
     const offRaw = manager.onRawMessage((message) => decoder.handleMessage(message));
     detachDecoder = () => {
       offRaw();
       offKeydown();
+      offKeyup();
     };
   };
 
   const offStatus = manager.onStatusChange((status) => {
     if (status === 'connected') setupDecoder();
-    else if (status === 'disconnected' || status === 'unavailable') teardownDecoder();
+    else if (status === 'disconnected' || status === 'unavailable') {
+      teardownDecoder();
+      // A hold in progress can never see its keyup once the device is gone.
+      cancelPttRecording(buildContext(deps));
+    }
   });
   if (manager.status === 'connected') setupDecoder();
 
   return () => {
     offStatus();
     teardownDecoder();
+    cancelPttRecording(buildContext(deps));
   };
 }
 
@@ -263,15 +302,16 @@ async function hydrateOnce(): Promise<boolean> {
     }
     const legacy = Array.isArray(bag.actionMapping) ? bag.actionMapping : undefined;
     const mappings = normalizeActionMappingsByModel(bag.actionMappingByModel, legacy);
-    // One-shot default migration: a persisted CM2 mapping still exactly equal
-    // to a prior default generation (never customized) picks up the current
-    // defaults and is written back.
-    const migrated = migrateLegacyCm2DefaultActionMapping(mappings);
+    // One-shot default migration: a persisted per-model mapping still exactly
+    // equal to a prior default generation (never customized) picks up the
+    // current defaults and is written back.
+    const migratedCm2 = migrateLegacyCm2DefaultActionMapping(mappings);
+    const migratedCodex = migrateLegacyCodexDefaultActionMapping(mappings);
     appStore.dispatch(hydrateHardwareConsoleActionMapping(mappings));
     appStore.dispatch(
       hydrateHardwareConsoleCycleScopes(normalizeCycleScopeByFamily(bag.cycleScopeByFamily)),
     );
-    if (migrated) await persistActionMapping(mappings);
+    if (migratedCm2 || migratedCodex) await persistActionMapping(mappings);
     return true;
   } catch (error) {
     logger.error('Action-mapping hydration failed; dispatching defaults', { error });

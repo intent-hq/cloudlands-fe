@@ -56,6 +56,10 @@ export interface HardwareConsoleState {
   encoderHudWorkspaceId: string | null;
   /** Label of the last-fired cycle action key shown by the action HUD; `null` = HUD hidden. */
   actionHudLabel: string | null;
+  /** True while a push-to-talk recording is in progress (transient, never persisted). */
+  pttRecording: boolean;
+  /** True while a `voice.transcribe` request is in flight (transient, never persisted). */
+  voiceTranscribing: boolean;
   /**
    * Per-model 7-slot action-key mappings (slot 0 = action key ACT06),
    * keyed by device model so a customized CM2 layout never bleeds into the
