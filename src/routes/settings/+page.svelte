@@ -30,6 +30,7 @@
   import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
   import WorkspaceApiSettings from '$lib/components/settings/WorkspaceApiSettings.svelte';
   import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
+  import AgentFeaturesSettings from '$lib/components/settings/AgentFeaturesSettings.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
@@ -482,6 +483,14 @@
             {m.settings_section_workspaceApi()}
           </h2>
           <WorkspaceApiSettings />
+        </div>
+
+        <!-- Agent Features -->
+        <div id="agent-features" class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            {m.settings_section_agentFeatures()}
+          </h2>
+          <AgentFeaturesSettings />
         </div>
 
         <!-- Agent Backend -->
