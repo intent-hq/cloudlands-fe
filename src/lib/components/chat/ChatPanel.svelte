@@ -2987,9 +2987,24 @@
     );
   }
 
-  // Handle selecting a suggested prompt - sends immediately
+  // Handle selecting a suggested prompt - sends the prompt bare and
+  // immediately: no composer context items, no workspace context string, and
+  // no draft cleanup, so the user's in-progress draft (text + attachments +
+  // backend draft) stays fully intact. All three entry points route here:
+  // SuggestedPrompts click, the Ctrl/Alt+number shortcut, and
+  // ChiefChatEmptyState selection.
   function handleSelectSuggestedPrompt(prompt: string) {
-    handleSend(prompt);
+    if (!workspace || !isActive) return;
+    appStore.dispatch(
+      sendMessage(agentId, {
+        wsId: workspace.id,
+        text: prompt,
+        agentName,
+        agentModel,
+        isInitialWorkspaceAgent,
+      }),
+    );
+    void performLocalSendCleanup({ followBottom: true });
   }
 
   // Handle editing a suggested prompt - loads into input without sending
