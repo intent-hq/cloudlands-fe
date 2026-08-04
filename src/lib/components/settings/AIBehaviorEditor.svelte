@@ -40,9 +40,9 @@
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import {
-  hasExplicitModelPin,
-  buildResetToInheritPayloads,
-} from './utils/reset-specialists-to-inherit';
+    hasExplicitModelPin,
+    buildResetToInheritPayloads,
+  } from './utils/reset-specialists-to-inherit';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';

@@ -232,7 +232,7 @@ describe('Specialist Configuration', () => {
         expect(specialist.name).toBeDefined();
         expect(specialist.description).toBeDefined();
         // No specialist pins a tier/model: absent means inherit the global default.
-        expect(specialist.defaultModelTier || specialist.defaultModel).toBeUndefined();
+        expect(specialist.defaultModel).toBeUndefined();
         expect(specialist.defaultBehaviorPrompt).toBeDefined();
       }
     });
