@@ -164,6 +164,7 @@
   slide,
 } from 'svelte/transition';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
+  import { resolvePreviousUserMessageId } from '$lib/utils/message-navigation';
   import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
@@ -1932,7 +1933,7 @@
   }
 
   // Navigate to a specific message by index
-  function navigateToMessage(index: number) {
+  async function navigateToMessage(index: number) {
     if (!scrollContainer) return;
 
     const messages = $agentMessages$;
@@ -1951,19 +1952,12 @@
 
     currentMessageIndex = index;
 
-    // Find the message element by data-message-index
-    const targetElement = scrollContainer.querySelector(
-      `[data-message-index="${index}"]`,
-    ) as HTMLElement;
+    // Force-render the target's turn (it may be a virtualized LazyTurn
+    // placeholder) and wait for the element before scrolling.
+    const targetElement = await forceRenderAndFindMessage(messages[index].id);
 
     if (targetElement) {
       smoothScrollTo(targetElement, 'center');
-
-      // // Flash highlight effect
-      // targetElement.classList.add('message-highlight-flash');
-      // setTimeout(() => {
-      //   targetElement.classList.remove('message-highlight-flash');
-      // }, 600);
     }
   }
 
@@ -1980,9 +1974,9 @@
     if (direction === 'previous') {
       // If at bottom (no selection), go to last message
       if (currentMessageIndex === -1) {
-        navigateToMessage(messages.length - 1);
+        void navigateToMessage(messages.length - 1);
       } else if (currentMessageIndex > 0) {
-        navigateToMessage(currentMessageIndex - 1);
+        void navigateToMessage(currentMessageIndex - 1);
       } else {
         // At first message, scroll to top
         smoothScrollToPosition(0);
@@ -1993,10 +1987,10 @@
         // Already at bottom, do nothing
         return;
       } else if (currentMessageIndex < messages.length - 1) {
-        navigateToMessage(currentMessageIndex + 1);
+        void navigateToMessage(currentMessageIndex + 1);
       } else {
         // At last message, go to bottom
-        navigateToMessage(-1);
+        void navigateToMessage(-1);
       }
     }
   }
@@ -2118,6 +2112,24 @@
   let clearDeepOpenHighlight: (() => void) | null = null;
   const DEEP_OPEN_HIGHLIGHT_NAME = 'deep-open-match';
   const DEEP_OPEN_HIGHLIGHT_TIMEOUT_MS = 8000;
+
+  // Force-render a message's turn through the LazyTurn virtualization (reuses
+  // the deep-open force-visible key) and resolve its DOM element once rendered.
+  // Drops follow so the placeholder expanding doesn't yank the viewport back
+  // down. Retries across a few frames; resolves null if it never appears.
+  async function forceRenderAndFindMessage(messageId: string): Promise<HTMLElement | null> {
+    deepOpenTurnKey = messageIdToTurnKey.get(messageId) ?? messageId;
+    shouldFollowBottom = false;
+    await tick();
+    const selector = `[data-message-id="${CSS.escape(messageId)}"]`;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await new Promise(requestAnimationFrame);
+      const targetElement = scrollContainer?.querySelector(selector) as HTMLElement | null;
+      if (targetElement) return targetElement;
+    }
+    logger.warn('[ChatPanel] Message turn not rendered after force-visible', { messageId });
+    return null;
+  }
 
   // Collect ranges for every case-insensitive occurrence of each query token
   // inside the message element (same text-node walk as the search highlighter,
@@ -2406,34 +2418,28 @@
   });
 
   // Scroll to previous user message from the current sticky one
-  function scrollToPreviousUserMessage(currentMessageId: string) {
+  async function scrollToPreviousUserMessage(currentMessageId: string) {
     if (!scrollContainer) return;
 
-    // Get all user messages
-    const userMessages = $agentMessages$.filter((m) => m.role === 'user');
-    const currentIndex = userMessages.findIndex((m) => m.id === currentMessageId);
+    const previousMessageId = resolvePreviousUserMessageId($agentMessages$, currentMessageId);
 
-    if (currentIndex <= 0) {
+    if (!previousMessageId) {
       // At first message or not found - scroll to top
       smoothScrollToPosition(0);
       return;
     }
 
-    // Find the previous user message
-    const previousMessage = userMessages[currentIndex - 1];
-    const targetElement = scrollContainer.querySelector(
-      `[data-message-id="${previousMessage.id}"]`,
-    ) as HTMLElement;
+    // Force-render the previous message's turn (it may be a virtualized
+    // LazyTurn placeholder) and wait for the element before scrolling.
+    const targetElement = await forceRenderAndFindMessage(previousMessageId);
+    if (!targetElement) return;
 
-    if (targetElement) {
-      smoothScrollTo(targetElement, 'start');
-
-      // // Flash highlight effect
-      // targetElement.classList.add('message-highlight-flash');
-      // setTimeout(() => {
-      //   targetElement.classList.remove('message-highlight-flash');
-      // }, 600);
-    }
+    // Anchor on the turn container rather than the user-message row: the row
+    // is position: sticky, so its rect is clamped within the turn and can
+    // point at the bottom of the previous turn instead of the message's
+    // natural position at the top of its turn.
+    const anchor = (targetElement.closest('.conversation-turn') as HTMLElement) ?? targetElement;
+    smoothScrollTo(anchor, 'start');
   }
 
   // Track if draft prompt has been applied to prevent re-applying on re-renders
