@@ -56,8 +56,10 @@ import {
   bulkUpsertSessions,
   clearAllSessions,
   removeSession,
+  removeWorkspaceSessions,
   updateSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
+import { CHIEF_WORKSPACE_ID } from "$shared/types/branded-ids";
 import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
 import { selectChatLiveStreamPhase } from "$store/renderer/slices/chat-state/chat-state-selectors";
 import {
@@ -716,6 +718,111 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     expect(selectAgentMessages.select(appStore.state, agentA).map((m) => m.id)).toContain(
       "live-turn-msg",
     );
+  });
+
+  describe("chief-workspace exemption from the viewed-agent swap (monorepo#1421)", () => {
+    const CHIEF_AGENT = "agent-sub-chief";
+
+    function seedChiefSession(agentId: string): void {
+      seedSession(agentId, { workspaceId: CHIEF_WORKSPACE_ID });
+    }
+
+    function openChiefChat(agentId: string): FakeSubscription {
+      appStore.dispatch(initializeChatRequested(agentId, { wsId: CHIEF_WORKSPACE_ID }));
+      const sub = fakeSubscriptions.find((s) => s.agentId === agentId);
+      if (!sub) throw new Error(`no chat.subscribe recorded for ${agentId}`);
+      return sub;
+    }
+
+    it("keeps the chief subscription open — and live — when a workspace agent is marked as viewed", () => {
+      const workspaceAgent = "agent-sub-chief-ws-viewed";
+      seedChiefSession(CHIEF_AGENT);
+      seedSession(workspaceAgent);
+      const chiefSub = openChiefChat(CHIEF_AGENT);
+
+      // The user opens a workspace chat while the Chief sidebar panel stays
+      // mounted. The viewed-agent swap must not tear down the chief stream.
+      openChat(workspaceAgent);
+      appStore.dispatch(markAgentAsViewed(workspaceAgent));
+
+      expect(chiefSub.unsubscribe).not.toHaveBeenCalled();
+
+      // A live emit for the chief agent must still apply to the store.
+      chiefSub.handler(transcript([makeMessage("chief-live", "still streaming")], true));
+      expect(hasLiveChatSubscription(CHIEF_AGENT)).toBe(true);
+      expect(selectAgentMessages.select(appStore.state, CHIEF_AGENT).map((m) => m.id)).toContain(
+        "chief-live",
+      );
+    });
+
+    it("does not close the viewed workspace agent's subscription when the chief agent is marked as viewed (symmetric)", () => {
+      const workspaceAgent = "agent-sub-chief-symmetric";
+      seedChiefSession(CHIEF_AGENT);
+      seedSession(workspaceAgent);
+      const wsSub = openChat(workspaceAgent);
+      appStore.dispatch(markAgentAsViewed(workspaceAgent));
+
+      // Focusing the Chief panel marks its agent as viewed — the open
+      // workspace chat's subscription must survive the swap.
+      openChiefChat(CHIEF_AGENT);
+      appStore.dispatch(markAgentAsViewed(CHIEF_AGENT));
+
+      expect(wsSub.unsubscribe).not.toHaveBeenCalled();
+      wsSub.handler(transcript([makeMessage("ws-live", "still streaming")], true));
+      expect(hasLiveChatSubscription(workspaceAgent)).toBe(true);
+    });
+
+    it("viewing one chief thread still closes another chief thread's subscription", () => {
+      const otherChiefThread = "agent-sub-chief-thread-b";
+      seedChiefSession(CHIEF_AGENT);
+      seedChiefSession(otherChiefThread);
+      const threadASub = openChiefChat(CHIEF_AGENT);
+      openChiefChat(otherChiefThread);
+
+      appStore.dispatch(markAgentAsViewed(otherChiefThread));
+
+      expect(threadASub.unsubscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it("spares the chief subscription when closing the last viewed workspace chat clears the viewed agent", () => {
+      const workspaceAgent = "agent-sub-chief-chat-close";
+      seedChiefSession(CHIEF_AGENT);
+      seedSession(workspaceAgent);
+      const chiefSub = openChiefChat(CHIEF_AGENT);
+      const wsSub = openChat(workspaceAgent);
+      appStore.dispatch(markAgentAsViewed(workspaceAgent));
+
+      // The chat area closes: the applied clear tears down workspace
+      // subscriptions but the chief panel is still open in the sidebar.
+      appStore.dispatch(clearCurrentlyViewedAgent(workspaceAgent));
+      expect(wsSub.unsubscribe).toHaveBeenCalledTimes(1);
+      expect(chiefSub.unsubscribe).not.toHaveBeenCalled();
+    });
+
+    it("a clear scoped to the chief agent closes exactly the chief subscription, even while a workspace agent stays viewed", () => {
+      const workspaceAgent = "agent-sub-chief-scoped-clear";
+      seedChiefSession(CHIEF_AGENT);
+      seedSession(workspaceAgent);
+      const chiefSub = openChiefChat(CHIEF_AGENT);
+      const wsSub = openChat(workspaceAgent);
+      appStore.dispatch(markAgentAsViewed(workspaceAgent));
+
+      // ChiefCard collapse / thread-switch destroy: the swap exempts chief
+      // subscriptions, so this scoped clear is their only viewed-lifecycle
+      // teardown — and it must not touch the still-viewed workspace chat.
+      appStore.dispatch(clearCurrentlyViewedAgent(CHIEF_AGENT));
+      expect(chiefSub.unsubscribe).toHaveBeenCalledTimes(1);
+      expect(wsSub.unsubscribe).not.toHaveBeenCalled();
+    });
+
+    it("still closes chief subscriptions on removeWorkspaceSessions for the chief workspace", () => {
+      seedChiefSession(CHIEF_AGENT);
+      const chiefSub = openChiefChat(CHIEF_AGENT);
+
+      appStore.dispatch(removeWorkspaceSessions(CHIEF_WORKSPACE_ID));
+
+      expect(chiefSub.unsubscribe).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("live stream phase mirroring", () => {
