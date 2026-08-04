@@ -11,6 +11,7 @@
   import Fa from 'svelte-fa';
   import Portal from './Portal.svelte';
   import Button from './button/button.svelte';
+  import ZoomPanViewport from './ZoomPanViewport.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -33,6 +34,7 @@
 
   let closeButtonElement: HTMLButtonElement | null = $state(null);
   let dialogElement: HTMLDivElement | null = $state(null);
+  let zoomPanViewport: ZoomPanViewport | undefined = $state();
 
   function close() {
     open = false;
@@ -44,13 +46,19 @@
   }
 
   function handleBackdropClick(e: MouseEvent) {
-    // Only close if clicking the backdrop itself, not the image
-    if (e.target === e.currentTarget) {
-      close();
-    }
+    // Close on backdrop clicks; clicks on the image or the zoom controls keep
+    // the lightbox open. (A drag-pan's trailing click is suppressed by
+    // ZoomPanViewport before it reaches this handler.)
+    const target = e.target instanceof Element ? e.target : null;
+    if (target?.closest('img, [role="toolbar"], button, input')) return;
+    close();
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    // Zoom keys (+/-/0): forward to the viewport unless it already handled
+    // the event itself (keydown bubbling up from inside the viewport)
+    if (!e.defaultPrevented && zoomPanViewport?.handleKeydown(e)) return;
+
     // Manual focus trap: Tab and Shift+Tab cycle between focusable elements
     if (e.key === 'Tab') {
       if (!dialogElement) return;
@@ -125,19 +133,17 @@
         <Fa icon={faXmark} size="lg" />
       </Button>
 
-      <!-- Image container -->
-      <div
-        class="max-w-[90vw] max-h-[90vh] flex items-center justify-center p-4"
-        onclick={(e) => e.stopPropagation()}
-        role="presentation"
-      >
-        <img
-          src={imageUrl}
-          alt={imageName}
-          class="max-w-full max-h-full object-contain cursor-default"
-          style="max-height: 90vh;"
-        />
-      </div>
+      <!-- Zoomable image viewport (keyed so zoom state resets on URL change) -->
+      {#key imageUrl}
+        <ZoomPanViewport bind:this={zoomPanViewport}>
+          <img
+            src={imageUrl}
+            alt={imageName}
+            class="max-w-[90vw] max-h-[90vh] object-contain"
+            draggable="false"
+          />
+        </ZoomPanViewport>
+      {/key}
     </div>
   </Portal>
 {/if}
