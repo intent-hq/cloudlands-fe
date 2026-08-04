@@ -279,4 +279,21 @@ describe('ChatMessage image lightbox', () => {
       expect(document.activeElement).toBe(imageButtons[1]);
     });
   });
+
+  it('renders zoom controls in the lightbox', async () => {
+    const message = createMessageWithImage();
+    render(ChatMessage, { props: { message } });
+
+    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
+    await fireEvent.click(imageButton);
+
+    // Zoom controls should render inside the lightbox
+    await waitFor(() => {
+      expect(screen.getByRole('toolbar', { name: /zoom controls/i })).toBeTruthy();
+    });
+    expect(screen.getByRole('slider', { name: /zoom level/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /zoom in/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /zoom out/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /reset zoom/i })).toBeTruthy();
+  });
 });

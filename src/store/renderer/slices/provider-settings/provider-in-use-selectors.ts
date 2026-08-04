@@ -16,11 +16,6 @@ import { m } from '$shared/paraglide/messages.js';
  * - a specialist's explicit `codingAgent`, or
  * - a specialist's explicit model id (compound ids pin their prefix provider;
  *   bare ids pin the default provider unless an explicit coding agent covers them).
- *
- * Tier-based specialist models (`defaultModelTier`) follow the specialist's
- * effective coding agent: when that agent is the implicit active-provider
- * fallback, it does NOT count as in use — otherwise no provider could ever be
- * disabled.
  */
 export const selectProviderInUseReasons = store.createSelector((state): Record<string, string> => {
   const reasons: Record<string, string> = {};
@@ -51,9 +46,8 @@ export const selectProviderInUseReasons = store.createSelector((state): Record<s
         m.settings_providers_inUseSpecialistAgent_label({ name: specialist.name }),
       );
     }
-    // Explicit model pin. Ignored when a tier is set — tier resolution
-    // follows the effective coding agent instead of the pinned model.
-    if (!specialist.defaultModelTier && specialist.defaultModel) {
+    // Explicit model pin.
+    if (specialist.defaultModel) {
       if (specialist.defaultModel.includes(':')) {
         const { providerId } = parseCompoundModelId(specialist.defaultModel, defaultProviderId);
         addReason(

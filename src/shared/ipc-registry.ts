@@ -591,7 +591,6 @@ export const IPC_CHANNELS = {
     READ_FILE: 'specialists:read-file',
     WRITE_FILE: 'specialists:write-file',
     DELETE_FILE: 'specialists:delete-file',
-    OPEN_FOLDER: 'specialists:open-folder',
     GET_FOLDER_PATH: 'specialists:get-folder-path',
     EXPORT_BUILTIN: 'specialists:export-builtin',
     FILE_EXISTS: 'specialists:file-exists',

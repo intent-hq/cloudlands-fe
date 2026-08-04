@@ -222,7 +222,7 @@ describe('AgentSubscriptions sections', () => {
     ).toBeTruthy();
   });
 
-  it('shows a count-free "Waiting for agent" header with a single one-shot watch', async () => {
+  it('shows a counted "Waiting on 1 agent" header with a single one-shot watch', async () => {
     const WS = 'ws-sections-header-one';
     await renderWithSnapshot(WS, {
       subscriptions: [oneShotSubscription('watch-solo', WS, 'child-solo')],
@@ -231,12 +231,10 @@ describe('AgentSubscriptions sections', () => {
     });
 
     const header = screen.getByTestId('one-shot-header');
-    expect(header.textContent).toContain('Waiting for agent');
-    // Singular header carries no count
-    expect(header.textContent).not.toMatch(/\d/);
+    expect(header.textContent).toContain('Waiting on 1 agent');
   });
 
-  it('shows a counted "Waiting for {count} agents" header with multiple one-shot watches', async () => {
+  it('shows a distributive "Waiting on each of {count} agents" header with multiple one-shot watches', async () => {
     const WS = 'ws-sections-header-many';
     await renderWithSnapshot(WS, {
       subscriptions: [
@@ -247,19 +245,93 @@ describe('AgentSubscriptions sections', () => {
       agentStatuses: { [PARENT]: 'waiting', 'child-1': 'responding', 'child-2': 'responding' },
     });
 
-    expect(screen.getByTestId('one-shot-header').textContent).toContain('Waiting for 2 agents');
+    expect(screen.getByTestId('one-shot-header').textContent).toContain(
+      'Waiting on each of 2 agents',
+    );
   });
 
   it('renders no one-shot header when there are no one-shot watches', async () => {
     const WS = 'ws-sections-header-none';
     await renderWithSnapshot(WS, {
-      subscriptions: [groupSubscription('grp-1', WS, ['child-a'])],
-      delegationGroups: [delegationGroup('grp-1', ['child-a'])],
-      agentStatuses: { [PARENT]: 'waiting', 'child-a': 'responding' },
+      subscriptions: [groupSubscription('grp-1', WS, ['child-a', 'child-b'])],
+      delegationGroups: [delegationGroup('grp-1', ['child-a', 'child-b'])],
+      agentStatuses: { [PARENT]: 'waiting', 'child-a': 'responding', 'child-b': 'responding' },
     });
 
     expect(screen.queryByTestId('one-shot-header')).toBeNull();
     expect(screen.queryByTestId('one-shot-watches')).toBeNull();
+  });
+
+  it('renders a single-agent after_all group as a one-shot row, not a group section', async () => {
+    const WS = 'ws-sections-single-group';
+    await renderWithSnapshot(WS, {
+      subscriptions: [groupSubscription('grp-solo', WS, ['child-solo'])],
+      delegationGroups: [delegationGroup('grp-solo', ['child-solo'])],
+      agentStatuses: { [PARENT]: 'waiting', 'child-solo': 'responding' },
+    });
+
+    expect(screen.queryByTestId('delegation-group-section')).toBeNull();
+    const oneShots = screen.getByTestId('one-shot-watches');
+    expect(within(oneShots).getAllByTestId('agent-list-item')).toHaveLength(1);
+    const header = screen.getByTestId('one-shot-header');
+    expect(header.textContent).toContain('Waiting on 1 agent');
+  });
+
+  it('merged single-agent group cancel sends the scoped agent.cancelSubscriptions { groupId }', async () => {
+    const WS = 'ws-sections-single-group-cancel';
+    await renderWithSnapshot(WS, {
+      subscriptions: [groupSubscription('grp-solo', WS, ['child-solo'])],
+      delegationGroups: [delegationGroup('grp-solo', ['child-solo'])],
+      agentStatuses: { [PARENT]: 'waiting', 'child-solo': 'responding' },
+    });
+
+    await fireEvent.click(screen.getByTestId('one-shot-cancel'));
+    await flush();
+
+    expect(backendRequestSpy.mock.calls).toContainEqual([
+      'agent.cancelSubscriptions',
+      { agentId: PARENT, workspaceId: WS, groupId: 'grp-solo' },
+    ]);
+  });
+
+  it('merged single-agent group stop sends agent.stop for the watched agent', async () => {
+    const WS = 'ws-sections-single-group-stop';
+    await renderWithSnapshot(WS, {
+      subscriptions: [groupSubscription('grp-solo', WS, ['child-solo'])],
+      delegationGroups: [delegationGroup('grp-solo', ['child-solo'])],
+      agentStatuses: { [PARENT]: 'waiting', 'child-solo': 'responding' },
+    });
+
+    await fireEvent.click(screen.getByTestId('one-shot-stop'));
+    await flush();
+
+    expect(backendRequestSpy.mock.calls).toContainEqual(['agent.stop', { agentId: 'child-solo' }]);
+  });
+
+  it('mixed snapshot renders one group section plus the single-agent group as a one-shot row', async () => {
+    const WS = 'ws-sections-single-mixed';
+    await renderWithSnapshot(WS, {
+      subscriptions: [
+        groupSubscription('grp-solo', WS, ['child-solo']),
+        groupSubscription('grp-multi', WS, ['child-a', 'child-b']),
+      ],
+      delegationGroups: [
+        delegationGroup('grp-solo', ['child-solo']),
+        delegationGroup('grp-multi', ['child-a', 'child-b']),
+      ],
+      agentStatuses: {
+        [PARENT]: 'waiting',
+        'child-solo': 'responding',
+        'child-a': 'responding',
+        'child-b': 'responding',
+      },
+    });
+
+    const sections = screen.getAllByTestId('delegation-group-section');
+    expect(sections).toHaveLength(1);
+    expect(within(sections[0]).getByTestId('group-counter').textContent).toContain('0/2');
+    const oneShots = screen.getByTestId('one-shot-watches');
+    expect(within(oneShots).getAllByTestId('agent-list-item')).toHaveLength(1);
   });
 
   it('collapsing the one-shot header hides the rows and shows the inline avatar strip', async () => {
@@ -379,19 +451,27 @@ describe('AgentSubscriptions sections', () => {
     await renderWithSnapshot(WS, {
       subscriptions: [
         groupSubscription('grp-done', WS, ['child-a']),
-        groupSubscription('grp-live', WS, ['child-b']),
+        groupSubscription('grp-live', WS, ['child-b', 'child-c']),
       ],
       delegationGroups: [
         delegationGroup('grp-done', ['child-a'], ['child-a'], false),
-        delegationGroup('grp-live', ['child-b']),
+        delegationGroup('grp-live', ['child-b', 'child-c']),
       ],
-      agentStatuses: { [PARENT]: 'waiting', 'child-a': 'completed', 'child-b': 'responding' },
+      agentStatuses: {
+        [PARENT]: 'waiting',
+        'child-a': 'completed',
+        'child-b': 'responding',
+        'child-c': 'responding',
+      },
     });
 
+    // grp-done is single-agent but delivery-pending, so it keeps the group
+    // chrome (warning + 1/1 counter) instead of merging into one-shot rows.
     const sections = screen.getAllByTestId('delegation-group-section');
     expect(sections).toHaveLength(2);
     expect(within(sections[0]).getByTestId('group-delivery-pending')).toBeTruthy();
     expect(within(sections[0]).getByTestId('group-counter').textContent).toContain('1/1');
     expect(within(sections[1]).queryByTestId('group-delivery-pending')).toBeNull();
+    expect(screen.queryByTestId('one-shot-watches')).toBeNull();
   });
 });

@@ -4,9 +4,10 @@
  * top-level agents only.
  *
  * Only the status-filtered families are togglable. `cycle-unread-agents`
- * has no scope: unread attention is workspace-level and backend-owned
- * (`workspace.attention === 'unread'`), so the family walks each unread
- * workspace's top-level agents.
+ * has no scope toggle of its own: its unread-workspace portion is a fixed
+ * top-level walk (unread attention is workspace-level and backend-owned,
+ * `workspace.attention === 'unread'`), while its attention-request portion
+ * follows the `cycle-attention-agents` configured scope.
  * `cycle-workspace-agents` keeps its fixed top-level walk.
  *
  * Persisted as the `cycleScopeByFamily` field of the shared

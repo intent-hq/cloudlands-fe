@@ -5,7 +5,7 @@
  * Allows the frontend to list, read, write, and delete specialist files.
  */
 
-import { ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
+import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
 import { SPECIALISTS_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
@@ -20,7 +20,6 @@ import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import {
   getSpecialistsDirectory,
-  ensureSpecialistsDirectory,
   loadSpecialistFiles,
   loadProjectSpecialistFiles,
   loadSpecialistFile,
@@ -212,28 +211,6 @@ export function setupSpecialistsIPC(): void {
     ),
   );
 
-  // Open the specialists folder
-  ipcMain.handle(
-    SPECIALISTS_CHANNELS.OPEN_FOLDER,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async () => {
-        try {
-          const dir = await ensureSpecialistsDirectory();
-          await shell.openPath(dir);
-          return { success: true, data: dir };
-        } catch (error) {
-          return {
-            success: false,
-            error:
-              error instanceof Error ? error.message : m.specialists_ipc_openFolderFailed_error(),
-          };
-        }
-      },
-      SPECIALISTS_CHANNELS.OPEN_FOLDER,
-    ),
-  );
-
   // Get the specialists folder path
   ipcMain.handle(
     SPECIALISTS_CHANNELS.GET_FOLDER_PATH,
@@ -287,7 +264,6 @@ export function setupSpecialistsIPC(): void {
             description: bundled.frontmatter.description,
             codingAgent: bundled.frontmatter.codingAgent,
             model: bundled.frontmatter.model,
-            modelTier: bundled.frontmatter.modelTier,
             roleReminder: bundled.frontmatter.roleReminder,
             hidden: bundled.frontmatter.hidden,
             behaviorPrompt: bundled.behaviorPrompt,

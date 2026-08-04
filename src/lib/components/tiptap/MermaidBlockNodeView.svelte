@@ -13,6 +13,7 @@
   import { tick } from 'svelte';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
+  import ZoomPanViewport from '$lib/components/ui/ZoomPanViewport.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -59,6 +60,7 @@
   let fullscreenSvg = $state('');
   let fullscreenDialogElement: HTMLDivElement | undefined = $state();
   let diagramContainerEl: HTMLDivElement | undefined = $state();
+  let zoomPanViewport: ZoomPanViewport | undefined = $state();
 
   function openFullscreen(e: MouseEvent) {
     // Prevent the click from propagating to ProseMirror selection handling
@@ -86,6 +88,13 @@
     if (e.target === e.currentTarget) {
       closeFullscreen();
     }
+  }
+
+  function handleFullscreenKeydown(e: KeyboardEvent) {
+    // Zoom keys (+/-/0): forward to the viewport unless it already handled
+    // the event itself (keydown bubbling up from inside the viewport)
+    if (!e.defaultPrevented && zoomPanViewport?.handleKeydown(e)) return;
+    if (e.key === 'Escape') closeFullscreen();
   }
 
   // Whether code editor is visible
@@ -255,7 +264,7 @@
   <div
     class="fullscreen-overlay"
     onclick={handleFullscreenBackdropClick}
-    onkeydown={(e) => { if (e.key === 'Escape') closeFullscreen(); }}
+    onkeydown={handleFullscreenKeydown}
     tabindex="-1"
     role="dialog"
     aria-modal="true"
@@ -271,8 +280,11 @@
       >
         <Fa icon={faTimes} size="sm" />
       </button>
+      <!-- Fresh component per open, so zoom/pan state resets each time -->
       <div class="fullscreen-diagram">
-        {@html fullscreenSvg}
+        <ZoomPanViewport bind:this={zoomPanViewport}>
+          {@html fullscreenSvg}
+        </ZoomPanViewport>
       </div>
     </div>
   </div>
@@ -333,8 +345,8 @@
     position: relative;
     background: hsl(var(--background));
     border-radius: 8px;
-    max-width: 90vw;
-    max-height: 90vh;
+    width: 90vw;
+    height: 90vh;
     overflow: hidden;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
     display: flex;
@@ -363,6 +375,8 @@
   }
 
   .fullscreen-diagram {
+    flex: 1;
+    min-height: 0;
     padding: 40px;
     display: flex;
     align-items: center;
@@ -371,8 +385,8 @@
   }
 
   .fullscreen-diagram :global(svg) {
-    max-width: calc(90vw - 80px);
-    max-height: calc(90vh - 80px);
+    max-width: 100%;
+    max-height: 100%;
     width: auto;
     height: auto;
   }

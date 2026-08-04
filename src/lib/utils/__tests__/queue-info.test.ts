@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { getQueueInfo, stripDequeueWaitNote } from '../queue-info';
+import {
+  getQueueInfo,
+  stripDequeueWaitNote,
+  shouldSuppressQueueDivider,
+  type QueueDividerTurn,
+} from '../queue-info';
 
 // PROTOCOL.md §5.5 dequeue-wait annotation, exactly as intentd appends it.
 const WAIT_NOTE =
@@ -77,5 +82,52 @@ describe('stripDequeueWaitNote', () => {
     expect(stripDequeueWaitNote(`hello\n\n${WAIT_NOTE}\n\n${STALE_NOTE}`)).toBe(
       `hello\n\n${STALE_NOTE}`,
     );
+  });
+});
+
+describe('shouldSuppressQueueDivider', () => {
+  const queuedMetadata = {
+    queueInfo: { queuedAt: '2026-01-01T11:58:00Z', waitedMs: 120000 },
+  };
+
+  const queuedTurn = (): QueueDividerTurn => ({
+    userMessage: { metadata: queuedMetadata },
+    assistantMessages: [],
+  });
+
+  const plainTurn = (): QueueDividerTurn => ({
+    userMessage: { metadata: {} },
+    assistantMessages: [],
+  });
+
+  it('suppresses between two consecutive queued turns with no assistant output', () => {
+    expect(shouldSuppressQueueDivider(queuedTurn(), queuedTurn())).toBe(true);
+  });
+
+  it('keeps the divider when the current queued turn has assistant messages', () => {
+    const current: QueueDividerTurn = {
+      userMessage: { metadata: queuedMetadata },
+      assistantMessages: [{}],
+    };
+    expect(shouldSuppressQueueDivider(current, queuedTurn())).toBe(false);
+  });
+
+  it('keeps the divider when the next turn is not queued', () => {
+    expect(shouldSuppressQueueDivider(queuedTurn(), plainTurn())).toBe(false);
+  });
+
+  it('keeps the divider when the current turn is not queued', () => {
+    expect(shouldSuppressQueueDivider(plainTurn(), queuedTurn())).toBe(false);
+  });
+
+  it('never suppresses without a next turn (last turn in group)', () => {
+    expect(shouldSuppressQueueDivider(queuedTurn(), null)).toBe(false);
+    expect(shouldSuppressQueueDivider(queuedTurn(), undefined)).toBe(false);
+  });
+
+  it('keeps the divider when either turn lacks a user message', () => {
+    const orphan: QueueDividerTurn = { userMessage: null, assistantMessages: [{}] };
+    expect(shouldSuppressQueueDivider(orphan, queuedTurn())).toBe(false);
+    expect(shouldSuppressQueueDivider(queuedTurn(), orphan)).toBe(false);
   });
 });

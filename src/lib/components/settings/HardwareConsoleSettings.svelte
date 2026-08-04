@@ -36,7 +36,10 @@
   } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { buildHardwareLedSnapshot } from '$features/hardware-console/led';
-  import { ACTION_KEY_REGISTRY } from '$features/hardware-console/actions/action-key-registry';
+  import {
+    ACTION_KEY_REGISTRY,
+    actionSlotIcons,
+  } from '$features/hardware-console/actions/action-key-registry';
   import {
     CODEX_MIC_LINKED_SLOT,
     getDefaultActionMapping,
@@ -51,7 +54,7 @@
   import type { HardwareConsoleStatus } from '$features/hardware-console/device/device-manager';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import {
-    inferTransportFromCollectionCount,
+    inferTransportFromCollections,
     type HardwareConsoleTransport,
   } from '$features/hardware-console/device/transport-heuristic';
   import {
@@ -106,13 +109,13 @@
       snapshot = null;
       return;
     }
-    const [probed, collectionCount] = await Promise.all([
+    const [probed, collections] = await Promise.all([
       probeConnectedDevice(client),
-      manager.connectedCollectionCount().catch(() => 0),
+      manager.connectedCollections().catch(() => []),
     ]);
     if (manager.status !== 'connected') return;
     snapshot = probed;
-    transport = inferTransportFromCollectionCount(collectionCount);
+    transport = inferTransportFromCollections(collections);
   }
 
   onMount(() => {
@@ -206,6 +209,8 @@
   }
 
   const actionMapping = $derived($actionMappingsByModel$[deviceModel] ?? []);
+  // Per-slot assigned-action icons for the CM2 key faces in the graphic.
+  const actionSlots = $derived(actionSlotIcons(actionMapping));
   const selectedActionId = $derived(
     selectedSlot === null ? null : (actionMapping[selectedSlot] ?? 'none'),
   );
@@ -347,6 +352,7 @@
           model={deviceModel}
           {selectedSlot}
           onSelectKey={(slot) => (selectedSlot = slot)}
+          {actionSlots}
           {agentSlots}
           {agentKeysInteractive}
           {agentKeyStatusLabel}

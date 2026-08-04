@@ -404,7 +404,6 @@ const ALLOWED_CHANNELS = [
   "specialists:read-file",
   "specialists:write-file",
   "specialists:delete-file",
-  "specialists:open-folder",
   "specialists:get-folder-path",
   "specialists:export-builtin",
   "specialists:file-exists",
@@ -931,13 +930,6 @@ const electronAPI = {
     const isDynamicChannel = dynamicPrefixes.some((prefix) => channel.startsWith(prefix));
     if (isDynamicChannel) {
       ipcRenderer.setMaxListeners(50); // Higher limit for dynamic channels
-    }
-
-    // backend:status legitimately accumulates ~12 listeners (one reconnect-replay
-    // subscription per backend client), so raise the cap to at least 15 without
-    // lowering a higher cap already in effect (dynamic channels set 50)
-    if (channel === 'backend:status') {
-      ipcRenderer.setMaxListeners(Math.max(ipcRenderer.getMaxListeners(), 15));
     }
 
     // Use generated allowed channels (includes dynamic patterns)

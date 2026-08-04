@@ -66,8 +66,10 @@ import {
 } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
 import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
 import {
+  addTerminal,
   hydrateTerminalsRequested,
   openTerminalOverlay,
+  terminalCreated,
 } from "$store/renderer/slices/terminals/terminals-slice";
 import { bulkUpsertSessions } from "$store/renderer/slices/agent-session/agent-session-slice";
 import {
@@ -787,6 +789,95 @@ describe("lifecycleReadService (hydrateAgentsRequested → agents.list convergen
       expect(getItems(wsState.terminals)).toEqual([]);
       expect(wsState.activeTerminalId).toBeNull();
       expect(wsState.isOpen).toBe(false);
+    });
+  });
+
+  // Daemon-first terminal creation (part of intent-hq/monorepo#1411): tabs
+  // are keyed by the daemon id from terminal.create, so a workspace
+  // switch-away/switch-back hydration (terminal.list) returns the same id and
+  // the tab survives with its panel state intact.
+  describe("daemon-first terminal creation (monorepo#1411)", () => {
+    it("create tab -> switch away/back -> hydration returns the PTY -> tab present, same id, active, panel open", async () => {
+      const wsA = "ws-df-a";
+      const wsB = "ws-df-b";
+
+      // Daemon-first create: the component dispatched addTerminal keyed by
+      // the daemon-assigned id, opened the panel, and signalled the create.
+      appStore.dispatch(addTerminal(wsA, "pty-daemon-1", "Terminal 1"));
+      appStore.dispatch(openTerminalOverlay(wsA, "pty-daemon-1"));
+      terminalsApi.list.mockResolvedValueOnce({
+        terminals: [{ id: "pty-daemon-1", name: "Terminal", workspaceId: wsA, isConnected: true }],
+        daemonBootId: "boot-1",
+      } as never);
+      appStore.dispatch(terminalCreated(wsA));
+      await flush();
+
+      // Switch to B (unrelated hydration), then back to A: the daemon lists
+      // the same PTY id the tab is keyed by.
+      terminalsApi.list.mockResolvedValueOnce({
+        terminals: [],
+        daemonBootId: "boot-1",
+      } as never);
+      appStore.dispatch(hydrateTerminalsRequested(wsB));
+      await flush();
+
+      terminalsApi.list.mockResolvedValueOnce({
+        terminals: [{ id: "pty-daemon-1", name: "Terminal", workspaceId: wsA, isConnected: true }],
+        daemonBootId: "boot-1",
+      } as never);
+      appStore.dispatch(hydrateTerminalsRequested(wsA));
+      await flush();
+
+      const wsState = appStore.state.terminals.workspaces[wsA];
+      expect(getItems(wsState.terminals).map((t) => t.id)).toEqual(["pty-daemon-1"]);
+      expect(wsState.activeTerminalId).toBe("pty-daemon-1");
+      expect(wsState.isOpen).toBe(true);
+    });
+
+    it("a stale empty terminal.list racing a create is corrected by the post-create refetch", async () => {
+      const ws = "ws-df-race";
+
+      // Seed a boot id so a later same-boot empty would be authoritative
+      // (the dangerous converge-to-zero case).
+      terminalsApi.list.mockResolvedValueOnce({
+        terminals: [{ id: "pty-old", name: "Terminal", workspaceId: ws, isConnected: true }],
+        daemonBootId: "boot-1",
+      } as never);
+      appStore.dispatch(hydrateTerminalsRequested(ws));
+      await flush();
+
+      // A hydration goes out whose response will be an empty same-boot list
+      // captured BEFORE the create; it resolves only after the create lands.
+      let resolveStale: (value: unknown) => void = () => {};
+      terminalsApi.list.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveStale = resolve;
+        }) as never,
+      );
+      appStore.dispatch(hydrateTerminalsRequested(ws));
+
+      // Daemon-first create succeeds mid-flight: tab added under the daemon
+      // id, terminalCreated invalidates the in-flight fetch and refetches.
+      appStore.dispatch(addTerminal(ws, "pty-new", "Terminal 1"));
+      appStore.dispatch(openTerminalOverlay(ws, "pty-new"));
+      terminalsApi.list.mockResolvedValueOnce({
+        terminals: [
+          { id: "pty-old", name: "Terminal", workspaceId: ws, isConnected: true },
+          { id: "pty-new", name: "Terminal", workspaceId: ws, isConnected: true },
+        ],
+        daemonBootId: "boot-1",
+      } as never);
+      appStore.dispatch(terminalCreated(ws));
+
+      // The stale pre-create response resolves last — it must be discarded.
+      resolveStale({ terminals: [], daemonBootId: "boot-1" });
+      await flush();
+
+      expect(terminalsApi.list).toHaveBeenCalledTimes(3);
+      const wsState = appStore.state.terminals.workspaces[ws];
+      expect(getItems(wsState.terminals).map((t) => t.id)).toEqual(["pty-old", "pty-new"]);
+      expect(wsState.activeTerminalId).toBe("pty-new");
+      expect(wsState.isOpen).toBe(true);
     });
   });
 });

@@ -19,7 +19,6 @@ import {
   getSpecialistById,
   GITHUB_DEPENDENT_SPECIALIST_IDS,
 } from '$lib/constants/specialists';
-import { type ProviderModelTier as ModelTier } from '$shared/provider-catalog';
 import { getCachedDefaultProviderId } from '../../../main/utils/provider-catalog-accessor';
 import {
   loadSpecialistFiles,
@@ -66,11 +65,6 @@ export interface EffectiveSpecialist {
    * a model from a tier.
    */
   model: string;
-  /**
-   * Explicit frontmatter capability tier, verbatim. Used for provider-agnostic
-   * display (e.g. the prompt table) — never resolved to a concrete model here.
-   */
-  modelTier?: ModelTier;
   behaviorPrompt: string;
   isCustomized: boolean;
   /**
@@ -296,7 +290,6 @@ export function getEffectiveSpecialist(
       description: fileSpecialist.frontmatter.description,
       codingAgent: resolveSpecialistCodingAgent(fileSpecialist.frontmatter.codingAgent, providerId),
       model: fileSpecialist.frontmatter.model || '',
-      modelTier: fileSpecialist.frontmatter.modelTier,
       behaviorPrompt: fileSpecialist.behaviorPrompt,
       isCustomized: fileSpecialist.source !== 'bundled',
       roleReminder: fileSpecialist.frontmatter.roleReminder,
@@ -315,7 +308,6 @@ export function getEffectiveSpecialist(
       description: hardcoded.description,
       codingAgent: resolveSpecialistCodingAgent(hardcoded.codingAgent, providerId),
       model: hardcoded.defaultModel || '',
-      modelTier: hardcoded.defaultModelTier,
       behaviorPrompt: hardcoded.defaultBehaviorPrompt,
       isCustomized: false,
       roleReminder: hardcoded.roleReminder,
@@ -348,7 +340,6 @@ export function getAllEffectiveSpecialists(
         description: file.frontmatter.description,
         codingAgent: resolveSpecialistCodingAgent(file.frontmatter.codingAgent, providerId),
         model: file.frontmatter.model || '',
-        modelTier: file.frontmatter.modelTier,
         behaviorPrompt: file.behaviorPrompt,
         isCustomized: file.source !== 'bundled',
         roleReminder: file.frontmatter.roleReminder,
@@ -365,7 +356,6 @@ export function getAllEffectiveSpecialists(
     description: s.description,
     codingAgent: resolveSpecialistCodingAgent(s.codingAgent, providerId),
     model: s.defaultModel || '',
-    modelTier: s.defaultModelTier,
     behaviorPrompt: s.defaultBehaviorPrompt,
     isCustomized: false,
     roleReminder: s.roleReminder,
@@ -448,23 +438,22 @@ export function getRoleReminder(specialist: EffectiveSpecialist): string {
 
 /**
  * Format specialists for inclusion in agent prompts.
- * Shows capability tier (fast/balanced/smart) instead of concrete model IDs
- * so the prompt is provider-agnostic.
+ * Omits concrete model IDs so the prompt is provider-agnostic.
  */
 export async function formatSpecialistsForPrompt(workspacePath?: string): Promise<string> {
   await getFileSpecialists(workspacePath);
   const specialists = getAllEffectiveSpecialists(undefined, workspacePath);
 
   const rows = specialists
-    .map((s) => `| **${s.name}** | \`${s.id}\` | ${s.modelTier || 'default'} | ${s.description} |`)
+    .map((s) => `| **${s.name}** | \`${s.id}\` | ${s.description} |`)
     .join('\n');
 
   return `## Agent Specialists
 
 You have access to the following agent specialists. When delegating work, you can either create a blank agent or use \`specialist\` to create an agent with specific, pre-configured behavior:
 
-| Specialist | ID | Speed | Purpose |
-|------------|-------|-------|---------|
+| Specialist | ID | Purpose |
+|------------|-------|---------|
 ${rows}
 
 **Examples** (call via the \`workspace_api\` tool):

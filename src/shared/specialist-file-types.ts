@@ -33,16 +33,6 @@ export type SpecialistSource = 'project' | 'user' | 'bundled' | 'builtin' | 'ele
 export type SpecialistFileScope = Extract<SpecialistSource, 'project' | 'user'>;
 
 /**
- * Model tier for provider-aware model resolution
- * - 'smart': Most capable model (e.g., opus4.5 for Anthropic)
- * - 'balanced': General purpose model (e.g., sonnet4.5 for Anthropic)
- * - 'fast': Faster, cheaper model (e.g., haiku4.5 for Anthropic)
- *
- * Must match the ProviderModelTier type in shared/provider-catalog.ts
- */
-export type ModelTier = 'fast' | 'balanced' | 'smart';
-
-/**
  * YAML frontmatter fields for specialist markdown files
  */
 export interface SpecialistFileFrontmatter {
@@ -56,20 +46,10 @@ export interface SpecialistFileFrontmatter {
    */
   codingAgent?: string;
   /**
-   * Default model ID, e.g., "opus4.5", "sonnet4.5" (optional)
-   * Takes precedence over modelTier: when both are specified, this explicit model wins.
+   * Default model ID, e.g., "opus4.5", "sonnet4.5" (optional).
+   * When omitted, the specialist inherits the global default model.
    */
   model?: string;
-  /**
-   * Model tier for provider-aware resolution (optional).
-   * When specified, the actual model is resolved based on the active provider.
-   * The 'model' field takes precedence when both are specified; the tier is
-   * used as the fallback when no explicit model is set.
-   * - 'smart': Most capable model (e.g., opus4.5 for Anthropic)
-   * - 'balanced': General purpose model (e.g., sonnet4.5 for Anthropic)
-   * - 'fast': Faster, cheaper model (e.g., haiku4.5 for Anthropic)
-   */
-  modelTier?: ModelTier;
   /**
    * Short reminder of critical constraints for this specialist.
    * Injected periodically during long conversations to prevent role drift.
@@ -157,8 +137,7 @@ export const SPECIALIST_FILE_EXTENSIONS = ['.md'];
 
 /**
  * Legacy default model constant. Runtime specialist resolution should prefer
- * the user's selected default model when a specialist does not specify model
- * or modelTier.
+ * the user's selected default model when a specialist does not specify model.
  */
 export const DEFAULT_SPECIALIST_MODEL = 'sonnet4.5';
 

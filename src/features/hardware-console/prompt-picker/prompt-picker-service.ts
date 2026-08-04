@@ -290,9 +290,7 @@ export function createHardwareConsolePromptPickerMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     if (!installed) {
       installed = true;
-      const manager = getHardwareConsoleManager();
-      installHardwareConsolePromptPickerJoystick(manager);
-      void manager.start();
+      installHardwareConsolePromptPickerJoystick(getHardwareConsoleManager());
       void hydrateOnce()
         .catch(() => false)
         .then((hydrated) => {

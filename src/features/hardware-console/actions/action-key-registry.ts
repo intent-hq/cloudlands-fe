@@ -316,17 +316,33 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
     getEmptyHint: () => m.hardwareConsole_actionKey_noUnreadAgents_message(),
     getSingleCandidateHint: () => m.hardwareConsole_actionKey_noOtherUnreadAgents_message(),
     collect: (state) => {
-      // Unread is workspace-level (BE-owned `workspace.attention`); walk the
-      // top-level agents of each unread workspace.
+      // Union of two walks, deduped by agent id — each walk is in workspace
+      // order, and unread-workspace entries precede attention-only entries:
+      // (a) the top-level agents of each unread workspace (unread is
+      // workspace-level, BE-owned `workspace.attention`) — a fixed top-level
+      // walk; and (b) every attention-requesting agent (the LED attention
+      // definition), which follows the `cycle-attention-agents` configured
+      // scope so the settings toggle also governs this portion.
       const unreadWorkspaceIds = new Set<string>(
         getItems(state.workspace.workspaces)
           .filter((workspace) => workspace.attention === 'unread')
           .map((workspace) => workspace.id),
       );
-      if (unreadWorkspaceIds.size === 0) return [];
-      return collectCycleAgents(state, isSessionCyclable).filter((entry) =>
+      const unreadEntries = collectCycleAgents(state, isSessionCyclable).filter((entry) =>
         unreadWorkspaceIds.has(entry.wsId),
       );
+      const attentionEntries = collectCycleAgents(
+        state,
+        sessionNeedsAttention,
+        undefined,
+        familyScope(state, 'cycle-attention-agents'),
+      );
+      const seen = new Set<string>();
+      return [...unreadEntries, ...attentionEntries].filter((entry) => {
+        if (seen.has(entry.agentId)) return false;
+        seen.add(entry.agentId);
+        return true;
+      });
     },
   }),
   makeGlobalCycleAction({
@@ -399,9 +415,7 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
           : [...SIDEBAR_TAB_IDS];
       const selected = state.sidebarNav.multiSelectSelectedTabIdsByWorkspaceId[wsId] ?? [];
       const currentIndex = selected.length === 1 ? order.indexOf(selected[0]) : -1;
-      dispatch(
-        setMultiSelectSidebarSelectedTabs(wsId, [order[(currentIndex + 1) % order.length]]),
-      );
+      dispatch(setMultiSelectSidebarSelectedTabs(wsId, [order[(currentIndex + 1) % order.length]]));
     },
   },
   {
@@ -506,4 +520,27 @@ export function getActionKeyDefinition(id: ActionKeyActionId): ActionKeyDefiniti
   const definition = ACTION_KEY_REGISTRY.find((entry) => entry.id === id);
   if (!definition) throw new Error(`Unknown action key action: ${id}`);
   return definition;
+}
+
+/**
+ * Per-slot key faces resolved from an action mapping, for the settings
+ * device graphic: the assigned action's icon plus its label for the hover
+ * tooltip (`none` = blank face, no tooltip). Labels are getters delegating
+ * to the registry so they re-evaluate on locale change.
+ */
+export function actionSlotIcons(
+  mapping: readonly ActionKeyActionId[],
+): { icon: IconDefinition | null; readonly label: string | null }[] {
+  return mapping.map((actionId) => {
+    const definition =
+      actionId === 'none'
+        ? null
+        : (ACTION_KEY_REGISTRY.find((entry) => entry.id === actionId) ?? null);
+    return {
+      icon: definition?.icon ?? null,
+      get label() {
+        return definition?.label ?? null;
+      },
+    };
+  });
 }

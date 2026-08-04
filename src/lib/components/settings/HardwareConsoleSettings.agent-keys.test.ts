@@ -39,7 +39,7 @@ vi.mock('$features/hardware-console/instance', () => ({
     },
     client: null,
     onStatusChange: () => () => {},
-    connectedCollectionCount: () => Promise.resolve(0),
+    connectedCollections: () => Promise.resolve([]),
   }),
 }));
 
@@ -101,6 +101,34 @@ describe('HardwareConsoleSettings agent keys', () => {
     // Idle workspace (no agents, no activity) surfaces the idle LED meaning.
     expect(popover.textContent).toContain(m.settings_hardware_ledStatus_idle_label());
     expect(mocks.focusWorkspaceSlot).not.toHaveBeenCalled();
+  });
+
+  it('assigned-key slot badges are display-only: clicking one opens the popover, not a pin menu', async () => {
+    mocks.state.current = await buildState();
+    const HardwareConsoleSettings = (await import('./HardwareConsoleSettings.svelte')).default;
+    const { m } = await import('$shared/paraglide/messages.js');
+    const result = render(HardwareConsoleSettings);
+
+    // No interactive MicroKeySlotBadge menu trigger in the device graphic.
+    expect(
+      result.queryByRole('button', {
+        name: m.workspace_microKeyBadge_ariaLabel({ number: '1' }),
+      }),
+    ).toBeNull();
+
+    // Clicking directly on the slot square falls through to the key and
+    // opens the workspace-info popover; no pin/unassign menu appears.
+    const square = result.container.querySelector('foreignObject span') as HTMLElement;
+    await fireEvent.click(square);
+    expect(
+      result.getByRole('dialog', {
+        name: m.settings_hardware_agentKeyPopover_ariaLabel({ number: '1' }),
+      }).textContent,
+    ).toContain('Alpha');
+    expect(
+      result.queryByText(m.workspace_card_assignMicroKeyNumber_label({ number: '1' })),
+    ).toBeNull();
+    expect(result.queryByText(m.workspace_card_unassignMicroKey_label())).toBeNull();
   });
 
   it('agent keys are not interactive while disconnected', async () => {

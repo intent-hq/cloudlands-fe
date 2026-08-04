@@ -31,6 +31,10 @@ import {
 } from "$store/renderer/slices/specialists/specialists-slice";
 import { SPECIALISTS } from "$lib/constants/specialists";
 import { dispatchSpecialistList } from "./specialists-mutation-service";
+import {
+  hasExplicitModelPin,
+  buildResetToInheritPayloads,
+} from "$lib/components/settings/utils/reset-specialists-to-inherit";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -38,7 +42,6 @@ const COORDINATOR_DEF: SpecialistDef = {
   id: "spec-writer",
   name: "Coordinator",
   description: "Plans work",
-  modelTier: "smart",
   prompt: "You plan.",
   behaviorPrompt: "You plan.",
   source: "bundled",
@@ -146,7 +149,6 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
         id: "chief-of-staff",
         name: "Chief of Staff",
         description: "App-level assistant",
-        modelTier: "smart",
         prompt: "You assist.",
         behaviorPrompt: "You assist.",
         source: "bundled",
@@ -256,6 +258,77 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
       );
     });
 
+    it("omits model from the wire spec when clearing to inherit (edit)", async () => {
+      const existingFile: FileSpecialist = {
+        id: "reviewer",
+        name: "Reviewer",
+        description: "Reviews",
+        model: "opus4.5",
+        behaviorPrompt: "You review.",
+        filePath: "/home/u/.intent/specialists/reviewer.md",
+        source: "user",
+      };
+      edit.mockResolvedValue({ ...USER_DEF, model: undefined });
+      appStore.dispatch(setFileSpecialists([existingFile]));
+
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: "reviewer",
+          name: "Reviewer",
+          description: "Reviews",
+          model: undefined,
+          behaviorPrompt: "You review.",
+        }),
+      );
+      await flush();
+
+      expect(edit).toHaveBeenCalledTimes(1);
+      const sentSpec = edit.mock.calls[0][1] as SpecialistDef;
+      expect(sentSpec.model).toBeUndefined();
+      // The JSON-RPC serialization drops undefined keys — `model` must not
+      // appear on the wire (inherit-on-omit, PROTOCOL §5.11).
+      expect(JSON.stringify(sentSpec)).not.toContain('"model"');
+    });
+
+    it("normalizes an empty-string model to an omitted wire key (never model: '')", async () => {
+      create.mockResolvedValue(USER_DEF);
+      appStore.dispatch(setFileSpecialists([]));
+
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: "reviewer",
+          name: "Reviewer",
+          description: "Reviews",
+          model: "",
+          behaviorPrompt: "You review.",
+        }),
+      );
+      await flush();
+
+      const sentSpec = create.mock.calls[0][1] as SpecialistDef;
+      expect(sentSpec.model).toBeUndefined();
+      expect(JSON.stringify(sentSpec)).not.toContain('"model"');
+    });
+
+    it("keeps an explicit model pin on the wire (present on pin)", async () => {
+      create.mockResolvedValue(USER_DEF);
+      appStore.dispatch(setFileSpecialists([]));
+
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: "reviewer",
+          name: "Reviewer",
+          description: "Reviews",
+          model: "claude-code:opus4.5",
+          behaviorPrompt: "You review.",
+        }),
+      );
+      await flush();
+
+      const sentSpec = create.mock.calls[0][1] as SpecialistDef;
+      expect(sentSpec.model).toBe("claude-code:opus4.5");
+    });
+
     it("passes scope=project and workspacePath when provided", async () => {
       create.mockResolvedValue(USER_DEF);
       appStore.dispatch(setFileSpecialists([]));
@@ -278,6 +351,139 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
         "project",
         "/ws/path",
       );
+    });
+  });
+
+  describe("reset all to default (Settings → AI Behavior button)", () => {
+    const pinnedReviewer: FileSpecialist = {
+      id: "reviewer",
+      name: "Reviewer",
+      description: "Reviews",
+      model: "claude-code:opus4.5",
+      behaviorPrompt: "You review.",
+      filePath: "/home/u/.intent/specialists/reviewer.md",
+      source: "user",
+    };
+    const inheriting: FileSpecialist = {
+      id: "inheriting",
+      name: "Inheriting",
+      description: "No pin",
+      model: "",
+      behaviorPrompt: "You inherit.",
+      filePath: "/home/u/.intent/specialists/inheriting.md",
+      source: "user",
+    };
+
+    it("hasExplicitModelPin gates the button on an explicit model pin", () => {
+      expect(hasExplicitModelPin([inheriting])).toBe(false);
+      expect(hasExplicitModelPin([inheriting, pinnedReviewer])).toBe(true);
+      expect(hasExplicitModelPin([])).toBe(false);
+    });
+
+    it("issues specialist.edit only for pinned file specialists, with model omitted on the wire", async () => {
+      edit.mockResolvedValue({} as any);
+      appStore.dispatch(setFileSpecialists([pinnedReviewer, inheriting]));
+
+      const payloads = buildResetToInheritPayloads([pinnedReviewer, inheriting], () => undefined);
+      for (const payload of payloads) {
+        appStore.dispatch(saveFileSpecialist(payload));
+      }
+      await flush();
+
+      // Only the pinned specialist gets a wire call; the inheriting one
+      // (and built-ins with no override file) are untouched.
+      expect(edit).toHaveBeenCalledTimes(1);
+      expect(create).not.toHaveBeenCalled();
+      const editedIds = edit.mock.calls.map((c) => c[0]).sort();
+      expect(editedIds).toEqual(["reviewer"]);
+      for (const call of edit.mock.calls) {
+        const sentSpec = call[1] as SpecialistDef;
+        expect(sentSpec.model).toBeUndefined();
+        expect(JSON.stringify(sentSpec)).not.toContain('"model"');
+      }
+      // All other fields preserved.
+      const reviewerSpec = edit.mock.calls.find((c) => c[0] === "reviewer")![1] as SpecialistDef;
+      expect(reviewerSpec.name).toBe("Reviewer");
+      expect(reviewerSpec.behaviorPrompt).toBe("You review.");
+    });
+
+    it("routes a project-scope pinned specialist through scope=project with workspacePath", async () => {
+      const projectPinned: FileSpecialist = {
+        ...pinnedReviewer,
+        id: "proj-spec",
+        source: "project",
+        filePath: "/ws/path/.intent/specialists/proj-spec.md",
+      };
+      edit.mockResolvedValue({} as any);
+      appStore.dispatch(setFileSpecialists([projectPinned]));
+
+      const payloads = buildResetToInheritPayloads([projectPinned], () => "/ws/path");
+      for (const payload of payloads) {
+        appStore.dispatch(saveFileSpecialist(payload));
+      }
+      await flush();
+
+      expect(edit).toHaveBeenCalledWith(
+        "proj-spec",
+        expect.objectContaining({ source: "project" }),
+        "project",
+        "/ws/path",
+      );
+    });
+
+    it("skips a project-scope pinned specialist when no workspace path resolves", () => {
+      const projectPinned: FileSpecialist = {
+        ...pinnedReviewer,
+        id: "proj-spec",
+        source: "project",
+        filePath: "/ws/path/.intent/specialists/proj-spec.md",
+      };
+
+      const payloads = buildResetToInheritPayloads([projectPinned, pinnedReviewer], () => undefined);
+
+      // The project-scope specialist is skipped (writeSpecialistFile rejects
+      // project writes without a workspacePath); the user-scope one remains.
+      expect(payloads.map((p) => p.id)).toEqual(["reviewer"]);
+    });
+  });
+
+  describe("create-specialist defaults to inherit", () => {
+    it("sends no model key by default (inherit) and includes it only when picked", async () => {
+      create.mockResolvedValue({} as any);
+      appStore.dispatch(setFileSpecialists([]));
+
+      // Default create — model left undefined (the create form's inherit default).
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: "new-spec",
+          name: "New Spec",
+          description: "Fresh",
+          behaviorPrompt: "You are new.",
+          scope: "user",
+        }),
+      );
+      await flush();
+
+      const inheritSpec = create.mock.calls[0][1] as SpecialistDef;
+      expect(JSON.stringify(inheritSpec)).not.toContain('"model"');
+
+      // Explicit pick — model present on the wire.
+      create.mockClear();
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: "new-pinned",
+          name: "New Pinned",
+          description: "Pinned",
+          codingAgent: "claude-code",
+          model: "claude-code:opus4.5",
+          behaviorPrompt: "You are pinned.",
+          scope: "user",
+        }),
+      );
+      await flush();
+
+      const pinnedSpec = create.mock.calls[0][1] as SpecialistDef;
+      expect(pinnedSpec.model).toBe("claude-code:opus4.5");
     });
   });
 
@@ -434,7 +640,6 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
           id: "spec-writer",
           name: "Coordinator",
           description: "Plans work",
-          modelTier: "smart",
           prompt: "You plan.",
           behaviorPrompt: "You plan.",
           source: "bundled" as const,
@@ -490,7 +695,6 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
         id: "future-specialist",
         name: "Future Specialist",
         description: "A new bundled specialist",
-        modelTier: "balanced",
         prompt: "You specialize.",
         behaviorPrompt: "You specialize.",
         source: "bundled",

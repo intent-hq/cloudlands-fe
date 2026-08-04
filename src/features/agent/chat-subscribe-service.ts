@@ -8,15 +8,27 @@
  *    (deduped per agent id; skipped while a soft-hidden deletion is pending).
  *  - `markAgentAsViewed` swaps subscriptions on agent switch: it closes every
  *    other agent's subscription and (re)opens the viewed agent's when its
- *    session exists — so switching chats never leaks registrations.
+ *    session exists — so switching chats never leaks registrations. The swap
+ *    is realm-scoped (monorepo#1421): chief-workspace subscriptions (entry
+ *    wsId / session workspaceId === CHIEF_WORKSPACE_ID) and ordinary
+ *    workspace subscriptions never close each other, because the Chief panel
+ *    is a standing sidebar surface that stays open — and must keep rendering
+ *    live — while the user views workspace chats (and vice versa). Viewing a
+ *    chief thread still closes other chief threads' subscriptions.
  *  - `transcriptHydrationSettled` re-applies the entry's last reconciled
  *    transcript: a slower chat-read hydrate whose pages predate a finalize
  *    would otherwise clobber the finalized row this stream already delivered
  *    (monorepo#1161).
- *  - `clearCurrentlyViewedAgent` (chat close / panel destroy) closes all —
- *    but only when the clear actually applied (no agent remains viewed after
- *    the reducer). A background panel's trailing scoped clear is ignored by
- *    the reducer, so the viewed agent's subscription survives (monorepo#1215).
+ *  - `clearCurrentlyViewedAgent` (chat close / panel destroy) closes all
+ *    non-chief subscriptions — but only when the clear actually applied (no
+ *    agent remains viewed after the reducer). A background panel's trailing
+ *    scoped clear is ignored by the reducer, so the viewed agent's
+ *    subscription survives (monorepo#1215). A clear scoped to a
+ *    chief-workspace agent instead closes exactly that subscription,
+ *    regardless of which agent remains viewed: the swap exempts chief
+ *    subscriptions, so the Chief panel's own destroy (collapse /
+ *    thread-switch remount) is their only viewed-lifecycle teardown — and
+ *    the chat area's viewed state says nothing about the chief panel.
  *  - `removeSession` (agent-deletion soft-hide), `workspaceDeleted`,
  *    `removeWorkspaceSessions`, and `clearAllSessions` tear down the affected
  *    subscriptions so a deleted agent's stream can never resurrect its state.
@@ -73,6 +85,7 @@ import {
   markAgentAsViewed,
 } from "$store/renderer/slices/unread-tracking/unread-tracking-slice";
 import { deduplicateAgentMessages } from "$shared/utils/message-dedup";
+import { CHIEF_WORKSPACE_ID } from "$shared/types/branded-ids";
 import { createLogger } from "$lib/utils/client-logger";
 import { isAgentDeletionPending } from "./utils/pending-agent-deletions";
 
@@ -284,10 +297,41 @@ function closeWorkspaceChatSubscriptions(wsId: string): void {
   }
 }
 
-/** Close every subscription except the given agent's (agent-switch swap). */
+/**
+ * True when the agent belongs to the chief virtual workspace, per its
+ * subscription entry's wsId or (before a subscription exists) its stored
+ * session's workspaceId.
+ */
+function isChiefChatAgent(agentId: string): boolean {
+  return (
+    subscriptions.get(agentId)?.wsId === CHIEF_WORKSPACE_ID ||
+    readSession(agentId)?.workspaceId === CHIEF_WORKSPACE_ID
+  );
+}
+
+/**
+ * Close every subscription except the given agent's (agent-switch swap).
+ * Realm-scoped (monorepo#1421): chief-workspace and ordinary workspace
+ * subscriptions never close each other — the Chief panel stays open (and
+ * must keep rendering live) while workspace chats are viewed, and vice
+ * versa. Viewing a chief thread still closes other chief threads'.
+ */
 function closeOtherChatSubscriptions(agentId: string): void {
-  for (const otherId of [...subscriptions.keys()]) {
-    if (otherId !== agentId) closeChatSubscription(otherId);
+  const viewedIsChief = isChiefChatAgent(agentId);
+  for (const [otherId, entry] of [...subscriptions.entries()]) {
+    if (otherId === agentId) continue;
+    if ((entry.wsId === CHIEF_WORKSPACE_ID) !== viewedIsChief) continue;
+    closeChatSubscription(otherId);
+  }
+}
+
+/**
+ * Close every non-chief subscription (chat close — the chief panel's
+ * lifecycle is independent of the chat area's viewed state).
+ */
+function closeNonChiefChatSubscriptions(): void {
+  for (const [agentId, entry] of [...subscriptions.entries()]) {
+    if (entry.wsId !== CHIEF_WORKSPACE_ID) closeChatSubscription(agentId);
   }
 }
 
@@ -340,11 +384,22 @@ export function createChatSubscribeMiddleware(): StoreMiddleware {
           }
         }
       } else if (type === clearCurrentlyViewedAgent.type) {
-        // Runs post-reducer: a scoped clear from a background/deactivating
-        // panel that does not match the viewed agent is a reducer no-op, so
-        // an agent still being viewed means the chat did NOT close — keep
-        // its standing subscription (monorepo#1215).
-        if (readCurrentlyViewedAgentId() === null) closeAllChatSubscriptions();
+        const [scopeAgentId] = (action as { payload: [string?] }).payload ?? [];
+        if (typeof scopeAgentId === "string" && isChiefChatAgent(scopeAgentId)) {
+          // The swap exempts chief-workspace subscriptions, so this scoped
+          // clear (ChiefCard collapse / thread-switch destroy) is their only
+          // viewed-lifecycle teardown — close exactly this subscription, even
+          // while another agent remains viewed. No close-all: the chief
+          // panel closing says nothing about the chat area (monorepo#1421).
+          closeChatSubscription(scopeAgentId);
+        } else if (readCurrentlyViewedAgentId() === null) {
+          // Runs post-reducer: a scoped clear from a background/deactivating
+          // panel that does not match the viewed agent is a reducer no-op, so
+          // an agent still being viewed means the chat did NOT close — keep
+          // its standing subscription (monorepo#1215). Chief subscriptions
+          // are spared: their panel is still open (monorepo#1421).
+          closeNonChiefChatSubscriptions();
+        }
       } else if (type === removeSession.type) {
         const [agentId] = (action as { payload: [string] }).payload;
         if (typeof agentId === "string") closeChatSubscription(agentId);

@@ -40,6 +40,9 @@ importers:
       '@fortawesome/free-solid-svg-icons':
         specifier: ^7.3.1
         version: 7.3.1
+      '@mermaid-js/layout-elk':
+        specifier: ^0.2.2
+        version: 0.2.2(mermaid@11.16.0)
       '@pierre/diffs':
         specifier: ^1.2.12
         version: 1.2.12(@shikijs/themes@4.3.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -1211,6 +1214,11 @@ packages:
   '@malept/flatpak-bundler@0.4.0':
     resolution: {integrity: sha512-9QOtNffcOF/c1seMCDnjckb3R9WHcG34tky+FHpNKKCW0wc/scYLwMtO+ptyGUfMW0/b/n4qRiALlaFHc9Oj7Q==}
     engines: {node: '>= 10.0.0'}
+
+  '@mermaid-js/layout-elk@0.2.2':
+    resolution: {integrity: sha512-vnH3gtqfhyBiRVKNpT8iDENTw18q/OF0GF/SfYfHN43KZpu+6eZDEOMHTfNYAkpmUWJNgtRQFIS6BTc7vH/DYQ==}
+    peerDependencies:
+      mermaid: ^11.0.2
 
   '@mermaid-js/parser@1.2.0':
     resolution: {integrity: sha512-oYPyv8A4As1yH5Bx+04iQEQxXuIQDe0GKCNSRgao6z8AM9jixXIfP0vsppRLvGf+nKIOb9/LdpWA4YuJiVvESA==}
@@ -3003,6 +3011,9 @@ packages:
     resolution: {integrity: sha512-lgeUDjUuUzUSBchBudmjCZ8ApeYdVneMi17nLRMdfxGw7FyLFligsLtIF+dL3UoNnOsupAwdqVNJCK5MFE82kQ==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
+
+  elkjs@0.9.3:
+    resolution: {integrity: sha512-f/ZeWvW/BCXbhGEf1Ujp29EASo/lk1FDnETgNKwJrsVvGZhUWCZyg3xLJjAsxfOmt8KjswHmI5EwCQcPMpOYhQ==}
 
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
@@ -5965,6 +5976,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@mermaid-js/layout-elk@0.2.2(mermaid@11.16.0)':
+    dependencies:
+      d3: 7.9.0
+      elkjs: 0.9.3
+      mermaid: 11.16.0
+
   '@mermaid-js/parser@1.2.0':
     dependencies:
       '@chevrotain/types': 11.1.2
@@ -7937,6 +7954,8 @@ snapshots:
       '@types/node': 24.12.4
     transitivePeerDependencies:
       - supports-color
+
+  elkjs@0.9.3: {}
 
   emoji-regex@8.0.0: {}
 

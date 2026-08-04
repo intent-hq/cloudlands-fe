@@ -459,9 +459,6 @@
     style:anchor-name="--workspace-list-{workspace.id}"
   >
     <div class="flex items-center gap-1.5 shrink-0 mt-[3px]">
-      {#if $microConnected$ && $workspaceKeySlot$ !== null}
-        <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
-      {/if}
       <div class="shrink-0 relative">
         <WorkspacePhaseIndicator
           phase={workspacePhaseInfo?.phase ?? 'planning'}
@@ -562,9 +559,16 @@
         </span>
       </div>
 
-      {#if !hideRepoAvatar && workspace.repositoryOwner && workspace.repositoryName}
-        <div class="wc-repo truncate text-ui text-subtle">
-          {workspace.repositoryOwner}/{workspace.repositoryName}
+      {#if ($microConnected$ && $workspaceKeySlot$ !== null) || (!hideRepoAvatar && workspace.repositoryOwner && workspace.repositoryName)}
+        <div class="wc-repo flex items-center gap-1.5 min-w-0">
+          {#if $microConnected$ && $workspaceKeySlot$ !== null}
+            <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
+          {/if}
+          {#if !hideRepoAvatar && workspace.repositoryOwner && workspace.repositoryName}
+            <span class="min-w-0 truncate text-ui text-subtle">
+              {workspace.repositoryOwner}/{workspace.repositoryName}
+            </span>
+          {/if}
         </div>
       {/if}
     </div>

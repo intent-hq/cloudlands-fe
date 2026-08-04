@@ -20,10 +20,11 @@
   import {
   addTerminal,
   openTerminalOverlay,
-  toggleTerminalOverlay,
+  terminalCreated,
 } from '$store/renderer/slices/terminals/terminals-slice';
   import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { toast } from '$lib/components/ui/toast';
 
 
   let rtkAvailable = $state(false);
@@ -73,18 +74,30 @@
 
   async function installRtk() {
     try {
-      // Create a new terminal tab and open the overlay
-      const termId = `terminal-${Date.now()}`;
+      // Daemon-first create (`terminal.create`, PROTOCOL §5.13): key the tab
+      // by the daemon-assigned id so hydration/writes address the real PTY.
+      const result = await appClient.terminals.create({
+        workspaceId: ROOT_WORKSPACE_ID,
+        cols: 80,
+        rows: 24,
+      });
+      if (!result.success || !result.id) {
+        // Daemon-first invariant: never fabricate a tab without a PTY behind
+        // it — surface the failure instead.
+        console.error('Failed to create install terminal:', result.success ? 'missing id' : result.error);
+        toast.error(m.terminal_adapter_openFailed_error());
+        return;
+      }
+      const termId = result.id;
       appStore.dispatch(addTerminal(ROOT_WORKSPACE_ID, termId, m.settings_rtk_installTerminalTitle()));
+      appStore.dispatch(terminalCreated(ROOT_WORKSPACE_ID));
       appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, termId));
 
       // Wait briefly for the terminal to initialize, then write the command
+      // via `terminal.write` (PROTOCOL §5.13) using the daemon-assigned id.
       setTimeout(async () => {
         try {
-          await invoke('terminal:professional:write', {
-            terminalId: termId,
-            data: 'brew install rtk\n',
-          });
+          await appClient.terminals.write(termId, 'brew install rtk\n');
         } catch {
           // Terminal might not be ready yet - user can type manually
         }
@@ -95,9 +108,11 @@
       for (const delay of pollIntervals) {
         setTimeout(() => recheckRtk(), delay);
       }
-    } catch {
-      // Fallback: just open the terminal
-      appStore.dispatch(toggleTerminalOverlay(ROOT_WORKSPACE_ID));
+    } catch (error) {
+      // Daemon-first invariant: no fabricated fallback tab — surface the
+      // failure instead.
+      console.error('Failed to create install terminal:', error);
+      toast.error(m.terminal_adapter_openFailed_error());
     }
   }
 

@@ -32,7 +32,6 @@ import {
   type SpecialistFilesResult,
   type SpecialistFileScope,
   type SpecialistSource,
-  type ModelTier,
   SPECIALISTS_FOLDER,
   SPECIALIST_FILE_EXTENSIONS,
   filenameToSpecialistId,
@@ -362,24 +361,13 @@ export function parseSpecialistFile(
 
   const { frontmatter, body } = parsed;
 
-  // Validate modelTier if present
-  const validModelTiers = ['fast', 'balanced', 'smart'];
-  const modelTier = frontmatter.modelTier;
-  if (modelTier && !validModelTiers.includes(modelTier)) {
-    return {
-      error: m.specialists_loader_invalidModelTier_error({
-        modelTier,
-        validTiers: validModelTiers.join(', '),
-      }),
-    };
-  }
-
+  // Retired `modelTier:` keys in existing files are tolerated and ignored
+  // (dropped on the next rewrite) — never rejected.
   const specialistFrontmatter: SpecialistFileFrontmatter = {
     name: frontmatter.name || nameFromFilename,
     description: frontmatter.description || '',
     codingAgent: frontmatter.codingAgent,
     model: frontmatter.model,
-    modelTier: modelTier as ModelTier | undefined,
     roleReminder: frontmatter.roleReminder,
     agentType: frontmatter.agentType,
     hidden: frontmatter.hidden === 'true' ? true : undefined,
@@ -502,7 +490,6 @@ export async function writeSpecialistFile(specialist: {
   description: string;
   codingAgent?: string;
   model?: string;
-  modelTier?: ModelTier;
   roleReminder?: string;
   hidden?: boolean;
   behaviorPrompt: string;
@@ -537,10 +524,7 @@ export async function writeSpecialistFile(specialist: {
       frontmatterParts.push(`codingAgent: "${escapeYamlValue(specialist.codingAgent)}"`);
     }
 
-    // modelTier takes precedence over model (provider-aware resolution)
-    if (specialist.modelTier) {
-      frontmatterParts.push(`modelTier: "${escapeYamlValue(specialist.modelTier)}"`);
-    } else if (specialist.model) {
+    if (specialist.model) {
       frontmatterParts.push(`model: "${escapeYamlValue(specialist.model)}"`);
     }
 

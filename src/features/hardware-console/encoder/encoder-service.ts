@@ -191,9 +191,7 @@ export function createHardwareConsoleEncoderMiddleware(deps: EncoderDeps = {}): 
   return () => (next) => (action) => {
     if (!installed) {
       installed = true;
-      const manager = getHardwareConsoleManager();
-      installHardwareConsoleEncoder(manager, deps);
-      void manager.start();
+      installHardwareConsoleEncoder(getHardwareConsoleManager(), deps);
     }
 
     const result = next(action);

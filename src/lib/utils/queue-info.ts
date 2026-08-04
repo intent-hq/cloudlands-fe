@@ -59,3 +59,32 @@ const DEQUEUE_WAIT_NOTE_RE =
 export function stripDequeueWaitNote(text: string): string {
   return text.replace(DEQUEUE_WAIT_NOTE_RE, '');
 }
+
+/**
+ * Minimal structural view of a conversation turn used by
+ * `shouldSuppressQueueDivider` — matches ChatPanel's `ConversationTurn`
+ * without depending on it (keeps this util dependency-light).
+ */
+export interface QueueDividerTurn {
+  userMessage: { metadata?: unknown } | null;
+  assistantMessages: readonly unknown[];
+}
+
+/**
+ * Whether the between-turn divider after `currentTurn` should be suppressed
+ * because it and `nextTurn` are consecutive queued messages delivered in the
+ * same drain batch: the current turn's user message carries `queueInfo`, the
+ * current turn produced no assistant output, and the next turn (same group)
+ * is also a queued user message. In that case the messages read as one
+ * delivery batch and get a small gap instead of a full divider.
+ */
+export function shouldSuppressQueueDivider(
+  currentTurn: QueueDividerTurn,
+  nextTurn: QueueDividerTurn | null | undefined,
+): boolean {
+  if (!nextTurn) return false;
+  if (currentTurn.assistantMessages.length > 0) return false;
+  if (!currentTurn.userMessage || !getQueueInfo(currentTurn.userMessage.metadata)) return false;
+  if (!nextTurn.userMessage || !getQueueInfo(nextTurn.userMessage.metadata)) return false;
+  return true;
+}
