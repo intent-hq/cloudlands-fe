@@ -7,6 +7,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { validateBranchPrefix, sanitizeBranchPrefix } from '$lib/utils/workspace-validation';
   import PathSettingField from './PathSettingField.svelte';
+  import { Select } from '$lib/components/ui/select';
 
   // Settings state
   let worktreesLocation = $state('');
@@ -66,6 +67,16 @@
           { value: '/usr/bin/fish', label: 'Fish' },
         ]),
   ];
+
+  // Unknown/custom values (e.g. hand-edited settings) fall back to the raw value.
+  const selectedShellLabel = $derived(
+    shellOptions.find((option) => option.value === defaultShell)?.label ?? defaultShell,
+  );
+
+  function handleShellChange(value: string) {
+    defaultShell = value;
+    handleSave();
+  }
 
   onMount(async () => {
     void loadCowCapability();
@@ -233,16 +244,20 @@
       <label for="defaultShell" class="text-sm font-medium text-foreground shrink-0">
         {m.settings_gitWorkspace_defaultShell_label()}
       </label>
-      <select
-        id="defaultShell"
-        bind:value={defaultShell}
-        onchange={handleSave}
-        class="w-56 px-3 py-1.5 bg-background border border-border rounded-md text-sm text-foreground transition-all focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-      >
-        {#each shellOptions as option (option.value)}
-          <option value={option.value}>{option.label}</option>
-        {/each}
-      </select>
+      <div class="w-56 shrink-0">
+        <Select.Root value={defaultShell} onchange={handleShellChange}>
+          <Select.Trigger id="defaultShell" class="py-1.5">
+            <span class="truncate">{selectedShellLabel}</span>
+          </Select.Trigger>
+          <Select.Content portal class="max-h-[300px] w-56">
+            {#each shellOptions as option (option.value)}
+              <Select.Item value={option.value}>
+                <span class="truncate">{option.label}</span>
+              </Select.Item>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      </div>
     </div>
   </section>
 

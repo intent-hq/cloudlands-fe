@@ -12,6 +12,7 @@
   import { Switch } from '$lib/components/ui/switch';
   import { Label } from '$lib/components/ui/label';
   import { Input } from '$lib/components/ui/input';
+  import { Select } from '$lib/components/ui/select';
   import Fa from 'svelte-fa';
   import {
   faBug,
@@ -43,6 +44,12 @@
   let backendResumeError = $state<string | null>(null);
   let availableAgents = $state<Array<{ id: string; name: string; status: string }>>([]);
   let selectedAgentId = $state<string>('');
+
+  // Trigger label for the agent picker select
+  const selectedAgentLabel = $derived.by(() => {
+    const agent = availableAgents.find((a) => a.id === selectedAgentId);
+    return agent ? `${agent.name} (${agent.status})` : selectedAgentId;
+  });
 
   // Detect if on Mac
   const isMac =
@@ -513,14 +520,18 @@
             </Button>
 
             {#if availableAgents.length > 0}
-              <select
-                bind:value={selectedAgentId}
-                class="w-full h-8 px-2 text-sm bg-background border border-border rounded"
-              >
-                {#each availableAgents as agent (agent.id)}
-                  <option value={agent.id}>{agent.name} ({agent.status})</option>
-                {/each}
-              </select>
+              <Select.Root bind:value={selectedAgentId}>
+                <Select.Trigger class="w-full h-8 px-2 text-sm py-1!">
+                  <span class="truncate">{selectedAgentLabel}</span>
+                </Select.Trigger>
+                <Select.Content portal class="max-h-[300px]">
+                  {#each availableAgents as agent (agent.id)}
+                    <Select.Item value={agent.id}>
+                      <span class="truncate">{agent.name} ({agent.status})</span>
+                    </Select.Item>
+                  {/each}
+                </Select.Content>
+              </Select.Root>
 
               <Button
                 size="sm"

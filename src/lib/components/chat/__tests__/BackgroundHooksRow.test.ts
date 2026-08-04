@@ -35,6 +35,7 @@ vi.mock('$store/renderer/slices/background-hooks/background-hooks-selectors', ()
 
 import BackgroundHooksRow from '../BackgroundHooksRow.svelte';
 import { backgroundHooksRefetchRequested } from '$store/renderer/slices/background-hooks/background-hooks-slice';
+import { formatTime } from '$lib/i18n/format';
 
 function makeHook(overrides: Partial<BackgroundHook> = {}): BackgroundHook {
   return {
@@ -103,6 +104,41 @@ describe('BackgroundHooksRow', () => {
     const hoverCard = screen.getByTestId('background-hook-hover-card');
     expect(hoverCard.querySelector('pre')).toBeNull();
     expect(hoverCard.textContent).not.toContain('const status');
+  });
+
+  it('hover card shows the TTL duration and deadline when expiresAt is set', async () => {
+    hooksState.hooks = [makeHook({ expiresAt: '2026-07-31T11:00:00Z' })];
+    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
+    await fireEvent.focus(trigger);
+
+    const hoverCard = await waitFor(() => screen.getByTestId('background-hook-hover-card'));
+    // createdAt 10:00:00Z → expiresAt 11:00:00Z = 60m (seconds part omitted)
+    expect(hoverCard.textContent).toContain('TTL: 60m');
+    expect(hoverCard.textContent).toContain(formatTime('2026-07-31T11:00:00Z', { seconds: true }));
+  });
+
+  it('hover card shows a minutes-and-seconds TTL duration when not whole minutes', async () => {
+    hooksState.hooks = [makeHook({ expiresAt: '2026-07-31T10:12:30Z' })];
+    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
+    await fireEvent.focus(trigger);
+
+    const hoverCard = await waitFor(() => screen.getByTestId('background-hook-hover-card'));
+    expect(hoverCard.textContent).toContain('TTL: 12m 30s');
+  });
+
+  it('omits the TTL line when expiresAt is missing (legacy hook)', async () => {
+    hooksState.hooks = [makeHook()];
+    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
+    await fireEvent.focus(trigger);
+
+    const hoverCard = await waitFor(() => screen.getByTestId('background-hook-hover-card'));
+    expect(hoverCard.textContent).not.toContain('TTL:');
   });
 
   it('hover-card link opens the script modal and dispatches the refetch trigger', async () => {
