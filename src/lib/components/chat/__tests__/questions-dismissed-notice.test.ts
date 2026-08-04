@@ -5,6 +5,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import AgentMessageList from '../AgentMessageList.svelte';
 import { getQuestionsDismissedNotice } from '../questions-dismissed-notice';
+import { m } from '$shared/paraglide/messages.js';
 import type { AgentMessage } from '$shared/types';
 
 // Mock the Redux store to avoid initialization errors
@@ -92,7 +93,7 @@ describe('AgentMessageList - questions-dismissed chip', () => {
 
     // Compact centered chip, discriminated on metadata before role branching
     expect(screen.getByRole('status')).toBeTruthy();
-    expect(screen.getByText('Questions dismissed')).toBeTruthy();
+    expect(screen.getByText(m.chat_questionsDismissedNotice_dismissed_label())).toBeTruthy();
     expect(container.querySelector('.questions-dismissed-notice')).toBeTruthy();
 
     // The delivered prompt text stays out of the visible transcript body
