@@ -226,11 +226,13 @@
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
   import {
+  faChevronDown,
   faPlus,
   faSearch,
   faSync,
 } from '@fortawesome/free-solid-svg-icons';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { Select } from '$lib/components/ui/select';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { linearAuthClient } from '$features/linear-auth/renderer/linear-auth.client';
   import { handleLink } from '$features/navigation/link-handler';
@@ -517,6 +519,20 @@
     return Array.from(teamMap.entries())
       .map(([key, name]) => ({ key, name }))
       .sort((a, b) => a.name.localeCompare(b.name));
+  });
+
+  // Trigger label for the Linear team filter select
+  const selectedLinearTeamLabel = $derived.by(() => {
+    const allLabel = m.workspace_issueSuggestions_allWithCount_label({
+      count: linearAssignedIssues.length + linearCreatedIssues.length,
+    });
+    if (!selectedLinearTeam) return allLabel;
+    const team = linearTeams.find((t) => t.key === selectedLinearTeam);
+    if (!team) return allLabel;
+    const count = [...linearAssignedIssues, ...linearCreatedIssues].filter(
+      (i) => i.teamKey === team.key,
+    ).length;
+    return `${team.name} (${count})`;
   });
 
 
@@ -1592,21 +1608,33 @@
       {#if activeSource === 'linear' && linearTeams.length > 1}
         <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border/20 bg-muted/20">
           <span class="text-xs text-subtle">{m.workspace_issueSuggestions_team_label()}</span>
-          <select
-            bind:value={selectedLinearTeam}
-            class="text-xs bg-transparent border-none text-muted-foreground hover:text-foreground cursor-pointer outline-none py-0.5 pr-4 appearance-none"
-            style="background-image: url('data:image/svg+xml;charset=US-ASCII,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 4 5%22><path fill=%22%236b7280%22 d=%22M2 0L0 2h4z%22 transform=%22rotate(180 2 2.5)%22/></svg>'); background-repeat: no-repeat; background-position: right 0 center; background-size: 8px;"
+          <Select.Root
+            value={selectedLinearTeam ?? ''}
+            onchange={(value) => (selectedLinearTeam = value || null)}
           >
-            <option value={null}
-              >{m.workspace_issueSuggestions_allWithCount_label({ count: linearAssignedIssues.length + linearCreatedIssues.length })}</option
+            <Select.Trigger
+              variant="ghost"
+              class="w-auto gap-1 px-1! py-0.5! text-xs! text-muted-foreground hover:text-foreground"
             >
-            {#each linearTeams as team}
-              {@const count = [...linearAssignedIssues, ...linearCreatedIssues].filter(
-                (i) => i.teamKey === team.key,
-              ).length}
-              <option value={team.key}>{team.name} ({count})</option>
-            {/each}
-          </select>
+              <span class="truncate">{selectedLinearTeamLabel}</span>
+              <Fa icon={faChevronDown} size={8} class="opacity-50 shrink-0" />
+            </Select.Trigger>
+            <Select.Content portal class="max-h-[300px] min-w-[10rem]">
+              <Select.Item value="" class="text-xs! py-1.5!">
+                <span class="truncate"
+                  >{m.workspace_issueSuggestions_allWithCount_label({ count: linearAssignedIssues.length + linearCreatedIssues.length })}</span
+                >
+              </Select.Item>
+              {#each linearTeams as team (team.key)}
+                {@const count = [...linearAssignedIssues, ...linearCreatedIssues].filter(
+                  (i) => i.teamKey === team.key,
+                ).length}
+                <Select.Item value={team.key} class="text-xs! py-1.5!">
+                  <span class="truncate">{team.name} ({count})</span>
+                </Select.Item>
+              {/each}
+            </Select.Content>
+          </Select.Root>
         </div>
       {/if}
 
