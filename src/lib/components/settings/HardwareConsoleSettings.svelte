@@ -51,7 +51,7 @@
   import type { HardwareConsoleStatus } from '$features/hardware-console/device/device-manager';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import {
-    inferTransportFromCollectionCount,
+    inferTransportFromCollections,
     type HardwareConsoleTransport,
   } from '$features/hardware-console/device/transport-heuristic';
   import {
@@ -106,13 +106,13 @@
       snapshot = null;
       return;
     }
-    const [probed, collectionCount] = await Promise.all([
+    const [probed, collections] = await Promise.all([
       probeConnectedDevice(client),
-      manager.connectedCollectionCount().catch(() => 0),
+      manager.connectedCollections().catch(() => []),
     ]);
     if (manager.status !== 'connected') return;
     snapshot = probed;
-    transport = inferTransportFromCollectionCount(collectionCount);
+    transport = inferTransportFromCollections(collections);
   }
 
   onMount(() => {

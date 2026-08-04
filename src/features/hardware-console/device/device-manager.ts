@@ -17,7 +17,7 @@ import {
   type SupportedHardwareConsoleDevice,
 } from './supported-devices';
 import { VendorChannelTransport } from './transport';
-import type { HidDeviceLike } from './webhid-types';
+import type { HidCollectionInfoLike, HidDeviceLike } from './webhid-types';
 
 const logger = new Logger('HardwareConsoleManager');
 
@@ -70,15 +70,20 @@ export class HardwareConsoleManager {
   }
 
   /**
-   * Number of granted HID collections matching the connected device's
-   * VID/PID (each usage pair enumerates as one granted device). Feeds the
-   * transport heuristic in transport-heuristic.ts; `0` while disconnected.
+   * Flattened top-level collections of all granted HID devices matching the
+   * connected device's VID/PID. macOS may enumerate one granted device per
+   * usage pair or coalesce all pairs onto a single device, so callers must
+   * inspect collections, not device count (intent-hq/monorepo#1422). Feeds
+   * the transport heuristic in transport-heuristic.ts; empty while
+   * disconnected.
    */
-  async connectedCollectionCount(): Promise<number> {
-    if (!this.platform || !this.device) return 0;
+  async connectedCollections(): Promise<HidCollectionInfoLike[]> {
+    if (!this.platform || !this.device) return [];
     const { vendorId, productId } = this.device;
     const devices = await this.platform.getDevices();
-    return devices.filter((d) => d.vendorId === vendorId && d.productId === productId).length;
+    return devices
+      .filter((d) => d.vendorId === vendorId && d.productId === productId)
+      .flatMap((d) => [...d.collections]);
   }
 
   onStatusChange(listener: (status: HardwareConsoleStatus) => void): () => void {
@@ -160,7 +165,28 @@ export class HardwareConsoleManager {
   private handleDeviceRemoval(device: HidDeviceLike): void {
     if (device !== this.device) return;
     logger.info('Connected device removed');
-    void this.teardown('device disconnected');
+    void this.teardown('device disconnected').then(() => this.reopenRemainingDevice(device));
+  }
+
+  /**
+   * After the connected device drops, another already-granted surface of the
+   * same hardware may still be present (e.g. BLE→USB hand-off: the USB
+   * surface was granted while BLE was connected, so its arrival never fires
+   * a WebHID `connect` event). Rescan and open it instead of sitting
+   * disconnected until the integration is toggled. Removal-only — never runs
+   * on `stop()` (`started` is false by then and the hotplug listeners are
+   * unsubscribed).
+   */
+  private async reopenRemainingDevice(removed: HidDeviceLike): Promise<void> {
+    if (!this.platform || !this.started || this.device || this.opening) return;
+    const granted = await this.platform.getDevices();
+    const candidate = selectVendorDevice(granted.filter((d) => d !== removed));
+    if (!candidate) return;
+    logger.info('Reconnecting to remaining granted device after removal', {
+      vendorId: candidate.vendorId,
+      productId: candidate.productId,
+    });
+    await this.openDevice(candidate);
   }
 
   private async openDevice(device: HidDeviceLike): Promise<void> {

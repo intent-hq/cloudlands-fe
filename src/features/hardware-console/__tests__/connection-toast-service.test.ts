@@ -40,6 +40,26 @@ import { FakeHidDevice, FakeWebHidApi, flushMicrotasks } from '../device/__tests
 const CM2 = { vendorId: 0x303a, productId: 0x8297 };
 const CODEX_KEYMAP = JSON.stringify({ layers: [['KC_A'], ['KV_OAI_AGENT_1']] });
 
+/** One usage pair per sibling device (split enumeration). The first three
+ *  are also on the BLE surface; mouse/pointer/gamepad are USB-only. */
+const SIBLING_PAIRS = [
+  { usagePage: 0x0001, usage: 0x0006 }, // keyboard
+  { usagePage: 0x000c, usage: 0x0001 }, // consumer
+  { usagePage: 0x000c, usage: 0x0002 },
+  { usagePage: 0x0001, usage: 0x0002 }, // mouse (USB-only)
+  { usagePage: 0x0001, usage: 0x0005 }, // gamepad (USB-only)
+];
+
+/** CM2 USB enumeration coalesced into one device: all 6 usage pairs. */
+const USB_COALESCED_PAIRS = [
+  { usagePage: 0x0001, usage: 0x0006 },
+  { usagePage: 0x000c, usage: 0x0001 },
+  { usagePage: 0x0001, usage: 0x0002 },
+  { usagePage: 0x0001, usage: 0x0001 },
+  { usagePage: 0x0001, usage: 0x0005 },
+  { usagePage: 0xff00, usage: 0x0001 },
+];
+
 type RpcHandlers = Record<string, (params: unknown) => unknown>;
 
 /** FakeHidDevice that answers RPC requests like device firmware would. */
@@ -73,17 +93,27 @@ function readyHandlers(): RpcHandlers {
   };
 }
 
-function makeSetup(deviceCount = 1): {
+function makeSetup(
+  deviceCount = 1,
+  primaryCollections?: readonly { usagePage: number; usage: number }[],
+): {
   hid: FakeWebHidApi;
   manager: HardwareConsoleManager;
   device: RespondingDevice;
 } {
   const hid = new FakeWebHidApi();
-  const device = new RespondingDevice(CM2.vendorId, CM2.productId);
+  const device = new RespondingDevice(
+    CM2.vendorId,
+    CM2.productId,
+    'Fake Device',
+    primaryCollections,
+  );
   device.handlers = readyHandlers();
   hid.devices = [device];
   for (let i = 1; i < deviceCount; i++) {
-    hid.devices.push(new FakeHidDevice(CM2.vendorId, CM2.productId, 'Sibling', []));
+    hid.devices.push(
+      new FakeHidDevice(CM2.vendorId, CM2.productId, 'Sibling', [SIBLING_PAIRS[i - 1]]),
+    );
   }
   const manager = new HardwareConsoleManager(createWebHidPlatform(hid), {
     requestTimeoutMs: 200,
@@ -148,6 +178,16 @@ describe('installHardwareConsoleConnectionToasts', () => {
     await flushMicrotasks(20);
     const [title] = toastSuccessMock.mock.calls[0] as [string];
     expect(title).toContain('Bluetooth');
+  });
+
+  it('labels USB when macOS coalesces the enumeration into one device', async () => {
+    // Regression (intent-hq/monorepo#1422): one granted device carrying all
+    // 6 usage pairs used to count as 1 collection and label Bluetooth.
+    const { manager } = makeSetup(1, USB_COALESCED_PAIRS);
+    await manager.start();
+    await flushMicrotasks(20);
+    const [title] = toastSuccessMock.mock.calls[0] as [string];
+    expect(title).toContain('USB');
   });
 
   it('warns when firmware lacks Codex support', async () => {
