@@ -1213,3 +1213,134 @@ describe('ModelPicker confirmModelChange gate', () => {
     expect(onModelChange).toHaveBeenCalledWith('model-1');
   });
 });
+
+describe('ModelPicker specialist inherit state (default-option plumbing)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'gpt5.4';
+    mockModelState.loadError = null;
+    mockModelState.availableModels = [
+      { value: 'model-1', label: 'Model 1', description: 'A model' },
+    ];
+    providerWarnings$.set({});
+    codexManagedInstallStatus$.set(null);
+    mockAgentSession$.set(undefined);
+    vi.mocked(getModelsForProvider).mockResolvedValue([
+      { value: 'model-1', label: 'Model 1', description: 'A model' },
+      { value: 'model-2', label: 'Model 2', description: 'Another model' },
+    ]);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models: await vi.mocked(getModelsForProvider)(providerId),
+    }));
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  it('renders the inherit state with the daemon resolvedModel preview on the trigger (no explicit pin)', async () => {
+    render(ModelPicker, {
+      props: {
+        // Inheriting: no explicit frontmatter model — daemon preview only.
+        selectedModel: undefined,
+        showDefaultOption: true,
+        defaultModelId: 'model-1',
+        defaultOptionLabel: 'Default',
+        defaultOptionDescription: 'Use the global default model',
+        formatDefaultModelLabel: (model: string) => `Default (${model})`,
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      const trigger = screen
+        .getAllByRole('button')
+        .find((b) => b.textContent?.includes('Default'));
+      expect(trigger?.textContent).toContain('Default (Model 1)');
+    });
+  });
+
+  it('renders the pinned state from an explicit model (preview ignored)', async () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'model-2',
+        showDefaultOption: true,
+        defaultModelId: 'model-1',
+        formatDefaultModelLabel: (model: string) => `Default (${model})`,
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      const trigger = screen
+        .getAllByRole('button')
+        .find((b) => b.textContent?.includes('Model'));
+      expect(trigger?.textContent).toContain('Model 2');
+      expect(trigger?.textContent).not.toContain('Default');
+    });
+  });
+
+  it('shows the custom inherit option label/description in the dropdown', async () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'model-2',
+        showDefaultOption: true,
+        defaultOptionLabel: 'Default',
+        defaultOptionDescription: 'Use the global default model',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    const inheritOption = await screen.findByRole('option', { name: /Use the global default model/ });
+    expect(inheritOption.textContent).toContain('Default');
+  });
+
+  it('emits onModelChange("") when the inherit option is picked', async () => {
+    const onModelChange = vi.fn();
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'model-2',
+        onModelChange,
+        showDefaultOption: true,
+        defaultOptionLabel: 'Default',
+        defaultOptionDescription: 'Use the global default model',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(
+      await screen.findByRole('option', { name: /Use the global default model/ }),
+    );
+
+    await waitFor(() => {
+      expect(onModelChange).toHaveBeenCalledWith('');
+    });
+  });
+
+  it('emits the model id unchanged when a concrete model is picked (pin path)', async () => {
+    const onModelChange = vi.fn();
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        onModelChange,
+        showDefaultOption: true,
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Model 2/ }));
+
+    await waitFor(() => {
+      expect(onModelChange).toHaveBeenCalledWith('model-2');
+    });
+  });
+});

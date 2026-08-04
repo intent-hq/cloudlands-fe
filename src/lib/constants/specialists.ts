@@ -1,5 +1,4 @@
 import { m } from '$shared/paraglide/messages.js';
-import type { ProviderModelTier as ModelTier } from '$shared/provider-catalog';
 import type { SpecialistSource } from '$shared/specialist-file-types';
 
 /** Known built-in specialist IDs */
@@ -24,21 +23,8 @@ export interface Specialist {
    */
   codingAgent?: string;
   /**
-   * The capability tier for this specialist's default model.
-   * Resolved at runtime to the appropriate model for the active provider.
-   * - fast: Quick, cheap models (haiku4.5, haiku, gpt-5.1-codex-mini)
-   * - balanced: General purpose (sonnet4.5, sonnet, gpt-5.2-codex)
-   * - smart: High-capability (opus4.5, opus, gpt-5.1-codex-max)
-   * The fallback for provider-aware resolution when defaultModel is not set;
-   * an explicit defaultModel wins when both are provided.
-   * Optional: if neither defaultModelTier nor defaultModel is provided, callers
-   * should use the user's current default model.
-   */
-  defaultModelTier?: ModelTier;
-  /**
    * Hardcoded default model ID. Used for custom specialists or backwards compatibility.
-   * Takes precedence over defaultModelTier: when both are provided, this explicit
-   * model wins and tier-based provider-aware resolution is skipped.
+   * Optional: if not provided, callers should use the user's current default model.
    */
   defaultModel?: string;
   defaultBehaviorPrompt: string;
@@ -83,7 +69,6 @@ export const SPECIALISTS: Specialist[] = [
     get description() {
       return m.specialists_builtin_coordinator_description();
     },
-    defaultModelTier: 'smart',
     // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     defaultBehaviorPrompt: `## Coordinator
 
@@ -166,7 +151,6 @@ If helpful, you can use groups for distinct phases: **Researching**, **Planning*
     get description() {
       return m.specialists_builtin_implementor_description();
     },
-    defaultModelTier: 'smart',
     // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     defaultBehaviorPrompt: `## Implementor
 
@@ -204,7 +188,6 @@ Call \`ws.agent.reportToParent("<report>")\` (via the \`workspace_api\` tool) wi
     get description() {
       return m.specialists_builtin_verifier_description();
     },
-    defaultModelTier: 'smart',
     // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     defaultBehaviorPrompt: `## Verifier
 
@@ -262,7 +245,6 @@ Call \`ws.agent.reportToParent("<report>")\` (via the \`workspace_api\` tool) wi
     get description() {
       return m.specialists_builtin_prReviewer_description();
     },
-    defaultModelTier: 'smart',
     // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     defaultBehaviorPrompt: `# Role
 You are a PR review specialist conducting a code review for a pull request.
@@ -357,7 +339,6 @@ If no issues found, write "✅ Approved" with no task notes.
     get description() {
       return m.specialists_builtin_prShepherd_description();
     },
-    defaultModelTier: 'smart',
     // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     defaultBehaviorPrompt: `## PR Shepherd
 
@@ -497,7 +478,6 @@ Update a workspace note after each iteration with: Iteration number, PR state su
     get description() {
       return m.specialists_builtin_uiDesigner_description();
     },
-    defaultModelTier: 'smart',
     // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     defaultBehaviorPrompt: `## UI Designer
 
@@ -617,7 +597,6 @@ Call \`ws.agent.reportToParent("<report>")\` (via the \`workspace_api\` tool) wi
     get description() {
       return m.specialists_builtin_developer_description();
     },
-    defaultModelTier: 'smart',
     // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     defaultBehaviorPrompt: `## Developer
 
@@ -885,7 +864,6 @@ Be proactive but reversible. Summarize what you found, recommend the safest next
     get description() {
       return m.specialists_builtin_ralph_description();
     },
-    defaultModelTier: 'smart',
     defaultBehaviorPrompt: '',
     defaultAgentType: 'ralph-loop',
     // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)

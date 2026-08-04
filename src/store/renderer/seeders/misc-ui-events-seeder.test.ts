@@ -29,7 +29,6 @@ const CHIEF_BUNDLED: SpecialistDef = {
   id: "chief-of-staff",
   name: "Chief of Staff",
   description: "App-level assistant",
-  modelTier: "smart",
   prompt: "You assist.",
   behaviorPrompt: "You assist.",
   source: "bundled",

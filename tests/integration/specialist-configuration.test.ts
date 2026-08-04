@@ -136,29 +136,15 @@ describe('Specialist Configuration', () => {
   });
 
   describe('Specialist Model Assignments', () => {
-    it('orchestrator uses smart tier for planning', () => {
-      const specialist = getSpecialistById('spec-writer');
-      expect(specialist!.defaultModelTier).toBe('smart');
-    });
-
-    it('implementor uses smart tier for execution', () => {
-      const specialist = getSpecialistById('implementor');
-      expect(specialist!.defaultModelTier).toBe('smart');
-    });
-
-    it('verifier uses smart tier for thorough review', () => {
-      const specialist = getSpecialistById('verifier');
-      expect(specialist!.defaultModelTier).toBe('smart');
-    });
-
-    it('pr-reviewer uses smart tier for thorough review', () => {
-      const specialist = getSpecialistById('pr-reviewer');
-      expect(specialist!.defaultModelTier).toBe('smart');
-    });
-
-    it('ui-designer uses smart tier like other specialists', () => {
-      const specialist = getSpecialistById('ui-designer');
-      expect(specialist!.defaultModelTier).toBe('smart');
+    // Built-ins carry no model pin: absent means "inherit the global
+    // default model".
+    it('no built-in specialist pins a model', () => {
+      for (const specialist of SPECIALISTS) {
+        expect(
+          specialist.defaultModel,
+          `Specialist ${specialist.id} must not pin a defaultModel`,
+        ).toBeUndefined();
+      }
     });
   });
 
@@ -245,15 +231,8 @@ describe('Specialist Configuration', () => {
         expect(specialist.id).toBeDefined();
         expect(specialist.name).toBeDefined();
         expect(specialist.description).toBeDefined();
-        // Most specialists pin a model tier/model. Chief intentionally uses the user's default model.
-        if (specialist.id === 'chief-of-staff') {
-          expect(specialist.defaultModelTier || specialist.defaultModel).toBeUndefined();
-        } else {
-          expect(
-            specialist.defaultModelTier || specialist.defaultModel,
-            `Specialist ${specialist.id} must have either defaultModelTier or defaultModel`,
-          ).toBeDefined();
-        }
+        // No specialist pins a tier/model: absent means inherit the global default.
+        expect(specialist.defaultModelTier || specialist.defaultModel).toBeUndefined();
         expect(specialist.defaultBehaviorPrompt).toBeDefined();
       }
     });
@@ -308,13 +287,9 @@ describe('Specialist Configuration', () => {
       expect(getDefaultProviderId()).toBe('auggie');
     });
 
-    it('smart-tier specialists resolve to opus4.7 for auggie', () => {
-      const smartSpecialists = SPECIALISTS.filter((s) => s.defaultModelTier === 'smart');
-      expect(smartSpecialists.length).toBeGreaterThan(0);
-      for (const s of smartSpecialists) {
-        const resolved = getDefaultModelForProvider('auggie', s.defaultModelTier!);
-        expect(resolved).toBe('opus4.7');
-      }
+    it('no built-in specialist carries a model pin (built-ins inherit the global default)', () => {
+      expect(SPECIALISTS.filter((s) => s.defaultModel)).toHaveLength(0);
+      expect(getDefaultModelForProvider('auggie', 'smart')).toBe('opus4.7');
     });
 
     it('non-auggie provider tiers are NOT opus4.7', () => {
@@ -374,15 +349,14 @@ describe('Specialist Configuration', () => {
   });
 
   describe('getEffectiveSpecialist coding agent resolution', () => {
-    // Tier→model resolution is daemon-owned: the main process passes the
-    // frontmatter model/modelTier through verbatim ('' when no model).
+    // Model resolution is daemon-owned: the main process passes the
+    // frontmatter model through verbatim ('' when no model).
     it('falls back to the caller coding agent for built-in specialists without an explicit codingAgent', () => {
       const resolved = getEffectiveSpecialist('implementor', 'codex');
 
       expect(resolved).not.toBeNull();
       expect(resolved?.codingAgent).toBe('codex');
-      expect(resolved?.modelTier).toBe('smart');
-      // No tier→model synthesis in the main process
+      // No model synthesis in the main process
       expect(resolved?.model).toBe('');
     });
 
@@ -392,7 +366,6 @@ describe('Specialist Configuration', () => {
         name: 'File Specialist',
         description: 'File-backed specialist',
         codingAgent: 'codex',
-        modelTier: 'fast',
         behaviorPrompt: 'Focus on file-backed work.',
       });
       await refreshSpecialistsFromFiles();
@@ -401,7 +374,6 @@ describe('Specialist Configuration', () => {
 
       expect(resolved).not.toBeNull();
       expect(resolved?.codingAgent).toBe('codex');
-      expect(resolved?.modelTier).toBe('fast');
       expect(resolved?.model).toBe('');
     });
 
@@ -437,18 +409,17 @@ describe('Specialist Configuration', () => {
       expect(resolved).not.toBeNull();
       // Override from electron-store is no longer applied
       expect(resolved?.codingAgent).toBe('auggie');
-      expect(resolved?.modelTier).toBe('smart');
       expect(resolved?.model).toBe('');
     });
 
     // Regression (monorepo#944): the explicit model in the file is passed
-    // through verbatim, even when modelTier is also declared.
-    it('keeps the explicit model when a file declares BOTH model and modelTier', async () => {
+    // through verbatim, even when a retired modelTier key is also declared.
+    it('keeps the explicit model when a file declares a retired modelTier key', async () => {
       const dir = await ensureSpecialistsDirectory();
       const content = [
         '---',
         'name: "Both Fields"',
-        'description: "Declares both model and modelTier"',
+        'description: "Declares both model and a retired modelTier"',
         'codingAgent: "auggie"',
         'model: "sonnet4.5"',
         'modelTier: "smart"',
@@ -463,34 +434,35 @@ describe('Specialist Configuration', () => {
 
       expect(resolved).not.toBeNull();
       expect(resolved?.model).toBe('sonnet4.5');
-      // The declared tier is still surfaced on the output field
-      expect(resolved?.modelTier).toBe('smart');
     });
 
-    it('does NOT tier-resolve when a file declares only modelTier (daemon-owned)', async () => {
-      await writeSpecialistFile({
-        id: 'tier-only',
-        name: 'Tier Only',
-        description: 'Declares only modelTier',
-        codingAgent: 'auggie',
-        modelTier: 'fast',
-        behaviorPrompt: 'Behavior prompt.',
-      });
+    it('ignores a legacy modelTier-only file (no tier resolution, inherit the default)', async () => {
+      const dir = await ensureSpecialistsDirectory();
+      const content = [
+        '---',
+        'name: "Tier Only"',
+        'description: "Declares only a retired modelTier"',
+        'codingAgent: "auggie"',
+        'modelTier: "fast"',
+        '---',
+        '',
+        'Behavior prompt.',
+      ].join('\n');
+      await fs.writeFile(path.join(dir, 'tier-only.md'), content, 'utf-8');
       await refreshSpecialistsFromFiles();
 
       const resolved = getEffectiveSpecialist('tier-only', 'auggie');
 
       expect(resolved).not.toBeNull();
       expect(resolved?.model).toBe('');
-      expect(resolved?.modelTier).toBe('fast');
     });
 
-    it('getAllEffectiveSpecialists keeps the explicit model when both fields are declared', async () => {
+    it('getAllEffectiveSpecialists keeps the explicit model when a retired modelTier is declared', async () => {
       const dir = await ensureSpecialistsDirectory();
       const content = [
         '---',
         'name: "Both Fields List"',
-        'description: "Declares both model and modelTier"',
+        'description: "Declares both model and a retired modelTier"',
         'codingAgent: "auggie"',
         'model: "sonnet4.5"',
         'modelTier: "smart"',
@@ -507,7 +479,6 @@ describe('Specialist Configuration', () => {
 
       expect(found).toBeDefined();
       expect(found?.model).toBe('sonnet4.5');
-      expect(found?.modelTier).toBe('smart');
     });
 
     it('resolves file-based specialist overrides correctly', async () => {
@@ -518,7 +489,6 @@ describe('Specialist Configuration', () => {
         name: 'Implementor',
         description: 'Custom override',
         codingAgent: 'codex',
-        modelTier: 'smart',
         behaviorPrompt: 'Custom prompt.',
       });
       await refreshSpecialistsFromFiles();
@@ -527,7 +497,6 @@ describe('Specialist Configuration', () => {
 
       expect(resolved).not.toBeNull();
       expect(resolved?.codingAgent).toBe('codex');
-      expect(resolved?.modelTier).toBe('smart');
       expect(resolved?.model).toBe('');
     });
   });

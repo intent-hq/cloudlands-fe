@@ -3,7 +3,6 @@
   import {
   faPlus,
   faGear,
-  faArrowUpRightFromSquare,
   faPencil,
 } from '@fortawesome/free-solid-svg-icons';
   import {
@@ -15,7 +14,6 @@
   selectUserOverrides,
 } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
-  import { openSpecialistsFolder } from '$store/renderer/slices/specialists/specialists-slice';
 
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -93,20 +91,6 @@
       <span class="text-ui font-semibold text-muted-foreground uppercase tracking-wider">
         {m.settings_aiBehavior_sidebar_specialistsSection()}
       </span>
-      <Tooltip
-        content={m.settings_aiBehavior_sidebar_openFolderTooltip()}
-        side="right"
-        delayDuration={300}
-      >
-        <button
-          type="button"
-          onclick={() => appStore.dispatch(openSpecialistsFolder())}
-          class="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-          aria-label={m.settings_aiBehavior_sidebar_openFolderAriaLabel()}
-        >
-          <Fa icon={faArrowUpRightFromSquare} size="xs" />
-        </button>
-      </Tooltip>
     </div>
 
     {#each visibleSpecialists as specialist (specialist.id)}

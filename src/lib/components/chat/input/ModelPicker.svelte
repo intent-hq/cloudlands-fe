@@ -149,6 +149,14 @@
     // (e.g. "Provider default" for daemon-resolved specialist previews).
     defaultModelLabel?: string;
     showDefaultOption?: boolean;
+    // Overrides for the "use default" dropdown option's label/description
+    // (e.g. the specialist editor's "Inherit global default" wording).
+    defaultOptionLabel?: string;
+    defaultOptionDescription?: string;
+    // Wraps the resolved defaultModelId label on the trigger when no explicit
+    // model is selected (e.g. "Default ({model})" for the specialist editor's
+    // inherit state). Only applied when defaultModelId is set.
+    formatDefaultModelLabel?: (modelLabel: string) => string;
     // Gates agent-session updates (updateAgentSessionFields, agent.setModel).
     updateGlobalStore?: boolean;
     // Gates the global selectModel dispatch (persisted default); Settings default picker only.
@@ -178,6 +186,9 @@
     defaultModelId,
     defaultModelLabel,
     showDefaultOption = false,
+    defaultOptionLabel,
+    defaultOptionDescription,
+    formatDefaultModelLabel,
     updateGlobalStore = false,
     updateGlobalDefault = false,
     silentFallback = false,
@@ -511,24 +522,30 @@
     userChangedModel = true;
     localModel = model;
 
-    if (model !== undefined) {
-      onModelChange?.(model);
+    if (model === undefined) {
+      // "Use default" picked — notify the parent with an empty string so it
+      // can clear an explicit pin (consumers with explicit-model semantics
+      // guard on falsy values; no agent/global updates apply to "default").
+      onModelChange?.('');
+      return;
+    }
 
-      await tick();
+    onModelChange?.(model);
 
-      if (updateGlobalDefault) appStore.dispatch(selectModel(model));
-      if (!updateGlobalStore) return;
+    await tick();
 
-      if (agentId && workspaceId) {
-        appStore.dispatch(updateAgentSessionFields(agentId, { model }));
-        logger.debug('Updated local session model:', { agentId, model });
+    if (updateGlobalDefault) appStore.dispatch(selectModel(model));
+    if (!updateGlobalStore) return;
 
-        if (deferUpdate) {
-          pendingModelUpdate = model;
-          logger.info('Model update deferred until streaming ends:', { model, agentId });
-        } else {
-          await applyBackendModelUpdate(model);
-        }
+    if (agentId && workspaceId) {
+      appStore.dispatch(updateAgentSessionFields(agentId, { model }));
+      logger.debug('Updated local session model:', { agentId, model });
+
+      if (deferUpdate) {
+        pendingModelUpdate = model;
+        logger.info('Model update deferred until streaming ends:', { model, agentId });
+      } else {
+        await applyBackendModelUpdate(model);
       }
     }
   }
@@ -565,11 +582,14 @@
 
     // Unresolvable defaultModelId (models not loaded yet): prefer the caller's
     // defaultModelLabel (e.g. "Provider default"), then the bare model id.
-    return defaultModelId
-      ? (getModelLabel(defaultModelId) ??
-          defaultModelLabel ??
-          parseCompoundModelId(defaultModelId).modelId)
-      : (defaultModelLabel ?? m.chat_modelPicker_defaultModel_label());
+    if (defaultModelId) {
+      const resolvedLabel =
+        getModelLabel(defaultModelId) ??
+        defaultModelLabel ??
+        parseCompoundModelId(defaultModelId).modelId;
+      return formatDefaultModelLabel ? formatDefaultModelLabel(resolvedLabel) : resolvedLabel;
+    }
+    return defaultModelLabel ?? m.chat_modelPicker_defaultModel_label();
   });
 
   const triggerProviderId = $derived.by(() => {
@@ -611,10 +631,10 @@
   const useDefaultOption: DropdownOption = {
     value: USE_DEFAULT_VALUE,
     get label() {
-      return m.chat_modelPicker_defaultModel_label();
+      return defaultOptionLabel ?? m.chat_modelPicker_defaultModel_label();
     },
     get description() {
-      return m.chat_modelPicker_defaultModel_description();
+      return defaultOptionDescription ?? m.chat_modelPicker_defaultModel_description();
     },
   };
 
