@@ -335,16 +335,21 @@ async function dispatchToLifecycle(
  * Suggestion toast for sends into an ARCHIVED workspace: an "Unarchive"
  * action button invokes the existing `unarchiveWorkspace` flow
  * (workspace-operations-service — it owns the §5.1 wire call, the
- * success/error toasts, and store convergence via `workspace:updated`);
- * dismissing does nothing and nothing is ever unarchived automatically.
- * Keyed by a stable per-workspace toast id so repeated sends while archived
- * update the one toast instead of stacking duplicates. Both the toast lib
- * and the operations service are imported lazily per this module's
- * dependency-light rules; failures are logged, never surfaced — the toast
- * is advisory and must not fail the send.
+ * success/error toasts, and optimistic store convergence via
+ * `applyWorkspaceChanges`; the daemon's `workspace:updated` event is the
+ * reconciling follow-up); dismissing does nothing and nothing is ever
+ * unarchived automatically. Keyed by a stable per-workspace toast id so
+ * repeated sends while archived update the one toast instead of stacking
+ * duplicates. Both the toast lib and the operations service are imported
+ * lazily per this module's dependency-light rules; failures are logged,
+ * never surfaced — the toast is advisory and must not fail the send.
  */
 async function suggestUnarchiveIfArchived(workspace: Workspace): Promise<void> {
-  if (workspace.status !== WorkspaceStatusEnum.Archived) return;
+  // Same dual archived signal as WorkspaceHoverCard: the boolean flag can be
+  // set while `status` is stale (or vice versa).
+  const isArchived =
+    workspace.archived || workspace.status === WorkspaceStatusEnum.Archived;
+  if (!isArchived) return;
   try {
     const { toast } = await import('svelte-sonner');
     toast.info(m.agent_chatSend_archivedWorkspace_toast(), {

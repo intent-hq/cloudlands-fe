@@ -130,6 +130,10 @@ function seedWorkspace(): void {
       title: "WS",
       branch: "main",
       status: "active",
+      // Explicit false: setWorkspaceEntity MERGES into any existing entity,
+      // so an archived:true seeded by a previous test would otherwise leak
+      // through this beforeEach reseed.
+      archived: false,
       repositoryPath: "/tmp/repo",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
@@ -1829,10 +1833,10 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(options.id).toBe(`chat-send-unarchive-${WS}`);
     expect(options.action?.label).toBeTruthy();
 
-    // Repeated sends reuse the SAME toast id — svelte-sonner updates the
-    // existing toast in place instead of stacking a duplicate. (Settle the
-    // optimistic in-flight flags from the first send so the second one takes
-    // the direct lifecycle path again.)
+    // Repeated sends pass the SAME stable toast id — dedup relies on
+    // sonner's update-by-id semantics (not exercised here; sonner is
+    // stubbed). (Settle the optimistic in-flight flags from the first send
+    // so the second one takes the direct lifecycle path again.)
     appStore.dispatch(streamEnded(AGENT));
     seedSession({ isStreaming: false, isResponding: false, status: AgentStatus.Idle });
     appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "hello again" }));
@@ -1880,6 +1884,32 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     const unarchiveCalls = backend.requests.filter((r) => r.method === "workspace.unarchive");
     expect(unarchiveCalls).toHaveLength(1);
     expect(unarchiveCalls[0]?.params).toEqual({ workspaceId: WS });
+  });
+
+  it("archived flag set but status stale (non-Archived): toast still shows — dual archived signal", async () => {
+    const { toast } = await import("svelte-sonner");
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS,
+        title: "WS",
+        branch: "main",
+        status: WorkspaceStatusEnum.Active,
+        archived: true,
+        repositoryPath: "/tmp/repo",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+      } as unknown as Workspace),
+    );
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "hello stale-status" }));
+    await flush();
+    await flush();
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    expect(toast.info).toHaveBeenCalledTimes(1);
   });
 
   it("non-archived workspace: no suggestion toast, behavior unchanged", async () => {

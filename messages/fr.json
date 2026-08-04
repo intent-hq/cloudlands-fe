@@ -4421,7 +4421,7 @@
   "agent_chatSend_queueFailed_error": "Impossible de mettre le message en file d'attente : {error}",
   "agent_chatSend_sendNowRejected_error": "sendQueuedMessageNow rejeté",
   "agent_chatSend_nothingToRetry_toast": "Rien à réessayer — envoyez un message pour démarrer un nouveau tour.",
-  "agent_chatSend_archivedWorkspace_toast": "Cet espace est archivé. Votre message a tout de même été envoyé.",
+  "agent_chatSend_archivedWorkspace_toast": "Cet espace est archivé. Votre message sera tout de même délivré.",
   "agent_chatSend_archivedWorkspace_unarchive_label": "Désarchiver",
   "agent_ipc_activeStreamsFailed_error": "Impossible d'obtenir les flux actifs",
   "agent_ipc_circuitBreakerResetFailed_error": "Impossible de réinitialiser le disjoncteur",

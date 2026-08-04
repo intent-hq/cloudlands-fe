@@ -4421,7 +4421,7 @@
   "agent_chatSend_queueFailed_error": "訊息加入佇列失敗：{error}",
   "agent_chatSend_sendNowRejected_error": "sendQueuedMessageNow 被拒絕",
   "agent_chatSend_nothingToRetry_toast": "沒有可重試的內容——傳送訊息以開始新一輪對話。",
-  "agent_chatSend_archivedWorkspace_toast": "此空間已歸檔。您的訊息仍已傳送。",
+  "agent_chatSend_archivedWorkspace_toast": "此空間已歸檔。您的訊息仍會送達。",
   "agent_chatSend_archivedWorkspace_unarchive_label": "取消歸檔",
   "agent_ipc_activeStreamsFailed_error": "獲取活躍流失敗",
   "agent_ipc_circuitBreakerResetFailed_error": "重設熔斷器失敗",
