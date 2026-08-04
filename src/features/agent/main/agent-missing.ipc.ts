@@ -73,6 +73,64 @@ const UniversalAgentEnhancePromptSchema = z.object({
     .optional(),
 });
 
+interface ActiveStream {
+  agentId: string;
+  sessionId: string;
+  workspaceId: string;
+  startTime: number;
+}
+
+interface AgentListActiveResult {
+  streams: ActiveStream[];
+}
+
+async function getLegacyActiveStreams(
+  client: ReturnType<typeof getBackendClient>,
+): Promise<ActiveStream[]> {
+  const workspaceListResult = (await client.request('workspace.list')) as
+    { workspaces?: Array<Record<string, unknown>> } | undefined;
+  const workspaces = Array.isArray(workspaceListResult?.workspaces)
+    ? workspaceListResult.workspaces
+    : [];
+
+  const perWorkspace = await Promise.all(
+    workspaces.map(async (ws) => {
+      const workspaceId = String(ws.id ?? ws.workspaceId ?? '');
+      if (!workspaceId) return [];
+      try {
+        const agentListResult = (await client.request('agent.list', { workspaceId })) as
+          | {
+              agents?: Array<{
+                id?: string;
+                isStreaming?: boolean;
+                isResponding?: boolean;
+                updatedAt?: string;
+              }>;
+            }
+          | undefined;
+        const agents = Array.isArray(agentListResult?.agents) ? agentListResult.agents : [];
+        return agents
+          .filter((agent) => agent.isStreaming === true || agent.isResponding === true)
+          .map((agent) => {
+            const agentId = String(agent.id ?? '');
+            const parsed = agent.updatedAt ? Date.parse(agent.updatedAt) : NaN;
+            const startTime = Number.isFinite(parsed) ? parsed : 0;
+            return { agentId, sessionId: agentId, workspaceId, startTime };
+          })
+          .filter((entry) => entry.agentId.length > 0);
+      } catch (error) {
+        logger.warn('agent.list failed during active-streams probe; skipping workspace', {
+          workspaceId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return [];
+      }
+    }),
+  );
+
+  return perWorkspace.flat();
+}
+
 // Note: Agent context schemas are defined in agent-context.ipc.ts
 
 /**
@@ -95,61 +153,27 @@ export function registerMissingAgentHandlers(): void {
     }
   }
 
-  // Cross-workspace active-streams probe used by the renderer
-  // `active-streams-tracker` to know which agents are mid-turn across ALL
-  // workspaces (workspace switcher, sidebar cards, delete guards). The
-  // authoritative signal now lives in the daemon (PROTOCOL.md §5.5): iterate
-  // `workspace.list` → `agent.list` per workspace and filter on the AgentLite
-  // `isStreaming || isResponding` flags. Response shape stays
-  // { agentId, sessionId, workspaceId, startTime } per the tracker's
-  // `ActiveStream` interface; `agentId = sessionId = AgentLite.id`, `startTime`
-  // is best-effort from `updatedAt` (parsed to epoch ms, 0 on parse failure).
+  // Cross-workspace active-streams probe used by the renderer tracker. New
+  // daemons answer this in one request; the legacy fan-out remains as a
+  // compatibility fallback while older sidecars may still be installed.
   ipcMain.handle('agent:get-active-streams', async () => {
     try {
       const client = getBackendClient();
-      const workspaceListResult = (await client.request('workspace.list')) as
-        | { workspaces?: Array<Record<string, unknown>> }
-        | undefined;
-      const workspaces = Array.isArray(workspaceListResult?.workspaces)
-        ? workspaceListResult!.workspaces!
-        : [];
-
-      const perWorkspace = await Promise.all(
-        workspaces.map(async (ws) => {
-          const workspaceId = String(ws.id ?? ws.workspaceId ?? '');
-          if (!workspaceId) return [];
-          try {
-            const agentListResult = (await client.request('agent.list', { workspaceId })) as
-              | {
-                  agents?: Array<{
-                    id?: string;
-                    isStreaming?: boolean;
-                    isResponding?: boolean;
-                    updatedAt?: string;
-                  }>;
-                }
-              | undefined;
-            const agents = Array.isArray(agentListResult?.agents) ? agentListResult!.agents! : [];
-            return agents
-              .filter((agent) => agent.isStreaming === true || agent.isResponding === true)
-              .map((agent) => {
-                const agentId = String(agent.id ?? '');
-                const parsed = agent.updatedAt ? Date.parse(agent.updatedAt) : NaN;
-                const startTime = Number.isFinite(parsed) ? parsed : 0;
-                return { agentId, sessionId: agentId, workspaceId, startTime };
-              })
-              .filter((entry) => entry.agentId.length > 0);
-          } catch (error) {
-            logger.warn('agent.list failed during active-streams probe; skipping workspace', {
-              workspaceId,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            return [];
-          }
-        }),
-      );
-
-      const activeStreams = perWorkspace.flat();
+      let activeStreams: ActiveStream[];
+      try {
+        const result = await client.request<AgentListActiveResult>('agent.listActive');
+        activeStreams = result.streams.map(({ agentId, sessionId, workspaceId, startTime }) => ({
+          agentId,
+          sessionId,
+          workspaceId,
+          startTime,
+        }));
+      } catch (error) {
+        logger.warn('agent.listActive unavailable; falling back to legacy active-streams probe', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        activeStreams = await getLegacyActiveStreams(client);
+      }
 
       logger.debug('agent:get-active-streams called', {
         count: activeStreams.length,

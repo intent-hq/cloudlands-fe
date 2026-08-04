@@ -1,19 +1,9 @@
 /**
  * Active Streams Bridge Seeder
  *
- * Bridges agent:get-active-streams to real daemon data in the renderer.
- * Queries workspace.list → agent.list per workspace and filters on
- * isStreaming === true || isResponding === true, mirroring the main-process
- * handler in src/features/agent/main/agent-missing.ipc.ts.
- *
- * The tracker's ActiveStream interface expects:
- *   { agentId, sessionId, workspaceId, startTime }
- * where agentId = sessionId = AgentLite.id, and startTime is Date.parse(updatedAt) or 0.
- *
- * Per-workspace agent.list failures are swallowed (returning [] for that
- * workspace) and the overall result is still { success: true, data }. Only
- * workspace.list failure returns { success: false, error, data: [] }. Never
- * throws; the channel is always bridged (the tracker reads result.success).
+ * Bridges agent:get-active-streams to the daemon's cross-workspace
+ * agent.listActive probe. Older sidecars fall back to the legacy
+ * workspace.list → agent.list fan-out for compatibility.
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { AGENT_CHANNELS } from '$shared/ipc/channels';
@@ -33,20 +23,20 @@ interface AgentListResult {
   }>;
 }
 
+interface AgentListActiveResult {
+  streams: ActiveStream[];
+}
+
 /**
- * Fetch active streams from the daemon: workspace.list → agent.list per
- * workspace → filter on isStreaming || isResponding → map to ActiveStream shape.
+ * Legacy compatibility path for sidecars without agent.listActive.
  */
-async function getActiveStreamsFromDaemon(): Promise<ActiveStream[]> {
-  // Query workspace.list
+async function getLegacyActiveStreamsFromDaemon(): Promise<ActiveStream[]> {
   const workspaceListResult = (await backendRequest<WorkspaceListResult>('workspace.list')) as
-    | WorkspaceListResult
-    | undefined;
+    WorkspaceListResult | undefined;
   const workspaces = Array.isArray(workspaceListResult?.workspaces)
     ? workspaceListResult.workspaces
     : [];
 
-  // Query agent.list per workspace in parallel
   const perWorkspace = await Promise.all(
     workspaces.map(async (ws) => {
       const workspaceId = String(ws.id ?? ws.workspaceId ?? '');
@@ -58,7 +48,6 @@ async function getActiveStreamsFromDaemon(): Promise<ActiveStream[]> {
         })) as AgentListResult | undefined;
         const agents = Array.isArray(agentListResult?.agents) ? agentListResult.agents : [];
 
-        // Filter on isStreaming || isResponding
         return agents
           .filter((agent) => agent.isStreaming === true || agent.isResponding === true)
           .map((agent) => {
@@ -76,6 +65,23 @@ async function getActiveStreamsFromDaemon(): Promise<ActiveStream[]> {
   );
 
   return perWorkspace.flat();
+}
+
+async function getActiveStreamsFromDaemon(): Promise<ActiveStream[]> {
+  try {
+    const result = await backendRequest<AgentListActiveResult>('agent.listActive');
+    return result.streams.map(({ agentId, sessionId, workspaceId, startTime }) => ({
+      agentId,
+      sessionId,
+      workspaceId,
+      startTime,
+    }));
+  } catch (error) {
+    // Compatibility fallback: shipped FE versions may briefly run against a
+    // pre-PROTOCOL-4.1 sidecar that does not implement agent.listActive yet.
+    console.warn('agent.listActive unavailable; using legacy active-streams probe', error);
+    return getLegacyActiveStreamsFromDaemon();
+  }
 }
 
 // Register the handler at import time (host-bridge-seeder idiom)
