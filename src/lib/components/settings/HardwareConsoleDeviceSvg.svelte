@@ -53,15 +53,16 @@
    *
    * The encoder and joystick pop small explainer cards describing their
    * fixed (non-configurable) behavior. While `agentKeysInteractive` (a
-   * device is connected), the agent keys show numbered slot badges (binding
-   * numbering: second row = slots 1-4, top row = slots 5-6 — matching
-   * AGENT_KEY_IDS) and clicking an assigned key pops a workspace-info card
-   * anchored next to the key (name plus the LED status meaning) — it does
-   * not navigate; unassigned keys are inert.
+   * device is connected), the agent keys show display-only numbered slot
+   * squares (binding numbering: second row = slots 1-4, top row = slots
+   * 5-6 — matching AGENT_KEY_IDS) and clicking an assigned key (including
+   * over the square) pops a workspace-info card anchored next to the key
+   * (name plus the LED status meaning) — it does not navigate; unassigned
+   * keys are inert.
    */
   import { formatInteger } from '$lib/i18n/format';
   import type { HardwareDeviceModel } from '$features/hardware-console/input/types';
-  import MicroKeySlotBadge from '$lib/components/workspace/MicroKeySlotBadge.svelte';
+  import MicroKeySlotSquare from '$lib/components/ui/toast/MicroKeySlotSquare.svelte';
 
   /** Resolved assignment of one agent-key slot. */
   interface AgentKeySlot {
@@ -383,7 +384,7 @@
           />
           <foreignObject x={key.x + 4} y={key.y + 4} width="20" height="20">
             {#if assignment?.workspaceId}
-              <MicroKeySlotBadge workspaceId={assignment.workspaceId} {slot} />
+              <MicroKeySlotSquare {slot} />
             {:else}
               <span
                 class="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-border/40 bg-muted/30 text-[10px] font-medium leading-none text-subtle/60 a11y-ignore"

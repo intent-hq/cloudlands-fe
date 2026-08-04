@@ -150,6 +150,37 @@ describe('HardwareConsoleDeviceSvg', () => {
     ).toBeTruthy();
   });
 
+  it('renders assigned-key slot badges display-only: no menu trigger, clicks fall through to the popover', async () => {
+    const { HardwareConsoleDeviceSvg, m } = await loadComponent();
+    const result = render(HardwareConsoleDeviceSvg, {
+      props: { agentSlots: SIX_SLOTS, agentKeysInteractive: true },
+    });
+
+    // No interactive MicroKeySlotBadge menu trigger anywhere in the graphic.
+    for (let n = 1; n <= 6; n += 1) {
+      expect(
+        result.queryByRole('button', {
+          name: m.workspace_microKeyBadge_ariaLabel({ number: String(n) }),
+        }),
+      ).toBeNull();
+    }
+
+    // Clicking directly on the slot square bubbles to the key: the
+    // workspace-info popover opens, no pin/unassign menu appears.
+    const square = result.container.querySelector('foreignObject span') as HTMLElement;
+    await fireEvent.click(square);
+    expect(
+      result.getByRole('dialog', {
+        name: m.settings_hardware_agentKeyPopover_ariaLabel({ number: '1' }),
+      }).textContent,
+    ).toContain('Alpha');
+    expect(
+      result.queryByText(m.workspace_card_assignMicroKeyNumber_label({ number: '1' })),
+    ).toBeNull();
+    expect(result.queryByText(m.workspace_card_unassignMicroKey_label())).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
   it('keyboard-activating an assigned key opens the popover; Escape dismisses it', async () => {
     const { HardwareConsoleDeviceSvg, m } = await loadComponent();
     const result = render(HardwareConsoleDeviceSvg, {
