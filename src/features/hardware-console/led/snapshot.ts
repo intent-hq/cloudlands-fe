@@ -177,9 +177,10 @@ export function buildHardwareLedSnapshot(state: LedSnapshotState): HardwareLedSn
 
   // Ambient scans ALL assignable workspaces (not just the 6 assigned), in
   // spec mapping-table precedence: failed > blocked > question/discussion >
-  // running (breath speed ∝ count) > unread > complete > dark. `complete`
-  // only wins when nothing is running or needs attention, which the
-  // precedence order guarantees.
+  // unread > running (breath speed ∝ count) > complete > dark. `unread`
+  // outranks `running` so unseen output stays visible even while other
+  // workspaces are still running; `complete` is terminal (every completion
+  // passes through unread first) and only wins once nothing is running.
   let anyFailed = false;
   let anyBlocked = false;
   let anyAttention = false;
@@ -199,8 +200,8 @@ export function buildHardwareLedSnapshot(state: LedSnapshotState): HardwareLedSn
   if (anyFailed) ambient = { kind: 'failed' };
   else if (anyBlocked) ambient = { kind: 'blocked' };
   else if (anyAttention) ambient = { kind: 'question' };
-  else if (runningCount > 0) ambient = { kind: 'running', runningCount };
   else if (anyUnread) ambient = { kind: 'unread' };
+  else if (runningCount > 0) ambient = { kind: 'running', runningCount };
   else if (anyComplete) ambient = { kind: 'complete' };
   else ambient = { kind: 'dark' };
 
