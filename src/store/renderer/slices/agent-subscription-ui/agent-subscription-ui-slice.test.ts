@@ -12,6 +12,7 @@ import {
   setWokenUp,
   clearWokenUp,
   resetSubscriptionUI,
+  removeWatchedAgent,
 } from './agent-subscription-ui-slice';
 import {
   selectAgentSubscriptions,
@@ -186,6 +187,142 @@ describe('agentSubscriptionUIReducer', () => {
     it('returns same reference when key does not exist', () => {
       const state = agentSubscriptionUIReducer(initialState, clearWokenUp('no', 'exist'));
       expect(state).toBe(initialState);
+    });
+  });
+
+  describe('removeWatchedAgent', () => {
+    const watchOn = (id: string, agentId: string): Subscription => ({
+      id,
+      agentId: AGENT,
+      eventTypes: ['agent:completed'],
+      actorIds: [agentId],
+      createdAt: '2026-01-01T00:00:00Z',
+      description: `Watch ${agentId}`,
+    });
+
+    it('drops one-shot subscriptions watching the agent and its top-level status', () => {
+      let state = agentSubscriptionUIReducer(
+        initialState,
+        setSubscriptionSnapshot(WS, AGENT, {
+          subscriptions: [watchOn('sub-a', 'child-1'), watchOn('sub-b', 'child-2')],
+          delegationGroups: [],
+          agentStatuses: { 'child-1': 'responding', 'child-2': 'idle' },
+          waitingState: 'waiting',
+        }),
+      );
+      state = agentSubscriptionUIReducer(state, removeWatchedAgent(WS, 'child-1'));
+      const entry = state.entries[makeKey(WS, AGENT)];
+      expect(entry.subscriptions.map((s) => s.id)).toEqual(['sub-b']);
+      expect(entry.agentStatuses).toEqual({ 'child-2': 'idle' });
+      // A subscription remains, so the entry keeps waiting.
+      expect(entry.waitingState).toBe('waiting');
+    });
+
+    it('prunes delegation-group membership, drops emptied groups, leaves other workspaces untouched', () => {
+      const soloGroup: DelegationGroupStatus = {
+        groupId: 'g-solo',
+        awaitMode: 'all',
+        expectedAgentIds: ['a-1'],
+        completedAgentIds: [],
+        deletedAgentIds: ['a-1'],
+        agentStatuses: { 'a-1': 'failed' },
+        delivered: false,
+      };
+      let state = agentSubscriptionUIReducer(
+        initialState,
+        setSubscriptionSnapshot(WS, AGENT, {
+          subscriptions: [],
+          delegationGroups: [group, soloGroup],
+          agentStatuses: { 'a-1': 'completed', 'a-2': 'responding', 'a-3': 'idle' },
+          waitingState: 'waiting',
+        }),
+      );
+      state = agentSubscriptionUIReducer(
+        state,
+        setSubscriptionSnapshot('ws-other', AGENT, {
+          subscriptions: [],
+          delegationGroups: [group],
+          agentStatuses: { 'a-1': 'completed' },
+          waitingState: 'waiting',
+        }),
+      );
+      const otherEntryBefore = state.entries[makeKey('ws-other', AGENT)];
+
+      state = agentSubscriptionUIReducer(state, removeWatchedAgent(WS, 'a-1'));
+
+      const entry = state.entries[makeKey(WS, AGENT)];
+      // g-1 keeps going without a-1; g-solo emptied out and is dropped.
+      expect(entry.delegationGroups.map((g) => g.groupId)).toEqual(['g-1']);
+      expect(entry.delegationGroups[0].expectedAgentIds).toEqual(['a-2', 'a-3']);
+      expect(entry.delegationGroups[0].completedAgentIds).toEqual([]);
+      expect(entry.delegationGroups[0].agentStatuses).toEqual({
+        'a-2': 'responding',
+        'a-3': 'idle',
+      });
+      expect(entry.agentStatuses).toEqual({ 'a-2': 'responding', 'a-3': 'idle' });
+      expect(entry.waitingState).toBe('waiting');
+      // The other workspace's entry is the exact same reference.
+      expect(state.entries[makeKey('ws-other', AGENT)]).toBe(otherEntryBefore);
+    });
+
+    it('transitions a waiting entry to idle when nothing remains', () => {
+      let state = agentSubscriptionUIReducer(
+        initialState,
+        setSubscriptionSnapshot(WS, AGENT, {
+          subscriptions: [watchOn('sub-only', 'child-1')],
+          delegationGroups: [
+            {
+              groupId: 'g-only',
+              awaitMode: 'all',
+              expectedAgentIds: ['child-1'],
+              completedAgentIds: [],
+              deletedAgentIds: [],
+              agentStatuses: { 'child-1': 'responding' },
+              delivered: false,
+            },
+          ],
+          agentStatuses: { 'child-1': 'responding' },
+          waitingState: 'waiting',
+        }),
+      );
+      state = agentSubscriptionUIReducer(state, removeWatchedAgent(WS, 'child-1'));
+      const entry = state.entries[makeKey(WS, AGENT)];
+      expect(entry.subscriptions).toHaveLength(0);
+      expect(entry.delegationGroups).toHaveLength(0);
+      expect(entry.agentStatuses).toEqual({});
+      expect(entry.waitingState).toBe('idle');
+    });
+
+    it('does not touch a non-waiting waitingState even when the entry empties', () => {
+      let state = agentSubscriptionUIReducer(
+        initialState,
+        setSubscriptionSnapshot(WS, AGENT, {
+          subscriptions: [watchOn('sub-only', 'child-1')],
+          delegationGroups: [],
+          agentStatuses: {},
+          waitingState: 'completed',
+        }),
+      );
+      state = agentSubscriptionUIReducer(state, removeWatchedAgent(WS, 'child-1'));
+      expect(state.entries[makeKey(WS, AGENT)].waitingState).toBe('completed');
+    });
+
+    it('returns the same state reference when nothing matched', () => {
+      const seeded = agentSubscriptionUIReducer(
+        initialState,
+        setSubscriptionSnapshot(WS, AGENT, {
+          subscriptions: [sub],
+          delegationGroups: [group],
+          agentStatuses: { 'a-1': 'completed' },
+          waitingState: 'waiting',
+        }),
+      );
+      expect(agentSubscriptionUIReducer(seeded, removeWatchedAgent(WS, 'no-such-agent'))).toBe(
+        seeded,
+      );
+      expect(
+        agentSubscriptionUIReducer(seeded, removeWatchedAgent('ws-unknown', 'a-1')),
+      ).toBe(seeded);
     });
   });
 

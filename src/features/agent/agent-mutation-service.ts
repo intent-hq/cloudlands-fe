@@ -79,7 +79,10 @@ import {
   stopAgentSessionRequested,
   undoAgentDeletionRequested,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-import { cancelAgentSubscriptionsRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+import {
+  cancelAgentSubscriptionsRequested,
+  removeWatchedAgent,
+} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
@@ -396,6 +399,11 @@ function softHideSession(wsId: string, agentId: string): void {
   // Prune any recently-closed tab entries for this agent so the empty-state
   // recent list and "Reopen Closed Tab" cannot resurrect the deleted agent.
   appStore.dispatch(pruneRecentlyClosed(wsId, { agentId }));
+  // Optimistically drop the agent from every subscription-UI entry in the
+  // workspace (watches on it, delegation-group membership, status rows) so
+  // hidden agents never linger in subscription footers. On undo the daemon's
+  // still-live watch repopulates via a workspace refetch.
+  appStore.dispatch(removeWatchedAgent(wsId, agentId));
 }
 
 /** Re-add a soft-hidden session to both stores (mirror of softHideSession). */
@@ -539,6 +547,15 @@ function handleUndoDeletion(action: ReturnType<typeof undoAgentDeletionRequested
     if (pending.timer) clearTimeout(pending.timer);
     removePendingAgentDeletion(agentId);
     restoreHiddenSession(pending.snapshot);
+    // The delete never reached the daemon, so its watches are still live —
+    // refetch the workspace's subscription entries to repopulate what the
+    // soft-hide optimistically pruned. Lazily imported (like the toast lib)
+    // to keep this middleware-reachable module's static graph light.
+    void import('./agent-subscription-read-service').then(
+      ({ refreshWorkspaceSubscriptionEntries }) =>
+        refreshWorkspaceSubscriptionEntries(pending.wsId),
+      (error) => logger.error('Failed to refresh subscriptions after undo', error),
+    );
     appStore.dispatch(action.success(true));
   } catch (error) {
     logger.error('Failed to undo agent deletion', error);
