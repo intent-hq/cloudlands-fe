@@ -2,8 +2,7 @@
  * Active Streams Bridge Seeder Test
  *
  * Tests the daemon-backed agent:get-active-streams handler that queries
- * workspace.list → agent.list per workspace and filters on isStreaming ||
- * isResponding, mirroring the main-process handler in agent-missing.ipc.ts.
+ * agent.listActive, mirroring the main-process handler in agent-missing.ipc.ts.
  *
  * FAKE transport only: the daemon bridge is mocked so no IPC ever fires.
  * Each test asserts the JSON-RPC method + params the handler emits and how
@@ -34,50 +33,23 @@ describe('Active Streams Bridge Seeder', () => {
     resetMockBackend();
   });
 
-  it('queries workspace.list → agent.list and returns streaming agents in ActiveStream shape', async () => {
-    // Mock workspace.list returning two workspaces
-    backend.onRequest('workspace.list', () => ({
-      workspaces: [
-        { id: 'ws1', title: 'Workspace 1' },
-        { id: 'ws2', title: 'Workspace 2' },
+  it('requests agent.listActive without params and returns its ActiveStream shape', async () => {
+    backend.onRequest('agent.listActive', () => ({
+      streams: [
+        {
+          agentId: 'agent-streaming-1',
+          sessionId: 'agent-streaming-1',
+          workspaceId: 'ws1',
+          startTime: 1_784_350_800_000,
+        },
+        {
+          agentId: 'agent-responding-2',
+          sessionId: 'agent-responding-2',
+          workspaceId: 'ws2',
+          startTime: 1_784_352_600_000,
+        },
       ],
     }));
-
-    // Mock agent.list for ws1: one streaming agent, one idle agent
-    backend.onRequest('agent.list', (params) => {
-      if ((params as { workspaceId: string }).workspaceId === 'ws1') {
-        return {
-          agents: [
-            {
-              id: 'agent-streaming-1',
-              isStreaming: true,
-              isResponding: false,
-              updatedAt: '2026-07-18T05:00:00.000Z',
-            },
-            {
-              id: 'agent-idle-1',
-              isStreaming: false,
-              isResponding: false,
-              updatedAt: '2026-07-18T04:00:00.000Z',
-            },
-          ],
-        };
-      }
-      // ws2: one responding agent
-      if ((params as { workspaceId: string }).workspaceId === 'ws2') {
-        return {
-          agents: [
-            {
-              id: 'agent-responding-2',
-              isStreaming: false,
-              isResponding: true,
-              updatedAt: '2026-07-18T05:30:00.000Z',
-            },
-          ],
-        };
-      }
-      return { agents: [] };
-    });
 
     // Invoke the handler via the mock IPC router
     const { invoke } = await import('$shared/generated/ipc-client');
@@ -85,10 +57,8 @@ describe('Active Streams Bridge Seeder', () => {
       'agent:get-active-streams',
     );
 
-    // Assert wire contract: workspace.list was called, then agent.list per workspace
-    expect(backend.requests).toContainEqual({ method: 'workspace.list', params: undefined });
-    expect(backend.requests).toContainEqual({ method: 'agent.list', params: { workspaceId: 'ws1' } });
-    expect(backend.requests).toContainEqual({ method: 'agent.list', params: { workspaceId: 'ws2' } });
+    expect(backend.requests).toEqual([{ method: 'agent.listActive', params: undefined }]);
+    expect(backend.requests.some(({ method }) => method === 'agent.list')).toBe(false);
 
     expect(result.success).toBe(true);
     expect(Array.isArray(result.data)).toBe(true);
@@ -99,44 +69,36 @@ describe('Active Streams Bridge Seeder', () => {
       startTime: number;
     }>;
 
-    // Should return 2 active streams (streaming + responding), filtering out the idle agent
-    expect(streams).toHaveLength(2);
-
-    const stream1 = streams.find((s) => s.agentId === 'agent-streaming-1');
-    expect(stream1).toBeDefined();
-    expect(stream1?.sessionId).toBe('agent-streaming-1');
-    expect(stream1?.workspaceId).toBe('ws1');
-    expect(stream1?.startTime).toBe(Date.parse('2026-07-18T05:00:00.000Z'));
-
-    const stream2 = streams.find((s) => s.agentId === 'agent-responding-2');
-    expect(stream2).toBeDefined();
-    expect(stream2?.sessionId).toBe('agent-responding-2');
-    expect(stream2?.workspaceId).toBe('ws2');
-    expect(stream2?.startTime).toBe(Date.parse('2026-07-18T05:30:00.000Z'));
+    expect(streams).toEqual([
+      {
+        agentId: 'agent-streaming-1',
+        sessionId: 'agent-streaming-1',
+        workspaceId: 'ws1',
+        startTime: 1_784_350_800_000,
+      },
+      {
+        agentId: 'agent-responding-2',
+        sessionId: 'agent-responding-2',
+        workspaceId: 'ws2',
+        startTime: 1_784_352_600_000,
+      },
+    ]);
   });
 
-  it('filters out agents that are neither streaming nor responding', async () => {
-    backend.onRequest('workspace.list', () => ({
-      workspaces: [{ id: 'ws1' }],
-    }));
-
-    backend.onRequest('agent.list', () => ({
-      agents: [
-        { id: 'agent-idle', isStreaming: false, isResponding: false },
-        { id: 'agent-waiting', isStreaming: false, isResponding: false },
-      ],
-    }));
+  it('returns an empty successful result when no agents are mid-turn', async () => {
+    backend.onRequest('agent.listActive', () => ({ streams: [] }));
 
     const { invoke } = await import('$shared/generated/ipc-client');
-    const result = await invoke<{ success: boolean; data?: unknown }>(
-      'agent:get-active-streams',
-    );
+    const result = await invoke<{ success: boolean; data?: unknown }>('agent:get-active-streams');
 
     expect(result.success).toBe(true);
     expect(result.data).toEqual([]);
   });
 
-  it('returns { success: false, data: [] } on daemon failure', async () => {
+  it('returns { success: false, data: [] } when the compatibility fallback also fails', async () => {
+    backend.onRequest('agent.listActive', () => {
+      throw new Error('method not found');
+    });
     backend.onRequest('workspace.list', () => {
       throw new Error('Daemon connection failed');
     });
@@ -151,7 +113,10 @@ describe('Active Streams Bridge Seeder', () => {
     expect(result.data).toEqual([]);
   });
 
-  it('handles invalid updatedAt by using startTime = 0', async () => {
+  it('falls back to the legacy fan-out when agent.listActive is unavailable', async () => {
+    backend.onRequest('agent.listActive', () => {
+      throw new Error('method not found');
+    });
     backend.onRequest('workspace.list', () => ({
       workspaces: [{ id: 'ws1' }],
     }));
@@ -164,9 +129,7 @@ describe('Active Streams Bridge Seeder', () => {
     }));
 
     const { invoke } = await import('$shared/generated/ipc-client');
-    const result = await invoke<{ success: boolean; data?: unknown }>(
-      'agent:get-active-streams',
-    );
+    const result = await invoke<{ success: boolean; data?: unknown }>('agent:get-active-streams');
 
     expect(result.success).toBe(true);
     const streams = result.data as Array<{ agentId: string; startTime: number }>;
