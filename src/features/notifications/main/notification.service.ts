@@ -103,11 +103,31 @@ function getSpecialistDisplayName(specialist?: string): string {
 }
 
 /**
+ * Structured content parts carried on `notification:show` alongside the
+ * concatenated `title`/`body`, so the renderer toast can lay them out on
+ * separate lines. Present only for non-chief agent-idle notifications.
+ */
+interface NotificationStructuredContent {
+  /** Untruncated workspace title (the renderer truncates via CSS). */
+  workspaceTitle?: string;
+  /** Raw specialist id, e.g. "spec-writer". */
+  specialist?: string;
+  /** Localized specialist display name, e.g. "Coordinator". */
+  specialistDisplayName: string;
+  taskTitle?: string;
+  /** ACP provider id (auggie, claude-code, codex, ...). */
+  provider?: string;
+  /** Idle agent's id — seeds AuggieAvatar's deterministic gradient colors. */
+  agentId?: string;
+}
+
+/**
  * Notification content for display
  */
 interface NotificationContent {
   title: string;
   body: string;
+  structured?: NotificationStructuredContent;
 }
 
 /**
@@ -373,6 +393,7 @@ export class NotificationService {
         | {
             agents?: Array<{
               id?: string;
+              provider?: string;
               isStreaming?: boolean;
               isResponding?: boolean;
               metadata?: { isBackground?: boolean; specialist?: string };
@@ -407,14 +428,19 @@ export class NotificationService {
       }
 
       // Build notification content with specialist type and task title;
-      // enrich with `metadata.specialist` when the payload lacks it.
-      const content = await this.buildNotificationContent({
-        ...event,
-        data: {
-          ...event.data,
-          specialist: event.data.specialist ?? idleAgent?.metadata?.specialist,
-        },
-      } as AgentIdleEvent);
+      // enrich with `metadata.specialist` when the payload lacks it. The
+      // provider (AgentLite top-level field, PROTOCOL.md §5.5) feeds the
+      // structured toast parts.
+      const content = await this.buildNotificationContent(
+        {
+          ...event,
+          data: {
+            ...event.data,
+            specialist: event.data.specialist ?? idleAgent?.metadata?.specialist,
+          },
+        } as AgentIdleEvent,
+        idleAgent?.provider,
+      );
 
       // Focus gate for the OS banner: `soundOnlyWhenUnfocused` ON suppresses
       // the banner only while the focused window is VIEWING the event's own
@@ -476,9 +502,15 @@ export class NotificationService {
 
   /**
    * Build notification content from event data
-   * Uses specialist display name and task title instead of agent name
+   * Uses specialist display name and task title instead of agent name.
+   * Non-chief notifications additionally carry `structured` content parts
+   * (untruncated, for the renderer's multi-line toast layout); chief
+   * notifications keep the plain title/body only.
    */
-  private async buildNotificationContent(event: AgentIdleEvent): Promise<NotificationContent> {
+  private async buildNotificationContent(
+    event: AgentIdleEvent,
+    provider?: string,
+  ): Promise<NotificationContent> {
     const { specialist, taskTitle } = event.data;
 
     // Chief-of-staff completions: the chief "workspace" is a hidden virtual
@@ -531,7 +563,18 @@ export class NotificationService {
     // Build body
     const body = taskTitle ? m.notification_body_task_completed() : m.notification_body_finished();
 
-    return { title, body };
+    return {
+      title,
+      body,
+      structured: {
+        ...(workspaceTitle ? { workspaceTitle } : {}),
+        ...(specialist ? { specialist } : {}),
+        specialistDisplayName: displayName,
+        ...(taskTitle ? { taskTitle } : {}),
+        ...(provider ? { provider } : {}),
+        ...(event.data.agentId ? { agentId: event.data.agentId } : {}),
+      },
+    };
   }
 
   /**
@@ -552,6 +595,7 @@ export class NotificationService {
       title: content.title,
       body: content.body,
       timestamp: new Date().toISOString(),
+      ...(content.structured ? { structured: content.structured } : {}),
       ...(navigateTarget ? { navigateTarget } : {}),
     };
     if (workspaceId && getWindowIdsForWorkspace(workspaceId).length > 0) {
