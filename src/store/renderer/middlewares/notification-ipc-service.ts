@@ -35,6 +35,25 @@ import {
 import { playNotificationSoundPerSettings } from "$features/notifications/notification-sound-gate";
 import { m } from "$shared/paraglide/messages.js";
 
+/**
+ * Structured content parts of `notification:show` (see notification.service.ts
+ * in main). Present only for non-chief agent-idle notifications; passed
+ * through to the custom toast for the three-line layout.
+ */
+interface NotificationStructuredContent {
+  /** Emitting agent id — seeds the deterministic auggie avatar colors. */
+  agentId?: string;
+  /** Untruncated workspace title (the renderer truncates via CSS). */
+  workspaceTitle?: string;
+  /** Raw specialist id, e.g. "spec-writer". */
+  specialist?: string;
+  /** Localized specialist display name, e.g. "Coordinator". */
+  specialistDisplayName: string;
+  taskTitle?: string;
+  /** ACP provider id (auggie, claude-code, codex, ...). */
+  provider?: string;
+}
+
 /** Payload of `notification:show` (see notification.service.ts in main). */
 interface NotificationShowEvent {
   title?: string;
@@ -47,6 +66,8 @@ interface NotificationShowEvent {
    * events.
    */
   navigateTarget?: NotificationNavigatePayload;
+  /** Structured parts for the custom toast; absent for chief / old daemons. */
+  structured?: NotificationStructuredContent;
 }
 
 async function handleNotificationShow(data?: NotificationShowEvent): Promise<void> {
@@ -110,6 +131,7 @@ async function showNavigateToast(
         title: data.title ?? data.body ?? "",
         description: data.title ? data.body : undefined,
         keySlot,
+        structured: data.structured,
         actionLabel: m.notifications_toast_open_label(),
         onAction: () => {
           if (toastId !== undefined) toast.dismiss(toastId);
