@@ -122,7 +122,11 @@
     serializeDraftAttachments,
   } from './chat-draft-attachments';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
-  import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
+  import {
+    getQueueInfo,
+    stripDequeueWaitNote,
+    shouldSuppressQueueDivider,
+  } from '$lib/utils/queue-info';
   import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
   import ChatMessage from './ChatMessage.svelte';
   import DateSeparator from './DateSeparator.svelte';
@@ -3853,7 +3857,12 @@
                 </div>
                 <!-- Dividing line between turns (not after the last one) -->
                 {#if !(groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1)}
-                  <hr class="border-t border-border/50 mb-3" />
+                  {#if shouldSuppressQueueDivider(turn, turns[turnIndex + 1] ?? null)}
+                    <!-- Consecutive queued messages drained together: tight gap, no divider -->
+                    <div class="mb-1"></div>
+                  {:else}
+                    <hr class="border-t border-border/50 mb-3" />
+                  {/if}
                 {/if}
               {/each}
             {/each}
