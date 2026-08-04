@@ -74,7 +74,7 @@
   selectRestoreStatus,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { focusBrowserTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-  import { closeActiveTerminalRequested, removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
+  import { closeActiveTerminalRequested, removeTerminal, terminalCreated } from '$store/renderer/slices/terminals/terminals-slice';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { renameAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -254,6 +254,10 @@
         // Save terminal metadata without a hardcoded title — the reducer keeps
         // any daemon-provided name and only falls back to 'Terminal'.
         terminalManager.saveTerminalMetadata(result.id, workspaceId);
+
+        // Correct any in-flight terminal.list snapshot that predates the
+        // create (coalesced post-create refetch in lifecycle-read-service).
+        appStore.dispatch(terminalCreated(workspaceId));
 
         // Reload terminals to include the new one
         loadTerminals(workspaceId);
