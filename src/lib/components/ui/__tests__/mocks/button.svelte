@@ -17,6 +17,7 @@
   {onclick}
   data-variant={variant}
   data-size={size}
+  {...$$restProps}
 >
   <slot />
 </button>
