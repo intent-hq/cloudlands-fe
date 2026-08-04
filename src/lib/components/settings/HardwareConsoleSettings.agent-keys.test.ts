@@ -39,7 +39,7 @@ vi.mock('$features/hardware-console/instance', () => ({
     },
     client: null,
     onStatusChange: () => () => {},
-    connectedCollectionCount: () => Promise.resolve(0),
+    connectedCollections: () => Promise.resolve([]),
   }),
 }));
 

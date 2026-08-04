@@ -8,6 +8,16 @@ import { FakeHidDevice, FakeWebHidApi, flushMicrotasks } from './fake-hid';
 const CM2 = { vendorId: 0x303a, productId: 0x8297 };
 const CODEX = { vendorId: 0x303a, productId: 0x8360 };
 
+/** CM2 USB enumeration coalesced into one device: all 6 usage pairs. */
+const USB_COALESCED_PAIRS = [
+  { usagePage: 0x0001, usage: 0x0006 },
+  { usagePage: 0x000c, usage: 0x0001 },
+  { usagePage: 0x0001, usage: 0x0002 },
+  { usagePage: 0x0001, usage: 0x0001 },
+  { usagePage: 0x0001, usage: 0x0005 },
+  { usagePage: 0xff00, usage: 0x0001 },
+];
+
 function makeManager(hid = new FakeWebHidApi()): {
   hid: FakeWebHidApi;
   manager: HardwareConsoleManager;
@@ -136,12 +146,67 @@ describe('HardwareConsoleManager', () => {
     expect(notifications).toEqual([{ method: 'v.oai.hid', params: { state: 'idle' } }]);
   });
 
+  it('aggregates collections across a coalesced enumeration', async () => {
+    // Regression (intent-hq/monorepo#1422): macOS can enumerate the CM2 as
+    // ONE granted device carrying all 6 usage pairs; counting granted
+    // devices (1) instead of collections (6) mislabeled USB as bluetooth.
+    const { hid, manager } = makeManager();
+    const device = new FakeHidDevice(CM2.vendorId, CM2.productId, 'CM2', USB_COALESCED_PAIRS);
+    hid.devices = [device];
+    await manager.start();
+    await expect(manager.connectedCollections()).resolves.toHaveLength(6);
+  });
+
+  it('reconnects to a remaining granted device after the connected one is removed', async () => {
+    // Regression (intent-hq/monorepo#1422): when the BLE surface drops while
+    // the USB surface is already granted, no WebHID connect event fires —
+    // the manager must rescan instead of sitting disconnected until the
+    // integration is toggled.
+    const { hid, manager, statuses } = makeManager();
+    const ble = new FakeHidDevice(CM2.vendorId, CM2.productId, 'CM2 (BLE)');
+    const usb = new FakeHidDevice(CM2.vendorId, CM2.productId, 'CM2 (USB)', USB_COALESCED_PAIRS);
+    hid.devices = [ble, usb];
+    await manager.start();
+    expect(ble.opened).toBe(true);
+    hid.devices = [usb];
+    hid.emitDisconnect(ble);
+    await flushMicrotasks();
+    expect(manager.status).toBe('connected');
+    expect(usb.opened).toBe(true);
+    expect(statuses).toEqual(['connecting', 'connected', 'disconnected', 'connecting', 'connected']);
+  });
+
+  it('stays disconnected after removal when no other granted device remains', async () => {
+    const { hid, manager } = makeManager();
+    const device = new FakeHidDevice(CM2.vendorId, CM2.productId);
+    hid.devices = [device];
+    await manager.start();
+    hid.devices = [];
+    hid.emitDisconnect(device);
+    await flushMicrotasks();
+    expect(manager.status).toBe('disconnected');
+    expect(manager.client).toBeNull();
+  });
+
+  it('does not reopen the removed device when getDevices still lists it', async () => {
+    // The disconnect event can race a stale getDevices() snapshot; the
+    // removal rescan must never re-open the device that just went away.
+    const { hid, manager } = makeManager();
+    const device = new FakeHidDevice(CM2.vendorId, CM2.productId);
+    hid.devices = [device];
+    await manager.start();
+    hid.emitDisconnect(device);
+    await flushMicrotasks();
+    expect(manager.status).toBe('disconnected');
+  });
+
   it('tears down on disconnect and reconnects on replug', async () => {
     const { hid, manager, statuses } = makeManager();
     const device = new FakeHidDevice(CM2.vendorId, CM2.productId);
     hid.devices = [device];
     await manager.start();
     const pending = manager.client!.call('sys.version');
+    hid.devices = [];
     hid.emitDisconnect(device);
     await flushMicrotasks();
     expect(manager.status).toBe('disconnected');
@@ -149,6 +214,7 @@ describe('HardwareConsoleManager', () => {
     await expect(pending).rejects.toThrow(/device disconnected/);
 
     const replugged = new FakeHidDevice(CM2.vendorId, CM2.productId);
+    hid.devices = [replugged];
     hid.emitConnect(replugged);
     await flushMicrotasks();
     expect(manager.status).toBe('connected');
