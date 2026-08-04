@@ -75,7 +75,8 @@ import {
   getChiefThreadTitle,
   isPlaceholderChiefThreadName,
 } from '$store/renderer/slices/sidebar-nav/chief-thread-title';
-import type { AgentSession } from '$shared/types';
+import type { AgentSession, Workspace } from '$shared/types';
+import { WorkspaceStatusEnum } from '$shared/types';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
 import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
 import { createLogger } from '$lib/utils/client-logger';
@@ -141,6 +142,11 @@ async function dispatchToLifecycle(
     );
     return;
   }
+
+  // Sending into an ARCHIVED workspace: surface a suggestion toast with an
+  // "Unarchive" action (never auto-unarchive). Fire-and-forget — the send
+  // below must never be blocked, delayed, or failed by the toast.
+  void suggestUnarchiveIfArchived(workspace);
 
   const content = workspaceContextStr ? `${workspaceContextStr}\n\n${text.trim()}` : text.trim();
 
@@ -322,6 +328,51 @@ async function dispatchToLifecycle(
     const message = error instanceof Error ? error.message : String(error);
     logger.error('lifecycle.sendMessage threw', error);
     appStore.dispatch(chatSendFailed(agentId, message));
+  }
+}
+
+/**
+ * Suggestion toast for sends into an ARCHIVED workspace: an "Unarchive"
+ * action button invokes the existing `unarchiveWorkspace` flow
+ * (workspace-operations-service — it owns the §5.1 wire call, the
+ * success/error toasts, and store convergence via `workspace:updated`);
+ * dismissing does nothing and nothing is ever unarchived automatically.
+ * Keyed by a stable per-workspace toast id so repeated sends while archived
+ * update the one toast instead of stacking duplicates. Both the toast lib
+ * and the operations service are imported lazily per this module's
+ * dependency-light rules; failures are logged, never surfaced — the toast
+ * is advisory and must not fail the send.
+ */
+async function suggestUnarchiveIfArchived(workspace: Workspace): Promise<void> {
+  if (workspace.status !== WorkspaceStatusEnum.Archived) return;
+  try {
+    const { toast } = await import('svelte-sonner');
+    toast.info(m.agent_chatSend_archivedWorkspace_toast(), {
+      id: `chat-send-unarchive-${workspace.id}`,
+      action: {
+        label: m.agent_chatSend_archivedWorkspace_unarchive_label(),
+        onClick: () => {
+          void (async () => {
+            try {
+              const { unarchiveWorkspace } = await import(
+                '$features/workspace/workspace-operations-service'
+              );
+              await unarchiveWorkspace(workspace.id);
+            } catch (error) {
+              logger.error('Unarchive from chat-send suggestion toast failed', {
+                workspaceId: workspace.id,
+                error,
+              });
+            }
+          })();
+        },
+      },
+    });
+  } catch (error) {
+    logger.warn('Failed to surface archived-workspace suggestion toast', {
+      workspaceId: workspace.id,
+      error,
+    });
   }
 }
 

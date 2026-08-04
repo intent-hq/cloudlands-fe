@@ -4421,6 +4421,8 @@
   "agent_chatSend_queueFailed_error": "メッセージをキューに追加できませんでした: {error}",
   "agent_chatSend_sendNowRejected_error": "sendQueuedMessageNow が拒否されました",
   "agent_chatSend_nothingToRetry_toast": "再試行するものはありません — メッセージを送信して新しいターンを開始してください。",
+  "agent_chatSend_archivedWorkspace_toast": "このスペースはアーカイブされています。メッセージはそのまま送信されました。",
+  "agent_chatSend_archivedWorkspace_unarchive_label": "アーカイブを解除",
   "agent_ipc_activeStreamsFailed_error": "アクティブなストリームを取得できませんでした",
   "agent_ipc_circuitBreakerResetFailed_error": "サーキットブレーカーをリセットできませんでした",
   "agent_ipc_unknown_error": "不明なエラー",

@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentStatus } from "$shared/types/agent.types";
 import type { AgentMessage, AgentSession, QueuedMessage, Workspace } from "$shared/types";
+import { WorkspaceStatusEnum } from "$shared/types";
 
 // FAKE seams: agent-send.sendMessage, appClient.agents.queue,
 // appClient.agents.removeQueued, and appClient.agents.sendQueuedNow are all
@@ -48,17 +49,33 @@ vi.mock("$features/agent/chat-read-service", async (importOriginal) => {
   const actual = await importOriginal<typeof import("$features/agent/chat-read-service")>();
   return { ...actual, loadChatTranscript: loadChatTranscriptSpy };
 });
-vi.mock("$lib/client", () => ({
-  appClient: {
-    agents: {
-      queue: agentsQueue,
-      removeQueued: agentsRemoveQueued,
-      sendQueuedNow: agentsSendQueuedNow,
-      stop: agentsStop,
-      rename: agentsRename,
+// PARTIAL mock: `agents` stays spied (no wire), but `workspaces` keeps the
+// REAL LiveWorkspacesClient so the archived-send suggestion toast's
+// "Unarchive" action can be asserted as an exact `workspace.unarchive`
+// JSON-RPC call on the (mocked) backend-transport seam below.
+vi.mock("$lib/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$lib/client")>();
+  return {
+    ...actual,
+    appClient: {
+      ...actual.appClient,
+      agents: {
+        queue: agentsQueue,
+        removeQueued: agentsRemoveQueued,
+        sendQueuedNow: agentsSendQueuedNow,
+        stop: agentsStop,
+        rename: agentsRename,
+      },
     },
-  },
-}));
+  };
+});
+// FAKE daemon transport: the real LiveWorkspacesClient (kept by the partial
+// mock above) bottoms out here, so the unarchive wire call can be asserted
+// per PROTOCOL.md §5.1.
+vi.mock("$lib/client/live/backend-transport", async () => {
+  const mod = await import("../../test/mocks/backend-transport.mock");
+  return mod.mockBackendTransportModule;
+});
 // The retry no-op path lazily `import("svelte-sonner")` for user feedback;
 // stub it so no real toast component is mounted.
 vi.mock("svelte-sonner", () => ({
@@ -1761,5 +1778,120 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(contentArg).toBe("plain text");
     expect(optionsArg.noteIds).toEqual(["note-1"]);
     expect(optionsArg.imageBlocks).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // Archived-workspace send: suggestion toast with an "Unarchive" action.
+  // The toast is advisory — the send always proceeds unchanged; the action
+  // routes through the REAL workspaceClient/LiveWorkspacesClient (partial
+  // $lib/client mock) so the exact `workspace.unarchive` JSON-RPC call is
+  // asserted on the mocked transport per PROTOCOL.md §5.1.
+  // -------------------------------------------------------------------------
+
+  function seedArchivedWorkspace(): void {
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS,
+        title: "WS",
+        branch: "main",
+        status: WorkspaceStatusEnum.Archived,
+        archived: true,
+        repositoryPath: "/tmp/repo",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+      } as unknown as Workspace),
+    );
+  }
+
+  type ToastOptions = { id?: string; action?: { label: string; onClick: () => void } };
+
+  it("archived workspace: send shows the suggestion toast (stable per-workspace id) and the send still proceeds", async () => {
+    const { toast } = await import("svelte-sonner");
+    seedArchivedWorkspace();
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "hello archived" }));
+    await flush();
+    await flush();
+
+    // The send is untouched: the lifecycle send fires with the same args as
+    // an active-workspace send.
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    expect(lifecycleSendMessage.mock.calls[0]?.[1]).toBe("hello archived");
+
+    expect(toast.info).toHaveBeenCalledTimes(1);
+    const [, options] = (toast.info as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      ToastOptions,
+    ];
+    expect(options.id).toBe(`chat-send-unarchive-${WS}`);
+    expect(options.action?.label).toBeTruthy();
+
+    // Repeated sends reuse the SAME toast id — svelte-sonner updates the
+    // existing toast in place instead of stacking a duplicate. (Settle the
+    // optimistic in-flight flags from the first send so the second one takes
+    // the direct lifecycle path again.)
+    appStore.dispatch(streamEnded(AGENT));
+    seedSession({ isStreaming: false, isResponding: false, status: AgentStatus.Idle });
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "hello again" }));
+    await flush();
+    await flush();
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(2);
+    expect(toast.info).toHaveBeenCalledTimes(2);
+    const [, options2] = (toast.info as ReturnType<typeof vi.fn>).mock.calls[1] as [
+      string,
+      ToastOptions,
+    ];
+    expect(options2.id).toBe(`chat-send-unarchive-${WS}`);
+  });
+
+  it("archived workspace: clicking the Unarchive action issues exactly one workspace.unarchive wire call (§5.1)", async () => {
+    const { toast } = await import("svelte-sonner");
+    const { installMockBackend } = await import("../../test/mocks/backend-transport.mock");
+    const backend = installMockBackend();
+    // PROTOCOL §5.1: workspace.unarchive returns { workspace } with the
+    // refreshed record (archived: false / status "Active", archivedAt cleared).
+    backend.onRequest("workspace.unarchive", () => ({
+      workspace: {
+        id: WS,
+        title: "WS",
+        branch: "main",
+        status: "Active",
+        archived: false,
+        archivedAt: null,
+      },
+    }));
+    seedArchivedWorkspace();
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "hello archived" }));
+    await flush();
+    await flush();
+
+    const [, options] = (toast.info as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      ToastOptions,
+    ];
+    options.action?.onClick();
+    await flush();
+    await flush();
+
+    const unarchiveCalls = backend.requests.filter((r) => r.method === "workspace.unarchive");
+    expect(unarchiveCalls).toHaveLength(1);
+    expect(unarchiveCalls[0]?.params).toEqual({ workspaceId: WS });
+  });
+
+  it("non-archived workspace: no suggestion toast, behavior unchanged", async () => {
+    const { toast } = await import("svelte-sonner");
+    // Default seedWorkspace() from beforeEach: status "active".
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "hello active" }));
+    await flush();
+    await flush();
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    expect(toast.info).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
   });
 });
