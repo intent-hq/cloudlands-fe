@@ -20,11 +20,11 @@
   import {
   addTerminal,
   openTerminalOverlay,
-  toggleTerminalOverlay,
   terminalCreated,
 } from '$store/renderer/slices/terminals/terminals-slice';
   import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { toast } from '$lib/components/ui/toast';
 
 
   let rtkAvailable = $state(false);
@@ -82,7 +82,10 @@
         rows: 24,
       });
       if (!result.success || !result.id) {
-        appStore.dispatch(toggleTerminalOverlay(ROOT_WORKSPACE_ID));
+        // Daemon-first invariant: never fabricate a tab without a PTY behind
+        // it — surface the failure instead.
+        console.error('Failed to create install terminal:', result.success ? 'missing id' : result.error);
+        toast.error(m.terminal_adapter_openFailed_error());
         return;
       }
       const termId = result.id;
@@ -105,9 +108,11 @@
       for (const delay of pollIntervals) {
         setTimeout(() => recheckRtk(), delay);
       }
-    } catch {
-      // Fallback: just open the terminal
-      appStore.dispatch(toggleTerminalOverlay(ROOT_WORKSPACE_ID));
+    } catch (error) {
+      // Daemon-first invariant: no fabricated fallback tab — surface the
+      // failure instead.
+      console.error('Failed to create install terminal:', error);
+      toast.error(m.terminal_adapter_openFailed_error());
     }
   }
 

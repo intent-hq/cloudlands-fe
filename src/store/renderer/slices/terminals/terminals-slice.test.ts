@@ -29,6 +29,8 @@ import {
   getItems,
   getItem,
 } from "$lib/store-shim/utils/collections/collection-utils";
+import { setScriptsData } from "../scripts/scripts-slice";
+import type { ScriptWithState } from "$features/scripts/types";
 
 const WS = "ws-1";
 
@@ -961,6 +963,137 @@ describe("terminalsReducer", () => {
       state = terminalsReducer(state, clearScriptSelection("ws-1"));
       expect(getWs(state, "ws-1").selectedScriptId).toBeNull();
       expect(getWs(state, "ws-2").selectedScriptId).toBe("script-b");
+    });
+  });
+
+  // Write-time validation of the selected script tab: when `setScriptsData`
+  // (the authoritative `script.list` response) lands without the selected
+  // script, the reducer clears the selection instead of relying solely on
+  // `selectSelectedScriptId`'s read-time filtering — a stale persisted id
+  // must not keep isOpen:true alive with nothing renderable (stuck state).
+  describe("stale selectedScriptId cleared on setScriptsData", () => {
+    function makeScript(id: string): ScriptWithState {
+      return {
+        id,
+        workspaceId: WS,
+        name: `script-${id}`,
+        command: "pnpm dev",
+        mode: "service",
+        source: "user",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        runtime: { status: "idle", restartCount: 0 },
+      };
+    }
+
+    function scriptHeldState(overrides?: Partial<ReturnType<typeof getWs>>): TerminalOverlayState {
+      return {
+        ...initialState,
+        workspaces: { [WS]: {
+          isOpen: true,
+          activeTerminalId: null,
+          terminals: col([]),
+          terminalsLoaded: false,
+          isLoadingTerminals: false,
+          daemonBootId: "boot-1",
+          selectedScriptId: "script-1",
+          ...overrides,
+        }},
+      };
+    }
+
+    it("clears a selection missing from the script list and closes a script-only panel", () => {
+      const state = terminalsReducer(
+        scriptHeldState(),
+        setScriptsData(WS, [makeScript("other-script")]),
+      );
+      const ws = getWs(state);
+      expect(ws.selectedScriptId).toBeNull();
+      expect(ws.isOpen).toBe(false);
+    });
+
+    it("clears a stale selection but keeps the panel open on an active terminal", () => {
+      const state = terminalsReducer(
+        scriptHeldState({
+          terminals: col([{ id: "t1", name: "T1" }]),
+          activeTerminalId: "t1",
+        }),
+        setScriptsData(WS, []),
+      );
+      const ws = getWs(state);
+      expect(ws.selectedScriptId).toBeNull();
+      expect(ws.isOpen).toBe(true);
+      expect(ws.activeTerminalId).toBe("t1");
+    });
+
+    it("keeps a selection present in the script list", () => {
+      const stateWith = scriptHeldState();
+      const state = terminalsReducer(stateWith, setScriptsData(WS, [makeScript("script-1")]));
+      expect(state).toBe(stateWith);
+    });
+
+    it("is a no-op when no script is selected", () => {
+      const stateWith = scriptHeldState({ selectedScriptId: null, isOpen: false });
+      const state = terminalsReducer(stateWith, setScriptsData(WS, []));
+      expect(state).toBe(stateWith);
+    });
+
+    it("does not touch other workspaces", () => {
+      const stateWith = scriptHeldState();
+      const state = terminalsReducer(stateWith, setScriptsData("ws-other", []));
+      expect(getWs(state).selectedScriptId).toBe("script-1");
+      expect(getWs(state).isOpen).toBe(true);
+    });
+  });
+
+  // Nit fix from the PR #705 review: customName is renderer-only state keyed
+  // by daemon PTY id. Across a KNOWN daemon boot change a recycled id is a
+  // different terminal, so hydration must not resurrect the old custom name.
+  describe("customName preservation across daemonBootId changes", () => {
+    function namedState(bootId: string | null): TerminalOverlayState {
+      return {
+        ...initialState,
+        workspaces: { [WS]: {
+          isOpen: true,
+          activeTerminalId: "pty-0",
+          terminals: col([{ id: "pty-0", name: "Terminal", customName: "Build" }]),
+          terminalsLoaded: false,
+          isLoadingTerminals: false,
+          daemonBootId: bootId,
+          selectedScriptId: null,
+        }},
+      };
+    }
+
+    it("preserves customName on a same-boot hydration", () => {
+      const state = terminalsReducer(
+        namedState("boot-1"),
+        loadWorkspaceTerminals(WS, [{ id: "pty-0", name: "Terminal" }], undefined, "boot-1"),
+      );
+      expect(getItem(getWs(state).terminals, "pty-0")?.customName).toBe("Build");
+    });
+
+    it("drops customName for a recycled id on a new boot", () => {
+      const state = terminalsReducer(
+        namedState("boot-1"),
+        loadWorkspaceTerminals(WS, [{ id: "pty-0", name: "Terminal" }], undefined, "boot-2"),
+      );
+      expect(getItem(getWs(state).terminals, "pty-0")?.customName).toBeUndefined();
+    });
+
+    it("preserves customName when the incoming boot id is unknown (legacy bare-array response)", () => {
+      const state = terminalsReducer(
+        namedState("boot-1"),
+        loadWorkspaceTerminals(WS, [{ id: "pty-0", name: "Terminal" }], undefined),
+      );
+      expect(getItem(getWs(state).terminals, "pty-0")?.customName).toBe("Build");
+    });
+
+    it("preserves customName when no prior boot id was known", () => {
+      const state = terminalsReducer(
+        namedState(null),
+        loadWorkspaceTerminals(WS, [{ id: "pty-0", name: "Terminal" }], undefined, "boot-1"),
+      );
+      expect(getItem(getWs(state).terminals, "pty-0")?.customName).toBe("Build");
     });
   });
 });

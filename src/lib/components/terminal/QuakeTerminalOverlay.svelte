@@ -646,15 +646,21 @@
 
   let overlayContainer = $state<HTMLDivElement>();
 
+  // In-flight guard: a double-click on the new-terminal button must not
+  // issue two `terminal.create` calls (two daemon PTYs).
+  let isCreatingTerminal = false;
+
   async function createNewTerminal() {
-    if (!workspaceId) return;
+    if (!workspaceId || isCreatingTerminal) return;
+    const createWorkspaceId = workspaceId;
+    isCreatingTerminal = true;
     try {
       // Daemon-first create (`terminal.create`, PROTOCOL §5.13): the daemon
       // assigns the PTY id and the Redux tab is keyed by it, so hydration
       // (`terminal.list`) always matches the tab id — no local placeholder
       // ids that a workspace-switch hydration would drop.
       const result = await appClient.terminals.create({
-        workspaceId,
+        workspaceId: createWorkspaceId,
         cols: 80,
         rows: 24,
       });
@@ -663,17 +669,24 @@
         toast.error(m.terminal_adapter_openFailed_error());
         return;
       }
-      appStore.dispatch(
-        addTerminal(
-          workspaceId,
-          result.id,
-          m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
-        ),
-      );
+      // Workspace switched mid-create: the PTY is real and will hydrate into
+      // its workspace via terminalCreated, but don't mutate the departed
+      // workspace's open/active state.
+      const stale = workspaceId !== createWorkspaceId;
+      if (!stale) {
+        appStore.dispatch(
+          addTerminal(
+            createWorkspaceId,
+            result.id,
+            m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
+          ),
+        );
+      }
       // Correct any in-flight terminal.list snapshot that predates the create.
-      appStore.dispatch(terminalCreated(workspaceId));
+      appStore.dispatch(terminalCreated(createWorkspaceId));
+      if (stale) return;
       if (!$isOpen) {
-        appStore.dispatch(openTerminalOverlay(workspaceId, result.id));
+        appStore.dispatch(openTerminalOverlay(createWorkspaceId, result.id));
       }
       // Focus the overlay container immediately so keyboard shortcuts
       // (Cmd+T, Cmd+W) route to the terminal before xterm is ready
@@ -683,6 +696,8 @@
     } catch (error) {
       logger.error('Failed to create terminal', error);
       toast.error(m.terminal_adapter_openFailed_error());
+    } finally {
+      isCreatingTerminal = false;
     }
   }
 

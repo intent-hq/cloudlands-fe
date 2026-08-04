@@ -10,7 +10,11 @@ import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
 const mocks = vi.hoisted(() => ({
   mockSettingsGet: vi.fn(),
   mockSettingsUpdate: vi.fn(),
+  mockTerminalsCreate: vi.fn(),
+  mockTerminalsWrite: vi.fn(),
   mockInvoke: vi.fn(),
+  mockDispatch: vi.fn(),
+  mockToastError: vi.fn(),
 }));
 
 vi.mock('$lib/client', () => ({
@@ -18,6 +22,10 @@ vi.mock('$lib/client', () => ({
     settings: {
       get: mocks.mockSettingsGet,
       update: mocks.mockSettingsUpdate,
+    },
+    terminals: {
+      create: mocks.mockTerminalsCreate,
+      write: mocks.mockTerminalsWrite,
     },
   },
 }));
@@ -29,10 +37,14 @@ vi.mock('$shared/generated/ipc-client', () => ({
 // Mock store - minimal implementation
 vi.mock('$store/renderer/store', () => ({
   store: {
-    dispatch: vi.fn(),
+    dispatch: mocks.mockDispatch,
     createSelector: vi.fn((fn) => fn),
     state: {},
   },
+}));
+
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: { success: vi.fn(), info: vi.fn(), error: mocks.mockToastError, warning: vi.fn() },
 }));
 
 describe('RtkSettings', () => {
@@ -139,6 +151,59 @@ describe('RtkSettings', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Failed to load RTK settings from the daemon/)).toBeTruthy();
+    });
+  });
+
+  // Review fix (PR #705): a failed daemon-first `terminal.create` must not
+  // fabricate a local-id tab or toggle the overlay — Redux terminal tabs are
+  // keyed by daemon-assigned ids that hydration (`terminal.list`) matches.
+  describe('installRtk create-failure fallback', () => {
+    async function renderUnavailableAndClickInstall() {
+      mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: false });
+      mocks.mockInvoke.mockResolvedValue({ data: { available: false } });
+
+      render(RtkSettings);
+
+      const installButton = await screen.findByText('brew install rtk');
+      await fireEvent.click(installButton);
+      await waitFor(() => {
+        expect(mocks.mockTerminalsCreate).toHaveBeenCalled();
+      });
+    }
+
+    it('does not dispatch any terminal action when terminal.create reports failure', async () => {
+      mocks.mockTerminalsCreate.mockResolvedValue({ success: false, error: 'boom' });
+
+      await renderUnavailableAndClickInstall();
+
+      expect(mocks.mockDispatch).not.toHaveBeenCalled();
+      expect(mocks.mockToastError).toHaveBeenCalled();
+    });
+
+    it('does not dispatch any terminal action when terminal.create throws', async () => {
+      mocks.mockTerminalsCreate.mockRejectedValue(new Error('transport down'));
+
+      await renderUnavailableAndClickInstall();
+
+      expect(mocks.mockDispatch).not.toHaveBeenCalled();
+      expect(mocks.mockToastError).toHaveBeenCalled();
+    });
+
+    it('dispatches daemon-id-keyed tab actions on success', async () => {
+      mocks.mockTerminalsCreate.mockResolvedValue({ success: true, id: 'pty-daemon-7' });
+      mocks.mockTerminalsWrite.mockResolvedValue({ success: true });
+
+      await renderUnavailableAndClickInstall();
+
+      await waitFor(() => {
+        expect(mocks.mockDispatch).toHaveBeenCalled();
+      });
+      const dispatched = mocks.mockDispatch.mock.calls.map(
+        (call) => call[0] as { type: string; payload: unknown[] },
+      );
+      const addAction = dispatched.find((action) => action.type === 'terminals/addTerminal');
+      expect(addAction?.payload[1]).toBe('pty-daemon-7');
+      expect(mocks.mockToastError).not.toHaveBeenCalled();
     });
   });
 

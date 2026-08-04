@@ -633,10 +633,15 @@ export function createLifecycleReadMiddleware(): StoreMiddleware {
         // on `workspaceUnmounted`, so drop the once-per-workspace init flag
         // too — otherwise a remount of the same workspace id would skip the
         // `workspace.getContext` refetch and stay empty until an event
-        // arrives.
+        // arrives. The terminal-hydration generation entry goes too: it only
+        // needs to be monotonic while a fetch can be in flight, and leaving
+        // it behind grows the map with every workspace ever mounted.
         case workspaceUnmounted.type: {
           const wsId = wsIdOf(action);
-          if (wsId) initializedContextWorkspaces.delete(wsId);
+          if (wsId) {
+            initializedContextWorkspaces.delete(wsId);
+            terminalsHydrationGeneration.delete(wsId);
+          }
           break;
         }
         case hydrateTerminalsRequested.type: {

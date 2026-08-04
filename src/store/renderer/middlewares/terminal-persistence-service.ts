@@ -46,6 +46,7 @@ import {
   type TerminalMetadata,
   type PersistedWorkspaceState,
 } from "../slices/terminals/terminals-slice";
+import { setScriptsData } from "../slices/scripts/scripts-slice";
 
 // ============================================================================
 // Constants
@@ -329,9 +330,33 @@ export function createTerminalPersistenceMiddleware(): StoreMiddleware {
         }
       }
 
+      // Stale-script-selection clear (item: stuck-state guard): the terminals
+      // reducer clears selectedScriptId (and possibly isOpen) when
+      // setScriptsData lands without the selected script. Persist that
+      // correction, otherwise the stale id is restored from localStorage on
+      // the next launch and recreates the stuck state.
+      const priorScriptSelection =
+        action?.type === setScriptsData.type
+          ? (api.getState() as StoreState).terminals.workspaces[
+              (action.payload as { wsId: string }).wsId
+            ]?.selectedScriptId
+          : undefined;
+
       const result = next(action);
 
       if (!action) return result;
+
+      if (action.type === setScriptsData.type) {
+        const wsId = (action.payload as { wsId: string }).wsId;
+        const ws = (api.getState() as StoreState).terminals.workspaces[wsId];
+        if (ws && priorScriptSelection != null && ws.selectedScriptId === null) {
+          saveWorkspaceState(wsId, {
+            isOpen: ws.isOpen,
+            activeTerminalId: ws.activeTerminalId,
+            selectedScriptId: ws.selectedScriptId,
+          });
+        }
+      }
 
       // GAP 2: Persist height changes
       if (action.type === setTerminalOverlayHeight.type) {

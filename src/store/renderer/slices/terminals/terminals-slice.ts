@@ -9,6 +9,7 @@ import {
   getItemIndex,
   type Collection,
 } from "$lib/store-shim/utils/collections/collection-utils";
+import { setScriptsData } from "../scripts/scripts-slice";
 
 // ============================================================================
 // Constants
@@ -63,9 +64,10 @@ export interface WorkspaceTerminalState {
   /**
    * Script whose output tab the overlay is showing, or null when a terminal
    * tab is showing. Lives here (not component $state) so the selected script
-   * tab survives workspace switches/remounts. The id is not validated against
-   * the scripts slice in this reducer — `selectSelectedScriptId` validates it
-   * against loaded scripts at read time.
+   * tab survives workspace switches/remounts. Hydration paths accept the id
+   * unvalidated (scripts may not be loaded yet); once `setScriptsData` lands
+   * the reducer clears a selection pointing at a missing script, and
+   * `selectSelectedScriptId` additionally filters stale ids at read time.
    */
   selectedScriptId: string | null;
 }
@@ -399,9 +401,19 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
     const prior = getWs(state, wsId);
     // Preserve renderer-only customName for daemon-listed tabs that survive
     // the merge — hydration replaces the collection wholesale otherwise.
+    // Never across a KNOWN boot change though: a recycled PTY id on a new
+    // daemon boot is a different terminal, so the old tab's custom name must
+    // not resurrect onto it (mirrors the metadata-removal path). Unknown
+    // boots (legacy bare-array responses) keep the preservation.
+    const bootChanged =
+      daemonBootId !== undefined &&
+      prior.daemonBootId !== null &&
+      daemonBootId !== prior.daemonBootId;
     const merged = terminals.map((t) => ({
       ...t,
-      customName: getItem(prior.terminals, t.id)?.customName ?? t.customName,
+      customName: bootChanged
+        ? t.customName
+        : getItem(prior.terminals, t.id)?.customName ?? t.customName,
     }));
     const collection = createCollection<TerminalTab, "id">("id", merged);
     // Adopt the incoming boot id when present; a legacy bare-array response
@@ -519,4 +531,24 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
     const ws = getWs(state, wsId);
     if (ws.isLoadingTerminals === isLoadingTerminals) return state;
     return setWs(state, wsId, { ...ws, isLoadingTerminals });
+  })
+  // Cross-slice validation: when the scripts slice receives the workspace's
+  // authoritative script list (`script.list`), a selectedScriptId pointing at
+  // a script that no longer exists (deleted out-of-band, stale persisted id)
+  // is cleared here — at write time — instead of relying solely on
+  // `selectSelectedScriptId`'s read-time filtering. Without this, a stale id
+  // keeps `isOpen:true` alive with nothing renderable (the stuck state this
+  // slice otherwise guards against), because the raw id in Redux stays
+  // non-null and every subsequent hydration preserves isOpen for it.
+  .with(setScriptsData, (state, { payload: { wsId, scripts } }) => {
+    const ws = state.workspaces[wsId];
+    if (!ws?.selectedScriptId) return state;
+    if (scripts.some((script) => script.id === ws.selectedScriptId)) return state;
+    return setWs(state, wsId, {
+      ...ws,
+      selectedScriptId: null,
+      // Without the script tab, the panel needs an active terminal to
+      // render; close it when there is none (stuck-state guard).
+      isOpen: ws.activeTerminalId !== null ? ws.isOpen : false,
+    });
   });
