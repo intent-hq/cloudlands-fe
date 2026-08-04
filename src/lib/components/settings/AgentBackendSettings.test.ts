@@ -195,13 +195,22 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
     expect(trigger.textContent).toContain('All Queued Messages');
   });
 
-  it('defaults to "All Queued Messages" when the daemon reports a legacy boolean', async () => {
+  it('maps a legacy boolean true to "All Queued Messages"', async () => {
     mockSettings({ flush: true });
 
     render(AgentBackendSettings);
 
     const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
     expect(trigger.textContent).toContain('All Queued Messages');
+  });
+
+  it('maps a legacy boolean false to "Off (FIFO)"', async () => {
+    mockSettings({ flush: false });
+
+    render(AgentBackendSettings);
+
+    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    expect(trigger.textContent).toContain('Off (FIFO)');
   });
 
   it('renders "System Messages Only" when the daemon reports systemOnly', async () => {

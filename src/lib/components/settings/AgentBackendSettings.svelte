@@ -62,10 +62,17 @@
     maxConcurrent = typeof value === 'number' ? value : 0;
     // Display empty for 0 (Auto)
     inputValue = maxConcurrent === 0 ? '' : String(maxConcurrent);
-    // Unknown/absent value (e.g. legacy boolean or missing setting) falls back
-    // to the daemon default of `all`.
+    // Legacy boolean values map to their nearest enum equivalent (`true` ->
+    // `all`, `false` -> `off`); any other unknown/absent value falls back to
+    // the daemon default of `all`.
     const flushValue = byPath.get(FLUSH_SETTING_PATH);
-    flushQueuedMessages = isFlushMode(flushValue) ? flushValue : 'all';
+    if (isFlushMode(flushValue)) {
+      flushQueuedMessages = flushValue;
+    } else if (flushValue === false) {
+      flushQueuedMessages = 'off';
+    } else {
+      flushQueuedMessages = 'all';
+    }
   }
 
   async function handleFlushModeChange(value: string) {
