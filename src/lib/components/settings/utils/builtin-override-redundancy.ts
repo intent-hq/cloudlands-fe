@@ -24,10 +24,15 @@ function normalized(value: string | undefined): string {
  * remains. Pass `ignoreModelPin: true` when the pin is about to be cleared
  * (reset paths) to classify what the file becomes after clearing.
  *
- * `codingAgent` is intentionally ignored: it is only ever written as a side
- * effect of a model pin (the provider parsed from the compound model id) or
- * baked as a copy of the effective default on other saves — never chosen
- * independently by the user — so it carries no customization intent.
+ * A non-empty `codingAgent` counts as a pin too (unless `ignoreModelPin`):
+ * per PROTOCOL §5.11 inherit-on-omit, a `codingAgent` in a user-tier file
+ * overrides the effective provider independently of the model pin
+ * (`selectEffectiveCodingAgent` honors it), and legacy files may carry a
+ * baked `codingAgent` with no `model:` key. Ignoring it on the badge path
+ * would hide the Modified indicators — and the per-specialist Reset
+ * affordance — for a file that still pins the provider. The reset/delete
+ * paths pass `ignoreModelPin: true` and physically delete the file, which
+ * removes the stale `codingAgent` along with the pin.
  *
  * Bundled `name`/`description` are i18n getters; comparing via property
  * access evaluates them to the current locale's values.
@@ -38,7 +43,7 @@ export function isRedundantBuiltInOverride(
   options?: { ignoreModelPin?: boolean },
 ): boolean {
   if (fileSpec.source !== 'user') return false;
-  if (!options?.ignoreModelPin && fileSpec.model) return false;
+  if (!options?.ignoreModelPin && (fileSpec.model || fileSpec.codingAgent)) return false;
   const bundled = bundledSpecialists.find((s) => s.id === fileSpec.id);
   if (!bundled) return false;
   return (

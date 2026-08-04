@@ -582,13 +582,28 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
     });
 
     it("treats undefined and empty string as equal", () => {
-      // spec-writer has no roleReminder in some shapes — '' on the file side
-      // must match undefined on the bundled side.
-      const withEmptyReminder = {
-        ...identicalOverride,
-        roleReminder: implementor.roleReminder ?? "",
-      };
-      expect(isRedundantBuiltInOverride(withEmptyReminder, SPECIALISTS)).toBe(true);
+      // '' on the file side must match undefined on the bundled side (and
+      // vice versa). All real bundled specialists define roleReminder, so
+      // build a fixture without one (spreading evaluates the i18n getters
+      // into plain values).
+      const bundledNoReminder = [{ ...implementor, roleReminder: undefined }];
+      expect(
+        isRedundantBuiltInOverride({ ...identicalOverride, roleReminder: "" }, bundledNoReminder),
+      ).toBe(true);
+      expect(
+        isRedundantBuiltInOverride(
+          { ...identicalOverride, roleReminder: undefined },
+          bundledNoReminder,
+        ),
+      ).toBe(true);
+      // undefined on the file side matches a defined-but-empty bundled value.
+      const bundledEmptyReminder = [{ ...implementor, roleReminder: "" }];
+      expect(
+        isRedundantBuiltInOverride(
+          { ...identicalOverride, roleReminder: undefined },
+          bundledEmptyReminder,
+        ),
+      ).toBe(true);
     });
 
     it("is false for project-scope files and non-built-in ids", () => {
@@ -600,9 +615,17 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
       ).toBe(false);
     });
 
-    it("ignores codingAgent (pin side effect, not a customization)", () => {
-      const withAgent = { ...identicalOverride, codingAgent: "claude-code" };
-      expect(isRedundantBuiltInOverride(withAgent, SPECIALISTS)).toBe(true);
+    it("treats a baked codingAgent like a model pin on the badge path (legacy files)", () => {
+      // Legacy pre-fix "Reset all" rewrites cleared `model:` but preserved the
+      // baked codingAgent — such a file still pins the provider (PROTOCOL
+      // §5.11 inherit-on-omit) and must keep reading as Modified.
+      const legacyBaked = { ...identicalOverride, codingAgent: "claude-code" };
+      expect(isRedundantBuiltInOverride(legacyBaked, SPECIALISTS)).toBe(false);
+      // …but the reset/delete paths (ignoreModelPin) still classify it as
+      // redundant, since deleting the file removes the stale codingAgent too.
+      expect(
+        isRedundantBuiltInOverride(legacyBaked, SPECIALISTS, { ignoreModelPin: true }),
+      ).toBe(true);
     });
   });
 
