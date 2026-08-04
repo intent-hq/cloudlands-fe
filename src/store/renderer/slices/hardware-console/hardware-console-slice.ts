@@ -24,6 +24,7 @@ import {
   type CycleScopeFamilyId,
 } from "$features/hardware-console/actions/cycle-scope";
 import type { HardwareDeviceModel } from "$features/hardware-console/input/types";
+import type { PttRecordingFinishedPayload } from "$features/hardware-console/voice/ptt-controller";
 import type {
   HardwareConsoleState,
   RadialPromptPickerState,
@@ -43,6 +44,8 @@ export const initialState: HardwareConsoleState = {
   radialPrompt: closedRadialPrompt,
   encoderHudWorkspaceId: null,
   actionHudLabel: null,
+  pttRecording: false,
+  voiceTranscribing: false,
   actionMappingByModel: normalizeActionMappingsByModel(undefined),
   actionMappingHydrated: false,
   cycleScopeByFamily: normalizeCycleScopeByFamily(undefined),
@@ -130,6 +133,34 @@ export const actionHudShown = createAction<[label: string]>(
 );
 /** Action HUD timed out: hide it. */
 export const actionHudHidden = createAction("hardwareConsole/actionHudHidden");
+/** Push-to-talk keydown: microphone recording began (HUD + LED indicators on). */
+export const pttRecordingStarted = createAction("hardwareConsole/pttRecordingStarted");
+/** Push-to-talk recording ended (release, auto-stop, error, or cancel): indicators off. */
+export const pttRecordingStopped = createAction("hardwareConsole/pttRecordingStopped");
+/**
+ * Push-to-talk recording finished with captured audio plus the gesture
+ * outcome (`stopReason`, `autoSend`). Seam for the transcription flow
+ * (separate task) — the payload's Blob is consumed by middleware/services
+ * and never stored in state (no reducer case).
+ */
+export const pttRecordingFinished = createAction<[audio: PttRecordingFinishedPayload]>(
+  "hardwareConsole/pttRecordingFinished",
+);
+/**
+ * A voice-key send gesture fired without transcribable audio (double press
+ * while idle, or captured audio below the minimum duration): send the
+ * composer as-is. Seam for the composer/transcription side (no reducer
+ * case).
+ */
+export const pttSendRequested = createAction("hardwareConsole/pttSendRequested");
+/** A `voice.transcribe` request is in flight (spinner on voice surfaces). */
+export const voiceTranscriptionStarted = createAction(
+  "hardwareConsole/voiceTranscriptionStarted",
+);
+/** The in-flight `voice.transcribe` settled (success or failure). */
+export const voiceTranscriptionFinished = createAction(
+  "hardwareConsole/voiceTranscriptionFinished",
+);
 /** Boot-time hydration of the per-model action-key mappings from the daemon settings bag. */
 export const hydrateHardwareConsoleActionMapping = createAction<
   [actionMappingByModel: Partial<Record<HardwareDeviceModel, ActionKeyActionId[]>>]
@@ -252,6 +283,22 @@ export const hardwareConsoleReducer = createReducer<HardwareConsoleState>(initia
   .with(actionHudHidden, (state) => {
     if (state.actionHudLabel === null) return state;
     return { ...state, actionHudLabel: null };
+  })
+  .with(pttRecordingStarted, (state) => {
+    if (state.pttRecording) return state;
+    return { ...state, pttRecording: true };
+  })
+  .with(pttRecordingStopped, (state) => {
+    if (!state.pttRecording) return state;
+    return { ...state, pttRecording: false };
+  })
+  .with(voiceTranscriptionStarted, (state) => {
+    if (state.voiceTranscribing) return state;
+    return { ...state, voiceTranscribing: true };
+  })
+  .with(voiceTranscriptionFinished, (state) => {
+    if (!state.voiceTranscribing) return state;
+    return { ...state, voiceTranscribing: false };
   })
   .with(hydrateHardwareConsoleActionMapping, (state, { payload: [actionMappingByModel] }) => {
     return {

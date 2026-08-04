@@ -15,6 +15,8 @@ import {
   keyPinsReconciled,
   markKeySlotUnassigned,
   pinWorkspaceToKey,
+  pttRecordingStarted,
+  pttRecordingStopped,
   setActionKeyMapping,
   setCycleScope,
   setHardwareConsoleEnabled,
@@ -24,6 +26,8 @@ import {
   radialPromptPickerOpened,
   radialPromptPickerSectorChanged,
   unpinWorkspaceFromKeys,
+  voiceTranscriptionFinished,
+  voiceTranscriptionStarted,
 } from "./hardware-console-slice";
 
 describe("hardwareConsoleReducer", () => {
@@ -290,14 +294,46 @@ describe("hardwareConsoleReducer", () => {
     expect(hardwareConsoleReducer(initialState, actionHudShown(""))).toBe(initialState);
   });
 
+  it("tracks the push-to-talk recording flag", () => {
+    expect(initialState.pttRecording).toBe(false);
+
+    const started = hardwareConsoleReducer(initialState, pttRecordingStarted());
+    expect(started.pttRecording).toBe(true);
+
+    const stopped = hardwareConsoleReducer(started, pttRecordingStopped());
+    expect(stopped.pttRecording).toBe(false);
+  });
+
+  it("returns the same state for redundant push-to-talk updates", () => {
+    expect(hardwareConsoleReducer(initialState, pttRecordingStopped())).toBe(initialState);
+    const started = hardwareConsoleReducer(initialState, pttRecordingStarted());
+    expect(hardwareConsoleReducer(started, pttRecordingStarted())).toBe(started);
+  });
+
+  it("tracks the voice-transcription in-flight flag", () => {
+    expect(initialState.voiceTranscribing).toBe(false);
+
+    const started = hardwareConsoleReducer(initialState, voiceTranscriptionStarted());
+    expect(started.voiceTranscribing).toBe(true);
+
+    const finished = hardwareConsoleReducer(started, voiceTranscriptionFinished());
+    expect(finished.voiceTranscribing).toBe(false);
+  });
+
+  it("returns the same state for redundant voice-transcription updates", () => {
+    expect(hardwareConsoleReducer(initialState, voiceTranscriptionFinished())).toBe(initialState);
+    const started = hardwareConsoleReducer(initialState, voiceTranscriptionStarted());
+    expect(hardwareConsoleReducer(started, voiceTranscriptionStarted())).toBe(started);
+  });
+
   it("defaults the per-model action mappings to each model's layout, unhydrated", () => {
     expect(initialState.actionMappingByModel["creator-micro-2"]).toEqual([
       "new-workspace",
       "new-agent",
       "see-spec",
       "switch-window-layouts",
+      "push-to-talk",
       "cycle-in-progress-agents",
-      "cycle-attention-agents",
       "cycle-unread-agents",
     ]);
     expect(initialState.actionMappingByModel["codex-micro"]).toEqual([
@@ -305,9 +341,9 @@ describe("hardwareConsoleReducer", () => {
       "cycle-attention-agents",
       "stop-agent",
       "new-workspace",
-      "cycle-unread-agents",
+      "push-to-talk",
       "none",
-      "new-agent",
+      "cycle-unread-agents",
     ]);
     expect(initialState.actionMappingHydrated).toBe(false);
   });
@@ -323,8 +359,8 @@ describe("hardwareConsoleReducer", () => {
       "new-agent",
       "see-spec",
       "switch-window-layouts",
+      "push-to-talk",
       "cycle-in-progress-agents",
-      "cycle-attention-agents",
       "cycle-unread-agents",
     ]);
     expect(state.actionMappingByModel["codex-micro"]).toEqual(

@@ -24,7 +24,12 @@ import type { AgentKeyLedState, AmbientLedState, HardwareLedSnapshot } from './f
 /** The narrow slice of the app store state the LED derivation reads. */
 export interface LedSnapshotState {
   workspace: { workspaces: Collection<Workspace, 'id'> };
-  hardwareConsole: { keyPins: (string | null)[]; excludedWorkspaceIds?: readonly string[] };
+  hardwareConsole: {
+    keyPins: (string | null)[];
+    excludedWorkspaceIds?: readonly string[];
+    /** True while a push-to-talk recording is in progress. */
+    pttRecording?: boolean;
+  };
   workspaceAgents: {
     byWorkspaceId: Record<string, { foregroundAgentIds: readonly (string | number)[] }>;
   };
@@ -138,17 +143,22 @@ export function buildHardwareLedSnapshot(state: LedSnapshotState): HardwareLedSn
     return deriveAgentKeyLedState(workspace, foregroundSessions(state, workspace.id));
   });
 
-  // Ambient scans ALL assignable workspaces (not just the 6 assigned):
+  // Ambient: an in-progress push-to-talk recording outranks everything;
+  // otherwise scan ALL assignable workspaces (not just the 6 assigned):
   // attention (any top-level agent question/discussion/blocked/failed)
   // outranks breath (any workspace running); dark when all idle.
   let ambient: AmbientLedState = 'dark';
-  for (const workspace of workspaces) {
-    const agents = foregroundSessions(state, workspace.id);
-    if (agents.some((session) => hasFailed(session) || needsAttention(session))) {
-      ambient = 'attention';
-      break;
+  if (state.hardwareConsole.pttRecording === true) {
+    ambient = 'recording';
+  } else {
+    for (const workspace of workspaces) {
+      const agents = foregroundSessions(state, workspace.id);
+      if (agents.some((session) => hasFailed(session) || needsAttention(session))) {
+        ambient = 'attention';
+        break;
+      }
+      if (isWorkspaceRunning(workspace)) ambient = 'breath';
     }
-    if (isWorkspaceRunning(workspace)) ambient = 'breath';
   }
 
   return { keys, ambient };

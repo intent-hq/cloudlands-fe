@@ -6,11 +6,14 @@ import {
   DEFAULT_ACTION_MAPPING,
   DEFAULT_ACTION_MAPPINGS,
   LEGACY_CM2_DEFAULT_ACTION_MAPPING,
+  PRE_PTT_CM2_DEFAULT_ACTION_MAPPING,
+  PRE_PTT_CODEX_DEFAULT_ACTION_MAPPING,
   PREVIOUS_CM2_DEFAULT_ACTION_MAPPING,
   actionKeyToSlot,
   getDefaultActionMapping,
   isActionKeyActionId,
   migrateLegacyCm2DefaultActionMapping,
+  migrateLegacyCodexDefaultActionMapping,
   normalizeActionMapping,
   normalizeActionMappingsByModel,
 } from '../action-mapping';
@@ -33,27 +36,28 @@ describe('actionKeyToSlot', () => {
 });
 
 describe('per-model default mappings', () => {
-  it('CM2 assigns creation actions then agent-cycling actions (stop-agent unassigned)', () => {
+  it('CM2 assigns creation actions then row-4 actions (stop-agent unassigned)', () => {
     expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2']).toEqual([
       'new-workspace',
       'new-agent',
       'see-spec',
       'switch-window-layouts',
+      'push-to-talk',
       'cycle-in-progress-agents',
-      'cycle-attention-agents',
       'cycle-unread-agents',
     ]);
     expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2']).toHaveLength(ACTION_KEY_COUNT);
     expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2']).not.toContain('stop-agent');
     expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2']).not.toContain('toggle-sidebar-tabs');
     expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2']).not.toContain('cycle-workspace-agents');
+    expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2']).not.toContain('cycle-attention-agents');
   });
 
-  it('CM2 row 4 (ACT10–ACT12) defaults to in-progress / attention / unread cycling', () => {
+  it('CM2 row 4 (ACT10–ACT12) defaults to push-to-talk / in-progress / unread', () => {
     expect(ACTION_KEY_IDS.slice(4)).toEqual(['ACT10', 'ACT11', 'ACT12']);
     expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2'].slice(4)).toEqual([
+      'push-to-talk',
       'cycle-in-progress-agents',
-      'cycle-attention-agents',
       'cycle-unread-agents',
     ]);
   });
@@ -69,11 +73,12 @@ describe('per-model default mappings', () => {
       'cycle-attention-agents', // ACT07 checkmark
       'stop-agent', // ACT08 x-mark
       'new-workspace', // ACT09 branching
-      'cycle-unread-agents', // ACT10 = first switch of the linked Mic pair
+      'push-to-talk', // ACT10 = first switch of the linked Mic pair
       'none', // ACT11 = second linked switch, unset by default
-      'new-agent', // ACT12 logo
+      'cycle-unread-agents', // ACT12 logo
     ]);
     expect(DEFAULT_ACTION_MAPPINGS['codex-micro']).toHaveLength(ACTION_KEY_COUNT);
+    expect(DEFAULT_ACTION_MAPPINGS['codex-micro']).not.toContain('new-agent');
   });
 
   it('the Codex linked-pair slot is ACT11 and defaults to none', () => {
@@ -116,7 +121,7 @@ describe('normalizeActionMapping', () => {
       'new-agent',
       'toggle-sidebar-tabs',
       'switch-window-layouts',
-      'cycle-in-progress-agents',
+      'push-to-talk',
       'new-workspace',
       'cycle-unread-agents',
     ]);
@@ -197,19 +202,13 @@ describe('normalizeActionMappingsByModel', () => {
 });
 
 describe('migrateLegacyCm2DefaultActionMapping', () => {
-  it('upgrades a CM2 mapping still equal to the oldest (pre-attention) defaults', () => {
+  it.each([
+    ['oldest (pre-attention)', LEGACY_CM2_DEFAULT_ACTION_MAPPING],
+    ['previous (cycle-workspace)', PREVIOUS_CM2_DEFAULT_ACTION_MAPPING],
+    ['pre-PTT (row-4 cycling)', PRE_PTT_CM2_DEFAULT_ACTION_MAPPING],
+  ])('upgrades a CM2 mapping still equal to the %s defaults', (_label, priorDefaults) => {
     const mappings = normalizeActionMappingsByModel({
-      'creator-micro-2': [...LEGACY_CM2_DEFAULT_ACTION_MAPPING],
-    });
-    expect(migrateLegacyCm2DefaultActionMapping(mappings)).toBe(true);
-    expect(mappings['creator-micro-2']).toEqual([
-      ...DEFAULT_ACTION_MAPPINGS['creator-micro-2'],
-    ]);
-  });
-
-  it('upgrades a CM2 mapping still equal to the previous (cycle-workspace) defaults', () => {
-    const mappings = normalizeActionMappingsByModel({
-      'creator-micro-2': [...PREVIOUS_CM2_DEFAULT_ACTION_MAPPING],
+      'creator-micro-2': [...priorDefaults],
     });
     expect(migrateLegacyCm2DefaultActionMapping(mappings)).toBe(true);
     expect(mappings['creator-micro-2']).toEqual([
@@ -221,6 +220,7 @@ describe('migrateLegacyCm2DefaultActionMapping', () => {
     for (const priorDefaults of [
       LEGACY_CM2_DEFAULT_ACTION_MAPPING,
       PREVIOUS_CM2_DEFAULT_ACTION_MAPPING,
+      PRE_PTT_CM2_DEFAULT_ACTION_MAPPING,
     ]) {
       const customized = [...priorDefaults];
       customized[0] = 'stop-agent';
@@ -233,6 +233,30 @@ describe('migrateLegacyCm2DefaultActionMapping', () => {
   it('is a no-op on the current defaults and never touches the Codex entry', () => {
     const mappings = normalizeActionMappingsByModel(undefined);
     expect(migrateLegacyCm2DefaultActionMapping(mappings)).toBe(false);
+    expect(mappings).toEqual(normalizeActionMappingsByModel(undefined));
+  });
+});
+
+describe('migrateLegacyCodexDefaultActionMapping', () => {
+  it('upgrades a Codex mapping still equal to the pre-PTT defaults', () => {
+    const mappings = normalizeActionMappingsByModel({
+      'codex-micro': [...PRE_PTT_CODEX_DEFAULT_ACTION_MAPPING],
+    });
+    expect(migrateLegacyCodexDefaultActionMapping(mappings)).toBe(true);
+    expect(mappings['codex-micro']).toEqual([...DEFAULT_ACTION_MAPPINGS['codex-micro']]);
+  });
+
+  it('leaves a customized Codex mapping untouched', () => {
+    const customized = [...PRE_PTT_CODEX_DEFAULT_ACTION_MAPPING];
+    customized[0] = 'see-spec';
+    const mappings = normalizeActionMappingsByModel({ 'codex-micro': customized });
+    expect(migrateLegacyCodexDefaultActionMapping(mappings)).toBe(false);
+    expect(mappings['codex-micro']).toEqual(customized);
+  });
+
+  it('is a no-op on the current defaults and never touches the CM2 entry', () => {
+    const mappings = normalizeActionMappingsByModel(undefined);
+    expect(migrateLegacyCodexDefaultActionMapping(mappings)).toBe(false);
     expect(mappings).toEqual(normalizeActionMappingsByModel(undefined));
   });
 });

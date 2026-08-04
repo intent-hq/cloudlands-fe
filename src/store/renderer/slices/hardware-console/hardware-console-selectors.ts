@@ -80,3 +80,13 @@ export const selectEncoderHudWorkspaceId = store.createSelector(
 export const selectActionHudLabel = store.createSelector(
   (state) => state.hardwareConsole.actionHudLabel,
 );
+
+/** True while a push-to-talk recording is in progress ("Listening…" indicator). */
+export const selectPttRecording = store.createSelector(
+  (state) => state.hardwareConsole.pttRecording,
+);
+
+/** True while a `voice.transcribe` request is in flight (mic-button spinner). */
+export const selectVoiceTranscribing = store.createSelector(
+  (state) => state.hardwareConsole.voiceTranscribing,
+);

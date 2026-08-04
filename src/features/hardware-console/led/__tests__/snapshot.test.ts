@@ -56,6 +56,7 @@ interface StateInput {
   keyPins?: (string | null)[];
   agentsByWorkspace?: Record<string, string[]>;
   sessions?: StoredAgentSession[];
+  pttRecording?: boolean;
 }
 
 function makeState(input: StateInput = {}): LedSnapshotState {
@@ -67,7 +68,10 @@ function makeState(input: StateInput = {}): LedSnapshotState {
   for (const session of input.sessions ?? []) byAgentId[String(session.id)] = session;
   return {
     workspace: { workspaces: createCollection('id', input.workspaces ?? []) },
-    hardwareConsole: { keyPins: input.keyPins ?? [null, null, null, null, null, null] },
+    hardwareConsole: {
+      keyPins: input.keyPins ?? [null, null, null, null, null, null],
+      pttRecording: input.pttRecording,
+    },
     workspaceAgents: { byWorkspaceId },
     agentSessions: { byAgentId },
   };
@@ -237,5 +241,18 @@ describe('buildHardwareLedSnapshot', () => {
       sessions: [makeSession('agent-bg', { attentionRequestKind: 'blocker' })],
     });
     expect(buildHardwareLedSnapshot(state).keys[0]).toBe('idle');
+  });
+
+  it('an in-progress push-to-talk recording drives ambient recording, outranking attention', () => {
+    const state = makeState({
+      workspaces: [makeWorkspace('ws-1')],
+      agentsByWorkspace: { 'ws-1': ['agent-1'] },
+      sessions: [makeSession('agent-1', { attentionRequestKind: 'blocker' })],
+      pttRecording: true,
+    });
+    const snapshot = buildHardwareLedSnapshot(state);
+    expect(snapshot.ambient).toBe('recording');
+    // Key states are unaffected by the recording indicator.
+    expect(snapshot.keys[0]).toBe('attention');
   });
 });

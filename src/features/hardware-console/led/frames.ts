@@ -27,8 +27,9 @@ export type AgentKeyLedState =
   | 'attention'
   | 'failed';
 
-/** Ambient/keys backlight state (spec ambient row of the control mapping). */
-export type AmbientLedState = 'dark' | 'breath' | 'attention';
+/** Ambient/keys backlight state (spec ambient row of the control mapping).
+ * `recording` = push-to-talk capture in progress (red pulse, outranks all). */
+export type AmbientLedState = 'dark' | 'breath' | 'attention' | 'recording';
 
 /** Host-side lighting state snapshot: 6 key states + the ambient state. */
 export interface HardwareLedSnapshot {
@@ -107,6 +108,7 @@ const AMBIENT_PALETTE: Record<AmbientLedState, RgbcfgZone> = {
   dark: DARK_ZONE,
   breath: { e: LED_EFFECT_BREATH, b: 0.5, s: AMBIENT_BREATH_SPEED, m: 0, c: COLOR_BLUE },
   attention: { e: LED_EFFECT_BREATH, b: 0.8, s: FAST_BREATH_SPEED, m: 0, c: COLOR_YELLOW },
+  recording: { e: LED_EFFECT_BREATH, b: 0.8, s: FAST_BREATH_SPEED, m: 0, c: COLOR_RED },
 };
 
 /**
