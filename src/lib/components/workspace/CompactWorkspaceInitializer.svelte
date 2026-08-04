@@ -68,12 +68,26 @@
   import { createAgentTypeId } from '$shared/types/agent.types';
   import {
   faMagicWandSparkles,
+  faMicrophone,
   faPaperclip,
   faSpinner,
   faStop,
   faExclamationTriangle,
   faCodeBranch,
 } from '@fortawesome/free-solid-svg-icons';
+  import {
+  selectPttRecording,
+  selectVoiceTranscribing,
+} from '$store/renderer/slices/hardware-console/hardware-console-selectors';
+  import { selectEffectiveVoiceEngine } from '$store/renderer/slices/voice-settings/voice-settings-selectors';
+  import {
+  cancelPromptMicRecording,
+  isPromptMicRecording,
+  togglePromptMicRecording,
+} from '$features/hardware-console/voice/prompt-mic-controller';
+  import { cancelActiveTranscription } from '$features/hardware-console/voice/transcription-cancellation';
+  import type { PttContext } from '$features/hardware-console/voice/ptt-controller';
+  import { showVoiceSetupToast } from '$features/hardware-console/voice/voice-setup-toast';
   import { invoke } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
   import {
@@ -116,6 +130,8 @@
 
   const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectCatalogDefaultProviderId();
+  const pttRecording$ = selectPttRecording();
+  const voiceTranscribing$ = selectVoiceTranscribing();
   const logger = createLogger('CompactWorkspaceInitializer');
 
   // Constants
@@ -2390,7 +2406,63 @@
       isEnhancing = false;
     }
   }
+
+  // Prompt mic latch button: same three states as the chat composer's mic
+  // (idle / recording pulse / transcribing spinner). "Recording" renders
+  // only for the session THIS prompt started (ownership via the controller's
+  // session token); `$pttRecording$` drives re-evaluation.
+  const micRecording = $derived($pttRecording$ && isPromptMicRecording());
+  const micTranscribing = $derived($voiceTranscribing$);
+
+  /** Dispatch + hint context for the shared PTT session API. */
+  const micContext: PttContext = {
+    dispatch: (action) => appStore.dispatch(action as { type: string }),
+    showHint: (message) => toast.info(message),
+  };
+
+  function handleMicClick() {
+    // No engine can transcribe (daemon selected, key missing, no OS
+    // fallback): surface the actionable setup toast instead of recording
+    // audio that could never be transcribed. A live recording is never
+    // gated — its stop-click must always land.
+    if (
+      !micRecording &&
+      selectEffectiveVoiceEngine.select(appStore.state) === 'unavailable'
+    ) {
+      showVoiceSetupToast();
+      return;
+    }
+    togglePromptMicRecording(micContext, { focus: () => richTextarea?.focusEnd() });
+  }
+
+  function handleMicEscape(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || !micRecording) return;
+    if (cancelPromptMicRecording(micContext)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }
+
+  // Cancel-while-transcribing: abandon the in-flight session so a hung or
+  // slow transcribe can never insert a late result — the transcribing state
+  // clears immediately and a new recording can start right away.
+  function handleMicCancelTranscription() {
+    cancelActiveTranscription();
+  }
+
+  // A recording left running when this prompt unmounts (modal closed) can
+  // never insert into it — discard the session instead of transcribing into
+  // whatever holds focus later.
+  onDestroy(() => {
+    cancelPromptMicRecording(micContext);
+  });
 </script>
+
+<!-- Esc cancels an in-progress prompt mic recording (discard, no
+     transcription). Capture phase so the modal's own Escape handling (close)
+     never wins while dictation is live; a no-op unless this prompt owns the
+     recording session. -->
+<svelte:window onkeydowncapture={handleMicEscape} />
 
 <!-- Compact Initializer -->
 <div class="w-full mx-auto" bind:this={controlsContainer}>
@@ -2505,6 +2577,57 @@
           repositoryOwner={githubRepoInfo?.owner}
           repositoryName={githubRepoInfo?.repo}
         />
+
+        <!-- Mic latch button: click starts dictation, click again (Esc
+             cancels) stops and transcribes into this prompt at the caret. -->
+        <div class="absolute top-2 {enhanceAvailable ? 'right-[62px]' : 'right-9'}">
+          {#if micTranscribing}
+            <!-- Clickable while transcribing: cancel abandons the in-flight
+                 session (a hung provider's late result is discarded) and
+                 returns the button to idle immediately. -->
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="ghost-light"
+              onclick={handleMicCancelTranscription}
+              tooltip={m.chat_richInput_micCancelTranscribing_label()}
+              tooltipSide="top"
+              aria-label={m.chat_richInput_micCancelTranscribing_label()}
+              data-testid="initializer-mic-button"
+            >
+              <Fa icon={faSpinner} size="xs" class="animate-spin" />
+            </Button>
+          {:else if micRecording}
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="ghost-light"
+              onclick={handleMicClick}
+              tooltip={m.chat_richInput_micStop_label()}
+              tooltipSide="top"
+              aria-label={m.chat_richInput_micStop_label()}
+              aria-pressed="true"
+              class="text-destructive-foreground animate-pulse"
+              data-testid="initializer-mic-button"
+            >
+              <Fa icon={faMicrophone} size="xs" />
+            </Button>
+          {:else}
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="ghost-light"
+              onclick={handleMicClick}
+              tooltip={m.chat_richInput_micStart_label()}
+              tooltipSide="top"
+              aria-label={m.chat_richInput_micStart_label()}
+              aria-pressed="false"
+              data-testid="initializer-mic-button"
+            >
+              <Fa icon={faMicrophone} size="xs" />
+            </Button>
+          {/if}
+        </div>
 
         <!-- Enhance prompt button (§5.31 auggie-only gate) -->
         {#if enhanceAvailable}

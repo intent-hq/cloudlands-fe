@@ -20,6 +20,7 @@ import {
   app,
   session,
   shell,
+  systemPreferences,
 } from 'electron';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -503,12 +504,21 @@ function setupPermissionHandlers(ses: Electron.Session): void {
       return;
     }
 
+    // Microphone for voice dictation: only audio-only getUserMedia from the
+    // app shell itself. On macOS the Chromium grant alone is not enough — the
+    // OS-level TCC grant is requested via askForMediaAccess (prompts once;
+    // subsequent calls resolve from the stored decision).
+    if (permission === 'media' && isAllowedMicrophoneRequest(webContents, details)) {
+      void grantMicrophoneAccess().then(callback);
+      return;
+    }
+
     logger.warn('Blocked permission request', { permission, url: url.substring(0, 100) });
     callback(false);
   });
 
 
-  ses.setPermissionCheckHandler((_webContents, permission, requestingOrigin, _details) => {
+  ses.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
     if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') {
       return true;
     }
@@ -518,8 +528,82 @@ function setupPermissionHandlers(ses: Electron.Session): void {
     if (permission === 'hid') {
       return isTrustedHidOrigin(requestingOrigin);
     }
+    // Audio capture for voice dictation (navigator.permissions / device
+    // enumeration checks before the actual getUserMedia request). Video
+    // capture stays blocked, as does any webview-originated media check —
+    // consistent with the request handler above.
+    if (permission === 'media') {
+      if (webContents?.getType() === 'webview') {
+        return false;
+      }
+      return details.mediaType !== 'video';
+    }
     return false;
   });
+}
+
+/**
+ * True when a `media` permission request may reach the microphone grant path
+ * — camera / screen-capture requests and any webview-originated media
+ * request stay blocked.
+ *
+ * When `mediaTypes` is populated, the request is granted only if it asks for
+ * audio exclusively. However, Chromium's PermissionController also delivers
+ * getUserMedia permission requests with NO `mediaTypes` (the field is
+ * optional; see electron/electron#36629) — denying those rejects
+ * getUserMedia with NotAllowedError before askForMediaAccess can ever run
+ * (no OS prompt, no TCC entry). Such a metadata-less request is granted only
+ * when it originates from the app shell itself (app:// or the dev server),
+ * whose sole media consumer is the audio-only voice recorder.
+ */
+function isAllowedMicrophoneRequest(
+  webContents: Electron.WebContents | null,
+  details: Electron.PermissionRequest,
+): boolean {
+  if (webContents?.getType() === 'webview') {
+    return false;
+  }
+  const mediaTypes = (details as Electron.MediaAccessPermissionRequest).mediaTypes;
+  if (Array.isArray(mediaTypes) && mediaTypes.length > 0) {
+    return mediaTypes.every((t) => t === 'audio');
+  }
+  return isAppShellUrl(details.requestingUrl || webContents?.getURL() || '');
+}
+
+/**
+ * True when a URL belongs to the app's own renderer: the internal app
+ * protocols (app://, workspace-asset://) or the dev server in development.
+ */
+function isAppShellUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return BROWSER_PROTOCOLS.INTERNAL.includes(parsed.protocol) || isDevServerUrl(parsed);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the OS-level microphone grant. On macOS this triggers the one-time
+ * TCC prompt (NSMicrophoneUsageDescription supplies the dialog text in
+ * packaged builds); other platforms need no OS-level grant.
+ */
+async function grantMicrophoneAccess(): Promise<boolean> {
+  if (process.platform !== 'darwin') {
+    return true;
+  }
+  const status = systemPreferences.getMediaAccessStatus('microphone');
+  if (status === 'granted') {
+    return true;
+  }
+  try {
+    const granted = await systemPreferences.askForMediaAccess('microphone');
+    logger.info('macOS microphone access', { granted });
+    return granted;
+  } catch (err) {
+    logger.warn('macOS microphone access request failed', { err: String(err) });
+    return false;
+  }
 }
 
 /**

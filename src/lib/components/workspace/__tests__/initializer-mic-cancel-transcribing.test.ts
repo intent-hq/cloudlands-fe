@@ -1,14 +1,13 @@
 /**
  * @vitest-environment jsdom
  *
- * Regression tests for the `git-tracking:get-remote-url` probe race in
- * CompactWorkspaceInitializer (reviewer finding on cloudlands-fe#443):
- * switching repos must clear the detected GitHub owner/repo synchronously
- * (no stale `(owner/repo)` suffix on the repo pill), and a late-arriving
- * probe response for a previous repoPath must never overwrite the current
- * repo's result.
+ * The workspace-prompt mic button's cancel-while-transcribing affordance
+ * (CompactWorkspaceInitializer): while `voice.transcribe` is in flight the
+ * spinner button must be clickable (not disabled) with the cancel
+ * tooltip/aria-label, and clicking it must abandon the in-flight
+ * transcription session so a late result is discarded.
  */
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
@@ -22,7 +21,7 @@ const mocks = vi.hoisted(() => {
     readable,
     dispatch: vi.fn(),
     goto: vi.fn(),
-    getRemoteUrl: vi.fn<(repoPath: string) => Promise<unknown>>(),
+    hardwareConsole: { pttRecording: false, voiceTranscribing: true },
   };
 });
 
@@ -33,7 +32,7 @@ vi.mock('$store/renderer/store', async () => {
     '$store/renderer/utils/test-helpers/store-mock'
   );
   return createAppStoreMockModule({
-    state: () => ({ hardwareConsole: { pttRecording: false, voiceTranscribing: false } }),
+    state: () => ({ hardwareConsole: mocks.hardwareConsole }),
     dispatch: mocks.dispatch,
   });
 });
@@ -119,17 +118,11 @@ vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
   clearNewWorkspaceDraft: vi.fn(),
 }));
 
-// The component gates the remote-URL probe on `window.electronAPI` (provided
-// by test-setup) and calls `invoke('git-tracking:get-remote-url')` through
-// the electron bridge — route that channel to a per-test mock.
 vi.mock('$lib/electron-bridge', () => ({
   isElectron: vi.fn(() => true),
-  invoke: vi.fn(async (channel: string, args?: { repoPath?: string }) => {
+  invoke: vi.fn(async (channel: string) => {
     if (channel === 'system:check-git') {
       return { success: true, data: { available: true, version: '2.44.0' } };
-    }
-    if (channel === 'git-tracking:get-remote-url') {
-      return mocks.getRemoteUrl(args?.repoPath ?? '');
     }
     return { success: true, data: null };
   }),
@@ -143,6 +136,13 @@ vi.mock('$lib/components/ui/RichTextarea.svelte', async () => ({
 }));
 
 vi.mock('$lib/components/ui/tooltip/Tooltip.svelte', async () => ({
+  default: (await import('../initializer/__tests__/mocks/MockComponent.svelte')).default,
+}));
+
+// The Button's `tooltip` prop wraps its trigger in TooltipShortcut (which
+// renders through Tooltip's `trigger` snippet, not `children`) — mock it to
+// render its children so the wrapped mic button reaches the DOM.
+vi.mock('$lib/components/ui/tooltip/TooltipShortcut.svelte', async () => ({
   default: (await import('../initializer/__tests__/mocks/MockComponent.svelte')).default,
 }));
 
@@ -172,123 +172,66 @@ vi.mock('$lib/components/chat/AttachmentPreview.svelte', async () => ({
 }));
 
 vi.mock('svelte-fa', async () => ({
-  default: (await import('../initializer/__tests__/mocks/MockComponent.svelte')).default,
+  default: (await import('../../ui/__tests__/mocks/Fa.svelte')).default,
 }));
 
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
-}
-
-function remoteUrlResponse(owner: string, repo: string) {
-  return { success: true, data: { owner, repo } };
-}
+import { m } from '$shared/paraglide/messages.js';
+import {
+  beginTranscriptionSession,
+  hasActiveTranscriptionSession,
+  resetTranscriptionCancellation,
+} from '$features/hardware-console/voice/transcription-cancellation';
 
 function renderInitializer() {
   return render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
 }
 
-/** Callbacks the initializer passed to the (mocked) RepoAndBranchPicker. */
-function pickerCallbacks() {
-  return (
-    window as unknown as {
-      __mockRepoAndBranchPicker: {
-        onRepoChange: (event: { detail: Record<string, unknown> }) => void;
-      };
-    }
-  ).__mockRepoAndBranchPicker;
+/** The transcribing mic button (the mocked Fa exposes data-icon="spinner"). */
+function transcribingMicButton(): HTMLButtonElement | null {
+  const button = document.body.querySelector('[data-testid="initializer-mic-button"]');
+  return (button as HTMLButtonElement | null) ?? null;
 }
 
-/** Drive a local repo selection through the picker's onRepoChange. */
-function selectLocalRepo(path: string) {
-  pickerCallbacks().onRepoChange({
-    detail: { path, type: 'local', isValidPath: true },
-  });
-}
-
-const textOf = (result: ReturnType<typeof renderInitializer>, testId: string) =>
-  result.getByTestId(testId).textContent;
-
-/** Flush pending microtasks and a macrotask so late promise chains settle. */
-async function flush() {
-  await Promise.resolve();
-  await new Promise((r) => setTimeout(r, 0));
-}
-
-describe('CompactWorkspaceInitializer remote-URL probe race', () => {
+describe('CompactWorkspaceInitializer mic cancel-while-transcribing', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
-    mocks.getRemoteUrl.mockResolvedValue({ success: false });
+    mocks.hardwareConsole.voiceTranscribing = true;
   });
 
   afterEach(() => {
     cleanup();
+    resetTranscriptionCancellation();
     sessionStorage.clear();
   });
 
-  it('shows the detected owner/repo for a local repo with a GitHub remote (happy path)', async () => {
-    mocks.getRemoteUrl.mockResolvedValue(remoteUrlResponse('owner-a', 'repo-a'));
-
-    const result = renderInitializer();
-    await waitFor(() => expect(pickerCallbacks()).toBeTruthy());
-    selectLocalRepo('/repo/a');
-
-    await waitFor(() => expect(mocks.getRemoteUrl).toHaveBeenCalledWith('/repo/a'));
-    await waitFor(() => {
-      expect(textOf(result, 'detected-github-owner')).toBe('owner-a');
-      expect(textOf(result, 'detected-github-repo')).toBe('repo-a');
-    });
+  it('renders an enabled cancel control with the cancel tooltip/aria-label while transcribing', () => {
+    renderInitializer();
+    const button = transcribingMicButton();
+    expect(button).not.toBeNull();
+    expect(button!.disabled).toBe(false);
+    expect(button!.getAttribute('aria-label')).toBe(
+      m.chat_richInput_micCancelTranscribing_label(),
+    );
   });
 
-  it('clears the detected owner/repo as soon as the repo switches (no stale suffix)', async () => {
-    const probeB = deferred<unknown>();
-    mocks.getRemoteUrl.mockImplementation(async (repoPath: string) =>
-      repoPath === '/repo/a' ? remoteUrlResponse('owner-a', 'repo-a') : probeB.promise,
-    );
+  it('clicking the cancel control abandons the in-flight transcription session', async () => {
+    const onCancel = vi.fn();
+    beginTranscriptionSession(onCancel);
 
-    const result = renderInitializer();
-    await waitFor(() => expect(pickerCallbacks()).toBeTruthy());
-    selectLocalRepo('/repo/a');
-    await waitFor(() => expect(textOf(result, 'detected-github-owner')).toBe('owner-a'));
+    renderInitializer();
+    await fireEvent.click(transcribingMicButton()!);
 
-    // Switch repos while B's probe is still in flight: the previous repo's
-    // suffix must disappear immediately, not linger until B resolves.
-    selectLocalRepo('/repo/b');
-    await waitFor(() => expect(textOf(result, 'detected-github-owner')).toBe(''));
-    expect(textOf(result, 'detected-github-repo')).toBe('');
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(hasActiveTranscriptionSession()).toBe(false);
   });
 
-  it('ignores an out-of-order probe response for a superseded repo path', async () => {
-    const probeA = deferred<unknown>();
-    const probeB = deferred<unknown>();
-    mocks.getRemoteUrl.mockImplementation((repoPath: string) =>
-      repoPath === '/repo/a' ? probeA.promise : probeB.promise,
-    );
-
-    const result = renderInitializer();
-    await waitFor(() => expect(pickerCallbacks()).toBeTruthy());
-    selectLocalRepo('/repo/a');
-    await waitFor(() => expect(mocks.getRemoteUrl).toHaveBeenCalledWith('/repo/a'));
-
-    // Switch repos while A's probe is in flight, then resolve A late.
-    selectLocalRepo('/repo/b');
-    await waitFor(() => expect(mocks.getRemoteUrl).toHaveBeenCalledWith('/repo/b'));
-    probeA.resolve(remoteUrlResponse('owner-a', 'repo-a'));
-    await flush();
-
-    // A's late result must be dropped, not shown for repo B.
-    expect(textOf(result, 'detected-github-owner')).toBe('');
-    expect(textOf(result, 'detected-github-repo')).toBe('');
-
-    // B's own probe still applies normally.
-    probeB.resolve(remoteUrlResponse('owner-b', 'repo-b'));
-    await waitFor(() => expect(textOf(result, 'detected-github-owner')).toBe('owner-b'));
-    expect(textOf(result, 'detected-github-repo')).toBe('repo-b');
+  it('renders the idle mic button (not the cancel control) when not transcribing', () => {
+    mocks.hardwareConsole.voiceTranscribing = false;
+    renderInitializer();
+    const button = transcribingMicButton();
+    expect(button).not.toBeNull();
+    expect(button!.getAttribute('aria-label')).toBe(m.chat_richInput_micStart_label());
   });
 });

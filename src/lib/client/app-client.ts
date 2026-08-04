@@ -1537,6 +1537,38 @@ export interface StatsClient {
   ): Promise<UsageStatsResult>;
 }
 
+/** Optional domain-vocabulary hints for `voice.transcribe` (PROTOCOL §5.41). */
+export interface VoiceTranscribeContext {
+  /** Free-form style/context hint (OpenAI prompt; ignored by ElevenLabs). */
+  prompt?: string;
+  /** Domain keyterms (workspace title, branch, agent names, …). */
+  keyterms?: string[];
+}
+
+/** `voice.transcribe` result (PROTOCOL §5.41). */
+export interface VoiceTranscribeResult {
+  text: string;
+  /** The provider that actually served the request. */
+  provider: "elevenlabs" | "openai";
+  /** Transcribed audio duration in ms; always present, `null` when unknown. */
+  durationMs: number | null;
+}
+
+export interface VoiceClient {
+  /**
+   * Daemon-owned speech-to-text (`voice.transcribe`, PROTOCOL §5.41).
+   * Base64-encodes the recorded audio and forwards it with the container
+   * MIME type and optional context hints. Daemon-global (no `workspaceId`).
+   * THROWS on transport/daemon errors — including the descriptive
+   * no-API-key `-32603` — so callers surface them explicitly.
+   */
+  transcribe(
+    audio: Blob,
+    mimeType: string,
+    context?: VoiceTranscribeContext,
+  ): Promise<VoiceTranscribeResult>;
+}
+
 export interface BrowserClient {
   recentUrls(workspaceId: string): Promise<RecentUrl[]>;
   subscribe(handler: SubscriptionHandler<RecentUrl[]>): Unsubscribe;
@@ -1693,6 +1725,7 @@ export interface AppClient {
   models: ModelsClient;
   providers: ProvidersClient;
   stats: StatsClient;
+  voice: VoiceClient;
   browser: BrowserClient;
   integrations: IntegrationsClient;
   system: SystemClient;
