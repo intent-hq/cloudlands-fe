@@ -2,8 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ipcMain } from 'electron';
 
 // Mock the daemon JSON-RPC seam so the IPC handler's daemon calls are
-// observable without a real socket. Method-aware so `workspace.list` and
-// `agent.list` can be scripted independently per test.
+// observable without a real socket.
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: requestMock }),
@@ -35,13 +34,7 @@ afterEach(() => {
   vi.resetModules();
 });
 
-// C1d-3: `agent:get-active-streams` is a cross-workspace probe used by the
-// renderer `active-streams-tracker`. Post-rewire it iterates
-// `workspace.list` → `agent.list` per workspace (PROTOCOL.md §5.5) and
-// filters on the AgentLite `isStreaming || isResponding` flags, returning
-// the tracker's `ActiveStream[]` shape (`agentId, sessionId, workspaceId,
-// startTime`).
-describe("agent:get-active-streams IPC wire contract (via workspace.list + agent.list)", () => {
+describe('agent:get-active-streams IPC wire contract', () => {
   async function registerAndGetHandler() {
     const { registerMissingAgentHandlers } = await import('../agent-missing.ipc');
     registerMissingAgentHandlers();
@@ -51,87 +44,51 @@ describe("agent:get-active-streams IPC wire contract (via workspace.list + agent
     return entry![1];
   }
 
-  it('issues workspace.list then agent.list per workspace and returns streaming/responding agents in the ActiveStream shape', async () => {
-    // Method-aware router: workspace.list → 2 workspaces; agent.list → per-ws AgentLite[]
-    requestMock.mockImplementation(async (method: string, params?: any) => {
-      if (method === 'workspace.list') {
-        return { workspaces: [{ id: 'ws-1' }, { id: 'ws-2' }] };
-      }
-      if (method === 'agent.list' && params?.workspaceId === 'ws-1') {
-        return {
-          agents: [
-            {
-              id: 'agent-a',
-              workspaceId: 'ws-1',
-              isStreaming: true,
-              isResponding: false,
-              updatedAt: '2026-07-06T00:00:00.000Z',
-            },
-            {
-              id: 'agent-idle',
-              workspaceId: 'ws-1',
-              isStreaming: false,
-              isResponding: false,
-              updatedAt: '2026-07-06T00:00:01.000Z',
-            },
-          ],
-        };
-      }
-      if (method === 'agent.list' && params?.workspaceId === 'ws-2') {
-        return {
-          agents: [
-            {
-              id: 'agent-b',
-              workspaceId: 'ws-2',
-              isStreaming: false,
-              isResponding: true,
-              updatedAt: '2026-07-06T00:00:02.000Z',
-            },
-          ],
-        };
-      }
-      return {};
+  it('requests agent.listActive without params and maps its streams without agent.list fan-out', async () => {
+    requestMock.mockResolvedValue({
+      streams: [
+        {
+          agentId: 'agent-a',
+          sessionId: 'agent-a',
+          workspaceId: 'ws-1',
+          startTime: 1_783_296_000_000,
+        },
+        {
+          agentId: 'agent-b',
+          sessionId: 'agent-b',
+          workspaceId: 'ws-2',
+          startTime: 1_783_296_002_000,
+        },
+      ],
     });
 
     const handler = await registerAndGetHandler();
     const result = await handler({} as any);
 
-    // Wire assertions — exact request shape per PROTOCOL.md §5.5.
-    const methods = requestMock.mock.calls.map((c) => c[0]);
-    expect(methods[0]).toBe('workspace.list');
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'ws-1' });
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'ws-2' });
-
-    // Response-shape compatibility with `active-streams-tracker.ts` `ActiveStream`:
-    // { agentId, sessionId, workspaceId, startTime } — no assistantAppMessageId,
-    // no accumulatedContent (the renderer tracker does not read those fields).
-    expect(result.success).toBe(true);
-    expect(Array.isArray(result.data)).toBe(true);
-    const streams = result.data as Array<Record<string, unknown>>;
-    expect(streams).toHaveLength(2);
-    expect(streams).toContainEqual({
-      agentId: 'agent-a',
-      sessionId: 'agent-a',
-      workspaceId: 'ws-1',
-      startTime: Date.parse('2026-07-06T00:00:00.000Z'),
+    expect(requestMock.mock.calls).toEqual([['agent.listActive']]);
+    expect(requestMock).not.toHaveBeenCalledWith('agent.list', expect.anything());
+    expect(result).toEqual({
+      success: true,
+      data: [
+        {
+          agentId: 'agent-a',
+          sessionId: 'agent-a',
+          workspaceId: 'ws-1',
+          startTime: 1_783_296_000_000,
+        },
+        {
+          agentId: 'agent-b',
+          sessionId: 'agent-b',
+          workspaceId: 'ws-2',
+          startTime: 1_783_296_002_000,
+        },
+      ],
     });
-    expect(streams).toContainEqual({
-      agentId: 'agent-b',
-      sessionId: 'agent-b',
-      workspaceId: 'ws-2',
-      startTime: Date.parse('2026-07-06T00:00:02.000Z'),
-    });
-    // Field-level compat: consumer-required keys present; unused fields omitted.
-    for (const s of streams) {
-      expect(Object.keys(s).sort()).toEqual(
-        ['agentId', 'sessionId', 'workspaceId', 'startTime'].sort(),
-      );
-      expect(typeof s.startTime).toBe('number');
-    }
   });
 
-  it('coerces missing/invalid updatedAt to startTime=0 (best-effort)', async () => {
+  it('falls back to the legacy fan-out when agent.listActive is unavailable', async () => {
     requestMock.mockImplementation(async (method: string, params?: any) => {
+      if (method === 'agent.listActive') throw new Error('method not found');
       if (method === 'workspace.list') return { workspaces: [{ id: 'ws-1' }] };
       if (method === 'agent.list' && params?.workspaceId === 'ws-1') {
         return {
@@ -158,6 +115,7 @@ describe("agent:get-active-streams IPC wire contract (via workspace.list + agent
 
   it('skips a workspace when its agent.list rejects, still returning results from siblings', async () => {
     requestMock.mockImplementation(async (method: string, params?: any) => {
+      if (method === 'agent.listActive') throw new Error('method not found');
       if (method === 'workspace.list') return { workspaces: [{ id: 'ws-good' }, { id: 'ws-bad' }] };
       if (method === 'agent.list' && params?.workspaceId === 'ws-good') {
         return {
@@ -190,8 +148,9 @@ describe("agent:get-active-streams IPC wire contract (via workspace.list + agent
     ]);
   });
 
-  it('returns { success: false, data: [] } when workspace.list rejects', async () => {
+  it('returns { success: false, data: [] } when the compatibility fallback also fails', async () => {
     requestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.listActive') throw new Error('method not found');
       if (method === 'workspace.list') throw new Error('workspace boom');
       return {};
     });

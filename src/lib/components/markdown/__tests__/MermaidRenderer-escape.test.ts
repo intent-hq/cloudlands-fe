@@ -21,9 +21,12 @@ import {
 vi.mock('mermaid', () => ({
   default: {
     initialize: vi.fn(),
+    registerLayoutLoaders: vi.fn(),
     render: vi.fn(async () => ({ svg: '<svg data-testid="diagram"></svg>' })),
   },
 }));
+
+vi.mock('@mermaid-js/layout-elk', () => ({ default: [] }));
 
 vi.mock('$store/renderer/slices/theme/theme-selectors', async () => {
   const { createAppStoreMock } =
@@ -62,6 +65,14 @@ describe('MermaidRenderer fullscreen Escape handling (escape-layer stack)', () =
     await waitFor(() => {
       expect(screen.queryByLabelText(FULLSCREEN_LABEL)).toBeFalsy();
     });
+  });
+
+  it('renders the zoom/pan viewport and controls in fullscreen mode', async () => {
+    await renderAndOpenFullscreen();
+
+    expect(screen.getByTestId('zoom-pan-viewport')).toBeTruthy();
+    expect(screen.getByTestId('zoom-pan-controls')).toBeTruthy();
+    expect(screen.getByTestId('zoom-pan-slider')).toBeTruthy();
   });
 
   it('Escape is not consumed while not fullscreen (no layer registered)', async () => {

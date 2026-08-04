@@ -317,6 +317,77 @@ describe('GitWorkspaceSettings — resetToDefaults', () => {
 });
 
 
+describe('GitWorkspaceSettings — default shell select', () => {
+  const SHELL_TRIGGER = { name: /Default Shell/ };
+  const withShell = (value: string) =>
+    baseSettings.map((setting) =>
+      setting.path === 'workspace.defaultShell' ? { ...setting, value } : setting,
+    );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.mockCapabilities.mockResolvedValue({});
+    mocks.mockSettingsUpdate.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('renders the trigger with the Auto-detect label when the value is auto', async () => {
+    mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
+    render(GitWorkspaceSettings);
+
+    const trigger = await waitFor(() => screen.getByRole('button', SHELL_TRIGGER));
+    expect(trigger.textContent).toContain('Auto-detect (System Default)');
+  });
+
+  it('falls back to the raw value for an unknown/custom shell', async () => {
+    mocks.mockSettingsList.mockResolvedValue(withShell('/opt/homebrew/bin/nu'));
+    render(GitWorkspaceSettings);
+
+    const trigger = await waitFor(() => screen.getByRole('button', SHELL_TRIGGER));
+    expect(trigger.textContent).toContain('/opt/homebrew/bin/nu');
+  });
+
+  it('persists a selection via settings.update with the exact payload', async () => {
+    mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
+    render(GitWorkspaceSettings);
+
+    const trigger = await waitFor(() => screen.getByRole('button', SHELL_TRIGGER));
+    await fireEvent.click(trigger);
+
+    const option = await waitFor(() => screen.getByRole('button', { name: 'Zsh' }));
+    await fireEvent.click(option);
+
+    await waitFor(() => {
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'workspace.defaultShell', value: '/bin/zsh' },
+      ]);
+    });
+    expect(screen.getByRole('button', SHELL_TRIGGER).textContent).toContain('Zsh');
+  });
+
+  it('resetToDefaults resets the value to auto and the trigger label reflects it', async () => {
+    mocks.mockSettingsList.mockResolvedValue(withShell('/bin/zsh'));
+    const { component } = render(GitWorkspaceSettings);
+
+    const trigger = await waitFor(() => screen.getByRole('button', SHELL_TRIGGER));
+    expect(trigger.textContent).toContain('Zsh');
+
+    component.resetToDefaults();
+
+    await waitFor(() => {
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'workspace.defaultShell', value: 'auto' },
+      ]);
+      expect(screen.getByRole('button', SHELL_TRIGGER).textContent).toContain(
+        'Auto-detect (System Default)',
+      );
+    });
+  });
+});
+
 describe('GitWorkspaceSettings — path picker fields (PathSettingField)', () => {
   const REDACTED = '********';
   const withValues = (overrides: Record<string, unknown>) =>

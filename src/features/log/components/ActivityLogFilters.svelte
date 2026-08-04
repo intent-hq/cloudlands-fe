@@ -7,6 +7,7 @@
 
 <script lang="ts">
   import { slide } from 'svelte/transition';
+  import { Select } from '$lib/components/ui/select';
   import {
   deleteActivityLogPreset,
   saveActivityLogPreset,
@@ -78,6 +79,16 @@
     { value: 'agent', get label() { return m.log_filters_actorAgents_label(); } },
     { value: 'system', get label() { return m.log_filters_actorSystem_label(); } },
   ]);
+
+  const selectedDateRangeLabel = $derived(
+    dateRangeOptions.find((option) => option.value === filters.dateRange)?.label ??
+      m.log_filters_dateRangeAllTime_label(),
+  );
+
+  const selectedActorLabel = $derived(
+    actorOptions.find((option) => option.value === filters.actorFilter)?.label ??
+      m.log_filters_actorAll_label(),
+  );
 
   // Apply filters
   function applyFilters() {
@@ -178,29 +189,39 @@
       <!-- Date Range -->
       <div class="flex items-center gap-2 mb-3">
         <label for="date-range" class="text-sm min-w-[100px]">{m.log_filters_dateRange_label()}</label>
-        <select
-          id="date-range"
-          bind:value={filters.dateRange}
-          class="flex-1 px-2 py-1 border border-border rounded text-sm"
-        >
-          {#each dateRangeOptions as option (option.value)}
-            <option value={option.value}>{option.label}</option>
-          {/each}
-        </select>
+        <div class="flex-1 min-w-0">
+          <Select.Root value={filters.dateRange} onchange={(value) => (filters.dateRange = value)}>
+            <Select.Trigger id="date-range" class="py-1">
+              <span class="truncate">{selectedDateRangeLabel}</span>
+            </Select.Trigger>
+            <Select.Content portal class="max-h-[300px]">
+              {#each dateRangeOptions as option (option.value)}
+                <Select.Item value={option.value}>
+                  <span class="truncate">{option.label}</span>
+                </Select.Item>
+              {/each}
+            </Select.Content>
+          </Select.Root>
+        </div>
       </div>
 
       <!-- Actor Filter -->
       <div class="flex items-center gap-2 mb-3">
         <label for="actor-filter" class="text-sm min-w-[100px]">{m.log_filters_actor_label()}</label>
-        <select
-          id="actor-filter"
-          bind:value={filters.actorFilter}
-          class="flex-1 px-2 py-1 border border-border rounded text-sm"
-        >
-          {#each actorOptions as option (option.value)}
-            <option value={option.value}>{option.label}</option>
-          {/each}
-        </select>
+        <div class="flex-1 min-w-0">
+          <Select.Root value={filters.actorFilter} onchange={(value) => (filters.actorFilter = value)}>
+            <Select.Trigger id="actor-filter" class="py-1">
+              <span class="truncate">{selectedActorLabel}</span>
+            </Select.Trigger>
+            <Select.Content portal class="max-h-[300px]">
+              {#each actorOptions as option (option.value)}
+                <Select.Item value={option.value}>
+                  <span class="truncate">{option.label}</span>
+                </Select.Item>
+              {/each}
+            </Select.Content>
+          </Select.Root>
+        </div>
       </div>
 
       <!-- Filter Presets -->

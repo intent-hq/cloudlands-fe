@@ -29,6 +29,7 @@ import {
   HUD_AGENT_STATE_BUCKETS,
   HUD_UNREAD_ATTENTION_VALUE,
   isHudAttentionValue,
+  isHudTrackedAttentionValue,
   isWaitingWireStatus,
   toHudAgentStateBucket,
 } from './hud-types';
@@ -202,7 +203,9 @@ export interface HudWorkspaceStateBars {
  * always agree with the center grid: `wait`/`blocked` bucket as ATTENTION,
  * `failed` as FAILED, `in_progress` as PROGRESS, `complete` as COMPLETED,
  * PR states as PR OPEN / PR MERGED, `unread` as UNREAD, and everything else
- * (`idle`/`not_started`) as IDLE.
+ * (`idle`/`not_started`) as IDLE. An unread `complete`/`pr_merged` workspace
+ * folds to UNREAD (its card `stateKey` does — see `cardStateKey`), so it
+ * counts as UNREAD, not COMPLETED / PR MERGED.
  */
 export const selectHudWorkspaceStateBars = store.createSelector((state): HudWorkspaceStateBars => {
   const bars: HudWorkspaceStateBars = {
@@ -303,11 +306,11 @@ function sinceMs(item: HudAttentionItem): number {
  * ATTENTION panel rows, newest first: agents in the needs-attention/failed
  * buckets (from `agentSummary.agents`, PROTOCOL §5.1, via the attention-aware
  * `agentBucketOf`) plus workspaces whose live `workspace:attention-changed`
- * flag is raised (the FE `Workspace` entity carries no `attention` field —
- * the hud slice mirrors the event stream; the wire attention enum is only
- * `none | unread | review_required` (§9.9) — question/blocker/discussion
- * attention never travels on it, so the `review_required` allowlist stays
- * exact and `unread` stays excluded). A wire `needs_attention` displayStatus
+ * flag is raised (the hud slice mirrors the event stream; the wire attention
+ * enum is only `none | unread | review_required` (§9.9) —
+ * question/blocker/discussion attention never travels on it, so the
+ * `review_required` allowlist stays exact and `unread` stays excluded). A
+ * wire `needs_attention` displayStatus
  * (the daemon's step-0 rollup, intentd#825) no other row already covers
  * raises a generic workspace row — the same authoritative-rollup fallback
  * the ATTN counter applies, so a question hold the FE never captured still
@@ -525,10 +528,12 @@ const ZERO_TASKS = { total: 0, completed: 0, inProgress: 0 };
  * no pending question/blocker/discussion cannot render NEEDS ATTENTION.
  *
  * The non-urgent `unread` flag (the main app's blue dot, raised on every
- * turn end, cleared by `workspace.markSeen`) sits JUST ABOVE `idle`: it
- * renders the blue UNREAD state only when the card would otherwise fall to
- * the idle bucket (`idle` / `not_started`) — it never masks failed /
- * blocked / wait / in_progress / PR / complete.
+ * turn end, cleared by `workspace.markSeen`) outranks only the idle bucket
+ * (`idle` / `not_started`) and the TERMINAL states (`complete` /
+ * `pr_merged` — nothing is running and no action pends, so the unseen-result
+ * signal is the more useful render): it renders the blue UNREAD state there
+ * and never masks failed / blocked / wait / in_progress / pr_open /
+ * pr_ready.
  */
 function cardStateKey(
   workspace: Workspace,
@@ -545,7 +550,10 @@ function cardStateKey(
     return 'wait';
   if (
     attention === HUD_UNREAD_ATTENTION_VALUE &&
-    (displayStatus === 'idle' || displayStatus === 'not_started')
+    (displayStatus === 'idle' ||
+      displayStatus === 'not_started' ||
+      displayStatus === 'complete' ||
+      displayStatus === 'pr_merged')
   )
     return 'unread';
   return displayStatus;
@@ -883,15 +891,25 @@ function keepLiveWithAncestors(agents: HudCardAgent[]): HudCardAgent[] {
 /**
  * Center-grid card view-models: one per HUD workspace, joining the workspace
  * entity (`workspace.list` §5.1) with the BE task rollup (`task.list` §5.4),
- * the token usage rollup (`workspace.getTokenUsage` §5.23), the live
- * attention flag, and the agent-session slice's last-response lines. All
- * values are served verbatim from their owning slices — no re-derivation.
+ * the token usage rollup (`workspace.getTokenUsage` §5.23), the attention
+ * flag, and the agent-session slice's last-response lines. All values are
+ * served verbatim from their owning slices — no re-derivation.
+ *
+ * Attention sources: the hud slice's live `workspace:attention-changed` flag
+ * when one arrived, else the entity's daemon-served `attention` field
+ * (`workspace.list`/`workspace.get` §5.1, kept fresh by the events bridge)
+ * when it is a tracked value — so a workspace already unread at app start
+ * renders UNREAD without waiting for a live event.
  */
 export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspaceCard[] => {
   const flags = state.hud.attentionByWorkspaceId;
   return selectHudWorkspaces.select(state).map((workspace) => {
     const workspaceId = String(workspace.id);
-    const attention = flags[workspaceId]?.attention ?? null;
+    const attention =
+      flags[workspaceId]?.attention ??
+      (typeof workspace.attention === 'string' && isHudTrackedAttentionValue(workspace.attention)
+        ? workspace.attention
+        : null);
     const agents = cardAgentsOf(workspace, state);
     const stateKey = cardStateKey(workspace, attention, agents);
     const usageTotals = state.tokenUsage?.byWorkspaceId[workspaceId]?.totals;

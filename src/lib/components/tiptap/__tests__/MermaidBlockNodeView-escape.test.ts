@@ -77,6 +77,14 @@ describe('MermaidBlockNodeView fullscreen Escape handling (escape-layer stack)',
     });
   });
 
+  it('renders the zoom/pan viewport and controls in fullscreen mode', async () => {
+    await renderAndOpenFullscreen();
+
+    expect(screen.getByTestId('zoom-pan-viewport')).toBeTruthy();
+    expect(screen.getByTestId('zoom-pan-controls')).toBeTruthy();
+    expect(screen.getByTestId('zoom-pan-slider')).toBeTruthy();
+  });
+
   it('Escape is not consumed while not fullscreen (no layer registered)', async () => {
     render(MermaidBlockNodeView, { props: makeProps() as NodeViewProps });
     expect(screen.queryByLabelText(FULLSCREEN_LABEL)).toBeFalsy();

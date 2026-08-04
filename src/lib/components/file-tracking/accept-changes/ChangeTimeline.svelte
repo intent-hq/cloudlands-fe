@@ -34,6 +34,7 @@
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
   import { Input } from '$lib/components/ui/input';
+  import { Select } from '$lib/components/ui/select';
   import type { LocalCommitInfo } from '$features/accept-changes/types';
   import FileRow from './FileRow.svelte';
   import CommitNode from './CommitNode.svelte';
@@ -678,15 +679,18 @@
         >{m.fileTracking_changeTimeline_targetBranch_label()}</span
       >
       {#if canEditTargetBranch}
-        <select
-          class="w-full h-8 px-2 text-sm bg-background border border-input rounded-md"
-          bind:value={targetBranch}
-          onchange={() => onTargetBranchChange?.(targetBranch)}
-        >
-          {#each availableBranches as b (b)}
-            <option value={b}>{b}</option>
-          {/each}
-        </select>
+        <Select.Root bind:value={targetBranch} onchange={(value) => onTargetBranchChange?.(value)}>
+          <Select.Trigger class="h-8 px-2">
+            <span class="truncate">{targetBranch}</span>
+          </Select.Trigger>
+          <Select.Content portal class="max-h-[300px]">
+            {#each availableBranches as b (b)}
+              <Select.Item value={b}>
+                <span class="truncate">{b}</span>
+              </Select.Item>
+            {/each}
+          </Select.Content>
+        </Select.Root>
       {:else}
         <div
           class="h-8 px-2 text-sm bg-muted/50 border border-input rounded-md flex items-center text-subtle"
