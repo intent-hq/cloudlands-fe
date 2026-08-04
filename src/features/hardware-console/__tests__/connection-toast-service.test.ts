@@ -40,8 +40,11 @@ import { FakeHidDevice, FakeWebHidApi, flushMicrotasks } from '../device/__tests
 const CM2 = { vendorId: 0x303a, productId: 0x8297 };
 const CODEX_KEYMAP = JSON.stringify({ layers: [['KC_A'], ['KV_OAI_AGENT_1']] });
 
-/** One usage pair per sibling device (split enumeration). The first three
- *  are also on the BLE surface; mouse/pointer/gamepad are USB-only. */
+/** One usage pair per sibling device (split enumeration). Not the exact
+ *  live-verified USB pair set: indices 0-2 carry no USB-only collection
+ *  (so `makeSetup(4)` models the 4-pair BLE surface), indices 3-4 add the
+ *  USB-only mouse/gamepad pairs (so `makeSetup(6)` labels USB). Inference
+ *  only cares about USB-only presence and total count. */
 const SIBLING_PAIRS = [
   { usagePage: 0x0001, usage: 0x0006 }, // keyboard
   { usagePage: 0x000c, usage: 0x0001 }, // consumer

@@ -8,7 +8,10 @@
  * list across all granted devices matching the VID/PID, because macOS may
  * enumerate the pairs as sibling `HIDDevice`s (one collection each) or
  * coalesce them onto a single `IOHIDDevice` (intent-hq/monorepo#1422) —
- * counting granted devices is therefore not reliable. Platform-neutral, no
+ * counting granted devices is therefore not reliable. Note the inference
+ * describes the granted surfaces, not the active connection: with both
+ * surfaces granted and physically present (USB plugged in while BLE is
+ * still the live link) the label reads USB. Platform-neutral, no
  * DOM/Electron dependencies.
  */
 

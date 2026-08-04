@@ -165,7 +165,11 @@ export class HardwareConsoleManager {
   private handleDeviceRemoval(device: HidDeviceLike): void {
     if (device !== this.device) return;
     logger.info('Connected device removed');
-    void this.teardown('device disconnected').then(() => this.reopenRemainingDevice(device));
+    void this.teardown('device disconnected')
+      .then(() => this.reopenRemainingDevice(device))
+      .catch((error: unknown) => {
+        logger.warn('Removal rescan failed', { error: String(error) });
+      });
   }
 
   /**
