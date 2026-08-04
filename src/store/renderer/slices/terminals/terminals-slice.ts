@@ -9,6 +9,7 @@ import {
   getItemIndex,
   type Collection,
 } from "$lib/store-shim/utils/collections/collection-utils";
+import { setScriptsData } from "../scripts/scripts-slice";
 
 // ============================================================================
 // Constants
@@ -53,7 +54,6 @@ export interface WorkspaceTerminalState {
   terminals: Collection<TerminalTab, "id">;
   terminalsLoaded: boolean;
   isLoadingTerminals: boolean;
-  recentlyCreatedTerminals: string[];
   /**
    * Daemon boot id from the last `terminal.list` snapshot (PROTOCOL §5.13
    * envelope). Lets the reducer tell a same-boot authoritative empty list
@@ -61,12 +61,23 @@ export interface WorkspaceTerminalState {
    * PTYs respawn via auto-reconnect). `null` until a boot id is seen.
    */
   daemonBootId: string | null;
+  /**
+   * Script whose output tab the overlay is showing, or null when a terminal
+   * tab is showing. Lives here (not component $state) so the selected script
+   * tab survives workspace switches/remounts. Hydration paths accept the id
+   * unvalidated (scripts may not be loaded yet); once `setScriptsData` lands
+   * the reducer clears a selection pointing at a missing script, and
+   * `selectSelectedScriptId` additionally filters stale ids at read time.
+   */
+  selectedScriptId: string | null;
 }
 
 /** Persisted subset of workspace state (terminals are loaded from terminalManager) */
 export interface PersistedWorkspaceState {
   isOpen: boolean;
   activeTerminalId: string | null;
+  /** Optional for backward compat with entries persisted before it existed. */
+  selectedScriptId?: string | null;
 }
 
 export type TerminalOverlayState = {
@@ -84,8 +95,8 @@ export const emptyWorkspaceState: WorkspaceTerminalState = {
   terminals: createCollection<TerminalTab, "id">("id"),
   terminalsLoaded: false,
   isLoadingTerminals: false,
-  recentlyCreatedTerminals: [],
   daemonBootId: null,
+  selectedScriptId: null,
 };
 
 const initialState: TerminalOverlayState = {
@@ -120,6 +131,16 @@ export const toggleTerminalOverlay = createAction<[wsId: string, termId?: string
 
 export const selectTerminal = createAction<[wsId: string, termId: string]>(
   "terminals/selectTerminal"
+);
+
+/** Show a script's output tab in the overlay (clears on selectTerminal/addTerminal) */
+export const selectScript = createAction<[wsId: string, scriptId: string]>(
+  "terminals/selectScript"
+);
+
+/** Clear the selected script tab (back to the active terminal, if any) */
+export const clearScriptSelection = createAction<[wsId: string]>(
+  "terminals/clearScriptSelection"
 );
 
 export const addTerminal = createAction<[wsId: string, termId: string, name?: string]>(
@@ -194,8 +215,16 @@ export const setIsLoadingTerminals = createAction<[wsId: string, isLoadingTermin
   "terminals/setIsLoadingTerminals"
 );
 
-export const markTerminalRecentlyCreated = createAction<[wsId: string, terminalId: string]>(
-  "terminals/markTerminalRecentlyCreated"
+/**
+ * Signals a successful daemon `terminal.create` (PROTOCOL §5.13) from an
+ * interactive create flow. Trigger-only action with no reducer entry (see
+ * AGENTS.md §8); the handler in `lifecycle-read-service` invalidates any
+ * in-flight `terminal.list` fetch (whose snapshot predates the create) and
+ * starts a coalesced refetch so the store converges on the daemon list that
+ * includes the new PTY.
+ */
+export const terminalCreated = createAction<[wsId: string]>(
+  "terminals/terminalCreated"
 );
 
 
@@ -241,6 +270,8 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
     if (termId) {
       newWs.terminals = addTerminalIfMissing(ws.terminals, termId);
       newWs.activeTerminalId = termId;
+      // Explicitly targeting a terminal means showing it, not a script tab.
+      newWs.selectedScriptId = null;
     } else if (!ws.activeTerminalId || !getItem(ws.terminals, ws.activeTerminalId)) {
       const result = ensureDefaultTerminal(ws.terminals, wsId);
       newWs.terminals = result.terminals;
@@ -265,6 +296,8 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
     if (termId) {
       newWs.terminals = addTerminalIfMissing(ws.terminals, termId);
       newWs.activeTerminalId = termId;
+      // Explicitly targeting a terminal means showing it, not a script tab.
+      newWs.selectedScriptId = null;
     } else if (!ws.activeTerminalId || !getItem(ws.terminals, ws.activeTerminalId)) {
       const result = ensureDefaultTerminal(ws.terminals, wsId);
       newWs.terminals = result.terminals;
@@ -276,8 +309,22 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
   .with(selectTerminal, (state, { payload: [wsId, termId] }) => {
     const ws = getWs(state, wsId);
     if (!getItem(ws.terminals, termId)) return state;
-    if (ws.activeTerminalId === termId) return state;
-    return setWs(state, wsId, { ...ws, activeTerminalId: termId });
+    // Selecting a terminal tab always leaves the script tab (mirrors the
+    // former component logic that reset selectedScriptId on every tab click).
+    if (ws.activeTerminalId === termId && ws.selectedScriptId === null) return state;
+    return setWs(state, wsId, { ...ws, activeTerminalId: termId, selectedScriptId: null });
+  })
+  .with(selectScript, (state, { payload: [wsId, scriptId] }) => {
+    const ws = getWs(state, wsId);
+    if (ws.selectedScriptId === scriptId) return state;
+    // activeTerminalId is kept — the script tab overlays it; clearing the
+    // script selection falls back to the still-active terminal.
+    return setWs(state, wsId, { ...ws, selectedScriptId: scriptId });
+  })
+  .with(clearScriptSelection, (state, { payload: [wsId] }) => {
+    const ws = getWs(state, wsId);
+    if (ws.selectedScriptId === null) return state;
+    return setWs(state, wsId, { ...ws, selectedScriptId: null });
   })
   .with(addTerminal, (state, { payload: [wsId, termId, name] }) => {
     const ws = getWs(state, wsId);
@@ -286,6 +333,9 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
       ...ws,
       terminals: newTerminals,
       activeTerminalId: termId,
+      // A newly created terminal takes over the panel (mirrors the former
+      // component logic in createNewTerminal).
+      selectedScriptId: null,
     });
   })
   .with(removeTerminal, (state, { payload: [wsId, termId] }) => {
@@ -348,12 +398,37 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
     return setWs(state, wsId, { ...ws, terminals });
   })
   .with(loadWorkspaceTerminals, (state, { payload: [wsId, terminals, savedState, daemonBootId] }) => {
-    const collection = createCollection<TerminalTab, "id">("id", terminals);
     const prior = getWs(state, wsId);
+    // Preserve renderer-only customName for daemon-listed tabs that survive
+    // the merge — hydration replaces the collection wholesale otherwise.
+    // Never across a KNOWN boot change though: a recycled PTY id on a new
+    // daemon boot is a different terminal, so the old tab's custom name must
+    // not resurrect onto it (mirrors the metadata-removal path). Unknown
+    // boots (legacy bare-array responses) keep the preservation.
+    const bootChanged =
+      daemonBootId !== undefined &&
+      prior.daemonBootId !== null &&
+      daemonBootId !== prior.daemonBootId;
+    const merged = terminals.map((t) => ({
+      ...t,
+      customName: bootChanged
+        ? t.customName
+        : getItem(prior.terminals, t.id)?.customName ?? t.customName,
+    }));
+    const collection = createCollection<TerminalTab, "id">("id", merged);
     // Adopt the incoming boot id when present; a legacy bare-array response
     // carries none, so the last-seen boot id is kept.
     const nextBootId = daemonBootId ?? prior.daemonBootId;
     let wsState: WorkspaceTerminalState;
+
+    // Scripts are not part of `terminal.list`, so hydration must never drop a
+    // script-tab selection: restore it from savedState when persisted there,
+    // otherwise keep the in-memory one. Stale ids are filtered at read time
+    // by `selectSelectedScriptId` (validated against loaded scripts).
+    const selectedScriptId =
+      savedState?.selectedScriptId !== undefined
+        ? savedState.selectedScriptId
+        : prior.selectedScriptId;
 
     if (terminals.length > 0) {
       let activeId: string | null;
@@ -365,11 +440,16 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
           ? savedState.activeTerminalId
           : collection.ids[0];
       } else {
-        isOpen = false;
-        activeId = collection.ids[0];
+        // Mid-session rehydration (workspace switch-back, post-create
+        // refetch): keep the live panel open/active state — tabs are keyed
+        // by daemon ids, so the prior active id stays valid when listed.
+        isOpen = prior.isOpen;
+        activeId = (prior.activeTerminalId && getItem(collection, prior.activeTerminalId))
+          ? prior.activeTerminalId
+          : collection.ids[0];
       }
 
-      wsState = { terminals: collection, isOpen, activeTerminalId: activeId, terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [], daemonBootId: nextBootId };
+      wsState = { terminals: collection, isOpen, activeTerminalId: activeId, terminalsLoaded: false, isLoadingTerminals: false, daemonBootId: nextBootId, selectedScriptId };
     } else if (prior.terminals.ids.length > 0) {
       // Empty list over existing live tabs. Converge to zero ONLY when the
       // snapshot is authoritative for the boot we already know: the daemon
@@ -377,7 +457,10 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
       // PTY is genuinely gone (killed externally, e.g. via the sitter). A
       // different or unknown boot id means a daemon restart (PTYs respawn
       // via auto-reconnect) or a legacy/transient response (monorepo#1330)
-      // — preserve the tabs and only adopt the new boot id.
+      // — preserve the tabs and only adopt the new boot id. A snapshot that
+      // races a `terminal.create` is handled upstream: the terminalCreated
+      // trigger invalidates the in-flight fetch and refetches, so no
+      // in-flight tab guard is needed here.
       const sameBootAuthoritativeEmpty =
         daemonBootId !== undefined &&
         prior.daemonBootId !== null &&
@@ -388,41 +471,39 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
         return setWs(state, wsId, { ...prior, daemonBootId: nextBootId });
       }
 
-      // Tabs whose spawn is still in flight (`terminal.create` acked but not
-      // yet listed) must survive the converge — the racing list snapshot
-      // predates them.
-      const kept = prior.terminals.ids
-        .filter((id) => prior.recentlyCreatedTerminals.includes(id))
-        .map((id) => getItem(prior.terminals, id))
-        .filter((tab): tab is TerminalTab => tab !== undefined);
-      const keptCollection = createCollection<TerminalTab, "id">("id", kept);
-      const activeId =
-        prior.activeTerminalId && getItem(keptCollection, prior.activeTerminalId)
-          ? prior.activeTerminalId
-          : keptCollection.ids[0] ?? null;
       wsState = {
         ...prior,
-        terminals: keptCollection,
-        activeTerminalId: activeId,
-        // The panel requires activeTerminalId to render — never leave
-        // isOpen:true with no terminals (stuck state).
-        isOpen: keptCollection.ids.length > 0 ? prior.isOpen : false,
+        terminals: createCollection<TerminalTab, "id">("id"),
+        activeTerminalId: null,
+        // With zero terminal tabs the panel renders only when a script tab
+        // holds it open (the overlay shows with isOpen && (activeTerminalId
+        // || selectedScriptId)) — keep isOpen in that case; otherwise close,
+        // since isOpen:true with nothing to render is a stuck state.
+        isOpen:
+          selectedScriptId !== null &&
+          (savedState ? savedState.isOpen : prior.isOpen),
         daemonBootId: nextBootId,
+        selectedScriptId,
       };
     } else {
-      // Don't restore isOpen when there are no terminals — the panel
-      // requires activeTerminalId to render, so isOpen:true with no
-      // terminals creates a stuck state where the toggle appears broken
-      // (first click closes an invisible panel, second click finally
-      // creates a default terminal and opens it).
+      // Empty list over an empty workspace. Scripts are not in
+      // `terminal.list`, so a script-only panel legitimately gets an empty
+      // hydration here — preserve isOpen when a script tab holds the panel
+      // open (monorepo#1411 flash-then-close on workspace switch-back).
+      // With no script selected either, never leave isOpen:true: the panel
+      // has nothing to render, creating a stuck state where the toggle
+      // appears broken (first click closes an invisible panel, second click
+      // finally creates a default terminal and opens it).
       wsState = {
         terminals: createCollection<TerminalTab, "id">("id"),
         activeTerminalId: null,
-        isOpen: false,
+        isOpen:
+          selectedScriptId !== null &&
+          (savedState ? savedState.isOpen : prior.isOpen),
         terminalsLoaded: false,
         isLoadingTerminals: false,
-        recentlyCreatedTerminals: [],
         daemonBootId: nextBootId,
+        selectedScriptId,
       };
     }
 
@@ -451,11 +532,23 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
     if (ws.isLoadingTerminals === isLoadingTerminals) return state;
     return setWs(state, wsId, { ...ws, isLoadingTerminals });
   })
-  .with(markTerminalRecentlyCreated, (state, { payload: [wsId, terminalId] }) => {
-    const ws = getWs(state, wsId);
-    if (ws.recentlyCreatedTerminals.includes(terminalId)) return state;
+  // Cross-slice validation: when the scripts slice receives the workspace's
+  // authoritative script list (`script.list`), a selectedScriptId pointing at
+  // a script that no longer exists (deleted out-of-band, stale persisted id)
+  // is cleared here — at write time — instead of relying solely on
+  // `selectSelectedScriptId`'s read-time filtering. Without this, a stale id
+  // keeps `isOpen:true` alive with nothing renderable (the stuck state this
+  // slice otherwise guards against), because the raw id in Redux stays
+  // non-null and every subsequent hydration preserves isOpen for it.
+  .with(setScriptsData, (state, { payload: { wsId, scripts } }) => {
+    const ws = state.workspaces[wsId];
+    if (!ws?.selectedScriptId) return state;
+    if (scripts.some((script) => script.id === ws.selectedScriptId)) return state;
     return setWs(state, wsId, {
       ...ws,
-      recentlyCreatedTerminals: [...ws.recentlyCreatedTerminals, terminalId],
+      selectedScriptId: null,
+      // Without the script tab, the panel needs an active terminal to
+      // render; close it when there is none (stuck-state guard).
+      isOpen: ws.activeTerminalId !== null ? ws.isOpen : false,
     });
   });
