@@ -48,6 +48,9 @@
   let tooltipOpen = false;
   let inFlight = false;
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
+  // Bumped when the workspace id changes and on unmount so a late-resolving
+  // poll never applies state or schedules another timer.
+  let generation = 0;
 
   // Older daemons (no workspace.diskUsage method): fall back to the legacy
   // list/get row field when present.
@@ -71,14 +74,18 @@
     }, POLL_INTERVAL_MS);
   }
 
-  // Single-flight per workspace: rapid re-hover never stacks calls.
+  // Single-flight per workspace: rapid re-hover never stacks calls. A poll
+  // that settles after the workspace changed or the component unmounted
+  // (generation mismatch) is discarded and never reschedules.
   async function pollDiskUsage() {
     const id = workspace?.id;
     if (!id || inFlight || unsupported) return;
+    const gen = generation;
     inFlight = true;
     pending = true;
     try {
       const result = await pollWorkspaceDiskUsage(String(id));
+      if (gen !== generation) return;
       if (result === null) {
         // Older daemon: the method is missing (-32601); never poll again.
         unsupported = true;
@@ -88,12 +95,16 @@
         refreshing = result.refreshing;
       }
     } catch {
+      if (gen !== generation) return;
       // Transient daemon failure: stop polling; the next open retries.
       refreshing = false;
     } finally {
-      pending = false;
-      inFlight = false;
+      if (gen === generation) {
+        pending = false;
+        inFlight = false;
+      }
     }
+    if (gen !== generation) return;
     scheduleNextPoll();
   }
 
@@ -106,8 +117,33 @@
     }
   }
 
+  // Scope the fetched state to the hovered workspace: when this component
+  // instance receives a different workspace, drop the previous workspace's
+  // value instead of briefly rendering it.
+  const UNSET = Symbol();
+  let lastWorkspaceId: unknown = UNSET;
   $effect(() => {
-    return () => clearPollTimer();
+    const id = workspace?.id;
+    if (lastWorkspaceId === UNSET) {
+      lastWorkspaceId = id;
+      return;
+    }
+    if (id === lastWorkspaceId) return;
+    lastWorkspaceId = id;
+    generation += 1;
+    clearPollTimer();
+    inFlight = false;
+    fetched = undefined;
+    refreshing = false;
+    pending = false;
+    if (tooltipOpen) void pollDiskUsage();
+  });
+
+  $effect(() => {
+    return () => {
+      generation += 1;
+      clearPollTimer();
+    };
   });
 
   function handleShrinkClick() {

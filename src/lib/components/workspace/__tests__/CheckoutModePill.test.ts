@@ -197,6 +197,89 @@ describe('CheckoutModePill', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
+  it('resets the fetched value when the workspace prop changes (no stale render)', async () => {
+    const { rerender } = await renderPill({
+      workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace,
+    });
+    await flushFetch();
+    expect(screen.getByTestId('tooltip-content').textContent).toContain('Total size: 2.17Gi');
+
+    // The new workspace's walk never settles within this test.
+    mocks.diskUsage.mockImplementation(() => new Promise(() => {}));
+    await rerender({
+      workspace: { ...baseWorkspace, id: 'ws-2', checkoutMode: 'cow' } as Workspace,
+    });
+    await tick();
+
+    // ws-1's value must not render for ws-2; the fetch retargets ws-2.
+    const tooltip = screen.getByTestId('tooltip-content');
+    expect(tooltip.textContent).not.toContain('Total size');
+    expect(screen.getByRole('status', { name: 'Loading disk usage' })).toBeTruthy();
+    expect(mocks.diskUsage).toHaveBeenLastCalledWith('ws-2');
+  });
+
+  it('ignores a poll that resolves after the workspace prop changed', async () => {
+    const deferred: Array<(value: unknown) => void> = [];
+    mocks.diskUsage.mockImplementation(() => new Promise((resolve) => deferred.push(resolve)));
+    const { rerender } = await renderPill({
+      workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace,
+    });
+    await tick();
+    await vi.waitFor(() => expect(mocks.diskUsage).toHaveBeenCalledTimes(1));
+
+    await rerender({
+      workspace: { ...baseWorkspace, id: 'ws-2', checkoutMode: 'cow' } as Workspace,
+    });
+    await tick();
+    await vi.waitFor(() => expect(mocks.diskUsage).toHaveBeenCalledTimes(2));
+
+    // ws-1's walk settles late — its value must not render for ws-2.
+    deferred[0]({ diskUsage, refreshing: false });
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
+    expect(screen.getByTestId('tooltip-content').textContent).not.toContain('Total size');
+
+    // ws-2's own walk still renders once it settles.
+    deferred[1]({ diskUsage, refreshing: false });
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
+    expect(screen.getByTestId('tooltip-content').textContent).toContain('Total size: 2.17Gi');
+  });
+
+  it('does not schedule further polls when the fetch resolves after unmount', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolvePoll: ((value: unknown) => void) | undefined;
+      mocks.diskUsage.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolvePoll = resolve;
+          }),
+      );
+      const { unmount } = await renderPill({
+        workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace,
+      });
+      await tick();
+      await Promise.resolve();
+      expect(mocks.diskUsage).toHaveBeenCalledTimes(1);
+
+      unmount();
+      const timersBefore = vi.getTimerCount();
+      // refreshing:true would normally schedule the next ~1s poll.
+      resolvePoll!({ diskUsage, refreshing: true });
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(vi.getTimerCount()).toBe(timersBefore);
+      await vi.runAllTimersAsync();
+      expect(mocks.diskUsage).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('renders the notes as separate flush-left paragraphs (no pre-wrap indentation)', async () => {
     await renderPill({
       workspace: { ...baseWorkspace, checkoutMode: 'worktree' } as Workspace,
