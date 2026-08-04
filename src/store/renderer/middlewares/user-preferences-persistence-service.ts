@@ -6,7 +6,10 @@
  * (GAPs 9-15, 17). It also owns the language preference: hydration, persistence,
  * applying it to the Paraglide runtime via the renderer locale service, and
  * syncing it to the Electron main process (`app:set-language-preference`) so
- * native menus/dialogs/notifications follow the same locale.
+ * native menus/dialogs/notifications follow the same locale. Boot-time
+ * hydration also fetches the installed monospace font list from the main
+ * process (`system:list-fonts`) and dispatches `setSystemFonts` — live mode
+ * only; the mock-driven path seeds fixture fonts through the settings seeder.
  *
  * Beta-updates and notification settings are handled by sibling middlewares and
  * are excluded here to avoid overlap.
@@ -24,6 +27,7 @@ import type { StoreMiddleware } from "$lib/store-shim/types";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 import { applyLanguagePreference } from "$lib/i18n/locale";
 import { isElectron } from "$lib/electron-bridge";
+import { SYSTEM_CHANNELS } from "$shared/ipc/channels";
 import {
   setSpellcheckEnabled,
   toggleSpellcheck,
@@ -38,6 +42,7 @@ import {
   setNoteFontStyle,
   cycleNoteFontStyle,
   setCodeFontFamily,
+  setSystemFonts,
   saveActivityLogPreset,
   deleteActivityLogPreset,
   hydrateActivityLogPresets,
@@ -142,6 +147,30 @@ export function createUserPreferencesPersistenceMiddleware(): StoreMiddleware {
       const storedLanguage = safeLocalStorage.getJSON<string>(LANGUAGE_PREFERENCE_STORAGE_KEY);
       if (typeof storedLanguage === "string" && storedLanguage.trim() !== "") {
         api.dispatch(setLanguagePreference(storedLanguage));
+      }
+
+      // Hydrate system fonts from the main process (live mode only — the
+      // mock-driven path seeds fixture fonts through the settings seeder).
+      // Fire-and-forget so a slow/failed IPC call never blocks the other
+      // preference hydrations above.
+      if (isElectron() && typeof window !== "undefined" && window.electronAPI?.invoke) {
+        void window.electronAPI
+          .invoke(SYSTEM_CHANNELS.LIST_FONTS, {})
+          .then((result) => {
+            const envelope = result as
+              | { success: true; data: string[] }
+              | { success: false; error: string }
+              | null;
+            if (envelope?.success && Array.isArray(envelope.data)) {
+              api.dispatch(setSystemFonts(envelope.data));
+            } else {
+              api.dispatch(setSystemFonts([]));
+            }
+          })
+          .catch((error) => {
+            console.warn("Failed to load system fonts:", error);
+            api.dispatch(setSystemFonts([]));
+          });
       }
     }
 
