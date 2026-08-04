@@ -4,6 +4,55 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.16.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.15.0...v2.16.0) (2026-08-04)
+
+
+### 🚀 Features
+
+* add Agent Features settings section with new-sessions-only note ([#712](https://github.com/intent-hq/cloudlands-fe/issues/712)) ([328933f](https://github.com/intent-hq/cloudlands-fe/commit/328933f1c88f4d5fb2275df38994e062514a6851))
+* add zoom/pan controls to lightboxes and richer mermaid rendering ([#696](https://github.com/intent-hq/cloudlands-fe/issues/696)) ([a293333](https://github.com/intent-hq/cloudlands-fe/commit/a2933331d90a7a951b05b78efb844a9d89ba7774))
+* fetch workspace disk usage on demand when the tooltip opens ([#711](https://github.com/intent-hq/cloudlands-fe/issues/711)) ([7f0f58f](https://github.com/intent-hq/cloudlands-fe/commit/7f0f58f024e763e95719089e528dd71b74d7c22d))
+* hide non-user entries from the queued-messages section ([#687](https://github.com/intent-hq/cloudlands-fe/issues/687)) ([e63c6e9](https://github.com/intent-hq/cloudlands-fe/commit/e63c6e90ac0920b5f38d4c83e6e15089d4c46eb5))
+* include attention-requesting agents in cycle-unread-agents ([#699](https://github.com/intent-hq/cloudlands-fe/issues/699)) ([1853752](https://github.com/intent-hq/cloudlands-fe/commit/18537529f1decfb4b473bd20cdf4653fd4912bb7))
+* merge single-agent delegation groups into the one-shot watch section ([#695](https://github.com/intent-hq/cloudlands-fe/issues/695)) ([d72413e](https://github.com/intent-hq/cloudlands-fe/commit/d72413e8d55f92ae22b6f2d716457f52885884f0))
+* prioritize unread over running in ambient LED precedence ([#719](https://github.com/intent-hq/cloudlands-fe/issues/719)) ([d64a330](https://github.com/intent-hq/cloudlands-fe/commit/d64a330da2b3d2cfa7afd3acc74640b2ce2ee79c))
+* refresh published date on rolling beta and stable releases ([#691](https://github.com/intent-hq/cloudlands-fe/issues/691)) ([481b273](https://github.com/intent-hq/cloudlands-fe/commit/481b273d680d448c56b5e1a3ee2f4c1ed92353cc))
+* render questions-dismissed notification as transcript chip + hide queued entry ([#724](https://github.com/intent-hq/cloudlands-fe/issues/724)) ([19c676f](https://github.com/intent-hq/cloudlands-fe/commit/19c676f31df174ab09070bbb4077e7aed3eef112))
+* replace flush toggle with queue flush mode dropdown ([#726](https://github.com/intent-hq/cloudlands-fe/issues/726)) ([da1b54e](https://github.com/intent-hq/cloudlands-fe/commit/da1b54eb065dd61acd27809707d3d206a3db78ef))
+* restyle workspace finish toast into a three-line layout ([#690](https://github.com/intent-hq/cloudlands-fe/issues/690)) ([500d605](https://github.com/intent-hq/cloudlands-fe/commit/500d605efff0edae9d0f6919a309be8fe78c9da6))
+* richer state-driven hardware-console ambient lighting ([#701](https://github.com/intent-hq/cloudlands-fe/issues/701)) ([2ad6861](https://github.com/intent-hq/cloudlands-fe/commit/2ad6861286336df68e1b6e193ffbc885c75a5bac))
+* show assigned action icons and tooltips on hardware device graphic ([#706](https://github.com/intent-hq/cloudlands-fe/issues/706)) ([97b35b0](https://github.com/intent-hq/cloudlands-fe/commit/97b35b0b646a7e06d7d1f5ce1855d84f7c9531f0))
+* show hook TTL in the hook chip hover card ([#692](https://github.com/intent-hq/cloudlands-fe/issues/692)) ([5fe0260](https://github.com/intent-hq/cloudlands-fe/commit/5fe0260169a974bbdb3801be7121da311f4b02af))
+* specialist model inheritance — inherit-by-default picker, reset-all, retire modelTier ([#708](https://github.com/intent-hq/cloudlands-fe/issues/708)) ([beb406a](https://github.com/intent-hq/cloudlands-fe/commit/beb406a5af3b6eb609e93c14ef525f21c829db04))
+* suggest unarchiving workspace when chatting in an archived one ([#721](https://github.com/intent-hq/cloudlands-fe/issues/721)) ([8f0fcef](https://github.com/intent-hq/cloudlands-fe/commit/8f0fcef55fbf861948dba7e90870b3ca84c63758))
+* voice dictation with push-to-talk, provider settings, and macOS local transcription ([#723](https://github.com/intent-hq/cloudlands-fe/issues/723)) ([49a5297](https://github.com/intent-hq/cloudlands-fe/commit/49a5297c7452b2e4f2f8712e3b4fc9887fb0d33b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar pin to 0.4.2 ([#728](https://github.com/intent-hq/cloudlands-fe/issues/728)) ([12c148d](https://github.com/intent-hq/cloudlands-fe/commit/12c148d8c648b00a9f601e851d3ac4ec99b25f2f))
+* clear Modified state when a built-in override matches bundled defaults ([#725](https://github.com/intent-hq/cloudlands-fe/issues/725)) ([384b830](https://github.com/intent-hq/cloudlands-fe/commit/384b830cfe91e8ab9b570f9bddb92d740c76edb9))
+* close residual hardware-console lifecycle races in removal rescan and superseded opens ([#718](https://github.com/intent-hq/cloudlands-fe/issues/718)) ([01a8351](https://github.com/intent-hq/cloudlands-fe/commit/01a8351d384864851b55c53504f8d76f7dbe53bf))
+* guard hardware console lifecycle against stop/start races ([#716](https://github.com/intent-hq/cloudlands-fe/issues/716)) ([ef02783](https://github.com/intent-hq/cloudlands-fe/commit/ef027833e5646efab036e8dd040d10b12ee0a644))
+* hide soft-deleted agents from the subscription UI immediately ([#715](https://github.com/intent-hq/cloudlands-fe/issues/715)) ([2090826](https://github.com/intent-hq/cloudlands-fe/commit/2090826246f04bce8299ec097aa7366c8edf496b))
+* infer hardware-console transport from collections and rescan after removal ([#709](https://github.com/intent-hq/cloudlands-fe/issues/709)) ([7a1b803](https://github.com/intent-hq/cloudlands-fe/commit/7a1b803758b8d854cac20256264ae5f860e784b8))
+* keep Chief chat subscription alive while workspace chats are viewed ([#707](https://github.com/intent-hq/cloudlands-fe/issues/707)) ([d3e375b](https://github.com/intent-hq/cloudlands-fe/commit/d3e375b2e775e27f4e63d4c50c4d73e95036d12b))
+* make scroll-to-previous work under LazyTurn virtualization ([#713](https://github.com/intent-hq/cloudlands-fe/issues/713)) ([c2923e8](https://github.com/intent-hq/cloudlands-fe/commit/c2923e8baac156067005880b9413c56193bf54e9))
+* make slot badge non-interactive in settings device graphic ([#702](https://github.com/intent-hq/cloudlands-fe/issues/702)) ([d6771cd](https://github.com/intent-hq/cloudlands-fe/commit/d6771cd867bef2e4cf664593e6eca40060f8ff52))
+* move micro-key slot badge to the repo line in workspace sidebar rows ([#698](https://github.com/intent-hq/cloudlands-fe/issues/698)) ([4c72279](https://github.com/intent-hq/cloudlands-fe/commit/4c7227980e5a0387f43b15f2cdb0fda097397495))
+* never start hardware console when the integration toggle is off ([#714](https://github.com/intent-hq/cloudlands-fe/issues/714)) ([9c09620](https://github.com/intent-hq/cloudlands-fe/commit/9c09620eb51507eb9aa668bb99cb2d6a5b60dd66))
+* never surface previous-turn summaries while the agent is responding ([#722](https://github.com/intent-hq/cloudlands-fe/issues/722)) ([ae30f3f](https://github.com/intent-hq/cloudlands-fe/commit/ae30f3f07084bf5a2e50cb0d648a77ce63c90b74))
+* preserve composer draft when selecting a suggested prompt ([#697](https://github.com/intent-hq/cloudlands-fe/issues/697)) ([5287906](https://github.com/intent-hq/cloudlands-fe/commit/52879060aac8060443ee683db14be08656bde9c9))
+* remove divider between consecutively dequeued queued messages ([#717](https://github.com/intent-hq/cloudlands-fe/issues/717)) ([aaebe5b](https://github.com/intent-hq/cloudlands-fe/commit/aaebe5b0a9c0bdf9180a0432c589cab41be2195a))
+* replace native selects with the custom portaled Select component ([#694](https://github.com/intent-hq/cloudlands-fe/issues/694)) ([80ee1d3](https://github.com/intent-hq/cloudlands-fe/commit/80ee1d37b044521ad48ea9a556f05c917bbef3eb))
+* restore system font list fetch in user-preferences hydration ([#693](https://github.com/intent-hq/cloudlands-fe/issues/693)) ([d3753b5](https://github.com/intent-hq/cloudlands-fe/commit/d3753b50285ebaf7a1bf0a67c16f271026e2ab7b))
+* restore terminal panel and tabs across workspace switches ([#705](https://github.com/intent-hq/cloudlands-fe/issues/705)) ([7c365fb](https://github.com/intent-hq/cloudlands-fe/commit/7c365fb20197027147f9905c9c59d8725b51257d))
+* reword one-shot watch footer header to distributive waiting-on phrasing ([#720](https://github.com/intent-hq/cloudlands-fe/issues/720)) ([1d5eac6](https://github.com/intent-hq/cloudlands-fe/commit/1d5eac61f9de5f61123bfe7b3a9044a8781209b6))
+* share a single backend:status listener across onReconnected subscribers ([#710](https://github.com/intent-hq/cloudlands-fe/issues/710)) ([a880c66](https://github.com/intent-hq/cloudlands-fe/commit/a880c6626814552597c2d268925465fa6d45d7b5))
+* show HUD unread state over complete and pr_merged, sourced from daemon attention ([#703](https://github.com/intent-hq/cloudlands-fe/issues/703)) ([7bf2b4f](https://github.com/intent-hq/cloudlands-fe/commit/7bf2b4f908a4832bfc69b5c87c9ff8a874d5f52a))
+* stable alphabetical provider list order in settings ([#704](https://github.com/intent-hq/cloudlands-fe/issues/704)) ([bab2d16](https://github.com/intent-hq/cloudlands-fe/commit/bab2d16b50bc3600e64a4e06d7c2bc3ff095334f))
+* stop active-stream and agents-seeder boot fan-outs ([#686](https://github.com/intent-hq/cloudlands-fe/issues/686)) ([2a626b2](https://github.com/intent-hq/cloudlands-fe/commit/2a626b28d93d5a6b332fd6748e81d3cc7d53fb64))
+
 ## [2.15.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.14.0...v2.15.0) (2026-08-03)
 
 
