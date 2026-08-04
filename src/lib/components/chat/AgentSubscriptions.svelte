@@ -405,7 +405,7 @@
             <Fa icon={oneShotCollapsed ? faChevronRight : faChevronDown} class="w-2.5! h-2.5!" />
           </button>
 
-          <!-- Waiting label (count only when watching multiple agents) -->
+          <!-- Waiting label -->
           <button
             type="button"
             class="shrink-0 flex items-center gap-2 whitespace-nowrap cursor-pointer hover:text-muted-foreground transition-colors"
@@ -413,7 +413,7 @@
           >
             <Fa icon={faHourglass} size="13" />
             {oneShotWatchedIds.length === 1
-              ? m.chat_agentSubscriptions_waitingForAgents_one()
+              ? m.chat_agentSubscriptions_waitingForAgents_one({ count: formatInteger(1) })
               : m.chat_agentSubscriptions_waitingForAgents_many({
                   count: formatInteger(oneShotWatchedIds.length),
                 })}
