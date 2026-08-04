@@ -40,16 +40,19 @@ import {
 } from '$store/renderer/slices/workspace/workspace-slice';
 import {
   applyWorkspaceProposal,
+  closeArchiveWarning,
   closeBulkArchiveConfirm,
   closeBulkDeleteArchivedConfirm,
   closeBulkDeleteWarningConfirm,
   closeDeleteWarning,
   closeRemoveRepoConfirm,
+  confirmArchiveWorkspace,
   confirmBulkArchive,
   confirmBulkDeleteArchived,
   confirmBulkDeleteWarning,
   confirmDeleteWorkspace,
   confirmRemoveRepo,
+  openArchiveWarning,
   openBulkDeleteWarningConfirm,
   openDeleteWarning,
   requestArchiveWorkspace,
@@ -221,14 +224,12 @@ async function deleteWorkspaceWithUndo(workspace: Workspace): Promise<void> {
   );
 }
 
-/** Delete from a card/header: gate on running agents, else delete-with-undo. */
+/** Delete from a card/header: gate on active work, else delete-with-undo. */
 export async function deleteWorkspace(workspaceId: string): Promise<void> {
-  const { hasRunningAgents, getRunningAgentNames } =
-    await import('$lib/utils/delete-warning-utils');
-  if (hasRunningAgents(workspaceId)) {
-    appStore.dispatch(
-      openDeleteWarning({ workspaceId, agentNames: getRunningAgentNames(workspaceId) }),
-    );
+  const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+  const { agentNames, hookNames } = await getActiveWorkNames(workspaceId);
+  if (agentNames.length > 0 || hookNames.length > 0) {
+    appStore.dispatch(openDeleteWarning({ workspaceId, agentNames, hookNames }));
     return;
   }
 
@@ -239,7 +240,7 @@ export async function deleteWorkspace(workspaceId: string): Promise<void> {
   await deleteWorkspaceWithUndo(workspace);
 }
 
-/** "Delete anyway" from the running-agents warning modal. */
+/** "Delete anyway" from the active-work warning modal. */
 export async function confirmDeleteFromWarning(): Promise<void> {
   const workspaceId = appStore.state.workspaceOperations.pendingDeleteWorkspaceId;
   appStore.dispatch(closeDeleteWarning());
@@ -252,8 +253,29 @@ export async function confirmDeleteFromWarning(): Promise<void> {
   await deleteWorkspaceWithUndo(workspace);
 }
 
-/** Archive a workspace, converge the store, and offer an Undo (unarchive). */
+/** Archive from a card/header: gate on active work, else archive-with-undo. */
 export async function archiveWorkspace(workspaceId: string): Promise<void> {
+  const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+  const { agentNames, hookNames } = await getActiveWorkNames(workspaceId);
+  if (agentNames.length > 0 || hookNames.length > 0) {
+    appStore.dispatch(openArchiveWarning({ workspaceId, agentNames, hookNames }));
+    return;
+  }
+
+  await archiveWorkspaceWithUndo(workspaceId);
+}
+
+/** "Archive anyway" from the active-work warning modal. */
+export async function confirmArchiveFromWarning(): Promise<void> {
+  const workspaceId = appStore.state.workspaceOperations.pendingArchiveWorkspaceId;
+  appStore.dispatch(closeArchiveWarning());
+  if (!workspaceId) return;
+
+  await archiveWorkspaceWithUndo(workspaceId);
+}
+
+/** Archive a workspace, converge the store, and offer an Undo (unarchive). */
+async function archiveWorkspaceWithUndo(workspaceId: string): Promise<void> {
   const toast = await getToast();
   const title = readWorkspaceById(workspaceId)?.title || m.workspace_ops_space_fallback();
 
@@ -744,6 +766,9 @@ export function createWorkspaceOperationsMiddleware(): StoreMiddleware {
           break;
         case confirmDeleteWorkspace.type:
           void confirmDeleteFromWarning();
+          break;
+        case confirmArchiveWorkspace.type:
+          void confirmArchiveFromWarning();
           break;
         case confirmBulkArchive.type:
           void bulkArchive();

@@ -104,11 +104,17 @@
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { createAgentWithSpecialistRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
+    closeArchiveWarning,
     closeDeleteWarning,
+    confirmArchiveWorkspace,
     confirmDeleteWorkspace,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import {
+    selectActiveHookNamesForArchive,
+    selectActiveHookNamesForDelete,
+    selectRunningAgentNamesForArchive,
     selectRunningAgentNamesForDelete,
+    selectShowArchiveWarning,
     selectShowDeleteWarning,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
 
@@ -181,6 +187,10 @@
   const showCreateModal$ = selectShowCreateModal();
   const showDeleteWarning$ = selectShowDeleteWarning();
   const runningAgentNamesForDelete$ = selectRunningAgentNamesForDelete();
+  const activeHookNamesForDelete$ = selectActiveHookNamesForDelete();
+  const showArchiveWarning$ = selectShowArchiveWarning();
+  const runningAgentNamesForArchive$ = selectRunningAgentNamesForArchive();
+  const activeHookNamesForArchive$ = selectActiveHookNamesForArchive();
 
   // Register all tab types early
   // This must happen before any panels are rendered
@@ -1109,8 +1119,19 @@
   <DeleteWarningDialog
     open={$showDeleteWarning$}
     agentNames={$runningAgentNamesForDelete$}
+    hookNames={$activeHookNamesForDelete$}
     onDeleteAnyway={() => appStore.dispatch(confirmDeleteWorkspace())}
     onCancel={() => appStore.dispatch(closeDeleteWarning())}
+  />
+
+  <!-- Redux-owned archive warning host (global for all workspace archive entrypoints) -->
+  <DeleteWarningDialog
+    open={$showArchiveWarning$}
+    mode="archive"
+    agentNames={$runningAgentNamesForArchive$}
+    hookNames={$activeHookNamesForArchive$}
+    onDeleteAnyway={() => appStore.dispatch(confirmArchiveWorkspace())}
+    onCancel={() => appStore.dispatch(closeArchiveWarning())}
   />
 
   <!-- Release Notes Modal (shown after update) -->

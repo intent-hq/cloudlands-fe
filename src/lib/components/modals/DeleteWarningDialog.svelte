@@ -11,15 +11,30 @@
 
   interface Props {
     open?: boolean;
+    /** 'delete' (default) warns before a permanent delete; 'archive' before an archive. */
+    mode?: 'delete' | 'archive';
     agentNames?: string[];
+    hookNames?: string[];
     onDeleteAnyway?: () => void;
     onCancel?: () => void;
   }
 
-  let { open = $bindable(false), agentNames = [], onDeleteAnyway, onCancel }: Props = $props();
+  let {
+    open = $bindable(false),
+    mode = 'delete',
+    agentNames = [],
+    hookNames = [],
+    onDeleteAnyway,
+    onCancel,
+  }: Props = $props();
 
   const dialogTitleId = 'delete-warning-dialog-title';
   const dialogDescriptionId = 'delete-warning-dialog-description';
+
+  const isArchive = $derived(mode === 'archive');
+  const closeAriaLabel = $derived(
+    isArchive ? m.modals_archiveWarning_close_ariaLabel() : m.modals_deleteWarning_close_ariaLabel()
+  );
 
   function close() {
     open = false;
@@ -67,10 +82,12 @@
             </div>
             <div>
               <h2 id={dialogTitleId} class="text-lg font-semibold leading-6">
-                {m.modals_deleteWarning_title()}
+                {isArchive ? m.modals_archiveWarning_title() : m.modals_deleteWarning_title()}
               </h2>
               <p class="mt-1 text-sm text-subtle">
-                {m.modals_deleteWarning_description()}
+                {isArchive
+                  ? m.modals_archiveWarning_description()
+                  : m.modals_deleteWarning_description()}
               </p>
             </div>
           </div>
@@ -78,7 +95,7 @@
             variant="ghost"
             size="icon-sm"
             class="-mr-1 mt-0.5 text-subtle hover:text-foreground"
-            aria-label={m.modals_deleteWarning_close_ariaLabel()}
+            aria-label={closeAriaLabel}
             onclick={close}
           >
             <Fa icon={faXmark} />
@@ -87,14 +104,34 @@
 
         <div id={dialogDescriptionId} class="space-y-4 px-6 py-5">
           <div class="rounded-xl border border-destructive-foreground/15 bg-destructive/45 p-4">
-            <p class="text-sm font-medium text-foreground">
-              {agentNames.length === 1
-                ? m.modals_deleteWarning_agentsStopped_one({ count: formatInteger(agentNames.length) })
-                : m.modals_deleteWarning_agentsStopped_many({ count: formatInteger(agentNames.length) })}
-            </p>
-            {#if agentNames.length > 0}
+            {#if agentNames.length > 0 || hookNames.length === 0}
+              <p class="text-sm font-medium text-foreground">
+                {agentNames.length === 1
+                  ? m.modals_deleteWarning_agentsStopped_one({ count: formatInteger(agentNames.length) })
+                  : m.modals_deleteWarning_agentsStopped_many({ count: formatInteger(agentNames.length) })}
+              </p>
+              {#if agentNames.length > 0}
+                <ul class="mt-3 max-h-32 space-y-2 overflow-auto pr-1">
+                  {#each agentNames as name}
+                    <li class="flex items-center gap-2 text-sm text-subtle">
+                      <span class="size-1.5 rounded-full bg-destructive-foreground"></span>
+                      <span class="truncate">{name}</span>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            {/if}
+            {#if hookNames.length > 0}
+              <p
+                class="text-sm font-medium text-foreground"
+                class:mt-3={agentNames.length > 0}
+              >
+                {hookNames.length === 1
+                  ? m.modals_deleteWarning_hooksCancelled_one({ count: formatInteger(hookNames.length) })
+                  : m.modals_deleteWarning_hooksCancelled_many({ count: formatInteger(hookNames.length) })}
+              </p>
               <ul class="mt-3 max-h-32 space-y-2 overflow-auto pr-1">
-                {#each agentNames as name}
+                {#each hookNames as name}
                   <li class="flex items-center gap-2 text-sm text-subtle">
                     <span class="size-1.5 rounded-full bg-destructive-foreground"></span>
                     <span class="truncate">{name}</span>
@@ -104,7 +141,9 @@
             {/if}
           </div>
           <p class="text-sm leading-6 text-subtle">
-            {m.modals_deleteWarning_permanent_description()}
+            {isArchive
+              ? m.modals_archiveWarning_note_description()
+              : m.modals_deleteWarning_permanent_description()}
           </p>
         </div>
 
@@ -113,7 +152,9 @@
         >
           <Button variant="outline" onclick={close}>{m.modals_deleteWarning_cancel_label()}</Button>
           <Button variant="destructive" class="sm:min-w-[11rem]" onclick={handleDeleteAnyway}>
-            {m.modals_deleteWarning_confirm_label()}
+            {isArchive
+              ? m.modals_archiveWarning_confirm_label()
+              : m.modals_deleteWarning_confirm_label()}
           </Button>
         </div>
       </div>

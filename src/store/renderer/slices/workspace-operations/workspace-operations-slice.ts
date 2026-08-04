@@ -6,6 +6,11 @@ export type WorkspaceOperationsState = {
   showDeleteWarning: boolean;
   pendingDeleteWorkspaceId: string | null;
   runningAgentNamesForDelete: string[];
+  activeHookNamesForDelete: string[];
+  showArchiveWarning: boolean;
+  pendingArchiveWorkspaceId: string | null;
+  runningAgentNamesForArchive: string[];
+  activeHookNamesForArchive: string[];
   showBulkArchiveConfirm: boolean;
   showBulkDeleteArchivedConfirm: boolean;
   pendingBulkRepoKey: string | undefined;
@@ -20,6 +25,11 @@ export const initialState: WorkspaceOperationsState = {
   showDeleteWarning: false,
   pendingDeleteWorkspaceId: null,
   runningAgentNamesForDelete: [],
+  activeHookNamesForDelete: [],
+  showArchiveWarning: false,
+  pendingArchiveWorkspaceId: null,
+  runningAgentNamesForArchive: [],
+  activeHookNamesForArchive: [],
   showBulkArchiveConfirm: false,
   showBulkDeleteArchivedConfirm: false,
   pendingBulkRepoKey: undefined,
@@ -63,10 +73,20 @@ export const applyWorkspaceProposal = createAction<[payload: WorkspaceProposalAp
 );
 
 export const openDeleteWarning = createAction<
-  [payload: { workspaceId: string; agentNames: string[] }]
+  [payload: { workspaceId: string; agentNames: string[]; hookNames: string[] }]
 >("workspaceOperations/openDeleteWarning");
 
 export const closeDeleteWarning = createAction("workspaceOperations/closeDeleteWarning");
+
+export const openArchiveWarning = createAction<
+  [payload: { workspaceId: string; agentNames: string[]; hookNames: string[] }]
+>("workspaceOperations/openArchiveWarning");
+
+export const closeArchiveWarning = createAction("workspaceOperations/closeArchiveWarning");
+
+export const confirmArchiveWorkspace = createAction(
+  "workspaceOperations/confirmArchiveWorkspace"
+);
 
 export const openBulkArchiveConfirm = createAction<[repoKey: string]>(
   "workspaceOperations/openBulkArchiveConfirm"
@@ -113,17 +133,33 @@ export const closeRemoveRepoConfirm = createAction(
 export const confirmRemoveRepo = createAction("workspaceOperations/confirmRemoveRepo");
 
 export const workspaceOperationsReducer = createReducer<WorkspaceOperationsState>(initialState)
-  .with(openDeleteWarning, (state, { payload: [{ workspaceId, agentNames }] }) => ({
+  .with(openDeleteWarning, (state, { payload: [{ workspaceId, agentNames, hookNames }] }) => ({
     ...state,
     showDeleteWarning: true,
     pendingDeleteWorkspaceId: workspaceId,
     runningAgentNamesForDelete: agentNames,
+    activeHookNamesForDelete: hookNames,
   }))
   .with(closeDeleteWarning, (state) => ({
     ...state,
     showDeleteWarning: false,
     pendingDeleteWorkspaceId: null,
     runningAgentNamesForDelete: [],
+    activeHookNamesForDelete: [],
+  }))
+  .with(openArchiveWarning, (state, { payload: [{ workspaceId, agentNames, hookNames }] }) => ({
+    ...state,
+    showArchiveWarning: true,
+    pendingArchiveWorkspaceId: workspaceId,
+    runningAgentNamesForArchive: agentNames,
+    activeHookNamesForArchive: hookNames,
+  }))
+  .with(closeArchiveWarning, (state) => ({
+    ...state,
+    showArchiveWarning: false,
+    pendingArchiveWorkspaceId: null,
+    runningAgentNamesForArchive: [],
+    activeHookNamesForArchive: [],
   }))
   .with(openBulkArchiveConfirm, (state, { payload: [repoKey] }) => ({
     ...state,
