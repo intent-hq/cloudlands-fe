@@ -33,7 +33,6 @@ import {
   selectHudActive,
   selectHudFeed,
   selectHudAttentionByWorkspaceId,
-  selectHudRate5s,
   selectHudRateHistory,
   selectHudSystem,
   selectHudUsage,
@@ -151,14 +150,9 @@ describe('HUD subscription (mock backend, real store)', () => {
       { eventTypes: [...HUD_SUBSCRIBE_EVENT_TYPES], replaceGroup: HUD_REPLACE_GROUP },
     ]);
     // The subscribe set is the feed families plus the takeover-only families
-    // (agent:stream:end carries the §7.1 question trailingBlocks) plus the
-    // live token-rate family for the TOK/S chart.
+    // (agent:stream:end carries the §7.1 question trailingBlocks).
     expect(HUD_SUBSCRIBE_EVENT_TYPES).toEqual(
-      expect.arrayContaining([
-        ...HUD_FEED_EVENT_TYPES,
-        'agent:stream:end',
-        'workspace:tokenUsage-changed',
-      ]),
+      expect.arrayContaining([...HUD_FEED_EVENT_TYPES, 'agent:stream:end']),
     );
     expect(selectHudActive.select(appStore.state)).toBe(true);
   });
@@ -261,45 +255,6 @@ describe('HUD subscription (mock backend, real store)', () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it('backfills the 5s TOK/S buckets from the rate history exactly once', async () => {
-    scriptHappyBackend(backend);
-    stop = startHudSubscription();
-    await flush();
-
-    const rate5s = selectHudRate5s.select(appStore.state);
-    expect(rate5s.backfilled).toBe(true);
-    // The scripted history's minutes are from 14:00 (2026-07-30) — far outside
-    // the trailing 200s window of "now" — so no buckets survive the prune, but
-    // the one-shot flag is set.
-    expect(rate5s.buckets).toEqual([]);
-  });
-
-  it('folds workspace:tokenUsage-changed totals deltas into live 5s buckets', async () => {
-    scriptHappyBackend(backend);
-    stop = startHudSubscription();
-    await flush();
-
-    const usageEvent = (id: string, inputTokens: number) => ({
-      type: 'workspace:tokenUsage-changed',
-      workspaceId: WS_ID,
-      id,
-      subscriptionId: SUB_ID,
-      data: { workspaceId: WS_ID, tokenUsage: { totals: totals({ inputTokens }) } },
-    });
-    // First push establishes the cumulative baseline — no delta yet.
-    backend.pushEvent(usageEvent('evt-u1', 1000));
-    await flush();
-    expect(selectHudRate5s.select(appStore.state).buckets).toEqual([]);
-
-    backend.pushEvent(usageEvent('evt-u2', 1150));
-    await flush();
-    const { buckets } = selectHudRate5s.select(appStore.state);
-    expect(buckets).toHaveLength(1);
-    expect(buckets[0].tokens).toBe(150);
-    // Never a feed row.
-    expect(selectHudFeed.select(appStore.state)).toEqual([]);
   });
 
   it('captures §7.1 question blocks from agent:stream:end into the slice', async () => {
