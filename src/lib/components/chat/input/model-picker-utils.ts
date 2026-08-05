@@ -126,13 +126,17 @@ export interface FindModelFallbackOptionParams {
   excludeValue?: string;
   /** When set, only consider options belonging to this provider. */
   restrictToProvider?: string;
-  /** The globally selected model, used as a tiebreaker before first-available. */
+  /** The user's globally selected model — the top-priority fallback pick. */
   globallySelectedModel?: string | null;
 }
 
 /**
- * Find the best fallback option: the provider CLI's marked default →
- * globally selected model → first available.
+ * Find the best fallback option: the user's globally selected model →
+ * the provider CLI's marked default → first available.
+ *
+ * The CLI-marked default is a *default*, not an override — the user's
+ * explicitly configured global model outranks it (coordinator ruling on the
+ * PR #759 review, recorded in the spec's Decisions section).
  */
 export function findModelFallbackOption(
   params: FindModelFallbackOptionParams,
@@ -148,10 +152,9 @@ export function findModelFallbackOption(
     );
   }
 
-  const cliDefault = candidates.find((opt) => opt.data?.isDefault);
   return (
-    cliDefault ??
     candidates.find((opt) => opt.value === globallySelectedModel) ??
+    candidates.find((opt) => opt.data?.isDefault) ??
     candidates[0]
   );
 }

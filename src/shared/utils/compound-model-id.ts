@@ -51,19 +51,3 @@ export function isModelValidForProvider(
   return parseCompoundModelId(model, defaultProviderId).providerId === targetProviderId;
 }
 
-/**
- * Resolve the best default model from a preference list against the
- * available models: first preference-list entry present in
- * `availableValues`, or `undefined` when none match.
- */
-export function resolvePreferredModel(
-  preferenceList: readonly string[],
-  availableValues: string[],
-): string | undefined {
-  for (const preferred of preferenceList) {
-    if (availableValues.includes(preferred)) {
-      return preferred;
-    }
-  }
-  return undefined;
-}

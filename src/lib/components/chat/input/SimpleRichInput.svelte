@@ -19,7 +19,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     EnhancePromptUnavailableError,
     isEnhancePromptAvailable,
   } from '$lib/client/live/live-prompt-enhancement';
-  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
 
@@ -76,7 +75,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   const logger = createLogger('SimpleRichInput');
 
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
-  const activeProviderId$ = selectActiveProviderId();
   const pttRecording$ = selectPttRecording();
   const voiceTranscribing$ = selectVoiceTranscribing();
   const effectiveVoiceEngine$ = selectEffectiveVoiceEngine();
@@ -196,8 +194,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     onHistoryNext,
   }: Props = $props();
 
-  // §5.31 gate — enhance is auggie-only; unset active provider defaults to auggie
-  const enhanceAvailable = $derived(isEnhancePromptAvailable($activeProviderId$));
+  // §5.31 gate — enhance is auggie-only; gated on the settings-derived
+  // effective provider, matching the daemon's derivation.
+  const enhanceAvailable = $derived(isEnhancePromptAvailable($defaultProviderId$));
 
   // Track if enhancement is in progress
   let isEnhancing = $state(false);

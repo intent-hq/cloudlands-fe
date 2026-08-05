@@ -48,6 +48,19 @@ export const selectAllCatalogProviderIds = store.createSelector(
  * provider id (malformed/legacy compound string) is ignored and resolution
  * falls through to the next precedence step, so an unknown id never
  * mis-attributes bare model ids downstream.
+ *
+ * Known divergences from the spec's ideal ordering (accepted, documented on
+ * the PR #759 review):
+ * - The model lookup is keyed by `activeProviderId`, so when
+ *   `providers.active` is unset the persisted global model is never
+ *   consulted — a daemon-persisted compound `model.default` without
+ *   `providers.active` (older FE / another client) falls through to the
+ *   first catalog row rather than the model's provider.
+ * - In steady state the compound branch is a legacy/transient-state guard,
+ *   not the primary path: `providerModels[activeProviderId]` is
+ *   write-normalized to the bare form (the model slice mirrors the active
+ *   provider as its default), so `includes(':')` only fires on
+ *   un-normalized state (pre-hydration persistence, older writers).
  */
 export const selectEffectiveDefaultProviderId = store.createSelector((state): string => {
   const catalogLoaded = state.providerCatalog?.loaded ?? false;

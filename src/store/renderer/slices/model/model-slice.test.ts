@@ -109,6 +109,26 @@ describe('modelReducer', () => {
     expect(known.defaultProviderId).toBe('codex');
   });
 
+  it("keeps the first-row fallback when hydrateActiveProvider('') arrives (unset providers.active boot path)", () => {
+    // Boot ordering regression: `LiveSettingsClient.getProviderSettings()`
+    // returns `activeProviderId: ''` when `providers.active` is unset but
+    // `providers.enabled` is present, and the settings seeder dispatches it
+    // verbatim. After providerCatalogLoaded installed the first-row fallback,
+    // the empty payload must not clobber it (which would re-normalize every
+    // persisted pick to the prefixed form and break bare-id validation).
+    const withPicks = modelReducer(
+      initialState,
+      loadProviderModelsFromStorage({ [defaultProviderId]: 'gpt5.4' }),
+    );
+    const afterEmptyHydrate = modelReducer(withPicks, hydrateActiveProvider(''));
+    expect(afterEmptyHydrate.defaultProviderId).toBe(defaultProviderId);
+    expect(afterEmptyHydrate.providerModels).toEqual({ [defaultProviderId]: 'gpt5.4' });
+
+    // setActiveProvider('') (defensive symmetry) behaves the same.
+    const afterEmptySet = modelReducer(withPicks, setActiveProvider(''));
+    expect(afterEmptySet.defaultProviderId).toBe(defaultProviderId);
+  });
+
   it('re-normalizes persisted picks that landed before catalog hydration', () => {
     const preCatalog = modelReducer(
       bareInitialState,

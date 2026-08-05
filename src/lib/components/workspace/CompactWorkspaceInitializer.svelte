@@ -1063,7 +1063,7 @@
   });
 
   // §5.31 gate — enhance is auggie-only; unset active provider defaults to auggie
-  const enhanceAvailable = $derived(isEnhancePromptAvailable($activeProviderId$));
+  const enhanceAvailable = $derived(isEnhancePromptAvailable($defaultProviderId$));
 
   // Enhance prompt state
   let isEnhancing = $state(false);
