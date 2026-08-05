@@ -33,6 +33,14 @@ export const selectVoiceOpenAiModel = store.createSelector(
   (state) => state.voiceSettings.openaiModel,
 );
 
+export const selectVoiceInputDeviceId = store.createSelector(
+  (state) => state.voiceSettings.inputDeviceId,
+);
+
+export const selectVoiceInputDevices = store.createSelector(
+  (state) => state.voiceSettings.inputDevices,
+);
+
 export const selectVoiceBusyProvider = store.createSelector(
   (state) => state.voiceSettings.busyProvider,
 );

@@ -32,6 +32,12 @@ export interface VoiceRecorderOptions extends VoiceRecorderCallbacks {
   maxDurationMs?: number;
   /** Clock, injectable for tests. Defaults to Date.now. */
   now?: () => number;
+  /**
+   * Preferred audio-input device id; `null`/undefined captures from the
+   * system default. Applied as an `ideal` constraint so a missing/unplugged
+   * device degrades to the default instead of failing the recording.
+   */
+  deviceId?: string | null;
 }
 
 export type VoiceRecorderState = 'idle' | 'starting' | 'recording' | 'stopped';
@@ -52,6 +58,15 @@ export function isVoiceRecordingSupported(): boolean {
   );
 }
 
+/**
+ * getUserMedia constraints for the recorder: an `ideal` device constraint
+ * when a device is selected (graceful fallback to the default when the
+ * device is gone), plain `audio: true` otherwise.
+ */
+export function buildRecorderConstraints(deviceId?: string | null): MediaStreamConstraints {
+  return deviceId ? { audio: { deviceId: { ideal: deviceId } } } : { audio: true };
+}
+
 /** The most specific supported mime type, or undefined for the browser default. */
 export function pickRecorderMimeType(): string | undefined {
   if (
@@ -67,6 +82,7 @@ export class VoiceRecorder {
   private readonly maxDurationMs: number;
   private readonly now: () => number;
   private readonly callbacks: VoiceRecorderCallbacks;
+  private readonly deviceId: string | null;
 
   private currentState: VoiceRecorderState = 'idle';
   private recorder: MediaRecorder | null = null;
@@ -83,6 +99,7 @@ export class VoiceRecorder {
     this.maxDurationMs = options.maxDurationMs ?? PTT_MAX_RECORDING_MS;
     this.now = options.now ?? Date.now;
     this.callbacks = { onFinished: options.onFinished, onError: options.onError };
+    this.deviceId = options.deviceId ?? null;
   }
 
   get state(): VoiceRecorderState {
@@ -94,7 +111,7 @@ export class VoiceRecorder {
     this.currentState = 'starting';
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia(buildRecorderConstraints(this.deviceId));
     } catch (error) {
       const discarded = this.discardRequested;
       this.currentState = 'stopped';

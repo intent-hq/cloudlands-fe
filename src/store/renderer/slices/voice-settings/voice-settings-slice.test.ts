@@ -5,6 +5,8 @@ import {
   removeVoiceVocabularyTerm,
   setVoiceBusyProvider,
   setVoiceEngineValue,
+  setVoiceInputDevices,
+  setVoiceInputDeviceValue,
   setVoiceKeyConfigured,
   setVoiceOpenAiModelValue,
   setVoiceOsEngineAvailable,
@@ -26,6 +28,8 @@ describe("voiceSettingsReducer", () => {
       keyConfigured: { elevenlabs: false, openai: false },
       vocabulary: null,
       openaiModel: null,
+      inputDeviceId: null,
+      inputDevices: [],
       busyProvider: null,
       error: null,
     });
@@ -83,6 +87,27 @@ describe("voiceSettingsReducer", () => {
     const state = voiceSettingsReducer(initialState, setVoiceEngineValue("os"));
     expect(state.engine).toBe("os");
     expect(voiceSettingsReducer(state, setVoiceEngineValue("daemon")).engine).toBe("daemon");
+  });
+
+  it("sets and clears the input-device value (null = system default)", () => {
+    const selected = voiceSettingsReducer(initialState, setVoiceInputDeviceValue("mic-1"));
+    expect(selected.inputDeviceId).toBe("mic-1");
+    const cleared = voiceSettingsReducer(selected, setVoiceInputDeviceValue(null));
+    expect(cleared.inputDeviceId).toBeNull();
+  });
+
+  it("hydrates and replaces the enumerated input-device list", () => {
+    const hydrated = voiceSettingsReducer(
+      initialState,
+      setVoiceInputDevices([{ deviceId: "mic-1", label: "USB Mic" }]),
+    );
+    expect(hydrated.inputDevices).toEqual([{ deviceId: "mic-1", label: "USB Mic" }]);
+    const replaced = voiceSettingsReducer(
+      hydrated,
+      setVoiceInputDevices([{ deviceId: "mic-2", label: "Headset" }]),
+    );
+    expect(replaced.inputDevices).toEqual([{ deviceId: "mic-2", label: "Headset" }]);
+    expect(voiceSettingsReducer(replaced, setVoiceInputDevices([])).inputDevices).toEqual([]);
   });
 
   it("sets the OS-engine availability flag", () => {

@@ -16,6 +16,7 @@ import { store as appStore } from "$store/renderer/store";
 import {
   addVoiceVocabularyTerm,
   changeVoiceEngine,
+  changeVoiceInputDevice,
   changeVoiceOpenAiModel,
   changeVoiceProvider,
   clearVoiceKey,
@@ -24,6 +25,8 @@ import {
   saveVoiceKey,
   setVoiceBusyProvider,
   setVoiceEngineValue,
+  setVoiceInputDevices,
+  setVoiceInputDeviceValue,
   setVoiceKeyConfigured,
   setVoiceOpenAiModelValue,
   setVoiceOsEngineAvailable,
@@ -50,6 +53,10 @@ import {
   type VoiceEngine,
 } from "$features/voice/voice-engine-preference";
 import {
+  loadVoiceInputDevicePreference,
+  saveVoiceInputDevicePreference,
+} from "$features/voice/voice-input-device-preference";
+import {
   isOsTranscriptionAvailable,
   requestOsSpeechAuthorization,
 } from "$features/voice/os-transcription-service";
@@ -65,8 +72,10 @@ function isVoiceProvider(value: unknown): value is VoiceProvider {
 /** Read the daemon snapshot and hydrate the slice. */
 export async function initializeVoiceSettingsFlow(): Promise<void> {
   // Engine preference + OS-engine availability are client-local (localStorage
-  // + main-process probe) and independent of the daemon settings read.
+  // + main-process probe) and independent of the daemon settings read; the
+  // mic-device preference and device list are likewise host-local.
   void hydrateVoiceEngineFlow();
+  void hydrateVoiceInputDeviceFlow();
   try {
     const snapshot = await loadVoiceSettings();
     appStore.dispatch(
@@ -114,6 +123,56 @@ export function changeVoiceEngineFlow(engine: VoiceEngine): void {
   // Enable-time TCC prompt: request macOS speech-recognition authorization
   // the moment the user picks the OS engine, not mid-dictation.
   if (engine === "os") void requestOsSpeechAuthorizationFlow();
+}
+
+/** Guard: the `devicechange` listener is registered once per renderer. */
+let deviceChangeListenerRegistered = false;
+
+/**
+ * Enumerate audio-input devices and hydrate the slice. Enumeration failures
+ * (no MediaDevices, permission-less contexts) leave the current list alone —
+ * the selector still renders the "System default" option.
+ */
+export async function refreshVoiceInputDevicesFlow(): Promise<void> {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    appStore.dispatch(
+      setVoiceInputDevices(
+        devices
+          .filter((device) => device.kind === "audioinput" && device.deviceId !== "")
+          .map((device) => ({ deviceId: device.deviceId, label: device.label })),
+      ),
+    );
+  } catch (error) {
+    logger.error("input device enumeration error", error);
+  }
+}
+
+/**
+ * Hydrate the persisted mic-device preference, enumerate the current device
+ * list, and keep it fresh on `devicechange` (plug/unplug).
+ */
+export async function hydrateVoiceInputDeviceFlow(): Promise<void> {
+  appStore.dispatch(setVoiceInputDeviceValue(loadVoiceInputDevicePreference()));
+  if (
+    !deviceChangeListenerRegistered &&
+    typeof navigator !== "undefined" &&
+    typeof navigator.mediaDevices?.addEventListener === "function"
+  ) {
+    deviceChangeListenerRegistered = true;
+    navigator.mediaDevices.addEventListener("devicechange", () => {
+      void refreshVoiceInputDevicesFlow();
+    });
+  }
+  await refreshVoiceInputDevicesFlow();
+}
+
+/** Persist the mic-device selection locally (no daemon write — host-specific id). */
+export function changeVoiceInputDeviceFlow(deviceId: string | null): void {
+  if (deviceId === appStore.state.voiceSettings.inputDeviceId) return;
+  appStore.dispatch(setVoiceInputDeviceValue(deviceId));
+  saveVoiceInputDevicePreference(deviceId);
 }
 
 /**
@@ -248,6 +307,13 @@ export function createVoiceSettingsMiddleware(): StoreMiddleware {
       case changeVoiceEngine.type: {
         const payload = Array.isArray(action.payload) ? action.payload : [];
         if (isVoiceEngine(payload[0])) changeVoiceEngineFlow(payload[0]);
+        break;
+      }
+      case changeVoiceInputDevice.type: {
+        const payload = Array.isArray(action.payload) ? action.payload : [];
+        if (payload[0] === null || typeof payload[0] === "string") {
+          changeVoiceInputDeviceFlow(payload[0]);
+        }
         break;
       }
       case changeVoiceOpenAiModel.type: {
