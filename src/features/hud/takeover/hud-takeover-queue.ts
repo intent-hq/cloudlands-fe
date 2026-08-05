@@ -234,7 +234,8 @@ function insertBehindLeadingViewers(
  * after the close; other workspaces coalesce into their pending entry or
  * append FIFO at the back. A manual VIEWER — active OR pending — is never
  * coalesced into: the pending lookup skips viewer entries, so an event
- * trigger always lands in its own non-viewer entry (monorepo#1492).
+ * trigger always lands in its own non-viewer entry, subject to the pending
+ * cap for non-displayed workspaces (monorepo#1492).
  */
 export function enqueueTakeover(
   state: HudTakeoverQueueState,
