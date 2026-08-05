@@ -1,5 +1,6 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
 
 const mocks = vi.hoisted(() => ({
   getJSON: vi.fn(),
@@ -38,6 +39,7 @@ import {
   setNoteFontStyle,
   setShowArchived,
   setSpellcheckEnabled,
+  setSystemFonts,
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleShowArchived,
@@ -45,6 +47,7 @@ import {
 } from '../user-preferences-slice';
 import {
   hydrateUserPreferencesWorker,
+  loadSystemFontsWorker,
   persistLanguagePreferenceWorker,
   userPreferencesPersistenceSaga,
 } from './user-preferences-persistence-saga';
@@ -74,6 +77,51 @@ describe('userPreferencesPersistenceSaga', () => {
     mocks.isElectron.mockReturnValue(true);
     mocks.getJSON.mockReturnValue(undefined);
     mocks.setJSON.mockReturnValue(undefined);
+    vi.mocked(window.electronAPI.invoke).mockReset();
+    vi.mocked(window.electronAPI.invoke).mockResolvedValue({ success: false, error: 'not available' });
+  });
+
+  it('loads system fonts at startup through the exact IPC request', async () => {
+    const fonts = ['Helvetica Neue', 'JetBrains Mono', 'Cascadia Code'];
+    vi.mocked(window.electronAPI.invoke).mockResolvedValue({ success: true, data: fonts });
+    const dispatch = vi.fn();
+    const task = runSaga({ dispatch, getState: () => ({}) }, userPreferencesPersistenceSaga);
+    await settle();
+
+    expect(vi.mocked(window.electronAPI.invoke).mock.calls).toEqual([
+      [SYSTEM_CHANNELS.LIST_FONTS, undefined],
+    ]);
+    expect(dispatch.mock.calls).toEqual([[setSystemFonts(fonts)]]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('skips system font IPC outside Electron', async () => {
+    mocks.isElectron.mockReturnValue(false);
+    const dispatch = vi.fn();
+    await runSaga({ dispatch, getState: () => ({}) }, loadSystemFontsWorker).toPromise();
+
+    expect(vi.mocked(window.electronAPI.invoke).mock.calls).toEqual([]);
+    expect(dispatch.mock.calls).toEqual([]);
+  });
+
+  it('keeps failed system font loading paths non-fatal', async () => {
+    const dispatch = vi.fn();
+    vi.mocked(window.electronAPI.invoke).mockResolvedValueOnce({ success: false, error: 'closed' });
+    await runSaga({ dispatch, getState: () => ({}) }, loadSystemFontsWorker).toPromise();
+
+    vi.mocked(window.electronAPI.invoke).mockResolvedValueOnce({ success: true, data: ['Mono', 42] });
+    await runSaga({ dispatch, getState: () => ({}) }, loadSystemFontsWorker).toPromise();
+
+    vi.mocked(window.electronAPI.invoke).mockRejectedValueOnce(new Error('closed'));
+    await runSaga({ dispatch, getState: () => ({}) }, loadSystemFontsWorker).toPromise();
+
+    expect(vi.mocked(window.electronAPI.invoke).mock.calls).toEqual([
+      [SYSTEM_CHANNELS.LIST_FONTS, undefined],
+      [SYSTEM_CHANNELS.LIST_FONTS, undefined],
+      [SYSTEM_CHANNELS.LIST_FONTS, undefined],
+    ]);
+    expect(dispatch.mock.calls).toEqual([]);
   });
 
   it('hydrates every valid legacy storage shape exactly once', async () => {
