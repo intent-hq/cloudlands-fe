@@ -107,7 +107,10 @@ describe('hud-takeover-queue', () => {
   it('the next pending entry opens with its own pre-roll blink', () => {
     let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
     state = enqueueTakeover(state, trigger('ws-2'), T0 + 10, NO_BLINK);
+    state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
+    state = tickTakeoverQueue(state, state.phaseEndsAtMs!);
     const closeEnd = T0 + HUD_TAKEOVER_OPEN_MS + DEFAULT_DWELL_MS + HUD_TAKEOVER_CLOSE_MS;
+    expect(state.phaseEndsAtMs).toBe(closeEnd);
     state = tickTakeoverQueue(state, closeEnd);
     expect(state.phase).toBe('blinking');
     expect(state.active?.workspaceId).toBe('ws-2');
@@ -130,44 +133,131 @@ describe('hud-takeover-queue', () => {
     let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
     state = enqueueTakeover(state, trigger('ws-2'), T0 + 100, NO_BLINK);
     expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-2']);
-    // ws-1 must stay active through its full cycle.
+    // ws-1 must stay active through its full cycle (a slightly-late tick
+    // re-anchors the dwell to now).
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS + 10, NO_BLINK);
     expect(state.active?.workspaceId).toBe('ws-1');
-    const closeEnd = T0 + HUD_TAKEOVER_OPEN_MS + DEFAULT_DWELL_MS + HUD_TAKEOVER_CLOSE_MS;
-    state = tickTakeoverQueue(state, closeEnd, NO_BLINK);
+    expect(state.phaseEndsAtMs).toBe(T0 + HUD_TAKEOVER_OPEN_MS + 10 + DEFAULT_DWELL_MS);
+    state = tickTakeoverQueue(state, state.phaseEndsAtMs!, NO_BLINK);
+    expect(state.phase).toBe('closing');
+    state = tickTakeoverQueue(state, state.phaseEndsAtMs!, NO_BLINK);
     expect(state.phase).toBe('opening');
     expect(state.active?.workspaceId).toBe('ws-2');
     expect(state.pending).toEqual([]);
   });
 
-  it('settles a long stall through multiple phases in one tick', () => {
+  it('a stalled clock advances at most ONE phase per tick, re-anchored to now', () => {
     let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
     state = enqueueTakeover(state, trigger('ws-2'), T0 + 1);
-    state = tickTakeoverQueue(state, T0 + 60_000);
-    // ws-1 fully played, ws-2 fully played, everything done.
-    expect(state.phase).toBe('idle');
-    expect(state.pending).toEqual([]);
+    // The clock jumps far past every chained deadline (background tab).
+    const stalledAt = T0 + 60_000;
+    state = tickTakeoverQueue(state, stalledAt);
+    // Only blinking → opening: the new deadline anchors to now, in the future.
+    expect(state.phase).toBe('opening');
+    expect(state.active?.workspaceId).toBe('ws-1');
+    expect(state.phaseEndsAtMs).toBe(stalledAt + HUD_TAKEOVER_OPEN_MS);
+    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-2']);
   });
 
-  it('coalesces a duplicate workspace into the dwelling display and restarts the dwell', () => {
+  it('never fast-forwards past the close: a stale tick cannot switch the active workspace', () => {
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
+    state = enqueueTakeover(state, trigger('ws-2'), T0 + 10, NO_BLINK);
+    // One tick on a long-stalled clock must NOT hand the display to ws-2.
+    const staleNow = T0 + 60_000;
+    state = tickTakeoverQueue(state, staleNow, NO_BLINK);
+    expect(state.active?.workspaceId).toBe('ws-1');
+    expect(state.phase).toBe('dwelling');
+    // ws-2 only opens after a full closing phase whose deadline lay in the
+    // future at transition time.
+    state = tickTakeoverQueue(state, state.phaseEndsAtMs!, NO_BLINK);
+    expect(state.phase).toBe('closing');
+    expect(state.active?.workspaceId).toBe('ws-1');
+    expect(state.phaseEndsAtMs).toBe(staleNow + DEFAULT_DWELL_MS + HUD_TAKEOVER_CLOSE_MS);
+    state = tickTakeoverQueue(state, state.phaseEndsAtMs!, NO_BLINK);
+    expect(state.phase).toBe('opening');
+    expect(state.active?.workspaceId).toBe('ws-2');
+  });
+
+  it('the close plays in full on a stalled clock even with an empty queue', () => {
     let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
-    const later = T0 + HUD_TAKEOVER_OPEN_MS + 3000;
-    state = enqueueTakeover(state, trigger('ws-1', { kind: 'agent_started', detail: 'Verifier' }), later);
     expect(state.phase).toBe('dwelling');
-    expect(state.pending).toEqual([]);
-    expect(state.active?.triggers).toHaveLength(2);
-    expect(activeTakeoverTrigger(state)?.kind).toBe('agent_started');
-    // The restarted dwell scales with BOTH banners' text.
-    expect(state.phaseEndsAtMs).toBe(later + takeoverDwellMs(state.active));
+    const staleNow = T0 + 60_000;
+    state = tickTakeoverQueue(state, staleNow);
+    expect(state.phase).toBe('closing');
+    expect(state.phaseEndsAtMs).toBe(staleNow + HUD_TAKEOVER_CLOSE_MS);
+    state = tickTakeoverQueue(state, state.phaseEndsAtMs!);
+    expect(state.phase).toBe('idle');
   });
 
-  it('coalesces into the opening display without restarting the open', () => {
+  it('freezes the dwelling display: a same-workspace trigger queues at the front instead', () => {
     let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
-    state = enqueueTakeover(state, trigger('ws-1', { kind: 'agent_failed' }), T0 + 200);
+    state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
+    const dwellEndsAt = state.phaseEndsAtMs;
+    const later = T0 + HUD_TAKEOVER_OPEN_MS + 3000;
+    state = enqueueTakeover(
+      state,
+      trigger('ws-1', { kind: 'agent_started', detail: 'Verifier' }),
+      later,
+      NO_BLINK,
+    );
+    expect(state.phase).toBe('dwelling');
+    // The displayed entry and its dwell deadline are untouched.
+    expect(state.active?.triggers).toHaveLength(1);
+    expect(activeTakeoverTrigger(state)?.kind).toBe('task_complete');
+    expect(state.phaseEndsAtMs).toBe(dwellEndsAt);
+    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-1']);
+  });
+
+  it('freezes the opening display: a same-workspace trigger queues instead of coalescing', () => {
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
+    state = enqueueTakeover(state, trigger('ws-1', { kind: 'agent_failed' }), T0 + 200, NO_BLINK);
     expect(state.phase).toBe('opening');
     expect(state.phaseEndsAtMs).toBe(T0 + HUD_TAKEOVER_OPEN_MS);
-    expect(state.active?.triggers).toHaveLength(2);
+    expect(state.active?.triggers).toHaveLength(1);
+    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-1']);
+  });
+
+  it('a same-workspace trigger jumps ahead of other queued workspaces and re-opens next', () => {
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
+    state = enqueueTakeover(state, trigger('ws-2'), T0 + 10, NO_BLINK);
+    state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
+    state = enqueueTakeover(
+      state,
+      trigger('ws-1', { kind: 'agent_failed' }),
+      T0 + HUD_TAKEOVER_OPEN_MS + 100,
+      NO_BLINK,
+    );
+    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-1', 'ws-2']);
+    // ws-1 re-animates next, with the NEW banner only, after the close plays.
+    state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS + DEFAULT_DWELL_MS, NO_BLINK);
+    expect(state.phase).toBe('closing');
+    const closeEnd = T0 + HUD_TAKEOVER_OPEN_MS + DEFAULT_DWELL_MS + HUD_TAKEOVER_CLOSE_MS;
+    state = tickTakeoverQueue(state, closeEnd, NO_BLINK);
+    expect(state.phase).toBe('opening');
+    expect(state.active?.workspaceId).toBe('ws-1');
+    expect(state.active?.triggers).toHaveLength(1);
+    expect(activeTakeoverTrigger(state)?.kind).toBe('agent_failed');
+    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-2']);
+  });
+
+  it('a displayed workspace re-queues ahead of other entries but never ahead of a pending viewer', () => {
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
+    state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
+    const at = T0 + HUD_TAKEOVER_OPEN_MS + 100;
+    // A manual viewer for ws-2 jumps the queue; ws-3 appends FIFO behind it.
+    state = requestImmediateTakeover(state, trigger('ws-2', { kind: 'manual' }), at, NO_BLINK);
+    expect(state.phase).toBe('closing');
+    state = enqueueTakeover(state, trigger('ws-3'), at + 10, NO_BLINK);
+    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-2', 'ws-3']);
+    // The still-displayed ws-1 re-queues ahead of ws-3 but the user's manual
+    // ws-2 viewer keeps precedence at the head of the queue.
+    state = enqueueTakeover(state, trigger('ws-1', { kind: 'agent_failed' }), at + 20, NO_BLINK);
+    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-2', 'ws-1', 'ws-3']);
+    // A further ws-1 trigger merges into that pending entry in place.
+    state = enqueueTakeover(state, trigger('ws-1', { kind: 'question_asked' }), at + 30, NO_BLINK);
+    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-2', 'ws-1', 'ws-3']);
+    expect(state.pending[1].triggers).toHaveLength(2);
   });
 
   it('coalesces duplicates into a pending entry', () => {
@@ -178,12 +268,15 @@ describe('hud-takeover-queue', () => {
     expect(state.pending[0].triggers).toHaveLength(2);
   });
 
-  it('re-enqueues a closing workspace as a new pending entry', () => {
+  it('re-enqueues a closing workspace at the FRONT of pending without touching the close', () => {
     let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
+    state = enqueueTakeover(state, trigger('ws-2'), T0 + 400);
     state = dismissTakeover(state, T0 + 500);
+    const closeEndsAt = state.phaseEndsAtMs;
     state = enqueueTakeover(state, trigger('ws-1', { kind: 'agent_failed' }), T0 + 600);
     expect(state.phase).toBe('closing');
-    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-1']);
+    expect(state.phaseEndsAtMs).toBe(closeEndsAt);
+    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-1', 'ws-2']);
   });
 
   it('DISMISS skips the dwell and the next entry opens after the close', () => {
@@ -218,6 +311,21 @@ describe('hud-takeover-queue', () => {
     expect(overflow).toBe(state);
     const coalesced = enqueueTakeover(state, trigger('ws-1', { kind: 'agent_failed' }), T0 + 101);
     expect(coalesced.pending[0].triggers).toHaveLength(2);
+  });
+
+  it('the displayed workspace re-queues even when pending is at the cap', () => {
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-0'), T0, NO_BLINK);
+    for (let i = 1; i <= HUD_TAKEOVER_MAX_PENDING; i++) {
+      state = enqueueTakeover(state, trigger(`ws-${i}`), T0 + i, NO_BLINK);
+    }
+    state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
+    expect(state.phase).toBe('dwelling');
+    expect(state.pending).toHaveLength(HUD_TAKEOVER_MAX_PENDING);
+    // The on-screen ws-0 must not be dropped by the cap: it jumps the queue.
+    const at = T0 + HUD_TAKEOVER_OPEN_MS + 100;
+    state = enqueueTakeover(state, trigger('ws-0', { kind: 'agent_failed' }), at, NO_BLINK);
+    expect(state.pending).toHaveLength(HUD_TAKEOVER_MAX_PENDING + 1);
+    expect(state.pending[0].workspaceId).toBe('ws-0');
   });
 
   it('caps triggers kept per entry at the banner limit', () => {
@@ -497,7 +605,7 @@ describe('hud-takeover-queue', () => {
     expect(state.active?.isViewer).toBe(false);
   });
 
-  it('event triggers queue behind an open viewer instead of coalescing into it', () => {
+  it('event triggers queue behind an open viewer; its own workspace jumps to the front', () => {
     let state = requestImmediateTakeover(
       createHudTakeoverQueue(),
       trigger('ws-1', { kind: 'manual' }),
@@ -505,9 +613,10 @@ describe('hud-takeover-queue', () => {
       NO_BLINK,
     );
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
-    // Same workspace AND a different workspace: both wait in pending.
-    state = enqueueTakeover(state, trigger('ws-1', { kind: 'task_complete' }), T0 + 2000);
-    state = enqueueTakeover(state, trigger('ws-2', { kind: 'agent_failed' }), T0 + 3000);
+    // A different workspace queues FIFO; the viewer's own workspace (enqueued
+    // LATER) jumps ahead of it. Neither coalesces into the viewer.
+    state = enqueueTakeover(state, trigger('ws-2', { kind: 'agent_failed' }), T0 + 2000);
+    state = enqueueTakeover(state, trigger('ws-1', { kind: 'task_complete' }), T0 + 3000);
     expect(state.phase).toBe('dwelling');
     expect(state.phaseEndsAtMs).toBeNull();
     expect(state.active?.triggers).toHaveLength(1);
