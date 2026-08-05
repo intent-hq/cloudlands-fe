@@ -5,6 +5,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -153,6 +154,13 @@ async function openMenu() {
   await fireEvent.click(button);
   return screen.findByRole('menu');
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockTooltip.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
+warmImport(() => import('../ChatWorkspaceCard.svelte'));
 
 describe('ChatWorkspaceCard overflow menu', () => {
   beforeEach(() => {

@@ -61,6 +61,7 @@ vi.mock('svelte-fa', async () => {
 });
 
 import CreateAgentSection from '../CreateAgentSection.svelte';
+import { warmImport } from '../../../../test/warm-import';
 
 async function expandDropdown() {
   const trigger = screen.getByText('Create new agent');
@@ -69,6 +70,12 @@ async function expandDropdown() {
     expect(screen.getByText('Blank Agent')).toBeTruthy();
   });
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../modals/__tests__/mocks/MockPortal.svelte'));
+warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
+warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
 
 describe('CreateAgentSection Escape handling (escape-layer stack)', () => {
   afterEach(() => {

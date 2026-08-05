@@ -10,6 +10,7 @@ import {
   fireEvent,
   waitFor,
 } from '@testing-library/svelte';
+import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -222,6 +223,14 @@ function makePushedCommit(hash: string, overrides: Record<string, unknown> = {})
     ...overrides,
   };
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/MockSimple.svelte'));
+warmImport(() => import('./mocks/MockBranchSelector.svelte'));
+warmImport(() => import('./mocks/MockFileRow.svelte'));
+warmImport(() => import('./mocks/Fa.svelte'));
+warmImport(() => import('../PRSection.svelte'));
 
 describe('PRSection', () => {
   beforeEach(() => {

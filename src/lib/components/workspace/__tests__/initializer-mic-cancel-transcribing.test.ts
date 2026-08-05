@@ -182,6 +182,7 @@ import {
   hasActiveTranscriptionSession,
   resetTranscriptionCancellation,
 } from '$features/hardware-console/voice/transcription-cancellation';
+import { warmImport } from '../../../../test/warm-import';
 
 function renderInitializer() {
   return render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
@@ -192,6 +193,13 @@ function transcribingMicButton(): HTMLButtonElement | null {
   const button = document.body.querySelector('[data-testid="initializer-mic-button"]');
   return (button as HTMLButtonElement | null) ?? null;
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/MockRichTextarea.svelte'));
+warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
+warmImport(() => import('./mocks/MockRepoAndBranchPicker.svelte'));
+warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
 
 describe('CompactWorkspaceInitializer mic cancel-while-transcribing', () => {
   beforeEach(() => {

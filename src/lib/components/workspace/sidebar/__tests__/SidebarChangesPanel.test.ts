@@ -2,7 +2,6 @@ import {
   describe,
   it,
   expect,
-  beforeAll,
   beforeEach,
   vi,
   type Mock,
@@ -14,6 +13,7 @@ import {
 } from '@testing-library/svelte';
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import { ChangeStage } from '$features/file-tracking/types';
+import { warmImport } from '../../../../../test/warm-import';
 
 // Polyfill scrollIntoView for jsdom
 if (typeof Element.prototype.scrollIntoView !== 'function') {
@@ -615,15 +615,14 @@ async function renderPanel(props: Record<string, any> = {}) {
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe('SidebarChangesPanel', () => {
-  // Warm the component module graph up front. The cold dynamic import of
-  // SidebarChangesPanel.svelte (and its transitive deps) was previously billed
-  // to the first test's timeout and flaked on loaded CI runners
-  // (intent-hq/monorepo#1406). After this, renderPanel()'s import is a cache hit.
-  beforeAll(async () => {
-    await import('../SidebarChangesPanel.svelte');
-  }, 120_000);
+// Warm the component module graph up front. The cold dynamic import of
+// SidebarChangesPanel.svelte (and its transitive deps) was previously billed
+// to the first test's timeout and flaked on loaded CI runners
+// (intent-hq/monorepo#1406, intent-hq/monorepo#1464). After this,
+// renderPanel()'s import is a cache hit.
+warmImport(() => import('../SidebarChangesPanel.svelte'));
 
+describe('SidebarChangesPanel', () => {
   beforeEach(async () => {
     await resetMocks();
     mockStageFiles.mockClear();

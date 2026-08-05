@@ -41,6 +41,7 @@ vi.mock('svelte-fa', async () => {
 });
 
 import SettingsChangeCard from './SettingsChangeCard.svelte';
+import { warmImport } from '../../../../test/warm-import';
 
 function makeProposal(): Proposal {
   return {
@@ -59,6 +60,10 @@ function makeProposal(): Proposal {
     },
   };
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
 
 describe('SettingsChangeCard', () => {
   beforeEach(() => {

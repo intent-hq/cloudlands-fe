@@ -170,6 +170,7 @@ vi.mock('svelte-fa', async () => ({
 
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
 import { REPO_CONFIG_SCRIPT_NAME } from '$features/setup-scripts';
+import { warmImport } from '../../../../test/warm-import';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -209,6 +210,12 @@ function selectGitHubRepo(overrides: Record<string, unknown> = {}) {
     },
   });
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/MockRichTextarea.svelte'));
+warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
+warmImport(() => import('./mocks/MockRepoAndBranchPicker.svelte'));
 
 describe('CompactWorkspaceInitializer repo-config setup script detection', () => {
   beforeEach(() => {

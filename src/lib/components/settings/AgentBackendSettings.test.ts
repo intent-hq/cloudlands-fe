@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import AgentBackendSettings from './AgentBackendSettings.svelte';
+import { warmImport } from '../../../test/warm-import';
 
 // Mock appClient - use vi.hoisted to avoid hoisting issues
 const mocks = vi.hoisted(() => ({
@@ -39,6 +40,10 @@ function mockSettings({
     ...(flush === undefined ? [] : [{ path: FLUSH_PATH, value: flush }]),
   ]);
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../ui/__tests__/mocks/Fa.svelte'));
 
 describe('AgentBackendSettings', () => {
   beforeEach(() => {

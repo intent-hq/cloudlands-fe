@@ -40,6 +40,7 @@ vi.mock('svelte-fa', async () => {
 });
 
 import AddContextSection from '../AddContextSection.svelte';
+import { warmImport } from '../../../../../test/warm-import';
 
 async function expandDropdown() {
   const trigger = screen.getByText('Add context');
@@ -48,6 +49,12 @@ async function expandDropdown() {
     expect(screen.getByText('Note')).toBeTruthy();
   });
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../initializer/__tests__/mocks/MockComponent.svelte'));
+warmImport(() => import('../../../modals/__tests__/mocks/MockPortal.svelte'));
+warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
 
 describe('AddContextSection Escape handling (escape-layer stack)', () => {
   afterEach(() => {

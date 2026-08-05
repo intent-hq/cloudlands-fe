@@ -84,6 +84,7 @@ vi.mock('$lib/components/ui/Header.svelte', async () => ({
 }));
 
 import IssueSuggestions from '../IssueSuggestions.svelte';
+import { warmImport } from '../../../../../test/warm-import';
 
 const linearIssue = {
   id: 'lin-1',
@@ -111,6 +112,12 @@ function tabButton(label: string): HTMLButtonElement {
   if (!button) throw new Error(`Tab button "${label}" not found`);
   return button as HTMLButtonElement;
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('./mocks/MockComponent.svelte'));
+warmImport(() => import('./mocks/MockTooltipRich.svelte'));
 
 describe('IssueSuggestions source preference + provider ordering', () => {
   // The global test setup replaces window.localStorage with a non-storing

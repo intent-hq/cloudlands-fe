@@ -129,6 +129,7 @@ import {
   setScriptsInitialized,
 } from '$store/renderer/slices/scripts/scripts-slice';
 import { selectScript } from '$store/renderer/slices/terminals/terminals-slice';
+import { warmImport } from '../../../../test/warm-import';
 
 const WS_A = 'ws-a' as WorkspaceId;
 
@@ -158,6 +159,14 @@ function rawSelectedScriptId(wsId: string): string | null {
 function dispatchedTypes(): string[] {
   return (appStore as any).__dispatched.map((action: { type: string }) => action.type);
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockTooltip.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockTooltipRich.svelte'));
+warmImport(() => import('./mocks/MockButton.svelte'));
 
 describe('QuakeTerminalOverlay delete script (PR #705 review)', () => {
   beforeEach(() => {

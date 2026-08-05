@@ -112,6 +112,7 @@ import {
   setScriptsInitialized,
   appendScriptOutput,
 } from '$store/renderer/slices/scripts/scripts-slice';
+import { warmImport } from '../../../../test/warm-import';
 
 const WS_A = 'ws-a' as WorkspaceId;
 const WS_B = 'ws-b' as WorkspaceId;
@@ -143,6 +144,14 @@ function seedWorkspace(wsId: string, scriptId: string) {
 function wsState(wsId: string) {
   return (appStore as any).state.scripts.byWorkspaceId[wsId];
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockTooltip.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockTooltipRich.svelte'));
+warmImport(() => import('./mocks/MockButton.svelte'));
 
 describe('QuakeTerminalOverlay scripts persistence (monorepo#1330)', () => {
   beforeEach(() => {

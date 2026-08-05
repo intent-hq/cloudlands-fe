@@ -171,6 +171,13 @@ vi.mock('$lib/components/ui/button/button.svelte', async () => {
 });
 
 import TerminalSidebar from '../TerminalSidebar.svelte';
+import { warmImport } from '../../../../test/warm-import';
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
+warmImport(() => import('./mocks/MockButton.svelte'));
 
 describe('TerminalSidebar detection flow', () => {
   beforeEach(() => {

@@ -105,6 +105,7 @@ vi.mock('$lib/components/workspace/initializer/AddRemoteSetupModal.svelte', asyn
 }));
 
 import RepoSelector from '../RepoSelector.svelte';
+import { warmImport } from '../../../../../test/warm-import';
 
 const DROPDOWN_HEADING = 'What repo should we work on?';
 
@@ -114,6 +115,11 @@ async function openDropdown(container: HTMLElement) {
   expect(trigger).toBeTruthy();
   await fireEvent.click(trigger!);
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('./mocks/MockComponent.svelte'));
 
 describe('RepoSelector Escape handling (escape-layer stack)', () => {
   afterEach(() => {

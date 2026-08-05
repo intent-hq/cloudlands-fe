@@ -176,6 +176,7 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
+import { warmImport } from '../../../../test/warm-import';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -219,6 +220,12 @@ async function flush() {
   await Promise.resolve();
   await new Promise((r) => setTimeout(r, 0));
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/MockRichTextarea.svelte'));
+warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
+warmImport(() => import('./mocks/MockRepoAndBranchPicker.svelte'));
 
 describe('CompactWorkspaceInitializer remote-URL probe race', () => {
   beforeEach(() => {
