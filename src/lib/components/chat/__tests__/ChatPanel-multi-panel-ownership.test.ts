@@ -6,9 +6,32 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const testState = vi.hoisted(() => {
   const readable = <T>(value: T) => ({ subscribe: (run: (value: T) => void) => (run(value), () => {}) });
+  const createControllableReadable = <T>(value: T) => {
+    const subscribers = new Set<(nextValue: T) => void>();
+    let currentValue = value;
+    return {
+      emit: (nextValue: T) => {
+        currentValue = nextValue;
+        subscribers.forEach((run) => run(currentValue));
+      },
+      readable: {
+        subscribe: (run: (nextValue: T) => void) => {
+          run(currentValue);
+          subscribers.add(run);
+          return () => {
+            subscribers.delete(run);
+          };
+        },
+      },
+    };
+  };
+  const panelTabs = createControllableReadable<unknown[]>([]);
+  const panel = { title: 'app.ts' };
   const selector = <T>(value: T) => Object.assign(vi.fn(() => readable(value)), { select: vi.fn(() => value) });
   return {
     dispatch: vi.fn(),
+    panelTabs,
+    panel,
     selector,
     readable,
     panelManager: {
@@ -18,7 +41,7 @@ const testState = vi.hoisted(() => {
         activeTabId: 'file-tab',
         tabs: [
           { id: 'agent-tab', type: 'agent', agentId: 'agent-1', title: 'Agent' },
-          { id: 'file-tab', type: 'file', filePath: 'src/app.ts', title: 'app.ts' },
+          { id: 'file-tab', type: 'file', filePath: 'src/app.ts', title: panel.title },
         ],
       })),
     },
@@ -36,7 +59,7 @@ vi.mock('$lib/electron-bridge', () => ({ invoke: vi.fn().mockResolvedValue({ suc
 vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
 
-vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({ selectAllTabs: vi.fn(() => testState.readable([])) }));
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({ selectAllTabs: vi.fn(() => testState.panelTabs.readable) }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: testState.selector(null), selectAgentIsResponding: testState.selector(false),
   selectAgentIsRunning: testState.selector(false), selectAgentSessionIsStreaming: testState.selector(false),
@@ -97,9 +120,17 @@ function dispatchedTypes() {
   return testState.dispatch.mock.calls.map(([action]) => action?.type);
 }
 
+function updatePanelActions() {
+  return testState.dispatch.mock.calls
+    .map(([action]) => action)
+    .filter((action) => action?.type === 'multiPanelContext/updatePanels');
+}
+
 describe('ChatPanel multi-panel context ownership', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    testState.panel.title = 'app.ts';
+    testState.panelTabs.emit([]);
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   });
 
@@ -121,5 +152,32 @@ describe('ChatPanel multi-panel context ownership', () => {
 
     await waitFor(() => expect(dispatchedTypes()).toContain('multiPanelContext/setWorkspace'));
     expect(dispatchedTypes()).toContain('multiPanelContext/updatePanels');
+  });
+
+  it('does not produce a fresh availablePanelContexts reference for unchanged panel data', async () => {
+    await renderChatPanel(true);
+
+    await waitFor(() => expect(updatePanelActions()).toHaveLength(1));
+    const firstPanels = updatePanelActions()[0].payload[0];
+
+    testState.panelTabs.emit([]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(updatePanelActions()).toHaveLength(1);
+    expect(updatePanelActions()[0].payload[0]).toBe(firstPanels);
+  });
+
+  it('refreshes availablePanelContexts for real semantic panel changes', async () => {
+    await renderChatPanel(true);
+
+    await waitFor(() => expect(updatePanelActions()).toHaveLength(1));
+    const firstPanels = updatePanelActions()[0].payload[0];
+    testState.panel.title = 'renamed.ts';
+    testState.panelTabs.emit([]);
+
+    await waitFor(() => expect(updatePanelActions()).toHaveLength(2));
+    const nextPanels = updatePanelActions()[1].payload[0];
+    expect(nextPanels).not.toBe(firstPanels);
+    expect(nextPanels[0].label).toBe('renamed.ts');
   });
 });
