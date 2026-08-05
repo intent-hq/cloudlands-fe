@@ -7,7 +7,7 @@ import {
   updateItem,
   type Collection,
 } from "@augmentcode/themis/utils/collections/collection-utils";
-import type { ModelTier, SpecialistFileScope } from "$shared/specialist-file-types";
+import type { SpecialistFileScope, SpecialistModelOption } from "$shared/specialist-file-types";
 
 // ============================================================================
 // Types (re-exported for consumers)
@@ -35,13 +35,17 @@ export interface FileSpecialist {
   description: string;
   codingAgent?: string;
   model: string;
-  modelTier?: ModelTier;
   behaviorPrompt: string;
   roleReminder?: string;
   filePath: string;
   source: SpecialistFileScope;
   /** When true, excluded from picker surfaces (Settings still shows it). */
   hidden?: boolean;
+  /**
+   * Ordered delegation model options (PROTOCOL §5.11 `modelOptions`).
+   * Undefined when the wire omitted the key (resolved list empty/inherited).
+   */
+  modelOptions?: SpecialistModelOption[];
   /**
    * Daemon-computed default-model preview (`specialist.list` resolvedModel/
    * resolvedProvider, PROTOCOL §5.11). Absent when resolution yields the
@@ -57,8 +61,9 @@ export interface FileSpecialistWritePayload {
   description: string;
   codingAgent?: string;
   model?: string;
-  modelTier?: ModelTier;
   roleReminder?: string;
+  /** Empty list is omitted on the wire (undefined) so inheritance is kept. */
+  modelOptions?: SpecialistModelOption[];
   behaviorPrompt: string;
   scope?: SpecialistFileScope;
   workspacePath?: string;
