@@ -128,10 +128,22 @@ beforeEach(() => {
 afterEach(() => {
   clearPromptDictationTarget();
   resetTranscriptionCancellation();
+  document.body.innerHTML = '';
   vi.clearAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
+
+/** Mount a `[role="dialog"]` overlay with a focused textarea (modal focus). */
+function focusEditableInDialog(): HTMLTextAreaElement {
+  const dialog = document.createElement('div');
+  dialog.setAttribute('role', 'dialog');
+  const textarea = document.createElement('textarea');
+  dialog.appendChild(textarea);
+  document.body.appendChild(dialog);
+  textarea.focus();
+  return textarea;
+}
 
 describe('gatherTranscriptionContext', () => {
   it('composes keyterms from workspace title, branch, and visible agent names', () => {
@@ -654,6 +666,130 @@ describe('handleFinishedRecording with a prompt dictation target', () => {
   });
 });
 
+describe('handleFinishedRecording with focus inside a modal dialog', () => {
+  // Regression for intent-hq/monorepo#1461: dictating with the New Space
+  // modal open must land in the modal's editor, never steal focus into the
+  // chat composer behind it.
+  it('inserts at the focused editable without focusing the agent composer', async () => {
+    focusEditableInDialog();
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const focusComposer = vi.fn();
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, { transcribe, insertText, focusComposer });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(focusComposer).not.toHaveBeenCalled();
+    expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('captures the dialog focus synchronously at recording-finish time', async () => {
+    // Focus is inside the dialog when the recording finishes but moves away
+    // before the transcription resolves — the routing decision must stick.
+    focusEditableInDialog();
+    let resolve!: (value: { text: string }) => void;
+    const transcribe = vi.fn().mockReturnValue(
+      new Promise<{ text: string }>((res) => {
+        resolve = res;
+      }),
+    );
+    const insertText = vi.fn().mockReturnValue(true);
+    const focusComposer = vi.fn();
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, { transcribe, insertText, focusComposer });
+    document.body.innerHTML = '';
+    resolve(TRANSCRIBE_RESULT);
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(focusComposer).not.toHaveBeenCalled();
+    expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+  });
+
+  it('suppresses autoSend (a synthetic Enter must not submit the modal form)', async () => {
+    focusEditableInDialog();
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const sendComposer = vi.fn();
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(
+      RECORDING,
+      { transcribe, insertText, sendComposer, focusComposer: vi.fn() },
+      { autoSend: true },
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+    expect(sendComposer).not.toHaveBeenCalled();
+  });
+
+  it('suppresses the empty-transcript autoSend send as well', async () => {
+    focusEditableInDialog();
+    const transcribe = vi.fn().mockResolvedValue({ ...TRANSCRIBE_RESULT, text: '  ' });
+    const sendComposer = vi.fn().mockReturnValue(true);
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(
+      RECORDING,
+      { transcribe, insertText: vi.fn(), sendComposer, focusComposer: vi.fn() },
+      { autoSend: true },
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(sendComposer).not.toHaveBeenCalled();
+  });
+
+  it('a registered prompt dictation target still wins over the dialog focus', async () => {
+    focusEditableInDialog();
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const promptFocus = vi.fn();
+    setPromptDictationTarget({ focus: promptFocus });
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, {
+      transcribe,
+      insertText,
+      focusComposer: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(promptFocus).toHaveBeenCalled();
+    expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+  });
+
+  it('keeps the agent-composer routing when focus is outside any dialog', async () => {
+    const textarea = document.createElement('textarea');
+    document.body.appendChild(textarea);
+    textarea.focus();
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    const focusComposer = vi.fn();
+    const sendComposer = vi.fn().mockReturnValue(true);
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(
+      RECORDING,
+      { transcribe, insertText, focusComposer, sendComposer },
+      { autoSend: true },
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(focusComposer).toHaveBeenCalledWith('agent-a');
+    expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+    expect(sendComposer).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('cancelActiveTranscription during an in-flight transcription', () => {
   /** A transcribe seam that stays pending until the test resolves/rejects it. */
   function deferredTranscribe() {
@@ -786,6 +922,24 @@ describe('runTranscriptionFlow', () => {
     expect(transcribe).not.toHaveBeenCalled();
     expect(focusComposer).toHaveBeenCalledWith('agent-a');
     expect(sendComposer).toHaveBeenCalled();
+  });
+
+  it('without a recording and with autoSend, suppresses the send when focus is inside a dialog', async () => {
+    // Regression for the intent-hq/monorepo#1461 follow-up: a send gesture
+    // with no transcribable audio must not focus/send the chat composer
+    // behind a focused modal dialog — the send is simply suppressed.
+    focusEditableInDialog();
+    const sendComposer = vi.fn().mockReturnValue(true);
+    const focusComposer = vi.fn();
+    vi.useFakeTimers();
+    const flow = runTranscriptionFlow(null, { autoSend: true }, {
+      sendComposer,
+      focusComposer,
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+    expect(focusComposer).not.toHaveBeenCalled();
+    expect(sendComposer).not.toHaveBeenCalled();
   });
 
   it('without a recording and without autoSend, does nothing', async () => {
