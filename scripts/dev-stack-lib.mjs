@@ -44,8 +44,13 @@ export function parseCommands(argv) {
  * Rules:
  * - anything closing while a teardown is in progress → ignore (the runner
  *   only kills after teardownInProgress is set, so its own kills land here;
- *   a close with killed=true outside a teardown means something external
- *   terminated the member and must still tear the stack down)
+ *   killed=true is only ever set by concurrently's Command.kill() — its
+ *   KillOnSignal controller or this runner's teardown — while an external
+ *   kill arrives as killed=false with a string exitCode and tears down.
+ *   Accepted race: a sibling's genuine non-zero close arriving after
+ *   teardown began is also swallowed here, so the runner can exit 0 and
+ *   mask a concurrent crash — the window is tiny and the exit code would
+ *   be unreliable anyway once kills are in flight)
  * - build exits 0            → ignore (overlapped-build startup keeps going)
  * - build exits non-zero     → teardown, failure (mirrors --kill-others-on-fail)
  * - long-running exits (any) → teardown; failure iff non-zero
