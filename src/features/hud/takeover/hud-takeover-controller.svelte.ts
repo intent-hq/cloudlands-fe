@@ -75,7 +75,7 @@ export function createTakeoverController(reduced: () => boolean): HudTakeoverCon
     setTakeoverBlinkTarget(null);
   });
 
-  // FLIP zoom: measured once per display (`zoomKey` dedupes coalesce re-runs).
+  // FLIP zoom: measured once per display (`zoomKey` dedupes queue-update re-runs).
   $effect(() => {
     if (queue.phase !== 'opening' || !queue.active) {
       zoomKey = '';
