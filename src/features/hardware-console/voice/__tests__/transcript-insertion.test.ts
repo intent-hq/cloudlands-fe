@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   insertTranscriptText,
+  isFocusInsideDialog,
   padTranscriptForInsertion,
   sendFocusedComposer,
 } from '../transcript-insertion';
@@ -74,6 +75,55 @@ describe('insertTranscriptText', () => {
     textarea.setSelectionRange(0, 8);
     expect(insertTranscriptText('added')).toBe(true);
     expect(textarea.value).toBe('keep all added of this');
+  });
+});
+
+describe('isFocusInsideDialog', () => {
+  it('returns false when nothing has focus', () => {
+    expect(isFocusInsideDialog()).toBe(false);
+  });
+
+  it('returns false when the focused element is outside any dialog', () => {
+    focusTextarea();
+    expect(isFocusInsideDialog()).toBe(false);
+  });
+
+  it('returns true when the focused element sits inside a [role="dialog"]', () => {
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    const textarea = document.createElement('textarea');
+    dialog.appendChild(textarea);
+    document.body.appendChild(dialog);
+    textarea.focus();
+    expect(isFocusInsideDialog()).toBe(true);
+  });
+
+  it('returns true when the dialog element itself holds focus', () => {
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.tabIndex = -1;
+    document.body.appendChild(dialog);
+    dialog.focus();
+    expect(isFocusInsideDialog()).toBe(true);
+  });
+
+  it('returns true when the focused element sits inside a [role="alertdialog"]', () => {
+    const alertDialog = document.createElement('div');
+    alertDialog.setAttribute('role', 'alertdialog');
+    const textarea = document.createElement('textarea');
+    alertDialog.appendChild(textarea);
+    document.body.appendChild(alertDialog);
+    textarea.focus();
+    expect(isFocusInsideDialog()).toBe(true);
+  });
+
+  it('returns true when the alertdialog element itself holds focus', () => {
+    const alertDialog = document.createElement('div');
+    alertDialog.setAttribute('role', 'alertdialog');
+    alertDialog.tabIndex = -1;
+    document.body.appendChild(alertDialog);
+    alertDialog.focus();
+    expect(isFocusInsideDialog()).toBe(true);
   });
 });
 

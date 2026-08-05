@@ -7,6 +7,7 @@
    * with the action's localized label; the action-key middleware hides it
    * after press inactivity. Same visual/placement as EncoderCycleHud —
    * mounted after it in the layout so it paints on top when both show.
+   * Sits at z-70 so it stays visible above modal overlays (z-60).
    */
   import { fade } from 'svelte/transition';
   import { m } from '$shared/paraglide/messages.js';
@@ -23,7 +24,7 @@
 
 {#if text !== null}
   <div
-    class="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+    class="fixed bottom-8 left-1/2 -translate-x-1/2 z-70 pointer-events-none"
     transition:fade={{ duration: 120 }}
     role="status"
   >

@@ -3,6 +3,7 @@
    * Small HUD shown while the encoder rotation cycles the active workspace.
    * Purely presentational: the encoder service navigates and dispatches
    * `encoderHudShown`; the middleware hides it after rotation inactivity.
+   * Sits at z-70 so it stays visible above modal overlays (z-60).
    */
   import { fade } from 'svelte/transition';
   import { m } from '$shared/paraglide/messages.js';
@@ -23,7 +24,7 @@
 
 {#if $hudWorkspaceId$ !== null && title !== null}
   <div
-    class="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+    class="fixed bottom-8 left-1/2 -translate-x-1/2 z-70 pointer-events-none"
     transition:fade={{ duration: 120 }}
     role="status"
     aria-label={m.hardwareConsole_encoderHud_ariaLabel()}
