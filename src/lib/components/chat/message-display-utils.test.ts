@@ -168,9 +168,7 @@ describe('resolveStoppedIndicatorLabel', () => {
 
   it('resolves generic stopped for an unknown future reason', () => {
     expect(
-      resolveStoppedIndicatorLabel(
-        interrupted({ interruptReason: 'some_future_reason' as never }),
-      ),
+      resolveStoppedIndicatorLabel(interrupted({ interruptReason: 'some_future_reason' })),
     ).toEqual({ kind: 'stopped' });
   });
 });
