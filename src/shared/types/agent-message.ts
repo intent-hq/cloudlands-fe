@@ -85,6 +85,18 @@ export interface MessageMetadata {
   merged?: boolean;
   mergedCount?: number;
 
+  // Interruption cause on interrupted assistant rows (PROTOCOL §7); also
+  // carried by the terminal `agent:stream:end` event. `interruptedBy` is only
+  // present for `preempted_by_message`. Open union: unknown future daemon
+  // reasons pass through and resolve to the generic Stopped label.
+  interruptReason?:
+    | 'user_stop'
+    | 'preempted_by_message'
+    | 'daemon_shutdown'
+    | 'agent_stopped'
+    | (string & {});
+  interruptedBy?: { kind: 'user' } | { kind: 'agent'; agentId?: string; name?: string };
+
   // Streaming
   stopReason?: string;
   sessionId?: string;

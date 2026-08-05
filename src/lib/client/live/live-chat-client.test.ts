@@ -846,6 +846,64 @@ describe("LiveChatClient.subscribe (ported delta-path regressions)", () => {
     off();
   });
 
+  it("carries interruptReason/interruptedBy metadata on the terminal reconcile onto the reconciled message (§7.1/§7.2)", async () => {
+    // A preemption persists the interrupted row with the reason metadata and
+    // the daemon lifts it onto the terminal delta entities — the fields must
+    // survive verbatim onto the materialized message so the reason-specific
+    // Stopped label renders live, without a reload.
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: unknown[]; isStreaming: boolean }> = [];
+    const off = client.subscribe("agent-1", (t) => seen.push(t));
+    await flush();
+    snapshotPush("sub-1", 0, SEEDED_SNAPSHOT);
+
+    deltaPush("sub-1", 1, {
+      added: [
+        {
+          agentId: "agent-1",
+          messageId: "0190a200-asst",
+          role: "assistant",
+          block: { type: "text", id: "0190a200-asst:0", text: "Partial " },
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    });
+
+    const interruptedMetadata = {
+      interrupted: true,
+      stopReason: "interrupted",
+      interruptReason: "preempted_by_message",
+      interruptedBy: { kind: "agent", agentId: "agent-sender-1", name: "Coordinator" },
+    };
+    deltaPush("sub-1", 2, {
+      added: [],
+      updated: [
+        {
+          agentId: "agent-1",
+          messageId: "0190a200-asst",
+          role: "assistant",
+          messageSeq: 1,
+          timestamp: "2026-06-27T01:00:03.000Z",
+          streamingComplete: true,
+          metadata: interruptedMetadata,
+          block: { type: "text", id: "0190a200-asst:0", text: "Partial " },
+        },
+      ],
+      removedIds: [],
+    });
+
+    const last = seen[seen.length - 1];
+    const asst = last.messages[1] as {
+      isStreaming?: boolean;
+      metadata?: Record<string, unknown>;
+    };
+    expect(asst.isStreaming).toBe(false);
+    expect(asst.metadata).toEqual(interruptedMetadata);
+    off();
+  });
+
   it("mid-turn rehydration: the seq-0 snapshot's synthetic in-flight assistant continues via deltas without a gap", async () => {
     // Tab switch / app restart mid-turn: the seq-0 snapshot carries the
     // synthetic in-flight assistant message (partial text preserved) and the
