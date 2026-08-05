@@ -96,6 +96,19 @@ describe("multiPanelContextReducer", () => {
   });
 
   describe("updatePanels", () => {
+    it("should return same state for semantically unchanged panels after preserving checked state", () => {
+      const stateWithChecked = withPanels(
+        makePanel({ id: "p1", checked: true, isActive: true, filePath: "file.ts" }),
+      );
+      const incomingPanels = [
+        makePanel({ id: "p1", checked: false, isActive: true, filePath: "file.ts" }),
+      ];
+
+      const state = multiPanelContextReducer(stateWithChecked, updatePanels(incomingPanels));
+
+      expect(state).toBe(stateWithChecked);
+    });
+
     it("should preserve checked state for existing panels", () => {
       const stateWithChecked = withPanels(
         makePanel({ id: "p1", checked: true }),
@@ -113,6 +126,47 @@ describe("multiPanelContextReducer", () => {
       const newPanels = [makePanel({ id: "p1", checked: true })];
       const state = multiPanelContextReducer(initialState, updatePanels(newPanels));
       expect(getItems(state.panels)[0].checked).toBe(true);
+    });
+
+    it("should update state for real panel additions", () => {
+      const stateWithPanel = withPanels(makePanel({ id: "p1" }));
+      const state = multiPanelContextReducer(
+        stateWithPanel,
+        updatePanels([makePanel({ id: "p1" }), makePanel({ id: "p2" })]),
+      );
+
+      expect(state).not.toBe(stateWithPanel);
+      expect(getItems(state.panels).map((panel) => panel.id)).toEqual(["p1", "p2"]);
+    });
+
+    it("should update state for panel removals", () => {
+      const stateWithPanels = withPanels(makePanel({ id: "p1" }), makePanel({ id: "p2" }));
+      const state = multiPanelContextReducer(stateWithPanels, updatePanels([makePanel({ id: "p1" })]));
+
+      expect(state).not.toBe(stateWithPanels);
+      expect(getItems(state.panels).map((panel) => panel.id)).toEqual(["p1"]);
+    });
+
+    it("should update state for semantic panel field changes", () => {
+      const stateWithPanel = withPanels(makePanel({ id: "p1", label: "file.ts" }));
+      const state = multiPanelContextReducer(
+        stateWithPanel,
+        updatePanels([makePanel({ id: "p1", label: "renamed.ts" })]),
+      );
+
+      expect(state).not.toBe(stateWithPanel);
+      expect(getItems(state.panels)[0].label).toBe("renamed.ts");
+    });
+
+    it("should update state for semantic panel reordering", () => {
+      const stateWithPanels = withPanels(makePanel({ id: "p1" }), makePanel({ id: "p2" }));
+      const state = multiPanelContextReducer(
+        stateWithPanels,
+        updatePanels([makePanel({ id: "p2" }), makePanel({ id: "p1" })]),
+      );
+
+      expect(state).not.toBe(stateWithPanels);
+      expect(getItems(state.panels).map((panel) => panel.id)).toEqual(["p2", "p1"]);
     });
   });
 

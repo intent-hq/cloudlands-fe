@@ -145,7 +145,7 @@ export const initAppStore = (
       }
     },
   };
-
+  
   exposeStoreContextDebug(storeContext);
 
   // Populate the renderer store bridge so that services reachable from the

@@ -343,7 +343,9 @@ export const agentStreamResetStreamingMessagesRequested = createAction<
  * are ignored. Handled in sagas/ensure-agent-session-saga.ts.
  */
 export const ensureAgentSessionLoaded = createAction<[wsId: string, agentId: string]>(
-  'workspaceAgents/ensureAgentSessionLoaded',
+  'workspaceAgents/ensureAgentSessionLoaded', (...args) => {
+    return args;
+  }
 );
 
 export const activateAgentRequested = createAsyncAction<
