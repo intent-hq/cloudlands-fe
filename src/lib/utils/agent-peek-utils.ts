@@ -116,13 +116,21 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
   // holds the initial user message), the session's wire-persisted preview
   // fields are the freshest source. Transcript-derived values stay
   // authoritative whenever the transcript contains the corresponding role.
-  if (!foundAssistantMessage && agent.lastAgentResponse) {
-    const extracted = AuggieTextParser.extractDigest(agent.lastAgentResponse);
-    if (extracted.digest) {
-      digest = extracted.digest;
-      lastResponse = extracted.cleanedText;
-    } else {
-      lastResponse = agent.lastAgentResponse;
+  if (!foundAssistantMessage) {
+    if (agent.lastAgentResponse) {
+      const extracted = AuggieTextParser.extractDigest(agent.lastAgentResponse);
+      if (extracted.digest) {
+        digest = extracted.digest;
+        lastResponse = extracted.cleanedText;
+      } else {
+        lastResponse = agent.lastAgentResponse;
+      }
+    }
+    // The daemon strips <agent_digest> spans from `lastAgentResponse` at the
+    // source and serves the digest as the separate wire `digest` field, so
+    // the extraction above is defensive-only; prefer its result when present.
+    if (!digest && agent.digest) {
+      digest = agent.digest;
     }
   }
   if (!foundUserMessage && agent.lastUserMessage) {
