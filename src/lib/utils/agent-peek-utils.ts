@@ -70,11 +70,15 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
     }
   }
 
+  let foundUserMessage = false;
+  let foundAssistantMessage = false;
+
   if (agent.messages && agent.messages.length > 0) {
     // Find the last user message
     for (let i = agent.messages.length - 1; i >= 0; i--) {
       const msg = agent.messages[i];
       if (msg.role === 'user') {
+        foundUserMessage = true;
         lastUserMessage = extractMessageText(msg);
         break;
       }
@@ -84,6 +88,7 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
     for (let i = agent.messages.length - 1; i >= 0; i--) {
       const msg = agent.messages[i];
       if (msg.role === 'assistant') {
+        foundAssistantMessage = true;
         const fullText = extractMessageText(msg);
         // Try to extract <agent_digest> from the message
         const extracted = AuggieTextParser.extractDigest(fullText);
@@ -104,6 +109,32 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
         break;
       }
     }
+  }
+
+  // Wire-field fallback (AgentLite, PROTOCOL §5.5): when the loaded transcript
+  // has no assistant message (e.g. an idle delegated agent whose session only
+  // holds the initial user message), the session's wire-persisted preview
+  // fields are the freshest source. Transcript-derived values stay
+  // authoritative whenever the transcript contains the corresponding role.
+  if (!foundAssistantMessage) {
+    if (agent.lastAgentResponse) {
+      const extracted = AuggieTextParser.extractDigest(agent.lastAgentResponse);
+      if (extracted.digest) {
+        digest = extracted.digest;
+        lastResponse = extracted.cleanedText;
+      } else {
+        lastResponse = agent.lastAgentResponse;
+      }
+    }
+    // The daemon strips <agent_digest> spans from `lastAgentResponse` at the
+    // source and serves the digest as the separate wire `digest` field, so
+    // the extraction above is defensive-only; prefer its result when present.
+    if (!digest && agent.digest) {
+      digest = agent.digest;
+    }
+  }
+  if (!foundUserMessage && agent.lastUserMessage) {
+    lastUserMessage = agent.lastUserMessage;
   }
 
   // Extract completion report and parent agent from metadata if available
