@@ -27,7 +27,7 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({ state: () => ({ providerCatalog }) });
 });
 
-import { isUserProviderSettled } from './model-picker-utils';
+import { findModelFallbackOption, isUserProviderSettled } from './model-picker-utils';
 
 const sampleModel: AuggieModel = { value: 'auggie:sonnet4.6', label: 'Sonnet 4.6' };
 const sampleDropdownOption: DropdownOption = {
@@ -125,5 +125,57 @@ describe('isUserProviderSettled', () => {
       modelProvider: 'auggie',
     });
     expect(result).toBe(false);
+  });
+});
+
+describe('findModelFallbackOption', () => {
+  const option = (value: string, isDefault = false): DropdownOption => ({
+    value,
+    label: value,
+    data: { isDefault },
+  });
+
+  it("prefers the user's globally selected model over the CLI-marked default", () => {
+    // Coordinator ruling (spec Decisions): the CLI-marked default is a
+    // *default*, not an override — the user's explicit global pick wins.
+    const options = [option('auggie:a'), option('auggie:cli-default', true), option('auggie:b')];
+    const result = findModelFallbackOption({
+      options,
+      globallySelectedModel: 'auggie:b',
+    });
+    expect(result?.value).toBe('auggie:b');
+  });
+
+  it('falls back to the CLI-marked default when the global pick is absent', () => {
+    const options = [option('auggie:a'), option('auggie:cli-default', true)];
+    const result = findModelFallbackOption({
+      options,
+      globallySelectedModel: 'auggie:not-listed',
+    });
+    expect(result?.value).toBe('auggie:cli-default');
+  });
+
+  it('falls back to the first available option when neither resolves', () => {
+    const options = [option('auggie:a'), option('auggie:b')];
+    const result = findModelFallbackOption({ options, globallySelectedModel: null });
+    expect(result?.value).toBe('auggie:a');
+  });
+
+  it('excludes the sentinel and respects restrictToProvider before resolving', () => {
+    const options = [
+      option('use-default'),
+      option('codex:x', true),
+      option('auggie:cli-default', true),
+      option('auggie:y'),
+    ];
+    const result = findModelFallbackOption({
+      options,
+      excludeValue: 'use-default',
+      restrictToProvider: 'auggie',
+      globallySelectedModel: 'codex:x',
+    });
+    // codex:x is filtered out by the provider restriction, so the in-provider
+    // CLI default wins over first-available.
+    expect(result?.value).toBe('auggie:cli-default');
   });
 });

@@ -8,10 +8,9 @@ export type ProviderSettingsState = {
   enabledProviders: Record<string, boolean>;
   /**
    * Registry metadata snapshotted from `providerCatalogLoaded` (reducers only
-   * see their own slice): the default provider id ('' before hydration) and
-   * the ids whose catalog rows say `canBeDisabled: false`.
+   * see their own slice): the ids whose catalog rows say
+   * `canBeDisabled: false`.
    */
-  defaultProviderId: string;
   nonDisableableProviderIds: string[];
 };
 
@@ -22,7 +21,6 @@ export const OLD_STORAGE_KEY = ENABLED_PROVIDERS_STORAGE_KEY;
 export const initialState: ProviderSettingsState = {
   activeProviderId: "",
   enabledProviders: {},
-  defaultProviderId: "",
   nonDisableableProviderIds: [],
 };
 
@@ -64,13 +62,12 @@ export const loadEnabledProvidersFromStorage = createAction<
 export const providerSettingsReducer = createReducer<ProviderSettingsState>(initialState)
   .with(providerCatalogLoaded, (state, { payload: [catalog] }) => ({
     ...state,
-    defaultProviderId: catalog.defaultProviderId,
     nonDisableableProviderIds: catalog.providers
       .filter((provider) => provider.canBeDisabled === false)
       .map((provider) => provider.id),
-    // Before hydration the active provider is unknown ('' initial state);
-    // adopt the registry default unless settings hydration already set one.
-    activeProviderId: state.activeProviderId || catalog.defaultProviderId,
+    // The registry carries no default designation; the active provider is
+    // user-derived (settings hydration / onboarding pick). Before those land
+    // it stays '' — never silently adopted from the catalog.
   }))
   .with(setActiveProvider, (state, { payload: [providerId] }) => ({
     ...state,
@@ -96,9 +93,7 @@ export const providerSettingsReducer = createReducer<ProviderSettingsState>(init
       ...state,
       enabledProviders: {
         ...state.enabledProviders,
-        [providerId]: !resolveProviderEnabled(state.enabledProviders, providerId, {
-          defaultProviderId: state.defaultProviderId,
-        }),
+        [providerId]: !resolveProviderEnabled(state.enabledProviders, providerId),
       },
     };
   })

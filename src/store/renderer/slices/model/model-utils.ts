@@ -12,7 +12,7 @@ import {
 } from '$features/providers/provider-models.client';
 import { store as appStore } from '../../store';
 import {
-  selectCatalogDefaultProviderId,
+  selectEffectiveDefaultProviderId,
   selectNormalizedProviderId,
   selectProviderCatalogEntry,
 } from '../provider-catalog/provider-catalog-selectors';
@@ -52,7 +52,7 @@ function prefixModelsForProvider(providerId: string, models: ProviderModel[]): A
   if (models.length === 0) {
     return [];
   }
-  const defaultProviderId = selectCatalogDefaultProviderId.select(appStore.state);
+  const defaultProviderId = selectEffectiveDefaultProviderId.select(appStore.state);
   return models.map((model) => {
     if (providerId !== defaultProviderId) {
       return {

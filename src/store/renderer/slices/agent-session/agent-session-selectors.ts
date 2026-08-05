@@ -13,6 +13,7 @@ import {
 } from "$shared/utils/agent-attention";
 import type { StoredAgentSession } from "./agent-session-types";
 import { selectAgentQueueMessages } from "../agent-queue/agent-queue-selectors";
+import { selectEffectiveDefaultProviderId } from "../provider-catalog/provider-catalog-selectors";
 
 // ============================================================================
 // Internal helpers
@@ -143,7 +144,7 @@ export const selectAgentProvider = store.createSelector(
     if (!agentId) return undefined;
     const stored = state.agentSessions?.byAgentId[agentId];
     return stored
-      ? getAgentProvider(stored, state.providerCatalog?.defaultProviderId ?? '')
+      ? getAgentProvider(stored, selectEffectiveDefaultProviderId.select(state))
       : undefined;
   },
 );

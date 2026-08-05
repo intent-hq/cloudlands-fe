@@ -4,8 +4,8 @@
  * `providers.catalog` is daemon-global (no `workspaceId`, `{}` params) and
  * returns the full static provider registry — every registered row (gated-off
  * included, `visible` carries the daemon-evaluated verdict) in registry
- * order, plus `defaultProviderId`. The data is compiled into the daemon, so
- * the result only changes when the daemon binary does.
+ * order. The data is compiled into the daemon, so the result only changes
+ * when the daemon binary does.
  *
  * The response is validated against the §5.38 Zod schema at the wire
  * boundary; a divergent payload THROWS (never silently absorbed — the BE or

@@ -51,14 +51,17 @@ function isUnavailable(
 }
 
 /**
- * FE mirror of the §5.31 provider gate: `agent.enhancePrompt` is auggie-only,
- * and the daemon treats an unset `providers.active` setting as auggie — so an
- * empty/null active provider keeps the affordance visible.
+ * FE mirror of the §5.31 provider gate: `agent.enhancePrompt` is auggie-only.
+ * The daemon derives the effective provider from settings (provider of
+ * `model.default`, else `providers.active`) and no longer treats an unset
+ * `providers.active` as auggie — callers pass the settings-derived effective
+ * provider (`selectEffectiveDefaultProviderId`), and the affordance is hidden
+ * unless it resolves to auggie ('' before hydration is honestly unavailable).
  */
 export function isEnhancePromptAvailable(
-  activeProviderId: string | null | undefined,
+  effectiveProviderId: string | null | undefined,
 ): boolean {
-  return !activeProviderId || activeProviderId === "auggie";
+  return effectiveProviderId === "auggie";
 }
 
 export interface EnhancePromptOptions {

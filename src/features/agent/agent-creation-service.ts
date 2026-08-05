@@ -101,7 +101,7 @@ async function loadCreationDeps() {
     selectEffectiveCodingAgent: specSel.selectEffectiveCodingAgent,
     selectEffectiveBehaviorPrompt: specSel.selectEffectiveBehaviorPrompt,
     selectNoteById: notesSel.selectNoteById,
-    selectCatalogDefaultProviderId: catalogSel.selectCatalogDefaultProviderId,
+    selectEffectiveDefaultProviderId: catalogSel.selectEffectiveDefaultProviderId,
   };
 }
 type CreationDeps = Awaited<ReturnType<typeof loadCreationDeps>>;
@@ -157,7 +157,7 @@ function getWorkspaceInitialAgentProvider(wsId: string, deps: CreationDeps): str
   const sessions = deps.selectAllWorkspaceAgents.select(appStore.state, wsId);
   const initialAgent = sessions.find((s) => String(s.workspaceId) === wsId && s.isInitialAgent);
   return initialAgent
-    ? getAgentProvider(initialAgent, deps.selectCatalogDefaultProviderId.select(appStore.state))
+    ? getAgentProvider(initialAgent, deps.selectEffectiveDefaultProviderId.select(appStore.state))
     : undefined;
 }
 

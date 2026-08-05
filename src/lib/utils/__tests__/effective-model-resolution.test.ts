@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { MOCK_PROVIDER_CATALOG } from '../../../test/fixtures/provider-catalog.fixture';
-
 import { resolveSubmitProvider } from '../effective-model-resolution';
 
-const defaultProviderId = MOCK_PROVIDER_CATALOG.defaultProviderId;
+const defaultProviderId = 'auggie';
 
 // Default-model resolution is daemon-owned (PROTOCOL §5.11); the former
 // client-side resolution helpers were removed. Only the submit-provider

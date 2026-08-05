@@ -16,7 +16,6 @@ import type { ProviderCatalogEntry, ProviderCatalogState } from './provider-cata
 
 export const initialState: ProviderCatalogState = {
   providers: createCollection<ProviderCatalogEntry, 'id'>('id'),
-  defaultProviderId: '',
   loaded: false,
 };
 
@@ -33,7 +32,6 @@ export const providerCatalogReducer = createReducer<ProviderCatalogState>(initia
   (state, { payload: [catalog] }) => ({
     ...state,
     providers: createCollection<ProviderCatalogEntry, 'id'>('id', catalog.providers),
-    defaultProviderId: catalog.defaultProviderId,
     loaded: true,
   }),
 );

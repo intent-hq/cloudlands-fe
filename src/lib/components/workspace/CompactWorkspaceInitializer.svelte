@@ -115,7 +115,7 @@
   import SetupScriptModal from '../modals/SetupScriptModal.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { parseCompoundModelId } from '$shared/utils/compound-model-id';
   import { resolveSubmitProvider } from '$lib/utils/effective-model-resolution';
   import { store as appStore } from '$store/renderer/store';
@@ -129,7 +129,7 @@
 } from './initializer/new-workspace-draft';
 
   const activeProviderId$ = selectActiveProviderId();
-  const defaultProviderId$ = selectCatalogDefaultProviderId();
+  const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const pttRecording$ = selectPttRecording();
   const voiceTranscribing$ = selectVoiceTranscribing();
   const logger = createLogger('CompactWorkspaceInitializer');
@@ -1063,7 +1063,7 @@
   });
 
   // §5.31 gate — enhance is auggie-only; unset active provider defaults to auggie
-  const enhanceAvailable = $derived(isEnhancePromptAvailable($activeProviderId$));
+  const enhanceAvailable = $derived(isEnhancePromptAvailable($defaultProviderId$));
 
   // Enhance prompt state
   let isEnhancing = $state(false);

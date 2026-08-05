@@ -21,19 +21,16 @@ const CATALOG: ProviderCatalogResult = {
       displayName: "Augment Auggie",
       shortName: "Auggie",
       command: "auggie",
-      isDefault: true,
       canBeDisabled: true,
       loginCommandHint: "auggie login",
       authErrorPatterns: ["authentication required", "auggie login"],
       visible: true,
-      modelTiers: { fast: "haiku4.5", balanced: "sonnet4.5", smart: "opus4.7" },
     },
     {
       id: "unsloth",
       displayName: "Unsloth",
       shortName: "Unsloth",
       command: "opencode",
-      isDefault: false,
       canBeDisabled: true,
       loginDocsUrl: "https://docs.unsloth.ai",
       visible: true,
@@ -43,7 +40,6 @@ const CATALOG: ProviderCatalogResult = {
       displayName: "Pi",
       shortName: "Pi",
       command: "pi-acp",
-      isDefault: false,
       canBeDisabled: true,
       loginDocsUrl: "https://pi.dev/docs/latest/quickstart",
       visible: true,
@@ -53,13 +49,11 @@ const CATALOG: ProviderCatalogResult = {
       displayName: "Mock (E2E)",
       shortName: "Mock",
       command: "node",
-      isDefault: false,
       canBeDisabled: true,
       requiresEnvVar: "MOCK_AGENT_SCRIPT_PATH",
       visible: false,
     },
   ],
-  defaultProviderId: "auggie",
 };
 
 describe("LiveProvidersClient", () => {
@@ -104,8 +98,8 @@ describe("LiveProvidersClient", () => {
     // Registry order (unsloth before pi) survives — clients must key by id,
     // but the order is carried through faithfully for informational use.
     expect(result.providers.map((p) => p.id)).toEqual(["auggie", "unsloth", "pi", "mock"]);
-    // Optional fields are present-by-presence: absent on dynamic providers.
-    expect(result.providers[1].modelTiers).toBeUndefined();
+    // Optional fields are present-by-presence: absent when unset.
+    expect(result.providers[1].loginCommandHint).toBeUndefined();
     expect(result.providers[3].visible).toBe(false);
   });
 
@@ -114,24 +108,6 @@ describe("LiveProvidersClient", () => {
       ok: true,
       result: {
         providers: [{ id: "auggie", displayName: "Augment Auggie" }],
-        defaultProviderId: "auggie",
-      },
-    });
-
-    await expect(client.catalog()).rejects.toThrow();
-  });
-
-  it("throws on an incomplete modelTiers table (missing documented tier)", async () => {
-    mockInvoke.mockResolvedValue({
-      ok: true,
-      result: {
-        providers: [
-          {
-            ...CATALOG.providers[0],
-            modelTiers: { fast: "haiku4.5", balanced: "sonnet4.5" },
-          },
-        ],
-        defaultProviderId: "auggie",
       },
     });
 
@@ -141,7 +117,6 @@ describe("LiveProvidersClient", () => {
   it("preserves unknown additive fields (PROTOCOL compatibility policy: detect by presence)", async () => {
     const withExtra = {
       providers: [{ ...CATALOG.providers[0], futureField: "x" }],
-      defaultProviderId: "auggie",
     };
     mockInvoke.mockResolvedValue({ ok: true, result: withExtra });
 

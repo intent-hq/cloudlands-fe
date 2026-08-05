@@ -23,6 +23,7 @@ import {
   reloadModelsForProvider,
   setAvailableModels,
 } from "$store/renderer/slices/model/model-slice";
+import { setActiveProvider } from "$store/renderer/slices/provider-settings/provider-settings-slice";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -36,11 +37,13 @@ const SONNET_ROW = {
 describe("model-reload-service (PROTOCOL §5.30 models.list wire)", () => {
   beforeAll(async () => {
     appStore.init();
-    // activeProviderId adopts the registry default from catalog hydration.
     const { seedProviderCatalog } = await import(
       "../../test/fixtures/provider-catalog.fixture"
     );
     seedProviderCatalog(appStore);
+    // The catalog carries no default designation; the active provider is
+    // user-derived, so set it explicitly for the reload path under test.
+    appStore.dispatch(setActiveProvider("auggie"));
   });
 
   beforeEach(async () => {

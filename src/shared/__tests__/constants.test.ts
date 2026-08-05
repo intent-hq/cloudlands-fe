@@ -60,7 +60,8 @@ describe('Constants Module', () => {
 
   describe('DEFAULTS', () => {
     it('should have all required default values', () => {
-      expect(DEFAULTS.AGENT_MODEL).toBe('opus4.5'); // Short model ID format
+      // No AGENT_MODEL: the default model is derived from the provider catalog.
+      expect(DEFAULTS).not.toHaveProperty('AGENT_MODEL');
       expect(DEFAULTS.AGENT_NAME).toBe('Assistant');
       expect(DEFAULTS.WORKSPACE_NAME).toBe('Untitled');
       expect(DEFAULTS.TEMPERATURE).toBe(0.7);

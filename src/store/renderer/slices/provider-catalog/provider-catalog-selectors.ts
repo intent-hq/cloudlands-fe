@@ -3,18 +3,23 @@
  *
  * The read surface over the daemon-served registry (`providers.catalog`,
  * PROTOCOL §5.38) — the renderer's single source of provider metadata
- * (display names, commands, auth hints, tier tables, default provider).
- * Consumers must check `selectProviderCatalogLoaded` (or tolerate
- * `undefined` / identity fallbacks) before the first hydration lands.
+ * (display names, commands, auth hints). Consumers must check
+ * `selectProviderCatalogLoaded` (or tolerate `undefined` / identity
+ * fallbacks) before the first hydration lands.
+ *
+ * The registry carries no default designation: the effective default
+ * provider is derived from user settings via
+ * `selectEffectiveDefaultProviderId`.
  */
 import { getItem, getItems } from '$lib/store-shim/utils/collections/collection-utils';
+import { isProviderAuthenticationErrorForEntry } from '$shared/provider-catalog';
 import {
-  isProviderAuthenticationErrorForEntry,
-  type ProviderModelTiersTable,
-} from '$shared/provider-catalog';
-import { isModelValidForProvider, parseCompoundModelId } from '$shared/utils/compound-model-id';
+  isModelValidForProvider,
+  parseCompoundModelId,
+  splitCompoundModelId,
+} from '$shared/utils/compound-model-id';
 import { store } from '../../store';
-import type { ProviderCatalogEntry, ProviderModelTier } from './provider-catalog-types';
+import type { ProviderCatalogEntry } from './provider-catalog-types';
 
 /** True once the first `providers.catalog` hydration landed. */
 export const selectProviderCatalogLoaded = store.createSelector(
@@ -32,10 +37,45 @@ export const selectAllCatalogProviderIds = store.createSelector(
   (state): string[] => state.providerCatalog?.providers.ids ?? [],
 );
 
-/** The registry's default provider id ('' until the catalog is hydrated). */
-export const selectCatalogDefaultProviderId = store.createSelector(
-  (state): string => state.providerCatalog?.defaultProviderId ?? '',
-);
+/**
+ * The effective default provider id, derived from user settings (the
+ * registry carries no default designation): the provider prefix of the
+ * global default model when it is a compound id, else the active provider
+ * (`providers.active`), else the first catalog row. '' only before any of
+ * those resolve (fresh state, catalog not hydrated).
+ *
+ * Once the catalog is hydrated, a prefix that is not a known catalog
+ * provider id (malformed/legacy compound string) is ignored and resolution
+ * falls through to the next precedence step, so an unknown id never
+ * mis-attributes bare model ids downstream.
+ *
+ * Known divergences from the spec's ideal ordering (accepted, documented on
+ * the PR #759 review):
+ * - The model lookup is keyed by `activeProviderId`, so when
+ *   `providers.active` is unset the persisted global model is never
+ *   consulted — a daemon-persisted compound `model.default` without
+ *   `providers.active` (older FE / another client) falls through to the
+ *   first catalog row rather than the model's provider.
+ * - In steady state the compound branch is a legacy/transient-state guard,
+ *   not the primary path: `providerModels[activeProviderId]` is
+ *   write-normalized to the bare form (the model slice mirrors the active
+ *   provider as its default), so `includes(':')` only fires on
+ *   un-normalized state (pre-hydration persistence, older writers).
+ */
+export const selectEffectiveDefaultProviderId = store.createSelector((state): string => {
+  const catalogLoaded = state.providerCatalog?.loaded ?? false;
+  const catalogIds = state.providerCatalog?.providers.ids ?? [];
+  const activeProviderId = state.providerSettings?.activeProviderId ?? '';
+  const globalModel = activeProviderId
+    ? state.model?.providerModels?.[activeProviderId]
+    : undefined;
+  if (globalModel?.includes(':')) {
+    const { providerId } = splitCompoundModelId(globalModel);
+    if (providerId && (!catalogLoaded || catalogIds.includes(providerId))) return providerId;
+  }
+  if (activeProviderId) return activeProviderId;
+  return catalogIds[0] ?? '';
+});
 
 /** One registry row by id; `undefined` when unknown or not yet hydrated. */
 export const selectProviderCatalogEntry = store.createSelector(
@@ -45,56 +85,33 @@ export const selectProviderCatalogEntry = store.createSelector(
 
 /**
  * `getProviderConfig`-equivalent: the row for `providerId`, falling back to
- * the default provider's row when the id is unknown. `undefined` only before
- * the first hydration.
+ * the effective default provider's row when the id is unknown. `undefined`
+ * only before the first hydration.
  */
 export const selectProviderCatalogEntryOrDefault = store.createSelector(
   (state, providerId: string): ProviderCatalogEntry | undefined =>
     selectProviderCatalogEntry.select(state, providerId) ??
-    selectProviderCatalogEntry.select(state, selectCatalogDefaultProviderId.select(state)),
-);
-
-/**
- * The static `{ fast, balanced, smart }` tier table for a provider, or
- * `undefined` for dynamic-model providers (§5.38: `modelTiers` is present
- * only for static-tier providers) and unknown ids. No default-provider
- * fallback — callers must not receive another provider's model ids.
- */
-export const selectProviderModelTiers = store.createSelector(
-  (state, providerId: string): ProviderModelTiersTable | undefined =>
-    selectProviderCatalogEntry.select(state, providerId)?.modelTiers,
-);
-
-/**
- * `getDefaultModelForProvider`-equivalent: the model id at one capability
- * tier. `undefined` when the provider has no static tier table (callers
- * fall back to the parent agent's model, as today).
- */
-export const selectDefaultModelForProviderTier = store.createSelector(
-  (state, providerId: string, tier: ProviderModelTier): string | undefined =>
-    selectProviderModelTiers.select(state, providerId)?.[tier],
+    selectProviderCatalogEntry.select(state, selectEffectiveDefaultProviderId.select(state)),
 );
 
 /**
  * `resolveProviderEnabled`-equivalent against the catalog: providers that
- * cannot be disabled are always enabled; the default provider is enabled
- * when it has no persisted entry; every other provider defaults to disabled
- * when unset. Reads the persisted map from the providerSettings slice.
- * The `canBeDisabled` check uses the EXACT row (no default fallback) so an
- * unknown id cannot inherit the default provider's canBeDisabled:false.
+ * cannot be disabled are always enabled; every other provider defaults to
+ * disabled when unset. Reads the persisted map from the providerSettings
+ * slice. The `canBeDisabled` check uses the EXACT row (no default fallback)
+ * so an unknown id cannot inherit another row's canBeDisabled:false.
  */
 export const selectProviderEnabledFromCatalog = store.createSelector(
   (state, providerId: string): boolean => {
     const entry = selectProviderCatalogEntry.select(state, providerId);
     if (entry?.canBeDisabled === false) return true;
-    const enabled = state.providerSettings.enabledProviders[providerId];
-    return enabled ?? providerId === selectCatalogDefaultProviderId.select(state);
+    return state.providerSettings.enabledProviders[providerId] ?? false;
   },
 );
 
 /**
  * Canonical provider id for a raw/aliased id: the row's own `id` when known,
- * the registry default for unknown ids (mirroring the old
+ * the effective default for unknown ids (mirroring the old
  * `getProviderConfig(id).id` alias healing for `acp` / `default` /
  * `augment`), and the raw id verbatim before hydration.
  */
@@ -114,21 +131,25 @@ export const selectProviderDisplayName = store.createSelector(
 
 /**
  * `parseCompoundModelId`-equivalent: bare model ids resolve to the
- * registry's default provider ('' before hydration — callers seeded at
- * connect time never observe that in practice).
+ * effective default provider ('' before any settings/catalog hydration —
+ * callers seeded at connect time never observe that in practice).
  */
 export const selectParsedCompoundModelId = store.createSelector(
   (state, compoundModelId: string): { providerId: string; modelId: string } =>
-    parseCompoundModelId(compoundModelId, selectCatalogDefaultProviderId.select(state)),
+    parseCompoundModelId(compoundModelId, selectEffectiveDefaultProviderId.select(state)),
 );
 
 /**
- * `isModelValidForProvider`-equivalent against the catalog default: whether
- * a (compound or bare) model id belongs to `targetProviderId`.
+ * `isModelValidForProvider`-equivalent against the effective default:
+ * whether a (compound or bare) model id belongs to `targetProviderId`.
  */
 export const selectIsModelValidForProvider = store.createSelector(
   (state, model: string, targetProviderId: string): boolean =>
-    isModelValidForProvider(model, targetProviderId, selectCatalogDefaultProviderId.select(state)),
+    isModelValidForProvider(
+      model,
+      targetProviderId,
+      selectEffectiveDefaultProviderId.select(state),
+    ),
 );
 
 /**

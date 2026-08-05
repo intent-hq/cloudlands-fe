@@ -19,7 +19,7 @@
     EnhancePromptUnavailableError,
     isEnhancePromptAvailable,
   } from '$lib/client/live/live-prompt-enhancement';
-  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { v4 as uuidv4 } from 'uuid';
   import { goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
@@ -296,9 +296,10 @@
   let promptStepRef: OnboardingPromptStep | null = $state(null);
   let isOnboardingEnhancing = $state(false);
 
-  // §5.31 gate — enhance is auggie-only; unset active provider defaults to auggie
-  const activeProviderId$ = selectActiveProviderId();
-  const enhancePromptAvailable = $derived(isEnhancePromptAvailable($activeProviderId$));
+  // §5.31 gate — enhance is auggie-only; the daemon derives the effective
+  // provider from settings, so the FE mirror gates on the same derivation.
+  const effectiveProviderId$ = selectEffectiveDefaultProviderId();
+  const enhancePromptAvailable = $derived(isEnhancePromptAvailable($effectiveProviderId$));
 
   /** Get the RichTextarea from the prompt step sub-component. */
   function getOnboardingRichTextarea(): RichTextarea | null {

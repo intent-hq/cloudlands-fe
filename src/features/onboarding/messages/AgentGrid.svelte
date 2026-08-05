@@ -12,7 +12,7 @@
   import { onMount } from 'svelte';
   import { invoke } from '$lib/electron-bridge';
   import {
-  selectCatalogDefaultProviderId,
+  selectEffectiveDefaultProviderId,
   selectProviderCatalogEntries,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { AUGGIE_CHANNELS } from '$shared/ipc/channels';
@@ -162,7 +162,7 @@
   };
 
   const catalogEntries$ = selectProviderCatalogEntries();
-  const defaultProviderId$ = selectCatalogDefaultProviderId();
+  const defaultProviderId$ = selectEffectiveDefaultProviderId();
 
   /** Randomized provider order — shuffled once when the catalog rows land
    *  (rows are static per daemon connection, so this is once per mount in

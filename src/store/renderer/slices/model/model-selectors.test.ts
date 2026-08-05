@@ -3,8 +3,6 @@ import {
   expect,
   it,
 } from 'vitest';
-import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
-import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 import { initialState as modelInitialState } from './model-slice';
 import { initialState as providerSettingsInitialState } from '../provider-settings/provider-settings-slice';
 import {
@@ -19,7 +17,7 @@ import type { ProviderSettingsState } from '../provider-settings/provider-settin
 import type { StoreState } from '../../types';
 import type { ProviderStatus } from '../agent-availability/agent-availability-types';
 
-const defaultProviderId = MOCK_PROVIDER_CATALOG.defaultProviderId;
+const defaultProviderId = 'auggie';
 
 function mockState(
   model: Partial<ModelState> = {},
@@ -74,17 +72,38 @@ describe('selectSelectedModel', () => {
     expect(selectSelectedModel.select(state)).toBe('gpt5.4');
   });
 
-  it('falls back to UI_INITIAL_MODEL when no model is persisted and the active provider is available', () => {
+  it('falls back to the catalog default (isDefault row, else first row) when no model is persisted and the active provider is available', () => {
+    const availableModels = createCollection<AuggieModel, 'value'>('value', [
+      { value: 'opus4.7', label: 'Claude Opus 4.7' },
+      { value: 'sonnet4.5', label: 'Claude Sonnet 4.5', isDefault: true },
+      { value: 'codex:gpt-5-codex', label: 'GPT-5 Codex' },
+    ]);
     const state = mockState(
-      {},
+      { availableModels, defaultProviderId },
       { activeProviderId: defaultProviderId, enabledProviders: {} },
       { [defaultProviderId]: { available: true } },
     );
 
-    expect(selectSelectedModel.select(state)).toBe(MODEL_DEFAULTS.UI_INITIAL_MODEL);
+    // The CLI-marked default row wins over the first row.
+    expect(selectSelectedModel.select(state)).toBe('sonnet4.5');
+
+    const noDefaultMarked = mockState(
+      {
+        availableModels: createCollection<AuggieModel, 'value'>('value', [
+          { value: 'opus4.7', label: 'Claude Opus 4.7' },
+          { value: 'sonnet4.5', label: 'Claude Sonnet 4.5' },
+        ]),
+        defaultProviderId,
+      },
+      { activeProviderId: defaultProviderId, enabledProviders: {} },
+      { [defaultProviderId]: { available: true } },
+    );
+
+    // No marked default → the first available row.
+    expect(selectSelectedModel.select(noDefaultMarked)).toBe('opus4.7');
   });
 
-  it('does not fall back to UI_INITIAL_MODEL when the active provider is unavailable', () => {
+  it('does not fabricate a default when the active provider is unavailable', () => {
     const state = mockState(
       {},
       { activeProviderId: defaultProviderId, enabledProviders: {} },
@@ -94,7 +113,7 @@ describe('selectSelectedModel', () => {
     expect(selectSelectedModel.select(state)).toBe('');
   });
 
-  it('does not fall back to UI_INITIAL_MODEL when the active provider has not been checked', () => {
+  it('does not fabricate a default when the active provider has not been checked', () => {
     const state = mockState({}, { activeProviderId: defaultProviderId, enabledProviders: {} });
 
     expect(selectSelectedModel.select(state)).toBe('');
@@ -102,9 +121,14 @@ describe('selectSelectedModel', () => {
 });
 
 describe('selectHasResolvableModel', () => {
-  it('is true when the active provider is available', () => {
+  it('is true when the active provider is available and has catalog rows', () => {
     const state = mockState(
-      {},
+      {
+        availableModels: createCollection<AuggieModel, 'value'>('value', [
+          { value: 'opus4.7', label: 'Claude Opus 4.7' },
+        ]),
+        defaultProviderId,
+      },
       { activeProviderId: defaultProviderId, enabledProviders: {} },
       { [defaultProviderId]: { available: true } },
     );
