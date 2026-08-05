@@ -225,16 +225,15 @@ export const hudGridFilterStatesCleared = createAction('hud/gridFilterStatesClea
 
 // ── Reducer ──
 
-export const hudReducer = createReducer<HudState>(initialState)
-  // Activation resets to a clean slate — the feed is live-only (no backfill).
-  .with(hudActivated, () => ({ ...initialState, active: true }))
-  .with(hudDeactivated, () => initialState)
-  .with(hudFeedEntryReceived, (state, { payload: [entry] }) => {
+export const hudReducer = createReducer<HudState>(initialState);
+hudReducer.with(hudActivated, () => ({ ...initialState, active: true }));
+hudReducer.with(hudDeactivated, () => initialState);
+hudReducer.with(hudFeedEntryReceived, (state, { payload: [entry] }) => {
     if (!state.active) return state;
     if (state.feed.some((existing) => existing.id === entry.id)) return state;
     return { ...state, feed: [entry, ...state.feed].slice(0, HUD_FEED_LIMIT) };
-  })
-  .with(hudAttentionChanged, (state, { payload: [workspaceId, attention, raisedAtTs] }) => {
+  });
+hudReducer.with(hudAttentionChanged, (state, { payload: [workspaceId, attention, raisedAtTs] }) => {
     // The wire field is single-valued, so any untracked value ("none" —
     // e.g. from `workspace.markSeen`) means no flag is currently raised:
     // clear. Tracked values are the HUD attention allowlist plus the
@@ -257,54 +256,54 @@ export const hudReducer = createReducer<HudState>(initialState)
         [workspaceId]: { attention, raisedAtTs },
       },
     };
-  })
-  .with(hudDisplayStatusChanged, (state, { payload: [workspaceId, displayStatus] }) => ({
+  });
+hudReducer.with(hudDisplayStatusChanged, (state, { payload: [workspaceId, displayStatus] }) => ({
     ...state,
     displayStatusByWorkspaceId: {
       ...state.displayStatusByWorkspaceId,
       [workspaceId]: displayStatus,
     },
-  }))
-  .with(hudUsageLoaded, (state, { payload: [usage] }) => ({ ...state, usage, usageError: null }))
-  .with(hudUsageFailed, (state, { payload: [error] }) => ({ ...state, usageError: error }))
-  .with(hudRateHistoryLoaded, (state, { payload: [rateHistory] }) => ({
+  }));
+hudReducer.with(hudUsageLoaded, (state, { payload: [usage] }) => ({ ...state, usage, usageError: null }));
+hudReducer.with(hudUsageFailed, (state, { payload: [error] }) => ({ ...state, usageError: error }));
+hudReducer.with(hudRateHistoryLoaded, (state, { payload: [rateHistory] }) => ({
     ...state,
     rateHistory,
     rateHistoryError: null,
-  }))
-  .with(hudRateHistoryFailed, (state, { payload: [error] }) => ({
+  }));
+hudReducer.with(hudRateHistoryFailed, (state, { payload: [error] }) => ({
     ...state,
     rateHistoryError: error,
-  }))
-  .with(hudTakeoverRequested, (state, { payload: [workspaceId] }) =>
+  }));
+hudReducer.with(hudTakeoverRequested, (state, { payload: [workspaceId] }) =>
     state.takeoverRequestWorkspaceId === workspaceId
       ? state
       : { ...state, takeoverRequestWorkspaceId: workspaceId },
-  )
-  .with(hudTakeoverRequestCleared, (state) =>
+  );
+hudReducer.with(hudTakeoverRequestCleared, (state) =>
     state.takeoverRequestWorkspaceId === null
       ? state
       : { ...state, takeoverRequestWorkspaceId: null },
-  )
-  .with(hudQuestionCaptured, (state, { payload: [question] }) => {
+  );
+hudReducer.with(hudQuestionCaptured, (state, { payload: [question] }) => {
     if (!state.active) return state;
     return {
       ...state,
       questionsByAgentId: { ...state.questionsByAgentId, [question.agentId]: question },
     };
-  })
-  .with(hudQuestionSuperseded, (state, { payload: [agentId] }) => {
+  });
+hudReducer.with(hudQuestionSuperseded, (state, { payload: [agentId] }) => {
     if (!(agentId in state.questionsByAgentId)) return state;
     const next = { ...state.questionsByAgentId };
     delete next[agentId];
     return { ...state, questionsByAgentId: next };
-  })
-  .with(hudGridFilterRepoPicked, (state, { payload: [repo] }) =>
+  });
+hudReducer.with(hudGridFilterRepoPicked, (state, { payload: [repo] }) =>
     state.gridFilter.repo === repo
       ? state
       : { ...state, gridFilter: { ...state.gridFilter, repo } },
-  )
-  .with(hudGridFilterStateToggled, (state, { payload: [stateKey] }) => ({
+  );
+hudReducer.with(hudGridFilterStateToggled, (state, { payload: [stateKey] }) => ({
     ...state,
     gridFilter: {
       ...state.gridFilter,
@@ -312,9 +311,10 @@ export const hudReducer = createReducer<HudState>(initialState)
         ? state.gridFilter.states.filter((existing) => existing !== stateKey)
         : [...state.gridFilter.states, stateKey],
     },
-  }))
-  .with(hudGridFilterStatesCleared, (state) =>
+  }));
+hudReducer.with(hudGridFilterStatesCleared, (state) =>
     state.gridFilter.states.length === 0
       ? state
       : { ...state, gridFilter: { ...state.gridFilter, states: [] } },
   );
+

@@ -168,8 +168,8 @@ export const setVoiceSettingsError = createAction<[error: string | null]>(
 
 // --- Reducer ---
 
-export const voiceSettingsReducer = createReducer<VoiceSettingsSliceState>(initialState)
-  .with(setVoiceSettingsSnapshot, (state, { payload }) => ({
+export const voiceSettingsReducer = createReducer<VoiceSettingsSliceState>(initialState);
+voiceSettingsReducer.with(setVoiceSettingsSnapshot, (state, { payload }) => ({
     ...state,
     isLoading: false,
     available: payload.available,
@@ -179,64 +179,68 @@ export const voiceSettingsReducer = createReducer<VoiceSettingsSliceState>(initi
     openaiModel: payload.openaiModel,
     language: payload.language,
     workspaceVocabularyMaxTerms: payload.workspaceVocabularyMaxTerms,
-  }))
-  .with(setVoiceOpenAiModelValue, (state, { payload: [model] }) => ({
+  }));
+voiceSettingsReducer.with(setVoiceOpenAiModelValue, (state, { payload: [model] }) => ({
     ...state,
     openaiModel: model,
-  }))
-  .with(setVoiceLanguageValue, (state, { payload: [language] }) => ({
+  }));
+voiceSettingsReducer.with(setVoiceLanguageValue, (state, { payload: [language] }) => ({
     ...state,
     language,
-  }))
-  .with(setVoiceWorkspaceVocabularyMaxTermsValue, (state, { payload: [maxTerms] }) => ({
+  }));
+voiceSettingsReducer.with(
+  setVoiceWorkspaceVocabularyMaxTermsValue,
+  (state, { payload: [maxTerms] }) => ({
     ...state,
     workspaceVocabularyMaxTerms: maxTerms,
-  }))
-  .with(setVoiceProviderValue, (state, { payload: [provider] }) => ({
+  }),
+);
+voiceSettingsReducer.with(setVoiceProviderValue, (state, { payload: [provider] }) => ({
     ...state,
     provider,
-  }))
-  .with(setVoiceInputDeviceValue, (state, { payload: [deviceId] }) => ({
+  }));
+voiceSettingsReducer.with(setVoiceInputDeviceValue, (state, { payload: [deviceId] }) => ({
     ...state,
     inputDeviceId: deviceId,
-  }))
-  .with(setVoiceInputDevices, (state, { payload: [devices] }) => ({
+  }));
+voiceSettingsReducer.with(setVoiceInputDevices, (state, { payload: [devices] }) => ({
     ...state,
     inputDevices: devices,
-  }))
-  .with(setVoiceEngineValue, (state, { payload: [engine] }) => ({
+  }));
+voiceSettingsReducer.with(setVoiceEngineValue, (state, { payload: [engine] }) => ({
     ...state,
     engine,
-  }))
-  .with(setVoiceOsEngineAvailable, (state, { payload: [available] }) => ({
+  }));
+voiceSettingsReducer.with(setVoiceOsEngineAvailable, (state, { payload: [available] }) => ({
     ...state,
     osEngineAvailable: available,
-  }))
-  .with(addVoiceVocabularyTerm, (state, { payload: [term] }) => {
+  }));
+voiceSettingsReducer.with(addVoiceVocabularyTerm, (state, { payload: [term] }) => {
     if (state.vocabulary === null) return state;
     const trimmed = term.trim();
     if (!trimmed || trimmed.length > VOICE_VOCABULARY_TERM_MAX_LENGTH) return state;
     const lower = trimmed.toLowerCase();
     if (state.vocabulary.some((existing) => existing.toLowerCase() === lower)) return state;
     return { ...state, vocabulary: [...state.vocabulary, trimmed] };
-  })
-  .with(removeVoiceVocabularyTerm, (state, { payload: [term] }) => {
+  });
+voiceSettingsReducer.with(removeVoiceVocabularyTerm, (state, { payload: [term] }) => {
     if (state.vocabulary === null || !state.vocabulary.includes(term)) return state;
     return { ...state, vocabulary: state.vocabulary.filter((entry) => entry !== term) };
-  })
-  .with(setVoiceVocabularyValue, (state, { payload: [vocabulary] }) => ({
+  });
+voiceSettingsReducer.with(setVoiceVocabularyValue, (state, { payload: [vocabulary] }) => ({
     ...state,
     vocabulary,
-  }))
-  .with(setVoiceKeyConfigured, (state, { payload: [provider, configured] }) => ({
+  }));
+voiceSettingsReducer.with(setVoiceKeyConfigured, (state, { payload: [provider, configured] }) => ({
     ...state,
     keyConfigured: { ...state.keyConfigured, [provider]: configured },
-  }))
-  .with(setVoiceBusyProvider, (state, { payload: [provider] }) => ({
+  }));
+voiceSettingsReducer.with(setVoiceBusyProvider, (state, { payload: [provider] }) => ({
     ...state,
     busyProvider: provider,
-  }))
-  .with(setVoiceSettingsError, (state, { payload: [error] }) => ({
+  }));
+voiceSettingsReducer.with(setVoiceSettingsError, (state, { payload: [error] }) => ({
     ...state,
     error,
   }));
+
