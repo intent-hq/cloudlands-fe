@@ -86,6 +86,78 @@
       </svg>
       <span id="splash-text">Getting ready to build</span>
     </div>
+    <script>
+      // Localize the splash text before first paint (same pre-paint pattern as
+      // the inline theme script in <head>; this one lives after the splash
+      // markup so #splash-text exists when it runs).
+      // The per-locale strings duplicate splash_gettingReady_label in
+      // messages/*.json — the catalogs are the source of truth; keep this map
+      // in sync when they change (a sync check chained into `pnpm run lint`
+      // compares this map against the catalogs).
+      // Locale resolution is a simplified inline version of
+      // src/shared/i18n/locale-matcher.ts: explicit preference (exact tag) →
+      // navigator.languages best match → 'en'. Simplification: instead of full
+      // Intl.Locale likely-subtags negotiation, the matcher does exact-tag then
+      // language-prefix matching, with a hardcoded zh split (Traditional
+      // zh-TW/zh-HK/zh-MO/zh-Hant-* → zh-TW; other zh → zh-CN).
+      // Defensive: any exception leaves the English default span content intact.
+      (function() {
+        try {
+          const messages = {
+            'en': 'Getting ready to build',
+            'de': 'Wir bereiten alles zum Bauen vor',
+            'es': 'Preparando todo para construir',
+            'fr': 'Nous préparons tout pour construire',
+            'ja': 'ビルドの準備をしています',
+            'ko': '빌드를 준비하는 중입니다',
+            'zh-CN': '正在准备构建',
+            'zh-TW': '正在準備建置'
+          };
+          const locales = Object.keys(messages);
+          const exact = function(tag) {
+            const lowered = tag.toLowerCase();
+            return locales.find(function(l) { return l.toLowerCase() === lowered; });
+          };
+          const match = function(tag) {
+            if (typeof tag !== 'string' || tag.trim() === '') return undefined;
+            const found = exact(tag);
+            if (found) return found;
+            const lowered = tag.toLowerCase();
+            if (lowered === 'zh' || lowered.indexOf('zh-') === 0) {
+              return /^zh(-hant|-tw|-hk|-mo)/.test(lowered) ? 'zh-TW' : 'zh-CN';
+            }
+            const language = lowered.split('-')[0];
+            return locales.find(function(l) { return l.split('-')[0] === language; });
+          };
+
+          let preference = null;
+          try {
+            preference = JSON.parse(localStorage.getItem('language-preference'));
+          } catch (e) {
+            preference = null; // missing/invalid = no preference
+          }
+
+          let resolved;
+          if (typeof preference === 'string' && preference !== 'system') {
+            resolved = exact(preference);
+          }
+          if (!resolved) {
+            const requested = (navigator.languages && navigator.languages.length > 0)
+              ? navigator.languages
+              : [navigator.language];
+            for (const tag of requested) {
+              resolved = match(tag);
+              if (resolved) break;
+            }
+          }
+          if (resolved && resolved !== 'en') {
+            document.getElementById('splash-text').textContent = messages[resolved];
+          }
+        } catch (e) {
+          // Keep the English default on any failure.
+        }
+      })();
+    </script>
     <div style="display: contents" id="app">%sveltekit.body%</div>
   </body>
 </html>

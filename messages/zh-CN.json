@@ -5284,5 +5284,6 @@
   "settings_voice_osEngine_description": "语音通过 macOS 语音识别转写 — 尽可能在这台 Mac 上处理，否则回退到 Apple 的服务器识别。无需 API 密钥。",
   "settings_voice_osEngineUnavailable_error": "此设备不支持系统听写。",
   "settings_voice_osEngine_helperMissing_description": "语音助手不可用",
-  "settings_voice_osEngine_permissionNote": "首次启用时 macOS 会请求语音识别权限 — 在允许之前听写无法工作。"
+  "settings_voice_osEngine_permissionNote": "首次启用时 macOS 会请求语音识别权限 — 在允许之前听写无法工作。",
+  "splash_gettingReady_label": "正在准备构建"
 }

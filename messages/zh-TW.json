@@ -5284,5 +5284,6 @@
   "settings_voice_osEngine_description": "語音透過 macOS 語音辨識轉錄 — 盡可能在這台 Mac 上處理，否則改用 Apple 的伺服器辨識。無需 API 金鑰。",
   "settings_voice_osEngineUnavailable_error": "此裝置不支援系統聽寫。",
   "settings_voice_osEngine_helperMissing_description": "語音輔助程式無法使用",
-  "settings_voice_osEngine_permissionNote": "首次啟用時 macOS 會要求語音辨識權限 — 在允許之前聽寫無法運作。"
+  "settings_voice_osEngine_permissionNote": "首次啟用時 macOS 會要求語音辨識權限 — 在允許之前聽寫無法運作。",
+  "splash_gettingReady_label": "正在準備建置"
 }
