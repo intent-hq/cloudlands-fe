@@ -11,7 +11,7 @@
  * service, the configured store, the slice actions, and the logger (NOT
  * selectors).
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
+import type { StoreMiddleware } from "@augmentcode/themis/types";
 import { store as appStore } from "$store/renderer/store";
 import {
   addVoiceVocabularyTerm,
