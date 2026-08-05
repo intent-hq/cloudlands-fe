@@ -32,6 +32,14 @@ export const selectShowBulkArchiveConfirm = store.createSelector((state) => {
   return state.workspaceOperations.showBulkArchiveConfirm;
 });
 
+export const selectBulkArchiveActiveAgentCount = store.createSelector((state) => {
+  return state.workspaceOperations.bulkArchiveActiveAgentCount;
+});
+
+export const selectBulkArchiveActiveHookCount = store.createSelector((state) => {
+  return state.workspaceOperations.bulkArchiveActiveHookCount;
+});
+
 export const selectShowBulkDeleteArchivedConfirm = store.createSelector((state) => {
   return state.workspaceOperations.showBulkDeleteArchivedConfirm;
 });
@@ -50,6 +58,14 @@ export const selectShowBulkDeleteWarningConfirm = store.createSelector((state) =
 
 export const selectBulkDeleteWorkspaceCount = store.createSelector((state) => {
   return state.workspaceOperations.bulkDeleteWorkspaceCount;
+});
+
+export const selectBulkDeleteActiveAgentCount = store.createSelector((state) => {
+  return state.workspaceOperations.bulkDeleteActiveAgentCount;
+});
+
+export const selectBulkDeleteActiveHookCount = store.createSelector((state) => {
+  return state.workspaceOperations.bulkDeleteActiveHookCount;
 });
 
 export const selectShowRemoveRepoConfirm = store.createSelector((state) => {

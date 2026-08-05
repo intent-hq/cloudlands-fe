@@ -40,6 +40,7 @@ import {
 } from '$store/renderer/slices/workspace/workspace-slice';
 import {
   applyWorkspaceProposal,
+  bulkArchiveActiveWorkComputed,
   closeArchiveWarning,
   closeBulkArchiveConfirm,
   closeBulkDeleteArchivedConfirm,
@@ -53,6 +54,7 @@ import {
   confirmDeleteWorkspace,
   confirmRemoveRepo,
   openArchiveWarning,
+  openBulkArchiveConfirm,
   openBulkDeleteWarningConfirm,
   openDeleteWarning,
   requestArchiveWorkspace,
@@ -128,6 +130,55 @@ function getArchivedWorkspacesForRepo(repoKey: string, workspaces: Workspace[]):
       workspace.status === WorkspaceStatusEnum.Archived &&
       workspaceMatchesRepoKey(workspace, repoKey),
   );
+}
+
+/** Max concurrent per-workspace active-work lookups during bulk aggregation. */
+const BULK_ACTIVE_WORK_CONCURRENCY = 5;
+
+/**
+ * Aggregate streaming-agent / active-hook counts across a set of workspaces.
+ * Lookups run in bounded batches — each can fall back to a per-workspace
+ * `hook.list` RPC, so an unbounded fan-out on repos with many workspaces
+ * would burst the daemon and risk timeout-induced flakiness.
+ */
+async function countBulkActiveWork(
+  workspaces: Workspace[],
+): Promise<{ agentCount: number; hookCount: number }> {
+  const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+  let agentCount = 0;
+  let hookCount = 0;
+  for (let i = 0; i < workspaces.length; i += BULK_ACTIVE_WORK_CONCURRENCY) {
+    const batch = workspaces.slice(i, i + BULK_ACTIVE_WORK_CONCURRENCY);
+    const results = await Promise.all(batch.map((workspace) => getActiveWorkNames(workspace.id)));
+    for (const { agentNames, hookNames } of results) {
+      agentCount += agentNames.length;
+      hookCount += hookNames.length;
+    }
+  }
+  return { agentCount, hookCount };
+}
+
+/**
+ * Compute the active work behind an open bulk-archive confirm and fold the
+ * counts into the slice so the dialog can warn about it. Fire-and-forget from
+ * the middleware; the reducer drops late results if the confirm was closed or
+ * reopened for a different repo in the meantime.
+ */
+async function computeBulkArchiveActiveWork(repoKey: string): Promise<void> {
+  // Capture the token minted by openBulkArchiveConfirm (the middleware runs
+  // after the reducer) so only the newest compute folds its counts — a stale
+  // in-flight compute from a previous open of the same repo is dropped.
+  const token = appStore.state.workspaceOperations.bulkArchiveComputeToken;
+  const toArchive = getActiveWorkspacesForRepo(repoKey, readWorkspaces());
+  if (toArchive.length === 0) return;
+  try {
+    const { agentCount, hookCount } = await countBulkActiveWork(toArchive);
+    appStore.dispatch(bulkArchiveActiveWorkComputed({ repoKey, agentCount, hookCount, token }));
+  } catch (error) {
+    // The warning is advisory: fail open (counts stay at zero) rather than
+    // letting a fire-and-forget middleware call become an unhandled rejection.
+    logger.error('Failed to compute bulk archive active work:', error);
+  }
 }
 
 /**
@@ -463,7 +514,7 @@ async function performBulkDeleteArchived(repoKey: string): Promise<void> {
   }
 }
 
-/** Bulk-delete archived workspaces; defer to the warning modal if agents run. */
+/** Bulk-delete archived workspaces; defer to the warning modal on active work. */
 export async function bulkDeleteArchived(): Promise<void> {
   const repoKey = appStore.state.workspaceOperations.pendingBulkRepoKey;
   appStore.dispatch(closeBulkDeleteArchivedConfirm());
@@ -479,9 +530,16 @@ export async function bulkDeleteArchived(): Promise<void> {
     return;
   }
 
-  const { hasRunningAgents } = await import('$lib/utils/delete-warning-utils');
-  if (toDelete.some((workspace) => hasRunningAgents(workspace.id))) {
-    appStore.dispatch(openBulkDeleteWarningConfirm({ repoKey, workspaceCount: toDelete.length }));
+  const { agentCount, hookCount } = await countBulkActiveWork(toDelete);
+  if (agentCount > 0 || hookCount > 0) {
+    appStore.dispatch(
+      openBulkDeleteWarningConfirm({
+        repoKey,
+        workspaceCount: toDelete.length,
+        agentCount,
+        hookCount,
+      }),
+    );
     return;
   }
 
@@ -769,6 +827,9 @@ export function createWorkspaceOperationsMiddleware(): StoreMiddleware {
           break;
         case confirmArchiveWorkspace.type:
           void confirmArchiveFromWarning();
+          break;
+        case openBulkArchiveConfirm.type:
+          if (typeof payload[0] === 'string') void computeBulkArchiveActiveWork(payload[0]);
           break;
         case confirmBulkArchive.type:
           void bulkArchive();

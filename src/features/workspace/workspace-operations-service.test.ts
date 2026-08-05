@@ -66,10 +66,13 @@ import { setRepos } from "$store/renderer/slices/known-repos/known-repos-slice";
 import {
   applyWorkspaceProposal,
   closeArchiveWarning,
+  closeBulkArchiveConfirm,
+  closeBulkDeleteWarningConfirm,
   closeDeleteWarning,
   confirmArchiveWorkspace,
   confirmBulkArchive,
   confirmBulkDeleteArchived,
+  confirmBulkDeleteWarning,
   confirmDeleteWorkspace,
   confirmRemoveRepo,
   openBulkArchiveConfirm,
@@ -138,6 +141,8 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
     appStore.dispatch(hydrateProposalLifecycle({}));
     appStore.dispatch(closeDeleteWarning());
     appStore.dispatch(closeArchiveWarning());
+    appStore.dispatch(closeBulkArchiveConfirm());
+    appStore.dispatch(closeBulkDeleteWarningConfirm());
   });
 
   it("archives via the client seam and converges the store to Archived", async () => {
@@ -433,6 +438,78 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
     expect(stored("ws-1")?.status).toBe(WorkspaceStatusEnum.Archived);
   });
 
+  describe("bulk archive active-work warning (agents / hooks)", () => {
+    it("folds aggregated agent+hook counts into the open confirm", async () => {
+      activeWork.mockResolvedValue({ agentNames: ["Agent One"], hookNames: ["ci-watch"] });
+      seed(makeWorkspace({ id: "ws-1" }), makeWorkspace({ id: "ws-2" }));
+
+      appStore.dispatch(openBulkArchiveConfirm("acme/app"));
+      await flush();
+
+      expect(appStore.state.workspaceOperations.showBulkArchiveConfirm).toBe(true);
+      // One streaming agent + one active hook per targeted workspace, aggregated.
+      expect(appStore.state.workspaceOperations.bulkArchiveActiveAgentCount).toBe(2);
+      expect(appStore.state.workspaceOperations.bulkArchiveActiveHookCount).toBe(2);
+    });
+
+    it("reports agents-only counts when no hooks are active", async () => {
+      activeWork.mockResolvedValue({ agentNames: ["Agent One"], hookNames: [] });
+      seed(makeWorkspace({ id: "ws-1" }));
+
+      appStore.dispatch(openBulkArchiveConfirm("acme/app"));
+      await flush();
+
+      expect(appStore.state.workspaceOperations.bulkArchiveActiveAgentCount).toBe(1);
+      expect(appStore.state.workspaceOperations.bulkArchiveActiveHookCount).toBe(0);
+    });
+
+    it("reports hooks-only counts when no agents are streaming", async () => {
+      activeWork.mockResolvedValue({ agentNames: [], hookNames: ["ci-watch"] });
+      seed(makeWorkspace({ id: "ws-1" }));
+
+      appStore.dispatch(openBulkArchiveConfirm("acme/app"));
+      await flush();
+
+      expect(appStore.state.workspaceOperations.bulkArchiveActiveAgentCount).toBe(0);
+      expect(appStore.state.workspaceOperations.bulkArchiveActiveHookCount).toBe(1);
+    });
+
+    it("keeps counts at zero when no active work exists", async () => {
+      seed(makeWorkspace({ id: "ws-1" }));
+
+      appStore.dispatch(openBulkArchiveConfirm("acme/app"));
+      await flush();
+
+      expect(appStore.state.workspaceOperations.bulkArchiveActiveAgentCount).toBe(0);
+      expect(appStore.state.workspaceOperations.bulkArchiveActiveHookCount).toBe(0);
+    });
+
+    it("drops a late count result if the confirm closed before it resolved", async () => {
+      activeWork.mockResolvedValue({ agentNames: ["Agent One"], hookNames: [] });
+      seed(makeWorkspace({ id: "ws-1" }));
+
+      appStore.dispatch(openBulkArchiveConfirm("acme/app"));
+      appStore.dispatch(closeBulkArchiveConfirm());
+      await flush();
+
+      expect(appStore.state.workspaceOperations.bulkArchiveActiveAgentCount).toBe(0);
+      expect(appStore.state.workspaceOperations.bulkArchiveActiveHookCount).toBe(0);
+    });
+
+    it("still archives on confirm regardless of active work", async () => {
+      activeWork.mockResolvedValue({ agentNames: ["Agent One"], hookNames: ["ci-watch"] });
+      seed(makeWorkspace({ id: "ws-1" }));
+
+      appStore.dispatch(openBulkArchiveConfirm("acme/app"));
+      await flush();
+      appStore.dispatch(confirmBulkArchive());
+      await flush();
+
+      expect(ws.archive).toHaveBeenCalledWith("ws-1");
+      expect(stored("ws-1")?.status).toBe(WorkspaceStatusEnum.Archived);
+    });
+  });
+
   it("bulk-deletes every archived workspace sequentially for the pending repo", async () => {
     seed(
       makeWorkspace({ id: "ws-x", status: WorkspaceStatusEnum.Archived }),
@@ -449,6 +526,71 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
     expect(ws.delete).toHaveBeenCalledWith("ws-y");
     expect(ws.delete).not.toHaveBeenCalledWith("ws-active");
     expect(stored("ws-x")).toBeUndefined();
+  });
+
+  describe("bulk delete gating on active work (agents / hooks)", () => {
+    it("routes an agents-only bulk delete to the warning modal with counts", async () => {
+      activeWork.mockResolvedValue({ agentNames: ["Agent One"], hookNames: [] });
+      seed(
+        makeWorkspace({ id: "ws-x", status: WorkspaceStatusEnum.Archived }),
+        makeWorkspace({ id: "ws-y", status: WorkspaceStatusEnum.Archived })
+      );
+
+      appStore.dispatch(openBulkDeleteArchivedConfirm("acme/app"));
+      appStore.dispatch(confirmBulkDeleteArchived());
+      await flush();
+
+      expect(ws.delete).not.toHaveBeenCalled();
+      expect(appStore.state.workspaceOperations.showBulkDeleteWarningConfirm).toBe(true);
+      expect(appStore.state.workspaceOperations.bulkDeleteWorkspaceCount).toBe(2);
+      expect(appStore.state.workspaceOperations.bulkDeleteActiveAgentCount).toBe(2);
+      expect(appStore.state.workspaceOperations.bulkDeleteActiveHookCount).toBe(0);
+    });
+
+    it("routes a hooks-only bulk delete to the warning modal with counts", async () => {
+      activeWork.mockResolvedValue({ agentNames: [], hookNames: ["ci-watch"] });
+      seed(makeWorkspace({ id: "ws-x", status: WorkspaceStatusEnum.Archived }));
+
+      appStore.dispatch(openBulkDeleteArchivedConfirm("acme/app"));
+      appStore.dispatch(confirmBulkDeleteArchived());
+      await flush();
+
+      expect(ws.delete).not.toHaveBeenCalled();
+      expect(appStore.state.workspaceOperations.showBulkDeleteWarningConfirm).toBe(true);
+      expect(appStore.state.workspaceOperations.bulkDeleteActiveAgentCount).toBe(0);
+      expect(appStore.state.workspaceOperations.bulkDeleteActiveHookCount).toBe(1);
+    });
+
+    it("routes an agents-and-hooks bulk delete to the warning modal with both counts", async () => {
+      activeWork.mockResolvedValue({ agentNames: ["Agent One"], hookNames: ["ci-watch"] });
+      seed(makeWorkspace({ id: "ws-x", status: WorkspaceStatusEnum.Archived }));
+
+      appStore.dispatch(openBulkDeleteArchivedConfirm("acme/app"));
+      appStore.dispatch(confirmBulkDeleteArchived());
+      await flush();
+
+      expect(ws.delete).not.toHaveBeenCalled();
+      expect(appStore.state.workspaceOperations.showBulkDeleteWarningConfirm).toBe(true);
+      expect(appStore.state.workspaceOperations.bulkDeleteActiveAgentCount).toBe(1);
+      expect(appStore.state.workspaceOperations.bulkDeleteActiveHookCount).toBe(1);
+    });
+
+    it("'Delete anyway' proceeds with the bulk delete for the pending repo", async () => {
+      activeWork.mockResolvedValue({ agentNames: ["Agent One"], hookNames: ["ci-watch"] });
+      seed(makeWorkspace({ id: "ws-x", status: WorkspaceStatusEnum.Archived }));
+
+      appStore.dispatch(openBulkDeleteArchivedConfirm("acme/app"));
+      appStore.dispatch(confirmBulkDeleteArchived());
+      await flush();
+      expect(appStore.state.workspaceOperations.showBulkDeleteWarningConfirm).toBe(true);
+
+      appStore.dispatch(confirmBulkDeleteWarning());
+      await flush();
+
+      expect(appStore.state.workspaceOperations.showBulkDeleteWarningConfirm).toBe(false);
+      expect(ws.delete).toHaveBeenCalledWith("ws-x");
+      expect(stored("ws-x")).toBeUndefined();
+    });
   });
 
   it("reports timeouts as 'still deleting' and does not remove entities on timeout", async () => {
