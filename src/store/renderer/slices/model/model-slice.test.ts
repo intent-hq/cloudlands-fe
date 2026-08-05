@@ -151,22 +151,25 @@ describe('modelReducer', () => {
   });
 
   it('stores available models as a collection', () => {
-    const state = modelReducer(initialState, setAvailableModels(mockModels));
+    const state = modelReducer(initialState, setAvailableModels(mockModels, defaultProviderId));
 
     expect(state.availableModels).toEqual(createCollection('value', mockModels));
   });
 
-  it('attributes available models to the explicit providerId when given', () => {
+  it('attributes available models to the providerId carried by the action', () => {
     const state = modelReducer(initialState, setAvailableModels(mockModels, 'codex'));
 
     expect(state.availableModelsProviderId).toBe('codex');
   });
 
-  it('attributes available models to the default provider when no providerId is given', () => {
+  it('keeps the action providerId as provenance even when the active provider differs', () => {
+    // Provenance is stamped from the dispatch, never re-derived from the
+    // current default/active provider — a provider switch between trigger and
+    // dispatch must not silently re-attribute the catalog.
     const withActive = modelReducer(initialState, setActiveProvider('grok'));
-    const state = modelReducer(withActive, setAvailableModels(mockModels));
+    const state = modelReducer(withActive, setAvailableModels(mockModels, 'codex'));
 
-    expect(state.availableModelsProviderId).toBe('grok');
+    expect(state.availableModelsProviderId).toBe('codex');
   });
 
   it('stores selected models in providerModels using provider normalization', () => {

@@ -35,10 +35,22 @@ import {
 
 const logger = createLogger("ModelReloadService");
 
+/**
+ * Monotonic reload generation. Each trigger bumps it; a fetch whose captured
+ * generation is no longer current discards its response instead of
+ * dispatching, so on rapid provider switches (A→B while A's fetch is in
+ * flight) a slow stale response can neither overwrite B's catalog nor
+ * misattribute provenance (`models.list` resolves against the daemon's
+ * active provider at processing time, not at capture time).
+ */
+let reloadGeneration = 0;
+
 /** Fetch the daemon catalog for the active provider and drive the loading transitions. */
 async function reloadForActiveProvider(): Promise<void> {
   const providerId = appStore.state.providerSettings.activeProviderId;
   if (typeof providerId !== "string" || providerId.length === 0) return;
+
+  const generation = ++reloadGeneration;
 
   appStore.dispatch(
     setLoadingStateForProvider({ providerId, status: "loading" }),
@@ -49,6 +61,7 @@ async function reloadForActiveProvider(): Promise<void> {
 
   try {
     const models = await appClient.models.list();
+    if (generation !== reloadGeneration) return;
     if (models.length === 0) {
       appStore.dispatch(
         setLoadingStateForProvider({
@@ -68,6 +81,7 @@ async function reloadForActiveProvider(): Promise<void> {
       }),
     );
   } catch (error) {
+    if (generation !== reloadGeneration) return;
     const message =
       error instanceof Error && error.message
         ? error.message

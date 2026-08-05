@@ -51,6 +51,7 @@
   selectHasCheckedOnce,
   selectManagedInstallStatusByProvider,
 } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+  import { selectDaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { ensureProvidersChecked } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import {
   selectActiveProviderId,
@@ -124,6 +125,7 @@
   const allProviderWarnings$ = selectAllProviderWarnings();
   const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
   const hasCheckedOnce$ = selectHasCheckedOnce();
+  const daemonHealth$ = selectDaemonHealth();
 
   // The availability status map gates which providers the picker offers, but
   // outside onboarding nothing else triggers the bulk check — a fresh session
@@ -730,8 +732,17 @@
   // Gated on hasCheckedOnce: before the first availability check resolves,
   // availableEnabledProviderIds is empty by default, which is "unknown" —
   // not "confirmed unavailable" — so this must not trip during initial load.
+  // Also gated on backend-connected (daemon health): the mount-time
+  // ensureProvidersChecked can run its bulk probe before the daemon socket is
+  // up — every probe fails and hasCheckedOnce still flips, which would
+  // transiently satisfy this condition (and fire the toast in every mounted
+  // picker) until the connect listener re-runs the check and heals the map.
+  // A daemon-down failure is surfaced by the daemon-loss UI, not this notice.
   const hasNoAvailableProvider = $derived(
-    !providerId && $hasCheckedOnce$ && $availableEnabledProviderIds$.length === 0,
+    !providerId &&
+      $hasCheckedOnce$ &&
+      $daemonHealth$ !== 'down' &&
+      $availableEnabledProviderIds$.length === 0,
   );
 
   let noProviderToastShown = false;

@@ -190,6 +190,10 @@ vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors'
   selectHasCheckedOnce: () => writable(true),
 }));
 
+vi.mock('$store/renderer/slices/daemon-health/daemon-health-selectors', () => ({
+  selectDaemonHealth: () => writable('healthy'),
+}));
+
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
   selectAvailableEnabledProviderIds: () => enabledProviderIds$,

@@ -89,7 +89,7 @@ export const initialState: ModelState = {
 export const setSelectedModel =
   createAction<[payload: { providerId: string; model: string }]>('model/setSelectedModel');
 
-export const setAvailableModels = createAction<[models: AuggieModel[], providerId?: string]>(
+export const setAvailableModels = createAction<[models: AuggieModel[], providerId: string]>(
   'model/setAvailableModels',
 );
 
@@ -229,10 +229,10 @@ export const modelReducer = createReducer<ModelState>(initialState)
   .with(setAvailableModels, (state, { payload: [models, providerId] }) => ({
     ...state,
     availableModels: createCollection<AuggieModel, 'value'>('value', models),
-    // Both writers (model-reload-service, boot seeder) load for the active
-    // provider, which `defaultProviderId` mirrors — so it is the correct
-    // attribution when the dispatch does not carry one explicitly.
-    availableModelsProviderId: providerId ?? state.defaultProviderId,
+    // Explicit provenance is required: silently attributing to the current
+    // default provider would stamp the wrong provenance whenever the active
+    // provider changed between trigger and dispatch.
+    availableModelsProviderId: providerId,
   }))
   .with(
     setLoadingStateForProvider,

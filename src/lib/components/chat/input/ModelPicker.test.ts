@@ -147,6 +147,13 @@ vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors'
   selectHasCheckedOnce: () => hasCheckedOnce$,
 }));
 
+// Daemon connection health ('healthy' | 'degraded' | 'down'); the D1(B)
+// no-provider surface is suppressed while the daemon is down.
+const daemonHealth$ = writable<'healthy' | 'degraded' | 'down'>('healthy');
+vi.mock('$store/renderer/slices/daemon-health/daemon-health-selectors', () => ({
+  selectDaemonHealth: () => daemonHealth$,
+}));
+
 const enabledProviderIds$ = writable(['auggie']);
 const activeProviderId$ = writable('auggie');
 // Mirrors `enabledProviderIds$` by default (available === enabled), so every
@@ -201,6 +208,7 @@ warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
 afterEach(() => {
   availableProviderOverride$.set(null);
   mockModelState.availableModelsProviderId = 'auggie';
+  daemonHealth$.set('healthy');
 });
 
 describe('ModelPicker locked state', () => {
@@ -778,6 +786,7 @@ describe('ModelPicker availability gating', () => {
     activeProviderId$.set('auggie');
     availableProviderOverride$.set(null);
     hasCheckedOnce$.set(true);
+    daemonHealth$.set('healthy');
   });
 
   afterEach(() => {
@@ -785,6 +794,7 @@ describe('ModelPicker availability gating', () => {
     document.body.innerHTML = '';
     availableProviderOverride$.set(null);
     hasCheckedOnce$.set(true);
+    daemonHealth$.set('healthy');
   });
 
   it('does not show the no-provider failure notice or toast while availability has not been checked yet', async () => {
@@ -809,6 +819,36 @@ describe('ModelPicker availability gating', () => {
     render(ModelPicker, {
       props: { portal: false },
     });
+
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalled();
+    });
+    expect(screen.getByText('No provider available')).toBeTruthy();
+  });
+
+  it('suppresses the no-provider notice and toast while the daemon is not yet connected (pre-connect probe failure)', async () => {
+    // Regression (startup window): the mount-time ensureProvidersChecked can
+    // run its bulk probe before the daemon socket is up — every probe fails,
+    // hasCheckedOnce flips, and availableEnabledProviderIds is [] — which
+    // must NOT fire the D1(B) toast/notice while daemon health is 'down'.
+    const { toast } = await import('svelte-sonner');
+    daemonHealth$.set('down');
+    hasCheckedOnce$.set(true);
+    availableProviderOverride$.set([]);
+
+    render(ModelPicker, {
+      props: { portal: false },
+    });
+
+    await screen.findByRole('button');
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.queryByText('No provider available')).toBeNull();
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+
+    // Once the daemon connects, a still-empty availability map is a real
+    // confirmed failure — the notice and toast surface as before.
+    daemonHealth$.set('healthy');
 
     await waitFor(() => {
       expect(vi.mocked(toast.error)).toHaveBeenCalled();
