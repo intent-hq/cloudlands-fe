@@ -6,7 +6,7 @@ import type { SpecialistDef } from '$lib/client/app-client';
 import { SPECIALISTS, type Specialist } from '$lib/constants/specialists';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import type { ModelTier, SpecialistFileScope } from '$shared/specialist-file-types';
+import type { SpecialistFileScope } from '$shared/specialist-file-types';
 import { selectBundledSpecialists, selectGetFileSpecialist } from '../specialists-selectors';
 import {
   deleteFileSpecialist,
@@ -23,7 +23,6 @@ import {
 } from '../specialists-slice';
 
 const logger = createLogger('SpecialistsSaga');
-const MODEL_TIERS = new Set<ModelTier>(['fast', 'balanced', 'smart']);
 
 type SpecialistAction = ReturnType<
   | typeof saveFileSpecialist
@@ -36,12 +35,6 @@ interface ListContext {
   generation: number;
 }
 
-function toModelTier(value: string | undefined): ModelTier | undefined {
-  return value !== undefined && MODEL_TIERS.has(value as ModelTier)
-    ? (value as ModelTier)
-    : undefined;
-}
-
 function toBundledSpecialist(def: SpecialistDef): Specialist {
   return {
     id: def.id,
@@ -49,12 +42,14 @@ function toBundledSpecialist(def: SpecialistDef): Specialist {
     description: def.description,
     codingAgent: def.codingAgent,
     defaultModel: def.model,
-    defaultModelTier: toModelTier(def.modelTier),
     defaultBehaviorPrompt: def.behaviorPrompt ?? def.prompt ?? '',
     roleReminder: def.roleReminder,
     source: 'bundled',
     defaultAgentType: def.agentType,
     hidden: def.hidden,
+    modelOptions: def.modelOptions,
+    resolvedModel: def.resolvedModel,
+    resolvedProvider: def.resolvedProvider,
   };
 }
 
@@ -68,10 +63,12 @@ function bundledFallback(builtin: Specialist): Specialist {
   };
   if (builtin.codingAgent !== undefined) mapped.codingAgent = builtin.codingAgent;
   if (builtin.defaultModel !== undefined) mapped.defaultModel = builtin.defaultModel;
-  if (builtin.defaultModelTier !== undefined) mapped.defaultModelTier = builtin.defaultModelTier;
   if (builtin.roleReminder !== undefined) mapped.roleReminder = builtin.roleReminder;
   if (builtin.defaultAgentType !== undefined) mapped.defaultAgentType = builtin.defaultAgentType;
   if (builtin.hidden !== undefined) mapped.hidden = builtin.hidden;
+  if (builtin.modelOptions !== undefined) mapped.modelOptions = builtin.modelOptions;
+  if (builtin.resolvedModel !== undefined) mapped.resolvedModel = builtin.resolvedModel;
+  if (builtin.resolvedProvider !== undefined) mapped.resolvedProvider = builtin.resolvedProvider;
   return mapped;
 }
 
@@ -82,12 +79,14 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
     description: def.description,
     codingAgent: def.codingAgent,
     model: def.model ?? '',
-    modelTier: toModelTier(def.modelTier),
     behaviorPrompt: def.behaviorPrompt ?? def.prompt ?? '',
     roleReminder: def.roleReminder,
     filePath: def.path ?? '',
     source: def.source as SpecialistFileScope,
     hidden: def.hidden,
+    modelOptions: def.modelOptions,
+    resolvedModel: def.resolvedModel,
+    resolvedProvider: def.resolvedProvider,
   };
 }
 
@@ -149,8 +148,8 @@ function* handleSave(action: ReturnType<typeof saveFileSpecialist>, context: Lis
       description: payload.description,
       codingAgent: payload.codingAgent,
       model: payload.model,
-      modelTier: payload.modelTier,
       roleReminder: payload.roleReminder,
+      modelOptions: payload.modelOptions?.length ? payload.modelOptions : undefined,
       behaviorPrompt: payload.behaviorPrompt,
       source: scope,
       hidden: existing?.hidden ?? bundled?.hidden,
@@ -209,8 +208,8 @@ function* handleExport(action: ReturnType<typeof exportBuiltinToFile>, context: 
       description: bundled.description,
       codingAgent: bundled.codingAgent,
       model: bundled.defaultModel,
-      modelTier: bundled.defaultModelTier,
       roleReminder: bundled.roleReminder,
+      modelOptions: bundled.modelOptions,
       behaviorPrompt: bundled.defaultBehaviorPrompt,
       source: 'user',
       hidden: bundled.hidden,
