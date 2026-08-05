@@ -232,6 +232,54 @@ describe("host-bridge-seeder", () => {
     });
   });
 
+  describe("system:check-gh → daemon host.findBinary", () => {
+    it("forwards { name:'gh' } and folds a positive probe to {available:true, version}", async () => {
+      // PROTOCOL host.findBinary: `{ available, path?, version? }`. The gh
+      // probe is informational only (never gates onboarding); version is
+      // forwarded verbatim when reported.
+      mockedRequest.mockResolvedValueOnce({
+        available: true,
+        path: "/opt/homebrew/bin/gh",
+        version: "2.62.0",
+      });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_GH);
+
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "gh" });
+      expect(response).toEqual({
+        success: true,
+        data: { available: true, version: "2.62.0" },
+      });
+    });
+
+    it("folds a version-less probe (binary resolves, --version failed) to {available:true}", async () => {
+      mockedRequest.mockResolvedValueOnce({ available: true, path: "/usr/local/bin/gh" });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_GH);
+
+      expect(response).toEqual({
+        success: true,
+        data: { available: true, version: undefined },
+      });
+    });
+
+    it("folds a daemon-reported missing binary to {available:false}", async () => {
+      mockedRequest.mockResolvedValueOnce({ available: false });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_GH);
+
+      expect(response).toEqual({ success: true, data: { available: false } });
+    });
+
+    it("folds an RPC failure to {available:false} — never an error", async () => {
+      mockedRequest.mockRejectedValueOnce(new Error("transport down"));
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_GH);
+
+      expect(response).toEqual({ success: true, data: { available: false } });
+    });
+  });
+
   describe("editor-open intents → daemon host.openInEditor (PROTOCOL §5.14)", () => {
     it("vscode:open with a string path sends host.openInEditor {editorId:'vscode', path}", async () => {
       mockedRequest.mockResolvedValueOnce({ ok: true });

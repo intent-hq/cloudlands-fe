@@ -1,13 +1,15 @@
 /**
  * Tests for the host-requirements check middleware.
  *
- * Asserts the host-requirements triggers probe git + node over the exact
- * legacy IPC channels (`system:check-git` / `system:check-node`) and ALWAYS
- * land the slice in a terminal state: per-tool statuses set as each probe
- * settles, `hasCheckedOnce` flipped once both settle — even when every probe
- * fails. The channel handlers themselves are wire-contract-tested in
- * host-bridge-seeder.test.ts against the daemon `host.*` methods; here the
- * envelopes fed back are exactly the shapes those bridges produce.
+ * Asserts the host-requirements triggers probe git + node + gh over the exact
+ * legacy IPC channels (`system:check-git` / `system:check-node` /
+ * `system:check-gh`) and ALWAYS land the slice in a terminal state: per-tool
+ * statuses set as each probe settles, `hasCheckedOnce` flipped once all
+ * settle — even when every probe fails. The gh probe is informational only
+ * and never gates onboarding. The channel handlers themselves are
+ * wire-contract-tested in host-bridge-seeder.test.ts against the daemon
+ * `host.*` methods; here the envelopes fed back are exactly the shapes those
+ * bridges produce.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -46,23 +48,27 @@ const flush = async () => {
   }
 };
 
-/** Route the two probe channels; anything else resolves a bland envelope. */
+/** Route the three probe channels; anything else resolves a bland envelope. */
 function routeProbes(handlers: {
   git?: () => Promise<unknown>;
   node?: () => Promise<unknown>;
+  gh?: () => Promise<unknown>;
 }): void {
   mockedInvoke.mockImplementation(async (channel: string) => {
     if (channel === SYSTEM.CHECK_GIT && handlers.git) return handlers.git();
     if (channel === SYSTEM.CHECK_NODE && handlers.node) return handlers.node();
+    if (channel === SYSTEM.CHECK_GH && handlers.gh) return handlers.gh();
     return { success: true, data: null };
   });
 }
+
+const PROBE_CHANNELS = [SYSTEM.CHECK_GIT, SYSTEM.CHECK_NODE, SYSTEM.CHECK_GH] as const;
 
 /** All probe-channel invocations so far, as channel names. */
 const probeCalls = () =>
   mockedInvoke.mock.calls
     .map(([channel]) => channel)
-    .filter((channel) => channel === SYSTEM.CHECK_GIT || channel === SYSTEM.CHECK_NODE);
+    .filter((channel) => (PROBE_CHANNELS as readonly string[]).includes(channel));
 
 describe("host-requirements-check-service", () => {
   beforeAll(() => {
@@ -80,7 +86,7 @@ describe("host-requirements-check-service", () => {
     mockedInvoke.mockResolvedValue({ success: true, data: null });
   });
 
-  it("ensureHostRequirementsChecked probes both channels and lands terminal state", async () => {
+  it("ensureHostRequirementsChecked probes all channels and lands terminal state", async () => {
     routeProbes({
       git: async () => ({
         success: true,
@@ -90,15 +96,20 @@ describe("host-requirements-check-service", () => {
         success: true,
         data: { available: true, version: "22.1.0", versionOk: true },
       }),
+      gh: async () => ({
+        success: true,
+        data: { available: true, version: "2.62.0" },
+      }),
     });
 
     appStore.dispatch(ensureHostRequirementsChecked());
     await flush();
 
-    expect(probeCalls().sort()).toEqual([SYSTEM.CHECK_GIT, SYSTEM.CHECK_NODE].sort());
+    expect(probeCalls().sort()).toEqual([...PROBE_CHANNELS].sort());
     const state = appStore.state.hostRequirements;
     expect(state.git).toEqual({ checked: true, available: true, version: "git version 2.43.0" });
     expect(state.node).toEqual({ checked: true, ok: true, version: "22.1.0" });
+    expect(state.gh).toEqual({ checked: true, available: true, version: "2.62.0" });
     expect(state.checking).toBe(false);
     expect(state.hasCheckedOnce).toBe(true);
   });
@@ -118,27 +129,32 @@ describe("host-requirements-check-service", () => {
         success: true,
         data: { available: true, version: "18.19.0", versionOk: false },
       }),
+      gh: async () => ({ success: true, data: { available: false } }),
     });
 
     appStore.dispatch(checkHostRequirementsRequested());
     await flush();
 
-    expect(probeCalls().sort()).toEqual([SYSTEM.CHECK_GIT, SYSTEM.CHECK_NODE].sort());
+    expect(probeCalls().sort()).toEqual([...PROBE_CHANNELS].sort());
     const state = appStore.state.hostRequirements;
     // Terminal folds: git not available (version dropped), node present but
-    // too old (version kept for messaging).
+    // too old (version kept for messaging), gh not available.
     expect(state.git).toEqual({ checked: true, available: false });
     expect(state.node).toEqual({ checked: true, ok: false, version: "18.19.0" });
+    expect(state.gh).toEqual({ checked: true, available: false });
     expect(state.hasCheckedOnce).toBe(true);
     expect(state.checking).toBe(false);
   });
 
-  it("still lands terminal when both probes reject (never stuck in checking)", async () => {
+  it("still lands terminal when all probes reject (never stuck in checking)", async () => {
     routeProbes({
       git: async () => {
         throw new Error("transport down");
       },
       node: async () => {
+        throw new Error("transport down");
+      },
+      gh: async () => {
         throw new Error("transport down");
       },
     });
@@ -149,6 +165,7 @@ describe("host-requirements-check-service", () => {
     const state = appStore.state.hostRequirements;
     expect(state.git).toEqual({ checked: true, available: false });
     expect(state.node).toEqual({ checked: true, ok: false, version: undefined });
+    expect(state.gh).toEqual({ checked: true, available: false });
     expect(state.checking).toBe(false);
     expect(state.hasCheckedOnce).toBe(true);
   });
@@ -224,8 +241,8 @@ describe("host-requirements-check-service", () => {
     }
     await flush();
 
-    // One git + one node probe despite two triggers.
-    expect(probeCalls().sort()).toEqual([SYSTEM.CHECK_GIT, SYSTEM.CHECK_NODE].sort());
+    // One probe per channel despite two triggers.
+    expect(probeCalls().sort()).toEqual([...PROBE_CHANNELS].sort());
     expect(appStore.state.hostRequirements.checking).toBe(false);
   });
 
@@ -233,6 +250,7 @@ describe("host-requirements-check-service", () => {
     routeProbes({
       git: async () => ({ success: false, error: "daemon unreachable" }),
       node: async () => ({ success: false, error: "daemon unreachable" }),
+      gh: async () => ({ success: false, error: "daemon unreachable" }),
     });
 
     appStore.dispatch(checkHostRequirementsRequested());
@@ -241,6 +259,7 @@ describe("host-requirements-check-service", () => {
     const state = appStore.state.hostRequirements;
     expect(state.git).toEqual({ checked: true, available: false });
     expect(state.node).toEqual({ checked: true, ok: false, version: undefined });
+    expect(state.gh).toEqual({ checked: true, available: false });
     expect(state.hasCheckedOnce).toBe(true);
   });
 });
