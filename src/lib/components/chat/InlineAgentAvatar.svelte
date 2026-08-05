@@ -7,10 +7,10 @@
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
 
   import {
-  selectAgentIsResponding,
-  selectAgentIsBlockedWaiting,
-  selectAgentSession,
-} from '$store/renderer/slices/agent-session/agent-session-selectors';
+    selectAgentIsResponding,
+    selectAgentIsWaiting,
+    selectAgentSession,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
@@ -38,13 +38,13 @@
   // disk restore.
   const agent$ = selectAgentSession(agentId);
   const agentIsResponding$ = selectAgentIsResponding(agentId);
-  // Hourglass-worthy waits only — tool execution inside a live turn stays running.
-  const agentIsWaiting$ = selectAgentIsBlockedWaiting(agentId);
+  const agentIsWaiting$ = selectAgentIsWaiting(agentId);
   const agentData = $derived(getAgentPeekData($agent$));
 
   $effect(() => {
     const wsId = workspace?.id;
     if (wsId) {
+      console.log('LOAD');
       appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
     }
   });
