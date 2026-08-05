@@ -559,6 +559,20 @@ export interface AgentsClient {
     messageId: string;
   }): Promise<MutationResult>;
   /**
+   * Advance the per-conversation seen marker (`agent.markSeen`, §4.5). The
+   * daemon persists `lastSeenMessageId` in session metadata — served on
+   * `AgentLite` and converging via `agent:updated` — and returns
+   * `{ success: true, lastSeenMessageId }`. Fired fire-and-forget by the
+   * viewport trigger while the user is viewing the conversation at-bottom;
+   * callers never await it for UI flow. A nonexistent agent or a workspace
+   * mismatch rejects (folded into `{ success: false, error }`).
+   */
+  markSeen(params: {
+    agentId: string;
+    workspaceId: string;
+    messageId: string;
+  }): Promise<MutationResult>;
+  /**
    * Rename an agent session (`agent.rename`, §5.5). The daemon persists the
    * new name and an applied rename emits `agent:renamed` (in
    * `AGENT_LIFECYCLE_EVENTS`), so the reactive `subscribe` refetch reconciles

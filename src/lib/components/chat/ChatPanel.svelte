@@ -192,6 +192,12 @@
   markAgentAsViewed,
   clearCurrentlyViewedAgent,
 } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
+  import {
+    requestMarkAgentSeen,
+    cancelPendingMarkAgentSeen,
+    newestPersistedMessageId,
+    type MarkAgentSeenSnapshot,
+  } from '$features/agent/mark-agent-seen';
   import AuroraBackground from './AuroraBackground.svelte';
   import {
   invoke,
@@ -2479,12 +2485,57 @@
     }
   });
 
+  // Advance the per-conversation seen marker (agent.markSeen, PROTOCOL §4.5)
+  // while the user is viewing the end of the transcript. The ONLY trigger is
+  // the viewport being at the very bottom with this panel active — scrolling
+  // mid-conversation never produces a backend call. The request is debounced
+  // and fire-and-forget; all gates (at-bottom, viewed agent, window focus)
+  // are re-checked from this live snapshot when the debounce fires, so
+  // scrolling away or blurring during the window silently drops it. Streaming
+  // rows are never eligible — the marker only ever points at a persisted
+  // message the daemon can resolve.
+  function markSeenSnapshot(): MarkAgentSeenSnapshot | null {
+    if (isComponentDestroyed || !agentId || !workspace?.id) return null;
+    return {
+      workspaceId: workspace.id,
+      agentId,
+      messageId: newestPersistedMessageId($agentMessages$),
+      atBottom: distanceFromBottom <= SCROLL_BOTTOM_THRESHOLD,
+    };
+  }
+  $effect(() => {
+    if (!agentId || !isActive || !workspace?.id) return;
+    if (distanceFromBottom > SCROLL_BOTTOM_THRESHOLD) return;
+    const messageId = newestPersistedMessageId($agentMessages$);
+    if (!messageId) return;
+    requestMarkAgentSeen(agentId, markSeenSnapshot);
+  });
+
+  // Re-arm the trigger when the window regains focus while sitting at the
+  // bottom — the focus gate dropped any request that fired while blurred.
+  onMount(() => {
+    const handleWindowFocus = () => {
+      if (isComponentDestroyed || !agentId || !isActive) return;
+      if (distanceFromBottom > SCROLL_BOTTOM_THRESHOLD) return;
+      requestMarkAgentSeen(agentId, markSeenSnapshot);
+    };
+    window.addEventListener('focus', handleWindowFocus);
+    return () => {
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  });
+
   onDestroy(() => {
     // CRITICAL: Set destruction flag FIRST, before any other cleanup.
     // This prevents async callbacks (like appClient.agents.* promises resolving
     // late) from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
+
+    // Drop any pending markSeen debounce for this panel's agent.
+    if (agentId) {
+      cancelPendingMarkAgentSeen(agentId);
+    }
 
     // Clear currently viewed agent so other agents can properly be marked as
     // unread — scoped so a cached background tab's destroy cannot tear down
