@@ -1400,7 +1400,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           >
             <!-- Queue button -->
             <button
-              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer transition-colors text-primary not-disabled:hover:bg-background overflow-visible"
+              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors text-primary not-disabled:hover:bg-background overflow-visible"
               onclick={handleSubmit}
               disabled={isEnhancing}
               aria-label={m.chat_richInput_queueMessage_ariaLabel()}
@@ -1421,7 +1421,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
             <!-- Interrupt button (stop + send immediately) -->
             <button
-              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer transition-colors text-destructive-foreground not-disabled:hover:bg-background"
+              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors text-destructive-foreground not-disabled:hover:bg-background"
               onclick={handleForceSubmit}
               disabled={isEnhancing}
               aria-label={m.chat_richInput_interruptAndSend_ariaLabel()}
