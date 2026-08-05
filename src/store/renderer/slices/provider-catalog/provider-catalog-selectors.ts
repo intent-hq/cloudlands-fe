@@ -43,18 +43,38 @@ export const selectAllCatalogProviderIds = store.createSelector(
  * global default model when it is a compound id, else the active provider
  * (`providers.active`), else the first catalog row. '' only before any of
  * those resolve (fresh state, catalog not hydrated).
+ *
+ * Once the catalog is hydrated, a prefix that is not a known catalog
+ * provider id (malformed/legacy compound string) is ignored and resolution
+ * falls through to the next precedence step, so an unknown id never
+ * mis-attributes bare model ids downstream.
+ *
+ * Known divergences from the spec's ideal ordering (accepted, documented on
+ * the PR #759 review):
+ * - The model lookup is keyed by `activeProviderId`, so when
+ *   `providers.active` is unset the persisted global model is never
+ *   consulted — a daemon-persisted compound `model.default` without
+ *   `providers.active` (older FE / another client) falls through to the
+ *   first catalog row rather than the model's provider.
+ * - In steady state the compound branch is a legacy/transient-state guard,
+ *   not the primary path: `providerModels[activeProviderId]` is
+ *   write-normalized to the bare form (the model slice mirrors the active
+ *   provider as its default), so `includes(':')` only fires on
+ *   un-normalized state (pre-hydration persistence, older writers).
  */
 export const selectEffectiveDefaultProviderId = store.createSelector((state): string => {
+  const catalogLoaded = state.providerCatalog?.loaded ?? false;
+  const catalogIds = state.providerCatalog?.providers.ids ?? [];
   const activeProviderId = state.providerSettings?.activeProviderId ?? '';
   const globalModel = activeProviderId
     ? state.model?.providerModels?.[activeProviderId]
     : undefined;
   if (globalModel?.includes(':')) {
     const { providerId } = splitCompoundModelId(globalModel);
-    if (providerId) return providerId;
+    if (providerId && (!catalogLoaded || catalogIds.includes(providerId))) return providerId;
   }
   if (activeProviderId) return activeProviderId;
-  return state.providerCatalog?.providers.ids[0] ?? '';
+  return catalogIds[0] ?? '';
 });
 
 /** One registry row by id; `undefined` when unknown or not yet hydrated. */

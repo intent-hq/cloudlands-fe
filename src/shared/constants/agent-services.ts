@@ -217,11 +217,12 @@ export const MODEL_IDS = {
  * MODEL DEFAULTS
  * ============================================================================
  *
- * Non-model-id defaults only. There is intentionally NO hardcoded interactive
- * default model id: the default model is always derived from the provider
- * CLI's catalog (the row it marks `isDefault`, else the first available row)
- * via `resolveDefaultModel` in
- * `$store/renderer/slices/model/model-selection-utils`.
+ * There is intentionally NO hardcoded INTERACTIVE default model id: the
+ * default model is always derived from the provider CLI's catalog (the row
+ * it marks `isDefault`, else the first available row) via
+ * `resolveDefaultModel` in
+ * `$store/renderer/slices/model/model-selection-utils`. The background
+ * model-id defaults below are pending removal in a follow-up.
  */
 export const MODEL_DEFAULTS = {
   /**

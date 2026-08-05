@@ -20,6 +20,7 @@ import { backendRequest } from "./backend-transport";
 import {
   enhancePrompt,
   generateLayout,
+  isEnhancePromptAvailable,
   EnhancePromptUnavailableError,
 } from "./live-prompt-enhancement";
 
@@ -125,5 +126,16 @@ describe("live prompt-enhancement seam (fake transport)", () => {
       mode: "layout",
       workspaceId: "ws-abc",
     });
+  });
+
+  it("isEnhancePromptAvailable gates on the settings-derived effective provider (auggie only)", () => {
+    // The daemon no longer treats an unset `providers.active` as auggie —
+    // the FE mirror hides the affordance unless the settings-derived
+    // effective provider resolves to auggie.
+    expect(isEnhancePromptAvailable("auggie")).toBe(true);
+    expect(isEnhancePromptAvailable("codex")).toBe(false);
+    expect(isEnhancePromptAvailable("")).toBe(false);
+    expect(isEnhancePromptAvailable(null)).toBe(false);
+    expect(isEnhancePromptAvailable(undefined)).toBe(false);
   });
 });

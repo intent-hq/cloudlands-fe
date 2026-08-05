@@ -578,9 +578,20 @@ app.whenReady().then(async () => {
       const { hostExec } = await import('../shared/main/host-exec.js');
       const { fetchProviderCatalog } = await import('./utils/provider-catalog-accessor.js');
       const catalog = await fetchProviderCatalog();
-      // The registry carries no default designation — the first catalog row
-      // is the neutral positional pick for the About-panel version line.
-      const defaultProvider = catalog.providers[0];
+      // The registry carries no default designation — probe the persisted
+      // active provider (`providers.active`, the effective-default rule used
+      // renderer-side), falling back to the first catalog row when unset.
+      // The settings read is best-effort: a failure just means first-row.
+      const activeProviderId = await getBackendClient()
+        .request('settings.get', { path: 'providers.active' })
+        .then((result) => {
+          const value = (result as { value?: unknown } | null)?.value;
+          return typeof value === 'string' ? value : '';
+        })
+        .catch(() => '');
+      const defaultProvider =
+        catalog.providers.find((provider) => provider.id === activeProviderId) ??
+        catalog.providers[0];
       if (!defaultProvider) return;
 
       const result = await hostExec(defaultProvider.command, {

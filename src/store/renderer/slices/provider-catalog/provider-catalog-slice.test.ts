@@ -124,15 +124,16 @@ describe('provider-catalog selectors', () => {
   });
 
   it('selectEffectiveDefaultProviderId derives the default from user settings', () => {
-    // Compound global default model wins: its provider prefix is the default.
+    // Compound global default model wins: its provider prefix (a known
+    // catalog row) is the default.
     expect(
       selectEffectiveDefaultProviderId.select(
         storeWith(hydrated, {}, {
           activeProviderId: 'pi',
-          providerModels: { pi: 'opencode:some-model' },
+          providerModels: { pi: 'unsloth:some-model' },
         }),
       ),
-    ).toBe('opencode');
+    ).toBe('unsloth');
     // Bare global model → the active provider.
     expect(
       selectEffectiveDefaultProviderId.select(
@@ -147,6 +148,35 @@ describe('provider-catalog selectors', () => {
     expect(selectEffectiveDefaultProviderId.select(storeWith(hydrated))).toBe('auggie');
     // Before hydration with nothing configured → ''.
     expect(selectEffectiveDefaultProviderId.select(storeWith(initialState))).toBe('');
+  });
+
+  it('selectEffectiveDefaultProviderId ignores compound prefixes unknown to the catalog', () => {
+    // Malformed/legacy compound id: the prefix is not a catalog provider id
+    // once the catalog is hydrated → fall through to the active provider.
+    expect(
+      selectEffectiveDefaultProviderId.select(
+        storeWith(hydrated, {}, {
+          activeProviderId: 'pi',
+          providerModels: { pi: 'legacy-removed-provider:some-model' },
+        }),
+      ),
+    ).toBe('pi');
+    // Empty-prefix malformed id (':model') also falls through.
+    expect(
+      selectEffectiveDefaultProviderId.select(
+        storeWith(hydrated, {}, { activeProviderId: 'pi', providerModels: { pi: ':model' } }),
+      ),
+    ).toBe('pi');
+    // Before hydration there is no catalog to validate against — the prefix
+    // is trusted verbatim (re-validated once the catalog lands).
+    expect(
+      selectEffectiveDefaultProviderId.select(
+        storeWith(initialState, {}, {
+          activeProviderId: 'pi',
+          providerModels: { pi: 'opencode:some-model' },
+        }),
+      ),
+    ).toBe('opencode');
   });
 
   it('selectProviderCatalogEntry keys by id, undefined for unknown ids', () => {
