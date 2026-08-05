@@ -518,6 +518,29 @@ describe('createNotificationIpcMiddleware', () => {
           expect.objectContaining({ description: 'Finished' }),
         );
       });
+
+      it('falls back to the plain toast (structured dropped) when the custom toast rendering throws with structured present', async () => {
+        microStatusMock.value = 'connected';
+        resolvedKeySlotSelectMock.mockImplementation(() => null);
+        mockToastCustom.mockImplementation(() => {
+          throw new Error('custom render boom');
+        });
+        const { showHandler } = setupMiddleware();
+
+        await showHandler({
+          title: 'Agent',
+          body: 'Finished',
+          timestamp: 't',
+          navigateTarget: { workspaceId: 'ws-123' },
+          structured: { agentId: 'agent-1', specialistDisplayName: 'Coordinator' },
+        });
+
+        expect(mockToast).toHaveBeenCalledTimes(1);
+        expect(mockToast).toHaveBeenCalledWith(
+          'Agent',
+          expect.objectContaining({ description: 'Finished' }),
+        );
+      });
     });
   });
 
