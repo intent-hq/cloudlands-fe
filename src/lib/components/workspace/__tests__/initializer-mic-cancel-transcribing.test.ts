@@ -7,7 +7,7 @@
  * tooltip/aria-label, and clicking it must abandon the in-flight
  * transcription session so a late result is discarded.
  */
-import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
@@ -91,10 +91,15 @@ vi.mock('$lib/client', () => ({
   appClient: { git: { pull: vi.fn(async () => ({ success: true })) }, drafts: {} },
 }));
 
-vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
-  enhancePrompt: vi.fn(async (p: string) => ({ enhanced: p })),
-  isEnhancePromptAvailable: vi.fn(() => true),
-}));
+vi.mock('$lib/client/live/live-prompt-enhancement', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('$lib/client/live/live-prompt-enhancement')>();
+  return {
+    ...actual,
+    enhancePrompt: vi.fn(async (p: string) => ({ enhanced: p })),
+    isEnhancePromptAvailable: vi.fn(() => true),
+  };
+});
 
 vi.mock('$lib/utils/workspace-validation', () => ({
   getGitErrorMessage: (message: string) => message,
@@ -177,6 +182,7 @@ vi.mock('svelte-fa', async () => ({
 
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
 import { m } from '$shared/paraglide/messages.js';
+import { enhancePrompt } from '$lib/client/live/live-prompt-enhancement';
 import {
   beginTranscriptionSession,
   hasActiveTranscriptionSession,
@@ -241,5 +247,106 @@ describe('CompactWorkspaceInitializer mic cancel-while-transcribing', () => {
     const button = transcribingMicButton();
     expect(button).not.toBeNull();
     expect(button!.getAttribute('aria-label')).toBe(m.chat_richInput_micStart_label());
+  });
+});
+
+describe('CompactWorkspaceInitializer input lock while enhancing', () => {
+  /** The mocked RichTextarea exposes its `disabled` prop via data-disabled. */
+  function promptBox(): HTMLElement {
+    return document.body.querySelector('[data-testid="mock-rich-textarea"]') as HTMLElement;
+  }
+
+  // Locate affordances via the mocked Fa's data-icon (real fa icon names).
+  function enhanceButton(): HTMLButtonElement | null {
+    const icon = document.body.querySelector('[data-icon="wand-magic-sparkles"]');
+    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+  }
+
+  function stopEnhanceButton(): HTMLButtonElement | null {
+    const icon = document.body.querySelector('[data-icon="stop"]');
+    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+  }
+
+  function createButton(): HTMLButtonElement | null {
+    return (
+      Array.from(document.body.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes(m.workspace_compactInitializer_createWorkspace_label()),
+      ) ?? null
+    );
+  }
+
+  /** Render expanded with a non-empty prompt so the enhance button is enabled. */
+  async function renderWithPrompt() {
+    const { component } = render(CompactWorkspaceInitializer, {
+      props: { isExpanded: true },
+    });
+    component.applyStarterPrompt({ prompt: 'build a todo app', repoName: 'todo-app' } as never);
+    await waitFor(() => expect(promptBox().textContent).toContain('build a todo app'));
+    return component;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionStorage.clear();
+    mocks.hardwareConsole.voiceTranscribing = false;
+  });
+
+  afterEach(() => {
+    cleanup();
+    sessionStorage.clear();
+  });
+
+  it('disables the prompt input and Create button while enhancing and restores them on success', async () => {
+    let resolveEnhance!: (value: { enhanced: string }) => void;
+    vi.mocked(enhancePrompt).mockImplementation(
+      () => new Promise((resolve) => { resolveEnhance = resolve; }) as never,
+    );
+    await renderWithPrompt();
+
+    expect(promptBox().getAttribute('data-disabled')).toBe('false');
+    await waitFor(() => expect(createButton()!.disabled).toBe(false));
+
+    await fireEvent.click(enhanceButton()!);
+
+    await waitFor(() => expect(promptBox().getAttribute('data-disabled')).toBe('true'));
+    expect(createButton()!.disabled).toBe(true);
+
+    resolveEnhance({ enhanced: 'a much better prompt' });
+
+    await waitFor(() => expect(promptBox().getAttribute('data-disabled')).toBe('false'));
+    expect(createButton()!.disabled).toBe(false);
+  });
+
+  it('restores editability when enhancement fails', async () => {
+    let rejectEnhance!: (error: unknown) => void;
+    vi.mocked(enhancePrompt).mockImplementation(
+      () => new Promise((_resolve, reject) => { rejectEnhance = reject; }) as never,
+    );
+    await renderWithPrompt();
+
+    await fireEvent.click(enhanceButton()!);
+    await waitFor(() => expect(promptBox().getAttribute('data-disabled')).toBe('true'));
+
+    rejectEnhance(new Error('enhance failed'));
+
+    await waitFor(() => expect(promptBox().getAttribute('data-disabled')).toBe('false'));
+    await waitFor(() => expect(createButton()!.disabled).toBe(false));
+  });
+
+  it('keeps the cancel-enhance button clickable and restores editability on cancel', async () => {
+    vi.mocked(enhancePrompt).mockImplementation(() => new Promise(() => {}) as never);
+    await renderWithPrompt();
+
+    await fireEvent.click(enhanceButton()!);
+    await waitFor(() => expect(promptBox().getAttribute('data-disabled')).toBe('true'));
+
+    const stopButton = stopEnhanceButton();
+    expect(stopButton).not.toBeNull();
+    expect(stopButton!.disabled).toBe(false);
+
+    await fireEvent.click(stopButton!);
+
+    await waitFor(() => expect(promptBox().getAttribute('data-disabled')).toBe('false'));
+    await waitFor(() => expect(createButton()!.disabled).toBe(false));
   });
 });

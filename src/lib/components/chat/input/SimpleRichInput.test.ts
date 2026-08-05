@@ -890,6 +890,130 @@ describe('SimpleRichInput enhance-button provider gate (§5.31)', () => {
   });
 });
 
+describe('SimpleRichInput input lock while enhancing', () => {
+  const baseProps = () => ({
+    value: 'make this prompt better',
+    contextItems: [],
+    workspace: {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/tmp/workspace',
+      createdAt: new Date().toISOString(),
+    } as any,
+    agentId: 'agent-1',
+    selectedModel: 'gpt5.4',
+  });
+
+  function editorTextarea(): HTMLTextAreaElement {
+    return screen.getByTestId('tiptap-editor') as HTMLTextAreaElement;
+  }
+
+  // The mocked Button strips aria-label — locate affordances via the Fa icon
+  // mock's data-icon attribute.
+  function enhanceButton(): HTMLButtonElement | null {
+    const icon = document.body.querySelector('[data-icon="magic-wand"]');
+    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+  }
+
+  function stopEnhanceButton(): HTMLButtonElement | null {
+    const icon = document.body.querySelector('[data-icon="stop"]');
+    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+  }
+
+  function sendButton(): HTMLButtonElement | null {
+    const icon = document.body.querySelector('[data-icon="paper-plane"]');
+    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockReduxState.providerSettings.activeProviderId = 'auggie';
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    addMockSession('ws-1', createSession());
+  });
+
+  afterEach(() => {
+    cleanup();
+    removeMockSession('ws-1', 'agent-1');
+    mockReduxState.providerSettings.activeProviderId = '';
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+  });
+
+  it('disables the editor and send button while enhancing and restores them on success', async () => {
+    let resolveEnhance!: (value: unknown) => void;
+    enhancePromptMock.mockImplementation(
+      () => new Promise((resolve) => { resolveEnhance = resolve; }),
+    );
+    render(SimpleRichInput, { props: baseProps() });
+
+    expect(editorTextarea().disabled).toBe(false);
+    expect(sendButton()!.disabled).toBe(false);
+
+    await fireEvent.click(enhanceButton()!);
+
+    await waitFor(() => expect(editorTextarea().disabled).toBe(true));
+    expect(sendButton()!.disabled).toBe(true);
+
+    resolveEnhance({
+      enhanced: 'enhanced prompt',
+      original: 'make this prompt better',
+      mode: 'enhance',
+    });
+
+    await waitFor(() => expect(editorTextarea().disabled).toBe(false));
+    expect(sendButton()!.disabled).toBe(false);
+  });
+
+  it('restores editability and submission when enhancement fails', async () => {
+    let rejectEnhance!: (error: unknown) => void;
+    enhancePromptMock.mockImplementation(
+      () => new Promise((_resolve, reject) => { rejectEnhance = reject; }),
+    );
+    render(SimpleRichInput, { props: baseProps() });
+
+    await fireEvent.click(enhanceButton()!);
+    await waitFor(() => expect(editorTextarea().disabled).toBe(true));
+
+    rejectEnhance(new Error('enhance failed'));
+
+    await waitFor(() => expect(editorTextarea().disabled).toBe(false));
+    expect(sendButton()!.disabled).toBe(false);
+  });
+
+  it('keeps the cancel-enhance button clickable and restores editability on cancel', async () => {
+    enhancePromptMock.mockImplementation(() => new Promise(() => {}));
+    render(SimpleRichInput, { props: baseProps() });
+
+    await fireEvent.click(enhanceButton()!);
+    await waitFor(() => expect(editorTextarea().disabled).toBe(true));
+
+    const stopButton = stopEnhanceButton();
+    expect(stopButton).not.toBeNull();
+    expect(stopButton!.disabled).toBe(false);
+
+    await fireEvent.click(stopButton!);
+
+    await waitFor(() => expect(editorTextarea().disabled).toBe(false));
+    expect(sendButton()!.disabled).toBe(false);
+  });
+
+  it('blocks submission while enhancing even if the click handler fires', async () => {
+    enhancePromptMock.mockImplementation(() => new Promise(() => {}));
+    const onsubmit = vi.fn();
+    render(SimpleRichInput, { props: { ...baseProps(), onsubmit } });
+
+    await fireEvent.click(enhanceButton()!);
+    await waitFor(() => expect(editorTextarea().disabled).toBe(true));
+
+    await fireEvent.click(sendButton()!);
+    expect(onsubmit).not.toHaveBeenCalled();
+  });
+});
+
 describe('SimpleRichInput mic-button visibility (effective voice engine)', () => {
   const baseProps = () => ({
     value: '',

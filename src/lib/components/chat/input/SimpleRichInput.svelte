@@ -685,7 +685,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   }
 
   function handleSubmit() {
-    if (!canSend || disabled) {
+    if (!canSend || disabled || isEnhancing) {
       return;
     }
     // Clear any model fallback warning since user is sending a message with the new model
@@ -695,7 +695,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   }
 
   function handleForceSubmit() {
-    if (!canSend || disabled) {
+    if (!canSend || disabled || isEnhancing) {
       return;
     }
     // Force submit interrupts streaming and sends immediately
@@ -1180,8 +1180,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         {autoFocus}
         {value}
         {placeholder}
-        {disabled}
-        {editableWhileDisabled}
+        disabled={disabled || isEnhancing}
+        editableWhileDisabled={editableWhileDisabled && !isEnhancing}
         workspace={workspace ?? undefined}
         onUpdate={(text) => {
           value = text;
@@ -1400,8 +1400,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           >
             <!-- Queue button -->
             <button
-              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer transition-colors text-primary not-disabled:hover:bg-background overflow-visible"
+              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors text-primary not-disabled:hover:bg-background overflow-visible"
               onclick={handleSubmit}
+              disabled={isEnhancing}
               aria-label={m.chat_richInput_queueMessage_ariaLabel()}
             >
               <div class="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-full">
@@ -1420,8 +1421,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
             <!-- Interrupt button (stop + send immediately) -->
             <button
-              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer transition-colors text-destructive-foreground not-disabled:hover:bg-background"
+              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors text-destructive-foreground not-disabled:hover:bg-background"
               onclick={handleForceSubmit}
+              disabled={isEnhancing}
               aria-label={m.chat_richInput_interruptAndSend_ariaLabel()}
               data-testid="interrupt-btn"
             >
@@ -1461,7 +1463,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               size="icon-sm"
               class="text-primary disabled:text-subtle"
               onclick={handleSubmit}
-              disabled={disabled || !canSend}
+              disabled={disabled || !canSend || isEnhancing}
             >
               <Fa icon={faPaperPlane} class="mr-1" size="sm" />
             </Button>
@@ -1474,7 +1476,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             size="icon-sm"
             class="text-primary disabled:text-subtle"
             onclick={handleSubmit}
-            disabled={disabled || !canSend}
+            disabled={disabled || !canSend || isEnhancing}
             aria-label={m.chat_richInput_sendMessage_ariaLabel()}
           >
             <Fa icon={faPaperPlane} size="sm" />
