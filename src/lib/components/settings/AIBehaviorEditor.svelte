@@ -41,6 +41,7 @@
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
+  import SpecialistModelOptions from './SpecialistModelOptions.svelte';
   import {
     hasExplicitModelPin,
     buildResetToInheritPayloads,
@@ -51,7 +52,10 @@
   import { formatNumber } from '$lib/i18n/format';
   import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
   import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { generateUniqueSpecialistId } from '$shared/specialist-file-types';
+  import {
+    generateUniqueSpecialistId,
+    type SpecialistModelOption,
+  } from '$shared/specialist-file-types';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -163,6 +167,14 @@
   let _specialistCodingAgentValue = $state('');
   let specialistModelValue = $state<string | undefined>(undefined);
 
+  // Saved model options from the resolved specialist view (file override →
+  // bundled). Reactive to file specialist changes so the rows resync after
+  // each post-save refetch.
+  const savedModelOptions = $derived.by(() => {
+    void $fileSpecialists$; // track file specialist changes
+    return currentSpecialist?.modelOptions;
+  });
+
   // Sync specialist model value when specialist changes or file specialists
   // change. The picker's selected value is the EXPLICIT frontmatter model
   // only — undefined when inheriting (the daemon resolvedModel preview is
@@ -218,6 +230,7 @@
           codingAgent: fileSpec.codingAgent,
           model: undefined,
           roleReminder: fileSpec.roleReminder,
+          modelOptions: fileSpec.modelOptions,
           behaviorPrompt: fileSpec.behaviorPrompt,
           scope: fileSpec.source,
           workspacePath,
@@ -246,6 +259,7 @@
             codingAgent: newProvider,
             model: compoundModelId,
             roleReminder: fileSpec.roleReminder,
+            modelOptions: fileSpec.modelOptions,
             behaviorPrompt: fileSpec.behaviorPrompt,
             scope: fileSpec.source,
             workspacePath,
@@ -266,6 +280,7 @@
           codingAgent: newProvider,
           model: compoundModelId,
           roleReminder: currentSpecialist.roleReminder,
+          modelOptions: currentSpecialist.modelOptions,
           behaviorPrompt: effectivePrompt || currentSpecialist.defaultBehaviorPrompt,
           scope: 'user',
         }),
@@ -302,6 +317,7 @@
             codingAgent: fileSpec.codingAgent,
             model: fileSpec.model,
             roleReminder: fileSpec.roleReminder,
+            modelOptions: fileSpec.modelOptions,
             behaviorPrompt: prompt,
             scope: fileSpec.source,
             workspacePath,
@@ -325,11 +341,78 @@
           codingAgent: effectiveCodingAgent,
           model: currentSpecialist.defaultModel,
           roleReminder: currentSpecialist.roleReminder,
+          modelOptions: currentSpecialist.modelOptions,
           behaviorPrompt: prompt,
           scope: 'user',
         }),
       );
     }
+  }
+
+  /**
+   * Persist the committed model-option rows. Empty list ⇒ the key is omitted
+   * on save (inherit is maintained — coordinator constraint; the mutation
+   * service drops empty lists before the wire call). A built-in with no
+   * override file gets one only when a non-empty list is committed, mirroring
+   * the model-pin export path; clearing the last option on a user override
+   * that then matches the bundled defaults deletes the file (monorepo#1450).
+   */
+  function handleModelOptionsCommit(options: SpecialistModelOption[]) {
+    if (!currentSpecialist) return;
+    const next = options.length > 0 ? options : undefined;
+
+    if (isFileBased) {
+      const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
+      if (!fileSpec) return;
+      if (!next && !fileSpec.model && !fileSpec.codingAgent) {
+        const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
+        if (
+          isRedundantBuiltInOverride({ ...fileSpec, modelOptions: undefined }, bundledSpecialists)
+        ) {
+          appStore.dispatch(
+            deleteFileSpecialistAction({ id: fileSpec.id, scope: fileSpec.source }),
+          );
+          return;
+        }
+      }
+      const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: fileSpec.id,
+          name: fileSpec.name,
+          description: fileSpec.description,
+          codingAgent: fileSpec.codingAgent,
+          model: fileSpec.model || undefined,
+          roleReminder: fileSpec.roleReminder,
+          modelOptions: next,
+          behaviorPrompt: fileSpec.behaviorPrompt,
+          scope: fileSpec.source,
+          workspacePath,
+        }),
+      );
+      return;
+    }
+
+    // Built-in with no override file: nothing to clear, and a non-empty list
+    // exports to a user file with the options applied (model stays unpinned).
+    if (!next) return;
+    const effectivePrompt = selectEffectiveBehaviorPrompt.select(
+      appStore.state,
+      currentSpecialist.id,
+    );
+    appStore.dispatch(
+      saveFileSpecialist({
+        id: currentSpecialist.id,
+        name: currentSpecialist.name,
+        description: currentSpecialist.description,
+        codingAgent: selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id),
+        model: currentSpecialist.defaultModel,
+        roleReminder: currentSpecialist.roleReminder,
+        modelOptions: next,
+        behaviorPrompt: effectivePrompt || currentSpecialist.defaultBehaviorPrompt,
+        scope: 'user',
+      }),
+    );
   }
 
   function handleNameSave(newNameValue: string) {
@@ -348,6 +431,7 @@
         // preview into the file (it would pin a floating default).
         model: currentSpecialist.defaultModel,
         roleReminder: currentSpecialist.roleReminder,
+        modelOptions: currentSpecialist.modelOptions,
         behaviorPrompt: selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id),
         scope: fileSpec?.source ?? 'user',
         workspacePath: fileSpec?.source === 'project' ? getCurrentWorkspacePath() : undefined,
@@ -371,6 +455,7 @@
         // preview into the file (it would pin a floating default).
         model: currentSpecialist.defaultModel,
         roleReminder: currentSpecialist.roleReminder,
+        modelOptions: currentSpecialist.modelOptions,
         behaviorPrompt: selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id),
         scope: fileSpec?.source ?? 'user',
         workspacePath: fileSpec?.source === 'project' ? getCurrentWorkspacePath() : undefined,
@@ -608,6 +693,14 @@
             {m.settings_aiBehavior_reset()}
           </button>
         {/if}
+      </div>
+
+      <!-- Delegation model options (PROTOCOL §5.11 modelOptions) -->
+      <div class="mt-4">
+        <SpecialistModelOptions
+          savedOptions={savedModelOptions}
+          onCommit={handleModelOptionsCommit}
+        />
       </div>
     </div>
 

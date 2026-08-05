@@ -94,6 +94,7 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
                 hidden: file.hidden,
                 resolvedModel: file.resolvedModel,
                 resolvedProvider: file.resolvedProvider,
+                modelOptions: file.modelOptions,
             });
         }
     }

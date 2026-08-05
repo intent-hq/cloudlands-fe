@@ -66,6 +66,7 @@ export function buildResetToInheritPayloads(
       codingAgent: fileSpec.codingAgent,
       model: undefined,
       roleReminder: fileSpec.roleReminder,
+      modelOptions: fileSpec.modelOptions,
       behaviorPrompt: fileSpec.behaviorPrompt,
       scope: fileSpec.source,
       workspacePath,

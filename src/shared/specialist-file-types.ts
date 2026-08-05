@@ -33,6 +33,17 @@ export type SpecialistSource = 'project' | 'user' | 'bundled' | 'builtin' | 'ele
 export type SpecialistFileScope = Extract<SpecialistSource, 'project' | 'user'>;
 
 /**
+ * One entry of a specialist's ordered delegation model-option list
+ * (PROTOCOL §5.11 `modelOptions`): `model` is the internal compound model id
+ * (e.g. "opencode:kimi-k3") and `hint` the author's free-text guidance for
+ * choosing that option (`""` when none was given).
+ */
+export interface SpecialistModelOption {
+  model: string;
+  hint: string;
+}
+
+/**
  * YAML frontmatter fields for specialist markdown files
  */
 export interface SpecialistFileFrontmatter {
@@ -67,6 +78,12 @@ export interface SpecialistFileFrontmatter {
    * (it remains visible on Settings → AI Behavior for editing).
    */
   hidden?: boolean;
+  /**
+   * Ordered delegation model options (PROTOCOL §5.11). Stored in frontmatter
+   * as a single-line JSON-array scalar. Omitted (undefined) when the file has
+   * no `modelOptions:` key — an explicit `[]` is the inherit-clearing form.
+   */
+  modelOptions?: SpecialistModelOption[];
 }
 
 /**

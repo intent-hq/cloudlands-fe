@@ -1433,6 +1433,12 @@ export interface SpecialistDef {
   roleReminder?: string;
   agentType?: string;
   hidden?: boolean;
+  /**
+   * Ordered delegation model options (additive, PROTOCOL §5.11): emitted on
+   * `list`/`get` when the resolved list is non-empty, omitted otherwise
+   * (never `null`/`[]` on the wire); accepted in `create`/`edit` spec bodies.
+   */
+  modelOptions?: { model: string; hint: string }[];
   prompt?: string;
   behaviorPrompt?: string;
   source: "project" | "user" | "bundled";
