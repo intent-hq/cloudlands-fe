@@ -1,42 +1,28 @@
 <script lang="ts">
   /**
-   * AGENT ACTIVITY · TOK/S panel (mock lines 214-223) — 40-bar chart over the
-   * trailing 200s of 5s token buckets (live `workspace:tokenUsage-changed`
-   * deltas, backfilled from the per-minute `stats.getRateHistory` samples on
-   * open), with the "−200S … {rate} TOK/S NOW" footer. A 1s ticker slides the
-   * window so bars age out even while no tokens land.
+   * AGENT ACTIVITY · TOK/S panel (mock lines 214-223) — a bar per trailing
+   * per-minute `stats.getRateHistory` sample (up to 40; the array already ends
+   * at the current minute), normalized to the window's max. The peak Y-scale
+   * label (top-right of the plot) and the "TOK/S NOW" footer both convert the
+   * minute token counts to a per-second rate (÷60). The 15s history poll keeps
+   * the samples fresh, so no client-side window sliding is needed.
    */
-  import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { selectHudRate5s } from '$store/renderer/slices/hud/hud-selectors';
-  import {
-    HUD_RATE_5S_BAR_COUNT,
-    HUD_RATE_5S_BUCKET_MS,
-    toRate5sBucketStart,
-  } from '$store/renderer/slices/hud/hud-slice';
+  import { selectHudRateHistory } from '$store/renderer/slices/hud/hud-selectors';
 
-  const rate5s$ = selectHudRate5s();
+  const rateHistory$ = selectHudRateHistory();
 
-  let nowMs = $state(Date.now());
-  onMount(() => {
-    const timer = setInterval(() => (nowMs = Date.now()), 1000);
-    return () => clearInterval(timer);
-  });
-
-  /** Dense trailing window: one value per 5s slot, zeros where no bucket. */
-  const bars = $derived.by(() => {
-    const newestStart = toRate5sBucketStart(nowMs);
-    const byStart = new Map($rate5s$.buckets.map((bucket) => [bucket.startMs, bucket.tokens]));
-    return Array.from({ length: HUD_RATE_5S_BAR_COUNT }, (_, index) => {
-      const startMs = newestStart - (HUD_RATE_5S_BAR_COUNT - 1 - index) * HUD_RATE_5S_BUCKET_MS;
-      return { startMs, tokens: byStart.get(startMs) ?? 0 };
-    });
-  });
+  /** Trailing minute samples (chronological); empty when no data yet. */
+  const bars = $derived($rateHistory$?.samples ?? []);
 
   const maxTokens = $derived(Math.max(1, ...bars.map((bar) => bar.tokens)));
-  /** TOK/S NOW — the newest bucket's tokens over its 5s span. */
-  const tokRate = $derived(Math.round(bars[bars.length - 1].tokens / 5));
+  /** Peak minute over the window, as a per-second rate (÷60); 0 when no data. */
+  const peakRate = $derived(
+    bars.length > 0 ? Math.round(Math.max(...bars.map((bar) => bar.tokens)) / 60) : 0,
+  );
+  /** TOK/S NOW — the newest minute sample's tokens over its 60s span. */
+  const tokRate = $derived(bars.length > 0 ? Math.round(bars[bars.length - 1].tokens / 60) : 0);
 </script>
 
 <section class="hud-tokrate-panel" data-testid="hud-tokrate-panel">
@@ -46,7 +32,10 @@
     <span class="hud-tokrate-window">{m.hud_tokRate_window_label()}</span>
   </header>
   <div class="hud-tokrate-chart">
-    {#each bars as bar (bar.startMs)}
+    {#if bars.length > 0}
+      <span class="hud-tokrate-peak">{m.hud_tokRate_peak_label({ rate: formatInteger(peakRate) })}</span>
+    {/if}
+    {#each bars as bar (bar.bucketUtc)}
       <div
         class="hud-tokrate-bar"
         style:height={`${Math.round((bar.tokens / maxTokens) * 100)}%`}
@@ -94,11 +83,22 @@
     color: hsl(var(--text-ghost));
   }
   .hud-tokrate-chart {
+    position: relative;
     display: flex;
     align-items: flex-end;
     gap: 2px;
     height: 74px;
     padding: 10px 12px 6px;
+  }
+  .hud-tokrate-peak {
+    position: absolute;
+    top: 4px;
+    right: 12px;
+    font:
+      500 9px 'JetBrains Mono',
+      monospace;
+    color: hsl(var(--text-ghost));
+    pointer-events: none;
   }
   .hud-tokrate-bar {
     flex: 1;

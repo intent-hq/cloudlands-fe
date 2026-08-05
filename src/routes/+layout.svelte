@@ -13,6 +13,7 @@
   import '@fontsource/jetbrains-mono/500-italic.css';
   import '@fontsource/jetbrains-mono/700.css';
   import '@fontsource/jetbrains-mono/700-italic.css';
+  import '@fontsource/doto/700.css';
 
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/stores';

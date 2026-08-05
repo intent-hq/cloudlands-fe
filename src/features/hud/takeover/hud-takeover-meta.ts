@@ -6,6 +6,7 @@
  */
 import { m } from '$shared/paraglide/messages.js';
 import type { HudAgentStateBucket } from '$store/renderer/slices/hud/hud-types';
+import { HUD_STATE_COLORS } from '../grid/hud-card-meta';
 import type { HudTakeoverKind, HudTakeoverTrigger } from './hud-takeover-queue';
 
 /** Localized banner-chip label for a takeover kind. */
@@ -23,12 +24,26 @@ export function takeoverKindLabel(kind: HudTakeoverKind): string {
       return m.hud_takeover_kindQuestion_label();
     case 'status_update':
       return m.hud_takeover_kindStatusUpdate_label();
+    case 'workspace_idle':
+      return m.hud_takeover_kindWorkspaceIdle_label();
+    case 'pr_open':
+      return m.hud_takeover_kindPrOpen_label();
+    case 'pr_ready':
+      return m.hud_takeover_kindPrReady_label();
+    case 'pr_merged':
+      return m.hud_takeover_kindPrMerged_label();
+    case 'workspace_complete':
+      return m.hud_takeover_kindWorkspaceComplete_label();
     case 'manual':
       return m.hud_takeover_kindManual_label();
   }
 }
 
-/** Accent color for a takeover kind (mock `kc`). */
+/**
+ * Accent color for a takeover kind (mock `kc`). The workspace displayStatus
+ * kinds reuse the canonical card table (`HUD_STATE_COLORS`) so chip and card
+ * can never drift for the same wire state.
+ */
 export function takeoverKindColor(kind: HudTakeoverKind): string {
   switch (kind) {
     case 'task_complete':
@@ -42,6 +57,15 @@ export function takeoverKindColor(kind: HudTakeoverKind): string {
       return 'hsl(var(--destructive-foreground))';
     case 'question_asked':
       return 'hsl(var(--warning))';
+    case 'workspace_idle':
+      return HUD_STATE_COLORS.idle;
+    case 'pr_open':
+    case 'pr_ready':
+      return HUD_STATE_COLORS.pr;
+    case 'pr_merged':
+      return HUD_STATE_COLORS.prMerged;
+    case 'workspace_complete':
+      return HUD_STATE_COLORS.done;
   }
 }
 
@@ -167,21 +191,36 @@ export interface HudTakeoverBannerView {
 }
 
 /**
- * Banner content per kind: status updates put the workspace name on the
- * dot-matrix headline with the status text sub-title; attention banners
- * (signal-carrying question/blocker/discussion) put the RAISING AGENT's name
- * on the matrix line (workspace-title fallback — never a raw UUID) with the
- * question/reason sub-title in the card footer's shared Q:/Blocker:/Request
- * Discussion: prefixes; every other kind keeps the wire detail headline over
- * the repo-ref sub-line. All text is wire/localized content routing —
- * i18n-exempt at this join point.
+ * Kinds whose banner puts the WORKSPACE TITLE on the dot-matrix headline:
+ * status updates (status text sub-title) and the workspace displayStatus
+ * takeovers (idle / PR / complete — no agent name, empty detail, never a raw
+ * wire word; the localized kind chip carries the meaning).
+ */
+const WORKSPACE_HEADLINE_KINDS: ReadonlySet<HudTakeoverKind> = new Set([
+  'status_update',
+  'workspace_idle',
+  'pr_open',
+  'pr_ready',
+  'pr_merged',
+  'workspace_complete',
+]);
+
+/**
+ * Banner content per kind: `WORKSPACE_HEADLINE_KINDS` put the workspace name
+ * on the dot-matrix headline with the (possibly empty) detail sub-title;
+ * attention banners (signal-carrying question/blocker/discussion) put the
+ * RAISING AGENT's name on the matrix line (workspace-title fallback — never
+ * a raw UUID) with the question/reason sub-title in the card footer's shared
+ * Q:/Blocker:/Request Discussion: prefixes; every other kind keeps the wire
+ * detail headline over the repo-ref sub-line. All text is wire/localized
+ * content routing — i18n-exempt at this join point.
  */
 export function bannerView(
   banner: HudTakeoverTrigger,
   title: string,
   repoRef: string,
 ): HudTakeoverBannerView {
-  if (banner.kind === 'status_update') {
+  if (WORKSPACE_HEADLINE_KINDS.has(banner.kind)) {
     return {
       big: title,
       wrap: false,
