@@ -21,10 +21,7 @@ import {
 } from '../../agent-session/agent-session-slice';
 import { selectSelectedModel } from '../../model/model-selectors';
 import { openTab, openTabInAdjacentOrSplit } from '../../panel-layout/panel-layout-slice';
-import {
-  selectDefaultModelForProviderTier,
-  selectEffectiveDefaultProviderId,
-} from '../../provider-catalog/provider-catalog-selectors';
+import { selectEffectiveDefaultProviderId } from '../../provider-catalog/provider-catalog-selectors';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
 import {
   selectEffectiveBehaviorPrompt,
@@ -200,11 +197,7 @@ function* runAgentForNote(
     if (specialist) {
       behaviorPrompt = specialist.defaultBehaviorPrompt;
       if (!model) {
-        const provider = yield* selectActiveProviderId.effect();
-        const tierModel = specialist.defaultModelTier
-          ? yield* selectDefaultModelForProviderTier.effect(provider, specialist.defaultModelTier)
-          : undefined;
-        model = tierModel ?? specialist.defaultModel ?? '';
+        model = specialist.defaultModel ?? '';
       }
     }
   }
