@@ -552,6 +552,7 @@ type SessionComparisonSnapshot = Pick<
   completionReport: string | undefined;
   taskNoteId: string | undefined;
   dismissedQuestionsMessageId: string | undefined;
+  lastSeenMessageId: string | undefined;
   sandboxId: string | undefined;
   sandboxPath: string | undefined;
   sandboxBranch: string | undefined;
@@ -600,6 +601,8 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
       typeof metadata?.dismissedQuestionsMessageId === 'string'
         ? metadata.dismissedQuestionsMessageId
         : undefined,
+    lastSeenMessageId:
+      typeof metadata?.lastSeenMessageId === 'string' ? metadata.lastSeenMessageId : undefined,
     sandboxId: typeof metadata?.sandboxId === 'string' ? metadata.sandboxId : undefined,
     sandboxPath: typeof metadata?.sandboxPath === 'string' ? metadata.sandboxPath : undefined,
     sandboxBranch:
