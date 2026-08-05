@@ -1,16 +1,13 @@
 <script lang="ts">
   import type {
-  AgentSession,
-  PullRequestInfo,
-  Workspace,
-  WorkspaceAgentInfo,
-  WorkspaceGitSummary,
-  WorkspaceTask,
-} from '$shared/types';
-  import {
-  PullRequestStatus,
-  WorkspaceStatusEnum,
-} from '$shared/types';
+    AgentSession,
+    PullRequestInfo,
+    Workspace,
+    WorkspaceAgentInfo,
+    WorkspaceGitSummary,
+    WorkspaceTask,
+  } from '$shared/types';
+  import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
   import { formatDistanceToNow } from '$lib/i18n/format';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
@@ -20,24 +17,20 @@
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import {
-  faCodeMerge,
-  faCodePullRequest,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCodeMerge, faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
-  selectWorkspaceTaskDisplayList,
-  selectWorkspaceTaskProgress,
-} from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
+    selectWorkspaceTaskDisplayList,
+    selectWorkspaceTaskProgress,
+  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import type { WorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-types';
   import {
-  selectWorkspaceDiffSummary,
-  selectWorkspaceGitSummary,
-} from '$store/renderer/slices/workspace-summaries/workspace-summaries-selectors';
+    selectWorkspaceDiffSummary,
+    selectWorkspaceGitSummary,
+  } from '$store/renderer/slices/workspace-summaries/workspace-summaries-selectors';
   import { loadWorkspaceSummariesRequested } from '$store/renderer/slices/workspace-summaries/workspace-summaries-slice';
-
 
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
@@ -121,7 +114,10 @@
     };
   }
 
-  function getPullRequestDisplayStatus(pr: PullRequestInfo | null, legacyStatus?: PullRequestStatus) {
+  function getPullRequestDisplayStatus(
+    pr: PullRequestInfo | null,
+    legacyStatus?: PullRequestStatus,
+  ) {
     return pr?.isDraft ? PullRequestStatus.Draft : (pr?.status ?? legacyStatus ?? null);
   }
 
@@ -156,7 +152,10 @@
     return status === PullRequestStatus.Merged ? faCodeMerge : faCodePullRequest;
   }
 
-  function getPullRequestDetailsColor(pr: PullRequestInfo | null, status: PullRequestStatus | null) {
+  function getPullRequestDetailsColor(
+    pr: PullRequestInfo | null,
+    status: PullRequestStatus | null,
+  ) {
     if (pr?.mergeConflicts || pr?.ciStatus?.failed || pr?.reviewDecision === 'CHANGES_REQUESTED') {
       return 'text-red-500';
     }
@@ -261,7 +260,11 @@
     return {
       id: session.id,
       name: session.name || m.workspace_fileChanges_agent_label(),
-      status: session.isStreaming ? 'streaming' : session.isProcessing ? 'processing' : session.status,
+      status: session.isStreaming
+        ? 'streaming'
+        : session.isProcessing
+          ? 'processing'
+          : session.status,
       specialist: session.metadata?.specialist as WorkspaceAgentInfo['specialist'],
       lastActivity: lastActivity instanceof Date ? lastActivity.toISOString() : lastActivity,
     };
@@ -408,17 +411,34 @@
     );
   });
 
+  let sessionLoadWorkspaceId: string | null = null;
+  let relevantAgentSessionIds = new Set<string>();
+
   $effect(() => {
     const workspaceId = workspace?.id;
-    if (!loadAgentSessions || !workspaceId) return;
-    // Member sessions provide real names/statuses for IDs-only summaries.
-    const agentIds = new Set([
-      ...memberAgentIds.slice(0, 6),
-      ...runningAgents.slice(0, 3).map((agent) => agent.id),
-    ]);
-    for (const agentId of agentIds) {
-      appStore.dispatch(ensureAgentSessionLoaded(String(workspaceId), agentId));
+    if (!loadAgentSessions || !workspaceId) {
+      sessionLoadWorkspaceId = null;
+      relevantAgentSessionIds = new Set();
+      return;
     }
+
+    const workspaceIdString = String(workspaceId);
+    if (sessionLoadWorkspaceId !== workspaceIdString) {
+      sessionLoadWorkspaceId = workspaceIdString;
+      relevantAgentSessionIds = new Set();
+    }
+
+    // Member sessions provide real names/statuses for IDs-only summaries.
+    const nextRelevantAgentSessionIds = new Set([
+      ...memberAgentIds.slice(0, 6).map(String),
+      ...runningAgents.slice(0, 3).map((agent) => String(agent.id)),
+    ]);
+    for (const agentId of nextRelevantAgentSessionIds) {
+      if (!relevantAgentSessionIds.has(agentId)) {
+        appStore.dispatch(ensureAgentSessionLoaded(workspaceIdString, agentId));
+      }
+    }
+    relevantAgentSessionIds = nextRelevantAgentSessionIds;
   });
 
   let streamingAgentIdsWithoutInfo = $derived.by(() => {
@@ -462,7 +482,9 @@
   });
 </script>
 
-<div class="bg-popover shadow-2xl ring-1 ring-border/70 py-3 px-4 w-[320px] shrink-0 max-w-[calc(100vw-1rem)] flex flex-col gap-1.5 text-left">
+<div
+  class="bg-popover shadow-2xl ring-1 ring-border/70 py-3 px-4 w-[320px] shrink-0 max-w-[calc(100vw-1rem)] flex flex-col gap-1.5 text-left"
+>
   <!-- Header: Title and repo -->
   <div class="w-full">
     {#if isLoading || !workspace}
@@ -517,7 +539,6 @@
 
   {#if !isLoading && workspace}
     <div class="grid gap-1.5 text-xs text-subtle">
-
       {#if runningAgents.length > 0}
         <div class="mt-1 flex w-full min-w-0 flex-col pb-2">
           <div
@@ -609,7 +630,6 @@
           </span>
         </div>
       {/if}
-
 
       <div class="flex items-center justify-between gap-3">
         <span class="min-w-0 truncate text-right"
