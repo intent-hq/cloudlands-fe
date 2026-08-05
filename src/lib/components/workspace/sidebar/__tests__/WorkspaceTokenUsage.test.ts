@@ -234,6 +234,71 @@ describe('WorkspaceTokenUsage', () => {
     expect(screen.getByTestId('token-usage-by-agent')).not.toBeNull();
   });
 
+  it('hides model and agent rows whose tokens are all zero', async () => {
+    mocks.state.usage = makeUsage({
+      byAgentId: {
+        'agent-live': {
+          agentId: 'agent-live',
+          sessionId: 'sess-live',
+          lastMessageId: 'msg-1',
+          computedAt: 1000,
+          inputTokens: 1000,
+          outputTokens: 30000,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          byModel: {},
+        },
+        'agent-idle': {
+          agentId: 'agent-idle',
+          sessionId: 'sess-idle',
+          lastMessageId: 'msg-2',
+          computedAt: 1000,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          byModel: {},
+        },
+      },
+      totals: {
+        inputTokens: 1000,
+        outputTokens: 30000,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+      byModel: {
+        'model-live': {
+          inputTokens: 1000,
+          outputTokens: 30000,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        },
+        'model-idle': {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        },
+      },
+      lastScanAt: 5000,
+      isStale: false,
+    });
+    mocks.state.agents = [
+      { id: 'agent-live', name: 'LiveAgent' },
+      { id: 'agent-idle', name: 'IdleAgent' },
+    ];
+
+    await renderTokenUsage();
+
+    const modelText = screen.getByTestId('token-usage-by-model').textContent ?? '';
+    expect(modelText).toContain('Model Live');
+    expect(modelText).not.toContain('Model Idle');
+
+    const agentText = screen.getByTestId('token-usage-by-agent').textContent ?? '';
+    expect(agentText).toContain('LiveAgent');
+    expect(agentText).not.toContain('IdleAgent');
+  });
+
   it('shows a subtle updating hint when the data is stale', async () => {
     mocks.state.usage = makeUsage({
       totals: {
