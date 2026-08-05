@@ -8,6 +8,7 @@
    * committed list via `saveFileSpecialist` (empty list ⇒ key omitted on the
    * wire so inheritance is preserved).
    */
+  import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { faPlus, faXmark } from '@fortawesome/free-solid-svg-icons';
 
@@ -26,29 +27,40 @@
 
   // Local rows: saved options plus any draft rows (model === ''). Hints are
   // committed on blur (the input is not two-way bound), so typing never
-  // mutates `rows` and the sync effect below stays quiescent mid-edit.
-  let rows = $state<SpecialistModelOption[]>([]);
+  // mutates `rows` and the sync effect below stays quiescent mid-edit. Each
+  // row carries a stable local key so the {#each} block never re-associates
+  // DOM (in-flight input text, pickers) with a different row after a removal.
+  interface Row extends SpecialistModelOption {
+    key: number;
+  }
+  let nextKey = 0;
+  let rows = $state<Row[]>([]);
 
-  function committed(list: SpecialistModelOption[]): SpecialistModelOption[] {
-    return list.filter((row) => row.model !== '');
+  function committed(list: Row[]): SpecialistModelOption[] {
+    return list
+      .filter((row) => row.model !== '')
+      .map(({ model, hint }) => ({ model, hint }));
   }
 
   // Resync from the store only when the saved list diverges from the local
   // committed rows (specialist switch, external edit, post-commit refetch
-  // with a different result). Draft rows survive unrelated refetches.
+  // with a different result). `rows` is read via `untrack` so local commits
+  // (which mutate `rows` before the refetch lands) never re-run the effect
+  // against stale savedOptions — only savedOptions changes trigger a resync.
+  // Draft rows survive refetches that echo the local committed list.
   $effect(() => {
     const saved = savedOptions ?? [];
-    const local = committed(rows);
+    const local = untrack(() => committed(rows));
     const inSync =
       saved.length === local.length &&
       saved.every((opt, i) => opt.model === local[i].model && opt.hint === local[i].hint);
     if (!inSync) {
-      rows = saved.map((opt) => ({ ...opt }));
+      rows = saved.map((opt) => ({ key: nextKey++, ...opt }));
     }
   });
 
   function addRow() {
-    rows = [...rows, { model: '', hint: '' }];
+    rows = [...rows, { key: nextKey++, model: '', hint: '' }];
   }
 
   function handleModelChange(index: number, compoundModelId: string) {
@@ -85,7 +97,7 @@
     </p>
   </div>
 
-  {#each rows as row, index (index)}
+  {#each rows as row, index (row.key)}
     <div class="flex items-center gap-2">
       <div class="shrink-0">
         <ModelPicker

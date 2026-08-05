@@ -364,18 +364,18 @@
     if (isFileBased) {
       const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
       if (!fileSpec) return;
+      const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
       if (!next && !fileSpec.model && !fileSpec.codingAgent) {
         const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
         if (
           isRedundantBuiltInOverride({ ...fileSpec, modelOptions: undefined }, bundledSpecialists)
         ) {
           appStore.dispatch(
-            deleteFileSpecialistAction({ id: fileSpec.id, scope: fileSpec.source }),
+            deleteFileSpecialistAction({ id: fileSpec.id, scope: fileSpec.source, workspacePath }),
           );
           return;
         }
       }
-      const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
       appStore.dispatch(
         saveFileSpecialist({
           id: fileSpec.id,
@@ -394,7 +394,10 @@
     }
 
     // Built-in with no override file: nothing to clear, and a non-empty list
-    // exports to a user file with the options applied (model stays unpinned).
+    // exports to a user file with the options applied. As on the other
+    // export paths (name/description saves), `defaultModel` is the bundled
+    // definition's explicit frontmatter model (usually undefined) — never
+    // the daemon's resolved preview, which must not be baked into the file.
     if (!next) return;
     const effectivePrompt = selectEffectiveBehaviorPrompt.select(
       appStore.state,
@@ -695,12 +698,16 @@
         {/if}
       </div>
 
-      <!-- Delegation model options (PROTOCOL §5.11 modelOptions) -->
+      <!-- Delegation model options (PROTOCOL §5.11 modelOptions). Keyed on
+           the specialist id so draft rows never leak across specialist
+           switches (remounting resets the component's local rows). -->
       <div class="mt-4">
-        <SpecialistModelOptions
-          savedOptions={savedModelOptions}
-          onCommit={handleModelOptionsCommit}
-        />
+        {#key currentSpecialist.id}
+          <SpecialistModelOptions
+            savedOptions={savedModelOptions}
+            onCommit={handleModelOptionsCommit}
+          />
+        {/key}
       </div>
     </div>
 
