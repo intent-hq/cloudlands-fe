@@ -8,7 +8,10 @@
 //   - a locale's inline value differs from its catalog value,
 //   - a catalog locale is missing from the inline map,
 //   - the inline map has a locale with no catalog file,
-//   - a catalog lacks the splash key entirely.
+//   - a catalog lacks the splash key entirely,
+//   - the hardcoded <span id="splash-text"> default differs from the en catalog
+//     value (the inline script short-circuits for 'en' and every failure path
+//     leaves the default in place, so the span is the effective en rendering).
 //
 // Exits 1 with a diff-style report on any violation. Chained into
 // `pnpm run lint` (like check-i18n-completeness.mjs), so it runs in CI.
@@ -25,7 +28,13 @@ const APP_HTML = 'src/app.html';
 
 const MAP_RE = /const messages = \{([\s\S]*?)\};/;
 const ENTRY_RE = /(['"])((?:\\.|(?!\1)[^\\])*)\1\s*:\s*(['"])((?:\\.|(?!\3)[^\\])*)\3/g;
+const SPAN_RE = /<span id="splash-text">([\s\S]*?)<\/span>/;
 
+// Intentionally handles only the simple escapes used by these values
+// (\', \", \\). Multi-character escapes are not decoded ("\n" → "n",
+// "\u00e9" → "u00e9"), which cannot false-pass: such an inline value still
+// mismatches its catalog counterpart and fails loud — only the reported
+// `app.html:` value in the diff would look off.
 function unescapeJs(literal) {
   return literal.replace(/\\(.)/g, '$1');
 }
@@ -50,9 +59,22 @@ export function parseSplashMap(html) {
 }
 
 /**
+ * Parse the hardcoded `<span id="splash-text">` default content out of app.html
+ * source. Returns `{ text }` on success or `{ error }` when the span is missing.
+ */
+export function parseSplashSpan(html) {
+  const match = html.match(SPAN_RE);
+  if (!match) {
+    return { error: `no \`<span id="splash-text">\` element found in ${APP_HTML}` };
+  }
+  return { text: match[1] };
+}
+
+/**
  * Compare the inline splash map in src/app.html against `splash_gettingReady_label`
- * in each messages/*.json catalog under `rootDir`. Returns a list of
- * human-readable problem lines (empty = pass). Pure apart from filesystem reads.
+ * in each messages/*.json catalog under `rootDir`, and the hardcoded
+ * `<span id="splash-text">` default against the en catalog value. Returns a list
+ * of human-readable problem lines (empty = pass). Pure apart from filesystem reads.
  */
 export function checkSplashSync(rootDir) {
   const problems = [];
@@ -95,6 +117,24 @@ export function checkSplashSync(rootDir) {
     if (!locales.includes(locale)) {
       problems.push(
         `${locale}: present in the ${APP_HTML} splash map but messages/${locale}.json does not exist`,
+      );
+    }
+  }
+
+  // The hardcoded span default is the effective en rendering (the inline
+  // script never rewrites it for 'en', and every failure path leaves it in
+  // place), so it must track the en catalog value too.
+  const span = parseSplashSpan(html);
+  if (span.error) {
+    problems.push(span.error);
+  } else if (locales.includes('en')) {
+    const enCatalog = JSON.parse(readFileSync(join(rootDir, 'messages/en.json'), 'utf8'));
+    const want = enCatalog[SPLASH_KEY];
+    if (typeof want === 'string' && span.text !== want) {
+      problems.push(
+        `en: hardcoded <span id="splash-text"> default diverges from messages/en.json ${SPLASH_KEY}:\n` +
+          `  catalog:  "${want}"\n` +
+          `  app.html: "${span.text}"`,
       );
     }
   }

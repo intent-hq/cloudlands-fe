@@ -7,14 +7,14 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = process.cwd();
 const scriptPath = join(repoRoot, 'scripts/check-splash-i18n-sync.mjs');
 
-function appHtml(entries: Record<string, string>) {
+function appHtml(entries: Record<string, string>, spanText = 'Getting ready to build') {
   const body = Object.entries(entries)
     .map(([locale, value]) => `            '${locale}': '${value.replace(/'/g, "\\'")}'`)
     .join(',\n');
   return `<!doctype html>
 <html lang="en">
   <body>
-    <span id="splash-text">Getting ready to build</span>
+    <span id="splash-text">${spanText}</span>
     <script>
       (function() {
         try {
@@ -137,6 +137,55 @@ describe('splash i18n sync gate', () => {
         const result = runCheck(dir);
         expect(result.exitCode).toBe(1);
         expect(result.output).toContain('en: messages/en.json has no splash_gettingReady_label');
+      },
+    );
+  });
+
+  it('passes when the hardcoded span default matches the en catalog', () => {
+    withFixture(
+      {
+        'src/app.html': appHtml({ en: 'Getting ready to build' }, 'Getting ready to build'),
+        'messages/en.json': catalog('Getting ready to build'),
+      },
+      (dir) => {
+        const result = runCheck(dir);
+        expect(result.output).toContain('passed');
+        expect(result.exitCode).toBe(0);
+      },
+    );
+  });
+
+  it('fails when the hardcoded span default drifts from the en catalog', () => {
+    withFixture(
+      {
+        'src/app.html': appHtml({ en: 'Getting ready to ship' }, 'Getting ready to build'),
+        'messages/en.json': catalog('Getting ready to ship'),
+      },
+      (dir) => {
+        const result = runCheck(dir);
+        expect(result.exitCode).toBe(1);
+        expect(result.output).toContain(
+          'en: hardcoded <span id="splash-text"> default diverges from messages/en.json',
+        );
+        expect(result.output).toContain('catalog:  "Getting ready to ship"');
+        expect(result.output).toContain('app.html: "Getting ready to build"');
+      },
+    );
+  });
+
+  it('fails when app.html has no splash-text span', () => {
+    withFixture(
+      {
+        'src/app.html': appHtml({ en: 'Getting ready to build' }).replace(
+          /<span id="splash-text">.*<\/span>/,
+          '',
+        ),
+        'messages/en.json': catalog('Getting ready to build'),
+      },
+      (dir) => {
+        const result = runCheck(dir);
+        expect(result.exitCode).toBe(1);
+        expect(result.output).toContain('no `<span id="splash-text">` element found');
       },
     );
   });

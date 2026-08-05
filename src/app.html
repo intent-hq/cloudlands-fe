@@ -100,7 +100,8 @@
       // Intl.Locale likely-subtags negotiation, the matcher does exact-tag then
       // language-prefix matching, with a hardcoded zh split (Traditional
       // zh-TW/zh-HK/zh-MO/zh-Hant-* → zh-TW; other zh → zh-CN).
-      // Defensive: any exception leaves the English default span content intact.
+      // Defensive: any exception leaves the English default span content (and
+      // lang="en") intact.
       (function() {
         try {
           const messages = {
@@ -152,6 +153,9 @@
           }
           if (resolved && resolved !== 'en') {
             document.getElementById('splash-text').textContent = messages[resolved];
+            // Match the announced language to the rendered splash text for
+            // screen readers; the rest of the app does not manage lang.
+            document.documentElement.lang = resolved;
           }
         } catch (e) {
           // Keep the English default on any failure.
