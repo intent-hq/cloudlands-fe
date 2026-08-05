@@ -176,12 +176,11 @@ export class TerminalAdapter {
       cursorWidth: 1,
       scrollback: 10000,
       allowTransparency: true,
-      windowsMode: isWindowsPlatform,
+      windowsPty: isWindowsPlatform ? { backend: 'conpty' } : undefined,
       macOptionIsMeta: true,
       rightClickSelectsWord: true,
       convertEol: true,
       drawBoldTextInBrightColors: true,
-      fastScrollModifier: 'ctrl',
       scrollSensitivity: 1,
       theme: this.themeManager.getCurrentTheme(),
     });
