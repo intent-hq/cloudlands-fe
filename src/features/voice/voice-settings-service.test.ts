@@ -114,6 +114,16 @@ describe("voiceSettingsService (mocked settings seam)", () => {
     expect(snapshot.language).toBe("");
   });
 
+  it("lowercases a hand-edited language value so it matches the curated codes", async () => {
+    settings.get.mockImplementation((path: string) =>
+      Promise.resolve(entry(path, path === VOICE_LANGUAGE_SETTING_PATH ? " DE " : null)),
+    );
+
+    const snapshot = await loadVoiceSettings();
+
+    expect(snapshot.language).toBe("de");
+  });
+
   it("surfaces a null model when the daemon's catalog lacks voice.openai.model", async () => {
     settings.get.mockImplementation((path: string) =>
       Promise.resolve(path === VOICE_OPENAI_MODEL_SETTING_PATH ? null : entry(path, null)),

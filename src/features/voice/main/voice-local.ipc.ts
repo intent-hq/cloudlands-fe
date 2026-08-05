@@ -130,7 +130,13 @@ function runHelper(
       helperPath,
       args,
       { timeout: HELPER_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 },
-      (error, stdout) => {
+      (error, stdout, stderr) => {
+        if (typeof stderr === 'string' && stderr.trim().length > 0) {
+          // The helper's diagnostics (e.g. requested-locale resolution or the
+          // system-locale fallback) go to stderr — surface them in the main
+          // log so a "wrong language" report has a trail.
+          logger.warn('speech helper stderr', { stderr: stderr.trim() });
+        }
         if (error && typeof error.code !== 'number') {
           // Spawn failure or timeout kill — no parseable helper output.
           reject(error);

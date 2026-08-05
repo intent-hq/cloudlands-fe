@@ -300,12 +300,29 @@ export async function clearVoiceKeyFlow(provider: VoiceProvider): Promise<void> 
   }
 }
 
+let bootHydrated = false;
+
+/** Test-only — reset the boot-hydration guard so each test fixture can boot fresh. */
+export function __resetVoiceSettingsBootHydrationForTests(): void {
+  bootHydrated = false;
+}
+
 /**
  * Middleware that gives the voice settings triggers a real handler.
  * Fire-and-forget — dispatch stays synchronous and never throws.
+ *
+ * Boot hydration (same first-dispatched-action pattern as
+ * settings-hydration-service): the snapshot read runs once at boot so the
+ * dictation path sees the hydrated `voice.language` / `voice.vocabulary`
+ * even when the settings panel never mounts. The panel's own
+ * `initializeVoiceSettings` dispatch simply re-reads.
  */
 export function createVoiceSettingsMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
+    if (!bootHydrated) {
+      bootHydrated = true;
+      void initializeVoiceSettingsFlow();
+    }
     // Vocabulary edits reduce optimistically, so the pre-dispatch array is the
     // rollback target — capture it before the reducer runs.
     const isVocabularyEdit =

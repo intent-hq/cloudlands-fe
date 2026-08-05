@@ -5,13 +5,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockExecFile, mockFs } = vi.hoisted(() => ({
+const { mockExecFile, mockFs, mockLoggerWarn } = vi.hoisted(() => ({
   mockExecFile: vi.fn(),
   mockFs: {
     access: vi.fn(),
     writeFile: vi.fn(),
     unlink: vi.fn(),
   },
+  mockLoggerWarn: vi.fn(),
 }));
 
 vi.mock(import('child_process'), async (importOriginal) => {
@@ -21,6 +22,16 @@ vi.mock(import('child_process'), async (importOriginal) => {
 });
 
 vi.mock('fs/promises', () => ({ ...mockFs, default: mockFs }));
+
+vi.mock(import('../../../../shared/logger'), async (importOriginal) => {
+  const actual = await importOriginal();
+  class MockLogger extends actual.Logger {
+    override warn(message: string, ...args: unknown[]) {
+      mockLoggerWarn(message, ...args);
+    }
+  }
+  return { ...actual, Logger: MockLogger };
+});
 
 // Dev launches run the bundled main from dist/main, so appPath is two
 // levels below the project root (see resolveHelperPath).
@@ -41,21 +52,25 @@ import {
 /** [1,2,3] encodes to "AQID" in standard padded base64. */
 const AUDIO_BASE64 = 'AQID';
 
-/** Stub the helper process: capture argv, return canned stdout/exit code. */
-function stubHelper(stdout: string, exitCode = 0) {
+/** Stub the helper process: capture argv, return canned stdout/stderr/exit code. */
+function stubHelper(stdout: string, exitCode = 0, stderr = '') {
   mockExecFile.mockImplementation(
     (
       _path: string,
       _args: string[],
       _options: unknown,
-      callback: (error: (Error & { code?: number }) | null, stdout: string) => void,
+      callback: (
+        error: (Error & { code?: number }) | null,
+        stdout: string,
+        stderr: string,
+      ) => void,
     ) => {
       if (exitCode === 0) {
-        callback(null, stdout);
+        callback(null, stdout, stderr);
       } else {
         const error = new Error(`exit ${exitCode}`) as Error & { code?: number };
         error.code = exitCode;
-        callback(error, stdout);
+        callback(error, stdout, stderr);
       }
     },
   );
@@ -81,6 +96,7 @@ afterEach(() => {
   mockFs.access.mockReset();
   mockFs.writeFile.mockReset();
   mockFs.unlink.mockReset();
+  mockLoggerWarn.mockReset();
 });
 
 describe('transcribeWithOsHelper', () => {
@@ -141,6 +157,29 @@ describe('transcribeWithOsHelper', () => {
       '--locale',
       'fr',
     ]);
+  });
+
+  it('surfaces helper stderr diagnostics (locale fallback trail) in the main log', async () => {
+    stubHelper(
+      JSON.stringify({ text: 'hello', durationMs: 500 }),
+      0,
+      'locale xx unsupported; falling back to the system locale\n',
+    );
+
+    const result = await transcribeWithOsHelper(AUDIO_BASE64, 'audio/wav', undefined, 'xx');
+
+    expect(result).toMatchObject({ success: true, text: 'hello' });
+    expect(mockLoggerWarn).toHaveBeenCalledWith('speech helper stderr', {
+      stderr: 'locale xx unsupported; falling back to the system locale',
+    });
+  });
+
+  it('does not log when the helper writes nothing to stderr', async () => {
+    stubHelper(JSON.stringify({ text: 'ok', durationMs: 1 }));
+
+    await transcribeWithOsHelper(AUDIO_BASE64, 'audio/wav');
+
+    expect(mockLoggerWarn).not.toHaveBeenCalled();
   });
 
   it('maps a helper error payload to its typed code', async () => {

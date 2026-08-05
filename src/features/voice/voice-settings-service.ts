@@ -159,12 +159,14 @@ export async function loadVoiceSettings(): Promise<VoiceSettingsSnapshot> {
           : VOICE_OPENAI_DEFAULT_MODEL,
     // `null` entry ⇒ daemon predates `voice.language` ⇒ hide the selector.
     // Unset/blank/non-string values fold to auto-detect (the daemon trims and
-    // treats blank as unset — §5.41 "Language resolution").
+    // treats blank as unset — §5.41 "Language resolution"). Lowercased so a
+    // hand-edited value ("DE" in config.toml) matches the curated codes —
+    // ISO-639-1/BCP-47 language subtags are case-insensitive.
     language:
       languageEntry === null
         ? null
         : typeof languageEntry.value === "string"
-          ? languageEntry.value.trim()
+          ? languageEntry.value.trim().toLowerCase()
           : VOICE_LANGUAGE_AUTO,
   };
 }

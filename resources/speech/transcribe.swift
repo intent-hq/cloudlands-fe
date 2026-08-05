@@ -105,12 +105,42 @@ guard authStatus == .authorized else {
 // macOS supports it, otherwise the system locale — never a hard failure just
 // because one locale lacks a recognizer. `recognizer-unavailable` fires only
 // when neither works.
+func languageSubtag(_ locale: Locale) -> String? {
+    locale.language.languageCode?.identifier.lowercased()
+}
+
+func regionSubtag(_ locale: Locale) -> String? {
+    locale.region?.identifier.lowercased()
+}
+
 func makeRecognizer() -> SFSpeechRecognizer? {
     if let identifier = requestedLocale {
         if let recognizer = SFSpeechRecognizer(locale: Locale(identifier: identifier)),
             recognizer.isAvailable
         {
             return recognizer
+        }
+        // `supportedLocales()` is region-qualified (de-DE, en-US, …), so a bare
+        // ISO-639-1 code ("de" — what the voice.language setting stores) rarely
+        // matches the failable init directly. Resolve by language before giving
+        // up: any supported locale with the requested language, preferring the
+        // system region when several qualify.
+        if let requestedLanguage = languageSubtag(Locale(identifier: identifier)) {
+            let candidates = SFSpeechRecognizer.supportedLocales()
+                .filter { languageSubtag($0) == requestedLanguage }
+                .sorted { $0.identifier < $1.identifier }
+            let systemRegion = regionSubtag(Locale.current)
+            let match =
+                candidates.first { regionSubtag($0) != nil && regionSubtag($0) == systemRegion }
+                ?? candidates.first
+            if let locale = match,
+                let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable
+            {
+                FileHandle.standardError.write(
+                    "locale \(identifier) resolved to supported locale \(locale.identifier)\n"
+                        .data(using: .utf8)!)
+                return recognizer
+            }
         }
         FileHandle.standardError.write(
             "locale \(identifier) unsupported; falling back to the system locale\n"

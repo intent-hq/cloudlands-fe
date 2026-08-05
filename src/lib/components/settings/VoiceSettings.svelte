@@ -84,10 +84,18 @@
   const inputDevices$ = selectVoiceInputDevices();
 
   // Language names localized to the active UI locale via Intl.DisplayNames —
-  // no name table; unknown codes fall back to the raw tag.
+  // no name table; unknown codes fall back to the raw tag. One instance per
+  // active locale (not per call — the list maps it ~29 times per render).
+  const languageNames = $derived.by(() => {
+    try {
+      return new Intl.DisplayNames([getActiveLocale()], { type: 'language' });
+    } catch {
+      return null;
+    }
+  });
   function languageDisplayName(code: string): string {
     try {
-      const name = new Intl.DisplayNames([getActiveLocale()], { type: 'language' }).of(code);
+      const name = languageNames?.of(code);
       if (name && name !== code) return name;
     } catch {
       // Unknown tag — fall through to the raw code.
@@ -95,15 +103,21 @@
     return code;
   }
 
-  // A stored code outside the curated list still renders in the selector so
-  // the value round-trips (e.g. set via CLI/config.toml).
-  const languageOptions = $derived(
-    $language$ !== null &&
+  // Curated codes sorted by localized display name for the active locale; a
+  // stored code outside the curated list (case-insensitive — Intl.DisplayNames
+  // canonicalizes case, so "DE" would otherwise duplicate "German") is pinned
+  // first so the value round-trips (e.g. set via CLI/config.toml).
+  const languageOptions = $derived.by(() => {
+    const collator = new Intl.Collator(getActiveLocale());
+    const sorted = [...VOICE_LANGUAGES].sort((a, b) =>
+      collator.compare(languageDisplayName(a), languageDisplayName(b)),
+    );
+    return $language$ !== null &&
       $language$ !== VOICE_LANGUAGE_AUTO &&
-      !VOICE_LANGUAGES.includes($language$)
-      ? [$language$, ...VOICE_LANGUAGES]
-      : [...VOICE_LANGUAGES],
-  );
+      !VOICE_LANGUAGES.some((code) => code.toLowerCase() === $language$.toLowerCase())
+      ? [$language$, ...sorted]
+      : sorted;
+  });
 
   // Permission-less contexts return devices with empty labels (Web API behavior).
   function inputDeviceLabel(device: VoiceInputDevice, index: number): string {
