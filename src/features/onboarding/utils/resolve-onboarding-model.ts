@@ -28,7 +28,7 @@ import {
   selectEffectiveBehaviorPrompt,
   selectUserOverrides,
 } from '$store/renderer/slices/specialists/specialists-selectors';
-import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { splitCompoundModelId } from '$shared/utils/compound-model-id';
 import {
   getProviderAvailability,
@@ -160,7 +160,7 @@ export async function resolveOnboardingModel(
   userSelectedModel?: string,
 ): Promise<ResolvedModelConfig> {
   const activeProvider = selectActiveProviderId.select(state);
-  const defaultProviderId = selectCatalogDefaultProviderId.select(state);
+  const defaultProviderId = selectEffectiveDefaultProviderId.select(state);
   const specialist = selectSpecialists.select(state).find((s) => s.id === specialistId);
   const behaviorPrompt = selectEffectiveBehaviorPrompt.select(state, specialistId) || undefined;
   const specialistOverride = selectUserOverrides.select(state).modelOverrides[specialistId];

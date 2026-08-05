@@ -60,12 +60,11 @@
 
   import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
   import {
-  selectCatalogDefaultProviderId,
+  selectEffectiveDefaultProviderId,
   selectNormalizedProviderId,
   selectProviderDisplayName,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
-  import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
   import {
   formatProviderLoadError,
   type ProviderLoadError,
@@ -93,7 +92,7 @@
 
   const logger = createLogger('ModelPicker');
 
-  const defaultProviderId$ = selectCatalogDefaultProviderId();
+  const defaultProviderId$ = selectEffectiveDefaultProviderId();
 
   // Catalog-backed local shims for the legacy provider-config helpers, so the
   // picker's many call sites keep their shape. Reads are reactive via the
@@ -695,9 +694,9 @@
   });
 
   // D1(B): when no provider is available at all, never fall back to a
-  // default provider/model (e.g. Auggie's opus4.7) — surface an explicit
-  // failure instead. Per-provider fetch failures / a single unavailable
-  // effective provider are handled by the existing warning/fallback paths.
+  // default provider/model — surface an explicit failure instead.
+  // Per-provider fetch failures / a single unavailable effective provider
+  // are handled by the existing warning/fallback paths.
   // Gated on hasCheckedOnce: before the first availability check resolves,
   // availableEnabledProviderIds is empty by default, which is "unknown" —
   // not "confirmed unavailable" — so this must not trip during initial load.
@@ -839,7 +838,6 @@
       options: flatModelOptions,
       excludeValue: USE_DEFAULT_VALUE,
       restrictToProvider,
-      preferredModels: MODEL_DEFAULTS.UI_MODEL_PREFERENCE,
       globallySelectedModel: $selectedModel$,
     });
   }
@@ -898,14 +896,12 @@
     // artefact. During a provider switch the session may still hold a model from the
     // old provider (e.g. "haiku4.5") which doesn't match the new provider's prefixed
     // IDs (e.g. "claude-code:haiku4.5"). If the base model name matches an available
-    // model, the model is just the default initial model, or the model's provider
-    // prefix differs from the active provider, skip the warning — the user didn't
-    // lose their model, the provider just changed.
+    // model, or the model's provider prefix differs from the active provider, skip
+    // the warning — the user didn't lose their model, the provider just changed.
     const { providerId: unavailableModelProvider, modelId: unavailableBaseId } =
       parseCompoundModelId(unavailableModelName);
     const activeProvider = normalizeProviderId($activeProviderId$);
     const isProviderSwitch =
-      unavailableModelName === MODEL_DEFAULTS.UI_INITIAL_MODEL ||
       unavailableModelProvider !== activeProvider ||
       flatModelOptions.some((opt) => {
         const { modelId: optBaseId } = parseCompoundModelId(opt.value);

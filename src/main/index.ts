@@ -578,7 +578,9 @@ app.whenReady().then(async () => {
       const { hostExec } = await import('../shared/main/host-exec.js');
       const { fetchProviderCatalog } = await import('./utils/provider-catalog-accessor.js');
       const catalog = await fetchProviderCatalog();
-      const defaultProvider = catalog.providers.find((p) => p.id === catalog.defaultProviderId);
+      // The registry carries no default designation — the first catalog row
+      // is the neutral positional pick for the About-panel version line.
+      const defaultProvider = catalog.providers[0];
       if (!defaultProvider) return;
 
       const result = await hostExec(defaultProvider.command, {

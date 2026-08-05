@@ -1,8 +1,8 @@
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { DropdownOption } from '$lib/components/ui/dropdown';
-import { resolvePreferredModel, splitCompoundModelId } from '$shared/utils/compound-model-id';
+import { splitCompoundModelId } from '$shared/utils/compound-model-id';
 import {
-  selectCatalogDefaultProviderId,
+  selectEffectiveDefaultProviderId,
   selectNormalizedProviderId,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
@@ -106,13 +106,14 @@ export function isProviderEnabled(enabledProviderIds: string[], providerId: stri
 }
 
 /**
- * Normalize a model ID for equivalence comparison: strip the default-provider
- * prefix so `auggie:sonnet4.6` matches bare `sonnet4.6` (and vice versa) when
- * `auggie` is the default provider. Non-default-provider prefixes are preserved
- * so `opencode:foo` still only matches the compound form.
+ * Normalize a model ID for equivalence comparison: strip the effective
+ * default-provider prefix so `auggie:sonnet4.6` matches bare `sonnet4.6`
+ * (and vice versa) when `auggie` is the effective default provider.
+ * Other prefixes are preserved so `opencode:foo` still only matches the
+ * compound form.
  */
 export function normalizeModelIdForMatch(modelId: string): string {
-  const defaultProviderId = selectCatalogDefaultProviderId.select(appStore.state);
+  const defaultProviderId = selectEffectiveDefaultProviderId.select(appStore.state);
   if (!defaultProviderId) return modelId;
   const prefix = `${defaultProviderId}:`;
   return modelId.startsWith(prefix) ? modelId.slice(prefix.length) : modelId;
@@ -125,34 +126,32 @@ export interface FindModelFallbackOptionParams {
   excludeValue?: string;
   /** When set, only consider options belonging to this provider. */
   restrictToProvider?: string;
-  /** Preference list of model ids tried first, in order. */
-  preferredModels: readonly string[];
   /** The globally selected model, used as a tiebreaker before first-available. */
   globallySelectedModel?: string | null;
 }
 
 /**
- * Find the best fallback option: preference list → globally selected model →
- * first available.
+ * Find the best fallback option: the provider CLI's marked default →
+ * globally selected model → first available.
  */
 export function findModelFallbackOption(
   params: FindModelFallbackOptionParams,
 ): DropdownOption | undefined {
-  const { options, excludeValue, restrictToProvider, preferredModels, globallySelectedModel } =
-    params;
+  const { options, excludeValue, restrictToProvider, globallySelectedModel } = params;
   let candidates = options.filter((opt) => opt.value !== excludeValue);
 
   if (restrictToProvider) {
-    const defaultProviderId = selectCatalogDefaultProviderId.select(appStore.state);
+    const defaultProviderId = selectEffectiveDefaultProviderId.select(appStore.state);
     candidates = candidates.filter(
       (opt) =>
         (splitCompoundModelId(opt.value).providerId ?? defaultProviderId) === restrictToProvider,
     );
   }
 
-  const optionValues = candidates.map((opt) => opt.value);
-  const preferredValue = resolvePreferredModel(preferredModels, optionValues);
-  return preferredValue
-    ? candidates.find((opt) => opt.value === preferredValue)
-    : (candidates.find((opt) => opt.value === globallySelectedModel) ?? candidates[0]);
+  const cliDefault = candidates.find((opt) => opt.data?.isDefault);
+  return (
+    cliDefault ??
+    candidates.find((opt) => opt.value === globallySelectedModel) ??
+    candidates[0]
+  );
 }

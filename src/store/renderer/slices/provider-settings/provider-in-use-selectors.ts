@@ -1,7 +1,7 @@
 import { store } from '../../store';
 import { parseCompoundModelId } from '$shared/utils/compound-model-id';
 import { selectProviderModels } from '../model/model-selectors';
-import { selectCatalogDefaultProviderId } from '../provider-catalog/provider-catalog-selectors';
+import { selectEffectiveDefaultProviderId } from '../provider-catalog/provider-catalog-selectors';
 import { selectSpecialists } from '../specialists/specialists-selectors';
 import { selectActiveProviderId } from './provider-settings-selectors';
 import { m } from '$shared/paraglide/messages.js';
@@ -24,14 +24,14 @@ export const selectProviderInUseReasons = store.createSelector((state): Record<s
   };
 
   // Only an explicitly selected global model counts as a pin. The
-  // UI_INITIAL_MODEL fallback used by selectSelectedModel is implicit and
-  // must not permanently block the default provider.
+  // catalog-derived default fallback used by selectSelectedModel is implicit
+  // and must not permanently block the default provider.
   // Note: providerModels values are normalized on write (bare iff the
   // provider is the default, prefixed otherwise), so this branch only ever
   // pins the active provider itself. ProviderSelector already hides Disable
   // for the active provider; the pin is defense in depth for callers that
   // bypass that UI (e.g. toggles or agent-driven settings proposals).
-  const defaultProviderId = selectCatalogDefaultProviderId.select(state);
+  const defaultProviderId = selectEffectiveDefaultProviderId.select(state);
   const activeProviderId = selectActiveProviderId.select(state);
   const globalModel = selectProviderModels.select(state)[activeProviderId];
   if (globalModel) {

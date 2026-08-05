@@ -34,13 +34,10 @@ const CATALOG: ProviderCatalogResult = {
       displayName: "Augment Auggie",
       shortName: "Auggie",
       command: "auggie",
-      isDefault: true,
       canBeDisabled: true,
       visible: true,
-      modelTiers: { fast: "haiku4.5", balanced: "sonnet4.5", smart: "opus4.7" },
     },
   ],
-  defaultProviderId: "auggie",
 };
 
 function makeHarness(catalogImpl: () => Promise<ProviderCatalogResult>) {

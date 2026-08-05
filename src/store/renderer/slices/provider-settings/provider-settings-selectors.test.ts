@@ -36,7 +36,6 @@ function mockState(
     providerSettings: {
       activeProviderId,
       enabledProviders,
-      defaultProviderId: MOCK_PROVIDER_CATALOG.defaultProviderId,
       nonDisableableProviderIds: [],
     },
     agentAvailability: {
@@ -81,37 +80,37 @@ describe("provider-settings selectors", () => {
       expect(selectIsProviderEnabled.select(state, "claude-code")).toBe(false);
     });
 
-    it("should treat the unset default provider (auggie) as enabled", () => {
+    it("should treat unset providers as disabled (no default-provider exception)", () => {
       const state = mockState({}, "codex");
-      expect(selectIsProviderEnabled.select(state, "auggie")).toBe(true);
+      expect(selectIsProviderEnabled.select(state, "auggie")).toBe(false);
     });
 
-    it("should return false for unset non-default disableable providers", () => {
+    it("should return false for unset disableable providers", () => {
       const state = mockState({});
       expect(selectIsProviderEnabled.select(state, "claude-code")).toBe(false);
     });
 
-    it("should respect an explicit false for the default provider (auggie)", () => {
+    it("should respect an explicit false for auggie", () => {
       const state = mockState({ auggie: false }, "codex");
       expect(selectIsProviderEnabled.select(state, "auggie")).toBe(false);
     });
 
-    it("should respect an explicit true for the default provider (auggie)", () => {
+    it("should respect an explicit true for auggie", () => {
       const state = mockState({ auggie: true }, "codex");
       expect(selectIsProviderEnabled.select(state, "auggie")).toBe(true);
     });
 
-    it("should include the unset default provider in enabled ids even when not active", () => {
+    it("should not include an unset provider in enabled ids when not active", () => {
       const state = mockState({}, "codex");
-      expect(selectEnabledProviderIds.select(state)).toContain("auggie");
+      expect(selectEnabledProviderIds.select(state)).not.toContain("auggie");
     });
 
-    it("should exclude the explicitly disabled default provider when not active", () => {
+    it("should exclude an explicitly disabled provider when not active", () => {
       const state = mockState({ auggie: false }, "codex");
       expect(selectEnabledProviderIds.select(state)).not.toContain("auggie");
     });
 
-    it("should re-include the default provider when explicitly re-enabled", () => {
+    it("should re-include a provider when explicitly re-enabled", () => {
       const state = mockState({ auggie: true }, "codex");
       expect(selectEnabledProviderIds.select(state)).toContain("auggie");
     });
@@ -120,6 +119,7 @@ describe("provider-settings selectors", () => {
       const state = mockState({ "claude-code": true });
       const ids = selectEnabledProviderIds.select(state);
       expect(ids).toContain("claude-code");
+      // The active provider is always included.
       expect(ids).toContain("auggie");
     });
 

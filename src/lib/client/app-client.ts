@@ -1506,7 +1506,7 @@ export interface ModelsClient {
 /**
  * Provider registry domain (`providers.catalog`, PROTOCOL §5.38, v2.6).
  * Daemon-global: no `workspaceId`. Returns the full static provider registry
- * (gated-off rows included, in registry order) plus `defaultProviderId`.
+ * (gated-off rows included, in registry order).
  * THROWS on transport/daemon failure so the seeder can decide the fallback
  * (keep the last hydrated catalog rather than wiping it).
  */

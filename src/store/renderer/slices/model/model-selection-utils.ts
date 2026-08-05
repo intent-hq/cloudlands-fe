@@ -1,5 +1,15 @@
-import { MODEL_DEFAULTS } from "$shared/constants/agent-services";
 import { splitCompoundModelId } from "$shared/utils/compound-model-id";
+
+/**
+ * Resolve the default model from a provider's catalog rows: the row the
+ * provider CLI marks `isDefault`, else the first row. Empty list → `''`
+ * (no selection — never a fabricated model id).
+ */
+export function resolveDefaultModel(
+  models: readonly { value: string; isDefault?: boolean }[],
+): string {
+  return (models.find((m) => m.isDefault) ?? models[0])?.value ?? '';
+}
 
 /**
  * Normalize a model id for storage under `providerId`: bare iff the provider
@@ -51,19 +61,3 @@ export function findAvailableModelMatch(
   });
 }
 
-export function resolvePreferredModelForProvider(
-  availableValues: string[]
-): string | undefined {
-  for (const preferredModel of MODEL_DEFAULTS.UI_MODEL_PREFERENCE) {
-    const match = availableValues.find((availableValue) => {
-      const { modelId } = splitCompoundModelId(availableValue);
-      return availableValue === preferredModel || modelId === preferredModel;
-    });
-
-    if (match) {
-      return match;
-    }
-  }
-
-  return availableValues[0];
-}

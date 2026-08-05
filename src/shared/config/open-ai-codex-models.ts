@@ -125,8 +125,6 @@ export const CODEX_MODELS = buildCodexModels();
 
 export type CodexModelId = keyof typeof CODEX_MODELS;
 
-export const CODEX_DEFAULT_MODEL_ID = 'gpt-5.3-codex/medium';
-
 /**
  * Parse a Codex model ID into its base model and optional reasoning effort.
  *
@@ -156,12 +154,10 @@ export function getCodexModelList(): Array<{
   value: string;
   label: string;
   description?: string;
-  isDefault?: boolean;
 }> {
   return Object.entries(CODEX_MODELS).map(([id, config]) => ({
     value: id,
     label: config.label,
     description: config.description,
-    isDefault: id === CODEX_DEFAULT_MODEL_ID,
   }));
 }

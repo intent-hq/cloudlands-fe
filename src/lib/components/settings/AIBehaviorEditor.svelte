@@ -51,7 +51,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
   import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
-  import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import {
     generateUniqueSpecialistId,
     type SpecialistModelOption,
@@ -71,7 +71,7 @@
   const fileSpecialists$ = selectFileSpecialists();
   const selectedModel = selectSelectedModel();
   const activeProviderId$ = selectActiveProviderId();
-  const defaultProviderId$ = selectCatalogDefaultProviderId();
+  const defaultProviderId$ = selectEffectiveDefaultProviderId();
 
   function parseCompoundModelId(compoundModelId: string): {
     providerId: string;

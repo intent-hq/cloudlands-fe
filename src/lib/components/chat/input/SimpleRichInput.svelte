@@ -10,7 +10,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import type { Workspace } from '$shared/types';
   import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
   import {
-  selectCatalogDefaultProviderId,
+  selectEffectiveDefaultProviderId,
   selectNormalizedProviderId,
   selectProviderDisplayName,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -75,7 +75,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   const logger = createLogger('SimpleRichInput');
 
-  const defaultProviderId$ = selectCatalogDefaultProviderId();
+  const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const activeProviderId$ = selectActiveProviderId();
   const pttRecording$ = selectPttRecording();
   const voiceTranscribing$ = selectVoiceTranscribing();

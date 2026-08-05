@@ -7,7 +7,7 @@ import {
   findAvailableModelMatch,
   normalizeModelForProvider,
   normalizeProviderModels,
-  resolvePreferredModelForProvider,
+  resolveDefaultModel,
 } from "./model-selection-utils";
 
 const defaultProviderId = "auggie";
@@ -48,13 +48,16 @@ describe("model-selection-utils", () => {
     ).toBe("codex:gpt-5.3-codex/medium");
   });
 
-  it("resolves the first preferred available model and falls back to the first item", () => {
-    expect(resolvePreferredModelForProvider(["codex:gpt5.4", "codex:other"])).toBe(
-      "codex:gpt5.4"
-    );
-    expect(resolvePreferredModelForProvider(["codex:other", "codex:another"])).toBe(
-      "codex:other"
-    );
-    expect(resolvePreferredModelForProvider([])).toBeUndefined();
+  it("resolves the CLI-marked default model and falls back to the first row", () => {
+    expect(
+      resolveDefaultModel([
+        { value: "codex:gpt5.4" },
+        { value: "codex:other", isDefault: true },
+      ])
+    ).toBe("codex:other");
+    expect(
+      resolveDefaultModel([{ value: "codex:other" }, { value: "codex:another" }])
+    ).toBe("codex:other");
+    expect(resolveDefaultModel([])).toBe("");
   });
 });

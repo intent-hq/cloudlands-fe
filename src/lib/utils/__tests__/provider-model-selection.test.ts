@@ -18,7 +18,7 @@ describe('pickCompatibleModelForProvider', () => {
   it('keeps the current model when it already matches the provider', () => {
     const result = pickCompatibleModelForProvider({
       providerId: 'opencode',
-      availableModelValues: ['opencode:gpt-5', 'opencode:claude-sonnet-4.5'],
+      availableModels: [{ value: 'opencode:gpt-5' }, { value: 'opencode:claude-sonnet-4.5' }],
       currentModel: 'opencode:gpt-5',
       fallbackModel: 'opencode:claude-sonnet-4.5',
     });
@@ -29,7 +29,7 @@ describe('pickCompatibleModelForProvider', () => {
   it('falls back to the provider-compatible default when the current model is invalid', () => {
     const result = pickCompatibleModelForProvider({
       providerId: 'opencode',
-      availableModelValues: ['opencode:gpt-5', 'opencode:claude-sonnet-4.5'],
+      availableModels: [{ value: 'opencode:gpt-5' }, { value: 'opencode:claude-sonnet-4.5' }],
       currentModel: 'gpt-5',
       fallbackModel: 'opencode:claude-sonnet-4.5',
     });
@@ -40,7 +40,7 @@ describe('pickCompatibleModelForProvider', () => {
   it('returns null when the provider has no compatible models', () => {
     const result = pickCompatibleModelForProvider({
       providerId: 'opencode',
-      availableModelValues: ['gpt-5', 'claude-sonnet-4.5'],
+      availableModels: [{ value: 'gpt-5' }, { value: 'claude-sonnet-4.5' }],
       currentModel: 'gpt-5',
     });
 
@@ -50,12 +50,24 @@ describe('pickCompatibleModelForProvider', () => {
   it('falls back to the first compatible option when current and fallback models belong to other providers', () => {
     const result = pickCompatibleModelForProvider({
       providerId: 'opencode',
-      availableModelValues: ['opencode:gpt-5', 'opencode:claude-sonnet-4.5'],
+      availableModels: [{ value: 'opencode:gpt-5' }, { value: 'opencode:claude-sonnet-4.5' }],
       currentModel: 'gpt5.4',
       fallbackModel: 'codex:gpt-5-codex',
     });
 
     expect(result).toBe('opencode:gpt-5');
+  });
+
+  it('prefers the CLI-marked default row over the first row', () => {
+    const result = pickCompatibleModelForProvider({
+      providerId: 'opencode',
+      availableModels: [
+        { value: 'opencode:gpt-5' },
+        { value: 'opencode:claude-sonnet-4.5', isDefault: true },
+      ],
+    });
+
+    expect(result).toBe('opencode:claude-sonnet-4.5');
   });
 });
 

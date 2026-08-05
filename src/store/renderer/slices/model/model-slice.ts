@@ -4,6 +4,10 @@ import { createCollection } from '$lib/store-shim/utils/collections/collection-u
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
+  hydrateActiveProvider,
+  setActiveProvider,
+} from '../provider-settings/provider-settings-slice';
+import {
   normalizeModelForProvider,
   normalizeProviderModels,
 } from './model-selection-utils';
@@ -146,12 +150,28 @@ export const resetToDefaults = createAction('model/resetToDefaults');
 // ============================================================================
 
 export const modelReducer = createReducer<ModelState>(initialState)
-  .with(providerCatalogLoaded, (state, { payload: [catalog] }) => ({
+  .with(providerCatalogLoaded, (state, { payload: [catalog] }) => {
+    // The registry carries no default designation — the active provider
+    // (mirrored via setActiveProvider/hydrateActiveProvider) is the effective
+    // default; the first catalog row is the last-resort fallback.
+    const defaultProviderId = state.defaultProviderId || (catalog.providers[0]?.id ?? '');
+    return {
+      ...state,
+      defaultProviderId,
+      // Re-normalize persisted picks that landed before hydration: bare ids
+      // for the default provider, prefixed otherwise (same rule as writes).
+      providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
+    };
+  })
+  .with(setActiveProvider, (state, { payload: [providerId] }) => ({
     ...state,
-    defaultProviderId: catalog.defaultProviderId,
-    // Re-normalize persisted picks that landed before the catalog: bare ids
-    // for the default provider, prefixed otherwise (same rule as writes).
-    providerModels: normalizeProviderModels(state.providerModels, catalog.defaultProviderId),
+    defaultProviderId: providerId,
+    providerModels: normalizeProviderModels(state.providerModels, providerId),
+  }))
+  .with(hydrateActiveProvider, (state, { payload: [providerId] }) => ({
+    ...state,
+    defaultProviderId: providerId,
+    providerModels: normalizeProviderModels(state.providerModels, providerId),
   }))
   .with(setSelectedModel, (state, { payload: [{ providerId, model }] }) => ({
     ...state,

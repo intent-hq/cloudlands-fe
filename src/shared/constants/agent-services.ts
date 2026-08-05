@@ -214,34 +214,16 @@ export const MODEL_IDS = {
 
 /**
  * ============================================================================
- * MODEL DEFAULTS - SINGLE SOURCE OF TRUTH
+ * MODEL DEFAULTS
  * ============================================================================
  *
- * All model defaults and fallback priorities are defined here.
- * DO NOT define model defaults elsewhere - import from this file.
+ * Non-model-id defaults only. There is intentionally NO hardcoded interactive
+ * default model id: the default model is always derived from the provider
+ * CLI's catalog (the row it marks `isDefault`, else the first available row)
+ * via `resolveDefaultModel` in
+ * `$store/renderer/slices/model/model-selection-utils`.
  */
 export const MODEL_DEFAULTS = {
-  /**
-   * Default model for interactive agents (workspaces, chat).
-   * This is the primary model used when users create new agents.
-   */
-  AGENT_MODEL: MODEL_IDS.CLAUDE_OPUS_4_7,
-
-  /**
-   * Default model for the model picker UI initial selection.
-   * Used when no model has been previously selected by the user.
-   * Should match AGENT_MODEL since this is the default for interactive use.
-   */
-  UI_INITIAL_MODEL: MODEL_IDS.CLAUDE_OPUS_4_7,
-
-  /**
-   * Ordered preference list for the default interactive model.
-   * When the top choice isn't available from the provider, try the next one.
-   * Used by the model store and model picker to resolve a sane default
-   * instead of blindly picking availableModels[0].
-   */
-  UI_MODEL_PREFERENCE: [MODEL_IDS.CLAUDE_OPUS_4_7, MODEL_IDS.CLAUDE_OPUS_4_6, MODEL_IDS.GPT_5_4, MODEL_IDS.CLAUDE_OPUS_4_5] as readonly string[],
-
   /**
    * Default model for background agents (commit, PR, review).
    * Uses Haiku for fast, cheap, reliable automated background operations.
@@ -267,12 +249,6 @@ export const MODEL_DEFAULTS = {
    */
   DEFAULT_MAX_INPUT_TOKENS: 100000,
 } as const;
-
-/**
- * @deprecated Use MODEL_DEFAULTS.AGENT_MODEL instead.
- * Kept for backwards compatibility.
- */
-export const DEFAULT_AGENT_MODEL = MODEL_DEFAULTS.AGENT_MODEL;
 
 /** Type for the built-in model IDs defined in this file */
 export type KnownModelId = (typeof MODEL_IDS)[keyof typeof MODEL_IDS];

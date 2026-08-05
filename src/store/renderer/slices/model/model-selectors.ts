@@ -5,11 +5,12 @@ import {
   type Collection,
 } from '$lib/store-shim/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
+import { isModelValidForProvider } from '$shared/utils/compound-model-id';
 import {
   selectActiveProviderId,
   selectAvailableEnabledProviderIds,
 } from '../provider-settings/provider-settings-selectors';
+import { resolveDefaultModel } from './model-selection-utils';
 import type { ModelLoadingState } from './model-types';
 
 function getEffectiveProviderId(state: any, providerId?: string): string {
@@ -20,11 +21,12 @@ function getEffectiveProviderId(state: any, providerId?: string): string {
  * Select the currently selected model value.
  *
  * Prefers the persisted model for the effective provider. When nothing is
- * persisted, falls back to `MODEL_DEFAULTS.UI_INITIAL_MODEL` only if the
- * effective provider is actually available — per decision D1(B) we never
- * fabricate a default model for a provider that isn't installed, since that
- * would mask the failure instead of surfacing it. Returns `''` when nothing
- * is resolvable; pair with `selectHasResolvableModel` to detect that state.
+ * persisted, falls back to the provider catalog's default (the row the CLI
+ * marks `isDefault`, else the first available row) only if the effective
+ * provider is actually available — per decision D1(B) we never fabricate a
+ * default model for a provider that isn't installed, since that would mask
+ * the failure instead of surfacing it. Returns `''` when nothing is
+ * resolvable; pair with `selectHasResolvableModel` to detect that state.
  */
 export const selectSelectedModel = store.createSelector((state, providerId?: string): string => {
   const effectiveProviderId = getEffectiveProviderId(state, providerId);
@@ -32,7 +34,12 @@ export const selectSelectedModel = store.createSelector((state, providerId?: str
   if (persisted) return persisted;
 
   const isAvailable = selectAvailableEnabledProviderIds.select(state).includes(effectiveProviderId);
-  return isAvailable ? MODEL_DEFAULTS.UI_INITIAL_MODEL : '';
+  if (!isAvailable) return '';
+
+  const models = getItems<AuggieModel, 'value'>(state.model.availableModels).filter((m) =>
+    isModelValidForProvider(m.value, effectiveProviderId, state.model.defaultProviderId),
+  );
+  return resolveDefaultModel(models);
 });
 
 /** Whether `selectSelectedModel` resolved to an actual model for the effective provider. */

@@ -24,7 +24,7 @@
 } from '$features/providers/provider-availability.client';
   import { parseCompoundModelId } from '$shared/utils/compound-model-id';
   import {
-  selectCatalogDefaultProviderId,
+  selectEffectiveDefaultProviderId,
   selectProviderCatalogEntries,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -35,7 +35,7 @@
   import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('InitialAgentPicker');
-  const defaultProviderId$ = selectCatalogDefaultProviderId();
+  const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const catalogEntries$ = selectProviderCatalogEntries();
   const specialists$ = selectSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();

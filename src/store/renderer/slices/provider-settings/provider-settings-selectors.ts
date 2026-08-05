@@ -24,13 +24,8 @@ export const selectEnabledProviders = store.createSelector(
 
 export const selectIsProviderEnabled = store.createSelector(
   (state, providerId: string): boolean => {
-    // Fall back through the providerCatalog slice for states captured before
-    // the providerSettings snapshot fields hydrate (and partial test mocks).
-    const defaultProviderId =
-      state.providerSettings.defaultProviderId || state.providerCatalog?.defaultProviderId || "";
     const nonDisableable = state.providerSettings.nonDisableableProviderIds ?? [];
     return resolveProviderEnabled(state.providerSettings.enabledProviders, providerId, {
-      defaultProviderId,
       canBeDisabled: !nonDisableable.includes(providerId),
     });
   }

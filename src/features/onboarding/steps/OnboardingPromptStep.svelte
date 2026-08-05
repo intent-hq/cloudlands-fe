@@ -31,7 +31,7 @@
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
   import { selectSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
-  import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { appClient } from '$lib/client';
   import { createLogger } from '$lib/utils/client-logger';
@@ -39,7 +39,7 @@
   const COORDINATOR_SPECIALIST_ID = 'spec-writer';
 
   const logger = createLogger('OnboardingPromptStep');
-  const defaultProviderId$ = selectCatalogDefaultProviderId();
+  const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const activeProviderId$ = selectActiveProviderId();
   const specialists$ = selectSpecialists();
 

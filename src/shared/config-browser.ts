@@ -133,12 +133,12 @@ export class WorkspaceConfig extends WorkspaceConfigConstants {
   };
 
   // Agent configuration
-  // NOTE: Model defaults are defined in constants/agent-services.ts (MODEL_DEFAULTS)
+  // NOTE: Non-model defaults are defined in constants/agent-services.ts
+  // (MODEL_DEFAULTS). There is no hardcoded default model id — the default
+  // is always derived from the provider CLI's catalog.
   static readonly AGENT_CONFIG = {
     MAX_MESSAGE_LENGTH: 100000,
     MAX_HISTORY_SIZE: 1000,
-    /** @deprecated Use MODEL_DEFAULTS.AGENT_MODEL from constants/agent-services.ts */
-    DEFAULT_MODEL: 'opus4.5', // Short model ID format
     /** @deprecated Use MODEL_DEFAULTS.DEFAULT_TEMPERATURE from constants/agent-services.ts */
     DEFAULT_TEMPERATURE: 0.7,
     DEFAULT_MAX_TOKENS: 4096,

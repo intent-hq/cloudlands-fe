@@ -31,7 +31,7 @@ import {
 import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
 
 import { isModelValidForProvider, splitCompoundModelId } from '$shared/utils/compound-model-id';
-import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -358,7 +358,7 @@ export class UnifiedAgentFactory {
       // Pass the caller's explicit model through untouched; when absent, omit
       // it from `agent.create` so the daemon applies its resolved default
       // (specialist frontmatter > settings chain > provider CLI default). No
-      // client-side tier/DEFAULT_AGENT_MODEL synthesis.
+      // client-side default-model synthesis.
       let resolvedModel = normalized.model;
 
       // Step 6.8: Safety-net — reject cross-provider compound model IDs.
@@ -369,7 +369,7 @@ export class UnifiedAgentFactory {
       if (resolvedModel && provider && resolvedModel.includes(':')) {
         const defaultProviderId = isBackend
           ? ''
-          : selectCatalogDefaultProviderId.select(appStore.state);
+          : selectEffectiveDefaultProviderId.select(appStore.state);
         if (!isModelValidForProvider(resolvedModel, provider, defaultProviderId)) {
           const modelProvider = splitCompoundModelId(resolvedModel).providerId;
           logger.warn('Safety net: cross-provider model mismatch in agent creation', {

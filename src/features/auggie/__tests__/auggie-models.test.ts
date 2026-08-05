@@ -73,8 +73,9 @@ describe('auggie-models', () => {
     });
   });
 
-  // Regression: opus4.7 is the Auggie default and must have display metadata
-  describe('opus4.7 default model regression', () => {
+  // Regression: opus4.7 must have display metadata (it is NOT a hardcoded
+  // default — defaults come from the provider CLI's catalog).
+  describe('opus4.7 icon regression', () => {
     it('opus4.7 has a dedicated icon (not the fallback)', () => {
       const icon = getModelIcon('opus4.7');
       expect(icon).toBe('🎭');

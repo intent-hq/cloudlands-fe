@@ -7,6 +7,7 @@ import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
+import { setActiveProvider } from '../provider-settings/provider-settings-slice';
 import {
   clearModelFallbackInfo,
   clearLoadingStateForProvider,
@@ -25,7 +26,8 @@ import {
 import { selectAllProviderWarnings } from './model-selectors';
 import type { ModelState } from './model-types';
 
-const defaultProviderId = MOCK_PROVIDER_CATALOG.defaultProviderId;
+// With nothing user-configured, the first catalog row is the effective default.
+const defaultProviderId = MOCK_PROVIDER_CATALOG.providers[0].id;
 
 // Most cases exercise the slice after catalog hydration (the boot-time
 // contract: the provider-catalog seeder lands before user model picks).
@@ -51,9 +53,28 @@ describe('modelReducer', () => {
     expect(modelReducer(undefined, { type: '@@INIT' })).toEqual(bareInitialState);
   });
 
-  it('snapshots the default provider id from catalog hydration', () => {
+  it('falls back to the first catalog row at hydration when no active provider was mirrored', () => {
     expect(bareInitialState.defaultProviderId).toBe('');
     expect(initialState.defaultProviderId).toBe(defaultProviderId);
+  });
+
+  it('mirrors the active provider as the default and re-normalizes picks', () => {
+    const withActive = modelReducer(bareInitialState, setActiveProvider('codex'));
+    expect(withActive.defaultProviderId).toBe('codex');
+    // A mirrored active provider survives catalog hydration (no first-row clobber).
+    const hydrated = modelReducer(withActive, providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
+    expect(hydrated.defaultProviderId).toBe('codex');
+
+    const withPicks = modelReducer(
+      hydrated,
+      loadProviderModelsFromStorage({ codex: 'codex:gpt-5.3-codex/high', auggie: 'gpt5.4' }),
+    );
+    // Switching the active provider re-normalizes: codex picks become bare,
+    // other providers' picks become prefixed.
+    expect(withPicks.providerModels).toEqual({
+      codex: 'gpt-5.3-codex/high',
+      auggie: 'auggie:gpt5.4',
+    });
   });
 
   it('re-normalizes persisted picks that landed before catalog hydration', () => {

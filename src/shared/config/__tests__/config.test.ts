@@ -27,7 +27,8 @@ import type { AgentConfig, StreamConfig, PersistenceConfig, AppConfig } from '..
 describe('Configuration Defaults', () => {
   it('should have valid default agent config', () => {
     expect(DEFAULT_AGENT_CONFIG.name).toBe('Assistant');
-    expect(DEFAULT_AGENT_CONFIG.model).toBe('opus4.5'); // Short model ID format
+    // No default model id: the daemon/provider CLI resolves the default.
+    expect(DEFAULT_AGENT_CONFIG.model).toBeUndefined();
     expect(DEFAULT_AGENT_CONFIG.temperature).toBe(0.7);
     expect(DEFAULT_AGENT_CONFIG.maxTokens).toBe(4096);
   });

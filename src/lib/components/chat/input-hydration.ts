@@ -10,6 +10,6 @@ export function resolveHydratedInputModel(
 
   // Return session.model directly without client-side fallback.
   // When session.model is null/undefined, the ModelPicker will show
-  // "Default model" option instead of falling back to DEFAULT_AGENT_MODEL.
+  // "Default model" option instead of falling back to a hardcoded model id.
   return session.model;
 }

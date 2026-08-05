@@ -22,9 +22,11 @@ export type ModelState = {
   modelPickerCollapsedGroups: string[];
   fallbackInfoByAgentId: Record<string, ModelFallbackInfo>;
   /**
-   * Registry default provider id snapshotted from `providerCatalogLoaded`
-   * ('' before hydration). Reducers only see their own slice, so the
-   * catalog's default is mirrored here for model-id normalization.
+   * Effective default provider id mirrored for model-id normalization
+   * ('' before hydration). Reducers only see their own slice, so this is
+   * snapshotted from `setActiveProvider`/`hydrateActiveProvider` (the user's
+   * active provider) with a first-catalog-row fallback at
+   * `providerCatalogLoaded` — the registry itself carries no default.
    */
   defaultProviderId: string;
 };
