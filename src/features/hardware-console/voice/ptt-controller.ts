@@ -25,6 +25,7 @@
  */
 
 import { m } from '$shared/paraglide/messages.js';
+import { loadVoiceInputDevicePreference } from '$features/voice/voice-input-device-preference';
 import {
   pttRecordingFinished,
   pttRecordingStarted,
@@ -134,6 +135,9 @@ export function startPttRecording(context: PttContext): void {
   // it — must never route a LATER session's transcript into the prompt.
   clearPromptDictationTarget();
   const recorder = new VoiceRecorder({
+    // Selected mic (localStorage preference); `ideal` constraint semantics
+    // mean an unplugged device degrades to the system default.
+    deviceId: loadVoiceInputDevicePreference(),
     onFinished: (result) => {
       if (activeRecorder === recorder) activeRecorder = null;
       const outcome = pendingOutcome ?? { stopReason: 'auto-stop' as const, autoSend: false };

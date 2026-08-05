@@ -6,7 +6,7 @@ import {
 import type { VoiceEngine } from "$features/voice/voice-engine-preference";
 import { createAction } from "$lib/store-shim/utils/store/create-action";
 import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
-import type { VoiceSettingsSliceState } from "./voice-settings-types";
+import type { VoiceInputDevice, VoiceSettingsSliceState } from "./voice-settings-types";
 
 export const initialState: VoiceSettingsSliceState = {
   isLoading: true,
@@ -17,6 +17,8 @@ export const initialState: VoiceSettingsSliceState = {
   keyConfigured: { elevenlabs: false, openai: false },
   vocabulary: null,
   openaiModel: null,
+  inputDeviceId: null,
+  inputDevices: [],
   busyProvider: null,
   error: null,
 };
@@ -102,6 +104,21 @@ export const setVoiceProviderValue = createAction<[provider: VoiceProvider]>(
   "voiceSettings/setProviderValue",
 );
 
+/** Trigger: switch the microphone input device (store-service persists locally) */
+export const changeVoiceInputDevice = createAction<[deviceId: string | null]>(
+  "voiceSettings/changeInputDevice",
+);
+
+/** Set the (already persisted) input-device value (`null` = system default) */
+export const setVoiceInputDeviceValue = createAction<[deviceId: string | null]>(
+  "voiceSettings/setInputDeviceValue",
+);
+
+/** Hydrate the enumerated audio-input device list */
+export const setVoiceInputDevices = createAction<[devices: VoiceInputDevice[]]>(
+  "voiceSettings/setInputDevices",
+);
+
 /** Set one provider's key-configured flag */
 export const setVoiceKeyConfigured = createAction<
   [provider: VoiceProvider, configured: boolean]
@@ -136,6 +153,14 @@ export const voiceSettingsReducer = createReducer<VoiceSettingsSliceState>(initi
   .with(setVoiceProviderValue, (state, { payload: [provider] }) => ({
     ...state,
     provider,
+  }))
+  .with(setVoiceInputDeviceValue, (state, { payload: [deviceId] }) => ({
+    ...state,
+    inputDeviceId: deviceId,
+  }))
+  .with(setVoiceInputDevices, (state, { payload: [devices] }) => ({
+    ...state,
+    inputDevices: devices,
   }))
   .with(setVoiceEngineValue, (state, { payload: [engine] }) => ({
     ...state,

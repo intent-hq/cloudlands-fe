@@ -12,6 +12,7 @@
   import {
     addVoiceVocabularyTerm,
     changeVoiceEngine,
+    changeVoiceInputDevice,
     changeVoiceOpenAiModel,
     changeVoiceProvider,
     clearVoiceKey,
@@ -23,6 +24,8 @@
   import {
     selectVoiceBusyProvider,
     selectVoiceEngine,
+    selectVoiceInputDeviceId,
+    selectVoiceInputDevices,
     selectVoiceKeyConfigured,
     selectVoiceOpenAiModel,
     selectVoiceOsEngineAvailable,
@@ -32,6 +35,7 @@
     selectVoiceSettingsIsLoading,
     selectVoiceVocabulary,
   } from '$store/renderer/slices/voice-settings/voice-settings-selectors';
+  import type { VoiceInputDevice } from '$store/renderer/slices/voice-settings/voice-settings-types';
   import {
     VOICE_OPENAI_MODELS,
     VOICE_PROVIDERS,
@@ -70,6 +74,20 @@
   const busyProvider$ = selectVoiceBusyProvider();
   const error$ = selectVoiceSettingsError();
   const vocabulary$ = selectVoiceVocabulary();
+  const inputDeviceId$ = selectVoiceInputDeviceId();
+  const inputDevices$ = selectVoiceInputDevices();
+
+  // Permission-less contexts return devices with empty labels (Web API behavior).
+  function inputDeviceLabel(device: VoiceInputDevice, index: number): string {
+    return device.label !== ''
+      ? device.label
+      : m.settings_voice_inputDevice_unnamed({ number: index + 1 });
+  }
+
+  // Trigger text: selected device label, or "System default" when unset/gone.
+  const selectedInputDevice = $derived(
+    $inputDevices$.find((device) => device.deviceId === $inputDeviceId$),
+  );
 
   // Paste-key flow (mirrors LinearAuthConnection): one provider's input open
   // at a time. Draft state is ephemeral component-local UI state.
@@ -144,6 +162,11 @@
 
   function handleRemoveVocabularyTerm(term: string) {
     appStore.dispatch(removeVoiceVocabularyTerm(term));
+  }
+
+  function handleInputDeviceChange(next: string) {
+    // Empty string is the "System default" sentinel (Select values are strings).
+    appStore.dispatch(changeVoiceInputDevice(next === '' ? null : next));
   }
 </script>
 
@@ -325,6 +348,30 @@
           </div>
         </div>
       {/if}
+
+      <div class="space-y-2 pt-1">
+        <span class="text-xs text-foreground">{m.settings_voice_inputDevice_label()}</span>
+        <Select.Root value={$inputDeviceId$ ?? ''} onchange={handleInputDeviceChange}>
+          <Select.Trigger
+            class="h-7 text-xs w-[280px]"
+            aria-label={m.settings_voice_inputDevice_ariaLabel()}
+          >
+            {selectedInputDevice
+              ? inputDeviceLabel(selectedInputDevice, $inputDevices$.indexOf(selectedInputDevice))
+              : m.settings_voice_inputDevice_default()}
+          </Select.Trigger>
+          <Select.Content>
+            <Select.Item value="">
+              <span class="text-xs">{m.settings_voice_inputDevice_default()}</span>
+            </Select.Item>
+            {#each $inputDevices$ as device, index (device.deviceId)}
+              <Select.Item value={device.deviceId}>
+                <span class="text-xs">{inputDeviceLabel(device, index)}</span>
+              </Select.Item>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      </div>
 
       {#if $vocabulary$ !== null}
         <div class="space-y-2 pt-1">
