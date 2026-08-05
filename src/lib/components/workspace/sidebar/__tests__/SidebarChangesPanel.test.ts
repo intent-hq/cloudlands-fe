@@ -2,6 +2,7 @@ import {
   describe,
   it,
   expect,
+  beforeAll,
   beforeEach,
   vi,
   type Mock,
@@ -615,6 +616,14 @@ async function renderPanel(props: Record<string, any> = {}) {
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe('SidebarChangesPanel', () => {
+  // Warm the component module graph up front. The cold dynamic import of
+  // SidebarChangesPanel.svelte (and its transitive deps) was previously billed
+  // to the first test's timeout and flaked on loaded CI runners
+  // (intent-hq/monorepo#1406). After this, renderPanel()'s import is a cache hit.
+  beforeAll(async () => {
+    await import('../SidebarChangesPanel.svelte');
+  }, 120_000);
+
   beforeEach(async () => {
     await resetMocks();
     mockStageFiles.mockClear();
@@ -636,7 +645,7 @@ describe('SidebarChangesPanel', () => {
         // The loading state should NOT show the main container
         expect(container.querySelector('.sidebar-changes-container')).toBeFalsy();
       });
-    }, 30_000);
+    });
 
     it('shows empty state with "No changes yet" when loaded with no changes', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
