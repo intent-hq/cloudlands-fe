@@ -2463,6 +2463,30 @@ export function setupSystemIPC() {
     }
   });
 
+  // Check GitHub CLI (gh) availability — delegated to the daemon host
+  // (host.findBinary, PROTOCOL §5.14) like CHECK_NODE. Informational only:
+  // the onboarding gate never blocks on gh, and a missing binary or failed
+  // probe folds to available:false, never an error.
+  ipcMain.handle(SYSTEM_CHANNELS.CHECK_GH, async () => {
+    try {
+      const result = await getBackendClient().request<{ available: boolean; version?: string }>(
+        'host.findBinary',
+        { name: 'gh' },
+      );
+      const available = result?.available === true;
+      const version = typeof result?.version === 'string' ? result.version : undefined;
+      return {
+        success: true,
+        data: available ? { available: true, version } : { available: false },
+      };
+    } catch (error) {
+      logger.warn('host.findBinary gh failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { success: true, data: { available: false } };
+    }
+  });
+
   // Check rtk availability
   ipcMain.handle(SYSTEM_CHANNELS.CHECK_RTK, async () => {
     try {

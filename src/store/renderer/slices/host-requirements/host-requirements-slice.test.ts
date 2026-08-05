@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
 import {
   selectAllRequirementsMet,
+  selectGhRequirement,
   selectGitRequirement,
   selectHostRequirementsChecking,
   selectHostRequirementsHasCheckedOnce,
@@ -18,6 +19,7 @@ import {
 import {
   checkHostRequirementsComplete,
   checkHostRequirementsStarted,
+  ghRequirementResolved,
   gitRequirementResolved,
   hostRequirementsReducer,
   initialState,
@@ -35,6 +37,7 @@ describe('hostRequirementsReducer', () => {
     expect(state).toEqual({
       git: { checked: false, available: false },
       node: { checked: false, ok: false },
+      gh: { checked: false, available: false },
       checking: false,
       hasCheckedOnce: false,
     });
@@ -73,6 +76,17 @@ describe('hostRequirementsReducer', () => {
     expect(state.node).toEqual({ checked: true, ok: false, version: '18.19.0' });
   });
 
+  it('ghRequirementResolved(true, version) lands a terminal available state', () => {
+    const state = hostRequirementsReducer(initialState, ghRequirementResolved(true, '2.62.0'));
+    expect(state.gh).toEqual({ checked: true, available: true, version: '2.62.0' });
+  });
+
+  it('ghRequirementResolved(false) drops any stale version (terminal not-available)', () => {
+    const withGh = hostRequirementsReducer(initialState, ghRequirementResolved(true, '2.62.0'));
+    const state = hostRequirementsReducer(withGh, ghRequirementResolved(false));
+    expect(state.gh).toEqual({ checked: true, available: false });
+  });
+
   it('checkHostRequirementsComplete clears checking and flips hasCheckedOnce', () => {
     const started = hostRequirementsReducer(initialState, checkHostRequirementsStarted());
     const state = hostRequirementsReducer(started, checkHostRequirementsComplete());
@@ -84,10 +98,12 @@ describe('hostRequirementsReducer', () => {
     let state = hostRequirementsReducer(initialState, checkHostRequirementsStarted());
     state = hostRequirementsReducer(state, gitRequirementResolved(false));
     state = hostRequirementsReducer(state, nodeRequirementResolved(false));
+    state = hostRequirementsReducer(state, ghRequirementResolved(false));
     state = hostRequirementsReducer(state, checkHostRequirementsComplete());
     expect(state).toEqual({
       git: { checked: true, available: false },
       node: { checked: true, ok: false },
+      gh: { checked: true, available: false },
       checking: false,
       hasCheckedOnce: true,
     });
@@ -98,6 +114,7 @@ describe('host-requirements selectors', () => {
   const met: HostRequirementsState = {
     git: { checked: true, available: true, version: '2.43.0' },
     node: { checked: true, ok: true, version: '22.1.0' },
+    gh: { checked: true, available: true, version: '2.62.0' },
     checking: false,
     hasCheckedOnce: true,
   };
@@ -105,6 +122,7 @@ describe('host-requirements selectors', () => {
   it('exposes the per-tool statuses', () => {
     expect(selectGitRequirement.select(storeWith(met))).toEqual(met.git);
     expect(selectNodeRequirement.select(storeWith(met))).toEqual(met.node);
+    expect(selectGhRequirement.select(storeWith(met))).toEqual(met.gh);
   });
 
   it('exposes checking and hasCheckedOnce', () => {
@@ -127,5 +145,14 @@ describe('host-requirements selectors', () => {
         storeWith({ ...met, git: { checked: true, available: false } }),
       ),
     ).toBe(false);
+  });
+
+  it('allRequirementsMet ignores gh (informational only — never gates)', () => {
+    expect(
+      selectAllRequirementsMet.select(storeWith({ ...met, gh: { checked: true, available: false } })),
+    ).toBe(true);
+    expect(
+      selectAllRequirementsMet.select(storeWith({ ...met, gh: { checked: false, available: false } })),
+    ).toBe(true);
   });
 });

@@ -2938,6 +2938,8 @@
   "onboarding_requirementsStep_installNode_label": "安装 Node.js",
   "onboarding_requirementsStep_nodeTooOld_description": "需要 Node.js {minimum} 及以上版本。你安装的是 {version}。",
   "onboarding_requirementsStep_nodeMissing_description": "需要 Node.js {minimum} 及以上版本，但未找到。",
+  "onboarding_requirementsStep_ghOptional_label": "可选",
+  "onboarding_requirementsStep_ghMissing_description": "未找到 GitHub CLI（gh）。它是可选的——安装后，智能体可将其用于更多 GitHub 工作流。",
   "onboarding_requirementsStep_checkAgain_label": "重新检查",
   "onboarding_requirementsStep_recheck_description": "当你回到应用时，我们会自动重新检查。",
   "onboarding_creationError_authRequired_title": "需要 GitHub 身份验证",
