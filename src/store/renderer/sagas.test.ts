@@ -14,6 +14,7 @@ describe('renderer app saga registry', () => {
       'agentReadSaga',
       'agentSubscriptionReadSaga',
       'chatReadSaga',
+      'chatSubscribeSaga',
       'chatSendSaga',
       'permissionResponseSaga',
       'agentStreamSaga',
@@ -72,7 +73,7 @@ describe('renderer app saga registry', () => {
       'agentEventsIpcSaga',
       'gitEventsIpcSaga',
     ]);
-    expect(new Set(sagas).size).toBe(64);
+    expect(new Set(sagas).size).toBe(65);
   });
 
   it('returns one cancellation handler per registered saga', () => {
@@ -81,8 +82,8 @@ describe('renderer app saga registry', () => {
 
     const handlers = startAllAppSagas(store as never);
 
-    expect(store.runSaga).toHaveBeenCalledTimes(64);
+    expect(store.runSaga).toHaveBeenCalledTimes(65);
     expect(store.runSaga.mock.calls.map(([saga]) => saga)).toEqual(sagas);
-    expect(handlers).toEqual(Array(64).fill(cancel));
+    expect(handlers).toEqual(Array(65).fill(cancel));
   });
 });

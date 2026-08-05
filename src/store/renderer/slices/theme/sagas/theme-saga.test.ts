@@ -36,6 +36,8 @@ vi.mock('$lib/utils/theme-presets', () => ({
 }));
 
 import {
+  clearThemeCustomization,
+  importCustomTheme,
   requestThemePreferenceChange,
   selectThemePreset,
   setThemeCustomization,
@@ -52,7 +54,20 @@ const settle = async () => {
 };
 
 describe('themeSaga', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.manager.getTheme.mockReturnValue('dark');
+    mocks.manager.isDark.mockReturnValue(true);
+    mocks.manager.hasCustomTheme.mockReturnValue(false);
+    mocks.manager.getCustomThemeName.mockReturnValue(null);
+    mocks.manager.getActivePresetId.mockReturnValue(null);
+    mocks.manager.setTheme.mockImplementation(() => undefined);
+    mocks.manager.setPresetTheme.mockImplementation(() => undefined);
+    mocks.manager.setCustomTheme.mockImplementation(() => undefined);
+    mocks.manager.clearCustomTheme.mockImplementation(() => undefined);
+    mocks.manager.dispose.mockImplementation(() => mocks.mediaRemove('change', mocks.systemThemeListener));
+    mocks.resetInstance.mockImplementation(() => mocks.manager.dispose());
+  });
   afterEach(() => document.documentElement.classList.remove('dark', 'light'));
 
   it('hydrates an exact manager snapshot, applies preference, and suppresses its synchronous echo', async () => {
@@ -133,6 +148,99 @@ describe('themeSaga', () => {
     channel.put(selectThemePreset('missing'));
     await settle();
     expect(dispatch).toHaveBeenCalledWith(setThemeError('Unknown theme preset: missing'));
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('applies a known preset and syncs customization from the manager', async () => {
+    mocks.manager.setPresetTheme.mockImplementation(() => {
+      mocks.manager.hasCustomTheme.mockReturnValue(true);
+      mocks.manager.getCustomThemeName.mockReturnValue('Night');
+      mocks.manager.getActivePresetId.mockReturnValue('night');
+    });
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch }, themeSaga);
+    await settle();
+    dispatch.mockClear();
+
+    channel.put(selectThemePreset('night'));
+    await settle();
+
+    expect(mocks.manager.setPresetTheme).toHaveBeenCalledWith('night', { name: 'Night' }, { name: 'Day' });
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      setThemePreference('dark'),
+      setThemeName('dark'),
+      setThemeCustomization({ hasCustomTheme: true, customThemeName: 'Night', activePresetId: 'night' }),
+      setThemeError(null),
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('imports and clears custom themes through the manager', async () => {
+    const customTheme = { name: 'Imported', type: 'dark', colors: {} };
+    mocks.manager.setCustomTheme.mockImplementation(() => {
+      mocks.manager.hasCustomTheme.mockReturnValue(true);
+      mocks.manager.getCustomThemeName.mockReturnValue('Imported');
+      mocks.manager.getActivePresetId.mockReturnValue(null);
+    });
+    mocks.manager.clearCustomTheme.mockImplementation(() => {
+      mocks.manager.hasCustomTheme.mockReturnValue(false);
+      mocks.manager.getCustomThemeName.mockReturnValue(null);
+      mocks.manager.getActivePresetId.mockReturnValue(null);
+    });
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch }, themeSaga);
+    await settle();
+    dispatch.mockClear();
+
+    channel.put(importCustomTheme(customTheme));
+    await settle();
+    expect(mocks.manager.setCustomTheme).toHaveBeenCalledWith(customTheme);
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      setThemePreference('dark'),
+      setThemeName('dark'),
+      setThemeCustomization({ hasCustomTheme: true, customThemeName: 'Imported', activePresetId: null }),
+      setThemeError(null),
+    ]);
+
+    dispatch.mockClear();
+    channel.put(clearThemeCustomization());
+    await settle();
+    expect(mocks.manager.clearCustomTheme).toHaveBeenCalledOnce();
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      setThemePreference('dark'),
+      setThemeName('dark'),
+      setThemeCustomization({ hasCustomTheme: false, customThemeName: null, activePresetId: null }),
+      setThemeError(null),
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('surfaces custom import and clear failures as theme error actions', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch }, themeSaga);
+    await settle();
+    dispatch.mockClear();
+
+    mocks.manager.setCustomTheme.mockImplementation(() => {
+      throw new Error('Invalid theme JSON');
+    });
+    channel.put(importCustomTheme({}));
+    await settle();
+    expect(dispatch).toHaveBeenCalledWith(setThemeError('Invalid theme JSON'));
+
+    dispatch.mockClear();
+    mocks.manager.clearCustomTheme.mockImplementation(() => {
+      throw new Error('Clear failed');
+    });
+    channel.put(clearThemeCustomization());
+    await settle();
+    expect(dispatch).toHaveBeenCalledWith(setThemeError('Clear failed'));
     task.cancel();
     await task.toPromise();
   });

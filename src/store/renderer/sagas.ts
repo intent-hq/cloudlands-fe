@@ -23,6 +23,7 @@ import { backgroundAgentSettingsSaga } from './slices/background-agent-settings/
 import { browserPersistenceSaga } from './slices/browser/sagas/browser-persistence-saga';
 import { chatReadSaga } from './slices/chat-state/sagas/chat-read-saga';
 import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
+import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
 import { daemonHealthSaga } from './slices/daemon-health/sagas/daemon-health-saga';
 import { directoryPickerSaga } from './slices/directory-picker/sagas/directory-picker-saga';
@@ -87,6 +88,7 @@ export const sagas = [
   agentReadSaga,
   agentSubscriptionReadSaga,
   chatReadSaga,
+  chatSubscribeSaga,
   chatSendSaga,
   permissionResponseSaga,
   agentStreamSaga,
