@@ -5,11 +5,15 @@
  * Notable events that open a takeover (task spec): task → complete, agent
  * delegated (created) / started, agent failed, question asked (attention
  * raised OR the turn-terminal `agent:stream:end` carrying §7.1 question
- * trailingBlocks — the only place the question TEXT travels live), and
- * workspace STATUS MESSAGE text changes (`workspace:updated` whose §6.5
- * `changes` delta carries a non-empty `statusMessage`). displayStatus
- * transitions deliberately do NOT take over — they keep updating cards and
- * counters live via the feed families. All other events return null.
+ * trailingBlocks — the only place the question TEXT travels live), workspace
+ * STATUS MESSAGE text changes (`workspace:updated` whose §6.5 `changes`
+ * delta carries a non-empty `statusMessage`), and workspace displayStatus
+ * transitions (`workspace:displayStatus-changed`, §6.5) landing on the
+ * ALLOWLIST — idle / pr_open / pr_ready / pr_merged / complete; every other
+ * displayStatus value (in_progress, needs_attention, not_started, unknown)
+ * keeps updating cards and counters live via the feed families without
+ * taking over, and per-agent idle events (`agent:idle`, idle-bucket
+ * `agent:status-changed`) remain non-triggers. All other events return null.
  * `detail` is composed from wire identifiers (task titles, agent names,
  * question text) — wire content, i18n-exempt; the overlay localizes labels
  * off `kind`. Agent names never render as raw `agent-{uuid}` ids: the
@@ -24,6 +28,9 @@ import type { HudTakeoverKind, HudTakeoverTrigger } from './hud-takeover-queue';
 /**
  * Wire event type → takeover kind. THE single trigger set: the subscription
  * and any future surface must derive from this const, never re-list types.
+ * `workspace:displayStatus-changed` maps to MULTIPLE kinds (one per allowed
+ * displayStatus value — see `DISPLAY_STATUS_TAKEOVER_KINDS`); its entry here
+ * is a representative and the per-family gate resolves the real kind.
  */
 export const HUD_TAKEOVER_TRIGGER_KINDS: Readonly<Record<string, HudTakeoverKind>> = {
   'task:status-changed': 'task_complete',
@@ -34,6 +41,20 @@ export const HUD_TAKEOVER_TRIGGER_KINDS: Readonly<Record<string, HudTakeoverKind
   'agent:stream:end': 'question_asked',
   'agent:attention-requested': 'question_asked',
   'workspace:updated': 'status_update',
+  'workspace:displayStatus-changed': 'workspace_idle',
+};
+
+/**
+ * ALLOWLIST gate for `workspace:displayStatus-changed` (§5.1 wire values →
+ * takeover kinds). Every other displayStatus value (in_progress,
+ * needs_attention, not_started, unknown) never takes over.
+ */
+export const DISPLAY_STATUS_TAKEOVER_KINDS: Readonly<Record<string, HudTakeoverKind>> = {
+  idle: 'workspace_idle',
+  pr_open: 'pr_open',
+  pr_ready: 'pr_ready',
+  pr_merged: 'pr_merged',
+  complete: 'workspace_complete',
 };
 
 /** Event types that can open a takeover (keys of the trigger-kind const). */
@@ -88,6 +109,11 @@ function agentDisplayName(
  *  - `workspace:updated` only fires when its `changes` delta carries a
  *    non-empty `statusMessage` (cleared/empty messages and other field
  *    updates never take over); the caller dedupes same-text repeats;
+ *  - `workspace:displayStatus-changed` only fires on the
+ *    `DISPLAY_STATUS_TAKEOVER_KINDS` allowlist (idle / pr_open / pr_ready /
+ *    pr_merged / complete), resolving the kind from the displayStatus value;
+ *    the raw wire word never travels as `detail` — the banner renders the
+ *    workspace title with the localized kind chip;
  *  - `agent:failed` / `agent:created` / `agent:started` always fire.
  */
 export function mapEventToTakeoverTrigger(
@@ -95,7 +121,7 @@ export function mapEventToTakeoverTrigger(
   resolveAgentName?: HudAgentNameResolver,
 ): HudTakeoverTrigger | null {
   const type: string = typeof event.type === 'string' ? event.type : '';
-  const kind = HUD_TAKEOVER_TRIGGER_KINDS[type];
+  let kind = HUD_TAKEOVER_TRIGGER_KINDS[type];
   if (!kind) return null;
   const workspaceId = str(event.workspaceId);
   if (!workspaceId) return null;
@@ -155,6 +181,12 @@ export function mapEventToTakeoverTrigger(
       const statusMessage = str(changes.statusMessage);
       if (!statusMessage) return null;
       detail = statusMessage;
+      break;
+    }
+    case 'workspace:displayStatus-changed': {
+      const resolved = DISPLAY_STATUS_TAKEOVER_KINDS[str(data.displayStatus) ?? ''];
+      if (!resolved) return null;
+      kind = resolved;
       break;
     }
   }

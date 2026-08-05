@@ -51,8 +51,6 @@ import {
   hudFeedEntryReceived,
   hudQuestionCaptured,
   hudQuestionSuperseded,
-  hudRate5sBackfilled,
-  hudRate5sTokensObserved,
   hudRateHistoryFailed,
   hudRateHistoryLoaded,
   hudUsageFailed,
@@ -88,16 +86,10 @@ export const HUD_REPLACE_GROUP = 'hud-feed';
  * takeover-only families (`agent:stream:end`, whose §7.1 question
  * trailingBlocks drive the question takeover and the attention-row question
  * capture, and `workspace:updated`, whose statusMessage delta drives the
- * STATUS UPDATE takeover — neither renders in the feed) plus
- * `workspace:tokenUsage-changed` (§6.5), whose totals deltas feed the live
- * 5s TOK/S buckets.
+ * STATUS UPDATE takeover — neither renders in the feed).
  */
 export const HUD_SUBSCRIBE_EVENT_TYPES = [
-  ...new Set<string>([
-    ...HUD_FEED_EVENT_TYPES,
-    ...HUD_TAKEOVER_EVENT_TYPES,
-    'workspace:tokenUsage-changed',
-  ]),
+  ...new Set<string>([...HUD_FEED_EVENT_TYPES, ...HUD_TAKEOVER_EVENT_TYPES]),
 ];
 
 /** TOK/MIN chart poll cadence — new minute buckets land at most once a minute. */
@@ -162,9 +154,6 @@ async function loadRateHistory(): Promise<void> {
       tokens: sumTotals(sample),
     }));
     appStore.dispatch(hudRateHistoryLoaded({ samples: mapped, fetchedAtMs: Date.now() }));
-    // One-shot TOK/S chart backfill: minute samples split across their 5s
-    // slots (the reducer ignores repeats once backfilled).
-    appStore.dispatch(hudRate5sBackfilled(mapped, Date.now()));
   } catch (error) {
     appStore.dispatch(hudRateHistoryFailed(error instanceof Error ? error.message : String(error)));
   }
@@ -201,29 +190,6 @@ function hydrateVisibleWorkspaceAgents(): void {
     hydratedAgentWorkspaceIds.add(workspaceId);
     appStore.dispatch(hydrateAgentsRequested(workspaceId));
   }
-}
-
-/**
- * Last-seen summed token total per workspace — the baseline the live TOK/S
- * deltas are computed against (`workspace:tokenUsage-changed`, §6.5). Cleared
- * on every `startHudSubscription()`; a first-seen workspace only records the
- * baseline (no delta — the rollup is cumulative since before open).
- */
-const lastTokenTotalsByWorkspaceId = new Map<string, number>();
-
-/** Fold a `workspace:tokenUsage-changed` push into a live 5s bucket delta. */
-function handleTokenUsageChanged(workspaceId: string, data: Record<string, unknown>): void {
-  const tokenUsage = data.tokenUsage;
-  if (!workspaceId || !tokenUsage || typeof tokenUsage !== 'object') return;
-  const totals = (tokenUsage as { totals?: HudUsageTotals }).totals;
-  if (!totals || typeof totals !== 'object') return;
-  const total = sumTotals(totals);
-  if (!Number.isFinite(total)) return;
-  const previous = lastTokenTotalsByWorkspaceId.get(workspaceId);
-  lastTokenTotalsByWorkspaceId.set(workspaceId, total);
-  if (previous === undefined) return;
-  const delta = total - previous;
-  if (delta > 0) appStore.dispatch(hudRate5sTokensObserved(delta, Date.now()));
 }
 
 /**
@@ -291,10 +257,6 @@ function handleEvent(event: WorkspaceEvent): void {
     ) {
       appStore.dispatch(hudQuestionSuperseded(agentId));
     }
-  }
-  if (type === 'workspace:tokenUsage-changed') {
-    handleTokenUsageChanged(workspaceId, data);
-    return;
   }
   if (type === 'workspace:attention-changed') {
     const attention = data.attention;
@@ -370,7 +332,6 @@ export function startHudSubscription(): () => void {
   let disposed = false;
   let subscriptionId: string | undefined;
 
-  lastTokenTotalsByWorkspaceId.clear();
   lastStatusUpdateTextByWorkspaceId.clear();
   delegatedRowEmittedAgentIds.clear();
   hydratedAgentWorkspaceIds.clear();
