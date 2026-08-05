@@ -462,6 +462,53 @@ describe('HudTakeoverOverlay card→overlay transition', () => {
   });
 });
 
+describe('HudTakeoverOverlay stalled-clock enqueue (controller regression)', () => {
+  beforeEach(() => {
+    appStore.init();
+    appStore.dispatch(setWorkspaceEntity(workspace()));
+    appStore.dispatch(
+      setWorkspaceEntity({
+        ...workspace(),
+        id: 'ws-2' as WorkspaceId,
+        title: 'Other workspace',
+      } as Workspace),
+    );
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW_MS);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    cleanup();
+    appStore.dispose();
+  });
+
+  it('an enqueue on a long-stale queue never synchronously replaces the displayed workspace', () => {
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover(); // No source card → instant open for ws-1.
+    expect(screen.getByTestId('hud-takeover-overlay')).toBeTruthy();
+    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe(
+      'Sidecar auto-update',
+    );
+
+    // The renderer stalls (e.g. throttled background tab): the wall clock
+    // jumps far past every chained deadline without a phase timer firing.
+    vi.setSystemTime(NOW_MS + 60_000);
+    emitTakeoverTrigger({
+      workspaceId: 'ws-2',
+      kind: 'task_complete',
+      detail: 'Other task done',
+      raisedAtMs: NOW_MS + 60_000,
+      changedTaskId: null,
+    });
+    flushSync();
+
+    // ws-1 stays on screen; ws-2 waits behind the full close animation.
+    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe(
+      'Sidecar auto-update',
+    );
+  });
+});
+
 describe('HudTakeoverOverlay map drag-to-pan', () => {
   beforeEach(() => {
     appStore.init();
