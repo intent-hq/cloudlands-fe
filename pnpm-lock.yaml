@@ -25,6 +25,9 @@ importers:
 
   .:
     dependencies:
+      '@fontsource/doto':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@fontsource/ia-writer-mono':
         specifier: ^5.3.0
         version: 5.3.0
@@ -923,6 +926,9 @@ packages:
 
   '@floating-ui/utils@0.2.11':
     resolution: {integrity: sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==}
+
+  '@fontsource/doto@5.3.0':
+    resolution: {integrity: sha512-LTsUEUijHxf/0XmRGF8CiS8GyMuSKQSfX5XzzFYjTzWZSG8yPi0p+OV1D3Z4Ra7AfTYZ+Wzra1waw+j/bJBBCw==}
 
   '@fontsource/ia-writer-mono@5.3.0':
     resolution: {integrity: sha512-8eyf6/Cf1lFOtgzAYtY57qXwuUDbRlqjaa8aW0DBdLc7z1CBxRvNUq6hj6CMdeCym+hhfNCp8oLl305PEF+6ew==}
@@ -5727,6 +5733,8 @@ snapshots:
       '@floating-ui/utils': 0.2.11
 
   '@floating-ui/utils@0.2.11': {}
+
+  '@fontsource/doto@5.3.0': {}
 
   '@fontsource/ia-writer-mono@5.3.0': {}
 
