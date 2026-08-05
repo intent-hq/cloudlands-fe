@@ -29,7 +29,7 @@
  * Dependency-light middleware module per src/store/renderer/AGENTS.md: no
  * selector imports; the toast lib is imported lazily.
  */
-import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { StoreMiddleware } from '@augmentcode/themis/types';
 import { appClient } from '$lib/client';
 import type { VoiceTranscribeContext } from '$lib/client';
 import {
@@ -43,7 +43,7 @@ import {
 } from '$features/voice/effective-voice-engine';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
-import { getItem, type Collection } from '$lib/store-shim/utils/collections/collection-utils';
+import { getItem, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';

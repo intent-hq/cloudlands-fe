@@ -4,8 +4,8 @@ import {
   type VoiceProvider,
 } from "$features/voice/voice-settings-service";
 import type { VoiceEngine } from "$features/voice/voice-engine-preference";
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import type { VoiceInputDevice, VoiceSettingsSliceState } from "./voice-settings-types";
 
 export const initialState: VoiceSettingsSliceState = {
