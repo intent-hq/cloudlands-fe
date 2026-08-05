@@ -1864,6 +1864,7 @@
   "chat_chatPanel_autoScrollLocked_tooltip": "自動捲動已鎖定（點選解鎖）",
   "chat_chatPanel_autoScrollUnlocked_tooltip": "自動捲動已解鎖（點選鎖定）",
   "chat_chatPanel_scrollToBottom_tooltip": "捲動到底部",
+  "chat_newMessagesDivider_label": "新訊息",
   "chat_previewToolLabel_tool_fallback": "工具",
   "chat_shared_browser_fallback": "瀏覽器",
   "chat_shared_diff_fallback": "差異",

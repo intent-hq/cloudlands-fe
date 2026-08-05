@@ -1864,6 +1864,7 @@
   "chat_chatPanel_autoScrollLocked_tooltip": "Desplazamiento automático bloqueado (haga clic para desbloquear)",
   "chat_chatPanel_autoScrollUnlocked_tooltip": "Desplazamiento automático desbloqueado (haga clic para bloquear)",
   "chat_chatPanel_scrollToBottom_tooltip": "Desplazarse al final",
+  "chat_newMessagesDivider_label": "Mensajes nuevos",
   "chat_previewToolLabel_tool_fallback": "Herramienta",
   "chat_shared_browser_fallback": "Navegador",
   "chat_shared_diff_fallback": "Diff",

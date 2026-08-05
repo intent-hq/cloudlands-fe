@@ -1864,6 +1864,7 @@
   "chat_chatPanel_autoScrollLocked_tooltip": "Défilement automatique verrouillé (cliquer pour déverrouiller)",
   "chat_chatPanel_autoScrollUnlocked_tooltip": "Défilement automatique déverrouillé (cliquer pour verrouiller)",
   "chat_chatPanel_scrollToBottom_tooltip": "Faire défiler vers le bas",
+  "chat_newMessagesDivider_label": "Nouveaux messages",
   "chat_previewToolLabel_tool_fallback": "Outil",
   "chat_shared_browser_fallback": "Navigateur",
   "chat_shared_diff_fallback": "Diff",

@@ -458,6 +458,25 @@ describe('agent-session-slice reducer', () => {
       expect(next.byAgentId['a1'].metadata?.dismissedQuestionsMessageId).toBe('msg-q1');
     });
 
+    it('applies an upsert when only metadata.lastSeenMessageId changes (agent:updated convergence)', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            metadata: { lastSeenMessageId: 'msg-seen-1' } as any,
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].metadata?.lastSeenMessageId).toBe('msg-seen-1');
+    });
+
     it('applies an upsert when only metadata.taskNoteId changes (post-creation task assignment)', () => {
       const state = agentSessionReducer(
         initialState,
