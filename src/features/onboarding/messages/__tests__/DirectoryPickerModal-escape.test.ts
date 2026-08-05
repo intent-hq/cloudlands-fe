@@ -22,9 +22,7 @@ vi.mock('$lib/components/ui/Portal.svelte', async () => {
 });
 
 vi.mock('svelte-fa', async () => {
-  const MockFa = (
-    await import('../../../../lib/components/ui/__tests__/mocks/Fa.svelte')
-  ).default;
+  const MockFa = (await import('../../../../lib/components/ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa, Fa: MockFa };
 });
 
@@ -43,9 +41,7 @@ const homeListing = (): DirectoryPickerListing => ({
   path: '/Users/me',
   parent: null,
   home: '/Users/me',
-  entries: [
-    { name: 'code', path: '/Users/me/code', isDirectory: true, isGitRepo: false },
-  ],
+  entries: [{ name: 'code', path: '/Users/me/code', isDirectory: true, isGitRepo: false }],
 });
 
 async function renderOpenPicker(onClose: () => void) {
@@ -67,6 +63,13 @@ describe('DirectoryPickerModal Escape handling (escape-layer stack)', () => {
   beforeAll(() => {
     if (!('scrollTo' in Element.prototype)) {
       Object.defineProperty(Element.prototype, 'scrollTo', {
+        value: () => {},
+        writable: true,
+        configurable: true,
+      });
+    }
+    if (!('scrollIntoView' in Element.prototype)) {
+      Object.defineProperty(Element.prototype, 'scrollIntoView', {
         value: () => {},
         writable: true,
         configurable: true,
@@ -94,21 +97,37 @@ describe('DirectoryPickerModal Escape handling (escape-layer stack)', () => {
     const onClose = vi.fn();
     await renderOpenPicker(onClose);
 
+    await fireEvent.click(screen.getByRole('button', { name: 'Enter a folder path' }));
     const pathInput = screen.getByLabelText('Path') as HTMLInputElement;
     pathInput.focus();
     await fireEvent.input(pathInput, { target: { value: '/tmp' } });
     await fireEvent.keyDown(pathInput, { key: 'Escape' });
 
-    // The layer declined: picker did not close, the input's own handler
-    // cancelled the edit (draft restored to the loaded path).
+    // The layer declined: picker did not close, and the input's own handler
+    // cancelled edit mode back to the loaded-path breadcrumb.
     expect(onClose).not.toHaveBeenCalled();
     await waitFor(() => {
-      expect(pathInput.value).toBe('~');
+      expect(screen.queryByLabelText('Path')).toBeNull();
+      expect(screen.getByRole('button', { name: '~' })).toBeTruthy();
     });
 
     // Escape from a non-input target still closes.
     await fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears search without closing when Escape is pressed in the search input', async () => {
+    const onClose = vi.fn();
+    await renderOpenPicker(onClose);
+
+    const searchInput = screen.getByRole('searchbox', {
+      name: 'Filter folder contents',
+    }) as HTMLInputElement;
+    await fireEvent.input(searchInput, { target: { value: 'code' } });
+    await fireEvent.keyDown(searchInput, { key: 'Escape' });
+
+    expect(searchInput.value).toBe('');
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('Escape is not consumed while the picker is closed (no layer registered)', async () => {

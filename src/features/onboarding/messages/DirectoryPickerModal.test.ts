@@ -31,9 +31,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({
       directoryPicker: {
@@ -57,6 +56,7 @@ import DirectoryPickerModal from './DirectoryPickerModal.svelte';
 import {
   clearCreateDirectoryError,
   createDirectoryRequested,
+  clearPathNavigationError,
   loadDirectoryRequested,
   navigateToPathRequested,
   resetDirectoryPicker,
@@ -86,6 +86,7 @@ const flush = async () => {
 beforeAll(() => {
   // jsdom does not implement Element#scrollTo (used after each navigation).
   Element.prototype.scrollTo = (() => {}) as never;
+  Element.prototype.scrollIntoView = (() => {}) as never;
 });
 
 beforeEach(() => {
@@ -111,7 +112,7 @@ describe('DirectoryPickerModal navigation', () => {
     await flush();
     expect(loadCalls()).toHaveLength(1);
 
-    await fireEvent.click(screen.getByRole('option', { name: /code/ }));
+    await fireEvent.dblClick(screen.getByRole('option', { name: /code/ }));
     await flush();
     await flush();
 
@@ -150,27 +151,55 @@ describe('DirectoryPickerModal navigation', () => {
       .filter((action) => action?.type === resetDirectoryPicker.type);
     expect(resets).toHaveLength(1);
   });
+
+  it('derives standard favorites from home and hides files', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    for (const label of ['Home', 'Desktop', 'Documents', 'Downloads', 'Computer']) {
+      expect(screen.getByRole('button', { name: label })).toBeTruthy();
+    }
+    expect(screen.queryByRole('option', { name: 'notes.txt' })).toBeNull();
+  });
+
+  it('marks the picker dialog as modal', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    expect(screen.getByRole('dialog').getAttribute('aria-modal')).toBe('true');
+  });
+
+  it('closes when the backdrop is clicked', async () => {
+    const onClose = vi.fn();
+    render(DirectoryPickerModal, { props: { ...baseProps, onClose } });
+    await flush();
+
+    await fireEvent.click(screen.getByRole('presentation'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('DirectoryPickerModal editable path input', () => {
   const baseProps = { open: true, onSelect: vi.fn(), onClose: vi.fn() };
 
-  const pathInput = (): HTMLInputElement =>
-    screen.getByRole('textbox', { name: 'Path' }) as HTMLInputElement;
+  const pathInput = async (): Promise<HTMLInputElement> => {
+    await fireEvent.click(screen.getByRole('button', { name: 'Enter a folder path' }));
+    return screen.getByRole('textbox', { name: 'Path' }) as HTMLInputElement;
+  };
 
   it('shows the collapsed display path in the input', async () => {
     render(DirectoryPickerModal, { props: { ...baseProps } });
     await flush();
 
     // listing.path === listing.home, so the display form is `~`.
-    expect(pathInput().value).toBe('~');
+    expect((await pathInput()).value).toBe('~');
   });
 
   it('typing a path and pressing Enter dispatches navigateToPathRequested', async () => {
     render(DirectoryPickerModal, { props: { ...baseProps } });
     await flush();
 
-    const input = pathInput();
+    const input = await pathInput();
     await fireEvent.input(input, { target: { value: '/tmp/projects' } });
     await fireEvent.keyDown(input, { key: 'Enter' });
     await flush();
@@ -186,7 +215,7 @@ describe('DirectoryPickerModal editable path input', () => {
     render(DirectoryPickerModal, { props: { ...baseProps } });
     await flush();
 
-    const input = pathInput();
+    const input = await pathInput();
     await fireEvent.input(input, { target: { value: '~/src' } });
     await fireEvent.keyDown(input, { key: 'Enter' });
     await flush();
@@ -200,7 +229,7 @@ describe('DirectoryPickerModal editable path input', () => {
     render(DirectoryPickerModal, { props: { ...baseProps } });
     await flush();
 
-    const input = pathInput();
+    const input = await pathInput();
     await fireEvent.input(input, { target: { value: '/tmp/elsewhere' } });
     await fireEvent.blur(input);
     await flush();
@@ -215,12 +244,13 @@ describe('DirectoryPickerModal editable path input', () => {
     render(DirectoryPickerModal, { props: { ...baseProps, onClose } });
     await flush();
 
-    const input = pathInput();
+    const input = await pathInput();
     await fireEvent.input(input, { target: { value: '/typo/pat' } });
     await fireEvent.keyDown(input, { key: 'Escape' });
     await flush();
 
-    expect(input.value).toBe('~');
+    expect(screen.queryByRole('textbox', { name: 'Path' })).toBeNull();
+    expect(screen.getByRole('button', { name: '~' })).toBeTruthy();
     expect(navigateCalls()).toHaveLength(0);
     expect(onClose).not.toHaveBeenCalled();
   });
@@ -229,7 +259,7 @@ describe('DirectoryPickerModal editable path input', () => {
     render(DirectoryPickerModal, { props: { ...baseProps } });
     await flush();
 
-    const input = pathInput();
+    const input = await pathInput();
     // Re-typing the same collapsed path expands back to the current listing path.
     await fireEvent.input(input, { target: { value: '~' } });
     await fireEvent.keyDown(input, { key: 'Enter' });
@@ -249,8 +279,11 @@ describe('DirectoryPickerModal editable path input', () => {
     expect(screen.getByRole('option', { name: /code/ })).toBeTruthy();
 
     // A failed commit keeps the typed value in the input for correction.
-    const input = pathInput();
+    const input = await pathInput();
     await fireEvent.input(input, { target: { value: '/does/not/exist' } });
+    expect(
+      mocks.dispatch.mock.calls.some(([action]) => action?.type === clearPathNavigationError.type),
+    ).toBe(true);
     await fireEvent.keyDown(input, { key: 'Enter' });
     await flush();
     expect(input.value).toBe('/does/not/exist');
@@ -261,7 +294,7 @@ describe('DirectoryPickerModal editable path input', () => {
     await flush();
     expect(loadCalls()).toHaveLength(1);
 
-    const input = pathInput();
+    const input = await pathInput();
     await fireEvent.input(input, { target: { value: '/tmp/x' } });
     await fireEvent.keyDown(input, { key: 'Backspace' });
     await flush();
@@ -333,7 +366,7 @@ describe('DirectoryPickerModal file mode', () => {
     expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me/notes.txt');
   });
 
-  it('clicking a directory still navigates and clears the chosen file', async () => {
+  it('opening a directory still navigates and clears the chosen file', async () => {
     const onSelect = vi.fn();
     render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });
     await flush();
@@ -342,7 +375,7 @@ describe('DirectoryPickerModal file mode', () => {
     await flush();
     expect(selectButton().disabled).toBe(false);
 
-    await fireEvent.click(screen.getByRole('option', { name: /code/ }));
+    await fireEvent.dblClick(screen.getByRole('option', { name: /code/ }));
     await flush();
 
     const calls = loadCalls();

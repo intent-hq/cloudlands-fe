@@ -36,9 +36,7 @@ vi.mock('$lib/components/ui/Portal.svelte', async () => {
 });
 
 vi.mock('svelte-fa', async () => {
-  const MockFa = (
-    await import('../../../../lib/components/ui/__tests__/mocks/Fa.svelte')
-  ).default;
+  const MockFa = (await import('../../../../lib/components/ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa, Fa: MockFa };
 });
 
@@ -57,9 +55,7 @@ const homeListing = (): DirectoryPickerListing => ({
   path: '/Users/me',
   parent: null,
   home: '/Users/me',
-  entries: [
-    { name: 'code', path: '/Users/me/code', isDirectory: true, isGitRepo: false },
-  ],
+  entries: [{ name: 'code', path: '/Users/me/code', isDirectory: true, isGitRepo: false }],
 });
 
 const codeListing = (): DirectoryPickerListing => ({
@@ -82,6 +78,13 @@ beforeAll(() => {
       configurable: true,
     });
   }
+  if (!('scrollIntoView' in Element.prototype)) {
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      value: () => {},
+      writable: true,
+      configurable: true,
+    });
+  }
   appStore.init();
 });
 
@@ -91,9 +94,8 @@ afterEach(() => {
   appStore.dispatch(resetDirectoryPicker());
 });
 
-describe('DirectoryPickerModal — folder click does not snap back to home', () => {
-
-  it('clicking a folder loads that folder and never re-requests home', async () => {
+describe('DirectoryPickerModal — folder open does not snap back to home', () => {
+  it('opening a folder loads that folder and never re-requests home', async () => {
     backendRequestMock.mockImplementation(((method: string, params: unknown) => {
       if (method !== 'host.listDirectory') return Promise.resolve(undefined);
       const path = (params as { path?: string } | undefined)?.path;
@@ -119,7 +121,7 @@ describe('DirectoryPickerModal — folder click does not snap back to home', () 
     });
     expect(codeButton.textContent).toContain('code');
 
-    await fireEvent.click(codeButton);
+    await fireEvent.dblClick(codeButton);
 
     // Post-fix: the store settles on the folder listing.
     await waitFor(() => {
@@ -152,9 +154,7 @@ describe('DirectoryPickerModal — typed tilde path commit (monorepo#824)', () =
       path: '/Users/me/src',
       parent: '/Users/me',
       home: '/Users/me',
-      entries: [
-        { name: 'proj', path: '/Users/me/src/proj', isDirectory: true, isGitRepo: true },
-      ],
+      entries: [{ name: 'proj', path: '/Users/me/src/proj', isDirectory: true, isGitRepo: true }],
     });
 
     backendRequestMock.mockImplementation(((method: string, params: unknown) => {
@@ -181,9 +181,11 @@ describe('DirectoryPickerModal — typed tilde path commit (monorepo#824)', () =
       expect(appStore.state.directoryPicker.listing).toBeNull();
     });
 
-    const input = document.body.querySelector(
-      'input[aria-label="Path"]',
-    ) as HTMLInputElement;
+    const editPath = document.body.querySelector(
+      'button[aria-label="Enter a folder path"]',
+    ) as HTMLButtonElement;
+    await fireEvent.click(editPath);
+    const input = document.body.querySelector('input[aria-label="Path"]') as HTMLInputElement;
     await fireEvent.input(input, { target: { value: '~/src' } });
     await fireEvent.keyDown(input, { key: 'Enter' });
 
@@ -233,9 +235,11 @@ describe('DirectoryPickerModal — typed tilde path commit (monorepo#824)', () =
       expect(appStore.state.directoryPicker.listing?.path).toBe('/Users/me');
     });
 
-    const input = document.body.querySelector(
-      'input[aria-label="Path"]',
-    ) as HTMLInputElement;
+    const editPath = document.body.querySelector(
+      'button[aria-label="Enter a folder path"]',
+    ) as HTMLButtonElement;
+    await fireEvent.click(editPath);
+    const input = document.body.querySelector('input[aria-label="Path"]') as HTMLInputElement;
     await fireEvent.input(input, { target: { value: '~/src' } });
     await fireEvent.keyDown(input, { key: 'Enter' });
 
