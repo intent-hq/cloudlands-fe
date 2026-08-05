@@ -1591,6 +1591,7 @@
   "chat_autoCommitStatus_hooksFailedAfter_label": "· {count}번 시도 후 후크 실패",
   "chat_blockerReportNotice_title_label": "차단 요인 보고됨",
   "chat_discussionRequestNotice_title_label": "논의 요청됨",
+  "chat_draftGate_loading_label": "임시 저장 메시지 불러오는 중",
   "chat_turnFailureNotice_title_label": "턴 실패",
   "chat_msgAttribution_openAgent_title": "에이전트 {name} 열기",
   "chat_msgAttribution_sentMessage_after": "이(가) 메시지를 보냈습니다",
