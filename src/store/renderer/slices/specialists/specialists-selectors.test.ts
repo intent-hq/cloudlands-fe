@@ -15,18 +15,13 @@ import {
   selectHasOverrides,
   selectEffectiveCodingAgent,
   selectEffectiveModel,
+  selectExplicitModel,
   selectSpecialistSourceLabel,
 } from './specialists-selectors';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { initialState } from './specialists-slice';
 import type { StoreState } from '../../types';
 import { SPECIALISTS } from '$lib/constants/specialists';
-import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
-import {
-  initialState as providerCatalogInitialState,
-  providerCatalogLoaded,
-  providerCatalogReducer,
-} from '../provider-catalog/provider-catalog-slice';
 
 /**
  * Create a minimal mock StoreState with specialists slice populated.
@@ -36,6 +31,14 @@ function mockState(overrides: Partial<typeof initialState> = {}): StoreState {
     specialists: { ...initialState, ...overrides },
     featureCodes: { activeFeatures: [], initialized: true },
     providerSettings: { activeProviderId: 'auggie', enabledProviders: {} },
+    agentAvailability: {
+      providerStatusMap: { auggie: { available: true } },
+      providerLoadingMap: {},
+      providerUserInfoLoadingMap: {},
+      hasCheckedOnce: true,
+      watchedTerminalIds: [],
+      npxStatus: null,
+    },
     githubAuth: { isAuthenticated: false },
   } as unknown as StoreState;
 }
@@ -366,20 +369,18 @@ describe('specialists selectors', () => {
     });
   });
 
-  describe('selectEffectiveModel precedence (model before tier)', () => {
-    it('returns the explicit model when a user-tier def carries both model and an inherited modelTier', () => {
-      // The daemon inherits `modelTier` from the bundled parent when the user
-      // file omits it, so the wire def carries BOTH the explicit compound
-      // model AND modelTier: "smart". The explicit model must win.
+  describe('selectEffectiveModel precedence (explicit model before daemon preview)', () => {
+    it('returns the explicit model when a user def carries a model pin', () => {
       const userDef = {
         id: 'implementor',
         name: 'Implementor',
         description: 'Executes implementation tasks, writes code',
         model: 'claude-code:opus-custom',
-        modelTier: 'smart',
         behaviorPrompt: 'You implement.',
         source: 'user',
         filePath: '/Users/test/.intent/specialists/implementor.md',
+        resolvedModel: 'opus4.7',
+        resolvedProvider: 'auggie',
       };
       const state = mockState({
         bundledSpecialists: SPECIALISTS,
@@ -389,36 +390,80 @@ describe('specialists selectors', () => {
       expect(selectEffectiveModel.select(state, 'implementor')).toBe('claude-code:opus-custom');
     });
 
-    it('still resolves tier-only specialists via the catalog tier tables', () => {
-      const auggieTiers = MOCK_PROVIDER_CATALOG.providers.find(
-        (p) => p.id === 'auggie',
-      )!.modelTiers!;
-      const tierOnlyDef = {
-        id: 'tier-only-custom',
-        name: 'Tier Only',
-        description: 'custom tier-only specialist',
-        modelTier: 'smart',
+    it('surfaces the daemon resolvedModel preview for inheriting specialists', () => {
+      const inheritingDef = {
+        id: 'inheriting-custom',
+        name: 'Inheriting',
+        description: 'custom inheriting specialist',
         behaviorPrompt: 'prompt',
         source: 'user',
-        filePath: '/Users/test/.intent/specialists/tier-only-custom.md',
+        filePath: '/Users/test/.intent/specialists/inheriting-custom.md',
+        resolvedModel: 'opus4.7',
+        resolvedProvider: 'auggie',
       };
-      const state = {
-        ...mockState({
-          bundledSpecialists: SPECIALISTS,
-          fileSpecialists: createCollection('id', [tierOnlyDef]),
-        }),
-        providerCatalog: providerCatalogReducer(
-          providerCatalogInitialState,
-          providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
-        ),
-      } as StoreState;
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection('id', [inheritingDef]),
+      });
 
-      // Active provider is the default (auggie), so the tier resolves to a
-      // bare model ID without a provider prefix.
-      expect(selectEffectiveModel.select(state, 'tier-only-custom')).toBe(auggieTiers.smart);
-      // Bundled specialists carrying only a tier (e.g. verifier: smart) also
-      // resolve via the tier mapping.
-      expect(selectEffectiveModel.select(state, 'verifier')).toBe(auggieTiers.smart);
+      expect(selectEffectiveModel.select(state, 'inheriting-custom')).toBe('opus4.7');
+    });
+
+    it('returns empty string when resolvedModel is omitted from the wire', () => {
+      const cliDefaultDef = {
+        id: 'cli-default-custom',
+        name: 'CLI Default',
+        description: 'custom provider-default specialist',
+        behaviorPrompt: 'prompt',
+        source: 'user',
+        filePath: '/Users/test/.intent/specialists/cli-default-custom.md',
+      };
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection('id', [cliDefaultDef]),
+      });
+
+      expect(selectEffectiveModel.select(state, 'cli-default-custom')).toBe('');
+    });
+  });
+
+  describe('selectExplicitModel', () => {
+    it('returns only the explicit frontmatter model', () => {
+      const pinnedDef = {
+        id: 'implementor',
+        name: 'Implementor',
+        description: 'Executes implementation tasks, writes code',
+        model: 'claude-code:opus-custom',
+        behaviorPrompt: 'You implement.',
+        source: 'user',
+        filePath: '/Users/test/.intent/specialists/implementor.md',
+      };
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection('id', [pinnedDef]),
+      });
+
+      expect(selectExplicitModel.select(state, 'implementor')).toBe('claude-code:opus-custom');
+    });
+
+    it('returns undefined when only the daemon preview is present', () => {
+      const inheritingDef = {
+        id: 'implementor',
+        name: 'Implementor',
+        description: 'Executes implementation tasks, writes code',
+        behaviorPrompt: 'You implement.',
+        source: 'user',
+        filePath: '/Users/test/.intent/specialists/implementor.md',
+        resolvedModel: 'opus4.7',
+        resolvedProvider: 'auggie',
+      };
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection('id', [inheritingDef]),
+      });
+
+      expect(selectExplicitModel.select(state, 'implementor')).toBeUndefined();
+      expect(selectEffectiveModel.select(state, 'implementor')).toBe('opus4.7');
     });
   });
 });
