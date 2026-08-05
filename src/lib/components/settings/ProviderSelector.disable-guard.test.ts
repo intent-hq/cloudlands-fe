@@ -193,3 +193,90 @@ describe('ProviderSelector disable guard', () => {
     );
   });
 });
+
+describe('ProviderSelector default-unavailable honesty', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('shows "Default (unavailable)" for a generic active provider that is not installed', async () => {
+    mocks.state.current = {
+      ...(await buildState([])),
+      providerSettings: {
+        activeProviderId: 'codex',
+        enabledProviders: { 'claude-code': true, codex: true },
+      },
+    };
+    mocks.invoke.mockImplementation(async (channel: string) => {
+      if (channel === AUGGIE_CHANNELS.STATUS) {
+        return {
+          success: true,
+          data: {
+            installed: true,
+            authenticated: true,
+            versionOk: true,
+            nodeVersionOk: true,
+            minimumVersion: '0.0.0',
+          },
+        };
+      }
+      if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) {
+        return {
+          success: true,
+          data: {
+            ...availability,
+            providers: { ...availability.providers, codex: { available: false } },
+          },
+        };
+      }
+      if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
+        return { success: true, data: { auggie: null, 'claude-code': null, codex: null } };
+      }
+      return { success: true, data: {} };
+    });
+
+    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+    const result = render(ProviderSelector);
+    await waitFor(() => {
+      expect(result.getByText('OpenAI Codex')).toBeTruthy();
+    });
+    expect(result.getByText('Default (unavailable)')).toBeTruthy();
+  });
+
+  it('shows "Default (unavailable)" when Auggie is active but not installed', async () => {
+    mocks.state.current = {
+      ...(await buildState([])),
+      providerSettings: {
+        activeProviderId: 'auggie',
+        enabledProviders: { 'claude-code': true, codex: true },
+      },
+    };
+    mocks.invoke.mockImplementation(async (channel: string) => {
+      if (channel === AUGGIE_CHANNELS.STATUS) {
+        return {
+          success: true,
+          data: {
+            installed: false,
+            authenticated: false,
+            versionOk: false,
+            nodeVersionOk: true,
+            minimumVersion: '0.0.0',
+          },
+        };
+      }
+      if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) {
+        return { success: true, data: availability };
+      }
+      if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
+        return { success: true, data: { auggie: null, 'claude-code': null, codex: null } };
+      }
+      return { success: true, data: {} };
+    });
+
+    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+    const result = render(ProviderSelector);
+    await waitFor(() => {
+      expect(result.getByText('Default (unavailable)')).toBeTruthy();
+    });
+  });
+});

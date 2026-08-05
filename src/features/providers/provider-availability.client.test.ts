@@ -8,33 +8,16 @@ import {
 import type { ProviderAvailabilityResult } from './provider-availability.client';
 import {
   clearProviderAvailabilityCache,
+  getAvailableProviderIds,
   getProviderAvailability,
 } from './provider-availability.client';
 
 const mocks = vi.hoisted(() => ({
-  dispatch: vi.fn(),
   invoke: vi.fn(),
-  validateActiveProvider: vi.fn((availableProviderIds: string[]) => ({
-    type: 'providerSettings/validateActiveProvider',
-    payload: availableProviderIds,
-  })),
 }));
 
 vi.mock('$lib/electron-bridge', () => ({
   invoke: mocks.invoke,
-}));
-
-vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => {},
-    dispatch: mocks.dispatch,
-  });
-});
-
-vi.mock('$store/renderer/slices/provider-settings/provider-settings-slice', () => ({
-  validateActiveProvider: mocks.validateActiveProvider,
 }));
 
 type ProviderKey = keyof ProviderAvailabilityResult['providers'];
@@ -65,37 +48,30 @@ function mockAvailability(data: ProviderAvailabilityResult): void {
   mocks.invoke.mockResolvedValue({ success: true, data });
 }
 
-function expectValidatedProviderIds(providerIds: string[]): void {
-  expect(mocks.validateActiveProvider).toHaveBeenCalledWith(providerIds);
-  expect(mocks.dispatch).toHaveBeenCalledWith({
-    type: 'providerSettings/validateActiveProvider',
-    payload: providerIds,
-  });
-}
-
 describe('provider availability client', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearProviderAvailabilityCache();
   });
 
-  it('dispatches validateActiveProvider with claude-code when auggie is unavailable', async () => {
+  it('resolves the fetched availability data', async () => {
+    const data = createAvailabilityResult({ claudeCode: true });
+    mockAvailability(data);
+
+    const result = await getProviderAvailability(true);
+
+    expect(result).toEqual(data);
+  });
+
+  it('resolves claude-code as available when auggie is unavailable', async () => {
     mockAvailability(createAvailabilityResult({ claudeCode: true }));
 
-    await getProviderAvailability(true);
+    const availableIds = await getAvailableProviderIds(true);
 
-    expectValidatedProviderIds(['claude-code']);
+    expect(availableIds).toEqual(['claude-code']);
   });
 
-  it('excludes hidden providers from validateActiveProvider even when available', async () => {
-    mockAvailability(createAvailabilityResult({ auggie: true, claudeCode: true }, ['auggie']));
-
-    await getProviderAvailability(true);
-
-    expectValidatedProviderIds(['claude-code']);
-  });
-
-  it('dispatches all available provider IDs when none are hidden', async () => {
+  it('resolves all available provider IDs when none are hidden', async () => {
     mockAvailability(
       createAvailabilityResult({
         auggie: true,
@@ -108,9 +84,9 @@ describe('provider availability client', () => {
       }),
     );
 
-    await getProviderAvailability(true);
+    const availableIds = await getAvailableProviderIds(true);
 
-    expectValidatedProviderIds([
+    expect(availableIds).toEqual([
       'auggie',
       'claude-code',
       'codex',

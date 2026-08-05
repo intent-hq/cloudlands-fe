@@ -20,9 +20,19 @@ import {
 import type { Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 
-const { mockStoreDispatch, backendRequestMock } = vi.hoisted(() => ({
+const { mockStoreDispatch, backendRequestMock, mockStoreState } = vi.hoisted(() => ({
   mockStoreDispatch: vi.fn(),
   backendRequestMock: vi.fn(),
+  // Mutable so individual tests can opt into a `providerSettings` /
+  // `agentAvailability` shape (D1-B availability guard tests) without
+  // affecting the many tests that rely on `getActiveProviderId()` throwing
+  // (caught, returns null) when those slices are absent from the default state.
+  mockStoreState: {
+    current: {
+      workspaceAgents: { byWorkspaceId: {} },
+      workspace: { activeWorkspaceId: 'test-ws' },
+    } as Record<string, unknown>,
+  },
 }));
 
 // Mock the BackendTransport seam: sendInitialMessage() calls
@@ -44,7 +54,7 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({ workspaceAgents: { byWorkspaceId: {} }, workspace: { activeWorkspaceId: 'test-ws' } }),
+    state: () => mockStoreState.current,
     dispatch: mockStoreDispatch,
   });
 });
@@ -90,6 +100,10 @@ describe('UnifiedAgentFactory', () => {
     factory = UnifiedAgentFactory.getInstance();
     backendRequestMock.mockReset();
     backendRequestMock.mockResolvedValue({ success: true, queued: false, messageId: 'm-1' });
+    mockStoreState.current = {
+      workspaceAgents: { byWorkspaceId: {} },
+      workspace: { activeWorkspaceId: 'test-ws' },
+    };
     mockWorkspace = {
       id: 'workspace-123' as any,
       title: 'Test Workspace',
@@ -454,6 +468,80 @@ describe('UnifiedAgentFactory', () => {
         );
         expect(streamingReset).toBeDefined();
       });
+    });
+  });
+
+  describe('active-provider availability guard (D1-B)', () => {
+    it('refuses to create an agent when the active provider (implicit, no explicit config.provider) is confirmed unavailable', async () => {
+      mockStoreState.current = {
+        ...mockStoreState.current,
+        providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
+        agentAvailability: {
+          hasCheckedOnce: true,
+          providerStatusMap: { 'claude-code': { available: false } },
+        },
+      };
+
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'Test Agent',
+        workspaceId: mockWorkspace.id as any,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('claude-code');
+      expect(result.error).toContain('not available');
+    });
+
+    it('creates the agent normally when the active provider is available', async () => {
+      mockStoreState.current = {
+        ...mockStoreState.current,
+        providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
+        agentAvailability: {
+          hasCheckedOnce: true,
+          providerStatusMap: { 'claude-code': { available: true } },
+        },
+      };
+
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'Test Agent',
+        workspaceId: mockWorkspace.id as any,
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('does not gate an explicit config.provider on availability (caller intent honored)', async () => {
+      mockStoreState.current = {
+        ...mockStoreState.current,
+        providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
+        agentAvailability: {
+          hasCheckedOnce: true,
+          providerStatusMap: { 'claude-code': { available: false } },
+        },
+      };
+
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'Test Agent',
+        workspaceId: mockWorkspace.id as any,
+        provider: 'auggie',
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('does not refuse implicit creation while availability is still unknown (hasCheckedOnce false)', async () => {
+      mockStoreState.current = {
+        ...mockStoreState.current,
+        providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
+        agentAvailability: { hasCheckedOnce: false, providerStatusMap: {} },
+      };
+
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'Test Agent',
+        workspaceId: mockWorkspace.id as any,
+      });
+
+      expect(result.success).toBe(true);
     });
   });
 });

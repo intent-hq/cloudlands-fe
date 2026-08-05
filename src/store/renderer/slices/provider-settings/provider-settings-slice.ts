@@ -38,9 +38,12 @@ export const hydrateActiveProvider = createAction<[providerId: string]>(
   "providerSettings/hydrateActiveProvider"
 );
 
-export const validateActiveProvider = createAction<[availableProviderIds: string[]]>(
-  "providerSettings/validateActiveProvider"
-);
+// NOTE: there is intentionally no "validate active provider against
+// availability" action. Per decision D1(B) the active provider is never
+// silently switched away because it's uninstalled/unavailable — the store
+// keeps the user's selection and `selectIsActiveProviderAvailable` /
+// `selectAvailableEnabledProviderIds` (provider-settings-selectors.ts) let
+// the UI surface a failure state instead.
 
 export const setProviderEnabled = createAction<
   [payload: { providerId: string; enabled: boolean }]

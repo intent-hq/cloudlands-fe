@@ -96,6 +96,7 @@ async function loadCreationDeps() {
     selectWorkspaceById: wsSel.selectWorkspaceById,
     selectAllWorkspaceAgents: waSel.selectAllWorkspaceAgents,
     selectActiveProviderId: provSel.selectActiveProviderId,
+    selectIsActiveProviderAvailable: provSel.selectIsActiveProviderAvailable,
     selectSpecialists: specSel.selectSpecialists,
     selectEffectiveCodingAgent: specSel.selectEffectiveCodingAgent,
     selectEffectiveBehaviorPrompt: specSel.selectEffectiveBehaviorPrompt,
@@ -211,7 +212,15 @@ async function handleCreateAgentWithSpecialist(
   if (!workspace) return;
 
   const agents = deps.selectAllWorkspaceAgents.select(appStore.state, wsId);
-  let provider = deps.selectActiveProviderId.select(appStore.state);
+  // D1(B): only thread the active provider when it's actually available —
+  // an unavailable active provider must not be handed to the factory as an
+  // explicit `provider`, since that would bypass the factory's own
+  // active-provider availability guard (which only fires when no explicit
+  // provider is supplied) and spawn on a doomed provider (e.g. uninstalled
+  // Auggie) instead of surfacing a failure.
+  let provider = deps.selectIsActiveProviderAvailable.select(appStore.state)
+    ? deps.selectActiveProviderId.select(appStore.state)
+    : undefined;
 
   const existingNames = agents.map((a) => a.name).filter(Boolean) as string[];
   let behaviorPrompt: string | undefined;

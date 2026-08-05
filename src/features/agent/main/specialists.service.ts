@@ -19,7 +19,6 @@ import {
   getSpecialistById,
   GITHUB_DEPENDENT_SPECIALIST_IDS,
 } from '$lib/constants/specialists';
-import { getCachedDefaultProviderId } from '../../../main/utils/provider-catalog-accessor';
 import {
   loadSpecialistFiles,
   loadProjectSpecialistFiles,
@@ -250,15 +249,20 @@ export async function refreshSpecialistsFromFiles(workspacePath?: string): Promi
 // through the file-based system. The electron-store is only used for
 // one-time migration during initSpecialistsService().
 
+/**
+ * Resolve the coding agent for a specialist. Per decision D1(B): never
+ * silently fall back to the registry's default provider — that's how a
+ * delegated specialist with no explicit `codingAgent` ended up spawning on
+ * an uninstalled Auggie binary. Callers must thread an already
+ * availability-validated provider as `fallbackCodingAgent`; when neither is
+ * supplied, this returns `''` so callers can surface a failure instead of a
+ * doomed spawn.
+ */
 function resolveSpecialistCodingAgent(
   explicitCodingAgent: string | undefined,
   fallbackCodingAgent?: string,
 ): string {
-  // Last resort is the daemon registry's default. Before catalog hydration
-  // this degrades to '' (unknown) rather than baking in a provider id —
-  // callers always pass the active provider as fallbackCodingAgent in
-  // practice.
-  return explicitCodingAgent || fallbackCodingAgent || getCachedDefaultProviderId() || '';
+  return explicitCodingAgent || fallbackCodingAgent || '';
 }
 
 /**
