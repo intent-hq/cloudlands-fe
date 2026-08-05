@@ -2,8 +2,8 @@
  * Selectors for the unread-tracking Redux slice.
  */
 
-import { store } from "../../store";
-import type { DividerSession } from "./unread-tracking-types";
+import { store } from '../../store';
+import type { DividerSession } from './unread-tracking-types';
 
 /**
  * The latched "New messages" divider viewing session for an agent, or `null`
@@ -16,3 +16,7 @@ export const selectDividerSession = store.createSelector<
 >((state, agentId) => {
   return state.unreadTracking.dividerSessionByAgentId[agentId] ?? null;
 });
+/** Agent currently viewed by the chat area, or null when no chat is active. */
+export const selectCurrentlyViewedAgentId = store.createSelector(
+	(state): string | null => state.unreadTracking.currentlyViewedAgentId,
+);

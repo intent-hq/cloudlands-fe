@@ -261,7 +261,7 @@ export const selectAgentSessionStreamingContent = store.createSelector(
  * surface the last PERSISTED assistant message's text while a non-viewed
  * agent streams a new turn (its transcript never grows mid-turn). The
  * message-level flag stays accurate across navigate-away because
- * `closeChatSubscription` normalizes stale `isStreaming` /
+ * The chat-subscribe saga normalizes stale `isStreaming` /
  * `streamingComplete` flags when it tears down a mid-turn subscription.
  */
 export const selectAgentSessionHasStreamOwnedMessage = store.createSelector(

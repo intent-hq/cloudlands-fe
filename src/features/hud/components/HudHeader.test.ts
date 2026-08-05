@@ -12,14 +12,20 @@ import { flushSync } from 'svelte';
 import { store as appStore } from '$store/renderer/store';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
+import { themeSaga } from '$store/renderer/slices/theme/sagas/theme-saga';
 import { ThemeManager } from '$lib/utils/theme';
-import { __resetThemeMutationForTests } from '$features/theme/theme-service';
 import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
 
 import HudHeader from './HudHeader.svelte';
 
 const NOW_MS = Date.parse('2026-07-30T12:00:00Z');
+
+const settle = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+};
 
 describe('HudHeader after the counter strip moved to the footer', () => {
   beforeEach(() => {
@@ -109,9 +115,8 @@ describe('HudHeader macOS traffic-light spacer', () => {
 
 describe('HudHeader theme switcher with SYSTEM mode', () => {
   /**
-   * These tests run the REAL theme plumbing the main app uses: the theme
-   * mutation middleware (installed in the configured store) routes
-   * `requestThemePreferenceChange` through the ThemeManager singleton, which
+   * These tests run the REAL theme plumbing the main app uses: the root-owned
+   * theme saga routes `requestThemePreferenceChange` through the ThemeManager singleton, which
    * persists to the shared `theme` localStorage key and resolves `system`
    * through the `prefers-color-scheme` media query. A controllable matchMedia
    * stub captures the manager's change listener so an OS appearance flip can
@@ -119,6 +124,7 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
    */
   let mediaMatches = false;
   let mediaChangeListeners: Array<() => void> = [];
+  let stopThemeSaga: (() => void) | null = null;
 
   function stubControllableMatchMedia(): void {
     mediaMatches = false;
@@ -147,17 +153,20 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
     return (appStore.state as { theme: { preference: string; name: string } }).theme;
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     stubControllableMatchMedia();
     ThemeManager.resetInstance();
-    __resetThemeMutationForTests();
     appStore.init();
+    stopThemeSaga = appStore.runSaga(themeSaga);
+    await settle();
   });
-  afterEach(() => {
+  afterEach(async () => {
+    stopThemeSaga?.();
+    stopThemeSaga = null;
+    await settle();
     cleanup();
     appStore.dispose();
     ThemeManager.resetInstance();
-    __resetThemeMutationForTests();
   });
 
   it('cycles LIGHT → DARK → SYSTEM → LIGHT and labels all three states', async () => {
@@ -168,21 +177,25 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
     expect(btn.textContent?.trim()).toBe('THEME · SYSTEM');
 
     await fireEvent.click(btn);
+    await settle();
     flushSync();
     expect(themeState().preference).toBe('light');
     expect(btn.textContent?.trim()).toBe('THEME · LIGHT');
 
     await fireEvent.click(btn);
+    await settle();
     flushSync();
     expect(themeState().preference).toBe('dark');
     expect(btn.textContent?.trim()).toBe('THEME · DARK');
 
     await fireEvent.click(btn);
+    await settle();
     flushSync();
     expect(themeState().preference).toBe('system');
     expect(btn.textContent?.trim()).toBe('THEME · SYSTEM');
 
     await fireEvent.click(btn);
+    await settle();
     flushSync();
     expect(themeState().preference).toBe('light');
     expect(btn.textContent?.trim()).toBe('THEME · LIGHT');
@@ -193,6 +206,7 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
     const btn = screen.getByTestId('hud-header-theme-btn');
 
     await fireEvent.click(btn);
+    await settle();
     flushSync();
 
     // i18n-ignore (localStorage key, wire constant)
@@ -204,6 +218,7 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
     const btn = screen.getByTestId('hud-header-theme-btn');
 
     appStore.dispatch(requestThemePreferenceChange('system'));
+    await settle();
     flushSync();
 
     // OS reports light (mediaMatches=false) → resolved name is light.
@@ -216,6 +231,7 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
     // into Redux — no reload, no re-dispatch from the HUD.
     mediaMatches = true;
     for (const cb of mediaChangeListeners) cb();
+    await settle();
     flushSync();
 
     expect(themeState().preference).toBe('system');
