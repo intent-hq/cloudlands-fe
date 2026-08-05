@@ -59,7 +59,10 @@
   let visible = $state(false);
   let graceTimer: ReturnType<typeof setTimeout> | null = null;
   const isSandboxPage = $derived(
-    $page.url.pathname.startsWith('/sandbox') || $page.url.pathname.startsWith('/test'),
+    $page.url.pathname === '/sandbox' ||
+      $page.url.pathname.startsWith('/sandbox/') ||
+      $page.url.pathname === '/test' ||
+      $page.url.pathname.startsWith('/test/'),
   );
 
   $effect(() => {

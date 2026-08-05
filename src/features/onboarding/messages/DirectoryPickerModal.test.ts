@@ -162,6 +162,13 @@ describe('DirectoryPickerModal navigation', () => {
     expect(screen.queryByRole('option', { name: 'notes.txt' })).toBeNull();
   });
 
+  it('marks the picker dialog as modal', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    expect(screen.getByRole('dialog').getAttribute('aria-modal')).toBe('true');
+  });
+
   it('closes when the backdrop is clicked', async () => {
     const onClose = vi.fn();
     render(DirectoryPickerModal, { props: { ...baseProps, onClose } });

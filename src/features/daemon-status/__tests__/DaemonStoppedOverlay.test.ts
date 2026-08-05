@@ -131,7 +131,7 @@ describe('DaemonStoppedOverlay', () => {
     expect(overlay()).toBeNull();
   });
 
-  it.each(['/sandbox/directory-picker', '/test/component'])(
+  it.each(['/sandbox', '/sandbox/directory-picker', '/test', '/test/component'])(
     'stays hidden while the daemon is disconnected on %s',
     async (pathname) => {
       route.pathname = pathname;
@@ -139,6 +139,16 @@ describe('DaemonStoppedOverlay', () => {
       dispatchAndFlush(connectionStatusChanged('disconnected'));
       await vi.advanceTimersByTimeAsync(DAEMON_STOPPED_GRACE_MS * 2);
       expect(overlay()).toBeNull();
+    },
+  );
+
+  it.each(['/sandboxed', '/testimonials'])(
+    'shows the overlay for non-sandbox path %s',
+    async (pathname) => {
+      route.pathname = pathname;
+      render(DaemonStoppedOverlay);
+      await showOverlay(sidecarTransport);
+      expect(overlay()).toBeTruthy();
     },
   );
 

@@ -116,6 +116,20 @@ describe('DirectoryPickerModal Escape handling (escape-layer stack)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('clears search without closing when Escape is pressed in the search input', async () => {
+    const onClose = vi.fn();
+    await renderOpenPicker(onClose);
+
+    const searchInput = screen.getByRole('searchbox', {
+      name: 'Filter folder contents',
+    }) as HTMLInputElement;
+    await fireEvent.input(searchInput, { target: { value: 'code' } });
+    await fireEvent.keyDown(searchInput, { key: 'Escape' });
+
+    expect(searchInput.value).toBe('');
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('Escape is not consumed while the picker is closed (no layer registered)', async () => {
     render(DirectoryPickerModal, {
       props: { open: false, onSelect: vi.fn(), onClose: vi.fn() },

@@ -241,7 +241,10 @@
       event.target === newFolderInputRef
     )
       return;
-    if (event.target === searchInputRef && event.key !== 'Escape') return;
+    if (event.target === searchInputRef) {
+      if (event.key === 'Escape') searchDraft = '';
+      return;
+    }
 
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -311,6 +314,7 @@
     bind:this={dialogRef}
     tabindex="-1"
     role="dialog"
+    aria-modal="true"
     aria-label={title}
     class="flex h-[32rem] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border/50 bg-card shadow-2xl focus:outline-none"
   >
