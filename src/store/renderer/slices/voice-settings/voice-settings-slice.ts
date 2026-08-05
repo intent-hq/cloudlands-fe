@@ -17,6 +17,7 @@ export const initialState: VoiceSettingsSliceState = {
   keyConfigured: { elevenlabs: false, openai: false },
   vocabulary: null,
   openaiModel: null,
+  language: null,
   inputDeviceId: null,
   inputDevices: [],
   busyProvider: null,
@@ -86,7 +87,8 @@ export const setVoiceSettingsSnapshot = createAction(
     keyConfigured: Record<VoiceProvider, boolean>,
     vocabulary: string[] | null,
     openaiModel: VoiceOpenAiModel | null,
-  ) => ({ available, provider, keyConfigured, vocabulary, openaiModel }),
+    language: string | null,
+  ) => ({ available, provider, keyConfigured, vocabulary, openaiModel, language }),
 );
 
 /** Trigger: persist the OpenAI transcription model through `settings.update` */
@@ -97,6 +99,16 @@ export const changeVoiceOpenAiModel = createAction<[model: VoiceOpenAiModel]>(
 /** Set the OpenAI model value directly (optimistic apply or rollback) */
 export const setVoiceOpenAiModelValue = createAction<[model: VoiceOpenAiModel | null]>(
   "voiceSettings/setOpenAiModelValue",
+);
+
+/** Trigger: persist the language hint through `settings.update` (`""` = auto-detect) */
+export const changeVoiceLanguage = createAction<[language: string]>(
+  "voiceSettings/changeLanguage",
+);
+
+/** Set the language value directly (optimistic apply or rollback) */
+export const setVoiceLanguageValue = createAction<[language: string | null]>(
+  "voiceSettings/setLanguageValue",
 );
 
 /** Set the (already persisted) provider value */
@@ -145,10 +157,15 @@ export const voiceSettingsReducer = createReducer<VoiceSettingsSliceState>(initi
     keyConfigured: payload.keyConfigured,
     vocabulary: payload.vocabulary,
     openaiModel: payload.openaiModel,
+    language: payload.language,
   }))
   .with(setVoiceOpenAiModelValue, (state, { payload: [model] }) => ({
     ...state,
     openaiModel: model,
+  }))
+  .with(setVoiceLanguageValue, (state, { payload: [language] }) => ({
+    ...state,
+    language,
   }))
   .with(setVoiceProviderValue, (state, { payload: [provider] }) => ({
     ...state,

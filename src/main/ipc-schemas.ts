@@ -1489,4 +1489,6 @@ export const VoiceTranscribeLocalSchema = z.object({
   mimeType: z.string().min(1, 'MIME type is required'),
   /** Domain keyterms forwarded as SFSpeechRecognizer contextual strings. */
   contextualStrings: z.array(z.string().max(100)).max(100).optional(),
+  /** BCP-47 locale for the recognizer (e.g. "de"); absent = system locale. */
+  locale: z.string().min(1).max(35).optional(),
 });

@@ -13,6 +13,7 @@
     addVoiceVocabularyTerm,
     changeVoiceEngine,
     changeVoiceInputDevice,
+    changeVoiceLanguage,
     changeVoiceOpenAiModel,
     changeVoiceProvider,
     clearVoiceKey,
@@ -27,6 +28,7 @@
     selectVoiceInputDeviceId,
     selectVoiceInputDevices,
     selectVoiceKeyConfigured,
+    selectVoiceLanguage,
     selectVoiceOpenAiModel,
     selectVoiceOsEngineAvailable,
     selectVoiceProvider,
@@ -37,12 +39,15 @@
   } from '$store/renderer/slices/voice-settings/voice-settings-selectors';
   import type { VoiceInputDevice } from '$store/renderer/slices/voice-settings/voice-settings-types';
   import {
+    VOICE_LANGUAGE_AUTO,
+    VOICE_LANGUAGES,
     VOICE_OPENAI_MODELS,
     VOICE_PROVIDERS,
     VOICE_VOCABULARY_TERM_MAX_LENGTH,
     type VoiceOpenAiModel,
     type VoiceProvider,
   } from '$features/voice/voice-settings-service';
+  import { getActiveLocale } from '$lib/i18n/locale';
   import { isMacPlatform } from '$lib/utils/shortcuts';
 
   // Provider display names are brand names — not translated.
@@ -74,8 +79,31 @@
   const busyProvider$ = selectVoiceBusyProvider();
   const error$ = selectVoiceSettingsError();
   const vocabulary$ = selectVoiceVocabulary();
+  const language$ = selectVoiceLanguage();
   const inputDeviceId$ = selectVoiceInputDeviceId();
   const inputDevices$ = selectVoiceInputDevices();
+
+  // Language names localized to the active UI locale via Intl.DisplayNames —
+  // no name table; unknown codes fall back to the raw tag.
+  function languageDisplayName(code: string): string {
+    try {
+      const name = new Intl.DisplayNames([getActiveLocale()], { type: 'language' }).of(code);
+      if (name && name !== code) return name;
+    } catch {
+      // Unknown tag — fall through to the raw code.
+    }
+    return code;
+  }
+
+  // A stored code outside the curated list still renders in the selector so
+  // the value round-trips (e.g. set via CLI/config.toml).
+  const languageOptions = $derived(
+    $language$ !== null &&
+      $language$ !== VOICE_LANGUAGE_AUTO &&
+      !VOICE_LANGUAGES.includes($language$)
+      ? [$language$, ...VOICE_LANGUAGES]
+      : [...VOICE_LANGUAGES],
+  );
 
   // Permission-less contexts return devices with empty labels (Web API behavior).
   function inputDeviceLabel(device: VoiceInputDevice, index: number): string {
@@ -167,6 +195,12 @@
   function handleInputDeviceChange(next: string) {
     // Empty string is the "System default" sentinel (Select values are strings).
     appStore.dispatch(changeVoiceInputDevice(next === '' ? null : next));
+  }
+
+  function handleLanguageChange(next: string) {
+    // Empty string is the "Auto-detect" sentinel — the daemon treats a blank
+    // stored value as unset (provider auto-detection / OS system locale).
+    appStore.dispatch(changeVoiceLanguage(next));
   }
 </script>
 
@@ -346,6 +380,32 @@
               </button>
             {/if}
           </div>
+        </div>
+      {/if}
+
+      {#if $language$ !== null}
+        <div class="space-y-2 pt-1">
+          <span class="text-xs text-foreground">{m.settings_voice_language_label()}</span>
+          <Select.Root value={$language$} onchange={handleLanguageChange}>
+            <Select.Trigger
+              class="h-7 text-xs w-[280px]"
+              aria-label={m.settings_voice_language_ariaLabel()}
+            >
+              {$language$ === VOICE_LANGUAGE_AUTO
+                ? m.settings_voice_language_auto()
+                : languageDisplayName($language$)}
+            </Select.Trigger>
+            <Select.Content>
+              <Select.Item value={VOICE_LANGUAGE_AUTO}>
+                <span class="text-xs">{m.settings_voice_language_auto()}</span>
+              </Select.Item>
+              {#each languageOptions as code (code)}
+                <Select.Item value={code}>
+                  <span class="text-xs">{languageDisplayName(code)}</span>
+                </Select.Item>
+              {/each}
+            </Select.Content>
+          </Select.Root>
         </div>
       {/if}
 

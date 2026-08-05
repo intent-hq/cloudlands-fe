@@ -5,7 +5,7 @@
 // cloud `voice.transcribe`. Compiled at package time by
 // scripts/build-speech-helper.cjs (swiftc) into resources/speech-helper/.
 //
-// Usage: intent-speech-helper <audio-file> [--contextual-strings <json-array>]
+// Usage: intent-speech-helper <audio-file> [--contextual-strings <json-array>] [--locale <bcp47>]
 //        intent-speech-helper --request-authorization
 //
 // Prints a single JSON object to stdout:
@@ -66,8 +66,20 @@ if let flagIndex = arguments.firstIndex(of: "--contextual-strings") {
     contextualStrings = parsed
     arguments.removeSubrange(flagIndex...(flagIndex + 1))
 }
+var requestedLocale: String?
+if let flagIndex = arguments.firstIndex(of: "--locale") {
+    guard flagIndex + 1 < arguments.count,
+        !arguments[flagIndex + 1].isEmpty
+    else {
+        fail("bad-arguments", "--locale expects a BCP-47 locale identifier")
+    }
+    requestedLocale = arguments[flagIndex + 1]
+    arguments.removeSubrange(flagIndex...(flagIndex + 1))
+}
 guard arguments.count == 1 else {
-    fail("bad-arguments", "usage: intent-speech-helper <audio-file> [--contextual-strings <json-array>]")
+    fail(
+        "bad-arguments",
+        "usage: intent-speech-helper <audio-file> [--contextual-strings <json-array>] [--locale <bcp47>]")
 }
 let audioURL = URL(fileURLWithPath: arguments[0])
 guard FileManager.default.fileExists(atPath: audioURL.path) else {
@@ -89,8 +101,29 @@ guard authStatus == .authorized else {
     fail("authorization-denied", "speech recognition authorization status: \(authStatus.rawValue)")
 }
 
-guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
-    fail("recognizer-unavailable", "no speech recognizer available for the system locale")
+// Recognizer locale: the requested locale (the `voice.language` setting) when
+// macOS supports it, otherwise the system locale — never a hard failure just
+// because one locale lacks a recognizer. `recognizer-unavailable` fires only
+// when neither works.
+func makeRecognizer() -> SFSpeechRecognizer? {
+    if let identifier = requestedLocale {
+        if let recognizer = SFSpeechRecognizer(locale: Locale(identifier: identifier)),
+            recognizer.isAvailable
+        {
+            return recognizer
+        }
+        FileHandle.standardError.write(
+            "locale \(identifier) unsupported; falling back to the system locale\n"
+                .data(using: .utf8)!)
+    }
+    if let recognizer = SFSpeechRecognizer(), recognizer.isAvailable {
+        return recognizer
+    }
+    return nil
+}
+
+guard let recognizer = makeRecognizer() else {
+    fail("recognizer-unavailable", "no speech recognizer available for the requested or system locale")
 }
 // The recognizer delivers result handlers on `queue`, which DEFAULTS to the
 // main queue — but this CLI blocks its main thread on a semaphore while

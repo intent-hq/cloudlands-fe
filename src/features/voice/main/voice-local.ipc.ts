@@ -146,6 +146,7 @@ export async function transcribeWithOsHelper(
   audioBase64: string,
   mimeType: string,
   contextualStrings?: string[],
+  locale?: string,
 ): Promise<VoiceTranscribeLocalSuccess | VoiceTranscribeLocalFailure> {
   if (process.platform !== 'darwin') {
     return {
@@ -174,6 +175,9 @@ export async function transcribeWithOsHelper(
     const args = [tempFile];
     if (contextualStrings && contextualStrings.length > 0) {
       args.push('--contextual-strings', JSON.stringify(contextualStrings));
+    }
+    if (locale && locale.trim().length > 0) {
+      args.push('--locale', locale.trim());
     }
     const { stdout, exitCode } = await runHelper(helperPath, args);
     let parsed: Record<string, unknown>;
@@ -289,7 +293,12 @@ export function registerVoiceLocalHandlers(): void {
     createSafeValidatedHandler(
       VoiceTranscribeLocalSchema,
       async (_event, request) =>
-        transcribeWithOsHelper(request.audioBase64, request.mimeType, request.contextualStrings),
+        transcribeWithOsHelper(
+          request.audioBase64,
+          request.mimeType,
+          request.contextualStrings,
+          request.locale,
+        ),
       VOICE_CHANNELS.TRANSCRIBE_LOCAL,
     ),
   );

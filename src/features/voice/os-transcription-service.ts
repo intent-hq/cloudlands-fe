@@ -93,11 +93,14 @@ export async function requestOsSpeechAuthorization(): Promise<OsSpeechAuthorizat
 /**
  * Transcribe a finished dictation with the OS engine. Converts the blob to
  * WAV, ships it over IPC as base64, and returns the transcript. Vocabulary/
- * context keyterms are forwarded as SFSpeechRecognizer contextual strings.
+ * context keyterms are forwarded as SFSpeechRecognizer contextual strings;
+ * `locale` (BCP-47, from the `voice.language` setting) selects the
+ * recognizer locale — absent/blank means the system locale.
  */
 export async function transcribeWithOs(
   audio: Blob,
   contextualStrings?: string[],
+  locale?: string,
 ): Promise<OsTranscribeResult> {
   let wav: ArrayBuffer;
   try {
@@ -114,6 +117,7 @@ export async function transcribeWithOs(
       audioBase64: arrayBufferToBase64(wav),
       mimeType: 'audio/wav',
       ...(contextualStrings && contextualStrings.length > 0 ? { contextualStrings } : {}),
+      ...(locale && locale.trim().length > 0 ? { locale: locale.trim() } : {}),
     },
   );
   if (!response || response.success !== true) {

@@ -18,10 +18,12 @@ import {
   clearVoiceApiKey,
   loadVoiceSettings,
   saveVoiceApiKey,
+  setVoiceLanguage,
   setVoiceOpenAiModel,
   setVoiceProvider,
   setVoiceVocabulary,
   VOICE_API_KEY_SETTING_PATHS,
+  VOICE_LANGUAGE_SETTING_PATH,
   VOICE_OPENAI_DEFAULT_MODEL,
   VOICE_OPENAI_MODEL_SETTING_PATH,
   VOICE_PROVIDER_SETTING_PATH,
@@ -45,7 +47,7 @@ describe("voiceSettingsService (mocked settings seam)", () => {
     settings.reset.mockResolvedValue(null as never);
   });
 
-  it("loads provider + redacted key presence + vocabulary + model from the daemon settings paths", async () => {
+  it("loads provider + redacted key presence + vocabulary + model + language from the daemon settings paths", async () => {
     settings.get.mockImplementation((path: string) => {
       if (path === VOICE_PROVIDER_SETTING_PATH) return Promise.resolve(entry(path, "openai"));
       if (path === VOICE_API_KEY_SETTING_PATHS.elevenlabs)
@@ -54,6 +56,7 @@ describe("voiceSettingsService (mocked settings seam)", () => {
         return Promise.resolve(entry(path, ["intentd", "Cloudlands"]));
       if (path === VOICE_OPENAI_MODEL_SETTING_PATH)
         return Promise.resolve(entry(path, "whisper-1"));
+      if (path === VOICE_LANGUAGE_SETTING_PATH) return Promise.resolve(entry(path, "de"));
       return Promise.resolve(entry(path, null));
     });
 
@@ -64,12 +67,14 @@ describe("voiceSettingsService (mocked settings seam)", () => {
     expect(settings.get).toHaveBeenCalledWith(VOICE_API_KEY_SETTING_PATHS.openai);
     expect(settings.get).toHaveBeenCalledWith(VOICE_VOCABULARY_SETTING_PATH);
     expect(settings.get).toHaveBeenCalledWith(VOICE_OPENAI_MODEL_SETTING_PATH);
+    expect(settings.get).toHaveBeenCalledWith(VOICE_LANGUAGE_SETTING_PATH);
     expect(snapshot).toEqual({
       available: true,
       provider: "openai",
       keyConfigured: { elevenlabs: true, openai: false },
       vocabulary: ["intentd", "Cloudlands"],
       openaiModel: "whisper-1",
+      language: "de",
     });
   });
 
@@ -83,6 +88,30 @@ describe("voiceSettingsService (mocked settings seam)", () => {
     expect(snapshot.keyConfigured).toEqual({ elevenlabs: false, openai: false });
     expect(snapshot.vocabulary).toBeNull();
     expect(snapshot.openaiModel).toBeNull();
+    expect(snapshot.language).toBeNull();
+  });
+
+  it("surfaces a null language when the daemon's catalog lacks voice.language", async () => {
+    settings.get.mockImplementation((path: string) =>
+      Promise.resolve(path === VOICE_LANGUAGE_SETTING_PATH ? null : entry(path, null)),
+    );
+
+    const snapshot = await loadVoiceSettings();
+
+    expect(snapshot.language).toBeNull();
+  });
+
+  it("folds an unset or blank language value to auto-detect (empty string)", async () => {
+    settings.get.mockImplementation((path: string) =>
+      Promise.resolve(entry(path, path === VOICE_LANGUAGE_SETTING_PATH ? "  " : null)),
+    );
+
+    let snapshot = await loadVoiceSettings();
+    expect(snapshot.language).toBe("");
+
+    settings.get.mockImplementation((path: string) => Promise.resolve(entry(path, null)));
+    snapshot = await loadVoiceSettings();
+    expect(snapshot.language).toBe("");
   });
 
   it("surfaces a null model when the daemon's catalog lacks voice.openai.model", async () => {
@@ -161,6 +190,32 @@ describe("voiceSettingsService (mocked settings seam)", () => {
     await expect(setVoiceOpenAiModel("whisper-1")).rejects.toThrow(
       VOICE_OPENAI_MODEL_SETTING_PATH,
     );
+  });
+
+  it("persists the language selection through settings.update", async () => {
+    settings.update.mockResolvedValue([entry(VOICE_LANGUAGE_SETTING_PATH, "de")] as never);
+
+    await setVoiceLanguage("de");
+
+    expect(settings.update).toHaveBeenCalledWith([
+      { path: VOICE_LANGUAGE_SETTING_PATH, value: "de" },
+    ]);
+  });
+
+  it("persists the auto-detect sentinel (empty string) through settings.update", async () => {
+    settings.update.mockResolvedValue([entry(VOICE_LANGUAGE_SETTING_PATH, "")] as never);
+
+    await setVoiceLanguage("");
+
+    expect(settings.update).toHaveBeenCalledWith([
+      { path: VOICE_LANGUAGE_SETTING_PATH, value: "" },
+    ]);
+  });
+
+  it("throws when the daemon does not apply the language change (setting absent from the catalog)", async () => {
+    settings.update.mockResolvedValue([] as never);
+
+    await expect(setVoiceLanguage("de")).rejects.toThrow(VOICE_LANGUAGE_SETTING_PATH);
   });
 
   it("persists the full vocabulary array through settings.update", async () => {

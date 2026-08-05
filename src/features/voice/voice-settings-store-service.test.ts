@@ -22,6 +22,7 @@ vi.mock("$features/voice/os-transcription-service", () => ({
 vi.mock("$features/voice/voice-settings-service", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./voice-settings-service")>()),
   setVoiceOpenAiModel: vi.fn(),
+  setVoiceLanguage: vi.fn(),
 }));
 
 import {
@@ -33,6 +34,7 @@ import {
   setVoiceEngineValue,
   setVoiceInputDevices,
   setVoiceInputDeviceValue,
+  setVoiceLanguageValue,
   setVoiceOpenAiModelValue,
   setVoiceOsEngineAvailable,
   setVoiceSettingsError,
@@ -42,10 +44,11 @@ import {
   resetVoiceInputDevicePreferenceSession,
   VOICE_INPUT_DEVICE_STORAGE_KEY,
 } from "$features/voice/voice-input-device-preference";
-import { setVoiceOpenAiModel } from "$features/voice/voice-settings-service";
+import { setVoiceLanguage, setVoiceOpenAiModel } from "$features/voice/voice-settings-service";
 import {
   changeVoiceEngineFlow,
   changeVoiceInputDeviceFlow,
+  changeVoiceLanguageFlow,
   changeVoiceOpenAiModelFlow,
   hydrateVoiceEngineFlow,
   hydrateVoiceInputDeviceFlow,
@@ -56,6 +59,7 @@ import {
 const availableMock = vi.mocked(isOsTranscriptionAvailable);
 const requestAuthMock = vi.mocked(requestOsSpeechAuthorization);
 const setModelMock = vi.mocked(setVoiceOpenAiModel);
+const setLanguageMock = vi.mocked(setVoiceLanguage);
 // The global test setup replaces window.localStorage with vi.fn stubs.
 const getItemMock = vi.mocked(window.localStorage.getItem);
 const setItemMock = vi.mocked(window.localStorage.setItem);
@@ -225,6 +229,64 @@ describe("voiceSettingsStoreService OpenAI model flow (fake seam, real store)", 
 
     expect(setModelMock).not.toHaveBeenCalled();
     expect(state().openaiModel).toBeNull();
+  });
+});
+
+describe("voiceSettingsStoreService language flow (fake seam, real store)", () => {
+  beforeAll(() => appStore.init());
+  beforeEach(() => {
+    setLanguageMock.mockResolvedValue(undefined);
+    appStore.dispatch(setVoiceLanguageValue(""));
+    appStore.dispatch(setVoiceSettingsError(null));
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+    appStore.dispatch(setVoiceLanguageValue(null));
+    appStore.dispatch(setVoiceSettingsError(null));
+  });
+
+  it("applies the language optimistically and persists through the seam", async () => {
+    await changeVoiceLanguageFlow("de");
+
+    expect(state().language).toBe("de");
+    expect(setLanguageMock).toHaveBeenCalledWith("de");
+    expect(state().error).toBeNull();
+  });
+
+  it("persists the auto-detect sentinel (empty string)", async () => {
+    appStore.dispatch(setVoiceLanguageValue("de"));
+
+    await changeVoiceLanguageFlow("");
+
+    expect(state().language).toBe("");
+    expect(setLanguageMock).toHaveBeenCalledWith("");
+  });
+
+  it("rolls back to the previous language and surfaces an error when the write fails", async () => {
+    appStore.dispatch(setVoiceLanguageValue("de"));
+    setLanguageMock.mockRejectedValue(new Error("settings.update did not apply voice.language"));
+
+    await changeVoiceLanguageFlow("fr");
+
+    expect(state().language).toBe("de");
+    expect(state().error).not.toBeNull();
+  });
+
+  it("re-selecting the current language is a no-op — no daemon write", async () => {
+    appStore.dispatch(setVoiceLanguageValue("de"));
+
+    await changeVoiceLanguageFlow("de");
+
+    expect(setLanguageMock).not.toHaveBeenCalled();
+  });
+
+  it("skips the write when the daemon's catalog lacks the setting (null state)", async () => {
+    appStore.dispatch(setVoiceLanguageValue(null));
+
+    await changeVoiceLanguageFlow("de");
+
+    expect(setLanguageMock).not.toHaveBeenCalled();
+    expect(state().language).toBeNull();
   });
 });
 

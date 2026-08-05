@@ -31,6 +31,7 @@ vi.mock('electron', () => ({
 
 import { ipcMain } from 'electron';
 import { VOICE_CHANNELS } from '../../../../shared/ipc/channels';
+import { VoiceTranscribeLocalSchema } from '../../../../main/ipc-schemas';
 import {
   registerVoiceLocalHandlers,
   requestOsSpeechAuthorization,
@@ -110,6 +111,38 @@ describe('transcribeWithOsHelper', () => {
     expect(args).toHaveLength(1);
   });
 
+  it('passes --locale to the helper when a language is set', async () => {
+    stubHelper(JSON.stringify({ text: 'hallo welt', durationMs: 800 }));
+
+    await transcribeWithOsHelper(AUDIO_BASE64, 'audio/wav', undefined, 'de');
+
+    const [, args] = mockExecFile.mock.calls[0];
+    expect(args.slice(1)).toEqual(['--locale', 'de']);
+  });
+
+  it('omits --locale for a blank locale', async () => {
+    stubHelper(JSON.stringify({ text: '', durationMs: 100 }));
+
+    await transcribeWithOsHelper(AUDIO_BASE64, 'audio/wav', undefined, '   ');
+
+    const [, args] = mockExecFile.mock.calls[0];
+    expect(args).toHaveLength(1);
+  });
+
+  it('passes both --contextual-strings and --locale together', async () => {
+    stubHelper(JSON.stringify({ text: 'ok', durationMs: 1 }));
+
+    await transcribeWithOsHelper(AUDIO_BASE64, 'audio/wav', ['intentd'], 'fr');
+
+    const [, args] = mockExecFile.mock.calls[0];
+    expect(args.slice(1)).toEqual([
+      '--contextual-strings',
+      JSON.stringify(['intentd']),
+      '--locale',
+      'fr',
+    ]);
+  });
+
   it('maps a helper error payload to its typed code', async () => {
     stubHelper(JSON.stringify({ error: 'authorization-denied', message: 'status: 1' }), 1);
 
@@ -185,6 +218,24 @@ describe('transcribeWithOsHelper', () => {
 
     expect(result).toMatchObject({ success: false, error: { code: 'recognition-failed' } });
     expect(mockFs.unlink).toHaveBeenCalled();
+  });
+});
+
+describe('VoiceTranscribeLocalSchema locale contract', () => {
+  const base = { audioBase64: 'AQID', mimeType: 'audio/wav' };
+
+  it('accepts a request with a BCP-47 locale', () => {
+    const parsed = VoiceTranscribeLocalSchema.safeParse({ ...base, locale: 'de-DE' });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('accepts a request without a locale (system locale)', () => {
+    expect(VoiceTranscribeLocalSchema.safeParse(base).success).toBe(true);
+  });
+
+  it('rejects an empty or non-string locale', () => {
+    expect(VoiceTranscribeLocalSchema.safeParse({ ...base, locale: '' }).success).toBe(false);
+    expect(VoiceTranscribeLocalSchema.safeParse({ ...base, locale: 42 }).success).toBe(false);
   });
 });
 
