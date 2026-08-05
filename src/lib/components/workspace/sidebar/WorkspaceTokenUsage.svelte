@@ -51,6 +51,7 @@
         outputTokens: modelTotals.outputTokens,
         cachedTokens: modelTotals.cacheReadTokens + modelTotals.cacheCreationTokens,
       }))
+      .filter((row) => row.inputTokens + row.outputTokens + row.cachedTokens !== 0)
       .sort((a, b) => b.outputTokens - a.outputTokens),
   );
 
@@ -68,6 +69,7 @@
         outputTokens: entry.outputTokens,
         cachedTokens: entry.cacheReadTokens + entry.cacheCreationTokens,
       }))
+      .filter((row) => row.inputTokens + row.outputTokens + row.cachedTokens !== 0)
       .sort((a, b) => b.outputTokens - a.outputTokens),
   );
 
