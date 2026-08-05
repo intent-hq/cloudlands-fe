@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -70,6 +71,11 @@ function findButton(container: HTMLElement, label: string) {
     (b) => b.textContent?.trim() === label,
   ) as HTMLButtonElement | undefined;
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../sidebar/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../PullRequestCreator.svelte'));
 
 describe('PullRequestCreator', () => {
   beforeEach(() => {

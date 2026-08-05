@@ -21,6 +21,7 @@ import {
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import Modal from '../Modal.svelte';
+import { warmImport } from '../../../../test/warm-import';
 
 // Mock the Portal component to render children inline (no DOM teleportation)
 vi.mock('$lib/components/ui/Portal.svelte', async () => {
@@ -39,6 +40,12 @@ vi.mock('$lib/components/ui/button/button.svelte', async () => {
   const MockButton = (await import('../../terminal/__tests__/mocks/MockButton.svelte')).default;
   return { default: MockButton };
 });
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/MockPortal.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../../terminal/__tests__/mocks/MockButton.svelte'));
 
 describe('Modal - aria-hidden regression', () => {
   it('should NOT have aria-hidden="true" on the outer positioning wrapper div', async () => {

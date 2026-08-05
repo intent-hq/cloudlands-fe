@@ -16,6 +16,7 @@ import {
 } from 'vitest';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -108,6 +109,11 @@ async function renderOverlay(workspaceItem: Workspace) {
   const SpacesSwitcherOverlay = (await import('../SpacesSwitcherOverlay.svelte')).default;
   return render(SpacesSwitcherOverlay);
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../../lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
+warmImport(() => import('../SpacesSwitcherOverlay.svelte'));
 
 describe('SpacesSwitcherOverlay recency display', () => {
   beforeEach(() => {

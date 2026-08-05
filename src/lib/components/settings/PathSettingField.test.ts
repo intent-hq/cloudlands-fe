@@ -32,6 +32,7 @@ vi.mock('$features/onboarding/messages/DirectoryPickerModal.svelte', async () =>
 }));
 
 import PathSettingField from './PathSettingField.svelte';
+import { warmImport } from '../../../test/warm-import';
 
 const flush = async () => {
   await tick();
@@ -51,6 +52,11 @@ afterEach(() => {
   mocks.pickDirectory.mockClear();
   mocks.pickFile.mockClear();
 });
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../ui/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('$features/onboarding/messages/__tests__/mocks/MockDirectoryPickerModal.svelte'));
 
 describe('PathSettingField', () => {
   it('renders the value in a readonly textbox', () => {

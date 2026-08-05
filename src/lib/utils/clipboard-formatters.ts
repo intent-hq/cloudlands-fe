@@ -173,7 +173,8 @@ export function formatAgentMessagesForClipboard(
     }
 
     // Format with role prefix
-    const role = msg.role === 'user' ? 'User' : 'Assistant';
+    // i18n-ignore (clipboard export markup)
+    const role = msg.role === 'user' ? 'User' : msg.role === 'system' ? 'System' : 'Assistant';
     const timestamp = msg.timestamp ? formatDateTime(msg.timestamp) : '';
 
     parts.push(`${role}${timestamp ? ` (${timestamp})` : ''}:\n${messageParts.join('\n\n')}`);

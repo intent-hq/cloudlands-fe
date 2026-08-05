@@ -1,5 +1,6 @@
 import { store } from "../../store";
 import {
+  getItem,
   getItems,
   type Collection,
 } from '$lib/store-shim/utils/collections/collection-utils';
@@ -85,3 +86,22 @@ export const selectModelPickerCollapsedGroups = store.createSelector((state): st
 export const selectModelFallbackInfo = store.createSelector((state, agentId: string) => {
   return state.model.fallbackInfoByAgentId[agentId] ?? null;
 });
+
+/**
+ * Pretty display name (catalog `label`) for a (provider, raw model id) pair,
+ * or `undefined` on a lookup miss (catalog not loaded / unknown model).
+ * Catalog values are bare for the registry default provider and
+ * `provider:model` otherwise (see `prefixModelsForProvider` in model-utils).
+ */
+export const selectModelDisplayName = store.createSelector(
+  (state, providerId: string, modelId: string): string | undefined => {
+    const models: Collection<AuggieModel, 'value'> | undefined = state.model?.availableModels;
+    if (!models) return undefined;
+    const compound = getItem(models, `${providerId}:${modelId}`);
+    if (compound) return compound.label;
+    if (providerId === state.model.defaultProviderId) {
+      return getItem(models, modelId)?.label;
+    }
+    return undefined;
+  },
+);

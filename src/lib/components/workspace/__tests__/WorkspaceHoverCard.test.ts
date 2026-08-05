@@ -18,6 +18,7 @@ import {
   PullRequestStatus,
   WorkspaceStatusEnum,
 } from '$shared/types';
+import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -169,6 +170,11 @@ function expectVisibleChangesRow(expected: string) {
   expect(summary.className).toContain('font-medium');
   expect(summary.className).not.toContain('text-subtle');
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../sidebar/__tests__/mocks/MockSimple.svelte'));
+warmImport(() => import('../WorkspaceHoverCard.svelte'));
 
 describe('WorkspaceHoverCard', () => {
   beforeEach(() => {

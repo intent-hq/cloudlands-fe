@@ -10,6 +10,7 @@ import {
   fireEvent,
   waitFor,
 } from '@testing-library/svelte';
+import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -121,6 +122,11 @@ async function renderPostMerge(overrides: Partial<Record<string, unknown>> = {})
   };
   return render(PostMergeActions, { props: { ...defaults, ...overrides } });
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/Fa.svelte'));
+warmImport(() => import('../PostMergeActions.svelte'));
 
 describe('PostMergeActions', () => {
   beforeEach(() => {

@@ -220,6 +220,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   },
 }));
 import SimpleRichInput from './SimpleRichInput.svelte';
+import { warmImport } from '../../../../test/warm-import';
 
 function createSession(overrides: Record<string, unknown> = {}) {
   return {
@@ -253,6 +254,14 @@ function removeMockSession(wsId: string, agentId: string) {
     ws.agents.ids = ws.agents.ids.filter((id: string) => id !== agentId);
   }
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
+warmImport(() => import('../__tests__/mocks/TipTapEditor.svelte'));
+warmImport(() => import('../__tests__/mocks/ModelPicker.svelte'));
+warmImport(() => import('../__tests__/mocks/SlotOnly.svelte'));
 
 describe('SimpleRichInput provider switch sync', () => {
   beforeEach(() => {

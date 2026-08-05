@@ -82,6 +82,12 @@ vi.mock('$lib/components/ui/Header.svelte', async () => ({
 }));
 
 import IssueSuggestions from '../IssueSuggestions.svelte';
+import { warmImport } from '../../../../../test/warm-import';
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('./mocks/MockComponent.svelte'));
 
 describe('IssueSuggestions search input focus on panel open', () => {
   beforeEach(() => {
