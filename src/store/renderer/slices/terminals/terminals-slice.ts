@@ -9,6 +9,7 @@ import {
   getItemIndex,
   type Collection,
 } from "@augmentcode/themis/utils/collections/collection-utils";
+import { setScriptsData } from "../scripts/scripts-slice";
 
 // ============================================================================
 // Constants
@@ -55,6 +56,12 @@ export interface WorkspaceTerminalState {
   isLoadingTerminals: boolean;
   recentlyCreatedTerminals: string[];
   /**
+   * Script whose output tab the overlay is showing, or null when a terminal
+   * tab is showing. Lives here so the selected script tab survives workspace
+   * switches/remounts. Hydration accepts the id unvalidated until scripts load.
+   */
+  selectedScriptId: string | null;
+  /**
    * Daemon boot id from the last `terminal.list` snapshot (PROTOCOL §5.13
    * envelope). Lets the reducer tell a same-boot authoritative empty list
    * (converge to zero tabs) from a post-restart empty (preserve tabs — the
@@ -67,6 +74,8 @@ export interface WorkspaceTerminalState {
 export interface PersistedWorkspaceState {
   isOpen: boolean;
   activeTerminalId: string | null;
+  /** Optional for backward compat with entries persisted before it existed. */
+  selectedScriptId?: string | null;
 }
 
 export type TerminalOverlayState = {
@@ -85,6 +94,7 @@ export const emptyWorkspaceState: WorkspaceTerminalState = {
   terminalsLoaded: false,
   isLoadingTerminals: false,
   recentlyCreatedTerminals: [],
+  selectedScriptId: null,
   daemonBootId: null,
 };
 
@@ -120,6 +130,14 @@ export const toggleTerminalOverlay = createAction<[wsId: string, termId?: string
 
 export const selectTerminal = createAction<[wsId: string, termId: string]>(
   "terminals/selectTerminal"
+);
+
+export const selectScript = createAction<[wsId: string, scriptId: string]>(
+  "terminals/selectScript"
+);
+
+export const clearScriptSelection = createAction<[wsId: string]>(
+  "terminals/clearScriptSelection"
 );
 
 export const addTerminal = createAction<[wsId: string, termId: string, name?: string]>(
@@ -241,6 +259,7 @@ terminalsReducer.with(openTerminalOverlay, (state, { payload: [wsId, termId] }) 
     if (termId) {
       newWs.terminals = addTerminalIfMissing(ws.terminals, termId);
       newWs.activeTerminalId = termId;
+      newWs.selectedScriptId = null;
     } else if (!ws.activeTerminalId || !getItem(ws.terminals, ws.activeTerminalId)) {
       const result = ensureDefaultTerminal(ws.terminals, wsId);
       newWs.terminals = result.terminals;
@@ -265,6 +284,7 @@ terminalsReducer.with(toggleTerminalOverlay, (state, { payload: [wsId, termId] }
     if (termId) {
       newWs.terminals = addTerminalIfMissing(ws.terminals, termId);
       newWs.activeTerminalId = termId;
+      newWs.selectedScriptId = null;
     } else if (!ws.activeTerminalId || !getItem(ws.terminals, ws.activeTerminalId)) {
       const result = ensureDefaultTerminal(ws.terminals, wsId);
       newWs.terminals = result.terminals;
@@ -276,8 +296,18 @@ terminalsReducer.with(toggleTerminalOverlay, (state, { payload: [wsId, termId] }
 terminalsReducer.with(selectTerminal, (state, { payload: [wsId, termId] }) => {
     const ws = getWs(state, wsId);
     if (!getItem(ws.terminals, termId)) return state;
-    if (ws.activeTerminalId === termId) return state;
-    return setWs(state, wsId, { ...ws, activeTerminalId: termId });
+    if (ws.activeTerminalId === termId && ws.selectedScriptId === null) return state;
+    return setWs(state, wsId, { ...ws, activeTerminalId: termId, selectedScriptId: null });
+  });
+terminalsReducer.with(selectScript, (state, { payload: [wsId, scriptId] }) => {
+    const ws = getWs(state, wsId);
+    if (ws.selectedScriptId === scriptId) return state;
+    return setWs(state, wsId, { ...ws, selectedScriptId: scriptId });
+  });
+terminalsReducer.with(clearScriptSelection, (state, { payload: [wsId] }) => {
+    const ws = getWs(state, wsId);
+    if (ws.selectedScriptId === null) return state;
+    return setWs(state, wsId, { ...ws, selectedScriptId: null });
   });
 terminalsReducer.with(addTerminal, (state, { payload: [wsId, termId, name] }) => {
     const ws = getWs(state, wsId);
@@ -286,6 +316,7 @@ terminalsReducer.with(addTerminal, (state, { payload: [wsId, termId, name] }) =>
       ...ws,
       terminals: newTerminals,
       activeTerminalId: termId,
+      selectedScriptId: null,
     });
   });
 terminalsReducer.with(removeTerminal, (state, { payload: [wsId, termId] }) => {
@@ -352,6 +383,10 @@ terminalsReducer.with(loadWorkspaceTerminals, (state, { payload: [wsId, terminal
     const prior = getWs(state, wsId);
     const nextBootId = daemonBootId ?? prior.daemonBootId;
     let wsState: WorkspaceTerminalState;
+    const selectedScriptId =
+      (savedState?.selectedScriptId !== undefined
+        ? savedState.selectedScriptId
+        : prior.selectedScriptId) ?? null;
 
     if (terminals.length > 0) {
       let activeId: string | null;
@@ -363,11 +398,13 @@ terminalsReducer.with(loadWorkspaceTerminals, (state, { payload: [wsId, terminal
           ? savedState.activeTerminalId
           : collection.ids[0];
       } else {
-        isOpen = false;
-        activeId = collection.ids[0];
+        isOpen = prior.isOpen;
+        activeId = (prior.activeTerminalId && getItem(collection, prior.activeTerminalId))
+          ? prior.activeTerminalId
+          : collection.ids[0];
       }
 
-      wsState = { terminals: collection, isOpen, activeTerminalId: activeId, terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [], daemonBootId: nextBootId };
+      wsState = { terminals: collection, isOpen, activeTerminalId: activeId, terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [], selectedScriptId, daemonBootId: nextBootId };
     } else if (prior.terminals.ids.length > 0) {
       const sameBootAuthoritativeEmpty =
         daemonBootId !== undefined &&
@@ -392,7 +429,10 @@ terminalsReducer.with(loadWorkspaceTerminals, (state, { payload: [wsId, terminal
         ...prior,
         terminals: keptCollection,
         activeTerminalId: activeId,
-        isOpen: keptCollection.ids.length > 0 ? prior.isOpen : false,
+        isOpen: keptCollection.ids.length > 0
+          ? prior.isOpen
+          : selectedScriptId !== null && (savedState ? savedState.isOpen : prior.isOpen),
+        selectedScriptId,
         daemonBootId: nextBootId,
       };
     } else {
@@ -404,10 +444,11 @@ terminalsReducer.with(loadWorkspaceTerminals, (state, { payload: [wsId, terminal
       wsState = {
         terminals: createCollection<TerminalTab, "id">("id"),
         activeTerminalId: null,
-        isOpen: false,
+        isOpen: selectedScriptId !== null && (savedState ? savedState.isOpen : prior.isOpen),
         terminalsLoaded: false,
         isLoadingTerminals: false,
         recentlyCreatedTerminals: [],
+        selectedScriptId,
         daemonBootId: nextBootId,
       };
     }
@@ -443,5 +484,16 @@ terminalsReducer.with(markTerminalRecentlyCreated, (state, { payload: [wsId, ter
     return setWs(state, wsId, {
       ...ws,
       recentlyCreatedTerminals: [...ws.recentlyCreatedTerminals, terminalId],
+    });
+  });
+
+terminalsReducer.with(setScriptsData, (state, { payload: { wsId, scripts } }) => {
+    const ws = state.workspaces[wsId];
+    if (!ws?.selectedScriptId) return state;
+    if (scripts.some((script) => script.id === ws.selectedScriptId)) return state;
+    return setWs(state, wsId, {
+      ...ws,
+      selectedScriptId: null,
+      isOpen: ws.activeTerminalId !== null ? ws.isOpen : false,
     });
   });
