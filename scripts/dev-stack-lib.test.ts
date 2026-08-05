@@ -3,6 +3,7 @@ import {
   ROLE_BUILD,
   ROLE_LONG,
   classifyClose,
+  classifyError,
   classifySignal,
   parseCommands,
   resolveKillTimeout,
@@ -71,14 +72,29 @@ describe('classifyClose', () => {
     });
   });
 
-  it('ignores closes for commands the runner killed itself', () => {
-    expect(classifyClose(ROLE_LONG, close('SIGTERM', true), false)).toEqual({ action: 'ignore' });
-    expect(classifyClose(ROLE_BUILD, close(1, true), false)).toEqual({ action: 'ignore' });
+  it('still tears down when a long-running member is killed externally (killed=true, no teardown)', () => {
+    expect(classifyClose(ROLE_LONG, close('SIGTERM', true), false)).toEqual({
+      action: 'teardown',
+      failure: true,
+      exitCode: 1,
+    });
   });
 
-  it('ignores every close once teardown is in progress', () => {
+  it('ignores every close once teardown is in progress (including runner-initiated kills)', () => {
     expect(classifyClose(ROLE_LONG, close(1), true)).toEqual({ action: 'ignore' });
     expect(classifyClose(ROLE_BUILD, close(1), true)).toEqual({ action: 'ignore' });
+    expect(classifyClose(ROLE_LONG, close('SIGTERM', true), true)).toEqual({ action: 'ignore' });
+    expect(classifyClose(ROLE_BUILD, close(1, true), true)).toEqual({ action: 'ignore' });
+  });
+});
+
+describe('classifyError', () => {
+  it('tears down with failure when a command errors (e.g. spawn failure)', () => {
+    expect(classifyError(false)).toEqual({ action: 'teardown', failure: true, exitCode: 1 });
+  });
+
+  it('ignores errors once teardown is in progress', () => {
+    expect(classifyError(true)).toEqual({ action: 'ignore' });
   });
 });
 

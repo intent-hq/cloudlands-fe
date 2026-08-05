@@ -42,10 +42,13 @@ export function parseCommands(argv) {
  * Decide how the runner should react to a single command closing.
  *
  * Rules:
+ * - anything closing while a teardown is in progress → ignore (the runner
+ *   only kills after teardownInProgress is set, so its own kills land here;
+ *   a close with killed=true outside a teardown means something external
+ *   terminated the member and must still tear the stack down)
  * - build exits 0            → ignore (overlapped-build startup keeps going)
  * - build exits non-zero     → teardown, failure (mirrors --kill-others-on-fail)
- * - long-running exits (any) → teardown; failure iff non-zero and not killed
- * - anything closing because the runner killed it during teardown → ignore
+ * - long-running exits (any) → teardown; failure iff non-zero
  *
  * @param {'build' | 'long'} role
  * @param {{ exitCode: number | string, killed: boolean }} closeEvent
@@ -53,7 +56,7 @@ export function parseCommands(argv) {
  * @returns {{ action: 'ignore' } | { action: 'teardown', failure: boolean, exitCode: number }}
  */
 export function classifyClose(role, closeEvent, teardownInProgress) {
-  if (teardownInProgress || closeEvent.killed) {
+  if (teardownInProgress) {
     return { action: 'ignore' };
   }
   const exitCode = typeof closeEvent.exitCode === 'number' ? closeEvent.exitCode : 1;
@@ -66,6 +69,22 @@ export function classifyClose(role, closeEvent, teardownInProgress) {
   // Long-running member: any exit ends the stack. A clean exit (e.g. the
   // Electron app quitting via Cmd-Q) is a normal shutdown, not a failure.
   return { action: 'teardown', failure: exitCode !== 0, exitCode };
+}
+
+/**
+ * Decide how to react to a command erroring (e.g. failing to spawn).
+ * Concurrently emits `error` instead of a normal close in that case, so it
+ * must independently trigger a failure teardown or the rest of the stack
+ * would be left running.
+ *
+ * @param {boolean} teardownInProgress
+ * @returns {{ action: 'ignore' } | { action: 'teardown', failure: boolean, exitCode: number }}
+ */
+export function classifyError(teardownInProgress) {
+  if (teardownInProgress) {
+    return { action: 'ignore' };
+  }
+  return { action: 'teardown', failure: true, exitCode: 1 };
 }
 
 /**

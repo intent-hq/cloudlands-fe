@@ -22,6 +22,7 @@ import concurrently from 'concurrently';
 import {
   ROLE_LONG,
   classifyClose,
+  classifyError,
   classifySignal,
   parseCommands,
   resolveKillTimeout,
@@ -83,6 +84,17 @@ commands.forEach((command, index) => {
     } else if (role === ROLE_LONG) {
       console.log(`dev-stack: "${command.command}" ended; shutting down the dev stack`);
     }
+    beginTeardown();
+  });
+  // A spawn failure emits `error` with no close event; without this the rest
+  // of the stack would keep running with no one watching the failed member.
+  command.error.subscribe((error) => {
+    const decision = classifyError(teardownInProgress);
+    if (decision.action !== 'teardown') {
+      return;
+    }
+    console.error(`dev-stack: "${command.command}" failed to start: ${error}`);
+    failureExitCode = decision.exitCode;
     beginTeardown();
   });
 });
