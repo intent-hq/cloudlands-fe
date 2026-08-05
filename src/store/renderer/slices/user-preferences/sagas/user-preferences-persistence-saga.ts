@@ -2,6 +2,7 @@ import { call, fork, put, takeEvery } from 'typed-redux-saga';
 
 import { isElectron } from '$lib/electron-bridge';
 import { applyLanguagePreference } from '$lib/i18n/locale';
+import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
 import {
   getLocalStorageJSON,
   setLocalStorageJSON,
@@ -32,6 +33,7 @@ import {
   setNoteFontStyle,
   setShowArchived,
   setSpellcheckEnabled,
+  setSystemFonts,
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleShowArchived,
@@ -50,6 +52,11 @@ const CODE_STORAGE_KEY = 'code-font-settings';
 const ACTIVITY_LOG_PRESETS_STORAGE_KEY = 'activityLogPresets';
 const LANGUAGE_PREFERENCE_STORAGE_KEY = 'language-preference';
 
+type ListSystemFontsResponse = {
+  success?: boolean;
+  data?: unknown;
+};
+
 function validFont(value: unknown): value is { fontStyle: FontStyle } {
   return (
     typeof value === 'object' &&
@@ -58,6 +65,29 @@ function validFont(value: unknown): value is { fontStyle: FontStyle } {
     typeof value.fontStyle === 'string' &&
     FONT_STYLES.includes(value.fontStyle as FontStyle)
   );
+}
+
+function parseSystemFontsResponse(response: unknown): string[] | null {
+  if (typeof response !== 'object' || response === null) return null;
+  const { success, data } = response as ListSystemFontsResponse;
+  if (success !== true || !Array.isArray(data)) return null;
+  if (!data.every((font): font is string => typeof font === 'string')) return null;
+  return data;
+}
+
+async function requestSystemFonts(): Promise<string[] | null> {
+  if (!isElectron() || typeof window === 'undefined' || !window.electronAPI?.invoke) return null;
+  try {
+    const response = await window.electronAPI.invoke(SYSTEM_CHANNELS.LIST_FONTS, undefined);
+    return parseSystemFontsResponse(response);
+  } catch {
+    return null;
+  }
+}
+
+export function* loadSystemFontsWorker() {
+  const fonts = yield* call(requestSystemFonts);
+  if (fonts !== null) yield* put(setSystemFonts(fonts));
 }
 
 export function* hydrateUserPreferencesWorker() {
@@ -191,4 +221,5 @@ function* watchUserPreferenceWrites() {
 export function* userPreferencesPersistenceSaga() {
   yield* fork(watchUserPreferenceWrites);
   yield* fork(hydrateUserPreferencesWorker);
+  yield* fork(loadSystemFontsWorker);
 }
