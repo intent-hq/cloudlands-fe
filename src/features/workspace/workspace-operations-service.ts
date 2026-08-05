@@ -132,19 +132,28 @@ function getArchivedWorkspacesForRepo(repoKey: string, workspaces: Workspace[]):
   );
 }
 
-/** Aggregate streaming-agent / active-hook counts across a set of workspaces. */
+/** Max concurrent per-workspace active-work lookups during bulk aggregation. */
+const BULK_ACTIVE_WORK_CONCURRENCY = 5;
+
+/**
+ * Aggregate streaming-agent / active-hook counts across a set of workspaces.
+ * Lookups run in bounded batches — each can fall back to a per-workspace
+ * `hook.list` RPC, so an unbounded fan-out on repos with many workspaces
+ * would burst the daemon and risk timeout-induced flakiness.
+ */
 async function countBulkActiveWork(
   workspaces: Workspace[],
 ): Promise<{ agentCount: number; hookCount: number }> {
   const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
-  const results = await Promise.all(
-    workspaces.map((workspace) => getActiveWorkNames(workspace.id)),
-  );
   let agentCount = 0;
   let hookCount = 0;
-  for (const { agentNames, hookNames } of results) {
-    agentCount += agentNames.length;
-    hookCount += hookNames.length;
+  for (let i = 0; i < workspaces.length; i += BULK_ACTIVE_WORK_CONCURRENCY) {
+    const batch = workspaces.slice(i, i + BULK_ACTIVE_WORK_CONCURRENCY);
+    const results = await Promise.all(batch.map((workspace) => getActiveWorkNames(workspace.id)));
+    for (const { agentNames, hookNames } of results) {
+      agentCount += agentNames.length;
+      hookCount += hookNames.length;
+    }
   }
   return { agentCount, hookCount };
 }
@@ -162,8 +171,14 @@ async function computeBulkArchiveActiveWork(repoKey: string): Promise<void> {
   const token = appStore.state.workspaceOperations.bulkArchiveComputeToken;
   const toArchive = getActiveWorkspacesForRepo(repoKey, readWorkspaces());
   if (toArchive.length === 0) return;
-  const { agentCount, hookCount } = await countBulkActiveWork(toArchive);
-  appStore.dispatch(bulkArchiveActiveWorkComputed({ repoKey, agentCount, hookCount, token }));
+  try {
+    const { agentCount, hookCount } = await countBulkActiveWork(toArchive);
+    appStore.dispatch(bulkArchiveActiveWorkComputed({ repoKey, agentCount, hookCount, token }));
+  } catch (error) {
+    // The warning is advisory: fail open (counts stay at zero) rather than
+    // letting a fire-and-forget middleware call become an unhandled rejection.
+    logger.error('Failed to compute bulk archive active work:', error);
+  }
 }
 
 /**
