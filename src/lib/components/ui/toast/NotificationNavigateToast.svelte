@@ -1,9 +1,10 @@
 <script lang="ts">
   /**
    * In-app replacement toast for a suppressed frontmost OS notification,
-   * carrying the workspace's micro key-slot square next to the title. Only
-   * rendered when a slot resolved — the badge-less case keeps the plain
-   * `toast(...)` rendering (see notification-ipc-service.showNavigateToast).
+   * rendered when structured content is present or the workspace resolved to
+   * a micro key slot (the slot square is shown only when a slot resolved).
+   * When both are absent, the plain `toast(...)` rendering is kept (see
+   * notification-ipc-service.showNavigateToast).
    */
   import Button from '$lib/components/ui/button/button.svelte';
   import MicroKeySlotSquare from '$lib/components/ui/toast/MicroKeySlotSquare.svelte';
@@ -33,8 +34,8 @@
     title: string;
     /** Notification body shown under the title. */
     description?: string;
-    /** Resolved 0-based micro key slot of the workspace. */
-    keySlot: number;
+    /** Resolved 0-based micro key slot of the workspace; null when none. */
+    keySlot: number | null;
     /** "Open" action label. */
     actionLabel: string;
     onAction: () => void;
@@ -60,9 +61,11 @@
 <div class="flex items-center gap-3 max-w-[500px]">
   <div class="flex-1 min-w-0">
     {#if structured}
-      <!-- Line 1: slot square baseline-aligned with the workspace title. -->
+      <!-- Line 1: slot square (when resolved) baseline-aligned with the workspace title. -->
       <div class="flex items-baseline gap-1.5">
-        <MicroKeySlotSquare slot={keySlot} />
+        {#if keySlot !== null}
+          <MicroKeySlotSquare slot={keySlot} />
+        {/if}
         <p class="text-sm font-medium text-foreground truncate min-w-0">
           {structured.workspaceTitle ?? title}
         </p>
@@ -83,7 +86,9 @@
       {/if}
     {:else}
       <div class="flex items-center gap-1.5">
-        <MicroKeySlotSquare slot={keySlot} />
+        {#if keySlot !== null}
+          <MicroKeySlotSquare slot={keySlot} />
+        {/if}
         <p class="text-sm font-medium text-foreground">{title}</p>
       </div>
       {#if description}
