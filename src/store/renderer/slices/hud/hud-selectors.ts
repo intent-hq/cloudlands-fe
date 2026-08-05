@@ -83,9 +83,6 @@ export const selectHudSystem = store.createSelector((state): HudSystemView => {
   };
 });
 
-/** Live 5s token buckets for the AGENT ACTIVITY · TOK/S chart. */
-export const selectHudRate5s = store.createSelector((state) => state.hud.rate5s);
-
 /** Header FLEET OPS repo + status filter (shared with the center grid). */
 export const selectHudGridFilter = store.createSelector((state) => state.hud.gridFilter);
 
