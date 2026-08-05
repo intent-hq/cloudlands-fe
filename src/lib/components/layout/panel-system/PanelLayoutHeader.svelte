@@ -74,7 +74,7 @@
     EnhancePromptUnavailableError,
     isEnhancePromptAvailable,
   } from '$lib/client/live/live-prompt-enhancement';
-  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectModelForType } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import {
@@ -90,7 +90,7 @@
 
   const logger = createLogger('PanelLayoutHeader');
   const fastModel$ = selectModelForType('fast');
-  const activeProviderId$ = selectActiveProviderId();
+  const effectiveProviderId$ = selectEffectiveDefaultProviderId();
 
   interface Props {
     /** Whether back navigation is available */
@@ -121,7 +121,7 @@
   }: Props = $props();
 
   // §5.31 gate — AI layout generation is auggie-only; unset active provider defaults to auggie
-  const aiLayoutAvailable = $derived(isEnhancePromptAvailable($activeProviderId$));
+  const aiLayoutAvailable = $derived(isEnhancePromptAvailable($effectiveProviderId$));
 
   // AI prompt state
   let promptValue = $state('');

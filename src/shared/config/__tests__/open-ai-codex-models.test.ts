@@ -4,7 +4,6 @@ import {
   it,
 } from 'vitest';
 import {
-  CODEX_DEFAULT_MODEL_ID,
   CODEX_MODELS,
   getCodexModelList,
   supportedReasoningEfforts,
@@ -25,10 +24,7 @@ describe('OpenAI Codex model config', () => {
     }
   });
 
-  it('keeps the existing Codex default model selected', () => {
-    const defaultEntry = getCodexModelList().find((model) => model.isDefault);
-
-    expect(CODEX_DEFAULT_MODEL_ID).toBe('gpt-5.3-codex/medium');
-    expect(defaultEntry?.value).toBe(CODEX_DEFAULT_MODEL_ID);
+  it('marks no static Codex model as default (defaults come from the provider CLI)', () => {
+    expect(getCodexModelList().every((model) => !('isDefault' in model))).toBe(true);
   });
 });

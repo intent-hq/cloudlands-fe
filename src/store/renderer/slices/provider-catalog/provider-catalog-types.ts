@@ -13,13 +13,11 @@
 import type { Collection } from '$lib/store-shim/utils/collections/collection-utils';
 import type { ProviderCatalogEntry } from '$shared/provider-catalog';
 
-export type { ProviderCatalogEntry, ProviderModelTier } from '$shared/provider-catalog';
+export type { ProviderCatalogEntry } from '$shared/provider-catalog';
 
 export interface ProviderCatalogState {
   /** Wire rows, id-keyed with `ids` preserving the registry order. */
   providers: Collection<ProviderCatalogEntry, 'id'>;
-  /** The registry's `isDefault` entry (`defaultProviderId` on the wire). */
-  defaultProviderId: string;
   /** Flips true once the first `providers.catalog` hydration lands. */
   loaded: boolean;
 }

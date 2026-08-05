@@ -42,7 +42,6 @@ export async function fetchProviderCatalog(): Promise<ProviderCatalogResult> {
         cached = catalog;
         logger.info('Provider catalog hydrated', {
           providers: catalog.providers.length,
-          defaultProviderId: catalog.defaultProviderId,
         });
         return catalog;
       } finally {
@@ -72,11 +71,6 @@ export function getCachedProviderCatalogEntry(
   providerId: string,
 ): ProviderCatalogEntry | undefined {
   return cached?.providers.find((p) => p.id === providerId);
-}
-
-/** The registry's default provider id, or `undefined` before hydration. */
-export function getCachedDefaultProviderId(): string | undefined {
-  return cached?.defaultProviderId;
 }
 
 /** Test-only: reset module state between tests. */

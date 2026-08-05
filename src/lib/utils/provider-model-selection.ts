@@ -1,6 +1,5 @@
-import { resolvePreferredModel } from '$shared/utils/compound-model-id';
-import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
 import { getModelsForProvider } from '$store/renderer/slices/model/model-utils';
+import { resolveDefaultModel } from '$store/renderer/slices/model/model-selection-utils';
 import {
   selectIsModelValidForProvider,
   selectProviderDisplayName,
@@ -9,7 +8,7 @@ import { store as appStore } from '$store/renderer/store';
 
 export interface CompatibleModelSelectionInput {
   providerId: string;
-  availableModelValues: string[];
+  availableModels: { value: string; isDefault?: boolean }[];
   currentModel?: string;
   fallbackModel?: string;
 }
@@ -80,12 +79,13 @@ export async function resolveUsableProviderIds(providerIds: string[]): Promise<s
 
 export function pickCompatibleModelForProvider({
   providerId,
-  availableModelValues,
+  availableModels,
   currentModel,
   fallbackModel,
 }: CompatibleModelSelectionInput): string | null {
-  const preferredModel = resolvePreferredModel(MODEL_DEFAULTS.UI_MODEL_PREFERENCE, availableModelValues);
-  const candidates = [currentModel, fallbackModel, preferredModel, availableModelValues[0]];
+  const availableModelValues = availableModels.map((model) => model.value);
+  const defaultModel = resolveDefaultModel(availableModels);
+  const candidates = [currentModel, fallbackModel, defaultModel];
 
   for (const candidate of candidates) {
     if (
@@ -119,7 +119,7 @@ export async function resolveCompatibleModelForProvider(
 
   return pickCompatibleModelForProvider({
     providerId,
-    availableModelValues: availableModels.map((model) => model.value),
+    availableModels,
     currentModel,
     fallbackModel,
   });

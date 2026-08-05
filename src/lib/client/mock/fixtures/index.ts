@@ -148,7 +148,6 @@ export const mockModels: AuggieModel[] = [
     description: "Most capable model for complex coding and reasoning.",
     modelGroupPriority: 1,
     costTier: 3,
-    isDefault: true,
   },
   {
     value: "opus4.6",
@@ -163,6 +162,8 @@ export const mockModels: AuggieModel[] = [
     description: "Balanced speed and capability for everyday tasks.",
     modelGroupPriority: 2,
     costTier: 2,
+    // Mirrors the real CLI: sonnet4.5 is the row the provider marks default.
+    isDefault: true,
   },
   {
     value: "gpt5.4",

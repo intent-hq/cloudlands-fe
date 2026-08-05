@@ -27,7 +27,7 @@
    * - workspace: Current workspace object
    * - agentId: Unique identifier for the agent
    * - agentName: Display name for the agent (default: 'Chat')
-   * - agentModel: AI model to use (default: DEFAULT_AGENT_MODEL)
+   * - agentModel: AI model to use (default: daemon/provider-resolved)
    * - isInitialWorkspaceAgent: Whether this is the first agent in a new workspace
    * - isNewWorkspace: Whether this is a newly created workspace
    * - onClose: Callback when chat is closed
@@ -115,7 +115,6 @@
   type SuggestedPrompt,
   AgentStatus,
 } from '$shared/types';
-  import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
   import type { ContextItem } from './input/context-api';
   import { createChatDraftManager } from './chat-panel-draft.svelte';
   import ChatDraftLoadingGate from './ChatDraftLoadingGate.svelte';
@@ -212,7 +211,7 @@
 } from '$store/renderer/slices/specialists/specialists-selectors';
 
   import { getAgentProvider } from '$shared/types/agent-session';
-  import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
@@ -308,7 +307,7 @@
     workspace,
     agentId,
     agentName = 'Chat',
-    agentModel = DEFAULT_AGENT_MODEL,
+    agentModel = undefined,
     isActive = true,
     isInitialWorkspaceAgent = false,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1373,7 +1372,7 @@
   // Hydrated input model — uses session model when available, falls back to agentModel prop
   let hydratedInputModel = $derived(resolveHydratedInputModel($agentSession$, agentModel));
 
-  const catalogDefaultProviderId$ = selectCatalogDefaultProviderId();
+  const catalogDefaultProviderId$ = selectEffectiveDefaultProviderId();
 
   // Provider ID for the input — resolved from the agent session
   let inputProviderId = $derived.by(() => {

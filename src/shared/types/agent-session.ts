@@ -401,7 +401,7 @@ export function isPendingAgentSession(
  * Checks top-level `provider`, then `metadata.provider`, then `config.provider`.
  * Filters out the legacy 'acp' value (protocol name, not a real provider).
  * Falls back to inferring provider from the model ID if available —
- * `defaultProviderId` (the registry default from the provider catalog)
+ * `defaultProviderId` (the settings-derived effective default provider)
  * attributes bare model ids.
  */
 export function getAgentProvider(

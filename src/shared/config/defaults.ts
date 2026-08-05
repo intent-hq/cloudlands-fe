@@ -21,11 +21,12 @@ import {
 /**
  * Get default agent configuration.
  * Use this function instead of DEFAULT_AGENT_CONFIG for new agents.
+ * `model` is intentionally omitted: the daemon/provider CLI resolves the
+ * default model when none is specified.
  */
 export function getDefaultAgentConfig(): AgentConfig {
   return {
     name: 'Agent',
-    model: CONST_DEFAULTS.AGENT_MODEL,
     temperature: CONST_DEFAULTS.TEMPERATURE,
     maxTokens: CONST_DEFAULTS.MAX_TOKENS,
     systemPrompt: undefined,
@@ -39,7 +40,6 @@ export function getDefaultAgentConfig(): AgentConfig {
  */
 export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   name: CONST_DEFAULTS.AGENT_NAME,
-  model: CONST_DEFAULTS.AGENT_MODEL,
   temperature: CONST_DEFAULTS.TEMPERATURE,
   maxTokens: CONST_DEFAULTS.MAX_TOKENS,
   systemPrompt: undefined,

@@ -5,7 +5,8 @@
  * This is the single source of truth for application constants.
  *
  * NOTE: Model defaults are defined in constants/agent-services.ts (MODEL_DEFAULTS).
- * The DEFAULTS.AGENT_MODEL here re-exports from there for backwards compatibility.
+ * There is no hardcoded interactive default model id — the default is always
+ * derived from the provider CLI's catalog.
  */
 
 // ============================================================================
@@ -182,12 +183,6 @@ export const LIMITS = {
 // ============================================================================
 
 export const DEFAULTS = {
-  /**
-   * @deprecated Use MODEL_DEFAULTS.AGENT_MODEL from constants/agent-services.ts instead.
-   * Default agent model - uses short model ID format (e.g., 'sonnet4.5', 'opus4.5')
-   */
-  AGENT_MODEL: 'opus4.5',
-
   /** Default agent name */
   AGENT_NAME: 'Assistant',
 

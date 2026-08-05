@@ -33,16 +33,19 @@ import {
   seedProviderCatalog,
 } from "../../test/fixtures/provider-catalog.fixture";
 
-const getDefaultProviderId = () => MOCK_PROVIDER_CATALOG.defaultProviderId;
+// With nothing user-configured, the first catalog row is the effective default.
+const getDefaultProviderId = () => MOCK_PROVIDER_CATALOG.providers[0].id;
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update wire)", () => {
   beforeAll(() => {
     appStore.init();
-    // The middleware now reads known provider ids and the default provider
-    // from the providerCatalog slice — seed the §5.38-shaped mock catalog.
+    // The middleware reads known provider ids from the providerCatalog slice
+    // — seed the §5.38-shaped mock catalog. The catalog carries no default
+    // designation, so set the active provider explicitly.
     seedProviderCatalog(appStore);
+    appStore.dispatch(setActiveProvider(getDefaultProviderId()));
   });
 
   beforeEach(async () => {
@@ -87,7 +90,9 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
     appStore.dispatch(selectModel("opencode:opencode-go/kimi-k3"));
     await flush();
 
-    expect(appStore.state.model.providerModels.opencode).toBe("opencode:opencode-go/kimi-k3");
+    // The cross-provider pick switches the active provider to opencode, which
+    // becomes the effective default — its pick is therefore stored bare.
+    expect(appStore.state.model.providerModels.opencode).toBe("opencode-go/kimi-k3");
     expect(appStore.state.model.providerModels[defaultProviderId]).toBeUndefined();
     expect(updateSpy).toHaveBeenCalledWith({
       changes: [
@@ -174,8 +179,10 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
     appStore.dispatch(selectModel("opencode:opencode-go/kimi-k3"));
     await flush();
 
+    // opencode is the active (and thus effective default) provider, so its
+    // pick is normalized to the bare form on write.
     expect(appStore.state.model.providerModels).toEqual({
-      opencode: "opencode:opencode-go/kimi-k3",
+      opencode: "opencode-go/kimi-k3",
     });
     expect(updateSpy).toHaveBeenCalledWith({
       changes: [

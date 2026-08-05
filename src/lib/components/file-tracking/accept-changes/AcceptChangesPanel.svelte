@@ -74,7 +74,6 @@
   import { createAgentTypeId } from '$shared/types/agent.types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
-  import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
   import {
   parseAllReviewComments,
   getReviewStats,
@@ -1212,8 +1211,8 @@
       const repoPath = $workspace.repositoryPath;
       const baseBranch = $workspace.baseRef || $workspace.branch || 'main';
 
-      // Get model from model store
-      const selectedModel = $selectedModel$ || DEFAULT_AGENT_MODEL;
+      // Get model from model store; empty means the daemon resolves the default
+      const selectedModel = $selectedModel$ || undefined;
 
       // Prepare the initial agent configuration. No client-minted agentId:
       // the daemon assigns the id and returns it on the create result.

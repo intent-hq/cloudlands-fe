@@ -13,13 +13,8 @@ import {
   getSpecialistById,
   GITHUB_DEPENDENT_SPECIALIST_IDS,
 } from '../../src/lib/constants/specialists';
-import {
-  MODEL_DEFAULTS,
-  MODEL_IDS,
-  DEFAULT_AGENT_MODEL,
-} from '../../src/shared/constants/agent-services';
+import { MODEL_IDS } from '../../src/shared/constants/agent-services';
 import { MOCK_PROVIDER_CATALOG } from '../../src/test/fixtures/provider-catalog.fixture';
-import { getModelTierFromCatalog } from '../../src/shared/provider-catalog';
 import {
   writeSpecialistFile,
   ensureSpecialistsDirectory,
@@ -33,20 +28,6 @@ import {
 const { mockSettingsData } = vi.hoisted(() => ({
   mockSettingsData: {} as Record<string, unknown>,
 }));
-
-// Tier/default-provider helpers over the §5.38-shaped mock catalog, replacing
-// the deleted provider-config lookups (the registry now lives in the daemon).
-function getDefaultModelForProvider(providerId: string, tier: 'fast' | 'balanced' | 'smart') {
-  const tiers = MOCK_PROVIDER_CATALOG.providers.find((p) => p.id === providerId)?.modelTiers;
-  if (!tiers) throw new Error(`no tier table for ${providerId}`);
-  return tiers[tier];
-}
-function getModelTierFromModel(modelId: string, preferredProviderId?: string) {
-  return getModelTierFromCatalog(MOCK_PROVIDER_CATALOG.providers, modelId, preferredProviderId);
-}
-function getDefaultProviderId() {
-  return MOCK_PROVIDER_CATALOG.defaultProviderId;
-}
 
 const TEST_HOME = '/tmp/augment-specialist-config-test';
 let originalHome: string | undefined;
@@ -239,62 +220,26 @@ describe('Specialist Configuration', () => {
   });
 
   // ==========================================================================
-  // Regression: Auggie default model is Opus 4.7
-  // These tests lock in the opus4.7 default so a revert to opus4.6/gpt5.4
-  // would be caught immediately.
+  // Regression: no hardcoded interactive default-model ids
+  // The default model is always derived from the provider CLI's catalog
+  // (the row marked `isDefault`, else the first available row).
   // ==========================================================================
 
-  describe('Auggie Default Model Regression (opus4.7)', () => {
-    it('MODEL_DEFAULTS.AGENT_MODEL is opus4.7', () => {
-      expect(MODEL_DEFAULTS.AGENT_MODEL).toBe('opus4.7');
-    });
-
-    it('MODEL_DEFAULTS.UI_INITIAL_MODEL is opus4.7', () => {
-      expect(MODEL_DEFAULTS.UI_INITIAL_MODEL).toBe('opus4.7');
-    });
-
-    it('MODEL_DEFAULTS.UI_MODEL_PREFERENCE has opus4.7 first', () => {
-      expect(MODEL_DEFAULTS.UI_MODEL_PREFERENCE[0]).toBe('opus4.7');
-    });
-
-    it('deprecated DEFAULT_AGENT_MODEL alias is opus4.7', () => {
-      expect(DEFAULT_AGENT_MODEL).toBe('opus4.7');
-    });
-
+  describe('No hardcoded interactive model defaults', () => {
     it('MODEL_IDS.GPT_5_4 is the canonical gpt5.4 string', () => {
       expect(MODEL_IDS.GPT_5_4).toBe('gpt5.4');
     });
-  });
 
-  describe('Auggie Provider Tier Regression (opus4.7)', () => {
-    it('auggie smart tier resolves to opus4.7', () => {
-      expect(getDefaultModelForProvider('auggie', 'smart')).toBe('opus4.7');
-    });
-
-    it('getDefaultModelForProvider(auggie, smart) returns opus4.7', () => {
-      expect(getDefaultModelForProvider('auggie', 'smart')).toBe('opus4.7');
-    });
-
-    it('getModelTierFromModel(opus4.7) returns smart', () => {
-      expect(getModelTierFromModel('opus4.7')).toBe('smart');
-    });
-
-    it('getModelTierFromModel(opus4.7, auggie) returns smart', () => {
-      expect(getModelTierFromModel('opus4.7', 'auggie')).toBe('smart');
-    });
-
-    it('default provider is auggie', () => {
-      expect(getDefaultProviderId()).toBe('auggie');
+    it('no catalog row carries a default designation or tier table', () => {
+      for (const provider of MOCK_PROVIDER_CATALOG.providers) {
+        expect(provider).not.toHaveProperty('isDefault');
+        expect(provider).not.toHaveProperty('modelTiers');
+      }
+      expect(MOCK_PROVIDER_CATALOG).not.toHaveProperty('defaultProviderId');
     });
 
     it('no built-in specialist carries a model pin (built-ins inherit the global default)', () => {
       expect(SPECIALISTS.filter((s) => s.defaultModel)).toHaveLength(0);
-      expect(getDefaultModelForProvider('auggie', 'smart')).toBe('opus4.7');
-    });
-
-    it('non-auggie provider tiers are NOT opus4.7', () => {
-      // Ensure the change is scoped to auggie only
-      expect(getDefaultModelForProvider('claude-code', 'smart')).not.toBe('opus4.7');
     });
   });
 

@@ -2,13 +2,12 @@
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import type { ContextItem } from '$lib/components/chat/input/context-api';
   import { createLogger } from '$lib/utils/client-logger';
-  import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
 
   const logger = createLogger('TestInput');
 
   let value = $state('');
   let contextItems: ContextItem[] = $state([]);
-  let selectedModel = $state<string>(DEFAULT_AGENT_MODEL);
+  let selectedModel = $state<string>('');
   let isStreaming = $state(false);
   let isProcessing = $state(false);
 

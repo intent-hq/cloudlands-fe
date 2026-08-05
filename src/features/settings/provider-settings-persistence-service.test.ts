@@ -115,7 +115,7 @@ describe("provider-settings-persistence-service (PROTOCOL §5.12 settings.update
     });
   });
 
-  it("persists auggie:false when disabling the default-enabled provider from fresh state", async () => {
+  it("persists auggie:false when disabling auggie from fresh state", async () => {
     await seedEnabledProviders({});
 
     appStore.dispatch(setProviderEnabled({ providerId: "auggie", enabled: false }));
@@ -127,15 +127,15 @@ describe("provider-settings-persistence-service (PROTOCOL §5.12 settings.update
     });
   });
 
-  it("persists auggie:false when toggling unset auggie (enabled-if-unset default)", async () => {
+  it("persists auggie:true when toggling unset auggie (unset means disabled)", async () => {
     await seedEnabledProviders({});
 
     appStore.dispatch(toggleProvider("auggie"));
     await flush();
 
-    expect(appStore.state.providerSettings.enabledProviders.auggie).toBe(false);
+    expect(appStore.state.providerSettings.enabledProviders.auggie).toBe(true);
     expect(updateSpy).toHaveBeenCalledWith({
-      changes: [{ path: "providers.enabled", value: { auggie: false } }],
+      changes: [{ path: "providers.enabled", value: { auggie: true } }],
     });
   });
 

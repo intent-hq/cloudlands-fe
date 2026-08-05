@@ -30,10 +30,11 @@ describe("providerSettingsReducer", () => {
     expect(state).toEqual(bareInitialState);
   });
 
-  it("snapshots catalog metadata and adopts the registry default as active", () => {
+  it("snapshots catalog metadata without adopting any provider as active", () => {
     expect(bareInitialState.activeProviderId).toBe("");
-    expect(initialState.activeProviderId).toBe(MOCK_PROVIDER_CATALOG.defaultProviderId);
-    expect(initialState.defaultProviderId).toBe(MOCK_PROVIDER_CATALOG.defaultProviderId);
+    // The registry carries no default designation — hydration never sets an
+    // active provider on its own.
+    expect(initialState.activeProviderId).toBe("");
     // Hydration must not clobber a settings-hydrated active provider.
     const hydratedFirst = providerSettingsReducer(
       { ...bareInitialState, activeProviderId: "codex" },
@@ -151,9 +152,9 @@ describe("providerSettingsReducer", () => {
       expect(state.enabledProviders["auggie"]).toBe(false);
     });
 
-    it("should toggle unset auggie off (default provider is enabled-if-unset)", () => {
+    it("should toggle unset auggie on (no default-provider enabled-if-unset exception)", () => {
       const state = providerSettingsReducer(initialState, toggleProvider("auggie"));
-      expect(state.enabledProviders["auggie"]).toBe(false);
+      expect(state.enabledProviders["auggie"]).toBe(true);
     });
 
     it("should toggle auggie back on from an explicit false", () => {
