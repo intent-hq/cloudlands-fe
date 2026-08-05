@@ -85,6 +85,20 @@ export function insertTranscriptText(text: string, doc: Document = document): bo
 }
 
 /**
+ * Whether the currently focused element sits inside a modal dialog overlay
+ * (`[role="dialog"]`, e.g. the New Space modal, or `[role="alertdialog"]`,
+ * e.g. the daemon-stopped overlay). The dictation flow checks this at
+ * recording-finish time so the transcript stays with the modal's focused
+ * editable instead of the agent-composer routing stealing focus from the
+ * modal (intent-hq/monorepo#1461).
+ */
+export function isFocusInsideDialog(doc: Document = document): boolean {
+  const active = doc.activeElement;
+  if (!active || active === doc.body) return false;
+  return active.closest('[role="dialog"], [role="alertdialog"]') !== null;
+}
+
+/**
  * Trigger the focused composer's send by dispatching a synthetic Enter
  * keydown on the focused editable — the same path as pressing Enter.
  * Returns true when a focused editable received the event, false otherwise

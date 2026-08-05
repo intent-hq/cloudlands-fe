@@ -64,7 +64,11 @@ import {
   endTranscriptionSession,
   isTranscriptionSessionCurrent,
 } from './transcription-cancellation';
-import { insertTranscriptText, sendFocusedComposer } from './transcript-insertion';
+import {
+  insertTranscriptText,
+  isFocusInsideDialog,
+  sendFocusedComposer,
+} from './transcript-insertion';
 
 const logger = createLogger('HardwareConsoleVoiceTranscription');
 
@@ -372,6 +376,13 @@ export function insertTranscriptIntoPrompt(
  * prompt's editor instead, and `autoSend` never fires (creating a workspace
  * is an explicit act).
  *
+ * Without a prompt target, focus inside a modal dialog overlay
+ * (`[role="dialog"]`, e.g. the New Space modal) — captured synchronously at
+ * recording-finish time — also bypasses the agent-composer routing: the
+ * transcript is inserted at the focused editable's caret so focus is never
+ * stolen from the modal, and `autoSend` is suppressed for the same reason
+ * as the prompt target (intent-hq/monorepo#1461).
+ *
  * The run registers itself with the cancellation seam
  * (transcription-cancellation): `cancelActiveTranscription` — the mic
  * buttons' cancel-while-transcribing affordance — settles the in-flight
@@ -386,9 +397,14 @@ export async function handleFinishedRecording(
   const dispatch = deps.dispatch ?? ((action: unknown) => appStore.dispatch(action as never));
   const transcribe = deps.transcribe ?? transcribeWithSelectedEngine;
   const promptTarget = consumePromptDictationTarget();
+  // Captured synchronously at recording-finish time, before any await —
+  // the modal is what holds focus right now, whatever happens later.
+  const dialogFocused = isFocusInsideDialog();
 
   const state = appStore.state as unknown as VoiceContextState;
-  const targetAgentId = resolveTargetAgentId(state);
+  // A focused modal keeps the insertion: null target → focused-editable
+  // caret path, never `focusAgentComposer` stealing focus from the modal.
+  const targetAgentId = dialogFocused ? null : resolveTargetAgentId(state);
   const context = gatherTranscriptionContext(state);
 
   const hudLabel = m.hardwareConsole_voice_transcribing_label();
@@ -424,7 +440,9 @@ export async function handleFinishedRecording(
     const text = result.text;
     if (typeof text !== 'string' || text.trim().length === 0) {
       logger.info('voice.transcribe returned an empty transcript; nothing to insert');
-      if (options.autoSend && !promptTarget) await triggerComposerSend(targetAgentId, deps);
+      if (options.autoSend && !promptTarget && !dialogFocused) {
+        await triggerComposerSend(targetAgentId, deps);
+      }
       return;
     }
     const inserted = promptTarget
@@ -440,8 +458,10 @@ export async function handleFinishedRecording(
       return;
     }
     // The successful insertion leaves the composer focused, so the send
-    // lands on it directly — no focus retry cadence needed.
-    if (options.autoSend && !promptTarget) {
+    // lands on it directly — no focus retry cadence needed. A focused modal
+    // suppresses the send like the prompt target: a synthetic Enter must
+    // not submit the modal form.
+    if (options.autoSend && !promptTarget && !dialogFocused) {
       const send = deps.sendComposer ?? (() => sendFocusedComposer());
       send();
     }
@@ -495,7 +515,10 @@ export async function handleFinishedRecording(
  * captured recording and the gesture-decided options. `recording: null` is
  * the degenerate case — nothing was captured (or the audio was discarded as
  * too short) but the gesture still asked to send, so the composer's current
- * content is sent as-is.
+ * content is sent as-is. Focus inside a modal dialog overlay suppresses
+ * that send entirely — same rule as `handleFinishedRecording`: no composer
+ * focus steal, no synthetic Enter into the modal form
+ * (intent-hq/monorepo#1461).
  */
 export async function runTranscriptionFlow(
   recording: VoiceRecordingResult | null,
@@ -503,7 +526,7 @@ export async function runTranscriptionFlow(
   deps: TranscriptionDeps = {},
 ): Promise<void> {
   if (recording === null) {
-    if (!options.autoSend) return;
+    if (!options.autoSend || isFocusInsideDialog()) return;
     const state = appStore.state as unknown as VoiceContextState;
     await triggerComposerSend(resolveTargetAgentId(state), deps);
     return;
