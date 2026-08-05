@@ -106,6 +106,25 @@ describe('isFocusInsideDialog', () => {
     dialog.focus();
     expect(isFocusInsideDialog()).toBe(true);
   });
+
+  it('returns true when the focused element sits inside a [role="alertdialog"]', () => {
+    const alertDialog = document.createElement('div');
+    alertDialog.setAttribute('role', 'alertdialog');
+    const textarea = document.createElement('textarea');
+    alertDialog.appendChild(textarea);
+    document.body.appendChild(alertDialog);
+    textarea.focus();
+    expect(isFocusInsideDialog()).toBe(true);
+  });
+
+  it('returns true when the alertdialog element itself holds focus', () => {
+    const alertDialog = document.createElement('div');
+    alertDialog.setAttribute('role', 'alertdialog');
+    alertDialog.tabIndex = -1;
+    document.body.appendChild(alertDialog);
+    alertDialog.focus();
+    expect(isFocusInsideDialog()).toBe(true);
+  });
 });
 
 describe('sendFocusedComposer', () => {
