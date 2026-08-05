@@ -78,6 +78,7 @@ export const initialState: ModelState = {
   modelPickerCollapsedGroups: [],
   fallbackInfoByAgentId: {},
   defaultProviderId: '',
+  catalogProviderIds: [],
 };
 
 // ============================================================================
@@ -149,30 +150,72 @@ export const resetToDefaults = createAction('model/resetToDefaults');
 // Reducer
 // ============================================================================
 
+/**
+ * Adopt a mirrored default provider id only when it is a known catalog row
+ * (or when the catalog has not hydrated yet — pre-hydration ids are
+ * re-validated at `providerCatalogLoaded`). Unknown/stale ids keep the
+ * fallback so model-id normalization never treats an unknown provider as
+ * the default.
+ */
+function validatedDefaultProviderId(
+  candidate: string,
+  catalogProviderIds: string[],
+  fallback: string,
+): string {
+  if (!candidate) return fallback;
+  if (catalogProviderIds.length === 0 || catalogProviderIds.includes(candidate)) {
+    return candidate;
+  }
+  return fallback;
+}
+
 export const modelReducer = createReducer<ModelState>(initialState)
   .with(providerCatalogLoaded, (state, { payload: [catalog] }) => {
     // The registry carries no default designation — the active provider
     // (mirrored via setActiveProvider/hydrateActiveProvider) is the effective
-    // default; the first catalog row is the last-resort fallback.
-    const defaultProviderId = state.defaultProviderId || (catalog.providers[0]?.id ?? '');
+    // default; the first catalog row is the last-resort fallback. A mirrored
+    // id that no longer exists in the newly hydrated catalog is stale — reset
+    // it to the first row instead of letting it drive normalization.
+    const catalogProviderIds = catalog.providers.map((provider) => provider.id);
+    const firstRowId = catalogProviderIds[0] ?? '';
+    const defaultProviderId = validatedDefaultProviderId(
+      state.defaultProviderId,
+      catalogProviderIds,
+      firstRowId,
+    );
     return {
       ...state,
+      catalogProviderIds,
       defaultProviderId,
       // Re-normalize persisted picks that landed before hydration: bare ids
       // for the default provider, prefixed otherwise (same rule as writes).
       providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
     };
   })
-  .with(setActiveProvider, (state, { payload: [providerId] }) => ({
-    ...state,
-    defaultProviderId: providerId,
-    providerModels: normalizeProviderModels(state.providerModels, providerId),
-  }))
-  .with(hydrateActiveProvider, (state, { payload: [providerId] }) => ({
-    ...state,
-    defaultProviderId: providerId,
-    providerModels: normalizeProviderModels(state.providerModels, providerId),
-  }))
+  .with(setActiveProvider, (state, { payload: [providerId] }) => {
+    const defaultProviderId = validatedDefaultProviderId(
+      providerId,
+      state.catalogProviderIds,
+      state.defaultProviderId,
+    );
+    return {
+      ...state,
+      defaultProviderId,
+      providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
+    };
+  })
+  .with(hydrateActiveProvider, (state, { payload: [providerId] }) => {
+    const defaultProviderId = validatedDefaultProviderId(
+      providerId,
+      state.catalogProviderIds,
+      state.defaultProviderId,
+    );
+    return {
+      ...state,
+      defaultProviderId,
+      providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
+    };
+  })
   .with(setSelectedModel, (state, { payload: [{ providerId, model }] }) => ({
     ...state,
     providerModels: {

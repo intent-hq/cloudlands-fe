@@ -43,18 +43,25 @@ export const selectAllCatalogProviderIds = store.createSelector(
  * global default model when it is a compound id, else the active provider
  * (`providers.active`), else the first catalog row. '' only before any of
  * those resolve (fresh state, catalog not hydrated).
+ *
+ * Once the catalog is hydrated, a prefix that is not a known catalog
+ * provider id (malformed/legacy compound string) is ignored and resolution
+ * falls through to the next precedence step, so an unknown id never
+ * mis-attributes bare model ids downstream.
  */
 export const selectEffectiveDefaultProviderId = store.createSelector((state): string => {
+  const catalogLoaded = state.providerCatalog?.loaded ?? false;
+  const catalogIds = state.providerCatalog?.providers.ids ?? [];
   const activeProviderId = state.providerSettings?.activeProviderId ?? '';
   const globalModel = activeProviderId
     ? state.model?.providerModels?.[activeProviderId]
     : undefined;
   if (globalModel?.includes(':')) {
     const { providerId } = splitCompoundModelId(globalModel);
-    if (providerId) return providerId;
+    if (providerId && (!catalogLoaded || catalogIds.includes(providerId))) return providerId;
   }
   if (activeProviderId) return activeProviderId;
-  return state.providerCatalog?.providers.ids[0] ?? '';
+  return catalogIds[0] ?? '';
 });
 
 /** One registry row by id; `undefined` when unknown or not yet hydrated. */

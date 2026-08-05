@@ -7,7 +7,10 @@ import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
-import { setActiveProvider } from '../provider-settings/provider-settings-slice';
+import {
+  hydrateActiveProvider,
+  setActiveProvider,
+} from '../provider-settings/provider-settings-slice';
 import {
   clearModelFallbackInfo,
   clearLoadingStateForProvider,
@@ -64,6 +67,9 @@ describe('modelReducer', () => {
     // A mirrored active provider survives catalog hydration (no first-row clobber).
     const hydrated = modelReducer(withActive, providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
     expect(hydrated.defaultProviderId).toBe('codex');
+    expect(hydrated.catalogProviderIds).toEqual(
+      MOCK_PROVIDER_CATALOG.providers.map((provider) => provider.id),
+    );
 
     const withPicks = modelReducer(
       hydrated,
@@ -75,6 +81,32 @@ describe('modelReducer', () => {
       codex: 'gpt-5.3-codex/high',
       auggie: 'auggie:gpt5.4',
     });
+  });
+
+  it('resets a stale mirrored default at catalog hydration', () => {
+    // A pre-hydration mirror (e.g. hydrateActiveProvider from persisted
+    // settings) naming a provider absent from the newly hydrated catalog is
+    // stale — hydration falls back to the first row instead of keeping it.
+    const withStale = modelReducer(bareInitialState, hydrateActiveProvider('removed-provider'));
+    expect(withStale.defaultProviderId).toBe('removed-provider');
+
+    const hydrated = modelReducer(withStale, providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
+    expect(hydrated.defaultProviderId).toBe(defaultProviderId);
+  });
+
+  it('rejects unknown provider ids mirrored after catalog hydration', () => {
+    // Post-hydration, hydrateActiveProvider/setActiveProvider payloads are
+    // validated against the catalog: unknown ids keep the current default so
+    // model-id normalization never strips/prefixes against a bogus provider.
+    const fromHydrate = modelReducer(initialState, hydrateActiveProvider('removed-provider'));
+    expect(fromHydrate.defaultProviderId).toBe(defaultProviderId);
+
+    const fromSet = modelReducer(initialState, setActiveProvider('removed-provider'));
+    expect(fromSet.defaultProviderId).toBe(defaultProviderId);
+
+    // Known ids are still adopted.
+    const known = modelReducer(initialState, hydrateActiveProvider('codex'));
+    expect(known.defaultProviderId).toBe('codex');
   });
 
   it('re-normalizes persisted picks that landed before catalog hydration', () => {

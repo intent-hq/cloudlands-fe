@@ -27,6 +27,13 @@ export type ModelState = {
    * snapshotted from `setActiveProvider`/`hydrateActiveProvider` (the user's
    * active provider) with a first-catalog-row fallback at
    * `providerCatalogLoaded` — the registry itself carries no default.
+   * Ids are validated against `catalogProviderIds` once the catalog lands.
    */
   defaultProviderId: string;
+  /**
+   * Catalog provider ids mirrored from `providerCatalogLoaded` (registry
+   * order), used to reject stale/unknown provider ids in the mirrors above.
+   * Empty before the first hydration.
+   */
+  catalogProviderIds: string[];
 };
