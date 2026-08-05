@@ -241,18 +241,23 @@ describe('hud-takeover-queue', () => {
     expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-2']);
   });
 
-  it('merges into an existing pending entry for the displayed workspace and moves it to the front', () => {
+  it('a displayed workspace re-queues ahead of other entries but never ahead of a pending viewer', () => {
     let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
     const at = T0 + HUD_TAKEOVER_OPEN_MS + 100;
-    state = enqueueTakeover(state, trigger('ws-1', { kind: 'agent_failed' }), at, NO_BLINK);
-    // A manual viewer for ws-2 pushes its entry ahead of the queued ws-1.
-    state = requestImmediateTakeover(state, trigger('ws-2', { kind: 'manual' }), at + 10, NO_BLINK);
+    // A manual viewer for ws-2 jumps the queue; ws-3 appends FIFO behind it.
+    state = requestImmediateTakeover(state, trigger('ws-2', { kind: 'manual' }), at, NO_BLINK);
     expect(state.phase).toBe('closing');
-    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-2', 'ws-1']);
-    state = enqueueTakeover(state, trigger('ws-1', { kind: 'question_asked' }), at + 20, NO_BLINK);
-    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-1', 'ws-2']);
-    expect(state.pending[0].triggers).toHaveLength(2);
+    state = enqueueTakeover(state, trigger('ws-3'), at + 10, NO_BLINK);
+    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-2', 'ws-3']);
+    // The still-displayed ws-1 re-queues ahead of ws-3 but the user's manual
+    // ws-2 viewer keeps precedence at the head of the queue.
+    state = enqueueTakeover(state, trigger('ws-1', { kind: 'agent_failed' }), at + 20, NO_BLINK);
+    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-2', 'ws-1', 'ws-3']);
+    // A further ws-1 trigger merges into that pending entry in place.
+    state = enqueueTakeover(state, trigger('ws-1', { kind: 'question_asked' }), at + 30, NO_BLINK);
+    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-2', 'ws-1', 'ws-3']);
+    expect(state.pending[1].triggers).toHaveLength(2);
   });
 
   it('coalesces duplicates into a pending entry', () => {
@@ -306,6 +311,21 @@ describe('hud-takeover-queue', () => {
     expect(overflow).toBe(state);
     const coalesced = enqueueTakeover(state, trigger('ws-1', { kind: 'agent_failed' }), T0 + 101);
     expect(coalesced.pending[0].triggers).toHaveLength(2);
+  });
+
+  it('the displayed workspace re-queues even when pending is at the cap', () => {
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-0'), T0, NO_BLINK);
+    for (let i = 1; i <= HUD_TAKEOVER_MAX_PENDING; i++) {
+      state = enqueueTakeover(state, trigger(`ws-${i}`), T0 + i, NO_BLINK);
+    }
+    state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
+    expect(state.phase).toBe('dwelling');
+    expect(state.pending).toHaveLength(HUD_TAKEOVER_MAX_PENDING);
+    // The on-screen ws-0 must not be dropped by the cap: it jumps the queue.
+    const at = T0 + HUD_TAKEOVER_OPEN_MS + 100;
+    state = enqueueTakeover(state, trigger('ws-0', { kind: 'agent_failed' }), at, NO_BLINK);
+    expect(state.pending).toHaveLength(HUD_TAKEOVER_MAX_PENDING + 1);
+    expect(state.pending[0].workspaceId).toBe('ws-0');
   });
 
   it('caps triggers kept per entry at the banner limit', () => {
