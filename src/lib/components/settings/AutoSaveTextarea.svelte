@@ -51,13 +51,23 @@
   let isFocused = $state(false);
   let debounceTimeout: ReturnType<typeof setTimeout> | null = null;
   let savedStatusTimeout: ReturnType<typeof setTimeout> | null = null;
+  // Last seen `value` prop, so the sync effect only fires on real external
+  // changes — never because focus toggled (svelte-ignore: initial capture is
+  // intentional).
+  // svelte-ignore state_referenced_locally
+  let lastPropValue = value;
 
-  // Sync local value when prop changes (e.g., after reset).
-  // Guard: skip while focused to avoid clobbering in-progress edits
-  // and losing scroll position when the save round-trips through Redux.
+  // Sync local value only when the prop actually changes externally (e.g.,
+  // after reset or a post-save refetch). Guards: an unchanged prop must not
+  // clobber a local edit on blur (snap-back regression), and while focused
+  // external changes are skipped to protect in-progress edits and scroll
+  // position when the save round-trips through Redux.
   $effect(() => {
-    if (!isFocused) {
-      localValue = value;
+    if (value !== lastPropValue) {
+      lastPropValue = value;
+      if (!isFocused) {
+        localValue = value;
+      }
     }
   });
 
@@ -101,21 +111,43 @@
   function handleInput() {
     if (debounceTimeout) clearTimeout(debounceTimeout);
     debounceTimeout = setTimeout(() => {
+      debounceTimeout = null;
       save();
     }, debounceMs);
+  }
+
+  // Flush a pending debounced save immediately (e.g., on blur) so the edit
+  // is never silently dropped inside the debounce window.
+  function flushPendingSave() {
+    if (debounceTimeout) {
+      clearTimeout(debounceTimeout);
+      debounceTimeout = null;
+      save();
+    }
+  }
+
+  function handleBlur() {
+    flushPendingSave();
+    isFocused = false;
   }
 
   function handleReset() {
     localValue = originalValue;
     saveStatus = 'idle';
-    if (debounceTimeout) clearTimeout(debounceTimeout);
+    if (debounceTimeout) {
+      clearTimeout(debounceTimeout);
+      debounceTimeout = null;
+    }
     onReset?.();
   }
 
   function handleKeyDown(e: KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key === 's') {
       e.preventDefault();
-      if (debounceTimeout) clearTimeout(debounceTimeout);
+      if (debounceTimeout) {
+        clearTimeout(debounceTimeout);
+        debounceTimeout = null;
+      }
       save();
     }
   }
@@ -152,7 +184,7 @@
       oninput={() => handleInput()}
       onkeydown={handleKeyDown}
       onfocus={() => (isFocused = true)}
-      onblur={() => (isFocused = false)}
+      onblur={handleBlur}
       {placeholder}
       rows={minRows}
       noFocusStyle
