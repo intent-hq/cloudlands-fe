@@ -38,7 +38,10 @@ import {
   setVoiceSettingsError,
 } from "$store/renderer/slices/voice-settings/voice-settings-slice";
 import { VOICE_ENGINE_STORAGE_KEY } from "$features/voice/voice-engine-preference";
-import { VOICE_INPUT_DEVICE_STORAGE_KEY } from "$features/voice/voice-input-device-preference";
+import {
+  resetVoiceInputDevicePreferenceSession,
+  VOICE_INPUT_DEVICE_STORAGE_KEY,
+} from "$features/voice/voice-input-device-preference";
 import { setVoiceOpenAiModel } from "$features/voice/voice-settings-service";
 import {
   changeVoiceEngineFlow,
@@ -242,6 +245,7 @@ describe("voiceSettingsStoreService input-device flows (fake MediaDevices, real 
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+    resetVoiceInputDevicePreferenceSession();
     getItemMock.mockReset().mockReturnValue(null);
     setItemMock.mockReset();
     appStore.dispatch(setVoiceInputDeviceValue(null));

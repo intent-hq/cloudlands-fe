@@ -1,13 +1,16 @@
 /**
  * Tests for the localStorage-backed microphone input-device preference:
  * device ids round-trip, absent/blank values fold to the system default
- * (`null`), a `null` save clears the key, and storage failures degrade
- * without throwing. The global test setup replaces window.localStorage with
- * vi.fn stubs, so reads are driven through the mocked getItem.
+ * (`null`), a `null` save clears the key, storage failures degrade to a
+ * session-scoped preference without throwing, and loads prefer the
+ * in-session selection over the persisted value. The global test setup
+ * replaces window.localStorage with vi.fn stubs, so reads are driven
+ * through the mocked getItem.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   loadVoiceInputDevicePreference,
+  resetVoiceInputDevicePreferenceSession,
   saveVoiceInputDevicePreference,
   VOICE_INPUT_DEVICE_STORAGE_KEY,
 } from "./voice-input-device-preference";
@@ -17,6 +20,7 @@ const setItemMock = vi.mocked(window.localStorage.setItem);
 const removeItemMock = vi.mocked(window.localStorage.removeItem);
 
 afterEach(() => {
+  resetVoiceInputDevicePreferenceSession();
   getItemMock.mockReset().mockReturnValue(null);
   setItemMock.mockReset();
   removeItemMock.mockReset();
@@ -56,6 +60,24 @@ describe("load/saveVoiceInputDevicePreference", () => {
     });
     expect(() => saveVoiceInputDevicePreference("mic-abc123")).not.toThrow();
     expect(() => saveVoiceInputDevicePreference(null)).not.toThrow();
+    expect(loadVoiceInputDevicePreference()).toBeNull();
+  });
+
+  it("prefers the in-session selection when the persisted write failed", () => {
+    setItemMock.mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
+    getItemMock.mockReturnValue("mic-stale");
+    saveVoiceInputDevicePreference("mic-new");
+    expect(loadVoiceInputDevicePreference()).toBe("mic-new");
+  });
+
+  it("an in-session null save overrides a stale persisted value", () => {
+    removeItemMock.mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
+    getItemMock.mockReturnValue("mic-stale");
+    saveVoiceInputDevicePreference(null);
     expect(loadVoiceInputDevicePreference()).toBeNull();
   });
 });
