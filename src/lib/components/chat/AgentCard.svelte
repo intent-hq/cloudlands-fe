@@ -434,7 +434,9 @@
   //      a text-bearing `agent:stream:activity`) so a leftover previous-turn
   //      `lastAgentResponse` doesn't masquerade as this turn's text in the
   //      pre-first-token window;
-  //   3. the persisted transcript peek text (idle agents).
+  //   3. the persisted transcript peek text (idle agents) — agent-peek-utils
+  //      falls back to the wire `lastAgentResponse` when the loaded
+  //      transcript has no assistant message.
   // Tool previews (lastToolUse) only kick in when there's no text to show.
   const liveResponseLine = $derived.by(() => {
     if (isStreamActive && $hasStreamOwnedMessage$ && streamingBuffer) {
@@ -460,7 +462,8 @@
   // existing precedence. Once streamed text lands (or the daemon overlay flips
   // the role to "assistant"), the live-preview precedence above resumes.
   // Text source: transcript-derived first, then the wire `lastUserMessage`
-  // (AgentLite list/get projection) for sessions without a loaded transcript.
+  // (AgentLite list/get projection) — agent-peek-utils applies this fallback
+  // itself; the direct session read remains as a belt-and-braces fallback.
   const userFirstLine = $derived(
     stripUserMessagePrefixes(agentData?.lastUserMessage || $agent$?.lastUserMessage || '')
       .split('\n')[0]

@@ -282,7 +282,11 @@ describe('AgentCard user-message-newest preview (freshness wins)', () => {
     expect(preview.textContent).not.toContain('the question');
   });
 
-  it('leaves an AgentLite-only session without lastMessageRole unchanged (older daemon: no preview)', async () => {
+  it('previews the wire lastUserMessage on an AgentLite-only session without lastMessageRole (older daemon)', async () => {
+    // Absent role (older daemon) the freshness-wins precedence stays
+    // disabled, but the peek-utils wire fallback still surfaces the user
+    // text through the lowest-precedence preview slot — strictly better
+    // than an empty card. A wire lastAgentResponse would outrank it there.
     seedSession({
       status: AgentStatus.Idle,
       isStreaming: false,
@@ -292,8 +296,24 @@ describe('AgentCard user-message-newest preview (freshness wins)', () => {
 
     render(AgentCard, { props: { agentId } });
 
-    await screen.findByText('Watched Agent');
-    expect(screen.queryByTestId('agent-card-preview')).toBeNull();
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('wire-only user text');
+  });
+
+  it('lets the wire lastAgentResponse outrank the wire lastUserMessage when the role is absent', async () => {
+    seedSession({
+      status: AgentStatus.Idle,
+      isStreaming: false,
+      messages: [],
+      lastUserMessage: 'wire-only user text',
+      lastAgentResponse: 'wire-only response text',
+    });
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('wire-only response text');
+    expect(preview.textContent).not.toContain('wire-only user text');
   });
 });
 
