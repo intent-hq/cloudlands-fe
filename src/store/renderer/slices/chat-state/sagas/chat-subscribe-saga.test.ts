@@ -4,7 +4,8 @@ import type { AgentMessage, AgentSession } from "$shared/types";
 import type { ChatLiveStreamPhase, ChatTranscript } from "$lib/client/app-client";
 
 // FAKE seam: chat.subscribe is stubbed so no daemon call happens; each call
-// records its handler (so tests can push §7.1-shaped reconciled transcripts)
+// records its handler (so tests can push §7.1-shaped reconciled transcripts
+// through the saga-owned event channel)
 // and returns a spy disposer. agents.get/getConversation + subscribeSnapshot
 // keep the sibling chat-read saga (same initializeChatRequested
 // trigger, real store) inert. READ-ONLY: never a mutation.
@@ -70,11 +71,7 @@ import {
   clearCurrentlyViewedAgent,
   markAgentAsViewed,
 } from "$store/renderer/slices/unread-tracking/unread-tracking-slice";
-import {
-  __resetChatSubscribeSagaForTests,
-  chatSubscribeSaga,
-  hasLiveChatSubscription,
-} from "./chat-subscribe-saga";
+import { chatSubscribeSaga } from "./chat-subscribe-saga";
 import {
   clearPendingAgentDeletions,
   removePendingAgentDeletion,
@@ -144,7 +141,7 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
   });
   afterAll(() => stopSaga?.());
   afterEach(() => {
-    __resetChatSubscribeSagaForTests();
+    appStore.dispatch(clearAllSessions());
     clearPendingAgentDeletions();
     fakeSubscriptions.length = 0;
     vi.clearAllMocks();
@@ -166,12 +163,14 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     seedSession(agentId);
     const sub = openChat(agentId);
     sub.handler(transcript([]));
+    const before = selectAgentMessages.select(appStore.state, agentId);
 
     stopSaga?.();
     stopSaga = undefined;
 
     expect(sub.unsubscribe).toHaveBeenCalledOnce();
-    expect(hasLiveChatSubscription(agentId)).toBe(false);
+    sub.handler(transcript([makeMessage("late-after-cancel", "stale")]));
+    expect(selectAgentMessages.select(appStore.state, agentId)).toBe(before);
     stopSaga = appStore.runSaga(chatSubscribeSaga);
   });
 
@@ -188,7 +187,6 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     const asst = makeMessage("0190a200-asst", "Let me check.");
     sub.handler(transcript([user, asst]));
 
-    expect(hasLiveChatSubscription(agentId)).toBe(true);
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
       "0190a1b2-user",
       "0190a200-asst",
@@ -414,7 +412,7 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
 
   it("preserves store-only rows the snapshot page does not cover (older paged history)", () => {
     const agentId = "agent-sub-paged";
-    // Full-history hydration (chat-read-service) landed an older message the
+    // Full-history hydration (chat-read saga) landed an older message the
     // newest snapshot page no longer includes.
     const older = makeMessage("older-page-msg", "old history", {
       timestamp: "2025-12-31T23:00:00.000Z",
@@ -468,7 +466,6 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     // initializeChatRequested on mount).
     appStore.dispatch(markAgentAsViewed(agentB));
     expect(subA.unsubscribe).toHaveBeenCalledTimes(1);
-    expect(hasLiveChatSubscription(agentA)).toBe(false);
     // B's subscription opened from the switch (session already in store).
     const subB = fakeSubscriptions.find((s) => s.agentId === agentB);
     expect(subB).toBeDefined();
@@ -484,7 +481,7 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     // with isStreaming: true, and nothing else rewrites it after the
     // subscription closes. The stale flag would keep the AgentCard tier-1
     // frozen buffer winning over the push-applied lastAgentResponse that IS
-    // advancing (~1s activity pings), so closeChatSubscription normalizes
+    // advancing (~1s activity pings), so subscription teardown normalizes
     // the flags on teardown.
     const agentA = "agent-sub-stale-a";
     const agentB = "agent-sub-stale-b";
@@ -505,7 +502,7 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
 
     // Navigate away mid-turn: markAgentAsViewed(B) closes A's subscription.
     appStore.dispatch(markAgentAsViewed(agentB));
-    expect(hasLiveChatSubscription(agentA)).toBe(false);
+    expect(subA.unsubscribe).toHaveBeenCalledTimes(1);
 
     const partial = selectAgentMessages
       .select(appStore.state, agentA)
@@ -523,7 +520,6 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
 
     appStore.dispatch(clearCurrentlyViewedAgent());
     expect(sub.unsubscribe).toHaveBeenCalledTimes(1);
-    expect(hasLiveChatSubscription(agentId)).toBe(false);
   });
 
   it("renders the interrupted partial row with Stopped metadata after the §7.2 terminal reconcile", () => {
@@ -596,7 +592,6 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     const sub = openChat(agentId);
     appStore.dispatch(removeSession(agentId));
     expect(sub.unsubscribe).toHaveBeenCalledTimes(1);
-    expect(hasLiveChatSubscription(agentId)).toBe(false);
   });
 
   it("re-applies the last reconciled transcript when a slower hydrate settles without the finalized row (monorepo#1161)", () => {
@@ -677,9 +672,9 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     // Subscription open but nothing emitted yet.
     const agentB = "agent-sub-settle-preemit";
     seedSession(agentB, { messages: [makeMessage("seeded-b", "hydrated history")] });
-    openChat(agentB);
+    const sub = openChat(agentB);
     appStore.dispatch(transcriptHydrationSettled(agentB));
-    expect(hasLiveChatSubscription(agentB)).toBe(false);
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
     expect(selectAgentMessages.select(appStore.state, agentB).map((m) => m.id)).toEqual([
       "seeded-b",
     ]);
@@ -699,8 +694,8 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     //
     // Neither trailing clear means "no chat is viewed": A is still the
     // visible, viewed chat. Each panel scopes its clear to its own agent, so
-    // B's trailing clear is a reducer no-op (A is viewed) and the middleware
-    // must NOT map it to closeAllChatSubscriptions() — otherwise A's
+    // B's trailing clear is a reducer no-op (A is viewed) and the saga must
+    // NOT close A's subscription — otherwise A's
     // subscription (the sole transcript writer) dies and A's next live turn
     // renders NOTHING (no thinking, no stop button) until a remount
     // re-initializes the chat.
@@ -735,7 +730,6 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
 
     // A live emit for the viewed agent must still apply to the store.
     reopened!.handler(transcript([makeMessage("live-turn-msg", "thinking…")], true));
-    expect(hasLiveChatSubscription(agentA)).toBe(true);
     expect(selectAgentMessages.select(appStore.state, agentA).map((m) => m.id)).toContain(
       "live-turn-msg",
     );
@@ -770,7 +764,6 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
 
       // A live emit for the chief agent must still apply to the store.
       chiefSub.handler(transcript([makeMessage("chief-live", "still streaming")], true));
-      expect(hasLiveChatSubscription(CHIEF_AGENT)).toBe(true);
       expect(selectAgentMessages.select(appStore.state, CHIEF_AGENT).map((m) => m.id)).toContain(
         "chief-live",
       );
@@ -790,7 +783,9 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
 
       expect(wsSub.unsubscribe).not.toHaveBeenCalled();
       wsSub.handler(transcript([makeMessage("ws-live", "still streaming")], true));
-      expect(hasLiveChatSubscription(workspaceAgent)).toBe(true);
+      expect(selectAgentMessages.select(appStore.state, workspaceAgent).map((m) => m.id)).toContain(
+        "ws-live",
+      );
     });
 
     it("viewing one chief thread still closes another chief thread's subscription", () => {
