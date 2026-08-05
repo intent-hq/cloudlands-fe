@@ -49,6 +49,10 @@
   requestUnarchiveWorkspace,
 } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import {
+  selectBulkArchiveActiveAgentCount,
+  selectBulkArchiveActiveHookCount,
+  selectBulkDeleteActiveAgentCount,
+  selectBulkDeleteActiveHookCount,
   selectBulkDeleteWorkspaceCount,
   selectPendingBulkRepoKey,
   selectPendingRemoveRepoPath,
@@ -86,10 +90,14 @@
   let workspaceInitializer: CompactWorkspaceInitializer | null = $state(null);
 
   const showBulkArchiveConfirm = selectShowBulkArchiveConfirm();
+  const bulkArchiveActiveAgentCount = selectBulkArchiveActiveAgentCount();
+  const bulkArchiveActiveHookCount = selectBulkArchiveActiveHookCount();
   const showBulkDeleteArchivedConfirm = selectShowBulkDeleteArchivedConfirm();
   const pendingBulkRepoKey = selectPendingBulkRepoKey();
   const showBulkDeleteWarningConfirm = selectShowBulkDeleteWarningConfirm();
   const bulkDeleteWorkspaceCount = selectBulkDeleteWorkspaceCount();
+  const bulkDeleteActiveAgentCount = selectBulkDeleteActiveAgentCount();
+  const bulkDeleteActiveHookCount = selectBulkDeleteActiveHookCount();
   const showRemoveRepoConfirm = selectShowRemoveRepoConfirm();
   const pendingRemoveRepoPath = selectPendingRemoveRepoPath();
 
@@ -413,6 +421,8 @@
     repo: $pendingBulkRepoKey ?? m.workspace_home_thisRepo_fallback(),
   })}
   confirmText={m.workspace_home_bulkArchiveConfirm_label()}
+  activeAgentCount={$bulkArchiveActiveAgentCount}
+  activeHookCount={$bulkArchiveActiveHookCount}
   onConfirm={() => appStore.dispatch(confirmBulkArchive())}
   onCancel={() => appStore.dispatch(closeBulkArchiveConfirm())}
 />
@@ -430,7 +440,7 @@
   onCancel={() => appStore.dispatch(closeBulkDeleteArchivedConfirm())}
 />
 
-<!-- Bulk Delete Warning Dialog (when archived spaces have running agents) -->
+<!-- Bulk Delete Warning Dialog (when archived spaces have active agents/hooks) -->
 <BulkActionConfirmDialog
   open={$showBulkDeleteWarningConfirm}
   title={m.workspace_home_bulkDeleteWarning_title()}
@@ -439,6 +449,8 @@
     : m.workspace_home_bulkDeleteWarning_description_many({ count: $bulkDeleteWorkspaceCount })}
   confirmText={m.workspace_home_deleteAnyway_label()}
   variant="destructive"
+  activeAgentCount={$bulkDeleteActiveAgentCount}
+  activeHookCount={$bulkDeleteActiveHookCount}
   onConfirm={() => appStore.dispatch(confirmBulkDeleteWarning())}
   onCancel={() => appStore.dispatch(closeBulkDeleteWarningConfirm())}
 />
