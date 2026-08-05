@@ -1430,7 +1430,7 @@
   }
 
   async function handleSubmit() {
-    if (!isValid || isCreating) return;
+    if (!isValid || isCreating || isEnhancing) return;
 
     isCreating = true;
     error = null;
@@ -2510,6 +2510,7 @@
         bind:this={richTextarea}
         bind:value={initialPrompt}
         placeholder={m.workspace_compactInitializer_prompt_placeholder()}
+        disabled={isEnhancing || isCreating}
         repoPath={repoType === 'local' ? repoPath : undefined}
         onfocus={() => {
           isExpanded = true;
@@ -2735,7 +2736,7 @@
 
         <!-- Create button -->
         <div class="shrink-0">
-          <Button class="text-white" onclick={handleSubmit} disabled={!isValid || isCreating}>
+          <Button class="text-white" onclick={handleSubmit} disabled={!isValid || isCreating || isEnhancing}>
             {#if isCreating}
               <Fa icon={faSpinner} class="animate-spin" size="sm" />
               <span class="min-w-[160px] text-left">
