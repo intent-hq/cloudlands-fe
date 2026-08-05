@@ -57,7 +57,10 @@
 
   // Skip gating on sandbox/test routes
   const isSandboxPage = $derived(
-    $page.url.pathname.startsWith('/sandbox') || $page.url.pathname.startsWith('/test'),
+    $page.url.pathname === '/sandbox' ||
+      $page.url.pathname.startsWith('/sandbox/') ||
+      $page.url.pathname === '/test' ||
+      $page.url.pathname.startsWith('/test/'),
   );
 
   // Check if any provider is available (allows bypassing Auggie-specific setup)
