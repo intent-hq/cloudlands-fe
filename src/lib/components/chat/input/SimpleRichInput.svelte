@@ -8,12 +8,18 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
+  import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
   import {
-  getDefaultProviderId,
-  getProviderConfig,
-  parseCompoundModelId,
-} from '$shared/config/provider-config';
-  import { enhancePrompt } from '$lib/client/live/live-prompt-enhancement';
+  selectCatalogDefaultProviderId,
+  selectNormalizedProviderId,
+  selectProviderDisplayName,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    enhancePrompt,
+    EnhancePromptUnavailableError,
+    isEnhancePromptAvailable,
+  } from '$lib/client/live/live-prompt-enhancement';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
 
@@ -25,15 +31,31 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import Fa from 'svelte-fa';
   import {
   faMagicWandSparkles,
+  faMicrophone,
   faPaperclip,
   faPaperPlane,
+  faSpinner,
   faXmark,
   faLayerGroup,
   faStop,
 } from '@fortawesome/free-solid-svg-icons';
+  import {
+  selectPttRecording,
+  selectVoiceTranscribing,
+} from '$store/renderer/slices/hardware-console/hardware-console-selectors';
+  import {
+  cancelComposerMicRecording,
+  isComposerMicRecording,
+  toggleComposerMicRecording,
+} from '$features/hardware-console/voice/composer-mic-controller';
+  import { cancelActiveTranscription } from '$features/hardware-console/voice/transcription-cancellation';
+  import { showVoiceSetupToast } from '$features/hardware-console/voice/voice-setup-toast';
+  import { selectEffectiveVoiceEngine } from '$store/renderer/slices/voice-settings/voice-settings-selectors';
+  import type { PttContext } from '$features/hardware-console/voice/ptt-controller';
   import Button from '../../ui/button/button.svelte';
   import TipTapEditor from './TipTapEditor.svelte';
   import ModelPicker from './ModelPicker.svelte';
+  import ModelSwitchConfirmDialog from '../ModelSwitchConfirmDialog.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import AttachmentPreview from '../AttachmentPreview.svelte';
   import ContextChip from '../ContextChip.svelte';
@@ -52,6 +74,26 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { slide } from 'svelte/transition';
 
   const logger = createLogger('SimpleRichInput');
+
+  const defaultProviderId$ = selectCatalogDefaultProviderId();
+  const activeProviderId$ = selectActiveProviderId();
+  const pttRecording$ = selectPttRecording();
+  const voiceTranscribing$ = selectVoiceTranscribing();
+  const effectiveVoiceEngine$ = selectEffectiveVoiceEngine();
+
+  // Catalog-backed local shims for the legacy provider-config helpers.
+  function normalizeProviderId(providerId: string): string {
+    return selectNormalizedProviderId.select(appStore.state, providerId);
+  }
+  function providerDisplayName(providerId: string): string {
+    return selectProviderDisplayName.select(appStore.state, providerId);
+  }
+  function parseCompoundModelId(compoundModelId: string): {
+    providerId: string;
+    modelId: string;
+  } {
+    return parseCompoundModelIdWithDefault(compoundModelId, $defaultProviderId$);
+  }
 
   type MainPanelContext = {
     type: 'file' | 'note' | 'spec';
@@ -80,7 +122,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     selectedModel?: string | null;
     isModelLocked?: boolean;
     providerId?: string;
-    isProviderChangeLocked?: boolean;
+    /**
+     * When true (conversation has started), a mid-conversation model/provider
+     * switch must be confirmed via a warning dialog before it is applied.
+     */
+    requiresModelSwitchConfirmation?: boolean;
     agentId?: string;
     autoFocus?: boolean;
     /** Edit mode - shows cancel button and changes submit label */
@@ -110,11 +156,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import type { ContextItem } from './context-api';
   import { cn } from '$lib/utils';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   export type { ContextItem };
 
   let {
     value = $bindable(''),
-    placeholder = 'Ask anything or type @ for context',
+    placeholder = m.chat_richInput_askAnything_placeholder(),
     disabled = false,
     editableWhileDisabled = false,
     workspace,
@@ -127,7 +175,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     selectedModel: propSelectedModel,
     isModelLocked = false,
     providerId: propProviderId,
-    isProviderChangeLocked = false,
+    requiresModelSwitchConfirmation = false,
     agentId,
     autoFocus = false,
     editMode = false,
@@ -147,6 +195,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     onHistoryPrev,
     onHistoryNext,
   }: Props = $props();
+
+  // §5.31 gate — enhance is auggie-only; unset active provider defaults to auggie
+  const enhanceAvailable = $derived(isEnhancePromptAvailable($activeProviderId$));
 
   // Track if enhancement is in progress
   let isEnhancing = $state(false);
@@ -189,6 +240,52 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   // no turn to stop while a parent is idle-waiting, and that affordance lives
   // on sidebar/list surfaces (IDLE-1).
   let showStopButton = $derived(isStreaming || isResponding);
+
+  // Mic latch button: "recording" renders only for the session THIS button
+  // started (ownership via the controller's session token) — a live hardware
+  // PTT session leaves the button idle-looking, and a click then hints
+  // instead of hijacking it. `$pttRecording$` drives re-evaluation (it flips
+  // exactly when a session starts/ends); transcribing disables the button
+  // with a spinner while `voice.transcribe` is in flight.
+  const micRecording = $derived($pttRecording$ && isComposerMicRecording());
+  const micTranscribing = $derived($voiceTranscribing$);
+
+  /** Dispatch + hint context for the shared PTT session API. */
+  const micContext: PttContext = {
+    dispatch: (action) => appStore.dispatch(action as { type: string }),
+    showHint: (message) => toast.info(message),
+  };
+
+  function handleMicClick() {
+    // The button is hidden while the effective engine is 'unavailable'
+    // (no engine can transcribe at all — non-mac or helper-missing mac
+    // with no cloud key), so this gate only catches the render race where
+    // a click lands before the template reacts to a settings change. A
+    // live recording is never gated — its stop-click must always land.
+    if (
+      !micRecording &&
+      selectEffectiveVoiceEngine.select(appStore.state) === 'unavailable'
+    ) {
+      showVoiceSetupToast();
+      return;
+    }
+    toggleComposerMicRecording(micContext);
+  }
+
+  function handleMicEscape(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || !micRecording) return;
+    if (cancelComposerMicRecording(micContext)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }
+
+  // Cancel-while-transcribing: abandon the in-flight session so a hung or
+  // slow transcribe can never insert a late result — the transcribing state
+  // clears immediately and a new recording can start right away.
+  function handleMicCancelTranscription() {
+    cancelActiveTranscription();
+  }
 
   $effect(() => {
     const justEnabled = previousDisabled && !disabled;
@@ -427,18 +524,18 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   const hydratedPropProviderId = $derived.by(() => {
     if (propProviderId) {
-      return getProviderConfig(propProviderId).id;
+      return normalizeProviderId(propProviderId);
     }
 
     if (!agentId) {
-      return getProviderConfig(getDefaultProviderId()).id;
+      return $defaultProviderId$;
     }
 
     const session = workspace?.id
       ? selectAgentSession.select(appStore.state, agentId)
       : undefined;
-    const provider = session ? getAgentProvider(session) : undefined;
-    return provider ? getProviderConfig(provider).id : undefined;
+    const provider = session ? getAgentProvider(session, $defaultProviderId$) : undefined;
+    return provider ? normalizeProviderId(provider) : undefined;
   });
   let localProviderId = $state<string | undefined>(undefined);
 
@@ -451,20 +548,77 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   const selectedProviderId = $derived.by(() => {
     return localProviderId || hydratedPropProviderId;
   });
-  const providerChangeLocked = $derived(isProviderChangeLocked);
-  const effectiveModelLocked = $derived(isModelLocked || providerChangeLocked);
-  const providerAndModelLockedTitle = 'Start a new agent to change provider or model.';
-  const modelLockedTitle = $derived.by(() => {
-    if (!providerChangeLocked) {
-      return undefined;
-    }
 
-    return providerAndModelLockedTitle;
-  });
   let isChangingProvider = $state(false);
 
+  // Mid-conversation switch confirmation dialog state. The pending resolver
+  // settles the promise returned to ModelPicker's confirmModelChange gate.
+  let modelSwitchDialog = $state<{
+    isProviderChange: boolean;
+    fromModelLabel: string;
+    toModelLabel: string;
+    fromProviderName: string;
+    toProviderName: string;
+    resolve: (confirmed: boolean) => void;
+  } | null>(null);
+
+  function describeModelForDialog(model: string | null | undefined): {
+    modelLabel: string;
+    providerName: string;
+    providerId: string;
+  } {
+    if (!model) {
+      const provider = selectedProviderId || $defaultProviderId$;
+      return {
+        modelLabel: m.chat_richInput_defaultModel_label(),
+        providerName: providerDisplayName(provider),
+        providerId: normalizeProviderId(provider),
+      };
+    }
+    // Bare (non-compound) ids belong to the agent's current provider, not the
+    // default provider parseCompoundModelId falls back to.
+    const rawProvider = model.includes(':')
+      ? parseCompoundModelId(model).providerId
+      : selectedProviderId || $defaultProviderId$;
+    return {
+      modelLabel: parseCompoundModelId(model).modelId,
+      providerName: providerDisplayName(rawProvider),
+      providerId: normalizeProviderId(rawProvider),
+    };
+  }
+
+  function confirmModelSwitch(
+    from: string | null | undefined,
+    to: string | null,
+  ): boolean | Promise<boolean> {
+    if (!requiresModelSwitchConfirmation) return true;
+
+    // Settle any previously pending dialog so its awaiter never hangs.
+    modelSwitchDialog?.resolve(false);
+    const fromInfo = describeModelForDialog(from);
+    const toInfo = describeModelForDialog(to);
+    return new Promise<boolean>((resolve) => {
+      modelSwitchDialog = {
+        // Compare normalized provider ids, not display names — unknown ids
+        // fall back to the default config's display name and would misclassify
+        // a cross-provider switch as model-only.
+        isProviderChange: fromInfo.providerId !== toInfo.providerId,
+        fromModelLabel: fromInfo.modelLabel,
+        toModelLabel: toInfo.modelLabel,
+        fromProviderName: fromInfo.providerName,
+        toProviderName: toInfo.providerName,
+        resolve,
+      };
+    });
+  }
+
+  function settleModelSwitchDialog(confirmed: boolean) {
+    modelSwitchDialog?.resolve(confirmed);
+    modelSwitchDialog = null;
+  }
+
   async function handleProviderChangeFromModel(newProvider: string, newModel: string) {
-    if (!agentId || !workspace?.id || providerChangeLocked) return;
+    if (!agentId || !workspace?.id) return;
     if (isChangingProvider) return; // prevent re-entry during in-flight switch
 
     const previousSession = agentId && workspace?.id
@@ -513,7 +667,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         }));
       }
       toast.error(
-        error instanceof Error ? error.message : `Failed to switch to ${getProviderConfig(newProvider).displayName}.`,
+        error instanceof Error
+          ? error.message
+          : m.chat_richInput_switchFailed_error({
+              provider: providerDisplayName(newProvider),
+            }),
       );
     } finally {
       modelPickerRef?.clearPendingUpdate();
@@ -527,7 +685,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   }
 
   function handleSubmit() {
-    if (!canSend || disabled) {
+    if (!canSend || disabled || isEnhancing) {
       return;
     }
     // Clear any model fallback warning since user is sending a message with the new model
@@ -537,7 +695,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   }
 
   function handleForceSubmit() {
-    if (!canSend || disabled) {
+    if (!canSend || disabled || isEnhancing) {
       return;
     }
     // Force submit interrupts streaming and sends immediately
@@ -545,6 +703,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   }
 
   async function handleEnhancePrompt() {
+    if (!enhanceAvailable) return;
     if (!value.trim() || isEnhancing) return;
 
     isEnhancing = true;
@@ -564,7 +723,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         }
 
         value = result.enhanced;
-        toast.success('Prompt enhanced');
+        toast.success(m.chat_richInput_promptEnhanced_toast());
       }
     } catch (error) {
       // Don't show error if it was cancelled
@@ -573,9 +732,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       }
       logger.error('Failed to enhance prompt:', error);
       toast.error(
-        error instanceof Error && error.message
-          ? `Failed to enhance prompt: ${error.message}`
-          : 'Failed to enhance prompt',
+        error instanceof EnhancePromptUnavailableError
+          ? m.chat_richInput_enhanceUnavailable_error()
+          : error instanceof Error && error.message
+            ? m.chat_richInput_enhanceFailedDetail_error({ detail: error.message })
+            : m.chat_richInput_enhanceFailed_error(),
       );
     } finally {
       // Only reset isEnhancing if this request wasn't cancelled
@@ -737,17 +898,21 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         addedCount.value++;
       } catch (error) {
         logger.error('Failed to add image to context', { fileName: file.name, error });
-        toast.error(`Failed to add image: ${file.name}`);
+        toast.error(m.chat_richInput_addImageFailed_error({ name: file.name }));
       }
     }
 
     if (addedCount.value > 0) {
       logger.debug(`Added ${addedCount.value} image(s) to context`);
-      toast.success(`Added ${addedCount.value} image(s) to context`);
+      toast.success(
+        addedCount.value === 1
+          ? m.chat_richInput_addedImages_toast_one()
+          : m.chat_richInput_addedImages_toast_many({ count: formatInteger(addedCount.value) }),
+      );
     }
 
     if (oversizedFiles.length > 0) {
-      toast.error(`Files too large (max 10MB): ${oversizedFiles.join(', ')}`);
+      toast.error(m.chat_richInput_filesTooLarge_error({ names: oversizedFiles.join(', ') }));
     }
   }
 
@@ -764,14 +929,17 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       id: `file-upload-${Date.now()}-${fileName}`,
       type: 'file',
       label: fileName,
-      description: `${file.type || 'Unknown type'} • ${formatFileSize(file.size)}`,
+      description: m.chat_richInput_fileTypeSize_description({
+        type: file.type || m.chat_richInput_unknownType_fallback(),
+        size: formatFileSize(file.size),
+      }),
       path: fileName,
       file: file,
     };
 
     contextItems = [...contextItems, contextItem];
     oncontextAdd?.(contextItem);
-    toast.success(`Added ${fileName} to context`);
+    toast.success(m.chat_richInput_addedFile_toast({ name: fileName }));
   }
 
 
@@ -886,6 +1054,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   });
 </script>
 
+<!-- Esc cancels an in-progress composer mic recording (discard, no
+     transcription). Capture phase so the editor's own Escape handling
+     never wins while dictation is live; a no-op unless this instance owns
+     the recording session. -->
+<svelte:window onkeydowncapture={handleMicEscape} />
+
 <div
   bind:this={containerRef}
   class={cn(
@@ -904,7 +1078,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   ondrop={handleDrop}
   onpaste={handlePaste}
   role="region"
-  aria-label="Chat input with file drop support"
+  aria-label={m.chat_richInput_dropSupport_ariaLabel()}
   data-testid="message-input"
 >
   <!-- Drop zone overlay -->
@@ -914,7 +1088,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     >
       <div class="flex flex-col items-center gap-2 text-primary">
         <Fa icon={faPaperclip} class="w-6 h-6" />
-        <span class="text-sm font-medium">Drop files here</span>
+        <span class="text-sm font-medium">{m.chat_richInput_dropFiles_label()}</span>
       </div>
     </div>
   {/if}
@@ -926,7 +1100,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       : 'top-[-0.5px] -translate-y-1/2'}"
     onmousedown={startResize}
     ondblclick={handleResizeDoubleClick}
-    aria-label="Resize input area (double-click to reset)"
+    aria-label={m.chat_richInput_resize_ariaLabel()}
     tabindex="-1"
   >
     <div class="resize-handle-bar w-full h-full flex items-center justify-center">
@@ -955,7 +1129,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               />
             {/snippet}
             {#snippet content()}
-              <Header size={6}>Selected text</Header>
+              <Header size={6}>{m.chat_richInput_selectedText_label()}</Header>
               <div class="mt-1 text-xs whitespace-pre-wrap max-w-80 overflow-auto line-clamp-6">
                 {item.content}
               </div>
@@ -1006,8 +1180,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         {autoFocus}
         {value}
         {placeholder}
-        {disabled}
-        {editableWhileDisabled}
+        disabled={disabled || isEnhancing}
+        editableWhileDisabled={editableWhileDisabled && !isEnhancing}
         workspace={workspace ?? undefined}
         onUpdate={(text) => {
           value = text;
@@ -1069,12 +1243,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       <ModelPicker
         bind:this={modelPickerRef}
         {selectedModel}
-        providerId={providerChangeLocked ? selectedProviderId : undefined}
         variant="ghost-light"
         size="xs"
-        isLocked={effectiveModelLocked}
-        lockedTitle={modelLockedTitle}
-        showLockIconWhenLocked={!providerChangeLocked}
+        isLocked={isModelLocked}
+        confirmModelChange={confirmModelSwitch}
         deferUpdate={isStreaming}
         workspaceId={workspace?.id}
         {agentId}
@@ -1085,7 +1257,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
           // Check if the model is from a different provider
           const rawProvider = parseCompoundModelId(newModel).providerId;
-          const newProvider = getProviderConfig(rawProvider).id;
+          const newProvider = normalizeProviderId(rawProvider);
           if (agentId && newProvider !== selectedProviderId) {
             // Provider is changing — run the full provider switch flow
             void handleProviderChangeFromModel(newProvider, newModel);
@@ -1113,54 +1285,107 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     </div>
 
     <div class="flex items-end gap-px min-w-0 shrink-0 -mb-0.5">
-      <TooltipShortcut label="Attach files" side="top">
+      <TooltipShortcut label={m.chat_richInput_attachFiles_label()} side="top">
         <Button
           variant="ghost-light"
           size="icon-sm"
           {disabled}
           onclick={handleFileSelect}
-          aria-label="Attach files"
+          aria-label={m.chat_richInput_attachFiles_label()}
         >
           <Fa icon={faPaperclip} size="sm" />
         </Button>
       </TooltipShortcut>
 
-      {#if isEnhancing}
-        <TooltipShortcut label="Stop enhancing" side="top">
+      <!-- Mic latch button: click starts dictation, click again (Esc cancels)
+           stops and transcribes into the composer at the caret. Hidden when
+           no engine can transcribe at all ('unavailable': Windows/Linux or
+           helper-missing mac with no cloud key — see effective-voice-engine);
+           on macOS the button stays visible pre-authorization and the click
+           proceeds down the OS path so the permission prompt can fire. -->
+      {#if micTranscribing}
+        <!-- Clickable while transcribing: cancel abandons the in-flight
+             session (a hung provider's late result is discarded) and
+             returns the button to idle immediately. -->
+        <TooltipShortcut label={m.chat_richInput_micCancelTranscribing_label()} side="top">
           <Button
             variant="ghost-light"
             size="icon-sm"
-            onclick={handleCancelEnhance}
-            aria-label="Stop enhancing"
-            class="text-destructive-foreground"
+            onclick={handleMicCancelTranscription}
+            aria-label={m.chat_richInput_micCancelTranscribing_label()}
+            data-testid="composer-mic-button"
           >
-            <Fa icon={faStop} size="sm" />
+            <Fa icon={faSpinner} size="sm" class="animate-spin" />
           </Button>
         </TooltipShortcut>
-      {:else}
-        <TooltipShortcut label="Enhance prompt" shortcut="cmd+/" side="top">
+      {:else if micRecording}
+        <TooltipShortcut label={m.chat_richInput_micStop_label()} shortcut="Escape" side="top">
           <Button
             variant="ghost-light"
             size="icon-sm"
-            onclick={handleEnhancePrompt}
-            disabled={disabled || !value.trim()}
-            aria-label="Enhance prompt"
+            onclick={handleMicClick}
+            aria-label={m.chat_richInput_micStop_label()}
+            aria-pressed="true"
+            class="text-destructive-foreground animate-pulse"
+            data-testid="composer-mic-button"
           >
-            <Fa icon={faMagicWandSparkles} size="sm" />
+            <Fa icon={faMicrophone} size="sm" />
           </Button>
         </TooltipShortcut>
+      {:else if $effectiveVoiceEngine$ !== 'unavailable'}
+        <TooltipShortcut label={m.chat_richInput_micStart_label()} side="top">
+          <Button
+            variant="ghost-light"
+            size="icon-sm"
+            {disabled}
+            onclick={handleMicClick}
+            aria-label={m.chat_richInput_micStart_label()}
+            aria-pressed="false"
+            data-testid="composer-mic-button"
+          >
+            <Fa icon={faMicrophone} size="sm" />
+          </Button>
+        </TooltipShortcut>
+      {/if}
+
+      {#if enhanceAvailable}
+        {#if isEnhancing}
+          <TooltipShortcut label={m.chat_richInput_stopEnhancing_label()} side="top">
+            <Button
+              variant="ghost-light"
+              size="icon-sm"
+              onclick={handleCancelEnhance}
+              aria-label={m.chat_richInput_stopEnhancing_label()}
+              class="text-destructive-foreground"
+            >
+              <Fa icon={faStop} size="sm" />
+            </Button>
+          </TooltipShortcut>
+        {:else}
+          <TooltipShortcut label={m.chat_richInput_enhancePrompt_label()} shortcut="cmd+/" side="top">
+            <Button
+              variant="ghost-light"
+              size="icon-sm"
+              onclick={handleEnhancePrompt}
+              disabled={disabled || !value.trim()}
+              aria-label={m.chat_richInput_enhancePrompt_label()}
+            >
+              <Fa icon={faMagicWandSparkles} size="sm" />
+            </Button>
+          </TooltipShortcut>
+        {/if}
       {/if}
 
       {#if showStopButton}
         <!-- Stop button — visible whenever the agent is responding/running,
              mirroring the Thinking indicator so users can interrupt across
              the pre-first-chunk, streaming, and waiting-on-subagents windows. -->
-        <TooltipShortcut label="Stop" shortcut="Escape" side="top">
+        <TooltipShortcut label={m.chat_richInput_stop_label()} shortcut="Escape" side="top">
           <Button
             variant="ghost"
             size="icon-sm"
             onclick={() => onstop?.()}
-            aria-label="Stop streaming"
+            aria-label={m.chat_richInput_stopStreaming_ariaLabel()}
             class="text-destructive-foreground"
           >
             <Fa icon={faStop} size="sm" />
@@ -1175,14 +1400,15 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           >
             <!-- Queue button -->
             <button
-              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer transition-colors text-primary not-disabled:hover:bg-background overflow-visible"
+              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors text-primary not-disabled:hover:bg-background overflow-visible"
               onclick={handleSubmit}
-              aria-label="Queue message"
+              disabled={isEnhancing}
+              aria-label={m.chat_richInput_queueMessage_ariaLabel()}
             >
               <div class="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-full">
                 <span
                   class="text-[0.66rem] leading-none whitespace-nowrap text-subtle flex flex-col"
-                  >Queue</span
+                  >{m.chat_richInput_queue_label()}</span
                 >
                 <div class="text-subtle text-[0.6rem]">↵</div>
               </div>
@@ -1195,15 +1421,16 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
             <!-- Interrupt button (stop + send immediately) -->
             <button
-              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer transition-colors text-destructive-foreground not-disabled:hover:bg-background"
+              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors text-destructive-foreground not-disabled:hover:bg-background"
               onclick={handleForceSubmit}
-              aria-label="Interrupt and send"
+              disabled={isEnhancing}
+              aria-label={m.chat_richInput_interruptAndSend_ariaLabel()}
               data-testid="interrupt-btn"
             >
               <div class="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-full">
                 <span
                   class="text-[0.66rem] leading-none whitespace-nowrap text-subtle flex flex-col"
-                  >Send</span
+                  >{m.chat_richInput_send_label()}</span
                 >
                 <div class="text-subtle text-[0.6rem]">⌘↵</div>
               </div>
@@ -1215,7 +1442,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         <!-- Edit mode: Cancel and Save buttons -->
         <div class="flex items-center gap-1">
           <div class="absolute top-0.5 right-0.5">
-            <TooltipShortcut label="Cancel" shortcut="Escape" side="top">
+            <TooltipShortcut label={m.chat_richInput_cancel_label()} shortcut="Escape" side="top">
               <Button
                 variant="ghost"
                 size="xs"
@@ -1226,27 +1453,31 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               </Button>
             </TooltipShortcut>
           </div>
-          <TooltipShortcut label="Save & resend" shortcut="cmd+Enter" side="top">
+          <TooltipShortcut
+            label={m.chat_richInput_saveAndResend_label()}
+            shortcut="cmd+Enter"
+            side="top"
+          >
             <Button
               variant="ghost"
               size="icon-sm"
               class="text-primary disabled:text-subtle"
               onclick={handleSubmit}
-              disabled={disabled || !canSend}
+              disabled={disabled || !canSend || isEnhancing}
             >
               <Fa icon={faPaperPlane} class="mr-1" size="sm" />
             </Button>
           </TooltipShortcut>
         </div>
       {:else}
-        <TooltipShortcut label="Send" shortcut="Enter" side="top">
+        <TooltipShortcut label={m.chat_richInput_send_label()} shortcut="Enter" side="top">
           <Button
             variant="ghost"
             size="icon-sm"
             class="text-primary disabled:text-subtle"
             onclick={handleSubmit}
-            disabled={disabled || !canSend}
-            aria-label="Send message"
+            disabled={disabled || !canSend || isEnhancing}
+            aria-label={m.chat_richInput_sendMessage_ariaLabel()}
           >
             <Fa icon={faPaperPlane} size="sm" />
           </Button>
@@ -1255,6 +1486,18 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     </div>
   </div>
 </div>
+
+<!-- Mid-conversation model/provider switch confirmation -->
+<ModelSwitchConfirmDialog
+  open={modelSwitchDialog !== null}
+  isProviderChange={modelSwitchDialog?.isProviderChange ?? false}
+  fromModelLabel={modelSwitchDialog?.fromModelLabel ?? ''}
+  toModelLabel={modelSwitchDialog?.toModelLabel ?? ''}
+  fromProviderName={modelSwitchDialog?.fromProviderName ?? ''}
+  toProviderName={modelSwitchDialog?.toProviderName ?? ''}
+  onConfirm={() => settleModelSwitchDialog(true)}
+  onCancel={() => settleModelSwitchDialog(false)}
+/>
 
 <style>
   .rich-input-container {

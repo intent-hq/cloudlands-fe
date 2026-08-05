@@ -2,6 +2,7 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     open?: boolean;
@@ -16,11 +17,11 @@
 
   let {
     open = $bindable(false),
-    title = 'Enter value',
+    title = m.modals_input_title(),
     description = '',
     placeholder = '',
-    confirmLabel = 'OK',
-    cancelLabel = 'Cancel',
+    confirmLabel = m.modals_input_confirm_label(),
+    cancelLabel = m.modals_input_cancel_label(),
     onConfirm,
     onCancel,
   }: Props = $props();

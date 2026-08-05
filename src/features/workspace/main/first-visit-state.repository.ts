@@ -8,10 +8,7 @@
 import { promises as fs } from 'fs';
 import type { FirstVisitState, WorkspaceId } from '../../../shared/types';
 import { WorkspaceConfig } from '../../../shared/main/config';
-import {
-  validateFirstVisitState,
-  safeValidateFirstVisitState,
-} from '../../../shared/schemas';
+import { validateFirstVisitState, safeValidateFirstVisitState } from '../../../shared/schemas';
 import * as Errors from '../../../shared/errors';
 import { Logger } from '../../../shared/logger';
 import { fsyncFile } from '../../../shared/main/file-sync-utils';
@@ -68,7 +65,9 @@ export class FileSystemFirstVisitStateRepository implements FirstVisitStateRepos
       // Validate workspace ID matches
       if (state.workspaceId !== workspaceId) {
         logger.error(
+          // i18n-ignore (developer log / internal error)
           `First visit state workspace ID mismatch for workspace: ${workspaceId}. ` +
+            // i18n-ignore (developer log / internal error)
             `State has: ${state.workspaceId}, expected: ${workspaceId}`,
         );
         return null;
@@ -82,6 +81,7 @@ export class FileSystemFirstVisitStateRepository implements FirstVisitStateRepos
         return null;
       }
       logger.error(
+        // i18n-ignore (developer log / internal error)
         `Failed to load first visit state for workspace: ${workspaceId}`,
         error as Error,
       );
@@ -100,6 +100,7 @@ export class FileSystemFirstVisitStateRepository implements FirstVisitStateRepos
       // Validate workspace ID matches
       if (state.workspaceId !== workspaceId) {
         throw new Error(
+          // i18n-ignore (developer log / internal error)
           `Workspace ID mismatch: state.workspaceId=${state.workspaceId}, workspaceId=${workspaceId}`,
         );
       }
@@ -118,6 +119,7 @@ export class FileSystemFirstVisitStateRepository implements FirstVisitStateRepos
       // logger.debug(`First visit state saved successfully for workspace: ${workspaceId}`);
     } catch (error) {
       logger.error(
+        // i18n-ignore (developer log / internal error)
         `Failed to save first visit state for workspace: ${workspaceId}`,
         error as Error,
       );
@@ -149,6 +151,7 @@ export class FileSystemFirstVisitStateRepository implements FirstVisitStateRepos
       logger.debug(`First visit state deleted successfully for workspace: ${workspaceId}`);
     } catch (error) {
       logger.error(
+        // i18n-ignore (developer log / internal error)
         `Failed to delete first visit state for workspace: ${workspaceId}`,
         error as Error,
       );
@@ -187,6 +190,7 @@ export class InMemoryFirstVisitStateRepository implements FirstVisitStateReposit
     // Validate workspace ID matches
     if (state.workspaceId !== workspaceId) {
       throw new Error(
+        // i18n-ignore (developer log / internal error)
         `Workspace ID mismatch: state.workspaceId=${state.workspaceId}, workspaceId=${workspaceId}`,
       );
     }

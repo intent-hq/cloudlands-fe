@@ -9,6 +9,7 @@
    *   - reveals Message 3
    */
   import { onMount } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
   import { invoke } from '$shared/generated/ipc-client';
   import { fly } from 'svelte/transition';
@@ -90,17 +91,18 @@
   // NewProjectTab focuses and selects the field on mount so typing
   // immediately replaces the default.
   let parentPath = $state(getDefaultLocation());
+  // i18n-ignore — default directory name, kept ASCII-safe for the filesystem
   let projectName = $state('my-project');
 
   // Validate a project/folder name: reject path separators, traversal, null bytes, unsafe chars
   function getProjectNameError(name: string): string | undefined {
     if (!name || name.trim().length === 0) return undefined; // empty handled by isValid check
     const t = name.trim();
-    if (t.includes('/') || t.includes('\\')) return 'Name cannot contain path separators (/ or \\)';
-    if (t === '..' || t === '.' || /^\.+$/.test(t)) return "Name cannot be '.' or '..'";
-    if (t.includes('\0')) return 'Name cannot contain null characters';
-    if (/[<>:"|?*]/.test(t)) return 'Name contains invalid characters';
-    if (t.length > 255) return 'Name is too long (max 255 characters)';
+    if (t.includes('/') || t.includes('\\')) return m.onboarding_projectPicker_pathSeparators_error();
+    if (t === '..' || t === '.' || /^\.+$/.test(t)) return m.onboarding_projectPicker_dotName_error();
+    if (t.includes('\0')) return m.onboarding_projectPicker_nullChars_error();
+    if (/[<>:"|?*]/.test(t)) return m.onboarding_projectPicker_invalidChars_error();
+    if (t.length > 255) return m.onboarding_projectPicker_nameTooLong_error();
     return undefined;
   }
 
@@ -162,7 +164,7 @@
   const newProjectDirError = $derived.by(() => {
     if (!newProjectDirStatus?.exists) return undefined;
     if (!newProjectDirStatus.isEmpty)
-      return 'Target folder already exists and is not empty. Choose a different name.';
+      return m.onboarding_projectPicker_targetExists_error();
     return undefined;
   });
 
@@ -250,7 +252,7 @@
   const githubCloneDirError = $derived.by(() => {
     if (!githubCloneDirStatus?.exists) return undefined;
     if (!githubCloneDirStatus.isEmpty)
-      return 'Clone destination already exists and is not empty. Choose a different folder, or open it from the Local folder tab.';
+      return m.onboarding_projectPicker_cloneDestExists_error();
     return undefined;
   });
 
@@ -377,9 +379,24 @@
   });
 
   const tabs: { id: TabId; label: string }[] = [
-    { id: 'local', label: 'Local folder' },
-    { id: 'github', label: 'GitHub repo' },
-    { id: 'new', label: 'New' },
+    {
+      id: 'local',
+      get label() {
+        return m.onboarding_projectPicker_localFolder_label();
+      },
+    },
+    {
+      id: 'github',
+      get label() {
+        return m.onboarding_projectPicker_githubRepo_label();
+      },
+    },
+    {
+      id: 'new',
+      get label() {
+        return m.onboarding_projectPicker_new_label();
+      },
+    },
   ];
 </script>
 
@@ -390,10 +407,10 @@
       class="text-2xl font-semibold tracking-tight"
       in:fly={{ y: 14, duration: 400, delay: 80, easing: cubicOut }}
     >
-      Choose a project
+      {m.onboarding_projectPicker_chooseProject_title()}
     </h2>
     <p class="text-base text-muted-foreground leading-relaxed font-light max-w-lg">
-      You can work on a...
+      {m.onboarding_projectPicker_workOnA_description()}
     </p>
   {/if}
 

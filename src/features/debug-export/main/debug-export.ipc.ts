@@ -14,6 +14,7 @@ import { LOG_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { Logger } from '../../../shared/logger';
 import { createDebugBundle } from './debug-bundle.service';
+import { m } from '../../../shared/paraglide/messages.js';
 
 const logger = new Logger('DebugExportIPC');
 
@@ -49,7 +50,7 @@ export function registerDebugExportHandlers(): void {
           // Show save dialog
           const { filePath, canceled } = await dialog.showSaveDialog({
             defaultPath: suggestedFilename,
-            filters: [{ name: 'ZIP Files', extensions: ['zip'] }],
+            filters: [{ name: m.dialog_zip_files_filter(), extensions: ['zip'] }],
           });
 
           if (canceled || !filePath) {
@@ -78,7 +79,7 @@ export function registerDebugExportHandlers(): void {
           });
           return {
             success: false,
-            error: errorMsg || 'Failed to export debug bundle',
+            error: errorMsg || m.debugExport_ipc_exportFailed_error(),
           };
         }
       },

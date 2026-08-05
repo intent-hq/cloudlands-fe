@@ -55,7 +55,6 @@ test.describe('Build Smoke — Follow-up Message Flow (2 rounds)', () => {
     const launched = await launchPackagedApp({
       extraEnv: {
         MOCK_AGENT_SCRIPT_PATH: mockScriptPath,
-        DEFAULT_PROVIDER_OVERRIDE: 'mock',
         // Reduce the 3s default delay to 500ms for follow-up tests.
         // The default delay exists to let the app finish chat initialization,
         // but for follow-ups the chat is already initialized.  A shorter delay

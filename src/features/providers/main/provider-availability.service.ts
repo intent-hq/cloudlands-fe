@@ -8,7 +8,11 @@
 import { ipcMain } from 'electron';
 import * as fs from 'fs/promises';
 import { PROVIDERS_CHANNELS } from '../../../shared/ipc/channels';
-import { ACP_PROVIDERS } from '../../../shared/config/provider-config';
+import {
+  fetchProviderCatalog,
+  getCachedProviderCatalog,
+  getCachedProviderCatalogEntry,
+} from '../../../main/utils/provider-catalog-accessor';
 import { Logger } from '../../../shared/logger';
 import {
   getProviderAuthVerdict,
@@ -21,40 +25,20 @@ import { findAuggiePathAsync } from '../../auggie/main/auggie.ipc';
 import {
   CLAUDE_CODE_NPX_MISSING_WARNING,
   clearClaudeCodeCache,
-  getClaudeCodePath,
   isClaudeCodeInstalled,
   isNpxAvailableForClaudeCode,
 } from '../../claude-code/main/claude-code-resolver';
-import {
-  clearCodexCache,
-  getCodexPath,
-  isCodexInstalled,
-} from '../../codex/main/codex-resolver';
-import {
-  clearCortexCache,
-  getCortexPath,
-  isCortexInstalled,
-} from '../../cortex/main/cortex-resolver';
-import {
-  clearOpenCodeCache,
-  getOpenCodePath,
-  isOpenCodeInstalled,
-} from '../../opencode/main/opencode-resolver';
-import {
-  clearPiCache,
-  getPiPath,
-  isPiInstalled,
-} from '../../pi/main/pi-resolver';
-import {
-  clearDroidCache,
-  getDroidPath,
-  isDroidInstalled,
-} from '../../droid/main/droid-resolver';
+import { clearCodexCache, isCodexInstalled } from '../../codex/main/codex-resolver';
+import { clearCortexCache, isCortexInstalled } from '../../cortex/main/cortex-resolver';
+import { clearOpenCodeCache, isOpenCodeInstalled } from '../../opencode/main/opencode-resolver';
+import { clearPiCache, isPiInstalled } from '../../pi/main/pi-resolver';
+import { clearDroidCache, isDroidInstalled } from '../../droid/main/droid-resolver';
 import type {
   NpxStatus,
   ProviderAvailabilityResult,
   ProviderStatus,
 } from '$shared/types/provider-availability';
+import { m } from '../../../shared/paraglide/messages.js';
 
 export type { NpxStatus, ProviderAvailabilityResult, ProviderStatus };
 
@@ -175,14 +159,19 @@ async function checkGrokAvailability(): Promise<ProviderStatus> {
 /**
  * Check if unsloth is available. Unsloth rides the opencode binary as its
  * ACP runtime (the daemon injects the managed local server's config via
- * OPENCODE_CONFIG_CONTENT), so availability keys off the opencode binary on
- * the daemon host. Like grok, there is no FE-side resolver module — the
+ * OPENCODE_CONFIG_CONTENT), but the daemon-managed server lifecycle also
+ * shells out to the `unsloth` CLI directly (`unsloth run`, `unsloth start
+ * opencode`) — so availability requires BOTH binaries to resolve on the
+ * daemon host. Like grok, there is no FE-side resolver module — the
  * aggregate path uses the daemon's provider discovery and this fallback
  * covers the RPC-degraded / single-recheck path.
  */
 async function checkUnslothAvailability(): Promise<ProviderStatus> {
-  const opencodePath = await findBinary('opencode', { cache: false });
-  return { available: opencodePath !== null };
+  const [opencodePath, unslothPath] = await Promise.all([
+    findBinary('opencode', { cache: false }),
+    findBinary('unsloth', { cache: false }),
+  ]);
+  return { available: opencodePath !== null && unslothPath !== null };
 }
 
 /**
@@ -190,6 +179,7 @@ async function checkUnslothAvailability(): Promise<ProviderStatus> {
  */
 async function checkMockAvailability(): Promise<ProviderStatus> {
   if (process.env.TESTING !== 'true') {
+    // i18n-ignore (test-only mock provider diagnostic)
     return { available: false, error: 'Mock provider requires TESTING=true' };
   }
   const scriptPath = process.env.MOCK_AGENT_SCRIPT_PATH;
@@ -218,6 +208,12 @@ interface ProviderDiscoveryResponse {
     resolvedPath?: string | null;
     gatedOff?: string | null;
     hasNpxFallback: boolean;
+    /** Dual-binary providers only (unsloth): the required secondary CLI name. */
+    secondaryCommand?: string;
+    /** Dual-binary providers only: whether the secondary CLI resolved. */
+    secondaryResolved?: boolean;
+    /** Dual-binary providers only: the secondary CLI's resolved path, present when it resolved. */
+    secondaryResolvedPath?: string;
   }>;
   npx: {
     resolvedPath: string | null;
@@ -251,20 +247,36 @@ async function callProviderDiscovery(): Promise<ProviderDiscoveryResponse | null
 export async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   logger.info('Checking all provider availability');
 
-  // Determine which providers are hidden due to missing env vars or feature codes
+  // Determine which providers are hidden due to missing env vars or feature
+  // codes, from the daemon registry's gating metadata (PROTOCOL §5.38).
   const hiddenProviders: string[] = [];
-  for (const [providerId, config] of Object.entries(ACP_PROVIDERS)) {
+  let catalog;
+  try {
+    catalog = await fetchProviderCatalog();
+  } catch (error) {
+    // Fail closed on the gating decision: fall back to the last cached
+    // registry when the fetch fails. When there is no cache either, the
+    // daemon has never answered on this connection — provider discovery
+    // below will fail the same way and report nothing available, so no
+    // gated provider can surface through this path.
+    catalog = getCachedProviderCatalog();
+    logger.warn('Provider catalog fetch failed; using cached registry for gating', {
+      error,
+      hasCachedCatalog: catalog !== undefined,
+    });
+  }
+  for (const entry of catalog?.providers ?? []) {
     // Check legacy env var gating
-    if (config.requiresEnvVar && !process.env[config.requiresEnvVar]) {
-      hiddenProviders.push(providerId);
+    if (entry.requiresEnvVar && !process.env[entry.requiresEnvVar]) {
+      hiddenProviders.push(entry.id);
       continue;
     }
     // Check feature code gating
     if (
-      config.requiresFeatureCode &&
-      !featureCodesService.isFeatureEnabled(config.requiresFeatureCode)
+      entry.requiresFeatureCode &&
+      !featureCodesService.isFeatureEnabled(entry.requiresFeatureCode)
     ) {
-      hiddenProviders.push(providerId);
+      hiddenProviders.push(entry.id);
     }
   }
 
@@ -430,37 +442,34 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
 }
 
 /**
- * Get resolved CLI paths for all providers
+ * Daemon-resolved CLI paths per provider, as returned by GET_PATHS.
+ * `paths` covers every provider the daemon's discovery reported (null when
+ * the binary did not resolve); `secondaryPaths` carries the secondary
+ * binary's resolved path for dual-binary providers (today only unsloth's
+ * `unsloth` CLI) when it resolved.
  */
-export async function getProviderPaths(): Promise<{
-  auggie: string | null;
-  'claude-code': string | null;
-  codex: string | null;
-  cortex: string | null;
-  opencode: string | null;
-  pi: string | null;
-  droid: string | null;
-}> {
-  const [auggiePath, claudeCodePath, codexPath, cortexPath, opencodePath, piPath, droidPath] =
-    await Promise.all([
-      findAuggiePathAsync(),
-      getClaudeCodePath(),
-      getCodexPath(),
-      getCortexPath(),
-      getOpenCodePath(),
-      getPiPath(),
-      getDroidPath(),
-    ]);
+export interface ProviderPathsResult {
+  paths: Record<string, string | null>;
+  secondaryPaths: Record<string, string | null>;
+}
 
-  return {
-    auggie: auggiePath,
-    'claude-code': claudeCodePath,
-    codex: codexPath,
-    cortex: cortexPath,
-    opencode: opencodePath,
-    pi: piPath,
-    droid: droidPath,
-  };
+/**
+ * Get resolved CLI paths for all providers from the daemon's
+ * host.providerDiscovery snapshot (PROTOCOL §5.14) — the daemon spawns
+ * providers, so its resolution is the truth the UI must mirror. No FE-local
+ * binary resolution. Degrades to empty maps when the RPC fails.
+ */
+export async function getProviderPaths(): Promise<ProviderPathsResult> {
+  const discovery = await callProviderDiscovery();
+  const paths: Record<string, string | null> = {};
+  const secondaryPaths: Record<string, string | null> = {};
+  for (const provider of discovery?.providers ?? []) {
+    paths[provider.id] = provider.resolvedPath ?? null;
+    if (provider.secondaryCommand !== undefined) {
+      secondaryPaths[provider.id] = provider.secondaryResolvedPath ?? null;
+    }
+  }
+  return { paths, secondaryPaths };
 }
 
 /**
@@ -485,10 +494,7 @@ export function setupProviderAvailabilityIPC(): void {
 
   ipcMain.handle(
     PROVIDERS_CHANNELS.CHECK_SINGLE,
-    async (
-      _event: Electron.IpcMainInvokeEvent,
-      request: string | { providerId: string },
-    ) => {
+    async (_event: Electron.IpcMainInvokeEvent, request: string | { providerId: string }) => {
       const providerId = typeof request === 'string' ? request : request.providerId;
       try {
         let status: ProviderStatus;
@@ -523,9 +529,13 @@ export function setupProviderAvailabilityIPC(): void {
             }
             break;
           case 'cortex': {
+            // Fail closed pre-hydration: cortex is feature-gated in the
+            // registry, so an unhydrated catalog means "hidden", not "open".
+            const cortexEntry = getCachedProviderCatalogEntry('cortex');
+            const cortexFeatureCode = cortexEntry?.requiresFeatureCode;
             const isHidden =
-              ACP_PROVIDERS.cortex.requiresFeatureCode &&
-              !featureCodesService.isFeatureEnabled(ACP_PROVIDERS.cortex.requiresFeatureCode);
+              cortexEntry === undefined ||
+              (cortexFeatureCode && !featureCodesService.isFeatureEnabled(cortexFeatureCode));
             if (isHidden) {
               status = { available: false };
             } else {
@@ -573,7 +583,11 @@ export function setupProviderAvailabilityIPC(): void {
             status = await checkMockAvailability();
             break;
           default:
-            return { success: false, providerId, error: `Unknown provider: ${providerId}` };
+            return {
+              success: false,
+              providerId,
+              error: m.providers_availability_unknownProvider_error({ id: providerId }),
+            };
         }
 
         if (status.available) {

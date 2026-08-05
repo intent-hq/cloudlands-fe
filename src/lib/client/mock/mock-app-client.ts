@@ -31,7 +31,12 @@ type MigratedDomain =
   | "tasks"
   | "comments"
   | "git"
-  | "files";
+  | "files"
+  // `providers` was born live (`providers.catalog`, PROTOCOL §5.38) — it never
+  // had a mock fixture era, so it is likewise absent here.
+  | "providers"
+  // `voice` was born live too (`voice.transcribe`, PROTOCOL §5.41).
+  | "voice";
 
 /** Emit the snapshot once, then return an idle disposer. */
 function emitOnce<T>(handler: SubscriptionHandler<T>, snapshot: T): Unsubscribe {
@@ -50,11 +55,15 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     // Mock parity with the §7.1 seq-0 snapshot: an empty transcript is the
     // safe default since fixtures don't model turn-granular AgentMessage lists.
     subscribeSnapshot: async () => ({ messages: [], truncated: false, totalMessages: 0 }),
+    subscribe: (_agentId, handler) =>
+      emitOnce(handler, { messages: [], truncated: false, totalMessages: 0, isStreaming: false }),
   };
 
   readonly terminals: AppClient["terminals"] = {
-    list: async (workspaceId) =>
-      fx.mockTerminals.filter((terminal) => terminal.workspaceId === workspaceId),
+    list: async (workspaceId) => ({
+      terminals: fx.mockTerminals.filter((terminal) => terminal.workspaceId === workspaceId),
+      daemonBootId: "mock-boot",
+    }),
     create: async () => OK,
     write: async () => OK,
     resize: async () => OK,

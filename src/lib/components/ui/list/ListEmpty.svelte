@@ -2,6 +2,7 @@
   import { cn } from '$lib/utils';
   import type { HTMLAttributes } from 'svelte/elements';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props extends HTMLAttributes<HTMLDivElement> {
     class?: string;
@@ -10,7 +11,7 @@
     children?: any;
   }
 
-  let { class: className, message = 'No items', icon, children, ...restProps }: Props = $props();
+  let { class: className, message = m.ui_list_empty_label(), icon, children, ...restProps }: Props = $props();
 </script>
 
 <div

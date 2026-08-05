@@ -6,11 +6,9 @@
  */
 
 import { createRequire } from 'module';
-import {
-  ipcMain,
-  BrowserWindow,
-} from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { getFocusedWindowWorkspaceId } from '../../system/main/system.ipc';
+import { m } from '$shared/paraglide/messages.js';
 import type { Result, CommandResponse, WorkspaceId } from '../../../shared/types';
 import { protocolAdapter } from '../../protocol/main/protocol-adapter';
 
@@ -22,7 +20,6 @@ import { execFileAsync } from '../../../shared/git/git-env';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
 import { disposeScriptProcessManager } from '../../scripts/main/script-process-manager';
-import { readScripts } from '../../scripts/main/scripts-persistence';
 import {
   initRepoRegistry,
   getAllRepos,
@@ -32,7 +29,6 @@ import {
   clearRepos,
 } from './repo-registry';
 import { initChangeHistory } from './change-history-persistence';
-import { initWorkspaceSettings } from './workspace-settings.service';
 
 import { clearMetadataFSCache } from '../../metadata-fs/main/metadata-fs-factory';
 import { deleteEventStoreForWorkspace } from '../../../store/main/slices/workspace-events/sagas/persistence-saga';
@@ -43,10 +39,7 @@ import {
   isValidBranchName,
   getBranchNameValidationError,
 } from '../../../main/utils/workspace-validation';
-import {
-  WORKSPACE_CHANNELS,
-  EDITOR_CHANNELS,
-} from '$shared/ipc/channels';
+import { WORKSPACE_CHANNELS, EDITOR_CHANNELS } from '$shared/ipc/channels';
 import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   createSafeValidatedHandler,
@@ -131,16 +124,8 @@ export function setupWorkspaceIPC(): void {
   // Initialize the persistent repo registry
   initRepoRegistry().catch((err) => logger.error('Failed to init repo registry', err as Error));
 
-  // Hydrate the daemon-owned git.autoCommit into the workspace-settings cache
-  // (the sync API falls back to the default until this resolves).
-  initWorkspaceSettings().catch((err) =>
-    logger.error('Failed to init workspace settings', err as Error),
-  );
-
   // Initialize the persistent change history cache
-  initChangeHistory().catch((err) =>
-    logger.error('Failed to init change history', err as Error),
-  );
+  initChangeHistory().catch((err) => logger.error('Failed to init change history', err as Error));
 
   // Register validation schemas for all workspace channels
   registerValidationSchema(WORKSPACE_CHANNELS.GET, WorkspaceGetSchema);
@@ -233,7 +218,10 @@ export function setupWorkspaceIPC(): void {
         if (workspace) {
           return resultToCommandResponse({ ok: true, data: workspace });
         } else {
-          return resultToCommandResponse({ ok: false, error: 'Workspace not found' });
+          return resultToCommandResponse({
+            ok: false,
+            error: m.workspaceIpc_workspaceNotFound_error(),
+          });
         }
       },
       WORKSPACE_CHANNELS.GET,
@@ -253,7 +241,7 @@ export function setupWorkspaceIPC(): void {
         if (!workspaceId) {
           return resultToCommandResponse({
             ok: false,
-            error: 'No active workspace for this window',
+            error: m.workspaceIpc_noActiveWorkspace_error(),
           });
         }
 
@@ -261,7 +249,10 @@ export function setupWorkspaceIPC(): void {
         if (workspace) {
           return resultToCommandResponse({ ok: true, data: workspace });
         } else {
-          return resultToCommandResponse({ ok: false, error: 'Workspace not found' });
+          return resultToCommandResponse({
+            ok: false,
+            error: m.workspaceIpc_workspaceNotFound_error(),
+          });
         }
       },
       WORKSPACE_CHANNELS.GET_CURRENT,
@@ -281,7 +272,10 @@ export function setupWorkspaceIPC(): void {
         if (workspace) {
           return resultToCommandResponse({ ok: true, data: workspace });
         } else {
-          return resultToCommandResponse({ ok: false, error: 'Workspace not found' });
+          return resultToCommandResponse({
+            ok: false,
+            error: m.workspaceIpc_workspaceNotFound_error(),
+          });
         }
       },
       WORKSPACE_CHANNELS.GET_BY_ID,
@@ -362,7 +356,7 @@ export function setupWorkspaceIPC(): void {
           logger.error('[WorkspaceIPC] Failed to close workspace', error as Error, {
             workspaceId: id,
           });
-          return resultToCommandResponse({ ok: false, error: 'Failed to close workspace' });
+          return resultToCommandResponse({ ok: false, error: m.workspaceIpc_closeFailed_error() });
         }
       },
       WORKSPACE_CHANNELS.CLOSE,
@@ -372,8 +366,10 @@ export function setupWorkspaceIPC(): void {
   // Open workspace
   //
   // ⚠️  IMPORTANT: This handler has side effects beyond just "opening" the workspace:
-  // it warms caches and starts scripts services. File-change monitoring is owned
-  // by the daemon; the FE-side change-detection stack has been removed.
+  // it warms caches. File-change monitoring is owned by the daemon; the FE-side
+  // change-detection stack has been removed. Script autoStart is owned by the
+  // daemon (`script.*`, PROTOCOL §5.8) — the legacy FE-side autoStart trigger
+  // has been removed.
   //
   // The backend is IDEMPOTENT, so it's safe to call this multiple times for the
   // same workspace.
@@ -404,8 +400,8 @@ export function setupWorkspaceIPC(): void {
           // agent-writes cache to warm here.
 
           // PERFORMANCE OPTIMIZATION: Start all background initialization without blocking
-          // The workspace is usable immediately - caches and scripts initialize
-          // in the background and will be ready by the time the user needs them.
+          // The workspace is usable immediately - caches initialize in the
+          // background and will be ready by the time the user needs them.
 
           // Metadata watcher retired alongside the workspace disk-read path;
           // workspace metadata is served by the daemon (`workspace.get`).
@@ -428,52 +424,7 @@ export function setupWorkspaceIPC(): void {
                 }
               })();
 
-              // Initialize workspace scripts: clean stale PIDs and start autoStart services
-              const scriptsInitPromise = (async () => {
-                try {
-                  const { getScriptProcessManager } =
-                    await import('../../scripts/main/script-process-manager');
-                  const scriptsWorkspacePath = workspace.worktreePath || workspace.repositoryPath;
-                  if (!scriptsWorkspacePath) return;
-
-                  const scriptsMetadataPath = WorkspaceConfig.paths.metadata(id);
-                  const manager = getScriptProcessManager(
-                    id,
-                    scriptsWorkspacePath,
-                    scriptsMetadataPath,
-                  );
-
-                  // Clean up stale PIDs from previous sessions
-                  manager.cleanupStalePids();
-
-                  // Load scripts and start autoStart services
-                  const scripts = await readScripts(id);
-                  const autoStartScripts = scripts.filter(
-                    (s) => s.autoStart && s.mode === 'service',
-                  );
-
-                  if (autoStartScripts.length > 0) {
-                    logger.info('[WorkspaceIPC] Starting autoStart scripts', {
-                      workspaceId: id,
-                      count: autoStartScripts.length,
-                      names: autoStartScripts.map((s) => s.name),
-                    });
-                    for (const script of autoStartScripts) {
-                      manager.start(script);
-                    }
-                  }
-                } catch (error) {
-                  logger.warn('[WorkspaceIPC] Failed to initialize scripts', error as Error, {
-                    workspaceId: id,
-                  });
-                }
-              })();
-
-              // Wait for ALL to complete in parallel
-              await Promise.all([
-                cacheWarmingPromise,
-                scriptsInitPromise,
-              ]);
+              await cacheWarmingPromise;
 
               logger.info('[WorkspaceIPC] Background initialization complete', {
                 workspaceId: id,
@@ -481,6 +432,7 @@ export function setupWorkspaceIPC(): void {
               });
             } catch (error) {
               logger.error(
+                // i18n-ignore (developer log message)
                 '[WorkspaceIPC] Failed background initialization for workspace',
                 error as Error,
                 {
@@ -509,7 +461,10 @@ export function setupWorkspaceIPC(): void {
           return resultToCommandResponse({ ok: true, data: workspace });
         } else {
           // Workspace not found or error
-          return resultToCommandResponse({ ok: false, error: 'Workspace not found' });
+          return resultToCommandResponse({
+            ok: false,
+            error: m.workspaceIpc_workspaceNotFound_error(),
+          });
         }
       },
       WORKSPACE_CHANNELS.OPEN,
@@ -711,7 +666,10 @@ export function setupWorkspaceIPC(): void {
       WorkspaceSaveSchema,
       async (_, validated) => {
         logger.warn('workspace:save not yet implemented', { id: validated.id });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.SAVE,
     ),
@@ -724,7 +682,10 @@ export function setupWorkspaceIPC(): void {
       WorkspaceActivateSchema,
       async (_, validated) => {
         logger.warn('workspace:activate not yet implemented', { id: validated.id });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.ACTIVATE,
     ),
@@ -740,7 +701,10 @@ export function setupWorkspaceIPC(): void {
           id: validated.id,
           newName: validated.newName,
         });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.RENAME,
     ),
@@ -764,7 +728,7 @@ export function setupWorkspaceIPC(): void {
         if (!newBranchName) {
           return resultToCommandResponse({
             ok: false,
-            error: 'Branch name cannot be empty',
+            error: m.workspaceIpc_branchNameEmpty_error(),
           });
         }
 
@@ -772,7 +736,7 @@ export function setupWorkspaceIPC(): void {
           const validationError = getBranchNameValidationError(newBranchName);
           return resultToCommandResponse({
             ok: false,
-            error: validationError || 'Invalid branch name format',
+            error: validationError || m.workspaceIpc_branchNameInvalid_error(),
           });
         }
 
@@ -780,12 +744,18 @@ export function setupWorkspaceIPC(): void {
           // Get the current workspace to find the old branch name
           const workspace = await protocolAdapter.getWorkspace(workspaceId);
           if (!workspace) {
-            return resultToCommandResponse({ ok: false, error: 'Workspace not found' });
+            return resultToCommandResponse({
+              ok: false,
+              error: m.workspaceIpc_workspaceNotFound_error(),
+            });
           }
 
           const oldBranchName = workspace.branch;
           if (!oldBranchName) {
-            return resultToCommandResponse({ ok: false, error: 'Workspace has no branch' });
+            return resultToCommandResponse({
+              ok: false,
+              error: m.workspaceIpc_workspaceHasNoBranch_error(),
+            });
           }
 
           // No-op if renaming to the same name
@@ -804,14 +774,17 @@ export function setupWorkspaceIPC(): void {
             if (!status?.branch) {
               return resultToCommandResponse({
                 ok: false,
-                error: 'Failed to get current git branch',
+                error: m.workspaceIpc_getCurrentBranchFailed_error(),
               });
             }
             actualGitBranch = status.branch;
           } catch (error) {
             return resultToCommandResponse({
               ok: false,
-              error: error instanceof Error ? error.message : 'Failed to get current git branch',
+              error:
+                error instanceof Error
+                  ? error.message
+                  : m.workspaceIpc_getCurrentBranchFailed_error(),
             });
           }
 
@@ -833,7 +806,8 @@ export function setupWorkspaceIPC(): void {
           } catch (error) {
             return resultToCommandResponse({
               ok: false,
-              error: error instanceof Error ? error.message : 'Failed to rename branch',
+              error:
+                error instanceof Error ? error.message : m.workspaceIpc_renameBranchFailed_error(),
             });
           }
 
@@ -850,7 +824,7 @@ export function setupWorkspaceIPC(): void {
             });
             return resultToCommandResponse({
               ok: false,
-              error: `Failed to update workspace metadata: ${updateResult.error}`,
+              error: m.workspaceIpc_updateMetadataFailed_error({ error: updateResult.error }),
             });
           }
 
@@ -867,7 +841,10 @@ export function setupWorkspaceIPC(): void {
           });
           return resultToCommandResponse({
             ok: false,
-            error: error instanceof Error ? error.message : 'Failed to rename workspace branch',
+            error:
+              error instanceof Error
+                ? error.message
+                : m.workspaceIpc_renameWorkspaceBranchFailed_error(),
           });
         }
       },
@@ -882,7 +859,10 @@ export function setupWorkspaceIPC(): void {
       WorkspaceExportSchema,
       async (_, validated) => {
         logger.warn('workspace:export not yet implemented', { id: validated.id });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.EXPORT,
     ),
@@ -895,7 +875,10 @@ export function setupWorkspaceIPC(): void {
       WorkspaceImportSchema,
       async (_, validated) => {
         logger.warn('workspace:import not yet implemented', { data: validated.data });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.IMPORT,
     ),
@@ -908,7 +891,10 @@ export function setupWorkspaceIPC(): void {
       WorkspaceGetMetadataSchema,
       async (_, validated) => {
         logger.warn('workspace:get-metadata not yet implemented', { id: validated.id });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.GET_METADATA,
     ),
@@ -924,7 +910,10 @@ export function setupWorkspaceIPC(): void {
           id: validated.id,
           metadata: validated.metadata,
         });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.UPDATE_METADATA,
     ),
@@ -937,7 +926,10 @@ export function setupWorkspaceIPC(): void {
       WorkspaceGetRecentSchema,
       async () => {
         logger.warn('workspace:get-recent not yet implemented');
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.GET_RECENT,
     ),
@@ -950,7 +942,10 @@ export function setupWorkspaceIPC(): void {
       WorkspaceClearRecentSchema,
       async () => {
         logger.warn('workspace:clear-recent not yet implemented');
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.CLEAR_RECENT,
     ),
@@ -963,7 +958,10 @@ export function setupWorkspaceIPC(): void {
       WorkspaceGetStatsSchema,
       async (_, validated) => {
         logger.warn('workspace:get-stats not yet implemented', { id: validated.id });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.GET_STATS,
     ),
@@ -1006,7 +1004,10 @@ export function setupWorkspaceIPC(): void {
           logger.error('Failed to get hover status', error as Error, {
             workspaceId: validated.workspaceId,
           });
-          return resultToCommandResponse({ ok: false, error: 'Failed to get hover status' });
+          return resultToCommandResponse({
+            ok: false,
+            error: m.workspaceIpc_hoverStatusFailed_error(),
+          });
         }
       },
       WORKSPACE_CHANNELS.GET_HOVER_STATUS,
@@ -1020,7 +1021,10 @@ export function setupWorkspaceIPC(): void {
       WorkspaceValidateSchema,
       async (_, validated) => {
         logger.warn('workspace:validate not yet implemented', { id: validated.id });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.VALIDATE,
     ),
@@ -1033,7 +1037,10 @@ export function setupWorkspaceIPC(): void {
       WorkspaceRepairSchema,
       async (_, validated) => {
         logger.warn('workspace:repair not yet implemented', { id: validated.id });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.REPAIR,
     ),
@@ -1046,7 +1053,10 @@ export function setupWorkspaceIPC(): void {
       WorkspaceBackupSchema,
       async (_, validated) => {
         logger.warn('workspace:backup not yet implemented', { id: validated.id });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.BACKUP,
     ),
@@ -1062,7 +1072,10 @@ export function setupWorkspaceIPC(): void {
           id: validated.id,
           backupPath: validated.backupPath,
         });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.RESTORE,
     ),
@@ -1075,7 +1088,7 @@ export function setupWorkspaceIPC(): void {
       WorkspaceGetSettingsSchema,
       async (_, validated) => {
         const { getWorkspaceSettings } = await import('./workspace-settings.service');
-        const settings = getWorkspaceSettings(validated.id);
+        const settings = await getWorkspaceSettings(validated.id);
         return resultToCommandResponse({ ok: true, data: settings });
       },
       WORKSPACE_CHANNELS.GET_SETTINGS,
@@ -1089,7 +1102,7 @@ export function setupWorkspaceIPC(): void {
       WorkspaceUpdateSettingsSchema,
       async (_, validated) => {
         const { updateWorkspaceSettings } = await import('./workspace-settings.service');
-        const updated = updateWorkspaceSettings(validated.id, validated.settings);
+        const updated = await updateWorkspaceSettings(validated.id, validated.settings);
         return resultToCommandResponse({ ok: true, data: updated });
       },
       WORKSPACE_CHANNELS.UPDATE_SETTINGS,
@@ -1192,7 +1205,10 @@ export function setupWorkspaceIPC(): void {
           id: validated.id,
           gitInfo: validated.gitInfo,
         });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.UPDATE_GIT_INFO,
     ),
@@ -1205,7 +1221,10 @@ export function setupWorkspaceIPC(): void {
       WorkspaceGetSettingsAltSchema,
       async (_, validated) => {
         logger.warn('workspace:getSettings not yet implemented', { id: validated.id });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.GET_SETTINGS_ALT,
     ),
@@ -1221,7 +1240,10 @@ export function setupWorkspaceIPC(): void {
           id: validated.id,
           settings: validated.settings,
         });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.UPDATE_SETTINGS_ALT,
     ),
@@ -1234,7 +1256,10 @@ export function setupWorkspaceIPC(): void {
       WorkspaceLoadRulesSchema,
       async (_, validated) => {
         logger.warn('workspace:load-rules not yet implemented', { id: validated.id });
-        return resultToCommandResponse({ ok: false, error: 'Not yet implemented' });
+        return resultToCommandResponse({
+          ok: false,
+          error: m.workspaceIpc_notYetImplemented_error(),
+        });
       },
       WORKSPACE_CHANNELS.LOAD_RULES,
     ),
@@ -1370,6 +1395,7 @@ export function setupWorkspaceIPC(): void {
 
           if (!workspace) {
             logger.warn(
+              // i18n-ignore (developer log message)
               'Workspace not found (or adapter returned unexpected shape), trying direct path',
               { workspaceId, res },
             );
@@ -1532,10 +1558,9 @@ export function setupWorkspaceIPC(): void {
             void listingPath;
             void maxResults;
             void pattern;
-            logger.info(
-              'workspace:list-files: skipping remote listing; legacy RPC retired',
-              { workspaceId },
-            );
+            logger.info('workspace:list-files: skipping remote listing; legacy RPC retired', {
+              workspaceId,
+            });
             return { files: [], folders: [] };
           }
 
@@ -1677,6 +1702,7 @@ export function setupWorkspaceIPC(): void {
           const { workspaceId, query, limit } = validated;
 
           // Validate query
+          // i18n-ignore (validation result only logged, never shown in UI)
           const queryValidation = validateIPCString(query, 'Search query', 500);
           if (!queryValidation.valid) {
             logger.warn('Invalid search query', { query, error: queryValidation.error });
@@ -1727,10 +1753,9 @@ export function setupWorkspaceIPC(): void {
           // transport lands.
           // TODO(P3-5): route via daemon `fs.grep` over WSS transport.
           if (isRemote && workspaceId) {
-            logger.info(
-              'workspace:search-in-files: skipping remote search; legacy RPC retired',
-              { workspaceId },
-            );
+            logger.info('workspace:search-in-files: skipping remote search; legacy RPC retired', {
+              workspaceId,
+            });
             return [];
           }
 

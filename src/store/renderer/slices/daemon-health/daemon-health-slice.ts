@@ -13,6 +13,7 @@ import type {
   DaemonHealthStats,
   SidecarRunLog,
   SystemStatusWirePayload,
+  UnslothStatusWirePayload,
   BackendTransportInfo,
 } from './daemon-health-types';
 
@@ -37,6 +38,10 @@ export const initialState: DaemonHealthState = {
   sidecarRunLog: null,
   sidecarRunLogPending: false,
   sidecarRunLogError: null,
+  unslothStatus: null,
+  unslothPolling: false,
+  unslothStopping: false,
+  unslothStopError: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -79,11 +84,12 @@ export const pollSystemStatus = createAction(
 );
 
 /**
- * system.status poll succeeded.
+ * system.status poll succeeded. `receivedAt` is the dispatch-time ISO
+ * timestamp — stamped by the caller so the reducer stays deterministic.
  */
-export const systemStatusSuccess = createAction<[payload: SystemStatusWirePayload]>(
-  'daemonHealth/systemStatusSuccess',
-);
+export const systemStatusSuccess = createAction<
+  [payload: SystemStatusWirePayload, receivedAt: string]
+>('daemonHealth/systemStatusSuccess');
 
 /**
  * system.status poll failed.
@@ -130,6 +136,52 @@ export const fetchSidecarRunLogSucceeded = createAction<[log: SidecarRunLog]>(
  */
 export const fetchSidecarRunLogFailed = createAction<[error: string]>(
   'daemonHealth/fetchSidecarRunLogFailed',
+);
+
+/**
+ * Poll unsloth.status (middleware trigger). Dispatched by the status
+ * dropdown only while it is open — there is no background interval.
+ */
+export const pollUnslothStatus = createAction(
+  'daemonHealth/pollUnslothStatus',
+);
+
+/**
+ * unsloth.status poll succeeded with the wire payload.
+ */
+export const unslothStatusSuccess = createAction<[payload: UnslothStatusWirePayload]>(
+  'daemonHealth/unslothStatusSuccess',
+);
+
+/**
+ * unsloth.status poll failed (older daemon without the method, transport
+ * error). The stored status clears so the UI never shows stale server rows.
+ */
+export const unslothStatusFailure = createAction(
+  'daemonHealth/unslothStatusFailure',
+);
+
+/**
+ * User confirmed stopping the managed unsloth server. The middleware invokes
+ * unsloth.stop and re-polls unsloth.status when it resolves.
+ */
+export const stopUnslothRequested = createAction(
+  'daemonHealth/stopUnslothRequested',
+);
+
+/**
+ * unsloth.stop resolved (`{ stopped: boolean }` — false is a no-op, not an
+ * error). The follow-up unsloth.status re-poll refreshes the stored status.
+ */
+export const stopUnslothSucceeded = createAction<[stopped: boolean]>(
+  'daemonHealth/stopUnslothSucceeded',
+);
+
+/**
+ * unsloth.stop failed.
+ */
+export const stopUnslothFailed = createAction<[error: string]>(
+  'daemonHealth/stopUnslothFailed',
 );
 
 // ---------------------------------------------------------------------------
@@ -195,7 +247,7 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
   .with(pollSystemStatus, (state) => {
     return { ...state, polling: true };
   })
-  .with(systemStatusSuccess, (state, { payload: [wirePayload] }) => {
+  .with(systemStatusSuccess, (state, { payload: [wirePayload, receivedAt] }) => {
     // Extract stats payload, treating new fields as optional.
     const stats: DaemonHealthStats = {
       clients: wirePayload.clients,
@@ -219,7 +271,7 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
       // Daemon-reported locality (§5.14) — authoritative for host-shell
       // gating; falls back to the transport heuristic before the first poll.
       hostLocality: wirePayload.host.locality ?? state.hostLocality,
-      lastUpdated: new Date().toISOString(),
+      lastUpdated: receivedAt,
     };
   })
   .with(systemStatusFailure, (state) => {
@@ -245,4 +297,25 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
   .with(fetchSidecarRunLogFailed, (state, { payload: [error] }) => {
     if (!state.sidecarRunLogPending) return state;
     return { ...state, sidecarRunLogPending: false, sidecarRunLogError: error };
+  })
+  .with(pollUnslothStatus, (state) => {
+    return { ...state, unslothPolling: true };
+  })
+  .with(unslothStatusSuccess, (state, { payload: [status] }) => {
+    return { ...state, unslothPolling: false, unslothStatus: status };
+  })
+  .with(unslothStatusFailure, (state) => {
+    // Clear rather than keep a stale snapshot: a failed poll (older daemon,
+    // connection loss) means we no longer know the server state.
+    return { ...state, unslothPolling: false, unslothStatus: null };
+  })
+  .with(stopUnslothRequested, (state) => {
+    return { ...state, unslothStopping: true, unslothStopError: null };
+  })
+  .with(stopUnslothSucceeded, (state) => {
+    // The middleware's follow-up unsloth.status re-poll refreshes the status.
+    return { ...state, unslothStopping: false };
+  })
+  .with(stopUnslothFailed, (state, { payload: [error] }) => {
+    return { ...state, unslothStopping: false, unslothStopError: error };
   });

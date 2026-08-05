@@ -12,6 +12,7 @@ import type {
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { logger } from '$lib/utils/client-logger';
 import { fuzzyMatch } from '../fuzzy-matcher';
+import { m } from '$shared/paraglide/messages.js';
 
 interface FileSearchResult {
   path: string;
@@ -70,7 +71,10 @@ export class FileProvider implements Provider {
   };
 
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
-    logger.debug('[FileProvider] Searching for:', { query, context: { workspaceId: context.workspaceId } });
+    logger.debug('[FileProvider] Searching for:', {
+      query,
+      context: { workspaceId: context.workspaceId },
+    });
 
     const workspaceId = context.workspaceId;
     if (!workspaceId) {
@@ -240,7 +244,7 @@ export class FileProvider implements Provider {
    */
   private distinguishDuplicates(candidates: MentionCandidate[]): MentionCandidate[] {
     // Get all paths from description or meta.path
-    const paths = candidates.map(c => c.description || c.meta?.path || '');
+    const paths = candidates.map((c) => c.description || c.meta?.path || '');
 
     // Find the minimum number of path segments needed to distinguish each file
     const distinguished = candidates.map((candidate, index) => {
@@ -255,7 +259,7 @@ export class FileProvider implements Provider {
         const testPath = segments.slice(-i).join('/');
 
         // Check if this path segment is unique among other files
-        const isUnique = !otherPaths.some(other => {
+        const isUnique = !otherPaths.some((other) => {
           const otherSegments = other.split('/');
           const otherTest = otherSegments.slice(-i).join('/');
           return otherTest === testPath;
@@ -297,15 +301,27 @@ export class FileProvider implements Provider {
     const grouped: MentionCandidate[] = [];
 
     if (groups.recent.length > 0) {
-      grouped.push(...groups.recent.slice(0, 3).map((r) => ({ ...r, group: 'Recent Files' })));
+      grouped.push(
+        ...groups.recent
+          .slice(0, 3)
+          .map((r) => ({ ...r, group: m.chat_mentions_recentFiles_group() })),
+      );
     }
 
     if (groups.relevant.length > 0) {
-      grouped.push(...groups.relevant.slice(0, 5).map((r) => ({ ...r, group: 'Most Relevant' })));
+      grouped.push(
+        ...groups.relevant
+          .slice(0, 5)
+          .map((r) => ({ ...r, group: m.chat_mentions_mostRelevant_group() })),
+      );
     }
 
     if (groups.other.length > 0) {
-      grouped.push(...groups.other.slice(0, 10).map((r) => ({ ...r, group: 'Other Files' })));
+      grouped.push(
+        ...groups.other
+          .slice(0, 10)
+          .map((r) => ({ ...r, group: m.chat_mentions_otherFiles_group() })),
+      );
     }
 
     return grouped;
@@ -346,17 +362,17 @@ export class FileProvider implements Provider {
     return [
       {
         id: 'files-recent',
-        label: 'Recent Files',
+        label: m.chat_mentions_recentFiles_group(),
         icon: '🕐',
       },
       {
         id: 'files-all',
-        label: 'All Files',
+        label: m.chat_mentions_allFiles_group(),
         icon: '📁',
       },
       {
         id: 'files-tests',
-        label: 'Test Files',
+        label: m.chat_mentions_testFiles_group(),
         icon: '🧪',
       },
     ];

@@ -10,6 +10,7 @@
    */
 
   import { page } from '$app/state';
+  import { m } from '$shared/paraglide/messages.js';
   import { faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
@@ -33,10 +34,6 @@
   import type { LayoutPresetId } from '$lib/components/layout/panel-system/types';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
-  import {
-  selectUnreadAgentIds,
-  selectUnreadAgentIdsForWorkspace,
-} from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
 
   import { writable } from 'svelte/store';
   import { WorkspaceStatusEnum } from '$shared/types';
@@ -67,7 +64,6 @@
   const zoomFactor = selectZoomFactor();
   const counterScale = selectCounterScale();
   const workspaceItems = selectWorkspaceItems();
-  const unreadAgentIds$ = selectUnreadAgentIds();
 
   // Detect platform for conditional styling and shortcuts
   const isMac = $derived.by(() => {
@@ -154,22 +150,17 @@
   const workspacesWithActivity = $derived.by(() => {
     // Touch reactive versions
     void activeStreamsVersion;
-    // Reading unreadAgentIds$ triggers re-evaluation when unread state changes
-    void $unreadAgentIds$;
 
     const allWorkspaces = $workspaceItems.filter(
       (w) => w.status !== WorkspaceStatusEnum.Archived && w.id !== workspaceId,
     );
 
-    const state = appStore.state;
     return allWorkspaces
       .map((ws) => {
         const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
         const streaming = streamingAgentIds.length > 0;
-        const hasUnread =
-          selectUnreadAgentIdsForWorkspace
-            .select(state, ws.id)
-            .filter((id) => !streamingAgentIds.includes(id)).length > 0;
+        // BE-owned attention flag; streaming takes precedence over unread.
+        const hasUnread = !streaming && ws.attention === 'unread';
 
         return { workspace: ws, streaming, hasUnread };
       })
@@ -243,7 +234,7 @@
 <div
   class="window-title-bar-wrapper"
   style:height="{35 / $zoomFactor}px"
-  aria-label="Window title bar"
+  aria-label={m.layout_titleBar_ariaLabel()}
 >
   <div
     class={cn(
@@ -259,13 +250,13 @@
       {#if isWorkspaceVisible && $sidebarSide$ === 'left'}
         <Tooltip side="bottom" delayDuration={300}>
           {#snippet content()}
-            <span>Sidebar</span>
+            <span>{m.layout_titleBar_sidebar_tooltip()}</span>
             <span class="text-subtle ml-1.5">⌘B</span>
           {/snippet}
           <button
             class="p-2 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
             onclick={() => appStore.dispatch(toggleSidebar())}
-            aria-label="Toggle sidebar"
+            aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}
           >
             <SidebarIcon size={16} side="left" />
           </button>
@@ -283,7 +274,7 @@
 
           <!-- Display text -->
           <span class="text-sm text-subtle truncate flex-1 px-2">
-            {displayText || 'Search...'}
+            {displayText || m.layout_titleBar_search_placeholder()}
           </span>
 
           <!-- Shortcut hint -->
@@ -313,13 +304,13 @@
       {#if isWorkspaceVisible && $sidebarSide$ === 'right'}
         <Tooltip side="bottom" delayDuration={300}>
           {#snippet content()}
-            <span>Sidebar</span>
+            <span>{m.layout_titleBar_sidebar_tooltip()}</span>
             <span class="text-subtle ml-1.5">⌘B</span>
           {/snippet}
           <button
             class="p-2 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
             onclick={() => appStore.dispatch(toggleSidebar())}
-            aria-label="Toggle sidebar"
+            aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}
           >
             <SidebarIcon size={16} side="right" />
           </button>

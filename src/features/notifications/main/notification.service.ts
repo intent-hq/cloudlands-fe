@@ -14,18 +14,13 @@
  * when the daemon is unreachable.
  */
 
-import {
-  app,
-  BrowserWindow,
-  Notification,
-} from 'electron';
+import { app, BrowserWindow, Notification, screen } from 'electron';
+import { isHudWindow } from '../../../main/hud-window';
 import { Logger } from '../../../shared/logger';
+import { m } from '../../../shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '../../../shared/types/branded-ids';
 import type { AgentIdleEvent } from '../../events/types';
-import type {
-  ConnectionStatus,
-  JsonRpcNotification,
-} from '../../backend/main/json-rpc-client';
+import type { ConnectionStatus, JsonRpcNotification } from '../../backend/main/json-rpc-client';
 import { getBackendClient, onBackendReconnected } from '../../backend/main/backend.ipc';
 import {
   getFocusedWindowWorkspaceId,
@@ -90,20 +85,40 @@ async function refreshPrefs(): Promise<NotificationPrefs> {
 }
 
 /**
- * Map specialist ID to display name
+ * Map specialist ID to localized display name (message functions so the
+ * active main-process locale is applied at notification time)
  */
-const SPECIALIST_DISPLAY_NAMES: Record<string, string> = {
-  'spec-writer': 'Coordinator',
-  implementor: 'Implementor',
-  verifier: 'Verifier',
+const SPECIALIST_DISPLAY_NAMES: Record<string, () => string> = {
+  'spec-writer': () => m.notification_specialist_coordinator(),
+  implementor: () => m.notification_specialist_implementor(),
+  verifier: () => m.notification_specialist_verifier(),
 };
 
 /**
  * Get display name for a specialist type
  */
 function getSpecialistDisplayName(specialist?: string): string {
-  if (!specialist) return 'Agent';
-  return SPECIALIST_DISPLAY_NAMES[specialist] || 'Agent';
+  if (!specialist) return m.notification_specialist_agent();
+  return SPECIALIST_DISPLAY_NAMES[specialist]?.() || m.notification_specialist_agent();
+}
+
+/**
+ * Structured content parts carried on `notification:show` alongside the
+ * concatenated `title`/`body`, so the renderer toast can lay them out on
+ * separate lines. Present only for non-chief agent-idle notifications.
+ */
+interface NotificationStructuredContent {
+  /** Untruncated workspace title (the renderer truncates via CSS). */
+  workspaceTitle?: string;
+  /** Raw specialist id, e.g. "spec-writer". */
+  specialist?: string;
+  /** Localized specialist display name, e.g. "Coordinator". */
+  specialistDisplayName: string;
+  taskTitle?: string;
+  /** ACP provider id (auggie, claude-code, codex, ...). */
+  provider?: string;
+  /** Idle agent's id — seeds AuggieAvatar's deterministic gradient colors. */
+  agentId?: string;
 }
 
 /**
@@ -112,6 +127,34 @@ function getSpecialistDisplayName(specialist?: string): string {
 interface NotificationContent {
   title: string;
   body: string;
+  structured?: NotificationStructuredContent;
+}
+
+/**
+ * Pick the window a notification click should focus/navigate: prefer a
+ * window with the workspace open, then the focused window, then any other
+ * window — never the HUD pop-out (detected by the shared `isHudWindow`
+ * helper in main/hud-window.ts). Returns undefined when only HUD (or no)
+ * windows are live; the click handler then opens a fresh main window instead.
+ */
+function pickNotificationClickTarget(workspaceWindows: BrowserWindow[]): BrowserWindow | undefined {
+  const nonHudWorkspaceWindow = workspaceWindows.find((w) => !w.isDestroyed() && !isHudWindow(w));
+  if (nonHudWorkspaceWindow) return nonHudWorkspaceWindow;
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && !focused.isDestroyed() && !isHudWindow(focused)) return focused;
+  return BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !isHudWindow(w));
+}
+
+/**
+ * Click-navigation target attached to `notification:show` when the OS banner
+ * was skipped because the app was frontmost (electron#51885). The renderer
+ * shows a clickable in-app toast that routes through the same navigation as
+ * `notification:navigate`.
+ */
+interface NotificationNavigateTarget {
+  workspaceId: string;
+  chief?: boolean;
+  agentId?: string;
 }
 
 export class NotificationService {
@@ -124,6 +167,13 @@ export class NotificationService {
   /** Detaches the pending connect-retry `status` listener, when armed. */
   private statusRetryDisposer?: () => void;
   private activeNotifications = new Set<Notification>();
+  /**
+   * Latest notification per stable id. When a same-id notification replaces a
+   * delivered one, the OS may never emit `close` for the replaced instance —
+   * this map lets us evict it from `activeNotifications` so the set cannot
+   * grow over repeated idles from the same agent.
+   */
+  private notificationsById = new Map<string, Notification>();
 
   constructor() {
     // Warm the preferences cache eagerly; each `handleAgentIdle` re-fetches.
@@ -321,20 +371,35 @@ export class NotificationService {
         return;
       }
 
+      // Fast path: the agent ended its turn while awaiting delegated
+      // sub-agents (pending completion watches) — the workspace isn't truly
+      // quiet even if the children haven't started responding yet. Absent on
+      // older daemons, in which case the agent.list gate below still applies.
+      if (event.data.isWaitingForOtherAgents === true) {
+        logger.debug('Skipping notification for agent waiting on other agents', {
+          workspaceId,
+          agentName: event.data.agentName,
+        });
+        return;
+      }
+
       // `agent.list` (PROTOCOL.md §5.5) serves two purposes: AgentLite
       // `metadata` carries `isBackground`/`specialist` (absent from the
       // daemon idle payload), and `isStreaming`/`isResponding` feed the
       // other-agents-active suppression gate below.
       const agentList = (await getBackendClient().request('agent.list', {
         workspaceId,
-      })) as {
-        agents?: Array<{
-          id?: string;
-          isStreaming?: boolean;
-          isResponding?: boolean;
-          metadata?: { isBackground?: boolean; specialist?: string };
-        }>;
-      } | undefined;
+      })) as
+        | {
+            agents?: Array<{
+              id?: string;
+              provider?: string;
+              isStreaming?: boolean;
+              isResponding?: boolean;
+              metadata?: { isBackground?: boolean; specialist?: string };
+            }>;
+          }
+        | undefined;
       const agents = agentList?.agents ?? [];
       const idleAgent = agents.find((agent) => agent.id === event.data.agentId);
 
@@ -363,14 +428,19 @@ export class NotificationService {
       }
 
       // Build notification content with specialist type and task title;
-      // enrich with `metadata.specialist` when the payload lacks it.
-      const content = await this.buildNotificationContent({
-        ...event,
-        data: {
-          ...event.data,
-          specialist: event.data.specialist ?? idleAgent?.metadata?.specialist,
-        },
-      } as AgentIdleEvent);
+      // enrich with `metadata.specialist` when the payload lacks it. The
+      // provider (AgentLite top-level field, PROTOCOL.md §5.5) feeds the
+      // structured toast parts.
+      const content = await this.buildNotificationContent(
+        {
+          ...event,
+          data: {
+            ...event.data,
+            specialist: event.data.specialist ?? idleAgent?.metadata?.specialist,
+          },
+        } as AgentIdleEvent,
+        idleAgent?.provider,
+      );
 
       // Focus gate for the OS banner: `soundOnlyWhenUnfocused` ON suppresses
       // the banner only while the focused window is VIEWING the event's own
@@ -391,14 +461,40 @@ export class NotificationService {
         return;
       }
 
+      // Frontmost gate: under Electron 42's UNUserNotificationCenter backend,
+      // `click` never fires for banners presented while the app is frontmost
+      // on macOS (electron#51885). Skip the OS banner and deliver an in-app
+      // clickable toast instead — `navigateTarget` mirrors the banner
+      // click-payload so the renderer routes the same way. A focused HUD
+      // pop-out does NOT count as frontmost: the HUD renders no toast UI and
+      // is never a notification target, so HUD-focused delivery stays on the
+      // OS-banner path (whose click goes through the HUD-excluding picker).
+      const focusedWindow = BrowserWindow.getFocusedWindow();
+      const appFrontmost = focusedWindow !== null && !isHudWindow(focusedWindow);
+      if (appFrontmost) {
+        logger.debug('App is frontmost, delivering in-app toast instead of OS banner', {
+          workspaceId,
+          agentName: event.data.agentName,
+        });
+        const navigateTarget: NotificationNavigateTarget =
+          workspaceId === CHIEF_WORKSPACE_ID
+            ? {
+                workspaceId,
+                chief: true,
+                ...(event.data.agentId ? { agentId: event.data.agentId } : {}),
+              }
+            : { workspaceId };
+        this.sendShowEvent(content, workspaceId, navigateTarget);
+        return;
+      }
+
       // Show notification — prefer a window with the workspace open for
       // click-to-focus; otherwise fall back to the focused (or any) window,
-      // which navigates to the workspace on click.
-      const focusWindow =
-        workspaceWindows[0] ??
-        BrowserWindow.getFocusedWindow() ??
-        BrowserWindow.getAllWindows()[0];
-      this.showNotification(content, focusWindow ?? undefined, workspaceId, event.data.agentId);
+      // which navigates to the workspace on click. The HUD pop-out is never
+      // a valid click target: when only the HUD is live the click opens a
+      // fresh main window instead (see showNotification).
+      const focusWindow = pickNotificationClickTarget(workspaceWindows);
+      this.showNotification(content, focusWindow, workspaceId, event.data.agentId);
     } catch (error) {
       logger.error('Failed to handle agent:idle event', error as Error);
     }
@@ -406,9 +502,15 @@ export class NotificationService {
 
   /**
    * Build notification content from event data
-   * Uses specialist display name and task title instead of agent name
+   * Uses specialist display name and task title instead of agent name.
+   * Non-chief notifications additionally carry `structured` content parts
+   * (untruncated, for the renderer's multi-line toast layout); chief
+   * notifications keep the plain title/body only.
    */
-  private async buildNotificationContent(event: AgentIdleEvent): Promise<NotificationContent> {
+  private async buildNotificationContent(
+    event: AgentIdleEvent,
+    provider?: string,
+  ): Promise<NotificationContent> {
     const { specialist, taskTitle } = event.data;
 
     // Chief-of-staff completions: the chief "workspace" is a hidden virtual
@@ -419,8 +521,10 @@ export class NotificationService {
       const truncatedChatName =
         chatName && chatName.length > 40 ? `${chatName.slice(0, 37)}...` : chatName;
       return {
-        title: truncatedChatName ? `Assistant — ${truncatedChatName}` : 'Assistant',
-        body: taskTitle ? 'Task completed' : 'Finished',
+        title: truncatedChatName
+          ? m.notification_assistant_titled({ chatName: truncatedChatName })
+          : m.notification_assistant_title(),
+        body: taskTitle ? m.notification_body_task_completed() : m.notification_body_finished(),
       };
     }
 
@@ -457,9 +561,20 @@ export class NotificationService {
     }
 
     // Build body
-    const body = taskTitle ? 'Task completed' : 'Finished';
+    const body = taskTitle ? m.notification_body_task_completed() : m.notification_body_finished();
 
-    return { title, body };
+    return {
+      title,
+      body,
+      structured: {
+        ...(workspaceTitle ? { workspaceTitle } : {}),
+        ...(specialist ? { specialist } : {}),
+        specialistDisplayName: displayName,
+        ...(taskTitle ? { taskTitle } : {}),
+        ...(provider ? { provider } : {}),
+        ...(event.data.agentId ? { agentId: event.data.agentId } : {}),
+      },
+    };
   }
 
   /**
@@ -467,20 +582,27 @@ export class NotificationService {
    * notification sound. Sent regardless of window focus or banner suppression.
    * Delivered to windows with the event's workspace open; when none exist
    * (workspace not open anywhere) it falls back to the focused (or any)
-   * window so the sound still plays.
+   * window so the sound still plays. `navigateTarget` is present only when
+   * the OS banner was skipped because the app was frontmost (electron#51885)
+   * — the renderer then shows a clickable in-app toast.
    */
-  private sendShowEvent(content: NotificationContent, workspaceId?: string): void {
+  private sendShowEvent(
+    content: NotificationContent,
+    workspaceId?: string,
+    navigateTarget?: NotificationNavigateTarget,
+  ): void {
     const payload = {
       title: content.title,
       body: content.body,
       timestamp: new Date().toISOString(),
+      ...(content.structured ? { structured: content.structured } : {}),
+      ...(navigateTarget ? { navigateTarget } : {}),
     };
     if (workspaceId && getWindowIdsForWorkspace(workspaceId).length > 0) {
       sendToWorkspaceWindows(workspaceId, 'notification:show', payload);
       return;
     }
-    const fallbackWindow =
-      BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const fallbackWindow = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
     if (
       fallbackWindow &&
       !fallbackWindow.isDestroyed() &&
@@ -492,6 +614,12 @@ export class NotificationService {
 
   /**
    * Show a desktop notification
+   *
+   * Agent-idle notifications carry a stable `id` of `workspaceId:agentId`
+   * (macOS `UNNotificationRequest.identifier`) so a repeat idle from the same
+   * agent natively REPLACES the delivered notification — at most one per
+   * agent at any time. Test notifications omit `id` (Electron falls back to
+   * a random UUID) so they never replace or get replaced.
    */
   private showNotification(
     content: NotificationContent,
@@ -508,58 +636,94 @@ export class NotificationService {
         return;
       }
 
+      const stableId = workspaceId && agentId ? `${workspaceId}:${agentId}` : undefined;
       const notification = new Notification({
         title: content.title,
         body: content.body,
+        ...(stableId ? { id: stableId } : {}),
       });
 
       // Keep a strong reference to prevent GC before user interaction
       this.activeNotifications.add(notification);
+      if (stableId) {
+        // Native replacement may retire the previous same-id notification
+        // WITHOUT a 'close' event — evict it here so the set cannot leak.
+        const replaced = this.notificationsById.get(stableId);
+        if (replaced) {
+          this.activeNotifications.delete(replaced);
+        }
+        this.notificationsById.set(stableId, notification);
+      }
+      const release = () => {
+        this.activeNotifications.delete(notification);
+        if (stableId && this.notificationsById.get(stableId) === notification) {
+          this.notificationsById.delete(stableId);
+        }
+      };
 
       // Focus workspace window on click and navigate to the correct workspace
       notification.on('click', () => {
-        this.activeNotifications.delete(notification);
+        release();
 
         if (process.platform === 'darwin') {
           app.show();
         }
 
-        if (mainWindow) {
-          if (mainWindow.isDestroyed()) {
-            return;
-          }
-          if (mainWindow.isMinimized()) {
-            mainWindow.restore();
-          }
-          mainWindow.show();
-          mainWindow.focus();
-          if (workspaceId && !mainWindow.webContents.isDestroyed()) {
-            // Chief completions route to the sidebar Assistant panel (the
-            // chief workspace page is hidden); everything else keeps the
-            // bare `{ workspaceId }` payload.
-            const payload =
-              workspaceId === CHIEF_WORKSPACE_ID
-                ? { workspaceId, chief: true, ...(agentId ? { agentId } : {}) }
-                : { workspaceId };
-            mainWindow.webContents.send('notification:navigate', payload);
-          }
+        // Re-validate at click time: the window picked at show time may
+        // have closed or navigated to /hud while the notification sat in
+        // the notification center — selection always goes through the
+        // picker, so a HUD window can never be the click target.
+        let target = mainWindow;
+        if (!target || target.isDestroyed() || isHudWindow(target)) {
+          const workspaceWindows = workspaceId
+            ? getWindowIdsForWorkspace(workspaceId)
+                .map((id) => BrowserWindow.fromId(id))
+                .filter((w): w is BrowserWindow => w !== null && !w.isDestroyed())
+            : [];
+          target = pickNotificationClickTarget(workspaceWindows);
+        }
+
+        if (!target || target.isDestroyed()) {
+          // No regular window is live (e.g. only the HUD pop-out is open,
+          // or no windows at all): open a fresh app window directly on the
+          // workspace route rather than navigating the HUD (simplest
+          // correct behavior — no IPC races against a still-loading
+          // renderer).
+          this.openWindowForNotificationClick(workspaceId);
+          return;
+        }
+
+        if (target.isMinimized()) {
+          target.restore();
+        }
+        target.show();
+        target.focus();
+        if (workspaceId && !target.webContents.isDestroyed()) {
+          // Chief completions route to the sidebar Assistant panel (the
+          // chief workspace page is hidden); everything else keeps the
+          // bare `{ workspaceId }` payload.
+          const payload =
+            workspaceId === CHIEF_WORKSPACE_ID
+              ? { workspaceId, chief: true, ...(agentId ? { agentId } : {}) }
+              : { workspaceId };
+          target.webContents.send('notification:navigate', payload);
         }
       });
 
       notification.on('close', () => {
-        this.activeNotifications.delete(notification);
+        release();
       });
 
       // Log any errors that occur during notification display
       notification.on('failed', (_event, error) => {
-        this.activeNotifications.delete(notification);
+        release();
         logger.error('Notification failed to show', { error });
       });
 
       try {
         notification.show();
       } catch (error) {
-        this.activeNotifications.delete(notification);
+        release();
         logger.error('Notification.show() threw', error as Error);
         return;
       }
@@ -578,6 +742,34 @@ export class NotificationService {
   }
 
   /**
+   * Notification-click fallback when no regular (non-HUD) window is live:
+   * open a fresh app window loaded directly on the workspace route (home for
+   * chief completions, whose workspace page is hidden). Loading the route
+   * up-front avoids racing a `notification:navigate` IPC against a renderer
+   * that has not registered its listeners yet.
+   */
+  private openWindowForNotificationClick(workspaceId?: string): void {
+    void (async () => {
+      try {
+        const { createWindowForSession } = await import('../../../main/window');
+        const { getMainWindow } = await import('../../../main/state');
+        const route =
+          workspaceId && workspaceId !== CHIEF_WORKSPACE_ID ? `/workspace/${workspaceId}` : '/';
+        const existingMain = getMainWindow();
+        const setAsMain = !existingMain || existingMain.isDestroyed();
+        const { workArea } = screen.getPrimaryDisplay();
+        createWindowForSession({ route, bounds: workArea }, setAsMain);
+        logger.info('Notification click opened a new window (no regular window was live)', {
+          workspaceId,
+          route,
+        });
+      } catch (error) {
+        logger.error('Failed to open window for notification click', error as Error);
+      }
+    })();
+  }
+
+  /**
    * Show a test notification
    * @returns Object with success status and any error message
    */
@@ -588,17 +780,21 @@ export class NotificationService {
         logger.warn('Desktop notifications are not supported on this platform');
         return {
           success: false,
-          error: 'Desktop notifications are not supported on this platform',
+          error: m.notification_not_supported(),
         };
       }
 
-      const focusWindow =
-        BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      // Same non-HUD click-target rules as real notifications.
+      const focusWindow = pickNotificationClickTarget([]);
 
-      this.showNotification({ title: 'Agent', body: 'Test notification' }, focusWindow ?? undefined);
+      this.showNotification(
+        { title: m.notification_specialist_agent(), body: m.notification_test_body() },
+        focusWindow,
+      );
       return { success: true };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage =
+        error instanceof Error ? error.message : m.notifications_web_unknown_error();
       logger.error('Failed to show test notification', error as Error);
       return { success: false, error: errorMessage };
     }

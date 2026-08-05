@@ -26,6 +26,7 @@
   import { Button } from '$lib/components/ui/button';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
+  import { m } from '$shared/paraglide/messages.js';
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -50,7 +51,7 @@
     }
 
     // Fallback to agent ID (shortened)
-    return `Agent ${agent.id.substring(0, 8)}`;
+    return m.chat_agentsList_agentShortId_fallback({ id: agent.id.substring(0, 8) });
   }
 
   function getAgentTimestamp(agent: AgentSession): Date | null {
@@ -118,7 +119,7 @@
 {#if !collapsed}
   <div class="py-7 overflow-hidden">
     <div class="px-5 mb-1.5 flex justify-between items-center">
-      <h4 class="text-xs font-medium text-subtle">Threads</h4>
+      <h4 class="text-xs font-medium text-subtle">{m.chat_agentsList_threads_title()}</h4>
     </div>
 
     {#if visibleAgents.length > 0}
@@ -132,7 +133,7 @@
             size="sm"
             class="w-full justify-start text-left p-2"
             onclick={(e) => handleAgentClick(e, agent)}
-            title="Agent thread"
+            title={m.chat_agentsList_agentThread_title()}
           >
             <div class="flex items-start gap-2 w-full">
               <AuggieAvatar
@@ -164,7 +165,7 @@
         </div>
       {/each}
     {:else}
-      <div class="px-4 py-2 text-sm text-subtle">No threads yet</div>
+      <div class="px-4 py-2 text-sm text-subtle">{m.chat_agentsList_noThreads_label()}</div>
     {/if}
   </div>
 {:else}

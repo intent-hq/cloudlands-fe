@@ -1,3 +1,12 @@
+<script lang="ts" module>
+  import mermaid from 'mermaid';
+  import elkLayouts from '@mermaid-js/layout-elk';
+
+  // Register the ELK layout engine once per module load; per-diagram
+  // frontmatter (`config: layout: ...`) still overrides the default.
+  mermaid.registerLayoutLoaders(elkLayouts);
+</script>
+
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
@@ -6,9 +15,11 @@
   faTimes,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import mermaid from 'mermaid';
+  import Portal from '$lib/components/ui/Portal.svelte';
+  import ZoomPanViewport from '$lib/components/ui/ZoomPanViewport.svelte';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('MermaidRenderer');
 
@@ -26,6 +37,7 @@
   let isFullscreen = $state(false);
   let fullscreenSvg = $state('');
   let fullscreenDialogElement: HTMLDivElement | undefined = $state();
+  let zoomPanViewport: ZoomPanViewport | undefined = $state();
   const isDarkTheme = selectIsDarkTheme();
 
   // Decode base64 encoded mermaid code
@@ -59,12 +71,13 @@
     mermaid.initialize({
       startOnLoad: false,
       theme: 'base',
+      layout: 'elk',
       securityLevel: 'loose',
       fontFamily: 'inherit',
       flowchart: {
         useMaxWidth: false,
         htmlLabels: true,
-        curve: 'linear',
+        curve: 'basis',
         padding: 12,
       },
       sequence: {
@@ -72,66 +85,70 @@
         wrap: true,
         mirrorActors: false,
       },
+      // "Auggie" palette derived from the app design tokens (src/app.css):
+      // green primary/accent hsl(158 100% 30%), blue secondary
+      // hsl(212 100% 48%/60%), warning hsl(38 92% 50%). Backgrounds stay
+      // neutral; nodes/borders/notes carry the accent hues.
       themeVariables: isDark ? {
-        // Dark theme - subtle, muted colors
-        primaryColor: 'hsl(240 3.7% 15.9%)',
-        primaryTextColor: 'hsl(0 0% 63.9%)',
-        primaryBorderColor: 'hsl(240 3.7% 25%)',
-        lineColor: 'hsl(240 3.7% 35%)',
-        secondaryColor: 'hsl(240 3.7% 12%)',
-        tertiaryColor: 'hsl(240 3.7% 10%)',
+        // Dark theme - auggie accents on neutral backgrounds
+        primaryColor: 'hsl(158 35% 14%)',
+        primaryTextColor: 'hsl(158 20% 82%)',
+        primaryBorderColor: 'hsl(158 80% 32%)',
+        lineColor: 'hsl(158 20% 48%)',
+        secondaryColor: 'hsl(212 45% 16%)',
+        tertiaryColor: 'hsl(240 4% 10%)',
         background: 'transparent',
-        mainBkg: 'hsl(240 3.7% 15.9%)',
-        nodeBorder: 'hsl(240 3.7% 25%)',
-        clusterBkg: 'hsl(240 3.7% 12%)',
-        clusterBorder: 'hsl(240 3.7% 25%)',
-        titleColor: 'hsl(0 0% 63.9%)',
-        edgeLabelBackground: 'hsl(240 3.7% 15.9%)',
-        textColor: 'hsl(0 0% 63.9%)',
-        nodeTextColor: 'hsl(0 0% 63.9%)',
-        actorTextColor: 'hsl(0 0% 63.9%)',
-        actorBkg: 'hsl(240 3.7% 15.9%)',
-        actorBorder: 'hsl(240 3.7% 25%)',
-        actorLineColor: 'hsl(240 3.7% 30%)',
-        signalColor: 'hsl(0 0% 63.9%)',
-        signalTextColor: 'hsl(0 0% 63.9%)',
-        labelBoxBkgColor: 'hsl(240 3.7% 15.9%)',
-        labelBoxBorderColor: 'hsl(240 3.7% 25%)',
-        labelTextColor: 'hsl(0 0% 63.9%)',
-        loopTextColor: 'hsl(0 0% 63.9%)',
-        noteBkgColor: 'hsl(240 3.7% 18%)',
-        noteBorderColor: 'hsl(240 3.7% 25%)',
-        noteTextColor: 'hsl(0 0% 63.9%)',
+        mainBkg: 'hsl(158 35% 14%)',
+        nodeBorder: 'hsl(158 80% 32%)',
+        clusterBkg: 'hsl(158 25% 10%)',
+        clusterBorder: 'hsl(158 45% 24%)',
+        titleColor: 'hsl(0 0% 80%)',
+        edgeLabelBackground: 'hsl(240 12% 12%)',
+        textColor: 'hsl(0 0% 78%)',
+        nodeTextColor: 'hsl(158 20% 82%)',
+        actorTextColor: 'hsl(212 70% 85%)',
+        actorBkg: 'hsl(212 45% 16%)',
+        actorBorder: 'hsl(212 90% 55%)',
+        actorLineColor: 'hsl(212 35% 42%)',
+        signalColor: 'hsl(0 0% 74%)',
+        signalTextColor: 'hsl(0 0% 78%)',
+        labelBoxBkgColor: 'hsl(212 45% 16%)',
+        labelBoxBorderColor: 'hsl(212 90% 55%)',
+        labelTextColor: 'hsl(212 70% 85%)',
+        loopTextColor: 'hsl(212 70% 85%)',
+        noteBkgColor: 'hsl(38 55% 15%)',
+        noteBorderColor: 'hsl(38 85% 45%)',
+        noteTextColor: 'hsl(38 70% 78%)',
       } : {
-        // Light theme - subtle, muted colors
-        primaryColor: 'hsl(0 0% 96.1%)',
-        primaryTextColor: 'hsl(240 5.9% 30%)',
-        primaryBorderColor: 'hsl(240 5.9% 85%)',
-        lineColor: 'hsl(240 5.9% 70%)',
-        secondaryColor: 'hsl(0 0% 98%)',
-        tertiaryColor: 'hsl(0 0% 96%)',
+        // Light theme - auggie accents on neutral backgrounds
+        primaryColor: 'hsl(158 45% 94%)',
+        primaryTextColor: 'hsl(158 35% 16%)',
+        primaryBorderColor: 'hsl(158 100% 30%)',
+        lineColor: 'hsl(158 25% 40%)',
+        secondaryColor: 'hsl(212 85% 94%)',
+        tertiaryColor: 'hsl(0 0% 97%)',
         background: 'transparent',
-        mainBkg: 'hsl(0 0% 96.1%)',
-        nodeBorder: 'hsl(240 5.9% 85%)',
-        clusterBkg: 'hsl(0 0% 98%)',
-        clusterBorder: 'hsl(240 5.9% 85%)',
-        titleColor: 'hsl(240 5.9% 30%)',
-        edgeLabelBackground: 'hsl(0 0% 96.1%)',
-        textColor: 'hsl(240 5.9% 30%)',
-        nodeTextColor: 'hsl(240 5.9% 30%)',
-        actorTextColor: 'hsl(240 5.9% 30%)',
-        actorBkg: 'hsl(0 0% 96.1%)',
-        actorBorder: 'hsl(240 5.9% 85%)',
-        actorLineColor: 'hsl(240 5.9% 80%)',
+        mainBkg: 'hsl(158 45% 94%)',
+        nodeBorder: 'hsl(158 100% 30%)',
+        clusterBkg: 'hsl(158 30% 97%)',
+        clusterBorder: 'hsl(158 45% 78%)',
+        titleColor: 'hsl(240 5.9% 25%)',
+        edgeLabelBackground: 'hsl(0 0% 100%)',
+        textColor: 'hsl(240 5.9% 25%)',
+        nodeTextColor: 'hsl(158 35% 16%)',
+        actorTextColor: 'hsl(212 60% 20%)',
+        actorBkg: 'hsl(212 85% 94%)',
+        actorBorder: 'hsl(212 100% 48%)',
+        actorLineColor: 'hsl(212 45% 65%)',
         signalColor: 'hsl(240 5.9% 30%)',
         signalTextColor: 'hsl(240 5.9% 30%)',
-        labelBoxBkgColor: 'hsl(0 0% 96.1%)',
-        labelBoxBorderColor: 'hsl(240 5.9% 85%)',
-        labelTextColor: 'hsl(240 5.9% 30%)',
-        loopTextColor: 'hsl(240 5.9% 30%)',
-        noteBkgColor: 'hsl(0 0% 94%)',
-        noteBorderColor: 'hsl(240 5.9% 85%)',
-        noteTextColor: 'hsl(240 5.9% 30%)',
+        labelBoxBkgColor: 'hsl(212 85% 94%)',
+        labelBoxBorderColor: 'hsl(212 100% 48%)',
+        labelTextColor: 'hsl(212 60% 20%)',
+        loopTextColor: 'hsl(212 60% 20%)',
+        noteBkgColor: 'hsl(38 92% 92%)',
+        noteBorderColor: 'hsl(38 92% 50%)',
+        noteTextColor: 'hsl(38 70% 22%)',
       },
     });
   }
@@ -157,7 +174,7 @@
       error = null;
     } catch (err) {
       logger.error('Failed to render mermaid diagram:', err);
-      error = err instanceof Error ? err.message : 'Failed to render diagram';
+      error = err instanceof Error ? err.message : m.markdown_mermaid_renderFailed_error();
       renderedSvg = '';
     }
   }
@@ -184,6 +201,13 @@
     if (e.target === e.currentTarget) {
       closeFullscreen();
     }
+  }
+
+  function handleFullscreenKeydown(e: KeyboardEvent) {
+    // Zoom keys (+/-/0): forward to the viewport unless it already handled
+    // the event itself (keydown bubbling up from inside the viewport)
+    if (!e.defaultPrevented && zoomPanViewport?.handleKeydown(e)) return;
+    if (e.key === 'Escape') closeFullscreen();
   }
 
   onMount(() => {
@@ -221,7 +245,7 @@
     <div class="mermaid-error">
       <pre class="error-message">{error}</pre>
       <details class="error-source">
-        <summary>View source</summary>
+        <summary>{m.markdown_mermaid_viewSource_label()}</summary>
         <pre>{decodeHtmlEntities(decodeBase64(code))}</pre>
       </details>
     </div>
@@ -234,15 +258,15 @@
         <button
           class="expand-button"
           onclick={openFullscreen}
-          title="Expand to fullscreen"
-          aria-label="Expand diagram to fullscreen"
+          title={m.markdown_mermaid_expand_tooltip()}
+          aria-label={m.markdown_mermaid_expand_ariaLabel()}
         >
           <Fa icon={faExpand} size="sm" />
         </button>
       {/if}
     </div>
   {:else if !code?.trim()}
-    <div class="mermaid-empty">No diagram code</div>
+    <div class="mermaid-empty">{m.markdown_mermaid_noCode_label()}</div>
   {:else}
     <div class="mermaid-loading">
       <div class="loading-spinner"></div>
@@ -251,30 +275,38 @@
 </div>
 
 {#if isFullscreen}
-  <div
-    class="fullscreen-overlay"
-    onclick={handleBackdropClick}
-    onkeydown={(e) => { if (e.key === 'Escape') closeFullscreen(); }}
-    tabindex="-1"
-    role="dialog"
-    aria-modal="true"
-    aria-label="Fullscreen diagram view"
-    bind:this={fullscreenDialogElement}
-  >
-    <div class="fullscreen-content">
-      <button
-        class="close-button"
-        onclick={closeFullscreen}
-        title="Close fullscreen"
-        aria-label="Close fullscreen view"
-      >
-        <Fa icon={faTimes} size="sm" />
-      </button>
-      <div class="fullscreen-diagram">
-        {@html fullscreenSvg}
+  <!-- Portal to body so the fixed overlay escapes any ancestor that forms a
+       containing block (e.g. transforms/masks inside collapsible group
+       sections) and covers the whole app window. -->
+  <Portal target="body" zIndex={1000}>
+    <div
+      class="fullscreen-overlay"
+      onclick={handleBackdropClick}
+      onkeydown={handleFullscreenKeydown}
+      tabindex="-1"
+      role="dialog"
+      aria-modal="true"
+      aria-label={m.markdown_mermaid_fullscreenView_ariaLabel()}
+      bind:this={fullscreenDialogElement}
+    >
+      <div class="fullscreen-content">
+        <button
+          class="close-button"
+          onclick={closeFullscreen}
+          title={m.markdown_mermaid_closeFullscreen_tooltip()}
+          aria-label={m.markdown_mermaid_closeFullscreen_ariaLabel()}
+        >
+          <Fa icon={faTimes} size="sm" />
+        </button>
+        <!-- Fresh component per open, so zoom/pan state resets each time -->
+        <div class="fullscreen-diagram">
+          <ZoomPanViewport bind:this={zoomPanViewport}>
+            {@html fullscreenSvg}
+          </ZoomPanViewport>
+        </div>
       </div>
     </div>
-  </div>
+  </Portal>
 {/if}
 
 <style>
@@ -350,8 +382,8 @@
     position: relative;
     background: hsl(var(--background));
     border-radius: 8px;
-    max-width: 90vw;
-    max-height: 90vh;
+    width: 90vw;
+    height: 90vh;
     overflow: hidden;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
     display: flex;
@@ -384,6 +416,8 @@
   }
 
   .fullscreen-diagram {
+    flex: 1;
+    min-height: 0;
     padding: 40px;
     display: flex;
     align-items: center;
@@ -392,8 +426,8 @@
   }
 
   .fullscreen-diagram :global(svg) {
-    max-width: calc(90vw - 80px);
-    max-height: calc(90vh - 80px);
+    max-width: 100%;
+    max-height: 100%;
     width: auto;
     height: auto;
   }

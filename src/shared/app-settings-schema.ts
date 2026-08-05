@@ -1,4 +1,6 @@
 import { THEME_PRESET_IDS, THEME_PRESET_MANIFEST } from './theme-presets-manifest';
+import { locales } from './paraglide/runtime.js';
+import { SYSTEM_LANGUAGE_PREFERENCE } from './i18n/locale-matcher';
 
 export type AppSettingValueType =
   | 'string'
@@ -152,6 +154,22 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'redux-action', action: 'userPreferences/setHasCompletedProviderSetup' },
   },
   {
+    path: 'preferences.language',
+    label: 'Language',
+    description:
+      'Display language for the app UI. "system" follows the OS locale; otherwise a BCP-47 tag of an available message catalog.',
+    category: 'preferences',
+    type: 'enum',
+    // Catalog-driven: options come from the compiled Paraglide catalogs, so
+    // new locales added to messages/ appear here automatically.
+    enumValues: [SYSTEM_LANGUAGE_PREFERENCE, ...locales],
+    enumLabels: { [SYSTEM_LANGUAGE_PREFERENCE]: 'System' },
+    source: 'local-storage',
+    storageKey: 'language-preference',
+    defaultValue: SYSTEM_LANGUAGE_PREFERENCE,
+    apply: { kind: 'redux-action', action: 'userPreferences/setLanguagePreference' },
+  },
+  {
     path: 'theme.preference',
     label: 'Theme preference',
     description: 'Light, dark, or system theme preference.',
@@ -198,17 +216,6 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     type: 'object',
     source: 'local-storage',
     storageKey: 'workspaces-provider-models',
-    defaultValue: {},
-    apply: { kind: 'read-only' },
-  },
-  {
-    path: 'model.workspaceOverrides',
-    label: 'Workspace model overrides',
-    description: 'Per-workspace model selections persisted by workspace ID.',
-    category: 'agents',
-    type: 'object',
-    source: 'local-storage',
-    storageKey: 'workspaces-workspace-models',
     defaultValue: {},
     apply: { kind: 'read-only' },
   },

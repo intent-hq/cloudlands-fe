@@ -8,10 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../../../shared/logger';
 import { createWorkspaceEvent } from '../types';
 import type { CanonicalAgentStatusFields } from '../types';
-import {
-  getMainState,
-  mainDispatch,
-} from '../../../store/main/redux-store-bridge';
+import { getMainState, mainDispatch } from '../../../store/main/redux-store-bridge';
 import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 import {
   addSubscription,
@@ -34,7 +31,10 @@ import {
 import { notifyPendingWorkClearedForAgent } from '../../agent/main/agent-process-registry';
 
 // Re-export types that consumers need
-export type { AgentEventFilter, AgentSubscriptionRecord } from '../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
+export type {
+  AgentEventFilter,
+  AgentSubscriptionRecord,
+} from '../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
 export type { AgentStatus } from '../../../store/main/slices/agent-subscriptions/types';
 
 const logger = new Logger('AgentSubscriptionOps');
@@ -94,7 +94,10 @@ function canonicalFieldsForStatus(
 
 /** Subscribe an agent to events. Returns subscription ID (empty string if agent is deleted). */
 export function agentSubscribe(
-  workspaceId: string, agentId: string, agentName: string, filter: AgentEventFilter,
+  workspaceId: string,
+  agentId: string,
+  agentName: string,
+  filter: AgentEventFilter,
 ): string {
   if (selectIsAgentDeleted.select(getMainState(), workspaceId, agentId)) {
     logger.warn('Rejecting subscription for deleted agent', { agentId, agentName });
@@ -102,7 +105,10 @@ export function agentSubscribe(
   }
   const id = uuidv4();
   const record: AgentSubscriptionRecord = {
-    id, agentId, agentName, workspaceId,
+    id,
+    agentId,
+    agentName,
+    workspaceId,
     filter: filter as AgentSubscriptionRecord['filter'],
     createdAt: new Date().toISOString(),
   };
@@ -110,12 +116,20 @@ export function agentSubscribe(
   if (filter.delegationGroup) {
     const g = filter.delegationGroup;
     if (!selectDelegationGroup.select(getMainState(), workspaceId, g.groupId)) {
-      mainDispatch(setDelegationGroup(workspaceId, {
-        groupId: g.groupId, parentAgentId: agentId, parentAgentName: agentName,
-        awaitMode: g.awaitMode, expectedAgentIds: [...g.expectedAgentIds],
-        completedAgentIds: [], deletedAgentIds: [], events: [],
-        subscriptionId: id, delivered: false,
-      }));
+      mainDispatch(
+        setDelegationGroup(workspaceId, {
+          groupId: g.groupId,
+          parentAgentId: agentId,
+          parentAgentName: agentName,
+          awaitMode: g.awaitMode,
+          expectedAgentIds: [...g.expectedAgentIds],
+          completedAgentIds: [],
+          deletedAgentIds: [],
+          events: [],
+          subscriptionId: id,
+          delivered: false,
+        }),
+      );
     }
   }
   logger.info('Agent subscribed', { subscriptionId: id, agentId, agentName });
@@ -135,12 +149,17 @@ export function agentSubscribe(
  * unrelated delegation-group trackers.
  */
 export function agentSubscribeToGroup(
-  workspaceId: string, parentAgentId: string, parentAgentName: string,
-  groupId: string, delegatedAgentId: string,
+  workspaceId: string,
+  parentAgentId: string,
+  parentAgentName: string,
+  groupId: string,
+  delegatedAgentId: string,
 ): string {
   if (selectIsAgentDeleted.select(getMainState(), workspaceId, parentAgentId)) {
     logger.warn('Rejecting delegation-group subscription for deleted agent', {
-      agentId: parentAgentId, groupId, delegatedAgentId,
+      agentId: parentAgentId,
+      groupId,
+      delegatedAgentId,
     });
     return '';
   }
@@ -163,12 +182,12 @@ export function agentSubscribeToGroup(
   // `seed.id` when we just created the subscription, or a prior caller's id
   // when we extended an existing one for the same group.
   const subs = selectAgentSubscriptions.select(getMainState(), workspaceId, parentAgentId);
-  const canonical = subs.find(s => s.filter.delegationGroup?.groupId === groupId);
+  const canonical = subs.find((s) => s.filter.delegationGroup?.groupId === groupId);
   const canonicalId = canonical?.id ?? seed.id;
   logger.info(
     canonicalId === seed.id
-      ? 'Created delegation-group subscription'
-      : 'Added agent to existing delegation-group subscription',
+      ? 'Created delegation-group subscription' // i18n-ignore (developer log message)
+      : 'Added agent to existing delegation-group subscription', // i18n-ignore (developer log message)
     { groupId, parentAgentId, delegatedAgentId, subscriptionId: canonicalId },
   );
   return canonicalId;
@@ -176,19 +195,26 @@ export function agentSubscribeToGroup(
 
 /** Unsubscribe a specific subscription. Returns true if found. */
 export function agentUnsubscribe(
-  workspaceId: string, subscriptionId: string,
-  reason?: 'manual-unsubscribe' | 'oneshot-fired' | 'delegation-complete', groupId?: string,
+  workspaceId: string,
+  subscriptionId: string,
+  reason?: 'manual-unsubscribe' | 'delegation-complete',
+  groupId?: string,
 ): boolean {
   const ws = selectWorkspaceSubscriptionState.select(getMainState(), workspaceId);
   const sub = ws.subscriptions[subscriptionId];
   if (!sub) return false;
   mainDispatch(removeSubscription(workspaceId, subscriptionId));
   // Emit unsubscription event (saga can't do this — record already removed from state)
-  mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
-    'agent:unsubscribed', workspaceId,
-    { type: 'agent', id: sub.agentId, name: sub.agentName },
-    { agentId: sub.agentId, agentName: sub.agentName, subscriptionId, reason, groupId },
-  )));
+  mainDispatch(
+    reduxEmitWorkspaceEvent(
+      createWorkspaceEvent(
+        'agent:unsubscribed',
+        workspaceId,
+        { type: 'agent', id: sub.agentId, name: sub.agentName },
+        { agentId: sub.agentId, agentName: sub.agentName, subscriptionId, reason, groupId },
+      ),
+    ),
+  );
   logger.info('Agent unsubscribed', { subscriptionId, agentId: sub.agentId, reason, groupId });
 
   // If agent has no remaining subscriptions, notify process registry
@@ -240,12 +266,16 @@ export function updateAgentStatus(
       ...canonicalFields,
       status,
     };
-    mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
-      'agent:status-changed',
-      workspaceId,
-      { type: 'agent', id: agentId },
-      data,
-    )));
+    mainDispatch(
+      reduxEmitWorkspaceEvent(
+        createWorkspaceEvent(
+          'agent:status-changed',
+          workspaceId,
+          { type: 'agent', id: agentId },
+          data,
+        ),
+      ),
+    );
   }
 }
 
@@ -254,6 +284,8 @@ export function markAgentAsDeleted(workspaceId: string, agentId: string): void {
   mainDispatch(markAgentDeletedAction(workspaceId, agentId, Date.now()));
   logger.info('Agent marked as deleted', { agentId });
   const removedCount = agentUnsubscribeAll(workspaceId, agentId);
-  logger.info('Cleaned up subscriptions for deleted agent', { agentId, removedSubscriptions: removedCount });
+  logger.info('Cleaned up subscriptions for deleted agent', {
+    agentId,
+    removedSubscriptions: removedCount,
+  });
 }
-

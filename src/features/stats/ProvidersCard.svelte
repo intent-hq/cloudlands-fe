@@ -9,6 +9,7 @@
    */
   import Logo from '$lib/components/Logo.svelte';
   import type { UsageStatsResult } from '$lib/client/app-client';
+  import { m as msg } from '$shared/paraglide/messages.js';
   import {
     MODEL_BAR_COLORS,
     formatInt,
@@ -32,7 +33,7 @@
   <div class="head">
     <div class="head-brand">
       <Logo width={26} />
-      <span class="head-title">PROVIDERS</span>
+      <span class="head-title">{msg.stats_providersCard_title_label()}</span>
     </div>
     <span class="head-label">{label}</span>
   </div>
@@ -59,19 +60,20 @@
           >
         </div>
       {:else}
-        <div class="row row-last row-empty">No provider usage in this period</div>
+        <div class="row row-last row-empty">{msg.stats_providersCard_empty_label()}</div>
       {/each}
     </div>
     <div class="callout">
-      <div class="callout-label">MOST USED</div>
+      <div class="callout-label">{msg.stats_providersCard_mostUsed_label()}</div>
       <div class="callout-provider">{top ? providerDisplayName(top.provider) : '—'}</div>
       <div class="callout-sub">
-        {#if top}{formatTokens(top.tokens)} tokens · {formatInt(top.runs)} runs{:else}—{/if}
+        {#if top}{msg.stats_providersCard_calloutSub_label({ tokens: formatTokens(top.tokens), runs: formatInt(top.runs) })}{:else}—{/if}
       </div>
     </div>
   </div>
   <div class="foot">
-    <span class="foot-brand">Built with Intent</span>
+    <span class="foot-brand">{msg.stats_card_builtWith_label()}</span>
+    <!-- i18n-ignore (brand URL) -->
     <span class="foot-url">intentapp.dev</span>
   </div>
 </div>

@@ -3,7 +3,8 @@
  * The dropdown pushes an escape layer while open, so Escape dismisses it
  * (and only it, when stacked under other overlays — see the NewSpaceModal
  * regression test in modals/__tests__).
- * Also covers the Recent list rendering (owner-qualified repo names).
+ * Also covers the Recent list rendering (owner-qualified repo names) and
+ * plain-text search filtering from the GitHub tab (intent-hq/monorepo#859).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
@@ -104,6 +105,7 @@ vi.mock('$lib/components/workspace/initializer/AddRemoteSetupModal.svelte', asyn
 }));
 
 import RepoSelector from '../RepoSelector.svelte';
+import { warmImport } from '../../../../../test/warm-import';
 
 const DROPDOWN_HEADING = 'What repo should we work on?';
 
@@ -113,6 +115,11 @@ async function openDropdown(container: HTMLElement) {
   expect(trigger).toBeTruthy();
   await fireEvent.click(trigger!);
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('./mocks/MockComponent.svelte'));
 
 describe('RepoSelector Escape handling (escape-layer stack)', () => {
   afterEach(() => {
@@ -204,5 +211,77 @@ describe('RepoSelector Recent list owner rendering', () => {
       .find((button) => button.textContent?.includes('solo'));
     expect(soloRow).toBeTruthy();
     expect(soloRow!.textContent?.replace(/\s+/g, ' ').trim()).toBe('solo');
+  });
+});
+
+describe('RepoSelector Recent list search filtering (GitHub tab)', () => {
+  afterEach(() => {
+    mockRepos.recentRepos = [];
+    cleanup();
+  });
+
+  async function openGitHubTab() {
+    mockRepos.recentRepos = [
+      {
+        path: '/Users/dev/clones/monorepo',
+        type: 'github',
+        githubUrl: 'https://github.com/intent-hq/monorepo',
+        name: 'monorepo',
+        owner: 'intent-hq',
+      },
+      {
+        path: '/Users/dev/clones/react',
+        type: 'github',
+        githubUrl: 'https://github.com/facebook/react',
+        name: 'react',
+        owner: 'facebook',
+      },
+    ];
+    const { container } = render(RepoSelector, { props: {} });
+    await openDropdown(container);
+    await waitFor(() => {
+      expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy();
+    });
+
+    await fireEvent.click(screen.getByText('Clone from GitHub'));
+    await waitFor(() => {
+      expect(screen.getByText('monorepo')).toBeTruthy();
+      expect(screen.getByText('react')).toBeTruthy();
+    });
+
+    return screen.getByPlaceholderText('owner/repo');
+  }
+
+  it('filters the Recent list by owner when plain text is typed', async () => {
+    const input = await openGitHubTab();
+
+    await fireEvent.input(input, { target: { value: 'intent-hq' } });
+
+    await waitFor(() => {
+      expect(screen.queryByText('react')).toBeFalsy();
+      expect(screen.getByText('monorepo')).toBeTruthy();
+    });
+  });
+
+  it('filters the Recent list by repo name when plain text is typed', async () => {
+    const input = await openGitHubTab();
+
+    await fireEvent.input(input, { target: { value: 'react' } });
+
+    await waitFor(() => {
+      expect(screen.queryByText('monorepo')).toBeFalsy();
+      expect(screen.getByText('react')).toBeTruthy();
+    });
+  });
+
+  it('filters the Recent list by owner/repo when a slash-form string is typed', async () => {
+    const input = await openGitHubTab();
+
+    await fireEvent.input(input, { target: { value: 'intent-hq/mono' } });
+
+    await waitFor(() => {
+      expect(screen.queryByText('react')).toBeFalsy();
+      expect(screen.getByText('monorepo')).toBeTruthy();
+    });
   });
 });

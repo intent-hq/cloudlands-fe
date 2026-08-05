@@ -40,6 +40,7 @@
   import Fa from 'svelte-fa';
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspaceId: string;
@@ -82,7 +83,7 @@
     if (currentWorkspaceId) {
       const archiveResult = await workspaceClient.archive(currentWorkspaceId);
       if (!archiveResult.ok) {
-        toast.error('Failed to archive workspace');
+        toast.error(m.workspace_postMerge_archiveFailed_error());
         return;
       }
       appStore.dispatch(loadWorkspacesRequested());
@@ -136,7 +137,7 @@
             hasResetToTrunk: true,
           });
 
-          toast.success('Workspace reset — ready for new changes');
+          toast.success(m.workspace_postMerge_resetSuccess_label());
         } catch (uiError) {
           console.error('Failed to refresh UI after workspace reset:', uiError);
           dispatchPostMergeUpdate({
@@ -145,7 +146,7 @@
             isContentMergedToTrunk: false,
             hasResetToTrunk: true,
           });
-          toast.success('Workspace reset successful. Reload to see updated state.');
+          toast.success(m.workspace_postMerge_resetSuccessReload_label());
         }
 
         // If workspace was archived, unarchive it so the user can continue working
@@ -160,10 +161,10 @@
           });
         }
       } else {
-        toast.error(result.error || 'Failed to reset workspace');
+        toast.error(result.error || m.workspace_postMerge_resetFailed_error());
       }
     } catch {
-      toast.error('Failed to reset workspace');
+      toast.error(m.workspace_postMerge_resetFailed_error());
     } finally {
       appStore.dispatch(setGitOperationFlag(workspaceId, 'isResettingToTrunk', false));
     }
@@ -183,14 +184,14 @@
       >
         {#if isResettingToTrunk}
           <Fa icon={faSpinner} size="sm" class="animate-spin text-ghost" />
-          <span>Resetting...</span>
+          <span>{m.workspace_postMerge_resetting_label()}</span>
         {:else}
           <Fa icon={faRotateLeft} size="sm" class="text-primary" />
-          <span>Reset and continue working</span>
+          <span>{m.workspace_postMerge_resetAndContinue_label()}</span>
         {/if}
       </Button>
       <p class="text-xs text-subtle text-center mt-2">
-        Reset branch to {trunkBranch} and keep working
+        {m.workspace_postMerge_resetBranchTo_label({ branch: trunkBranch })}
       </p>
     </div>
   {/if}
@@ -204,10 +205,10 @@
         onclick={handleStartNewSpace}
       >
         <Fa icon={faRocket} size="sm" class="text-primary" />
-        <span>Archive and start new space</span>
+        <span>{m.workspace_postMerge_archiveStartNew_label()}</span>
       </Button>
       <p class="text-xs text-subtle text-center mt-2">
-        Continue working on this repo in a fresh workspace
+        {m.workspace_postMerge_continueFresh_label()}
       </p>
     </div>
   {/if}

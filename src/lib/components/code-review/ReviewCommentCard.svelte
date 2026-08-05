@@ -18,6 +18,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { getLanguageFromPath } from '$lib/utils/file-utils';
   import { slide } from 'svelte/transition';
+  import * as m from '$shared/paraglide/messages.js';
 
   interface Props {
     comment: ReviewComment;
@@ -58,7 +59,7 @@
         const snippetEnd = Math.min(lines.length, endLine + 2);
         codeSnippet = lines.slice(snippetStart, snippetEnd).join('\n');
       } else {
-        snippetError = response.error || 'Failed to load file';
+        snippetError = response.error || m.codeReview_commentCard_loadFile_error();
       }
     } catch (error) {
       snippetError = (error as Error).message;
@@ -100,10 +101,10 @@
     <h4 class="text-sm font-semibold text-foreground leading-snug">{comment.title}</h4>
     <span class={cn('text-xs font-medium shrink-0', config.color)}>
       {comment.severity === 'critical'
-        ? 'Critical'
+        ? m.codeReview_commentCard_severityCritical_label()
         : comment.severity === 'important'
-          ? 'Important'
-          : 'Suggestion'}
+          ? m.codeReview_commentCard_severityImportant_label()
+          : m.codeReview_commentCard_severitySuggestion_label()}
     </span>
   </div>
 
@@ -134,7 +135,7 @@
       <button
         class="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0"
         onclick={() => onViewInDiff?.(comment)}
-        title="View in diff"
+        title={m.codeReview_commentCard_viewInDiff_tooltip()}
       >
         <Fa icon={faArrowUpRightFromSquare} class="h-3 w-3" />
       </button>
@@ -144,7 +145,7 @@
     {#if isCodeExpanded}
       <div class="px-4 pb-3" transition:slide={{ duration: 100 }}>
         {#if isLoadingSnippet}
-          <div class="text-xs text-subtle italic py-2">Loading...</div>
+          <div class="text-xs text-subtle italic py-2">{m.codeReview_commentCard_loading_label()}</div>
         {:else if snippetError}
           <div class="text-xs text-red-500 py-2">{snippetError}</div>
         {:else if codeSnippet}
@@ -175,7 +176,7 @@
         disabled={isFixing}
       >
         <Fa icon={faWrench} class="h-3 w-3" />
-        <span>{isFixing ? 'Creating...' : 'Fix'}</span>
+        <span>{isFixing ? m.codeReview_commentCard_creating_label() : m.codeReview_commentCard_fix_label()}</span>
       </button>
     {/if}
   </div>

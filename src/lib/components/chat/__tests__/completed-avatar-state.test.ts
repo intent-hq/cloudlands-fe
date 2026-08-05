@@ -23,7 +23,12 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: () => makeReadable(false),
   selectAgentIsWaiting: () => makeReadable(false),
   selectAgentSessionStreamingContent: () => makeReadable(''),
+  selectAgentSessionHasStreamOwnedMessage: () => makeReadable(false),
   selectAgentProvider: () => makeReadable(undefined),
+}));
+
+vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
+  selectChatReceivedFirstChunk: () => makeReadable(false),
 }));
 
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({

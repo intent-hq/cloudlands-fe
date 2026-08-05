@@ -63,6 +63,7 @@
   faCode,
 } from '@fortawesome/free-solid-svg-icons';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
+  import { m } from '$shared/paraglide/messages.js';
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
 
@@ -261,7 +262,7 @@
     if (!tab.filePath || !workspaceId || !absolutePath) return;
 
     const filePath = tab.filePath;
-    const fileName = filePath.split('/').pop() || 'file';
+    const fileName = filePath.split('/').pop() || m.layout_fileTab_file_fallback();
     // Capture current content so we can restore on undo
     const savedContent =
       selectFileContent.select(appStore.state, workspaceId, filePath) ?? '';
@@ -275,7 +276,7 @@
           workspaceId,
         });
         if (!result?.success) {
-          throw new Error(result?.error || 'Failed to delete file');
+          throw new Error(result?.error || m.ui_workspaceActions_deleteFileFailed_error());
         }
         // Close the tab
         appStore.dispatch(closeTab(workspaceId, tab.id));
@@ -315,7 +316,9 @@
         variant="ghost-light"
         size="icon-xs"
         onclick={() => (markdownPreview = !markdownPreview)}
-        tooltip={markdownPreview ? 'Switch to code editor' : 'Switch to rich text preview'}
+        tooltip={markdownPreview
+          ? m.layout_fileTab_switchToCode_tooltip()
+          : m.layout_fileTab_switchToPreview_tooltip()}
         tooltipSide="bottom"
         aria-pressed={markdownPreview}
         class={markdownPreview ? headerToggleActiveClass : headerToggleInactiveClass}
@@ -328,7 +331,7 @@
         variant="ghost-light"
         size="icon-xs"
         onclick={handleGoToChanges}
-        tooltip="Go to changes"
+        tooltip={m.layout_fileTab_goToChanges_tooltip()}
         tooltipSide="bottom"
       >
         <Fa icon={faPencil} size="xs" />
@@ -339,7 +342,9 @@
         variant="ghost-light"
         size="icon-xs"
         onclick={() => appStore.dispatch(toggleDiffIndicators())}
-        tooltip={$diffIndicators ? 'Hide diff indicators' : 'Show diff indicators'}
+        tooltip={$diffIndicators
+          ? m.layout_fileTab_hideDiffIndicators_tooltip()
+          : m.layout_fileTab_showDiffIndicators_tooltip()}
         tooltipSide="bottom"
         aria-pressed={$diffIndicators}
         class={$diffIndicators ? headerToggleActiveClass : headerToggleInactiveClass}
@@ -350,7 +355,9 @@
         variant="ghost-light"
         size="icon-xs"
         onclick={() => appStore.dispatch(toggleLineWrapping())}
-        tooltip={$lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
+        tooltip={$lineWrapping
+          ? m.layout_diffHeader_wrappingOn_tooltip()
+          : m.layout_diffHeader_wrapLines_tooltip()}
         tooltipSide="bottom"
         aria-pressed={$lineWrapping}
         class={$lineWrapping ? headerToggleActiveClass : headerToggleInactiveClass}
@@ -362,7 +369,7 @@
       variant="ghost-light"
       size="icon-xs"
       onclick={handleDeleteFile}
-      tooltip="Delete file"
+      tooltip={m.layout_fileTab_deleteFile_tooltip()}
       tooltipSide="bottom"
       class="text-muted-foreground hover:text-destructive-foreground"
     >
@@ -392,7 +399,7 @@
       </div>
     {:else if fileError}
       <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
-        <p class="text-destructive-foreground">Error loading file</p>
+        <p class="text-destructive-foreground">{m.layout_fileTab_errorLoading_label()}</p>
         <p class="text-xs">{fileError}</p>
       </div>
     {:else if fileContent !== null}
@@ -427,7 +434,7 @@
       {/if}
     {:else}
       <div class="flex items-center justify-center h-full text-subtle">
-        <p>Preparing to load file...</p>
+        <p>{m.layout_fileTab_preparing_label()}</p>
       </div>
     {/if}
   {/key}

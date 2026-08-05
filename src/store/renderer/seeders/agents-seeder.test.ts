@@ -33,6 +33,7 @@ import { selectAgentSession } from "../slices/agent-session/agent-session-select
 import { bulkUpsertSessions } from "../slices/agent-session/agent-session-slice";
 import { selectActiveAgentId } from "../slices/workspace-agents/workspace-agents-selectors";
 import { setActiveAgentId, addAgent } from "../slices/workspace-agents/workspace-agents-slice";
+import { setActiveWorkspaceId } from "../slices/workspace/workspace-slice";
 
 const mockedClient = vi.mocked(appClient);
 
@@ -53,6 +54,35 @@ describe("agents-seeder", () => {
   afterEach(() => {
     vi.clearAllMocks();
     clearPendingAgentDeletions();
+  });
+
+  describe("workspace hydration scope", () => {
+    it("does not list agents when no active workspace is selected", async () => {
+      mockedClient.workspaces.list.mockResolvedValueOnce([{ id: "ws-1" }, { id: "ws-2" }]);
+
+      const { seedMockStore } = await import("../mock-bootstrap");
+      await seedMockStore(store, appClient);
+
+      expect(mockedClient.workspaces.list).not.toHaveBeenCalled();
+      expect(mockedClient.agents.list).not.toHaveBeenCalled();
+      expect(store.state.workspaceAgents.byWorkspaceId["ws-1"]).toBeUndefined();
+      expect(store.state.workspaceAgents.byWorkspaceId["ws-2"]).toBeUndefined();
+    });
+
+    it("lists agents only for the selected active workspace", async () => {
+      store.dispatch(setActiveWorkspaceId("ws-2"));
+      mockedClient.workspaces.list.mockResolvedValueOnce([{ id: "ws-1" }, { id: "ws-2" }]);
+      mockedClient.agents.list.mockResolvedValueOnce([]);
+
+      const { seedMockStore } = await import("../mock-bootstrap");
+      await seedMockStore(store, appClient);
+
+      expect(mockedClient.workspaces.list).not.toHaveBeenCalled();
+      expect(mockedClient.agents.list).toHaveBeenCalledTimes(1);
+      expect(mockedClient.agents.list).toHaveBeenCalledWith("ws-2");
+      expect(store.state.workspaceAgents.byWorkspaceId["ws-1"]).toBeUndefined();
+      expect(store.state.workspaceAgents.byWorkspaceId["ws-2"]?.agentsLoaded).toBe(true);
+    });
   });
 
   describe("preserve-messages merge", () => {
@@ -88,6 +118,7 @@ describe("agents-seeder", () => {
       };
 
       store.dispatch(bulkUpsertSessions([existingSession]));
+      store.dispatch(setActiveWorkspaceId(WORKSPACE_ID));
 
       // WHEN: the seeder runs and agents.list returns AgentLite (messages: [])
       const agentLitePayload: AgentSession = {
@@ -95,7 +126,6 @@ describe("agents-seeder", () => {
         messages: [], // AgentLite normalizes messages to []
       };
 
-      mockedClient.workspaces.list.mockResolvedValueOnce([{ id: WORKSPACE_ID }]);
       mockedClient.agents.list.mockResolvedValueOnce([agentLitePayload]);
 
       // Run the seeder directly
@@ -128,6 +158,7 @@ describe("agents-seeder", () => {
       };
 
       store.dispatch(bulkUpsertSessions([existingSession]));
+      store.dispatch(setActiveWorkspaceId(WORKSPACE_ID));
 
       // WHEN: seeder provides an agent with messages
       const newMessages: AgentSession["messages"] = [
@@ -139,7 +170,6 @@ describe("agents-seeder", () => {
         },
       ];
 
-      mockedClient.workspaces.list.mockResolvedValueOnce([{ id: WORKSPACE_ID }]);
       mockedClient.agents.list.mockResolvedValueOnce([
         { ...existingSession, messages: newMessages },
       ]);
@@ -168,9 +198,9 @@ describe("agents-seeder", () => {
       store.dispatch(addAgent(WORKSPACE_ID, agent1));
       store.dispatch(addAgent(WORKSPACE_ID, agent2));
       store.dispatch(setActiveAgentId(WORKSPACE_ID, AGENT_ID_1));
+      store.dispatch(setActiveWorkspaceId(WORKSPACE_ID));
 
       // Mock daemon response: both agents present, AGENT_ID_2 is foreground
-      mockedClient.workspaces.list.mockResolvedValueOnce([{ id: WORKSPACE_ID }]);
       mockedClient.agents.list.mockResolvedValueOnce([agent1, agent2]);
 
       // WHEN: seeder runs
@@ -195,7 +225,7 @@ describe("agents-seeder", () => {
       const kept: AgentSession = { id: KEPT, workspaceId: WORKSPACE_ID, name: "Kept", isBackground: false, messages: [], status: "idle" };
       setPendingAgentDeletion({ wsId: WORKSPACE_ID, agentId: DOOMED, snapshot: doomed, timer: null });
       try {
-        mockedClient.workspaces.list.mockResolvedValueOnce([{ id: WORKSPACE_ID }]);
+        store.dispatch(setActiveWorkspaceId(WORKSPACE_ID));
         mockedClient.agents.list.mockResolvedValueOnce([doomed, kept]);
 
         const { seedMockStore } = await import("../mock-bootstrap");

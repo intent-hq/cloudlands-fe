@@ -50,6 +50,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   faTrash,
 } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('NoteTabType');
@@ -68,7 +69,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     'text-foreground bg-sidebar hover:text-foreground hover:bg-sidebar';
   const headerToggleInactiveClass = 'text-subtle';
   const rawNoteToggleLabel = $derived(
-    $rawNoteViewEnabled ? 'Show rich note view' : 'Show raw markdown note view',
+    $rawNoteViewEnabled ? m.layout_noteTab_showRichView_label() : m.layout_noteTab_showRawView_label(),
   );
 
   // Version history state
@@ -152,7 +153,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     if (!$note) return;
     try {
       await navigator.clipboard.writeText($note.content || '');
-      noteCopyFeedback = 'Copied full note';
+      noteCopyFeedback = m.layout_noteTab_copiedFullNote_label();
       if (noteCopyTimeoutId) clearTimeout(noteCopyTimeoutId);
       noteCopyTimeoutId = setTimeout(() => {
         noteCopyFeedback = null;
@@ -167,13 +168,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     if (!tab.noteId || isNoteDeleting) return;
     if (isSpecNote(tab.noteId)) {
       const { toast } = await import('svelte-sonner');
-      toast.error('Cannot delete the space spec');
+      toast.error(m.layout_noteTab_cannotDeleteSpec_error());
       return;
     }
     const noteIdToDelete = tab.noteId;
 
     const savedNote = $note ? { ...$note } : null;
-    const noteTitle = $note?.title || 'Note';
+    const noteTitle = $note?.title || m.layout_tabTypes_note_title();
     isNoteDeleting = true;
     try {
       appStore.dispatch(closeTab(workspaceId, tab.id));
@@ -181,11 +182,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
       // Show undo toast
       const { toast } = await import('svelte-sonner');
-      const toastId = toast.warning(`Deleted "${noteTitle}"`, {
+      const toastId = toast.warning(m.layout_noteTab_deletedNote_toast({ title: noteTitle }), {
         duration: 15000,
         action: savedNote
           ? {
-              label: 'Undo',
+              label: m.ui_workspaceActions_undo_label(),
               onClick: () => {
                 try {
                   void createNote(savedNote.workspaceId, {
@@ -199,7 +200,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                   toast.dismiss(toastId);
                 } catch (err) {
                   logger.error('Failed to restore note', err);
-                  toast.error('Failed to restore note');
+                  toast.error(m.layout_noteTab_restoreFailed_error());
                 }
               },
             }
@@ -208,7 +209,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     } catch (error) {
       logger.error('Failed to delete note', error);
       const { toast } = await import('svelte-sonner');
-      toast.error('Failed to delete note');
+      toast.error(m.layout_noteTab_deleteFailed_error());
     } finally {
       isNoteDeleting = false;
     }
@@ -231,9 +232,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     variant="ghost-light"
     size="icon-xs"
     onclick={handleCopyNote}
-    tooltip={noteCopyFeedback || 'Copy full note'}
+    tooltip={noteCopyFeedback || m.layout_noteTab_copyFullNote_tooltip()}
     tooltipSide="bottom"
-    aria-label="Copy full note"
+    aria-label={m.layout_noteTab_copyFullNote_tooltip()}
   >
     {#if noteCopyFeedback}
       <Fa icon={faCheck} size="xs" class="text-green-500" />
@@ -261,7 +262,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     variant="ghost-light"
     size="icon-xs"
     onclick={() => (showVersionHistory = !showVersionHistory)}
-    tooltip={showVersionHistory ? 'Hide version history' : 'Show version history'}
+    tooltip={showVersionHistory
+      ? m.layout_noteTab_hideVersionHistory_tooltip()
+      : m.layout_noteTab_showVersionHistory_tooltip()}
     tooltipSide="bottom"
     class={showVersionHistory ? 'text-foreground' : 'text-muted-foreground'}
   >
@@ -272,7 +275,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     variant="ghost-light"
     size="icon-xs"
     onclick={() => appStore.dispatch(toggleSpellcheck())}
-    tooltip={$spellcheckEnabled ? 'Spellcheck: On' : 'Spellcheck: Off'}
+    tooltip={$spellcheckEnabled
+      ? m.layout_noteTab_spellcheckOn_tooltip()
+      : m.layout_noteTab_spellcheckOff_tooltip()}
     tooltipSide="bottom"
     aria-pressed={$spellcheckEnabled}
     class={$spellcheckEnabled ? headerToggleActiveClass : headerToggleInactiveClass}
@@ -287,7 +292,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       variant="ghost-light"
       size="icon-xs"
       onclick={handleDeleteNote}
-      tooltip="Delete note"
+      tooltip={m.layout_noteTab_deleteNote_tooltip()}
       tooltipSide="bottom"
       disabled={isNoteDeleting}
     >
@@ -330,6 +335,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 {:else}
   <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
     <Fa icon={faNote} class="text-4xl opacity-50" />
-    <p>No note selected</p>
+    <p>{m.layout_noteTab_noNoteSelected_label()}</p>
   </div>
 {/if}

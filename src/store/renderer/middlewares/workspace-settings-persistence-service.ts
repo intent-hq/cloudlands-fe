@@ -10,6 +10,11 @@
  *   - Watches setAutoCommitEnabled action
  *   - Invokes WORKSPACE_CHANNELS.UPDATE_SETTINGS with {id, settings:{autoCommitEnabled}}
  *   - Invokes SETTINGS_CHANNELS.SET with {key:"autoCommit", value} for electron-store persistence
+ *   - If the daemon-backed UPDATE_SETTINGS rejects (e.g. -32602 for the
+ *     virtual Chief workspace, PROTOCOL §5.1), the optimistic toggle is
+ *     REVERTED to the previous value so the UI never presents a state the
+ *     daemon refused to persist. The revert dispatch is loop-guarded so it
+ *     is not itself re-persisted.
  *
  * IPC handlers exist in main at workspace.ipc.ts (UPDATE_SETTINGS) and are
  * unchanged. Storage key "autoCommit" matches the deleted saga so existing
@@ -27,11 +32,16 @@ import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("WorkspaceSettingsPersistenceService");
 
+/** Workspace ids whose next setAutoCommitEnabled dispatch is a revert (skip persistence). */
+const revertingWorkspaceIds = new Set<string>();
+
 /**
  * Sync autoCommit setting to main process for a workspace.
  * Also persists to electron-store so it survives app restarts.
+ * Returns whether the daemon-backed workspace-settings write succeeded.
  */
-async function syncToMainProcess(workspaceId: string, autoCommitEnabled: boolean): Promise<void> {
+async function syncToMainProcess(workspaceId: string, autoCommitEnabled: boolean): Promise<boolean> {
+  let synced = true;
   // Update workspace-level settings
   try {
     await invoke(WORKSPACE_CHANNELS.UPDATE_SETTINGS, {
@@ -44,6 +54,7 @@ async function syncToMainProcess(workspaceId: string, autoCommitEnabled: boolean
       autoCommitEnabled,
       error,
     });
+    synced = false;
   }
 
   // Persist to electron-store so the setting survives app restarts
@@ -60,23 +71,40 @@ async function syncToMainProcess(workspaceId: string, autoCommitEnabled: boolean
       error,
     });
   }
+  return synced;
 }
 
 /**
  * Middleware giving workspace-settings persistence real handlers again.
- * Watches setAutoCommitEnabled and persists via IPC to main + electron-store.
+ * Watches setAutoCommitEnabled and persists via IPC to main + electron-store;
+ * reverts the toggle when the daemon rejects the write.
  */
 export function createWorkspaceSettingsPersistenceMiddleware(): StoreMiddleware {
   return (api) => (next) => (action) => {
-    const result = next(action);
     if (action && action.type === setAutoCommitEnabled.type) {
       const [workspaceId, enabled] = (action as ReturnType<typeof setAutoCommitEnabled>).payload;
+      if (revertingWorkspaceIds.has(workspaceId)) {
+        // This dispatch undoes a failed persist — apply it without re-persisting.
+        revertingWorkspaceIds.delete(workspaceId);
+        return next(action);
+      }
+      const previousEnabled =
+        (api.getState() as StoreState).workspaceSettings.byWorkspaceId[workspaceId]
+          ?.autoCommitEnabled ?? true;
+      const result = next(action);
       // Read the updated state to confirm the reducer ran
       const state = api.getState() as StoreState;
       const autoCommitEnabled = state.workspaceSettings.byWorkspaceId[workspaceId]?.autoCommitEnabled ?? enabled;
-      // Async persist (fire and forget, errors logged)
-      void syncToMainProcess(workspaceId, autoCommitEnabled);
+      // Async persist (errors logged); on daemon rejection revert the toggle
+      // so the UI does not silently diverge from the persisted state.
+      void syncToMainProcess(workspaceId, autoCommitEnabled).then((synced) => {
+        if (!synced && previousEnabled !== autoCommitEnabled) {
+          revertingWorkspaceIds.add(workspaceId);
+          api.dispatch(setAutoCommitEnabled(workspaceId, previousEnabled));
+        }
+      });
+      return result;
     }
-    return result;
+    return next(action);
   };
 }

@@ -23,6 +23,7 @@
   import { writable } from 'svelte/store';
   import Button from '../ui/button/button.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
   import { selectWorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 
@@ -30,7 +31,6 @@
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
-  import CheckoutModePill from './CheckoutModePill.svelte';
   import { deriveWorkspacePhase } from './workspace-phase';
   import WorkspaceHoverCard from './WorkspaceHoverCard.svelte';
   import WorkspacePhaseIndicator from './WorkspacePhaseIndicator.svelte';
@@ -185,7 +185,8 @@
               'text-base font-medium truncate flex-1 min-w-0',
               ws.archived || !ws.title ? 'text-muted-foreground' : 'text-foreground',
             )}
-            title={ws.title || 'Untitled'}>{ws.title || 'Untitled'}</span
+            title={ws.title || m.workspace_links_untitled_label()}
+            >{ws.title || m.workspace_links_untitled_label()}</span
           >
 
           <!-- Agent avatars -->
@@ -232,7 +233,9 @@
             {@const tooltipText = prTooltipContent}
             <Tooltip content={tooltipText} side="bottom" sideOffset={4} disabled={!tooltipText}>
               <span class="text-ui font-medium px-1.5 py-0.5 rounded-full shrink-0 {statusColor}">
-                PR{prDisplayNumber ? ` #${prDisplayNumber}` : ''}
+                {m.workspace_card_prBadge_label({
+                  number: prDisplayNumber ? ` #${prDisplayNumber}` : '',
+                })}
               </span>
             </Tooltip>
           {/if}
@@ -249,9 +252,8 @@
 
         <!-- Row 2: repo info (hidden when grouped by repo) -->
         {#if !groupByRepo && ws.repositoryOwner && ws.repositoryName}
-          <div class="flex min-w-0 items-center gap-1 text-xs text-subtle">
-            <span class="min-w-0 truncate">{ws.repositoryOwner}/{ws.repositoryName}</span>
-            <CheckoutModePill checkoutMode={ws.checkoutMode} />
+          <div class="truncate text-xs text-subtle">
+            {ws.repositoryOwner}/{ws.repositoryName}
           </div>
         {/if}
       </div>
@@ -269,7 +271,9 @@
           size="icon-xs"
           onclick={handleArchive}
           class="hover:text-muted-foreground"
-          tooltip={isArchived ? 'Unarchive space' : 'Archive space'}
+          tooltip={isArchived
+            ? m.workspace_tableRow_unarchive_tooltip()
+            : m.workspace_tableRow_archive_tooltip()}
         >
           <Fa icon={isArchived ? faBoxOpen : faBoxArchive} size="sm" />
         </Button>
@@ -280,7 +284,7 @@
           size="icon-xs"
           onclick={handleDelete}
           class="hover:text-destructive-foreground hover:bg-destructive/10!"
-          tooltip="Delete space"
+          tooltip={m.workspace_tableRow_delete_tooltip()}
         >
           <Fa icon={faTrash} size="sm" />
         </Button>

@@ -18,10 +18,20 @@ import { createGitReadMiddleware } from "$features/git/git-read-service";
 import { createAgentReadMiddleware } from "$features/agent/agent-read-service";
 import { createAgentSubscriptionReadMiddleware } from "$features/agent/agent-subscription-read-service";
 import { createChatReadMiddleware } from "$features/agent/chat-read-service";
+import { createChatSubscribeMiddleware } from "$features/agent/chat-subscribe-service";
 import { createChatSendMiddleware } from "$features/agent/chat-send-service";
 import { createPermissionResponseMiddleware } from "$features/permission/permission-response-service";
 import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge.client";
 import { createAgentFailureToastMiddleware } from "$features/agent/agent-failure-toast-service";
+import { createHardwareConsoleConnectionToastMiddleware } from "$features/hardware-console/connection-toast-service";
+import { createHardwareConsoleIntegrationToggleMiddleware } from "$features/hardware-console/integration-toggle-service";
+import { createHardwareConsoleKeyPinPersistenceMiddleware } from "$features/hardware-console/assignment/key-pin-persistence-service";
+import { createHardwareConsoleKeySwitchMiddleware } from "$features/hardware-console/assignment/key-switch-service";
+import { createHardwareConsoleLedStatusMiddleware } from "$features/hardware-console/led/led-status-service";
+import { createHardwareConsolePromptPickerMiddleware } from "$features/hardware-console/prompt-picker/prompt-picker-service";
+import { createHardwareConsoleActionKeyMiddleware } from "$features/hardware-console/actions/action-key-service";
+import { createVoiceTranscriptionMiddleware } from "$features/hardware-console/voice/transcription-service";
+import { createHardwareConsoleEncoderMiddleware } from "$features/hardware-console/encoder/encoder-service";
 import { createSettingsHydrationMiddleware } from "$features/settings/settings-hydration-service";
 import { createModelSelectionPersistenceMiddleware } from "$features/settings/model-selection-persistence-service";
 import { createBackgroundAgentSettingsPersistenceMiddleware } from "$features/settings/background-agent-settings-persistence-service";
@@ -29,7 +39,6 @@ import { createModelReloadMiddleware } from "$features/settings/model-reload-ser
 import { createProviderSettingsPersistenceMiddleware } from "$features/settings/provider-settings-persistence-service";
 import { createProviderAvailabilityCheckMiddleware } from "$features/providers/provider-availability-check-service";
 import { createHostRequirementsCheckMiddleware } from "$features/system/host-requirements-check-service";
-import { createAgentStreamMiddleware } from "$features/agent/agent-stream-service";
 import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
 import { createAgentMutationMiddleware } from "$features/agent/agent-mutation-service";
 import { createEditRegenerateMiddleware } from "$features/agent/edit-regenerate-service";
@@ -47,14 +56,16 @@ import { createNotesReadMiddleware } from "$features/notes/notes-read-service";
 import { createGitHubAuthMiddleware } from "$features/github-auth/github-auth-store-service";
 import { createSentryAuthMiddleware } from "$features/sentry-auth/sentry-auth-store-service";
 import { createLinearAuthMiddleware } from "$features/linear-auth/linear-auth-store-service";
+import { createVoiceSettingsMiddleware } from "$features/voice/voice-settings-store-service";
 import { createMcpManagementMiddleware } from "$features/mcp/mcp-management-service";
 import { createWorkspaceOperationsMiddleware } from "$features/workspace/workspace-operations-service";
 import { createDirectoryPickerReadMiddleware } from "$features/onboarding/directory-picker-read-service";
+import { createLegacyImportMiddleware } from "$features/settings/legacy-import-service";
 import { createStatsReadMiddleware } from "$features/stats/stats-read-service";
+import { createBackgroundHooksMiddleware } from "$features/hooks/background-hooks-read-service";
 import { createLifecycleReadMiddleware } from "./middlewares/lifecycle-read-service";
 import { createLifecycleIpcReadMiddleware } from "./middlewares/lifecycle-ipc-read-service";
 import { createUiLayoutPersistenceMiddleware } from "./middlewares/ui-layout-persistence-service";
-import { createUnreadTrackingPersistenceMiddleware } from "./middlewares/unread-tracking-persistence-service";
 import { createTabStatePersistenceMiddleware } from "./middlewares/tab-state-persistence-service";
 import { createSidebarNavPersistenceMiddleware } from "./middlewares/sidebar-nav-persistence-service";
 import { createBrowserPersistenceMiddleware } from "./middlewares/browser-persistence-service";
@@ -63,7 +74,11 @@ import { createFileContentPruneService } from "./middlewares/file-content-prune-
 import { createTerminalPersistenceMiddleware } from "./middlewares/terminal-persistence-service";
 import { createExternalEditorsPersistenceMiddleware } from "./middlewares/external-editors-persistence-service";
 import { createZoomSyncMiddleware } from "./middlewares/zoom-sync-service";
+import { createMenuIpcMiddleware } from "./middlewares/menu-ipc-service";
+import { createBrowserIpcMiddleware } from "./middlewares/browser-ipc-service";
 import { createNotificationIpcMiddleware } from "./middlewares/notification-ipc-service";
+import { createAgentEventsIpcMiddleware } from "./middlewares/agent-events-ipc-service";
+import { createGitEventsIpcMiddleware } from "./middlewares/git-events-ipc-service";
 import { createWebNotificationMiddleware } from "$features/notifications/web-notification-service";
 import { createWorkspaceSettingsPersistenceMiddleware } from "./middlewares/workspace-settings-persistence-service";
 import { createUserPreferencesBetaPersistenceMiddleware } from "./middlewares/user-preferences-beta-persistence-service";
@@ -73,9 +88,9 @@ import { createWorkspaceInitializerPersistenceMiddleware } from "./middlewares/w
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-update-mutation-service";
 import { createSpecialistsMutationMiddleware } from "$features/specialists/specialists-mutation-service";
-import { createActiveStreamsReduxBridge } from "$features/agent/active-streams-redux-bridge";
 import { createDaemonHealthMiddleware } from "./middlewares/daemon-health-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
+import { isHudWindowRenderer } from "$lib/utils/navigation.client";
 
 const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
 
@@ -110,6 +125,67 @@ function getReduxLoggerConfig(): { enabled: boolean; webviewName?: string } {
 }
 
 function buildMiddleware(): StoreMiddleware[] {
+  // The chrome-less HUD pop-out window must be fully inert to Codex Micro /
+  // Creator Micro 2 input: only the main window may open the device, decode
+  // input, drive LEDs, or dispatch hardware-triggered effects. Skipping the
+  // hardware-console middlewares here keeps the shared manager from ever
+  // starting in the HUD renderer (and eliminates double-execution of actions
+  // like new-workspace / stop-agent). This module loads in the renderer after
+  // the page URL is set, so `window.location` is reliable at build time; in
+  // non-window contexts the check is false and behavior is unchanged.
+  const hardwareConsoleMiddleware: StoreMiddleware[] = isHudWindowRenderer()
+    ? []
+    : [
+        // Surface connect/disconnect toasts with firmware, battery, transport,
+        // and Codex-mode readiness for supported devices.
+        createHardwareConsoleConnectionToastMiddleware(),
+        // Hydrate the hardware-console integration enable/disable flag from the
+        // shared `hardwareConsole.state` daemon settings bag, persist toggle
+        // changes (read-modify-write so sibling fields survive), and stop/start
+        // the shared manager to match the flag. Sole owner of the boot-time
+        // manager start (WebHID; no-op where WebHID is unavailable): the manager
+        // starts only after hydration settles with the flag on.
+        createHardwareConsoleIntegrationToggleMiddleware(),
+        // Hydrate the hardware-console agent-key pins from the shared
+        // `hardwareConsole.state` daemon settings bag and persist pin changes
+        // (read-modify-write so sibling fields in the bag survive).
+        createHardwareConsoleKeyPinPersistenceMiddleware(),
+        // Wire agent-key presses to workspace switching: first press navigates
+        // to the resolved workspace and lands on the first agent tab requiring
+        // attention (falling back to the current/first open tab); subsequent
+        // presses cycle through that workspace's open tabs in order.
+        createHardwareConsoleKeySwitchMiddleware(),
+        // Drive the device LEDs from store state: per-key v.oai.thstatus frames
+        // for the 6 assigned workspaces plus the v.oai.rgbcfg ambient state
+        // (breath while running, blink-amber on attention, dark when idle);
+        // frames replay on reconnect.
+        createHardwareConsoleLedStatusMiddleware(),
+        // Joystick radial prompt picker: track composer submissions in the
+        // prompt-usage tracker (persisted in the shared hardwareConsole.state
+        // bag, read-modify-write) and open a radial overlay of the top-N prompts
+        // on joystick deflection; release inserts the highlighted prompt at the
+        // cursor of the focused text input (never auto-sends).
+        createHardwareConsolePromptPickerMiddleware(),
+        // Wire action-key presses (ACT06-ACT12) to the mapped v1 actions
+        // (cycle agents, stop agent, see spec, toggle sidebar tabs, new agent,
+        // new workspace, ...); unavailable actions no-op with a subtle toast
+        // hint. The mapping hydrates from the shared hardwareConsole.state bag
+        // and persists changes (read-modify-write so sibling fields survive).
+        createHardwareConsoleActionKeyMiddleware(),
+        // Push-to-talk transcription: on `pttRecordingFinished`, call the
+        // daemon's `voice.transcribe` (PROTOCOL §5.41) with lightweight
+        // store-derived context and insert the transcript at the cursor of
+        // the active agent's composer (insert-for-review, never auto-send).
+        // HUD shows "Transcribing…" while in flight; errors surface as
+        // toasts (no-key hint → Settings, provider failure → error).
+        createVoiceTranscriptionMiddleware(),
+        // Encoder behaviors: rotate cycles the active workspace by activity
+        // (one step per detent, direction honored, clamped at the list ends,
+        // small HUD while rotating); click opens the All-workspaces sidebar
+        // panel, then cycles its view mode Recent → Repo → Status.
+        createHardwareConsoleEncoderMiddleware(),
+      ];
+
   const baseMiddleware: StoreMiddleware[] = [
     // Guard must be first — reject actions tagged for the wrong store immediately
     createStoreGuardMiddleware("renderer"),
@@ -135,10 +211,15 @@ function buildMiddleware(): StoreMiddleware[] {
     // so opening an agent loads its full retained transcript via
     // `agents.getConversation` instead of showing an empty conversation.
     createChatReadMiddleware(),
+    // Keep the open chat's transcript live from the standing `chat.subscribe`
+    // stream (PROTOCOL §7.1): on `initializeChatRequested` a per-agent
+    // subscription reconciles snapshot+deltas into the agent-session slice,
+    // swapping/tearing down on agent switch, chat close, and agent deletion.
+    createChatSubscribeMiddleware(),
     // Give the (post-saga) `sendMessage` action a real consumer so pressing
-    // Send in ChatPanel routes through `agent-stream-lifecycle.sendMessage()`
-    // again — producing a user message and a live-streaming assistant response
-    // — instead of being a no-op.
+    // Send in ChatPanel routes through `agent-send.sendMessage()` — producing
+    // a user message and a live-streaming assistant response — instead of
+    // being a no-op.
     createChatSendMiddleware(),
     // Give the (post-saga) permission triggers (`approvePermission` /
     // `denyPermission` / `cancelPermission` / `selectPermissionOption`) a real
@@ -157,17 +238,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // a Retry All action that redrives each failed agent via `agent.retry`.
     // Toasts update in place per group and auto-dismiss when a group empties.
     createAgentFailureToastMiddleware(),
+    // Hardware-console middlewares (empty in the HUD pop-out window — see above).
+    ...hardwareConsoleMiddleware,
     // Poll system.status periodically (~10s) and listen to backend:status
     // connection events to derive tri-state daemon health (healthy/degraded/down)
     // plus stats payload for the health indicator UI.
     createDaemonHealthMiddleware(),
-    // Bridge activeStreamsTracker updates into Redux so sidebar workspace cards
-    // re-render when active-stream data arrives after mount (app refresh case).
-    // Subscribes once at boot and dispatches `bumpActiveStreamsVersion` when
-    // the tracker notifies listeners, triggering sidebar deriveds to recompute.
-    // Also ensures `activeStreamsTracker.startPolling()` is called independently
-    // of WindowTitleBar mounting.
-    createActiveStreamsReduxBridge(),
     // Boot-hydrate the BE-owned settings slices (providers, background-agents,
     // MCP, model overrides) by calling `settings.list` once on first dispatched
     // action, then keep them in sync via the `settings:changed` routing the
@@ -176,9 +252,9 @@ function buildMiddleware(): StoreMiddleware[] {
     createSettingsHydrationMiddleware(),
     // Give the (post-saga) `selectModel` trigger a real handler (map to
     // `setSelectedModel` for the active provider) and persist model picks to
-    // the daemon settings catalog (`model.providerDefaults` /
-    // `model.workspaceOverrides`, PROTOCOL §5.12) so the selection survives a
-    // reload — the hydration middleware above reads the same paths on boot.
+    // the daemon settings catalog (`model.providerDefaults`, PROTOCOL §5.12)
+    // so the selection survives a reload — the hydration middleware above
+    // reads the same path on boot.
     createModelSelectionPersistenceMiddleware(),
     // Persist background-agent settings (default model + per-type overrides)
     // to the daemon settings catalog (`backgroundAgents.defaultModel` /
@@ -211,12 +287,6 @@ function buildMiddleware(): StoreMiddleware[] {
     // hostRequirements slice in a terminal state for the onboarding gate —
     // failures fold to not-available, never stuck on "checking".
     createHostRequirementsCheckMiddleware(),
-    // Give the (post-saga) `agentStreamUpdateReceived` action a real consumer
-    // so a streaming agent's text/tool blocks grow live in the chat panel
-    // (placeholder on first event, in-place block update on subsequent events,
-    // finalize on complete/error/timeout) instead of staying invisible until
-    // the conversation is re-fetched.
-    createAgentStreamMiddleware(),
     // Give the (post-saga) agent-creation triggers (create / create-with-
     // specialist / run-for-note / activate-initial) real handlers so Cmd/Ctrl+T,
     // the New-agent / specialist UI, the NoteMetadataBar run button, and fresh-
@@ -224,9 +294,9 @@ function buildMiddleware(): StoreMiddleware[] {
     // open its tab again.
     createAgentCreationMiddleware(),
     // Give the (post-saga) agent-session mutation triggers (restore / activate
-    // / save) real handlers so `agent-stream-lifecycle.sendMessage()` — which
-    // awaits each `action.promise` before dispatching the user message and
-    // opening the stream — can resolve again instead of hanging. Restore reads
+    // / save) real handlers so `agent-send.sendMessage()` — which awaits each
+    // `action.promise` before dispatching the user message and issuing the
+    // wire send — can resolve again instead of hanging. Restore reads
     // via `appClient.agents.get`; activate marks the session ACTIVE and
     // refetches; save is a no-op on the mock seam (Redux IS the state).
     createAgentMutationMiddleware(),
@@ -294,6 +364,9 @@ function buildMiddleware(): StoreMiddleware[] {
     createGitHubAuthMiddleware(),
     createSentryAuthMiddleware(),
     createLinearAuthMiddleware(),
+    // Give the voice settings triggers (initialize + provider change +
+    // save/clear API key) handlers that run against the daemon settings seam.
+    createVoiceSettingsMiddleware(),
     // Give the (post-saga) MCP settings triggers (loadServers + add/remove/
     // update/toggle/import/restart) real handlers so the MCP panel loads and
     // persists servers via the `appClient.settings` seam again.
@@ -318,19 +391,25 @@ function buildMiddleware(): StoreMiddleware[] {
     // to the `directoryPicker` slice — keeping `backendRequest` out of the Svelte
     // component (per the `intent/no-component-async-data-fetch` rule).
     createDirectoryPickerReadMiddleware(),
+    // Route Settings legacy-import requests through the client service and
+    // reflect the asynchronous result in the legacyImport slice.
+    createLegacyImportMiddleware(),
     // Give the usage-stats overlay a real read handler so
     // `loadUsageStatsRequested` fetches via `stats.getUsage` and dispatches the
     // result back to the `stats` slice — keeping the wire call out of the
     // Svelte component (per the `intent/no-component-async-data-fetch` rule).
     createStatsReadMiddleware(),
+    // Give the BackgroundHooksRow chip row a real live-read handler so
+    // `backgroundHooksSubscribeRequested` opens the workspace's `hook:*`
+    // events.subscribe + `hook.list` seed and run/cancel triggers forward to
+    // `hook.runNow` / `hook.cancel` (PROTOCOL §5.40) — keeping the wire calls
+    // out of the Svelte component (per the `intent/no-component-async-data-fetch`
+    // rule).
+    createBackgroundHooksMiddleware(),
     // Give the (post-saga) ui-layout persistence triggers real handlers so panel
     // sizes / group layouts / collapsed state read on mount and persist on change
     // across sessions via localStorage again.
     createUiLayoutPersistenceMiddleware(),
-    // Give the (post-saga) unread-tracking triggers real handlers so unread state
-    // hydrates/persists across sessions and `clearWorkspaceUnread` clears the
-    // workspace's agents via `clearAgentsUnread` again.
-    createUnreadTrackingPersistenceMiddleware(),
     // Give the (post-saga) tab-state persistence triggers real handlers so the
     // workspace-tab strip (order/pin/active tab) and per-tab scroll positions
     // hydrate on boot and persist on change across sessions via localStorage.
@@ -371,11 +450,32 @@ function buildMiddleware(): StoreMiddleware[] {
     // ipc-saga.ts) so zoom-level changes from the main process (Cmd/Ctrl+Plus/
     // Minus or View menu) dispatch setZoomFactor and reach the Redux store again.
     createZoomSyncMiddleware(),
+    // Restore the menu bar IPC listeners (deleted app-layout/sagas/
+    // app-layout-saga.ts) so `navigate` and the `menu:*` channels the main
+    // process sends on menu clicks (Settings..., New Workspace, Open Recent,
+    // New Agent/Note/Terminal/Browser, Close Tab, Reopen Closed Tab, Select
+    // Previous/Next Tab, browser zoom) take effect in the renderer again.
+    createMenuIpcMiddleware(),
+    // Restore the browser:open-tab IPC listener (deleted app-layout/sagas/
+    // app-layout-saga.ts → watchBrowserOpenTabSaga) so agent/MCP-triggered
+    // browser tab opens forwarded by the main process take effect in the
+    // renderer again (replace / adjacent / plain-open semantics).
+    createBrowserIpcMiddleware(),
     // Restore the notification IPC listeners (deleted ui-notifications/sagas/
     // ui-notifications-saga.ts) so `notification:show` plays the notification
     // sound per the sound settings and `notification:navigate` (notification
     // click) navigates to the emitting workspace again.
     createNotificationIpcMiddleware(),
+    // Restore the agent-events IPC listeners (deleted auth/sagas/auth-saga.ts)
+    // so `agent:auth-required` shows a warning toast (with an Open Terminal
+    // action) and `agent:plan-required` shows a plan-upgrade error toast again.
+    createAgentEventsIpcMiddleware(),
+    // Restore the git event IPC listeners (deleted git/sagas/git-operations-saga.ts
+    // + auth/sagas/auth-saga.ts) so `git:op-completed` / `git:op-failed` update
+    // lastGitOperation/lastGitError and show result toasts again, and
+    // `git:auth-required` / `github:auth-required` open the git-credentials /
+    // GitHub-auth modals again.
+    createGitEventsIpcMiddleware(),
     // Web-platform substitute for the main-process NotificationService:
     // when `getPlatform() === 'web'` (no Electron main process), listen on
     // the relayed legacy `agent:idle` channel and show browser Notifications

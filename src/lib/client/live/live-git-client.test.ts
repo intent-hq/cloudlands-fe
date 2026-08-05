@@ -249,6 +249,20 @@ describe("LiveGitClient reads (fake transport)", () => {
     });
   });
 
+  it("diffs forwards the paths narrowing set and omits an empty one", async () => {
+    mockedRequest.mockResolvedValue([]);
+    const client = new LiveGitClient();
+
+    await client.diffs("ws-1", { paths: ["a.ts", "b.ts"] });
+    expect(mockedRequest).toHaveBeenCalledWith("git.diffs", {
+      workspaceId: "ws-1",
+      paths: ["a.ts", "b.ts"],
+    });
+
+    await client.diffs("ws-1", { paths: [] });
+    expect(mockedRequest).toHaveBeenLastCalledWith("git.diffs", { workspaceId: "ws-1" });
+  });
+
   it("commitDetails forwards git.commitDetails and normalizes the wire shape", async () => {
     mockedRequest.mockResolvedValueOnce({
       commitHash: "abc123",

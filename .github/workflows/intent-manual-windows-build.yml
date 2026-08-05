@@ -15,23 +15,38 @@ permissions:
 jobs:
   test-windows-build:
     name: Test Windows Build
-    runs-on: windows-latest
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # On the self-hosted Windows runner C:\WINDOWS\system32\bash.EXE (the
+      # WSL stub) shadows Git Bash in PATH, and WSL bash can't execute the
+      # runner's Windows-path step scripts. Prepend Git's bin dir so every
+      # later `shell: bash` step resolves Git Bash instead (same workaround
+      # as intentd's ci.yml build job).
+      - name: Put Git Bash first on PATH
+        shell: cmd
+        run: echo C:\Program Files\Git\bin>>"%GITHUB_PATH%"
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
           version: 10.30.3
+          # Per-runner-instance dest: concurrent self-hosted slots share $HOME
+          # and race on the default ~/setup-pnpm (monorepo#1239). The action
+          # expands ~ via os.homedir(), so this is safe on Windows too.
+          dest: ~/setup-pnpm-${{ runner.name }}
 
       - name: Setup Node.js
+        # No cache: 'pnpm' — the self-hosted runner is non-ephemeral, so the
+        # local pnpm store persists between runs and the GH Actions cache
+        # tarball round-trip would only add network time.
         uses: actions/setup-node@v7
         with:
           node-version: '22'
-          cache: 'pnpm'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -73,11 +88,13 @@ jobs:
           INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}
           INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
 
+      # The GH-hosted image had a D: scratch drive for the decoded cert; the
+      # self-hosted runner doesn't, so it lives in the per-run temp dir.
       - name: Decode DigiCert client certificate
         if: ${{ steps.integrated_signing.outputs.enabled == 'true' }}
         shell: bash
         run: |
-          echo "${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > /d/Certificate_pkcs12.p12
+          echo "${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > "$RUNNER_TEMP/Certificate_pkcs12.p12"
 
       - name: Setup DigiCert Software Trust Manager
         if: ${{ steps.integrated_signing.outputs.enabled == 'true' }}
@@ -87,7 +104,7 @@ jobs:
         env:
           SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
           SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
-          SM_CLIENT_CERT_FILE: D:\\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
 
       # ── Build ─────────────────────────────────────────────────────────
@@ -104,7 +121,7 @@ jobs:
           INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS }}
           SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
           SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
-          SM_CLIENT_CERT_FILE: D:\\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
         run: |
           pnpm run dist:win

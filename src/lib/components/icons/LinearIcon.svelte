@@ -10,11 +10,13 @@
 
   let { size = 16, class: className = '' }: Props = $props();
   const isDarkTheme = selectIsDarkTheme();
+  // i18n-ignore (brand name)
+  const altText = 'Linear';
 </script>
 
 <img
   src={$isDarkTheme ? linearLight : linearDark}
-  alt="Linear"
+  alt={altText}
   width={size}
   height={size}
   class={className}

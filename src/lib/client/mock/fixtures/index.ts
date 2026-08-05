@@ -235,7 +235,10 @@ export const mockSystemStatus: SystemStatusState = {
   binaryInstallAvailable: false,
 };
 
-export const mockProviderSettings: ProviderSettingsState = {
+export const mockProviderSettings: Pick<
+  ProviderSettingsState,
+  "activeProviderId" | "enabledProviders"
+> = {
   activeProviderId: "auggie",
   enabledProviders: { auggie: true, "claude-code": false, codex: false },
 };
@@ -265,6 +268,7 @@ export const mockUserPreferences: UserPreferencesState = {
   soundOnlyWhenUnfocused: true,
   volume: 0.5,
   activityLogPresets: [],
+  languagePreference: "system",
 };
 
 /** Configured MCP servers for the MCP settings panel. */

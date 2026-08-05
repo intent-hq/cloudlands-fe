@@ -22,8 +22,11 @@ const mocks = vi.hoisted(() => {
       { name: 'notes.txt', path: '/Users/me/notes.txt', isDirectory: false, isGitRepo: false },
     ],
   };
-  // Mutable so individual tests can render with a typed-path failure hint.
-  const overrides = { pathError: null as string | null };
+  // Mutable so individual tests can render with a typed-path or create hint.
+  const overrides = {
+    pathError: null as string | null,
+    createError: null as string | null,
+  };
   return { dispatch, listing, overrides };
 });
 
@@ -39,6 +42,7 @@ vi.mock('$store/renderer/store', async () => {
         error: null,
         requestedPath: null,
         pathError: mocks.overrides.pathError,
+        createError: mocks.overrides.createError,
       },
     }),
     dispatch: mocks.dispatch,
@@ -51,6 +55,8 @@ vi.mock('svelte-fa', async () => ({
 
 import DirectoryPickerModal from './DirectoryPickerModal.svelte';
 import {
+  clearCreateDirectoryError,
+  createDirectoryRequested,
   loadDirectoryRequested,
   navigateToPathRequested,
   resetDirectoryPicker,
@@ -85,6 +91,7 @@ beforeAll(() => {
 beforeEach(() => {
   mocks.dispatch.mockClear();
   mocks.overrides.pathError = null;
+  mocks.overrides.createError = null;
 });
 
 describe('DirectoryPickerModal navigation', () => {
@@ -261,5 +268,237 @@ describe('DirectoryPickerModal editable path input', () => {
 
     // No extra loadDirectoryRequested (navigate-up) beyond the load-on-open.
     expect(loadCalls()).toHaveLength(1);
+  });
+});
+
+describe('DirectoryPickerModal directory mode (default)', () => {
+  const baseProps = { open: true, onSelect: vi.fn(), onClose: vi.fn() };
+
+  it('hides files from the listing', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    expect(screen.queryByRole('option', { name: /notes\.txt/ })).toBeNull();
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+  });
+
+  it('the select button is enabled and commits the current directory', async () => {
+    const onSelect = vi.fn();
+    render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });
+    await flush();
+
+    const select = screen.getByRole('button', { name: 'Select folder' }) as HTMLButtonElement;
+    expect(select.disabled).toBe(false);
+    await fireEvent.click(select);
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me');
+  });
+});
+
+describe('DirectoryPickerModal file mode', () => {
+  const baseProps = { open: true, mode: 'file' as const, onSelect: vi.fn(), onClose: vi.fn() };
+
+  const selectButton = (): HTMLButtonElement =>
+    screen.getByRole('button', { name: 'Select file' }) as HTMLButtonElement;
+
+  it('lists files alongside directories', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    expect(screen.getByRole('option', { name: /notes\.txt/ })).toBeTruthy();
+    expect(screen.getAllByRole('option')).toHaveLength(3);
+  });
+
+  it('disables the select button until a file is chosen', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    expect(selectButton().disabled).toBe(true);
+
+    await fireEvent.click(screen.getByRole('option', { name: /notes\.txt/ }));
+    await flush();
+
+    expect(selectButton().disabled).toBe(false);
+  });
+
+  it('clicking a file then Select commits the file path', async () => {
+    const onSelect = vi.fn();
+    render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });
+    await flush();
+
+    await fireEvent.click(screen.getByRole('option', { name: /notes\.txt/ }));
+    await flush();
+    await fireEvent.click(selectButton());
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me/notes.txt');
+  });
+
+  it('clicking a directory still navigates and clears the chosen file', async () => {
+    const onSelect = vi.fn();
+    render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });
+    await flush();
+
+    await fireEvent.click(screen.getByRole('option', { name: /notes\.txt/ }));
+    await flush();
+    expect(selectButton().disabled).toBe(false);
+
+    await fireEvent.click(screen.getByRole('option', { name: /code/ }));
+    await flush();
+
+    const calls = loadCalls();
+    expect(calls).toHaveLength(2);
+    expect(requestedPath(calls[1])).toBe('/Users/me/code');
+    expect(selectButton().disabled).toBe(true);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('clicking a file does not dispatch a navigation', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+    expect(loadCalls()).toHaveLength(1);
+
+    await fireEvent.click(screen.getByRole('option', { name: /notes\.txt/ }));
+    await flush();
+
+    expect(loadCalls()).toHaveLength(1);
+  });
+
+  it('does not show the New Folder button', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    expect(screen.queryByRole('button', { name: 'New Folder' })).toBeNull();
+  });
+});
+
+describe('DirectoryPickerModal New Folder', () => {
+  const baseProps = { open: true, onSelect: vi.fn(), onClose: vi.fn() };
+
+  /** All `directoryPicker/createDirectoryRequested` actions dispatched so far. */
+  const createCalls = (): Array<{ type: string; payload: unknown[] }> =>
+    mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action?.type === createDirectoryRequested.type);
+
+  const newFolderButton = (): HTMLButtonElement =>
+    screen.getByRole('button', { name: 'New Folder' }) as HTMLButtonElement;
+
+  const nameInput = (): HTMLInputElement =>
+    screen.getByRole('textbox', { name: 'New folder name' }) as HTMLInputElement;
+
+  it('shows the New Folder button in directory mode', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    expect(newFolderButton().disabled).toBe(false);
+  });
+
+  it('clicking New Folder reveals the name input', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    expect(screen.queryByRole('textbox', { name: 'New folder name' })).toBeNull();
+    await fireEvent.click(newFolderButton());
+    await flush();
+
+    expect(nameInput()).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'New Folder' })).toBeNull();
+  });
+
+  it('typing a name and pressing Enter dispatches createDirectoryRequested with the joined path', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    await fireEvent.click(newFolderButton());
+    await flush();
+
+    const input = nameInput();
+    await fireEvent.input(input, { target: { value: 'new-folder' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await flush();
+
+    const calls = createCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].payload[0]).toBe('/Users/me/new-folder');
+    // Enter inside the input must not act as list navigation.
+    expect(loadCalls()).toHaveLength(1); // only the load-on-open request
+  });
+
+  it('trims the typed name and ignores an empty commit', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    await fireEvent.click(newFolderButton());
+    await flush();
+
+    const input = nameInput();
+    await fireEvent.input(input, { target: { value: '   ' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await flush();
+    expect(createCalls()).toHaveLength(0);
+
+    await fireEvent.input(input, { target: { value: '  spaced  ' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await flush();
+
+    const calls = createCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].payload[0]).toBe('/Users/me/spaced');
+  });
+
+  it('Escape cancels the input without closing the modal', async () => {
+    const onClose = vi.fn();
+    render(DirectoryPickerModal, { props: { ...baseProps, onClose } });
+    await flush();
+
+    await fireEvent.click(newFolderButton());
+    await flush();
+
+    const input = nameInput();
+    await fireEvent.input(input, { target: { value: 'abandoned' } });
+    await fireEvent.keyDown(input, { key: 'Escape' });
+    await flush();
+
+    expect(screen.queryByRole('textbox', { name: 'New folder name' })).toBeNull();
+    expect(newFolderButton()).toBeTruthy();
+    expect(createCalls()).toHaveLength(0);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('Escape after a failed create also clears the hint', async () => {
+    mocks.overrides.createError = 'Permission denied';
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    await fireEvent.click(newFolderButton());
+    await flush();
+
+    await fireEvent.keyDown(nameInput(), { key: 'Escape' });
+    await flush();
+
+    const clears = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action?.type === clearCreateDirectoryError.type);
+    expect(clears).toHaveLength(1);
+  });
+
+  it('renders the failure hint and keeps the typed name for correction', async () => {
+    mocks.overrides.createError = 'Permission denied';
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    expect(screen.getByRole('alert').textContent?.trim()).toBe('Permission denied');
+
+    // The listing is still rendered — the failed creation did not clear it.
+    expect(screen.getByRole('option', { name: /code/ })).toBeTruthy();
+
+    await fireEvent.click(newFolderButton());
+    await flush();
+    const input = nameInput();
+    await fireEvent.input(input, { target: { value: 'denied' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await flush();
+    // The mock store never updates, so the input survives with its value.
+    expect(nameInput().value).toBe('denied');
   });
 });

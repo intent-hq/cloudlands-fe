@@ -122,6 +122,7 @@ vi.mock('$store/renderer/store', () => ({
 
 import { requestPrBranchLookup } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-slice';
 import ProposalCard from './ProposalCard.svelte';
+import { warmImport } from '../../../../test/warm-import';
 
 const originalElectronAPI = window.electronAPI;
 
@@ -219,6 +220,11 @@ function makeWorkspaceProposal(
     },
   };
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockRepoAndBranchPicker.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockSpecialistDropdown.svelte'));
 
 describe('ProposalCard', () => {
   it('renders lifecycle progress, disabled controls, and aria-live status', () => {

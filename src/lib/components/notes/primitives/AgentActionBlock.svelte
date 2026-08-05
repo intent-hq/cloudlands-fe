@@ -13,7 +13,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { parseAgentTypeId } from '$shared/types/agent.types';
-  import { selectWorkspaceDefaultModel } from '$store/renderer/slices/model/model-selectors';
+  import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
 
 
   import { WorkspaceId } from '$shared/types/branded-ids';
@@ -22,6 +22,7 @@
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('AgentActionBlock');
 
@@ -41,28 +42,32 @@
   function getErrorMessage(err: unknown): string {
     if (err instanceof Error) return err.message;
     if (typeof err === 'string') return err;
-    return 'Unknown error';
+    return m.notes_agentActionBlock_unknown_error();
   }
 
   // Get button state
   let buttonState = $derived.by(() => {
     if (running) {
-      return { label: 'Running...', icon: faSpinner, spin: true };
+      return { label: m.notes_agentActionBlock_running_label(), icon: faSpinner, spin: true };
     }
     if (agentId) {
-      return { label: 'View', icon: faArrowUpRightFromSquare, spin: false };
+      return {
+        label: m.notes_agentActionBlock_view_label(),
+        icon: faArrowUpRightFromSquare,
+        spin: false,
+      };
     }
     if (primitive?.lastRun?.status === 'success') {
-      return { label: 'Done', icon: faCheck, spin: false };
+      return { label: m.notes_agentActionBlock_done_label(), icon: faCheck, spin: false };
     }
-    return { label: 'Run', icon: faPlay, spin: false };
+    return { label: m.notes_agentActionBlock_run_label(), icon: faPlay, spin: false };
   });
 
   // Run the agent action
   async function runAction() {
     if (!primitive || running) return;
     if (!workspaceId) {
-      toast.error('No space context available');
+      toast.error(m.notes_agentActionBlock_noWorkspace_error());
       return;
     }
     running = true;
@@ -83,7 +88,7 @@
         // self-renameable.
         nameExplicitlySet: false,
         workspaceId: WorkspaceId(workspaceId),
-        model: selectWorkspaceDefaultModel.select(state, workspaceId),
+        model: selectSelectedModel.select(state),
         agentType: parseAgentTypeId(primitive.agentId || '') || 'chat',
         source: 'agent-action-block',
         initialMessage: primitive.goal,
@@ -115,7 +120,7 @@
         });
       }
 
-      toast.success('Agent action started');
+      toast.success(m.notes_agentActionBlock_started_label());
     } catch (err) {
       const errorMessage = getErrorMessage(err);
       logger.error('[runAction] Error running agent action', {
@@ -188,7 +193,7 @@
           type="button"
           class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
           onclick={(e) => handleOpenAgent(e, linkedAgentId)}
-          title="View agent"
+          title={m.notes_agentActionBlock_viewAgent_tooltip()}
         >
           <AuggieAvatar agentId={linkedAgentId} size={16} />
         </button>
@@ -210,6 +215,6 @@
       </Button>
     </div>
   {:else}
-    <div class="my-1.5 text-sm text-subtle">Invalid agent action block</div>
+    <div class="my-1.5 text-sm text-subtle">{m.notes_agentActionBlock_invalid_error()}</div>
   {/if}
 </NodeViewWrapper>

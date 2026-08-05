@@ -1,6 +1,5 @@
 <script lang="ts">
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-  import { selectUnreadAgentIdsByWorkspace } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
 
   import {
   selectAgentIsResponding,
@@ -32,6 +31,7 @@
   import WorkspaceTableOlderToggle from './WorkspaceTableOlderToggle.svelte';
   import WorkspaceTableRow from './WorkspaceTableRow.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   // Safe non-deferred transition functions replacing crossfade.
   //
@@ -93,9 +93,8 @@
     onRemoveRepo,
   }: Props = $props();
 
-  // Track streaming state for reactivity. Unread state comes from a Redux selector readable.
+  // Track streaming state for reactivity. Unread state comes from workspace.attention (BE-owned).
   let activeStreamsVersion = $state(0);
-  const unreadAgentIdsByWorkspace$ = selectUnreadAgentIdsByWorkspace();
 
   onMount(() => {
     // Start polling for active streams (if not already started)
@@ -118,7 +117,8 @@
 
     return getWorkspaceAgentDisplayInfos({
       memberAgentIds: ws.agentSummary?.agentIds ?? [],
-      unreadAgentIds: $unreadAgentIdsByWorkspace$[ws.id] ?? [],
+      // Attention is workspace-level; treat all member agents as unread.
+      unreadAgentIds: ws.attention === 'unread' ? (ws.agentSummary?.agentIds ?? []) : [],
       workspaceActivity: ws.activity,
       getAgentSnapshot: (agentId) => {
         const loadedSession = selectAgentSession.select(reduxState, agentId);
@@ -248,7 +248,7 @@
       return [
         {
           key: 'all',
-          label: 'All Spaces',
+          label: m.workspace_tableView_allSpaces_label(),
           isGithub: false,
           workspaces: sorted,
         },
@@ -450,9 +450,9 @@
         transition:slide={{ axis: 'y', duration: 150 }}
       >
         {#if searchQuery}
-          <p>No spaces match "{searchQuery}"</p>
+          <p>{m.workspace_tableView_noMatch_label({ query: searchQuery })}</p>
         {:else}
-          <p>No active spaces</p>
+          <p>{m.workspace_tableView_noActiveSpaces_label()}</p>
         {/if}
       </div>
     {:else}
@@ -482,11 +482,11 @@
                 <div class="overflow-hidden" transition:slide={{ axis: 'y', duration: 150 }}>
                   {#if group.workspaces.length === 0}
                     <div class="px-3 py-3 text-xs text-subtle text-center">
-                      No active spaces.{#if onRemoveRepo && group.repoPath && !workspaces.some((ws) => ws.repositoryPath === group.repoPath || (ws.repositoryOwner && ws.repositoryName && `${ws.repositoryOwner}/${ws.repositoryName}` === group.key))}
+                      {m.workspace_tableView_noActiveSpacesDot_label()}{#if onRemoveRepo && group.repoPath && !workspaces.some((ws) => ws.repositoryPath === group.repoPath || (ws.repositoryOwner && ws.repositoryName && `${ws.repositoryOwner}/${ws.repositoryName}` === group.key))}
                         {' '}<button
                           class="text-muted-foreground/70 hover:text-destructive underline cursor-pointer"
                           onclick={() => onRemoveRepo?.(group.repoPath!)}
-                        >Remove</button>.
+                        >{m.workspace_tableView_remove_label()}</button>.
                       {/if}
                     </div>
                   {:else}
@@ -618,9 +618,9 @@
     {#if filteredWorkspaces.length === 0}
       <div class="py-16 text-center text-subtle">
         {#if searchQuery}
-          <p class="text-[13px]">No spaces match "{searchQuery}"</p>
+          <p class="text-[13px]">{m.workspace_tableView_noMatch_label({ query: searchQuery })}</p>
         {:else}
-          <p class="text-[13px]">No active spaces</p>
+          <p class="text-[13px]">{m.workspace_tableView_noActiveSpaces_label()}</p>
         {/if}
       </div>
     {/if}

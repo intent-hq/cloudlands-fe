@@ -11,7 +11,6 @@ import type {
   DelegationGroupTrackerRecord,
   QueuedEventRecord,
   AgentStatus,
-  DeliveryStats,
 } from "./types";
 import { emptyWorkspaceSubscriptionState } from "./types";
 
@@ -139,17 +138,6 @@ export const selectIsDelegationGroupComplete = createMainSelector(
 );
 
 // ---------------------------------------------------------------------------
-// One-shot guards
-// ---------------------------------------------------------------------------
-
-export const selectIsOneShotFired = createMainSelector(
-  (state, wsId: string, subscriptionId: string): boolean => {
-    const ws = selectWorkspaceSubscriptionState.select(state, wsId);
-    return ws.firedOneShotSubscriptions.includes(subscriptionId);
-  },
-);
-
-// ---------------------------------------------------------------------------
 // Deleted agents
 // ---------------------------------------------------------------------------
 
@@ -169,64 +157,6 @@ export const selectAllWorkspaceIds = createMainSelector(
     const slice = state?.agentSubscriptions;
     if (!slice) return [];
     return Object.keys(slice.byWorkspaceId);
-  },
-);
-
-// ---------------------------------------------------------------------------
-// Subscriptions signature (structural snapshot for change detection)
-// ---------------------------------------------------------------------------
-
-/**
- * A DelegationGroupTracker with the `events` array removed. Used inside the
- * subscriptions signature so that `appendDelegationGroupEvent` (which only
- * grows `events`) does not trigger the subscriptions-changed emitter.
- */
-interface TrackerCore {
-  groupId: string;
-  parentAgentId: string;
-  parentAgentName: string;
-  awaitMode: "any" | "all";
-  expectedAgentIds: string[];
-  completedAgentIds: string[];
-  deletedAgentIds: string[];
-  subscriptionId: string;
-  delivered: boolean;
-}
-
-/**
- * Composite per-workspace signature of the subscriptions slice. Every field
- * except `delegationGroups[*].events` participates; a change to any of these
- * fields causes the subscriptions-changed emitter saga to fire exactly once.
- */
-export interface SubscriptionsSignature {
-  subscriptions: Record<string, AgentSubscriptionRecord>;
-  delegationGroups: Record<string, TrackerCore>;
-  agentStatuses: Record<string, AgentStatus>;
-  deliveryStats: DeliveryStats;
-  deletedAgents: Record<string, number>;
-  firedOneShotSubscriptions: string[];
-}
-
-export const selectSubscriptionsSignature = createMainSelector(
-  (state, wsId: string): SubscriptionsSignature | null => {
-    const slice = state.agentSubscriptions;
-    const ws = slice.byWorkspaceId[wsId];
-    if (!ws) return null;
-    const delegationGroups: Record<string, TrackerCore> = {};
-    for (const [id, tracker] of Object.entries(
-      ws.delegationGroups as Record<string, DelegationGroupTrackerRecord>,
-    )) {
-      const { events: _events, ...core } = tracker;
-      delegationGroups[id] = core;
-    }
-    return {
-      subscriptions: ws.subscriptions,
-      delegationGroups,
-      agentStatuses: ws.agentStatuses,
-      deliveryStats: ws.deliveryStats,
-      deletedAgents: ws.deletedAgents,
-      firedOneShotSubscriptions: ws.firedOneShotSubscriptions,
-    };
   },
 );
 

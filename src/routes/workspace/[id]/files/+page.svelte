@@ -7,6 +7,7 @@
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
 
   let workspaceId = $derived($page.params.id ?? '');
   const workspaceIdStore = writable(workspaceId);
@@ -23,11 +24,11 @@
   <div class="flex items-center gap-4 px-4 py-2 border-b">
     <Button variant="ghost" size="sm" href="/workspace/{$page.params.id}">
       <Fa icon={faArrowLeft} size="sm" class="mr-2" />
-      Back to Workspace
+      {m.workspace_filesPage_backToWorkspace_label()}
     </Button>
     {#if $workspace}
       <span class="text-sm text-subtle">
-        {$workspace.name} - File Explorer
+        {m.workspace_filesPage_fileExplorer_label({ name: $workspace.name ?? '' })}
       </span>
     {/if}
   </div>

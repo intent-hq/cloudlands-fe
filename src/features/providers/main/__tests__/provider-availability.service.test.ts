@@ -393,10 +393,10 @@ describe('provider availability service', () => {
     });
   });
 
-  it('single recheck resolves unsloth off the opencode binary without an auth probe', async () => {
+  it('single recheck resolves unsloth off both opencode and unsloth binaries without an auth probe', async () => {
     routeBackend({});
     mocks.findBinary.mockImplementation(async (name: string) =>
-      name === 'opencode' ? '/usr/local/bin/opencode' : null,
+      name === 'opencode' || name === 'unsloth' ? `/usr/local/bin/${name}` : null,
     );
 
     const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
@@ -419,6 +419,38 @@ describe('provider availability service', () => {
   });
 
   it('single recheck reports unsloth unavailable when opencode is missing', async () => {
+    routeBackend({});
+    mocks.findBinary.mockImplementation(async (name: string) =>
+      name === 'unsloth' ? '/usr/local/bin/unsloth' : null,
+    );
+
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE);
+    if (!handler) throw new Error('provider check handler was not registered');
+
+    const result = await handler({}, 'unsloth');
+
+    expect(result).toEqual({ success: true, providerId: 'unsloth', data: { available: false } });
+  });
+
+  it('single recheck reports unsloth unavailable when the unsloth CLI is missing', async () => {
+    routeBackend({});
+    mocks.findBinary.mockImplementation(async (name: string) =>
+      name === 'opencode' ? '/usr/local/bin/opencode' : null,
+    );
+
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE);
+    if (!handler) throw new Error('provider check handler was not registered');
+
+    const result = await handler({}, 'unsloth');
+
+    expect(result).toEqual({ success: true, providerId: 'unsloth', data: { available: false } });
+  });
+
+  it('single recheck reports unsloth unavailable when neither binary is present', async () => {
     routeBackend({});
     mocks.findBinary.mockResolvedValue(null);
 
@@ -447,5 +479,104 @@ describe('provider availability service', () => {
       'host.providerAuthStatus',
       expect.anything(),
     );
+  });
+
+  describe('getProviderPaths (providers:get-paths → host.providerDiscovery)', () => {
+    it('maps daemon-resolved paths for every provider, incl. grok and unsloth primary+secondary', async () => {
+      routeBackend({
+        'host.providerDiscovery': {
+          ...EMPTY_DISCOVERY,
+          providers: EMPTY_DISCOVERY.providers.map((p) => {
+            if (p.id === 'grok') {
+              return { ...p, installed: true, resolvedPath: '/home/user/.grok/bin/grok' };
+            }
+            if (p.id === 'unsloth') {
+              return {
+                ...p,
+                installed: true,
+                resolvedPath: '/home/user/.opencode/bin/opencode',
+                secondaryCommand: 'unsloth',
+                secondaryResolved: true,
+                secondaryResolvedPath: '/usr/local/bin/unsloth',
+              };
+            }
+            if (p.id === 'auggie') {
+              return { ...p, installed: true, resolvedPath: '/usr/local/bin/auggie' };
+            }
+            return p;
+          }),
+        },
+      });
+
+      const { getProviderPaths } = await import('../provider-availability.service');
+      const result = await getProviderPaths();
+
+      expect(mocks.backendRequest).toHaveBeenCalledWith('host.providerDiscovery', {});
+      // No FE-local binary resolution on the GET_PATHS path.
+      expect(mocks.findBinary).not.toHaveBeenCalled();
+      expect(mocks.findAuggiePathAsync).not.toHaveBeenCalled();
+      expect(result.paths).toEqual({
+        auggie: '/usr/local/bin/auggie',
+        'claude-code': null,
+        codex: null,
+        cortex: null,
+        opencode: null,
+        pi: null,
+        droid: null,
+        grok: '/home/user/.grok/bin/grok',
+        unsloth: '/home/user/.opencode/bin/opencode',
+      });
+      expect(result.secondaryPaths).toEqual({ unsloth: '/usr/local/bin/unsloth' });
+    });
+
+    it('keys an unresolved secondary as null when secondaryResolvedPath is omitted', async () => {
+      routeBackend({
+        'host.providerDiscovery': {
+          ...EMPTY_DISCOVERY,
+          providers: EMPTY_DISCOVERY.providers.map((p) =>
+            p.id === 'unsloth'
+              ? { ...p, secondaryCommand: 'unsloth', secondaryResolved: false }
+              : p,
+          ),
+        },
+      });
+
+      const { getProviderPaths } = await import('../provider-availability.service');
+      const result = await getProviderPaths();
+
+      expect(result.paths.unsloth).toBeNull();
+      expect(result.secondaryPaths).toEqual({ unsloth: null });
+    });
+
+    it('degrades to empty maps when the discovery RPC fails', async () => {
+      routeBackend({});
+
+      const { getProviderPaths } = await import('../provider-availability.service');
+      const result = await getProviderPaths();
+
+      expect(result).toEqual({ paths: {}, secondaryPaths: {} });
+    });
+
+    it('serves the new shape through the GET_PATHS IPC handler envelope', async () => {
+      routeBackend({
+        'host.providerDiscovery': {
+          ...EMPTY_DISCOVERY,
+          providers: EMPTY_DISCOVERY.providers.map((p) =>
+            p.id === 'codex' ? { ...p, installed: true, resolvedPath: '/usr/local/bin/codex' } : p,
+          ),
+        },
+      });
+
+      const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+      setupProviderAvailabilityIPC();
+      const handler = mocks.handlers.get(PROVIDERS_CHANNELS.GET_PATHS);
+      if (!handler) throw new Error('provider paths handler was not registered');
+
+      const result = await handler({});
+
+      expect(result.success).toBe(true);
+      expect(result.data.paths.codex).toBe('/usr/local/bin/codex');
+      expect(result.data.secondaryPaths).toEqual({});
+    });
   });
 });

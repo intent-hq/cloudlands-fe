@@ -5,6 +5,7 @@
   - not_started: Empty outline circle (gray)
   - waiting: Empty outline circle with clock (gray)
   - discussion_needed: Circle with question mark (amber)
+  - blocked: Circle with exclamation mark (red)
   - in_progress: Half-filled circle animating (blue)
   - review_required: Circle with eye icon (blue)
   - complete: Filled circle with checkmark (green)
@@ -16,6 +17,7 @@
   draw,
   scale,
 } from 'svelte/transition';
+  import { m } from '$shared/paraglide/messages.js';
 
   type NormalizedTaskStatus = TaskStatus | 'unknown';
 
@@ -23,6 +25,7 @@
     'not_started',
     'waiting',
     'discussion_needed',
+    'blocked',
     'in_progress',
     'review_required',
     'complete',
@@ -59,6 +62,7 @@
     not_started: { stroke: '#99999966', fill: 'transparent', innerCircleRPercentage: 0 },
     waiting: { stroke: '#99999966', fill: 'transparent', innerCircleRPercentage: 0 },
     discussion_needed: { stroke: '#f59e0b', fill: '#f59e0b', innerCircleRPercentage: 100 },
+    blocked: { stroke: '#ef4444', fill: '#ef4444', innerCircleRPercentage: 100 },
     in_progress: { stroke: '#00BCFF', fill: '#00BCFF', innerCircleRPercentage: 55 },
     review_required: { stroke: '#3b82f6', fill: '#3b82f6', innerCircleRPercentage: 100 },
     complete: { stroke: '#22c55e', fill: '#00BD7D', innerCircleRPercentage: 100 },
@@ -67,7 +71,18 @@
   };
 
   let colors = $derived(statusColors[normalizedStatus] || statusColors.not_started);
-  let statusLabel = $derived(String(normalizedStatus ?? 'unknown').replace(/_/g, ' '));
+  const statusLabels: Record<NormalizedTaskStatus, () => string> = {
+    not_started: m.tiptap_taskStatus_notStarted_label,
+    waiting: m.tiptap_taskStatus_waiting_label,
+    discussion_needed: m.tiptap_taskStatus_discussionNeeded_label,
+    blocked: m.tiptap_taskStatus_blocked_label,
+    in_progress: m.tiptap_taskStatus_inProgress_label,
+    review_required: m.tiptap_taskStatus_reviewRequired_label,
+    complete: m.tiptap_taskStatus_complete_label,
+    cancelled: m.tiptap_taskStatus_cancelled_label,
+    unknown: m.tiptap_taskStatus_unknown_label,
+  };
+  let statusLabel = $derived((statusLabels[normalizedStatus] ?? m.tiptap_taskStatus_unknown_label)());
 </script>
 
 <button
@@ -75,7 +90,7 @@
   class="task-status-icon inline-flex items-center justify-center shrink-0 cursor-pointer bg-transparent border-0 p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-primary rounded-full"
   style="width: {size}px; height: {size}px;"
   {onclick}
-  title="Status: {statusLabel}"
+  title={m.tiptap_taskStatus_status_tooltip({ status: statusLabel })}
 >
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <!-- Clip path for half-fill effect -->
@@ -137,6 +152,23 @@
         transition:scale={{ duration: 300 }}
       />
       <!-- <circle cx="12" cy="15.5" r="1.5" fill="white" transition:draw={{ duration: 300 }} /> -->
+    {:else if normalizedStatus === 'blocked'}
+      <!-- Filled circle with exclamation mark -->
+      <path
+        d="M12 5.5V13.5"
+        stroke="white"
+        stroke-width="3"
+        stroke-linecap="round"
+        transition:draw={{ duration: 300 }}
+      />
+      <circle
+        cx="12"
+        cy="17.5"
+        r="1.6"
+        fill="white"
+        class="origin-center"
+        transition:scale={{ duration: 300 }}
+      />
     {:else if normalizedStatus === 'review_required'}
       <!-- Filled circle with eye icon -->
       <path

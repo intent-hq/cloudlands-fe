@@ -71,7 +71,6 @@ describe('parseSpecialistFile', () => {
 name: "Test Specialist"
 description: "A test specialist"
 codingAgent: "codex"
-modelTier: "fast"
 ---
 
 You are a test specialist.`;
@@ -83,7 +82,6 @@ You are a test specialist.`;
         expect(result.frontmatter.name).toBe('Test Specialist');
         expect(result.frontmatter.description).toBe('A test specialist');
         expect(result.frontmatter.codingAgent).toBe('codex');
-        expect(result.frontmatter.modelTier).toBe('fast');
         expect(result.behaviorPrompt).toBe('You are a test specialist.');
       }
     });
@@ -152,25 +150,9 @@ Body`;
     });
   });
 
-  describe('Invalid modelTier', () => {
-    it('should error on invalid modelTier', () => {
-      const content = `---
-name: "Test"
-description: "A test"
-modelTier: "invalid"
----
-
-Body`;
-
-      const result = parseSpecialistFile('/path/to/invalid-tier.md', content);
-      expect('error' in result).toBe(true);
-      if ('error' in result) {
-        expect(result.error).toContain('Invalid modelTier');
-      }
-    });
-
-    it('should accept valid modelTier values', () => {
-      for (const tier of ['fast', 'balanced', 'smart']) {
+  describe('Retired modelTier key', () => {
+    it('should tolerate and ignore a modelTier key in existing files', () => {
+      for (const tier of ['fast', 'balanced', 'smart', 'invalid']) {
         const content = `---
 name: "Test"
 description: "A test"
@@ -181,6 +163,9 @@ Body`;
 
         const result = parseSpecialistFile(`/path/to/${tier}.md`, content);
         expect('error' in result).toBe(false);
+        if (!('error' in result)) {
+          expect('modelTier' in result.frontmatter).toBe(false);
+        }
       }
     });
   });
@@ -458,7 +443,6 @@ Body`;
         name: 'Round Trip',
         description: 'Round-trip test specialist',
         codingAgent: 'codex',
-        modelTier: 'fast',
         roleReminder: 'Stay focused.',
         behaviorPrompt: 'Round-trip prompt',
       });
@@ -467,7 +451,6 @@ Body`;
 
       expect(loaded).not.toBeNull();
       expect(loaded?.frontmatter.codingAgent).toBe('codex');
-      expect(loaded?.frontmatter.modelTier).toBe('fast');
       expect(loaded?.frontmatter.roleReminder).toBe('Stay focused.');
       expect(loaded?.behaviorPrompt).toBe('Round-trip prompt');
     });

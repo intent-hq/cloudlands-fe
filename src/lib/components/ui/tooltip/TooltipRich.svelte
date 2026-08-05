@@ -10,6 +10,7 @@
   faTriangleExclamation,
 } from '@fortawesome/free-solid-svg-icons';
   import type { Snippet } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     title?: string;
@@ -193,7 +194,7 @@
               <button
                 onclick={handleClose}
                 class="absolute -top-1 -right-1 p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                aria-label="Close tooltip"
+                aria-label={m.ui_tooltipRich_close_ariaLabel()}
               >
                 <Fa icon={faXmark} size="xs" class="w-3 h-3" />
               </button>

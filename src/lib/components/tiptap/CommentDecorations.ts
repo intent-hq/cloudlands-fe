@@ -236,6 +236,7 @@ export function updateCommentDecorations(view: any) {
  * These should be added to your global styles or component styles
  * Uses Tailwind CSS color variables for consistent theming
  */
+// i18n-ignore (CSS stylesheet string, not user-facing text)
 export const commentDecorationStyles = `
   /* Base comment highlight */
   .comment-highlight {

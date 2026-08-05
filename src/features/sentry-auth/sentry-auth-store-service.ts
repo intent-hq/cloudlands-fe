@@ -28,6 +28,7 @@ import {
   setSentryProjects,
 } from "$store/renderer/slices/sentry-auth/sentry-auth-slice";
 import { createLogger } from "$lib/utils/client-logger";
+import { m } from "$shared/paraglide/messages.js";
 
 const logger = createLogger("SentryAuthService");
 
@@ -63,14 +64,14 @@ export async function connectSentryFlow(organization: string, apiToken: string):
   try {
     const result = await sentryAuthClient.saveConfig(organization, apiToken);
     if (!result.success) {
-      appStore.dispatch(setSentryError(result.error ?? "Failed to connect to Sentry"));
+      appStore.dispatch(setSentryError(result.error ?? m.sentryAuth_service_connectFailed_error()));
       appStore.dispatch(setSentryConnecting(false));
       return;
     }
     appStore.dispatch(setSentryConnected(organization));
     await fetchSentryProjectsFlow();
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to connect to Sentry";
+    const message = error instanceof Error ? error.message : m.sentryAuth_service_connectFailed_error();
     appStore.dispatch(setSentryError(message));
     appStore.dispatch(setSentryConnecting(false));
   }

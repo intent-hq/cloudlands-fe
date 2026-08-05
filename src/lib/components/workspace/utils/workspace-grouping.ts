@@ -1,4 +1,5 @@
 import type { Workspace } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 
 /**
  * GitHub owner/name info resolved from a repository path.
@@ -63,7 +64,7 @@ export function buildRepoPathLookup(
 export function getGroupKey(
   ws: Workspace,
   repoPathLookup: Map<string, RepoGithubInfo>,
-  noRepoLabel = 'Unknown Repository',
+  noRepoLabel: string = m.workspace_grouping_unknownRepository_label(),
 ): GroupKeyResult {
   if (ws.repositoryOwner && ws.repositoryName) {
     return {

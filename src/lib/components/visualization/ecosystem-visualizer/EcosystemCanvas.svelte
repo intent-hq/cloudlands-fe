@@ -23,6 +23,7 @@
 } from 'svelte';
   import { tweened } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
+  import * as m from '$shared/paraglide/messages.js';
 
   // Change type colors matching repo-visualizer
   const CHANGE_COLORS = {
@@ -1254,7 +1255,7 @@
       onmousedown={handleMouseDown}
       onmouseup={handleMouseUp}
       onwheel={handleWheel}
-      aria-label="Ecosystem visualization"
+      aria-label={m.ecosystem_canvas_visualization_ariaLabel()}
     ></canvas>
 
     <!-- Hover card (follows mouse, like repo-visualizer) -->
@@ -1279,7 +1280,7 @@
         </div>
         {#if hoveredNode.size > 0 && !hoveredNode.isFolder}
           <div class="mt-1 pt-1 border-t border-border/50 text-subtle">
-            {(hoveredNode.size / 1024).toFixed(1)} KB
+            {m.ecosystem_canvas_fileSize_label({ size: (hoveredNode.size / 1024).toFixed(1) })}
           </div>
         {/if}
       </div>
@@ -1308,7 +1309,7 @@
               bind:this={searchInputRef}
               bind:value={searchQuery}
               type="text"
-              placeholder="Search files and folders..."
+              placeholder={m.ecosystem_canvas_search_placeholder()}
               class="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground focus:outline-none! focus:ring-0!"
               onblur={() => !searchQuery.trim() && closeSearch()}
             />
@@ -1316,7 +1317,7 @@
               class="text-muted-foreground hover:text-foreground text-xs"
               onclick={closeSearch}
             >
-              ESC
+              {m.ecosystem_canvas_esc_label()}
             </button>
           </div>
           {#if searchResults.length > 0}
@@ -1357,7 +1358,7 @@
             </div>
           {:else if searchQuery}
             <div class="px-3 py-4 text-center text-sm text-subtle">
-              No results for "{searchQuery}"
+              {m.ecosystem_canvas_noResults_label({ query: searchQuery })}
             </div>
           {/if}
         </div>
@@ -1376,7 +1377,7 @@
             <circle cx="11" cy="11" r="8"></circle>
             <path d="m21 21-4.35-4.35"></path>
           </svg>
-          <span>Search</span>
+          <span>{m.ecosystem_canvas_search_label()}</span>
           <kbd class="text-ui px-1 py-0.5 rounded bg-muted ml-1">/</kbd>
         </button>
       {/if}
@@ -1391,30 +1392,30 @@
             ? 'bg-background/95 text-foreground shadow-sm border-border'
             : 'bg-background/70 text-muted-foreground hover:bg-background/90 border-border/10'}"
           onclick={() => (showChangesMode = !showChangesMode)}
-          title={showChangesMode ? 'Click to show file types' : 'Click to highlight changes'}
+          title={showChangesMode ? m.ecosystem_canvas_showFileTypes_tooltip() : m.ecosystem_canvas_highlightChanges_tooltip()}
         >
           <span class="opacity-60"
-            >{showChangesMode ? 'Highlighting changed files' : 'Highlight changed files'}</span
+            >{showChangesMode ? m.ecosystem_canvas_highlightingChanged_label() : m.ecosystem_canvas_highlightChanged_label()}</span
           >
           {#if filesChanged.length > 0}
             <span class="flex items-center gap-1">
               <span class="w-2 h-2 rounded-full" style="background-color: {CHANGE_COLORS.local}"
               ></span>
-              <span>{filesChanged.length} local</span>
+              <span>{m.ecosystem_canvas_localCount_label({ count: filesChanged.length })}</span>
             </span>
           {/if}
           {#if filesCommitted.length > 0}
             <span class="flex items-center gap-1">
               <span class="w-2 h-2 rounded-full" style="background-color: {CHANGE_COLORS.committed}"
               ></span>
-              <span>{filesCommitted.length} unpushed</span>
+              <span>{m.ecosystem_canvas_unpushedCount_label({ count: filesCommitted.length })}</span>
             </span>
           {/if}
           {#if filesPR.length > 0}
             <span class="flex items-center gap-1">
               <span class="w-2 h-2 rounded-full" style="background-color: {CHANGE_COLORS.pr}"
               ></span>
-              <span>{filesPR.length} in PR</span>
+              <span>{m.ecosystem_canvas_inPrCount_label({ count: filesPR.length })}</span>
             </span>
           {/if}
         </button>

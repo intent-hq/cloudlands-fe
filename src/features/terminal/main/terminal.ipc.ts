@@ -16,6 +16,7 @@ import { ipcMain } from 'electron';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
+import { m } from '../../../shared/paraglide/messages.js';
 import { Logger } from '../../../shared/logger';
 import type { WorkspaceId } from '../../../shared/types';
 import { TERMINAL_CHANNELS } from '$shared/ipc/channels';
@@ -152,7 +153,7 @@ class DaemonTerminal {
     this.id = params.id;
     this.workspaceId = params.workspaceId;
     this.cwd = params.cwd;
-    this.title = params.title || 'Terminal';
+    this.title = params.title || m.terminal_quakeOverlay_terminal_fallback();
     this.daemonTerminalId = params.daemonTerminalId;
   }
 
@@ -209,8 +210,16 @@ class DaemonTerminalRegistry {
    */
   private reconnectDisposer: (() => void) | undefined;
 
+  /**
+   * Resolve by local id, falling back to the daemon id. Renderer hydration
+   * (`terminal.list`) rekeys tabs to daemon ids, so reconnect/write/kill
+   * calls can arrive with either id space (monorepo#1330).
+   */
   getTerminal(id: string): DaemonTerminal | undefined {
-    return this.terminals.get(id);
+    const direct = this.terminals.get(id);
+    if (direct) return direct;
+    const localId = this.byDaemonId.get(id);
+    return localId !== undefined ? this.terminals.get(localId) : undefined;
   }
   getWorkspaceTerminals(workspaceId: string): DaemonTerminal[] {
     return Array.from(this.terminals.values()).filter(
@@ -223,7 +232,7 @@ class DaemonTerminalRegistry {
     void this.ensureSubscription();
   }
   async dispose(id: string): Promise<boolean> {
-    const terminal = this.terminals.get(id);
+    const terminal = this.getTerminal(id);
     if (!terminal) return false;
     if (terminal.isAlive) {
       try {
@@ -239,7 +248,7 @@ class DaemonTerminalRegistry {
     }
     terminal.markDisposed();
     this.byDaemonId.delete(terminal.daemonTerminalId);
-    this.terminals.delete(id);
+    this.terminals.delete(terminal.id);
     return true;
   }
   async disposeAll(): Promise<void> {
@@ -405,6 +414,7 @@ async function spawnDaemonTerminal(params: {
     if (typeof result?.terminalId !== 'string' || result.terminalId.length === 0) {
       return {
         ok: false,
+        // i18n-ignore (protocol diagnostic error, not user-facing)
         error: `terminal.create returned no terminalId: ${JSON.stringify(result)}`,
       };
     }
@@ -447,6 +457,7 @@ export function registerTerminalHandlers() {
           if (existing && existing.isAlive) {
             if (existing.workspaceId !== workspaceId) {
               logger.warn(
+                // i18n-ignore (log message, not user-facing)
                 `[Terminal] Terminal ${providedId} belongs to workspace ${existing.workspaceId}, not ${workspaceId}. Creating new terminal.`,
               );
             } else {
@@ -462,7 +473,12 @@ export function registerTerminalHandlers() {
                   error: error instanceof Error ? error.message : String(error),
                 });
               }
-              return { success: true, terminalId: providedId, reconnected: true };
+              // Return the registry's LOCAL id (canonical key) rather than
+              // echoing providedId: `terminal:data`/`terminal:exit` events are
+              // emitted under the local id, so a caller reattaching with the
+              // daemon id must learn the id events arrive under. Identical to
+              // providedId on the local-id path — no behavior change there.
+              return { success: true, terminalId: existing.id, reconnected: true };
             }
           }
         }
@@ -487,7 +503,7 @@ export function registerTerminalHandlers() {
         if (!validatedCwd) {
           return {
             success: false,
-            error: `WORKSPACE_NOT_READY: could not access working directory ${workingDir}`,
+            error: m.terminal_ipc_workingDirInaccessible_error({ workingDir }),
           };
         }
 
@@ -524,7 +540,7 @@ export function registerTerminalHandlers() {
           logger.error('[Terminal] Error listing terminals', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to list terminals',
+            error: error instanceof Error ? error.message : m.terminal_ipc_listFailed_error(),
             terminals: [],
           };
         }
@@ -540,8 +556,9 @@ export function registerTerminalHandlers() {
       async (_, validated) => {
         const { terminalId, data } = validated;
         const terminal = registry.getTerminal(terminalId);
-        if (!terminal) return { success: false, error: `Terminal not found: ${terminalId}` };
-        if (!terminal.isAlive) return { success: false, error: 'Terminal is disposed' };
+        if (!terminal)
+          return { success: false, error: m.terminal_ipc_notFoundWithId_error({ terminalId }) };
+        if (!terminal.isAlive) return { success: false, error: m.terminal_ipc_disposed_error() };
         try {
           await getBackendClient().request('terminal.write', {
             terminalId: terminal.daemonTerminalId,
@@ -567,8 +584,9 @@ export function registerTerminalHandlers() {
       async (_, validated) => {
         const { terminalId, cols, rows } = validated;
         const terminal = registry.getTerminal(terminalId);
-        if (!terminal) return { success: false, error: `Terminal not found: ${terminalId}` };
-        if (!terminal.isAlive) return { success: false, error: 'Terminal is disposed' };
+        if (!terminal)
+          return { success: false, error: m.terminal_ipc_notFoundWithId_error({ terminalId }) };
+        if (!terminal.isAlive) return { success: false, error: m.terminal_ipc_disposed_error() };
         try {
           await getBackendClient().request('terminal.resize', {
             terminalId: terminal.daemonTerminalId,
@@ -595,7 +613,8 @@ export function registerTerminalHandlers() {
       async (_, validated) => {
         const { terminalId } = validated;
         const terminal = registry.getTerminal(terminalId);
-        if (!terminal) return { success: false, error: `Terminal not found: ${terminalId}` };
+        if (!terminal)
+          return { success: false, error: m.terminal_ipc_notFoundWithId_error({ terminalId }) };
         return { success: true, info: terminal.getInfo() };
       },
       TERMINAL_CHANNELS.PROFESSIONAL_INFO,
@@ -609,7 +628,7 @@ export function registerTerminalHandlers() {
       async (_, validated) => {
         const { terminalId } = validated;
         const terminal = registry.getTerminal(terminalId);
-        if (!terminal) return { success: false, error: 'Terminal not found' };
+        if (!terminal) return { success: false, error: m.terminal_ipc_notFound_error() };
         return { success: true, buffer: terminal.getBufferedOutput() };
       },
       TERMINAL_CHANNELS.PROFESSIONAL_GET_BUFFER,
@@ -623,8 +642,8 @@ export function registerTerminalHandlers() {
       async (_, validated) => {
         const { terminalId } = validated;
         const terminal = registry.getTerminal(terminalId);
-        if (!terminal) return { success: false, error: 'Terminal not found' };
-        if (!terminal.isAlive) return { success: false, error: 'Terminal is disposed' };
+        if (!terminal) return { success: false, error: m.terminal_ipc_notFound_error() };
+        if (!terminal.isAlive) return { success: false, error: m.terminal_ipc_disposed_error() };
         try {
           await getBackendClient().request('terminal.write', {
             terminalId: terminal.daemonTerminalId,
@@ -655,7 +674,7 @@ export function registerTerminalHandlers() {
           logger.error('[Terminal] Error disposing terminal', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.terminal_ipc_unknown_error(),
           };
         }
       },
@@ -688,14 +707,15 @@ export function registerTerminalHandlers() {
           if (!validatedCwd) {
             return {
               ok: false,
-              error:
-                'WORKSPACE_NOT_READY: The workspace directory does not exist yet. Please wait for workspace initialization to complete.',
+              error: m.terminal_ipc_workspaceNotReady_error(),
             };
           }
           const result = await createTerminalFromBackend({
             workspaceId: workspaceId as WorkspaceId,
             cwd: validatedCwd,
-            title: title || `Command: ${command.substring(0, 30)}`,
+            title:
+              title ||
+              m.terminal_ipc_commandTitle_label({ command: command.substring(0, 30) }),
             initialCommand: command,
             pasteOnly,
             env,
@@ -750,8 +770,7 @@ export async function createTerminalFromBackend(options: {
     return {
       terminalId: '',
       success: false,
-      error:
-        'WORKSPACE_NOT_READY: The workspace directory does not exist yet. Please wait for workspace initialization to complete.',
+      error: m.terminal_ipc_workspaceNotReady_error(),
     };
   }
   const localId = generateTerminalId();
@@ -762,7 +781,7 @@ export async function createTerminalFromBackend(options: {
     cols: 80,
     rows: 24,
     env,
-    title: title || 'Terminal',
+    title: title || m.terminal_quakeOverlay_terminal_fallback(),
   });
   if (!spawn.ok) {
     return { terminalId: '', success: false, error: spawn.error };
@@ -771,7 +790,7 @@ export async function createTerminalFromBackend(options: {
     terminalCreated({
       terminalId: localId,
       workspaceId,
-      title: title || 'Terminal',
+      title: title || m.terminal_quakeOverlay_terminal_fallback(),
       cwd: validatedCwd,
       createdAt: new Date().toISOString(),
       background: !!initialCommand,

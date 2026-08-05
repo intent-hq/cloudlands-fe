@@ -6,18 +6,36 @@
     faXmark,
   } from '@fortawesome/free-solid-svg-icons';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     open?: boolean;
+    /** 'delete' (default) warns before a permanent delete; 'archive' before an archive. */
+    mode?: 'delete' | 'archive';
     agentNames?: string[];
+    hookNames?: string[];
     onDeleteAnyway?: () => void;
     onCancel?: () => void;
   }
 
-  let { open = $bindable(false), agentNames = [], onDeleteAnyway, onCancel }: Props = $props();
+  let {
+    open = $bindable(false),
+    mode = 'delete',
+    agentNames = [],
+    hookNames = [],
+    onDeleteAnyway,
+    onCancel,
+  }: Props = $props();
 
-  const dialogTitleId = 'delete-warning-dialog-title';
-  const dialogDescriptionId = 'delete-warning-dialog-description';
+  // Mode-derived ids so the delete and archive hosts never collide in the DOM.
+  const dialogTitleId = $derived(`${mode}-warning-dialog-title`);
+  const dialogDescriptionId = $derived(`${mode}-warning-dialog-description`);
+
+  const isArchive = $derived(mode === 'archive');
+  const closeAriaLabel = $derived(
+    isArchive ? m.modals_archiveWarning_close_ariaLabel() : m.modals_deleteWarning_close_ariaLabel()
+  );
 
   function close() {
     open = false;
@@ -65,10 +83,12 @@
             </div>
             <div>
               <h2 id={dialogTitleId} class="text-lg font-semibold leading-6">
-                Stop agents and delete space?
+                {isArchive ? m.modals_archiveWarning_title() : m.modals_deleteWarning_title()}
               </h2>
               <p class="mt-1 text-sm text-subtle">
-                This action will stop running work before permanently deleting the space.
+                {isArchive
+                  ? m.modals_archiveWarning_description()
+                  : m.modals_deleteWarning_description()}
               </p>
             </div>
           </div>
@@ -76,7 +96,7 @@
             variant="ghost"
             size="icon-sm"
             class="-mr-1 mt-0.5 text-subtle hover:text-foreground"
-            aria-label="Close delete warning dialog"
+            aria-label={closeAriaLabel}
             onclick={close}
           >
             <Fa icon={faXmark} />
@@ -85,10 +105,12 @@
 
         <div id={dialogDescriptionId} class="space-y-4 px-6 py-5">
           <div class="rounded-xl border border-destructive-foreground/15 bg-destructive/45 p-4">
-            <p class="text-sm font-medium text-foreground">
-              {agentNames.length} active agent{agentNames.length !== 1 ? 's' : ''} will be stopped
-            </p>
             {#if agentNames.length > 0}
+              <p class="text-sm font-medium text-foreground">
+                {agentNames.length === 1
+                  ? m.modals_deleteWarning_agentsStopped_one({ count: formatInteger(agentNames.length) })
+                  : m.modals_deleteWarning_agentsStopped_many({ count: formatInteger(agentNames.length) })}
+              </p>
               <ul class="mt-3 max-h-32 space-y-2 overflow-auto pr-1">
                 {#each agentNames as name}
                   <li class="flex items-center gap-2 text-sm text-subtle">
@@ -98,19 +120,40 @@
                 {/each}
               </ul>
             {/if}
+            {#if hookNames.length > 0}
+              <p
+                class="text-sm font-medium text-foreground"
+                class:mt-3={agentNames.length > 0}
+              >
+                {hookNames.length === 1
+                  ? m.modals_deleteWarning_hooksCancelled_one({ count: formatInteger(hookNames.length) })
+                  : m.modals_deleteWarning_hooksCancelled_many({ count: formatInteger(hookNames.length) })}
+              </p>
+              <ul class="mt-3 max-h-32 space-y-2 overflow-auto pr-1">
+                {#each hookNames as name}
+                  <li class="flex items-center gap-2 text-sm text-subtle">
+                    <span class="size-1.5 rounded-full bg-destructive-foreground"></span>
+                    <span class="truncate">{name}</span>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
           </div>
           <p class="text-sm leading-6 text-subtle">
-            Intent will permanently remove this space from disk after stopping the running agents.
-            This cannot be undone.
+            {isArchive
+              ? m.modals_archiveWarning_note_description()
+              : m.modals_deleteWarning_permanent_description()}
           </p>
         </div>
 
         <div
           class="flex flex-col-reverse gap-2 border-t border-border/70 bg-muted/20 px-6 py-4 sm:flex-row sm:justify-end"
         >
-          <Button variant="outline" onclick={close}>Cancel</Button>
+          <Button variant="outline" onclick={close}>{m.modals_deleteWarning_cancel_label()}</Button>
           <Button variant="destructive" class="sm:min-w-[11rem]" onclick={handleDeleteAnyway}>
-            Stop agents and delete
+            {isArchive
+              ? m.modals_archiveWarning_confirm_label()
+              : m.modals_deleteWarning_confirm_label()}
           </Button>
         </div>
       </div>

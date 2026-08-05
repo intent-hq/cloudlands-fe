@@ -24,14 +24,11 @@
  * module never statically pulls in `$app/*` navigation. The tab-closing
  * navigate-away flow lives in `./navigate-away-if-viewing` (same discipline).
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
-import {
-  getItem,
-  getItems,
-} from "$lib/store-shim/utils/collections/collection-utils";
-import { WorkspaceStatusEnum, type Workspace } from "$shared/types";
-import type { WorkspaceId } from "$shared/types/branded-ids";
-import { store as appStore } from "$store/renderer/store";
+import type { StoreMiddleware } from '$lib/store-shim/types';
+import { getItem, getItems } from '$lib/store-shim/utils/collections/collection-utils';
+import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
+import type { WorkspaceId } from '$shared/types/branded-ids';
+import { store as appStore } from '$store/renderer/store';
 import {
   bulkUpdateWorkspaceEntities,
   clearActiveWorkspace,
@@ -40,49 +37,55 @@ import {
   removeWorkspaceEntity,
   setWorkspaceEntity,
   updateWorkspaceEntity,
-} from "$store/renderer/slices/workspace/workspace-slice";
+} from '$store/renderer/slices/workspace/workspace-slice';
 import {
   applyWorkspaceProposal,
+  bulkArchiveActiveWorkComputed,
+  closeArchiveWarning,
   closeBulkArchiveConfirm,
   closeBulkDeleteArchivedConfirm,
   closeBulkDeleteWarningConfirm,
   closeDeleteWarning,
   closeRemoveRepoConfirm,
+  confirmArchiveWorkspace,
   confirmBulkArchive,
   confirmBulkDeleteArchived,
   confirmBulkDeleteWarning,
   confirmDeleteWorkspace,
   confirmRemoveRepo,
+  openArchiveWarning,
+  openBulkArchiveConfirm,
   openBulkDeleteWarningConfirm,
   openDeleteWarning,
   requestArchiveWorkspace,
   requestDeleteWorkspace,
   requestUnarchiveWorkspace,
-} from "$store/renderer/slices/workspace-operations/workspace-operations-slice";
+} from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
 import {
   proposalApplyStarted,
   proposalApplySucceeded,
   proposalFailed,
-} from "$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice";
-import type { ProposalLifecycleState } from "$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-types";
-import { buildCreateWorkspaceRequestFromProposal } from "$store/renderer/slices/workspace-operations/utils/workspace-create-proposal";
-import { getProposalId } from "$lib/components/chat/proposals/proposal-id";
-import { isBulkOperationProposal, isWorkspaceCreateProposal } from "$shared/types/proposal";
-import type { WorkspaceProposalApplyPayload } from "$shared/app-workspace-operations";
-import { removeRepo } from "$store/renderer/slices/known-repos/known-repos-slice";
-import { workspaceClient } from "$store/renderer/slices/workspace/utils/workspace.client";
-import { navigateAwayIfViewing } from "./navigate-away-if-viewing";
-import { invoke } from "$lib/electron-bridge";
-import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
-import { createLogger } from "$lib/utils/client-logger";
+} from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
+import type { ProposalLifecycleState } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-types';
+import { buildCreateWorkspaceRequestFromProposal } from '$store/renderer/slices/workspace-operations/utils/workspace-create-proposal';
+import { getProposalId } from '$lib/components/chat/proposals/proposal-id';
+import { isBulkOperationProposal, isWorkspaceCreateProposal } from '$shared/types/proposal';
+import type { WorkspaceProposalApplyPayload } from '$shared/app-workspace-operations';
+import { removeRepo } from '$store/renderer/slices/known-repos/known-repos-slice';
+import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
+import { navigateAwayIfViewing } from './navigate-away-if-viewing';
+import { invoke } from '$lib/electron-bridge';
+import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
+import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 
-const logger = createLogger("WorkspaceOperationsService");
+const logger = createLogger('WorkspaceOperationsService');
 
 /** Undo window for the destructive archive/delete toasts (matches legacy saga). */
 const UNDO_DURATION_MS = 15000;
 
 async function getToast() {
-  const { toast } = await import("svelte-sonner");
+  const { toast } = await import('svelte-sonner');
   return toast;
 }
 
@@ -91,7 +94,7 @@ function readWorkspaces(): Workspace[] {
 }
 
 function readWorkspaceById(workspaceId: string): Workspace | undefined {
-  return getItem(appStore.state.workspace.workspaces, workspaceId as Workspace["id"]);
+  return getItem(appStore.state.workspace.workspaces, workspaceId as Workspace['id']);
 }
 
 /**
@@ -109,7 +112,7 @@ function workspaceMatchesRepoKey(workspace: Workspace, repoKey: string): boolean
   if (workspace.repositoryPath) {
     return workspace.repositoryPath === repoKey;
   }
-  return repoKey === "unknown";
+  return repoKey === 'unknown';
 }
 
 function getActiveWorkspacesForRepo(repoKey: string, workspaces: Workspace[]): Workspace[] {
@@ -117,7 +120,7 @@ function getActiveWorkspacesForRepo(repoKey: string, workspaces: Workspace[]): W
     (workspace) =>
       workspace.status !== WorkspaceStatusEnum.Archived &&
       workspace.status !== WorkspaceStatusEnum.Deleted &&
-      workspaceMatchesRepoKey(workspace, repoKey)
+      workspaceMatchesRepoKey(workspace, repoKey),
   );
 }
 
@@ -125,8 +128,57 @@ function getArchivedWorkspacesForRepo(repoKey: string, workspaces: Workspace[]):
   return workspaces.filter(
     (workspace) =>
       workspace.status === WorkspaceStatusEnum.Archived &&
-      workspaceMatchesRepoKey(workspace, repoKey)
+      workspaceMatchesRepoKey(workspace, repoKey),
   );
+}
+
+/** Max concurrent per-workspace active-work lookups during bulk aggregation. */
+const BULK_ACTIVE_WORK_CONCURRENCY = 5;
+
+/**
+ * Aggregate streaming-agent / active-hook counts across a set of workspaces.
+ * Lookups run in bounded batches — each can fall back to a per-workspace
+ * `hook.list` RPC, so an unbounded fan-out on repos with many workspaces
+ * would burst the daemon and risk timeout-induced flakiness.
+ */
+async function countBulkActiveWork(
+  workspaces: Workspace[],
+): Promise<{ agentCount: number; hookCount: number }> {
+  const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+  let agentCount = 0;
+  let hookCount = 0;
+  for (let i = 0; i < workspaces.length; i += BULK_ACTIVE_WORK_CONCURRENCY) {
+    const batch = workspaces.slice(i, i + BULK_ACTIVE_WORK_CONCURRENCY);
+    const results = await Promise.all(batch.map((workspace) => getActiveWorkNames(workspace.id)));
+    for (const { agentNames, hookNames } of results) {
+      agentCount += agentNames.length;
+      hookCount += hookNames.length;
+    }
+  }
+  return { agentCount, hookCount };
+}
+
+/**
+ * Compute the active work behind an open bulk-archive confirm and fold the
+ * counts into the slice so the dialog can warn about it. Fire-and-forget from
+ * the middleware; the reducer drops late results if the confirm was closed or
+ * reopened for a different repo in the meantime.
+ */
+async function computeBulkArchiveActiveWork(repoKey: string): Promise<void> {
+  // Capture the token minted by openBulkArchiveConfirm (the middleware runs
+  // after the reducer) so only the newest compute folds its counts — a stale
+  // in-flight compute from a previous open of the same repo is dropped.
+  const token = appStore.state.workspaceOperations.bulkArchiveComputeToken;
+  const toArchive = getActiveWorkspacesForRepo(repoKey, readWorkspaces());
+  if (toArchive.length === 0) return;
+  try {
+    const { agentCount, hookCount } = await countBulkActiveWork(toArchive);
+    appStore.dispatch(bulkArchiveActiveWorkComputed({ repoKey, agentCount, hookCount, token }));
+  } catch (error) {
+    // The warning is advisory: fail open (counts stay at zero) rather than
+    // letting a fire-and-forget middleware call become an unhandled rejection.
+    logger.error('Failed to compute bulk archive active work:', error);
+  }
 }
 
 /**
@@ -160,9 +212,9 @@ export function flushPendingWorkspaceDeletions(): void {
 // Commit pending deletions on window teardown — same convention as the
 // beforeunload flush in `unified-save-queue.ts`; `pagehide` additionally
 // covers teardown paths where beforeunload does not fire.
-if (typeof window !== "undefined") {
-  window.addEventListener("beforeunload", flushPendingWorkspaceDeletions);
-  window.addEventListener("pagehide", flushPendingWorkspaceDeletions);
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', flushPendingWorkspaceDeletions);
+  window.addEventListener('pagehide', flushPendingWorkspaceDeletions);
 }
 
 /**
@@ -191,7 +243,7 @@ async function deleteWorkspaceWithUndo(workspace: Workspace): Promise<void> {
     if (!result.ok) {
       appStore.dispatch(clearWorkspacePendingDeletion(workspace.id));
       appStore.dispatch(setWorkspaceEntity(workspace));
-      toast.error("Failed to delete space");
+      toast.error(m.workspace_ops_deleteFailed_error());
       return;
     }
     appStore.dispatch(clearWorkspacePendingDeletion(workspace.id));
@@ -200,35 +252,35 @@ async function deleteWorkspaceWithUndo(workspace: Workspace): Promise<void> {
   const timer = setTimeout(() => void commit(), UNDO_DURATION_MS);
   pendingWorkspaceDeletions.set(workspace.id, { timer, commit });
 
-  toast.warning(`Deleted ${workspace.title || "space"}`, {
-    duration: UNDO_DURATION_MS,
-    action: {
-      label: "Undo",
-      onClick: () => {
-        // Already committed (e.g. a teardown flush fired without the window
-        // actually unloading — cancelled navigation / dev HMR): the delete has
-        // reached the daemon, so Undo must stay inert instead of resurrecting
-        // the entity locally and diverging from the daemon.
-        if (!pendingWorkspaceDeletions.has(workspace.id)) return;
-        undone = true;
-        clearTimeout(timer);
-        pendingWorkspaceDeletions.delete(workspace.id);
-        appStore.dispatch(clearWorkspacePendingDeletion(workspace.id));
-        appStore.dispatch(setWorkspaceEntity(workspace));
+  toast.warning(
+    m.workspace_ops_deleted_toast({ title: workspace.title || m.workspace_ops_space_fallback() }),
+    {
+      duration: UNDO_DURATION_MS,
+      action: {
+        label: m.workspace_ops_undo_label(),
+        onClick: () => {
+          // Already committed (e.g. a teardown flush fired without the window
+          // actually unloading — cancelled navigation / dev HMR): the delete has
+          // reached the daemon, so Undo must stay inert instead of resurrecting
+          // the entity locally and diverging from the daemon.
+          if (!pendingWorkspaceDeletions.has(workspace.id)) return;
+          undone = true;
+          clearTimeout(timer);
+          pendingWorkspaceDeletions.delete(workspace.id);
+          appStore.dispatch(clearWorkspacePendingDeletion(workspace.id));
+          appStore.dispatch(setWorkspaceEntity(workspace));
+        },
       },
     },
-  });
+  );
 }
 
-/** Delete from a card/header: gate on running agents, else delete-with-undo. */
+/** Delete from a card/header: gate on active work, else delete-with-undo. */
 export async function deleteWorkspace(workspaceId: string): Promise<void> {
-  const { hasRunningAgents, getRunningAgentNames } = await import(
-    "$lib/utils/delete-warning-utils"
-  );
-  if (hasRunningAgents(workspaceId)) {
-    appStore.dispatch(
-      openDeleteWarning({ workspaceId, agentNames: getRunningAgentNames(workspaceId) })
-    );
+  const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+  const { agentNames, hookNames } = await getActiveWorkNames(workspaceId);
+  if (agentNames.length > 0 || hookNames.length > 0) {
+    appStore.dispatch(openDeleteWarning({ workspaceId, agentNames, hookNames }));
     return;
   }
 
@@ -239,7 +291,7 @@ export async function deleteWorkspace(workspaceId: string): Promise<void> {
   await deleteWorkspaceWithUndo(workspace);
 }
 
-/** "Delete anyway" from the running-agents warning modal. */
+/** "Delete anyway" from the active-work warning modal. */
 export async function confirmDeleteFromWarning(): Promise<void> {
   const workspaceId = appStore.state.workspaceOperations.pendingDeleteWorkspaceId;
   appStore.dispatch(closeDeleteWarning());
@@ -252,16 +304,37 @@ export async function confirmDeleteFromWarning(): Promise<void> {
   await deleteWorkspaceWithUndo(workspace);
 }
 
-/** Archive a workspace, converge the store, and offer an Undo (unarchive). */
+/** Archive from a card/header: gate on active work, else archive-with-undo. */
 export async function archiveWorkspace(workspaceId: string): Promise<void> {
+  const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+  const { agentNames, hookNames } = await getActiveWorkNames(workspaceId);
+  if (agentNames.length > 0 || hookNames.length > 0) {
+    appStore.dispatch(openArchiveWarning({ workspaceId, agentNames, hookNames }));
+    return;
+  }
+
+  await archiveWorkspaceWithUndo(workspaceId);
+}
+
+/** "Archive anyway" from the active-work warning modal. */
+export async function confirmArchiveFromWarning(): Promise<void> {
+  const workspaceId = appStore.state.workspaceOperations.pendingArchiveWorkspaceId;
+  appStore.dispatch(closeArchiveWarning());
+  if (!workspaceId) return;
+
+  await archiveWorkspaceWithUndo(workspaceId);
+}
+
+/** Archive a workspace, converge the store, and offer an Undo (unarchive). */
+async function archiveWorkspaceWithUndo(workspaceId: string): Promise<void> {
   const toast = await getToast();
-  const title = readWorkspaceById(workspaceId)?.title || "space";
+  const title = readWorkspaceById(workspaceId)?.title || m.workspace_ops_space_fallback();
 
   await navigateAwayIfViewing(workspaceId);
 
   const result = await workspaceClient.archive(workspaceId as WorkspaceId);
   if (!result.ok) {
-    toast.error("Failed to archive space");
+    toast.error(m.workspace_ops_archiveFailed_error());
     return;
   }
 
@@ -271,10 +344,10 @@ export async function archiveWorkspace(workspaceId: string): Promise<void> {
   });
 
   let undone = false;
-  toast.warning(`Archived space ${title}`, {
+  toast.warning(m.workspace_ops_archived_toast({ title }), {
     duration: UNDO_DURATION_MS,
     action: {
-      label: "Undo",
+      label: m.workspace_ops_undo_label(),
       onClick: () => {
         if (undone) return;
         undone = true;
@@ -295,16 +368,16 @@ export async function archiveWorkspace(workspaceId: string): Promise<void> {
 /** Unarchive a workspace and converge the store. */
 export async function unarchiveWorkspace(workspaceId: string): Promise<void> {
   const toast = await getToast();
-  const title = readWorkspaceById(workspaceId)?.title || "space";
+  const title = readWorkspaceById(workspaceId)?.title || m.workspace_ops_space_fallback();
 
   const result = await workspaceClient.unarchive(workspaceId as WorkspaceId);
   if (!result.ok) {
-    toast.error("Failed to unarchive space");
+    toast.error(m.workspace_ops_unarchiveFailed_error());
     return;
   }
 
   applyWorkspaceChanges(workspaceId, { status: WorkspaceStatusEnum.Active, archived: false });
-  toast.success(`Unarchived space ${title}`);
+  toast.success(m.workspace_ops_unarchived_toast({ title }));
 }
 
 /** Archive every active workspace for a repo, with a single bulk Undo. */
@@ -312,27 +385,27 @@ export async function bulkArchive(): Promise<void> {
   const repoKey = appStore.state.workspaceOperations.pendingBulkRepoKey;
   appStore.dispatch(closeBulkArchiveConfirm());
   if (!repoKey) {
-    logger.error("bulkArchive called without a repo key");
+    logger.error('bulkArchive called without a repo key');
     return;
   }
 
   const toast = await getToast();
   const toArchive = getActiveWorkspacesForRepo(repoKey, readWorkspaces());
   if (toArchive.length === 0) {
-    toast.info("No active spaces to archive");
+    toast.info(m.workspace_ops_noActiveToArchive_message());
     return;
   }
 
   const results = await Promise.allSettled(
     toArchive.map((workspace) =>
-      workspaceClient.archive(workspace.id).then((result) => ({ id: workspace.id, result }))
-    )
+      workspaceClient.archive(workspace.id).then((result) => ({ id: workspace.id, result })),
+    ),
   );
 
   const archivedIds: WorkspaceId[] = [];
   let failCount = 0;
   for (const settled of results) {
-    if (settled.status === "fulfilled" && settled.value.result.ok) {
+    if (settled.status === 'fulfilled' && settled.value.result.ok) {
       archivedIds.push(settled.value.id);
       applyWorkspaceChanges(settled.value.id, {
         status: WorkspaceStatusEnum.Archived,
@@ -345,10 +418,14 @@ export async function bulkArchive(): Promise<void> {
 
   if (archivedIds.length > 0) {
     let undone = false;
-    toast.warning(`Archived ${archivedIds.length} space${archivedIds.length === 1 ? "" : "s"}`, {
+    const archivedMessage =
+      archivedIds.length === 1
+        ? m.workspace_ops_archivedCount_one({ count: archivedIds.length })
+        : m.workspace_ops_archivedCount_many({ count: archivedIds.length });
+    toast.warning(archivedMessage, {
       duration: UNDO_DURATION_MS,
       action: {
-        label: "Undo",
+        label: m.workspace_ops_undo_label(),
         onClick: () => {
           if (undone) return;
           undone = true;
@@ -369,7 +446,11 @@ export async function bulkArchive(): Promise<void> {
   }
 
   if (failCount > 0) {
-    toast.error(`Failed to archive ${failCount} space${failCount === 1 ? "" : "s"}`);
+    toast.error(
+      failCount === 1
+        ? m.workspace_ops_archiveFailedCount_one({ count: failCount })
+        : m.workspace_ops_archiveFailedCount_many({ count: failCount }),
+    );
   }
 }
 
@@ -388,7 +469,7 @@ async function performBulkDeleteArchived(repoKey: string): Promise<void> {
   const toast = await getToast();
   const toDelete = getArchivedWorkspacesForRepo(repoKey, readWorkspaces());
   if (toDelete.length === 0) {
-    toast.info("No archived spaces to delete");
+    toast.info(m.workspace_ops_noArchivedToDelete_message());
     return;
   }
 
@@ -401,7 +482,7 @@ async function performBulkDeleteArchived(repoKey: string): Promise<void> {
     if (result.ok) {
       deleteCount++;
       appStore.dispatch(removeWorkspaceEntity(workspace.id));
-    } else if (result.error?.includes("timed out")) {
+    } else if (result.error?.includes('timed out')) {
       timeoutCount++;
       // Do NOT remove the entity — leave it for the workspace:deleted event to
       // purge when the daemon finishes.
@@ -412,39 +493,52 @@ async function performBulkDeleteArchived(repoKey: string): Promise<void> {
 
   if (deleteCount > 0) {
     toast.success(
-      `Permanently deleted ${deleteCount} archived space${deleteCount === 1 ? "" : "s"}`
+      deleteCount === 1
+        ? m.workspace_ops_permanentlyDeletedCount_one({ count: deleteCount })
+        : m.workspace_ops_permanentlyDeletedCount_many({ count: deleteCount }),
     );
   }
   if (timeoutCount > 0) {
     toast.info(
-      `${timeoutCount} space${timeoutCount === 1 ? " is" : "s are"} still deleting (large checkout${timeoutCount === 1 ? "" : "s"})`
+      timeoutCount === 1
+        ? m.workspace_ops_stillDeleting_one({ count: timeoutCount })
+        : m.workspace_ops_stillDeleting_many({ count: timeoutCount }),
     );
   }
   if (failCount > 0) {
-    toast.error(`Failed to delete ${failCount} space${failCount === 1 ? "" : "s"}`);
+    toast.error(
+      failCount === 1
+        ? m.workspace_ops_deleteFailedCount_one({ count: failCount })
+        : m.workspace_ops_deleteFailedCount_many({ count: failCount }),
+    );
   }
 }
 
-/** Bulk-delete archived workspaces; defer to the warning modal if agents run. */
+/** Bulk-delete archived workspaces; defer to the warning modal on active work. */
 export async function bulkDeleteArchived(): Promise<void> {
   const repoKey = appStore.state.workspaceOperations.pendingBulkRepoKey;
   appStore.dispatch(closeBulkDeleteArchivedConfirm());
   if (!repoKey) {
-    logger.error("bulkDeleteArchived called without a repo key");
+    logger.error('bulkDeleteArchived called without a repo key');
     return;
   }
 
   const toDelete = getArchivedWorkspacesForRepo(repoKey, readWorkspaces());
   if (toDelete.length === 0) {
     const toast = await getToast();
-    toast.info("No archived spaces to delete");
+    toast.info(m.workspace_ops_noArchivedToDelete_message());
     return;
   }
 
-  const { hasRunningAgents } = await import("$lib/utils/delete-warning-utils");
-  if (toDelete.some((workspace) => hasRunningAgents(workspace.id))) {
+  const { agentCount, hookCount } = await countBulkActiveWork(toDelete);
+  if (agentCount > 0 || hookCount > 0) {
     appStore.dispatch(
-      openBulkDeleteWarningConfirm({ repoKey, workspaceCount: toDelete.length })
+      openBulkDeleteWarningConfirm({
+        repoKey,
+        workspaceCount: toDelete.length,
+        agentCount,
+        hookCount,
+      }),
     );
     return;
   }
@@ -457,7 +551,7 @@ export async function bulkDeleteAfterWarning(): Promise<void> {
   const repoKey = appStore.state.workspaceOperations.pendingBulkDeleteRepoKey;
   appStore.dispatch(closeBulkDeleteWarningConfirm());
   if (!repoKey) {
-    logger.error("bulkDeleteAfterWarning called without a repo key");
+    logger.error('bulkDeleteAfterWarning called without a repo key');
     return;
   }
   await performBulkDeleteArchived(repoKey);
@@ -479,23 +573,22 @@ export async function removeRepoFromRegistry(): Promise<void> {
   const repoPath = appStore.state.workspaceOperations.pendingRemoveRepoPath;
   appStore.dispatch(closeRemoveRepoConfirm());
   if (!repoPath) {
-    logger.error("removeRepoFromRegistry called without a repo path");
+    logger.error('removeRepoFromRegistry called without a repo path');
     return;
   }
 
   const toast = await getToast();
   try {
-    const result = await invoke<RemoveRepoResponse>(
-      WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
-      { repository: repoPath }
-    );
+    const result = await invoke<RemoveRepoResponse>(WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY, {
+      repository: repoPath,
+    });
     if (!result?.success) {
-      throw new Error(result?.error || "Remove failed");
+      throw new Error(result?.error || m.workspace_ops_removeFailed_error());
     }
     appStore.dispatch(removeRepo(repoPath));
   } catch (error) {
-    logger.error("Failed to remove repository from registry", error);
-    toast.error("Failed to remove repository");
+    logger.error('Failed to remove repository from registry', error);
+    toast.error(m.workspace_ops_removeRepoFailed_error());
   }
 }
 
@@ -520,10 +613,9 @@ export async function applyWorkspaceCreateProposal(
   if (!isWorkspaceCreateProposal(proposal)) return;
 
   const proposalId = getProposalId(proposal);
-  const lifecycle = (
-    appStore.state as { proposalLifecycle?: ProposalLifecycleState }
-  ).proposalLifecycle?.[proposalId];
-  if (lifecycle?.status === "applying" || lifecycle?.status === "applied") return;
+  const lifecycle = (appStore.state as { proposalLifecycle?: ProposalLifecycleState })
+    .proposalLifecycle?.[proposalId];
+  if (lifecycle?.status === 'applying' || lifecycle?.status === 'applied') return;
 
   appStore.dispatch(proposalApplyStarted({ proposalId, startedAt: Date.now() }));
 
@@ -531,14 +623,14 @@ export async function applyWorkspaceCreateProposal(
   // `error.data.code` (e.g. "base-ref-unresolvable", monorepo#761) so
   // ProposalCard can key affordances off it instead of matching error prose.
   const fail = async (errorMessage: string, errorCode?: string) => {
-    const message = errorMessage || "Failed to create space";
+    const message = errorMessage || m.fileTracking_acceptChanges_createSpaceFailed_error();
     appStore.dispatch(
       proposalFailed({
         proposalId,
         error: message,
         errorCode,
         completedAt: Date.now(),
-        lastAction: "apply",
+        lastAction: 'apply',
       }),
     );
     const toast = await getToast();
@@ -549,7 +641,7 @@ export async function applyWorkspaceCreateProposal(
     const request = buildCreateWorkspaceRequestFromProposal(proposal, editedFields);
     const result = await workspaceClient.create(request);
     if (!result.ok) {
-      logger.error("Failed to apply workspace-create proposal", result.error);
+      logger.error('Failed to apply workspace-create proposal', result.error);
       await fail(result.error, result.errorCode);
       return;
     }
@@ -564,7 +656,7 @@ export async function applyWorkspaceCreateProposal(
     );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error("Failed to apply workspace-create proposal", error);
+    logger.error('Failed to apply workspace-create proposal', error);
     await fail(errorMessage);
   }
 }
@@ -586,30 +678,31 @@ export async function applyWorkspaceCreateProposal(
  * to all `payload.ids`); only an absent `selectedBulkItemIds` falls back to
  * the proposal's `payload.ids`.
  */
-export async function applyBulkOpProposal(
-  payload: WorkspaceProposalApplyPayload,
-): Promise<void> {
+export async function applyBulkOpProposal(payload: WorkspaceProposalApplyPayload): Promise<void> {
   const { proposal, selectedBulkItemIds } = payload;
   if (!isBulkOperationProposal(proposal)) return;
 
   const proposalId = getProposalId(proposal);
-  const lifecycle = (
-    appStore.state as { proposalLifecycle?: ProposalLifecycleState }
-  ).proposalLifecycle?.[proposalId];
-  if (lifecycle?.status === "applying" || lifecycle?.status === "applied") return;
+  const lifecycle = (appStore.state as { proposalLifecycle?: ProposalLifecycleState })
+    .proposalLifecycle?.[proposalId];
+  if (lifecycle?.status === 'applying' || lifecycle?.status === 'applied') return;
 
-  const isDelete = proposal.payload.operation === "workspace.bulkDelete";
+  const isDelete = proposal.payload.operation === 'workspace.bulkDelete';
 
   const fail = async (error: string) => {
     appStore.dispatch(
-      proposalFailed({ proposalId, error, completedAt: Date.now(), lastAction: "apply" }),
+      proposalFailed({ proposalId, error, completedAt: Date.now(), lastAction: 'apply' }),
     );
     (await getToast()).error(error);
   };
 
   const ids = selectedBulkItemIds ?? proposal.payload.ids;
   if (ids.length === 0) {
-    await fail(`No spaces selected to ${isDelete ? "delete" : "archive"}`);
+    await fail(
+      isDelete
+        ? m.workspace_ops_noneSelectedDelete_error()
+        : m.workspace_ops_noneSelectedArchive_error(),
+    );
     return;
   }
 
@@ -627,7 +720,7 @@ export async function applyBulkOpProposal(
 
     let archivedCount = 0;
     for (const settled of results) {
-      if (settled.status === "fulfilled" && settled.value.result.ok) {
+      if (settled.status === 'fulfilled' && settled.value.result.ok) {
         archivedCount++;
         applyWorkspaceChanges(settled.value.id, {
           status: WorkspaceStatusEnum.Archived,
@@ -639,13 +732,19 @@ export async function applyBulkOpProposal(
     const failCount = ids.length - archivedCount;
     if (failCount > 0) {
       await fail(
-        `Failed to archive ${failCount} of ${ids.length} space${ids.length === 1 ? "" : "s"}`,
+        ids.length === 1
+          ? m.workspace_ops_archiveFailedOfCount_one({ failCount, total: ids.length })
+          : m.workspace_ops_archiveFailedOfCount_many({ failCount, total: ids.length }),
       );
       return;
     }
 
     appStore.dispatch(proposalApplySucceeded({ proposalId, completedAt: Date.now() }));
-    toast.success(`Archived ${archivedCount} space${archivedCount === 1 ? "" : "s"}`);
+    toast.success(
+      archivedCount === 1
+        ? m.workspace_ops_archivedCount_one({ count: archivedCount })
+        : m.workspace_ops_archivedCount_many({ count: archivedCount }),
+    );
     return;
   }
 
@@ -657,7 +756,7 @@ export async function applyBulkOpProposal(
     if (result.ok) {
       deleteCount++;
       appStore.dispatch(removeWorkspaceEntity(id as WorkspaceId));
-    } else if (result.error?.includes("timed out")) {
+    } else if (result.error?.includes('timed out')) {
       timeoutCount++;
       // Do NOT remove the entity — leave it for the workspace:deleted event to
       // purge when the daemon finishes.
@@ -667,17 +766,27 @@ export async function applyBulkOpProposal(
   }
 
   if (failCount > 0) {
-    await fail(`Failed to delete ${failCount} of ${ids.length} space${ids.length === 1 ? "" : "s"}`);
+    await fail(
+      ids.length === 1
+        ? m.workspace_ops_deleteFailedOfCount_one({ failCount, total: ids.length })
+        : m.workspace_ops_deleteFailedOfCount_many({ failCount, total: ids.length }),
+    );
     return;
   }
 
   appStore.dispatch(proposalApplySucceeded({ proposalId, completedAt: Date.now() }));
   if (deleteCount > 0) {
-    toast.success(`Deleted ${deleteCount} space${deleteCount === 1 ? "" : "s"}`);
+    toast.success(
+      deleteCount === 1
+        ? m.workspace_ops_deletedCount_one({ count: deleteCount })
+        : m.workspace_ops_deletedCount_many({ count: deleteCount }),
+    );
   }
   if (timeoutCount > 0) {
     toast.info(
-      `${timeoutCount} space${timeoutCount === 1 ? " is" : "s are"} still deleting (large checkout${timeoutCount === 1 ? "" : "s"})`
+      timeoutCount === 1
+        ? m.workspace_ops_stillDeleting_one({ count: timeoutCount })
+        : m.workspace_ops_stillDeleting_many({ count: timeoutCount }),
     );
   }
 }
@@ -691,11 +800,11 @@ export async function applyBulkOpProposal(
 export function createWorkspaceOperationsMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     const result = next(action);
-    if (action && typeof action.type === "string") {
+    if (action && typeof action.type === 'string') {
       const payload = Array.isArray(action.payload) ? action.payload : [];
       switch (action.type) {
         case applyWorkspaceProposal.type:
-          if (payload[0] && typeof payload[0] === "object") {
+          if (payload[0] && typeof payload[0] === 'object') {
             const proposalPayload = payload[0] as WorkspaceProposalApplyPayload;
             if (isBulkOperationProposal(proposalPayload.proposal)) {
               void applyBulkOpProposal(proposalPayload);
@@ -705,16 +814,22 @@ export function createWorkspaceOperationsMiddleware(): StoreMiddleware {
           }
           break;
         case requestArchiveWorkspace.type:
-          if (typeof payload[0] === "string") void archiveWorkspace(payload[0]);
+          if (typeof payload[0] === 'string') void archiveWorkspace(payload[0]);
           break;
         case requestUnarchiveWorkspace.type:
-          if (typeof payload[0] === "string") void unarchiveWorkspace(payload[0]);
+          if (typeof payload[0] === 'string') void unarchiveWorkspace(payload[0]);
           break;
         case requestDeleteWorkspace.type:
-          if (typeof payload[0] === "string") void deleteWorkspace(payload[0]);
+          if (typeof payload[0] === 'string') void deleteWorkspace(payload[0]);
           break;
         case confirmDeleteWorkspace.type:
           void confirmDeleteFromWarning();
+          break;
+        case confirmArchiveWorkspace.type:
+          void confirmArchiveFromWarning();
+          break;
+        case openBulkArchiveConfirm.type:
+          if (typeof payload[0] === 'string') void computeBulkArchiveActiveWork(payload[0]);
           break;
         case confirmBulkArchive.type:
           void bulkArchive();

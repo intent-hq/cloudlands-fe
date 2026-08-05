@@ -25,6 +25,7 @@
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('ReferenceBlock');
 
@@ -92,7 +93,7 @@
   function resolveReference() {
     if (!primitive || resolvedCode) return;
     if (!semanticId) {
-      error = 'No reference target available';
+      error = m.notes_referenceBlock_noTarget_error();
       loading = false;
       return;
     }
@@ -106,7 +107,7 @@
         'text';
       resolvedRange = primitive.target?.range || null;
     } else {
-      error = 'No code snapshot stored for this reference';
+      error = m.notes_referenceBlock_noSnapshot_error();
     }
     loading = false;
   }
@@ -219,7 +220,7 @@
                 );
               }
             }}
-            title="View agent"
+            title={m.notes_referenceBlock_viewAgent_tooltip()}
           >
             <AuggieAvatar agentId={linkedAgentId} size={16} />
           </button>
@@ -249,7 +250,7 @@
           size="sm"
           class="h-6 px-2 text-xs text-subtle gap-1 flex-none"
           onclick={openInApp}
-          title="Go to file"
+          title={m.notes_referenceBlock_goToFile_tooltip()}
         >
           <Fa icon={faArrowRight} size="xs" />
         </Button>
@@ -275,13 +276,13 @@
                 noMargin={true}
               />
             {:else}
-              <div class="p-3 text-sm text-subtle italic">No code content</div>
+              <div class="p-3 text-sm text-subtle italic">{m.notes_referenceBlock_noContent_label()}</div>
             {/if}
           </div>
         </div>
       {/if}
     </div>
   {:else}
-    <div class="my-1.5 text-sm text-subtle">Invalid reference block</div>
+    <div class="my-1.5 text-sm text-subtle">{m.notes_referenceBlock_invalid_error()}</div>
   {/if}
 </NodeViewWrapper>

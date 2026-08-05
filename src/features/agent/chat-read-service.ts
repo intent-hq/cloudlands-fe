@@ -18,10 +18,35 @@
  * = the conversation), and `upsertSession` registers the agent id in the
  * workspace-agents index.
  *
+ * PAIRING WITH THE STANDING SUBSCRIPTION (chat-subscribe-service): the same
+ * `initializeChatRequested` also opens a standing `chat.subscribe` whose seq-0
+ * snapshot covers the newest page + live-turn slot. This read pages the FULL
+ * history (the snapshot is only the newest page); the standing stream owns
+ * the in-flight message and reconciles live deltas after hydration.
+ *
+ * ONE guard that ownership split requires: `agent.getConversation` returns
+ * PERSISTED rows only (PROTOCOL §5.5) — the live partial turn exists solely
+ * in the subscription's snapshot/deltas (§7.1). When this read completes
+ * AFTER the seq-0 snapshot landed (the common mid-turn re-entry ordering),
+ * its full-list upsert would clobber the snapshot-delivered in-flight
+ * assistant message with a list that cannot contain it. So the hydrate keeps
+ * any stream-owned message (`isStreaming: true`) already in the store whose
+ * id is absent from the fetched pages — but ONLY while the freshly fetched
+ * session reports a turn in flight. When the daemon says the agent is idle,
+ * a store-resident stream-owned row the fetched pages lack is a renderer-
+ * local ghost the daemon never persisted (e.g. a daemon crash mid-turn) and
+ * is dropped. A turn that FINALIZED during the read is not covered by that
+ * guard (the persisted row is no longer stream-owned), so the subscription
+ * re-asserts its last reconciled transcript on this module's
+ * `transcriptHydrationSettled` dispatch — a fetch whose pages predate the
+ * finalize cannot silently drop the finalized row.
+ *
  * READ-ONLY: this module never invokes an agent mutation (no create/send/stop).
  *
- * Loads are coalesced per agent via an in-flight map so the ChatPanel mount
- * effect and rebind re-dispatch collapse rapid triggers into one fetch.
+ * Loads are coalesced per agent via an in-flight map: a request arriving while
+ * a load is already in flight shares the in-flight read. Post-hydration
+ * convergence is owned by the standing subscription — its settle-time
+ * re-apply plus its delta reconcile — so no follow-up rerun is scheduled.
  *
  * Errors are swallowed (logged only) so a failed read leaves any prior session
  * intact rather than clobbering it with an empty transcript. If `agents.get`
@@ -33,7 +58,7 @@
  * mid-initialization through the middleware chain).
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
-import type { AgentMessage } from "$shared/types";
+import type { AgentMessage, AgentSession } from "$shared/types";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import {
@@ -46,13 +71,57 @@ import {
   upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { createLogger } from "$lib/utils/client-logger";
-import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
 import { isAgentDeletionPending } from "./utils/pending-agent-deletions";
+import { staleRuntimeFlagClearUpsertOptions } from "./utils/stale-runtime-flag-clear";
 
 const logger = createLogger("ChatReadService");
 
 /** In-flight loads keyed by agent id; coalesces concurrent requests. */
 const inFlight = new Map<string, Promise<void>>();
+
+/**
+ * Keep stream-owned messages the persisted read cannot see: any message
+ * already in the store with `isStreaming: true` whose id is absent from the
+ * fetched pages was delivered by the standing chat.subscribe snapshot/deltas
+ * (the daemon's live-turn slot, never persisted mid-turn) and must survive
+ * this full-list hydrate. Fetched rows win on id collision — a finalized
+ * turn persists under the same message id.
+ *
+ * Preservation is gated on the FRESH session reporting a turn in flight
+ * (`turnInFlight` / `isResponding` / `isStreaming` — the same derivation as
+ * live-chat-client's snapshot overlay). If the daemon says the agent is
+ * idle, a stream-owned store row absent from the persisted pages is a stale
+ * renderer-local ghost (e.g. the daemon crashed mid-turn and never persisted
+ * the partial) — the fetched list is returned as-is so the ghost is evicted.
+ * `turnInFlight` is a PROTOCOL §5.5 additive AgentLite field not declared on
+ * the TS type, so it is read defensively off the raw session.
+ *
+ * State is read directly off `appStore.state` (dependency-light per
+ * src/store AGENTS.md — no selector imports in middleware-adjacent
+ * services).
+ */
+function withPreservedStreamOwnedMessages(
+  agentId: string,
+  fetched: AgentMessage[],
+  session: AgentSession,
+): AgentMessage[] {
+  const turnInFlight =
+    (session as { turnInFlight?: unknown }).turnInFlight === true ||
+    session.isResponding === true ||
+    session.isStreaming === true;
+  if (!turnInFlight) return fetched;
+  const state = appStore.state as {
+    agentSessions?: { byAgentId: Record<string, { messages?: AgentMessage[] }> };
+  };
+  const existingMessages = state.agentSessions?.byAgentId[agentId]?.messages;
+  if (!existingMessages || existingMessages.length === 0) return fetched;
+  const fetchedIds = new Set(fetched.map((message) => message.id));
+  const streamOwned = existingMessages.filter(
+    (message) => message.isStreaming === true && !fetchedIds.has(message.id),
+  );
+  if (streamOwned.length === 0) return fetched;
+  return [...fetched, ...streamOwned];
+}
 
 /**
  * Fetch a single agent's session AND its FULL transcript from the seam, then
@@ -68,7 +137,12 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
   // session. Skip entirely.
   if (isAgentDeletionPending(agentId)) return;
   const pending = inFlight.get(agentId);
-  if (pending) return pending;
+  if (pending) {
+    // Share the in-flight read. Post-hydration convergence (a turn finalizing
+    // after paging began, live growth during the read) is owned by the
+    // standing chat.subscribe delta reconcile, so no rerun is scheduled.
+    return pending;
+  }
 
   // Create a placeholder promise that we'll resolve once the actual work is done
   let resolveRun!: () => void;
@@ -93,6 +167,15 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
   // Actually perform the work
   (async () => {
     try {
+      // Capture BEFORE the fetch (monorepo#1250): a both-true runtime-flag
+      // pair that already exists when this read begins is either a genuinely
+      // live turn (the fresh session will report it in flight) or a stale
+      // leftover from a daemon crash mid-turn (the fresh session reports
+      // idle). A pair set DURING the fetch — chatSendStarted racing this
+      // read — is never cleared; that is the slice pair-guard's designed case.
+      const storedBefore = appStore.state.agentSessions?.byAgentId[agentId];
+      const hadInFlightPairBeforeFetch =
+        storedBefore?.isStreaming === true && storedBefore?.isProcessing === true;
       const session = await appClient.agents.get(agentId);
       if (!session) return;
       // Re-check after the fetch: a deletion may have become pending while
@@ -121,56 +204,48 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
         nextToken = page.nextToken;
       } while (nextToken !== null);
 
-      // REJOIN-STREAM FIX: chat.subscribe snapshot merges the live-turn slot
-      // (CS-0 D5), while agent.getConversation returns persisted-only. Fetch
-      // the snapshot and merge any in-flight assistant message into the hydrated
-      // transcript so reopening a mid-turn chat shows the partial response
-      // immediately instead of waiting for the next chunk/tool-call.
-      const snapshot = await appClient.chat.subscribeSnapshot(agentId);
-
-      // Final re-check before any side effects: the deletion may have become
-      // pending during transcript paging / snapshot fetch above. This guards
-      // both the store upserts below and seedStreamFromSnapshot (the bridge
-      // accumulator must not be seeded for a deleted agent).
+      // Final re-check before the store upserts: the deletion may have become
+      // pending during transcript paging above.
       if (isAgentDeletionPending(agentId)) return;
 
-      const inFlightMessage = snapshot.messages.find(
-        (m) =>
-          m.role === "assistant" &&
-          typeof m.isStreaming === "boolean" &&
-          m.isStreaming === true,
-      );
-
-      // Merge in-flight message when present: dedup by message id, persisted
-      // copy wins (the snapshot's in-flight entry may carry stale metadata
-      // but fresher content blocks). If the persisted set already contains
-      // the same message id, skip the snapshot's copy to preserve finalized
-      // metadata.
-      let finalMessages = allMessages;
-      if (inFlightMessage && typeof inFlightMessage.id === "string") {
-        const persistedIds = new Set(
-          allMessages.map((m) => (typeof m.id === "string" ? m.id : null)).filter(Boolean),
-        );
-        if (!persistedIds.has(inFlightMessage.id)) {
-          // Append in-flight message (allMessages is oldest-first after the
-          // unshift-per-page accumulation, so the newest in-flight assistant
-          // goes at the end).
-          finalMessages = [...allMessages, inFlightMessage];
-          // Seed the bridge stream accumulator so subsequent agent:stream:chunk
-          // events build on the hydrated prefix instead of starting empty
-          // (which would fail the regression guard until the candidate outgrows
-          // the partial). The snapshot's in-flight assistant carries the full
-          // content-blocks array built by chat_snapshot's CS-0 D5 merge.
-          seedStreamFromSnapshot(agentId, inFlightMessage, session.workspaceId);
-        }
-      }
-
+      // The live-turn slot and any messages that arrive during/after this
+      // read are owned by the standing chat.subscribe stream
+      // (chat-subscribe-service): its seq-0 snapshot covers the in-flight
+      // message and its deltas reconcile subsequent growth.
+      //
+      // Guard (mid-turn re-entry regression): this read fetched PERSISTED
+      // rows only, so it can never contain the live partial turn. If the
+      // snapshot already hydrated a stream-owned message (`isStreaming:
+      // true`) that the fetched pages lack, keep it — replacing the list
+      // wholesale would blank the already-streamed text until the next
+      // delta. A turn that finalized during the read persists under the
+      // SAME id, so the fetched (final) copy wins and nothing stale stays.
+      // Preservation only applies while the fresh session reports a turn in
+      // flight: on an idle session such a row is a renderer-local ghost the
+      // daemon never persisted (daemon crash mid-turn) and is dropped.
+      //
       // Render BE state as-is: the daemon is the single source of truth for
       // streaming/responding flags. If a chat opens with "Thinking", that is
       // because the daemon snapshot actually reports a turn is in-flight;
-      // any orphan/stale healing belongs in the daemon, not the renderer.
-      const sessionWithMessages = { ...session, messages: finalMessages };
-      appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
+      // orphan/stale healing belongs in the daemon — the ONE exception is
+      // the ghost eviction above, which concerns a renderer-local row the
+      // daemon never saw and therefore can never heal.
+      const mergedMessages = withPreservedStreamOwnedMessages(
+        agentId,
+        allMessages,
+        session,
+      );
+      const sessionWithMessages = { ...session, messages: mergedMessages };
+      // Stale-pair convergence (monorepo#1250): when the in-flight flag pair
+      // predates this fetch and the daemon authoritatively reports the
+      // session idle, the snapshot's explicit-false runtime flags win over
+      // the pair-guard — a crash-orphaned pair has no clearing event left.
+      appStore.dispatch(
+        bulkUpsertSessions(
+          [sessionWithMessages],
+          staleRuntimeFlagClearUpsertOptions(hadInFlightPairBeforeFetch, session),
+        ),
+      );
       appStore.dispatch(upsertSession(sessionWithMessages));
     } catch (error) {
       logger.error("Failed to load agent conversation transcript", error);

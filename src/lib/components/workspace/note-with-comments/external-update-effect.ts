@@ -342,6 +342,7 @@ export function runExternalContentUpdateEffect({
     // have scheduled a new save whose flush hasn't been acknowledged yet.
     if (getHasPendingNoteContent?.()) {
       logger.info(
+        // i18n-ignore (log line)
         '[NoteWithComments] Deferring external apply - pending local save appeared during debounce',
         { updateVersion, noteId },
       );
@@ -448,6 +449,7 @@ export function runExternalContentUpdateEffect({
             const noteId = getNoteId();
             if (workspaceId && noteId) {
               logger.debug(
+                // i18n-ignore (log line)
                 '[NoteWithComments] Restoring task-agent associations after external update',
                 {
                   noteId,

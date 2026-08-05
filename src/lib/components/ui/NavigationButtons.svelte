@@ -6,6 +6,7 @@
   faChevronLeft,
   faChevronRight,
 } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     canGoBack: boolean;
@@ -19,7 +20,7 @@
 
 <div class="flex items-center h-full -ml-3 mr-3 relative">
   <div class="flex items-center h-full">
-    <TooltipShortcut label="Go back" shortcut="alt+←" side="bottom" delayDuration={300}>
+    <TooltipShortcut label={m.ui_navButtons_goBack_tooltip()} shortcut="alt+←" side="bottom" delayDuration={300}>
       <Button
         size="xs"
         variant="ghost"
@@ -30,7 +31,7 @@
         <Fa icon={faChevronLeft} size="sm" />
       </Button>
     </TooltipShortcut>
-    <TooltipShortcut label="Go forward" shortcut="alt+→" side="bottom" delayDuration={300}>
+    <TooltipShortcut label={m.ui_navButtons_goForward_tooltip()} shortcut="alt+→" side="bottom" delayDuration={300}>
       <Button
         size="xs"
         variant="ghost"

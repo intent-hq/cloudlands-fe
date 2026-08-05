@@ -2,12 +2,7 @@
  * Provider Registry and Additional Providers
  */
 
-import type {
-  Provider,
-  MentionCandidate,
-  SearchContext,
-  MentionType,
-} from '../types';
+import type { Provider, MentionCandidate, SearchContext, MentionType } from '../types';
 import { SPECIAL_MENTIONS } from '../types';
 import { FileProvider } from './file-provider';
 import { logger } from '$lib/utils/client-logger';
@@ -19,6 +14,8 @@ import {
 import { formatRelativeTimeCompact } from '$lib/utils/date';
 import type { Workspace } from '$shared/types';
 import { store as appStore } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
+import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 
 // Folder Provider — daemon-backed via search.fileNames (PROTOCOL §5.15);
 // folders are derived from the workspace-relative file paths the daemon returns.
@@ -89,9 +86,7 @@ export class NoteProvider implements Provider {
   /**
    * Get sibling workspaces (workspaces in the same repository) via the appClient
    */
-  private async getSiblingWorkspaces(
-    currentWorkspaceId: string | undefined,
-  ): Promise<Workspace[]> {
+  private async getSiblingWorkspaces(currentWorkspaceId: string | undefined): Promise<Workspace[]> {
     // Guard: return empty if workspaceId is undefined
     if (!currentWorkspaceId) {
       return [];
@@ -172,12 +167,12 @@ export class NoteProvider implements Provider {
           const isCurrentWorkspace = workspaceId === context.workspaceId;
           const subtitle = isCurrentWorkspace
             ? undefined
-            : `From: ${workspaceTitle || workspaceId}`;
+            : m.chat_mentions_fromWorkspace_subtitle({ workspace: workspaceTitle || workspaceId });
 
           return {
             id: note.id || `note-${note.id}`,
             type: 'note' as MentionType,
-            label: note.title || note.id || 'Untitled Note',
+            label: note.title || note.id || m.chat_mentions_untitledNote_label(),
             subtitle,
             description: `${note.content?.substring(0, 100)}...` || '',
             icon: '📝',
@@ -233,24 +228,25 @@ export class ExternalSourceProvider implements Provider {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
+    // Placeholder stub data, not real catalog content.
     const sources = [
       {
         id: 'react-docs',
-        label: 'React Documentation',
+        label: 'React Documentation', // i18n-ignore (stub data)
         url: 'https://react.dev',
-        description: 'Official React documentation',
+        description: 'Official React documentation', // i18n-ignore (stub data)
       },
       {
         id: 'mdn',
-        label: 'MDN Web Docs',
+        label: 'MDN Web Docs', // i18n-ignore (stub data)
         url: 'https://developer.mozilla.org',
-        description: 'Web technology documentation',
+        description: 'Web technology documentation', // i18n-ignore (stub data)
       },
       {
         id: 'typescript',
-        label: 'TypeScript Handbook',
+        label: 'TypeScript Handbook', // i18n-ignore (stub data)
         url: 'https://www.typescriptlang.org/docs/',
-        description: 'TypeScript documentation',
+        description: 'TypeScript documentation', // i18n-ignore (stub data)
       },
     ];
 
@@ -277,12 +273,13 @@ export class RuleProvider implements Provider {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
+    // Placeholder stub data, not real catalog content.
     const rules = [
-      { path: '.intent/rules/cli.md', label: 'CLI Rules' },
-      { path: '.intent/rules/frontend.md', label: 'Frontend Rules' },
-      { path: '.intent/rules/python.md', label: 'Python Rules' },
-      { path: '.intent/rules/sidecar.md', label: 'Sidecar Rules' },
-      { path: '.intent/rules/systems.md', label: 'Systems Rules' },
+      { path: '.intent/rules/cli.md', label: 'CLI Rules' }, // i18n-ignore (stub data)
+      { path: '.intent/rules/frontend.md', label: 'Frontend Rules' }, // i18n-ignore (stub data)
+      { path: '.intent/rules/python.md', label: 'Python Rules' }, // i18n-ignore (stub data)
+      { path: '.intent/rules/sidecar.md', label: 'Sidecar Rules' }, // i18n-ignore (stub data)
+      { path: '.intent/rules/systems.md', label: 'Systems Rules' }, // i18n-ignore (stub data)
     ];
 
     return rules
@@ -308,24 +305,25 @@ export class TaskProvider implements Provider {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
+    // Placeholder stub data, not real catalog content.
     const tasks = [
       {
         id: 'task-1',
-        label: 'Implement authentication',
+        label: 'Implement authentication', // i18n-ignore (stub data)
         status: 'in_progress' as const,
-        assignee: 'John Doe',
+        assignee: 'John Doe', // i18n-ignore (stub data)
       },
       {
         id: 'task-2',
-        label: 'Write tests',
+        label: 'Write tests', // i18n-ignore (stub data)
         status: 'not_started' as const,
-        assignee: 'Jane Smith',
+        assignee: 'Jane Smith', // i18n-ignore (stub data)
       },
       {
         id: 'task-3',
-        label: 'Deploy to production',
+        label: 'Deploy to production', // i18n-ignore (stub data)
         status: 'completed' as const,
-        assignee: 'Bob Johnson',
+        assignee: 'Bob Johnson', // i18n-ignore (stub data)
       },
     ];
 
@@ -351,11 +349,12 @@ export class PersonalityProvider implements Provider {
   id = 'personality';
   triggers = ['@personality', '@persona'];
 
+  // Persona names are brand/product names; descriptions are stub data.
   private personalities = [
     {
       id: 'auggie-personality-agent-default',
-      name: 'Agent Auggie',
-      description: 'Default helpful AI assistant',
+      name: 'Agent Auggie', // i18n-ignore (persona brand name)
+      description: 'Default helpful AI assistant', // i18n-ignore (stub data)
       icon: '🤖',
       temperature: 0.7,
       model: 'default',
@@ -363,8 +362,8 @@ export class PersonalityProvider implements Provider {
     },
     {
       id: 'auggie-personality-prototyper',
-      name: 'Prototyper Auggie',
-      description: 'Specialized in rapid prototyping',
+      name: 'Prototyper Auggie', // i18n-ignore (persona brand name)
+      description: 'Specialized in rapid prototyping', // i18n-ignore (stub data)
       icon: '⚡',
       temperature: 0.7,
       model: 'default',
@@ -372,8 +371,8 @@ export class PersonalityProvider implements Provider {
     },
     {
       id: 'auggie-personality-brainstorm',
-      name: 'Brainstorm Auggie',
-      description: 'Creative ideation and exploration',
+      name: 'Brainstorm Auggie', // i18n-ignore (persona brand name)
+      description: 'Creative ideation and exploration', // i18n-ignore (stub data)
       icon: '💡',
       temperature: 0.7,
       model: 'default',
@@ -381,8 +380,8 @@ export class PersonalityProvider implements Provider {
     },
     {
       id: 'auggie-personality-reviewer',
-      name: 'Reviewer Auggie',
-      description: 'Code review and feedback',
+      name: 'Reviewer Auggie', // i18n-ignore (persona brand name)
+      description: 'Code review and feedback', // i18n-ignore (stub data)
       icon: '🔍',
       temperature: 0.7,
       model: 'default',
@@ -414,10 +413,7 @@ export class CommandProvider implements Provider {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
-    const commands = [
-      SPECIAL_MENTIONS.USE_DEFAULT_CONTEXT,
-      SPECIAL_MENTIONS.CLEAR_CONTEXT,
-    ];
+    const commands = [SPECIAL_MENTIONS.USE_DEFAULT_CONTEXT, SPECIAL_MENTIONS.CLEAR_CONTEXT];
 
     return commands.filter(
       (cmd) => !query || cmd.label.toLowerCase().includes(query.toLowerCase()),
@@ -433,7 +429,8 @@ export class TerminalProvider implements Provider {
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     try {
       const { terminalManager } = await import('$features/terminal/terminal-manager.svelte');
-      const { selectTerminals, selectTerminalDisplayName } = await import('$store/renderer/slices/terminals/terminals-selectors');
+      const { selectTerminals, selectTerminalDisplayName } =
+        await import('$store/renderer/slices/terminals/terminals-selectors');
       const store = appStore;
       const state = store.state;
 
@@ -464,7 +461,7 @@ export class TerminalProvider implements Provider {
           seen.add(meta.terminalId);
           allTerminals.push({
             id: meta.terminalId,
-            name: meta.title || 'Terminal',
+            name: meta.title || m.terminal_quakeOverlay_terminal_fallback(),
           });
         }
       }
@@ -490,8 +487,8 @@ export class TerminalProvider implements Provider {
         id: terminal.id,
         type: 'terminal' as MentionType,
         label: terminal.name,
-        subtitle: `Terminal ${index + 1}`,
-        description: 'Include terminal output in context',
+        subtitle: m.chat_mentions_terminalIndex_subtitle({ index: index + 1 }),
+        description: m.chat_mentions_terminalOutput_description(),
         icon: '💻',
         uri: `devspace://terminal/${encodeURIComponent(terminal.id)}`,
         meta: {
@@ -512,7 +509,8 @@ export class ScriptProvider implements Provider {
 
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     try {
-      const { selectScriptEntries } = await import('$store/renderer/slices/scripts/scripts-selectors');
+      const { selectScriptEntries } =
+        await import('$store/renderer/slices/scripts/scripts-selectors');
 
       if (!context.workspaceId) {
         return [];
@@ -532,28 +530,32 @@ export class ScriptProvider implements Provider {
       const filtered =
         query && !isTypingTrigger
           ? scripts.filter(
-              (s) =>
-                fuzzyMatch(query, s.name) !== null || fuzzyMatch(query, s.command) !== null,
+              (s) => fuzzyMatch(query, s.name) !== null || fuzzyMatch(query, s.command) !== null,
             )
           : scripts;
 
       return filtered.slice(0, 10).map((script) => {
         const status = script.runtime.status;
+        // Live statuses (running/restarting) reuse the running treatment.
         const statusLabel =
-          status === 'running' ? '● Running' : status === 'exited' ? '○ Exited' : '○ Idle';
+          isLiveScriptStatus(status)
+            ? m.chat_mentions_scriptRunning_label()
+            : status === 'exited'
+              ? m.chat_mentions_scriptExited_label()
+              : m.chat_mentions_scriptIdle_label();
         return {
           id: script.id,
           type: 'script' as MentionType,
           label: script.name,
           subtitle: `${statusLabel} · ${script.command}`,
-          description: 'Include script output in context',
+          description: m.chat_mentions_scriptOutput_description(),
           icon: '▶️',
           uri: `devspace://script/${encodeURIComponent(script.id)}`,
           meta: {
             workspaceId: context.workspaceId,
             command: script.command,
             status:
-              status === 'running'
+              isLiveScriptStatus(status)
                 ? ('ok' as const)
                 : status === 'exited'
                   ? ('warning' as const)
@@ -620,9 +622,8 @@ export class AgentProvider implements Provider {
 
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     try {
-      const { selectAllWorkspaceAgents } = await import(
-        '$store/renderer/slices/workspace-agents/workspace-agents-selectors'
-      );
+      const { selectAllWorkspaceAgents } =
+        await import('$store/renderer/slices/workspace-agents/workspace-agents-selectors');
       const workspaceId = context.workspaceId;
       if (!workspaceId) {
         return [];
@@ -639,9 +640,7 @@ export class AgentProvider implements Provider {
 
         const name = session.name || agentId;
         // Check session.metadata for specialist info
-        const specialistId =
-          (session.metadata as any)?.specialist ||
-          '';
+        const specialistId = (session.metadata as any)?.specialist || '';
         // Look up specialist name: try session metadata first, then resolve from store
         let specialistName = (session.metadata as any)?.specialistName || '';
         if (specialistId && !specialistName) {
@@ -662,9 +661,7 @@ export class AgentProvider implements Provider {
           }
         }
 
-        const statusLabel = session.isStreaming
-          ? 'responding'
-          : session.status || 'active';
+        const statusLabel = session.isStreaming ? 'responding' : session.status || 'active';
 
         // Build subtitle with specialist, status, message count, and recency
         const subtitleParts: string[] = [];
@@ -691,11 +688,11 @@ export class AgentProvider implements Provider {
           label: name,
           subtitle: subtitleParts.join(' · '),
           description: specialistName
-            ? `${specialistName} agent in this workspace`
-            : `Agent in this workspace`,
+            ? m.chat_mentions_specialistAgentInWorkspace_description({ specialist: specialistName })
+            : m.chat_mentions_agentInWorkspace_description(),
           icon: '🤖',
           uri: `devspace://agent/${encodeURIComponent(agentId)}`,
-          group: 'Agents',
+          group: m.chat_mentions_agents_group(),
           score: 0.7,
           meta: {
             workspaceId,

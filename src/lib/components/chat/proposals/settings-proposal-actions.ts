@@ -1,5 +1,6 @@
 import type { AppSettingApplyPlan, AppSettingDefinition } from '$shared/app-settings-schema';
 import { findAppSettingDefinition } from '$shared/app-settings-schema';
+import { m } from '$shared/paraglide/messages.js';
 import type { ProposalActionDetail, SettingsChangeProposal } from '$shared/types/proposal';
 import { appClient } from '$lib/client';
 import { store as appStore } from "$store/renderer/store";
@@ -33,6 +34,7 @@ import {
   selectCodeFontFamily,
   selectGroupByRepo,
   selectHasCompletedProviderSetup,
+  selectLanguagePreference,
   selectNotificationEnabled,
   selectNotificationVolume,
   selectNoteFontStyle,
@@ -76,6 +78,7 @@ import {
   setCodeFontFamily,
   setGroupByRepo,
   setHasCompletedProviderSetup,
+  setLanguagePreference,
   setNotificationEnabled,
   setNoteFontStyle,
   setShowArchived,
@@ -192,7 +195,9 @@ function toSerializableSettingValue(value: unknown): SerializableSettingValue {
 }
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error || 'Unknown settings error');
+  return error instanceof Error
+    ? error.message
+    : String(error || m.chat_settingsProposalActions_unknownError_fallback());
 }
 
 async function readDaemonSettingValue(definition: AppSettingDefinition): Promise<unknown> {
@@ -247,6 +252,8 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectGroupByRepo.select(state);
     case 'providers.completedSetup':
       return selectHasCompletedProviderSetup.select(state);
+    case 'preferences.language':
+      return selectLanguagePreference.select(state);
     case 'theme.preference':
       return selectThemePreference.select(state);
     case 'theme.activePresetId':
@@ -336,6 +343,9 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       return true;
     case 'providers.completedSetup':
       appStore.dispatch(setHasCompletedProviderSetup(Boolean(value)));
+      return true;
+    case 'preferences.language':
+      appStore.dispatch(setLanguagePreference(String(value ?? '')));
       return true;
     case 'theme.preference':
       if (!isThemePreference(value)) return false;
@@ -545,7 +555,7 @@ export async function applySettingsProposalWork(
       ...change,
       value: parseEditedValue(detail, change),
     })),
-    'Failed to apply settings change',
+    m.chat_settingsProposalActions_applyFailed_label(),
   );
   return {
     reverseChanges,
@@ -555,7 +565,7 @@ export async function applySettingsProposalWork(
 export async function undoSettingsProposalChanges(
   reverseChanges: SettingsProposalReverseChange[],
 ): Promise<void> {
-  await applySettingsTransaction(reverseChanges, 'Failed to undo settings change');
+  await applySettingsTransaction(reverseChanges, m.chat_settingsProposalActions_undoFailed_label());
 }
 
 export async function undoSettingsProposalWork(

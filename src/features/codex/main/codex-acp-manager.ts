@@ -1,7 +1,4 @@
-import {
-  createHash,
-  randomUUID,
-} from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { app } from 'electron';
 import * as fsSync from 'fs';
 import { promises as fs } from 'fs';
@@ -71,114 +68,136 @@ export const MANAGED_CODEX_ACP_INTEGRITY: {
     {
       packageName: '@agentclientprotocol/codex-acp',
       tarballUrl: `https://registry.npmjs.org/@agentclientprotocol/codex-acp/-/codex-acp-${MANAGED_CODEX_ACP_VERSION}.tgz`,
-      integrity: 'sha512-bhFLbGtOMEw6+PAp33vNERb6dXlULOfV3mWbRdps4v7sY7PHha/C2T1dnlG0yVcvBu9W+NYPzL0CAupnVoFTiQ==',
+      integrity:
+        'sha512-bhFLbGtOMEw6+PAp33vNERb6dXlULOfV3mWbRdps4v7sY7PHha/C2T1dnlG0yVcvBu9W+NYPzL0CAupnVoFTiQ==',
     },
     {
       packageName: '@agentclientprotocol/sdk',
       tarballUrl: 'https://registry.npmjs.org/@agentclientprotocol/sdk/-/sdk-1.3.0.tgz',
-      integrity: 'sha512-i3h/efaeuMUFAO1HSfo97QZQnnvMd7wWBYtBsdL6UMZg3a78sk3Ffya5Xu7C7tYsXomXoDXJBAzQF2PcFKAhIQ==',
+      integrity:
+        'sha512-i3h/efaeuMUFAO1HSfo97QZQnnvMd7wWBYtBsdL6UMZg3a78sk3Ffya5Xu7C7tYsXomXoDXJBAzQF2PcFKAhIQ==',
     },
     {
       packageName: '@openai/codex',
       tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.145.0.tgz',
-      integrity: 'sha512-/PSPSFujjjmiyVFvG2yu/grOFhsWdokTH8t2KGWhXSo/M5n/dIDsnbsnO82/7bLtIoDuzQf7ATBUMWqPWQINlQ==',
+      integrity:
+        'sha512-/PSPSFujjjmiyVFvG2yu/grOFhsWdokTH8t2KGWhXSo/M5n/dIDsnbsnO82/7bLtIoDuzQf7ATBUMWqPWQINlQ==',
     },
     {
       packageName: 'bundle-name',
       tarballUrl: 'https://registry.npmjs.org/bundle-name/-/bundle-name-4.1.0.tgz',
-      integrity: 'sha512-tjwM5exMg6BGRI+kNmTntNsvdZS1X8BFYS6tnJ2hdH0kVxM6/eVZ2xy+FqStSWvYmtfFMDLIxurorHwDKfDz5Q==',
+      integrity:
+        'sha512-tjwM5exMg6BGRI+kNmTntNsvdZS1X8BFYS6tnJ2hdH0kVxM6/eVZ2xy+FqStSWvYmtfFMDLIxurorHwDKfDz5Q==',
     },
     {
       packageName: 'default-browser',
       tarballUrl: 'https://registry.npmjs.org/default-browser/-/default-browser-5.5.0.tgz',
-      integrity: 'sha512-H9LMLr5zwIbSxrmvikGuI/5KGhZ8E2zH3stkMgM5LpOWDutGM2JZaj460Udnf1a+946zc7YBgrqEWwbk7zHvGw==',
+      integrity:
+        'sha512-H9LMLr5zwIbSxrmvikGuI/5KGhZ8E2zH3stkMgM5LpOWDutGM2JZaj460Udnf1a+946zc7YBgrqEWwbk7zHvGw==',
     },
     {
       packageName: 'default-browser-id',
       tarballUrl: 'https://registry.npmjs.org/default-browser-id/-/default-browser-id-5.0.1.tgz',
-      integrity: 'sha512-x1VCxdX4t+8wVfd1so/9w+vQ4vx7lKd2Qp5tDRutErwmR85OgmfX7RlLRMWafRMY7hbEiXIbudNrjOAPa/hL8Q==',
+      integrity:
+        'sha512-x1VCxdX4t+8wVfd1so/9w+vQ4vx7lKd2Qp5tDRutErwmR85OgmfX7RlLRMWafRMY7hbEiXIbudNrjOAPa/hL8Q==',
     },
     {
       packageName: 'define-lazy-prop',
       tarballUrl: 'https://registry.npmjs.org/define-lazy-prop/-/define-lazy-prop-3.0.0.tgz',
-      integrity: 'sha512-N+MeXYoqr3pOgn8xfyRPREN7gHakLYjhsHhWGT3fWAiL4IkAt0iDw14QiiEm2bE30c5XX5q0FtAA3CK5f9/BUg==',
+      integrity:
+        'sha512-N+MeXYoqr3pOgn8xfyRPREN7gHakLYjhsHhWGT3fWAiL4IkAt0iDw14QiiEm2bE30c5XX5q0FtAA3CK5f9/BUg==',
     },
     {
       packageName: 'diff',
       tarballUrl: 'https://registry.npmjs.org/diff/-/diff-9.0.0.tgz',
-      integrity: 'sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw==',
+      integrity:
+        'sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw==',
     },
     {
       packageName: 'is-docker',
       tarballUrl: 'https://registry.npmjs.org/is-docker/-/is-docker-3.0.0.tgz',
-      integrity: 'sha512-eljcgEDlEns/7AXFosB5K/2nCM4P7FQPkGc/DWLy5rmFEWvZayGrik1d9/QIY5nJ4f9YsVvBkA6kJpHn9rISdQ==',
+      integrity:
+        'sha512-eljcgEDlEns/7AXFosB5K/2nCM4P7FQPkGc/DWLy5rmFEWvZayGrik1d9/QIY5nJ4f9YsVvBkA6kJpHn9rISdQ==',
     },
     {
       packageName: 'is-in-ssh',
       tarballUrl: 'https://registry.npmjs.org/is-in-ssh/-/is-in-ssh-1.0.0.tgz',
-      integrity: 'sha512-jYa6Q9rH90kR1vKB6NM7qqd1mge3Fx4Dhw5TVlK1MUBqhEOuCagrEHMevNuCcbECmXZ0ThXkRm+Ymr51HwEPAw==',
+      integrity:
+        'sha512-jYa6Q9rH90kR1vKB6NM7qqd1mge3Fx4Dhw5TVlK1MUBqhEOuCagrEHMevNuCcbECmXZ0ThXkRm+Ymr51HwEPAw==',
     },
     {
       packageName: 'is-inside-container',
       tarballUrl: 'https://registry.npmjs.org/is-inside-container/-/is-inside-container-1.0.0.tgz',
-      integrity: 'sha512-KIYLCCJghfHZxqjYBE7rEy0OBuTd5xCHS7tHVgvCLkx7StIoaxwNW3hCALgEUjFfeRk+MG/Qxmp/vtETEF3tRA==',
+      integrity:
+        'sha512-KIYLCCJghfHZxqjYBE7rEy0OBuTd5xCHS7tHVgvCLkx7StIoaxwNW3hCALgEUjFfeRk+MG/Qxmp/vtETEF3tRA==',
     },
     {
       packageName: 'is-wsl',
       tarballUrl: 'https://registry.npmjs.org/is-wsl/-/is-wsl-3.1.1.tgz',
-      integrity: 'sha512-e6rvdUCiQCAuumZslxRJWR/Doq4VpPR82kqclvcS0efgt430SlGIk05vdCN58+VrzgtIcfNODjozVielycD4Sw==',
+      integrity:
+        'sha512-e6rvdUCiQCAuumZslxRJWR/Doq4VpPR82kqclvcS0efgt430SlGIk05vdCN58+VrzgtIcfNODjozVielycD4Sw==',
     },
     {
       packageName: 'open',
       tarballUrl: 'https://registry.npmjs.org/open/-/open-11.0.0.tgz',
-      integrity: 'sha512-smsWv2LzFjP03xmvFoJ331ss6h+jixfA4UUV/Bsiyuu4YJPfN+FIQGOIiv4w9/+MoHkfkJ22UIaQWRVFRfH6Vw==',
+      integrity:
+        'sha512-smsWv2LzFjP03xmvFoJ331ss6h+jixfA4UUV/Bsiyuu4YJPfN+FIQGOIiv4w9/+MoHkfkJ22UIaQWRVFRfH6Vw==',
     },
     {
       packageName: 'powershell-utils',
       tarballUrl: 'https://registry.npmjs.org/powershell-utils/-/powershell-utils-0.1.0.tgz',
-      integrity: 'sha512-dM0jVuXJPsDN6DvRpea484tCUaMiXWjuCn++HGTqUWzGDjv5tZkEZldAJ/UMlqRYGFrD/etByo4/xOuC/snX2A==',
+      integrity:
+        'sha512-dM0jVuXJPsDN6DvRpea484tCUaMiXWjuCn++HGTqUWzGDjv5tZkEZldAJ/UMlqRYGFrD/etByo4/xOuC/snX2A==',
     },
     {
       packageName: 'run-applescript',
       tarballUrl: 'https://registry.npmjs.org/run-applescript/-/run-applescript-7.1.0.tgz',
-      integrity: 'sha512-DPe5pVFaAsinSaV6QjQ6gdiedWDcRCbUuiQfQa2wmWV7+xC9bGulGI8+TdRmoFkAPaBXk8CrAbnlY2ISniJ47Q==',
+      integrity:
+        'sha512-DPe5pVFaAsinSaV6QjQ6gdiedWDcRCbUuiQfQa2wmWV7+xC9bGulGI8+TdRmoFkAPaBXk8CrAbnlY2ISniJ47Q==',
     },
     {
       packageName: 'vscode-jsonrpc',
       tarballUrl: 'https://registry.npmjs.org/vscode-jsonrpc/-/vscode-jsonrpc-9.0.1.tgz',
-      integrity: 'sha512-rfuA6T75H6m5EkbhtEPzre9pT0HPcDI2MMy4+nPFIBks5J8JBAUHD4tRYSgaBOijIEC7SRkC1kKyXTLqbmh9jw==',
+      integrity:
+        'sha512-rfuA6T75H6m5EkbhtEPzre9pT0HPcDI2MMy4+nPFIBks5J8JBAUHD4tRYSgaBOijIEC7SRkC1kKyXTLqbmh9jw==',
     },
     {
       packageName: 'wsl-utils',
       tarballUrl: 'https://registry.npmjs.org/wsl-utils/-/wsl-utils-0.3.1.tgz',
-      integrity: 'sha512-g/eziiSUNBSsdDJtCLB8bdYEUMj4jR7AGeUo96p/3dTafgjHhpF4RiCFPiRILwjQoDXx5MqkBr4fwWtR3Ky4Wg==',
+      integrity:
+        'sha512-g/eziiSUNBSsdDJtCLB8bdYEUMj4jR7AGeUo96p/3dTafgjHhpF4RiCFPiRILwjQoDXx5MqkBr4fwWtR3Ky4Wg==',
     },
     {
       packageName: 'zod',
       tarballUrl: 'https://registry.npmjs.org/zod/-/zod-4.4.3.tgz',
-      integrity: 'sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==',
+      integrity:
+        'sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==',
     },
   ],
   platforms: {
     'darwin-arm64': {
       packageName: '@openai/codex-darwin-arm64',
       tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-darwin-arm64.tgz',
-      integrity: 'sha512-h6aQ0UxnaP8mIM/9/qPAH9MNkRliJo88toq1T36IxNM2L5JSU0TFamu+MZn7YkFgDsrp0RfiI+97Tm8AVVxqtA==',
+      integrity:
+        'sha512-h6aQ0UxnaP8mIM/9/qPAH9MNkRliJo88toq1T36IxNM2L5JSU0TFamu+MZn7YkFgDsrp0RfiI+97Tm8AVVxqtA==',
     },
     'darwin-x64': {
       packageName: '@openai/codex-darwin-x64',
       tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-darwin-x64.tgz',
-      integrity: 'sha512-FCYzVKCa9VoLtg9gVyzKpqylonfgZrfcWZN6HsXAZPeuo8CukdMqdgTUOhDn2V6h3MbqS0z6VqQVKUllN/yKhA==',
+      integrity:
+        'sha512-FCYzVKCa9VoLtg9gVyzKpqylonfgZrfcWZN6HsXAZPeuo8CukdMqdgTUOhDn2V6h3MbqS0z6VqQVKUllN/yKhA==',
     },
     'linux-x64': {
       packageName: '@openai/codex-linux-x64',
       tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-linux-x64.tgz',
-      integrity: 'sha512-u8w8LLv3DvsfrDCoswLIemZ0SoNEXyi511WsfFsSiYUazk9qMsB/NtU8N9vhAfN7mZAxLFoMex4v66JjHuZWwA==',
+      integrity:
+        'sha512-u8w8LLv3DvsfrDCoswLIemZ0SoNEXyi511WsfFsSiYUazk9qMsB/NtU8N9vhAfN7mZAxLFoMex4v66JjHuZWwA==',
     },
     'win32-x64': {
       packageName: '@openai/codex-win32-x64',
       tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-win32-x64.tgz',
-      integrity: 'sha512-u0h9lk094CaXRSqE34SBW2dRaQTPa6fASXqehczWH9QdsU62mBsiAgAdp6tCG4i+YzPmmhjD8FdXNnYGNmwuMg==',
+      integrity:
+        'sha512-u0h9lk094CaXRSqE34SBW2dRaQTPa6fASXqehczWH9QdsU62mBsiAgAdp6tCG4i+YzPmmhjD8FdXNnYGNmwuMg==',
     },
   },
 };
@@ -240,7 +259,10 @@ function getPlatformPackage(): ManagedCodexAcpPackage {
   const key = platformKey();
   const pkg = getManifest().platforms[key];
   if (!pkg) {
-    throw new Error(`Unsupported platform/arch for managed codex-acp: ${getPlatform()}/${getArch()}`);
+    throw new Error(
+      // i18n-ignore (internal platform diagnostic, logged not rendered)
+      `Unsupported platform/arch for managed codex-acp: ${getPlatform()}/${getArch()}`,
+    );
   }
   return pkg;
 }
@@ -322,7 +344,10 @@ async function installManagedCodexAcp(): Promise<ManagedCodexAcpResult> {
 
     await fs.rm(paths.versionDir, { recursive: true, force: true });
 
-    const stageDir = path.join(paths.baseDir, `.tmp-${version}-${process.pid}-${Date.now()}-${randomUUID()}`);
+    const stageDir = path.join(
+      paths.baseDir,
+      `.tmp-${version}-${process.pid}-${Date.now()}-${randomUUID()}`,
+    );
     const installDir = path.join(stageDir, 'install');
 
     try {
@@ -385,7 +410,10 @@ async function cleanupTempDirs(baseDir: string): Promise<void> {
   );
 }
 
-async function downloadAndVerify(pkg: ManagedCodexAcpPackage, destinationPath: string): Promise<void> {
+async function downloadAndVerify(
+  pkg: ManagedCodexAcpPackage,
+  destinationPath: string,
+): Promise<void> {
   await downloadToFile(pkg.tarballUrl, destinationPath);
   await verifyIntegrity(destinationPath, pkg.integrity, pkg.packageName);
 }
@@ -448,10 +476,7 @@ async function extractPackageTarball(tarballPath: string, packageDir: string): P
   await getTar().x({ file: tarballPath, cwd: packageDir, strip: 1 });
 }
 
-async function chmodInstalledBins(
-  versionDir: string,
-  nativePackageName: string,
-): Promise<void> {
+async function chmodInstalledBins(versionDir: string, nativePackageName: string): Promise<void> {
   const { wrapperPath, nativeBinaryPath } = getPathsForVersion(versionDir, nativePackageName);
   await fs.chmod(wrapperPath, 0o755);
   if (getPlatform() !== 'win32') await fs.chmod(nativeBinaryPath, 0o755);
@@ -468,6 +493,7 @@ async function verifyMacCodeSignature(nativeBinaryPath: string): Promise<void> {
   const actualTeamId = teamMatch?.[1];
   if (actualTeamId !== CODEX_APPLE_TEAM_ID) {
     throw new Error(
+      // i18n-ignore (internal signature-verification diagnostic, logged not rendered)
       `Downloaded codex binary signed by unexpected team: expected ${CODEX_APPLE_TEAM_ID}, got ${actualTeamId ?? 'unknown'}`,
     );
   }
@@ -496,9 +522,9 @@ async function runProcess(
   options: { timeoutMs: number; env?: NodeJS.ProcessEnv },
 ): Promise<SpawnResult> {
   const env = options.env
-    ? Object.fromEntries(
+    ? (Object.fromEntries(
         Object.entries(options.env).filter(([, value]) => typeof value === 'string'),
-      ) as Record<string, string>
+      ) as Record<string, string>)
     : undefined;
   const result = await hostExec(command, {
     args,
@@ -509,9 +535,7 @@ async function runProcess(
     throw new Error(`${command} timed out after ${options.timeoutMs}ms`);
   }
   if (result.exitCode !== 0) {
-    throw new Error(
-      `${command} exited with ${result.exitCode}: ${result.stderr || result.stdout}`,
-    );
+    throw new Error(`${command} exited with ${result.exitCode}: ${result.stderr || result.stdout}`);
   }
   return { stdout: result.stdout, stderr: result.stderr };
 }
@@ -535,7 +559,8 @@ async function pruneOldManagedVersions(baseDir: string, currentVersion: string):
 }
 
 function compareVersions(a: string, b: string): number {
-  const parse = (version: string) => version.split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const parse = (version: string) =>
+    version.split('.').map((part) => Number.parseInt(part, 10) || 0);
   const left = parse(a);
   const right = parse(b);
   for (let i = 0; i < Math.max(left.length, right.length); i += 1) {

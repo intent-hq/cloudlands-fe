@@ -19,6 +19,7 @@
 } from '$lib/components/ui/list';
   import { createLogger } from '$lib/utils/client-logger';
   import { ChangeStage } from '$features/file-tracking/types';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('FileChangesList');
 
@@ -104,11 +105,11 @@
     const type = getChangeType(change);
     switch (type) {
       case 'added':
-        return 'Delete';
+        return m.fileTracking_changes_delete_label();
       case 'deleted':
-        return 'Restore';
+        return m.fileTracking_changes_restore_label();
       default:
-        return 'Discard';
+        return m.fileTracking_changes_discard_label();
     }
   }
 
@@ -117,11 +118,11 @@
     const type = getChangeType(change);
     switch (type) {
       case 'added':
-        return 'Delete new file';
+        return m.fileTracking_changes_deleteNewFile_tooltip();
       case 'deleted':
-        return 'Restore deleted file';
+        return m.fileTracking_changes_restoreDeletedFile_tooltip();
       default:
-        return 'Discard changes';
+        return m.fileTracking_changes_discardChanges_tooltip();
     }
   }
 
@@ -244,7 +245,7 @@
   {#if changes.length === 0}
     <!-- No changes message -->
     <div class="p-8 text-center text-subtle">
-      <p class="text-sm">No changes to display</p>
+      <p class="text-sm">{m.fileTracking_changes_noChanges_label()}</p>
     </div>
   {:else if showTreeView && treeData}
     <!-- Tree view -->

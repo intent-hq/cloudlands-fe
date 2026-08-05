@@ -1,5 +1,6 @@
 import type { ProposalActionDetail, SpecialistEditProposal } from '$shared/types/proposal';
-import { parseCompoundModelId } from '$shared/config/provider-config';
+import { selectParsedCompoundModelId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { m } from '$shared/paraglide/messages.js';
 import {
   generateUniqueSpecialistId,
   type SpecialistFileScope,
@@ -19,7 +20,6 @@ import {
 import {
   selectEffectiveBehaviorPrompt,
   selectEffectiveCodingAgent,
-  selectEffectiveModel,
   selectGetFileSpecialist,
   selectSpecialists,
 } from '$store/renderer/slices/specialists/specialists-selectors';
@@ -86,8 +86,9 @@ function buildCurrentSpecialistPayload(
     description: current.description,
     codingAgent:
       fileSpec?.codingAgent ?? current.codingAgent ?? selectEffectiveCodingAgent.select(state, id),
-    model: fileSpec?.model ?? current.defaultModel ?? selectEffectiveModel.select(state, id),
-    modelTier: fileSpec?.modelTier ?? current.defaultModelTier,
+    // Explicit frontmatter model only — the daemon's resolvedModel preview
+    // must never be baked into the file (it would pin a floating default).
+    model: fileSpec?.model || current.defaultModel,
     roleReminder: fileSpec?.roleReminder ?? current.roleReminder,
     behaviorPrompt: fileSpec?.behaviorPrompt ?? selectEffectiveBehaviorPrompt.select(state, id),
     scope,
@@ -157,16 +158,20 @@ export async function applySpecialistProposalWork(
     return { reverse };
   }
 
+  // Fallback when the proposal carries no model: the explicit frontmatter
+  // model only (empty ⇒ the file stays model-less and the daemon resolves the
+  // default) — never the daemon's resolvedModel preview, which would bake a
+  // floating default into the file as a pin.
   const fallbackModel = current
-    ? selectEffectiveModel.select(state, current.id)
+    ? (current.defaultModel ?? '')
     : selectSelectedModel.select(state);
   const model = stringField(proposal, detail, 'model', fallbackModel).trim();
-  const { providerId } = parseCompoundModelId(model);
+  const { providerId } = selectParsedCompoundModelId.select(state, model);
   const description = stringField(
     proposal,
     detail,
     'description',
-    current?.description ?? 'Custom specialist',
+    current?.description ?? m.chat_specialistProposalActions_customSpecialist_fallback(),
   ).trim();
   const prompt = stringField(
     proposal,
@@ -174,18 +179,15 @@ export async function applySpecialistProposalWork(
     'prompt',
     current ? selectEffectiveBehaviorPrompt.select(state, current.id) : '',
   );
-  const modelChanged = !!current && model !== fallbackModel;
-
   appStore.dispatch(
     saveFileSpecialist({
       id,
       name,
-      description: description || 'Custom specialist',
+      description: description || m.chat_specialistProposalActions_customSpecialist_fallback(),
       codingAgent:
         payload.codingAgent ??
         (current ? selectEffectiveCodingAgent.select(state, current.id) : providerId),
       model,
-      modelTier: modelChanged ? undefined : current?.defaultModelTier,
       roleReminder: payload.roleReminder ?? current?.roleReminder,
       behaviorPrompt: prompt,
       scope,

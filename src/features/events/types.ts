@@ -47,6 +47,19 @@ export interface CanonicalAgentStatusFields {
   isProcessing: boolean | null;
   isResponding: boolean | null;
   stopReason: string | null;
+  /**
+   * ISO timestamp of when the terminal stop/failure occurred. Accompanies
+   * `stopReason` on terminal lifecycle events; optional on the wire (older
+   * daemons omit it).
+   */
+  stopReasonTimestamp?: string | null;
+  /**
+   * Derived corrupted/poisoned-session flag (monorepo#940). Present (`true`)
+   * only on the terminal-failure `agent:status-changed` when the failure
+   * classifies as session-fatal; omitted otherwise (absent ≠ present-false on
+   * the wire) and on older daemons.
+   */
+  sessionCorrupted?: boolean;
 }
 
 // ============================================================================
@@ -97,12 +110,8 @@ export const WorkspaceEventType = {
 
   // Agent streaming events (for WebSocket API)
   AgentStreamStart: 'agent:stream:start',
-  AgentStreamChunk: 'agent:stream:chunk',
-  AgentStreamContentBlocks: 'agent:stream:content-blocks',
+  AgentStreamActivity: 'agent:stream:activity',
   AgentStreamEnd: 'agent:stream:end',
-  AgentStreamMessage: 'agent:stream:message',
-  AgentStreamToolUse: 'agent:stream:tool_use',
-  AgentStreamToolResult: 'agent:stream:tool_result',
 
   // Agent queue events (for WebSocket API)
   AgentQueueUpdated: 'agent:queue:updated',
@@ -250,6 +259,8 @@ export interface AgentMessageEvent extends WorkspaceEventBase {
     model?: string;
     temperature?: number;
     reasoning?: string;
+    /** Turn-correlation id stamped on the user-row echo (PROTOCOL §6.6); omitted when absent. */
+    turnId?: string;
   };
 }
 
@@ -357,6 +368,8 @@ export interface AgentFailedEvent extends WorkspaceEventBase {
     turnNumber?: number;
     model?: string;
     respondingToMessageId?: string;
+    /** Turn-correlation id of the failed turn (PROTOCOL §6.6); omitted by older daemons. */
+    turnId?: string;
   };
 }
 
@@ -465,6 +478,8 @@ export interface AgentIdleEvent extends WorkspaceEventBase {
     specialist?: string;
     /** Whether this is a background agent (not user-facing) */
     isBackground?: boolean;
+    /** Whether the agent is awaiting delegated sub-agents (pending completion watches); absent on older daemons */
+    isWaitingForOtherAgents?: boolean;
     /** Explicit completion report set by the agent via report_to_parent tool */
     completionReport?: string;
     /** ID of the parent agent that created this agent (for delegation) */
@@ -548,7 +563,7 @@ export interface AgentUnsubscribedEvent extends WorkspaceEventBase {
     agentName: string;
     subscriptionId: string;
     /** Reason for unsubscription */
-    reason?: 'manual-unsubscribe' | 'oneshot-fired' | 'delegation-complete';
+    reason?: 'manual-unsubscribe' | 'delegation-complete';
     /** Group ID if this was a delegation group subscription */
     groupId?: string;
   };
@@ -713,6 +728,8 @@ export interface AgentQueueProcessingEvent extends WorkspaceEventBase {
     messageId: string;
     /** Optional content of the message being processed (for UI display) */
     content?: string;
+    /** Turn-correlation id of the drained entry (PROTOCOL §6.5/§6.6); omitted only for legacy pre-#1022 entries. */
+    turnId?: string;
     [key: string]: any;
   };
 }
@@ -793,7 +810,7 @@ export interface AgentProcessEvictedEvent extends WorkspaceEventBase {
  * §6.6 / §7). Only agent-initiated (harness-wake) turns emit this event;
  * prompt (user-initiated) turns never do. `messageId` is the assistant
  * messageId minted for the wake turn — the same id carried by the turn's
- * `agent:stream:chunk` / `agent:tool:call` events and the persisted row.
+ * `agent:stream:activity` / `agent:tool:call` events and the persisted row.
  */
 export interface AgentStreamStartEvent extends WorkspaceEventBase {
   type: 'agent:stream:start';
@@ -806,26 +823,25 @@ export interface AgentStreamStartEvent extends WorkspaceEventBase {
 }
 
 /**
- * Emitted when an agent streams a text chunk (token-by-token)
+ * Content-free per-agent activity signal (PROTOCOL §7): the turn produced
+ * streamed output, but the raw content itself travels only on the §7.1
+ * `chat.subscribe` channel. Leading-edge throttled per agent — the first
+ * activity of a turn emits immediately, then at most one emission per
+ * second; the throttle resets when the turn ends. `messageId` is the turn's
+ * assistant message id (§7.1). Carries the server-derived live preview
+ * (`lastAgentResponse` / `digest` from the streamed-so-far text, same values
+ * as the `AgentLite` live-turn overlay, intentd#792) so watched-agent rows
+ * update push-style without a refetch — fields are omitted until derivable.
  */
-export interface AgentStreamChunkEvent extends WorkspaceEventBase {
-  type: 'agent:stream:chunk';
+export interface AgentStreamActivityEvent extends WorkspaceEventBase {
+  type: 'agent:stream:activity';
   data: {
     agentId: string;
-    content: any;
-    streamId?: string;
-  };
-}
-
-/**
- * Emitted when an agent streams content blocks (tool calls, structured content)
- */
-export interface AgentStreamContentBlocksEvent extends WorkspaceEventBase {
-  type: 'agent:stream:content-blocks';
-  data: {
-    agentId: string;
-    content: any;
-    streamId?: string;
+    messageId: string;
+    /** Live preview of the turn's last response text (trailing 500 chars). */
+    lastAgentResponse?: string;
+    /** Live `<agent_digest>` value from the streamed-so-far text. */
+    digest?: string;
   };
 }
 
@@ -837,6 +853,18 @@ export interface AgentStreamEndEvent extends WorkspaceEventBase {
   data: {
     agentId: string;
     streamId?: string;
+    /**
+     * Turn-correlation id (PROTOCOL §6.6) — stamped on the terminal
+     * `agent:stream:end` of a correlated turn; omitted when absent.
+     */
+    turnId?: string;
+    /**
+     * Final live-preview values re-derived from the full turn text (the last
+     * throttled `agent:stream:activity` may have missed the response tail).
+     * Omitted on transcript-free terminal emits (pre-output failures).
+     */
+    lastAgentResponse?: string;
+    digest?: string;
   };
 }
 
@@ -916,8 +944,7 @@ export type SpecificWorkspaceEvent =
   | McpNotificationEvent
   // Agent streaming events
   | AgentStreamStartEvent
-  | AgentStreamChunkEvent
-  | AgentStreamContentBlocksEvent
+  | AgentStreamActivityEvent
   | AgentStreamEndEvent
   // Agent user message events (cross-client sync)
   | AgentUserMessageSentEvent
@@ -1359,7 +1386,7 @@ export interface AgentUnsubscribedPayload {
   workspaceId?: string;
   subscriptionId: string;
   /** Reason for unsubscription */
-  reason?: 'manual-unsubscribe' | 'oneshot-fired' | 'delegation-complete';
+  reason?: 'manual-unsubscribe' | 'delegation-complete';
   /** Group ID if this was a delegation group subscription */
   groupId?: string;
 }
@@ -1378,6 +1405,7 @@ export interface AgentIdlePayload extends CanonicalAgentStatusFields {
   lastResponseSummary?: string;
   taskNoteId?: string;
   isBackground?: boolean;
+  isWaitingForOtherAgents?: boolean;
   completionReport?: string;
   parentAgentId?: string;
   respondingToMessageId?: string;

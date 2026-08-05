@@ -5,6 +5,7 @@
  * Ported from VS Code extension's mcp-options.ts
  */
 
+import { m } from '$shared/paraglide/messages.js';
 import type { McpTransportType, McpAuthType } from './types';
 
 export type UserInputType = 'argument' | 'environmentVariable';
@@ -33,11 +34,15 @@ export interface McpInstallOption {
   authType?: McpAuthType;
 }
 
-// MCP preset options data
+// MCP preset options data. `label` doubles as the server-name identifier
+// (normalizeServerName), so labels stay literal; localized copy uses getters
+// so it re-evaluates with the active locale on each render.
 export const mcpOptions: McpInstallOption[] = [
   {
     label: 'Figma',
-    description: 'Interact with Figma design files and metadata.',
+    get description() {
+      return m.settings_mcp_preset_figma_description();
+    },
     iconName: 'figma',
     type: 'http',
     url: 'https://mcp.figma.com/mcp',
@@ -45,14 +50,20 @@ export const mcpOptions: McpInstallOption[] = [
   },
   {
     label: 'Redis',
-    description: 'Real-time data platform for building fast apps',
+    get description() {
+      return m.settings_mcp_preset_redis_description();
+    },
     iconName: 'redis',
     command: 'uvx',
     args: ['--from', 'redis-mcp-server@latest', 'redis-mcp-server', '--url'],
     userInput: [
       {
-        label: 'Redis connection URL',
-        description: 'Enter your connection URL (redis://localhost:6379/0)',
+        get label() {
+          return m.settings_mcp_preset_redis_urlInput_label();
+        },
+        get description() {
+          return m.settings_mcp_preset_redis_urlInput_description();
+        },
         placeholder: 'rediss://<USERNAME>:<PASSWORD>@<HOST>:<PORT>',
         correspondingArg: '--url',
         type: 'argument',
@@ -61,14 +72,20 @@ export const mcpOptions: McpInstallOption[] = [
   },
   {
     label: 'MongoDB',
-    description: 'Optimize database queries and performance.',
+    get description() {
+      return m.settings_mcp_preset_mongodb_description();
+    },
     iconName: 'mongodb',
     command: 'npx',
     args: ['-y', 'mongodb-mcp-server', '--connectionString'],
     userInput: [
       {
-        label: 'MongoDB Connection String',
-        description: 'Enter your MongoDB connection string',
+        get label() {
+          return m.settings_mcp_preset_mongodb_connectionInput_label();
+        },
+        get description() {
+          return m.settings_mcp_preset_mongodb_connectionInput_description();
+        },
         placeholder: 'mongodb://username:password@host:port/database', // pragma: allowlist secret
         correspondingArg: '--connectionString',
         type: 'argument',
@@ -77,21 +94,31 @@ export const mcpOptions: McpInstallOption[] = [
   },
   {
     label: 'CircleCI',
-    description: 'Debug builds and improve CI/CD pipelines.',
+    get description() {
+      return m.settings_mcp_preset_circleci_description();
+    },
     iconName: 'circleci',
     command: 'npx',
     args: ['-y', '@circleci/mcp-server-circleci'],
     userInput: [
       {
-        label: 'CircleCI Token',
-        description: 'Enter your CircleCI token',
+        get label() {
+          return m.settings_mcp_preset_circleci_tokenInput_label();
+        },
+        get description() {
+          return m.settings_mcp_preset_circleci_tokenInput_description();
+        },
         placeholder: 'YOUR_CIRCLE_CI_TOKEN',
         type: 'environmentVariable',
         envVarName: 'CIRCLECI_TOKEN',
       },
       {
-        label: 'Base URL',
-        description: 'Enter the base URL for your CircleCI instance',
+        get label() {
+          return m.settings_mcp_preset_circleci_baseUrlInput_label();
+        },
+        get description() {
+          return m.settings_mcp_preset_circleci_baseUrlInput_description();
+        },
         placeholder: 'https://circleci.com',
         defaultValue: 'https://circleci.com',
         type: 'environmentVariable',
@@ -101,7 +128,9 @@ export const mcpOptions: McpInstallOption[] = [
   },
   {
     label: 'Vercel',
-    description: 'Manage deployments, projects, and search docs.',
+    get description() {
+      return m.settings_mcp_preset_vercel_description();
+    },
     iconName: 'vercel',
     command: 'npx',
     args: ['-y', 'mcp-remote', 'https://mcp.vercel.com'],
@@ -109,7 +138,9 @@ export const mcpOptions: McpInstallOption[] = [
   },
   {
     label: 'Railway',
-    description: 'Simplifies infrastructure from servers to observability.',
+    get description() {
+      return m.settings_mcp_preset_railway_description();
+    },
     iconName: 'railway',
     command: 'npx',
     args: ['-y', '@railway/mcp-server'],
@@ -117,7 +148,9 @@ export const mcpOptions: McpInstallOption[] = [
   },
   {
     label: 'Convex',
-    description: 'The backend platform that keeps your app in sync.',
+    get description() {
+      return m.settings_mcp_preset_convex_description();
+    },
     iconName: 'convex',
     command: 'npx',
     args: ['-y', 'convex@latest', 'mcp', 'start'],
@@ -125,14 +158,20 @@ export const mcpOptions: McpInstallOption[] = [
   },
   {
     label: 'Snowflake',
-    description: 'Cortex AI, object management, SQL orchestration.',
+    get description() {
+      return m.settings_mcp_preset_snowflake_description();
+    },
     iconName: 'snowflake',
     command: 'uvx',
     args: ['snowflake-labs-mcp', '--service-config-file'],
     userInput: [
       {
-        label: 'Service Config File Path',
-        description: 'Path to your Snowflake MCP configuration YAML file',
+        get label() {
+          return m.settings_mcp_preset_snowflake_configInput_label();
+        },
+        get description() {
+          return m.settings_mcp_preset_snowflake_configInput_description();
+        },
         placeholder: '/path/to/config.yaml',
         correspondingArg: '--service-config-file',
         type: 'argument',
@@ -141,7 +180,9 @@ export const mcpOptions: McpInstallOption[] = [
   },
   {
     label: 'Context7',
-    description: 'Package documentation lookup.',
+    get description() {
+      return m.settings_mcp_preset_context7_description();
+    },
     iconName: 'context7',
     command: 'npx',
     args: ['-y', '@upstash/context7-mcp@latest'],
@@ -149,15 +190,20 @@ export const mcpOptions: McpInstallOption[] = [
   },
   {
     label: 'Playwright',
-    description: 'Browser automation and testing.',
+    get description() {
+      return m.settings_mcp_preset_playwright_description();
+    },
     iconName: 'playwright',
     command: 'npx',
     args: ['-y', '@playwright/mcp@latest'],
     userInput: [],
   },
   {
+    // i18n-ignore (label doubles as the server-name identifier)
     label: 'Sequential Thinking',
-    description: 'Think through complex problems step-by-step.',
+    get description() {
+      return m.settings_mcp_preset_sequentialThinking_description();
+    },
     iconName: 'brain',
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-sequential-thinking'],
@@ -165,21 +211,31 @@ export const mcpOptions: McpInstallOption[] = [
   },
   {
     label: 'Slack',
-    description: 'Read from and post to Slack channels.',
+    get description() {
+      return m.settings_mcp_preset_slack_description();
+    },
     iconName: 'slack',
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-slack'],
     userInput: [
       {
-        label: 'Slack Bot Token',
-        description: 'Enter your Slack Bot Token (xoxb-...)',
+        get label() {
+          return m.settings_mcp_preset_slack_botTokenInput_label();
+        },
+        get description() {
+          return m.settings_mcp_preset_slack_botTokenInput_description();
+        },
         placeholder: 'xoxb-...',
         type: 'environmentVariable',
         envVarName: 'SLACK_BOT_TOKEN',
       },
       {
-        label: 'Slack Team ID',
-        description: 'Enter your Slack Team ID (optional)',
+        get label() {
+          return m.settings_mcp_preset_slack_teamIdInput_label();
+        },
+        get description() {
+          return m.settings_mcp_preset_slack_teamIdInput_description();
+        },
         placeholder: 'T01234567',
         type: 'environmentVariable',
         envVarName: 'SLACK_TEAM_ID',

@@ -10,16 +10,12 @@ import {
   type Specialist,
 } from "$lib/constants/specialists";
 import {
-  getDefaultModelForProvider,
-  getDefaultProviderId,
-  PROVIDER_MODEL_TIERS,
-} from "$shared/config/provider-config";
-import {
     selectActiveProviderId,
     selectIsActiveProviderAvailable,
 } from "../provider-settings/provider-settings-selectors";
 import type { FileSpecialist, SpecialistOverrides } from "./specialists-slice";
 import { selectGitHubAuthIsAuthenticated } from "../github-auth/github-auth-selectors";
+import { isRedundantBuiltInOverride } from "$lib/components/settings/utils/builtin-override-redundancy";
 // ============================================================================
 // Basic state selectors
 // ============================================================================
@@ -89,18 +85,18 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
     for (const file of fileSpecialists) {
         if (!seen.has(file.id) && selectIsSpecialistVisible.select(state, file.id)) {
             seen.add(file.id);
-            const effectiveTier = file.modelTier || (!file.model ? 'balanced' : undefined);
             result.push({
                 id: file.id,
                 name: file.name,
                 description: file.description,
                 codingAgent: file.codingAgent,
                 defaultModel: file.model || undefined,
-                defaultModelTier: effectiveTier,
                 defaultBehaviorPrompt: file.behaviorPrompt,
                 roleReminder: file.roleReminder,
                 source: file.source,
                 hidden: file.hidden,
+                resolvedModel: file.resolvedModel,
+                resolvedProvider: file.resolvedProvider,
             });
         }
     }
@@ -170,32 +166,33 @@ export const selectSpecialistById = store.createSelector((state, specialistId: s
 export const selectSpecialistName = store.createSelector((state, specialistId: string): string | null => {
     return selectSpecialistById.select(state, specialistId)?.name ?? null;
 });
-/**
- * Get the effective model for a specialist (file override → bundled default
- * → tier resolution). Returns `''` when the effective coding agent is
- * unresolvable (see `selectEffectiveCodingAgent`) since a tier can't resolve
- * to a concrete model without a provider — callers should treat `''` as "no
- * model available" rather than falling back to a hardcoded default.
- */
+/** Get the effective model for a specialist (file override → daemon-resolved preview) */
 export const selectEffectiveModel = store.createSelector((state, specialistId: string): string => {
     const specialists = selectSpecialists.select(state);
     const specialist = specialists.find((s: Specialist) => s.id === specialistId);
     if (!specialist)
         return '';
-    // Wave 2: File specialists already have the correct model baked in.
-    // No need to check userOverrides — they're deprecated.
-    // Resolve the model tier to an actual model ID for the active provider
-    if (specialist.defaultModelTier) {
-        const providerId = selectEffectiveCodingAgent.select(state, specialistId);
-        if (providerId in PROVIDER_MODEL_TIERS) {
-            const baseModel = getDefaultModelForProvider(providerId, specialist.defaultModelTier);
-            const defaultProviderId = getDefaultProviderId();
-            return providerId !== defaultProviderId ? `${providerId}:${baseModel}` : baseModel;
-        }
-        // Provider has no tier mapping — fall through
+    // Explicit frontmatter model wins, mirroring the daemon's model-first
+    // precedence (resolve_model, PROTOCOL §5.11). Otherwise surface the
+    // daemon-computed `resolvedModel` preview from the wire — no client-side
+    // tier/preference resolution. Empty string means "provider CLI default".
+    if (specialist.defaultModel) {
+        return specialist.defaultModel;
     }
-    return specialist.defaultModel ?? '';
+    return specialist.resolvedModel ?? '';
 });
+
+/**
+ * Get the explicit frontmatter model for a specialist, or undefined when the
+ * specialist inherits (no `model:` key in any winning tier). Distinct from
+ * `selectEffectiveModel`, which falls back to the daemon-resolved preview.
+ */
+export const selectExplicitModel = store.createSelector((state, specialistId: string): string | undefined => {
+    const specialists = selectSpecialists.select(state);
+    const specialist = specialists.find((s: Specialist) => s.id === specialistId);
+    return specialist?.defaultModel || undefined;
+});
+
 /** Get the effective behavior prompt for a specialist (file override → bundled default) */
 export const selectEffectiveBehaviorPrompt = store.createSelector((state, specialistId: string): string => {
     const specialists = selectSpecialists.select(state);
@@ -213,12 +210,18 @@ export const selectIsBuiltIn = store.createSelector((state, specialistId: string
 export const selectIsFileBased = store.createSelector((state, specialistId: string): boolean => {
     return !!getItem(state.specialists.fileSpecialists, specialistId);
 });
-/** Check if a built-in specialist has been overridden by a user file */
+/**
+ * Check if a built-in specialist has been overridden by a user file that
+ * actually differs from the bundled defaults. A lingering override file that
+ * is identical to the bundled definition (no model pin, all compared fields
+ * equal) never reads as "Modified" (monorepo#1450).
+ */
 export const selectHasOverrides = store.createSelector((state, specialistId: string): boolean => {
     const isBuiltIn = state.specialists.bundledSpecialists.some((s: Specialist) => s.id === specialistId);
     if (!isBuiltIn) return false;
     const file = getItem(state.specialists.fileSpecialists, specialistId);
-    return !!file && file.source === 'user';
+    if (!file || file.source !== 'user') return false;
+    return !isRedundantBuiltInOverride(file, state.specialists.bundledSpecialists);
 });
 /** Get a file specialist by ID */
 export const selectGetFileSpecialist = store.createSelector((state, specialistId: string): FileSpecialist | undefined => {

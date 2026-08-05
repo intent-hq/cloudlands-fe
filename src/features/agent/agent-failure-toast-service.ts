@@ -1,27 +1,33 @@
 /**
  * Agent-failure toast service — renders one persistent bottom-left toast per
- * failure group from the agent-failure registry, with a Retry All action.
+ * FAILED AGENT from the agent-failure registry, with Retry and Switch To
+ * actions. There is deliberately no error grouping and no "Retry All": a
+ * grouped mass-retry can accidentally restart agents a coordinator is
+ * already recovering.
  *
  * Subscribes to `subscribeToAgentFailures()` and drives `toast.custom(...)`
- * with a STABLE per-group toast id (`agent-failure:<groupKey>`) so the toast
- * updates in place as agents join/leave the group, and auto-dismisses when a
- * group empties. Manual close leaves the registry intact: the group's newest
- * `at` is recorded and the toast re-shows only when a NEWER failure lands in
- * the group.
+ * with a STABLE per-agent toast id (`agent-failure:<agentId>`) so the toast
+ * updates in place when the same agent re-fails, and auto-dismisses when the
+ * agent leaves error state or is deleted. Manual close leaves the registry
+ * intact: the entry's `at` is recorded and the toast re-shows only when a
+ * NEWER failure lands for that agent.
  *
- * Retry All calls `appClient.agents.retry(agentId, workspaceId)` for every
- * entry; `ok:true` removes the entry from the registry (the daemon's
+ * Retry calls `appClient.agents.retry(agentId, workspaceId)` for that one
+ * agent; `ok:true` removes the entry from the registry (the daemon's
  * `agent:status-changed` event converges other state — no store dispatches
  * here, mirroring ChatPanel.handleRetry semantics); `ok:false` keeps the
  * entry and surfaces a brief failure note on the toast. The button is
- * disabled while retries are in flight.
+ * disabled while the retry is in flight. The click also navigates to the
+ * agent's workspace with its chat drawer open (chief-of-staff failures open
+ * the sidebar Assistant panel instead), regardless of the retry RPC outcome.
+ * Switch To performs the SAME navigation but never calls `agent.retry`.
  *
  * Installed as a store middleware (`createAgentFailureToastMiddleware`) that
  * subscribes lazily on the first dispatched action — the same pattern as the
  * daemon-events bridge it rides alongside. Dependency-light per AGENTS.md:
  * no selector imports; names resolve via one-time reads off `appStore.state`
- * with graceful fallback to counts only. The toast lib and the Svelte
- * component are imported lazily (repo convention for non-component modules).
+ * with graceful fallbacks. The toast lib and the Svelte component are
+ * imported lazily (repo convention for non-component modules).
  */
 import type { StoreMiddleware } from '$lib/store-shim/types';
 import type { AgentSession, Workspace } from '$shared/types';
@@ -29,44 +35,49 @@ import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import {
   getAgentFailureEntry,
-  listAgentFailureGroups,
+  listAgentFailureEntries,
   removeAgentFailure,
   subscribeToAgentFailures,
-  type AgentFailureGroup,
+  type AgentFailureEntry,
 } from './agent-failure-registry';
 import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('AgentFailureToastService');
 
-/** Cap on the representative error message length shown in the toast. */
+/** Cap on the error message length shown in the toast. */
 const ERROR_SUMMARY_MAX_CHARS = 200;
-/** Max resolved "Agent — Workspace" lines before collapsing to "+N more". */
-const MAX_DETAIL_LINES = 5;
 
-/** Per-group transient toast state (never Redux, gone on reload). */
-interface GroupToastState {
-  /** True while this group's toast is currently shown. */
+/** Per-agent transient toast state (never Redux, gone on reload). */
+interface AgentToastState {
+  /** True while this agent's toast is currently shown. */
   visible: boolean;
-  /** True while Retry All requests are in flight (button disabled). */
+  /** True while this agent's retry request is in flight (button disabled). */
   retrying: boolean;
-  /** Brief note when some retries failed; cleared on the next attempt. */
+  /** Brief note when the retry failed; cleared on the next attempt. */
   retryNote?: string;
-  /** Newest entry `at` when the user manually closed the toast; the toast
-   *  re-shows only when an entry NEWER than this lands in the group. */
+  /** Entry `at` when the user manually closed the toast; the toast re-shows
+   *  only when a NEWER failure lands for this agent. */
   dismissedThroughAt?: number;
 }
 
-const stateByGroup = new Map<string, GroupToastState>();
+const stateByAgent = new Map<string, AgentToastState>();
 
 let installed = false;
 let unsubscribe: (() => void) | null = null;
 /** Monotonic render generation — stale async renders are dropped. */
 let renderGeneration = 0;
 
-/** Stable toast id for a failure group (in-place sonner updates). */
-export function agentFailureToastId(groupKey: string): string {
-  return `agent-failure:${groupKey}`;
+/** Stable toast id for a failed agent (in-place sonner updates). */
+export function agentFailureToastId(agentId: string): string {
+  return `agent-failure:${agentId}`;
 }
+
+/**
+ * Wrapper class for the Sonner toast element — the component is content-only,
+ * so the single wrapper border carries the destructive tint.
+ */
+const WRAPPER_CLASS = '!border-destructive/50';
 
 /** Lazily pull the toast lib so this middleware-reachable module stays light.
  *  The import promise is cached — concurrent registry notifications must not
@@ -88,6 +99,36 @@ function getToastComponent() {
     );
   }
   return toastComponentPromise;
+}
+
+/**
+ * Lazily pull the connected key-slot resolver (imports the store/selectors).
+ * The badge is optional: an import or resolution failure degrades to a `null`
+ * key slot so the toast still renders (badge-less), and a failed import is
+ * not cached so a later call can retry it.
+ */
+type KeySlotResolver = (workspaceId: string | undefined) => number | null;
+let keySlotResolverPromise: Promise<KeySlotResolver> | null = null;
+function getKeySlotResolver(): Promise<KeySlotResolver> {
+  if (!keySlotResolverPromise) {
+    keySlotResolverPromise = import('$features/hardware-console/assignment/connected-key-slot')
+      .then((module): KeySlotResolver => {
+        return (workspaceId) => {
+          try {
+            return module.resolveConnectedWorkspaceKeySlot(workspaceId);
+          } catch (error) {
+            logger.warn('Key-slot resolution failed — toast renders without badge', { error });
+            return null;
+          }
+        };
+      })
+      .catch((error): KeySlotResolver => {
+        keySlotResolverPromise = null;
+        logger.warn('Key-slot resolver unavailable — toast renders without badge', { error });
+        return () => null;
+      });
+  }
+  return keySlotResolverPromise;
 }
 
 /** One-time agent-name read off `appStore.state` (no selector imports). */
@@ -113,187 +154,217 @@ function truncate(text: string, maxChars: number): string {
   return text.length > maxChars ? `${text.slice(0, maxChars - 1)}…` : text;
 }
 
-/** Newest failure timestamp in the group (entries are oldest-first). */
-function newestAt(group: AgentFailureGroup): number {
-  return group.entries[group.entries.length - 1]?.at ?? 0;
-}
-
-function buildToastProps(group: AgentFailureGroup, state: GroupToastState) {
-  const count = group.entries.length;
-  const firstAgentName = resolveAgentName(group.entries[0].agentId);
-  const title =
-    count === 1
-      ? firstAgentName
-        ? `${firstAgentName} failed`
-        : '1 agent failed'
-      : `${count} agents failed`;
-  const retryLabel =
-    count === 1
-      ? firstAgentName
-        ? `Retry ${firstAgentName}`
-        : 'Retry'
-      : `Retry All ${count} Agents`;
-
-  // Lines are keyed by agentId — labels can collide (same-named agents in one
-  // workspace) and duplicate keys crash Svelte 5 keyed each blocks.
-  const detailLines: Array<{ key: string; label: string }> = [];
-  for (const entry of group.entries.slice(0, MAX_DETAIL_LINES)) {
-    const agentName = resolveAgentName(entry.agentId);
-    if (!agentName) continue;
-    const workspaceName = resolveWorkspaceName(entry.workspaceId);
-    detailLines.push({
-      key: entry.agentId,
-      label: workspaceName ? `${agentName} — ${workspaceName}` : agentName,
-    });
-  }
-  // Unlisted = beyond the cap PLUS skipped-unresolvable entries above.
-  const unlistedCount = count - detailLines.length;
-  if (detailLines.length > 0 && unlistedCount > 0) {
-    detailLines.push({ key: '__more__', label: `+${unlistedCount} more` });
-  }
+function buildToastProps(
+  entry: AgentFailureEntry,
+  state: AgentToastState,
+  resolveKeySlot: (workspaceId: string | undefined) => number | null,
+) {
+  const agentName = resolveAgentName(entry.agentId);
+  const workspaceName = resolveWorkspaceName(entry.workspaceId);
+  const title = agentName
+    ? m.agent_failureToast_agentFailed_title({ name: agentName })
+    : m.agent_failureToast_agentFailedUnknown_title();
+  const contextLine =
+    agentName && workspaceName
+      ? m.agent_failureToast_agentWorkspace_label({ agent: agentName, workspace: workspaceName })
+      : (workspaceName ?? undefined);
 
   return {
     title,
-    errorSummary: truncate(group.error, ERROR_SUMMARY_MAX_CHARS),
-    detailLines,
-    retryLabel,
+    errorSummary: truncate(entry.error, ERROR_SUMMARY_MAX_CHARS),
+    contextLine,
+    retryLabel: agentName
+      ? m.agent_failureToast_retryAgent_label({ name: agentName })
+      : m.agent_failureToast_retry_label(),
     retrying: state.retrying,
     retryNote: state.retryNote,
-    onRetry: () => void retryGroup(group.groupKey),
-    onClose: () => void closeGroupToast(group.groupKey),
+    keySlot: resolveKeySlot(entry.workspaceId),
+    onRetry: () => void retryAgent(entry.agentId),
+    onSwitchTo: () => void switchToAgent(entry.agentId),
+    onClose: () => void closeAgentToast(entry.agentId),
   };
 }
 
 /**
  * Render the current registry snapshot: show/update one toast per visible
- * group, dismiss toasts for groups that emptied. Serialized per generation —
- * a render started before a newer snapshot arrived is dropped.
+ * failed agent, dismiss toasts for agents that recovered or were deleted.
+ * Serialized per generation — a render started before a newer snapshot
+ * arrived is dropped.
  */
-async function renderGroups(groups: AgentFailureGroup[]): Promise<void> {
+async function renderEntries(entries: AgentFailureEntry[]): Promise<void> {
   const generation = ++renderGeneration;
-  const [toast, AgentFailureToast] = await Promise.all([getToast(), getToastComponent()]);
+  const [toast, AgentFailureToast, resolveKeySlot] = await Promise.all([
+    getToast(),
+    getToastComponent(),
+    getKeySlotResolver(),
+  ]);
   if (generation !== renderGeneration) return;
 
-  const liveKeys = new Set(groups.map((group) => group.groupKey));
+  const liveAgentIds = new Set(entries.map((entry) => entry.agentId));
 
-  // Dismiss + forget toast state for groups that no longer exist.
-  for (const [groupKey, state] of stateByGroup) {
-    if (liveKeys.has(groupKey)) continue;
-    if (state.visible) toast.dismiss(agentFailureToastId(groupKey));
-    stateByGroup.delete(groupKey);
+  // Dismiss + forget toast state for agents no longer in the registry.
+  for (const [agentId, state] of stateByAgent) {
+    if (liveAgentIds.has(agentId)) continue;
+    if (state.visible) toast.dismiss(agentFailureToastId(agentId));
+    stateByAgent.delete(agentId);
   }
 
-  for (const group of groups) {
-    let state = stateByGroup.get(group.groupKey);
+  for (const entry of entries) {
+    let state = stateByAgent.get(entry.agentId);
     if (!state) {
       state = { visible: false, retrying: false };
-      stateByGroup.set(group.groupKey, state);
+      stateByAgent.set(entry.agentId, state);
     }
 
-    // Manually closed: stay hidden unless a NEWER failure joined the group.
+    // Manually closed: stay hidden unless a NEWER failure landed.
     if (state.dismissedThroughAt !== undefined) {
-      if (newestAt(group) <= state.dismissedThroughAt) continue;
+      if (entry.at <= state.dismissedThroughAt) continue;
       state.dismissedThroughAt = undefined;
     }
 
     toast.custom(AgentFailureToast, {
-      id: agentFailureToastId(group.groupKey),
-      componentProps: buildToastProps(group, state),
+      id: agentFailureToastId(entry.agentId),
+      componentProps: buildToastProps(entry, state, resolveKeySlot),
       duration: Number.POSITIVE_INFINITY,
+      class: WRAPPER_CLASS,
     });
     state.visible = true;
   }
 }
 
-/** Re-render one group's toast in place from the current registry snapshot. */
-function rerenderGroup(groupKey: string): void {
-  const groups = listAgentFailureGroups().filter((group) => group.groupKey === groupKey);
-  if (groups.length === 0) return;
-  const state = stateByGroup.get(groupKey);
+/** Re-render one agent's toast in place from the current registry snapshot. */
+function rerenderAgent(agentId: string): void {
+  const entry = getAgentFailureEntry(agentId);
+  if (!entry) return;
+  const state = stateByAgent.get(agentId);
   if (!state || !state.visible) return;
-  void renderSingleGroup(groups[0], state);
+  void renderSingleEntry(entry, state);
 }
 
-async function renderSingleGroup(group: AgentFailureGroup, state: GroupToastState): Promise<void> {
-  const [toast, AgentFailureToast] = await Promise.all([getToast(), getToastComponent()]);
+async function renderSingleEntry(entry: AgentFailureEntry, state: AgentToastState): Promise<void> {
+  const [toast, AgentFailureToast, resolveKeySlot] = await Promise.all([
+    getToast(),
+    getToastComponent(),
+    getKeySlotResolver(),
+  ]);
   toast.custom(AgentFailureToast, {
-    id: agentFailureToastId(group.groupKey),
-    componentProps: buildToastProps(group, state),
+    id: agentFailureToastId(entry.agentId),
+    componentProps: buildToastProps(entry, state, resolveKeySlot),
     duration: Number.POSITIVE_INFINITY,
+    class: WRAPPER_CLASS,
   });
 }
 
 /**
- * Retry every failed agent in the group via `agent.retry`. `ok:true` removes
- * the entry from the registry (its status-changed event reconciles the rest);
- * `ok:false` keeps it and surfaces a brief note on the updated toast.
+ * Navigate to a failed agent: route to its workspace, then dispatch
+ * `openAgentTabRequested` so `createAppLayoutNavigationMiddleware` hydrates
+ * the session and opens/focuses the agent's conversation tab (query params
+ * alone are not read back into drawer state on workspace load).
+ * Chief-of-staff failures (the hidden chief virtual workspace) open the
+ * sidebar Assistant panel and select the chat thread instead — mirrors
+ * `handleNotificationNavigate`'s chief branch. Navigation modules are
+ * lazy-imported so this middleware-reachable module stays dependency-light.
+ * Never rejects; errors are logged.
  */
-export async function retryGroup(groupKey: string): Promise<void> {
-  const group = listAgentFailureGroups().find((candidate) => candidate.groupKey === groupKey);
-  const state = stateByGroup.get(groupKey);
-  if (!group || !state || state.retrying) return;
+async function navigateToFailedAgent(entry: AgentFailureEntry): Promise<void> {
+  try {
+    const { CHIEF_WORKSPACE_ID } = await import('$shared/types/branded-ids');
+    if (entry.workspaceId === CHIEF_WORKSPACE_ID) {
+      const { openPanel, setChiefActiveAgentId } = await import(
+        '$store/renderer/slices/sidebar-nav/sidebar-nav-slice'
+      );
+      appStore.dispatch(setChiefActiveAgentId(entry.agentId));
+      appStore.dispatch(openPanel('chief'));
+      return;
+    }
+    const { navigateToRoute } = await import('$lib/utils/navigation.client');
+    await navigateToRoute(`/workspace/${entry.workspaceId}`);
+    const { openAgentTabRequested } = await import(
+      '$store/renderer/slices/app-layout/app-layout-slice'
+    );
+    appStore.dispatch(openAgentTabRequested(entry.workspaceId, { agentId: entry.agentId }));
+  } catch (error) {
+    logger.warn('Failed to navigate to failed agent', {
+      agentId: entry.agentId,
+      workspaceId: entry.workspaceId,
+      error,
+    });
+  }
+}
+
+/**
+ * Retry ONE failed agent via `agent.retry`. `ok:true` removes the entry from
+ * the registry (its status-changed event reconciles the rest); `ok:false`
+ * keeps it and surfaces a brief note on the updated toast. The click also
+ * navigates to the agent regardless of the retry RPC outcome (a failed retry
+ * still shows its note on the toast).
+ */
+export async function retryAgent(agentId: string): Promise<void> {
+  const entry = getAgentFailureEntry(agentId);
+  const state = stateByAgent.get(agentId);
+  if (!entry || !state || state.retrying) return;
 
   state.retrying = true;
   state.retryNote = undefined;
-  rerenderGroup(groupKey);
+  rerenderAgent(agentId);
 
-  const entries = [...group.entries];
-  const results = await Promise.all(
-    entries.map(async (entry) => {
-      // Defensive only: LiveAgentsClient.retry already maps transport errors
-      // to `{ ok: false }`, so this catch is a guard against future clients.
-      try {
-        const result = await appClient.agents.retry(entry.agentId, entry.workspaceId);
-        return { entry, ok: result.ok === true };
-      } catch (error) {
-        logger.error('agent.retry threw', { agentId: entry.agentId, error });
-        return { entry, ok: false };
-      }
-    }),
-  );
+  void navigateToFailedAgent(entry);
+  // Defensive only: LiveAgentsClient.retry already maps transport errors to
+  // `{ ok: false }`, so this catch is a guard against future clients.
+  let ok = false;
+  try {
+    const result = await appClient.agents.retry(entry.agentId, entry.workspaceId);
+    ok = result.ok === true;
+  } catch (error) {
+    logger.error('agent.retry threw', { agentId: entry.agentId, error });
+  }
 
   state.retrying = false;
-  const failedCount = results.filter((result) => !result.ok).length;
-  if (failedCount > 0) {
-    state.retryNote =
-      failedCount === 1 ? 'Retry failed for 1 agent' : `Retry failed for ${failedCount} agents`;
-  }
+  if (!ok) state.retryNote = m.agent_failureToast_retryFailed_error();
 
-  // Removing entries notifies the subscription, which re-renders (or
-  // dismisses) the toast with the surviving entries + retryNote. Only remove
-  // when the registry still holds the entry snapshotted at retry start — if
-  // the agent re-failed while its retry was in flight, `recordAgentFailure`
-  // stored a fresh entry that this stale ok:true must not erase.
-  let removedAny = false;
-  for (const result of results) {
-    if (!result.ok) continue;
-    if (getAgentFailureEntry(result.entry.agentId) !== result.entry) continue;
-    removedAny = removeAgentFailure(result.entry.agentId) || removedAny;
+  // Removing the entry notifies the subscription, which dismisses the toast.
+  // Only remove when the registry still holds the entry snapshotted at retry
+  // start — if the agent re-failed while its retry was in flight,
+  // `recordAgentFailure` stored a fresh entry that this stale ok:true must
+  // not erase.
+  let removed = false;
+  if (ok && getAgentFailureEntry(agentId) === entry) {
+    removed = removeAgentFailure(agentId);
   }
-  if (!removedAny) rerenderGroup(groupKey);
+  if (!removed) rerenderAgent(agentId);
+}
+
+/**
+ * Switch To: navigate to the failed agent WITHOUT retrying it — same
+ * navigation as Retry (chief branch included), no `agent.retry` call.
+ */
+export async function switchToAgent(agentId: string): Promise<void> {
+  const entry = getAgentFailureEntry(agentId);
+  if (!entry) return;
+  await navigateToFailedAgent(entry);
 }
 
 /**
  * Manual close: hide the toast but leave the registry intact. Records the
- * group's newest `at` so only a NEWER failure re-shows the toast.
+ * entry's `at` so only a NEWER failure re-shows the toast.
  */
-export async function closeGroupToast(groupKey: string): Promise<void> {
-  const state = stateByGroup.get(groupKey);
+export async function closeAgentToast(agentId: string): Promise<void> {
+  const state = stateByAgent.get(agentId);
   if (!state) return;
-  const group = listAgentFailureGroups().find((candidate) => candidate.groupKey === groupKey);
-  state.dismissedThroughAt = group ? newestAt(group) : Date.now();
+  const entry = getAgentFailureEntry(agentId);
+  state.dismissedThroughAt = entry ? entry.at : Date.now();
   state.visible = false;
   const toast = await getToast();
-  toast.dismiss(agentFailureToastId(groupKey));
+  toast.dismiss(agentFailureToastId(agentId));
 }
 
 /** Idempotent install: subscribe to the registry and render the snapshot. */
 export function installAgentFailureToasts(): void {
   if (installed) return;
   installed = true;
-  unsubscribe = subscribeToAgentFailures((groups) => void renderGroups(groups));
-  const initial = listAgentFailureGroups();
-  if (initial.length > 0) void renderGroups(initial);
+  unsubscribe = subscribeToAgentFailures((entries) => void renderEntries(entries));
+  const initial = listAgentFailureEntries();
+  if (initial.length > 0) void renderEntries(initial);
 }
 
 /**
@@ -308,11 +379,11 @@ export function createAgentFailureToastMiddleware(): StoreMiddleware {
   };
 }
 
-/** Test-only — tear down the subscription and per-group toast state. */
+/** Test-only — tear down the subscription and per-agent toast state. */
 export function __resetAgentFailureToastsForTests(): void {
   if (unsubscribe) unsubscribe();
   unsubscribe = null;
   installed = false;
   renderGeneration++;
-  stateByGroup.clear();
+  stateByAgent.clear();
 }

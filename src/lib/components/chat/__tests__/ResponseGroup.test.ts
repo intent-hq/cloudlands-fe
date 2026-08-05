@@ -1,7 +1,11 @@
 /**
  * @vitest-environment jsdom
  *
- * Regression test for Bug 2: NaN keyframe values in ResponseGroup collapse transition.
+ * 1. Collapse state model: last/streaming groups collapse to the semi-open
+ *    cylinder preview (never fully closed); non-last finished groups collapse
+ *    fully. See "ResponseGroup - collapse state model" below.
+ *
+ * 2. Regression test for Bug 2: NaN keyframe values in ResponseGroup collapse transition.
  *
  * The `collapseFromCurrent` function in ResponseGroup.svelte uses
  * `parseFloat(style.paddingTop)` etc. without guarding against empty strings.
@@ -22,7 +26,20 @@ import {
   vi,
   afterEach,
 } from 'vitest';
+import {
+  fireEvent,
+  render,
+  waitFor,
+} from '@testing-library/svelte';
+import { createRawSnippet } from 'svelte';
 import { cubicOut } from 'svelte/easing';
+import ResponseGroup from '../ResponseGroup.svelte';
+import { warmImport } from '../../../../test/warm-import';
+
+vi.mock('svelte-fa', async () => {
+  const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
+  return { default: MockFa };
+});
 
 /**
  * Exact replica of collapseFromCurrent from ResponseGroup.svelte.
@@ -54,6 +71,10 @@ function collapseFromCurrent(node: HTMLElement, { duration = 300, easing = cubic
     },
   };
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
 
 describe('ResponseGroup - collapseFromCurrent NaN regression', () => {
   afterEach(() => {
@@ -156,3 +177,144 @@ describe('ResponseGroup - collapseFromCurrent NaN regression', () => {
   });
 });
 
+describe('ResponseGroup - collapse state model', () => {
+  const children = createRawSnippet(() => ({
+    render: () => '<div class="test-block">block</div>',
+  }));
+
+  function header(container: HTMLElement): HTMLButtonElement {
+    return container.querySelector('button')!;
+  }
+
+  function cylinder(container: HTMLElement): HTMLElement | null {
+    return container.querySelector('.cylinder-scroller');
+  }
+
+  /** Semi-open = constrained CylinderScroller (max-height applied) */
+  function isConstrained(el: HTMLElement | null): boolean {
+    return !!el && (el.getAttribute('style') ?? '').includes('max-height');
+  }
+
+  it('last completed group toggles expanded ↔ semi-open and never fully closes', async () => {
+    const { container } = render(ResponseGroup, {
+      props: { name: 'Group', isLast: true, children },
+    });
+    const btn = header(container);
+
+    // Starts fully expanded
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    expect(cylinder(container)).not.toBeNull();
+    expect(isConstrained(cylinder(container))).toBe(false);
+
+    // Collapse → semi-open (constrained cylinder), not a bare header
+    await fireEvent.click(btn);
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    expect(cylinder(container)).not.toBeNull();
+    expect(isConstrained(cylinder(container))).toBe(true);
+    expect(container.querySelector('.test-block')).not.toBeNull();
+
+    // Toggle again → back to fully expanded
+    await fireEvent.click(btn);
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    expect(isConstrained(cylinder(container))).toBe(false);
+  });
+
+  it('collapsing a streaming group lands on semi-open with content still visible', async () => {
+    const { container } = render(ResponseGroup, {
+      props: { name: 'Group', isStreaming: true, children },
+    });
+    const btn = header(container);
+
+    // Streaming starts semi-open
+    await waitFor(() => expect(cylinder(container)).not.toBeNull());
+    expect(isConstrained(cylinder(container))).toBe(true);
+
+    // Expand, then collapse mid-stream → semi-open, not fully closed
+    await fireEvent.click(btn);
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    expect(isConstrained(cylinder(container))).toBe(false);
+
+    await fireEvent.click(btn);
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    expect(cylinder(container)).not.toBeNull();
+    expect(isConstrained(cylinder(container))).toBe(true);
+    expect(container.querySelector('.test-block')).not.toBeNull();
+  });
+
+  it('non-last group collapsed mid-stream fully closes after streaming ends', async () => {
+    const { container, rerender } = render(ResponseGroup, {
+      props: { name: 'Group', isStreaming: true, children },
+    });
+    const btn = header(container);
+    await waitFor(() => expect(cylinder(container)).not.toBeNull());
+
+    // Collapse mid-stream (expand first so the second click collapses)
+    await fireEvent.click(btn);
+    await fireEvent.click(btn);
+    expect(cylinder(container)).not.toBeNull();
+
+    // Streaming ends → delayed full collapse (800ms timer)
+    await rerender({ isStreaming: false });
+    await waitFor(() => expect(cylinder(container)).toBeNull(), { timeout: 3000 });
+  });
+
+  it('non-last completed group still collapses fully on toggle', async () => {
+    const { container } = render(ResponseGroup, {
+      props: { name: 'Group', children },
+    });
+    const btn = header(container);
+
+    // Starts fully closed
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    expect(cylinder(container)).toBeNull();
+
+    await fireEvent.click(btn);
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    expect(cylinder(container)).not.toBeNull();
+    expect(isConstrained(cylinder(container))).toBe(false);
+
+    await fireEvent.click(btn);
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    await waitFor(() => expect(cylinder(container)).toBeNull());
+  });
+
+  it('last group collapsed mid-stream stays semi-open after streaming ends', async () => {
+    const { container, rerender } = render(ResponseGroup, {
+      props: { name: 'Group', isLast: true, isStreaming: true, children },
+    });
+    const btn = header(container);
+    await waitFor(() => expect(cylinder(container)).not.toBeNull());
+
+    // User expands then collapses mid-stream
+    await fireEvent.click(btn);
+    await fireEvent.click(btn);
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+
+    // Streaming ends → respects the user's collapse: semi-open, not re-expanded
+    await rerender({ isStreaming: false });
+    await waitFor(() => {
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      expect(cylinder(container)).not.toBeNull();
+      expect(isConstrained(cylinder(container))).toBe(true);
+    });
+
+    // Still semi-open after the non-last 800ms collapse delay would have fired
+    await new Promise((r) => setTimeout(r, 900));
+    expect(cylinder(container)).not.toBeNull();
+    expect(isConstrained(cylinder(container))).toBe(true);
+  });
+
+  it('last group expands fully when streaming ends without a user collapse', async () => {
+    const { container, rerender } = render(ResponseGroup, {
+      props: { name: 'Group', isLast: true, isStreaming: true, children },
+    });
+    const btn = header(container);
+    await waitFor(() => expect(cylinder(container)).not.toBeNull());
+
+    await rerender({ isStreaming: false });
+    await waitFor(() => {
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+      expect(isConstrained(cylinder(container))).toBe(false);
+    });
+  });
+});

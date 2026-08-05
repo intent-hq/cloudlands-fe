@@ -24,6 +24,7 @@
   import { tick } from 'svelte';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import type { BreadcrumbItem } from './types';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Main title - displayed after breadcrumbs */
@@ -165,7 +166,7 @@
               : 'cursor-default'}"
             onclick={startEditingTitle}
             disabled={!editableTitle}
-            title={editableTitle ? 'Click to edit' : title}
+            title={editableTitle ? m.ui_contentHeader_clickToEdit_tooltip() : title}
           >
             {title}
           </button>
@@ -186,7 +187,7 @@
     <!-- Navigation buttons - always present -->
     <div class="flex items-center h-full mr-1 relative border-l border-border ml-3">
       <div class="flex items-center h-full pl-3">
-        <TooltipShortcut label="Go back" shortcut="cmd+[" side="bottom" delayDuration={300}>
+        <TooltipShortcut label={m.ui_contentHeader_goBack_tooltip()} shortcut="cmd+[" side="bottom" delayDuration={300}>
           <Button
             size="icon-xs"
             variant="ghost-light"
@@ -197,7 +198,7 @@
             <Fa icon={faChevronLeft} size="sm" />
           </Button>
         </TooltipShortcut>
-        <TooltipShortcut label="Go forward" shortcut="cmd+]" side="bottom" delayDuration={300}>
+        <TooltipShortcut label={m.ui_contentHeader_goForward_tooltip()} shortcut="cmd+]" side="bottom" delayDuration={300}>
           <Button
             size="icon-xs"
             variant="ghost-light"
@@ -212,7 +213,7 @@
     </div>
 
     {#if showClose && onClose}
-      <TooltipShortcut label="Close panel" side="bottom" delayDuration={300}>
+      <TooltipShortcut label={m.ui_contentHeader_closePanel_tooltip()} side="bottom" delayDuration={300}>
         <Button size="icon-xs" variant="ghost-light" onclick={onClose}>
           <Fa icon={faXmark} size="sm" />
         </Button>

@@ -12,17 +12,19 @@
  * builder so web notifications match Electron's title/body exactly.
  */
 
+import { m } from '$shared/paraglide/messages.js';
+
 /** Map specialist ID to display name (mirrors notification.service.ts). */
-const SPECIALIST_DISPLAY_NAMES: Record<string, string> = {
-  'spec-writer': 'Coordinator',
-  implementor: 'Implementor',
-  verifier: 'Verifier',
+const SPECIALIST_DISPLAY_NAMES: Record<string, () => string> = {
+  'spec-writer': () => m.notification_specialist_coordinator(),
+  implementor: () => m.notification_specialist_implementor(),
+  verifier: () => m.notification_specialist_verifier(),
 };
 
 /** Get display name for a specialist type (mirrors notification.service.ts). */
 export function getSpecialistDisplayName(specialist?: string): string {
-  if (!specialist) return 'Agent';
-  return SPECIALIST_DISPLAY_NAMES[specialist] || 'Agent';
+  if (!specialist) return m.notification_specialist_agent();
+  return SPECIALIST_DISPLAY_NAMES[specialist]?.() || m.notification_specialist_agent();
 }
 
 /** Notification content for display. */
@@ -63,8 +65,10 @@ export function buildNotificationContent(
     const truncatedChatName =
       chatName && chatName.length > 40 ? `${chatName.slice(0, 37)}...` : chatName;
     return {
-      title: truncatedChatName ? `Assistant — ${truncatedChatName}` : 'Assistant',
-      body: taskTitle ? 'Task completed' : 'Finished',
+      title: truncatedChatName
+        ? m.notification_assistant_titled({ chatName: truncatedChatName })
+        : m.notification_assistant_title(),
+      body: taskTitle ? m.notification_body_task_completed() : m.notification_body_finished(),
     };
   }
 
@@ -89,7 +93,7 @@ export function buildNotificationContent(
   }
 
   // Build body
-  const body = taskTitle ? 'Task completed' : 'Finished';
+  const body = taskTitle ? m.notification_body_task_completed() : m.notification_body_finished();
 
   return { title, body };
 }

@@ -164,6 +164,10 @@ export const EMITTED_MOCK_IPC_EVENT_CHANNELS: ReadonlySet<string> = new Set([
   'file-tracking:changes-updated',
   'task:ready-tasks-changed',
   'line-attribution:updated',
+  // window-state-bridge-seeder.ts registerWindowFullScreenEventRelay —
+  // main-process enter/leave-full-screen (via the real preload bridge) or DOM
+  // fullscreenchange re-emitted for listenSync('window:fullscreen') consumers.
+  'window:fullscreen',
 ]);
 
 /**

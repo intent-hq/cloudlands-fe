@@ -6,15 +6,10 @@
   selectSpecialists,
   selectCustomSpecialistsLoaded,
   selectFileSpecialistsLoaded,
-  selectEffectiveModel,
-  selectEffectiveCodingAgent,
   filterPickableSpecialists,
 } from '$store/renderer/slices/specialists/specialists-selectors';
 
-  import {
-  selectSelectedModel,
-  selectAvailableModels,
-} from '$store/renderer/slices/model/model-selectors';
+  import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
   import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
@@ -27,19 +22,21 @@
   getProviderAvailability,
   type ProviderAvailabilityResult,
 } from '$features/providers/provider-availability.client';
+  import { parseCompoundModelId } from '$shared/utils/compound-model-id';
   import {
-  ACP_PROVIDERS,
-  getDefaultProviderId,
-  parseCompoundModelId,
-} from '$shared/config/provider-config';
-  import { resolveEffectiveModelForSpecialist } from '$lib/utils/effective-model-resolution';
+  selectCatalogDefaultProviderId,
+  selectProviderCatalogEntries,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { appClient } from '$lib/client';
   import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
-  import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('InitialAgentPicker');
+  const defaultProviderId$ = selectCatalogDefaultProviderId();
+  const catalogEntries$ = selectProviderCatalogEntries();
   const specialists$ = selectSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
@@ -49,7 +46,6 @@
   const fileSpecialistsLoaded$ = selectFileSpecialistsLoaded();
   const initializerHydrated$ = selectWorkspaceInitializerHydrated();
   const activeProviderId$ = selectActiveProviderId();
-  const availableModels$ = selectAvailableModels();
   const selectedModel$ = selectSelectedModel();
 
   interface Props {
@@ -78,7 +74,7 @@
     selectedModel = $bindable<string | undefined>(undefined),
     modelWasOverridden = $bindable<boolean>(false),
     isTeamMode = $bindable<boolean>(true),
-    selectedProvider = $bindable<string>($activeProviderId$ ?? getDefaultProviderId()),
+    selectedProvider = $bindable<string>($activeProviderId$ || $defaultProviderId$),
     onSpecialistChange,
     onModelChange,
     onTeamModeChange,
@@ -111,10 +107,10 @@
     return false;
   }
 
-  // Available providers derived from availability check - dynamically from ACP_PROVIDERS
+  // Available providers derived from availability check - dynamically from the catalog
   const availableProviders = $derived.by(() => {
     if (!providerAvailability) return [];
-    return Object.values(ACP_PROVIDERS)
+    return $catalogEntries$
       .filter((provider) => getProviderAvailable(provider.id))
       .map((provider) => ({ id: provider.id }));
   });
@@ -165,7 +161,10 @@
   $effect(() => {
     const provider = selectedProvider;
     if (selectedModel) {
-      const { providerId: modelProvider } = parseCompoundModelId(selectedModel);
+      const { providerId: modelProvider } = parseCompoundModelId(
+        selectedModel,
+        $defaultProviderId$,
+      );
       if (modelProvider !== provider) {
         logger.debug('Clearing stale model override (provider mismatch):', {
           selectedModel,
@@ -216,26 +215,57 @@
     }
   });
 
-  // Helper to resolve the effective model for a given specialist.
-  // Delegates to the shared resolveEffectiveModelForSpecialist utility (also used
-  // by the CompactWorkspaceInitializer submit path) so the displayed model always
-  // matches the model the created agent gets. When the form's selectedProvider
-  // matches the specialist's effective coding agent from Redux, the Redux-resolved
-  // model wins (mirrors Settings > Agents exactly); when the user has changed the
-  // provider within this form, it falls back to local tier resolution.
+  // Daemon-resolved default-model previews per provider context (PROTOCOL
+  // §5.11): `specialist.list` with the form's selected provider returns
+  // additive `resolvedModel`/`resolvedProvider` fields computed by the same
+  // resolver a no-model create uses, so the picker displays exactly what the
+  // daemon would pin. Absent resolvedModel means "Provider default". The
+  // store's specialist view carries the daemon-default-provider context, so
+  // it serves as the fallback until the per-provider fetch lands.
+  let resolvedModelsByProvider = $state<Record<string, Record<string, string | undefined>>>({});
+
+  // Bumped on every store specialist-view refresh; in-flight fetches from an
+  // older generation are dropped so they can't overwrite fresher previews.
+  let previewsGeneration = 0;
+
+  // Invalidate cached previews whenever the store's specialist view refreshes
+  // (daemon `specialists:changed` → list subscription refetch), so the
+  // resolvedModel preview tracks specialist/settings changes while the picker
+  // stays mounted. The fetch effect below then refetches on demand.
+  $effect(() => {
+    void $specialists$;
+    previewsGeneration += 1;
+    resolvedModelsByProvider = {};
+  });
+
+  $effect(() => {
+    const provider = selectedProvider;
+    if (!provider || provider in resolvedModelsByProvider) return;
+    const generation = previewsGeneration;
+    void (async () => {
+      try {
+        const defs = await appClient.specialists.list(provider);
+        if (generation !== previewsGeneration || defs.length === 0) return;
+        const byId: Record<string, string | undefined> = {};
+        for (const def of defs) byId[def.id] = def.resolvedModel;
+        resolvedModelsByProvider = { ...resolvedModelsByProvider, [provider]: byId };
+      } catch (error) {
+        logger.debug('Failed to fetch resolved-model previews:', { provider, error });
+      }
+    })();
+  });
+
+  // Helper to resolve the displayed default model for a given specialist:
+  // the daemon-computed `resolvedModel` preview in the form's provider
+  // context (undefined ⇒ provider CLI default, rendered "Provider default").
+  // With no specialist (General), show the global store selection — it
+  // mirrors the daemon's `model.providerDefaults`/`model.default` settings
+  // that the resolver applies for a specialist-less create.
   function resolveEffectiveModel(specialist: string | null): string | undefined {
-    const state = appStore.state;
-    return resolveEffectiveModelForSpecialist({
-      specialistId: specialist,
-      selectedProvider,
-      availableModelValues: $availableModels$.map((m) => m.value),
-      globalSelectedModel: $selectedModel$,
-      effectiveCodingAgent: specialist
-        ? selectEffectiveCodingAgent.select(state, specialist)
-        : undefined,
-      effectiveModel: specialist ? selectEffectiveModel.select(state, specialist) : undefined,
-      specialistInfo: specialist ? $specialists$.find((s) => s.id === specialist) : undefined,
-    });
+    if (!specialist) return $selectedModel$;
+    const providerView = resolvedModelsByProvider[selectedProvider];
+    if (providerView) return providerView[specialist];
+    return $specialists$.find((s) => s.id === specialist)?.resolvedModel;
   }
 
   // Effective model for the team mode card (based on actual selectedSpecialist)
@@ -248,15 +278,14 @@
   // When the user changes specialist defaults in Settings (e.g., spec-writer → sonnet4.5),
   // the form may still have a saved selectedModel (e.g., "opus4.6") marked as overridden
   // from a previous session when that was the default. This runs reactively (not onMount)
-  // so it waits until file specialists, available models, and the parent's persisted form
-  // state are all loaded — comparing before then is meaningless — and re-runs if hydration
+  // so it waits until file specialists and the parent's persisted form state are
+  // loaded — comparing before then is meaningless — and re-runs if hydration
   // re-applies a stale override after mount. A persisted "override" that matches the
   // current specialist default is not a real override; one that differs is stale. Either
-  // way it is cleared so the current specialist default drives the picker. Overrides the
-  // user made in this session are never cleared.
+  // way it is cleared so the daemon-resolved default drives the picker (and a no-model
+  // create). Overrides the user made in this session are never cleared.
   $effect(() => {
-    const dataReady =
-      $fileSpecialistsLoaded$ && $availableModels$.length > 0 && $initializerHydrated$;
+    const dataReady = $fileSpecialistsLoaded$ && $initializerHydrated$;
     if (!dataReady || modelOverriddenThisSession) return;
     // Degenerate persisted state: overridden flag set with no model. Normalize
     // so the invariant `modelWasOverridden ⇒ selectedModel set` holds.
@@ -267,16 +296,10 @@
       return;
     }
     if (modelWasOverridden && selectedModel) {
-      const currentDefault = isTeamMode ? teamModeModel : singleAgentModel;
-      if (currentDefault) {
-        logger.debug('Clearing stale persisted model override:', {
-          selectedModel,
-          currentDefault,
-        });
-        selectedModel = undefined;
-        modelWasOverridden = false;
-        onModelChange?.(undefined);
-      }
+      logger.debug('Clearing stale persisted model override:', { selectedModel });
+      selectedModel = undefined;
+      modelWasOverridden = false;
+      onModelChange?.(undefined);
     }
   });
 
@@ -293,7 +316,7 @@
     specialist: string | null; // only used by single-agent mode, but keep it uniform
   }
 
-  const defaultProvider = $activeProviderId$ ?? getDefaultProviderId();
+  const defaultProvider = $activeProviderId$ || $defaultProviderId$;
 
   let lastTeamMode = $state<ModeSnapshot>({
     model: undefined,
@@ -322,9 +345,11 @@
   );
 
   // Display label and description for the specialist selector
-  const specialistDisplayLabel = $derived(currentSpecialistInfo?.name ?? 'General');
+  const specialistDisplayLabel = $derived(
+    currentSpecialistInfo?.name ?? m.workspace_initialAgentPicker_general_label(),
+  );
   const specialistDisplayDescription = $derived(
-    currentSpecialistInfo?.description ?? 'No specialized behavior',
+    currentSpecialistInfo?.description ?? m.workspace_initialAgentPicker_noSpecializedBehavior_description(),
   );
 
   function selectTeamMode() {
@@ -385,7 +410,7 @@
     selectedModel = undefined;
     modelWasOverridden = false;
     // Reset provider to default when clearing model override
-    const defaultProv = $activeProviderId$ ?? getDefaultProviderId();
+    const defaultProv = $activeProviderId$ || $defaultProviderId$;
     if (selectedProvider !== defaultProv) {
       selectedProvider = defaultProv;
       onProviderChange?.(defaultProv);
@@ -402,7 +427,7 @@
 
     // Update provider to match the selected model's provider
     if (model) {
-      const { providerId } = parseCompoundModelId(model);
+      const { providerId } = parseCompoundModelId(model, $defaultProviderId$);
       if (providerId !== selectedProvider) {
         selectedProvider = providerId;
         onProviderChange?.(providerId);
@@ -426,7 +451,7 @@
     class="agent-card min-w-0 {isTeamMode ? 'agent-card-selected' : 'grayscale opacity-50'}"
     onclick={selectTeamMode}
   >
-    <div class="text-sm font-medium text-foreground">Agent orchestration</div>
+    <div class="text-sm font-medium text-foreground">{m.workspace_initialAgentPicker_teamMode_label()}</div>
     <div class="flex items-center gap-1 py-1.5">
       <AuggieAvatar seed="blank" size={22} specialist="spec-writer" />
       <span class="text-subtle text-xs mx-0.5">→</span>
@@ -434,14 +459,13 @@
       <AuggieAvatar seed="blank" size={22} specialist="verifier" />
     </div>
     <div class="text-sm text-subtle leading-snug">
-      A coordinator agent will write a spec for your task and manage the work for you across
-      different agents.
+      {m.workspace_initialAgentPicker_teamMode_description()}
     </div>
     <div
       class="model-picker-row {isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
       inert={!isTeamMode}
     >
-      <span class="text-sm text-subtle">using</span>
+      <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_before()}</span>
       {#key teamModeModel}
         <ModelPicker
           selectedModel={modelWasOverridden ? selectedModel : undefined}
@@ -451,6 +475,7 @@
           triggerClass="inline-flex items-center bg-sidebar px-1.5 py-0.5 cursor-pointer text-sm font-medium text-subtle rounded-none"
           showManageLink={true}
           defaultModelId={teamModeModel}
+          defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
           silentFallback
         />
       {/key}
@@ -466,7 +491,7 @@
     role="button"
     tabindex="0"
   >
-    <div class="text-sm font-medium text-foreground">Single agent</div>
+    <div class="text-sm font-medium text-foreground">{m.workspace_initialAgentPicker_singleAgent_label()}</div>
     <!-- Specialist selector dropdown -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -527,8 +552,8 @@
             >
               <AuggieAvatar seed="blank" size={20} />
               <div class="flex flex-col min-w-0">
-                <span class="font-medium text-foreground text-sm">General</span>
-                <span class="text-xs text-subtle">No specialized behavior</span>
+                <span class="font-medium text-foreground text-sm">{m.workspace_initialAgentPicker_general_label()}</span>
+                <span class="text-xs text-subtle">{m.workspace_initialAgentPicker_noSpecializedBehavior_description()}</span>
               </div>
             </button>
 
@@ -563,7 +588,7 @@
               onclick={openSpecialistSettings}
             >
               <Fa icon={faPlus} class="ml-0.5 mr-0.5 opacity-60" size={10} />
-              <span class="text-sm">Create new or manage specialists</span>
+              <span class="text-sm">{m.workspace_initialAgentPicker_manageSpecialists_label()}</span>
             </button>
           </div>
         {/snippet}
@@ -571,14 +596,14 @@
     </div>
 
     <p class="text-sm text-subtle leading-snug">
-      Work on specific tasks with an agent of your choosing.
+      {m.workspace_initialAgentPicker_singleAgent_description()}
     </p>
 
     <div
       class="model-picker-row {!isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
       inert={isTeamMode}
     >
-      <span class="text-sm text-subtle">using</span>
+      <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_before()}</span>
       {#key singleAgentModel}
         <ModelPicker
           selectedModel={modelWasOverridden ? selectedModel : undefined}
@@ -588,6 +613,7 @@
           triggerClass="inline-flex items-center bg-sidebar px-1.5 py-0.5 cursor-pointer text-sm font-medium text-subtle rounded-none"
           showManageLink={true}
           defaultModelId={singleAgentModel}
+          defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
           silentFallback
         />
       {/key}

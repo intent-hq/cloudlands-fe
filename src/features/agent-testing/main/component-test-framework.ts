@@ -25,6 +25,7 @@ export const componentTestRunner = {
     const result = {
       passed: true,
       success: true,
+      // i18n-ignore (test harness)
       message: `Component test ${testCase.name} passed`,
       duration: 0,
     };

@@ -7,6 +7,7 @@
  */
 
 import type { DiffHunk } from '$features/git-tracking/types';
+import { m } from '$shared/paraglide/messages.js';
 
 export type LineChangeType = 'added' | 'modified' | 'deleted';
 
@@ -110,13 +111,13 @@ function getChangeColor(type: LineChangeType): string {
 function getChangeHoverMessage(type: LineChangeType): string {
   switch (type) {
     case 'added':
-      return 'Added line';
+      return m.editor_lineChanges_added_tooltip();
     case 'modified':
-      return 'Modified line';
+      return m.editor_lineChanges_modified_tooltip();
     case 'deleted':
-      return 'Deleted line';
+      return m.editor_lineChanges_deleted_tooltip();
     default:
-      return 'Changed line';
+      return m.editor_lineChanges_changed_tooltip();
   }
 }
 

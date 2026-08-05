@@ -9,6 +9,8 @@ import {
   closeTerminalOverlay,
   toggleTerminalOverlay,
   selectTerminal,
+  selectScript,
+  clearScriptSelection,
   addTerminal,
   removeTerminal,
   setTerminalOverlayHeight,
@@ -18,7 +20,6 @@ import {
   hydrateHeight,
   setTerminalsLoaded,
   setIsLoadingTerminals,
-  markTerminalRecentlyCreated,
   setTerminalsList,
   type TerminalOverlayState,
   type TerminalTab,
@@ -28,6 +29,8 @@ import {
   getItems,
   getItem,
 } from "$lib/store-shim/utils/collections/collection-utils";
+import { setScriptsData } from "../scripts/scripts-slice";
+import type { ScriptWithState } from "$features/scripts/types";
 
 const WS = "ws-1";
 
@@ -48,7 +51,7 @@ const initialState: TerminalOverlayState = {
 
 /** Helper to get workspace state from the top-level state */
 function getWs(state: TerminalOverlayState, wsId: string = WS) {
-  return state.workspaces[wsId] || { isOpen: false, activeTerminalId: null, terminals: createCollection<TerminalTab, "id">("id"), terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [] };
+  return state.workspaces[wsId] || { isOpen: false, activeTerminalId: null, terminals: createCollection<TerminalTab, "id">("id"), terminalsLoaded: false, isLoadingTerminals: false, daemonBootId: null, selectedScriptId: null };
 }
 
 describe("terminalsReducer", () => {
@@ -79,7 +82,7 @@ describe("terminalsReducer", () => {
     it("should not create duplicate terminal", () => {
       const stateWithTerminal: TerminalOverlayState = {
         ...initialState,
-        workspaces: { [WS]: { isOpen: false, activeTerminalId: "term-123", terminals: col([{ id: "term-123", name: "Terminal" }]), terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [] } },
+        workspaces: { [WS]: { isOpen: false, activeTerminalId: "term-123", terminals: col([{ id: "term-123", name: "Terminal" }]), terminalsLoaded: false, isLoadingTerminals: false, daemonBootId: null, selectedScriptId: null } },
       };
       const state = terminalsReducer(stateWithTerminal, openTerminalOverlay(WS, "term-123"));
       expect(terms(state)).toHaveLength(1);
@@ -90,7 +93,7 @@ describe("terminalsReducer", () => {
     it("should close overlay", () => {
       const openState: TerminalOverlayState = {
         ...initialState,
-        workspaces: { [WS]: { isOpen: true, activeTerminalId: null, terminals: col([]), terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [] } },
+        workspaces: { [WS]: { isOpen: true, activeTerminalId: null, terminals: col([]), terminalsLoaded: false, isLoadingTerminals: false, daemonBootId: null, selectedScriptId: null } },
       };
       const state = terminalsReducer(openState, closeTerminalOverlay(WS));
       expect(getWs(state).isOpen).toBe(false);
@@ -111,7 +114,7 @@ describe("terminalsReducer", () => {
     it("should close when open and no termId", () => {
       const openState: TerminalOverlayState = {
         ...initialState,
-        workspaces: { [WS]: { isOpen: true, activeTerminalId: null, terminals: col([]), terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [] } },
+        workspaces: { [WS]: { isOpen: true, activeTerminalId: null, terminals: col([]), terminalsLoaded: false, isLoadingTerminals: false, daemonBootId: null, selectedScriptId: null } },
       };
       const state = terminalsReducer(openState, toggleTerminalOverlay(WS));
       expect(getWs(state).isOpen).toBe(false);
@@ -120,7 +123,7 @@ describe("terminalsReducer", () => {
     it("should stay open when open with termId", () => {
       const openState: TerminalOverlayState = {
         ...initialState,
-        workspaces: { [WS]: { isOpen: true, activeTerminalId: null, terminals: col([]), terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [] } },
+        workspaces: { [WS]: { isOpen: true, activeTerminalId: null, terminals: col([]), terminalsLoaded: false, isLoadingTerminals: false, daemonBootId: null, selectedScriptId: null } },
       };
       const state = terminalsReducer(openState, toggleTerminalOverlay(WS, "term-1"));
       const ws = getWs(state);
@@ -143,7 +146,8 @@ describe("terminalsReducer", () => {
           activeTerminalId: "t2",
           terminalsLoaded: false,
           isLoadingTerminals: false,
-          recentlyCreatedTerminals: [],
+          daemonBootId: null,
+          selectedScriptId: null,
         }},
       };
       const state = terminalsReducer(stateWith3, removeTerminal(WS, "t2"));
@@ -164,7 +168,8 @@ describe("terminalsReducer", () => {
           activeTerminalId: "t2",
           terminalsLoaded: false,
           isLoadingTerminals: false,
-          recentlyCreatedTerminals: [],
+          daemonBootId: null,
+          selectedScriptId: null,
         }},
       };
       const state = terminalsReducer(stateWith2, removeTerminal(WS, "t2"));
@@ -180,7 +185,8 @@ describe("terminalsReducer", () => {
           activeTerminalId: "t1",
           terminalsLoaded: false,
           isLoadingTerminals: false,
-          recentlyCreatedTerminals: [],
+          daemonBootId: null,
+          selectedScriptId: null,
         }},
       };
       const state = terminalsReducer(stateWith1, removeTerminal(WS, "t1"));
@@ -200,7 +206,8 @@ describe("terminalsReducer", () => {
           activeTerminalId: "t1",
           terminalsLoaded: false,
           isLoadingTerminals: false,
-          recentlyCreatedTerminals: [],
+          daemonBootId: null,
+          selectedScriptId: null,
         }},
       };
       const state = terminalsReducer(stateWith1Open, removeTerminal(WS, "t1"));
@@ -219,7 +226,8 @@ describe("terminalsReducer", () => {
           activeTerminalId: "t1",
           terminalsLoaded: false,
           isLoadingTerminals: false,
-          recentlyCreatedTerminals: [],
+          daemonBootId: null,
+          selectedScriptId: null,
         }},
       };
       const state = terminalsReducer(stateWith2, removeTerminal(WS, "t1"));
@@ -253,7 +261,7 @@ describe("terminalsReducer", () => {
     it("should set custom name", () => {
       const stateWith: TerminalOverlayState = {
         ...initialState,
-        workspaces: { [WS]: { isOpen: false, activeTerminalId: null, terminals: col([{ id: "t1", name: "Terminal" }]), terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [] } },
+        workspaces: { [WS]: { isOpen: false, activeTerminalId: null, terminals: col([{ id: "t1", name: "Terminal" }]), terminalsLoaded: false, isLoadingTerminals: false, daemonBootId: null, selectedScriptId: null } },
       };
       const state = terminalsReducer(stateWith, renameTerminal(WS, "t1", "My Terminal"));
       expect(getItem(getWs(state).terminals, "t1")?.customName).toBe("My Terminal");
@@ -262,7 +270,7 @@ describe("terminalsReducer", () => {
     it("should clear custom name on empty string", () => {
       const stateWith: TerminalOverlayState = {
         ...initialState,
-        workspaces: { [WS]: { isOpen: false, activeTerminalId: null, terminals: col([{ id: "t1", name: "Terminal", customName: "Old" }]), terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [] } },
+        workspaces: { [WS]: { isOpen: false, activeTerminalId: null, terminals: col([{ id: "t1", name: "Terminal", customName: "Old" }]), terminalsLoaded: false, isLoadingTerminals: false, daemonBootId: null, selectedScriptId: null } },
       };
       const state = terminalsReducer(stateWith, renameTerminal(WS, "t1", "  "));
       expect(getItem(getWs(state).terminals, "t1")?.customName).toBeUndefined();
@@ -295,7 +303,8 @@ describe("terminalsReducer", () => {
             terminals: col([{ id: "term-1", name: "Terminal", customName: "Mine", createdAt: "old" }]),
             terminalsLoaded: false,
             isLoadingTerminals: false,
-            recentlyCreatedTerminals: [],
+            daemonBootId: null,
+            selectedScriptId: null,
           },
         },
       };
@@ -328,7 +337,8 @@ describe("terminalsReducer", () => {
             terminals: col([{ id: "pty-0", name: "Setup Script" }]),
             terminalsLoaded: false,
             isLoadingTerminals: false,
-            recentlyCreatedTerminals: [],
+            daemonBootId: null,
+            selectedScriptId: null,
           },
         },
       };
@@ -441,7 +451,8 @@ describe("terminalsReducer", () => {
           activeTerminalId: "t1",
           terminalsLoaded: false,
           isLoadingTerminals: false,
-          recentlyCreatedTerminals: [],
+          daemonBootId: null,
+          selectedScriptId: null,
         }},
       };
       const state = terminalsReducer(stateWith, selectTerminal(WS, "t2"));
@@ -466,7 +477,7 @@ describe("terminalsReducer", () => {
     it("should not duplicate existing terminal", () => {
       const stateWith: TerminalOverlayState = {
         ...initialState,
-        workspaces: { [WS]: { isOpen: false, activeTerminalId: null, terminals: col([{ id: "t1", name: "T1" }]), terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [] } },
+        workspaces: { [WS]: { isOpen: false, activeTerminalId: null, terminals: col([{ id: "t1", name: "T1" }]), terminalsLoaded: false, isLoadingTerminals: false, daemonBootId: null, selectedScriptId: null } },
       };
       const state = terminalsReducer(stateWith, addTerminal(WS, "t1", "T1"));
       const ws = getWs(state);
@@ -515,19 +526,6 @@ describe("terminalsReducer", () => {
     });
   });
 
-  describe("markTerminalRecentlyCreated", () => {
-    it("should add terminal to recently created list", () => {
-      const state = terminalsReducer(initialState, markTerminalRecentlyCreated(WS, "t1"));
-      expect(getWs(state).recentlyCreatedTerminals).toEqual(["t1"]);
-    });
-
-    it("should not duplicate", () => {
-      let state = terminalsReducer(initialState, markTerminalRecentlyCreated(WS, "t1"));
-      state = terminalsReducer(state, markTerminalRecentlyCreated(WS, "t1"));
-      expect(getWs(state).recentlyCreatedTerminals).toEqual(["t1"]);
-    });
-  });
-
   describe("fresh-create stale customName regression (PanelLayout.handleCreateTerminal)", () => {
     // A previously-renamed terminal can leave a stale entry in the slice
     // (e.g. tab closed without removing the terminal, or daemon restart that
@@ -547,7 +545,8 @@ describe("terminalsReducer", () => {
             terminals: col([{ id: "pty-0", name: "Terminal", customName: "Build", type: "terminal", workspaceId: WS, createdAt: "2026-01-01T00:00:00.000Z" }]),
             terminalsLoaded: false,
             isLoadingTerminals: false,
-            recentlyCreatedTerminals: [],
+            daemonBootId: null,
+            selectedScriptId: null,
           },
         },
       };
@@ -582,7 +581,8 @@ describe("terminalsReducer", () => {
             terminals: col([{ id: "pty-0", name: "Terminal", customName: "Build" }]),
             terminalsLoaded: false,
             isLoadingTerminals: false,
-            recentlyCreatedTerminals: [],
+            daemonBootId: null,
+            selectedScriptId: null,
           },
         },
       };
@@ -596,6 +596,196 @@ describe("terminalsReducer", () => {
     });
   });
 
+  // Regression (intent-hq/monorepo#1330): switching workspaces re-dispatches
+  // loadWorkspaceTerminals from mount hydration. When the daemon returns a
+  // transient empty terminal.list (restart race, PTY not yet spawned), the
+  // reducer REPLACES the workspace state wholesale — live tabs vanish and
+  // isOpen is forced to false. An empty hydration result over existing live
+  // tabs must preserve them.
+  describe("transient empty hydration over live tabs (monorepo#1330)", () => {
+    it("must not clobber existing live tabs when an empty list lands", () => {
+      const stateWith: TerminalOverlayState = {
+        ...initialState,
+        workspaces: { [WS]: {
+          isOpen: true,
+          activeTerminalId: "pty-42",
+          terminals: col([{ id: "pty-42", name: "Terminal" }]),
+          terminalsLoaded: true,
+          isLoadingTerminals: false,
+          daemonBootId: null,
+          selectedScriptId: null,
+        }},
+      };
+
+      const state = terminalsReducer(stateWith, loadWorkspaceTerminals(WS, [], null));
+
+      expect(terms(state).map((t) => t.id)).toEqual(["pty-42"]);
+      expect(getWs(state).activeTerminalId).toBe("pty-42");
+      expect(getWs(state).isOpen).toBe(true);
+    });
+  });
+
+  // Boot-id-aware empty handling (intent-hq/monorepo#1334): the terminal.list
+  // envelope carries daemonBootId. A same-boot empty is authoritative (every
+  // PTY genuinely gone — converge to zero tabs); a different/unknown boot id
+  // means restart (preserve tabs; auto-reconnect respawns) or a legacy
+  // bare-array response (no metadata — preserve).
+  describe("boot-id-aware empty hydration (monorepo#1334)", () => {
+    function liveState(overrides?: Partial<ReturnType<typeof getWs>>): TerminalOverlayState {
+      return {
+        ...initialState,
+        workspaces: { [WS]: {
+          isOpen: true,
+          activeTerminalId: "pty-42",
+          terminals: col([{ id: "pty-42", name: "Terminal" }]),
+          terminalsLoaded: true,
+          isLoadingTerminals: false,
+          daemonBootId: "boot-1",
+          selectedScriptId: null,
+          ...overrides,
+        }},
+      };
+    }
+
+    it("adopts the daemonBootId from a non-empty hydration", () => {
+      const state = terminalsReducer(
+        initialState,
+        loadWorkspaceTerminals(WS, [{ id: "t1", name: "T1" }], null, "boot-1")
+      );
+      expect(getWs(state).daemonBootId).toBe("boot-1");
+    });
+
+    it("converges to zero tabs on a same-boot authoritative empty", () => {
+      const state = terminalsReducer(
+        liveState(),
+        loadWorkspaceTerminals(WS, [], null, "boot-1")
+      );
+      const ws = getWs(state);
+      expect(terms(state)).toEqual([]);
+      expect(ws.activeTerminalId).toBeNull();
+      expect(ws.isOpen).toBe(false);
+      expect(ws.daemonBootId).toBe("boot-1");
+    });
+
+    it("preserves tabs and adopts the new boot id on a post-restart empty (different boot)", () => {
+      const state = terminalsReducer(
+        liveState(),
+        loadWorkspaceTerminals(WS, [], null, "boot-2")
+      );
+      const ws = getWs(state);
+      expect(terms(state).map((t) => t.id)).toEqual(["pty-42"]);
+      expect(ws.activeTerminalId).toBe("pty-42");
+      expect(ws.isOpen).toBe(true);
+      expect(ws.daemonBootId).toBe("boot-2");
+    });
+
+    it("preserves tabs on an empty without boot metadata (legacy bare-array response)", () => {
+      const state = terminalsReducer(liveState(), loadWorkspaceTerminals(WS, [], null));
+      const ws = getWs(state);
+      expect(terms(state).map((t) => t.id)).toEqual(["pty-42"]);
+      expect(ws.daemonBootId).toBe("boot-1");
+    });
+
+    it("preserves tabs when a boot-tagged empty lands before any boot id is known", () => {
+      const stateWith = liveState({ daemonBootId: null });
+      const state = terminalsReducer(stateWith, loadWorkspaceTerminals(WS, [], null, "boot-1"));
+      const ws = getWs(state);
+      expect(terms(state).map((t) => t.id)).toEqual(["pty-42"]);
+      expect(ws.daemonBootId).toBe("boot-1");
+    });
+
+    it("keeps isOpen on a same-boot authoritative empty when a script tab holds the panel", () => {
+      const state = terminalsReducer(
+        liveState({ selectedScriptId: "script-1" }),
+        loadWorkspaceTerminals(WS, [], null, "boot-1")
+      );
+      const ws = getWs(state);
+      expect(terms(state)).toEqual([]);
+      expect(ws.activeTerminalId).toBeNull();
+      expect(ws.isOpen).toBe(true);
+      expect(ws.selectedScriptId).toBe("script-1");
+      expect(ws.daemonBootId).toBe("boot-1");
+    });
+  });
+
+  // Scripts are not in `terminal.list`, so a script-only panel gets an empty
+  // terminals hydration on every workspace remount. The reducer used to force
+  // isOpen:false unconditionally on the empty-over-empty pass, closing a
+  // panel legitimately held open by a script tab (monorepo#1411 — 1-frame
+  // flash then disappear on workspace switch-back).
+  describe("script-held panel survives empty hydration (monorepo#1411)", () => {
+    function scriptOnlyState(overrides?: Partial<ReturnType<typeof getWs>>): TerminalOverlayState {
+      return {
+        ...initialState,
+        workspaces: { [WS]: {
+          isOpen: true,
+          activeTerminalId: null,
+          terminals: col([]),
+          terminalsLoaded: true,
+          isLoadingTerminals: false,
+          daemonBootId: "boot-1",
+          selectedScriptId: "script-1",
+          ...overrides,
+        }},
+      };
+    }
+
+    it("keeps isOpen through a switch-away-and-back cycle (repeated empty hydrations)", () => {
+      // Each remount fires hydrateTerminalsRequested → empty terminal.list —
+      // the panel must stay open on the script tab across the whole cycle.
+      let state: TerminalOverlayState = scriptOnlyState();
+      state = terminalsReducer(state, loadWorkspaceTerminals(WS, [], undefined, "boot-1"));
+      state = terminalsReducer(state, loadWorkspaceTerminals(WS, [], undefined, "boot-1"));
+      const ws = getWs(state);
+      expect(ws.isOpen).toBe(true);
+      expect(ws.selectedScriptId).toBe("script-1");
+      expect(terms(state)).toEqual([]);
+    });
+
+    it("restores a persisted script-held open panel (savedState, zero terminals)", () => {
+      const state = terminalsReducer(
+        initialState,
+        loadWorkspaceTerminals(WS, [], {
+          isOpen: true,
+          activeTerminalId: null,
+          selectedScriptId: "script-1",
+        }, "boot-1")
+      );
+      const ws = getWs(state);
+      expect(ws.isOpen).toBe(true);
+      expect(ws.selectedScriptId).toBe("script-1");
+      expect(ws.daemonBootId).toBe("boot-1");
+    });
+
+    it("keeps a script-held panel closed when it was closed (no spurious opens)", () => {
+      const state = terminalsReducer(
+        scriptOnlyState({ isOpen: false }),
+        loadWorkspaceTerminals(WS, [], undefined, "boot-1")
+      );
+      expect(getWs(state).isOpen).toBe(false);
+    });
+
+    it("still converges isOpen to false on a truly-empty workspace (stuck-state guard)", () => {
+      const state = terminalsReducer(
+        scriptOnlyState({ selectedScriptId: null }),
+        loadWorkspaceTerminals(WS, [], undefined, "boot-1")
+      );
+      expect(getWs(state).isOpen).toBe(false);
+    });
+
+    it("ignores a persisted isOpen:true with no script and no terminals (stuck-state guard)", () => {
+      const state = terminalsReducer(
+        initialState,
+        loadWorkspaceTerminals(WS, [], {
+          isOpen: true,
+          activeTerminalId: null,
+          selectedScriptId: null,
+        }, "boot-1")
+      );
+      expect(getWs(state).isOpen).toBe(false);
+    });
+  });
+
   describe("setTerminalsList", () => {
     it("should replace terminal list preserving custom names", () => {
       const stateWith: TerminalOverlayState = {
@@ -606,7 +796,8 @@ describe("terminalsReducer", () => {
           terminals: col([{ id: "t1", name: "T1", customName: "My Term" }]),
           terminalsLoaded: false,
           isLoadingTerminals: false,
-          recentlyCreatedTerminals: [],
+          daemonBootId: null,
+          selectedScriptId: null,
         }},
       };
       const state = terminalsReducer(stateWith, setTerminalsList(WS, [
@@ -617,6 +808,292 @@ describe("terminalsReducer", () => {
       expect(terms(state)).toHaveLength(2);
       expect(getItem(ws.terminals, "t1")?.customName).toBe("My Term");
       expect(getItem(ws.terminals, "t1")?.name).toBe("New T1");
+    });
+  });
+
+  // Selected script tab lives in per-workspace Redux state (monorepo#1411) so
+  // it survives workspace switches/remounts instead of being component $state.
+  describe("selectScript / clearScriptSelection", () => {
+    function scriptState(overrides?: Partial<ReturnType<typeof getWs>>): TerminalOverlayState {
+      return {
+        ...initialState,
+        workspaces: { [WS]: {
+          isOpen: true,
+          activeTerminalId: "t1",
+          terminals: col([{ id: "t1", name: "T1" }, { id: "t2", name: "T2" }]),
+          terminalsLoaded: false,
+          isLoadingTerminals: false,
+          daemonBootId: null,
+          selectedScriptId: null,
+          ...overrides,
+        }},
+      };
+    }
+
+    it("selectScript sets selectedScriptId and keeps activeTerminalId", () => {
+      const state = terminalsReducer(scriptState(), selectScript(WS, "script-1"));
+      const ws = getWs(state);
+      expect(ws.selectedScriptId).toBe("script-1");
+      expect(ws.activeTerminalId).toBe("t1");
+    });
+
+    it("selectScript is a no-op when the script is already selected", () => {
+      const stateWith = scriptState({ selectedScriptId: "script-1" });
+      const state = terminalsReducer(stateWith, selectScript(WS, "script-1"));
+      expect(state).toBe(stateWith);
+    });
+
+    it("selectScript works on an untouched workspace (no terminals yet)", () => {
+      const state = terminalsReducer(initialState, selectScript(WS, "script-1"));
+      expect(getWs(state).selectedScriptId).toBe("script-1");
+    });
+
+    it("clearScriptSelection resets selectedScriptId", () => {
+      const stateWith = scriptState({ selectedScriptId: "script-1" });
+      const state = terminalsReducer(stateWith, clearScriptSelection(WS));
+      expect(getWs(state).selectedScriptId).toBeNull();
+    });
+
+    it("clearScriptSelection is a no-op when nothing is selected", () => {
+      const stateWith = scriptState();
+      const state = terminalsReducer(stateWith, clearScriptSelection(WS));
+      expect(state).toBe(stateWith);
+    });
+
+    it("selectTerminal clears the script selection", () => {
+      const stateWith = scriptState({ selectedScriptId: "script-1" });
+      const state = terminalsReducer(stateWith, selectTerminal(WS, "t2"));
+      const ws = getWs(state);
+      expect(ws.activeTerminalId).toBe("t2");
+      expect(ws.selectedScriptId).toBeNull();
+    });
+
+    it("selectTerminal on the already-active terminal still clears the script selection", () => {
+      // Mirrors the former component logic: clicking the active terminal tab
+      // while a script tab was showing switches back to the terminal.
+      const stateWith = scriptState({ selectedScriptId: "script-1" });
+      const state = terminalsReducer(stateWith, selectTerminal(WS, "t1"));
+      const ws = getWs(state);
+      expect(ws.activeTerminalId).toBe("t1");
+      expect(ws.selectedScriptId).toBeNull();
+    });
+
+    it("addTerminal clears the script selection (createNewTerminal semantics)", () => {
+      const stateWith = scriptState({ selectedScriptId: "script-1" });
+      const state = terminalsReducer(stateWith, addTerminal(WS, "t3", "T3"));
+      const ws = getWs(state);
+      expect(ws.activeTerminalId).toBe("t3");
+      expect(ws.selectedScriptId).toBeNull();
+    });
+
+    it("openTerminalOverlay with explicit termId clears the script selection", () => {
+      const stateWith = scriptState({ selectedScriptId: "script-1", isOpen: false });
+      const state = terminalsReducer(stateWith, openTerminalOverlay(WS, "t2"));
+      const ws = getWs(state);
+      expect(ws.isOpen).toBe(true);
+      expect(ws.activeTerminalId).toBe("t2");
+      expect(ws.selectedScriptId).toBeNull();
+    });
+
+    it("openTerminalOverlay without termId preserves the script selection", () => {
+      const stateWith = scriptState({ selectedScriptId: "script-1", isOpen: false });
+      const state = terminalsReducer(stateWith, openTerminalOverlay(WS));
+      const ws = getWs(state);
+      expect(ws.isOpen).toBe(true);
+      expect(ws.selectedScriptId).toBe("script-1");
+    });
+
+    it("removeTerminal preserves the script selection", () => {
+      const stateWith = scriptState({ selectedScriptId: "script-1" });
+      const state = terminalsReducer(stateWith, removeTerminal(WS, "t2"));
+      expect(getWs(state).selectedScriptId).toBe("script-1");
+    });
+
+    it("loadWorkspaceTerminals preserves the in-memory script selection (remount hydration)", () => {
+      const stateWith = scriptState({ selectedScriptId: "script-1" });
+      const state = terminalsReducer(
+        stateWith,
+        loadWorkspaceTerminals(WS, [{ id: "t1", name: "T1" }], { isOpen: true, activeTerminalId: "t1" })
+      );
+      // savedState without selectedScriptId (legacy persisted entry) must not
+      // drop the in-memory selection.
+      expect(getWs(state).selectedScriptId).toBe("script-1");
+    });
+
+    it("loadWorkspaceTerminals restores a persisted script selection", () => {
+      const state = terminalsReducer(
+        initialState,
+        loadWorkspaceTerminals(WS, [{ id: "t1", name: "T1" }], {
+          isOpen: true,
+          activeTerminalId: "t1",
+          selectedScriptId: "script-1",
+        })
+      );
+      expect(getWs(state).selectedScriptId).toBe("script-1");
+    });
+
+    it("loadWorkspaceTerminals honors an explicit persisted null selection", () => {
+      const stateWith = scriptState({ selectedScriptId: "script-1" });
+      const state = terminalsReducer(
+        stateWith,
+        loadWorkspaceTerminals(WS, [{ id: "t1", name: "T1" }], {
+          isOpen: true,
+          activeTerminalId: "t1",
+          selectedScriptId: null,
+        })
+      );
+      expect(getWs(state).selectedScriptId).toBeNull();
+    });
+
+    it("empty-list hydration over an empty workspace preserves the script selection", () => {
+      // Scripts are not in terminal.list, so a script-only panel gets an empty
+      // terminals hydration on every remount — the selection must survive it.
+      const stateWith = scriptState({
+        terminals: col([]),
+        activeTerminalId: null,
+        selectedScriptId: "script-1",
+      });
+      const state = terminalsReducer(stateWith, loadWorkspaceTerminals(WS, [], null));
+      expect(getWs(state).selectedScriptId).toBe("script-1");
+    });
+
+    it("keeps script selections independent per workspace", () => {
+      let state = terminalsReducer(initialState, selectScript("ws-1", "script-a"));
+      state = terminalsReducer(state, selectScript("ws-2", "script-b"));
+      state = terminalsReducer(state, clearScriptSelection("ws-1"));
+      expect(getWs(state, "ws-1").selectedScriptId).toBeNull();
+      expect(getWs(state, "ws-2").selectedScriptId).toBe("script-b");
+    });
+  });
+
+  // Write-time validation of the selected script tab: when `setScriptsData`
+  // (the authoritative `script.list` response) lands without the selected
+  // script, the reducer clears the selection instead of relying solely on
+  // `selectSelectedScriptId`'s read-time filtering — a stale persisted id
+  // must not keep isOpen:true alive with nothing renderable (stuck state).
+  describe("stale selectedScriptId cleared on setScriptsData", () => {
+    function makeScript(id: string): ScriptWithState {
+      return {
+        id,
+        workspaceId: WS,
+        name: `script-${id}`,
+        command: "pnpm dev",
+        mode: "service",
+        source: "user",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        runtime: { status: "idle", restartCount: 0 },
+      };
+    }
+
+    function scriptHeldState(overrides?: Partial<ReturnType<typeof getWs>>): TerminalOverlayState {
+      return {
+        ...initialState,
+        workspaces: { [WS]: {
+          isOpen: true,
+          activeTerminalId: null,
+          terminals: col([]),
+          terminalsLoaded: false,
+          isLoadingTerminals: false,
+          daemonBootId: "boot-1",
+          selectedScriptId: "script-1",
+          ...overrides,
+        }},
+      };
+    }
+
+    it("clears a selection missing from the script list and closes a script-only panel", () => {
+      const state = terminalsReducer(
+        scriptHeldState(),
+        setScriptsData(WS, [makeScript("other-script")]),
+      );
+      const ws = getWs(state);
+      expect(ws.selectedScriptId).toBeNull();
+      expect(ws.isOpen).toBe(false);
+    });
+
+    it("clears a stale selection but keeps the panel open on an active terminal", () => {
+      const state = terminalsReducer(
+        scriptHeldState({
+          terminals: col([{ id: "t1", name: "T1" }]),
+          activeTerminalId: "t1",
+        }),
+        setScriptsData(WS, []),
+      );
+      const ws = getWs(state);
+      expect(ws.selectedScriptId).toBeNull();
+      expect(ws.isOpen).toBe(true);
+      expect(ws.activeTerminalId).toBe("t1");
+    });
+
+    it("keeps a selection present in the script list", () => {
+      const stateWith = scriptHeldState();
+      const state = terminalsReducer(stateWith, setScriptsData(WS, [makeScript("script-1")]));
+      expect(state).toBe(stateWith);
+    });
+
+    it("is a no-op when no script is selected", () => {
+      const stateWith = scriptHeldState({ selectedScriptId: null, isOpen: false });
+      const state = terminalsReducer(stateWith, setScriptsData(WS, []));
+      expect(state).toBe(stateWith);
+    });
+
+    it("does not touch other workspaces", () => {
+      const stateWith = scriptHeldState();
+      const state = terminalsReducer(stateWith, setScriptsData("ws-other", []));
+      expect(getWs(state).selectedScriptId).toBe("script-1");
+      expect(getWs(state).isOpen).toBe(true);
+    });
+  });
+
+  // Nit fix from the PR #705 review: customName is renderer-only state keyed
+  // by daemon PTY id. Across a KNOWN daemon boot change a recycled id is a
+  // different terminal, so hydration must not resurrect the old custom name.
+  describe("customName preservation across daemonBootId changes", () => {
+    function namedState(bootId: string | null): TerminalOverlayState {
+      return {
+        ...initialState,
+        workspaces: { [WS]: {
+          isOpen: true,
+          activeTerminalId: "pty-0",
+          terminals: col([{ id: "pty-0", name: "Terminal", customName: "Build" }]),
+          terminalsLoaded: false,
+          isLoadingTerminals: false,
+          daemonBootId: bootId,
+          selectedScriptId: null,
+        }},
+      };
+    }
+
+    it("preserves customName on a same-boot hydration", () => {
+      const state = terminalsReducer(
+        namedState("boot-1"),
+        loadWorkspaceTerminals(WS, [{ id: "pty-0", name: "Terminal" }], undefined, "boot-1"),
+      );
+      expect(getItem(getWs(state).terminals, "pty-0")?.customName).toBe("Build");
+    });
+
+    it("drops customName for a recycled id on a new boot", () => {
+      const state = terminalsReducer(
+        namedState("boot-1"),
+        loadWorkspaceTerminals(WS, [{ id: "pty-0", name: "Terminal" }], undefined, "boot-2"),
+      );
+      expect(getItem(getWs(state).terminals, "pty-0")?.customName).toBeUndefined();
+    });
+
+    it("preserves customName when the incoming boot id is unknown (legacy bare-array response)", () => {
+      const state = terminalsReducer(
+        namedState("boot-1"),
+        loadWorkspaceTerminals(WS, [{ id: "pty-0", name: "Terminal" }], undefined),
+      );
+      expect(getItem(getWs(state).terminals, "pty-0")?.customName).toBe("Build");
+    });
+
+    it("preserves customName when no prior boot id was known", () => {
+      const state = terminalsReducer(
+        namedState(null),
+        loadWorkspaceTerminals(WS, [{ id: "pty-0", name: "Terminal" }], undefined, "boot-1"),
+      );
+      expect(getItem(getWs(state).terminals, "pty-0")?.customName).toBe("Build");
     });
   });
 });

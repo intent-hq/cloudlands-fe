@@ -28,6 +28,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { toStore } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('NoteMetadataBar');
 
@@ -83,7 +84,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     // workspace agent list for an ID lookup.
     const _workspaceAgents = $workspaceAgents$;
     const session = selectAgentSession.select(appStore.state, agentId);
-    return session?.name || 'Agent';
+    return session?.name || m.workspace_fileChanges_agent_label();
   }
 
   // Track which agents we've already tried to load
@@ -124,7 +125,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   // Handle running an agent for this note (creates agent and sends initial message)
   function handleRunAgent() {
-    appStore.dispatch(runAgentForNoteRequested(workspaceId, note.id, note.title || 'Task'));
+    appStore.dispatch(
+      runAgentForNoteRequested(workspaceId, note.id, note.title || m.workspace_noteCodeChanges_task_label()),
+    );
   }
 
   async function getAggregateChanges(): Promise<ChatFileChange[]> {
@@ -164,7 +167,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         openWorkspaceChatChanges(
           workspaceId as string,
           changes as never,
-          `Changes from task: ${note.title || 'Task'}`,
+          m.workspace_noteMetadataBar_changesFromTask_label({
+            title: note.title || m.workspace_noteCodeChanges_task_label(),
+          }),
           { isAggregate: true },
         ),
       );
@@ -180,7 +185,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     <div class="w-full max-w-[var(--content-max-width,60rem)] px-[var(--content-gutter-left)] pt-12 mb-6 flex flex-col">
       <!-- Status row -->
       <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
-        <div class="text-subtle pt-0.5">Status</div>
+        <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_status_label()}</div>
         <div class="flex items-center min-h-6 -mt-0.5">
           <TaskStatusIndicator
             {workspaceId}
@@ -193,13 +198,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
       <!-- Assignee row -->
       <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
-        <div class="text-subtle pt-0.5">Assignee</div>
+        <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_assignee_label()}</div>
         <div class="flex flex-col gap-1.5 min-h-6 min-w-0 overflow-hidden">
           {#if assignedAgents.length === 0}
             <button
               onclick={handleRunAgent}
               class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
-              title="Run agent"
+              title={m.workspace_noteMetadataBar_runAgent_tooltip()}
             >
               <Fa icon={faPlay} class="text-xs" />
             </button>
@@ -212,14 +217,14 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                 >
                   <AuggieAvatar size={22} {agentId} />
                   <span class="truncate font-medium text-subtle -mt-0.5"
-                    >{getAgentName(agentId) || 'Agent'}</span
+                    >{getAgentName(agentId)}</span
                   >
                 </button>
               {/each}
               <button
                 onclick={handleRunAgent}
                 class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
-                title="Run agent"
+                title={m.workspace_noteMetadataBar_runAgent_tooltip()}
               >
                 <Fa icon={faPlay} class="text-xs" />
               </button>

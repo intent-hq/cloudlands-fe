@@ -5,15 +5,12 @@
  * Manages update lifecycle: check → download → install
  */
 
-import {
-  app,
-  BrowserWindow,
-  powerMonitor,
-} from 'electron';
+import { app, BrowserWindow, powerMonitor } from 'electron';
 import type { UpdateInfo as ElectronUpdateInfo, ProgressInfo } from 'electron-updater';
 import electronUpdater from 'electron-updater';
 import { DEFAULTS } from '../../../shared/constants';
 import { Logger } from '../../../shared/logger';
+import { m } from '../../../shared/paraglide/messages.js';
 import { saveWindowSessions } from '../../../main/window';
 import type { UpdateChannel, UpdateState, UpdateStatus } from '../types';
 
@@ -263,7 +260,7 @@ class AutoUpdateService {
 
     const baseUrl = getUpdateBaseUrl();
     if (!baseUrl) {
-      this.state.error = 'Auto-update URL not configured';
+      this.state.error = m.autoUpdate_service_urlNotConfigured_error();
       this.updateStatus('error');
       return this.state;
     }
@@ -398,7 +395,7 @@ class AutoUpdateService {
     this.checkTimeoutId = setTimeout(() => {
       if (this.state.status === 'checking') {
         logger.warn('Update check timed out after ' + UPDATE_CHECK_TIMEOUT_MS + 'ms');
-        this.state.error = 'Update check timed out. Please check your network connection.';
+        this.state.error = m.autoUpdate_check_timeout_error();
         this.updateStatus('error');
       }
     }, UPDATE_CHECK_TIMEOUT_MS);

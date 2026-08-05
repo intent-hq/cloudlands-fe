@@ -16,6 +16,26 @@ vi.mock("$lib/client/live/backend-transport", () => ({
   backendRequest: vi.fn(),
 }));
 
+// The seeder reads known provider ids / gating metadata from the
+// providerCatalog slice — provide a hydrated §5.38-shaped mock state without
+// booting the full store (whose middleware would drag in live services).
+vi.mock("$store/renderer/store", async () => {
+  const { createAppStoreMockModule } = await import(
+    "$store/renderer/utils/test-helpers/store-mock"
+  );
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
+    "$store/renderer/slices/provider-catalog/provider-catalog-slice"
+  );
+  const { MOCK_PROVIDER_CATALOG } = await import(
+    "../../../test/fixtures/provider-catalog.fixture"
+  );
+  const providerCatalog = providerCatalogReducer(
+    initialState,
+    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+  );
+  return createAppStoreMockModule({ state: () => ({ providerCatalog }) });
+});
+
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { mockInvoke } from "$shared/ipc-mock-router";
 import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from "$shared/ipc/channels";
@@ -45,6 +65,7 @@ const NO_TOOLS = {
     pi: { available: false },
     droid: { available: false },
     grok: { available: false },
+    unsloth: { available: false },
     "codex-acp": { available: false },
     npx: { available: false },
   },
@@ -107,7 +128,17 @@ describe("provider-status-bridge-seeder", () => {
 
       expect(mockedRequest).toHaveBeenCalledWith("host.checkAuggie");
       expect(mockedRequest).toHaveBeenCalledWith("host.toolAvailability", {
-        tools: ["claude", "codex", "opencode", "pi", "droid", "grok", "codex-acp", "npx"],
+        tools: [
+          "claude",
+          "codex",
+          "opencode",
+          "pi",
+          "droid",
+          "grok",
+          "unsloth",
+          "codex-acp",
+          "npx",
+        ],
       });
       // The auth sweep carries no providerId / force — the daemon's cache
       // is respected on the aggregate path.
@@ -221,13 +252,14 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.providers.grok).toEqual({ available: true });
     });
 
-    it("keys unsloth availability off the opencode binary (available ⇒ authenticated)", async () => {
+    it("keys unsloth availability off both opencode AND the unsloth CLI (available ⇒ authenticated)", async () => {
       routeDaemon({
         "host.checkAuggie": { available: false },
         "host.toolAvailability": {
           tools: {
             ...NO_TOOLS.tools,
             opencode: { available: true, path: "/usr/local/bin/opencode" },
+            unsloth: { available: true, path: "/usr/local/bin/unsloth" },
           },
         },
         "host.providerAuthStatus": authSweep(),
@@ -244,6 +276,45 @@ describe("provider-status-bridge-seeder", () => {
       });
       // opencode itself keeps its own (unknown) auth verdict.
       expect(response.data?.providers.opencode).toEqual({ available: true });
+    });
+
+    it("reports unsloth unavailable when opencode is present but the unsloth CLI is missing", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: false },
+        "host.toolAvailability": {
+          tools: {
+            ...NO_TOOLS.tools,
+            opencode: { available: true, path: "/usr/local/bin/opencode" },
+          },
+        },
+        "host.providerAuthStatus": authSweep(),
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(response.data?.providers.unsloth).toEqual({ available: false });
+      expect(response.data?.providers.opencode).toEqual({ available: true });
+    });
+
+    it("reports unsloth unavailable when the unsloth CLI is present but opencode is missing", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: false },
+        "host.toolAvailability": {
+          tools: {
+            ...NO_TOOLS.tools,
+            unsloth: { available: true, path: "/usr/local/bin/unsloth" },
+          },
+        },
+        "host.providerAuthStatus": authSweep(),
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(response.data?.providers.unsloth).toEqual({ available: false });
     });
 
     it("does not attach verdicts to unavailable providers", async () => {
@@ -636,17 +707,20 @@ describe("provider-status-bridge-seeder", () => {
       });
     });
 
-    it("rechecks unsloth off the opencode binary — local-only, so available ⇒ authenticated", async () => {
+    it("rechecks unsloth off both opencode AND the unsloth CLI — local-only, so available ⇒ authenticated", async () => {
       routeDaemon({
-        "host.findBinary": (params: unknown) =>
-          (params as { name?: string }).name === "opencode"
-            ? { available: true, path: "/usr/local/bin/opencode" }
-            : { available: false },
+        "host.findBinary": (params: unknown) => {
+          const name = (params as { name?: string }).name;
+          return name === "opencode" || name === "unsloth"
+            ? { available: true, path: `/usr/local/bin/${name}` }
+            : { available: false };
+        },
       });
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "unsloth");
 
       expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "opencode" });
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "unsloth" });
       expect(mockedRequest).not.toHaveBeenCalledWith(
         "host.providerAuthStatus",
         expect.anything(),
@@ -660,7 +734,27 @@ describe("provider-status-bridge-seeder", () => {
 
     it("rechecks unsloth as unavailable when opencode is missing", async () => {
       routeDaemon({
-        "host.findBinary": { available: false },
+        "host.findBinary": (params: unknown) =>
+          (params as { name?: string }).name === "unsloth"
+            ? { available: true, path: "/usr/local/bin/unsloth" }
+            : { available: false },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "unsloth");
+
+      expect(response).toEqual({
+        success: true,
+        providerId: "unsloth",
+        data: { available: false },
+      });
+    });
+
+    it("rechecks unsloth as unavailable when the unsloth CLI is missing", async () => {
+      routeDaemon({
+        "host.findBinary": (params: unknown) =>
+          (params as { name?: string }).name === "opencode"
+            ? { available: true, path: "/usr/local/bin/opencode" }
+            : { available: false },
       });
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "unsloth");
@@ -716,44 +810,133 @@ describe("provider-status-bridge-seeder", () => {
     });
   });
 
-  describe("providers:get-paths → host.checkAuggie + host.findBinary", () => {
-    it("resolves auggie via host.checkAuggie and the other CLIs via host.findBinary", async () => {
+  describe("providers:get-paths → host.providerDiscovery", () => {
+    it("maps every provider's resolvedPath plus the unsloth secondary path", async () => {
+      // PROTOCOL §5.14 host.providerDiscovery-shaped snapshot: all providers,
+      // dual-binary unsloth carries secondaryCommand/secondaryResolved(+Path).
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
-        "host.findBinary": (params) => {
-          const { name } = params as { name: string };
-          if (name === "claude") return { available: true, path: "/opt/homebrew/bin/claude" };
-          if (name === "codex") return { available: true, path: "/opt/homebrew/bin/codex" };
-          return { available: false };
+        "host.providerDiscovery": {
+          providers: [
+            {
+              id: "auggie",
+              displayName: "Auggie",
+              command: "auggie",
+              installed: true,
+              resolvedPath: "/usr/local/bin/auggie",
+              hasNpxFallback: false,
+              npxOnly: false,
+            },
+            {
+              id: "claude-code",
+              displayName: "Claude Code",
+              command: "npx",
+              installed: true,
+              resolvedPath: "/usr/local/bin/npx",
+              hasNpxFallback: false,
+              npxOnly: true,
+              npxPackage: "@agentclientprotocol/claude-agent-acp@1.2.3",
+            },
+            {
+              id: "grok",
+              displayName: "Grok",
+              command: "grok",
+              installed: true,
+              resolvedPath: "/home/user/.grok/bin/grok",
+              hasNpxFallback: false,
+              npxOnly: false,
+            },
+            {
+              id: "unsloth",
+              displayName: "Unsloth",
+              command: "opencode",
+              installed: true,
+              resolvedPath: "/home/user/.opencode/bin/opencode",
+              hasNpxFallback: false,
+              npxOnly: false,
+              secondaryCommand: "unsloth",
+              secondaryResolved: true,
+              secondaryResolvedPath: "/usr/local/bin/unsloth",
+            },
+            {
+              id: "codex",
+              displayName: "Codex",
+              command: "codex",
+              installed: false,
+              hasNpxFallback: true,
+              npxOnly: false,
+            },
+          ],
+          npx: { resolvedPath: "/usr/local/bin/npx", version: "10.2.4", versionOk: true },
         },
       });
 
       const response = await mockInvoke<
-        Envelope<{ auggie: string | null; "claude-code": string | null; codex: string | null }>
+        Envelope<{
+          paths: Record<string, string | null>;
+          secondaryPaths: Record<string, string | null>;
+        }>
       >(PROVIDERS_CHANNELS.GET_PATHS);
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.checkAuggie");
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "claude" });
-      // codex resolves the real CLI (mirrors main's getCodexPath), not codex-acp.
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex" });
+      expect(mockedRequest).toHaveBeenCalledWith("host.providerDiscovery", {});
       expect(response).toEqual({
         success: true,
         data: {
-          auggie: "/usr/local/bin/auggie",
-          "claude-code": "/opt/homebrew/bin/claude",
-          codex: "/opt/homebrew/bin/codex",
+          paths: {
+            auggie: "/usr/local/bin/auggie",
+            "claude-code": "/usr/local/bin/npx",
+            grok: "/home/user/.grok/bin/grok",
+            unsloth: "/home/user/.opencode/bin/opencode",
+            codex: null,
+          },
+          secondaryPaths: { unsloth: "/usr/local/bin/unsloth" },
         },
       });
     });
 
-    it("folds per-binary daemon failures to null instead of failing the read", async () => {
+    it("keys an unresolved dual-binary secondary as null (secondaryResolvedPath omitted)", async () => {
+      routeDaemon({
+        "host.providerDiscovery": {
+          providers: [
+            {
+              id: "unsloth",
+              displayName: "Unsloth",
+              command: "opencode",
+              installed: false,
+              resolvedPath: "/home/user/.opencode/bin/opencode",
+              hasNpxFallback: false,
+              npxOnly: false,
+              secondaryCommand: "unsloth",
+              secondaryResolved: false,
+            },
+          ],
+          npx: { resolvedPath: null, version: null, versionOk: false },
+        },
+      });
+
+      const response = await mockInvoke<
+        Envelope<{
+          paths: Record<string, string | null>;
+          secondaryPaths: Record<string, string | null>;
+        }>
+      >(PROVIDERS_CHANNELS.GET_PATHS);
+
+      expect(response).toEqual({
+        success: true,
+        data: {
+          paths: { unsloth: "/home/user/.opencode/bin/opencode" },
+          secondaryPaths: { unsloth: null },
+        },
+      });
+    });
+
+    it("degrades to empty maps instead of failing the read when the RPC fails", async () => {
       mockedRequest.mockRejectedValue(new Error("transport down"));
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.GET_PATHS);
 
       expect(response).toEqual({
         success: true,
-        data: { auggie: null, "claude-code": null, codex: null },
+        data: { paths: {}, secondaryPaths: {} },
       });
     });
   });

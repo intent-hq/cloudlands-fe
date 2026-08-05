@@ -42,6 +42,7 @@
   faColumns,
   faCompressAlt,
 } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
   const lineWrapping = selectLineWrapping();
@@ -149,7 +150,9 @@
     // eslint-disable-next-line intent/no-component-async-data-fetch
     const result = await stageFilesViaSeam(workspaceId, paths.map(toRepoRelative));
     if (!result.success) {
-      toast.error('Stage failed', { description: result.error || 'Unknown error' });
+      toast.error(m.workspace_fileChanges_stageFailed_error(), {
+        description: result.error || m.ui_workspaceActions_unknown_error(),
+      });
     }
   }
 
@@ -157,7 +160,9 @@
     // eslint-disable-next-line intent/no-component-async-data-fetch
     const result = await unstageFilesViaSeam(workspaceId, paths.map(toRepoRelative));
     if (!result.success) {
-      toast.error('Unstage failed', { description: result.error || 'Unknown error' });
+      toast.error(m.workspace_fileChanges_unstageFailed_error(), {
+        description: result.error || m.ui_workspaceActions_unknown_error(),
+      });
     }
   }
 
@@ -165,7 +170,9 @@
     // eslint-disable-next-line intent/no-component-async-data-fetch
     const result = await discardFilesViaSeam(workspaceId, paths.map(toRepoRelative));
     if (!result.success) {
-      toast.error('Revert failed', { description: result.error || 'Unknown error' });
+      toast.error(m.workspace_fileChanges_revertFailed_error(), {
+        description: result.error || m.ui_workspaceActions_unknown_error(),
+      });
     }
   }
 
@@ -185,7 +192,9 @@
       if (changesAllExpanded) changesPanelRef?.expandAll();
       else changesPanelRef?.collapseAll();
     }}
-    tooltip={changesAllExpanded ? 'Collapse all files' : 'Expand all files'}
+    tooltip={changesAllExpanded
+      ? m.layout_diffHeader_collapseAllFiles_tooltip()
+      : m.layout_diffHeader_expandAllFiles_tooltip()}
     tooltipSide="bottom"
     aria-pressed={changesAllExpanded}
     class={changesAllExpanded ? headerToggleActiveClass : headerToggleInactiveClass}
@@ -196,7 +205,9 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={() => appStore.dispatch(toggleLineWrapping())}
-    tooltip={$lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
+    tooltip={$lineWrapping
+      ? m.layout_diffHeader_wrappingOn_tooltip()
+      : m.layout_diffHeader_wrapLines_tooltip()}
     tooltipSide="bottom"
     aria-pressed={$lineWrapping}
     class={$lineWrapping ? headerToggleActiveClass : headerToggleInactiveClass}
@@ -208,8 +219,8 @@
     size="icon-xs"
     onclick={() => appStore.dispatch(toggleFoldUnchanged())}
     tooltip={$foldUnchanged
-      ? 'Folding unchanged lines. Click to disable.'
-      : 'Click to fold unchanged lines'}
+      ? m.layout_diffHeader_foldingOn_tooltip()
+      : m.layout_diffHeader_foldLines_tooltip()}
     tooltipSide="bottom"
     aria-pressed={$foldUnchanged}
     class={$foldUnchanged ? headerToggleActiveClass : headerToggleInactiveClass}
@@ -220,7 +231,9 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={() => appStore.dispatch(toggleDiffSideBySide())}
-    tooltip={$diffSideBySide ? 'Click to show unified view' : 'Click to show split view'}
+    tooltip={$diffSideBySide
+      ? m.layout_diffHeader_unifiedView_tooltip()
+      : m.layout_diffHeader_splitView_tooltip()}
     tooltipSide="bottom"
     aria-pressed={$diffSideBySide}
     class={$diffSideBySide ? headerToggleActiveClass : headerToggleInactiveClass}

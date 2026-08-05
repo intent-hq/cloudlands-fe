@@ -5,12 +5,15 @@
  *
  * When the saga runtime was removed, `slices/app-layout/sagas/app-layout-saga.ts`
  * went with it — including `watchOpenFileSaga`, `watchOpenNoteSaga`,
- * `watchOpenDiffSaga`, and `watchOpenCommitChangesetSaga`. Their triggers
+ * `watchOpenDiffSaga`, `watchOpenCommitChangesetSaga`,
+ * `watchOpenChatChangesSaga`, and `watchOpenLocalChangesSaga`. Their triggers
  * (`openWorkspaceFile`, `openWorkspaceNote`, `openWorkspaceDiff`,
- * `openWorkspaceCommitChangeset`) still update `mainPanel.*` in the
+ * `openWorkspaceCommitChangeset`, `openWorkspaceChatChanges`,
+ * `openWorkspaceLocalChanges`) still update `mainPanel.*` in the
  * workspace-navigation slice, but nothing observed them anymore, so clicks
  * from CommandPalette, tool-call panels, sidebar file lists, markdown link
- * openers, `+layout.svelte`, etc. no longer opened a panel tab.
+ * openers, chat "N files changed" summaries, `+layout.svelte`, etc. no longer
+ * opened a panel tab.
  *
  * This restores the behavior WITHOUT re-adding a saga and WITHOUT changing any
  * call site: `createWorkspaceNavigationTabMiddleware()` observes dispatched
@@ -18,9 +21,10 @@
  * `panelLayout/openTab` (or `openTabInAdjacentOrSplit`) with the same tab
  * shape the old sagas built. Tab open/focus semantics are delegated entirely
  * to the panel-layout reducer: `findDuplicateTabInPanel` already dedupes tabs
- * by `noteId` / `filePath` / `diffPath` / `data.commitHash`, so re-clicking
- * the same target focuses the existing tab instead of duplicating it.
- * `force: true` mirrors the old sagas' user-initiated opens.
+ * by `noteId` / `filePath` / `diffPath` / `data.commitHash` /
+ * `data.messageId` (chat-changes) and treats `local-changes` as a singleton,
+ * so re-clicking the same target focuses the existing tab instead of
+ * duplicating it. `force: true` mirrors the old sagas' user-initiated opens.
  *
  * Sibling actions that never had a panel-layout tab handler even in the saga
  * world (`openWorkspaceBrowser`, `openWorkspaceAcceptChanges`,
@@ -37,10 +41,13 @@
 import type { StoreMiddleware } from "$lib/store-shim/types";
 import { store as appStore } from "$store/renderer/store";
 import {
+  openWorkspaceChatChanges,
   openWorkspaceCommitChangeset,
   openWorkspaceDiff,
   openWorkspaceFile,
+  openWorkspaceLocalChanges,
   openWorkspaceNote,
+  type JsonValue,
 } from "$store/renderer/slices/workspace-navigation/workspace-navigation-slice";
 import {
   openTab,
@@ -48,11 +55,12 @@ import {
 } from "$store/renderer/slices/panel-layout/panel-layout-slice";
 import type { PanelTab } from "$store/renderer/slices/panel-layout/panel-layout-types";
 import type { TrackedChange } from "$features/file-tracking/types";
+import { m } from "$shared/paraglide/messages.js";
 
 /** Build the human-friendly tab title shown for a commit changeset. */
 function buildCommitTabTitle(commitHash: string, commitMessage?: string): string {
   const shortHash = commitHash.substring(0, 7);
-  if (!commitMessage) return `Commit ${shortHash}`;
+  if (!commitMessage) return m.layout_navigation_commit_title({ hash: shortHash });
   const trimmed = commitMessage.length > 20 ? `${commitMessage.substring(0, 20)}...` : commitMessage;
   return `${shortHash}: ${trimmed}`;
 }
@@ -145,7 +153,7 @@ export function openFileTab(
 
   const tab: Omit<PanelTab, "id"> = {
     type: "file",
-    title: filePath.split("/").pop() || "File",
+    title: filePath.split("/").pop() || m.layout_tabTypes_file_title(),
     filePath,
     workspaceId: wsId,
     closable: true,
@@ -211,7 +219,7 @@ export function openDiffTab(
 
   const tab: Omit<PanelTab, "id"> = {
     type: "diff",
-    title: filePath.split("/").pop() || "Diff",
+    title: filePath.split("/").pop() || m.layout_tabTypes_diff_title(),
     diffPath: filePath,
     workspaceId: wsId,
     closable: true,
@@ -223,6 +231,57 @@ export function openDiffTab(
   };
 
   dispatchOpenTab(wsId, tab, options?.openInAdjacentPanel ?? false, options?.sourcePanelId);
+}
+
+/**
+ * Open (or focus) a chat-changes tab summarizing the file changes attached to
+ * a chat message (or an aggregated agent turn). Mirrors the removed
+ * `watchOpenChatChangesSaga`: `data` carries the changes plus the
+ * `messageId` / `isAggregate` / `agentId` / `turnNumber` options that
+ * `ChatChangesTabType` renders and `findDuplicateTabInPanel` dedupes on.
+ */
+export function openChatChangesTab(
+  wsId: string,
+  changes: JsonValue[] | undefined,
+  title: string,
+  options?: { messageId?: string; isAggregate?: boolean; agentId?: string; turnNumber?: number },
+): void {
+  if (!wsId || !changes) return;
+
+  const tab: Omit<PanelTab, "id"> = {
+    type: "chat-changes",
+    title,
+    workspaceId: wsId,
+    closable: true,
+    data: {
+      changes,
+      title,
+      messageId: options?.messageId,
+      isAggregate: options?.isAggregate,
+      agentId: options?.agentId,
+      turnNumber: options?.turnNumber,
+    },
+  };
+
+  dispatchOpenTab(wsId, tab, false);
+}
+
+/**
+ * Open (or focus) the singleton "All Changes" (`local-changes`) tab. Mirrors
+ * the removed `watchOpenLocalChangesSaga`; the panel-layout reducer treats
+ * `local-changes` as a singleton, so repeat opens focus the existing tab.
+ */
+export function openLocalChangesTab(wsId: string): void {
+  if (!wsId) return;
+
+  const tab: Omit<PanelTab, "id"> = {
+    type: "local-changes",
+    title: m.layout_presetExecutor_allChanges_title(),
+    workspaceId: wsId,
+    closable: true,
+  };
+
+  dispatchOpenTab(wsId, tab, false);
 }
 
 /**
@@ -281,6 +340,25 @@ export function createWorkspaceNavigationTabMiddleware(): StoreMiddleware {
         ];
         if (typeof wsId === "string") {
           openDiffTab(wsId, change, options);
+        }
+        break;
+      }
+      case openWorkspaceChatChanges.type: {
+        const [wsId, changes, title, options] = payload as [
+          string,
+          JsonValue[] | undefined,
+          string,
+          Parameters<typeof openChatChangesTab>[3],
+        ];
+        if (typeof wsId === "string") {
+          openChatChangesTab(wsId, changes, title, options);
+        }
+        break;
+      }
+      case openWorkspaceLocalChanges.type: {
+        const [wsId] = payload as [string];
+        if (typeof wsId === "string") {
+          openLocalChangesTab(wsId);
         }
         break;
       }

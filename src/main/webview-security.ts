@@ -20,6 +20,7 @@ import {
   app,
   session,
   shell,
+  systemPreferences,
 } from 'electron';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -27,6 +28,13 @@ import {
   BROWSER_PANEL_PARTITION,
   BROWSER_PROTOCOLS,
 } from '../shared/constants';
+import {
+  HUD_ROUTE_PREFIX,
+  findExistingHudWindow,
+  focusHudWindow,
+  registerHudWindow,
+} from './hud-window';
+import { isTrustedHidOrigin } from '../features/hardware-console/main/hardware-console.ipc';
 import { Logger } from '../shared/logger';
 
 const logger = new Logger('WebviewSecurity');
@@ -99,6 +107,17 @@ function isInternalUrl(parsed: URL): boolean {
 
 function isExternalHttpUrl(parsed: URL): boolean {
   return BROWSER_PROTOCOLS.EXTERNAL.includes(parsed.protocol);
+}
+
+/**
+ * Whether an internal URL targets the HUD pop-out route. The HUD is a
+ * singleton: window.open()-style popups (e.g. the renderer's
+ * window:open-new → window.open bridge) must reuse the live HUD window
+ * instead of materializing a second one, mirroring the createAppWindow
+ * funnel in system.ipc.ts.
+ */
+function isHudRouteUrl(parsed: URL): boolean {
+  return parsed.pathname.startsWith(HUD_ROUTE_PREFIX);
 }
 
 function getSecureWindowPreferences(): Electron.BrowserWindowConstructorOptions {
@@ -399,6 +418,20 @@ export function setupWebviewSecurity(): void {
       try {
         const parsed = new URL(url);
         if (isInternalUrl(parsed)) {
+          // HUD singleton: a popup targeting /hud (renderer window.open,
+          // including the window:open-new → window.open bridge fallback)
+          // must reuse the live HUD window instead of creating a second one
+          // — the same rule createAppWindow enforces for the IPC path.
+          if (isHudRouteUrl(parsed)) {
+            const existing = findExistingHudWindow();
+            if (existing) {
+              focusHudWindow(existing);
+              logger.info('Reusing existing HUD window for popup (singleton)', {
+                windowId: existing.id,
+              });
+              return { action: 'deny' };
+            }
+          }
           return {
             action: 'allow',
             overrideBrowserWindowOptions: getSecureWindowPreferences(),
@@ -428,6 +461,23 @@ export function setupWebviewSecurity(): void {
       contents.on('did-create-window', (popupWindow) => {
         trackWebviewPopup(popupWindow);
       });
+    } else {
+      // App-window popups: register a newly allowed /hud popup as THE HUD
+      // singleton immediately (its URL is still loading, so the URL-scan
+      // fallback would miss it — same mid-navigation race createAppWindow
+      // guards against by registering before loadURL).
+      contents.on('did-create-window', (popupWindow, details) => {
+        try {
+          if (isHudRouteUrl(new URL(details.url))) {
+            registerHudWindow(popupWindow);
+            logger.info('Registered HUD popup window as singleton', {
+              windowId: popupWindow.id,
+            });
+          }
+        } catch {
+          // invalid URL — nothing to register
+        }
+      });
     }
   });
 
@@ -454,17 +504,107 @@ function setupPermissionHandlers(ses: Electron.Session): void {
       return;
     }
 
+    // Microphone for voice dictation: only audio-only getUserMedia from the
+    // app shell itself. On macOS the Chromium grant alone is not enough — the
+    // OS-level TCC grant is requested via askForMediaAccess (prompts once;
+    // subsequent calls resolve from the stored decision).
+    if (permission === 'media' && isAllowedMicrophoneRequest(webContents, details)) {
+      void grantMicrophoneAccess().then(callback);
+      return;
+    }
+
     logger.warn('Blocked permission request', { permission, url: url.substring(0, 100) });
     callback(false);
   });
 
 
-  ses.setPermissionCheckHandler((_webContents, permission, _requestingOrigin, _details) => {
+  ses.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
     if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') {
       return true;
     }
+    // WebHID for the hardware console (Creator Micro 2 / Codex Micro): the
+    // app shell may enumerate HID devices; the actual device grant is scoped
+    // to supported VID/PIDs by the feature's device permission handler.
+    if (permission === 'hid') {
+      return isTrustedHidOrigin(requestingOrigin);
+    }
+    // Audio capture for voice dictation (navigator.permissions / device
+    // enumeration checks before the actual getUserMedia request). Video
+    // capture stays blocked, as does any webview-originated media check, and
+    // the grant is reported only to the app shell's own origin — mirroring
+    // the request handler's gate above.
+    if (permission === 'media') {
+      if (webContents?.getType() === 'webview') {
+        return false;
+      }
+      return details.mediaType !== 'video' && isAppShellUrl(requestingOrigin);
+    }
     return false;
   });
+}
+
+/**
+ * True when a `media` permission request may reach the microphone grant path
+ * — camera / screen-capture requests and any webview-originated media
+ * request stay blocked.
+ *
+ * When `mediaTypes` is populated, the request is granted only if it asks for
+ * audio exclusively. However, Chromium's PermissionController also delivers
+ * getUserMedia permission requests with NO `mediaTypes` (the field is
+ * optional; see electron/electron#36629) — denying those rejects
+ * getUserMedia with NotAllowedError before askForMediaAccess can ever run
+ * (no OS prompt, no TCC entry). Such a metadata-less request is granted only
+ * when it originates from the app shell itself (app:// or the dev server),
+ * whose sole media consumer is the audio-only voice recorder.
+ */
+function isAllowedMicrophoneRequest(
+  webContents: Electron.WebContents | null,
+  details: Electron.PermissionRequest,
+): boolean {
+  if (webContents?.getType() === 'webview') {
+    return false;
+  }
+  const mediaTypes = (details as Electron.MediaAccessPermissionRequest).mediaTypes;
+  if (Array.isArray(mediaTypes) && mediaTypes.length > 0) {
+    return mediaTypes.every((t) => t === 'audio');
+  }
+  return isAppShellUrl(details.requestingUrl || webContents?.getURL() || '');
+}
+
+/**
+ * True when a URL belongs to the app's own renderer: the internal app
+ * protocols (app://, workspace-asset://) or the dev server in development.
+ */
+function isAppShellUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return BROWSER_PROTOCOLS.INTERNAL.includes(parsed.protocol) || isDevServerUrl(parsed);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the OS-level microphone grant. On macOS this triggers the one-time
+ * TCC prompt (NSMicrophoneUsageDescription supplies the dialog text in
+ * packaged builds); other platforms need no OS-level grant.
+ */
+async function grantMicrophoneAccess(): Promise<boolean> {
+  if (process.platform !== 'darwin') {
+    return true;
+  }
+  const status = systemPreferences.getMediaAccessStatus('microphone');
+  if (status === 'granted') {
+    return true;
+  }
+  try {
+    const granted = await systemPreferences.askForMediaAccess('microphone');
+    logger.info('macOS microphone access', { granted });
+    return granted;
+  } catch (err) {
+    logger.warn('macOS microphone access request failed', { err: String(err) });
+    return false;
+  }
 }
 
 /**

@@ -56,6 +56,7 @@
   } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
+  import { markWorkspaceSeen } from '$features/workspace/mark-workspace-seen';
   import { workspaceUnmounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 
   import { setOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
@@ -87,6 +88,7 @@
     flushPendingAgentDeletionsRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('workspace-page');
@@ -248,6 +250,10 @@
           appStore.dispatch(setActiveWorkspaceId(workspaceId));
         }
       });
+      // Viewing a workspace clears its unread attention on the daemon
+      // (fire-and-forget `workspace.markSeen`, PROTOCOL §5.1); the
+      // `workspace:attention-changed` event drives the UI clear.
+      markWorkspaceSeen(workspaceId);
     }
   });
 
@@ -259,10 +265,22 @@
       appStore.dispatch(loadWorkspacesRequested());
     }
 
+    // Re-focusing the window while a workspace is on screen counts as viewing
+    // it — mark it seen so unread raised while the window was backgrounded
+    // clears the moment the user comes back.
+    const handleWindowFocus = () => {
+      if (workspaceId) markWorkspaceSeen(workspaceId);
+    };
+    window.addEventListener('focus', handleWindowFocus);
+
     // The `initial-agent-pending` sessionStorage marker is no longer stashed
     // by the daemon-owned create flow, so the fresh-creation fade-in transition
     // no longer keys off it. Any equivalent signal should come from workspace
     // creation events / navigation state going forward.
+
+    return () => {
+      window.removeEventListener('focus', handleWindowFocus);
+    };
   });
 
   // Create cleanup manager for this component
@@ -528,9 +546,9 @@
       const { error, timestamp } = JSON.parse(errorData);
       if (Date.now() - timestamp < 30000) {
         logger.error('[WorkspacePage] Workspace creation failed', { error });
-        toast.error(`Failed to create workspace: ${error}`, {
+        toast.error(m.workspace_page_createFailed_error({ error }), {
           duration: 10000,
-          description: 'Please try again or contact support if the issue persists.',
+          description: m.workspace_page_createFailedRetry_description(),
         });
       }
     } catch (e) {
@@ -671,7 +689,7 @@
       const layoutManager = getPanelLayoutManager(workspaceId);
       layoutManager.openTab({
         type: 'agent-overview',
-        title: 'Agent Overview',
+        title: m.layout_tabTypes_agentOverview_title(),
         closable: true,
         workspaceId,
       });
@@ -789,7 +807,7 @@
      ============================================================================ -->
 
 <svelte:head>
-  <title>{isOnboarding || showOnboarding ? 'New Space' : $workspace?.title || 'Space'}</title>
+  <title>{isOnboarding || showOnboarding ? m.workspace_page_newSpace_title() : $workspace?.title || m.workspace_page_space_title()}</title>
 </svelte:head>
 
 <!-- Sidebar Snippet -->
@@ -845,7 +863,7 @@
         {#if workspaceLoader.loadError && !isCreatingWorkspace}
           <ResourceNotFound
             kind={workspaceLoader.loadError.kind}
-            resourceLabel="Workspace"
+            resourceLabel={m.workspace_page_workspaceResource_label()}
             resourceId={workspaceId}
             detail={workspaceLoader.loadError.kind === 'error'
               ? workspaceLoader.loadError.message
@@ -885,10 +903,10 @@
   <WorkspaceModals workspace={$workspace ?? null} showPRCreator={false} />
   <InputDialog
     bind:open={createFileDialogOpen}
-    title="Create new file"
-    description="Enter a name for the new file"
-    placeholder="filename.ts"
-    confirmLabel="Create"
+    title={m.workspace_page_createFile_title()}
+    description={m.workspace_page_createFile_description()}
+    placeholder={m.workspace_page_createFile_placeholder()}
+    confirmLabel={m.workspace_page_create_label()}
     onConfirm={handleCreateFileConfirm}
   />
 {/snippet}

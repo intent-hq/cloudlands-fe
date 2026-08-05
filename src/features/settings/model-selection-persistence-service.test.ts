@@ -23,21 +23,26 @@ vi.mock("$lib/client/live/backend-transport", () => ({
 
 import { store as appStore } from "$store/renderer/store";
 import {
-  clearWorkspaceModel,
   loadProviderModelsFromStorage,
-  loadWorkspaceModelsFromStorage,
   selectModel,
   setSelectedModel,
-  setWorkspaceModel,
 } from "$store/renderer/slices/model/model-slice";
 import { setActiveProvider } from "$store/renderer/slices/provider-settings/provider-settings-slice";
-import { getDefaultProviderId } from "$shared/config/provider-config";
+import {
+  MOCK_PROVIDER_CATALOG,
+  seedProviderCatalog,
+} from "../../test/fixtures/provider-catalog.fixture";
+
+const getDefaultProviderId = () => MOCK_PROVIDER_CATALOG.defaultProviderId;
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update wire)", () => {
   beforeAll(() => {
     appStore.init();
+    // The middleware now reads known provider ids and the default provider
+    // from the providerCatalog slice — seed the §5.38-shaped mock catalog.
+    seedProviderCatalog(appStore);
   });
 
   beforeEach(async () => {
@@ -56,7 +61,6 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
     // actions are already asserted to not trigger persistence writes.
     appStore.dispatch(setActiveProvider(getDefaultProviderId()));
     appStore.dispatch(loadProviderModelsFromStorage({}));
-    appStore.dispatch(loadWorkspaceModelsFromStorage({}));
     await flush();
   });
 
@@ -220,60 +224,8 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
     expect(appStore.state.model.providerModels.codex).toBe("codex:gpt-test-2");
   });
 
-  it("does NOT persist model.providerDefaults or flip providers.active on a workspace-scoped pick (spawn/chat-input context)", async () => {
-    const defaultProviderId = getDefaultProviderId();
-    appStore.dispatch(setActiveProvider(defaultProviderId));
-    appStore.dispatch(loadProviderModelsFromStorage({}));
-    await flush();
-    updateSpy.mockClear();
-    modelsListSpy.mockClear();
-
-    // A cross-provider compound pick scoped to a workspace (the chat-input /
-    // spawn path dispatches setWorkspaceModel, never selectModel) must stay
-    // workspace-local: no global default write, no active-provider switch.
-    appStore.dispatch(
-      setWorkspaceModel({ workspaceId: "ws-spawn", model: "opencode:opencode-go/kimi-k3" }),
-    );
-    await flush();
-
-    expect(appStore.state.providerSettings.activeProviderId).toBe(defaultProviderId);
-    const persistedPaths = updateSpy.mock.calls.flatMap(([params]) =>
-      (params as { changes: { path: string }[] }).changes.map((c) => c.path),
-    );
-    expect(persistedPaths).toEqual(["model.workspaceOverrides"]);
-    expect(persistedPaths).not.toContain("model.providerDefaults");
-    expect(persistedPaths).not.toContain("providers.active");
-    expect(modelsListSpy).not.toHaveBeenCalled();
-  });
-
-  it("persists model.workspaceOverrides on workspace pick and clear", async () => {
-    appStore.dispatch(setWorkspaceModel({ workspaceId: "ws-1", model: "sonnet-test-3" }));
-    await flush();
-    expect(updateSpy).toHaveBeenCalledWith({
-      changes: [
-        {
-          path: "model.workspaceOverrides",
-          value: expect.objectContaining({ "ws-1": "sonnet-test-3" }),
-        },
-      ],
-    });
-
-    updateSpy.mockClear();
-    appStore.dispatch(clearWorkspaceModel("ws-1"));
-    await flush();
-    expect(updateSpy).toHaveBeenCalledWith({
-      changes: [
-        {
-          path: "model.workspaceOverrides",
-          value: expect.not.objectContaining({ "ws-1": "sonnet-test-3" }),
-        },
-      ],
-    });
-  });
-
   it("does NOT write back hydration/echo actions (no settings:changed loop)", async () => {
     appStore.dispatch(loadProviderModelsFromStorage({ auggie: "sonnet-test-1" }));
-    appStore.dispatch(loadWorkspaceModelsFromStorage({ "ws-1": "sonnet-test-3" }));
     await flush();
 
     expect(updateSpy).not.toHaveBeenCalled();

@@ -18,9 +18,15 @@
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectForegroundWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 
-  import { generateLayout } from '$lib/client/live/live-prompt-enhancement';
+  import {
+    generateLayout,
+    EnhancePromptUnavailableError,
+    isEnhancePromptAvailable,
+  } from '$lib/client/live/live-prompt-enhancement';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectModelForType } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
+  import { m } from '$shared/paraglide/messages.js';
   import { toast } from 'svelte-sonner';
   import LayoutPresetDropdown from './LayoutPresetDropdown.svelte';
   import PanelMinimap from './PanelMinimap.svelte';
@@ -29,6 +35,7 @@
 
   const logger = createLogger('PanelLayoutControls');
   const fastModel$ = selectModelForType('fast');
+  const activeProviderId$ = selectActiveProviderId();
 
   interface Props {
     /** Current layout tree root node */
@@ -58,6 +65,9 @@
     onApplyPreset,
   }: Props = $props();
 
+  // §5.31 gate — AI layout generation is auggie-only; unset active provider defaults to auggie
+  const aiLayoutAvailable = $derived(isEnhancePromptAvailable($activeProviderId$));
+
   // Track if dropdown is open
   let promptValue = $state('');
   let isGenerating = $state(false);
@@ -70,6 +80,7 @@
   }
 
   async function handleGenerateLayout() {
+    if (!aiLayoutAvailable) return;
     if (!promptValue.trim() || isGenerating) return;
 
     isGenerating = true;
@@ -92,17 +103,19 @@
         logger.info('Parsed layout', { layout });
         applyParsedLayout(layout);
         promptValue = '';
-        toast.success('Layout updated!');
+        toast.success(m.layout_layoutControls_updated_label());
       } else {
         logger.warn('Failed to parse layout response', { response: result.enhanced });
-        toast.error('Could not parse layout suggestion');
+        toast.error(m.layout_layoutControls_parseFailed_error());
       }
     } catch (error) {
       logger.error('Layout generation failed', error);
       toast.error(
-        error instanceof Error && error.message
-          ? `Layout generation failed: ${error.message}`
-          : 'Layout generation failed',
+        error instanceof EnhancePromptUnavailableError
+          ? m.layout_layoutControls_generationUnavailable_error()
+          : error instanceof Error && error.message
+            ? m.layout_layoutControls_generationFailedWithMessage_error({ message: error.message })
+            : m.layout_layoutControls_generationFailed_error(),
       );
     } finally {
       isGenerating = false;
@@ -131,6 +144,7 @@
     const { agents, notes } = getWorkspaceContext();
     const agentCount = agents.length;
 
+    // i18n-ignore (agent-facing prompt, kept in English)
     return `You are a layout configuration assistant. Generate a FLAT panel layout.
 
 Available agents (${agentCount} total): ${JSON.stringify(agents)}
@@ -201,7 +215,7 @@ Respond with ONLY:
   {promptValue}
   {isGenerating}
   onPromptChange={(value) => (promptValue = value)}
-  onGenerateLayout={handleGenerateLayout}
+  onGenerateLayout={aiLayoutAvailable ? handleGenerateLayout : undefined}
   onPromptKeydown={handlePromptKeydown}
   {canGoBack}
   {canGoForward}

@@ -7,16 +7,21 @@ import type { AgentSession } from "$shared/types/agent-session";
 // `appClient.agents.rename` are stubbed. The mutation middleware runs against
 // the REAL configured store so the restore/activate/save + deletion + rename
 // async actions resolve through the real action.success/failure path and
-// their promises settle exactly as agent-stream-lifecycle (and the deletion/
+// their promises settle exactly as agent-send (and the deletion/
 // rename triggers) expect.
-const { get, del, list, rename } = vi.hoisted(() => ({
+const { get, del, list, rename, dismissQuestions, stop, cancelSubscriptions } = vi.hoisted(() => ({
   get: vi.fn(),
   del: vi.fn(),
   list: vi.fn(),
   rename: vi.fn(),
+  dismissQuestions: vi.fn(),
+  stop: vi.fn(),
+  cancelSubscriptions: vi.fn(),
 }));
 vi.mock("$lib/client", () => ({
-  appClient: { agents: { get, delete: del, list, rename } },
+  appClient: {
+    agents: { get, delete: del, list, rename, dismissQuestions, stop, cancelSubscriptions },
+  },
 }));
 
 // The deletion handlers lazily `import("svelte-sonner")` for the undo/error
@@ -31,10 +36,24 @@ vi.mock("svelte-sonner", () => ({
   }),
 }));
 
+// The undo handler lazily imports the subscription read service to refetch the
+// workspace's entries. Override ONLY that export (importOriginal keeps
+// `createAgentSubscriptionReadMiddleware` real for the configured store's
+// middleware chain) so the test can assert the refetch without a wire call.
+const { refreshWorkspaceSubscriptionEntries } = vi.hoisted(() => ({
+  refreshWorkspaceSubscriptionEntries: vi.fn(),
+}));
+vi.mock("./agent-subscription-read-service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./agent-subscription-read-service")>();
+  return { ...actual, refreshWorkspaceSubscriptionEntries };
+});
+
 import { store as appStore } from "$store/renderer/store";
 import { toast } from "svelte-sonner";
 import {
+  agentSessionDismissQuestionsRequested,
   bulkUpsertSessions,
+  removeSession,
   updateSession,
   upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
@@ -48,8 +67,15 @@ import {
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
   saveAgentSessionRequested,
+  stopAgentSessionRequested,
   undoAgentDeletionRequested,
 } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
+import {
+  cancelAgentSubscriptionsRequested,
+  makeKey,
+  setSubscriptionSnapshot,
+} from "$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice";
+import type { AgentSubscriptionUIEntry } from "$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types";
 import {
   closeTab,
   initializeLayout,
@@ -327,7 +353,47 @@ describe("agentMutationService — deletion (soft-hide-then-commit)", () => {
     list.mockReset();
     toastMock.warning.mockClear();
     toastMock.error.mockClear();
+    refreshWorkspaceSubscriptionEntries.mockClear();
   });
+
+  /** Seed a parent agent's subscription-UI entry watching `childId`. */
+  function seedSubscriptionEntry(wsId: string, parentId: string, childId: string): void {
+    appStore.dispatch(
+      setSubscriptionSnapshot(wsId, parentId, {
+        subscriptions: [
+          {
+            id: "watch-1",
+            agentId: parentId,
+            eventTypes: ["agent:completed"],
+            actorIds: [childId],
+            createdAt: "2026-01-01T00:00:00Z",
+            description: "Completion watch",
+          },
+        ],
+        delegationGroups: [
+          {
+            groupId: "g-1",
+            awaitMode: "all",
+            expectedAgentIds: [childId, "agent-other"],
+            completedAgentIds: [childId],
+            deletedAgentIds: [],
+            agentStatuses: { [childId]: "responding", "agent-other": "idle" },
+            delivered: false,
+          },
+        ],
+        agentStatuses: { [childId]: "responding", "agent-other": "idle" },
+        waitingState: "waiting",
+      }),
+    );
+  }
+
+  function readSubscriptionEntry(wsId: string, parentId: string): AgentSubscriptionUIEntry {
+    return (
+      appStore.state as {
+        agentSubscriptionUI: { entries: Record<string, AgentSubscriptionUIEntry> };
+      }
+    ).agentSubscriptionUI.entries[makeKey(wsId, parentId)];
+  }
 
   it("soft-hides the session and shows an undo toast WITHOUT calling the daemon", async () => {
     const WS = "ws-del-undo";
@@ -489,6 +555,31 @@ describe("agentMutationService — deletion (soft-hide-then-commit)", () => {
     // best-effort lazily-imported affordance and is not asserted here.)
     expect(del).toHaveBeenCalledWith(AGENT, WS);
     expect(readSession(AGENT)?.name).toBe("Survivor");
+    // A failed delete emits no daemon event, so the restore itself must
+    // refetch the subscription entries the soft-hide optimistically pruned.
+    expect(refreshWorkspaceSubscriptionEntries).toHaveBeenCalledWith(WS);
+  });
+
+  it("deleteAgentSessionRequested (no-undo path) restores the session and refetches subscriptions when the delete fails", async () => {
+    const WS = "ws-del-now-fail";
+    const PARENT = "agent-del-now-fail-parent";
+    const AGENT = "agent-del-now-fail-child";
+    seedSession(makeSession(AGENT, WS, { name: "Survivor" }));
+    seedSubscriptionEntry(WS, PARENT, AGENT);
+    del.mockResolvedValueOnce({ success: false, error: "boom" });
+
+    const action = deleteAgentSessionRequested(WS, AGENT);
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("boom");
+    await flush();
+
+    // The soft-hide pruned the parent's watch on this agent...
+    expect(readSubscriptionEntry(WS, PARENT).subscriptions).toHaveLength(0);
+    // ...and the failed delete (no daemon event) restores the session and
+    // triggers the subscription refetch so the footer converges again.
+    expect(del).toHaveBeenCalledWith(AGENT, WS);
+    expect(readSession(AGENT)?.name).toBe("Survivor");
+    expect(refreshWorkspaceSubscriptionEntries).toHaveBeenCalledWith(WS);
   });
 
   it("deleteAgentSessionRequested soft-hides and commits the daemon delete immediately", async () => {
@@ -603,6 +694,69 @@ describe("agentMutationService — deletion (soft-hide-then-commit)", () => {
         .some((e) => e.tab.type === "agent" && e.tab.agentId === AGENT),
     ).toBe(false);
   });
+
+  it("delete-with-undo optimistically removes the agent from subscription-UI entries", async () => {
+    const WS = "ws-del-subui-undo";
+    const PARENT = "agent-subui-undo-parent";
+    const AGENT = "agent-subui-undo-child";
+    seedSession(makeSession(AGENT, WS));
+    seedSubscriptionEntry(WS, PARENT, AGENT);
+
+    const action = deleteAgentWithUndoRequested(WS, AGENT);
+    appStore.dispatch(action);
+    await action.promise;
+
+    const entry = readSubscriptionEntry(WS, PARENT);
+    expect(entry.subscriptions).toHaveLength(0);
+    expect(entry.delegationGroups[0].expectedAgentIds).toEqual(["agent-other"]);
+    expect(entry.delegationGroups[0].completedAgentIds).toEqual([]);
+    expect(entry.delegationGroups[0].agentStatuses).toEqual({ "agent-other": "idle" });
+    expect(entry.agentStatuses).toEqual({ "agent-other": "idle" });
+    expect(del).not.toHaveBeenCalled();
+
+    // Clean up the armed commit timer.
+    appStore.dispatch(undoAgentDeletionRequested(WS, AGENT));
+  });
+
+  it("deleteAgentSessionRequested (no-undo path) also removes the agent from subscription-UI entries", async () => {
+    const WS = "ws-del-subui-now";
+    const PARENT = "agent-subui-now-parent";
+    const AGENT = "agent-subui-now-child";
+    seedSession(makeSession(AGENT, WS));
+    seedSubscriptionEntry(WS, PARENT, AGENT);
+    del.mockResolvedValueOnce({ success: true });
+
+    const action = deleteAgentSessionRequested(WS, AGENT);
+    appStore.dispatch(action);
+    await action.promise;
+    await flush();
+
+    const entry = readSubscriptionEntry(WS, PARENT);
+    expect(entry.subscriptions).toHaveLength(0);
+    expect(entry.delegationGroups[0].expectedAgentIds).toEqual(["agent-other"]);
+    expect(entry.agentStatuses).toEqual({ "agent-other": "idle" });
+    expect(del).toHaveBeenCalledWith(AGENT, WS);
+  });
+
+  it("undo refetches the workspace's subscription entries so the daemon's live watch repopulates", async () => {
+    const WS = "ws-del-subui-refetch";
+    const AGENT = "agent-subui-refetch-child";
+    seedSession(makeSession(AGENT, WS));
+
+    const action = deleteAgentWithUndoRequested(WS, AGENT);
+    appStore.dispatch(action);
+    await action.promise;
+    expect(refreshWorkspaceSubscriptionEntries).not.toHaveBeenCalled();
+
+    const undo = undoAgentDeletionRequested(WS, AGENT);
+    appStore.dispatch(undo);
+    await expect(undo.promise).resolves.toBe(true);
+    // The refetch rides a lazy dynamic import; drain the microtask queue.
+    await flush();
+
+    expect(refreshWorkspaceSubscriptionEntries).toHaveBeenCalledWith(WS);
+    expect(del).not.toHaveBeenCalled();
+  });
 });
 
 
@@ -673,3 +827,269 @@ describe("agentMutationService — rename (Bug 1: renameAgentSessionRequested re
     expect(toastMock.error).toHaveBeenCalledWith("Failed to rename agent");
   });
 });
+
+describe("agentMutationService — dismiss questions (optimistic marker + rollback)", () => {
+  const toastMock = toast as unknown as { error: ReturnType<typeof vi.fn> };
+
+  beforeAll(() => {
+    appStore.init();
+  });
+  afterEach(() => {
+    dismissQuestions.mockReset();
+    toastMock.error.mockClear();
+  });
+
+  it("optimistically stamps dismissedQuestionsMessageId, forwards agent.dismissQuestions, and resolves", async () => {
+    const WS = "ws-dismiss-ok";
+    const AGENT = "agent-dismiss-ok";
+    seedSession(makeSession(AGENT, WS, { metadata: { model: "sonnet" } }));
+    let metadataAtWireCall: unknown;
+    dismissQuestions.mockImplementationOnce(async () => {
+      metadataAtWireCall = readSession(AGENT)?.metadata;
+      return { success: true };
+    });
+
+    const action = agentSessionDismissQuestionsRequested(AGENT, WS, "msg-q1");
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(dismissQuestions).toHaveBeenCalledWith({
+      agentId: AGENT,
+      workspaceId: WS,
+      messageId: "msg-q1",
+    });
+    // The marker was applied BEFORE the wire call (optimistic hide) and
+    // pre-existing metadata was preserved.
+    expect(metadataAtWireCall).toMatchObject({
+      model: "sonnet",
+      dismissedQuestionsMessageId: "msg-q1",
+    });
+    expect(readSession(AGENT)?.metadata?.dismissedQuestionsMessageId).toBe("msg-q1");
+  });
+
+  it("rolls the metadata back and surfaces a toast when the daemon reports failure", async () => {
+    const WS = "ws-dismiss-fail";
+    const AGENT = "agent-dismiss-fail";
+    seedSession(makeSession(AGENT, WS, { metadata: { model: "sonnet" } }));
+    dismissQuestions.mockResolvedValueOnce({ success: false, error: "dismiss boom" });
+
+    const action = agentSessionDismissQuestionsRequested(AGENT, WS, "msg-q1");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("dismiss boom");
+
+    expect(readSession(AGENT)?.metadata).toEqual({ model: "sonnet" });
+    // Toast import is lazy; flush the microtask queue before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(toastMock.error).toHaveBeenCalledWith("dismiss boom");
+  });
+
+  it("rolls back and rejects when the seam throws (transport failure)", async () => {
+    const WS = "ws-dismiss-throw";
+    const AGENT = "agent-dismiss-throw";
+    seedSession(makeSession(AGENT, WS));
+    dismissQuestions.mockRejectedValueOnce(new Error("wire down"));
+
+    const action = agentSessionDismissQuestionsRequested(AGENT, WS, "msg-q1");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("wire down");
+
+    expect(readSession(AGENT)?.metadata?.dismissedQuestionsMessageId).toBeUndefined();
+  });
+
+  it("still forwards the wire call when the session is not in the store (no optimistic stamp)", async () => {
+    dismissQuestions.mockResolvedValueOnce({ success: true });
+
+    const action = agentSessionDismissQuestionsRequested(
+      "agent-dismiss-missing",
+      "ws-dismiss-missing",
+      "msg-q1",
+    );
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(dismissQuestions).toHaveBeenCalledWith({
+      agentId: "agent-dismiss-missing",
+      workspaceId: "ws-dismiss-missing",
+      messageId: "msg-q1",
+    });
+  });
+
+  it("rollback only reverts the marker key — a concurrent in-flight metadata write survives", async () => {
+    const WS = "ws-dismiss-concurrent";
+    const AGENT = "agent-dismiss-concurrent";
+    seedSession(makeSession(AGENT, WS, { metadata: { model: "sonnet" } }));
+    dismissQuestions.mockImplementationOnce(async () => {
+      // A concurrent write lands while the RPC is in flight (e.g. an
+      // agent:updated refetch that persisted a model switch).
+      const current = readSession(AGENT);
+      appStore.dispatch(
+        updateSession(AGENT, { metadata: { ...current?.metadata, model: "opus" } }),
+      );
+      return { success: false, error: "dismiss boom" };
+    });
+
+    const action = agentSessionDismissQuestionsRequested(AGENT, WS, "msg-q1");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("dismiss boom");
+
+    // The concurrent model switch is preserved; only the marker is reverted.
+    expect(readSession(AGENT)?.metadata).toEqual({ model: "opus" });
+  });
+
+  it("rollback no-ops when a concurrent write already replaced the marker with a different value", async () => {
+    const WS = "ws-dismiss-replaced";
+    const AGENT = "agent-dismiss-replaced";
+    seedSession(makeSession(AGENT, WS, { metadata: {} }));
+    dismissQuestions.mockImplementationOnce(async () => {
+      const current = readSession(AGENT);
+      appStore.dispatch(
+        updateSession(AGENT, {
+          metadata: { ...current?.metadata, dismissedQuestionsMessageId: "msg-q2" },
+        }),
+      );
+      return { success: false, error: "dismiss boom" };
+    });
+
+    const action = agentSessionDismissQuestionsRequested(AGENT, WS, "msg-q1");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("dismiss boom");
+
+    // The newer marker (a later dismissal for msg-q2) is not clobbered.
+    expect(readSession(AGENT)?.metadata?.dismissedQuestionsMessageId).toBe("msg-q2");
+  });
+
+  it("rollback no-ops when the session was deleted mid-flight", async () => {
+    const WS = "ws-dismiss-deleted";
+    const AGENT = "agent-dismiss-deleted";
+    seedSession(makeSession(AGENT, WS));
+    dismissQuestions.mockImplementationOnce(async () => {
+      appStore.dispatch(removeSession(AGENT));
+      return { success: false, error: "dismiss boom" };
+    });
+
+    const action = agentSessionDismissQuestionsRequested(AGENT, WS, "msg-q1");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("dismiss boom");
+
+    expect(readSession(AGENT)).toBeUndefined();
+  });
+});
+
+describe("agentMutationService — stop session (stopAgentSessionRequested → agent.stop)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+  afterEach(() => {
+    stop.mockReset();
+  });
+
+  it("forwards agent.stop via the seam and resolves the action promise", async () => {
+    stop.mockResolvedValueOnce({ success: true });
+
+    const action = stopAgentSessionRequested("ws-stop-ok", "agent-stop-ok");
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(stop).toHaveBeenCalledWith("agent-stop-ok");
+  });
+
+  it("rejects when the daemon reports failure", async () => {
+    stop.mockResolvedValueOnce({ success: false, error: "stop boom" });
+
+    const action = stopAgentSessionRequested("ws-stop-fail", "agent-stop-fail");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("stop boom");
+  });
+
+  it("rejects when the seam throws (transport failure)", async () => {
+    stop.mockRejectedValueOnce(new Error("wire down"));
+
+    const action = stopAgentSessionRequested("ws-stop-throw", "agent-stop-throw");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("wire down");
+  });
+});
+
+describe("agentMutationService — cancel subscriptions (scoped agent.cancelSubscriptions)", () => {
+  const toastMock = toast as unknown as { error: ReturnType<typeof vi.fn> };
+
+  beforeAll(() => {
+    appStore.init();
+  });
+  afterEach(() => {
+    cancelSubscriptions.mockReset();
+    toastMock.error.mockClear();
+  });
+
+  it("forwards the subscriptionId-scoped params and resolves the promise", async () => {
+    cancelSubscriptions.mockResolvedValueOnce({ success: true });
+
+    const action = cancelAgentSubscriptionsRequested("ws-cancel-1", "agent-parent-1", {
+      subscriptionId: "watch-1",
+    });
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(cancelSubscriptions).toHaveBeenCalledWith({
+      agentId: "agent-parent-1",
+      workspaceId: "ws-cancel-1",
+      subscriptionId: "watch-1",
+    });
+  });
+
+  it("forwards the groupId-scoped params and resolves the promise", async () => {
+    cancelSubscriptions.mockResolvedValueOnce({ success: true });
+
+    const action = cancelAgentSubscriptionsRequested("ws-cancel-2", "agent-parent-2", {
+      groupId: "grp-1",
+    });
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(cancelSubscriptions).toHaveBeenCalledWith({
+      agentId: "agent-parent-2",
+      workspaceId: "ws-cancel-2",
+      groupId: "grp-1",
+    });
+  });
+
+  it("omits both optional ids for an unscoped cancel", async () => {
+    cancelSubscriptions.mockResolvedValueOnce({ success: true });
+
+    const action = cancelAgentSubscriptionsRequested("ws-cancel-3", "agent-parent-3");
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(cancelSubscriptions).toHaveBeenCalledWith({
+      agentId: "agent-parent-3",
+      workspaceId: "ws-cancel-3",
+    });
+  });
+
+  it("rejects and surfaces a toast when the daemon reports failure (e.g. -32602 unknown id)", async () => {
+    cancelSubscriptions.mockResolvedValueOnce({
+      success: false,
+      error: "unknown subscription id: watch-missing",
+    });
+
+    const action = cancelAgentSubscriptionsRequested("ws-cancel-4", "agent-parent-4", {
+      subscriptionId: "watch-missing",
+    });
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("unknown subscription id");
+    // Toast import is lazy; flush the microtask queue before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(toastMock.error).toHaveBeenCalledWith("unknown subscription id: watch-missing");
+  });
+
+  it("rejects when the seam throws (transport failure)", async () => {
+    cancelSubscriptions.mockRejectedValueOnce(new Error("wire down"));
+
+    const action = cancelAgentSubscriptionsRequested("ws-cancel-5", "agent-parent-5", {
+      groupId: "grp-x",
+    });
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("wire down");
+  });
+});
+

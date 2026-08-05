@@ -1,15 +1,15 @@
 /**
  * Workspace Settings Service (Main Process)
  *
- * Stores workspace-level settings like auto-commit preferences.
+ * Thin daemon-backed accessor for workspace-level settings (auto-commit).
  *
- * The source of truth is the daemon-owned `git.autoCommit` setting
- * (PROTOCOL.md §5.12). At process start we hydrate an in-memory cache from
- * the daemon via `settings.get` so the sync `getWorkspaceSettings` API can
- * serve the correct default even before the renderer has pushed the user's
- * preference. Renderer-driven per-workspace overrides are stored in a
- * simple in-memory map keyed by workspace id (unchanged from the
- * pre-P3-4 shape). The legacy `settings` electron-store is retired.
+ * The source of truth is the daemon's **persisted per-workspace override**
+ * (PROTOCOL.md §5.1 `workspace.getAutoCommit` / `workspace.setAutoCommit`),
+ * which the daemon resolves against the global `git.autoCommit` setting
+ * (§5.12) when no override is set. The former renderer-synced in-memory map
+ * is retired — reads and writes go straight to the daemon, so the value
+ * survives app/daemon restarts and stays consistent with the daemon-side
+ * commit gate.
  */
 
 import { Logger } from '../../../shared/logger';
@@ -22,138 +22,88 @@ export interface WorkspaceSettings {
 }
 
 const defaultSettings: WorkspaceSettings = {
-  autoCommitEnabled: true, // Default to enabled
+  autoCommitEnabled: true, // Default to enabled (matches the daemon catalog default)
 };
 
-const SETTING_PATH_AUTO_COMMIT = 'git.autoCommit';
-
-// In-memory store for workspace settings (populated by renderer sync)
-const workspaceSettingsStore = new Map<string, WorkspaceSettings>();
-
-// Daemon-hydrated global auto-commit preference. `null` while unhydrated;
-// the sync API falls back to the default (true) until hydration completes.
-let cachedAutoCommit: boolean | null = null;
-let hydrationPromise: Promise<void> | null = null;
-
-async function fetchAutoCommit(): Promise<boolean> {
+async function backendRequest<T>(method: string, params: Record<string, unknown>): Promise<T> {
   const { getBackendClient } = await import('../../backend/main/backend.ipc');
-  const result = (await getBackendClient().request('settings.get', {
-    path: SETTING_PATH_AUTO_COMMIT,
-  })) as { value?: unknown } | null;
-  const value = result?.value;
-  // Same semantics as the legacy electron-store branch: any value other
-  // than an explicit `false` means "enabled" (matches the catalog default).
-  return value !== false;
+  return (await getBackendClient().request(method, params)) as T;
 }
 
 /**
- * Hydrate `cachedAutoCommit` once from the daemon.
- * Safe to call repeatedly and eagerly; the sync API will simply keep
- * returning the default until this completes.
+ * Fetch the daemon-resolved auto-commit state. Throws on wire failure;
+ * a malformed response degrades to the built-in default (warn-logged).
  */
-export async function initWorkspaceSettings(): Promise<void> {
-  if (cachedAutoCommit !== null) return;
-  if (hydrationPromise) return hydrationPromise;
-  hydrationPromise = (async () => {
-    try {
-      cachedAutoCommit = await fetchAutoCommit();
-      logger.info('Workspace settings hydrated', { autoCommit: cachedAutoCommit });
-    } catch (error) {
-      logger.warn('Failed to hydrate git.autoCommit from daemon', {
-        error: (error as Error).message,
-      });
-      // Keep the default (true) — matches the pre-P3 fallback.
-      cachedAutoCommit = defaultSettings.autoCommitEnabled;
-    }
-  })();
-  return hydrationPromise;
+async function fetchWorkspaceSettings(workspaceId: string): Promise<WorkspaceSettings> {
+  const result = await backendRequest<{
+    autoCommit?: { enabled?: unknown; source?: string };
+  }>('workspace.getAutoCommit', { workspaceId });
+  const enabled = result?.autoCommit?.enabled;
+  if (typeof enabled === 'boolean') {
+    return { autoCommitEnabled: enabled };
+  }
+  logger.warn('workspace.getAutoCommit returned a malformed response; using default', {
+    workspaceId,
+  });
+  return { ...defaultSettings };
 }
 
 /**
- * Get settings for a workspace.
+ * Get settings for a workspace from the daemon.
  *
- * If the renderer has synced settings for this workspace, returns those.
- * Otherwise, returns the daemon-hydrated global default (or the built-in
- * default if hydration has not completed yet).
+ * Falls back to the built-in default (enabled) when the daemon is
+ * unreachable or the workspace is unknown, matching the daemon's own
+ * schema default for `git.autoCommit`.
  */
-export function getWorkspaceSettings(workspaceId: string): WorkspaceSettings {
-  const synced = workspaceSettingsStore.get(workspaceId);
-  if (synced) return synced;
-
-  // No renderer sync yet — use the hydrated daemon value, or the default
-  // if hydration is still in flight.
-  const autoCommitEnabled = cachedAutoCommit ?? defaultSettings.autoCommitEnabled;
-  return { autoCommitEnabled };
+export async function getWorkspaceSettings(workspaceId: string): Promise<WorkspaceSettings> {
+  try {
+    return await fetchWorkspaceSettings(workspaceId);
+  } catch (error) {
+    logger.warn('workspace.getAutoCommit failed; using default', {
+      workspaceId,
+      error: (error as Error).message,
+    });
+    return { ...defaultSettings };
+  }
 }
 
 /**
- * Update settings for a workspace
+ * Update settings for a workspace — persists the per-workspace override in
+ * the daemon (survives restarts; the daemon emits `workspace:updated`).
+ *
+ * A `workspace.setAutoCommit` failure REJECTS (deliberately — callers must
+ * not believe a write that never landed; the daemon returns -32602 for the
+ * virtual Chief workspace, see PROTOCOL §5.1). If the set succeeds but the
+ * read-back fails, the value just written is returned rather than the
+ * default, so the caller never sees a value contradicting its own write.
  */
-export function updateWorkspaceSettings(
+export async function updateWorkspaceSettings(
   workspaceId: string,
   settings: Partial<WorkspaceSettings>,
-): WorkspaceSettings {
-  const current = getWorkspaceSettings(workspaceId);
-  const updated = { ...current, ...settings };
-  workspaceSettingsStore.set(workspaceId, updated);
-  logger.info('Updated workspace settings', { workspaceId, settings: updated });
-  return updated;
-}
-
-/**
- * Check if auto-commit is enabled for a workspace
- */
-export function isAutoCommitEnabled(workspaceId: string): boolean {
-  return getWorkspaceSettings(workspaceId).autoCommitEnabled;
-}
-
-/**
- * Centralized guard for agent-initiated commits.
- *
- * Call this from ANY tool or code path where an agent attempts to commit.
- * Returns { allowed: true } if the commit should proceed, or
- * { allowed: false, reason: string } if it should be blocked.
- *
- * This exists to prevent the class of bug where a new commit tool/path
- * is added without checking the auto-commit setting. All agent commit
- * paths should use this single function rather than inlining the check.
- *
- * @param workspaceId - The workspace to check
- * @param opts.userRequested - If the user explicitly asked for the commit (bypasses auto-commit check)
- */
-export function assertAgentCommitAllowed(
-  workspaceId: string,
-  opts?: { userRequested?: boolean },
-): { allowed: true } | { allowed: false; reason: string } {
-  if (opts?.userRequested) {
-    return { allowed: true };
+): Promise<WorkspaceSettings> {
+  if (settings.autoCommitEnabled !== undefined) {
+    await backendRequest('workspace.setAutoCommit', {
+      workspaceId,
+      enabled: settings.autoCommitEnabled,
+    });
+    logger.info('Updated workspace settings', { workspaceId, settings });
+    try {
+      return await fetchWorkspaceSettings(workspaceId);
+    } catch (error) {
+      logger.warn('read-back after workspace.setAutoCommit failed; returning written value', {
+        workspaceId,
+        error: (error as Error).message,
+      });
+      return { autoCommitEnabled: settings.autoCommitEnabled };
+    }
   }
-  if (!isAutoCommitEnabled(workspaceId)) {
-    logger.info('Agent commit blocked: auto-commit disabled', { workspaceId });
-    return {
-      allowed: false,
-      reason:
-        'Auto-commit is disabled for this workspace. ' +
-        'Use agent_commit_changes with userRequested: true if the user asked to commit.',
-    };
-  }
-  return { allowed: true };
+  return getWorkspaceSettings(workspaceId);
 }
 
 /**
- * Clear settings for a workspace (e.g., when workspace is closed)
+ * Check if auto-commit is enabled for a workspace (daemon-resolved:
+ * per-workspace override → global `git.autoCommit` fallback).
  */
-export function clearWorkspaceSettings(workspaceId: string): void {
-  workspaceSettingsStore.delete(workspaceId);
-  logger.info('Cleared workspace settings', { workspaceId });
-}
-
-/**
- * Test-only: reset internal state so a fresh hydration can run in isolation.
- * @internal
- */
-export function __resetWorkspaceSettingsForTesting(): void {
-  cachedAutoCommit = null;
-  hydrationPromise = null;
-  workspaceSettingsStore.clear();
+export async function isAutoCommitEnabled(workspaceId: string): Promise<boolean> {
+  return (await getWorkspaceSettings(workspaceId)).autoCommitEnabled;
 }

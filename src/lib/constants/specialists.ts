@@ -1,4 +1,4 @@
-import type { ModelTier } from '$shared/config/provider-config';
+import { m } from '$shared/paraglide/messages.js';
 import type { SpecialistSource } from '$shared/specialist-file-types';
 
 /** Known built-in specialist IDs */
@@ -23,18 +23,8 @@ export interface Specialist {
    */
   codingAgent?: string;
   /**
-   * The capability tier for this specialist's default model.
-   * Resolved at runtime to the appropriate model for the active provider.
-   * - fast: Quick, cheap models (haiku4.5, haiku, gpt-5.1-codex-mini)
-   * - balanced: General purpose (sonnet4.5, sonnet, gpt-5.2-codex)
-   * - smart: High-capability (opus4.5, opus, gpt-5.1-codex-max)
-   * Optional: if neither defaultModelTier nor defaultModel is provided, callers
-   * should use the user's current default model.
-   */
-  defaultModelTier?: ModelTier;
-  /**
    * Hardcoded default model ID. Used for custom specialists or backwards compatibility.
-   * If defaultModelTier is provided, this is ignored in favor of provider-aware resolution.
+   * Optional: if not provided, callers should use the user's current default model.
    */
   defaultModel?: string;
   defaultBehaviorPrompt: string;
@@ -60,14 +50,26 @@ export interface Specialist {
    * (it remains visible on Settings → AI Behavior for editing).
    */
   hidden?: boolean;
+  /**
+   * Daemon-computed default-model preview (`specialist.list` resolvedModel/
+   * resolvedProvider, PROTOCOL §5.11): the model a no-model create with this
+   * specialist would pin, in the daemon's default-provider context. Absent
+   * when resolution yields the provider CLI default ("Provider default").
+   */
+  resolvedModel?: string;
+  resolvedProvider?: string;
 }
 
 export const SPECIALISTS: Specialist[] = [
   {
     id: 'spec-writer',
-    name: 'Coordinator',
-    description: 'Plans work, breaks down tasks, coordinates sub-agents',
-    defaultModelTier: 'smart',
+    get name() {
+      return m.specialists_builtin_coordinator_name();
+    },
+    get description() {
+      return m.specialists_builtin_coordinator_description();
+    },
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     defaultBehaviorPrompt: `## Coordinator
 
 You plan, delegate, and verify. You do NOT implement code yourself. You NEVER edit files directly.
@@ -136,14 +138,20 @@ You plan, delegate, and verify. You do NOT implement code yourself. You NEVER ed
 If helpful, you can use groups for distinct phases: **Researching**, **Planning**, **Delegating**.
 
 `,
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     roleReminder:
+      // i18n-ignore (agent behavior prompt consumed by LLM)
       'You NEVER edit files directly. You have no file editing tools. Do NOT launch processes to edit files (no echo, sed, cat >, etc.). Delegate ALL implementation to Implementor agents. Keep the Spec note up to date — update it when plans change, tasks complete, or decisions are made.',
   },
   {
     id: 'implementor',
-    name: 'Implementor',
-    description: 'Executes implementation tasks, writes code',
-    defaultModelTier: 'smart',
+    get name() {
+      return m.specialists_builtin_implementor_name();
+    },
+    get description() {
+      return m.specialists_builtin_implementor_description();
+    },
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     defaultBehaviorPrompt: `## Implementor
 
 Implement your assigned task — nothing more, nothing less. Produce minimal, clean changes.
@@ -167,14 +175,20 @@ Implement your assigned task — nothing more, nothing less. Produce minimal, cl
 
 ## Completion (REQUIRED)
 Call \`ws.agent.reportToParent("<report>")\` (via the \`workspace_api\` tool) with 1-3 sentences: what you did, verification run, any risks/follow-ups.`,
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     roleReminder:
+      // i18n-ignore (agent behavior prompt consumed by LLM)
       'Stay within task scope. No refactors, no scope creep. Call `ws.agent.reportToParent("<report>")` when complete.',
   },
   {
     id: 'verifier',
-    name: 'Verifier',
-    description: 'Reviews work and verifies completeness',
-    defaultModelTier: 'smart',
+    get name() {
+      return m.specialists_builtin_verifier_name();
+    },
+    get description() {
+      return m.specialists_builtin_verifier_description();
+    },
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     defaultBehaviorPrompt: `## Verifier
 
 Verify work against the spec's Acceptance Criteria. Be evidence-driven — no hand-waving.
@@ -218,14 +232,20 @@ Wait for implementor to complete, then re-verify.
 
 ## Completion (REQUIRED)
 Call \`ws.agent.reportToParent("<report>")\` (via the \`workspace_api\` tool) with: verdict (approved/not approved), tests run, top 1-3 issues or confirmations.`,
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     roleReminder:
+      // i18n-ignore (agent behavior prompt consumed by LLM)
       'Verify against Acceptance Criteria ONLY. Be evidence-driven. Call `ws.agent.reportToParent("<report>")` with your verdict.',
   },
   {
     id: 'pr-reviewer',
-    name: 'PR Reviewer',
-    description: 'Reviews pull requests with high-confidence, actionable feedback',
-    defaultModelTier: 'smart',
+    get name() {
+      return m.specialists_builtin_prReviewer_name();
+    },
+    get description() {
+      return m.specialists_builtin_prReviewer_description();
+    },
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     defaultBehaviorPrompt: `# Role
 You are a PR review specialist conducting a code review for a pull request.
 
@@ -306,14 +326,20 @@ If no issues found, write "✅ Approved" with no task notes.
 - Gather context before forming suggestions
 - Post zero comments if no high-confidence issues found
 - **PRIORITIZE LESS NOISE over completeness**`,
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     roleReminder:
+      // i18n-ignore (agent behavior prompt consumed by LLM)
       'HIGH CONFIDENCE issues only. Do NOT make changes yourself - delegate fixes to an Implementor.',
   },
   {
     id: 'pr-shepherd',
-    name: 'PR Shepherd',
-    description: 'Shepherds a PR to merge-ready state by coordinating fixes, CI, and reviews',
-    defaultModelTier: 'smart',
+    get name() {
+      return m.specialists_builtin_prShepherd_name();
+    },
+    get description() {
+      return m.specialists_builtin_prShepherd_description();
+    },
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     defaultBehaviorPrompt: `## PR Shepherd
 
 You shepherd a pull request into a merge-ready (green) state. You check CI status, address review comments, coordinate fixes, re-request reviews, and poll — not stopping until the PR is clean and mergeable.
@@ -439,14 +465,20 @@ Update a workspace note after each iteration with: Iteration number, PR state su
 | \`launch-process\` | Sleep/poll (\`sleep 60\`) |
 | \`ws.note.read("spec")\` / \`ws.note.add("spec", { content: "..." })\` | Track progress in workspace notes |
 | \`ws.agent.reportToParent("<report>")\` (via \`workspace_api\`) | Final completion report |`,
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     roleReminder:
+      // i18n-ignore (agent behavior prompt consumed by LLM)
       'You NEVER edit files directly. Delegate ALL code fixes to Implementor agents. DO NOT yield until the PR is merge-ready (green CI, no unresolved comments, mergeable). Poll and retry.',
   },
   {
     id: 'ui-designer',
-    name: 'UI Designer',
-    description: 'Creates elegant, accessible, production-ready user interfaces',
-    defaultModelTier: 'smart',
+    get name() {
+      return m.specialists_builtin_uiDesigner_name();
+    },
+    get description() {
+      return m.specialists_builtin_uiDesigner_description();
+    },
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     defaultBehaviorPrompt: `## UI Designer
 
 You create elegant, accessible, production-ready user interfaces. You write code that is beautiful, functional, and follows the project's established patterns.
@@ -552,14 +584,20 @@ Before delivering, verify:
 
 ## Completion (REQUIRED)
 Call \`ws.agent.reportToParent("<report>")\` (via the \`workspace_api\` tool) with: summary of UI created, accessibility verification status, any design decisions or tradeoffs made.`,
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     roleReminder:
+      // i18n-ignore (agent behavior prompt consumed by LLM)
       "Accessibility is non-negotiable: WCAG AA contrast, visible focus states, semantic HTML. Use project's existing design tokens. Check all interactive states.",
   },
   {
     id: 'developer',
-    name: 'Developer',
-    description: 'Plans, implements, and verifies — all in one agent',
-    defaultModelTier: 'smart',
+    get name() {
+      return m.specialists_builtin_developer_name();
+    },
+    get description() {
+      return m.specialists_builtin_developer_description();
+    },
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     defaultBehaviorPrompt: `## Developer
 
 You plan and implement. You write specs first, then implement the work yourself after approval. No delegation, no sub-agents.
@@ -598,14 +636,21 @@ For each acceptance criterion:
 - ❌ MISSING: what's not done, what's needed
 
 Then: Commands Run, Risk Notes, Follow-ups.`,
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     roleReminder:
+      // i18n-ignore (agent behavior prompt consumed by LLM)
       'You work ALONE — never call ws.agent.delegate or ws.agent.create. Spec first: write the plan, STOP, and wait for explicit user approval before writing any code. NEVER use checkboxes — use @@@task blocks ONLY. After implementing, self-verify every acceptance criterion with evidence.',
   },
   {
     id: 'chief-of-staff',
-    name: 'Chief of Staff',
-    description: 'App-level assistant for workspaces, settings, specialists, and learning Intent',
+    get name() {
+      return m.specialists_builtin_chiefOfStaff_name();
+    },
+    get description() {
+      return m.specialists_builtin_chiefOfStaff_description();
+    },
     hidden: true,
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     defaultBehaviorPrompt: `## Output Rule You Must Follow
 
 **When the answer mentions any workspace, output the workspace IDs inside a fenced \`workspace\` block — one ID per line.** Never list, bullet, number, or describe workspace IDs in prose. The block renders as live cards; the user does NOT see the raw IDs. Even a one-workspace answer uses a one-line \`workspace\` fence.
@@ -806,18 +851,24 @@ Even when the answer is a single workspace, render it as a one-line \`workspace\
 ## Operating Style
 
 Be proactive but reversible. Summarize what you found, recommend the safest next step, and use cards for changes. Keep user trust high: make it obvious what will change, what will not change, and how to undo or revisit the decision.`,
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     roleReminder:
+      // i18n-ignore (agent behavior prompt consumed by LLM)
       'You are the built-in Chief of Staff. Stay at the app level: use ws.app.* tools, proposal cards for non-destructive changes, confirmation cards for destructive actions, and NavLinks when teaching or navigating. CRITICAL: every time you mention one or more workspaces in chat (lists, single answers, recommendations, anything), emit a fenced `workspace` block with one workspace ID per line — never a prose list, bullets, or table of IDs. Never use a workspace ID slug (e.g. `user-bug-2`) as a label in prose; use the workspace title instead. When each workspace has its own commentary, emit a single-ID `workspace` block immediately followed by that commentary, repeated per workspace — do not stack cards then bullets. NavLink targets must be the full canonical route from ws.app.ui.targets() including the hash fragment that points at the specific row (e.g. `/settings?tab=setup#utility-default-model`) — a bare path like `/settings` lands at the page top with no highlight and is always wrong when a row-specific target exists.',
   },
   {
     id: 'ralph',
-    name: 'Ralph',
-    description:
-      'Iterative work/test loop — plans with user, then autonomously works until tests pass',
-    defaultModelTier: 'smart',
+    get name() {
+      return m.specialists_builtin_ralph_name();
+    },
+    get description() {
+      return m.specialists_builtin_ralph_description();
+    },
     defaultBehaviorPrompt: '',
     defaultAgentType: 'ralph-loop',
+    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     roleReminder:
+      // i18n-ignore (agent behavior prompt consumed by LLM)
       'You are Ralph. Phase 1: plan with user, agree on tests, get approval. Phase 2: delegate work→test to fresh child agents in a loop. Never implement directly — always delegate. Focus on task note state, not conversation history.',
   },
 ];

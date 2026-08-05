@@ -28,7 +28,7 @@ describe("workspaceInitializerReducer", () => {
   it("hydrates persisted initializer state", () => {
     const state = workspaceInitializerReducer(initialState, hydrateWorkspaceInitializer({
       compactFormState: { repoPath: "/repo", selectedModel: "auggie:default" },
-      onboardingFormState: { projectSelection: null, step: "project" },
+      onboardingFormState: { projectSelection: null, step: "project", selectedModel: "pi:claude", modelWasOverridden: true },
       lastSelectedRepo: { path: "/repo", type: "local" },
       branchByRepo: { "/repo": "dev" },
       defaultParentPath: "~/Code",
@@ -40,6 +40,8 @@ describe("workspaceInitializerReducer", () => {
     expect(state.hydrated).toBe(true);
     expect(state.compactFormState?.repoPath).toBe("/repo");
     expect(state.onboardingFormState?.step).toBe("project");
+    expect(state.onboardingFormState?.selectedModel).toBe("pi:claude");
+    expect(state.onboardingFormState?.modelWasOverridden).toBe(true);
     expect(state.lastSelectedRepo?.path).toBe("/repo");
     expect(state.branchByRepo["/repo"]).toBe("dev");
     expect(state.defaultParentPath).toBe("~/Code");

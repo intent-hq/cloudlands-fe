@@ -6,6 +6,8 @@
  * specifically for permission requests.
  */
 
+import { m } from '$shared/paraglide/messages.js';
+
 export interface PermissionDisplay {
   /** Friendly question format, e.g., "Set agent name to 'Context Explorer'?" */
   question: string;
@@ -108,41 +110,53 @@ export function parsePermissionRequest(
 
   if (lowerCleanName.includes('set_agent_name') || lowerCleanName.includes('set-agent-name')) {
     const name = parsedInput?.name || keyValue;
-    question = name ? `Rename agent to "${name}"?` : 'Rename agent?';
-    action = 'Rename agent';
+    question = name
+      ? m.chat_permissionParser_renameAgentTo_question({ name })
+      : m.chat_permissionParser_renameAgent_question();
+    action = m.chat_permissionParser_renameAgent_action();
     details = null; // Already shown in question
   } else if (lowerCleanName.includes('str_replace') || lowerCleanName.includes('str-replace')) {
     const path = parsedInput?.path;
-    question = path ? `Edit ${path.split('/').pop()}?` : 'Edit file?';
-    action = 'Edit file';
+    question = path
+      ? m.chat_permissionParser_editFileNamed_question({ name: path.split('/').pop() ?? path })
+      : m.chat_permissionParser_editFile_question();
+    action = m.chat_permissionParser_editFile_action();
     details = path;
   } else if (lowerCleanName.includes('save_file') || lowerCleanName.includes('save-file')) {
     const path = parsedInput?.path;
-    question = path ? `Save ${path.split('/').pop()}?` : 'Save file?';
-    action = 'Save file';
+    question = path
+      ? m.chat_permissionParser_saveFileNamed_question({ name: path.split('/').pop() ?? path })
+      : m.chat_permissionParser_saveFile_question();
+    action = m.chat_permissionParser_saveFile_action();
     details = path;
   } else if (
     lowerCleanName.includes('launch_process') ||
     lowerCleanName.includes('launch-process')
   ) {
     const cmd = parsedInput?.command;
-    question = 'Run command?';
-    action = 'Run command';
+    question = m.chat_permissionParser_runCommand_question();
+    action = m.chat_permissionParser_runCommand_action();
     details = cmd ? (cmd.length > 80 ? cmd.substring(0, 77) + '...' : cmd) : null;
   } else if (lowerCleanName.includes('delete') || lowerCleanName.includes('remove')) {
     const path = parsedInput?.path || parsedInput?.file_paths?.[0];
-    question = path ? `Delete ${path.split('/').pop()}?` : 'Delete?';
-    action = 'Delete';
+    question = path
+      ? m.chat_permissionParser_deleteNamed_question({ name: path.split('/').pop() ?? path })
+      : m.chat_permissionParser_delete_question();
+    action = m.chat_permissionParser_delete_action();
     details = path;
   } else if (lowerCleanName.includes('view') || lowerCleanName.includes('read')) {
     const path = parsedInput?.path;
-    question = path ? `Read ${path.split('/').pop()}?` : 'Read file?';
-    action = 'Read file';
+    question = path
+      ? m.chat_permissionParser_readFileNamed_question({ name: path.split('/').pop() ?? path })
+      : m.chat_permissionParser_readFile_question();
+    action = m.chat_permissionParser_readFile_action();
     details = path;
   } else if (lowerCleanName.includes('create_note') || lowerCleanName.includes('create-note')) {
     const title = parsedInput?.title;
-    question = title ? `Create note "${title}"?` : 'Create note?';
-    action = 'Create note';
+    question = title
+      ? m.chat_permissionParser_createNoteNamed_question({ title })
+      : m.chat_permissionParser_createNote_question();
+    action = m.chat_permissionParser_createNote_action();
     details = null;
   } else if (lowerCleanName.includes('note')) {
     const title = parsedInput?.title;
@@ -150,13 +164,15 @@ export function parsePermissionRequest(
     details = null;
   } else if (lowerCleanName.includes('browser') || lowerCleanName.includes('navigate')) {
     const url = parsedInput?.url;
-    question = url ? `Navigate to page?` : 'Browser action?';
-    action = 'Browser';
+    question = url
+      ? m.chat_permissionParser_navigate_question()
+      : m.chat_permissionParser_browserAction_question();
+    action = m.chat_permissionParser_browser_action();
     details = url;
   } else if (lowerCleanName.includes('github') || lowerCleanName.includes('api')) {
     const path = parsedInput?.path;
-    question = 'Make API request?';
-    action = 'API request';
+    question = m.chat_permissionParser_apiRequest_question();
+    action = m.chat_permissionParser_apiRequest_action();
     details = path || parsedInput?.url;
   } else if (keyValue) {
     // Generic case with a key value

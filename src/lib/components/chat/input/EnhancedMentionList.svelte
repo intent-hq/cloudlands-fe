@@ -12,6 +12,7 @@
   import Fa from 'svelte-fa';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { getAvatarStateFromStore } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import { m } from '$shared/paraglide/messages.js';
   import {
   faFile,
   faFileCode,
@@ -334,7 +335,7 @@
       {#if breadcrumbs.length > 0}
         <div class="breadcrumbs">
           <button class="breadcrumb-item" onclick={() => breadcrumbController.navigateToRoot()}>
-            All
+            {m.chat_mentionList_all_label()}
           </button>
           {#each breadcrumbs as crumb, i (crumb.id || `crumb-${i}`)}
             <span class="breadcrumb-separator">›</span>
@@ -405,7 +406,7 @@
           {/each}
         </div>
       {:else}
-        <div class="mention-empty">No results</div>
+        <div class="mention-empty">{m.chat_mentionList_noResults_label()}</div>
       {/if}
     </div>
   </div>

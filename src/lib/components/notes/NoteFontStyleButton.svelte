@@ -6,6 +6,7 @@
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { cycleNoteFontStyle } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   const noteFontStyleLabel = selectNoteFontStyleLabel();
@@ -20,8 +21,10 @@
   variant="ghost-light"
   size="icon-xs"
   onclick={cycleFont}
-  tooltip={`Font: ${$noteFontStyleLabel}`}
+  tooltip={m.notes_fontStyleButton_font_tooltip({ label: $noteFontStyleLabel })}
   tooltipSide="bottom"
 >
-  <span class="text-xs font-semibold tracking-tight" class:font-mono={$isNoteMonospace}> Aa </span>
+  <span class="text-xs font-semibold tracking-tight" class:font-mono={$isNoteMonospace}>
+    {m.notes_fontStyleButton_specimen_label()}
+  </span>
 </Button>

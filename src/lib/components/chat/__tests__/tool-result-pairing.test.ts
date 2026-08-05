@@ -80,7 +80,7 @@ describe('buildToolResultsMap / findToolResult — §7.1 pairing', () => {
     expect(findToolResult(map, use)).toBeUndefined();
   });
 
-  it('matches an error result with empty tool_use_id to the preceding unresolved tool_use', () => {
+  it('leaves an error result with empty tool_use_id unpaired (no position fallback)', () => {
     const use = toolUse('msg_1:0', 'tc_1');
     const orphanError: ContentBlock = {
       type: 'tool_result',
@@ -90,21 +90,7 @@ describe('buildToolResultsMap / findToolResult — §7.1 pairing', () => {
     };
     const map = buildToolResultsMap([use, orphanError]);
 
-    expect(findToolResult(map, use)).toBe(orphanError);
-  });
-
-  it('does not attribute an orphan error to a tool_use that already has a result', () => {
-    const use = toolUse('msg_1:0', 'tc_1');
-    const result = toolResult('msg_1:1', 'tc_1', 'ok');
-    const orphanError: ContentBlock = {
-      type: 'tool_result',
-      tool_use_id: '',
-      output: 'Error: exploded',
-      is_error: true,
-    };
-    const map = buildToolResultsMap([use, result, orphanError]);
-
-    expect(findToolResult(map, use)).toBe(result);
+    expect(findToolResult(map, use)).toBeUndefined();
   });
 
   it('ignores non-error results with empty tool_use_id (no position fallback)', () => {

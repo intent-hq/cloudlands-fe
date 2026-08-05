@@ -62,14 +62,6 @@ describe('specialists.service — coding agent resolution (D1-B)', () => {
       expect(result?.codingAgent).toBe('');
       expect(result?.codingAgent).not.toBe('auggie');
     });
-
-    it('resolveSpecialistForAgent mirrors the same resolution', async () => {
-      const { resolveSpecialistForAgent } = await import('./specialists.service');
-      expect(resolveSpecialistForAgent('implementor', 'claude-code')?.codingAgent).toBe(
-        'claude-code',
-      );
-      expect(resolveSpecialistForAgent('implementor')?.codingAgent).toBe('');
-    });
   });
 
   describe('file-based specialists', () => {

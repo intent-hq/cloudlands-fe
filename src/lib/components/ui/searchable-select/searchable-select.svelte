@@ -7,6 +7,7 @@
   faXmark,
 } from '@fortawesome/free-solid-svg-icons';
   import { createLogger } from '$lib/utils/client-logger';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('SearchableSelect');
 
@@ -33,8 +34,8 @@
   let {
     value = $bindable(''),
     options = [],
-    placeholder = 'Select an option',
-    searchPlaceholder = 'Search...',
+    placeholder = m.ui_searchableSelect_select_placeholder(),
+    searchPlaceholder = m.ui_searchableSelect_search_placeholder(),
     disabled = false,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     loading = false,
@@ -219,17 +220,21 @@
 
       <div class="max-h-60 overflow-auto p-1">
         {#if isSearching}
-          <div class="px-2 py-4 text-sm text-subtle text-center">Searching...</div>
+          <div class="px-2 py-4 text-sm text-subtle text-center">
+            {m.ui_searchableSelect_searching_label()}
+          </div>
         {:else if filteredOptions.length === 0}
           <div class="px-2 py-4 text-sm text-subtle text-center">
-            {searchQuery ? 'No results found' : 'No options available'}
+            {searchQuery
+              ? m.ui_searchableSelect_noResults_label()
+              : m.ui_searchableSelect_noOptions_label()}
             {#if allowCustom && searchQuery}
               <button
                 type="button"
                 onclick={handleCustomValue}
                 class="block w-full mt-2 px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground rounded"
               >
-                Use "{searchQuery}"
+                {m.ui_searchableSelect_useCustom_label({ value: searchQuery })}
               </button>
             {/if}
           </div>

@@ -316,6 +316,100 @@ describe("createDeltaSubscription", () => {
     expect(unsubscribeCalls).toContain("sub-1");
   });
 
+  describe("legacy-event refetch coalescing (intent-hq/monorepo#1010)", () => {
+    function setupPending() {
+      const handler = vi.fn();
+      const resolvers: Array<(items: Row[]) => void> = [];
+      const fetchAll = vi.fn(() => new Promise<Row[]>((resolve) => resolvers.push(resolve)));
+      const dispose = createDeltaSubscription<Row>({
+        eventTypes: ["x:changed"],
+        matchLegacyEvent: (method) => method === "events.event",
+        fetchAll,
+        getId,
+        normalize,
+        handler,
+      });
+      return { handler, fetchAll, resolvers, dispose };
+    }
+
+    it("coalesces an event storm into the in-flight refetch plus one trailing follow-up", async () => {
+      vi.useFakeTimers();
+      try {
+        const { handler, fetchAll, resolvers, dispose } = setupPending();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(fetchAll).toHaveBeenCalledTimes(1); // initial refetch, in flight
+
+        // Storm: many events while the initial refetch is still in flight
+        // must not fan out one fetchAll each.
+        for (let i = 0; i < 10; i += 1) push("events.event", { type: "x:changed" });
+        expect(fetchAll).toHaveBeenCalledTimes(1);
+
+        // The in-flight refetch settles → exactly one trailing follow-up is
+        // scheduled after the coalesce window.
+        resolvers[0]!([{ id: "a" }]);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(handler).toHaveBeenLastCalledWith([{ id: "a" }]);
+        expect(fetchAll).toHaveBeenCalledTimes(1);
+
+        // Events landing while the follow-up is pending are absorbed by it.
+        push("events.event", { type: "x:changed" });
+        await vi.advanceTimersByTimeAsync(250);
+        expect(fetchAll).toHaveBeenCalledTimes(2);
+        resolvers[1]!([{ id: "a" }, { id: "b" }]);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }]);
+
+        // Quiet period: a lone event still refetches immediately (leading edge).
+        push("events.event", { type: "x:changed" });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(fetchAll).toHaveBeenCalledTimes(3);
+        dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("skips the trailing follow-up when a push flips the subscription live first", async () => {
+      vi.useFakeTimers();
+      try {
+        const { fetchAll, resolvers, dispose } = setupPending();
+        await vi.advanceTimersByTimeAsync(0);
+        push("events.event", { type: "x:changed" }); // mid-flight → follow-up wanted
+        resolvers[0]!([{ id: "a" }]);
+        await vi.advanceTimersByTimeAsync(0); // follow-up timer armed
+
+        // The seq-0 snapshot lands before the window elapses → live.
+        push("subscription.push", {
+          subscriptionId: "sub-1",
+          kind: "snapshot",
+          seq: 0,
+          snapshot: [{ id: "a" }],
+        });
+        await vi.advanceTimersByTimeAsync(250);
+        expect(fetchAll).toHaveBeenCalledTimes(1);
+        dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("clears a pending follow-up on dispose", async () => {
+      vi.useFakeTimers();
+      try {
+        const { fetchAll, resolvers, dispose } = setupPending();
+        await vi.advanceTimersByTimeAsync(0);
+        push("events.event", { type: "x:changed" });
+        resolvers[0]!([{ id: "a" }]);
+        await vi.advanceTimersByTimeAsync(0); // follow-up timer armed
+        dispose();
+        await vi.advanceTimersByTimeAsync(250);
+        expect(fetchAll).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it("reconnect resets live mode so legacy events refetch until pushes resume", async () => {
     const { fetchAll } = setup([{ id: "a" }]);
     await flush();

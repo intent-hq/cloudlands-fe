@@ -20,9 +20,9 @@
  * the configured store, the slice actions, and the logger. No selector modules;
  * state is read directly off `appStore.state` if needed.
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
-import { autoUpdateClient } from "./auto-update.client";
-import { store as appStore } from "$store/renderer/store";
+import type { StoreMiddleware } from '$lib/store-shim/types';
+import { autoUpdateClient } from './auto-update.client';
+import { store as appStore } from '$store/renderer/store';
 import {
   initAutoUpdate,
   downloadUpdate,
@@ -33,10 +33,11 @@ import {
   showToastChecking,
   setUpToDate,
   showToast,
-} from "$store/renderer/slices/auto-update/auto-update-slice";
-import { createLogger } from "$lib/utils/client-logger";
+} from '$store/renderer/slices/auto-update/auto-update-slice';
+import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 
-const logger = createLogger("AutoUpdateMutationService");
+const logger = createLogger('AutoUpdateMutationService');
 
 /**
  * Guard flag ensuring listeners are registered exactly once even if
@@ -53,7 +54,7 @@ let listenersRegistered = false;
 async function handleInitAutoUpdate(): Promise<void> {
   // Idempotent guard — register listeners exactly once
   if (listenersRegistered) {
-    logger.debug("Auto-update listeners already registered, skipping init");
+    logger.debug('Auto-update listeners already registered, skipping init');
     return;
   }
 
@@ -88,13 +89,13 @@ async function handleInitAutoUpdate(): Promise<void> {
     const initialState = await autoUpdateClient.getState();
     appStore.dispatch(setUpdateState(initialState));
 
-    logger.debug("Auto-update listeners registered and initial state fetched");
+    logger.debug('Auto-update listeners registered and initial state fetched');
   } catch (error) {
     // Do NOT reset listenersRegistered here — all listener registrations
     // (onShowToast / onUpToDate / onStatusChanged / onProgress / onError) are
     // synchronous and happen before the getState() await. If getState() throws,
     // listeners are already registered and a retry would duplicate them.
-    logger.error("Failed to initialize auto-update", error);
+    logger.error('Failed to initialize auto-update', error);
     // Degrade gracefully — listeners are wired but the slice won't have initial
     // state until the next check.
   }
@@ -117,13 +118,15 @@ async function handleDownloadUpdate(): Promise<void> {
     // status-changed / progress IPC events registered in handleInitAutoUpdate.
   } catch (error) {
     const status = appStore.state.autoUpdate?.status;
-    if (status === "downloading" || status === "downloaded") {
-      logger.debug("Download trigger raced an in-progress download, ignoring", { status });
+    if (status === 'downloading' || status === 'downloaded') {
+      logger.debug('Download trigger raced an in-progress download, ignoring', { status });
       return;
     }
-    logger.error("Failed to download update", error);
+    logger.error('Failed to download update', error);
     appStore.dispatch(
-      setUpdateError(error instanceof Error ? error.message : "Failed to download update"),
+      setUpdateError(
+        error instanceof Error ? error.message : m.autoUpdate_mutation_downloadFailed_error(),
+      ),
     );
   }
 }
@@ -136,9 +139,11 @@ async function handleInstallUpdate(): Promise<void> {
   try {
     await autoUpdateClient.installUpdate();
   } catch (error) {
-    logger.error("Failed to install update", error);
+    logger.error('Failed to install update', error);
     appStore.dispatch(
-      setUpdateError(error instanceof Error ? error.message : "Failed to install update"),
+      setUpdateError(
+        error instanceof Error ? error.message : m.autoUpdate_mutation_installFailed_error(),
+      ),
     );
   }
 }
@@ -154,7 +159,7 @@ async function handleInstallUpdate(): Promise<void> {
 export function createAutoUpdateMutationMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     const result = next(action);
-    if (!action || typeof action !== "object") return result;
+    if (!action || typeof action !== 'object') return result;
     const type = (action as { type?: unknown }).type;
     if (type === initAutoUpdate.type) {
       void handleInitAutoUpdate();

@@ -2,6 +2,7 @@ import { createAction } from '$lib/store-shim/utils/store/create-action';
 import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
 import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
   normalizeModelForProvider,
   normalizeProviderModels,
@@ -25,7 +26,6 @@ export type {
 // ============================================================================
 
 export const GLOBAL_MODEL_KEY = 'workspaces-selected-model';
-export const WORKSPACE_MODELS_KEY = 'workspaces-workspace-models';
 export const PROVIDER_MODELS_KEY = 'workspaces-provider-models';
 
 export const MAX_AUTO_RETRIES = 3;
@@ -70,10 +70,10 @@ function buildLoadingState(
 export const initialState: ModelState = {
   availableModels: createCollection<AuggieModel, 'value'>('value'),
   loadingState: {},
-  workspaceModels: {},
   providerModels: {},
   modelPickerCollapsedGroups: [],
   fallbackInfoByAgentId: {},
+  defaultProviderId: '',
 };
 
 // ============================================================================
@@ -103,17 +103,6 @@ export const clearLoadingStateForProvider = createAction<[providerId: string]>(
 
 export const setRetryAttempt =
   createAction<[payload: { providerId: string; attempt: number }]>('model/setRetryAttempt');
-
-export const setWorkspaceModel =
-  createAction<[payload: { workspaceId: string; model: string }]>('model/setWorkspaceModel');
-
-export const clearWorkspaceModel = createAction<[workspaceId: string]>('model/clearWorkspaceModel');
-
-export const clearAllWorkspaceModels = createAction('model/clearAllWorkspaceModels');
-
-export const loadWorkspaceModelsFromStorage = createAction<[models: Record<string, string>]>(
-  'model/loadWorkspaceModelsFromStorage',
-);
 
 export const loadProviderModelsFromStorage = createAction<[models: Record<string, string>]>(
   'model/loadProviderModelsFromStorage',
@@ -157,11 +146,18 @@ export const resetToDefaults = createAction('model/resetToDefaults');
 // ============================================================================
 
 export const modelReducer = createReducer<ModelState>(initialState)
+  .with(providerCatalogLoaded, (state, { payload: [catalog] }) => ({
+    ...state,
+    defaultProviderId: catalog.defaultProviderId,
+    // Re-normalize persisted picks that landed before the catalog: bare ids
+    // for the default provider, prefixed otherwise (same rule as writes).
+    providerModels: normalizeProviderModels(state.providerModels, catalog.defaultProviderId),
+  }))
   .with(setSelectedModel, (state, { payload: [{ providerId, model }] }) => ({
     ...state,
     providerModels: {
       ...state.providerModels,
-      [providerId]: normalizeModelForProvider(providerId, model),
+      [providerId]: normalizeModelForProvider(providerId, model, state.defaultProviderId),
     },
   }))
   .with(setAvailableModels, (state, { payload: [models] }) => ({
@@ -205,25 +201,9 @@ export const modelReducer = createReducer<ModelState>(initialState)
       },
     };
   })
-  .with(setWorkspaceModel, (state, { payload: [{ workspaceId, model }] }) => ({
-    ...state,
-    workspaceModels: { ...state.workspaceModels, [workspaceId]: model },
-  }))
-  .with(clearWorkspaceModel, (state, { payload: [workspaceId] }) => {
-    const { [workspaceId]: _, ...rest } = state.workspaceModels;
-    return { ...state, workspaceModels: rest };
-  })
-  .with(clearAllWorkspaceModels, (state) => ({
-    ...state,
-    workspaceModels: {},
-  }))
-  .with(loadWorkspaceModelsFromStorage, (state, { payload: [models] }) => ({
-    ...state,
-    workspaceModels: models,
-  }))
   .with(loadProviderModelsFromStorage, (state, { payload: [models] }) => ({
     ...state,
-    providerModels: normalizeProviderModels(models),
+    providerModels: normalizeProviderModels(models, state.defaultProviderId),
   }))
   .with(hydrateModelPickerCollapsedGroups, (state, { payload: [groupKeys] }) => ({
     ...state,

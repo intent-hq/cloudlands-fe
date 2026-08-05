@@ -11,6 +11,7 @@
 import type { Result, CommandResponse } from '../../shared/types';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 import { AGENT_CHANNELS } from '$shared/ipc/channels';
+import { m } from '$shared/paraglide/messages.js';
 
 class AgentClient {
   private async invoke<T>(channel: string, data?: unknown): Promise<Result<T, string>> {
@@ -32,7 +33,7 @@ class AgentClient {
     if (response.success && response.data !== undefined) {
       return { ok: true, data: response.data };
     } else {
-      return { ok: false, error: response.error || 'Unknown error' };
+      return { ok: false, error: response.error || m.agent_client_unknown_error() };
     }
   }
 

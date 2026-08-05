@@ -5,7 +5,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { page } from '$app/state';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import MessageContent from '$lib/components/chat/MessageContent.svelte';
-  import { sendMessage as sendAgentMessage } from '$features/agent/agent-stream-lifecycle';
+  import { sendMessage as sendAgentMessage } from '$features/agent/agent-send';
   import { subscribeToAgent } from '$features/agent/browser';
   import {
   followBottom,
@@ -16,6 +16,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { restoreAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   import type { AgentSession } from '$shared/types';
+  import { formatTime } from '$lib/i18n/format';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
   const activeWorkspace = selectActiveWorkspace();
@@ -112,7 +114,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         // Create a minimal agent object if not found
         agent = {
           id: requestedAgentId,
-          name: 'Agent Session',
+          name: m.chat_agentThread_session_fallback(),
           messages: [],
         };
         messages = [];
@@ -124,7 +126,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       // Create a minimal agent object on error
       agent = {
         id: requestedAgentId,
-        name: 'Agent Session',
+        name: m.chat_agentThread_session_fallback(),
         messages: [],
       };
       messages = [];
@@ -151,7 +153,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     } catch (err) {
       logger.error('Failed to send message:', err);
       if (agentId !== targetAgentId) return;
-      const errorContent = `Error: ${err}`;
+      const errorContent = m.chat_agentThread_error_label({ error: String(err) });
       messages.push({
         role: 'assistant',
         content: errorContent,
@@ -165,22 +167,21 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   }
 
   function formatTimestamp(timestamp: string): string {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return formatTime(timestamp);
   }
 </script>
 
 <div class="h-screen flex flex-col p-8 max-w-screen-xl mx-auto">
   <div class="flex justify-between items-center mb-8 pb-4 border-b border-border">
     <h1 class="text-2xl font-semibold text-foreground">
-      {agent?.agentInfo?.name || 'Agent Thread'}
+      {agent?.agentInfo?.name || m.chat_agentThread_name_fallback()}
     </h1>
-    <span class="text-sm text-subtle font-mono">ID: {agentId}</span>
+    <span class="text-sm text-subtle font-mono">{m.chat_agentThread_id_label({ id: agentId })}</span>
   </div>
 
   <div class="flex-1 flex flex-col bg-card border border-border rounded-lg overflow-hidden">
     {#if loading}
-      <div class="flex-1 flex items-center justify-center text-subtle">Loading...</div>
+      <div class="flex-1 flex items-center justify-center text-subtle">{m.chat_agentThread_loading_label()}</div>
     {:else}
       <div
         bind:this={scrollContainer}
@@ -206,7 +207,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                   ? 'text-primary'
                   : 'text-success'}"
               >
-                {message.role === 'user' ? 'You' : 'Assistant'}
+                {message.role === 'user' ? m.chat_agentThread_you_label() : m.chat_agentThread_assistant_label()}
               </span>
               {#if message.timestamp}
                 <span class="text-xs text-subtle"
@@ -239,7 +240,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             }
           }}
           class="absolute bottom-24 right-6 p-2 rounded-full bg-primary/10 hover:bg-primary/20 border border-primary/20 transition-all duration-200 shadow-lg"
-          aria-label="Scroll to bottom"
+          aria-label={m.chat_agentThread_scrollToBottom_ariaLabel()}
         >
           <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
@@ -255,7 +256,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       <div class="p-4 border-t border-border bg-muted/30">
         <SimpleRichInput
           bind:value={newMessage}
-          placeholder="Type your message... (@ to mention, Ctrl+P to enhance)"
+          placeholder={m.chat_agentThread_message_placeholder()}
           onsubmit={sendMessage}
           disabled={loading || isStreaming}
           workspace={null}

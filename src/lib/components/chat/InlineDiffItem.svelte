@@ -22,6 +22,7 @@
   import { faArrowPointer } from '@fortawesome/free-solid-svg-icons';
   import { TrackedChangeDiffViewer } from '$lib/components/ui/diff';
   import type { LocalFileChange } from './types';
+  import { m } from '$shared/paraglide/messages.js';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 
@@ -210,7 +211,7 @@
   onfocusin={handleFocusIn}
   onfocusout={handleFocusOut}
   role="region"
-  aria-label="File diff viewer - click to enable scrolling"
+  aria-label={m.chat_inlineDiffItem_viewer_ariaLabel()}
 >
   {#if workspaceId}
     <TrackedChangeDiffViewer
@@ -236,13 +237,13 @@
           class="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-subtle shadow-lg"
         >
           <Fa icon={faArrowPointer} class="w-3 h-3" />
-          Click to scroll the code
+          {m.chat_inlineDiffItem_clickToScroll_label()}
         </div>
       </div>
     {/if}
   {:else}
     <div class="flex items-center justify-center h-24 text-subtle">
-      No workspace available
+      {m.chat_inlineDiffItem_noWorkspace_label()}
     </div>
   {/if}
 </div>

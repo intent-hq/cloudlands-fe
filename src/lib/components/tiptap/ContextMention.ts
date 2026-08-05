@@ -14,6 +14,7 @@ import {
 import { SvelteNodeViewRenderer } from '$lib/utils/tiptap/svelte-node-view';
 import ContextMentionNodeView from './ContextMentionNodeView.svelte';
 import type { ContextItemType, ContextProvider } from '$features/context/types';
+import { m } from '$shared/paraglide/messages.js';
 
 /**
  * Metadata for context mention hover cards
@@ -155,7 +156,7 @@ export const ContextMention = Node.create({
         'data-type': 'context-mention',
         class: 'context-mention',
       }),
-      HTMLAttributes.title || HTMLAttributes.identifier || 'Link',
+      HTMLAttributes.title || HTMLAttributes.identifier || m.tiptap_contextMention_link_fallback(),
     ];
   },
 

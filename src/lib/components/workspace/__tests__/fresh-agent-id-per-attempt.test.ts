@@ -91,6 +91,7 @@ vi.mock('$lib/client', () => ({
 
 vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
   enhancePrompt: vi.fn(async (p: string) => ({ enhanced: p })),
+  isEnhancePromptAvailable: vi.fn(() => true),
 }));
 
 vi.mock('$lib/utils/workspace-validation', () => ({
@@ -155,6 +156,7 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
+import { warmImport } from '../../../../test/warm-import';
 
 const PREFILL_KEY = 'workspace-prefill';
 
@@ -169,6 +171,11 @@ function seedAutoCreatePrefill() {
     }),
   );
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/MockRichTextarea.svelte'));
+warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
 
 describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
   beforeEach(() => {

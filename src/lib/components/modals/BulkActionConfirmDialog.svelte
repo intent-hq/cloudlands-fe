@@ -6,6 +6,8 @@
   faXmark,
   faExclamationTriangle,
 } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     open?: boolean;
@@ -13,19 +15,27 @@
     description?: string;
     confirmText?: string;
     variant?: ButtonVariant;
+    /** Streaming agents across the targeted workspaces that the action would stop. */
+    activeAgentCount?: number;
+    /** Active background hooks across the targeted workspaces that the action would cancel. */
+    activeHookCount?: number;
     onConfirm?: () => void;
     onCancel?: () => void;
   }
 
   let {
     open = $bindable(false),
-    title = 'Confirm Action',
+    title = m.modals_bulkActionConfirm_title(),
     description = '',
-    confirmText = 'Confirm',
+    confirmText = m.modals_bulkActionConfirm_confirm_label(),
     variant = 'default',
+    activeAgentCount = 0,
+    activeHookCount = 0,
     onConfirm,
     onCancel,
   }: Props = $props();
+
+  const hasActiveWork = $derived(activeAgentCount > 0 || activeHookCount > 0);
 
   let dialogRef: HTMLDivElement | null = $state(null);
 
@@ -93,19 +103,37 @@
           </div>
           <h2 id="bulk-dialog-title" class="text-lg font-semibold">{title}</h2>
         </div>
-        <Button variant="ghost" size="icon" onclick={close} aria-label="Close">
+        <Button variant="ghost" size="icon" onclick={close} aria-label={m.modals_bulkActionConfirm_close_ariaLabel()}>
           <Fa icon={faXmark} />
         </Button>
       </div>
 
       <!-- Content -->
-      <div class="p-6">
+      <div class="p-6 space-y-4">
         <p id="bulk-dialog-description" class="text-sm text-subtle">{description}</p>
+        {#if hasActiveWork}
+          <div class="rounded-xl border border-destructive-foreground/15 bg-destructive/45 p-4 space-y-1">
+            {#if activeAgentCount > 0}
+              <p class="text-sm font-medium text-foreground">
+                {activeAgentCount === 1
+                  ? m.modals_deleteWarning_agentsStopped_one({ count: formatInteger(activeAgentCount) })
+                  : m.modals_deleteWarning_agentsStopped_many({ count: formatInteger(activeAgentCount) })}
+              </p>
+            {/if}
+            {#if activeHookCount > 0}
+              <p class="text-sm font-medium text-foreground">
+                {activeHookCount === 1
+                  ? m.modals_deleteWarning_hooksCancelled_one({ count: formatInteger(activeHookCount) })
+                  : m.modals_deleteWarning_hooksCancelled_many({ count: formatInteger(activeHookCount) })}
+              </p>
+            {/if}
+          </div>
+        {/if}
       </div>
 
       <!-- Footer -->
       <div class="px-6 py-4 border-t border-border flex justify-end gap-2">
-        <Button variant="ghost" onclick={close}>Cancel</Button>
+        <Button variant="ghost" onclick={close}>{m.modals_bulkActionConfirm_cancel_label()}</Button>
         <Button {variant} onclick={handleConfirm}>{confirmText}</Button>
       </div>
     </div>

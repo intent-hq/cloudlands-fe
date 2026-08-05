@@ -8,6 +8,7 @@
   import Input from '$lib/components/ui/input/input.svelte';
   import { Select } from '$lib/components/ui/select';
   import { debugConfig } from '$lib/config/debug';
+  import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
   import { handleError } from '$lib/utils/error-handling';
   import { performanceMonitor } from '$lib/utils/performance';
@@ -16,7 +17,6 @@
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { KnownRepo } from '$shared/types/known-repo';
-
 
   import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
   import {
@@ -44,9 +44,14 @@
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
   import DirectoryPickerModal from '$features/onboarding/messages/DirectoryPickerModal.svelte';
+  import { pickDirectory } from '$lib/directory-picker-service';
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import { store as appStore } from '$store/renderer/store';
-  import { isolationNoun, resolveEffectiveIsolationMode, type IsolationMode } from './isolation-mode';
+  import {
+    isolationNoun,
+    resolveEffectiveIsolationMode,
+    type IsolationMode,
+  } from './isolation-mode';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('RepoSelector');
@@ -113,7 +118,7 @@
     triggerSuffix,
     triggerValueClass = 'text-subtle',
     triggerContentClass = 'gap-0.75',
-    emptyLabel = 'Select a repository',
+    emptyLabel = m.workspace_repoSelector_selectRepository_label(),
     showEmptyIcon = false,
     showTriggerChevron = false,
     triggerChevronClass = 'ml-2 opacity-50',
@@ -193,16 +198,15 @@
   let activeTab = $state<TabId>('local');
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // FOLDER-PICKER MODAL STATE
+  // FOLDER-PICKER STATE
   // ═══════════════════════════════════════════════════════════════════════════
-  // BE-driven folder browsing via `host.listDirectory` (DirectoryPickerModal),
-  // replacing the retired native-dialog round-trip. One modal is
-  // open at a time; `folderPickerPurpose` routes the picked path back to the
-  // right destination (folder pick / new-repo parent / github-clone parent).
+  // One picker is open at a time. Local Electron uses the native dialog; remote
+  // and web flows use DirectoryPickerModal. `folderPickerPurpose` routes the
+  // picked path back to the right destination.
   type FolderPickerPurpose = 'select-repo' | 'new-repo-parent' | 'github-clone-parent';
   let folderPickerOpen = $state(false);
   let folderPickerPurpose = $state<FolderPickerPurpose>('select-repo');
-  let folderPickerTitle = $state('Select folder');
+  let folderPickerTitle = $state<string>(m.workspace_repoSelector_selectFolder_title());
   let folderPickerInitialPath = $state<string | undefined>(undefined);
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -295,11 +299,11 @@
   function getProjectNameError(name: string): string | undefined {
     if (!name || name.trim().length === 0) return undefined; // empty is handled elsewhere
     const t = name.trim();
-    if (t.includes('/') || t.includes('\\')) return 'Name cannot contain path separators (/ or \\)';
-    if (t === '..' || t === '.' || /^\.+$/.test(t)) return "Name cannot be '.' or '..'";
-    if (t.includes('\0')) return 'Name cannot contain null characters';
-    if (/[<>:"|?*]/.test(t)) return 'Name contains invalid characters';
-    if (t.length > 255) return 'Name is too long (max 255 characters)';
+    if (t.includes('/') || t.includes('\\')) return m.workspace_repoSelector_nameSeparators_error();
+    if (t === '..' || t === '.' || /^\.+$/.test(t)) return m.workspace_repoSelector_nameDots_error();
+    if (t.includes('\0')) return m.workspace_repoSelector_nameNull_error();
+    if (/[<>:"|?*]/.test(t)) return m.workspace_repoSelector_nameInvalid_error();
+    if (t.length > 255) return m.workspace_repoSelector_nameTooLong_error();
     return undefined;
   }
 
@@ -353,7 +357,8 @@
       return (
         repo.name.toLowerCase().includes(search) ||
         repo.path.toLowerCase().includes(search) ||
-        (repo.owner && repo.owner.toLowerCase().includes(search))
+        (repo.owner && repo.owner.toLowerCase().includes(search)) ||
+        (repo.owner && `${repo.owner}/${repo.name}`.toLowerCase().includes(search))
       );
     });
   });
@@ -397,7 +402,10 @@
         const githubInfo = parseGitHubUrl(inputValue);
         if (githubInfo) {
           githubUrlInput = `${githubInfo.owner}/${githubInfo.repo}`;
-          handleInputChange(`https://github.com/${githubInfo.owner}/${githubInfo.repo}`);
+          handleInputChange(
+            `https://github.com/${githubInfo.owner}/${githubInfo.repo}`,
+            githubUrlInput,
+          );
         }
       }
     } else {
@@ -737,9 +745,10 @@
 
     githubUrlInput = cleaned;
 
-    // Trigger detection with the full URL for the existing logic
+    // Trigger detection with the full URL for the existing logic; pass the
+    // raw typed text as the search term so the Recent list filters by it
     if (cleaned) {
-      handleInputChange(`https://github.com/${cleaned}`);
+      handleInputChange(`https://github.com/${cleaned}`, cleaned);
     } else {
       handleInputChange('');
     }
@@ -755,7 +764,7 @@
 
       // Trigger detection
       if (normalized) {
-        handleInputChange(`https://github.com/${normalized}`);
+        handleInputChange(`https://github.com/${normalized}`, normalized);
       }
     }
   }
@@ -781,10 +790,13 @@
     }
   }
 
-  // Handle input change - search first, then debounced detection
-  function handleInputChange(value: string) {
+  // Handle input change - search first, then debounced detection.
+  // `search` is the plain text used to filter the Recent list; callers that
+  // pass a URL-prefixed `value` (GitHub tab) supply the unprefixed text so
+  // the name/owner match clauses are reachable (intent-hq/monorepo#859).
+  function handleInputChange(value: string, search: string = value) {
     inputValue = value;
-    searchTerm = value; // Update search term for filtering
+    searchTerm = search; // Update search term for filtering
 
     // Clear any pending detection
     if (detectionDebounceTimer) {
@@ -920,15 +932,32 @@
     isOpen = false;
   }
 
-  // Open the BE-driven folder picker to choose a repository folder.
-  function handleSelectFolder() {
-    folderPickerPurpose = 'select-repo';
-    folderPickerTitle = 'Select Repository Folder';
-    folderPickerInitialPath = typeof selectedValue === 'string' ? selectedValue : undefined;
-    folderPickerOpen = true;
+  function openFolderPicker(
+    purpose: FolderPickerPurpose,
+    title: string,
+    initialPath: string | undefined,
+  ): void {
+    folderPickerPurpose = purpose;
+    folderPickerTitle = title;
+    folderPickerInitialPath = initialPath;
+    void pickDirectory({
+      title,
+      defaultPath: initialPath,
+      openModal: () => (folderPickerOpen = true),
+      onSelect: handleFolderPickerSelect,
+    });
   }
 
-  // Apply a path picked via DirectoryPickerModal for the "select-repo" flow.
+  // Open the appropriate folder picker to choose a repository folder.
+  function handleSelectFolder() {
+    openFolderPicker(
+      'select-repo',
+      m.workspace_repoSelector_selectRepoFolder_title(),
+      typeof selectedValue === 'string' ? selectedValue : undefined,
+    );
+  }
+
+  // Apply a picked path for the "select-repo" flow.
   async function applyPickedRepoFolder(path: string): Promise<void> {
     try {
       // Check directory status first
@@ -978,13 +1007,14 @@
 
   // Toggle the inline create new repo form
 
-  // Open the BE-driven folder picker to choose a parent folder for a new repo.
+  // Open the appropriate folder picker to choose a parent folder for a new repo.
   function handleSelectNewRepoParent() {
     isDialogOpen = true;
-    folderPickerPurpose = 'new-repo-parent';
-    folderPickerTitle = 'Select Parent Folder for New Repository';
-    folderPickerInitialPath = newRepoParentPath || undefined;
-    folderPickerOpen = true;
+    openFolderPicker(
+      'new-repo-parent',
+      m.workspace_repoSelector_selectNewRepoParent_title(),
+      newRepoParentPath || undefined,
+    );
   }
 
   // Confirm and create the new repo selection
@@ -1025,16 +1055,17 @@
   // GITHUB CLONE FOLDER HANDLERS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Open the BE-driven folder picker to choose a clone target folder.
+  // Open the appropriate folder picker to choose a clone target folder.
   function handleSelectGitHubCloneParent() {
     isDialogOpen = true;
-    folderPickerPurpose = 'github-clone-parent';
-    folderPickerTitle = 'Select Folder to Clone Repository Into';
-    folderPickerInitialPath = githubCloneParentPath || undefined;
-    folderPickerOpen = true;
+    openFolderPicker(
+      'github-clone-parent',
+      m.workspace_repoSelector_selectCloneFolder_title(),
+      githubCloneParentPath || undefined,
+    );
   }
 
-  // Dispatch a picked path from DirectoryPickerModal to the right destination.
+  // Dispatch a picked path to the right destination.
   async function handleFolderPickerSelect(path: string): Promise<void> {
     folderPickerOpen = false;
     const purpose = folderPickerPurpose;
@@ -1183,7 +1214,7 @@
           {#if selectedValue}
             <span class={triggerValueClass}>{triggerDisplayValue}</span>
             {#if isNewRepo && !displayValue}
-              <span class="text-sm text-subtle ml-1">(new)</span>
+              <span class="text-sm text-subtle ml-1">{m.workspace_repoSelector_new_label()}</span>
             {/if}
             {#if triggerSuffix}
               <span class="text-sm text-subtle ml-1">({triggerSuffix})</span>
@@ -1203,15 +1234,15 @@
     >
       <!-- Header -->
       <div class="px-4 pt-2 pb-3">
-        <h2 class="text-base font-semibold text-foreground">What repo should we work on?</h2>
+        <h2 class="text-base font-semibold text-foreground">{m.workspace_repoSelector_whichRepo_label()}</h2>
         <p class="text-sm text-subtle mt-1">
-          Select an existing codebase or make a new one. We'll create an isolated space to work in.
+          {m.workspace_repoSelector_whichRepo_description()}
         </p>
       </div>
 
       <!-- Tab bar -->
       <div class="flex gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1">
-        {#each [{ id: 'local' as TabId, label: 'Copy local repo' }, { id: 'github' as TabId, label: 'Clone from GitHub' }, { id: 'new' as TabId, label: 'New repo' }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: 'Remote server' }] : [])] as tab}
+        {#each [{ id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'github' as TabId, label: m.workspace_repoSelector_cloneFromGithub_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
           <button
             type="button"
             class="flex-1 px-3 py-1.5 text-sm rounded-md cursor-pointer transition-all {activeTab ===
@@ -1237,7 +1268,7 @@
             <span
               class="text-sm truncate {inputValue ? 'text-foreground' : 'text-muted-foreground'}"
             >
-              {inputValue || 'Select a folder...'}
+              {inputValue || m.workspace_repoSelector_selectAFolder_placeholder()}
             </span>
             <Fa icon={faFolder} class="text-ghost opacity-50" />
           </button>
@@ -1245,8 +1276,10 @@
           <!-- GitHub: URL input with prefix -->
           <div class="flex items-center rounded-lg bg-sidebar">
             <Fa icon={faGithub} class="ml-3" />
+            <!-- i18n-ignore (domain prefix) -->
             <span class="text-sm pl-1.5 shrink-0 select-none">github.com/</span>
-            <Input
+            <!-- i18n-ignore (GitHub path format example placeholder) -->
+            <Input placeholder="owner/repo"
               bind:this={inputElement}
               type="text"
               bind:value={githubUrlInput}
@@ -1261,7 +1294,6 @@
                   }
                 }
               }}
-              placeholder="owner/repo"
               class="bg-sidebar border-none px-1 py-2.5! h-auto"
               noFocusStyle
             />
@@ -1272,21 +1304,21 @@
             class="w-full min-w-0 flex items-center gap-3 mt-2 text-left cursor-pointer"
             onclick={handleSelectGitHubCloneParent}
           >
-            <span class="text-sm text-subtle shrink-0 w-24 pl-1">Clone into</span>
+            <span class="text-sm text-subtle shrink-0 w-24 pl-1">{m.workspace_repoSelector_cloneInto_label()}</span>
             <span
               class="flex-1 text-sm px-3 py-2.5 bg-sidebar rounded-lg flex items-center shrink justify-between {githubCloneParentPath
                 ? 'text-foreground'
                 : 'text-subtle'} truncate"
             >
               <div class="truncate">
-                {githubCloneParentPath || 'Select folder...'}
+                {githubCloneParentPath || m.workspace_repoSelector_selectFolder_placeholder()}
               </div>
               <Fa icon={faFolder} class="text-ghost shrink-0 opacity-50" />
             </span>
           </button>
           <!-- Folder name -->
           <div class="flex items-center gap-3 mt-2">
-            <span class="text-sm text-subtle shrink-0 w-24 pl-1">Folder name</span>
+            <span class="text-sm text-subtle shrink-0 w-24 pl-1">{m.workspace_repoSelector_folderName_label()}</span>
             <Input
               type="text"
               bind:value={githubCloneFolderName}
@@ -1299,7 +1331,7 @@
                   }
                 }
               }}
-              placeholder={detectedGitHub?.repo || 'repo-name'}
+              placeholder={detectedGitHub?.repo || 'repo-name' /* i18n-ignore (example folder name) */}
               class="bg-sidebar border-none"
               noFocusStyle
             />
@@ -1311,16 +1343,16 @@
                 <span class="text-sm text-subtle truncate flex-1">
                   {githubCloneFullPath}
                 </span>
-                <Button size="sm" onclick={handleConfirmGitHubClone} class="shrink-0">Clone</Button>
+                <Button size="sm" onclick={handleConfirmGitHubClone} class="shrink-0">{m.workspace_repoSelector_clone_label()}</Button>
               {:else}
                 <span class="text-sm text-subtle truncate flex-1">
                   {#if !githubCloneParentPath}
-                    Select a folder to clone into
+                    {m.workspace_repoSelector_selectFolderToCloneInto_label()}
                   {:else if !githubCloneFolderName}
-                    Enter a folder name
+                    {m.workspace_repoSelector_enterFolderName_label()}
                   {/if}
                 </span>
-                <Button size="sm" disabled class="shrink-0">Clone</Button>
+                <Button size="sm" disabled class="shrink-0">{m.workspace_repoSelector_clone_label()}</Button>
               {/if}
             </div>
           {/if}
@@ -1331,21 +1363,22 @@
             class="w-full flex items-center gap-3 mb-2 text-left cursor-pointer"
             onclick={handleSelectNewRepoParent}
           >
-            <span class="text-sm text-subtle shrink-0 w-24 pl-1">Parent folder</span>
+            <span class="text-sm text-subtle shrink-0 w-24 pl-1">{m.workspace_repoSelector_parentFolder_label()}</span>
             <span
               class="flex-1 text-sm px-3 py-2.5 bg-sidebar rounded-lg flex items-center justify-between {newRepoParentPath
                 ? 'text-foreground'
                 : 'text-subtle'} truncate"
             >
               <div class="truncate">
-                {newRepoParentPath || 'Select...'}
+                {newRepoParentPath || m.workspace_repoSelector_select_placeholder()}
               </div>
               <Fa icon={faFolder} class="text-ghost shrink-0 opacity-50" />
             </span>
           </button>
           <div class="flex items-center gap-3">
-            <span class="text-sm text-subtle shrink-0 w-24 pl-1">Folder name</span>
-            <Input
+            <span class="text-sm text-subtle shrink-0 w-24 pl-1">{m.workspace_repoSelector_folderName_label()}</span>
+            <!-- i18n-ignore (example folder name placeholder) -->
+            <Input placeholder="new-project"
               type="text"
               bind:value={newRepoProjectName}
               onkeydown={(e) => {
@@ -1355,7 +1388,6 @@
                   handleConfirmNewRepo();
                 }
               }}
-              placeholder="new-project"
               class="bg-sidebar border-none"
               noFocusStyle
             />
@@ -1376,29 +1408,29 @@
               {#if isCheckingNewRepoPath}
                 <div class="flex items-center gap-2 text-sm text-subtle">
                   <Fa icon={faSpinner} class="animate-spin" size="sm" />
-                  <span>Checking...</span>
+                  <span>{m.workspace_repoSelector_checking_label()}</span>
                 </div>
               {:else if newRepoPathStatus?.exists && newRepoPathStatus?.isGitRepo}
                 <!-- Existing git repo - will create an isolated checkout -->
                 <div class="flex items-center justify-between gap-2">
                   <span class="text-sm text-subtle">
-                    Repo exists — we'll create a {isolationLabel} off it
+                    {m.workspace_repoSelector_repoExists_label({ isolationLabel })}
                   </span>
-                  <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0">Select</Button>
+                  <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0">{m.workspace_repoSelector_select_label()}</Button>
                 </div>
               {:else if newRepoPathStatus?.exists && !newRepoPathStatus?.isGitRepo}
                 <!-- Existing folder but not a git repo -->
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-sm text-amber-500"> Folder exists but is not a git repo </span>
+                  <span class="text-sm text-amber-500"> {m.workspace_repoSelector_folderNotGitRepo_label()} </span>
                   <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0" disabled
-                    >Create</Button
+                    >{m.workspace_repoSelector_create_label()}</Button
                   >
                 </div>
               {:else}
                 <!-- New folder - will create -->
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-sm text-subtle">New repo will be created</span>
-                  <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0">Create</Button>
+                  <span class="text-sm text-subtle">{m.workspace_repoSelector_newRepoWillBeCreated_label()}</span>
+                  <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0">{m.workspace_repoSelector_create_label()}</Button>
                 </div>
               {/if}
             </div>
@@ -1436,14 +1468,14 @@
                     handleRemoveRemoteSetup(setup.id);
                   }}
                   class="ml-1 p-0.5 rounded text-muted-foreground hover:text-destructive-foreground hover:bg-destructive/10"
-                  title="Remove setup"
+                  title={m.workspace_repoSelector_removeSetup_tooltip()}
                 >
                   <Fa icon={faXmark} size="xs" />
                 </button>
               </div>
             {/each}
             {#if remoteSetups.length === 0}
-              <div class="text-sm text-subtle px-3 py-2">No remote setups configured yet.</div>
+              <div class="text-sm text-subtle px-3 py-2">{m.workspace_repoSelector_noRemoteSetups_label()}</div>
             {/if}
             <button
               type="button"
@@ -1451,7 +1483,7 @@
               onclick={handleAddRemoteSetup}
             >
               <Fa icon={faPlus} size="sm" />
-              Add remote setup...
+              {m.workspace_repoSelector_addRemoteSetup_label()}
             </button>
           </div>
         {/if}
@@ -1466,13 +1498,13 @@
               <div class="text-sm font-medium truncate mb-1" title={nonGitFolderPath}>
                 {nonGitFolderPath.split('/').pop() || nonGitFolderPath}
               </div>
-              <div class="text-sm text-subtle mb-2">This folder is not a Git repository.</div>
+              <div class="text-sm text-subtle mb-2">{m.workspace_repoSelector_notGitRepository_label()}</div>
               <div class="flex gap-2">
                 <Button size="sm" variant="secondary" onclick={handleInitializeGitInFolder}
-                  >Initialize Git here</Button
+                  >{m.workspace_repoSelector_initializeGit_label()}</Button
                 >
                 <Button size="sm" variant="secondary" onclick={handleChooseDifferentFolder}>
-                  Choose a different folder
+                  {m.workspace_repoSelector_chooseDifferentFolder_label()}
                 </Button>
               </div>
             </div>
@@ -1483,7 +1515,7 @@
       <!-- Recent repos section - only show for local and github tabs when there are repos -->
       {#if activeTab !== 'new' && activeTab !== 'remote' && (isLoading || filteredRepos().length > 0)}
         <div class="overflow-y-auto flex-1 px-4 pb-3 pt-2">
-          <Header size={6} class="mb-1">Recent</Header>
+          <Header size={6} class="mb-1">{m.workspace_repoSelector_recent_label()}</Header>
           {#if isLoading && recentRepos.length === 0}
             <div class="space-y-1">
               {#each [1, 2, 3] as { }}
@@ -1545,9 +1577,8 @@
 {/if}
 
 <!--
-  BE-driven folder picker. One modal serves all three folder-selection flows
-  (repo folder, new-repo parent, github clone parent); the picked path is
-  routed back to the right destination via `folderPickerPurpose`.
+  Remote/web fallback picker. One modal serves all three folder-selection
+  flows; the picked path is routed via `folderPickerPurpose`.
 -->
 <DirectoryPickerModal
   open={folderPickerOpen}

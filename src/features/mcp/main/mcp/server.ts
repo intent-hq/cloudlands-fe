@@ -151,10 +151,12 @@ export class MCPServer extends EventEmitter {
         case 'tools/call':
           return await this.handleCallTool(request);
         default:
+          // i18n-ignore (MCP wire-protocol error consumed by agents)
           return createError(request.id, -32601, `Unknown method: ${request.method}`);
       }
     } catch (error) {
       this.logger.error(`Error handling request ${request.method}:`, error as Error);
+      // i18n-ignore (MCP wire-protocol error consumed by agents)
       return createError(request.id, -32603, (error as Error).message || 'Internal server error');
     }
   }
@@ -204,11 +206,13 @@ export class MCPServer extends EventEmitter {
     const { name, arguments: args } = request.params || {};
 
     if (!name) {
+      // i18n-ignore (MCP wire-protocol error consumed by agents)
       return createError(request.id, -32602, 'Missing tool name');
     }
 
     const tool = this.tools.get(name);
     if (!tool) {
+      // i18n-ignore (MCP wire-protocol error consumed by agents)
       return createError(request.id, -32602, `Tool not found: ${name}`);
     }
 
@@ -227,6 +231,7 @@ export class MCPServer extends EventEmitter {
           .filter((item) => item.type === 'text')
           .map((item) => (item as any).text)
           .join('\n');
+        // i18n-ignore (MCP wire-protocol error consumed by agents)
         return createError(request.id, -32603, errorMessage || 'Tool execution failed');
       }
 
@@ -248,6 +253,7 @@ export class MCPServer extends EventEmitter {
       });
     } catch (error) {
       this.logger.error(`Tool execution error for ${name}:`, error as Error);
+      // i18n-ignore (MCP wire-protocol error consumed by agents)
       return createError(request.id, -32603, `Tool execution failed: ${(error as Error).message}`);
     }
   }
@@ -288,6 +294,7 @@ export class MCPServer extends EventEmitter {
    */
   notifyToolsListChanged(): void {
     this.logger.info('Tool list changed (notification logged, not pushed to agent)', {
+      // i18n-ignore (developer log message)
       note: 'Agent will get filtered list on next tools/list call',
     });
     // Emit for any local listeners (even though HTTP bridge cannot push to agent)

@@ -1,10 +1,11 @@
-import {
-  getProviderConfig,
-  isModelValidForProvider,
-  resolvePreferredModel,
-} from '$shared/config/provider-config';
+import { resolvePreferredModel } from '$shared/utils/compound-model-id';
 import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
 import { getModelsForProvider } from '$store/renderer/slices/model/model-utils';
+import {
+  selectIsModelValidForProvider,
+  selectProviderDisplayName,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { store as appStore } from '$store/renderer/store';
 
 export interface CompatibleModelSelectionInput {
   providerId: string;
@@ -28,7 +29,7 @@ export interface ChatProviderControlVisibilityInput {
 export function buildProviderDropdownOptions(providerIds: string[]) {
   return providerIds.map((providerId) => ({
     value: providerId,
-    label: getProviderConfig(providerId).displayName,
+    label: selectProviderDisplayName.select(appStore.state, providerId),
   }));
 }
 
@@ -90,7 +91,7 @@ export function pickCompatibleModelForProvider({
     if (
       candidate &&
       availableModelValues.includes(candidate) &&
-      isModelValidForProvider(candidate, providerId)
+      selectIsModelValidForProvider.select(appStore.state, candidate, providerId)
     ) {
       return candidate;
     }

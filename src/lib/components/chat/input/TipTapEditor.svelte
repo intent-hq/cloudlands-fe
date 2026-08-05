@@ -22,6 +22,7 @@
 } from '$lib/components/tiptap/ContextMention';
   import { PasteChip } from '$lib/components/tiptap/PasteChip';
   import { createLogger } from '$lib/utils/client-logger';
+  import { m } from '$shared/paraglide/messages.js';
   import type { ContextItem } from './context-api';
   import { isFileDragEvent } from './drop-guard';
   import MentionHoverPreview from './MentionHoverPreview.svelte';
@@ -32,67 +33,14 @@
 } from '$lib/services/mentions';
   import type { Workspace } from '$shared/types';
   import { toPromptToken } from '$lib/services/mentions/format';
-  import { injectMentionSpans } from '$lib/utils/markdown-mention-injector';
   import { noteUrl } from '$shared/constants/intent-links';
   import { createIntentLink } from '$lib/utils/tiptap-link-extension';
-
-  /**
-   * Convert plain text to simple paragraph HTML for the TipTap editor.
-   * Unlike processMarkdownToHTML (which runs marked.parse and converts markdown
-   * syntax like "- item" to <ul><li> and "**bold**" to <strong>), this function
-   * preserves all literal characters (dashes, asterisks, etc.) as-is.
-   * Only @-mention tokens are rehydrated into mention chip spans.
-   *
-   * This prevents TipTap from stripping formatting — since formatting extensions
-   * (bulletList, bold, etc.) are intentionally disabled in the input editor,
-   * markdown-generated HTML tags would be silently removed.
-   */
-  function plainTextToEditorHTML(text: string): string {
-    if (!text || text.trim() === '') return '';
-
-    // If the value is already HTML (e.g., from comment editing where the caller
-    // pre-processes markdown → HTML via processMarkdownToHTML), pass it through
-    // directly. This matches the old processMarkdownToHTML skipIfHTML behavior.
-    const trimmed = text.trim();
-    if (trimmed.startsWith('<') && !trimmed.startsWith('<!--anchor:')) {
-      return text;
-    }
-
-    // Process line-by-line to escape HTML and preserve leading whitespace
-    const lines = text.split('\n');
-    const processedLines = lines.map((line) => {
-      if (line === '') return ''; // empty-line marker for paragraph splitting
-
-      // Escape HTML entities so user text is safe
-      let escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-      // Preserve leading spaces as &nbsp; so indentation is visible in HTML
-      // (browsers collapse leading whitespace in normal flow)
-      escaped = escaped.replace(/^ +/, (spaces) => '&nbsp;'.repeat(spaces.length));
-
-      return escaped;
-    });
-
-    // Group into paragraphs: consecutive non-empty lines form one <p>,
-    // empty lines start a new paragraph (matching the previous \n\n+ split)
-    const paragraphs: string[][] = [[]];
-    for (const line of processedLines) {
-      if (line === '') {
-        paragraphs.push([]);
-      } else {
-        paragraphs[paragraphs.length - 1].push(line);
-      }
-    }
-
-    // Build HTML: each paragraph group → <p>, lines within joined by <br>
-    const html = paragraphs
-      .filter((p) => p.length > 0)
-      .map((p) => `<p>${p.join('<br>')}</p>`)
-      .join('');
-
-    // Rehydrate @-mentions into TipTap mention chip spans
-    return injectMentionSpans(html);
-  }
+  import { Slice, Fragment } from '@tiptap/pm/model';
+  import {
+    plainTextToEditorHTML,
+    serializeEditorText,
+    pastedTextToParagraphNodes,
+  } from './editor-text-serialization';
 
   /** Represents an inline image in the editor content */
   export interface InlineImage {
@@ -199,7 +147,7 @@
 
   let {
     value = '',
-    placeholder = 'Ask anything or type @ for context',
+    placeholder = m.chat_richInput_askAnything_placeholder(),
     disabled = false,
     editableWhileDisabled = false,
     class: className = '',
@@ -381,7 +329,7 @@
    * Images are extracted separately via getInlineImages()
    */
   export function getTextContent(): string {
-    return editor?.getText?.() ?? '';
+    return serializeEditorText(editor);
   }
 
   /**
@@ -751,7 +699,7 @@
           if (transaction.getMeta('external-update') || isClearing) {
             return;
           }
-          const text = editor.getText();
+          const text = serializeEditorText(editor);
           onUpdate?.(text);
         },
         onSelectionUpdate: ({ editor }) => {
@@ -785,6 +733,19 @@
                 const tr = state.tr.replaceSelectionWith(node);
                 dispatch(tr);
                 return true;
+              }
+              if (/\r|\n/.test(text)) {
+                // Multi-line paste below the chip threshold: insert following the
+                // WYSIWYG convention (single \n → hardBreak, blank line → new
+                // paragraph) instead of ProseMirror's default one-<p>-per-line,
+                // which would serialize each single break as \n\n (#1151)
+                const { state, dispatch } = view;
+                const paragraphs = pastedTextToParagraphNodes(state.schema, text);
+                if (paragraphs.length > 0) {
+                  const slice = new Slice(Fragment.from(paragraphs), 1, 1);
+                  dispatch(state.tr.replaceSelection(slice).scrollIntoView());
+                  return true;
+                }
               }
             }
             return false;
@@ -998,7 +959,7 @@
                 if (prevValue !== null) {
                   event.preventDefault();
                   // Set the content and move cursor to end
-                  editor?.chain().setContent(prevValue).focus('end').run();
+                  editor?.chain().setContent(plainTextToEditorHTML(prevValue)).focus('end').run();
                   // Notify parent of the change
                   onUpdate?.(prevValue);
                   return true;
@@ -1034,7 +995,7 @@
                 if (nextValue !== null) {
                   event.preventDefault();
                   // Set the content and move cursor to end
-                  editor?.chain().setContent(nextValue).focus('end').run();
+                  editor?.chain().setContent(plainTextToEditorHTML(nextValue)).focus('end').run();
                   // Notify parent of the change
                   onUpdate?.(nextValue);
                   return true;
@@ -1328,7 +1289,7 @@
   $effect(() => {
     if (!editor) return;
 
-    const currentText = editor.getText();
+    const currentText = serializeEditorText(editor);
     if (value === currentText) {
       return;
     }

@@ -5,6 +5,7 @@
   faMinus,
 } from '@fortawesome/free-solid-svg-icons';
   import AnimatedNumber from '$lib/components/ui/AnimatedNumber.svelte';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     additions?: number;
@@ -65,7 +66,7 @@
         <span
           >+{#if animated}<AnimatedNumber
               value={additions}
-            />{:else}{additions.toLocaleString()}{/if}</span
+            />{:else}{formatInteger(additions)}{/if}</span
         >
       </span>
     {/if}
@@ -82,7 +83,7 @@
         <span
           >-{#if animated}<AnimatedNumber
               value={deletions}
-            />{:else}{deletions.toLocaleString()}{/if}</span
+            />{:else}{formatInteger(deletions)}{/if}</span
         >
       </span>
     {/if}

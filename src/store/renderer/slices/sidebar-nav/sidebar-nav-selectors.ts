@@ -2,15 +2,16 @@
  * Sidebar Nav Selectors
  */
 
-import { store } from "../../store";
-import type { StoreState } from "../../types";
-import { extractAllContent, type AgentMessage, type AgentSession } from "$shared/types";
+import { store } from '../../store';
+import type { StoreState } from '../../types';
+import { extractAllContent, type AgentMessage, type AgentSession } from '$shared/types';
 import {
   CHIEF_WORKSPACE_ID,
   type ChiefThreadPreview,
   type SidebarNavItem,
-} from "./sidebar-nav-types";
-import { getChiefThreadTitle } from "./chief-thread-title";
+} from './sidebar-nav-types';
+import { getChiefThreadTitle } from './chief-thread-title';
+import { m } from '$shared/paraglide/messages.js';
 
 function getMessageTimestamp(message: AgentMessage | undefined): number {
   const value = message?.timestamp;
@@ -26,11 +27,11 @@ function getSessionTimestamp(session: AgentSession): number {
 }
 
 function getMessagePreview(message: AgentMessage | undefined): string {
-  if (!message) return "No messages yet.";
+  if (!message) return m.layout_sidebarNav_noMessages_label();
   const text = extractAllContent(message).trim();
   if (text) return text;
-  if (message.role === "assistant") return "Chief is working on a response.";
-  return "Open Chief to continue the conversation.";
+  if (message.role === 'assistant') return m.layout_sidebarNav_chiefWorking_label();
+  return m.layout_sidebarNav_openChief_label();
 }
 
 function getChiefSessions(state: StoreState): AgentSession[] {
@@ -64,7 +65,7 @@ function toChiefThreadPreview(session: AgentSession): ChiefThreadPreview {
     preview: getMessagePreview(latestMessage),
     updatedAt: latestMessage?.timestamp
       ? new Date(latestMessage.timestamp).toISOString()
-      : typeof session.updatedAt === "string"
+      : typeof session.updatedAt === 'string'
         ? session.updatedAt
         : session.updatedAt?.toISOString(),
     isActive:
@@ -76,25 +77,13 @@ function toChiefThreadPreview(session: AgentSession): ChiefThreadPreview {
 }
 
 // ── Direct state selectors ──
-export const selectActiveStreamsVersion = store.createSelector(
-  (state) => state.sidebarNav.activeStreamsVersion,
-);
+export const selectExpandedItem = store.createSelector((state) => state.sidebarNav.expandedItem);
 
-export const selectExpandedItem = store.createSelector(
-  (state) => state.sidebarNav.expandedItem,
-);
+export const selectIsCardPinned = store.createSelector((state) => state.sidebarNav.isCardPinned);
 
-export const selectIsCardPinned = store.createSelector(
-  (state) => state.sidebarNav.isCardPinned,
-);
+export const selectPanelItem = store.createSelector((state) => state.sidebarNav.panelItem);
 
-export const selectPanelItem = store.createSelector(
-  (state) => state.sidebarNav.panelItem,
-);
-
-export const selectPanelWidth = store.createSelector(
-  (state) => state.sidebarNav.panelWidth,
-);
+export const selectPanelWidth = store.createSelector((state) => state.sidebarNav.panelWidth);
 
 export const selectOnboardingActive = store.createSelector(
   (state) => state.sidebarNav.onboardingActive,
@@ -104,9 +93,7 @@ export const selectShowCreateModal = store.createSelector(
   (state) => state.sidebarNav.showCreateModal,
 );
 
-export const selectDraftPrompt = store.createSelector(
-  (state) => state.sidebarNav.draftPrompt,
-);
+export const selectDraftPrompt = store.createSelector((state) => state.sidebarNav.draftPrompt);
 
 export const selectAllSpacesViewMode = store.createSelector(
   (state) => state.sidebarNav.allSpacesViewMode,
@@ -122,15 +109,17 @@ export const selectMultiSelectSidebarTabOrder = store.createSelector(
 
 export const selectMultiSelectSidebarSelectedTabIds = store.createSelector(
   (state, workspaceId: string): string[] =>
-    state.sidebarNav.multiSelectSelectedTabIdsByWorkspaceId[workspaceId] ?? ["overview"],
+    state.sidebarNav.multiSelectSelectedTabIdsByWorkspaceId[workspaceId] ?? ['overview'],
 );
 
 export const selectWorkspaceNoteOrder = store.createSelector(
-  (state, workspaceId: string): string[] => state.sidebarNav.noteOrderByWorkspaceId[workspaceId] ?? [],
+  (state, workspaceId: string): string[] =>
+    state.sidebarNav.noteOrderByWorkspaceId[workspaceId] ?? [],
 );
 
 export const selectWorkspaceCollapsedNoteIds = store.createSelector(
-  (state, workspaceId: string): string[] => state.sidebarNav.collapsedNoteIdsByWorkspaceId[workspaceId] ?? [],
+  (state, workspaceId: string): string[] =>
+    state.sidebarNav.collapsedNoteIdsByWorkspaceId[workspaceId] ?? [],
 );
 
 export const selectChiefActiveAgentId = store.createSelector(
@@ -144,12 +133,10 @@ export const selectStatsOverlayOpen = store.createSelector(
 // ── Derived selectors ──
 
 /** The active visible card (either hovered or expanded) */
-export const selectActiveCard = store.createSelector(
-  (state): SidebarNavItem | null => {
-    const { expandedItem, hoveredItem } = state.sidebarNav;
-    return expandedItem ?? hoveredItem;
-  },
-);
+export const selectActiveCard = store.createSelector((state): SidebarNavItem | null => {
+  const { expandedItem, hoveredItem } = state.sidebarNav;
+  return expandedItem ?? hoveredItem;
+});
 
 /** Whether any context menu is open (prevents hover card auto-close) */
 export const selectContextMenuOpen = store.createSelector(
@@ -172,4 +159,3 @@ export const selectChiefThreads = store.createSelector((state): ChiefThreadPrevi
     .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a))
     .map(toChiefThreadPreview),
 );
-

@@ -1,11 +1,25 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
+import { readFileSync } from 'fs';
 
 export default defineConfig(async () => {
   const { svelte } = await import('@sveltejs/vite-plugin-svelte');
+  const { paraglideVitePlugin } = await import('@inlang/paraglide-js');
+
+  // Mirror vite.config.mjs's __APP_VERSION__ define so components that render
+  // the app version (e.g. HudFooter) resolve it under vitest.
+  const packageJson = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
 
   return {
-    plugins: [svelte()],
+    plugins: [
+      // Compiles messages/{locale}.json into src/shared/paraglide so tests can
+      // import m.* functions without a separate generate:i18n run.
+      paraglideVitePlugin({
+        project: path.resolve(__dirname, 'project.inlang'),
+        outdir: path.resolve(__dirname, 'src/shared/paraglide'),
+      }),
+      svelte(),
+    ],
     test: {
       globals: true,
       environment: 'jsdom',
@@ -76,7 +90,6 @@ export default defineConfig(async () => {
         '**/features/agent/main/__tests__/persistence-ipc.test.ts',
         '**/tests/unit/edge-cases.test.ts',
         '**/tests/integration/workspace-operations.test.ts',
-        '**/lib/utils/__tests__/markdown-processor.test.ts',
         // Pre-existing test-fixture bug newly surfaced by the `**/test/**` →
         // `test/**` exclude narrowing (unrelated to the scripted-transport
         // fixture): the faker workspace-name assertion expects "Workspace"
@@ -100,17 +113,20 @@ export default defineConfig(async () => {
           './src/__mocks__/protocol-adapter',
         ),
         // Test-only stub: avoid resolving ws browser bundle (missing createWebSocketStream)
-        'ws': path.resolve(__dirname, './src/__mocks__/ws'),
+        ws: path.resolve(__dirname, './src/__mocks__/ws'),
         // Test-only stubs: avoid promisify(exec) at module load time (breaks jsdom)
         '$shared/git/git-env': path.resolve(__dirname, './src/__mocks__/git-env'),
         '$shared/main/async-utils': path.resolve(__dirname, './src/__mocks__/async-utils'),
         // Test-only stub: lru_map module doesn't provide proper ESM exports
-        'lru_map': path.resolve(__dirname, './src/__mocks__/lru_map'),
+        lru_map: path.resolve(__dirname, './src/__mocks__/lru_map'),
         // Test-only stub: @pierre/diffs/worker has lru_map ESM import issues
         '@pierre/diffs/worker': path.resolve(__dirname, './src/__mocks__/@pierre/diffs/worker'),
       },
       conditions: ['import', 'module', 'browser', 'default'],
       extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.svelte'],
+    },
+    define: {
+      __APP_VERSION__: JSON.stringify(packageJson.version),
     },
   };
 });

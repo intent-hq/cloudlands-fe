@@ -5,6 +5,7 @@
  * No side effects, no state, just functions.
  */
 
+import { m } from '../../shared/paraglide/messages.js';
 import type { Result, DiffChunk, WorkspaceId } from '../../shared/types';
 import type { DiffsRepository } from './main/diffs.repository';
 import { FileSystemDiffsRepository } from './main/diffs.repository';
@@ -45,7 +46,7 @@ export class DiffsService {
       logger.error('Failed to list diffs', error as Error, { workspaceId });
       return {
         ok: false,
-        error: (error as Error).message || 'Failed to list diffs',
+        error: (error as Error).message || m.diffs_service_listFailed_error(),
       };
     }
   }
@@ -79,7 +80,7 @@ export class DiffsService {
       logger.error('Failed to create diff', error as Error, { workspaceId });
       return {
         ok: false,
-        error: (error as Error).message || 'Failed to create diff',
+        error: (error as Error).message || m.diffs_service_createFailed_error(),
       };
     }
   }
@@ -100,7 +101,7 @@ export class DiffsService {
       if (index === -1) {
         return {
           ok: false,
-          error: 'Diff not found',
+          error: m.diffs_service_notFound_error(),
         };
       }
 
@@ -121,7 +122,7 @@ export class DiffsService {
       logger.error('Failed to update diff', error as Error, { workspaceId });
       return {
         ok: false,
-        error: (error as Error).message || 'Failed to update diff',
+        error: (error as Error).message || m.diffs_service_updateFailed_error(),
       };
     }
   }
@@ -145,7 +146,7 @@ export class DiffsService {
     } catch (error) {
       return {
         ok: false,
-        error: (error as Error).message || 'Failed to mark agent active',
+        error: (error as Error).message || m.diffs_service_markActiveFailed_error(),
       };
     }
   }
@@ -168,7 +169,7 @@ export class DiffsService {
     } catch (error) {
       return {
         ok: false,
-        error: (error as Error).message || 'Failed to get current changes',
+        error: (error as Error).message || m.diffs_service_currentChangesFailed_error(),
       };
     }
   }
@@ -184,6 +185,7 @@ export class DiffsService {
   ): Promise<Result<boolean, string>> {
     try {
       logger.debug(
+        // i18n-ignore (developer log message)
         `Starting agent execution tracking for ${agentName} in workspace ${workspaceId}`,
         { sessionId, turnNumber },
       );
@@ -194,7 +196,7 @@ export class DiffsService {
     } catch (error) {
       return {
         ok: false,
-        error: (error as Error).message || 'Failed to start agent execution tracking',
+        error: (error as Error).message || m.diffs_service_startTrackingFailed_error(),
       };
     }
   }
@@ -212,7 +214,7 @@ export class DiffsService {
     } catch (error) {
       return {
         ok: false,
-        error: (error as Error).message || 'Failed to stop agent execution tracking',
+        error: (error as Error).message || m.diffs_service_stopTrackingFailed_error(),
       };
     }
   }

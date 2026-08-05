@@ -2,7 +2,9 @@
   WorkspaceStatusIcon - Compact SVG-based workspace status indicator
 
   Displays a circular icon that represents workspace status:
+  - needs_attention: Filled circle with exclamation mark (amber)
   - not_started: Empty outline circle (gray)
+  - idle: Empty outline circle (gray)
   - in_progress: Half-filled circle (blue)
   - complete: Filled circle with checkmark (green)
   - pr_open: Filled circle with PR icon (purple)
@@ -13,7 +15,8 @@
   draw,
   scale,
 } from 'svelte/transition';
-  import type { WorkspaceDisplayStatus } from '$lib/components/workspace/utils/workspace-status-grouping';
+  import type { WorkspaceDisplayStatus } from '$shared/types';
+  import { m } from '$shared/paraglide/messages.js';
 
   let {
     status,
@@ -30,7 +33,9 @@
     WorkspaceDisplayStatus,
     { stroke: string; fill: string; innerCircleRPercentage: number }
   > = {
+    needs_attention: { stroke: '#F59E0B', fill: '#F59E0B', innerCircleRPercentage: 100 },
     not_started: { stroke: '#99999966', fill: 'transparent', innerCircleRPercentage: 0 },
+    idle: { stroke: '#99999966', fill: 'transparent', innerCircleRPercentage: 0 },
     in_progress: { stroke: '#00BCFF', fill: '#00BCFF', innerCircleRPercentage: 55 },
     complete: { stroke: '#22c55e', fill: '#00BD7D', innerCircleRPercentage: 100 },
     pr_ready: { stroke: '#22c55e', fill: '#22c55e', innerCircleRPercentage: 100 },
@@ -39,12 +44,30 @@
   };
 
   const statusLabels: Record<WorkspaceDisplayStatus, string> = {
-    not_started: 'Not started',
-    in_progress: 'In progress',
-    complete: 'Complete',
-    pr_ready: 'PR Mergeable',
-    pr_open: 'PR open',
-    pr_merged: 'PR merged',
+    get needs_attention() {
+      return m.workspace_statusIcon_needsAttention_label();
+    },
+    get not_started() {
+      return m.workspace_statusIcon_notStarted_label();
+    },
+    get idle() {
+      return m.workspace_statusIcon_idle_label();
+    },
+    get in_progress() {
+      return m.workspace_statusIcon_inProgress_label();
+    },
+    get complete() {
+      return m.workspace_statusIcon_complete_label();
+    },
+    get pr_ready() {
+      return m.workspace_statusIcon_prReady_label();
+    },
+    get pr_open() {
+      return m.workspace_statusIcon_prOpen_label();
+    },
+    get pr_merged() {
+      return m.workspace_statusIcon_prMerged_label();
+    },
   };
 
   let colors = $derived(statusColors[status] || statusColors.not_started);
@@ -97,6 +120,18 @@
         fill="none"
         transition:draw={{ duration: 300 }}
       />
+    {:else if status === 'needs_attention'}
+      <!-- Filled circle with exclamation mark -->
+      <g transition:scale={{ duration: 300 }}>
+        <path
+          d="M12 6.5V13.5"
+          stroke="white"
+          stroke-width="3.5"
+          stroke-linecap="round"
+          fill="none"
+        />
+        <circle cx="12" cy="17.5" r="1.75" fill="white" />
+      </g>
     {:else if status === 'pr_open'}
       <!-- PR open icon (pull request symbol) -->
       <g transition:scale={{ duration: 300 }}>

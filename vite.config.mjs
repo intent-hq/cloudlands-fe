@@ -1,4 +1,5 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -13,13 +14,7 @@ const packageJson = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'ut
 
 // Node modules that should be excluded from browser bundle
 // These are dependencies of electron-store that use Node.js APIs
-const nodeOnlyModules = [
-  'electron-store',
-  'conf',
-  'atomically',
-  'stubborn-fs',
-  'stubborn-utils',
-];
+const nodeOnlyModules = ['electron-store', 'conf', 'atomically', 'stubborn-fs', 'stubborn-utils'];
 
 const EMPTY_MODULE = `
   // This module was excluded because it uses Node.js-only APIs
@@ -118,7 +113,9 @@ const handleUnhandledSvelteKitModules = () => ({
     // This prevents Vite from trying to read files with null bytes in the path
     if (id.startsWith('\0virtual:__sveltekit/')) {
       const moduleName = id.replace('\0virtual:__sveltekit/', '');
-      console.warn(`[handle-unhandled-sveltekit-modules] Providing fallback for unhandled module: __sveltekit/${moduleName}`);
+      console.warn(
+        `[handle-unhandled-sveltekit-modules] Providing fallback for unhandled module: __sveltekit/${moduleName}`,
+      );
 
       // Provide appropriate fallback based on module name
       if (moduleName === 'paths') {
@@ -179,7 +176,11 @@ const excludeNodeModules = () => ({
   resolveId(source, _importer, options) {
     // Never intercept virtual modules (they start with \0 or virtual:)
     // This MUST be checked first, before any other logic
-    if (source.startsWith('\0') || source.startsWith('virtual:') || source.includes('__sveltekit')) {
+    if (
+      source.startsWith('\0') ||
+      source.startsWith('virtual:') ||
+      source.includes('__sveltekit')
+    ) {
       return null;
     }
 
@@ -238,37 +239,72 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-  // Plugin order:
-  // 1. devHealthProbeSilencer() - dev-only: absorbs /health probes from the MCP bridge scanner before SvelteKit sees them
-  // 2. preventSvelteKitRegenHMR() - blocks HMR page reloads for .svelte-kit/generated files
-  // 3. sveltekit() - SvelteKit's virtual modules and SSR handling
-  // 4. handleUnhandledSvelteKitModules() - catches any __sveltekit/* modules not handled by SvelteKit
-  // 5. excludeNodeModules() - excludes Node.js-only code from browser bundle
-  plugins: [
-    devHealthProbeSilencer(),
-    preventSvelteKitRegenHMR(),
-    sveltekit(),
-    handleUnhandledSvelteKitModules(),
-    excludeNodeModules(),
-  ].filter(Boolean),
+    // Plugin order:
+    // 1. paraglideVitePlugin() - compiles messages/{locale}.json into src/shared/paraglide (typed m.* functions)
+    // 2. devHealthProbeSilencer() - dev-only: absorbs /health probes from the MCP bridge scanner before SvelteKit sees them
+    // 3. preventSvelteKitRegenHMR() - blocks HMR page reloads for .svelte-kit/generated files
+    // 4. sveltekit() - SvelteKit's virtual modules and SSR handling
+    // 5. handleUnhandledSvelteKitModules() - catches any __sveltekit/* modules not handled by SvelteKit
+    // 6. excludeNodeModules() - excludes Node.js-only code from browser bundle
+    plugins: [
+      paraglideVitePlugin({
+        project: join(__dirname, 'project.inlang'),
+        outdir: join(__dirname, 'src/shared/paraglide'),
+      }),
+      devHealthProbeSilencer(),
+      preventSvelteKitRegenHMR(),
+      sveltekit(),
+      handleUnhandledSvelteKitModules(),
+      excludeNodeModules(),
+    ].filter(Boolean),
 
-  // Electron-specific configuration
-  // Use absolute paths since we use the app:// protocol which serves from a consistent root
-  // This prevents refresh issues on nested routes like /workspace/abc123
-  base: '/',
+    // Electron-specific configuration
+    // Use absolute paths since we use the app:// protocol which serves from a consistent root
+    // This prevents refresh issues on nested routes like /workspace/abc123
+    base: '/',
 
-  // Worker configuration for Monaco Editor
-  worker: {
-    format: 'es',
-  },
+    // Worker configuration for Monaco Editor
+    worker: {
+      format: 'es',
+    },
 
-  build: {
-    // Generate sourcemaps: 'hidden' in production (not exposed publicly),
-    // true in development for debugging
-    sourcemap: process.env.NODE_ENV === 'development' ? true : 'hidden',
-    rollupOptions: {
+    build: {
+      // Generate sourcemaps: 'hidden' in production (not exposed publicly),
+      // true in development for debugging. INTENT_DISABLE_SOURCEMAPS=1
+      // (exactly '1') skips them entirely — sourcemap generation multiplies
+      // rollup's peak heap, and CI smoke builds (Build (web)) never consume
+      // the maps (monorepo#1074).
+      sourcemap:
+        process.env.INTENT_DISABLE_SOURCEMAPS === '1'
+          ? false
+          : process.env.NODE_ENV === 'development'
+            ? true
+            : 'hidden',
+      rollupOptions: {
+        external: [
+          'electron',
+          'fs',
+          'path',
+          'os',
+          'crypto',
+          'stream',
+          'util',
+          'events',
+          'child_process',
+          // Native modules (cannot be bundled)
+          'node-pty',
+          'ssh2',
+          'cpu-features',
+          // Don't externalize TypeScript files - they should be bundled
+          // Only externalize Node.js built-in modules
+        ],
+      },
+    },
+
+    ssr: {
+      // Don't use noExternal: true as it can interfere with SvelteKit's virtual modules
+      // Instead, externalize only Node.js built-ins and native modules
       external: [
-        'electron',
         'fs',
         'path',
         'os',
@@ -277,181 +313,204 @@ export default defineConfig(({ mode }) => {
         'util',
         'events',
         'child_process',
-        // Native modules (cannot be bundled)
         'node-pty',
         'ssh2',
         'cpu-features',
-        // Don't externalize TypeScript files - they should be bundled
-        // Only externalize Node.js built-in modules
       ],
     },
-  },
 
-  ssr: {
-    // Don't use noExternal: true as it can interfere with SvelteKit's virtual modules
-    // Instead, externalize only Node.js built-ins and native modules
-    external: [
-      'fs', 'path', 'os', 'crypto', 'stream', 'util', 'events', 'child_process',
-      'node-pty', 'ssh2', 'cpu-features',
-    ],
-  },
-
-  server: {
-    // Support running multiple dev servers concurrently via DEV_PORT env var
-    // strictPort: true ensures we fail fast if port is taken, rather than silently using another port
-    // which causes Electron to connect to the wrong server
-    //
-    // Default 5190 is deliberately outside the MCP bridge scan range (5179–5188) so
-    // the Vite dev server never collides with the HTTP MCP bridge or the reference
-    // Intent app's WSS API server (which listens on 5180).
-    port: parseInt(process.env.DEV_PORT || '5190', 10),
-    strictPort: true,
-    // Use explicit IPv4 address to avoid issues on Linux where 'localhost' may
-    // resolve to ::1 (IPv6 only), causing wait-on and Electron to fail to connect.
-    host: '127.0.0.1',
-
-    cors: true,
-
-    // Configure HMR for Electron (will use the same port as the server)
-    hmr: {
-      protocol: 'ws',
+    server: {
+      // Support running multiple dev servers concurrently via DEV_PORT env var
+      // strictPort: true ensures we fail fast if port is taken, rather than silently using another port
+      // which causes Electron to connect to the wrong server
+      //
+      // Default 5190 is deliberately outside the MCP bridge scan range (5179–5188) so
+      // the Vite dev server never collides with the HTTP MCP bridge or the reference
+      // Intent app's WSS API server (which listens on 5180).
+      port: parseInt(process.env.DEV_PORT || '5190', 10),
+      strictPort: true,
+      // Use explicit IPv4 address to avoid issues on Linux where 'localhost' may
+      // resolve to ::1 (IPv6 only), causing wait-on and Electron to fail to connect.
       host: '127.0.0.1',
-      // HMR port will auto-match server port when not specified
+
+      cors: true,
+
+      // Configure HMR for Electron (will use the same port as the server)
+      hmr: {
+        protocol: 'ws',
+        host: '127.0.0.1',
+        // HMR port will auto-match server port when not specified
+      },
+
+      fs: {
+        allow: ['..'],
+        strict: false,
+      },
+
+      watch: {
+        // Use native file watching when available (faster than polling)
+        // Only use polling as fallback
+        usePolling: false,
+        // Ignore non-source directories and workspace data files
+        // NOTE: Be careful with ignore patterns - they can accidentally match the project directory
+        ignored: [
+          '**/node_modules/**',
+          '**/dist/**',
+          '**/dist-electron/**',
+          '**/.git/**',
+          '**/.worktrees/**',
+          // Ignore iOS/Xcode project files to prevent Electron app reloads during Xcode builds
+          '**/ios/**',
+          '**/.augment/**',
+          '**/playwright-report/**',
+          '**/test-results/**',
+          // Ignore the .workspace/ data subdirectories where runtime data is stored
+          // This prevents HMR reloads when agents modify workspace data files
+          // Note: We do NOT ignore the entire ~/.workspaces/ directory because
+          // git worktrees for development may be located there
+          '**/.workspace/**',
+          // Ignore agent instruction files to prevent HMR when editing via sandbox/rules page
+          '**/features/agent/main/instructions/**',
+          // Ignore preload directory - it's Electron-specific and compiled separately
+          // Changes here should not trigger HMR (the generate:ipc-channels script writes here)
+          '**/src/preload/**',
+          // Ignore .svelte-kit/generated files to prevent page reloads when SvelteKit regenerates routes
+          // This is critical because SvelteKit periodically regenerates these files and the page reload
+          // can break the router, causing blank pages and "Not found" errors
+          '**/.svelte-kit/generated/**',
+          '**/.svelte-kit/types/**',
+          // Ignore non-source files that external processes may modify (test runners, package managers, etc.)
+          // Changes to these files trigger full page reloads (not HMR-updateable), which destroys
+          // in-flight state like workspace creation navigation and causes the app to reload at "/"
+          '**/package.json',
+          '**/pnpm-lock.yaml',
+          '**/package-lock.json',
+          '**/test-reports/**',
+          '**/log.txt',
+        ],
+      },
     },
 
-    fs: {
-      allow: ['..'],
-      strict: false,
+    resolve: {
+      alias: [
+        // Path aliases for cleaner imports
+        { find: '$lib', replacement: join(__dirname, './src/lib') },
+        { find: '$store', replacement: join(__dirname, './src/store') },
+        { find: '$app', replacement: join(__dirname, './src/app') },
+        { find: '$features', replacement: join(__dirname, './src/features') },
+        { find: '$shared', replacement: join(__dirname, './src/shared') },
+
+        // Browser-safe config (uses hardcoded values instead of process.env)
+        {
+          find: /^.*\/shared\/config$/,
+          replacement: join(__dirname, './src/shared/config-browser.ts'),
+        },
+        {
+          find: /^.*\/shared\/config\.ts$/,
+          replacement: join(__dirname, './src/shared/config-browser.ts'),
+        },
+
+        // Icon library wrapper for Svelte 5 compatibility
+        {
+          find: /^svelte-fa$/,
+          replacement: join(__dirname, './src/lib/components/shared/icons/fa-proxy.ts'),
+        },
+        {
+          find: /^svelte-fa-original$/,
+          replacement: join(__dirname, './node_modules/svelte-fa/dist/index.js'),
+        },
+      ],
+      extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.svelte'],
+      conditions: ['import', 'module', 'browser', 'default'],
     },
 
-    watch: {
-      // Use native file watching when available (faster than polling)
-      // Only use polling as fallback
-      usePolling: false,
-      // Ignore non-source directories and workspace data files
-      // NOTE: Be careful with ignore patterns - they can accidentally match the project directory
-      ignored: [
-        '**/node_modules/**',
-        '**/dist/**',
-        '**/dist-electron/**',
-        '**/.git/**',
-        '**/.worktrees/**',
-        // Ignore iOS/Xcode project files to prevent Electron app reloads during Xcode builds
-        '**/ios/**',
-        '**/.augment/**',
-        '**/playwright-report/**',
-        '**/test-results/**',
-        // Ignore the .workspace/ data subdirectories where runtime data is stored
-        // This prevents HMR reloads when agents modify workspace data files
-        // Note: We do NOT ignore the entire ~/.workspaces/ directory because
-        // git worktrees for development may be located there
-        '**/.workspace/**',
-        // Ignore agent instruction files to prevent HMR when editing via sandbox/rules page
-        '**/features/agent/main/instructions/**',
-        // Ignore preload directory - it's Electron-specific and compiled separately
-        // Changes here should not trigger HMR (the generate:ipc-channels script writes here)
-        '**/src/preload/**',
-        // Ignore .svelte-kit/generated files to prevent page reloads when SvelteKit regenerates routes
-        // This is critical because SvelteKit periodically regenerates these files and the page reload
-        // can break the router, causing blank pages and "Not found" errors
-        '**/.svelte-kit/generated/**',
-        '**/.svelte-kit/types/**',
-        // Ignore non-source files that external processes may modify (test runners, package managers, etc.)
-        // Changes to these files trigger full page reloads (not HMR-updateable), which destroys
-        // in-flight state like workspace creation navigation and causes the app to reload at "/"
-        '**/package.json',
-        '**/pnpm-lock.yaml',
-        '**/package-lock.json',
-        '**/test-reports/**',
-        '**/log.txt',
+    define: {
+      'process.env.IS_ELECTRON': JSON.stringify(!isWebBuild),
+      ...webDefines,
+      __APP_VERSION__: JSON.stringify(packageJson.version),
+      __DEV_GIT_BRANCH__: JSON.stringify(
+        process.env.NODE_ENV === 'development'
+          ? (() => {
+              try {
+                return execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+              } catch {
+                return '';
+              }
+            })()
+          : '',
+      ),
+    },
+
+    optimizeDeps: {
+      // Allow Vite to auto-discover dependencies for optimal HMR performance
+      // noDiscovery: true was causing some deps to not be pre-bundled
+      exclude: [
+        // Node.js built-ins
+        'fs',
+        'path',
+        'os',
+        'crypto',
+        'stream',
+        'util',
+        'events',
+        'child_process',
+        'electron',
+        // Native modules (cannot be bundled by esbuild)
+        'node-pty',
+        'ssh2',
+        'cpu-features',
+        // Svelte internals (but NOT @sveltejs/kit - it needs to be pre-bundled for virtual modules to work)
+        'svelte',
+        'svelte/internal',
+        'svelte/internal/client',
+        // Node.js only packages
+        'ajv',
+        'conf',
+        'ajv-keywords',
+        'tippy.js',
+        'isomorphic-dompurify',
+        'jsdom',
+        // Large editor packages (handled separately)
+        'monaco-editor',
+        'monaco-editor/editor/editor.worker',
+        'monaco-editor/language/json/json.worker',
+        'monaco-editor/language/css/css.worker',
+        'monaco-editor/language/html/html.worker',
+        'monaco-editor/language/typescript/ts.worker',
+        // TipTap and ProseMirror (complex dependency graphs)
+        '@tiptap/core',
+        '@tiptap/starter-kit',
+        '@tiptap/pm',
+        'prosemirror-state',
+        'prosemirror-view',
+        'prosemirror-model',
+      ],
+      include: [
+        // Essential utilities
+        'uuid',
+        'highlight.js',
+        'highlight.js/lib/core',
+        'lowlight',
+        'date-fns',
+        'canvas-confetti',
+        // Terminal emulator
+        '@xterm/xterm',
+        '@xterm/addon-fit',
+        '@xterm/addon-search',
+        '@xterm/addon-web-links',
+        '@xterm/addon-webgl',
+        // Diff viewer
+        '@pierre/diffs',
+        // D3 visualization
+        'd3',
+        // Mermaid diagram rendering (dynamically imported, must be pre-bundled to avoid reload)
+        'mermaid',
+        // FontAwesome icons
+        '@fortawesome/free-regular-svg-icons',
+        // TipTap extensions (not core, but specific extensions used lazily)
+        '@tiptap/extension-code',
+        'svelte-tiptap',
       ],
     },
-  },
-
-  resolve: {
-    alias: [
-      // Path aliases for cleaner imports
-      { find: '$lib', replacement: join(__dirname, './src/lib') },
-      { find: '$store', replacement: join(__dirname, './src/store') },
-      { find: '$app', replacement: join(__dirname, './src/app') },
-      { find: '$features', replacement: join(__dirname, './src/features') },
-      { find: '$shared', replacement: join(__dirname, './src/shared') },
-
-      // Browser-safe config (uses hardcoded values instead of process.env)
-      {
-        find: /^.*\/shared\/config$/,
-        replacement: join(__dirname, './src/shared/config-browser.ts'),
-      },
-      {
-        find: /^.*\/shared\/config\.ts$/,
-        replacement: join(__dirname, './src/shared/config-browser.ts'),
-      },
-
-      // Icon library wrapper for Svelte 5 compatibility
-      {
-        find: /^svelte-fa$/,
-        replacement: join(__dirname, './src/lib/components/shared/icons/fa-proxy.ts'),
-      },
-      {
-        find: /^svelte-fa-original$/,
-        replacement: join(__dirname, './node_modules/svelte-fa/dist/index.js'),
-      },
-    ],
-    extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.svelte'],
-    conditions: ['import', 'module', 'browser', 'default'],
-  },
-
-  define: {
-    'process.env.IS_ELECTRON': JSON.stringify(!isWebBuild),
-    ...webDefines,
-    '__APP_VERSION__': JSON.stringify(packageJson.version),
-    '__DEV_GIT_BRANCH__': JSON.stringify(
-      process.env.NODE_ENV === 'development'
-        ? (() => { try { return execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim(); } catch { return ''; } })()
-        : ''
-    ),
-  },
-
-  optimizeDeps: {
-    // Allow Vite to auto-discover dependencies for optimal HMR performance
-    // noDiscovery: true was causing some deps to not be pre-bundled
-    exclude: [
-      // Node.js built-ins
-      'fs', 'path', 'os', 'crypto', 'stream', 'util', 'events', 'child_process', 'electron',
-      // Native modules (cannot be bundled by esbuild)
-      'node-pty', 'ssh2', 'cpu-features',
-      // Svelte internals (but NOT @sveltejs/kit - it needs to be pre-bundled for virtual modules to work)
-      'svelte', 'svelte/internal', 'svelte/internal/client',
-      // Node.js only packages
-      'ajv', 'conf', 'ajv-keywords', 'tippy.js', 'isomorphic-dompurify', 'jsdom',
-      // Large editor packages (handled separately)
-      'monaco-editor', 'monaco-editor/esm/vs/editor/editor.worker',
-      'monaco-editor/esm/vs/language/json/json.worker',
-      'monaco-editor/esm/vs/language/css/css.worker',
-      'monaco-editor/esm/vs/language/html/html.worker',
-      'monaco-editor/esm/vs/language/typescript/ts.worker',
-      // TipTap and ProseMirror (complex dependency graphs)
-      '@tiptap/core', '@tiptap/starter-kit', '@tiptap/pm',
-      'prosemirror-state', 'prosemirror-view', 'prosemirror-model',
-    ],
-    include: [
-      // Essential utilities
-      'uuid', 'highlight.js', 'highlight.js/lib/core', 'lowlight',
-      'date-fns', 'canvas-confetti',
-      // Terminal emulator
-      '@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-search',
-      '@xterm/addon-web-links', '@xterm/addon-webgl',
-      // Diff viewer
-      '@pierre/diffs',
-      // D3 visualization
-      'd3',
-      // Mermaid diagram rendering (dynamically imported, must be pre-bundled to avoid reload)
-      'mermaid',
-      // FontAwesome icons
-      '@fortawesome/free-regular-svg-icons',
-      // TipTap extensions (not core, but specific extensions used lazily)
-      '@tiptap/extension-code', 'svelte-tiptap',
-    ],
-  },
   };
 });

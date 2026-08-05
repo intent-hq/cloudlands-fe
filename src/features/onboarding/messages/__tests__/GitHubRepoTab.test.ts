@@ -47,6 +47,10 @@ vi.mock('$lib/electron-bridge', () => ({
   shell: { open: vi.fn(() => Promise.resolve()) },
 }));
 
+vi.mock('$lib/directory-picker-service', () => ({
+  pickDirectory: vi.fn(async ({ openModal }: { openModal: () => void }) => openModal()),
+}));
+
 vi.mock('$store/renderer/slices/github-auth/github-auth-slice', () => ({
   initializeGitHubAuth: () => ({ type: 'githubAuth/initialize' }),
 }));
@@ -80,6 +84,7 @@ vi.mock('../DirectoryPickerModal.svelte', async () => {
 });
 
 import GitHubRepoTab from '../GitHubRepoTab.svelte';
+import { warmImport } from '../../../../test/warm-import';
 
 const baseProps = () => ({
   githubUrl: '',
@@ -95,6 +100,11 @@ const pickerButton = (container: HTMLElement) =>
   container.querySelector<HTMLButtonElement>(
     'button[aria-label="Choose clone destination folder"]',
   )!;
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../../../lib/components/ui/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('./mocks/MockDirectoryPickerModal.svelte'));
 
 describe('GitHubRepoTab clone destination (#823)', () => {
   afterEach(() => {

@@ -27,6 +27,7 @@ import type {
   TaskStatus,
   UpdateWorkspaceRequest,
   Workspace,
+  WorkspaceDiskUsage,
   WorkspaceTask,
   WorkspaceTaskStats,
 } from "$shared/types";
@@ -48,10 +49,22 @@ import type { ScriptCategory, ScriptMode } from "$features/scripts/types";
 import type { SetupScript } from "$store/renderer/slices/setup-scripts/setup-scripts-types";
 import type { SkillInfo } from "$store/renderer/slices/skills/skills-types";
 import type { AuggieModel } from "$features/auggie/auggie-models.client";
+import type { ProviderCatalogResult } from "$shared/provider-catalog";
 import type { RecentUrl } from "$store/renderer/slices/browser/browser-types";
 import type { McpServerConfig } from "$store/renderer/slices/mcp-settings/mcp-settings-types";
 import type { UserPreferencesState } from "$store/renderer/slices/user-preferences/user-preferences-slice";
 import type { ProviderSettingsState } from "$store/renderer/slices/provider-settings/provider-settings-slice";
+
+/**
+ * The daemon-persisted subset of provider settings (`providers.active` /
+ * `providers.enabled`, PROTOCOL §5.12). The remaining ProviderSettingsState
+ * fields are registry snapshots hydrated from `providers.catalog`, never
+ * persisted through this seam.
+ */
+export type PersistedProviderSettings = Pick<
+  ProviderSettingsState,
+  "activeProviderId" | "enabledProviders"
+>;
 import type { SingleWorkspaceSettings } from "$store/renderer/slices/workspace-settings/workspace-settings-slice";
 import type { BackgroundAgentSettingsState } from "$store/renderer/slices/background-agent-settings/background-agent-settings-slice";
 import type { GitHubUser } from "$features/github-auth/types";
@@ -107,6 +120,20 @@ export interface MutationResult {
    * paths never set it.
    */
   queuedMessage?: QueuedMessage;
+  /**
+   * Turn-correlation id (PROTOCOL §5.5/§6.6, monorepo#1022) surfaced when the
+   * daemon returns one by the seam mutations that extract it: `queueMessage`
+   * (top-level result `turnId`, falling back to the echoed
+   * `queuedMessage.turnId`) and `sendQueuedMessageNow` (top-level field of
+   * the delivered arm ONLY — no `queuedMessage` fallback, a slot-race restore
+   * is not a delivery). `agent.retry` surfaces the same id on its own
+   * `{ ok, redriven?, turnId? }` result, and the chat send flow bypasses the
+   * `send()` seam, so `sendMessage` does not set it. Callers key retry
+   * records by it for exact lifecycle-event attribution (monorepo#1057).
+   * Additive and optional: older daemons omit it and other mutation paths
+   * never set it.
+   */
+  turnId?: string;
 }
 
 /**
@@ -269,6 +296,17 @@ export interface WorkspaceCreateResult extends MutationResult {
   errorCode?: string;
 }
 
+/**
+ * Result of the on-demand `workspace.diskUsage` poll (PROTOCOL §5.1).
+ * `diskUsage` is omitted until the daemon's first walk completes and for
+ * rows without a daemon-managed directory; `refreshing: true` means a
+ * background walk is in flight so callers may poll again shortly.
+ */
+export interface WorkspaceDiskUsageResult {
+  diskUsage?: WorkspaceDiskUsage;
+  refreshing: boolean;
+}
+
 export interface WorkspacesClient {
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]>;
   get(id: string): Promise<Workspace | null>;
@@ -298,6 +336,13 @@ export interface WorkspacesClient {
   archive(id: string): Promise<MutationResult>;
   /** Unarchive a workspace (`workspace.unarchive`, §5.1) — the archive-undo path. */
   unarchive(id: string): Promise<MutationResult>;
+  /**
+   * Mark a workspace seen (`workspace.markSeen`, §5.1) — clears the unread
+   * `attention` flag only (unlike `workspace.dismissAttention`, which also
+   * clears `review_required`). The daemon returns `{ workspace }` and emits
+   * `workspace:attention-changed`, which drives the reactive UI clear.
+   */
+  markSeen(id: string): Promise<MutationResult>;
   setActive(id: string): Promise<MutationResult>;
   recentViews(): Promise<Record<string, number>>;
   /**
@@ -307,6 +352,14 @@ export interface WorkspacesClient {
    * `workspace:tokenUsage-changed` event (§6.5).
    */
   getTokenUsage(workspaceId: string): Promise<TokenUsage | null>;
+  /**
+   * `workspace.diskUsage` (PROTOCOL §5.1): on-demand cached footprint of the
+   * workspace's daemon-managed directory — `{ diskUsage?, refreshing }`.
+   * Never populated on list/get rows (monorepo#1396); clients fetch it here
+   * when needed. Returns `null` when the daemon predates the method
+   * (-32601 METHOD_NOT_FOUND) so callers can fall back gracefully.
+   */
+  diskUsage(workspaceId: string): Promise<WorkspaceDiskUsageResult | null>;
   /**
    * `workspace.getContext` (PROTOCOL §5.1): the daemon-owned chat-context
    * attachment list for one workspace (notes, linear / github / sentry issues,
@@ -329,7 +382,7 @@ export interface WorkspacesClient {
 /**
  * Image content block attached to a message (PROTOCOL §5.5:
  * `{ type: "image", data, mimeType }`). Shared shape for the optional
- * `imageBlocks` params on `agents.queue` and `agents.force`.
+ * `imageBlocks` param on `agents.queue`.
  */
 export interface ImageBlock {
   type: "image";
@@ -348,16 +401,25 @@ export interface AgentsClient {
    * the newest slice. `nextToken` is opaque and walks backward to older pages
    * (`null` once the oldest message has been returned). Callers that want the
    * full transcript must page until `nextToken` is null.
+   *
+   * Seek (§5.5 `aroundMessageId`, additive): when given, it takes precedence
+   * over any token and resolves to the page CONTAINING that message (an
+   * unknown id is rejected daemon-side with -32602). Seek pages additionally
+   * carry `prevToken` — an opaque FORWARD cursor toward the live tail (pass
+   * it back as the `pageToken` input to fetch the next newer page); it is
+   * normalized to `null` on legacy backward pages, which never carry the key.
    */
   getConversation(
     agentId: string,
     limit?: number,
     pageToken?: string,
+    aroundMessageId?: string,
   ): Promise<{
     messages: AgentMessage[];
     truncated: boolean;
     totalMessages: number;
     nextToken: string | null;
+    prevToken: string | null;
   }>;
   /**
    * Create an agent session (`agent.create`, §5.5). The daemon returns the
@@ -389,10 +451,12 @@ export interface AgentsClient {
   }): Promise<MutationResult>;
   /**
    * Queue a message behind the agent's in-flight turn (`agent.queueMessage`,
-   * §5.5). Optional `imageBlocks` (same shape as `force`) are only forwarded
-   * when supplied so queued attachments survive queue-on-send. The daemon
-   * returns `{ success, queuedMessage }`, surfaced as `queuedMessage` on the
-   * MutationResult. Transport / daemon errors fold into
+   * §5.5). Optional `imageBlocks` are only forwarded when supplied so queued
+   * attachments survive queue-on-send. The daemon returns
+   * `{ success, queuedMessage, turnId }`, surfaced as `queuedMessage` /
+   * `turnId` on the MutationResult (the entry's turn-correlation id,
+   * monorepo#1057 — falls back to `queuedMessage.turnId` when the top-level
+   * field is absent). Transport / daemon errors fold into
    * `{ success: false, error }` — this method never throws.
    */
   queue(
@@ -418,18 +482,24 @@ export interface AgentsClient {
     editing?: boolean,
   ): Promise<MutationResult>;
   /**
-   * Force-send a queued message (`agent.forceMessage`, §5.5): the daemon stops
-   * the current stream, dequeues the message, and delivers it immediately —
-   * atomically. Optional `imageBlocks` / `noteIds` are only forwarded when
-   * supplied. Transport / daemon errors fold into `{ success: false, error }`.
+   * Send a queued message immediately (`agent.sendQueuedMessageNow`, §5.5):
+   * the daemon atomically dequeues the persisted entry and delivers its
+   * content as an interrupt send — there is no client-side remove-then-send
+   * window. Responds `{ success, queued: false, messageId }` on delivery; if
+   * the send slot is unavailable (turn startup race) the daemon restores the
+   * entry at the queue FRONT and responds `{ success: true, queued: true }` —
+   * not delivered now, and the re-add reconciles via `agent:queue:updated`.
+   * NOT idempotent: a missing entry (already drained/removed) rejects with
+   * `-32602`, folded into `{ success: false, error }` like the other
+   * mutations. The delivered arm carries `turnId` (the entry's preserved
+   * turn-correlation id, §5.5 — this RPC's response replaces the
+   * `agent:queue:processing` event, which is NOT emitted for this path),
+   * surfaced on the MutationResult (monorepo#1057).
    */
-  force(params: {
+  sendQueuedNow(params: {
     agentId: string;
-    messageId: string;
-    content: string;
     workspaceId: string;
-    imageBlocks?: ImageBlock[];
-    noteIds?: string[];
+    messageId: string;
   }): Promise<MutationResult>;
   /**
    * Read the agent's persisted message queue (`agent.getQueue`, §5.5/§6.6).
@@ -455,6 +525,55 @@ export interface AgentsClient {
    * converges the FE streaming state.
    */
   stop(agentId: string): Promise<MutationResult>;
+  /**
+   * Cancel the agent's completion watches / delegation groups
+   * (`agent.cancelSubscriptions`, §5.5). Unscoped (neither optional param)
+   * cancels EVERYTHING the agent registered — all completion watches, all
+   * delegation groups it parents, and all event subscriptions — and is
+   * idempotent. Scoped: `subscriptionId` cancels exactly that completion
+   * watch; `groupId` cancels that delegation group plus its grouped watches;
+   * both may be combined (all-or-nothing — an unknown id rejects with
+   * `-32602` before anything is removed, folded into
+   * `{ success: false, error }`). Each scoped removal publishes the standard
+   * `agent:subscriptions-changed` snapshot (§6.5), which drives the FE
+   * refetch path — callers never hand-roll list mutation.
+   */
+  cancelSubscriptions(params: {
+    agentId: string;
+    workspaceId: string;
+    subscriptionId?: string;
+    groupId?: string;
+  }): Promise<MutationResult>;
+  /**
+   * Dismiss the pending Agent Q&A question set (`agent.dismissQuestions`,
+   * §5.5). The daemon persists `dismissedQuestionsMessageId` (the id of the
+   * question-bearing assistant message) in session metadata — so the
+   * dismissal survives reload — emits `agent:updated`, and kicks the queue
+   * drain so messages held by the question hold resume. Idempotent:
+   * re-dismissing the same message succeeds. A nonexistent agent or a
+   * workspace mismatch rejects (folded into `{ success: false, error }`).
+   */
+  dismissQuestions(params: {
+    agentId: string;
+    workspaceId: string;
+    messageId: string;
+  }): Promise<MutationResult>;
+  /**
+   * Advance the per-conversation seen marker (`agent.markSeen`, §5.5). The
+   * daemon persists `lastSeenMessageId` in session metadata — served on
+   * `AgentLite` and converging via `agent:updated`. The wire ack carries
+   * `{ success: true, lastSeenMessageId }`, but this seam folds it into a
+   * plain `MutationResult` — callers read the advanced marker from session
+   * metadata, not from this result. Fired fire-and-forget by the viewport
+   * trigger while the user is viewing the conversation at-bottom; callers
+   * never await it for UI flow. A nonexistent agent or a workspace mismatch
+   * rejects (folded into `{ success: false, error }`).
+   */
+  markSeen(params: {
+    agentId: string;
+    workspaceId: string;
+    messageId: string;
+  }): Promise<MutationResult>;
   /**
    * Rename an agent session (`agent.rename`, §5.5). The daemon persists the
    * new name and an applied rename emits `agent:renamed` (in
@@ -489,12 +608,16 @@ export interface AgentsClient {
    * `false` — the queue was empty, error cleared to idle, nothing to redrive
    * (undefined on older daemons that omit the field). Emits
    * `agent:status-changed` events (pending → active → idle/error depending on
-   * the retry outcome).
+   * the retry outcome). `turnId` (monorepo#1022/#1057) is present only with
+   * `redriven: true`: the redriven head entry's turn-correlation id — the
+   * SAME id the original send/enqueue RPC returned (preserved across the
+   * terminal-failure requeue), so the redrive's lifecycle events correlate
+   * with the record the client already keyed.
    */
   retry(
     agentId: string,
     workspaceId: string,
-  ): Promise<{ ok: true; redriven?: boolean } | { ok: false; error: string }>;
+  ): Promise<{ ok: true; redriven?: boolean; turnId?: string } | { ok: false; error: string }>;
   /**
    * Resolve an outstanding interactive permission prompt
    * (`agent.respondPermission`, PROTOCOL §8). The daemon forwards the chosen
@@ -528,6 +651,36 @@ export interface AgentsClient {
   subscribe(handler: SubscriptionHandler<AgentSession[]>): Unsubscribe;
 }
 
+/**
+ * Reconciled `chat.subscribe` transcript state emitted by the standing
+ * subscription (PROTOCOL §7.1): the seq-0 message page reduced with every
+ * block-granularity delta. `isStreaming` derives from the snapshot's
+ * synthetic in-flight message / activity flags and the delta stream's
+ * terminal `streamingComplete` frames.
+ */
+export interface ChatTranscript {
+  messages: AgentMessage[];
+  truncated: boolean;
+  totalMessages: number;
+  isStreaming: boolean;
+}
+
+/**
+ * Lifecycle phase of a standing `chat.subscribe` stream (Track B only — no
+ * daemon-internal stages, no history-paging progress). Drives the per-agent
+ * live-hydration indicator: `connecting` (subscribe sent, ack pending),
+ * `awaiting-snapshot` (ack received, seq-0 snapshot pending), `live`
+ * (snapshot applied — indicator hidden), `resyncing` (sequence gap, recovery
+ * resnapshot in flight), `delayed` (subscribe failed or the seq-0 snapshot
+ * timed out, retry pending).
+ */
+export type ChatLiveStreamPhase =
+  | "connecting"
+  | "awaiting-snapshot"
+  | "live"
+  | "resyncing"
+  | "delayed";
+
 export interface ChatClient {
   /**
    * One-shot seq-0 snapshot from the `chat.subscribe` channel (PROTOCOL §7.1).
@@ -541,6 +694,21 @@ export interface ChatClient {
   subscribeSnapshot(
     agentId: string,
   ): Promise<{ messages: AgentMessage[]; truncated: boolean; totalMessages: number }>;
+  /**
+   * Standing per-agent `chat.subscribe` subscription (PROTOCOL §7.1). Keeps
+   * the registration open and invokes `handler` with the reconciled
+   * transcript on the seq-0 snapshot and after every applied block delta.
+   * Self-healing: a sequence gap resnapshots via a fresh registration, a
+   * transport reconnect re-registers, and pushes racing the subscribe reply
+   * are buffered pre-ack. Returns the disposer (sends `chat.unsubscribe`).
+   * Optional `onPhase` observes the stream's lifecycle phase transitions
+   * (deduped; purely observational — it never alters subscription behavior).
+   */
+  subscribe(
+    agentId: string,
+    handler: (transcript: ChatTranscript) => void,
+    onPhase?: (phase: ChatLiveStreamPhase) => void,
+  ): Unsubscribe;
 }
 
 /** Parameters for `terminal.create` (PROTOCOL §5.13). `command` omitted ⇒ default shell. */
@@ -584,8 +752,21 @@ export interface TerminalEventHandlers {
   onTitle?(event: TerminalTitleEvent): void;
 }
 
+/**
+ * `terminal.list` result envelope (PROTOCOL §5.13). `daemonBootId` identifies
+ * the daemon boot that produced the snapshot, letting the store distinguish an
+ * authoritative same-boot empty list (every PTY genuinely gone — converge to
+ * zero tabs) from a post-restart empty (PTYs respawn via auto-reconnect —
+ * preserve tabs). Absent when a legacy pre-envelope daemon returned a bare
+ * array.
+ */
+export interface TerminalListResult {
+  terminals: TerminalTab[];
+  daemonBootId?: string;
+}
+
 export interface TerminalsClient {
-  list(workspaceId: string): Promise<TerminalTab[]>;
+  list(workspaceId: string): Promise<TerminalListResult>;
   /**
    * `terminal.create` (PROTOCOL §5.13). On success the daemon-assigned
    * terminalId is surfaced as `MutationResult.id`.
@@ -669,8 +850,8 @@ export interface SettingsClient {
   updateUserRule(ruleType: string, content: string, enabled?: boolean): Promise<MutationResult>;
   getUserPreferences(): Promise<UserPreferencesState | null>;
   setUserPreferences(prefs: Partial<UserPreferencesState>): Promise<MutationResult>;
-  getProviderSettings(): Promise<ProviderSettingsState | null>;
-  setProviderSettings(settings: Partial<ProviderSettingsState>): Promise<MutationResult>;
+  getProviderSettings(): Promise<PersistedProviderSettings | null>;
+  setProviderSettings(settings: Partial<PersistedProviderSettings>): Promise<MutationResult>;
   getMcpServers(): Promise<McpServerConfig[]>;
   setMcpServers(servers: McpServerConfig[]): Promise<MutationResult>;
   getWorkspaceSettings(workspaceId: string): Promise<SingleWorkspaceSettings | null>;
@@ -744,6 +925,14 @@ export interface CommitDetailsResult {
 export interface GitDiffsOptions {
   /** Filter the result to a single workspace-relative file path. */
   path?: string;
+  /**
+   * Narrow the result to exactly these workspace-relative file paths (literal
+   * matching; the daemon prunes the walk). Unioned with `path` when both are
+   * set. An empty array is treated like an absent `paths` (the client omits
+   * it from the wire call), so narrowing then falls back to `path` when set,
+   * or the full tree otherwise.
+   */
+  paths?: string[];
   /** When `true`, returns the HEAD→index (staged) diff; ignored if `commitHash` is set. */
   staged?: boolean;
   /** When set, returns the per-file hunks for `<commitHash>^..<commitHash>`. */
@@ -1246,7 +1435,7 @@ export interface SkillsClient {
  * Wire `SpecialistDef` (`specialist.list`, PROTOCOL §5.11): the resolved view
  * of one definition. `source` is the winning tier (project > user > bundled)
  * and `path` the file it resolved from (omitted for `bundled`). The optional
- * frontmatter scalars (`codingAgent`/`model`/`modelTier`/`roleReminder`/
+ * frontmatter scalars (`codingAgent`/`model`/`roleReminder`/
  * `agentType`/`hidden`) are carried through verbatim when present;
  * `behaviorPrompt` mirrors `prompt` (the markdown body). `hidden: true`
  * excludes the specialist from picker surfaces (absent ⇒ not hidden).
@@ -1257,7 +1446,6 @@ export interface SpecialistDef {
   description: string;
   codingAgent?: string;
   model?: string;
-  modelTier?: string;
   roleReminder?: string;
   agentType?: string;
   hidden?: boolean;
@@ -1266,11 +1454,25 @@ export interface SpecialistDef {
   source: "project" | "user" | "bundled";
   isCustomized?: boolean;
   path?: string;
+  /**
+   * Daemon-computed default-model preview (additive, PROTOCOL §5.11): the
+   * model a no-model `agent.create` with this specialist would pin, resolved
+   * by the daemon's single creation-time resolver in the request's `provider`
+   * context. Both fields are omitted when resolution yields the provider CLI
+   * default (clients render "Provider default").
+   */
+  resolvedModel?: string;
+  resolvedProvider?: string;
 }
 
 export interface SpecialistsClient {
-  /** Merged bundled + user + project definitions (`specialist.list`, PROTOCOL §5.11). */
-  list(): Promise<SpecialistDef[]>;
+  /**
+   * Merged bundled + user + project definitions (`specialist.list`, PROTOCOL
+   * §5.11). The optional `provider` supplies the resolution context for the
+   * `resolvedModel`/`resolvedProvider` preview fields (defaults to the
+   * daemon's default provider; unknown provider → -32602).
+   */
+  list(provider?: string): Promise<SpecialistDef[]>;
   subscribe(handler: SubscriptionHandler<SpecialistDef[]>): Unsubscribe;
   /**
    * Create a new specialist definition (`specialist.create`, PROTOCOL §5.11).
@@ -1293,6 +1495,17 @@ export interface SpecialistsClient {
 export interface ModelsClient {
   list(): Promise<AuggieModel[]>;
   subscribe(handler: SubscriptionHandler<AuggieModel[]>): Unsubscribe;
+}
+
+/**
+ * Provider registry domain (`providers.catalog`, PROTOCOL §5.38, v2.6).
+ * Daemon-global: no `workspaceId`. Returns the full static provider registry
+ * (gated-off rows included, in registry order) plus `defaultProviderId`.
+ * THROWS on transport/daemon failure so the seeder can decide the fallback
+ * (keep the last hydrated catalog rather than wiping it).
+ */
+export interface ProvidersClient {
+  catalog(): Promise<ProviderCatalogResult>;
 }
 
 /** Wire `period` mode for `stats.getUsage`. */
@@ -1357,6 +1570,38 @@ export interface StatsClient {
     key: string | undefined,
     tzOffsetMinutes: number,
   ): Promise<UsageStatsResult>;
+}
+
+/** Optional domain-vocabulary hints for `voice.transcribe` (PROTOCOL §5.41). */
+export interface VoiceTranscribeContext {
+  /** Free-form style/context hint (OpenAI prompt; ignored by ElevenLabs). */
+  prompt?: string;
+  /** Domain keyterms (workspace title, branch, agent names, …). */
+  keyterms?: string[];
+}
+
+/** `voice.transcribe` result (PROTOCOL §5.41). */
+export interface VoiceTranscribeResult {
+  text: string;
+  /** The provider that actually served the request. */
+  provider: "elevenlabs" | "openai";
+  /** Transcribed audio duration in ms; always present, `null` when unknown. */
+  durationMs: number | null;
+}
+
+export interface VoiceClient {
+  /**
+   * Daemon-owned speech-to-text (`voice.transcribe`, PROTOCOL §5.41).
+   * Base64-encodes the recorded audio and forwards it with the container
+   * MIME type and optional context hints. Daemon-global (no `workspaceId`).
+   * THROWS on transport/daemon errors — including the descriptive
+   * no-API-key `-32603` — so callers surface them explicitly.
+   */
+  transcribe(
+    audio: Blob,
+    mimeType: string,
+    context?: VoiceTranscribeContext,
+  ): Promise<VoiceTranscribeResult>;
 }
 
 export interface BrowserClient {
@@ -1513,7 +1758,9 @@ export interface AppClient {
   skills: SkillsClient;
   specialists: SpecialistsClient;
   models: ModelsClient;
+  providers: ProvidersClient;
   stats: StatsClient;
+  voice: VoiceClient;
   browser: BrowserClient;
   integrations: IntegrationsClient;
   system: SystemClient;

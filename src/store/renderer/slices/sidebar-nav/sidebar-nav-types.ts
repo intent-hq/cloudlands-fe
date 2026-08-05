@@ -6,6 +6,7 @@
  */
 
 export const CHIEF_WORKSPACE_ID = '__chief__';
+// i18n-ignore (sentinel compared against daemon-stored names; localizing would break placeholder detection)
 export const DEFAULT_CHIEF_THREAD_TITLE = 'New chat with Intent';
 
 export type SidebarNavItem =
@@ -14,6 +15,7 @@ export type SidebarNavItem =
   | 'active'
   | 'chief'
   | 'all-workspaces'
+  | 'hud'
   | 'stats'
   | 'settings';
 export type AllSpacesViewMode = 'recent' | 'repo' | 'status';
@@ -28,8 +30,6 @@ export type ChiefThreadPreview = {
 };
 
 export type SidebarNavState = {
-  /** Bumped whenever active-streams data changes */
-  activeStreamsVersion: number;
   /** Bumped whenever unread-tracking data changes */
   unreadVersion: number;
   /** Currently hovered nav item (shows hover card) */

@@ -49,6 +49,10 @@
   requestUnarchiveWorkspace,
 } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import {
+  selectBulkArchiveActiveAgentCount,
+  selectBulkArchiveActiveHookCount,
+  selectBulkDeleteActiveAgentCount,
+  selectBulkDeleteActiveHookCount,
   selectBulkDeleteWorkspaceCount,
   selectPendingBulkRepoKey,
   selectPendingRemoveRepoPath,
@@ -74,6 +78,7 @@
   import Fa from 'svelte-fa';
   import { fly } from 'svelte/transition';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
   // Feature flag: mimic empty state for testing (set to true to test empty state UI)
@@ -85,10 +90,14 @@
   let workspaceInitializer: CompactWorkspaceInitializer | null = $state(null);
 
   const showBulkArchiveConfirm = selectShowBulkArchiveConfirm();
+  const bulkArchiveActiveAgentCount = selectBulkArchiveActiveAgentCount();
+  const bulkArchiveActiveHookCount = selectBulkArchiveActiveHookCount();
   const showBulkDeleteArchivedConfirm = selectShowBulkDeleteArchivedConfirm();
   const pendingBulkRepoKey = selectPendingBulkRepoKey();
   const showBulkDeleteWarningConfirm = selectShowBulkDeleteWarningConfirm();
   const bulkDeleteWorkspaceCount = selectBulkDeleteWorkspaceCount();
+  const bulkDeleteActiveAgentCount = selectBulkDeleteActiveAgentCount();
+  const bulkDeleteActiveHookCount = selectBulkDeleteActiveHookCount();
   const showRemoveRepoConfirm = selectShowRemoveRepoConfirm();
   const pendingRemoveRepoPath = selectPendingRemoveRepoPath();
 
@@ -204,7 +213,7 @@
       >
         <div class="w-full flex items-baseline space-between mb-5 relative">
           <h1 class="text-3xl font-medium tracking-[-0.03em]">
-            {isEmpty ? 'Create your first workspace' : 'Workspaces'}
+            {isEmpty ? m.workspace_home_createFirst_title() : m.workspace_home_workspaces_title()}
           </h1>
           {#if isInitializerExpanded}
             <div class="ml-auto absolute -right-3 top-3" transition:fly={{ y: 10, duration: 200 }}>
@@ -215,7 +224,7 @@
                 variant="ghost-light"
                 size="icon-xs"
                 class="text-muted-foreground hover:text-foreground"
-                tooltip="Close formㅤESC"
+                tooltip={m.workspace_home_closeForm_tooltip()}
               >
                 <Fa icon={faXmark} />
               </Button>
@@ -252,8 +261,8 @@
               variant="indicator"
               size="xs"
               pressed={$groupByRepo}
-              onLabel="Grouped by repo"
-              offLabel="Not grouped"
+              onLabel={m.workspace_home_groupedByRepo_label()}
+              offLabel={m.workspace_home_notGrouped_label()}
               onclick={() => appStore.dispatch(toggleGroupByRepo())}
             />
 
@@ -262,8 +271,8 @@
               variant="indicator"
               size="xs"
               pressed={$showArchived}
-              onLabel="Showing Archived"
-              offLabel="Show Archived"
+              onLabel={m.workspace_home_showingArchived_label()}
+              offLabel={m.workspace_home_showArchived_label()}
               onclick={() => appStore.dispatch(toggleShowArchived())}
             />
 
@@ -283,7 +292,7 @@
                     onblur={handleSearchBlur}
                     onkeydown={handleSearchKeydown}
                     type="text"
-                    placeholder="Search..."
+                    placeholder={m.workspace_home_search_placeholder()}
                     class="w-full px-3 py-1.5 text-sm bg-transparent border-none focus:outline-none placeholder:text-muted-foreground/50"
                   />
                 </div>
@@ -297,7 +306,7 @@
                     searchExpanded = false;
                     searchQuery = '';
                   }}
-                  title="Search spaces"
+                  title={m.workspace_home_searchSpaces_title()}
                 >
                   <Fa icon={faXmark} size="sm" />
                 </Button>
@@ -311,7 +320,7 @@
                     await tick();
                     searchInputRef?.focus();
                   }}
-                  title="Search spaces"
+                  title={m.workspace_home_searchSpaces_title()}
                 >
                   <Fa icon={faSearch} size="sm" />
                 </Button>
@@ -407,9 +416,13 @@
 <!-- Bulk Archive Confirmation Dialog -->
 <BulkActionConfirmDialog
   open={$showBulkArchiveConfirm}
-  title="Archive All Spaces"
-  description={`Are you sure you want to archive all active spaces in ${$pendingBulkRepoKey ?? 'this repo'}? You can unarchive them later.`}
-  confirmText="Archive All"
+  title={m.workspace_home_bulkArchive_title()}
+  description={m.workspace_home_bulkArchive_description({
+    repo: $pendingBulkRepoKey ?? m.workspace_home_thisRepo_fallback(),
+  })}
+  confirmText={m.workspace_home_bulkArchiveConfirm_label()}
+  activeAgentCount={$bulkArchiveActiveAgentCount}
+  activeHookCount={$bulkArchiveActiveHookCount}
   onConfirm={() => appStore.dispatch(confirmBulkArchive())}
   onCancel={() => appStore.dispatch(closeBulkArchiveConfirm())}
 />
@@ -417,21 +430,27 @@
 <!-- Bulk Delete Archived Confirmation Dialog -->
 <BulkActionConfirmDialog
   open={$showBulkDeleteArchivedConfirm}
-  title="Delete All Archived Spaces"
-  description={`This will permanently delete all archived spaces in ${$pendingBulkRepoKey ?? 'this repo'}. This action cannot be undone.`}
-  confirmText="Delete All"
+  title={m.workspace_home_bulkDeleteArchived_title()}
+  description={m.workspace_home_bulkDeleteArchived_description({
+    repo: $pendingBulkRepoKey ?? m.workspace_home_thisRepo_fallback(),
+  })}
+  confirmText={m.workspace_home_bulkDeleteConfirm_label()}
   variant="destructive"
   onConfirm={() => appStore.dispatch(confirmBulkDeleteArchived())}
   onCancel={() => appStore.dispatch(closeBulkDeleteArchivedConfirm())}
 />
 
-<!-- Bulk Delete Warning Dialog (when archived spaces have running agents) -->
+<!-- Bulk Delete Warning Dialog (when archived spaces have active agents/hooks) -->
 <BulkActionConfirmDialog
   open={$showBulkDeleteWarningConfirm}
-  title="Delete Archived Spaces?"
-  description={`${$bulkDeleteWorkspaceCount} archived space${$bulkDeleteWorkspaceCount === 1 ? '' : 's'} will be permanently deleted. Some have running agents that will be stopped.`}
-  confirmText="Delete Anyway"
+  title={m.workspace_home_bulkDeleteWarning_title()}
+  description={$bulkDeleteWorkspaceCount === 1
+    ? m.workspace_home_bulkDeleteWarning_description_one({ count: $bulkDeleteWorkspaceCount })
+    : m.workspace_home_bulkDeleteWarning_description_many({ count: $bulkDeleteWorkspaceCount })}
+  confirmText={m.workspace_home_deleteAnyway_label()}
   variant="destructive"
+  activeAgentCount={$bulkDeleteActiveAgentCount}
+  activeHookCount={$bulkDeleteActiveHookCount}
   onConfirm={() => appStore.dispatch(confirmBulkDeleteWarning())}
   onCancel={() => appStore.dispatch(closeBulkDeleteWarningConfirm())}
 />
@@ -439,9 +458,11 @@
 <!-- Remove Repo Confirmation Dialog -->
 <BulkActionConfirmDialog
   open={$showRemoveRepoConfirm}
-  title="Remove Repository"
-  description={`Remove "${$pendingRemoveRepoPath ?? 'this repository'}" from the home page? This won't delete any files or spaces.`}
-  confirmText="Remove"
+  title={m.workspace_home_removeRepo_title()}
+  description={m.workspace_home_removeRepo_description({
+    repo: $pendingRemoveRepoPath ?? m.workspace_home_thisRepository_fallback(),
+  })}
+  confirmText={m.workspace_home_remove_label()}
   variant="destructive"
   onConfirm={() => appStore.dispatch(confirmRemoveRepo())}
   onCancel={() => appStore.dispatch(closeRemoveRepoConfirm())}

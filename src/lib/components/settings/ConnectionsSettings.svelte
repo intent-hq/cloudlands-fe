@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { initializeLinearAuth } from '$store/renderer/slices/linear-auth/linear-auth-slice';
@@ -15,19 +16,19 @@
   // Track if initial load is complete
   let isLoading = $state(true);
 
-  // Integration metadata for skeleton rendering
+  // Integration metadata for skeleton rendering (names are brand names — not translated)
   const integrations = [
     {
       icon: 'github',
       name: 'GitHub',
-      description: 'Push changes and create pull requests directly from workspaces.',
+      description: m.settings_connections_github_description(),
     },
     {
       icon: 'linear',
       name: 'Linear',
-      description: 'Create workspaces tasks directly from tickets.',
+      description: m.settings_connections_linear_description(),
     },
-    { icon: 'sentry', name: 'Sentry', description: 'Create spaces directly from issues.' },
+    { icon: 'sentry', name: 'Sentry', description: m.settings_connections_sentry_description() },
   ] as const;
 
   onMount(() => {

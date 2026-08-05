@@ -113,7 +113,9 @@ export const WorkspaceSchema = z.object({
   conversationInfo: z.array(z.any()),
   status: z.nativeEnum(WorkspaceStatus),
   statusMessage: WorkspaceStatusMessageSchema.optional(),
+  statusImageAssetId: z.string().optional(), // Agent-authored status screenshot asset id (intent-hq/monorepo#997)
   activity: z.enum(['idle', 'agent_running']).optional(), // BE-derived in-flight agent state
+  attention: z.enum(['none', 'unread', 'review_required']).optional(), // BE-owned dismissible attention flag (PROTOCOL §5.1 / §9.9)
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   archived: z.boolean().optional(),
@@ -152,6 +154,21 @@ export const WorkspaceSchema = z.object({
   cowSupported: z.boolean().optional(),
   /** How the checkout was provisioned (PROTOCOL §5.1); omitted for rows without a daemon-provisioned checkout (skip-isolation/direct, remote, …). */
   checkoutMode: z.enum(['cow', 'worktree']).optional(),
+  /** Cached physical disk usage of the workspace directory (PROTOCOL §5.1); omitted until first computation completes. */
+  diskUsage: z
+    .object({
+      bytes: z.number().int().nonnegative(),
+      fileCount: z.number().int().nonnegative(),
+      computedAt: z.string().datetime({ offset: true }),
+      breakdown: z.array(
+        z.object({
+          name: z.string(),
+          bytes: z.number().int().nonnegative(),
+          fileCount: z.number().int().nonnegative(),
+        }),
+      ),
+    })
+    .optional(),
 });
 
 // SSH configuration schema for remote workspaces
@@ -236,6 +253,7 @@ export const TaskStatusSchema = z.enum([
   'not_started',
   'waiting',
   'discussion_needed',
+  'blocked',
   'in_progress',
   'review_required',
   'complete',
@@ -588,6 +606,7 @@ export const AgentSessionSchema = z.object({
   currentUserMessage: z.string().optional(),
   lastUserMessage: z.string().optional(),
   lastAgentResponse: z.string().optional(),
+  lastMessageRole: z.enum(['user', 'assistant']).optional(),
   isResponding: z.boolean().optional(),
   isWaitingOnTool: z.boolean().optional(),
   isWaitingForOtherAgents: z.boolean().optional(),
@@ -618,6 +637,18 @@ export const AgentSessionSchema = z.object({
     .optional(),
   // Task delegation
   digest: z.string().optional(), // Short summary for display in task status
+  // Pending attention request (requestDiscussion / reportBlocker); cleared by
+  // the daemon only on a user-origin delivery (sendMessage,
+  // sendQueuedMessageNow, editAndRegenerate, drained user-origin queue entry)
+  // — automatic deliveries (A2A sends, parent/subscription wakes) leave it
+  // pending
+  attentionRequestKind: z.enum(['discussion', 'blocker']).optional(),
+  attentionRequestReason: z.string().optional(),
+  attentionRequestTimestamp: z.string().optional(),
+  // Canonical stop/finish reason + ISO timestamp of the latest terminal
+  // stop/failure (accompanies stopReason; used for "failed X ago" displays)
+  stopReason: z.string().nullable().optional(),
+  stopReasonTimestamp: z.string().nullable().optional(),
 });
 
 /**

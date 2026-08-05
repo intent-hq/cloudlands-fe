@@ -11,6 +11,7 @@
  */
 
 import { Logger } from '../../../shared/logger';
+import { m } from '../../../shared/paraglide/messages.js';
 import { urlMatchesAnyDomain } from './mcp-host-match';
 import { getMcpAuthHeaderAsync } from './mcp-oauth';
 
@@ -87,7 +88,7 @@ const sentryProvider: McpAuthProvider = {
   },
 
   getAuthHint(): string {
-    return 'Click "Authenticate" to sign in with Sentry';
+    return m.mcp_authProviders_sentryHint_message();
   },
 };
 
@@ -126,7 +127,7 @@ const figmaProvider: McpAuthProvider = {
   },
 
   getAuthHint(): string {
-    return 'Click "Connect" in Settings > Integrations to sign in with Figma.';
+    return m.mcp_authProviders_figmaHint_message();
   },
 };
 
@@ -297,7 +298,7 @@ export async function injectMcpAuth<T>(config: T, serverName: string): Promise<T
     logger.warn('MCP server requires auth but credentials not found', {
       serverName,
       provider: provider.name,
-      hint: provider.getAuthHint?.() ?? 'Please authenticate with this service',
+      hint: provider.getAuthHint?.() ?? m.mcp_authProviders_genericHint_message(),
     });
   }
 

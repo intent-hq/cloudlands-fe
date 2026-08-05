@@ -33,6 +33,7 @@
   cn,
   type WithoutChildrenOrChild,
 } from '$lib/utils.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   let {
     ref = $bindable(null),
@@ -62,7 +63,7 @@
       class="ring-offset-background focus-visible:ring-ring rounded-xs focus-visible:outline-hidden absolute right-4 top-4 opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none"
     >
       <Fa icon={faXmark} size="1x" class="size-4" />
-      <span class="sr-only">Close</span>
+      <span class="sr-only">{m.ui_sheet_close_label()}</span>
     </SheetPrimitive.Close>
   </SheetPrimitive.Content>
 </SheetPrimitive.Portal>

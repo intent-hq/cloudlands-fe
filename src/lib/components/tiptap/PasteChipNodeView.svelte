@@ -15,6 +15,8 @@
   faXmark,
 } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   let { node, selected, deleteNode, editor, getPos }: NodeViewProps = $props();
 
@@ -70,7 +72,7 @@
             : 'bg-muted/60 text-foreground/80 hover:bg-muted hover:text-foreground'}"
         >
           <Fa icon={faClipboard} size="xs" class="shrink-0 opacity-40" />
-          <span class="whitespace-nowrap">Pasted {lineCount} lines</span>
+          <span class="whitespace-nowrap">{m.tiptap_pasteChip_pastedLines_label({ count: formatInteger(lineCount) })}</span>
         </span>
       {/snippet}
 
@@ -79,9 +81,9 @@
           <div class="flex items-center gap-1.5">
             <Fa icon={faClipboard} size="xs" class="opacity-40" />
             <span class="text-ui font-medium text-muted-foreground uppercase tracking-wide"
-              >Pasted text</span
+              >{m.tiptap_pasteChip_pastedText_label()}</span
             >
-            <span class="text-ui text-subtle">· {lineCount} lines</span>
+            <span class="text-ui text-subtle">· {m.tiptap_pasteChip_lines_label({ count: formatInteger(lineCount) })}</span>
           </div>
           <div
             class="text-xs text-subtle whitespace-pre-wrap break-words leading-relaxed line-clamp-[12]"
@@ -100,8 +102,8 @@
       onclick={handleExpand}
       class="expand-btn px-0.5! w-auto! hover:z-20 text-muted-foreground hover:text-foreground!
         {selected ? '' : ''}"
-      aria-label="Expand to raw text"
-      tooltip="Expand to raw text"
+      aria-label={m.tiptap_pasteChip_expand_label()}
+      tooltip={m.tiptap_pasteChip_expand_label()}
     >
       <Fa icon={faICursor} size={10} class="" />
     </Button>
@@ -113,7 +115,7 @@
       onclick={handleDelete}
       class="delete-btn px-0.5! -ml-px w-auto! hover:z-20 text-muted-foreground hover:text-foreground!
         {selected ? '' : ''}"
-      aria-label="Remove pasted text"
+      aria-label={m.tiptap_pasteChip_remove_ariaLabel()}
     >
       <Fa icon={faXmark} size={10} class="" />
     </Button>

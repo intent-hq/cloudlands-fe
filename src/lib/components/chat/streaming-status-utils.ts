@@ -1,3 +1,5 @@
+import { m } from '$shared/paraglide/messages.js';
+
 /**
  * Format duration with human-readable units:
  * - Under 10s: 'Xs' or 'X.Xs' (skip .0)
@@ -32,6 +34,17 @@ export function formatDuration(ms: number): string {
 
   // 1 minute or more (but less than 1 hour)
   return `${minutes}m ${seconds}s`;
+}
+
+/**
+ * Format a live elapsed duration ("Xs ago" timers) as whole seconds:
+ * rounds ms to the nearest second and clamps to a minimum of 1s, then
+ * reuses formatDuration for the m/h formatting above 60s. Never produces
+ * decimals or "0s" — use formatDuration for completed-event durations
+ * where sub-second precision matters.
+ */
+export function formatElapsed(ms: number): string {
+  return formatDuration(Math.max(1000, Math.round(ms / 1000) * 1000));
 }
 
 export interface StatusEvent {
@@ -95,3 +108,48 @@ export function shouldAppendStreamingEvent(
   return true;
 }
 
+/** Copy for the corrupted-session error surface (monorepo#940). */
+export const SESSION_CORRUPTED = {
+  get title() {
+    return m.chat_streamingStatus_sessionCorrupted_title();
+  },
+  get message() {
+    return m.chat_streamingStatus_sessionCorrupted_message();
+  },
+};
+
+export interface ErrorDisplay {
+  corrupted: boolean;
+  title: string;
+  message: string;
+  /** Raw error text demoted to secondary detail when corrupted copy replaces it. */
+  detail: string | null;
+}
+
+/**
+ * Derive the error surface copy from the raw error text and the daemon's
+ * derived sessionCorrupted flag (monorepo#940). When the flag is absent/false
+ * the result matches the pre-existing rendering exactly (title "Response
+ * failed", the raw error as the message); when corrupted, distinct
+ * recreate-aware copy is shown and the raw error becomes secondary detail.
+ */
+export function deriveErrorDisplay(
+  error: string | null | undefined,
+  sessionCorrupted?: boolean,
+): ErrorDisplay | null {
+  if (!error) return null;
+  if (sessionCorrupted === true) {
+    return {
+      corrupted: true,
+      title: SESSION_CORRUPTED.title,
+      message: SESSION_CORRUPTED.message,
+      detail: error,
+    };
+  }
+  return {
+    corrupted: false,
+    title: m.chat_streamingStatus_responseFailed_label(),
+    message: error,
+    detail: null,
+  };
+}

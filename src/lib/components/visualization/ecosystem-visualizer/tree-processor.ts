@@ -12,6 +12,7 @@ import {
   hierarchy,
   pack,
 } from 'd3';
+import { m } from '$shared/paraglide/messages.js';
 import type { FileNode, ProcessedNode, BlobShape } from './types';
 import { getColorForExtension } from './language-colors';
 import { DEFAULT_ECOSYSTEM_SETTINGS } from './types';
@@ -182,7 +183,12 @@ function pruneTree(
   // Add consolidation placeholders
   if (foldersToConsolidate.length > 0) {
     newChildren.push({
-      name: `+${foldersToConsolidate.length} folders`,
+      name:
+        foldersToConsolidate.length === 1
+          ? m.ecosystem_treeProcessor_consolidatedFolders_one()
+          : m.ecosystem_treeProcessor_consolidatedFolders_many({
+              count: foldersToConsolidate.length,
+            }),
       path: `__consolidated_folders_${node.path}_${depth}`,
       size: foldersToConsolidate.reduce((sum, f) => sum + countNodes(f), 0) * 10,
     });
@@ -190,7 +196,12 @@ function pruneTree(
 
   if (filesToConsolidate.length > 0) {
     newChildren.push({
-      name: `+${filesToConsolidate.length} files`,
+      name:
+        filesToConsolidate.length === 1
+          ? m.ecosystem_treeProcessor_consolidatedFiles_one()
+          : m.ecosystem_treeProcessor_consolidatedFiles_many({
+              count: filesToConsolidate.length,
+            }),
       path: `__consolidated_files_${node.path}_${depth}`,
       size: filesToConsolidate.reduce((sum, f) => sum + (f.size || 100), 0),
     });

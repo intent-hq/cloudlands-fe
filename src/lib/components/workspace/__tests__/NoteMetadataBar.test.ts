@@ -15,6 +15,7 @@ import {
 } from 'vitest';
 import type { AgentSession, Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -133,6 +134,12 @@ function makeTaskNote(assignedAgentIds: string[]): Note {
     metadata: { task: { status: 'in_progress', assignedAgentIds } },
   } as Note;
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../sidebar/__tests__/mocks/MockSimple.svelte'));
+warmImport(() => import('../sidebar/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../NoteMetadataBar.svelte'));
 
 describe('NoteMetadataBar smoke coverage', () => {
   beforeEach(() => {

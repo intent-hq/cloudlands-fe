@@ -8,6 +8,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { TooltipShortcut } from './tooltip';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     text: string;
@@ -19,7 +20,7 @@
     label?: string;
   }
 
-  let { text, size = 'xs', class: className = '', shortcut, label = 'Copy' }: Props = $props();
+  let { text, size = 'xs', class: className = '', shortcut, label = m.ui_copyButton_label() }: Props = $props();
 
   let copied = $state(false);
   let copyTimeout: ReturnType<typeof setTimeout> | null = null;

@@ -13,6 +13,7 @@ import {
 } from '@tiptap/core';
 import { SvelteNodeViewRenderer } from '$lib/utils/tiptap/svelte-node-view';
 import PasteChipNodeView from './PasteChipNodeView.svelte';
+import { m } from '$shared/paraglide/messages.js';
 
 export interface PasteChipAttributes {
   /** The full pasted text content */
@@ -68,7 +69,7 @@ export const PasteChip = Node.create({
         'data-type': 'paste-chip',
         class: 'paste-chip',
       }),
-      `Pasted ${HTMLAttributes['data-line-count'] || 0} lines`,
+      m.tiptap_pasteChip_pastedLines_label({ count: HTMLAttributes['data-line-count'] || 0 }),
     ];
   },
 

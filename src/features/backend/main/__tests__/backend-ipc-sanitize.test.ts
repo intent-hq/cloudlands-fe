@@ -139,7 +139,7 @@ describe('BACKEND.GET_STATUS IPC contract', () => {
     // Example responses
     const udsResponse: ExpectedResponse = {
       status: 'connected',
-      transport: { mode: 'sidecar-uds' },
+      transport: { mode: 'sidecar-uds', target: '/tmp/intentd.sock' },
     };
 
     const externalUdsResponse: ExpectedResponse = {
@@ -159,6 +159,7 @@ describe('BACKEND.GET_STATUS IPC contract', () => {
 
     expect(udsResponse.status).toBe('connected');
     expect(udsResponse.transport?.mode).toBe('sidecar-uds');
+    expect(udsResponse.transport?.target).toBe('/tmp/intentd.sock');
     expect(externalUdsResponse.transport?.mode).toBe('external-uds');
     expect(externalUdsResponse.transport?.target).toBe('/tmp/intentd.sock');
     expect(wsResponse.transport?.mode).toBe('external-ws');

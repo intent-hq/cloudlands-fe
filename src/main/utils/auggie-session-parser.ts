@@ -287,6 +287,7 @@ export async function extractFileChangesForWorkspace(
 
       if (!normalizedFilePath.startsWith(normalizedWorkspacePath)) {
         logger.debug(
+          // i18n-ignore (developer log message)
           `Filtering out file from different workspace: ${filePath} (not in ${workspacePath})`,
           { filePath, workspacePath },
         );
@@ -300,6 +301,7 @@ export async function extractFileChangesForWorkspace(
   });
 
   logger.debug(
+    // i18n-ignore (developer log message)
     `Filtered ${allChanges.length} changes to ${workspaceChanges.length} for workspace ${workspacePath}`,
     {
       allChangesCount: allChanges.length,
@@ -336,7 +338,7 @@ export async function watchSessionFile(
           }
         }
       }
-    } catch  {
+    } catch {
       // File might not exist yet
     }
   };

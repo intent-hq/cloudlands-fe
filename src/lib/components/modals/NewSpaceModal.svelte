@@ -13,6 +13,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     open?: boolean;
@@ -74,7 +75,7 @@
     >
       <!-- Header -->
       <div class="px-1 pb-4 flex items-center justify-between shrink-0">
-        <h2 class="text-lg font-medium tracking-[-0.02em] text-foreground">New Workspace</h2>
+        <h2 class="text-lg font-medium tracking-[-0.02em] text-foreground">{m.modals_newSpace_title()}</h2>
         <Button
           variant="ghost-light"
           size="icon-xs"

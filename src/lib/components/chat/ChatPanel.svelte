@@ -46,6 +46,7 @@
   import type { AgentMessage } from '$shared/types';
   import { saveAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
+  agentSessionDismissQuestionsRequested,
   agentSessionEditAndRegenerateRequested,
   agentSessionForkSessionRequested,
   agentSessionRegenerateFromMessageRequested,
@@ -91,11 +92,12 @@
   chatTrackedWorkspaceSet,
   chatErrorCleared,
   chatSendFailed,
+  chatQueuedRetryRecordUpdated,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
   selectChatError,
-  selectChatIsStalled,
   selectChatLastChunkTime,
+  selectChatLiveStreamPhase,
   selectChatModelUnavailable,
   selectChatReceivedFirstChunk,
   selectChatStatusEvents,
@@ -115,19 +117,28 @@
 } from '$shared/types';
   import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
   import type { ContextItem } from './input/context-api';
-  import {
-    deserializeDraftAttachments,
-    serializeDraftAttachments,
-  } from './chat-draft-attachments';
+  import { createChatDraftManager } from './chat-panel-draft.svelte';
+  import ChatDraftLoadingGate from './ChatDraftLoadingGate.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
+  import {
+    getQueueInfo,
+    stripDequeueWaitNote,
+    shouldSuppressQueueDivider,
+  } from '$lib/utils/queue-info';
+  import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
   import ChatMessage from './ChatMessage.svelte';
   import DateSeparator from './DateSeparator.svelte';
+  import NewMessagesDivider from './NewMessagesDivider.svelte';
+  import { resolveNewMessagesDividerAnchor } from './new-messages-divider';
   import EventWakeupBanner from './EventWakeupBanner.svelte';
   import { parseAgentEvents } from './event-wake-summary';
   import AgentCard from './AgentCard.svelte';
   import { toast } from 'svelte-sonner';
+  import { m } from '$shared/paraglide/messages.js';
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
+  import { getAgentStopReasonTimestamp } from '$shared/utils/agent-attention';
   import StreamingStatus from './StreamingStatus.svelte';
+  import LiveStreamPhaseIndicator from './LiveStreamPhaseIndicator.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
   import ChiefChatEmptyState from './ChiefChatEmptyState.svelte';
 
@@ -135,7 +146,7 @@
   import QuestionWizard, {
   type QuestionAnswer,
 } from './questions/QuestionWizard.svelte';
-  import { derivePendingQuestions } from './questions/pending-questions';
+  import { deriveWizardPendingQuestions } from './questions/wizard-gate';
   import { flattenAnswersToMessage } from './questions/answer-message';
   import { groupMessagesByDate } from '$lib/utils/timeFormatting';
   import {
@@ -157,15 +168,19 @@
   slide,
 } from 'svelte/transition';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
+  import { resolvePreviousUserMessageId } from '$lib/utils/message-navigation';
   import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
+  import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
+  import BackgroundHooksRow from './BackgroundHooksRow.svelte';
   import Button from '../ui/button/button.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AgentSubscriptions from './AgentSubscriptions.svelte';
+  import AttentionRequestBanner from './AttentionRequestBanner.svelte';
   import {
   groupContentBlocks,
   parseSuggestedPrompts,
@@ -179,6 +194,12 @@
   markAgentAsViewed,
   clearCurrentlyViewedAgent,
 } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
+  import {
+    requestMarkAgentSeen,
+    cancelPendingMarkAgentSeen,
+    newestPersistedMessageId,
+    type MarkAgentSeenSnapshot,
+  } from '$features/agent/mark-agent-seen';
   import AuroraBackground from './AuroraBackground.svelte';
   import {
   invoke,
@@ -191,10 +212,16 @@
 } from '$store/renderer/slices/specialists/specialists-selectors';
 
   import { getAgentProvider } from '$shared/types/agent-session';
+  import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
+  import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import { getModelChangeNotice } from './model-change-notice';
+  import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
+  import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import { resolveHydratedInputModel } from './input-hydration';
   import {
+  deriveQueuedMessagesVisibility,
   shouldShowEndOfListStreamingStatus,
   shouldShowPendingAssistantStatus,
 } from './chat-panel-visibility';
@@ -217,7 +244,12 @@
    * Extracts context reference labels and cleans up raw @context[...] patterns.
    */
   function formatMessageForStickyHeader(message: AgentMessage): string {
-    const rawText = extractAllContent(message);
+    // Hide the daemon's dequeue-wait [SYSTEM NOTE] from the sticky header the
+    // same way the message body does when structured queueInfo is present.
+    const allContent = extractAllContent(message);
+    const rawText = getQueueInfo(message.metadata)
+      ? stripDequeueWaitNote(allContent)
+      : allContent;
 
     // Get context references from metadata
     const contextRefs = message.metadata?.contextReferences as
@@ -228,7 +260,7 @@
     const pillLabels: string[] = [];
     if (contextRefs && contextRefs.length > 0) {
       for (const ref of contextRefs) {
-        const label = ref.title || ref.identifier || 'Context';
+        const label = ref.title || ref.identifier || m.chat_shared_context_fallback();
         pillLabels.push(`🔗 ${label}`);
       }
     }
@@ -318,13 +350,13 @@
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
   const chatError$ = selectChatError(agentIdStore);
-  const chatIsStalled$ = selectChatIsStalled(agentIdStore);
   const chatStreamingStartTime$ = selectChatStreamingStartTime(agentIdStore);
   const chatLastChunkTime$ = selectChatLastChunkTime(agentIdStore);
   const chatModelUnavailable$ = selectChatModelUnavailable(agentIdStore);
   const chatStatusEvents$ = selectChatStatusEvents(agentIdStore);
   const chatReceivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
+  const chatLiveStreamPhase$ = selectChatLiveStreamPhase(agentIdStore);
   // Canonical "agent is running" gate for idle-only affordances (next-steps links).
   const agentIsRunning$ = selectAgentIsRunning(agentIdStore);
   const transcriptHydration$ = selectTranscriptHydration(agentIdStore);
@@ -338,9 +370,25 @@
   const effectiveError = $derived.by(() => {
     if ($chatError$) return $chatError$;
     if ($agentSession$?.status === AgentStatus.Error) {
-      return $agentSession$.stopReason || 'Agent spawn failed';
+      return $agentSession$.stopReason || m.chat_chatPanel_agentSpawnFailed_error();
     }
     return null;
+  });
+
+  // monorepo#940: the daemon flags the parked error session as corrupted —
+  // Retry will recreate the provider session instead of resuming, so the error
+  // surface shows recreate-aware copy. Absent flag (older daemons / ordinary
+  // errors) renders exactly as before.
+  const effectiveSessionCorrupted = $derived(
+    $agentSession$?.status === AgentStatus.Error && $agentSession$?.sessionCorrupted === true,
+  );
+
+  // ISO timestamp of the terminal failure — shows "X ago" next to the error
+  // title. Only surfaced when the session is parked in Error (accompanies
+  // stopReason); null on older daemons or transient chat errors.
+  const effectiveFailedAt = $derived.by(() => {
+    if ($agentSession$?.status !== AgentStatus.Error) return null;
+    return getAgentStopReasonTimestamp($agentSession$);
   });
 
   // Track if there's a pending permission request for this agent
@@ -466,10 +514,25 @@
   // user message (and not streaming) replace the composer with the sequential
   // wizard. Derivation is purely transcript-based (wire contract), so
   // restored sessions re-surface unanswered questions automatically.
+  // The gate (own active turn, NOT the broad running gate — an agent paused
+  // on delegated agents has ended its turn and its questions must surface)
+  // lives in deriveWizardPendingQuestions so the regression suite exercises
+  // the real production gate.
   const pendingQuestions = $derived.by(() => {
     const hasUserMessage = $agentMessages$.some((m) => m.role === 'user');
     const showingPendingUserMessage = !!pendingMessage && !hasUserMessage;
-    return derivePendingQuestions($agentMessages$, $agentIsRunning$, showingPendingUserMessage);
+    // Reading $agentIsResponding$ keeps this $derived reactive to gate flips
+    // that do not change the transcript; the dismissal marker read keeps it
+    // reactive to metadata-only session updates (optimistic dismiss /
+    // agent:updated); the shared helper re-reads both from store state.
+    void $agentIsResponding$;
+    void $agentSession$?.metadata?.dismissedQuestionsMessageId;
+    return deriveWizardPendingQuestions(
+      appStore.state,
+      agentId,
+      $agentMessages$,
+      showingPendingUserMessage,
+    );
   });
 
   // Ignore = collapse, not dismiss — transient component state, never
@@ -483,6 +546,36 @@
       questionWizardCollapsed = false;
     }
   });
+
+  // Display-only filter: the queued-messages section shows only user-authored
+  // entries; daemon-origin entries (agent sends, event/hook/system wakes,
+  // PROTOCOL §5.5) stay in the queue and flush as usual but are hidden here.
+  const visibleQueuedMessages = $derived($queuedMessages$.filter(isUserQueuedMessage));
+
+  // Queue visibility around the wizard: hidden while the wizard is expanded,
+  // shown with a held-for-questions hint while Ignore-collapsed (the daemon
+  // parks automatic deliveries behind the pending Q&A — question hold,
+  // PROTOCOL §5.5). Derivation shared with the regression suite.
+  const queuedMessagesVisibility = $derived(
+    deriveQueuedMessagesVisibility({
+      queueLength: visibleQueuedMessages.length,
+      hasPendingQuestions: !!pendingQuestions,
+      questionWizardCollapsed,
+    }),
+  );
+
+  // Dismiss = persistent, unlike Ignore: the mutation middleware stamps
+  // `dismissedQuestionsMessageId` into session metadata optimistically (the
+  // wizard-gate reads it, so the wizard hides immediately) and forwards
+  // `agent.dismissQuestions` — the daemon persists the marker (survives
+  // reload) and releases the question hold. On failure the middleware rolls
+  // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
+  function handleQuestionWizardDismiss() {
+    if (!workspace || !pendingQuestions) return;
+    appStore.dispatch(
+      agentSessionDismissQuestionsRequested(agentId, workspace.id, pendingQuestions.messageId),
+    );
+  }
 
   // Completing the wizard flattens all answers into ONE plain-text user
   // message of `Q:`/`A:` pairs (wire contract — no messageMetadata) sent
@@ -566,6 +659,9 @@
     if (msg.role === 'user') {
       if (msg.metadata?.type === 'event_notification') return '';
       if (extractAllContent(msg).trimStart().startsWith('[WORKSPACE EVENTS]')) return '';
+      // Dismissal rows render as a compact chip; the raw delivered text never
+      // reaches the DOM, so keep it out of the search index too.
+      if (getQuestionsDismissedNotice(msg)) return '';
     }
     const grouped = groupContentBlocks(blocks, !!msg.isStreaming);
     const lastIndex = grouped.length - 1;
@@ -995,49 +1091,21 @@
     }
   });
 
-  // Restore draft from backend on mount
-  let draftRestored = $state(false);
-  $effect(() => {
-    if (draftRestored || !workspace || !agentId) return;
-
-    untrack(async () => {
-      const draft = await appClient.drafts.get(workspace.id, agentId);
-      if (!draft) return;
-      if (draft.attachments?.length && contextItems.length === 0) {
-        contextItems = deserializeDraftAttachments(draft.attachments);
-      }
-      if (draft.text && !inputValue) {
-        inputValue = draft.text;
-        setTimeout(() => {
-          inputComponent?.setContent?.(draft.text);
-        }, 50);
-      }
-    });
-
-    draftRestored = true;
-  });
-
-  // Save draft to backend (debounced)
-  let saveTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  $effect(() => {
-    if (!workspace || !agentId) return;
-    const currentValue = inputValue;
-    const currentAttachments = serializeDraftAttachments(contextItems);
-
-    if (saveTimeoutId) clearTimeout(saveTimeoutId);
-
-    saveTimeoutId = setTimeout(() => {
-      appClient.drafts
-        .set(
-          workspace.id,
-          agentId,
-          currentValue,
-          currentAttachments.length > 0 ? currentAttachments : undefined,
-        )
-        .catch((err) => {
-          logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
-        });
-    }, 500); // 500ms debounce
+  // Draft restore/save lifecycle (gated restore + debounced save); see
+  // chat-panel-draft.svelte.ts. While gateActive the composer blocks typing
+  // and shows the ChatDraftLoadingGate indicator.
+  const draftManager = createChatDraftManager({
+    drafts: appClient.drafts,
+    workspaceId: () => workspace?.id,
+    agentId: () => agentId,
+    inputValue: () => inputValue,
+    setInputValue: (text) => (inputValue = text),
+    contextItems: () => contextItems,
+    setContextItems: (items) => (contextItems = items),
+    applyEditorContent: (text) => inputComponent?.setContent?.(text),
+    onSaveError: (err) => {
+      logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
+    },
   });
 
   // Reference to QueuedMessageList for programmatic editing via Up arrow
@@ -1079,7 +1147,7 @@
       return {
         type: isSpec ? 'spec' : 'note',
         noteId,
-        title: note?.title || (isSpec ? 'Spec' : undefined),
+        title: note?.title || (isSpec ? m.chat_shared_spec_label() : undefined),
         kind: isSpec ? 'spec' : 'note',
       };
     }
@@ -1133,7 +1201,7 @@
             panelId,
             tabId: tab.id,
             type: 'file',
-            label: tab.title || tab.filePath.split('/').pop() || 'File',
+            label: tab.title || tab.filePath.split('/').pop() || m.chat_shared_file_fallback(),
             filePath: tab.filePath,
             checked: false, // Default unchecked - user opts-in
             isActive: isActiveTab,
@@ -1145,7 +1213,7 @@
             panelId,
             tabId: tab.id,
             type: isSpec ? 'spec' : 'note',
-            label: tab.title || (isSpec ? 'Spec' : 'Note'),
+            label: tab.title || (isSpec ? m.chat_shared_spec_label() : m.chat_shared_note_fallback()),
             noteId: tab.noteId,
             checked: false,
             isActive: isActiveTab,
@@ -1156,7 +1224,7 @@
             panelId,
             tabId: tab.id,
             type: 'diff',
-            label: tab.title || tab.diffPath.split('/').pop() || 'Diff',
+            label: tab.title || tab.diffPath.split('/').pop() || m.chat_shared_diff_fallback(),
             filePath: tab.diffPath,
             checked: false,
             isActive: isActiveTab,
@@ -1167,7 +1235,7 @@
             panelId,
             tabId: tab.id,
             type: 'browser',
-            label: tab.title || 'Browser',
+            label: tab.title || m.chat_shared_browser_fallback(),
             browserUrl: tab.browserUrl,
             checked: false,
             isActive: isActiveTab,
@@ -1194,7 +1262,7 @@
             panelId,
             tabId: tab.id,
             type: 'agent',
-            label: tab.title || 'Agent',
+            label: tab.title || m.chat_shared_agentName_fallback(),
             agentId: tab.agentId,
             checked: false,
             isActive: isActiveTab,
@@ -1249,7 +1317,7 @@
             panelId,
             tabId,
             sourceType: isNote ? 'note' : 'file',
-            sourceLabel: file?.split('/').pop() || 'Selection',
+            sourceLabel: file?.split('/').pop() || m.chat_chatPanel_selection_fallback(),
             filePath: isNote ? undefined : file,
             text: text,
             language: language,
@@ -1291,7 +1359,8 @@
   // Alias for backward compatibility
   let pendingInitialPrompt = $derived(pendingInitialData.prompt);
 
-  // Provider/model lock — prevents changing provider or model after any message
+  // Once the conversation has started, provider/model switches require a
+  // confirmation dialog (mid-conversation switch warning) instead of a lock.
   let canChangeProvider = $derived(
     resolveCanChangeAgentProvider({
       session: $agentSession$ ?? null,
@@ -1304,10 +1373,12 @@
   // Hydrated input model — uses session model when available, falls back to agentModel prop
   let hydratedInputModel = $derived(resolveHydratedInputModel($agentSession$, agentModel));
 
+  const catalogDefaultProviderId$ = selectCatalogDefaultProviderId();
+
   // Provider ID for the input — resolved from the agent session
   let inputProviderId = $derived.by(() => {
     if (!$agentSession$) return undefined;
-    return getAgentProvider($agentSession$);
+    return getAgentProvider($agentSession$, $catalogDefaultProviderId$);
   });
 
   // Create a synthetic message object for the pending prompt to use with ChatMessage component
@@ -1331,6 +1402,23 @@
   // Grouped messages for display (include ALL messages)
   // We'll handle the streaming state when rendering
   let groupedMessages = $derived(groupMessagesByDate($agentMessages$));
+
+  // ── "New messages" divider (unread marker, PROTOCOL §5.5 agent.markSeen) ──
+  // Id of the message the presentation-only divider renders after, or null
+  // when today's behavior applies (no marker / marker at newest / dangling
+  // marker). Marker updates from other clients converge via agent:updated →
+  // session metadata upserts, so the divider position is live-derived.
+  const newMessagesDividerAnchorId = $derived(
+    resolveNewMessagesDividerAnchor(
+      $agentMessages$.map((message) => message.id),
+      typeof $agentSession$?.metadata?.lastSeenMessageId === 'string'
+        ? $agentSession$.metadata.lastSeenMessageId
+        : undefined,
+    ),
+  );
+  // One-shot guard: the divider entry-positioning happens once per panel mount
+  // (first transcript availability), never again on later marker convergence.
+  let hasAppliedNewMessagesEntryScroll = false;
 
   // Get the auggie session ID from the most recent assistant message's metadata
   // This is the raw UUID format that auggie uses, needed for debugging/support
@@ -1388,17 +1476,25 @@
       currentCount > previousMessageCount &&
       (isFirstMessage || (shouldFollowBottom && !isScrollUnlocked));
     if (shouldScroll) {
-      // New message added - scroll to bottom after DOM updates
-      // Re-enable auto-follow when first message is added
-      if (isFirstMessage) {
-        shouldFollowBottom = true;
-        isScrollUnlocked = false;
+      // Unread-marker entry: on the first transcript hydration with a valid
+      // seen marker, land at the "New messages" divider instead of the bottom
+      // and leave follow disabled — the arrow button still scrolls to the end.
+      if (isFirstMessage && !hasAppliedNewMessagesEntryScroll && newMessagesDividerAnchorId) {
+        hasAppliedNewMessagesEntryScroll = true;
+        void scrollToNewMessagesDivider(newMessagesDividerAnchorId);
+      } else {
+        // New message added - scroll to bottom after DOM updates
+        // Re-enable auto-follow when first message is added
+        if (isFirstMessage) {
+          shouldFollowBottom = true;
+          isScrollUnlocked = false;
+        }
+        tick().then(() => {
+          // Guard against component destruction during tick
+          if (isComponentDestroyed) return;
+          if (scrollContainer) scrollToBottomUtil(scrollContainer);
+        });
       }
-      tick().then(() => {
-        // Guard against component destruction during tick
-        if (isComponentDestroyed) return;
-        if (scrollContainer) scrollToBottomUtil(scrollContainer);
-      });
     }
     previousMessageCount = currentCount;
   });
@@ -1417,6 +1513,8 @@
   interface ConversationTurn {
     userMessage: AgentMessage | null;
     assistantMessages: AgentMessage[];
+    /** Daemon-persisted model-change notice rows (after the user row, before assistant output) */
+    noticeMessages: AgentMessage[];
   }
 
   function groupIntoTurns(messages: AgentMessage[]): ConversationTurn[] {
@@ -1429,13 +1527,21 @@
         if (currentTurn) {
           turns.push(currentTurn);
         }
-        currentTurn = { userMessage: message, assistantMessages: [] };
+        currentTurn = { userMessage: message, assistantMessages: [], noticeMessages: [] };
       } else if (message.role === 'assistant') {
         if (currentTurn) {
           currentTurn.assistantMessages.push(message);
         } else {
           // Orphan assistant message (no preceding user message)
-          turns.push({ userMessage: null, assistantMessages: [message] });
+          turns.push({ userMessage: null, assistantMessages: [message], noticeMessages: [] });
+        }
+      } else if (getModelChangeNotice(message)) {
+        // Model-change transcript notice (non-user/non-assistant role) —
+        // rendered inline within its turn as a centered divider
+        if (currentTurn) {
+          currentTurn.noticeMessages.push(message);
+        } else {
+          turns.push({ userMessage: null, assistantMessages: [], noticeMessages: [message] });
         }
       }
     }
@@ -1455,6 +1561,13 @@
     const turns = groupIntoTurns(lastGroup.messages);
     return turns[turns.length - 1] ?? null;
   });
+
+  // Hide the aggregate file-changes row when it merely duplicates the last
+  // turn's per-turn row (same set of changed file paths)
+  const showAggregateFileChangesSummary = $derived(
+    $agentMessages$.filter((message) => message.role === 'assistant').length > 1 &&
+      !isAggregateFileChangesRedundant($agentMessages$),
+  );
 
   const showEndOfListStreamingStatus = $derived(
     shouldShowEndOfListStreamingStatus({
@@ -1664,8 +1777,15 @@
     requestAnimationFrame(() => {
       if (scrollContainer) {
         if ($agentMessages$.length > 0) {
-          // Scroll to bottom if there are messages
-          scrollToBottomUtil(scrollContainer);
+          if (!hasAppliedNewMessagesEntryScroll && newMessagesDividerAnchorId) {
+            // Unread-marker entry (remount with the transcript already
+            // loaded): land at the "New messages" divider instead of the bottom.
+            hasAppliedNewMessagesEntryScroll = true;
+            void scrollToNewMessagesDivider(newMessagesDividerAnchorId);
+          } else {
+            // Scroll to bottom if there are messages
+            scrollToBottomUtil(scrollContainer);
+          }
         } else {
           // Scroll to top for empty panel (shows specialist switcher)
           scrollContainer.scrollTop = 0;
@@ -1832,7 +1952,7 @@
   }
 
   // Navigate to a specific message by index
-  function navigateToMessage(index: number) {
+  async function navigateToMessage(index: number) {
     if (!scrollContainer) return;
 
     const messages = $agentMessages$;
@@ -1851,19 +1971,12 @@
 
     currentMessageIndex = index;
 
-    // Find the message element by data-message-index
-    const targetElement = scrollContainer.querySelector(
-      `[data-message-index="${index}"]`,
-    ) as HTMLElement;
+    // Force-render the target's turn (it may be a virtualized LazyTurn
+    // placeholder) and wait for the element before scrolling.
+    const targetElement = await forceRenderAndFindMessage(messages[index].id);
 
     if (targetElement) {
       smoothScrollTo(targetElement, 'center');
-
-      // // Flash highlight effect
-      // targetElement.classList.add('message-highlight-flash');
-      // setTimeout(() => {
-      //   targetElement.classList.remove('message-highlight-flash');
-      // }, 600);
     }
   }
 
@@ -1880,9 +1993,9 @@
     if (direction === 'previous') {
       // If at bottom (no selection), go to last message
       if (currentMessageIndex === -1) {
-        navigateToMessage(messages.length - 1);
+        void navigateToMessage(messages.length - 1);
       } else if (currentMessageIndex > 0) {
-        navigateToMessage(currentMessageIndex - 1);
+        void navigateToMessage(currentMessageIndex - 1);
       } else {
         // At first message, scroll to top
         smoothScrollToPosition(0);
@@ -1893,10 +2006,10 @@
         // Already at bottom, do nothing
         return;
       } else if (currentMessageIndex < messages.length - 1) {
-        navigateToMessage(currentMessageIndex + 1);
+        void navigateToMessage(currentMessageIndex + 1);
       } else {
         // At last message, go to bottom
-        navigateToMessage(-1);
+        void navigateToMessage(-1);
       }
     }
   }
@@ -2004,6 +2117,171 @@
 
     return () => {
       window.removeEventListener('agent:scroll-to-subscription', handleScrollToSubscription);
+    };
+  });
+
+  // --- Deep-open at a message (openMessage helper, $lib/utils/open-message) ---
+  // The helper hydrates the store (seek page when needed) and hands the DOM
+  // work off via 'chat:open-message' on a retry ladder; this panel force-renders
+  // the target's turn through LazyTurn, scrolls to it with a brief flash, and
+  // highlights the query terms via the CSS Custom Highlight API (cleared on the
+  // next user interaction or a short timeout — no persistent markup).
+  let deepOpenTurnKey = $state<string | null>(null);
+  const handledOpenMessageRequestIds = new Set<string>();
+  let clearDeepOpenHighlight: (() => void) | null = null;
+  const DEEP_OPEN_HIGHLIGHT_NAME = 'deep-open-match';
+  const DEEP_OPEN_HIGHLIGHT_TIMEOUT_MS = 8000;
+
+  // Force-render a message's turn through the LazyTurn virtualization (reuses
+  // the deep-open force-visible key) and resolve its DOM element once rendered.
+  // Drops follow so the placeholder expanding doesn't yank the viewport back
+  // down. Retries across a few frames; resolves null if it never appears.
+  async function forceRenderAndFindMessage(messageId: string): Promise<HTMLElement | null> {
+    deepOpenTurnKey = messageIdToTurnKey.get(messageId) ?? messageId;
+    shouldFollowBottom = false;
+    await tick();
+    const selector = `[data-message-id="${CSS.escape(messageId)}"]`;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await new Promise(requestAnimationFrame);
+      const targetElement = scrollContainer?.querySelector(selector) as HTMLElement | null;
+      if (targetElement) return targetElement;
+    }
+    logger.warn('[ChatPanel] Message turn not rendered after force-visible', { messageId });
+    return null;
+  }
+
+  // Entry positioning for the unread marker: force-render the anchor message's
+  // turn (it may be a virtualized LazyTurn placeholder), then land the viewport
+  // on the "New messages" divider rendered right after it. Follow stays
+  // disabled (forceRenderAndFindMessage drops it) so streaming growth doesn't
+  // yank the viewport down. Falls back to today's scroll-to-bottom if the
+  // anchor never renders.
+  async function scrollToNewMessagesDivider(anchorMessageId: string) {
+    const anchorElement = await forceRenderAndFindMessage(anchorMessageId);
+    if (isComponentDestroyed || !scrollContainer) return;
+    const dividerElement = scrollContainer.querySelector(
+      '[data-new-messages-divider]',
+    ) as HTMLElement | null;
+    const targetElement = dividerElement ?? anchorElement;
+    if (!targetElement) {
+      shouldFollowBottom = true;
+      scrollToBottomUtil(scrollContainer);
+      return;
+    }
+    smoothScrollTo(targetElement, 'center');
+  }
+
+  // Collect ranges for every case-insensitive occurrence of each query token
+  // inside the message element (same text-node walk as the search highlighter,
+  // scoped to one message).
+  function collectDeepOpenRanges(messageEl: HTMLElement, query: string): Range[] {
+    const tokens = Array.from(new Set(query.toLowerCase().split(/\s+/).filter(Boolean)));
+    if (tokens.length === 0) return [];
+    const walker = document.createTreeWalker(messageEl, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => {
+        const parent = (n as Text).parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        const tag = parent.tagName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TEXTAREA' || tag === 'INPUT') {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const textNodes: Text[] = [];
+    const nodeStarts: number[] = [];
+    const parts: string[] = [];
+    let cursor = 0;
+    let node: Text | null;
+    while ((node = walker.nextNode() as Text | null)) {
+      const text = node.textContent ?? '';
+      textNodes.push(node);
+      nodeStarts.push(cursor);
+      parts.push(text);
+      cursor += text.length;
+    }
+    if (cursor === 0) return [];
+    const lowerFullText = parts.join('').toLowerCase();
+    const ranges: Range[] = [];
+    for (const token of tokens) {
+      let pos = 0;
+      let hit: number;
+      while ((hit = lowerFullText.indexOf(token, pos)) !== -1) {
+        const range = createRangeForSpan(textNodes, nodeStarts, hit, hit + token.length);
+        if (range) ranges.push(range);
+        pos = hit + token.length;
+      }
+    }
+    return ranges;
+  }
+
+  function applyDeepOpenQueryHighlight(messageEl: HTMLElement, query: string) {
+    if (!CSS.highlights) return;
+    clearDeepOpenHighlight?.();
+    const ranges = collectDeepOpenRanges(messageEl, query);
+    if (ranges.length === 0) return;
+    CSS.highlights.set(DEEP_OPEN_HIGHLIGHT_NAME, new Highlight(...ranges));
+    const clear = () => {
+      CSS.highlights?.delete(DEEP_OPEN_HIGHLIGHT_NAME);
+      window.removeEventListener('pointerdown', clear, true);
+      window.removeEventListener('keydown', clear, true);
+      window.removeEventListener('wheel', clear, true);
+      clearTimeout(timer);
+      clearDeepOpenHighlight = null;
+    };
+    const timer = setTimeout(clear, DEEP_OPEN_HIGHLIGHT_TIMEOUT_MS);
+    // Capture phase: any interaction anywhere (click, keypress, manual scroll)
+    // clears the transient highlight. The programmatic smooth scroll fires no
+    // wheel events, so it never self-clears.
+    window.addEventListener('pointerdown', clear, true);
+    window.addEventListener('keydown', clear, true);
+    window.addEventListener('wheel', clear, true);
+    clearDeepOpenHighlight = clear;
+  }
+
+  async function handleOpenMessage(event: Event) {
+    const detail = (event as CustomEvent).detail as
+      | { agentId: string; messageId: string; query?: string; requestId: string }
+      | undefined;
+    if (!detail || detail.agentId !== agentId) return;
+    // The helper dispatches on a retry ladder (the panel may still be
+    // mounting); dedup so a successfully handled request runs exactly once.
+    if (handledOpenMessageRequestIds.has(detail.requestId)) return;
+
+    // Force-render the target's turn through the LazyTurn virtualization and
+    // drop follow so streaming growth doesn't yank the viewport back down.
+    deepOpenTurnKey = messageIdToTurnKey.get(detail.messageId) ?? detail.messageId;
+    shouldFollowBottom = false;
+    await tick();
+    requestAnimationFrame(() => {
+      const targetElement = scrollContainer?.querySelector(
+        `[data-message-id="${CSS.escape(detail.messageId)}"]`,
+      ) as HTMLElement | null;
+      if (!targetElement) {
+        // Not rendered yet — leave the requestId unhandled so a later retry
+        // from the dispatch ladder can try again.
+        logger.warn('[ChatPanel] Deep-open target not rendered yet', {
+          messageId: detail.messageId,
+        });
+        return;
+      }
+      handledOpenMessageRequestIds.add(detail.requestId);
+      smoothScrollTo(targetElement, 'center');
+      targetElement.classList.add('message-highlight-flash');
+      setTimeout(() => targetElement.classList.remove('message-highlight-flash'), 600);
+      if (detail.query) applyDeepOpenQueryHighlight(targetElement, detail.query);
+    });
+  }
+
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+
+    const listener = (event: Event) => void handleOpenMessage(event);
+    window.addEventListener('chat:open-message', listener);
+
+    return () => {
+      window.removeEventListener('chat:open-message', listener);
+      clearDeepOpenHighlight?.();
     };
   });
 
@@ -2180,34 +2458,28 @@
   });
 
   // Scroll to previous user message from the current sticky one
-  function scrollToPreviousUserMessage(currentMessageId: string) {
+  async function scrollToPreviousUserMessage(currentMessageId: string) {
     if (!scrollContainer) return;
 
-    // Get all user messages
-    const userMessages = $agentMessages$.filter((m) => m.role === 'user');
-    const currentIndex = userMessages.findIndex((m) => m.id === currentMessageId);
+    const previousMessageId = resolvePreviousUserMessageId($agentMessages$, currentMessageId);
 
-    if (currentIndex <= 0) {
+    if (!previousMessageId) {
       // At first message or not found - scroll to top
       smoothScrollToPosition(0);
       return;
     }
 
-    // Find the previous user message
-    const previousMessage = userMessages[currentIndex - 1];
-    const targetElement = scrollContainer.querySelector(
-      `[data-message-id="${previousMessage.id}"]`,
-    ) as HTMLElement;
+    // Force-render the previous message's turn (it may be a virtualized
+    // LazyTurn placeholder) and wait for the element before scrolling.
+    const targetElement = await forceRenderAndFindMessage(previousMessageId);
+    if (!targetElement) return;
 
-    if (targetElement) {
-      smoothScrollTo(targetElement, 'start');
-
-      // // Flash highlight effect
-      // targetElement.classList.add('message-highlight-flash');
-      // setTimeout(() => {
-      //   targetElement.classList.remove('message-highlight-flash');
-      // }, 600);
-    }
+    // Anchor on the turn container rather than the user-message row: the row
+    // is position: sticky, so its rect is clamped within the turn and can
+    // point at the bottom of the previous turn instead of the message's
+    // natural position at the top of its turn.
+    const anchor = (targetElement.closest('.conversation-turn') as HTMLElement) ?? targetElement;
+    smoothScrollTo(anchor, 'start');
   }
 
   // Track if draft prompt has been applied to prevent re-applying on re-renders
@@ -2250,6 +2522,7 @@
   let lastIsActive: boolean | undefined;
   $effect(() => {
     if (agentId === lastViewedAgentId && isActive === lastIsActive) return;
+    const previousAgentId = lastViewedAgentId;
     lastViewedAgentId = agentId;
     lastIsActive = isActive;
     if (agentId && isActive) {
@@ -2257,8 +2530,54 @@
     } else {
       // Panel is no longer active (user switched to another tab) —
       // clear so new messages for this agent are properly marked as unread.
-      appStore.dispatch(clearCurrentlyViewedAgent());
+      // Scoped to this panel's agent so a deactivating background panel's
+      // trailing clear cannot tear down the newly viewed agent's chat
+      // (monorepo#1215).
+      const scopeAgentId = agentId || previousAgentId;
+      if (scopeAgentId) {
+        appStore.dispatch(clearCurrentlyViewedAgent(scopeAgentId));
+      }
     }
+  });
+
+  // Advance the per-conversation seen marker (agent.markSeen, PROTOCOL §5.5)
+  // while the user is viewing the end of the transcript. The ONLY trigger is
+  // the viewport being at the very bottom with this panel active — scrolling
+  // mid-conversation never produces a backend call. The request is debounced
+  // and fire-and-forget; all gates (at-bottom, viewed agent, window focus)
+  // are re-checked from this live snapshot when the debounce fires, so
+  // scrolling away or blurring during the window silently drops it. Streaming
+  // rows are never eligible — the marker only ever points at a persisted
+  // message the daemon can resolve.
+  function markSeenSnapshot(): MarkAgentSeenSnapshot | null {
+    if (isComponentDestroyed || !agentId || !workspace?.id) return null;
+    return {
+      workspaceId: workspace.id,
+      agentId,
+      messageId: newestPersistedMessageId($agentMessages$),
+      atBottom: distanceFromBottom <= SCROLL_BOTTOM_THRESHOLD,
+    };
+  }
+  $effect(() => {
+    if (!agentId || !isActive || !workspace?.id) return;
+    if (distanceFromBottom > SCROLL_BOTTOM_THRESHOLD) return;
+    const messageId = newestPersistedMessageId($agentMessages$);
+    if (!messageId) return;
+    requestMarkAgentSeen(agentId, markSeenSnapshot);
+  });
+
+  // Re-arm the trigger when the window regains focus while sitting at the
+  // bottom — the focus gate dropped any request that fired while blurred.
+  onMount(() => {
+    const handleWindowFocus = () => {
+      if (isComponentDestroyed || !agentId || !isActive) return;
+      if (distanceFromBottom > SCROLL_BOTTOM_THRESHOLD) return;
+      requestMarkAgentSeen(agentId, markSeenSnapshot);
+    };
+    window.addEventListener('focus', handleWindowFocus);
+    return () => {
+      window.removeEventListener('focus', handleWindowFocus);
+    };
   });
 
   onDestroy(() => {
@@ -2268,9 +2587,16 @@
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
 
-    // Clear currently viewed agent so other agents can properly be marked as unread
+    // Drop any pending markSeen debounce for this panel's agent.
     if (agentId) {
-      appStore.dispatch(clearCurrentlyViewedAgent());
+      cancelPendingMarkAgentSeen(agentId);
+    }
+
+    // Clear currently viewed agent so other agents can properly be marked as
+    // unread — scoped so a cached background tab's destroy cannot tear down
+    // the currently viewed agent's chat (monorepo#1215).
+    if (agentId) {
+      appStore.dispatch(clearCurrentlyViewedAgent(agentId));
     }
 
     logger.info('ChatPanel destroyed', { instanceId, agentId });
@@ -2306,6 +2632,14 @@
     const result = await appClient.agents.editQueued(agentId, messageId, content, editing);
     if (!result.success) {
       logger.error('Failed to edit queued message', { messageId, error: result.error });
+    } else {
+      // #1011: sync the parked retry record with what the daemon actually
+      // persisted (save applies the edit; hold/cancel echo the original) —
+      // otherwise a post-drain "Try again" resends the pre-edit text. Prefer
+      // the authoritative echoed queuedMessage.content over the local arg so
+      // the record can't drift from the daemon's entry.
+      const persistedText = result.queuedMessage?.content ?? content;
+      appStore.dispatch(chatQueuedRetryRecordUpdated(agentId, messageId, persistedText));
     }
     return result;
   }
@@ -2316,30 +2650,21 @@
     appStore.dispatch(removeQueuedMessageRequested(agentId, messageId));
   }
 
-  // Handle sending a queued message immediately (interrupts current stream)
+  // Handle sending a queued message immediately (interrupts current stream).
+  // One atomic daemon call (`agent.sendQueuedMessageNow`, monorepo#1032): the
+  // send middleware needs only agentId/wsId/queuedMessageId — the daemon owns
+  // the entry's content/attachments and dequeues + delivers transactionally.
   function handleSendQueuedMessageNow(messageId: string) {
     const message = $queuedMessages$.find((m) => m.id === messageId);
     if (!message || !workspace) return;
 
     logger.info('Send queued message now triggered', { messageId, agentId });
 
-    // Dispatch through the send-message saga with forceSubmit/skipQueueCheck so
-    // saga-owned queue removal and stop orchestration run before send.
-    const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
-
     appStore.dispatch(
       sendMessage(agentId, {
         wsId: workspace.id,
         text: message.content,
         queuedMessageId: messageId,
-        serializedContextItems: message.contextItems as any,
-        noteIds,
-        imageBlocks: message.imageBlocks,
-        skipQueueCheck: true,
-        forceSubmit: true,
-        agentName,
-        agentModel,
-        isInitialWorkspaceAgent,
       }),
     );
 
@@ -2366,16 +2691,21 @@
     });
     for (const panel of checkedPanels) {
       if (panel.type === 'file' && panel.filePath) {
+        // i18n-ignore (agent-directed context marker, not user-facing UI)
         parts.push(`[Currently viewing file: ${panel.filePath}]`);
       } else if (panel.type === 'diff' && panel.filePath) {
+        // i18n-ignore (agent-directed context marker, not user-facing UI)
         parts.push(`[Currently viewing diff for: ${panel.filePath}]`);
       } else if (panel.type === 'note' && panel.noteId) {
         parts.push(
+          // i18n-ignore (agent-directed context marker, not user-facing UI)
           `[Currently viewing note: "${panel.label}" (ID: ${panel.noteId}). Use read_note_space-mcp(noteId="${panel.noteId}") to read its content.]`,
         );
       } else if (panel.type === 'spec') {
+        // i18n-ignore (agent-directed context marker, not user-facing UI)
         parts.push('[Currently viewing: Spec]');
       } else if (panel.type === 'browser' && panel.browserUrl) {
+        // i18n-ignore (agent-directed context marker, not user-facing UI)
         parts.push(`[Currently viewing browser: ${panel.browserUrl}]`);
       }
     }
@@ -2387,6 +2717,7 @@
       const displayText =
         selectedText.length > 500 ? selectedText.substring(0, 500) + '...' : selectedText;
       const source = selection.sourceLabel ? ` from ${selection.sourceLabel}` : '';
+      // i18n-ignore (agent-directed context marker, not user-facing UI)
       parts.push(`[Selected text${source}:\n\`\`\`\n${displayText}\n\`\`\`]`);
     }
 
@@ -2395,9 +2726,10 @@
 
   // Input history navigation callbacks (terminal-like up/down arrow)
   function handleHistoryPrev(): string | null {
-    // If there are queued messages and we're not already navigating history,
-    // edit the last queued message instead of cycling through sent history
-    if ($queuedMessages$.length > 0 && historyIndex === -1 && !inputValue.trim()) {
+    // If there are visible (user-authored) queued messages and we're not
+    // already navigating history, edit the last queued message instead of
+    // cycling through sent history
+    if (visibleQueuedMessages.length > 0 && historyIndex === -1 && !inputValue.trim()) {
       const editStarted = queuedMessageListRef?.editLastMessage?.();
       if (editStarted) {
         // Return null so TipTapEditor doesn't change the input content
@@ -2552,7 +2884,7 @@
     const currentStatus = $agentSession$?.status;
     if (currentStatus === AgentStatus.Error) {
       // Capture the current error message before clearing so we can restore it on failure
-      const priorError = $chatError$ || 'Agent failed to start';
+      const priorError = $chatError$ || m.chat_chatPanel_agentFailedToStart_error();
 
       // Clear the current error so the UI shows loading state
       appStore.dispatch(chatErrorCleared(agentId));
@@ -2582,7 +2914,7 @@
       if (result.redriven === false) {
         // Nothing was queued to redrive — the error is cleared, but no new
         // turn starts. Tell the user what to do next instead of a silent no-op.
-        toast.info('Nothing to retry — error cleared. Send a message to start a new turn.');
+        toast.info(m.chat_chatPanel_nothingToRetry_toast());
       }
       return;
     }
@@ -2692,7 +3024,6 @@
         workspaceContextStr,
         noteIds,
         ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
-        skipQueueCheck: true,
         forceSubmit: true,
         agentName,
         agentModel,
@@ -2747,9 +3078,24 @@
     );
   }
 
-  // Handle selecting a suggested prompt - sends immediately
+  // Handle selecting a suggested prompt - sends the prompt bare and
+  // immediately: no composer context items, no workspace context string, and
+  // no draft cleanup, so the user's in-progress draft (text + attachments +
+  // backend draft) stays fully intact. All three entry points route here:
+  // SuggestedPrompts click, the Ctrl/Alt+number shortcut, and
+  // ChiefChatEmptyState selection.
   function handleSelectSuggestedPrompt(prompt: string) {
-    handleSend(prompt);
+    if (!workspace || !isActive) return;
+    appStore.dispatch(
+      sendMessage(agentId, {
+        wsId: workspace.id,
+        text: prompt,
+        agentName,
+        agentModel,
+        isInitialWorkspaceAgent,
+      }),
+    );
+    void performLocalSendCleanup({ followBottom: true });
   }
 
   // Handle editing a suggested prompt - loads into input without sending
@@ -2898,7 +3244,7 @@
     <PanelFindBar
       bind:query={searchQuery}
       bind:inputRef={searchInputRef}
-      placeholder="Search messages..."
+      placeholder={m.chat_chatSearch_input_placeholder()}
       currentMatchIndex={currentSearchIndex}
       totalMatches={searchMatchCount}
       disableNavigationWhenNoMatches={false}
@@ -2945,7 +3291,7 @@
         >
           <Fa icon={faSquareCheck} class="text-ghost opacity-50" size="w-3 h-3" />
           <span class="text-subtle truncate max-w-[200px]">
-            {task.taskText || 'Assigned task'}
+            {task.taskText || m.chat_chatPanel_assignedTask_fallback()}
           </span>
         </a>
       {/if}
@@ -2964,7 +3310,7 @@
           <WorkspaceSetupCard
             repoName={onboardingContext.projectName ||
               onboardingContext.projectPath?.split('/').pop() ||
-              'your project'}
+              m.chat_chatPanel_yourProject_fallback()}
             repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
             worktreePath={onboardingContext.worktreePath}
             branch={onboardingContext.branch}
@@ -2990,7 +3336,7 @@
             <WorkspaceSetupCard
               repoName={onboardingContext.projectName ||
                 onboardingContext.projectPath?.split('/').pop() ||
-                'your project'}
+                m.chat_chatPanel_yourProject_fallback()}
               repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
               worktreePath={onboardingContext.worktreePath}
               branch={onboardingContext.branch}
@@ -3063,7 +3409,7 @@
                   <WorkspaceSetupCard
                     repoName={onboardingContext.projectName ||
                       onboardingContext.projectPath?.split('/').pop() ||
-                      'your project'}
+                      m.chat_chatPanel_yourProject_fallback()}
                     repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                     worktreePath={onboardingContext.worktreePath}
                     branch={onboardingContext.branch}
@@ -3121,7 +3467,8 @@
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
-                        isStalled={$chatIsStalled$}
+                        sessionCorrupted={effectiveSessionCorrupted}
+                        failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
                         onRetry={handleRetry}
@@ -3145,7 +3492,8 @@
                       receivedFirstChunk={$chatReceivedFirstChunk$}
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
                       error={effectiveError}
-                      isStalled={$chatIsStalled$}
+                      sessionCorrupted={effectiveSessionCorrupted}
+                      failedAt={effectiveFailedAt}
                       modelUnavailable={$chatModelUnavailable$}
                       {hasPendingPermission}
                       onRetry={handleRetry}
@@ -3168,7 +3516,7 @@
                   <WorkspaceSetupCard
                     repoName={onboardingContext.projectName ||
                       onboardingContext.projectPath?.split('/').pop() ||
-                      'your project'}
+                      m.chat_chatPanel_yourProject_fallback()}
                     repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                     worktreePath={onboardingContext.worktreePath}
                     branch={onboardingContext.branch}
@@ -3225,7 +3573,8 @@
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
-                        isStalled={$chatIsStalled$}
+                        sessionCorrupted={effectiveSessionCorrupted}
+                        failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
                         onRetry={handleRetry}
@@ -3249,7 +3598,8 @@
                       receivedFirstChunk={$chatReceivedFirstChunk$}
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
                       error={effectiveError}
-                      isStalled={$chatIsStalled$}
+                      sessionCorrupted={effectiveSessionCorrupted}
+                      failedAt={effectiveFailedAt}
                       modelUnavailable={$chatModelUnavailable$}
                       {hasPendingPermission}
                       onRetry={handleRetry}
@@ -3278,7 +3628,8 @@
                 receivedFirstChunk={$chatReceivedFirstChunk$}
                 streamingContentLength={$chatStreamingContent$?.length ?? 0}
                 error={effectiveError}
-                isStalled={$chatIsStalled$}
+                sessionCorrupted={effectiveSessionCorrupted}
+                failedAt={effectiveFailedAt}
                 modelUnavailable={$chatModelUnavailable$}
                 {hasPendingPermission}
                 onRetry={handleRetry}
@@ -3303,7 +3654,7 @@
                 <WorkspaceSetupCard
                   repoName={onboardingContext.projectName ||
                     onboardingContext.projectPath?.split('/').pop() ||
-                    'your project'}
+                    m.chat_chatPanel_yourProject_fallback()}
                   repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                   worktreePath={onboardingContext.worktreePath}
                   branch={onboardingContext.branch}
@@ -3323,6 +3674,13 @@
                 />
               </div>
             {/if}
+            <!-- Presentation-only unread marker (PROTOCOL §5.5 agent.markSeen):
+                 rendered after the anchor message; never part of the transcript -->
+            {#snippet newMessagesDividerAfter(messageId: string)}
+              {#if newMessagesDividerAnchorId === messageId}
+                <NewMessagesDivider />
+              {/if}
+            {/snippet}
             <!-- PERF: Use keyed each blocks for efficient list diffing -->
             {#each groupedMessages as group, groupIndex (group.messages[0]?.id ?? groupIndex)}
               <DateSeparator label={formatDistanceToNow(group.date)} />
@@ -3343,7 +3701,8 @@
                     scrollRoot={scrollContainer}
                     forceVisible={isTurnForceVisible(turnKey) ||
                       ($agentSessionIsStreaming$ && isLastTurnInConversation) ||
-                      visibleSearchTurnKeys.has(turnKey)}
+                      visibleSearchTurnKeys.has(turnKey) ||
+                      deepOpenTurnKey === turnKey}
                   >
                     {#snippet children()}
                       <!-- Event wakeup banner - shown when agent is woken by a subscription -->
@@ -3415,6 +3774,7 @@
                             {/if}
                           </div>
                         {/if}
+                        {@render newMessagesDividerAfter(message.id)}
                       {/if}
                       <!-- User message (sticky within this turn) - skip for event notifications (already shown above) -->
                       <!-- Also skip messages starting with [WORKSPACE EVENTS] as a fallback in case metadata is missing -->
@@ -3424,9 +3784,11 @@
                           extractAllContent(turn.userMessage)
                             .trim()
                             .startsWith('[WORKSPACE EVENTS]'))}
+                      <!-- Daemon-delivered dismissal rows render as a compact chip, not a user bubble -->
+                      {@const isQuestionsDismissed = !!getQuestionsDismissedNotice(turn.userMessage)}
                       <!-- Sticky compact user message header - shows when scrolled past expanded message -->
                       <!-- Positioned BEFORE expanded message in DOM so it's naturally behind it -->
-                      {#if shouldEnableSticky && turn.userMessage && !isEventNotification}
+                      {#if shouldEnableSticky && turn.userMessage && !isEventNotification && !isQuestionsDismissed}
                         <div class="sticky -top-px w-full z-10 h-0 overflow-visible">
                           <div
                             class="h-fit min-w-0 px-2 pt-2 pb-2 text-subtle whitespace-nowrap text-ellipsis leading-normal bg-sidebar rounded-xs w-full max-w-full truncate"
@@ -3436,7 +3798,19 @@
                         </div>
                       {/if}
 
-                      {#if turn.userMessage && !isEventNotification}
+                      {#if turn.userMessage && isQuestionsDismissed}
+                        <!-- Compact centered chip outside the user-bubble wrapper (no user margins/background) -->
+                        <div
+                          data-message-id={turn.userMessage.id}
+                          data-message-index={getMessageIndex(turn.userMessage.id)}
+                          class="message-nav-target px-2"
+                        >
+                          <QuestionsDismissedNotice
+                            title={extractAllContent(turn.userMessage) || undefined}
+                          />
+                        </div>
+                        {@render newMessagesDividerAfter(turn.userMessage.id)}
+                      {:else if turn.userMessage && !isEventNotification}
                         {@const message = turn.userMessage}
                         {@const globalIndex = getMessageIndex(message.id)}
                         <!-- z-20 and bg-sidebar to cover the sticky compact header when in view -->
@@ -3459,8 +3833,32 @@
                             backendSessionId={auggieSessionId}
                           />
                         </div>
+                        {@render newMessagesDividerAfter(message.id)}
                       {/if}
 
+                      <!-- Model-change notices (daemon-persisted, after the user row, before assistant output) -->
+                      {#each turn.noticeMessages as noticeMessage (noticeMessage.id)}
+                        {@const notice = getModelChangeNotice(noticeMessage)}
+                        {#if notice}
+                          <div data-message-id={noticeMessage.id} class="px-2">
+                            <ModelChangeNotice
+                              {notice}
+                              fallbackText={extractAllContent(noticeMessage) || undefined}
+                            />
+                          </div>
+                          {@render newMessagesDividerAfter(noticeMessage.id)}
+                        {/if}
+                      {/each}
+
+                      <!-- Live-hydration phase line: between the last user message and the Thinking row (500ms grace, pre-live phases only) -->
+                      {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0}
+                        <LiveStreamPhaseIndicator
+                          phase={$chatLiveStreamPhase$}
+                          turnInFlight={$agentIsResponding$ || $agentSessionIsStreaming$}
+                          seed={agentId}
+                          class="mb-2"
+                        />
+                      {/if}
                       <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
                       {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: effectiveError, modelUnavailable: $chatModelUnavailable$ }, )}
                         <div class="mb-8">
@@ -3471,7 +3869,8 @@
                             receivedFirstChunk={$chatReceivedFirstChunk$}
                             streamingContentLength={$chatStreamingContent$?.length ?? 0}
                             error={effectiveError}
-                            isStalled={$chatIsStalled$}
+                            sessionCorrupted={effectiveSessionCorrupted}
+                            failedAt={effectiveFailedAt}
                             modelUnavailable={$chatModelUnavailable$}
                             {hasPendingPermission}
                             onRetry={handleRetry}
@@ -3528,7 +3927,8 @@
                               receivedFirstChunk={$chatReceivedFirstChunk$}
                               streamingContentLength={$chatStreamingContent$?.length ?? 0}
                               error={effectiveError}
-                              isStalled={$chatIsStalled$}
+                              sessionCorrupted={effectiveSessionCorrupted}
+                              failedAt={effectiveFailedAt}
                               modelUnavailable={$chatModelUnavailable$}
                               {hasPendingPermission}
                               onRetry={handleRetry}
@@ -3556,17 +3956,29 @@
                             workspaceId={workspace.id}
                           />
                         {/if}
+                        {@render newMessagesDividerAfter(message.id)}
                       {/each}
                     {/snippet}
                   </LazyTurn>
                 </div>
                 <!-- Dividing line between turns (not after the last one) -->
                 {#if !(groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1)}
-                  <hr class="border-t border-border/50 mb-3" />
+                  {#if shouldSuppressQueueDivider(turn, turns[turnIndex + 1] ?? null)}
+                    <!-- Consecutive queued messages drained together: tight gap, no divider -->
+                    <div class="mb-1"></div>
+                  {:else}
+                    <hr class="border-t border-border/50 mb-3" />
+                  {/if}
                 {/if}
               {/each}
             {/each}
             {#if showEndOfListStreamingStatus}
+              <LiveStreamPhaseIndicator
+                phase={$chatLiveStreamPhase$}
+                turnInFlight={$agentIsResponding$ || $agentSessionIsStreaming$}
+                seed={agentId}
+                class="mb-2"
+              />
               <div class="mb-16">
                 <StreamingStatus
                   isStreaming={$agentSessionIsStreaming$}
@@ -3575,7 +3987,8 @@
                   receivedFirstChunk={$chatReceivedFirstChunk$}
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
                   error={effectiveError}
-                  isStalled={$chatIsStalled$}
+                  sessionCorrupted={effectiveSessionCorrupted}
+                  failedAt={effectiveFailedAt}
                   modelUnavailable={$chatModelUnavailable$}
                   {hasPendingPermission}
                   onRetry={handleRetry}
@@ -3590,12 +4003,12 @@
           </div>
         {/if}
       {/if}
-      <!-- Aggregate File Changes Summary (show if more than one assistant message, updates during streaming) -->
-      {#if $agentMessages$.filter((m) => m.role === 'assistant').length > 1}
+      <!-- Aggregate File Changes Summary (show if more than one assistant message and it isn't redundant with the last turn's row, updates during streaming) -->
+      {#if showAggregateFileChangesSummary}
         <div class="w-full">
           <ChatFileChangesSummary
             messages={$agentMessages$}
-            suffix="in conversation"
+            suffix={m.chat_chatPanel_fileChangesAggregate_suffix()}
             isAggregate={true}
             isStreaming={$agentSessionIsStreaming$}
             {agentId}
@@ -3632,6 +4045,10 @@
       {#if workspace?.id}
         {#key `${workspace.id}::${agentId}`}
           <div class="w-full pb-6" transition:slide={{ axis: 'y', duration: 200 }}>
+            <!-- Pending attention request (discussion/blocker) for this agent -->
+            {#if agentId}
+              <AttentionRequestBanner {agentId} />
+            {/if}
             <AgentSubscriptions workspaceId={workspace.id} {agentId} />
           </div>
         {/key}
@@ -3666,26 +4083,35 @@
           ? 'opacity-0!'
           : ''}"
         title={showLock
-          ? 'Auto-scroll locked (click to unlock)'
+          ? m.chat_chatPanel_autoScrollLocked_tooltip()
           : showUnlock
-            ? 'Auto-scroll unlocked (click to lock)'
-            : 'Scroll to bottom'}
+            ? m.chat_chatPanel_autoScrollUnlocked_tooltip()
+            : m.chat_chatPanel_scrollToBottom_tooltip()}
       >
         <Fa icon={showArrow ? faArrowDown : showLock ? faLock : faLockOpen} class="w-3! h-3!" />
       </Button>
     {/if}
   </div>
 
-  <!-- Queued Messages -->
-  {#if $queuedMessages$.length > 0}
+  <!-- Queued Messages: hidden while the question wizard is expanded; shown
+       with a held-for-questions hint while it is Ignore-collapsed (question
+       hold, PROTOCOL §5.5). -->
+  {#if queuedMessagesVisibility.showQueue}
     <QueuedMessageList
       bind:this={queuedMessageListRef}
-      messages={$queuedMessages$}
+      messages={visibleQueuedMessages}
+      heldForQuestions={queuedMessagesVisibility.heldForQuestions}
       onedit={handleEditQueuedMessage}
       onremove={handleRemoveQueuedMessage}
       onsendnow={handleSendQueuedMessageNow}
       ondone={() => inputComponent?.focus?.()}
     />
+  {/if}
+
+  <!-- Background hooks (PROTOCOL §5.40): faint chip row above the input,
+       visible only while the active agent has scheduled/running hooks. -->
+  {#if workspace?.id && agentId}
+    <BackgroundHooksRow workspaceId={workspace.id} {agentId} />
   {/if}
 
   <!-- Message Input with Aurora Background -->
@@ -3717,11 +4143,15 @@
             collapsed={questionWizardCollapsed}
             onToggleCollapsed={(c) => (questionWizardCollapsed = c)}
             onComplete={handleQuestionWizardComplete}
+            onDismiss={handleQuestionWizardDismiss}
           />
         </div>
       {/key}
     {/if}
     {#if !pendingQuestions || questionWizardCollapsed}
+      {#if draftManager.gateActive}
+        <ChatDraftLoadingGate />
+      {/if}
       <SimpleRichInput
         bind:this={inputComponent}
         bind:contextItems
@@ -3731,7 +4161,7 @@
         onstop={handleStop}
         onHistoryPrev={handleHistoryPrev}
         onHistoryNext={handleHistoryNext}
-        disabled={!workspace || !$agentSession$}
+        disabled={!workspace || !$agentSession$ || draftManager.gateActive}
         isStreaming={$agentSessionIsStreaming$}
         isResponding={$agentIsResponding$}
         {workspace}
@@ -3740,7 +4170,7 @@
         selectedModel={hydratedInputModel}
         compactMode={isCompactMode}
         editorClassName={isChiefWorkspace ? 'px-1.5!' : 'px-2!'}
-        isProviderChangeLocked={!canChangeProvider}
+        requiresModelSwitchConfirmation={!canChangeProvider}
         providerId={inputProviderId}
       />
     {/if}
@@ -3816,5 +4246,11 @@
   ::highlight(current-search-result) {
     background-color: hsl(var(--primary));
     color: hsl(var(--primary-foreground));
+  }
+
+  /* Transient query-term highlight for deep-open navigation (openMessage) */
+  ::highlight(deep-open-match) {
+    background-color: hsl(var(--primary) / 0.35);
+    color: inherit;
   }
 </style>

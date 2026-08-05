@@ -29,6 +29,14 @@ import {
   agentSessionEditAndRegenerateRequested,
   bulkUpsertSessions,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
+import {
+  chatLastAttemptedMessageSet,
+  chatQueuedRetryRecordSet,
+  chatReset,
+  chatSendFailed,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
+import { replaceAgentQueue } from "$store/renderer/slices/agent-queue/agent-queue-slice";
+import type { ChatAgentState } from "$store/renderer/slices/chat-state/chat-state-types";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -63,6 +71,13 @@ function readMessages(agentId: string): AgentMessage[] {
     agentSessions?: { byAgentId: Record<string, AgentSession> };
   };
   return state.agentSessions?.byAgentId[agentId]?.messages ?? [];
+}
+
+function readChatState(agentId: string): ChatAgentState | undefined {
+  const state = appStore.state as {
+    chatState?: { byAgentId: Record<string, ChatAgentState> };
+  };
+  return state.chatState?.byAgentId[agentId];
 }
 
 describe("editRegenerateService (fake appClient.agents.editAndRegenerate, real store)", () => {
@@ -131,6 +146,155 @@ describe("editRegenerateService (fake appClient.agents.editAndRegenerate, real s
     await flush();
     expect(toast.error).toHaveBeenCalledWith("bad message id");
     expect(readMessages(AGENT).map((m) => m.id)).toEqual(["m1", "m2"]);
+  });
+
+  it("clears a stale chat error and starts the loading state on success", async () => {
+    const WS = "ws-edit-chatstate";
+    const AGENT = "agent-edit-chatstate";
+    seedSession(AGENT, WS, [
+      makeMessage("m1", "user", "first"),
+      makeMessage("m2", "assistant", "reply"),
+    ]);
+    appStore.dispatch(chatSendFailed(AGENT, "provider exploded"));
+    expect(readChatState(AGENT)?.error).toBe("provider exploded");
+    editAndRegenerate.mockResolvedValueOnce({ success: true });
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited");
+    appStore.dispatch(action);
+    await action.promise;
+
+    const chatState = readChatState(AGENT);
+    expect(chatState?.error).toBeNull();
+    expect(chatState?.streamingStartTime).toEqual(expect.any(Number));
+  });
+
+  it("records the EDITED content as lastAttemptedMessage on success so retry-after-failure resends it (#941)", async () => {
+    const WS = "ws-edit-retry";
+    const AGENT = "agent-edit-retry";
+    seedSession(AGENT, WS, [
+      makeMessage("m1", "user", "pre-edit text"),
+      makeMessage("m2", "assistant", "reply"),
+    ]);
+    // A stale retry payload from a pre-edit send attempt.
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "pre-edit text" }));
+    editAndRegenerate.mockResolvedValueOnce({ success: true });
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited text");
+    appStore.dispatch(action);
+    await action.promise;
+
+    expect(readChatState(AGENT)?.lastAttemptedMessage).toEqual({ text: "edited text" });
+  });
+
+  it("drops parked queued-retry records on success — discarded entries never emit a processing event (#999)", async () => {
+    // agent.editAndRegenerate calls clear_queue daemon-side: the discarded
+    // entries never run, so no agent:queue:processing will ever promote
+    // their records. The flow site drops them eagerly to avoid a leak, and
+    // the late-arriving empty snapshot has nothing left to touch.
+    const WS = "ws-edit-discard";
+    const AGENT = "agent-edit-discard";
+    appStore.dispatch(chatReset(AGENT));
+    seedSession(AGENT, WS, [
+      makeMessage("m1", "user", "pre-edit text"),
+      makeMessage("m2", "assistant", "reply"),
+    ]);
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-1", { text: "queued discarded" }, "qm-1"));
+    editAndRegenerate.mockResolvedValueOnce({ success: true });
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited text");
+    appStore.dispatch(action);
+    await action.promise;
+
+    // The flow site knows deterministically the queue was discarded — all
+    // parked records are dropped without promotion.
+    expect(readChatState(AGENT)?.queuedRetryRecords).toEqual({});
+    // The daemon's late-arriving empty clear_queue snapshot finds nothing to
+    // promote; the edited text stays the retry payload.
+    appStore.dispatch(replaceAgentQueue(AGENT, []));
+    expect(readChatState(AGENT)?.lastAttemptedMessage).toEqual({ text: "edited text" });
+  });
+
+  it("drops ALL parked records on a multi-entry queue discard (#999)", async () => {
+    const WS = "ws-edit-discard-multi";
+    const AGENT = "agent-edit-discard-multi";
+    appStore.dispatch(chatReset(AGENT));
+    seedSession(AGENT, WS, [makeMessage("m1", "user", "pre-edit text")]);
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-1", { text: "queued 1" }, "qm-1"));
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-2", { text: "queued 2" }, "qm-2"));
+    editAndRegenerate.mockResolvedValueOnce({ success: true });
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited text");
+    appStore.dispatch(action);
+    await action.promise;
+
+    expect(readChatState(AGENT)?.queuedRetryRecords).toEqual({});
+    appStore.dispatch(replaceAgentQueue(AGENT, []));
+    expect(readChatState(AGENT)?.lastAttemptedMessage).toEqual({ text: "edited text" });
+  });
+
+  it("leaves parked records untouched on a non-success result (#999)", async () => {
+    const WS = "ws-edit-discard-fail";
+    const AGENT = "agent-edit-discard-fail";
+    appStore.dispatch(chatReset(AGENT));
+    seedSession(AGENT, WS, [makeMessage("m1", "user", "pre-edit text")]);
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-1", { text: "still queued" }, "qm-1"));
+    editAndRegenerate.mockResolvedValueOnce({ success: false, error: "bad message id" });
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited text");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("bad message id");
+
+    // No daemon-side clear happened — the queue (and its parked record)
+    // survives, so a later genuine drain-start still promotes it.
+    expect(readChatState(AGENT)?.queuedRetryRecords).toEqual({
+      "qm-1": { seq: 1, record: { text: "still queued" }, turnId: "qm-1" },
+    });
+  });
+
+  it("leaves a previously recorded lastAttemptedMessage untouched on a non-success result (#941)", async () => {
+    const WS = "ws-edit-retry-fail";
+    const AGENT = "agent-edit-retry-fail";
+    seedSession(AGENT, WS, [makeMessage("m1", "user", "pre-edit text")]);
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "pre-edit text" }));
+    editAndRegenerate.mockResolvedValueOnce({ success: false, error: "bad message id" });
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited text");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("bad message id");
+
+    expect(readChatState(AGENT)?.lastAttemptedMessage).toEqual({ text: "pre-edit text" });
+  });
+
+  it("leaves chat-state untouched on a non-success result", async () => {
+    const WS = "ws-edit-chatstate-fail";
+    const AGENT = "agent-edit-chatstate-fail";
+    seedSession(AGENT, WS, [makeMessage("m1", "user", "first")]);
+    appStore.dispatch(chatSendFailed(AGENT, "original error"));
+    editAndRegenerate.mockResolvedValueOnce({ success: false, error: "bad message id" });
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("bad message id");
+
+    const chatState = readChatState(AGENT);
+    expect(chatState?.error).toBe("original error");
+    expect(chatState?.streamingStartTime).toBeNull();
+  });
+
+  it("leaves chat-state untouched on a thrown transport error", async () => {
+    const WS = "ws-edit-chatstate-throw";
+    const AGENT = "agent-edit-chatstate-throw";
+    seedSession(AGENT, WS, [makeMessage("m1", "user", "first")]);
+    appStore.dispatch(chatSendFailed(AGENT, "original error"));
+    editAndRegenerate.mockRejectedValueOnce(new Error("transport boom"));
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("transport boom");
+
+    const chatState = readChatState(AGENT);
+    expect(chatState?.error).toBe("original error");
+    expect(chatState?.streamingStartTime).toBeNull();
   });
 
   it("rejects, toasts, and leaves the transcript untouched on a thrown transport error", async () => {

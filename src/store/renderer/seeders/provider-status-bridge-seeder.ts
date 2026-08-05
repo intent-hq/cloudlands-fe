@@ -32,9 +32,11 @@
  *  - opencode / pi / droid / grok: binary presence via
  *                 `host.toolAvailability` / `host.findBinary`.
  *  - unsloth:     rides the opencode binary (the daemon injects the managed
- *                 local server's config via OPENCODE_CONFIG_CONTENT), so
- *                 presence keys off `opencode`; local-only — no login
- *                 surface, so available ⇒ authenticated.
+ *                 local server's config via OPENCODE_CONFIG_CONTENT) AND the
+ *                 daemon-managed server lifecycle shells out to the `unsloth`
+ *                 CLI directly — presence requires BOTH `opencode` and
+ *                 `unsloth` to resolve; local-only — no login surface, so
+ *                 available ⇒ authenticated.
  *  - auth (all):  `host.providerAuthStatus` — `true`/`false` verdicts attach
  *                 to available providers; the wire `null` (unknown) folds to
  *                 undefined so no indicator renders.
@@ -56,10 +58,12 @@ import {
   OPENCODE_CHANNELS,
   PROVIDERS_CHANNELS,
 } from "$shared/ipc/channels";
-import { ACP_PROVIDERS } from "$shared/config/provider-config";
+import { getItem, getItems } from "$lib/store-shim/utils/collections/collection-utils";
+import { store as appStore } from "$store/renderer/store";
 import { MINIMUM_AUGGIE_VERSION, MINIMUM_NODE_VERSION } from "$shared/constants/auggie";
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from "$shared/constants/claude-code";
 import { CODEX_ADAPTER_MISSING_WARNING } from "$shared/constants/codex";
+import { m } from "$shared/paraglide/messages.js";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import {
   PROVIDER_AUTH_STATUS_METHOD,
@@ -98,6 +102,7 @@ const PROVIDER_BINARIES: Record<string, string> = {
   pi: "pi",
   droid: "droid",
   grok: "grok",
+  unsloth: "unsloth",
 };
 
 /** The codex ACP adapter binary — only consulted for the codex warning. */
@@ -158,9 +163,9 @@ async function checkAuggie(): Promise<HostCheckResult> {
  * matching the main service's default-deny gating.
  */
 function computeHiddenProviders(): string[] {
-  return Object.values(ACP_PROVIDERS)
-    .filter((config) => config.requiresEnvVar || config.requiresFeatureCode)
-    .map((config) => config.id);
+  return getItems(appStore.state.providerCatalog.providers)
+    .filter((entry) => entry.requiresEnvVar || entry.requiresFeatureCode)
+    .map((entry) => entry.id);
 }
 
 /** Attach an auth verdict only when the provider is actually available. */
@@ -217,9 +222,13 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const pi: ProviderStatus = { available: tool(PROVIDER_BINARIES.pi).available === true };
   const droid: ProviderStatus = { available: tool(PROVIDER_BINARIES.droid).available === true };
   const grok: ProviderStatus = { available: tool(PROVIDER_BINARIES.grok).available === true };
-  // unsloth rides the opencode binary; local-only, so available ⇒
-  // authenticated (the daemon's managed server injects its own API key).
-  const unsloth: ProviderStatus = { available: opencode.available };
+  // unsloth rides the opencode binary AND requires the unsloth CLI itself
+  // (the daemon-managed server lifecycle shells out to `unsloth run`
+  // directly); local-only, so available ⇒ authenticated (the daemon's
+  // managed server injects its own API key).
+  const unsloth: ProviderStatus = {
+    available: opencode.available && tool(PROVIDER_BINARIES.unsloth).available === true,
+  };
   if (unsloth.available) unsloth.authenticated = true;
   const cortex: ProviderStatus = { available: false };
   const mock: ProviderStatus = { available: false };
@@ -268,11 +277,15 @@ async function checkSingleProvider(providerId: string): Promise<ProviderStatus> 
     return { available: false };
   }
   if (providerId === "unsloth") {
-    // Rides the opencode binary; local-only so available ⇒ authenticated.
-    const found = await backendRequest<HostCheckResult>("host.findBinary", {
-      name: PROVIDER_BINARIES.opencode,
-    });
-    const status: ProviderStatus = { available: found?.available === true };
+    // Rides the opencode binary AND requires the unsloth CLI itself;
+    // local-only so available ⇒ authenticated.
+    const [opencodeFound, unslothFound] = await Promise.all([
+      backendRequest<HostCheckResult>("host.findBinary", { name: PROVIDER_BINARIES.opencode }),
+      backendRequest<HostCheckResult>("host.findBinary", { name: PROVIDER_BINARIES.unsloth }),
+    ]);
+    const status: ProviderStatus = {
+      available: opencodeFound?.available === true && unslothFound?.available === true,
+    };
     if (status.available) status.authenticated = true;
     return status;
   }
@@ -323,31 +336,39 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.GET_AVAILABILITY, async () => {
   }
 });
 
+/** Daemon `host.providerDiscovery` provider entry (PROTOCOL §5.14). */
+interface ProviderDiscoveryEntry {
+  id: string;
+  installed: boolean;
+  resolvedPath?: string | null;
+  secondaryCommand?: string;
+  secondaryResolved?: boolean;
+  secondaryResolvedPath?: string;
+}
+
 /**
- * providers:get-paths — resolved CLI paths for the settings path-config rows
- * (ProviderSelector only consumes auggie / claude-code / codex). Composed from
- * the daemon host surface: `host.checkAuggie` resolves auggie (providers.paths
- * override, then PATH) and `host.findBinary` resolves the other CLIs — for
- * codex that is the real `codex` CLI (mirrors main's getCodexPath), not the
- * codex-acp adapter. Preserves the legacy main handler's CommandResponse
- * envelope.
+ * providers:get-paths — daemon-resolved CLI paths for every provider's
+ * settings path popup, sourced from the daemon's `host.providerDiscovery`
+ * snapshot (PROTOCOL §5.14): `paths[id]` is the primary binary's
+ * `resolvedPath` (null when unresolved) and `secondaryPaths[id]` carries the
+ * dual-binary secondary's `secondaryResolvedPath` (unsloth's `unsloth` CLI).
+ * Mirrors main's getProviderPaths; degrades to empty maps on RPC failure.
  */
 registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, async () => {
-  const findPath = async (name: string): Promise<string | null> => {
-    const found = await backendRequest<HostCheckResult>("host.findBinary", { name }).catch(
-      () => undefined,
-    );
-    return found?.path ?? null;
-  };
   try {
-    const [auggie, claudeCode, codex] = await Promise.all([
-      checkAuggie()
-        .then((check) => check.path ?? null)
-        .catch(() => null),
-      findPath(PROVIDER_BINARIES["claude-code"]),
-      findPath(PROVIDER_BINARIES.codex),
-    ]);
-    return { success: true, data: { auggie, "claude-code": claudeCode, codex } };
+    const discovery = await backendRequest<{ providers?: ProviderDiscoveryEntry[] }>(
+      "host.providerDiscovery",
+      {},
+    ).catch(() => undefined);
+    const paths: Record<string, string | null> = {};
+    const secondaryPaths: Record<string, string | null> = {};
+    for (const provider of discovery?.providers ?? []) {
+      paths[provider.id] = provider.resolvedPath ?? null;
+      if (provider.secondaryCommand !== undefined) {
+        secondaryPaths[provider.id] = provider.secondaryResolvedPath ?? null;
+      }
+    }
+    return { success: true, data: { paths, secondaryPaths } };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
@@ -358,8 +379,8 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.CHECK_SINGLE, async (arg) => {
     typeof arg === "string"
       ? arg
       : ((arg as { providerId?: unknown } | undefined)?.providerId as string) || "";
-  if (!providerId || !(providerId in ACP_PROVIDERS)) {
-    return { success: false, providerId, error: `Unknown provider: ${providerId}` };
+  if (!providerId || !getItem(appStore.state.providerCatalog.providers, providerId)) {
+    return { success: false, providerId, error: m.providers_bridge_unknownProvider_error({ providerId }) };
   }
   try {
     return { success: true, providerId, data: await checkSingleProvider(providerId) };
@@ -442,9 +463,9 @@ registerMockIpcHandler(AUGGIE_CHANNELS.STATUS, async () => {
   } catch (error) {
     return {
       success: false,
-      error: `Auggie CLI check failed: ${
-        error instanceof Error ? error.message : String(error)
-      }. Please try again.`,
+      error: m.providers_bridge_auggieCheckFailed_error({
+        details: error instanceof Error ? error.message : String(error),
+      }),
       data: status,
     };
   }
@@ -507,7 +528,7 @@ registerMockIpcHandler(AUGGIE_CHANNELS.INSTALL, async () => ({
   success: true,
   data: {
     instructions: [
-      `Install the Auggie CLI on the daemon host (requires Node.js ${MINIMUM_NODE_VERSION}+), then click "Check again":`,
+      m.providers_bridge_auggieInstallOnDaemon_instruction({ version: MINIMUM_NODE_VERSION }),
     ],
     command: AUGGIE_INSTALL_COMMAND,
   },
@@ -533,9 +554,7 @@ registerMockIpcHandler(AUGGIE_CHANNELS.AUTHENTICATE, async () => {
       return {
         success: true,
         data: {
-          instructions: [
-            'Auggie CLI is not installed on the daemon host — install it first, then click "Check again":',
-          ],
+          instructions: [m.providers_bridge_auggieNotInstalledOnDaemon_instruction()],
           command: AUGGIE_INSTALL_COMMAND,
         },
       };
@@ -543,9 +562,7 @@ registerMockIpcHandler(AUGGIE_CHANNELS.AUTHENTICATE, async () => {
     return {
       success: true,
       data: {
-        instructions: [
-          'Log in by running this command in a terminal on the daemon host, then click "Check again":',
-        ],
+        instructions: [m.providers_bridge_auggieLoginOnDaemon_instruction()],
         command: "auggie login",
       },
     };

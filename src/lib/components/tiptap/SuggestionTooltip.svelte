@@ -4,6 +4,7 @@
   faCheck,
   faXmark,
 } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     suggestion: {
@@ -32,13 +33,13 @@
   function getTypeLabel(type: string) {
     switch (type) {
       case 'addition':
-        return 'Addition';
+        return m.tiptap_suggestionTooltip_addition_label();
       case 'deletion':
-        return 'Deletion';
+        return m.tiptap_suggestionTooltip_deletion_label();
       case 'modification':
-        return 'Modification';
+        return m.tiptap_suggestionTooltip_modification_label();
       default:
-        return 'Suggestion';
+        return m.tiptap_suggestionTooltip_suggestion_label();
     }
   }
 </script>
@@ -49,7 +50,7 @@
       >{getTypeLabel(suggestion.type)}</span
     >
     {#if suggestion.author}
-      <span class="suggestion-tooltip-author">by {suggestion.author}</span>
+      <span class="suggestion-tooltip-author">{m.tiptap_suggestionTooltip_byAuthor_label({ author: suggestion.author })}</span>
     {/if}
   </div>
 
@@ -61,19 +62,19 @@
 
   {#if suggestion.originalText && suggestion.type === 'modification'}
     <div class="mt-2 py-1 px-2 bg-muted rounded text-xs">
-      <span class="font-semibold mr-1">Original:</span>
+      <span class="font-semibold mr-1">{m.tiptap_suggestionTooltip_original_label()}</span>
       <span class="italic">{suggestion.originalText}</span>
     </div>
   {/if}
 
   <div class="suggestion-tooltip-actions">
-    <button class="accept" onclick={handleAccept} title="Accept suggestion">
+    <button class="accept" onclick={handleAccept} title={m.tiptap_suggestionTooltip_accept_tooltip()}>
       <Fa icon={faCheck} size="xs" class="inline mr-1" />
-      Accept
+      {m.tiptap_suggestionTooltip_accept_label()}
     </button>
-    <button class="reject" onclick={handleReject} title="Reject suggestion">
+    <button class="reject" onclick={handleReject} title={m.tiptap_suggestionTooltip_reject_tooltip()}>
       <Fa icon={faXmark} size="xs" class="inline mr-1" />
-      Reject
+      {m.tiptap_suggestionTooltip_reject_label()}
     </button>
   </div>
 </div>

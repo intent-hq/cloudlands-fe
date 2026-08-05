@@ -14,6 +14,7 @@
   faChevronRight,
 } from '@fortawesome/free-solid-svg-icons';
   import { shell } from '$lib/electron-bridge';
+  import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import {
   diagnoseCloneError,
@@ -44,16 +45,18 @@
   const diagnosis = $derived(diagnoseCloneError(message, errorCode));
 
   const titles: Record<CloneErrorKind, string> = $derived({
-    'auth-required': 'GitHub authentication required',
-    'askpass-missing': 'Intent is missing a required helper script',
-    'repo-not-found': 'Repository not found',
-    'access-denied': 'Access denied',
-    network: 'Network error',
-    'destination-exists': 'Destination folder already exists',
-    'path-invalid': 'Clone destination is not usable',
-    'git-not-installed': 'Git is not installed',
+    'auth-required': m.onboarding_creationError_authRequired_title(),
+    'askpass-missing': m.onboarding_creationError_askpassMissing_title(),
+    'repo-not-found': m.onboarding_creationError_repoNotFound_title(),
+    'access-denied': m.onboarding_creationError_accessDenied_title(),
+    network: m.onboarding_creationError_network_title(),
+    'destination-exists': m.onboarding_creationError_destinationExists_title(),
+    'path-invalid': m.onboarding_creationError_pathInvalid_title(),
+    'git-not-installed': m.onboarding_creationError_gitNotInstalled_title(),
     unknown:
-      variant === 'warning' ? 'We found an issue with this repository' : 'Failed to create workspace',
+      variant === 'warning'
+        ? m.onboarding_creationError_unknownWarning_title()
+        : m.onboarding_creationError_unknownError_title(),
   });
 
   // Daemon-provided detail renders inline (expanded) so users see the real
@@ -98,83 +101,89 @@
   {#if diagnosis.kind === 'auth-required'}
     <div class="space-y-2.5 text-foreground">
       <p>
-        Your terminal isn't signed in to GitHub, so Intent couldn't clone this repository.
-        The fastest way to fix this is to sign in with the GitHub CLI:
+        {m.onboarding_creationError_authRequired_description()}
       </p>
       <div class="flex items-center gap-2">
         <code class="flex-1 rounded bg-background/70 border border-border/50 px-2 py-1.5 font-mono text-xs">
+          <!-- i18n-ignore (shell command) -->
           gh auth login
         </code>
         <button
           type="button"
           class="shrink-0 rounded p-1.5 text-muted-foreground hover:text-foreground hover:bg-background/70 cursor-pointer"
-          aria-label="Copy command"
+          aria-label={m.onboarding_creationError_copyCommand_ariaLabel()}
           onclick={() => copyCommand('gh auth login')}
         >
           <Fa icon={copiedCommand === 'gh auth login' ? faCheck : faClipboard} size="sm" />
         </button>
       </div>
       <p class="text-xs text-muted-foreground">
-        Don't have the GitHub CLI?
+        {m.onboarding_creationError_noCli_before()}
         <button
           type="button"
           class="underline hover:text-foreground cursor-pointer"
-          onclick={() => openLink('https://cli.github.com/')}>Install it</button>
-        or
+          onclick={() => openLink('https://cli.github.com/')}>{m.onboarding_creationError_installIt_label()}</button>
+        {m.onboarding_creationError_or_label()}
         <button
           type="button"
           class="underline hover:text-foreground cursor-pointer"
           onclick={() =>
             openLink(
               'https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git',
-            )}>set up a git credential helper</button>. After signing in, click Try again below.
+            )}>{m.onboarding_creationError_credentialHelper_label()}</button>{m.onboarding_creationError_noCli_after()}
       </p>
     </div>
   {:else if diagnosis.kind === 'askpass-missing'}
     <div class="space-y-2 text-foreground">
       <p>
-        This usually means Intent is running from a quarantined location (e.g. Downloads).
-        Move <strong>Intent</strong> to <strong>Applications</strong> and relaunch — then try again.
+        {m.onboarding_creationError_askpassMissing_description()}
+        <!-- i18n-ignore (brand name / OS folder name inside <strong>) -->
+        {m.onboarding_creationError_askpassMove_before()} <strong>Intent</strong>
+        <!-- i18n-ignore (OS folder name) -->
+        {m.onboarding_creationError_askpassMove_middle()} <strong>Applications</strong>
+        {m.onboarding_creationError_askpassMove_after()}
       </p>
       <p class="text-xs text-muted-foreground">
-        If you've already moved it and still see this, quit Intent completely and reopen from Applications.
+        {m.onboarding_creationError_askpassMoved_note()}
       </p>
     </div>
   {:else if diagnosis.kind === 'repo-not-found'}
     <p class="text-foreground">
-      Double-check the repository URL. If this is a private repo, you'll need to sign in to
-      GitHub on your terminal (run <code class="font-mono text-xs">gh auth login</code>) before Intent can clone it.
+      {m.onboarding_creationError_repoNotFound_before()}
+      <!-- i18n-ignore (shell command) -->
+      <code class="font-mono text-xs">gh auth login</code>{m.onboarding_creationError_repoNotFound_after()}
     </p>
   {:else if diagnosis.kind === 'access-denied'}
     <p class="text-foreground">
-      Your account doesn't have permission to access this repository. Confirm the URL or
-      ask a maintainer for access.
+      {m.onboarding_creationError_accessDenied_description()}
     </p>
   {:else if diagnosis.kind === 'network'}
     <p class="text-foreground">
-      Intent couldn't reach GitHub. Check your internet connection and try again.
+      {m.onboarding_creationError_network_description()}
     </p>
   {:else if diagnosis.kind === 'destination-exists'}
     <p class="text-foreground">
-      The folder where Intent was going to clone this repository already exists and isn't empty.
-      Choose a different location in the project picker.
+      {m.onboarding_creationError_destinationExists_description()}
     </p>
   {:else if diagnosis.kind === 'path-invalid'}
     <p class="text-foreground">
-      Intent can't clone into that destination — the path is invalid or not writable.
-      Pick a different folder in the project picker and try again.
+      {m.onboarding_creationError_pathInvalid_description()}
     </p>
   {:else if diagnosis.kind === 'git-not-installed'}
     <p class="text-foreground">
-      Intent couldn't find <code class="font-mono text-xs">git</code> on your system. Install it from
+      {m.onboarding_creationError_gitNotInstalled_before()}
+      <!-- i18n-ignore (command and domain names) -->
+      <code class="font-mono text-xs">git</code>
+      {m.onboarding_creationError_gitNotInstalled_middle()}
       <button
         type="button"
         class="underline hover:text-foreground cursor-pointer"
         onclick={() => openLink('https://git-scm.com/downloads')}
       >
+        <!-- i18n-ignore (domain name) -->
         git-scm.com
       </button>
-      and try again.
+      {m.onboarding_creationError_gitNotInstalled_after()}
     </p>
   {:else}
     <p class="text-foreground">{diagnosis.rawMessage}</p>
@@ -182,7 +191,7 @@
 
   <div class="flex items-center gap-4 mt-3">
     {#if onRetry}
-      <Button variant="default" size="sm" onclick={onRetry}>Try again</Button>
+      <Button variant="default" size="sm" onclick={onRetry}>{m.onboarding_creationError_tryAgain_label()}</Button>
     {/if}
     {#if diagnosis.kind !== 'unknown' && diagnosis.rawMessage.trim()}
       <button
@@ -192,7 +201,11 @@
         aria-expanded={showDetails}
       >
         <Fa icon={showDetails ? faChevronDown : faChevronRight} size="xs" />
-        <span>{showDetails ? 'Hide' : 'Show'} error details</span>
+        <span
+          >{showDetails
+            ? m.onboarding_creationError_hideErrorDetails_label()
+            : m.onboarding_creationError_showErrorDetails_label()}</span
+        >
       </button>
     {/if}
   </div>

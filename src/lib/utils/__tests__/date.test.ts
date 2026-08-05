@@ -29,9 +29,9 @@ describe('date utilities', () => {
   });
 
   describe('formatDistanceToNow', () => {
-    it('should return "just now" for very recent times', () => {
-      const date = new Date(NOW.getTime() - 30000); // 30 seconds ago
-      expect(formatDistanceToNow(date)).toBe('just now');
+    it('should return "now" for very recent times', () => {
+      const date = new Date(NOW.getTime() - 5000); // 5 seconds ago
+      expect(formatDistanceToNow(date)).toBe('now');
     });
 
     it('should return "1 minute ago"', () => {
@@ -54,9 +54,9 @@ describe('date utilities', () => {
       expect(formatDistanceToNow(date)).toBe('3 hours ago');
     });
 
-    it('should return "1 day ago"', () => {
+    it('should return "yesterday"', () => {
       const date = new Date(NOW.getTime() - 24 * 60 * 60000); // 1 day ago
-      expect(formatDistanceToNow(date)).toBe('1 day ago');
+      expect(formatDistanceToNow(date)).toBe('yesterday');
     });
 
     it('should return "5 days ago"', () => {
@@ -64,19 +64,19 @@ describe('date utilities', () => {
       expect(formatDistanceToNow(date)).toBe('5 days ago');
     });
 
-    it('should return "1 month ago"', () => {
+    it('should return "last month"', () => {
       const date = new Date(NOW.getTime() - 30 * 24 * 60 * 60000); // 30 days ago
-      expect(formatDistanceToNow(date)).toBe('1 month ago');
+      expect(formatDistanceToNow(date)).toBe('last month');
     });
 
-    it('should return "1 year ago"', () => {
+    it('should return "last year"', () => {
       const date = new Date(NOW.getTime() - 365 * 24 * 60 * 60000); // 365 days ago
-      expect(formatDistanceToNow(date)).toBe('1 year ago');
+      expect(formatDistanceToNow(date)).toBe('last year');
     });
 
     it('should accept string dates', () => {
-      const dateStr = new Date(NOW.getTime() - 30000).toISOString();
-      expect(formatDistanceToNow(dateStr)).toBe('just now');
+      const dateStr = new Date(NOW.getTime() - 5000).toISOString();
+      expect(formatDistanceToNow(dateStr)).toBe('now');
     });
   });
 
@@ -99,9 +99,9 @@ describe('date utilities', () => {
       expect(formatRelativeTimeCompact(undefined)).toBe('Never');
     });
 
-    it('should return "Just now" for very recent times', () => {
+    it('should return minutes ago for recent times', () => {
       const date = new Date(NOW.getTime() - 30 * 60000); // 30 minutes ago
-      expect(formatRelativeTimeCompact(date)).toBe('Just now');
+      expect(formatRelativeTimeCompact(date)).toBe('30m ago');
     });
 
     it('should return hours ago', () => {
@@ -114,10 +114,9 @@ describe('date utilities', () => {
       expect(formatRelativeTimeCompact(date)).toBe('3d ago');
     });
 
-    it('should return formatted date for older dates', () => {
+    it('should return weeks ago for older dates', () => {
       const date = new Date(NOW.getTime() - 14 * 24 * 60 * 60000); // 14 days ago
-      const result = formatRelativeTimeCompact(date);
-      expect(result).toMatch(/\d{2}\.\d{2}\.\d{4}/);
+      expect(formatRelativeTimeCompact(date)).toBe('2w ago');
     });
   });
 });

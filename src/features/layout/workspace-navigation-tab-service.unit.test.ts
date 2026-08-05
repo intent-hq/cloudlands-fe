@@ -28,18 +28,24 @@ vi.mock("$store/renderer/store", () => ({
 
 import {
   createWorkspaceNavigationTabMiddleware,
+  openChatChangesTab,
   openCommitChangesetTab,
   openDiffTab,
   openFileTab,
+  openLocalChangesTab,
   openNoteTab,
 } from "./workspace-navigation-tab-service";
 import {
+  openWorkspaceChatChanges,
   openWorkspaceCommitChangeset,
   openWorkspaceDiff,
   openWorkspaceFile,
+  openWorkspaceLocalChanges,
   openWorkspaceNote,
+  type JsonValue,
 } from "$store/renderer/slices/workspace-navigation/workspace-navigation-slice";
 import { ChangeStage, type TrackedChange } from "$features/file-tracking/types";
+import { m } from "$shared/paraglide/messages.js";
 
 type Dispatch = (action: { type: string; payload?: unknown }) => unknown;
 
@@ -426,6 +432,109 @@ describe("workspaceNavigationTabMiddleware (unit)", () => {
     });
   });
 
+  describe("openWorkspaceChatChanges", () => {
+    const CHANGES: JsonValue[] = [
+      { file: "src/a.ts", additions: 2, deletions: 1 },
+      { file: "src/b.ts", additions: 5, deletions: 0 },
+    ];
+
+    it("opens a 'chat-changes' tab shaped like the removed watchOpenChatChangesSaga", () => {
+      const { dispatch } = makeMiddlewareRunner();
+
+      dispatch(
+        openWorkspaceChatChanges("ws-c", CHANGES, "3 files changed", {
+          messageId: "msg-1",
+          isAggregate: true,
+          agentId: "agent-1",
+          turnNumber: 4,
+        }),
+      );
+
+      const payload = findOpenTab()!.payload as {
+        wsId: string;
+        tab: Record<string, unknown>;
+        force: boolean;
+      };
+      expect(payload.wsId).toBe("ws-c");
+      expect(payload.force).toBe(true);
+      expect(payload.tab).toMatchObject({
+        type: "chat-changes",
+        title: "3 files changed",
+        workspaceId: "ws-c",
+        closable: true,
+        data: {
+          changes: CHANGES,
+          title: "3 files changed",
+          messageId: "msg-1",
+          isAggregate: true,
+          agentId: "agent-1",
+          turnNumber: 4,
+        },
+      });
+    });
+
+    it("opens without options, keeping the changes and title on tab.data", () => {
+      const { dispatch } = makeMiddlewareRunner();
+
+      dispatch(openWorkspaceChatChanges("ws-c", CHANGES, "1 file changed"));
+
+      const payload = findOpenTab()!.payload as { tab: { data: Record<string, unknown> } };
+      expect(payload.tab.data.changes).toBe(CHANGES);
+      expect(payload.tab.data.title).toBe("1 file changed");
+      expect(payload.tab.data.messageId).toBeUndefined();
+    });
+
+    it("is a no-op when changes is missing", () => {
+      const { dispatch } = makeMiddlewareRunner();
+
+      dispatch(openWorkspaceChatChanges("ws-c", undefined as unknown as JsonValue[], "title"));
+
+      expect(findOpenTab()).toBeUndefined();
+      expect(findOpenTabAdjacent()).toBeUndefined();
+    });
+
+    it("is a no-op when wsId is missing", () => {
+      const { dispatch } = makeMiddlewareRunner();
+
+      dispatch(openWorkspaceChatChanges("", CHANGES, "title"));
+
+      expect(findOpenTab()).toBeUndefined();
+      expect(findOpenTabAdjacent()).toBeUndefined();
+    });
+  });
+
+  describe("openWorkspaceLocalChanges", () => {
+    it("opens the singleton 'local-changes' tab shaped like the removed watchOpenLocalChangesSaga", () => {
+      const { dispatch } = makeMiddlewareRunner();
+
+      dispatch(openWorkspaceLocalChanges("ws-l"));
+
+      const payload = findOpenTab()!.payload as {
+        wsId: string;
+        tab: Record<string, unknown>;
+        force: boolean;
+      };
+      expect(payload.wsId).toBe("ws-l");
+      expect(payload.force).toBe(true);
+      expect(payload.tab).toMatchObject({
+        type: "local-changes",
+        title: m.layout_presetExecutor_allChanges_title(),
+        workspaceId: "ws-l",
+        closable: true,
+      });
+      expect(payload.tab.data).toBeUndefined();
+    });
+
+    it("is a no-op when wsId is missing", () => {
+      const { dispatch } = makeMiddlewareRunner();
+
+      dispatch(openWorkspaceLocalChanges(""));
+
+      expect(findOpenTab()).toBeUndefined();
+      expect(findOpenTabAdjacent()).toBeUndefined();
+    });
+  });
+
   describe("direct helpers", () => {
     it("openFileTab dispatches openTab with the same shape as the middleware path", () => {
       openFileTab("ws-h", "src/direct.ts", { line: 7 });
@@ -449,6 +558,26 @@ describe("workspaceNavigationTabMiddleware (unit)", () => {
       openDiffTab("ws-h", change);
       const payload = findOpenTab()!.payload as { tab: Record<string, unknown> };
       expect(payload.tab).toMatchObject({ type: "diff", diffPath: "d.ts", title: "d.ts" });
+    });
+
+    it("openChatChangesTab dispatches openTab with the same shape as the middleware path", () => {
+      const changes: JsonValue[] = [{ file: "x.ts" }];
+      openChatChangesTab("ws-h", changes, "2 files changed", { messageId: "m-1" });
+      const payload = findOpenTab()!.payload as { tab: Record<string, unknown> };
+      expect(payload.tab).toMatchObject({
+        type: "chat-changes",
+        title: "2 files changed",
+        data: { changes, title: "2 files changed", messageId: "m-1" },
+      });
+    });
+
+    it("openLocalChangesTab dispatches openTab with the same shape as the middleware path", () => {
+      openLocalChangesTab("ws-h");
+      const payload = findOpenTab()!.payload as { tab: Record<string, unknown> };
+      expect(payload.tab).toMatchObject({
+        type: "local-changes",
+        title: m.layout_presetExecutor_allChanges_title(),
+      });
     });
   });
 });

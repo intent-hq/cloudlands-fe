@@ -215,6 +215,21 @@ pnpm run build
 **Cause**: Electron not bundled correctly
 **Solution**: Check `electron-builder.yml` configuration
 
+#### Problem: Stale or corrupt Vite dep-optimization cache in dev
+
+**Symptoms**: Missing-dependency errors or `504 (Outdated Optimize Dep)` in the renderer after `pnpm run dev`
+**Cause**: `node_modules/.vite` (the Vite dep-optimization cache, reused for fast warm starts) is out of date or corrupt
+**Solution**: Force a one-off re-optimization, then return to normal dev runs:
+
+```bash
+# One-off forced re-optimization (vite dev --force)
+pnpm run dev:renderer:force
+
+# Or simply clear the cache and start dev normally
+rm -rf node_modules/.vite
+pnpm run dev
+```
+
 ## Debugging Tools
 
 ### Browser DevTools

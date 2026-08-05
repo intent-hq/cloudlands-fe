@@ -20,6 +20,8 @@
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -131,7 +133,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     <button
       class="icon-button session-comment"
       onclick={() => onShow?.()}
-      aria-label="Agent session: {agentData.name}"
+      aria-label={m.tiptap_agentPeek_session_ariaLabel({ name: agentData.name })}
     >
       <div class="icon-wrapper">
         <AuggieAvatar
@@ -146,7 +148,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     <button
       class="icon-button session-comment"
       onclick={() => onShow?.()}
-      aria-label="Agent launching..."
+      aria-label={m.tiptap_agentPeek_launching_ariaLabel()}
     >
       <div class="icon-wrapper">
         <Fa icon={faSpinner} class="animate-spin" size="sm" />
@@ -157,7 +159,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     <button
       class="icon-button session-comment error"
       onclick={() => onShow?.()}
-      aria-label="Agent not found"
+      aria-label={m.tiptap_agentPeek_notFound_ariaLabel()}
     >
       <div class="icon-wrapper">
         <Fa icon={faExclamationTriangle} size="sm" />
@@ -197,7 +199,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           {:else}
             <div class="font-medium text-sm truncate">
               {agentData.name}<span class="text-xs text-subtle"
-                >{$agentIsResponding$ ? 'Active' : 'Idle'}</span
+                >{$agentIsResponding$ ? m.tiptap_agentPeek_active_label() : m.tiptap_agentPeek_idle_label()}</span
               >
             </div>
           {/if}
@@ -240,7 +242,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                 size="xs"
                 showZero={false}
               />
-              <span class="text-ui text-subtle">lines</span>
+              <span class="text-ui text-subtle">{m.tiptap_agentPeek_lines_label()}</span>
             </div>
           {/if}
 
@@ -261,7 +263,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           <!-- File changes -->
           {#if agentData.fileChanges && agentData.fileChanges.length > 0}
             <div class="text-xs text-subtle">
-              {agentData.fileChanges.length} file{agentData.fileChanges.length === 1 ? '' : 's'} changed
+              {agentData.fileChanges.length === 1
+                ? m.tiptap_agentPeek_filesChanged_one()
+                : m.tiptap_agentPeek_filesChanged_many({
+                    count: formatInteger(agentData.fileChanges.length),
+                  })}
             </div>
           {/if}
         </div>
@@ -274,8 +280,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           <div class="flex items-center gap-2">
             <Fa icon={faSpinner} class="h-4 w-4 animate-spin text-ghost" />
             <div class="flex-1">
-              <div class="text-sm font-medium">Waiting for Agent to Launch</div>
-              <div class="text-xs text-subtle mt-0.5">Agent will appear here once ready...</div>
+              <div class="text-sm font-medium">{m.tiptap_agentPeek_waitingLaunch_label()}</div>
+              <div class="text-xs text-subtle mt-0.5">{m.tiptap_agentPeek_appearOnceReady_label()}</div>
             </div>
           </div>
         {:else}
@@ -284,11 +290,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             <Fa icon={faExclamationTriangle} class="h-4 w-4 mt-0.5 text-destructive-foreground" />
             <div class="flex-1">
               <div class="text-sm font-medium text-destructive-foreground">
-                {#if displayMode === 'full'}
-                  Assigned{/if} Agent Not Found
+                {displayMode === 'full'
+                  ? m.tiptap_agentPeek_assignedNotFound_label()
+                  : m.tiptap_agentPeek_notFound_label()}
               </div>
               <div class="text-xs text-subtle mt-0.5" class:hidden={displayMode !== 'full'}>
-                The agent working on this area may have been deleted or failed to launch.
+                {m.tiptap_agentPeek_mayBeDeleted_description()}
               </div>
             </div>
           </div>

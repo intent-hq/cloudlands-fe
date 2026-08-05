@@ -6,6 +6,7 @@
  */
 
 import { Logger } from '$shared/logger';
+import { m } from '$shared/paraglide/messages.js';
 import { getMcpAuthHeaderAsync } from './mcp-oauth';
 
 const logger = new Logger('McpConnectionTest');
@@ -95,7 +96,7 @@ export async function testMcpConnection(
       return {
         status: 'auth_required',
         statusCode: response.status,
-        errorMessage: `Authentication required (${response.status})`,
+        errorMessage: m.mcp_connectionTest_authRequired_error({ status: response.status }),
       };
     }
 
@@ -112,7 +113,7 @@ export async function testMcpConnection(
     return {
       status: 'error',
       statusCode: response.status,
-      errorMessage: `Server error (${response.status})`,
+      errorMessage: m.mcp_connectionTest_serverError_error({ status: response.status }),
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -122,7 +123,7 @@ export async function testMcpConnection(
     if (error instanceof Error && error.name === 'AbortError') {
       return {
         status: 'error',
-        errorMessage: 'Connection timeout',
+        errorMessage: m.mcp_connectionTest_timeout_error(),
       };
     }
 

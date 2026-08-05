@@ -29,7 +29,7 @@ import {
   isNpxAvailableForClaudeCode,
   getClaudeCodePath,
 } from '../claude-code-resolver';
-import { ACP_PROVIDERS } from '../../../../shared/config/provider-config';
+
 
 describe('claude-code-resolver', () => {
   beforeEach(() => {
@@ -215,14 +215,6 @@ describe('claude-code-resolver', () => {
   });
 });
 
-describe('Provider config snapshot', () => {
-  it("ACP_PROVIDERS['claude-code'].command equals 'claude-agent-acp'", () => {
-    expect(ACP_PROVIDERS['claude-code'].command).toBe('claude-agent-acp');
-  });
-
-  it('does not reference deprecated claude-code-acp package', () => {
-    const config = ACP_PROVIDERS['claude-code'];
-    expect(config.command).not.toContain('claude-code-acp');
-    expect(config.id).toBe('claude-code');
-  });
-});
+// The provider registry (command names, ids) is compiled into the intentd
+// daemon and served via providers.catalog (PROTOCOL §5.38); its row shape is
+// pinned by the daemon's own tests, not by FE snapshots.

@@ -1,11 +1,11 @@
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { DropdownOption } from '$lib/components/ui/dropdown';
+import { resolvePreferredModel, splitCompoundModelId } from '$shared/utils/compound-model-id';
 import {
-  getDefaultProviderId,
-  getProviderConfig,
-  parseCompoundModelId,
-  resolvePreferredModel,
-} from '$shared/config/provider-config';
+  selectCatalogDefaultProviderId,
+  selectNormalizedProviderId,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { store as appStore } from '$store/renderer/store';
 
 interface ModelPickerOptionInput {
   value: string;
@@ -40,17 +40,15 @@ export function toDropdownOptions(models: ModelPickerOptionInput[]): DropdownOpt
 }
 
 export interface IsUserProviderSettledParams {
-  /** True when the agent's provider differs from the global active provider. */
-  isAgentProviderOverride: boolean;
-  /** Models fetched for the agent's provider, or null while the fetch is pending. */
+  /** Models fetched for a disabled agent provider, or null while the fetch is pending. */
   agentProviderModels: AuggieModel[] | null;
-  /** Error produced by the agent-provider fetch, or null when none. */
+  /** Error produced by the disabled agent-provider fetch, or null when none. */
   agentProviderError: string | null;
-  /** Raw enabled provider ids; normalized internally through `getProviderConfig(id).id`. */
+  /** Raw enabled provider ids; normalized internally through the catalog. */
   enabledProviderIds: string[];
   /** Models per normalized provider id for the "all providers" view. */
   allProviderModels: Record<string, DropdownOption[]>;
-  /** The model's provider id, already normalized through `getProviderConfig(id).id`. */
+  /** The model's provider id, already normalized through the catalog. */
   modelProvider: string;
 }
 
@@ -68,23 +66,18 @@ export interface IsUserProviderSettledParams {
  * identical to "model gone" and would silently replace the user's picked
  * model (e.g. Sonnet 4.6 → GPT 5.4) in a way that survives reload.
  *
- * Settled means one of:
- *   - override mode: the agent's provider fetch has produced a result
- *     (models or an explicit error).
- *   - non-override: the user's provider is either no longer enabled
- *     (genuinely gone) or has successfully loaded ≥1 model.
+ * Settled means the enabled provider has successfully loaded at least one
+ * model, or the disabled agent-provider fetch has produced a result or error.
  *
- * @param params.isAgentProviderOverride - True when the agent's provider differs from the global active provider.
- * @param params.agentProviderModels - Models fetched for the agent's provider, or `null` while the fetch is pending.
- * @param params.agentProviderError - Error from the agent-provider fetch, or `null` when none.
- * @param params.enabledProviderIds - Raw enabled provider ids; normalized internally via `getProviderConfig(id).id`.
+ * @param params.agentProviderModels - Models fetched for a disabled agent provider, or `null` while pending.
+ * @param params.agentProviderError - Error from the disabled agent-provider fetch, or `null` when none.
+ * @param params.enabledProviderIds - Raw enabled provider ids; normalized internally via the catalog.
  * @param params.allProviderModels - Models per normalized provider id for the "all providers" view.
- * @param params.modelProvider - The model's provider id, already normalized through `getProviderConfig(id).id`.
+ * @param params.modelProvider - The model's provider id, already normalized through the catalog.
  * @returns `true` only when the user's provider has definitively settled; `false` while still loading.
  */
 export function isUserProviderSettled(params: IsUserProviderSettledParams): boolean {
   const {
-    isAgentProviderOverride,
     agentProviderModels,
     agentProviderError,
     enabledProviderIds,
@@ -92,23 +85,24 @@ export function isUserProviderSettled(params: IsUserProviderSettledParams): bool
     modelProvider,
   } = params;
 
-  if (isAgentProviderOverride) {
-    return agentProviderModels !== null || agentProviderError !== null;
-  }
-  const normalizedEnabledProviderIds = enabledProviderIds.map((pid) => getProviderConfig(pid).id);
+  const normalizedEnabledProviderIds = enabledProviderIds.map((pid) =>
+    selectNormalizedProviderId.select(appStore.state, pid),
+  );
   const providerEnabled = normalizedEnabledProviderIds.includes(modelProvider);
-  if (!providerEnabled) return true;
+  if (!providerEnabled) return agentProviderModels !== null || agentProviderError !== null;
   return (allProviderModels[modelProvider]?.length ?? 0) > 0;
 }
 
 /**
  * Return true when `providerId` is present in `enabledProviderIds`, comparing
- * both sides after normalization through `getProviderConfig(id).id` so raw
- * aliases (e.g. `acp`) match their canonical provider id.
+ * both sides after catalog normalization so raw aliases (e.g. `acp`) match
+ * their canonical provider id.
  */
 export function isProviderEnabled(enabledProviderIds: string[], providerId: string): boolean {
-  const normalizedId = getProviderConfig(providerId).id;
-  return enabledProviderIds.some((pid) => getProviderConfig(pid).id === normalizedId);
+  const normalizedId = selectNormalizedProviderId.select(appStore.state, providerId);
+  return enabledProviderIds.some(
+    (pid) => selectNormalizedProviderId.select(appStore.state, pid) === normalizedId,
+  );
 }
 
 /**
@@ -118,7 +112,9 @@ export function isProviderEnabled(enabledProviderIds: string[], providerId: stri
  * so `opencode:foo` still only matches the compound form.
  */
 export function normalizeModelIdForMatch(modelId: string): string {
-  const prefix = `${getDefaultProviderId()}:`;
+  const defaultProviderId = selectCatalogDefaultProviderId.select(appStore.state);
+  if (!defaultProviderId) return modelId;
+  const prefix = `${defaultProviderId}:`;
   return modelId.startsWith(prefix) ? modelId.slice(prefix.length) : modelId;
 }
 
@@ -147,8 +143,10 @@ export function findModelFallbackOption(
   let candidates = options.filter((opt) => opt.value !== excludeValue);
 
   if (restrictToProvider) {
+    const defaultProviderId = selectCatalogDefaultProviderId.select(appStore.state);
     candidates = candidates.filter(
-      (opt) => parseCompoundModelId(opt.value).providerId === restrictToProvider,
+      (opt) =>
+        (splitCompoundModelId(opt.value).providerId ?? defaultProviderId) === restrictToProvider,
     );
   }
 

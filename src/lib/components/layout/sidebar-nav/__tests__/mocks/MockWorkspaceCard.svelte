@@ -4,13 +4,19 @@
   interface Props {
     workspace?: Workspace;
     isPinned?: boolean;
+    isRunning?: boolean;
     [key: string]: unknown;
   }
 
-  let { workspace, isPinned = false }: Props = $props();
+  let { workspace, isPinned = false, isRunning = false }: Props = $props();
 </script>
 
-<div data-testid="workspace-card" data-workspace-id={workspace?.id} data-pinned={isPinned}>
+<div
+  data-testid="workspace-card"
+  data-workspace-id={workspace?.id}
+  data-pinned={isPinned}
+  data-running={isRunning}
+>
   {workspace?.title}
 </div>
 

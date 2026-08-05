@@ -4,6 +4,7 @@
     faArrowUpRightFromSquare,
     faBoxArchive,
     faCheck,
+    faKeyboard,
     faThumbtack,
     faTrash,
   } from '@fortawesome/free-solid-svg-icons';
@@ -18,11 +19,13 @@
   import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
   import type { WorkspacePhaseInfo, WorkspacePhaseStats, WorkspacePhase } from './workspace-phase';
   import TaskProgressBar from './TaskProgressBar.svelte';
-  import CheckoutModePill from './CheckoutModePill.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
-  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import type {
+    SidebarMenuEntry,
+    SidebarMenuItem,
+  } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     incrementContextMenuOpen,
     decrementContextMenuOpen,
@@ -46,11 +49,24 @@
     requestArchiveWorkspace,
     requestDeleteWorkspace,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import {
+    markKeySlotUnassigned,
+    pinWorkspaceToKey,
+  } from '$store/renderer/slices/hardware-console/hardware-console-slice';
+  import {
+    selectWorkspacePinnedKeySlot,
+    selectWorkspaceResolvedKeySlot,
+  } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
+  import { AGENT_KEY_COUNT } from '$features/hardware-console/assignment/key-assignment';
+  import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
+  import MicroKeySlotBadge from '$lib/components/workspace/MicroKeySlotBadge.svelte';
   import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
   import { cn } from '$lib/utils';
   import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
   import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface ActionDef {
     label: string;
@@ -137,6 +153,11 @@
     workspaceIdStore.set(workspace?.id ?? '');
   });
   const workspaceTaskProgress$ = selectWorkspaceTaskProgress(workspaceIdStore);
+
+  // Micro-key slot badge/menus: only while a micro is connected (manager
+  // status connected — not mere presence).
+  const microConnected$ = microConnectedReadable();
+  const workspaceKeySlot$ = selectWorkspaceResolvedKeySlot(workspaceIdStore);
 
   // Load canonical tasks for progress display (no-op once initialized).
   $effect(() => {
@@ -275,7 +296,7 @@
     if (onOpenInNewWindow) {
       items.push({
         id: 'open-new-window',
-        label: 'Open in New Window',
+        label: m.workspace_card_openNewWindow_label(),
         icon: faArrowUpRightFromSquare,
         onClick: () => {
           onOpenInNewWindow?.();
@@ -284,9 +305,43 @@
       });
     }
 
+    if ($microConnected$) {
+      const pinnedSlot = selectWorkspacePinnedKeySlot.select(appStore.state, workspace.id);
+      const resolvedSlot = selectWorkspaceResolvedKeySlot.select(appStore.state, workspace.id);
+      const assignSubmenu: SidebarMenuItem[] = [];
+      for (let slot = 0; slot < AGENT_KEY_COUNT; slot += 1) {
+        assignSubmenu.push({
+          id: `assign-micro-key-${slot + 1}`,
+          label: m.workspace_card_assignMicroKeyNumber_label({ number: formatInteger(slot + 1) }),
+          checked: pinnedSlot === slot,
+          onClick: () => {
+            appStore.dispatch(pinWorkspaceToKey(slot, workspace.id));
+            closeContextMenu();
+          },
+        });
+      }
+      if (resolvedSlot !== null) {
+        assignSubmenu.push({
+          id: 'unassign-micro-key',
+          label: m.workspace_card_unassignMicroKey_label(),
+          onClick: () => {
+            appStore.dispatch(markKeySlotUnassigned(resolvedSlot));
+            closeContextMenu();
+          },
+        });
+      }
+      items.push({
+        id: 'assign-micro-key',
+        label: m.workspace_card_assignMicroKey_label(),
+        icon: faKeyboard,
+        onClick: () => {},
+        submenu: assignSubmenu,
+      });
+    }
+
     items.push({
       id: 'archive',
-      label: 'Archive',
+      label: m.workspace_card_archive_label(),
       icon: faBoxArchive,
       onClick: () => {
         appStore.dispatch(requestArchiveWorkspace(workspace.id));
@@ -296,7 +351,7 @@
 
     items.push({
       id: 'delete',
-      label: 'Delete Space…',
+      label: m.workspace_card_deleteSpace_label(),
       icon: faTrash,
       destructive: true,
       onClick: () => {
@@ -324,8 +379,12 @@
   );
   let statusPrLabel = $derived.by(() => {
     if (!stats) return '';
-    if (stats.pr.hasMerged) return `PR #${stats.pr.number ?? ''} merged`;
-    if (stats.pr.hasOpen) return `PR ${stats.pr.number ? `#${stats.pr.number}` : ''} open`;
+    if (stats.pr.hasMerged)
+      return m.workspace_card_prMerged_label({ number: stats.pr.number ?? '' });
+    if (stats.pr.hasOpen)
+      return m.workspace_card_prOpen_label({
+        number: stats.pr.number ? `#${stats.pr.number}` : '',
+      });
     return '';
   });
 
@@ -333,36 +392,36 @@
     if (phase?.phase === 'planning') {
       if (isAgentRunning) {
         return {
-          primary: { label: 'Show Coordinator', action: 'show-coordinator' },
-          secondary: { label: 'Pause', action: 'pause' },
+          primary: { label: m.workspace_card_showCoordinator_label(), action: 'show-coordinator' },
+          secondary: { label: m.workspace_card_pause_label(), action: 'pause' },
         };
       }
       if (hasSpec || (stats?.tasks.total ?? 0) > 0) {
         return {
-          primary: { label: 'Approve & Start', action: 'approve' },
-          secondary: { label: 'View Spec', action: 'view-spec' },
+          primary: { label: m.workspace_card_approveStart_label(), action: 'approve' },
+          secondary: { label: m.workspace_card_viewSpec_label(), action: 'view-spec' },
         };
       }
       return {
-        primary: { label: 'Show Coordinator', action: 'show-coordinator' },
-        secondary: { label: 'View Spec', action: 'view-spec' },
+        primary: { label: m.workspace_card_showCoordinator_label(), action: 'show-coordinator' },
+        secondary: { label: m.workspace_card_viewSpec_label(), action: 'view-spec' },
       };
     }
     if (phase?.phase === 'building') {
       return {
-        primary: { label: 'Show Coordinator', action: 'show-coordinator' },
-        secondary: { label: 'Pause', action: 'pause' },
+        primary: { label: m.workspace_card_showCoordinator_label(), action: 'show-coordinator' },
+        secondary: { label: m.workspace_card_pause_label(), action: 'pause' },
       };
     }
     if (phase?.phase === 'reviewing') {
       return {
-        primary: { label: 'Create PR', action: 'create-pr' },
-        secondary: { label: 'Show changes', action: 'show-changes' },
+        primary: { label: m.workspace_card_createPr_label(), action: 'create-pr' },
+        secondary: { label: m.workspace_card_showChanges_label(), action: 'show-changes' },
       };
     }
     return {
-      primary: { label: 'Archive', action: 'archive' },
-      secondary: { label: 'Show changes', action: 'show-changes' },
+      primary: { label: m.workspace_card_archive_label(), action: 'archive' },
+      secondary: { label: m.workspace_card_showChanges_label(), action: 'show-changes' },
     };
   });
 
@@ -399,7 +458,7 @@
     onmouseleave={handleMouseLeave}
     style:anchor-name="--workspace-list-{workspace.id}"
   >
-    <div class="flex items-center shrink-0 mt-[3px]">
+    <div class="flex items-center gap-1.5 shrink-0 mt-[3px]">
       <div class="shrink-0 relative">
         <WorkspacePhaseIndicator
           phase={workspacePhaseInfo?.phase ?? 'planning'}
@@ -426,7 +485,7 @@
               ? 'text-foreground'
               : 'text-subtle'}"
         >
-          {workspace.title || 'Untitled'}
+          {workspace.title || m.workspace_links_untitled_label()}
         </span>
 
         {#if isRunning && streamingAgentIds.length > 0 && workspace?.activity !== 'idle'}
@@ -476,7 +535,7 @@
             <span
               class="wc-secondary text-ui font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}"
             >
-              PR{prNumber ? ` #${prNumber}` : ''}
+              {m.workspace_card_prBadge_label({ number: prNumber ? ` #${prNumber}` : '' })}
             </span>
           </Tooltip>
         {/if}
@@ -500,10 +559,16 @@
         </span>
       </div>
 
-      {#if !hideRepoAvatar && workspace.repositoryOwner && workspace.repositoryName}
-        <div class="wc-repo flex min-w-0 items-center gap-1 text-ui text-subtle">
-          <span class="min-w-0 truncate">{workspace.repositoryOwner}/{workspace.repositoryName}</span>
-          <CheckoutModePill checkoutMode={workspace.checkoutMode} />
+      {#if ($microConnected$ && $workspaceKeySlot$ !== null) || (!hideRepoAvatar && workspace.repositoryOwner && workspace.repositoryName)}
+        <div class="wc-repo flex items-center gap-1.5 min-w-0">
+          {#if $microConnected$ && $workspaceKeySlot$ !== null}
+            <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
+          {/if}
+          {#if !hideRepoAvatar && workspace.repositoryOwner && workspace.repositoryName}
+            <span class="min-w-0 truncate text-ui text-subtle">
+              {workspace.repositoryOwner}/{workspace.repositoryName}
+            </span>
+          {/if}
         </div>
       {/if}
     </div>
@@ -522,8 +587,8 @@
           <button
             class="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-ghost transition-all hover:bg-muted/50 hover:text-foreground"
             onclick={onMarkAsRead}
-            aria-label="Mark as read"
-            title="Mark as read"
+            aria-label={m.workspace_card_markAsRead_label()}
+            title={m.workspace_card_markAsRead_label()}
           >
             <Fa icon={faCheck} size="xs" />
           </button>
@@ -533,8 +598,8 @@
             class="flex h-5 w-5 -my-1 cursor-pointer items-center justify-center rounded transition-all hover:bg-muted/50 hover:text-foreground
               {isPinned ? 'text-primary/60' : 'text-ghost'}"
             onclick={onTogglePin}
-            aria-label={isPinned ? 'Unpin' : 'Pin'}
-            title={isPinned ? 'Unpin from Active list' : 'Pin to Active list'}
+            aria-label={isPinned ? m.workspace_card_unpin_ariaLabel() : m.workspace_card_pin_ariaLabel()}
+            title={isPinned ? m.workspace_card_unpin_tooltip() : m.workspace_card_pin_tooltip()}
           >
             <Fa icon={faThumbtack} size="xs" />
           </button>
@@ -669,7 +734,9 @@
         {/if}
         {#if stats.files.changed > 0}
           <div class="flex items-center justify-between text-ui">
-            <span class="text-subtle">{stats.files.changed} files</span>
+            <span class="text-subtle"
+              >{m.workspace_card_files_label({ count: formatInteger(stats.files.changed) })}</span
+            >
             <span class="tabular-nums">
               <span class="text-green-500/70">+{stats.files.additions}</span>
               <span class="text-red-500/70 ml-1">-{stats.files.deletions}</span>
@@ -678,7 +745,9 @@
         {/if}
         {#if stats.commits.total > 0}
           <div class="flex items-center justify-between text-ui">
-            <span class="text-subtle">{stats.commits.total} commits</span>
+            <span class="text-subtle"
+              >{m.workspace_card_commits_label({ count: formatInteger(stats.commits.total) })}</span
+            >
           </div>
         {/if}
         {#if statusPrLabel}

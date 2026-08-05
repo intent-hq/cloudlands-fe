@@ -26,6 +26,7 @@ export class DeepLinkHandler {
    */
   parseDeepLink(url: string): DeepLinkAction | null {
     try {
+      // i18n-ignore (developer log message)
       mainLogger.info('[DeepLinkHandler] Parsing URL:', { url });
 
       // Remove the protocol prefix
@@ -41,6 +42,7 @@ export class DeepLinkHandler {
 
       // Validate action
       if (!['open', 'create', 'clone', 'settings'].includes(action)) {
+        // i18n-ignore (developer log message)
         mainLogger.warn('[DeepLinkHandler] Invalid action:', { action });
         return null;
       }
@@ -51,11 +53,13 @@ export class DeepLinkHandler {
         params[key] = value;
       });
 
+      // i18n-ignore (developer log message)
       mainLogger.info(`[DeepLinkHandler] Parsed action: ${action}`, { params });
 
       // Validate action type
       const validActions = ['open', 'create', 'clone', 'settings'] as const;
       if (!validActions.includes(action as any)) {
+        // i18n-ignore (developer log message)
         mainLogger.warn(`[DeepLinkHandler] Invalid action type: ${action}`);
         return null;
       }
@@ -65,6 +69,7 @@ export class DeepLinkHandler {
         params,
       };
     } catch (error) {
+      // i18n-ignore (developer log message)
       mainLogger.error('[DeepLinkHandler] Failed to parse URL:', error as Error);
       return null;
     }
@@ -77,12 +82,14 @@ export class DeepLinkHandler {
     const action = this.parseDeepLink(url);
 
     if (!action) {
+      // i18n-ignore (developer log message)
       mainLogger.warn('[DeepLinkHandler] Could not parse deep link:', { url });
       return;
     }
 
     // If the app isn't ready yet, store the URL for later
     if (!mainWindow) {
+      // i18n-ignore (developer log message)
       mainLogger.info('[DeepLinkHandler] App not ready, storing URL for later');
       this.pendingUrl = url;
       return;
@@ -103,6 +110,7 @@ export class DeepLinkHandler {
    */
   async processPendingUrl(mainWindow: BrowserWindow): Promise<void> {
     if (this.pendingUrl) {
+      // i18n-ignore (developer log message)
       mainLogger.info('[DeepLinkHandler] Processing pending URL:', {
         url: this.pendingUrl,
       });
@@ -119,14 +127,15 @@ export class DeepLinkHandler {
     try {
       const result = await protocolAdapter.listWorkspaces();
       if (!result.ok) {
+        // i18n-ignore (developer log message)
         mainLogger.error('Failed to list workspaces', undefined, { error: result.error });
         return false;
       }
       return result.data.some((w: Workspace) => w.id === workspaceId);
     } catch (error) {
+      // i18n-ignore (developer log message)
       mainLogger.error('Failed to validate workspace', error as Error);
       return false;
     }
   }
-
 }

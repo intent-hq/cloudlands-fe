@@ -48,6 +48,7 @@
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { faNote } from '$lib/icons/faNote';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspaceId: string;
@@ -422,7 +423,7 @@
     <!-- Empty state -->
     <div class="flex-1 flex flex-col items-center justify-center text-subtle py-8">
       <Fa icon={faFile} class="text-2xl mb-2 opacity-40" />
-      <p class="text-ui">No activity yet</p>
+      <p class="text-ui">{m.workspace_activityPanel_noActivity_label()}</p>
     </div>
   {:else}
     <!-- Timeline -->

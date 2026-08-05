@@ -25,6 +25,7 @@
   import { PullRequestStatus, type PullRequestInfo } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     onClose?: () => void;
@@ -71,7 +72,7 @@
       formData.description.loading = false;
     } catch (err: any) {
       logger.error('Failed to generate PR content:', err);
-      error = err.message || 'Failed to generate PR content';
+      error = err.message || m.workspace_prCreator_generateFailed_error();
       formData.title.loading = false;
       formData.description.loading = false;
       autoCreatePending = false;
@@ -94,7 +95,7 @@
     const workspace = selectActiveWorkspace.select(appStore.state);
     if (!workspace) return;
     if (!formData.title.value) {
-      error = 'Please provide a title for the pull request';
+      error = m.workspace_prCreator_titleRequired_error();
       return;
     }
 
@@ -109,7 +110,7 @@
       });
 
       if (!result.success) {
-        error = result.error || 'Failed to create pull request';
+        error = result.error || m.workspace_prCreator_createFailed_error();
         return;
       }
 
@@ -145,7 +146,7 @@
       }, 2000);
     } catch (err: any) {
       logger.error('Failed to create PR:', err);
-      error = err.message || 'Failed to create pull request';
+      error = err.message || m.workspace_prCreator_createFailed_error();
     } finally {
       creatingPR = false;
     }
@@ -157,7 +158,7 @@
   <div class="flex items-center justify-between px-6 py-4 border-b border-border">
     <div class="flex items-center gap-3">
       <Fa icon={faCodePullRequest} size="lg" />
-      <h2 class="text-lg font-semibold">Create Pull Request</h2>
+      <h2 class="text-lg font-semibold">{m.workspace_prCreator_title()}</h2>
       {#if $activeWorkspace?.branch}
         <Badge variant="secondary" class="text-xs">
           <Fa icon={faCodeBranch} size="xs" class="mr-1" />
@@ -185,19 +186,19 @@
       {#if success}
         <div class="flex items-center gap-2 p-4 bg-green-500/10 text-green-600 rounded-lg">
           <Fa icon={faCircleCheck} size="lg" />
-          <span>Pull request created successfully!</span>
+          <span>{m.workspace_prCreator_createdSuccess_label()}</span>
         </div>
       {:else}
         <!-- Title Field -->
         <div class="space-y-2">
-          <label for="pr-title" class="text-sm font-medium">Title</label>
+          <label for="pr-title" class="text-sm font-medium">{m.workspace_prCreator_titleField_label()}</label>
           {#if formData.title.loading}
             <Skeleton class="h-10 w-full" />
           {:else}
             <Input
               id="pr-title"
               bind:value={formData.title.value}
-              placeholder="Enter pull request title..."
+              placeholder={m.workspace_prCreator_titleField_placeholder()}
               disabled={creatingPR}
             />
           {/if}
@@ -205,7 +206,7 @@
 
         <!-- Description Field -->
         <div class="space-y-2">
-          <label for="pr-description" class="text-sm font-medium">Description</label>
+          <label for="pr-description" class="text-sm font-medium">{m.workspace_prCreator_descriptionField_label()}</label>
           {#if formData.description.loading}
             <div class="space-y-2">
               <Skeleton class="h-4 w-full" />
@@ -217,7 +218,7 @@
             <Textarea
               id="pr-description"
               bind:value={formData.description.value}
-              placeholder="Enter pull request description..."
+              placeholder={m.workspace_prCreator_descriptionField_placeholder()}
               class="min-h-[200px] font-mono text-sm"
               disabled={creatingPR}
             />
@@ -232,21 +233,21 @@
     <div class="flex items-center justify-between px-6 py-4 border-t border-border">
       <div class="text-xs text-subtle">
         {#if generatingContent && autoCreatePending}
-          Generating and creating PR...
+          {m.workspace_prCreator_generatingAndCreating_label()}
         {:else if generatingContent}
-          Generating PR content from workspace changes...
+          {m.workspace_prCreator_generatingContent_label()}
         {:else if creatingPR}
-          Creating pull request...
+          {m.workspace_prCreator_creatingPr_label()}
         {:else if formData.title.value}
-          Review the generated content and make any necessary edits
+          {m.workspace_prCreator_reviewGenerated_label()}
         {:else}
-          Fill in the PR details or use auto-fill
+          {m.workspace_prCreator_fillDetails_label()}
         {/if}
       </div>
       <div class="flex gap-2">
         {#if onClose}
           <Button variant="outline" onclick={onClose} disabled={creatingPR || generatingContent}
-            >Cancel</Button
+            >{m.workspace_prCreator_cancel_label()}</Button
           >
         {/if}
         <Button
@@ -257,10 +258,10 @@
         >
           {#if generatingContent && !autoCreatePending}
             <Fa icon={faSpinner} size="sm" class="animate-spin" />
-            Generating...
+            {m.workspace_prCreator_generating_label()}
           {:else}
             <Fa icon={faMagic} size="sm" />
-            Auto-fill
+            {m.workspace_prCreator_autoFill_label()}
           {/if}
         </Button>
         <Button
@@ -271,10 +272,12 @@
         >
           {#if autoCreatePending}
             <Fa icon={faSpinner} size="sm" class="animate-spin" />
-            {generatingContent ? 'Generating...' : 'Creating...'}
+            {generatingContent
+              ? m.workspace_prCreator_generating_label()
+              : m.workspace_prCreator_creating_label()}
           {:else}
             <Fa icon={faMagic} size="sm" />
-            Auto-fill & Create
+            {m.workspace_prCreator_autoFillCreate_label()}
           {/if}
         </Button>
         <Button
@@ -283,10 +286,10 @@
         >
           {#if creatingPR && !autoCreatePending}
             <Fa icon={faSpinner} size="sm" class="animate-spin" />
-            Creating...
+            {m.workspace_prCreator_creating_label()}
           {:else}
             <Fa icon={faPaperPlane} size="sm" />
-            Create
+            {m.workspace_prCreator_create_label()}
           {/if}
         </Button>
       </div>

@@ -8,6 +8,7 @@
    * Uses a scrollable container with auto-scroll-into-view for keyboard navigation.
    */
   import { goto } from '$app/navigation';
+  import { m } from '$shared/paraglide/messages.js';
   import {
   fade,
   fly,
@@ -25,10 +26,6 @@
   selectAgentIsWaiting,
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import {
-  selectUnreadAgentIds,
-  selectUnreadAgentIdsForWorkspace,
-} from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
 
@@ -62,7 +59,6 @@
   const switcherWorkspaceIds = selectSwitcherWorkspaceIds();
   const workspaces = selectWorkspaceItems();
   const currentWorkspaceId = selectActiveWorkspaceId();
-  const unreadAgentIds$ = selectUnreadAgentIds();
   const allPermissionRequests = selectPermissionRequests();
   const workspaceTasksByWorkspaceId$ = selectWorkspaceTasksByWorkspaceId();
   const isOpen = $derived(!$switcherState.selectionHandled);
@@ -153,12 +149,12 @@
   function getWorkspaceAgentInfo(ws: Workspace): AgentDisplayInfo[] {
     // Reference version counters for reactivity
     void activeStreamsVersion;
-    void $unreadAgentIds$;
     const reduxState = appStore.state;
     const memberAgentIds = ws.agentSummary?.agentIds ?? [];
     if (memberAgentIds.length === 0) return [];
 
-    const unreadAgentIdsForWs = new Set(selectUnreadAgentIdsForWorkspace.select(reduxState, ws.id));
+    // Attention is workspace-level (BE-owned); treat all member agents as unread.
+    const unreadAgentIdsForWs = new Set(ws.attention === 'unread' ? memberAgentIds : []);
 
     return memberAgentIds
       .map((agentId) => {
@@ -219,7 +215,7 @@
   <div
     class="fixed top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2 w-[75vw] max-w-160 z-50"
     transition:fly={{ y: 6, duration: 200 }}
-    aria-label="Workspace switcher"
+    aria-label={m.workspace_switcher_ariaLabel()}
     role="dialog"
   >
     <div class="bg-background overflow-hidden border border-border shadow-lg">
@@ -307,7 +303,7 @@
                           ? 'bg-muted-foreground/10 text-muted-foreground'
                           : 'bg-red-500/10 text-red-500'}
                   <span class="text-ui font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
-                    PR{wsPrNumber ? ` #${wsPrNumber}` : ''}
+                    {m.workspace_switcher_pr_label()}{wsPrNumber ? ` #${wsPrNumber}` : ''}
                   </span>
                 {/if}
 

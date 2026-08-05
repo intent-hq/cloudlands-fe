@@ -8,6 +8,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
   import type { AppError } from '$lib/utils/error-handler.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     error: AppError;
@@ -50,25 +51,11 @@
     }
   }
 
-  function getBorderColor(type: string) {
-    switch (type) {
-      case 'error':
-        return 'border-destructive/50';
-      case 'warning':
-        return 'border-amber-500/50';
-      case 'info':
-        return 'border-blue-500/50';
-      default:
-        return 'border-destructive/50';
-    }
-  }
 </script>
 
-<div
-  class="flex items-start gap-3 p-4 bg-card border {getBorderColor(
-    error.type,
-  )} shadow-lg min-w-[360px] max-w-[500px]"
->
+<!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
+     the severity border tint is passed as a wrapper class by error-toast.ts. -->
+<div class="flex items-start gap-3 max-w-[500px]">
   <!-- Icon -->
   <div class="flex-shrink-0 mt-0.5 {getIconColor(error.type)}">
     <Fa icon={getIcon(error.type)} class="w-5 h-5" />
@@ -80,10 +67,10 @@
 
     <!-- Action buttons -->
     <div class="flex items-center gap-2 mt-3">
-      <Button variant="outline" size="sm" onclick={onCopy}>Copy</Button>
-      <Button variant="outline" size="sm" onclick={onDebug}>Debug with AI</Button>
+      <Button variant="outline" size="sm" onclick={onCopy}>{m.ui_errorToast_copy_label()}</Button>
+      <Button variant="outline" size="sm" onclick={onDebug}>{m.ui_errorToast_debug_label()}</Button>
       {#if error.recoverable && onRetry}
-        <Button variant="outline" size="sm" onclick={onRetry}>Retry</Button>
+        <Button variant="outline" size="sm" onclick={onRetry}>{m.ui_errorToast_retry_label()}</Button>
       {/if}
     </div>
   </div>
@@ -93,7 +80,7 @@
     type="button"
     class="flex-shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
     onclick={handleDismiss}
-    aria-label="Close"
+    aria-label={m.ui_errorToast_close_ariaLabel()}
   >
     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"

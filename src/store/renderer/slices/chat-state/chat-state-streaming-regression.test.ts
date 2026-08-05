@@ -21,9 +21,8 @@ import {
   chatSendFailed,
   chatInterrupted,
   chatStopCompleted,
-  chatStuckStateCleared,
-  streamCompleted,
-  streamTimedOut,
+  streamEnded,
+  streamFailed,
   chatStreamingReconciled,
 } from './chat-state-slice';
 import type { AgentSession } from '$shared/types';
@@ -58,11 +57,8 @@ function midStreamState() {
 // ============================================================================
 
 describe('OR-latch regression: isStreaming/isProcessing parity (agent-session)', () => {
-  it('streamCompleted clears both flags atomically', () => {
-    const s = agentSessionReducer(
-      midStreamState(),
-      streamCompleted(AGENT, { lastAttemptedMessage: null, modelUnavailable: null }),
-    );
+  it('streamEnded clears both flags atomically', () => {
+    const s = agentSessionReducer(midStreamState(), streamEnded(AGENT));
     expect(getSession(s, AGENT).isStreaming).toBe(false);
     expect(getSession(s, AGENT).isProcessing).toBe(false);
   });
@@ -84,14 +80,8 @@ describe('OR-latch regression: isStreaming/isProcessing parity (agent-session)',
     expect(getSession(s, AGENT).isProcessing).toBe(false);
   });
 
-  it('chatStuckStateCleared clears both flags atomically', () => {
-    const s = agentSessionReducer(midStreamState(), chatStuckStateCleared(AGENT));
-    expect(getSession(s, AGENT).isStreaming).toBe(false);
-    expect(getSession(s, AGENT).isProcessing).toBe(false);
-  });
-
-  it('streamTimedOut clears both flags atomically', () => {
-    const s = agentSessionReducer(midStreamState(), streamTimedOut(AGENT));
+  it('streamFailed clears both flags atomically', () => {
+    const s = agentSessionReducer(midStreamState(), streamFailed(AGENT));
     expect(getSession(s, AGENT).isStreaming).toBe(false);
     expect(getSession(s, AGENT).isProcessing).toBe(false);
   });
@@ -104,11 +94,10 @@ describe('OR-latch regression: isStreaming/isProcessing parity (agent-session)',
 
   it('no terminal action leaves flags diverged', () => {
     const terminals = [
-      streamCompleted(AGENT, { lastAttemptedMessage: null, modelUnavailable: null }),
+      streamEnded(AGENT),
       chatSendFailed(AGENT, 'fail'),
       chatStopCompleted(AGENT),
-      chatStuckStateCleared(AGENT),
-      streamTimedOut(AGENT),
+      streamFailed(AGENT),
       chatInterrupted(AGENT),
     ];
     for (const action of terminals) {
@@ -126,7 +115,7 @@ describe('OR-latch regression: isStreaming/isProcessing parity (agent-session)',
 describe('RAF interleaving regression (agent-session)', () => {
   it('chatStreamingReconciled re-engages flags (by design)', () => {
     let s = midStreamState();
-    s = agentSessionReducer(s, streamCompleted(AGENT, { lastAttemptedMessage: null, modelUnavailable: null }));
+    s = agentSessionReducer(s, streamEnded(AGENT));
     s = agentSessionReducer(s, chatStreamingReconciled(AGENT));
     expect(getSession(s, AGENT).isStreaming).toBe(true);
     expect(getSession(s, AGENT).isProcessing).toBe(true);
@@ -146,7 +135,7 @@ describe('RAF interleaving regression (agent-session)', () => {
     s = agentSessionReducer(s, chatSendStarted(A));
     s = agentSessionReducer(s, chatSendStarted(B));
 
-    s = agentSessionReducer(s, streamCompleted(A, { lastAttemptedMessage: null, modelUnavailable: null }));
+    s = agentSessionReducer(s, streamEnded(A));
     expect(getSession(s, A).isStreaming).toBe(false);
     expect(getSession(s, A).isProcessing).toBe(false);
     expect(getSession(s, B).isStreaming).toBe(true);

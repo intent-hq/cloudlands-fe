@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildOneShotProcessingKey,
   buildSweepCatchUpSeenKey,
   buildWorkspaceScopedGroupKey,
   buildWorkspaceScopedSubscriptionKey,
@@ -18,7 +17,6 @@ describe("subscription dedupe keys", () => {
       workspaceId: "ws-1",
       subscriptionId: "sub-1",
     });
-    expect(buildOneShotProcessingKey("ws-1", "sub-1")).toBe(key);
   });
 
   it("parses sweep catch-up keys without accepting them as subscription keys", () => {

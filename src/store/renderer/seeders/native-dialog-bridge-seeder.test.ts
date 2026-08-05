@@ -57,6 +57,18 @@ describe('native-dialog-bridge-seeder', () => {
     expect(invokeSpy).toHaveBeenCalledExactlyOnceWith('dialog:message', PAYLOAD);
   });
 
+  it('forwards dialog:open verbatim to the real preload bridge', async () => {
+    const options = { title: 'Choose a folder', defaultPath: '/tmp' };
+    const invokeSpy = vi.fn(async () => ['/tmp/project']);
+    (window as any).electronAPI = { versions: { electron: '35.0.0' }, invoke: invokeSpy };
+    registerNativeDialogBridge();
+
+    const result = await mockInvoke<string[]>('dialog:open', options);
+
+    expect(result).toEqual(['/tmp/project']);
+    expect(invokeSpy).toHaveBeenCalledExactlyOnceWith('dialog:open', options);
+  });
+
   it('rejects on the web platform (browser mock sentinel) instead of recursing into the mock', async () => {
     const invokeSpy = vi.fn(async () => 0);
     (window as any).electronAPI = { versions: { electron: '0.0.0-browser' }, invoke: invokeSpy };

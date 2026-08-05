@@ -13,6 +13,7 @@ import {
   waitFor,
 } from '@testing-library/svelte';
 import Dropdown from './Dropdown.svelte';
+import { warmImport } from '../../../../test/warm-import';
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../__tests__/mocks/Fa.svelte')).default;
@@ -43,6 +44,10 @@ function cleanupDropdownEnv() {
   vi.unstubAllGlobals();
   document.body.innerHTML = '';
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../__tests__/mocks/Fa.svelte'));
 
 describe('Dropdown duplicate option handling', () => {
   beforeEach(setupDropdownEnv);

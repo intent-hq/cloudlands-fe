@@ -37,7 +37,10 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } = await import(
     '$store/renderer/utils/test-helpers/store-mock'
   );
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
+  return createAppStoreMockModule({
+    state: () => ({ hardwareConsole: { pttRecording: false, voiceTranscribing: false } }),
+    dispatch: mocks.dispatch,
+  });
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
@@ -91,6 +94,7 @@ vi.mock('$lib/client', () => ({
 
 vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
   enhancePrompt: vi.fn(async (p: string) => ({ enhanced: p })),
+  isEnhancePromptAvailable: vi.fn(() => true),
 }));
 
 // Keep the real parseGitHubUrl (the shared probe helper depends on it);
@@ -166,6 +170,7 @@ vi.mock('svelte-fa', async () => ({
 
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
 import { REPO_CONFIG_SCRIPT_NAME } from '$features/setup-scripts';
+import { warmImport } from '../../../../test/warm-import';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -205,6 +210,12 @@ function selectGitHubRepo(overrides: Record<string, unknown> = {}) {
     },
   });
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/MockRichTextarea.svelte'));
+warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
+warmImport(() => import('./mocks/MockRepoAndBranchPicker.svelte'));
 
 describe('CompactWorkspaceInitializer repo-config setup script detection', () => {
   beforeEach(() => {

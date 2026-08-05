@@ -8,6 +8,7 @@
   import Fa from 'svelte-fa';
   import { faFileAlt } from '@fortawesome/free-solid-svg-icons';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     notes: Note[];
@@ -192,7 +193,7 @@
         type="button"
         class="shrink-0 p-0.5 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
         onclick={() => onSpecClick?.()}
-        aria-label="Open spec"
+        aria-label={m.workspace_flameGraph_openSpec_ariaLabel()}
       >
         <Fa icon={faFileAlt} size="xs" />
       </button>

@@ -3,13 +3,13 @@
 
   import { page } from '$app/state';
   import {
-  selectIsReadyToInstall,
-  selectAutoUpdateStatus,
-} from '$store/renderer/slices/auto-update/auto-update-selectors';
+    selectIsReadyToInstall,
+    selectAutoUpdateStatus,
+  } from '$store/renderer/slices/auto-update/auto-update-selectors';
   import {
-  installUpdate,
-  simulateSetState,
-} from '$store/renderer/slices/auto-update/auto-update-slice';
+    installUpdate,
+    simulateSetState,
+  } from '$store/renderer/slices/auto-update/auto-update-slice';
   import { autoUpdateClient } from '$features/auto-update/auto-update.client';
   import ProviderSelector from '$lib/components/settings/ProviderSelector.svelte';
   import AIBehaviorEditor from '$lib/components/settings/AIBehaviorEditor.svelte';
@@ -17,17 +17,25 @@
     type AIBehaviorView,
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
+  import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
+  import LegacyImportSettings from '$lib/components/settings/LegacyImportSettings.svelte';
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
+  import LanguageSettings from '$lib/components/settings/LanguageSettings.svelte';
   import McpServersSettings from '$lib/components/settings/McpServersSettings.svelte';
   import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
+  import HardwareConsoleSettings from '$lib/components/settings/HardwareConsoleSettings.svelte';
   import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
+  import WorkspaceApiSettings from '$lib/components/settings/WorkspaceApiSettings.svelte';
   import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
+  import AgentFeaturesSettings from '$lib/components/settings/AgentFeaturesSettings.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectIsProviderActive } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
@@ -36,31 +44,36 @@
   const workspaces = selectWorkspaceItems();
 
   import {
-  resetNotificationSettings,
-  setAgentFontStyle,
-  setBetaUpdatesEnabled,
-  setCodeFontFamily,
-  setNoteFontStyle,
-  type AgentFontStyle,
-} from '$store/renderer/slices/user-preferences/user-preferences-slice';
+    resetNotificationSettings,
+    setAgentFontStyle,
+    setBetaUpdatesEnabled,
+    setCodeFontFamily,
+    setNoteFontStyle,
+    type AgentFontStyle,
+  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
-  selectAgentFontStyle,
-  selectBetaUpdatesEnabled,
-  selectCodeFontFamily,
-  selectCodeFontFamilyCSS,
-  selectCodeFontFamilyLabel,
-  selectCodeFontOptions,
-  selectIsNoteMonospace,
-  selectNoteFontStyle,
-} from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+    selectAgentFontStyle,
+    selectBetaUpdatesEnabled,
+    selectCodeFontFamily,
+    selectCodeFontFamilyCSS,
+    selectCodeFontFamilyLabel,
+    selectCodeFontOptions,
+    selectIsNoteMonospace,
+    selectNoteFontStyle,
+  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   import { Select } from '$lib/components/ui/select';
+  import { m } from '$shared/paraglide/messages.js';
 
   import { isMacPlatform } from '$lib/utils/shortcuts';
+  import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+  import { getNavigatorHid } from '$features/hardware-console/device/platform';
+  import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
+  import { getHardwareConsoleManager } from '$features/hardware-console/instance';
   import {
-  getSettingsPreviousPath,
-  navigateBackFromSettings,
-} from '$lib/utils/workspace-navigation';
+    getSettingsPreviousPath,
+    navigateBackFromSettings,
+  } from '$lib/utils/workspace-navigation';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
@@ -77,6 +90,17 @@
   const codeFontFamilyLabel = selectCodeFontFamilyLabel();
   const codeFontOptions = selectCodeFontOptions();
   const themePreference = selectThemePreference();
+  const daemonTransport$ = selectDaemonTransport();
+
+  // UDS socket path of the connected intentd; null hides the Connection section
+  // (external-ws, unknown transport, or missing target).
+  const udsSocketPath = $derived(
+    $daemonTransport$ &&
+      ($daemonTransport$.mode === 'sidecar-uds' || $daemonTransport$.mode === 'external-uds') &&
+      $daemonTransport$.target
+      ? $daemonTransport$.target
+      : null,
+  );
 
   // Tab types
   type SettingsTab = 'accounts' | 'agents' | 'setup' | 'fonts-colors' | 'general';
@@ -119,11 +143,11 @@
 
   // Tab definitions
   const tabs: { id: SettingsTab; label: string }[] = [
-    { id: 'accounts', label: 'Accounts' },
-    { id: 'agents', label: 'Agents' },
-    { id: 'setup', label: 'Workspace Setup' },
-    { id: 'fonts-colors', label: 'Fonts & Colors' },
-    { id: 'general', label: 'General' },
+    { id: 'accounts', label: m.settings_tab_accounts() },
+    { id: 'agents', label: m.settings_tab_agents() },
+    { id: 'setup', label: m.settings_tab_setup() },
+    { id: 'fonts-colors', label: m.settings_tab_fontsColors() },
+    { id: 'general', label: m.settings_tab_general() },
   ];
 
   // Get specialist ID from URL query parameter for auto-selecting
@@ -153,11 +177,23 @@
   const isDevMode = import.meta.env.DEV;
   const isMac = isMacPlatform();
 
+  // Hardware section: hidden where WebHID is missing entirely. In Electron
+  // (silent grants, so getDevices() reflects physical presence) it is further
+  // gated on device presence — keyed off presence rather than the manager's
+  // connected status so toggling the integration off (manager.stop()) keeps
+  // the section visible. Web builds always show it so the user can grant a
+  // device via the Connect button.
+  const webHidAvailable = getNavigatorHid() !== null;
+  let hardwareDevicePresent = $state(false);
+  const showHardwareSection = $derived(
+    webHidAvailable && (!isElectronPlatform() || hardwareDevicePresent),
+  );
+
   // Get back label - show workspace title if coming from a workspace
   const backLabel = $derived.by(() => {
     const prevPath = getSettingsPreviousPath();
     logger.debug('[Settings] prevPath for back button:', prevPath);
-    if (prevPath === '/' || prevPath === '') return 'Home';
+    if (prevPath === '/' || prevPath === '') return m.settings_back_home();
     if (prevPath.startsWith('/workspace/')) {
       // Extract workspace ID from path like /workspace/{id} or /workspace/{id}/...
       const pathParts = prevPath.split('/');
@@ -166,10 +202,10 @@
       if (workspaceId) {
         const workspace = $workspaces.find((item) => item.id === workspaceId);
         logger.debug('[Settings] Found workspace:', workspace?.title);
-        return workspace?.title || 'Space';
+        return workspace?.title || m.settings_back_space();
       }
     }
-    return 'Back';
+    return m.settings_back_back();
   });
 
   // Component refs for reset functionality
@@ -181,15 +217,15 @@
 
   // Theme options
   const themeOptions = [
-    { value: 'light', label: 'Light' },
-    { value: 'dark', label: 'Dark' },
-    { value: 'system', label: 'System' },
+    { value: 'light', label: m.settings_theme_light() },
+    { value: 'dark', label: m.settings_theme_dark() },
+    { value: 'system', label: m.settings_theme_system() },
   ];
 
   // Font style options
   const fontStyleOptions = [
-    { value: 'sans', label: 'Sans-serif' },
-    { value: 'monospace', label: 'Mono' },
+    { value: 'sans', label: m.settings_fontStyle_sans() },
+    { value: 'monospace', label: m.settings_fontStyle_mono() },
   ];
 
   function handleNoteFontChange(value: string | boolean) {
@@ -213,10 +249,13 @@
     specialists: 'agents',
     providers: 'accounts',
     integrations: 'accounts',
+    voice: 'accounts',
     'mcp-servers': 'setup',
     'git-workspace': 'setup',
+    'agent-features': 'setup',
     'utility-default-model': 'setup',
     notifications: 'setup',
+    'websocket-api': 'general',
   };
 
   onMount(() => {
@@ -226,6 +265,15 @@
 
     // Handle hash-based navigation on initial load
     handleHashNavigation();
+  });
+
+  // Track supported-device presence for the Hardware section gate.
+  onMount(() => {
+    if (!webHidAvailable) return;
+    return watchSupportedDevicePresence(
+      getHardwareConsoleManager(),
+      (present) => (hardwareDevicePresent = present),
+    );
   });
 
   // Listen for hash changes while already on the settings page
@@ -318,7 +366,9 @@
         </kbd>
       </button>
 
-      <h1 class="mt-3 mb-4 text-3xl font-semibold tracking-[-0.02em] text-foreground">Settings</h1>
+      <h1 class="mt-3 mb-4 text-3xl font-semibold tracking-[-0.02em] text-foreground">
+        {m.settings_page_title()}
+      </h1>
 
       <!-- Tab Bar -->
       <div class="flex gap-1 border-b border-border -mx-6 px-6">
@@ -347,7 +397,7 @@
       {#if activeTab === 'accounts'}
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            AI Coding CLIs
+            {m.settings_section_aiCodingClis()}
           </h2>
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
@@ -355,18 +405,30 @@
             </section>
           </div>
           <p class="text-xs text-subtle mt-2">
-            You can sign in or switch accounts using your AI Coding CLI in the terminal.
+            {m.settings_section_aiCodingClis_hint()}
           </p>
         </div>
 
         <!-- Connections -->
         <div id="integrations" class="mb-6 scroll-mt-20">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Connections
+            {m.settings_section_connections()}
           </h2>
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
               <ConnectionsSettings />
+            </section>
+          </div>
+        </div>
+
+        <!-- Voice dictation -->
+        <div id="voice" class="mb-6 scroll-mt-20">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            {m.settings_section_voice()}
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <VoiceSettings />
             </section>
           </div>
         </div>
@@ -393,7 +455,7 @@
         <!-- Git & Workspace -->
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Git & Workspace
+            {m.settings_section_gitWorkspace()}
           </h2>
           <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef} />
         </div>
@@ -401,7 +463,7 @@
         <!-- Notifications -->
         <div id="notifications" class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Notifications
+            {m.settings_section_notifications()}
           </h2>
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
@@ -413,7 +475,7 @@
         <!-- RTK -->
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            CLI Optimization
+            {m.settings_section_cliOptimization()}
           </h2>
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
@@ -425,23 +487,31 @@
         <!-- MCP Servers -->
         <div id="mcp-servers" class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            MCP Servers
+            {m.settings_section_mcpServers()}
           </h2>
           <McpServersSettings isAuggieProvider={$isAuggieProvider$} />
         </div>
 
-        <!-- WebSocket API -->
-        <div id="websocket-api" class="mb-12">
+        <!-- Workspace API Output -->
+        <div id="workspace-api" class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            WebSocket API
+            {m.settings_section_workspaceApi()}
           </h2>
-          <WebSocketApiSettings />
+          <WorkspaceApiSettings />
+        </div>
+
+        <!-- Agent Features -->
+        <div id="agent-features" class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            {m.settings_section_agentFeatures()}
+          </h2>
+          <AgentFeaturesSettings />
         </div>
 
         <!-- Agent Backend -->
         <div id="agent-backend" class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Agent Backend
+            {m.settings_section_agentBackend()}
           </h2>
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
@@ -453,7 +523,7 @@
         <!-- Quick Actions -->
         <div id="utility-default-model" class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Quick Actions
+            {m.settings_section_quickActions()}
           </h2>
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
@@ -468,12 +538,12 @@
         <!-- Theme -->
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Appearance
+            {m.settings_section_appearance()}
           </h2>
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
               <div class="flex items-center justify-between">
-                <p class="text-sm font-medium text-foreground">Theme</p>
+                <p class="text-sm font-medium text-foreground">{m.settings_theme_label()}</p>
                 <Toggle
                   variant="group"
                   options={themeOptions}
@@ -492,19 +562,18 @@
         <!-- Font Style -->
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Font Style
+            {m.settings_section_fontStyle()}
           </h2>
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-sm font-medium text-foreground">Notes</p>
+                  <p class="text-sm font-medium text-foreground">{m.settings_font_notes_label()}</p>
                   <p
                     class="text-xs text-subtle mt-0.5 transition-all duration-200"
                     class:font-mono={$isNoteMonospace}
                   >
-                    The typeface used for your notes, specs, and documents. Monospace can feel more
-                    focused for technical writing.
+                    {m.settings_font_notes_description()}
                   </p>
                 </div>
                 <Toggle
@@ -519,13 +588,14 @@
             <section class="px-6 py-5">
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-sm font-medium text-foreground">Agent Chat</p>
+                  <p class="text-sm font-medium text-foreground">
+                    {m.settings_font_agentChat_label()}
+                  </p>
                   <p
                     class="text-xs text-subtle mt-0.5 transition-all duration-200"
                     class:font-mono={$agentFontStyle === 'monospace'}
                   >
-                    The typeface used for agent conversation messages, including code references and
-                    explanations.
+                    {m.settings_font_agentChat_description()}
                   </p>
                 </div>
                 <Toggle
@@ -540,9 +610,9 @@
             <section class="px-6 py-5">
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-sm font-medium text-foreground">Font</p>
+                  <p class="text-sm font-medium text-foreground">{m.settings_font_code_label()}</p>
                   <p class="text-xs text-subtle mt-0.5">
-                    The monospace font used in code editors, diffs, and syntax-highlighted blocks.
+                    {m.settings_font_code_description()}
                   </p>
                 </div>
                 <div class="w-[180px] flex-shrink-0">
@@ -571,28 +641,14 @@
 
       <!-- General Tab -->
       {#if activeTab === 'general'}
-        <!-- Updates -->
+        <!-- Language -->
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Updates
+            {m.settings_language_section_title()}
           </h2>
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
-              <div class="flex items-center justify-between">
-                <div>
-                  <p class="text-sm font-medium text-foreground">Beta updates</p>
-                  <p class="text-xs text-subtle mt-0.5">
-                    Receive beta releases with new features and early improvements. Beta updates may be less stable than stable releases.
-                  </p>
-                </div>
-                <Toggle
-                  variant="indicator"
-                  pressed={$betaUpdatesEnabled$}
-                  onChange={handleBetaUpdatesToggle}
-                  size="xs"
-                  ariaLabel="Enable beta updates"
-                />
-              </div>
+              <LanguageSettings />
             </section>
           </div>
         </div>
@@ -600,7 +656,7 @@
         <!-- Open In Apps -->
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Open In
+            {m.settings_section_openIn()}
           </h2>
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
@@ -609,37 +665,119 @@
           </div>
         </div>
 
-        <!-- Reset -->
+        <!-- Updates -->
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Reset
+            {m.settings_section_updates()}
           </h2>
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-sm font-medium text-foreground">Reset Settings</p>
+                  <p class="text-sm font-medium text-foreground">
+                    {m.settings_betaUpdates_label()}
+                  </p>
+                  <p class="text-xs text-subtle mt-0.5">
+                    {m.settings_betaUpdates_description()}
+                  </p>
+                </div>
+                <Toggle
+                  variant="indicator"
+                  pressed={$betaUpdatesEnabled$}
+                  onChange={handleBetaUpdatesToggle}
+                  size="xs"
+                  ariaLabel={m.settings_betaUpdates_ariaLabel()}
+                />
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <!-- Hardware / Creator Micro (only when a supported device is detectable) -->
+        {#if showHardwareSection}
+          <div id="hardware" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_hardware()}
+            </h2>
+            <HardwareConsoleSettings />
+          </div>
+        {/if}
+
+        <!-- WebSocket API -->
+        <div id="websocket-api" class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            {m.settings_section_websocketApi()}
+          </h2>
+          <WebSocketApiSettings />
+        </div>
+
+        <!-- Connection (UDS only; hidden for WS/unknown transports) -->
+        {#if udsSocketPath}
+          <div class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_connection()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <div class="flex items-center justify-between gap-4">
+                  <div class="min-w-0">
+                    <p class="text-sm font-medium text-foreground">
+                      {m.settings_connection_socket_label()}
+                    </p>
+                    <p class="text-xs text-subtle mt-0.5 font-mono select-text break-all">
+                      {udsSocketPath}
+                    </p>
+                  </div>
+                  <CopyButton text={udsSocketPath} class="shrink-0" />
+                </div>
+              </section>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Data -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            {m.settings_section_data()}
+          </h2>
+          <LegacyImportSettings />
+        </div>
+
+        <!-- Reset -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            {m.settings_section_reset()}
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-foreground">
+                    {m.settings_reset_label()}
+                  </p>
                   <p class="text-xs text-subtle">
-                    Restore theme, notifications, git settings, and update preferences to defaults
+                    {m.settings_reset_description()}
                   </p>
                 </div>
                 <Button variant="outline" size="sm" onclick={handleResetInterfaceSystem}>
-                  Reset to Defaults
+                  {m.settings_reset_button()}
                 </Button>
               </div>
             </section>
           </div>
         </div>
 
-        <!-- Developer Section (only in dev mode) -->
+        <!-- Developer Section (only in dev mode; dev-only UI is not translated) -->
         {#if isDevMode}
           <div class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              <!-- i18n-ignore (dev-only) -->
               Developer
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section class="px-6 py-5">
                 <div class="flex flex-col gap-2">
+                  <!-- i18n-ignore (dev-only) -->
                   <span class="text-sm font-medium">Update Toast Simulation</span>
                   <div class="flex items-center gap-2">
                     <Button
@@ -665,6 +803,7 @@
                           }),
                         )}
                     >
+                      <!-- i18n-ignore (dev-only) -->
                       Simulate Update Flow
                     </Button>
                     <Button
@@ -679,6 +818,7 @@
                           }),
                         )}
                     >
+                      <!-- i18n-ignore (dev-only) -->
                       Simulate No Update
                     </Button>
                     <Button
@@ -697,6 +837,7 @@
                           }),
                         )}
                     >
+                      <!-- i18n-ignore (dev-only) -->
                       Reset
                     </Button>
                   </div>
@@ -713,6 +854,7 @@
   <div class="px-6 py-4 border-t border-border bg-sidebar">
     <div class="max-w-5xl mx-auto px-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
       <div class="text-sm text-subtle">
+        <!-- i18n-ignore (brand name) -->
         <strong class="text-foreground">Intent</strong>
         <span class="ml-2">
           v{appVersion || '...'}
@@ -722,11 +864,11 @@
               class="font-medium underline text-primary hover:text-primary/80 cursor-pointer bg-transparent border-none p-0"
               onclick={() => appStore.dispatch(installUpdate())}
             >
-              Update available
+              {m.settings_footer_updateAvailable()}
             </button>
           {:else if $autoUpdateStatus$ === 'not-available' || $autoUpdateStatus$ === 'idle'}
             <span class="mx-2">·</span>
-            <span class="text-subtle">Up to date</span>
+            <span class="text-subtle">{m.settings_footer_upToDate()}</span>
           {/if}
         </span>
       </div>
@@ -736,7 +878,7 @@
           target="_blank"
           rel="noopener noreferrer"
           class="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          >Support</a
+          >{m.settings_footer_support()}</a
         >
       </div>
     </div>

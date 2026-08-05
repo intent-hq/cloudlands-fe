@@ -43,6 +43,7 @@ export function findBestAvailableModel(
     return {
       model: null,
       usedFallback: true,
+      // i18n-ignore (diagnostic-only field, never rendered)
       fallbackReason: 'No models available. Please retry loading models.',
       requestedModel,
     };
@@ -70,6 +71,7 @@ export function findBestAvailableModel(
   return {
     model: firstAvailable,
     usedFallback: true,
+    // i18n-ignore (diagnostic-only field, never rendered)
     fallbackReason: `Model "${requestedModel}" not available, using "${firstAvailable}" instead`,
     requestedModel,
   };

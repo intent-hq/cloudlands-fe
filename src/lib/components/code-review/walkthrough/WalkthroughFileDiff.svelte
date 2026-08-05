@@ -25,6 +25,7 @@
   import type { WalkthroughAnnotation } from './types';
   import WalkthroughInlineComment from './WalkthroughInlineComment.svelte';
   import WalkthroughCommentThread from './WalkthroughCommentThread.svelte';
+  import * as m from '$shared/paraglide/messages.js';
   import '$lib/styles/syntax-highlighting.css';
 
   /** Message in a comment thread */
@@ -440,7 +441,7 @@
             class="w-full py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors text-center"
             onclick={toggleFileCollapsed}
           >
-            +{totalChangedLines - previewLines.length} more lines
+            {m.codeReview_fileDiff_moreLines_label({ count: totalChangedLines - previewLines.length })}
           </button>
         {/if}
       </div>
@@ -458,7 +459,7 @@
             class="text-muted-foreground hover:text-foreground transition-colors"
             onclick={expandAll}
           >
-            Expand all
+            {m.codeReview_fileDiff_expandAll_label()}
           </button>
           {#if expandedRanges.size > 0}
             <span class="text-subtle">·</span>
@@ -467,7 +468,7 @@
               class="text-muted-foreground hover:text-foreground transition-colors"
               onclick={collapseToDefault}
             >
-              Collapse
+              {m.codeReview_fileDiff_collapse_label()}
             </button>
           {/if}
         </div>
@@ -487,7 +488,7 @@
                 onclick={() => expandRange(hunkIndex, gapAtStart.startIndex, gapAtStart.endIndex)}
               >
                 <Fa icon={faChevronDown} class="h-2.5 w-2.5" />
-                <span>Show {gapAtStart.count} hidden lines</span>
+                <span>{m.codeReview_fileDiff_showHidden_label({ count: gapAtStart.count })}</span>
                 <Fa icon={faChevronDown} class="h-2.5 w-2.5" />
               </button>
             {/if}
@@ -521,7 +522,7 @@
                         type="button"
                         class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-primary transition-all shrink-0"
                         onclick={() => handleOpenComment(lineKey)}
-                        title="Ask about this line"
+                        title={m.codeReview_fileDiff_askLine_tooltip()}
                       >
                         <Fa icon={faEllipsisH} class="h-3 w-3" />
                       </button>
@@ -566,7 +567,7 @@
                     onclick={() => expandRange(hunkIndex, gapAfter.startIndex, gapAfter.endIndex)}
                   >
                     <Fa icon={faEllipsisH} class="h-2.5 w-2.5" />
-                    <span>Show {gapAfter.count} hidden lines</span>
+                    <span>{m.codeReview_fileDiff_showHidden_label({ count: gapAfter.count })}</span>
                     <Fa icon={faEllipsisH} class="h-2.5 w-2.5" />
                   </button>
                 {/if}

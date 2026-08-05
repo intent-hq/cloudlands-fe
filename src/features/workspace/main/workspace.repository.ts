@@ -10,10 +10,7 @@ import * as path from 'path';
 import { type Workspace, type WorkspaceId, WorkspaceStatus } from '../../../shared/types';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import { WorkspaceConfig } from '../../../shared/main/config';
-import {
-  validateWorkspace,
-  safeValidateWorkspace,
-} from '../../../shared/schemas';
+import { validateWorkspace, safeValidateWorkspace } from '../../../shared/schemas';
 import * as Errors from '../../../shared/errors';
 import * as LoggerModule from '../../../shared/logger';
 import {
@@ -34,6 +31,7 @@ const CHIEF_WORKSPACE_TIMESTAMP = '2026-01-01T00:00:00.000Z';
 export function getChiefWorkspace(): Workspace {
   return {
     id: CHIEF_WORKSPACE_ID,
+    // i18n-ignore (sentinel title compared against daemon-stored value)
     title: 'Chief of Staff',
     branch: '',
     changesets: [],
@@ -237,7 +235,7 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
       try {
         await fs.access(workspaceDir);
         logger.debug('Workspace directory exists', { workspaceDir });
-      } catch  {
+      } catch {
         // Directory doesn't exist, create it
         logger.debug('Creating workspace directory', { workspaceDir });
         try {
@@ -257,7 +255,7 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
       try {
         await fs.access(metadataDir);
         logger.debug('Metadata directory exists', { metadataDir });
-      } catch  {
+      } catch {
         // Directory doesn't exist, create it
         logger.debug('Creating metadata directory', { metadataDir });
         try {
@@ -399,7 +397,7 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
       const workspacePath = WorkspaceConfig.paths.workspace(id);
       await fs.rm(workspacePath, { recursive: true, force: true });
       logger.debug('Workspace directory cleaned up', { workspaceId: id });
-    } catch  {
+    } catch {
       // Directory might not exist, that's okay
       logger.debug('Workspace cleanup - directory might not exist', { workspaceId: id });
     }
@@ -596,9 +594,11 @@ export class DaemonWorkspaceRepository implements WorkspaceRepository {
   async findAll(): Promise<Workspace[]> {
     try {
       const { getBackendClient } = await import('../../backend/main/backend.ipc');
-      const response = (await getBackendClient().request('workspace.list')) as {
-        workspaces?: Workspace[];
-      } | undefined;
+      const response = (await getBackendClient().request('workspace.list')) as
+        | {
+            workspaces?: Workspace[];
+          }
+        | undefined;
 
       const workspaces = response?.workspaces || [];
 
@@ -799,6 +799,7 @@ export class DaemonWorkspaceRepository implements WorkspaceRepository {
 
   async scanDirectory(_dir: string, _depth: number = 0): Promise<string[]> {
     throw new Error(
+      // i18n-ignore (developer-facing programming error)
       'DaemonWorkspaceRepository.scanDirectory not implemented — directory scanning should not happen through repository',
     );
   }

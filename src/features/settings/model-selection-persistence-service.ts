@@ -1,8 +1,8 @@
 /**
  * Model-selection persistence service — the write half of the default-model
  * path (the read half is `settings-hydration-service`, which routes the
- * daemon's `model.providerDefaults` / `model.workspaceOverrides` into the
- * model slice on boot and on `settings:changed`).
+ * daemon's `model.providerDefaults` into the model slice on boot and on
+ * `settings:changed`).
  *
  * Two post-saga gaps are re-homed here without changing any dispatch site:
  *
@@ -13,11 +13,10 @@
  * 2. Nothing persisted the selection, so every pick was lost on reload. After
  *    the reducer runs, the middleware writes the authoritative slice state to
  *    the daemon settings catalog (PROTOCOL §5.12): `model.providerDefaults`
- *    on per-provider picks and `model.workspaceOverrides` on per-workspace
- *    picks/clears. Writes are fire-and-forget; the daemon echoes them back
- *    via `settings:changed`, which hydration applies through the
- *    `loadProviderModelsFromStorage` / `loadWorkspaceModelsFromStorage`
- *    actions — deliberately NOT observed here, so there is no write loop.
+ *    on per-provider picks. Writes are fire-and-forget; the daemon echoes
+ *    them back via `settings:changed`, which hydration applies through the
+ *    `loadProviderModelsFromStorage` action — deliberately NOT observed
+ *    here, so there is no write loop.
  *
  * Dependency-light per src/store/renderer/AGENTS.md: imports only the
  * AppClient seam, the configured store, model-slice actions, and the logger
@@ -28,18 +27,13 @@ import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { createLogger } from "$lib/utils/client-logger";
 import {
-  clearAllWorkspaceModels,
-  clearWorkspaceModel,
   reloadModelsForProvider,
   selectModel,
   setSelectedModel,
-  setWorkspaceModel,
 } from "$store/renderer/slices/model/model-slice";
 import { setActiveProvider } from "$store/renderer/slices/provider-settings/provider-settings-slice";
-import {
-  getAllProviderIds,
-  parseCompoundModelId,
-} from "$shared/config/provider-config";
+import { getItem } from "$lib/store-shim/utils/collections/collection-utils";
+import { splitCompoundModelId } from "$shared/utils/compound-model-id";
 
 const logger = createLogger("ModelSelectionPersistenceService");
 
@@ -65,7 +59,7 @@ export function createModelSelectionPersistenceMiddleware(): StoreMiddleware {
           const model = payload[0];
           if (typeof model === "string" && model.length > 0) {
             const compoundProviderId = model.includes(":")
-              ? parseCompoundModelId(model).providerId
+              ? (splitCompoundModelId(model).providerId ?? "")
               : "";
             const activeProviderId =
               appStore.state.providerSettings.activeProviderId;
@@ -87,7 +81,7 @@ export function createModelSelectionPersistenceMiddleware(): StoreMiddleware {
             if (
               compoundProviderId.length > 0 &&
               compoundProviderId !== activeProviderId &&
-              getAllProviderIds().includes(compoundProviderId)
+              getItem(appStore.state.providerCatalog.providers, compoundProviderId) !== undefined
             ) {
               appStore.dispatch(setActiveProvider(compoundProviderId));
               appStore.dispatch(reloadModelsForProvider());
@@ -98,11 +92,6 @@ export function createModelSelectionPersistenceMiddleware(): StoreMiddleware {
         }
         case setSelectedModel.type:
           persist("model.providerDefaults", appStore.state.model.providerModels);
-          break;
-        case setWorkspaceModel.type:
-        case clearWorkspaceModel.type:
-        case clearAllWorkspaceModels.type:
-          persist("model.workspaceOverrides", appStore.state.model.workspaceModels);
           break;
       }
     }

@@ -6,6 +6,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     name: string;
@@ -41,11 +42,11 @@
     <div class="flex items-center gap-1">
       <Button variant="ghost-light" size="sm" onclick={handleCopy} class="h-7 px-2">
         <Fa icon={copied ? faCheck : faCopy} class="mr-1" />
-        {copied ? 'Copied' : 'Copy'}
+        {copied ? m.chat_shared_copied_label() : m.chat_shared_copy_label()}
       </Button>
       {#if onUseScript}
         <Button variant="ghost-light" size="sm" onclick={handleUse} class="h-7 px-2">
-          Use Script
+          {m.chat_setupScriptCard_useScript_label()}
         </Button>
       {/if}
     </div>

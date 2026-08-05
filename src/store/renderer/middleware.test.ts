@@ -1,4 +1,5 @@
 import {
+  afterEach,
   beforeEach,
   describe,
   expect,
@@ -19,12 +20,22 @@ const mocks = vi.hoisted(() => {
   const agentSubscriptionReadMiddleware = createPassthroughMiddleware();
   const filesReadMiddleware = createPassthroughMiddleware();
   const chatReadMiddleware = createPassthroughMiddleware();
+  const chatSubscribeMiddleware = createPassthroughMiddleware();
   const chatSendMiddleware = createPassthroughMiddleware();
   const permissionResponseMiddleware = createPassthroughMiddleware();
   const daemonEventsBridgeMiddleware = createPassthroughMiddleware();
   const agentFailureToastMiddleware = createPassthroughMiddleware();
+  const hardwareConsoleConnectionToastMiddleware = createPassthroughMiddleware();
+  const hardwareConsoleIntegrationToggleMiddleware = createPassthroughMiddleware();
+  const hardwareConsoleKeyPinPersistenceMiddleware = createPassthroughMiddleware();
+  const hardwareConsoleKeySwitchMiddleware = createPassthroughMiddleware();
+  const hardwareConsoleLedStatusMiddleware = createPassthroughMiddleware();
+  const hardwareConsolePromptPickerMiddleware = createPassthroughMiddleware();
+  const hardwareConsoleActionKeyMiddleware = createPassthroughMiddleware();
+  const hardwareConsoleEncoderMiddleware = createPassthroughMiddleware();
+  const voiceTranscriptionMiddleware = createPassthroughMiddleware();
+  const voiceSettingsMiddleware = createPassthroughMiddleware();
   const daemonHealthMiddleware = createPassthroughMiddleware();
-  const activeStreamsReduxBridgeMiddleware = createPassthroughMiddleware();
   const settingsHydrationMiddleware = createPassthroughMiddleware();
   const modelSelectionPersistenceMiddleware = createPassthroughMiddleware();
   const backgroundAgentSettingsPersistenceMiddleware = createPassthroughMiddleware();
@@ -32,7 +43,6 @@ const mocks = vi.hoisted(() => {
   const modelReloadMiddleware = createPassthroughMiddleware();
   const providerAvailabilityCheckMiddleware = createPassthroughMiddleware();
   const hostRequirementsCheckMiddleware = createPassthroughMiddleware();
-  const agentStreamMiddleware = createPassthroughMiddleware();
   const agentCreationMiddleware = createPassthroughMiddleware();
   const agentMutationMiddleware = createPassthroughMiddleware();
   const editRegenerateMiddleware = createPassthroughMiddleware();
@@ -52,18 +62,23 @@ const mocks = vi.hoisted(() => {
   const mcpManagementMiddleware = createPassthroughMiddleware();
   const workspaceOperationsMiddleware = createPassthroughMiddleware();
   const directoryPickerReadMiddleware = createPassthroughMiddleware();
+  const legacyImportMiddleware = createPassthroughMiddleware();
   const statsReadMiddleware = createPassthroughMiddleware();
+  const backgroundHooksMiddleware = createPassthroughMiddleware();
   const lifecycleReadMiddleware = createPassthroughMiddleware();
   const lifecycleIpcReadMiddleware = createPassthroughMiddleware();
   const uiLayoutPersistenceMiddleware = createPassthroughMiddleware();
-  const unreadTrackingPersistenceMiddleware = createPassthroughMiddleware();
   const tabStatePersistenceMiddleware = createPassthroughMiddleware();
   const panelLayoutPersistenceMiddleware = createPassthroughMiddleware();
   const fileContentPruneService = createPassthroughMiddleware();
   const terminalPersistenceMiddleware = createPassthroughMiddleware();
   const externalEditorsPersistenceMiddleware = createPassthroughMiddleware();
   const zoomSyncMiddleware = createPassthroughMiddleware();
+  const menuIpcMiddleware = createPassthroughMiddleware();
+  const browserIpcMiddleware = createPassthroughMiddleware();
   const notificationIpcMiddleware = createPassthroughMiddleware();
+  const agentEventsIpcMiddleware = createPassthroughMiddleware();
+  const gitEventsIpcMiddleware = createPassthroughMiddleware();
   const webNotificationMiddleware = createPassthroughMiddleware();
   const workspaceSettingsPersistenceMiddleware = createPassthroughMiddleware();
   const userPreferencesBetaPersistenceMiddleware = createPassthroughMiddleware();
@@ -87,12 +102,30 @@ const mocks = vi.hoisted(() => {
     createAgentSubscriptionReadMiddleware: vi.fn(() => agentSubscriptionReadMiddleware),
     createFilesReadMiddleware: vi.fn(() => filesReadMiddleware),
     createChatReadMiddleware: vi.fn(() => chatReadMiddleware),
+    createChatSubscribeMiddleware: vi.fn(() => chatSubscribeMiddleware),
     createChatSendMiddleware: vi.fn(() => chatSendMiddleware),
     createPermissionResponseMiddleware: vi.fn(() => permissionResponseMiddleware),
     createDaemonEventsBridgeMiddleware: vi.fn(() => daemonEventsBridgeMiddleware),
     createAgentFailureToastMiddleware: vi.fn(() => agentFailureToastMiddleware),
+    createHardwareConsoleConnectionToastMiddleware: vi.fn(
+      () => hardwareConsoleConnectionToastMiddleware,
+    ),
+    createHardwareConsoleIntegrationToggleMiddleware: vi.fn(
+      () => hardwareConsoleIntegrationToggleMiddleware,
+    ),
+    createHardwareConsoleKeyPinPersistenceMiddleware: vi.fn(
+      () => hardwareConsoleKeyPinPersistenceMiddleware,
+    ),
+    createHardwareConsoleKeySwitchMiddleware: vi.fn(() => hardwareConsoleKeySwitchMiddleware),
+    createHardwareConsoleLedStatusMiddleware: vi.fn(() => hardwareConsoleLedStatusMiddleware),
+    createHardwareConsolePromptPickerMiddleware: vi.fn(
+      () => hardwareConsolePromptPickerMiddleware,
+    ),
+    createHardwareConsoleActionKeyMiddleware: vi.fn(() => hardwareConsoleActionKeyMiddleware),
+    createHardwareConsoleEncoderMiddleware: vi.fn(() => hardwareConsoleEncoderMiddleware),
+    createVoiceTranscriptionMiddleware: vi.fn(() => voiceTranscriptionMiddleware),
+    createVoiceSettingsMiddleware: vi.fn(() => voiceSettingsMiddleware),
     createDaemonHealthMiddleware: vi.fn(() => daemonHealthMiddleware),
-    createActiveStreamsReduxBridge: vi.fn(() => activeStreamsReduxBridgeMiddleware),
     createSettingsHydrationMiddleware: vi.fn(() => settingsHydrationMiddleware),
     createModelSelectionPersistenceMiddleware: vi.fn(() => modelSelectionPersistenceMiddleware),
     createBackgroundAgentSettingsPersistenceMiddleware: vi.fn(() => backgroundAgentSettingsPersistenceMiddleware),
@@ -100,7 +133,6 @@ const mocks = vi.hoisted(() => {
     createModelReloadMiddleware: vi.fn(() => modelReloadMiddleware),
     createProviderAvailabilityCheckMiddleware: vi.fn(() => providerAvailabilityCheckMiddleware),
     createHostRequirementsCheckMiddleware: vi.fn(() => hostRequirementsCheckMiddleware),
-    createAgentStreamMiddleware: vi.fn(() => agentStreamMiddleware),
     createAgentCreationMiddleware: vi.fn(() => agentCreationMiddleware),
     createAgentMutationMiddleware: vi.fn(() => agentMutationMiddleware),
     createEditRegenerateMiddleware: vi.fn(() => editRegenerateMiddleware),
@@ -122,18 +154,23 @@ const mocks = vi.hoisted(() => {
     createMcpManagementMiddleware: vi.fn(() => mcpManagementMiddleware),
     createWorkspaceOperationsMiddleware: vi.fn(() => workspaceOperationsMiddleware),
     createDirectoryPickerReadMiddleware: vi.fn(() => directoryPickerReadMiddleware),
+    createLegacyImportMiddleware: vi.fn(() => legacyImportMiddleware),
     createStatsReadMiddleware: vi.fn(() => statsReadMiddleware),
+    createBackgroundHooksMiddleware: vi.fn(() => backgroundHooksMiddleware),
     createLifecycleReadMiddleware: vi.fn(() => lifecycleReadMiddleware),
     createLifecycleIpcReadMiddleware: vi.fn(() => lifecycleIpcReadMiddleware),
     createUiLayoutPersistenceMiddleware: vi.fn(() => uiLayoutPersistenceMiddleware),
-    createUnreadTrackingPersistenceMiddleware: vi.fn(() => unreadTrackingPersistenceMiddleware),
     createTabStatePersistenceMiddleware: vi.fn(() => tabStatePersistenceMiddleware),
     createPanelLayoutPersistenceMiddleware: vi.fn(() => panelLayoutPersistenceMiddleware),
     createFileContentPruneService: vi.fn(() => fileContentPruneService),
     createTerminalPersistenceMiddleware: vi.fn(() => terminalPersistenceMiddleware),
     createExternalEditorsPersistenceMiddleware: vi.fn(() => externalEditorsPersistenceMiddleware),
     createZoomSyncMiddleware: vi.fn(() => zoomSyncMiddleware),
+    createMenuIpcMiddleware: vi.fn(() => menuIpcMiddleware),
+    createBrowserIpcMiddleware: vi.fn(() => browserIpcMiddleware),
     createNotificationIpcMiddleware: vi.fn(() => notificationIpcMiddleware),
+    createAgentEventsIpcMiddleware: vi.fn(() => agentEventsIpcMiddleware),
+    createGitEventsIpcMiddleware: vi.fn(() => gitEventsIpcMiddleware),
     createWebNotificationMiddleware: vi.fn(() => webNotificationMiddleware),
     createWorkspaceSettingsPersistenceMiddleware: vi.fn(
       () => workspaceSettingsPersistenceMiddleware,
@@ -161,12 +198,22 @@ const mocks = vi.hoisted(() => {
     agentSubscriptionReadMiddleware,
     filesReadMiddleware,
     chatReadMiddleware,
+    chatSubscribeMiddleware,
     chatSendMiddleware,
     permissionResponseMiddleware,
     daemonEventsBridgeMiddleware,
     agentFailureToastMiddleware,
+    hardwareConsoleConnectionToastMiddleware,
+    hardwareConsoleIntegrationToggleMiddleware,
+    hardwareConsoleKeyPinPersistenceMiddleware,
+    hardwareConsoleKeySwitchMiddleware,
+    hardwareConsoleLedStatusMiddleware,
+    hardwareConsolePromptPickerMiddleware,
+    hardwareConsoleActionKeyMiddleware,
+    hardwareConsoleEncoderMiddleware,
+    voiceTranscriptionMiddleware,
+    voiceSettingsMiddleware,
     daemonHealthMiddleware,
-    activeStreamsReduxBridgeMiddleware,
     settingsHydrationMiddleware,
     modelSelectionPersistenceMiddleware,
     backgroundAgentSettingsPersistenceMiddleware,
@@ -174,7 +221,6 @@ const mocks = vi.hoisted(() => {
     modelReloadMiddleware,
     providerAvailabilityCheckMiddleware,
     hostRequirementsCheckMiddleware,
-    agentStreamMiddleware,
     agentCreationMiddleware,
     agentMutationMiddleware,
     editRegenerateMiddleware,
@@ -194,18 +240,23 @@ const mocks = vi.hoisted(() => {
     mcpManagementMiddleware,
     workspaceOperationsMiddleware,
     directoryPickerReadMiddleware,
+    legacyImportMiddleware,
     statsReadMiddleware,
+    backgroundHooksMiddleware,
     lifecycleReadMiddleware,
     lifecycleIpcReadMiddleware,
     uiLayoutPersistenceMiddleware,
-    unreadTrackingPersistenceMiddleware,
     tabStatePersistenceMiddleware,
     panelLayoutPersistenceMiddleware,
     fileContentPruneService,
     terminalPersistenceMiddleware,
     externalEditorsPersistenceMiddleware,
     zoomSyncMiddleware,
+    menuIpcMiddleware,
+    browserIpcMiddleware,
     notificationIpcMiddleware,
+    agentEventsIpcMiddleware,
+    gitEventsIpcMiddleware,
     webNotificationMiddleware,
     workspaceSettingsPersistenceMiddleware,
     userPreferencesBetaPersistenceMiddleware,
@@ -230,6 +281,9 @@ vi.mock("$features/agent/agent-subscription-read-service", () => ({
 }));
 vi.mock("$features/files/files-read-service", () => ({ createFilesReadMiddleware: mocks.createFilesReadMiddleware }));
 vi.mock("$features/agent/chat-read-service", () => ({ createChatReadMiddleware: mocks.createChatReadMiddleware }));
+vi.mock("$features/agent/chat-subscribe-service", () => ({
+  createChatSubscribeMiddleware: mocks.createChatSubscribeMiddleware,
+}));
 vi.mock("$features/agent/chat-send-service", () => ({ createChatSendMiddleware: mocks.createChatSendMiddleware }));
 vi.mock("$features/permission/permission-response-service", () => ({
   createPermissionResponseMiddleware: mocks.createPermissionResponseMiddleware,
@@ -240,11 +294,41 @@ vi.mock("$features/events/daemon-events-bridge.client", () => ({
 vi.mock("$features/agent/agent-failure-toast-service", () => ({
   createAgentFailureToastMiddleware: mocks.createAgentFailureToastMiddleware,
 }));
+vi.mock("$features/hardware-console/connection-toast-service", () => ({
+  createHardwareConsoleConnectionToastMiddleware:
+    mocks.createHardwareConsoleConnectionToastMiddleware,
+}));
+vi.mock("$features/hardware-console/integration-toggle-service", () => ({
+  createHardwareConsoleIntegrationToggleMiddleware:
+    mocks.createHardwareConsoleIntegrationToggleMiddleware,
+}));
+vi.mock("$features/hardware-console/assignment/key-pin-persistence-service", () => ({
+  createHardwareConsoleKeyPinPersistenceMiddleware:
+    mocks.createHardwareConsoleKeyPinPersistenceMiddleware,
+}));
+vi.mock("$features/hardware-console/assignment/key-switch-service", () => ({
+  createHardwareConsoleKeySwitchMiddleware: mocks.createHardwareConsoleKeySwitchMiddleware,
+}));
+vi.mock("$features/hardware-console/led/led-status-service", () => ({
+  createHardwareConsoleLedStatusMiddleware: mocks.createHardwareConsoleLedStatusMiddleware,
+}));
+vi.mock("$features/hardware-console/prompt-picker/prompt-picker-service", () => ({
+  createHardwareConsolePromptPickerMiddleware: mocks.createHardwareConsolePromptPickerMiddleware,
+}));
+vi.mock("$features/hardware-console/actions/action-key-service", () => ({
+  createHardwareConsoleActionKeyMiddleware: mocks.createHardwareConsoleActionKeyMiddleware,
+}));
+vi.mock("$features/hardware-console/encoder/encoder-service", () => ({
+  createHardwareConsoleEncoderMiddleware: mocks.createHardwareConsoleEncoderMiddleware,
+}));
+vi.mock("$features/hardware-console/voice/transcription-service", () => ({
+  createVoiceTranscriptionMiddleware: mocks.createVoiceTranscriptionMiddleware,
+}));
+vi.mock("$features/voice/voice-settings-store-service", () => ({
+  createVoiceSettingsMiddleware: mocks.createVoiceSettingsMiddleware,
+}));
 vi.mock("./middlewares/daemon-health-service", () => ({
   createDaemonHealthMiddleware: mocks.createDaemonHealthMiddleware,
-}));
-vi.mock("$features/agent/active-streams-redux-bridge", () => ({
-  createActiveStreamsReduxBridge: mocks.createActiveStreamsReduxBridge,
 }));
 vi.mock("$features/settings/settings-hydration-service", () => ({
   createSettingsHydrationMiddleware: mocks.createSettingsHydrationMiddleware,
@@ -266,9 +350,6 @@ vi.mock("$features/providers/provider-availability-check-service", () => ({
 }));
 vi.mock("$features/system/host-requirements-check-service", () => ({
   createHostRequirementsCheckMiddleware: mocks.createHostRequirementsCheckMiddleware,
-}));
-vi.mock("$features/agent/agent-stream-service", () => ({
-  createAgentStreamMiddleware: mocks.createAgentStreamMiddleware,
 }));
 vi.mock("$features/agent/agent-creation-service", () => ({
   createAgentCreationMiddleware: mocks.createAgentCreationMiddleware,
@@ -329,8 +410,14 @@ vi.mock("$features/workspace/workspace-operations-service", () => ({
 vi.mock("$features/onboarding/directory-picker-read-service", () => ({
   createDirectoryPickerReadMiddleware: mocks.createDirectoryPickerReadMiddleware,
 }));
+vi.mock("$features/settings/legacy-import-service", () => ({
+  createLegacyImportMiddleware: mocks.createLegacyImportMiddleware,
+}));
 vi.mock("$features/stats/stats-read-service", () => ({
   createStatsReadMiddleware: mocks.createStatsReadMiddleware,
+}));
+vi.mock("$features/hooks/background-hooks-read-service", () => ({
+  createBackgroundHooksMiddleware: mocks.createBackgroundHooksMiddleware,
 }));
 vi.mock("./middlewares/lifecycle-read-service", () => ({
   createLifecycleReadMiddleware: mocks.createLifecycleReadMiddleware,
@@ -340,9 +427,6 @@ vi.mock("./middlewares/lifecycle-ipc-read-service", () => ({
 }));
 vi.mock("./middlewares/ui-layout-persistence-service", () => ({
   createUiLayoutPersistenceMiddleware: mocks.createUiLayoutPersistenceMiddleware,
-}));
-vi.mock("./middlewares/unread-tracking-persistence-service", () => ({
-  createUnreadTrackingPersistenceMiddleware: mocks.createUnreadTrackingPersistenceMiddleware,
 }));
 vi.mock("./middlewares/tab-state-persistence-service", () => ({
   createTabStatePersistenceMiddleware: mocks.createTabStatePersistenceMiddleware,
@@ -362,8 +446,20 @@ vi.mock("./middlewares/external-editors-persistence-service", () => ({
 vi.mock("./middlewares/zoom-sync-service", () => ({
   createZoomSyncMiddleware: mocks.createZoomSyncMiddleware,
 }));
+vi.mock("./middlewares/menu-ipc-service", () => ({
+  createMenuIpcMiddleware: mocks.createMenuIpcMiddleware,
+}));
+vi.mock("./middlewares/browser-ipc-service", () => ({
+  createBrowserIpcMiddleware: mocks.createBrowserIpcMiddleware,
+}));
 vi.mock("./middlewares/notification-ipc-service", () => ({
   createNotificationIpcMiddleware: mocks.createNotificationIpcMiddleware,
+}));
+vi.mock("./middlewares/agent-events-ipc-service", () => ({
+  createAgentEventsIpcMiddleware: mocks.createAgentEventsIpcMiddleware,
+}));
+vi.mock("./middlewares/git-events-ipc-service", () => ({
+  createGitEventsIpcMiddleware: mocks.createGitEventsIpcMiddleware,
 }));
 vi.mock("$features/notifications/web-notification-service", () => ({
   createWebNotificationMiddleware: mocks.createWebNotificationMiddleware,
@@ -458,12 +554,21 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentSubscriptionReadMiddleware,
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
+      mocks.chatSubscribeMiddleware,
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
+      mocks.hardwareConsoleConnectionToastMiddleware,
+      mocks.hardwareConsoleIntegrationToggleMiddleware,
+      mocks.hardwareConsoleKeyPinPersistenceMiddleware,
+      mocks.hardwareConsoleKeySwitchMiddleware,
+      mocks.hardwareConsoleLedStatusMiddleware,
+      mocks.hardwareConsolePromptPickerMiddleware,
+      mocks.hardwareConsoleActionKeyMiddleware,
+      mocks.voiceTranscriptionMiddleware,
+      mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
-      mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.backgroundAgentSettingsPersistenceMiddleware,
@@ -471,7 +576,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
       mocks.hostRequirementsCheckMiddleware,
-      mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
       mocks.editRegenerateMiddleware,
@@ -488,14 +592,16 @@ describe("store middleware Redux logging gating", () => {
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
+      mocks.voiceSettingsMiddleware,
       mocks.mcpManagementMiddleware,
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
       mocks.lifecycleIpcReadMiddleware,
       mocks.directoryPickerReadMiddleware,
+      mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
+      mocks.backgroundHooksMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
-      mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
       mocks.sidebarNavPersistenceMiddleware,
       mocks.browserPersistenceMiddleware,
@@ -504,7 +610,11 @@ describe("store middleware Redux logging gating", () => {
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
+      mocks.menuIpcMiddleware,
+      mocks.browserIpcMiddleware,
       mocks.notificationIpcMiddleware,
+      mocks.agentEventsIpcMiddleware,
+      mocks.gitEventsIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
       mocks.userPreferencesBetaPersistenceMiddleware,
@@ -533,12 +643,21 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentSubscriptionReadMiddleware,
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
+      mocks.chatSubscribeMiddleware,
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
+      mocks.hardwareConsoleConnectionToastMiddleware,
+      mocks.hardwareConsoleIntegrationToggleMiddleware,
+      mocks.hardwareConsoleKeyPinPersistenceMiddleware,
+      mocks.hardwareConsoleKeySwitchMiddleware,
+      mocks.hardwareConsoleLedStatusMiddleware,
+      mocks.hardwareConsolePromptPickerMiddleware,
+      mocks.hardwareConsoleActionKeyMiddleware,
+      mocks.voiceTranscriptionMiddleware,
+      mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
-      mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.backgroundAgentSettingsPersistenceMiddleware,
@@ -546,7 +665,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
       mocks.hostRequirementsCheckMiddleware,
-      mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
       mocks.editRegenerateMiddleware,
@@ -563,14 +681,16 @@ describe("store middleware Redux logging gating", () => {
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
+      mocks.voiceSettingsMiddleware,
       mocks.mcpManagementMiddleware,
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
       mocks.lifecycleIpcReadMiddleware,
       mocks.directoryPickerReadMiddleware,
+      mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
+      mocks.backgroundHooksMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
-      mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
       mocks.sidebarNavPersistenceMiddleware,
       mocks.browserPersistenceMiddleware,
@@ -579,7 +699,11 @@ describe("store middleware Redux logging gating", () => {
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
+      mocks.menuIpcMiddleware,
+      mocks.browserIpcMiddleware,
       mocks.notificationIpcMiddleware,
+      mocks.agentEventsIpcMiddleware,
+      mocks.gitEventsIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
       mocks.userPreferencesBetaPersistenceMiddleware,
@@ -608,12 +732,21 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentSubscriptionReadMiddleware,
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
+      mocks.chatSubscribeMiddleware,
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
+      mocks.hardwareConsoleConnectionToastMiddleware,
+      mocks.hardwareConsoleIntegrationToggleMiddleware,
+      mocks.hardwareConsoleKeyPinPersistenceMiddleware,
+      mocks.hardwareConsoleKeySwitchMiddleware,
+      mocks.hardwareConsoleLedStatusMiddleware,
+      mocks.hardwareConsolePromptPickerMiddleware,
+      mocks.hardwareConsoleActionKeyMiddleware,
+      mocks.voiceTranscriptionMiddleware,
+      mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
-      mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.backgroundAgentSettingsPersistenceMiddleware,
@@ -621,7 +754,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
       mocks.hostRequirementsCheckMiddleware,
-      mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
       mocks.editRegenerateMiddleware,
@@ -638,14 +770,16 @@ describe("store middleware Redux logging gating", () => {
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
+      mocks.voiceSettingsMiddleware,
       mocks.mcpManagementMiddleware,
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
       mocks.lifecycleIpcReadMiddleware,
       mocks.directoryPickerReadMiddleware,
+      mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
+      mocks.backgroundHooksMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
-      mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
       mocks.sidebarNavPersistenceMiddleware,
       mocks.browserPersistenceMiddleware,
@@ -654,7 +788,11 @@ describe("store middleware Redux logging gating", () => {
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
+      mocks.menuIpcMiddleware,
+      mocks.browserIpcMiddleware,
       mocks.notificationIpcMiddleware,
+      mocks.agentEventsIpcMiddleware,
+      mocks.gitEventsIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
       mocks.userPreferencesBetaPersistenceMiddleware,
@@ -684,12 +822,21 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentSubscriptionReadMiddleware,
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
+      mocks.chatSubscribeMiddleware,
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
+      mocks.hardwareConsoleConnectionToastMiddleware,
+      mocks.hardwareConsoleIntegrationToggleMiddleware,
+      mocks.hardwareConsoleKeyPinPersistenceMiddleware,
+      mocks.hardwareConsoleKeySwitchMiddleware,
+      mocks.hardwareConsoleLedStatusMiddleware,
+      mocks.hardwareConsolePromptPickerMiddleware,
+      mocks.hardwareConsoleActionKeyMiddleware,
+      mocks.voiceTranscriptionMiddleware,
+      mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
-      mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.backgroundAgentSettingsPersistenceMiddleware,
@@ -697,7 +844,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
       mocks.hostRequirementsCheckMiddleware,
-      mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
       mocks.editRegenerateMiddleware,
@@ -714,14 +860,16 @@ describe("store middleware Redux logging gating", () => {
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
+      mocks.voiceSettingsMiddleware,
       mocks.mcpManagementMiddleware,
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
       mocks.lifecycleIpcReadMiddleware,
       mocks.directoryPickerReadMiddleware,
+      mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
+      mocks.backgroundHooksMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
-      mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
       mocks.sidebarNavPersistenceMiddleware,
       mocks.browserPersistenceMiddleware,
@@ -730,7 +878,11 @@ describe("store middleware Redux logging gating", () => {
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
+      mocks.menuIpcMiddleware,
+      mocks.browserIpcMiddleware,
       mocks.notificationIpcMiddleware,
+      mocks.agentEventsIpcMiddleware,
+      mocks.gitEventsIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
       mocks.userPreferencesBetaPersistenceMiddleware,
@@ -777,12 +929,21 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentSubscriptionReadMiddleware,
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
+      mocks.chatSubscribeMiddleware,
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
+      mocks.hardwareConsoleConnectionToastMiddleware,
+      mocks.hardwareConsoleIntegrationToggleMiddleware,
+      mocks.hardwareConsoleKeyPinPersistenceMiddleware,
+      mocks.hardwareConsoleKeySwitchMiddleware,
+      mocks.hardwareConsoleLedStatusMiddleware,
+      mocks.hardwareConsolePromptPickerMiddleware,
+      mocks.hardwareConsoleActionKeyMiddleware,
+      mocks.voiceTranscriptionMiddleware,
+      mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
-      mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.backgroundAgentSettingsPersistenceMiddleware,
@@ -790,7 +951,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
       mocks.hostRequirementsCheckMiddleware,
-      mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
       mocks.editRegenerateMiddleware,
@@ -807,14 +967,16 @@ describe("store middleware Redux logging gating", () => {
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
+      mocks.voiceSettingsMiddleware,
       mocks.mcpManagementMiddleware,
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
       mocks.lifecycleIpcReadMiddleware,
       mocks.directoryPickerReadMiddleware,
+      mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
+      mocks.backgroundHooksMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
-      mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
       mocks.sidebarNavPersistenceMiddleware,
       mocks.browserPersistenceMiddleware,
@@ -823,7 +985,11 @@ describe("store middleware Redux logging gating", () => {
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
+      mocks.menuIpcMiddleware,
+      mocks.browserIpcMiddleware,
       mocks.notificationIpcMiddleware,
+      mocks.agentEventsIpcMiddleware,
+      mocks.gitEventsIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
       mocks.userPreferencesBetaPersistenceMiddleware,
@@ -835,6 +1001,83 @@ describe("store middleware Redux logging gating", () => {
       mocks.specialistsMutationMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
+  });
+});
+
+describe("hardware-console middleware gating in the HUD window", () => {
+  const hardwareConsoleFactories = [
+    mocks.createHardwareConsoleConnectionToastMiddleware,
+    mocks.createHardwareConsoleIntegrationToggleMiddleware,
+    mocks.createHardwareConsoleKeyPinPersistenceMiddleware,
+    mocks.createHardwareConsoleKeySwitchMiddleware,
+    mocks.createHardwareConsoleLedStatusMiddleware,
+    mocks.createHardwareConsolePromptPickerMiddleware,
+    mocks.createHardwareConsoleActionKeyMiddleware,
+    mocks.createVoiceTranscriptionMiddleware,
+    mocks.createHardwareConsoleEncoderMiddleware,
+  ];
+
+  const hardwareConsoleMiddlewares = [
+    mocks.hardwareConsoleConnectionToastMiddleware,
+    mocks.hardwareConsoleIntegrationToggleMiddleware,
+    mocks.hardwareConsoleKeyPinPersistenceMiddleware,
+    mocks.hardwareConsoleKeySwitchMiddleware,
+    mocks.hardwareConsoleLedStatusMiddleware,
+    mocks.hardwareConsolePromptPickerMiddleware,
+    mocks.hardwareConsoleActionKeyMiddleware,
+    mocks.voiceTranscriptionMiddleware,
+    mocks.hardwareConsoleEncoderMiddleware,
+  ];
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.stubEnv("DEV", false);
+    vi.clearAllMocks();
+    setLocalStorageEntries({});
+    delete (window as Window & { intentFlags?: unknown }).intentFlags;
+  });
+
+  afterEach(() => {
+    window.history.pushState({}, "", "/");
+  });
+
+  it("skips all hardware-console middlewares in the HUD renderer (/hud)", async () => {
+    window.history.pushState({}, "", "/hud");
+
+    const { middleware } = await import("./middleware");
+
+    for (const factory of hardwareConsoleFactories) {
+      expect(factory).not.toHaveBeenCalled();
+    }
+    for (const hardwareConsoleMiddleware of hardwareConsoleMiddlewares) {
+      expect(middleware).not.toContain(hardwareConsoleMiddleware);
+    }
+    // The surrounding middlewares close the gap: agent-failure toast is
+    // immediately followed by daemon health.
+    expect(middleware.indexOf(mocks.daemonHealthMiddleware)).toBe(
+      middleware.indexOf(mocks.agentFailureToastMiddleware) + 1,
+    );
+  });
+
+  it("includes all hardware-console middlewares outside the HUD renderer", async () => {
+    window.history.pushState({}, "", "/workspace/ws-123");
+
+    const { middleware } = await import("./middleware");
+
+    for (const factory of hardwareConsoleFactories) {
+      expect(factory).toHaveBeenCalledTimes(1);
+    }
+    const start = middleware.indexOf(mocks.hardwareConsoleConnectionToastMiddleware);
+    expect(start).toBeGreaterThan(-1);
+    expect(middleware.slice(start, start + hardwareConsoleMiddlewares.length)).toEqual(
+      hardwareConsoleMiddlewares,
+    );
+    // Placement is unchanged: between the agent-failure toast and daemon health.
+    expect(middleware.indexOf(mocks.agentFailureToastMiddleware)).toBe(start - 1);
+    expect(middleware.indexOf(mocks.daemonHealthMiddleware)).toBe(
+      start + hardwareConsoleMiddlewares.length,
+    );
   });
 });
 

@@ -34,6 +34,7 @@ export function parseVersionPin(content: string): string {
   const version = lines[0];
   if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
     throw new Error(
+      // i18n-ignore (developer-facing config error)
       `Invalid intentd version pin "${version}" (expected e.g. 1.2.3 or 1.2.3-beta.1, no leading "v")`,
     );
   }

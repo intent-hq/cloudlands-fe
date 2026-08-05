@@ -4,6 +4,7 @@
   import { themePresets } from '$lib/utils/theme-presets';
   import Fa from 'svelte-fa';
   import { faUpload } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
   import {
   selectActiveThemePresetId,
   selectCustomThemeName,
@@ -73,11 +74,11 @@
       errorMessage = '';
     } catch (err) {
       if (err instanceof SyntaxError) {
-        errorMessage = 'Invalid JSON file. Please select a valid VS Code theme file.';
+        errorMessage = m.settings_colorTheme_invalidJsonError();
       } else if (err instanceof Error) {
         errorMessage = err.message;
       } else {
-        errorMessage = 'Failed to load theme file.';
+        errorMessage = m.settings_colorTheme_loadFileError();
       }
     }
 
@@ -92,10 +93,10 @@
 <div class="flex flex-col gap-3">
   <!-- Header -->
   <div class="flex items-center justify-between">
-    <p class="text-sm font-medium text-foreground">Color Theme</p>
+    <p class="text-sm font-medium text-foreground">{m.settings_colorTheme_title()}</p>
     <Button variant="outline" size="sm" onclick={handleImportClick}>
       <Fa icon={faUpload} size="12" />
-      Import…
+      {m.settings_colorTheme_importButton()}
     </Button>
   </div>
 
@@ -115,7 +116,7 @@
           <div class="h-4 flex-1" style="background-color: {color}"></div>
         {/each}
       </div>
-      <span class="text-ui leading-tight text-foreground truncate w-full {!$hasCustomTheme ? 'font-semibold' : ''}">Default</span>
+      <span class="text-ui leading-tight text-foreground truncate w-full {!$hasCustomTheme ? 'font-semibold' : ''}">{m.settings_colorTheme_defaultOption()}</span>
     </button>
 
     <!-- Presets -->
@@ -146,13 +147,14 @@
   {#if isUserImported}
     <div class="flex items-center justify-between">
       <p class="text-xs text-subtle">
-        Imported: <span class="text-foreground font-medium">{$customThemeName}</span>
+        {m.settings_colorTheme_importedLabel()}
+        <span class="text-foreground font-medium">{$customThemeName}</span>
       </p>
       <button
         class="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
         onclick={selectDefault}
       >
-        Clear
+        {m.settings_colorTheme_clearButton()}
       </button>
     </div>
   {/if}

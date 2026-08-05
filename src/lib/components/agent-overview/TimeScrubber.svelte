@@ -5,6 +5,8 @@
    * Minimal slider for scrubbing through activity history.
    * ShadCN/Vercel-inspired design.
    */
+  import { formatTime as formatClockTime } from '$lib/i18n/format';
+  import * as m from '$shared/paraglide/messages.js';
 
   interface Props {
     currentTime: string;
@@ -51,13 +53,7 @@
   // Format time for display
   function formatTime(isoTime: string): string {
     try {
-      const date = new Date(isoTime);
-      if (isNaN(date.getTime())) return '--:--:--';
-      return date.toLocaleTimeString(undefined, {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      });
+      return formatClockTime(isoTime, { seconds: true }) || '--:--:--';
     } catch {
       return '--:--:--';
     }
@@ -93,7 +89,7 @@
     {:else}
       <span class="h-2 w-2 rounded-full bg-muted-foreground/40"></span>
     {/if}
-    <span>{isLive ? 'Live' : 'Paused'}</span>
+    <span>{isLive ? m.agentOverview_timeScrubber_live_label() : m.agentOverview_timeScrubber_paused_label()}</span>
   </button>
 
   <!-- Slider container -->

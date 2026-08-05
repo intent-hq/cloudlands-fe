@@ -107,6 +107,15 @@ export async function signSidecar(context) {
   const appName = packager.appInfo.productFilename;
   const appPath = path.join(appOutDir, `${appName}.app`);
   const sidecarPath = path.join(appPath, 'Contents', 'Resources', 'intentd', 'intentd');
+  // Optional macOS speech transcription helper (scripts/build-speech-helper.cjs);
+  // absent when the staging build skipped it (no swiftc / non-mac packaging host).
+  const speechHelperPath = path.join(
+    appPath,
+    'Contents',
+    'Resources',
+    'speech-helper',
+    'intent-speech-helper',
+  );
 
   console.log('=== Signing intentd sidecar (afterPack) ===');
   console.log(`App: ${appPath}`);
@@ -148,6 +157,12 @@ export async function signSidecar(context) {
 
     // Verify the signature
     await verifySignature(sidecarPath);
+
+    // Sign the speech helper when bundled (same seal-ordering constraint)
+    if (fs.existsSync(speechHelperPath)) {
+      await signBinary(speechHelperPath, identity);
+      await verifySignature(speechHelperPath);
+    }
 
     console.log('=== Sidecar signing complete ===');
   } catch (error) {

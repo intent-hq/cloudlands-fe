@@ -76,6 +76,62 @@ function userMessage(metadata?: Record<string, unknown>): AgentMessage {
   };
 }
 
+function userTextMessage(text: string): AgentMessage {
+  return {
+    id: 'msg-1',
+    role: 'user',
+    contentBlocks: [{ type: 'text', text }],
+    timestamp: new Date('2026-01-01T12:00:00Z'),
+  };
+}
+
+describe('ChatMessage user message text rendering', () => {
+  it('renders multi-line text with no leading whitespace before the first character', () => {
+    const { container } = render(ChatMessage, {
+      props: { message: userTextMessage('Q: q1\nA: a1') },
+    });
+
+    // The element(s) applying whitespace-pre-wrap must contain exactly the
+    // message text — no template whitespace text nodes rendered under pre-wrap.
+    const preWrapEls = Array.from(container.querySelectorAll('.whitespace-pre-wrap')).filter(
+      (el) => el.textContent?.includes('Q: q1'),
+    );
+    expect(preWrapEls.length).toBeGreaterThan(0);
+    for (const el of preWrapEls) {
+      expect(el.textContent).toBe('Q: q1\nA: a1');
+    }
+  });
+
+  it('preserves internal newlines of the message text', () => {
+    const { container } = render(ChatMessage, {
+      props: { message: userTextMessage('line one\nline two') },
+    });
+
+    const span = Array.from(container.querySelectorAll('span')).find(
+      (el) => el.textContent === 'line one\nline two',
+    );
+    expect(span).toBeTruthy();
+    expect(span!.className).toContain('whitespace-pre-wrap');
+  });
+
+  it('still renders inline mention chips alongside text segments', () => {
+    const { container } = render(ChatMessage, {
+      props: { message: userTextMessage('see @note/spec now') },
+    });
+
+    // Mention chip renders as a button
+    const chip = Array.from(container.querySelectorAll('button')).find((el) =>
+      el.textContent?.includes('spec'),
+    );
+    expect(chip).toBeTruthy();
+
+    // Surrounding text segments keep their message-internal whitespace
+    const spans = Array.from(container.querySelectorAll('span.whitespace-pre-wrap'));
+    expect(spans.some((el) => el.textContent === 'see ')).toBe(true);
+    expect(spans.some((el) => el.textContent === ' now')).toBe(true);
+  });
+});
+
 describe('ChatMessage agent-to-agent sender attribution', () => {
   beforeEach(() => {
     dispatchMock.mockClear();
@@ -187,5 +243,70 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
 
     // Edit mode replaces the message body view
     expect(screen.queryByText('hello from another agent')).toBeNull();
+  });
+});
+
+describe('ChatMessage hook wake attribution', () => {
+  const hookWakeMetadata = {
+    type: 'hook_wake',
+    hookId: 'hook-1',
+    hookName: 'ci-watch',
+    reason: 'dispatched',
+  };
+
+  function hookWakeMessage(opts: { rowMetadata?: boolean; blockMetadata?: boolean }): AgentMessage {
+    return {
+      id: 'msg-1',
+      role: 'user',
+      contentBlocks: [
+        {
+          type: 'text',
+          text: '[Background hook "ci-watch"] CI is red',
+          ...(opts.blockMetadata ? { messageMetadata: hookWakeMetadata } : {}),
+        },
+      ],
+      timestamp: new Date('2026-01-01T12:00:00Z'),
+      ...(opts.rowMetadata ? { metadata: hookWakeMetadata } : {}),
+    };
+  }
+
+  it('renders the hook wake header and strips the prefix (row-level metadata)', () => {
+    render(ChatMessage, { props: { message: hookWakeMessage({ rowMetadata: true }) } });
+
+    const header = screen.getByTestId('hook-wake-attribution');
+    expect(header).toBeTruthy();
+    expect(screen.getByText('ci-watch')).toBeTruthy();
+    expect(screen.getByText('woke the agent')).toBeTruthy();
+    expect(screen.getByText('CI is red')).toBeTruthy();
+    expect(screen.queryByText(/\[Background hook/)).toBeNull();
+  });
+
+  it('detects hook wake from block-level messageMetadata', () => {
+    render(ChatMessage, { props: { message: hookWakeMessage({ blockMetadata: true }) } });
+
+    expect(screen.getByTestId('hook-wake-attribution')).toBeTruthy();
+    expect(screen.getByText('CI is red')).toBeTruthy();
+    expect(screen.queryByText(/\[Background hook/)).toBeNull();
+  });
+
+  it('renders untagged prefixed text unchanged (no metadata, no strip)', () => {
+    render(ChatMessage, {
+      props: { message: hookWakeMessage({}) },
+    });
+
+    expect(screen.queryByTestId('hook-wake-attribution')).toBeNull();
+    expect(screen.getByText('[Background hook "ci-watch"] CI is red')).toBeTruthy();
+  });
+
+  it('does not enter edit mode when clicking a hook wake message body', async () => {
+    const onEditSubmit = vi.fn();
+    render(ChatMessage, {
+      props: { message: hookWakeMessage({ rowMetadata: true }), onEditSubmit },
+    });
+
+    await fireEvent.click(screen.getByText('CI is red'));
+
+    expect(screen.getByText('CI is red')).toBeTruthy();
+    expect(screen.getByTestId('hook-wake-attribution')).toBeTruthy();
   });
 });

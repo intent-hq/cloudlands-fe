@@ -35,7 +35,13 @@ vi.mock('$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors'
   })),
 }));
 
+vi.mock('svelte-fa', async () => {
+  const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
+  return { default: MockFa, Fa: MockFa };
+});
+
 import SettingsChangeCard from './SettingsChangeCard.svelte';
+import { warmImport } from '../../../../test/warm-import';
 
 function makeProposal(): Proposal {
   return {
@@ -54,6 +60,10 @@ function makeProposal(): Proposal {
     },
   };
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
 
 describe('SettingsChangeCard', () => {
   beforeEach(() => {
@@ -92,11 +102,11 @@ describe('SettingsChangeCard', () => {
 
     expect(screen.getByText('Theme preset: Default')).toBeTruthy();
     expect(screen.getByText('Dracula → Default')).toBeTruthy();
-    const select = screen.getByLabelText('Theme preset') as HTMLSelectElement;
-    expect(select.value).toBe('');
-    expect(screen.getByRole('option', { name: 'Default' })).toBeTruthy();
+    const trigger = screen.getByLabelText('Theme preset');
+    expect(trigger.textContent).toContain('Default');
 
-    await fireEvent.change(select, { target: { value: '' } });
+    await fireEvent.click(trigger);
+    await fireEvent.click(screen.getByRole('button', { name: 'Default' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
 
     expect(onApply.mock.calls[0]?.[0].editedFields['theme.activePresetId']).toBeNull();

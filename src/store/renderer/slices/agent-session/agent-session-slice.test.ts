@@ -34,7 +34,7 @@ import {
   chatSendFailed,
   chatSendStarted,
   chatInitialized,
-  streamCompleted,
+  streamEnded,
 } from '../chat-state/chat-state-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -56,6 +56,7 @@ import {
   selectAgentIsWaitingForOtherAgents,
   selectAgentIsRunning,
   selectAllRetainedAgentSessions,
+  selectAgentAttentionRequest,
 } from './agent-session-selectors';
 
 // ============================================================================
@@ -296,6 +297,227 @@ describe('agent-session-slice reducer', () => {
       expect(getMsgs(next, 'a1')[0].contentBlocks).toHaveLength(3);
       expect(getMsgs(next, 'a1')[0].contentBlocks?.[2]).toMatchObject({ type: 'resource' });
     });
+
+    // Attention-request lifecycle: a re-hydration that only raises or clears
+    // the attention-request fields must not be swallowed by the no-op guard.
+    it('applies an upsert when an attention request is raised on an otherwise-equivalent session', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            attentionRequestKind: 'discussion',
+            attentionRequestReason: 'Need input on API shape',
+            attentionRequestTimestamp: '2026-07-30T10:00:00Z',
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].attentionRequestKind).toBe('discussion');
+      expect(next.byAgentId['a1'].attentionRequestReason).toBe('Need input on API shape');
+      expect(next.byAgentId['a1'].attentionRequestTimestamp).toBe('2026-07-30T10:00:00Z');
+    });
+
+    // Preview fields (AgentLite, PROTOCOL §5.5): an upsert whose only change
+    // is lastMessageRole/lastUserMessage/lastAgentResponse must not be
+    // swallowed by the no-op guard — the AgentCard preview renders directly
+    // off them.
+    it('applies an upsert when only lastMessageRole/lastUserMessage change on an otherwise-equivalent session', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            lastMessageRole: 'user',
+            lastUserMessage: 'Please also handle the empty-list case',
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].lastMessageRole).toBe('user');
+      expect(next.byAgentId['a1'].lastUserMessage).toBe(
+        'Please also handle the empty-list case',
+      );
+    });
+
+    it('applies an upsert when only lastAgentResponse changes on an otherwise-equivalent session', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { lastAgentResponse: 'Working on it…' })),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', { lastAgentResponse: 'Done — tests pass.' }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].lastAgentResponse).toBe('Done — tests pass.');
+    });
+
+    it('retires the attention request when the daemon clears the fields', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            attentionRequestKind: 'blocker',
+            attentionRequestReason: 'CI credentials expired',
+            attentionRequestTimestamp: '2026-07-30T11:00:00Z',
+          }),
+        ),
+      );
+      expect(state.byAgentId['a1'].attentionRequestKind).toBe('blocker');
+
+      // The daemon clears the fields on the next user-origin delivery; the
+      // re-fetched projection simply omits them.
+      const next = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].attentionRequestKind).toBeUndefined();
+      expect(next.byAgentId['a1'].attentionRequestReason).toBeUndefined();
+      expect(next.byAgentId['a1'].attentionRequestTimestamp).toBeUndefined();
+    });
+
+    it('registers metadata-carried (AgentLite) attention fields as changes too', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            metadata: {
+              attentionRequestKind: 'discussion',
+              attentionRequestReason: 'From AgentLite metadata',
+            } as any,
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].metadata?.attentionRequestKind).toBe('discussion');
+    });
+
+    // Regression (monorepo#1231): an upsert whose only change is
+    // metadata.completionReport must not be swallowed by the no-op guard —
+    // AgentCard's effectiveCompletionReport preview renders directly off it.
+    it('applies an upsert when only metadata.completionReport changes on an otherwise-equivalent session', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            metadata: { completionReport: 'Done — tests pass, PR ready.' },
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].metadata?.completionReport).toBe(
+        'Done — tests pass, PR ready.',
+      );
+    });
+
+    it('applies an upsert when only metadata.dismissedQuestionsMessageId changes (cross-window reconcile)', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            metadata: { dismissedQuestionsMessageId: 'msg-q1' } as any,
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].metadata?.dismissedQuestionsMessageId).toBe('msg-q1');
+    });
+
+    it('applies an upsert when only metadata.lastSeenMessageId changes (agent:updated convergence)', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            metadata: { lastSeenMessageId: 'msg-seen-1' } as any,
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].metadata?.lastSeenMessageId).toBe('msg-seen-1');
+    });
+
+    it('applies an upsert when only metadata.taskNoteId changes (post-creation task assignment)', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            metadata: { taskNoteId: 'note-42' } as any,
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].metadata?.taskNoteId).toBe('note-42');
+    });
+
+    it('applies an upsert when only the sandbox metadata fields settle (async CoW provisioning)', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            metadata: {
+              sandboxId: 'sbx-1',
+              sandboxPath: '/sandboxes/sbx-1',
+              sandboxBranch: 'agent/sbx-1',
+            } as any,
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].metadata?.sandboxPath).toBe('/sandboxes/sbx-1');
+    });
   });
 
   describe('removeSession', () => {
@@ -495,6 +717,349 @@ describe('agent-session-slice reducer', () => {
         isProcessing: true,
         isResponding: true,
       });
+    });
+
+    it('a running agent:status-changed clears the parked completion-watch state', () => {
+      // Live HUD bug: the coordinator's previous turn ended waiting on
+      // children (`agent:idle` froze isWaitingForOtherAgents: true), then the
+      // user messaged it. The daemon's turn-start `agent:status-changed`
+      // carries ONLY { agentId, status: "active", isActive: true } (§6.5/§6.7
+      // persist_status — no liveness flags, no waiting fields), so the stale
+      // waiting flag kept the card square grey for the whole turn while the
+      // feed showed AGENT RUNNING off the same event. Running-after-waiting
+      // must end the wait.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+          } as any),
+        ),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-running',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'active', isActive: true },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].status).toBe('active');
+      expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(false);
+      expect(state.byAgentId['a1'].waitingForAgentIds).toEqual([]);
+    });
+
+    it('a status-changed snapshot carrying explicit waiting fields stays verbatim', () => {
+      // The clear only fires when the waiting keys are ABSENT — a payload
+      // that carries them (e.g. an enriched snapshot) folds verbatim.
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-snapshot',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'active',
+            isActive: true,
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(true);
+      expect(state.byAgentId['a1'].waitingForAgentIds).toEqual(['child-1']);
+    });
+
+    it('a between-turns active overshoot (isActive false) does not clear the wait', () => {
+      // Parked coordinators can carry a lagging `status: "active"` with
+      // `isActive: false` — that is not a turn start and must not end the wait.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+          } as any),
+        ),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-overshoot',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'active', isActive: false },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(true);
+      expect(state.byAgentId['a1'].waitingForAgentIds).toEqual(['child-1']);
+    });
+
+    it('folds the agent:idle isWaitingForOtherAgents flag onto the session', () => {
+      // §6.5: agent:idle freezes the completion-watch waiting flag into the
+      // payload at emit time — a coordinator that ended its turn to wait on
+      // children must land waiting (so HUD cards keep its row visible).
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-idle-waiting',
+          type: 'agent:idle',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'idle',
+            isWaitingForOtherAgents: true,
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(true);
+    });
+
+    it('folds the agent:subscriptions-changed waiting snapshot onto the session', () => {
+      // §6.5: { agentId, isWaitingForOtherAgents, waitingForAgentIds } — the
+      // refreshed completion-watch snapshot after a watch is added/consumed.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { isWaitingForOtherAgents: true } as any)),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-subs-1',
+          type: 'agent:subscriptions-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1', 'child-2'],
+          },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].waitingForAgentIds).toEqual(['child-1', 'child-2']);
+
+      // Watch consumed: the cleared snapshot must fold too (the wait ended).
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-subs-2',
+          type: 'agent:subscriptions-changed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            isWaitingForOtherAgents: false,
+            waitingForAgentIds: [],
+          },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(false);
+      expect(state.byAgentId['a1'].waitingForAgentIds).toEqual([]);
+    });
+
+    it('a hint-only subscriptions-changed (no snapshot fields) does not clobber waiting state', () => {
+      // Some emitters send only { agentId, subscriptionVersion, reason } —
+      // absent waiting fields must not overwrite the tracked values.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+          } as any),
+        ),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-subs-hint',
+          type: 'agent:subscriptions-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', subscriptionVersion: 3 },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(true);
+      expect(state.byAgentId['a1'].waitingForAgentIds).toEqual(['child-1']);
+    });
+
+    it('a hydration whose only change is waitingForAgentIds is not swallowed as a no-op', () => {
+      // agent.list re-hydration (AgentLite §5.5) after the awaited set changed
+      // must produce new state — the comparison snapshot includes the list.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1', 'child-2'],
+          } as any),
+        ),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-2'],
+          } as any),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].waitingForAgentIds).toEqual(['child-2']);
+    });
+
+    it('a hydration whose only change is turnInFlight is not swallowed as a no-op', () => {
+      // STAB-125 turn-liveness (§5.5): the STAB-9 mid-turn agent.list
+      // re-hydration can differ from the stored session ONLY by
+      // turnInFlight flipping — the HUD bucket gate reads it, so the upsert
+      // must produce new state in both directions.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+          } as any),
+        ),
+      );
+
+      const midTurn = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+            turnInFlight: true,
+          } as any),
+        ),
+      );
+      expect(midTurn).not.toBe(state);
+      expect((midTurn.byAgentId['a1'] as any).turnInFlight).toBe(true);
+
+      const postTurn = agentSessionReducer(
+        midTurn,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+            turnInFlight: false,
+          } as any),
+        ),
+      );
+      expect(postTurn).not.toBe(midTurn);
+      expect((postTurn.byAgentId['a1'] as any).turnInFlight).toBe(false);
+    });
+
+    it('a running status-changed opens the sticky liveTurnOpen slot; a racy turnInFlight:false hydration cannot close it', () => {
+      // 3rd live repro: the daemon emits the turn-start event BEFORE opening
+      // the STAB-125 live-turn slot (try_begin → persist_status(Active) →
+      // begin_live_turn), so the STAB-9 refetch fired off that event can
+      // resolve with turnInFlight: false mid-turn. The FE-owned sticky slot
+      // must survive such a snapshot — only isActive: false or a terminal
+      // status closes it.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+          } as any),
+        ),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-running',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'active', isActive: true },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+
+      // The racy snapshot: watches pending, slot not yet visible to agent.list.
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions([
+          makeSession('a1', 'ws-1', {
+            status: 'active',
+            isActive: true,
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+            turnInFlight: false,
+          } as any),
+        ]),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+
+      // agent:idle closes the slot.
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-idle',
+          type: 'agent:idle',
+          timestamp: '2024-01-01T00:05:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'idle', isWaitingForOtherAgents: true },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(false);
+    });
+
+    it('a hydration with isActive:false or a terminal status closes the sticky liveTurnOpen slot', () => {
+      // Snapshot-only close path: if the idle event is missed, the
+      // authoritative isActive: false hydration must still end the turn.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-running',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'active', isActive: true },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions([
+          makeSession('a1', 'ws-1', {
+            status: 'idle',
+            isActive: false,
+            turnInFlight: false,
+          } as any),
+        ]),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBeUndefined();
     });
 
     it('adds cross-client user messages from canonical workspace events', () => {
@@ -762,6 +1327,29 @@ describe('agent-session-slice reducer', () => {
       );
     });
 
+    it('folds an AgentLite hydration lastAgentResponse in and never lets a snapshot without the field clobber it', () => {
+      // Hydration upsert (agent.list AgentLite, §5.5) carries the persisted
+      // summary — a refetch whose ONLY change is a fresh lastAgentResponse
+      // must not be swallowed by the equivalence no-op guard.
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1', { lastAgentResponse: 'Wired the release fetch' })),
+      );
+      expect(state.byAgentId['a1'].lastAgentResponse).toBe('Wired the release fetch');
+
+      // A later snapshot that omits the field keeps the known value.
+      state = agentSessionReducer(state, upsertSession(makeSession('a1')));
+      expect(state.byAgentId['a1'].lastAgentResponse).toBe('Wired the release fetch');
+
+      // But a snapshot that carries the key replaces it.
+      state = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1', { lastAgentResponse: 'All gates green' })),
+      );
+      expect(state.byAgentId['a1'].lastAgentResponse).toBe('All gates green');
+    });
+
     it('maps agent:session-stats-changed into session.stats without touching lifecycle fields', () => {
       let state = agentSessionReducer(
         initialState,
@@ -1003,6 +1591,183 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].status).toBe('error');
       expect(state.byAgentId['a1'].isActive).toBe(false);
     });
+
+    it('applies stopReasonTimestamp from agent:failed and preserves it when agent:status-changed arrives without the key', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-failed-ts-1',
+          type: 'agent:failed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            error: 'Provider stream aborted',
+            stopReasonTimestamp: '2024-01-01T00:00:01.000Z',
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].stopReasonTimestamp).toBe('2024-01-01T00:00:01.000Z');
+
+      // status-changed without the key must not clobber the timestamp
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-status-ts-1',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:02.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'error',
+            isActive: false,
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].stopReasonTimestamp).toBe('2024-01-01T00:00:01.000Z');
+    });
+
+    it('applies stopReasonTimestamp via the real wire sequence: agent:failed (no timestamp key) followed by the terminal-failure agent:status-changed carrying it', () => {
+      // Per PROTOCOL §7, `agent:failed` data is `{ agentId, error, turnId?,
+      // parentAgentId? }` — it never carries stopReasonTimestamp on the wire.
+      // The timestamp actually arrives on the terminal-failure
+      // `agent:status-changed` that follows it (intentd emission order:
+      // publish_terminal_failure_events -> persist_error_and_requeue).
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-failed-1',
+          type: 'agent:failed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            error: 'Provider stream aborted',
+          },
+        } as any),
+      );
+
+      // agent:failed's own null-defaulting must not persist past the
+      // following status-changed apply.
+      expect(state.byAgentId['a1'].stopReasonTimestamp).toBeNull();
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-status-1',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:02.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'error',
+            isActive: false,
+            stopReason: 'Provider stream aborted',
+            stopReasonTimestamp: '2024-01-01T00:00:02.000Z',
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].stopReasonTimestamp).toBe('2024-01-01T00:00:02.000Z');
+      expect(state.byAgentId['a1'].stopReason).toBe('Provider stream aborted');
+    });
+
+    it('applies sessionCorrupted from a terminal-failure agent:status-changed (monorepo#940)', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-status-corrupted-1',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'error',
+            isActive: false,
+            stopReason: 'JSON-RPC error -32603: invalid argument',
+            sessionCorrupted: true,
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].status).toBe('error');
+      expect(state.byAgentId['a1'].stopReason).toBe('JSON-RPC error -32603: invalid argument');
+      expect(state.byAgentId['a1'].sessionCorrupted).toBe(true);
+    });
+
+    it('keeps sessionCorrupted falsy on an error status-changed without the key (older daemons / ordinary errors)', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-status-plain-error',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'error',
+            isActive: false,
+            stopReason: 'Spawn timeout',
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].status).toBe('error');
+      expect(state.byAgentId['a1'].sessionCorrupted).toBeFalsy();
+    });
+
+    it('clears a stale sessionCorrupted flag on a status transition without the key (omitted-when-false wire semantics)', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-status-corrupted-2',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'error',
+            isActive: false,
+            stopReason: 'JSON-RPC error -32603: invalid argument',
+            sessionCorrupted: true,
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].sessionCorrupted).toBe(true);
+
+      // agent.retry recreated the provider session — the daemon emits the
+      // follow-up status-changed WITHOUT the flag (absent = not corrupted).
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-status-recovered',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:02.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'pending',
+            isActive: true,
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].status).toBe('pending');
+      expect(state.byAgentId['a1'].sessionCorrupted).toBe(false);
+    });
   });
 
   describe('updateAgentDigest', () => {
@@ -1011,6 +1776,21 @@ describe('agent-session-slice reducer', () => {
       state = agentSessionReducer(state, updateAgentDigest('ws-1', 'a1', 'summary'));
       expect(state.byAgentId['a1'].digest).toBe('summary');
       expect(updateAgentDigest.type).toBe('workspaceAgents/updateAgentDigest');
+    });
+
+    it('clears the digest with null (stored as undefined)', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(state, updateAgentDigest('ws-1', 'a1', 'summary'));
+      state = agentSessionReducer(state, updateAgentDigest('ws-1', 'a1', null));
+      expect(state.byAgentId['a1'].digest).toBeUndefined();
+    });
+
+    it('is a no-op when clearing an already-absent digest (undefined vs null)', () => {
+      // The bridge's turn-boundary clear fires once per turn even for
+      // sessions with no digest; that must not produce a new state object.
+      const state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      const next = agentSessionReducer(state, updateAgentDigest('ws-1', 'a1', null));
+      expect(next).toBe(state);
     });
   });
 
@@ -1872,6 +2652,59 @@ describe('agent-session selectors', () => {
     });
   });
 
+  describe('selectAgentAttentionRequest', () => {
+    it('derives a pending request from top-level session fields (both kinds)', () => {
+      const discussion = makeSession('a-disc', 'ws-1', {
+        attentionRequestKind: 'discussion',
+        attentionRequestReason: 'Need input',
+        attentionRequestTimestamp: '2026-07-30T10:00:00Z',
+      });
+      const blocker = makeSession('a-block', 'ws-1', {
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: 'Credentials expired',
+      });
+      const state = storeWith({
+        byAgentId: { 'a-disc': discussion, 'a-block': blocker },
+        agentIdsByWorkspace: {},
+      });
+
+      expect(selectAgentAttentionRequest.select(state, 'a-disc')).toEqual({
+        kind: 'discussion',
+        reason: 'Need input',
+        timestamp: '2026-07-30T10:00:00Z',
+      });
+      expect(selectAgentAttentionRequest.select(state, 'a-block')).toEqual({
+        kind: 'blocker',
+        reason: 'Credentials expired',
+        timestamp: undefined,
+      });
+    });
+
+    it('falls back to AgentLite metadata fields', () => {
+      const session = makeSession('a1', 'ws-1', {
+        metadata: {
+          attentionRequestKind: 'discussion',
+          attentionRequestReason: 'From metadata',
+        } as any,
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentAttentionRequest.select(state, 'a1')).toEqual({
+        kind: 'discussion',
+        reason: 'From metadata',
+        timestamp: undefined,
+      });
+    });
+
+    it('returns null when no request is pending (retired) or the agent is unknown', () => {
+      const session = makeSession('a1', 'ws-1');
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentAttentionRequest.select(state, 'a1')).toBeNull();
+      expect(selectAgentAttentionRequest.select(state, 'unknown')).toBeNull();
+    });
+  });
+
   describe('selectAgentIsWaitingForOtherAgents', () => {
     it('renders the daemon isWaitingForOtherAgents flag verbatim', () => {
       const session = makeSession('a1', 'ws-1', { isWaitingForOtherAgents: true });
@@ -2326,10 +3159,7 @@ describe('stream completion clears stale responding flags', () => {
     });
     let state = agentSessionReducer(initialState, upsertSession(existing));
 
-    state = agentSessionReducer(
-      state,
-      streamCompleted('a1', { lastAttemptedMessage: null, modelUnavailable: null }),
-    );
+    state = agentSessionReducer(state, streamEnded('a1'));
 
     expect(state.byAgentId['a1'].isStreaming).toBe(false);
     expect(state.byAgentId['a1'].isProcessing).toBe(false);
@@ -3043,6 +3873,9 @@ describe('pruneMessages sorts before pruning (prune-after-sort)', () => {
 describe('hasCanonicalId', () => {
   it('returns true for msg_-prefixed IDs', () => {
     expect(hasCanonicalId('msg_abc-123')).toBe(true);
+  });
+  it('returns true for server-minted user-msg- IDs (PROTOCOL §5.5)', () => {
+    expect(hasCanonicalId('user-msg-abc-123')).toBe(true);
   });
   it('returns false for plain UUIDs', () => {
     expect(hasCanonicalId('abc-123-def')).toBe(false);
@@ -4132,5 +4965,23 @@ describe('stopReason hydration', () => {
 
     expect(state.byAgentId['a1'].status).toBe('completed');
     expect(state.byAgentId['a1'].stopReason).toBe('end_turn');
+  });
+
+  it('hydrates sessionCorrupted from a daemon agent.list/agent.get snapshot via bulkUpsertSessions (monorepo#940)', () => {
+    const corruptedSession = makeSession('a1', 'ws-1', {
+      status: 'error',
+      activationState: 'error',
+      isActive: false,
+      isStreaming: false,
+      isProcessing: false,
+      stopReason: 'JSON-RPC error -32603: invalid argument',
+      sessionCorrupted: true,
+    });
+
+    const state = agentSessionReducer(initialState, bulkUpsertSessions([corruptedSession]));
+
+    expect(state.byAgentId['a1'].status).toBe('error');
+    expect(state.byAgentId['a1'].stopReason).toBe('JSON-RPC error -32603: invalid argument');
+    expect(state.byAgentId['a1'].sessionCorrupted).toBe(true);
   });
 });

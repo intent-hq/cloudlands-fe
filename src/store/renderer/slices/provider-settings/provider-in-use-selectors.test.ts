@@ -9,9 +9,20 @@ import {
 } from "./provider-in-use-selectors";
 import { initialState as specialistsInitialState } from "../specialists/specialists-slice";
 import { initialState as modelInitialState } from "../model/model-slice";
+import {
+  initialState as providerCatalogInitialState,
+  providerCatalogLoaded,
+  providerCatalogReducer,
+} from "../provider-catalog/provider-catalog-slice";
+import { MOCK_PROVIDER_CATALOG } from "../../../../test/fixtures/provider-catalog.fixture";
 import { createCollection } from "$lib/store-shim/utils/collections/collection-utils";
 import type { FileSpecialist } from "../specialists/specialists-slice";
 import type { StoreState } from "../../types";
+
+const providerCatalog = providerCatalogReducer(
+  providerCatalogInitialState,
+  providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+);
 
 function fileSpecialist(overrides: Partial<FileSpecialist> & { id: string }): FileSpecialist {
   return {
@@ -35,6 +46,7 @@ function mockState({
   fileSpecialists?: FileSpecialist[];
 } = {}): StoreState {
   return {
+    providerCatalog,
     providerSettings: { activeProviderId, enabledProviders: {} },
     model: { ...modelInitialState, providerModels },
     specialists: {
@@ -116,9 +128,9 @@ describe("provider in-use selectors", () => {
   });
 
   describe("active-provider fallback does not count as in use", () => {
-    it("does not mark the active provider as in use via tier-based specialists", () => {
-      // Bundled/hardcoded specialists use defaultModelTier with no explicit
-      // codingAgent — they follow the active provider and must not block it.
+    it("does not mark other providers as in use via unpinned specialists", () => {
+      // Bundled/hardcoded specialists carry no explicit model or codingAgent
+      // pin — they follow the active provider and must not block others.
       const state = mockState({
         activeProviderId: "claude-code",
         providerModels: { "claude-code": "claude-code:sonnet" },
@@ -127,13 +139,11 @@ describe("provider in-use selectors", () => {
       expect(selectProviderInUseReason.select(state, "codex")).toBeNull();
     });
 
-    it("ignores tier-based file specialists without an explicit coding agent", () => {
+    it("ignores file specialists without an explicit model or coding agent", () => {
       const state = mockState({
         activeProviderId: "codex",
         providerModels: { codex: "codex:gpt-5.3-codex/high" },
-        fileSpecialists: [
-          fileSpecialist({ id: "tiered", name: "Tiered", modelTier: "balanced" }),
-        ],
+        fileSpecialists: [fileSpecialist({ id: "unpinned", name: "Unpinned" })],
       });
       expect(selectProviderInUseReasons.select(state)["auggie"]).toBeUndefined();
     });

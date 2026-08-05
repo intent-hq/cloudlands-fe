@@ -18,7 +18,6 @@ import type { WorkspaceId as BrandedWorkspaceId } from '$shared/types/branded-id
 import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { generateAgentNameFromText } from '$lib/utils/agent-name-generator';
-import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
 import {
   addMessage,
   setAgentStreaming,
@@ -30,14 +29,10 @@ import {
   selectAvailableEnabledProviderIds,
 } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 
-import {
-  getDefaultModelForProvider,
-  getDefaultProviderId,
-  isModelValidForProvider,
-  parseCompoundModelId,
-  PROVIDER_MODEL_TIERS,
-} from '$shared/config/provider-config';
+import { isModelValidForProvider, splitCompoundModelId } from '$shared/utils/compound-model-id';
+import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = new Logger('UnifiedAgentFactory');
 
@@ -158,7 +153,7 @@ export class UnifiedAgentFactory {
         logger.error('Invalid workspace: missing ID');
         return {
           success: false,
-          error: 'Invalid workspace: missing ID',
+          error: m.agent_factory_invalidWorkspace_error(),
         };
       }
 
@@ -174,7 +169,7 @@ export class UnifiedAgentFactory {
           });
           return {
             success: false,
-            error: `Agent creation blocked: ${circuitCheck.reason}`,
+            error: m.agent_factory_creationBlocked_error({ reason: circuitCheck.reason ?? '' }),
           };
         }
         // Record the agent start
@@ -232,6 +227,7 @@ export class UnifiedAgentFactory {
                 }));
             } else {
               logger.debug(
+                // i18n-ignore (log line)
                 'Panel layout manager not yet initialized, skipping open panels context',
               );
             }
@@ -241,10 +237,7 @@ export class UnifiedAgentFactory {
 
           // Get linked references from context store (Redux)
           try {
-            const topLevelItems = selectTopLevelContextItems.select(
-              appStore.state,
-              workspace.id,
-            );
+            const topLevelItems = selectTopLevelContextItems.select(appStore.state, workspace.id);
             workspaceContext.linkedReferences = topLevelItems.map((item) => {
               let identifier: string | undefined;
               if (item.type === 'linear-issue') {
@@ -347,7 +340,7 @@ export class UnifiedAgentFactory {
             });
             return {
               success: false,
-              error: `The active provider "${activeId}" is not available. Install it or switch providers in Settings before creating an agent.`,
+              error: m.agent_factory_activeProviderUnavailable_error({ provider: activeId }),
             };
           }
           provider = activeId;
@@ -355,48 +348,30 @@ export class UnifiedAgentFactory {
         }
       }
 
-      // Step 6.6: Resolve model with provider-aware default
-      // If no model provided, use the provider's default 'balanced' tier model.
-      // Only resolve for providers with known tier mappings — providers with dynamic
-      // model lists (e.g. opencode) would produce invalid compound IDs.
+      // Step 6.6: Model is daemon-resolved (single resolver, PROTOCOL §5.11).
+      // Pass the caller's explicit model through untouched; when absent, omit
+      // it from `agent.create` so the daemon applies its resolved default
+      // (specialist frontmatter > settings chain > provider CLI default). No
+      // client-side tier/DEFAULT_AGENT_MODEL synthesis.
       let resolvedModel = normalized.model;
-      if (!resolvedModel && provider && provider in PROVIDER_MODEL_TIERS) {
-        const baseModel = getDefaultModelForProvider(provider, 'balanced');
-        const defaultProviderId = getDefaultProviderId();
-        // Prefix with provider ID for non-default providers (matches model store behavior)
-        resolvedModel = provider !== defaultProviderId ? `${provider}:${baseModel}` : baseModel;
-        logger.debug('Using provider-aware default model', {
-          provider,
-          baseModel,
-          resolvedModel,
-        });
-      }
-      // Final fallback to DEFAULT_AGENT_MODEL (only for backend or when no provider)
-      if (!resolvedModel) {
-        resolvedModel = DEFAULT_AGENT_MODEL;
-      }
 
       // Step 6.8: Safety-net — reject cross-provider compound model IDs.
-      // If the resolved model is a compound ID whose provider prefix doesn't match
-      // the target provider, log a warning and re-resolve to the provider's default.
-      // This catches edge cases where an LLM-supplied or inherited model slips through
-      // earlier validation (e.g., "codex:opencode/big-pickle").
+      // If the supplied model is a compound ID whose provider prefix doesn't
+      // match the target provider (e.g., "codex:opencode/big-pickle"), log a
+      // warning and drop it so the daemon resolves the target provider's own
+      // default instead of a cross-provider model leaking through.
       if (resolvedModel && provider && resolvedModel.includes(':')) {
-        if (!isModelValidForProvider(resolvedModel, provider)) {
-          const { providerId: modelProvider } = parseCompoundModelId(resolvedModel);
+        const defaultProviderId = isBackend
+          ? ''
+          : selectCatalogDefaultProviderId.select(appStore.state);
+        if (!isModelValidForProvider(resolvedModel, provider, defaultProviderId)) {
+          const modelProvider = splitCompoundModelId(resolvedModel).providerId;
           logger.warn('Safety net: cross-provider model mismatch in agent creation', {
             resolvedModel,
             modelProvider,
             expectedProvider: provider,
           });
-          if (provider in PROVIDER_MODEL_TIERS) {
-            const baseModel = getDefaultModelForProvider(provider, 'balanced');
-            const defaultProviderId = getDefaultProviderId();
-            resolvedModel = provider !== defaultProviderId ? `${provider}:${baseModel}` : baseModel;
-            logger.debug('Re-resolved model to provider default', { resolvedModel });
-          }
-          // If provider has no tier mappings (e.g., opencode), keep resolvedModel as-is.
-          // We cannot safely guess a model for dynamic-model providers.
+          resolvedModel = undefined;
         }
       }
 
@@ -438,7 +413,7 @@ export class UnifiedAgentFactory {
       if (!workspacePath) {
         return {
           success: false,
-          error: 'Workspace does not have a valid path',
+          error: m.agent_factory_invalidWorkspacePath_error(),
           sessionId,
         };
       }
@@ -549,8 +524,8 @@ export class UnifiedAgentFactory {
       // user-row agent:message event and on conversation rows (PROTOCOL §5.5),
       // so the echoed canonical message merges with the optimistic one by id
       // (the authoritative path); content-hash dedup remains only as a
-      // fallback for older daemons and echo-less paths (agent.forceMessage
-      // emits no live agent:message echo).
+      // fallback for rows that lack an appMessageId (e.g. older daemons that
+      // do not echo it).
       // Callers may supply their own id (empty/whitespace values are ignored).
       const initialUserAppMessageId =
         hasInitialMessage || hasContextReferences || hasImageBlocks
@@ -564,6 +539,7 @@ export class UnifiedAgentFactory {
           let messageText = normalized.initialMessage?.trim() || '';
           if (!messageText && hasContextReferences) {
             messageText =
+              // i18n-ignore (agent prompt content sent on the wire; must stay English)
               'I have linked some context above. Please review it and help me with this task.';
           }
 
@@ -600,6 +576,7 @@ export class UnifiedAgentFactory {
         let messageToSend = normalized.initialMessage?.trim() || '';
         if (!messageToSend && hasContextReferences) {
           messageToSend =
+            // i18n-ignore (agent prompt content sent on the wire; must stay English)
             'I have linked some context above. Please review it and help me with this task.';
         }
 
@@ -657,7 +634,7 @@ export class UnifiedAgentFactory {
         sessionId,
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : m.agent_factory_unknown_error();
       logger.error('Failed to create agent', {
         error: errorMessage,
         stack: error instanceof Error ? error.stack : undefined,
@@ -802,7 +779,7 @@ export class UnifiedAgentFactory {
       logger.error('Daemon agent.create failed', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Daemon error',
+        error: error instanceof Error ? error.message : m.agent_factory_daemon_error(),
       };
     }
   }

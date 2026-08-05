@@ -2,50 +2,55 @@
   /**
    * AgentSubscriptions Component
    *
-   * Shows what events an agent is currently subscribed to as a sleek bottom row.
-   * Also shows a brief "Woken up" indicator when an agent is woken by a subscription.
+   * Footer for what an agent is currently waiting on: a collapsible one-shot
+   * watch section on top (a "Waiting for…" header above individual AgentCards
+   * with per-row actions), followed by one collapsible DelegationGroupSection
+   * per multi-agent `after_all` delegation group. Single-agent groups merge
+   * into the one-shot rows (with a group-scoped cancel) unless their wake is
+   * delivery-pending, which keeps the group chrome for the warning. Also shows
+   * a brief "Woken up" indicator when an agent is woken by a subscription.
    *
    * All subscription data comes from Redux selectors (populated by the
-   * agent-subscription-ui saga). No IPC listeners, polling, or timers in this component.
+   * agent-subscription-ui read middleware). No IPC listeners, polling, or
+   * timers in this component.
    */
-  import {
-  fade,
-  slide,
-} from 'svelte/transition';
+  import { fade, slide } from 'svelte/transition';
   import { flip } from 'svelte/animate';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import {
-  faHourglass,
-  faBell,
-  faXmark,
-  faChevronDown,
-  faChevronRight,
-  faStop,
-  faTriangleExclamation,
-  faCircleCheck,
-} from '@fortawesome/free-solid-svg-icons';
+    faBell,
+    faChevronDown,
+    faChevronRight,
+    faHourglass,
+    faXmark,
+    faStop,
+    faCircleCheck,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { createLogger } from '$lib/utils/client-logger';
   import { untrack } from 'svelte';
-  import Button from '$lib/components/ui/button/button.svelte';
   import { writable } from 'svelte/store';
   import AgentCard from './AgentCard.svelte';
+  import DelegationGroupSection from './DelegationGroupSection.svelte';
   import InlineAgentAvatar from './InlineAgentAvatar.svelte';
-  import { sortWorkingAgentsFirst } from './delegation-ordering';
+  import { isGroupDeliveryPending } from './delegation-ordering';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   import {
-  selectAgentSubscriptions,
-  selectDelegationGroups,
-  selectWokenUpInfo,
-  selectCompletionStatus,
-  selectWaitingState,
-} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
+    selectAgentSubscriptions,
+    selectDelegationGroups,
+    selectWokenUpInfo,
+    selectCompletionStatus,
+    selectWaitingState,
+  } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
   import {
-  resetSubscriptionUI,
-  requestSubscriptionFetch,
-} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+    cancelAgentSubscriptionsRequested,
+    requestSubscriptionFetch,
+  } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
   import { stopAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import type { DelegationGroupStatus } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('AgentSubscriptions');
@@ -91,33 +96,52 @@
   const completionStatus$ = selectCompletionStatus(workspaceIdStore, agentIdStore);
   const waitingState$ = selectWaitingState(workspaceIdStore, agentIdStore);
 
-  // ── Component-local UI state ─────────────────────────────────────────
-  let isCollapsed: boolean = $state(false);
-
-  function toggleCollapsed() {
-    isCollapsed = !isCollapsed;
-  }
-
   // ── Derived display values ───────────────────────────────────────────
+
+  // `after_all` delegation groups, each rendered as its own section.
+  // Single-agent groups merge into the one-shot watch rows below unless their
+  // aggregated wake is delivery-pending (that warning needs the group chrome).
+  const delegationGroups = $derived(
+    $groups$.filter(
+      (g) => g.awaitMode === 'all' && (g.expectedAgentIds.length > 1 || isGroupDeliveryPending(g)),
+    ),
+  );
+
+  // Single-agent `after_all` groups rendered as one-shot rows, keyed by their
+  // sole expected agent so row actions stay group-aware (group-scoped cancel)
+  const mergedGroupByAgentId = $derived.by(() => {
+    const map = new Map<string, DelegationGroupStatus>();
+    for (const group of $groups$) {
+      if (group.awaitMode !== 'all') continue;
+      if (group.expectedAgentIds.length !== 1 || isGroupDeliveryPending(group)) continue;
+      map.set(group.expectedAgentIds[0], group);
+    }
+    return map;
+  });
 
   // Agent IDs from delegation groups (authoritative for "Waiting for all")
   const delegationWatchedIds = $derived.by(() => {
     const ids = new Set<string>();
-    for (const group of $groups$) {
-      if (group.awaitMode === 'all') {
-        for (const id of group.expectedAgentIds) ids.add(id);
-      }
+    for (const group of delegationGroups) {
+      for (const id of group.expectedAgentIds) ids.add(id);
     }
     return Array.from(ids);
   });
 
-  // Agent IDs from non-delegation subscriptions
-  const otherWatchedIds = $derived.by(() => {
+  // Agent IDs from one-shot watches (non-delegation subscriptions). "One-shot"
+  // here is UI vocabulary for the daemon's uniform deliver-once lifecycle on
+  // ungrouped watches — there is no client-side oneShot flag or fired-ID
+  // tracking; removal is driven entirely by daemon subscription snapshots. The
+  // daemon guarantees watch uniqueness per (parent, target, event), so no
+  // client-side dedup beyond the Set here. Merged single-agent groups render
+  // here too, so their agents are counted in the "Waiting for…" header.
+  const oneShotWatchedIds = $derived.by(() => {
     const ids = new Set<string>();
     for (const sub of $subs$) {
       if (sub.delegationGroup?.awaitMode === 'all') continue;
       for (const actorId of sub.actorIds || []) ids.add(actorId);
     }
+    for (const id of mergedGroupByAgentId.keys()) ids.add(id);
     return Array.from(ids);
   });
 
@@ -131,10 +155,11 @@
     return ids;
   });
 
-  const watchedAgentIds = $derived.by(() => {
-    const ids = Array.from(new Set([...delegationWatchedIds, ...otherWatchedIds]));
-    return sortWorkingAgentsFirst(ids, completedAgentIdSet);
-  });
+  // All watched agent IDs (used for footer visibility only; rendering is
+  // split into one-shot rows and per-group sections below)
+  const watchedAgentIds = $derived(
+    Array.from(new Set([...delegationWatchedIds, ...oneShotWatchedIds])),
+  );
 
   const waitMode = $derived.by(() => {
     for (const group of $groups$) {
@@ -147,14 +172,16 @@
   });
 
   // Whether any delegation group completed all agents but has not been delivered yet
-  const hasUndeliveredCompleteGroup = $derived.by(() => {
-    return $groups$.some((g) => {
-      const doneCount = g.completedAgentIds.length + g.deletedAgentIds.length;
-      return doneCount >= g.expectedAgentIds.length && g.expectedAgentIds.length > 0 && !g.delivered;
-    });
-  });
+  const hasUndeliveredCompleteGroup = $derived($groups$.some(isGroupDeliveryPending));
 
   const isCompleted = $derived($waitingState$ === 'completed');
+
+  // Collapse state for the one-shot watch section (header chevron)
+  let oneShotCollapsed: boolean = $state(false);
+
+  function toggleOneShotCollapsed() {
+    oneShotCollapsed = !oneShotCollapsed;
+  }
 
   const showSubscriptionRow = $derived.by(() => {
     // Show row during the 'completed' transitional state
@@ -172,32 +199,103 @@
   });
 
   // ── Button handlers ──────────────────────────────────────────────────
+  // All wire calls route through the mutation middleware (no IPC in the
+  // component); the daemon's `agent:subscriptions-changed` event drives the
+  // footer refetch, so no handler mutates the local subscription list.
 
-  // NOTE: the legacy `events:unsubscribe-agent` IPC is deprecated (daemon owns
-  // agent subscriptions, PROTOCOL §5.10); both handlers now only reset the
-  // local subscription UI (and stop agents, below).
-  function cancelSubscriptions() {
-    if (!workspaceId || !agentId) return;
-    appStore.dispatch(resetSubscriptionUI(workspaceId, agentId));
+  /** One-shot row stop: cancel that agent's in-flight stream (`agent.stop`). */
+  async function stopWatchedAgent(watchedAgentId: string) {
+    if (!workspaceId) return;
+    try {
+      const action = stopAgentSessionRequested(workspaceId, watchedAgentId);
+      appStore.dispatch(action);
+      await action.promise;
+    } catch (error) {
+      logger.error('Failed to stop watched agent', { watchedAgentId, error });
+    }
   }
 
-  async function stopAllAgents() {
+  /**
+   * One-shot row cancel: scoped `agent.cancelSubscriptions { subscriptionId }`
+   * for the parent's completion watch on this agent. Rows sourced from a
+   * merged single-agent group cancel the whole group (`{ groupId }`) instead,
+   * so the daemon removes the group plus its grouped watches together.
+   */
+  async function cancelWatch(watchedAgentId: string) {
+    if (!workspaceId || !agentId) return;
+    const mergedGroup = mergedGroupByAgentId.get(watchedAgentId);
+    if (mergedGroup) {
+      await cancelGroup(mergedGroup);
+      return;
+    }
+    const watch = $subs$.find(
+      (sub) =>
+        sub.delegationGroup?.awaitMode !== 'all' && (sub.actorIds || []).includes(watchedAgentId),
+    );
+    if (!watch) {
+      // Refetch race: the watch already fired/was removed between render and
+      // click, so there is nothing left to cancel.
+      logger.warn('No one-shot watch found to cancel', { watchedAgentId });
+      return;
+    }
+    try {
+      const action = cancelAgentSubscriptionsRequested(workspaceId, agentId, {
+        subscriptionId: watch.id,
+      });
+      appStore.dispatch(action);
+      await action.promise;
+    } catch (error) {
+      logger.error('Failed to cancel watch', { watchedAgentId, error });
+    }
+  }
+
+  /** Group header stop: stop every still-active agent in the group. */
+  async function stopGroup(group: DelegationGroupStatus) {
+    if (!workspaceId) return;
+    // Completed/deleted members have nothing to stop — including them would
+    // just produce spurious daemon-side failures.
+    const finished = new Set([...group.completedAgentIds, ...group.deletedAgentIds]);
+    const targets = group.expectedAgentIds.filter((id) => !finished.has(id));
+    const results = await Promise.allSettled(
+      targets.map((id) => {
+        const action = stopAgentSessionRequested(workspaceId, id);
+        appStore.dispatch(action);
+        return action.promise;
+      }),
+    );
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        logger.error('Failed to stop group agent', {
+          groupId: group.groupId,
+          agentId: targets[i],
+          error: result.reason,
+        });
+      }
+    });
+  }
+
+  /**
+   * Group cancel: scoped `agent.cancelSubscriptions { groupId }` — the daemon
+   * removes the group plus its grouped watches in one critical section.
+   */
+  async function cancelGroup(group: DelegationGroupStatus) {
     if (!workspaceId || !agentId) return;
     try {
-      const agentIdsToStop = [...watchedAgentIds];
-      appStore.dispatch(resetSubscriptionUI(workspaceId, agentId));
-      const stopAction = stopAgentSessionRequested(workspaceId, agentId);
-      appStore.dispatch(stopAction);
-      await stopAction.promise;
-      await Promise.all(
-        agentIdsToStop.map((id) => {
-          const action = stopAgentSessionRequested(workspaceId, id);
-          appStore.dispatch(action);
-          return action.promise;
-        }),
-      );
+      const action = cancelAgentSubscriptionsRequested(workspaceId, agentId, {
+        groupId: group.groupId,
+      });
+      appStore.dispatch(action);
+      await action.promise;
     } catch (error) {
-      logger.error('Failed to stop all agents', { error });
+      logger.error('Failed to cancel delegation group', { groupId: group.groupId, error });
+    }
+  }
+
+  function handleActionKeydown(e: KeyboardEvent, action: () => void) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      action();
     }
   }
 </script>
@@ -213,15 +311,20 @@
         <Tooltip.Trigger>
           <div class="shrink-0 flex items-center pb-1 gap-2 text-subtle">
             <Fa icon={faBell} size="xs" />
-            <span>Woken up</span>
+            <span>{m.chat_agentSubscriptions_wokenUp_label()}</span>
             <span class="text-subtle">
-              ({$wokenUpInfo$.eventCount}
-              {$wokenUpInfo$.eventCount === 1 ? 'event' : 'events'})
+              {$wokenUpInfo$.eventCount === 1
+                ? m.chat_agentSubscriptions_eventCount_one({
+                    count: formatInteger($wokenUpInfo$.eventCount),
+                  })
+                : m.chat_agentSubscriptions_eventCount_many({
+                    count: formatInteger($wokenUpInfo$.eventCount),
+                  })}
             </span>
           </div>
         </Tooltip.Trigger>
         <Tooltip.Content side="top" class="text-xs">
-          <p>Agent was woken by subscription events:</p>
+          <p>{m.chat_agentSubscriptions_wokenByEvents_tooltip()}</p>
           <ul class="mt-1 text-subtle">
             {#each $wokenUpInfo$.eventTypes as eventType, i (`eventType-${i}-${eventType}`)}
               <li>• {eventType}</li>
@@ -235,169 +338,197 @@
 
 {#if showSubscriptionRow}
   <div class="w-full font-family-child">
-    <div class="flex items-center gap-2 px-3 py-1.5 text-sm text-subtle">
-      <!-- Collapse/expand toggle with wait mode indicator -->
-      <button
-        type="button"
-        class="shrink-0 flex items-center gap-1.5 cursor-pointer hover:text-muted-foreground transition-colors"
-        onclick={toggleCollapsed}
-      >
-        <Fa icon={isCollapsed ? faChevronRight : faChevronDown} class="w-2.5! h-2.5!" />
-      </button>
+    {#if isCompleted || $wokenUpInfo$}
+      <!-- Slim status row: transitional "Completed" state and/or "Woken up" pill -->
+      <div class="flex items-center gap-2 px-3 py-1.5 text-sm text-subtle">
+        {#if isCompleted}
+          <span
+            class="shrink-0 flex items-center gap-2 whitespace-nowrap text-green-500"
+            transition:fade={{ duration: 200 }}
+          >
+            <Fa icon={faCircleCheck} size="13" />
+            {m.chat_agentSubscriptions_completed_label()}
+          </span>
+        {/if}
+        {#if $wokenUpInfo$}
+          <Tooltip.Provider delayDuration={0}>
+            <Tooltip.Root delayDuration={0}>
+              <Tooltip.Trigger>
+                <span
+                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-ui text-subtle bg-muted/50"
+                  transition:fade={{ duration: 200 }}
+                >
+                  <Fa icon={faBell} size="xs" />
+                  {m.chat_agentSubscriptions_wokenUp_label()}
+                </span>
+              </Tooltip.Trigger>
+              <Tooltip.Content side="top" class="text-xs">
+                <p>
+                  {$wokenUpInfo$.eventCount === 1
+                    ? m.chat_agentSubscriptions_wokenByCount_one({
+                        count: formatInteger($wokenUpInfo$.eventCount),
+                      })
+                    : m.chat_agentSubscriptions_wokenByCount_many({
+                        count: formatInteger($wokenUpInfo$.eventCount),
+                      })}
+                </p>
+                <ul class="mt-1 text-subtle">
+                  {#each $wokenUpInfo$.eventTypes as eventType, i (`eventType-${i}-${eventType}`)}
+                    <li>• {eventType}</li>
+                  {/each}
+                </ul>
+              </Tooltip.Content>
+            </Tooltip.Root>
+          </Tooltip.Provider>
+        {/if}
+      </div>
+    {/if}
 
-      <!-- Wait mode indicator - clickable to toggle collapse/expand -->
-      {#if isCompleted}
-        <span
-          class="shrink-0 flex items-center gap-2 whitespace-nowrap text-green-500"
-          transition:fade={{ duration: 200 }}
-        >
-          <Fa icon={faCircleCheck} size="13" />
-          Completed
-        </span>
-      {:else if waitMode === 'all'}
-        <button
-          type="button"
-          class="shrink-0 flex items-center gap-2 whitespace-nowrap cursor-pointer hover:text-muted-foreground transition-colors"
-          onclick={toggleCollapsed}
-        >
-          {#if hasUndeliveredCompleteGroup}
-            <Fa icon={faTriangleExclamation} size="13" class="text-warning" />
-            <span class="text-warning">Delivery pending</span>
-          {:else}
-            <Fa icon={faHourglass} size="13" />
-            Waiting for all
-          {/if}
-          {#if $completionStatus$.total > 0}
-            <span class="text-subtle">
-              ({$completionStatus$.completed}/{$completionStatus$.total})
-            </span>
-          {/if}
-        </button>
-      {:else}
-        <button
-          type="button"
-          class="shrink-0 cursor-pointer hover:text-muted-foreground transition-colors"
-          onclick={toggleCollapsed}
-        >
-          Waiting for {watchedAgentIds.length} agent{watchedAgentIds.length === 1 ? '' : 's'}
-        </button>
-      {/if}
-
-      <!-- Inline "Woken up" pill inside the subscription row -->
-      {#if $wokenUpInfo$}
-        <Tooltip.Provider delayDuration={0}>
-          <Tooltip.Root delayDuration={0}>
-            <Tooltip.Trigger>
-              <span
-                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-ui text-subtle bg-muted/50"
-                transition:fade={{ duration: 200 }}
-              >
-                <Fa icon={faBell} size="xs" />
-                Woken up
-              </span>
-            </Tooltip.Trigger>
-            <Tooltip.Content side="top" class="text-xs">
-              <p>
-                Agent was woken by {$wokenUpInfo$.eventCount}
-                {$wokenUpInfo$.eventCount === 1 ? 'event' : 'events'}:
-              </p>
-              <ul class="mt-1 text-subtle">
-                {#each $wokenUpInfo$.eventTypes as eventType, i (`eventType-${i}-${eventType}`)}
-                  <li>• {eventType}</li>
-                {/each}
-              </ul>
-            </Tooltip.Content>
-          </Tooltip.Root>
-        </Tooltip.Provider>
-      {/if}
-
-      <!-- Inline agent avatars when collapsed -->
-      {#if isCollapsed}
-        <div class="flex items-center -space-x-1.5">
-          {#each watchedAgentIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
-            <div animate:flip={{ duration: 200 }}>
-              <InlineAgentAvatar
-                agentId={watchedAgentId}
-                workspace={resolvedWorkspace}
-                isCompleted={completedAgentIdSet.has(watchedAgentId)}
-              />
-            </div>
-          {/each}
-          {#if watchedAgentIds.length > 5}
-            <span class="text-ui text-subtle pl-2">
-              +{watchedAgentIds.length - 5}
-            </span>
-          {/if}
-        </div>
-      {/if}
-
-      <!-- Action buttons (hidden during completed state — nothing to cancel) -->
-      <div class="flex-1"></div>
-      {#if !isCompleted}
-        <!-- Provider ensures proper context and cleanup during component destruction -->
-        <Tooltip.Provider delayDuration={0}>
-          <Tooltip.Root delayDuration={0}>
-            <Tooltip.Trigger>
-              <Button
-                variant="ghost-light"
-                size="icon-xs"
-                onclick={stopAllAgents}
-                class="text-ghost hover:text-muted-foreground/70"
-              >
-                <Fa icon={faStop} class="w-2.5! h-2.5!" />
-              </Button>
-            </Tooltip.Trigger>
-            <Tooltip.Content side="top" class="text-xs">
-              <p>Stop all agents</p>
-            </Tooltip.Content>
-          </Tooltip.Root>
-        </Tooltip.Provider>
-        <!-- Provider ensures proper context and cleanup during component destruction -->
-        <Tooltip.Provider delayDuration={0}>
-          <Tooltip.Root delayDuration={0}>
-            <Tooltip.Trigger>
-              <Button
-                variant="ghost-light"
-                size="icon-xs"
-                onclick={cancelSubscriptions}
-                class="text-ghost hover:text-muted-foreground/70"
-              >
-                <Fa icon={faXmark} class="w-2.5! h-2.5!" />
-              </Button>
-            </Tooltip.Trigger>
-            <Tooltip.Content side="top" class="text-xs">
-              <p>Cancel subscription</p>
-            </Tooltip.Content>
-          </Tooltip.Root>
-        </Tooltip.Provider>
-      {/if}
-    </div>
-  </div>
-
-  <!-- Agent cards with streaming last message - shown when expanded -->
-  {#if !isCollapsed}
-    <div
-      class="flex flex-col gap-0.5 w-full pl-4.5 pr-2 font-family-child"
-      transition:slide={{ duration: 150 }}
-    >
-      {#each watchedAgentIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
+    <!-- One-shot watch rows: individual agent cards, no group chrome -->
+    {#if oneShotWatchedIds.length > 0}
+      <div class="w-full" data-testid="one-shot-watches" transition:slide={{ duration: 150 }}>
+        <!-- Section header: waiting label, collapse toggle, avatar strip when collapsed -->
         <div
-          class="w-full"
-          animate:flip={{ duration: 200 }}
-          transition:slide={{ axis: 'y', duration: 200 }}
+          class="flex items-center gap-2 px-3 py-1.5 text-sm text-subtle"
+          data-testid="one-shot-header"
         >
-          <AgentCard
-            agentId={watchedAgentId}
-            workspace={resolvedWorkspace}
-            isCompleted={completedAgentIdSet.has(watchedAgentId)}
-          />
+          <!-- Collapse/expand toggle -->
+          <button
+            type="button"
+            class="shrink-0 flex items-center gap-1.5 cursor-pointer hover:text-muted-foreground transition-colors"
+            data-testid="one-shot-collapse-toggle"
+            aria-label={oneShotCollapsed
+              ? m.chat_agentSubscriptions_expandWatches_ariaLabel()
+              : m.chat_agentSubscriptions_collapseWatches_ariaLabel()}
+            onclick={toggleOneShotCollapsed}
+          >
+            <Fa icon={oneShotCollapsed ? faChevronRight : faChevronDown} class="w-2.5! h-2.5!" />
+          </button>
+
+          <!-- Waiting label -->
+          <button
+            type="button"
+            class="shrink-0 flex items-center gap-2 whitespace-nowrap cursor-pointer hover:text-muted-foreground transition-colors"
+            onclick={toggleOneShotCollapsed}
+          >
+            <Fa icon={faHourglass} size="13" />
+            {oneShotWatchedIds.length === 1
+              ? m.chat_agentSubscriptions_waitingForAgents_one({
+                  count: formatInteger(oneShotWatchedIds.length),
+                })
+              : m.chat_agentSubscriptions_waitingForAgents_many({
+                  count: formatInteger(oneShotWatchedIds.length),
+                })}
+          </button>
+
+          <!-- Inline agent avatars when collapsed -->
+          {#if oneShotCollapsed}
+            <div
+              class="flex items-center -space-x-1.5"
+              data-testid="one-shot-avatar-strip"
+              transition:fade={{ duration: 150 }}
+            >
+              {#each oneShotWatchedIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
+                <div animate:flip={{ duration: 200 }}>
+                  <InlineAgentAvatar
+                    agentId={watchedAgentId}
+                    workspace={resolvedWorkspace}
+                    isCompleted={completedAgentIdSet.has(watchedAgentId)}
+                  />
+                </div>
+              {/each}
+              {#if oneShotWatchedIds.length > 5}
+                <span class="text-ui text-subtle pl-2">
+                  +{formatInteger(oneShotWatchedIds.length - 5)}
+                </span>
+              {/if}
+            </div>
+          {/if}
+
+          <div class="flex-1"></div>
         </div>
-      {/each}
-      {#if watchedAgentIds.length > 5}
-        <div class="text-ui text-subtle text-center py-1">
-          +{watchedAgentIds.length - 5} more agents
-        </div>
-      {/if}
-    </div>
-  {/if}
+
+        <!-- Watch rows with per-row actions - shown when expanded -->
+        {#if !oneShotCollapsed}
+          <div
+            class="flex flex-col gap-0.5 w-full pl-4.5 pr-2"
+            transition:slide={{ duration: 150 }}
+          >
+            {#each oneShotWatchedIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
+              <div
+                class="w-full"
+                animate:flip={{ duration: 200 }}
+                transition:slide={{ axis: 'y', duration: 200 }}
+              >
+                {#snippet oneShotActions()}
+                  {#if !isCompleted}
+                    <!-- span[role=button]: AgentCard's row is itself a <button>, so
+                     nested real buttons would be invalid HTML -->
+                    <span
+                      role="button"
+                      tabindex="0"
+                      aria-label={m.chat_agentSubscriptions_stopAgent_tooltip()}
+                      title={m.chat_agentSubscriptions_stopAgent_tooltip()}
+                      class="inline-flex items-center justify-center w-5 h-5 rounded text-ghost hover:text-muted-foreground/70 cursor-pointer"
+                      data-testid="one-shot-stop"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        void stopWatchedAgent(watchedAgentId);
+                      }}
+                      onkeydown={(e) =>
+                        handleActionKeydown(e, () => void stopWatchedAgent(watchedAgentId))}
+                    >
+                      <Fa icon={faStop} class="w-2.5! h-2.5!" />
+                    </span>
+                    <span
+                      role="button"
+                      tabindex="0"
+                      aria-label={m.chat_agentSubscriptions_cancelWatch_tooltip()}
+                      title={m.chat_agentSubscriptions_cancelWatch_tooltip()}
+                      class="inline-flex items-center justify-center w-5 h-5 rounded text-ghost hover:text-muted-foreground/70 cursor-pointer"
+                      data-testid="one-shot-cancel"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        void cancelWatch(watchedAgentId);
+                      }}
+                      onkeydown={(e) =>
+                        handleActionKeydown(e, () => void cancelWatch(watchedAgentId))}
+                    >
+                      <Fa icon={faXmark} class="w-2.5! h-2.5!" />
+                    </span>
+                  {/if}
+                {/snippet}
+                <AgentCard
+                  agentId={watchedAgentId}
+                  workspace={resolvedWorkspace}
+                  isCompleted={completedAgentIdSet.has(watchedAgentId)}
+                  headerActions={oneShotActions}
+                />
+              </div>
+            {/each}
+            {#if oneShotWatchedIds.length > 5}
+              <div class="text-ui text-subtle text-center py-1">
+                {m.chat_shared_moreAgents_label({
+                  count: formatInteger(oneShotWatchedIds.length - 5),
+                })}
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </div>
+    {/if}
+
+    <!-- One collapsible section per after_all delegation group -->
+    {#each delegationGroups as group (group.groupId)}
+      <div transition:slide={{ axis: 'y', duration: 200 }}>
+        <DelegationGroupSection
+          {group}
+          workspace={resolvedWorkspace}
+          hideActions={isCompleted}
+          onStopGroup={stopGroup}
+          onCancelGroup={cancelGroup}
+        />
+      </div>
+    {/each}
+  </div>
 {/if}

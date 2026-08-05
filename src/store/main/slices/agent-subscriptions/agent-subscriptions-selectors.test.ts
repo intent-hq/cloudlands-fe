@@ -24,7 +24,6 @@ import {
   selectDelegationGroup,
   selectDelegationGroupsForParent,
   selectIsDelegationGroupComplete,
-  selectIsOneShotFired,
   selectIsAgentDeleted,
 } from "./agent-subscriptions-selectors";
 
@@ -266,17 +265,6 @@ describe("agent-subscriptions selectors", () => {
       });
       const state = makeState("ws-1", makeWsState({ delegationGroups: { [group.groupId]: group } }));
       expect(selectIsDelegationGroupComplete.select(state, "ws-1", group.groupId)).toBe(false);
-    });
-  });
-
-  describe("selectIsOneShotFired", () => {
-    it("returns false when not fired", () => {
-      expect(selectIsOneShotFired.select(emptyState(), "ws-1", "sub-x")).toBe(false);
-    });
-
-    it("returns true when fired", () => {
-      const state = makeState("ws-1", makeWsState({ firedOneShotSubscriptions: ["sub-x"] }));
-      expect(selectIsOneShotFired.select(state, "ws-1", "sub-x")).toBe(true);
     });
   });
 

@@ -16,6 +16,7 @@ import {
 } from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -124,6 +125,13 @@ async function renderHeader(overrides: Partial<Workspace> = {}) {
   const workspace = { ...baseWorkspace, ...overrides } as Workspace;
   return render(WorkspaceSidebarHeader, { props: { workspace, workspaceId: workspace.id } });
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../terminal/__tests__/mocks/MockButton.svelte'));
+warmImport(() => import('../sidebar/__tests__/mocks/MockSimple.svelte'));
+warmImport(() => import('../sidebar/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../WorkspaceSidebarHeader.svelte'));
 
 describe('WorkspaceSidebarHeader status message', () => {
   beforeEach(() => {

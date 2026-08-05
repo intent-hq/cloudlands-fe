@@ -51,7 +51,6 @@ const COORDINATOR_DEF: SpecialistDef = {
   id: "spec-writer",
   name: "Coordinator",
   description: "Plans work, breaks down tasks, coordinates sub-agents",
-  modelTier: "smart",
   prompt: "You plan, delegate, and verify.",
   behaviorPrompt: "You plan, delegate, and verify.",
   source: "bundled",
@@ -78,8 +77,18 @@ describe("LiveSpecialistsClient (fake transport)", () => {
 
     const defs = await client.list();
 
-    expect(mockedRequest).toHaveBeenCalledWith("specialist.list");
+    expect(mockedRequest).toHaveBeenCalledWith("specialist.list", undefined);
     expect(defs).toEqual([COORDINATOR_DEF, USER_DEF]);
+  });
+
+  it("list passes the optional provider as the resolution context (resolvedModel preview)", async () => {
+    mockedRequest.mockResolvedValueOnce({ specialists: [COORDINATOR_DEF] });
+    const client = new LiveSpecialistsClient();
+
+    const defs = await client.list("claude-code");
+
+    expect(mockedRequest).toHaveBeenCalledWith("specialist.list", { provider: "claude-code" });
+    expect(defs).toEqual([COORDINATOR_DEF]);
   });
 
   it("list folds a malformed result (no specialists array) to an empty list", async () => {
@@ -133,8 +142,8 @@ describe("LiveSpecialistsClient (fake transport)", () => {
       notify?.({ method: "specialists:changed", params: { workspaceId: "ws-1" } });
       await vi.advanceTimersByTimeAsync(100);
 
-      // Refetch is the global specialist.list (no workspaceId).
-      expect(mockedRequest).toHaveBeenLastCalledWith("specialist.list");
+      // Refetch is the global specialist.list (no workspaceId, no provider).
+      expect(mockedRequest).toHaveBeenLastCalledWith("specialist.list", undefined);
       expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF, USER_DEF]);
       unsubscribe();
     });
@@ -312,7 +321,7 @@ describe("LiveSpecialistsClient (fake transport)", () => {
         expect(mockedSubscribe).toHaveBeenLastCalledWith({ eventTypes: ["specialists:changed"] });
         await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF, USER_DEF]));
         expect(mockedRequest).toHaveBeenCalledTimes(1);
-        expect(mockedRequest).toHaveBeenCalledWith("specialist.list");
+        expect(mockedRequest).toHaveBeenCalledWith("specialist.list", undefined);
 
         // The refreshed id is released on dispose.
         unsubscribe();
@@ -438,7 +447,6 @@ describe("LiveSpecialistsClient (fake transport)", () => {
         id: "reviewer",
         name: "Reviewer",
         description: "Reviews diffs",
-        modelTier: "high",
         prompt: "You review code changes.",
         behaviorPrompt: "You review code changes.",
         source: "user",
@@ -625,7 +633,6 @@ describe("misc-ui-events seeder splits specialist.list into the store slices", (
       description: "Plans work, breaks down tasks, coordinates sub-agents",
       codingAgent: undefined,
       defaultModel: undefined,
-      defaultModelTier: "smart",
       defaultBehaviorPrompt: "You plan, delegate, and verify.",
       roleReminder: undefined,
       source: "bundled",
@@ -638,7 +645,6 @@ describe("misc-ui-events seeder splits specialist.list into the store slices", (
       description: "Reviews diffs",
       codingAgent: undefined,
       model: "opus4.5",
-      modelTier: undefined,
       behaviorPrompt: "You review code changes…",
       roleReminder: undefined,
       filePath: "/home/u/.intent/specialists/reviewer.md",

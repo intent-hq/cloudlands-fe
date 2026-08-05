@@ -3,7 +3,16 @@
   import ChatMessage from './ChatMessage.svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
+  import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import DiscussionRequestNotice from './DiscussionRequestNotice.svelte';
+  import BlockerReportNotice from './BlockerReportNotice.svelte';
+  import TurnFailureNotice from './TurnFailureNotice.svelte';
+  import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
+  import { getModelChangeNotice } from './model-change-notice';
+  import { getAttentionNotice } from './attention-notice';
+  import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import { fade } from 'svelte/transition';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     messages?: AgentMessage[];
@@ -89,6 +98,8 @@
 
 <div class="message-list">
   {#each filteredMessages as message, index (message.id)}
+    {@const modelChangeNotice = getModelChangeNotice(message)}
+    {@const questionsDismissedNotice = getQuestionsDismissedNotice(message)}
     <div
       id="message-{message.id}"
       class="message-wrapper group/message"
@@ -101,7 +112,20 @@
       <!-- Fallback path: AgentMessageList does not receive `agentId` via props/context,
            so we can't use ChatMessage's Redux-backed subscription here. Pass the
            message object directly. -->
-      {#if message.role === 'user'}
+      {#if modelChangeNotice}
+        <!-- Daemon-persisted model-change notice - centered inline divider.
+             Discriminated on metadata.type before role branching so it renders
+             regardless of the exact role the daemon persists. -->
+        <ModelChangeNotice
+          notice={modelChangeNotice}
+          fallbackText={extractAllContent(message) || undefined}
+        />
+      {:else if questionsDismissedNotice}
+        <!-- Daemon-delivered dismissal notification - compact centered chip.
+             Discriminated on metadata type before role branching so it renders
+             regardless of the exact role the daemon persists. -->
+        <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
+      {:else if message.role === 'user'}
         <ChatMessage {message} onCopy={() => handleCopy(extractAllContent(message))} />
       {:else if message.role === 'assistant'}
         <div class="assistant-message-container">
@@ -118,8 +142,17 @@
           {/if}
         </div>
       {:else if message.role === 'system'}
-        <!-- System message - render as interruption notice banner -->
-        <InterruptionNotice message={extractAllContent(message)} />
+        {@const attentionNotice = getAttentionNotice(message)}
+        <!-- System message - attention-request notice or interruption banner -->
+        {#if attentionNotice?.kind === 'discussion-request'}
+          <DiscussionRequestNotice reason={attentionNotice.reason} />
+        {:else if attentionNotice?.kind === 'blocker-report'}
+          <BlockerReportNotice reason={attentionNotice.reason} />
+        {:else if attentionNotice?.kind === 'turn-failure'}
+          <TurnFailureNotice reason={attentionNotice.reason} />
+        {:else}
+          <InterruptionNotice message={extractAllContent(message)} />
+        {/if}
       {/if}
     </div>
   {/each}
@@ -135,7 +168,7 @@
 
   {#if messages.length === 0 && !isStreaming}
     <div class="empty-state">
-      <p>No messages yet. Start a conversation!</p>
+      <p>{m.chat_agentMessageList_empty_label()}</p>
     </div>
   {/if}
 </div>

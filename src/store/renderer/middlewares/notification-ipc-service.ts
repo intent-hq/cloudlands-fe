@@ -11,7 +11,11 @@
  * listeners for the two preload-allowed channels:
  *   - `notification:show` → play the notification sound, honoring the sound
  *     settings (`soundEnabled` off = no sound; `soundOnlyWhenUnfocused` on +
- *     document focused = no sound; else play at `volume`).
+ *     document focused = no sound; else play at `volume`). When the payload
+ *     carries a `navigateTarget` (main suppressed the OS banner because the
+ *     app was frontmost — electron#51885: foreground banner clicks never
+ *     fire), also show a clickable in-app toast that routes through the same
+ *     `handleNotificationNavigate` as a native notification click.
  *   - `notification:navigate` → `goto(/workspace/{workspaceId})`, guarding
  *     null/missing payloads. Chief-of-staff payloads (`chief: true` or the
  *     chief virtual workspace id) open the sidebar Assistant panel and select
@@ -24,18 +28,133 @@
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
 import { isElectron } from "$lib/electron-bridge";
-import { handleNotificationNavigate } from "$features/notifications/notification-navigation";
+import {
+  handleNotificationNavigate,
+  type NotificationNavigatePayload,
+} from "$features/notifications/notification-navigation";
 import { playNotificationSoundPerSettings } from "$features/notifications/notification-sound-gate";
+import { m } from "$shared/paraglide/messages.js";
+
+/**
+ * Structured content parts of `notification:show` (see notification.service.ts
+ * in main). Present only for non-chief agent-idle notifications; passed
+ * through to the custom toast for the three-line layout.
+ */
+interface NotificationStructuredContent {
+  /** Emitting agent id — seeds the deterministic auggie avatar colors. */
+  agentId?: string;
+  /** Untruncated workspace title (the renderer truncates via CSS). */
+  workspaceTitle?: string;
+  /** Raw specialist id, e.g. "spec-writer". */
+  specialist?: string;
+  /** Localized specialist display name, e.g. "Coordinator". */
+  specialistDisplayName: string;
+  taskTitle?: string;
+  /** ACP provider id (auggie, claude-code, codex, ...). */
+  provider?: string;
+}
 
 /** Payload of `notification:show` (see notification.service.ts in main). */
 interface NotificationShowEvent {
   title?: string;
   body?: string;
   timestamp?: string;
+  /**
+   * Present only when the main process suppressed the OS banner because the
+   * app was frontmost (electron#51885) — the renderer shows a clickable
+   * in-app toast instead. Absent for sound-only and banner-accompanying
+   * events.
+   */
+  navigateTarget?: NotificationNavigatePayload;
+  /** Structured parts for the custom toast; absent for chief / old daemons. */
+  structured?: NotificationStructuredContent;
 }
 
-async function handleNotificationShow(_data?: NotificationShowEvent): Promise<void> {
+async function handleNotificationShow(data?: NotificationShowEvent): Promise<void> {
   await playNotificationSoundPerSettings();
+  if (data?.navigateTarget) {
+    await showNavigateToast(data, data.navigateTarget);
+  }
+}
+
+/**
+ * In-app replacement for the suppressed frontmost OS banner: a toast with the
+ * notification title/body whose "Open" action routes through the shared
+ * `handleNotificationNavigate` (same routing as `notification:navigate`,
+ * including the chief → Assistant panel case) and dismisses.
+ *
+ * When the payload carries `structured` content OR the target workspace
+ * resolves to a connected-micro key slot, the toast renders through a custom
+ * component that carries the three-line layout and/or the slot square (a
+ * plain `toast(...)` cannot); only when both are absent is the plain toast
+ * used. Both the resolver and the component are lazy-imported per middleware
+ * conventions. Key-slot resolution is best-effort: a resolver import or
+ * resolution failure degrades to a slot-less custom toast when `structured`
+ * is present (plain toast otherwise) — a custom component import/render
+ * failure falls back to the plain toast, and only a missing toast lib drops
+ * the toast entirely.
+ */
+async function showNavigateToast(
+  data: NotificationShowEvent,
+  navigateTarget: NotificationNavigatePayload,
+): Promise<void> {
+  let toast: (typeof import("svelte-sonner"))["toast"];
+  try {
+    ({ toast } = await import("svelte-sonner"));
+  } catch {
+    // Toast not available - not critical
+    return;
+  }
+
+  const showPlainToast = () => {
+    toast(data.title ?? data.body ?? "", {
+      description: data.title ? data.body : undefined,
+      action: {
+        label: m.notifications_toast_open_label(),
+        onClick: () => void handleNotificationNavigate(navigateTarget),
+      },
+    });
+  };
+
+  try {
+    let keySlot: number | null = null;
+    try {
+      const { resolveConnectedWorkspaceKeySlot } = await import(
+        "$features/hardware-console/assignment/connected-key-slot"
+      );
+      keySlot = resolveConnectedWorkspaceKeySlot(navigateTarget.workspaceId);
+    } catch {
+      // Slot resolution is best-effort - render without the slot square
+    }
+    if (keySlot === null && !data.structured) {
+      showPlainToast();
+      return;
+    }
+    const { default: NotificationNavigateToast } = await import(
+      "$lib/components/ui/toast/NotificationNavigateToast.svelte"
+    );
+    let toastId: string | number | undefined;
+    toastId = toast.custom(NotificationNavigateToast, {
+      componentProps: {
+        title: data.title ?? data.body ?? "",
+        description: data.title ? data.body : undefined,
+        keySlot,
+        structured: data.structured,
+        actionLabel: m.notifications_toast_open_label(),
+        onAction: () => {
+          if (toastId !== undefined) toast.dismiss(toastId);
+          void handleNotificationNavigate(navigateTarget);
+        },
+      },
+    });
+  } catch {
+    // Custom toast path failed - degrade to the plain toast
+    try {
+      showPlainToast();
+    } catch {
+      // Toast not available - not critical
+    }
+  }
 }
 
 export function createNotificationIpcMiddleware(): StoreMiddleware {

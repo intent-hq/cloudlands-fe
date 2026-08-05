@@ -5,6 +5,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -90,6 +91,20 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: { select: vi.fn(() => null) },
 }));
 
+vi.mock('$store/renderer/slices/hardware-console/hardware-console-selectors', () => ({
+  selectHardwareConsoleKeyPins: { select: vi.fn(() => [null, null, null, null, null, null]) },
+  selectHardwareConsoleKeySlots: { select: vi.fn(() => [null, null, null, null, null, null]) },
+  selectWorkspacePinnedKeySlot: { select: vi.fn(() => null) },
+  selectWorkspaceResolvedKeySlot: Object.assign(
+    () => mocks.readable(() => null),
+    { select: vi.fn(() => null) },
+  ),
+}));
+
+vi.mock('$features/hardware-console/device/connection-status', () => ({
+  microConnectedReadable: () => mocks.readable(() => false),
+}));
+
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: { select: vi.fn(() => false) },
   selectAgentIsWaiting: { select: vi.fn(() => false) },
@@ -139,6 +154,13 @@ async function openMenu() {
   await fireEvent.click(button);
   return screen.findByRole('menu');
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockTooltip.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
+warmImport(() => import('../ChatWorkspaceCard.svelte'));
 
 describe('ChatWorkspaceCard overflow menu', () => {
   beforeEach(() => {

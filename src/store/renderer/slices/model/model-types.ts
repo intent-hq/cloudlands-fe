@@ -18,8 +18,13 @@ export type ModelFallbackInfo = {
 export type ModelState = {
   availableModels: Collection<AuggieModel, 'value'>;
   loadingState: Record<string, ModelLoadingState>;
-  workspaceModels: Record<string, string>;
   providerModels: Record<string, string>;
   modelPickerCollapsedGroups: string[];
   fallbackInfoByAgentId: Record<string, ModelFallbackInfo>;
+  /**
+   * Registry default provider id snapshotted from `providerCatalogLoaded`
+   * ('' before hydration). Reducers only see their own slice, so the
+   * catalog's default is mirrored here for model-id normalization.
+   */
+  defaultProviderId: string;
 };

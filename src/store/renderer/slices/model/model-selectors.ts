@@ -1,5 +1,6 @@
 import { store } from "../../store";
 import {
+  getItem,
   getItems,
   type Collection,
 } from '$lib/store-shim/utils/collections/collection-utils';
@@ -8,9 +9,7 @@ import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
 import {
   selectActiveProviderId,
   selectAvailableEnabledProviderIds,
-  selectEnabledProviderIds,
 } from '../provider-settings/provider-settings-selectors';
-import { parseCompoundModelId } from '$shared/config/provider-config';
 import type { ModelLoadingState } from './model-types';
 
 function getEffectiveProviderId(state: any, providerId?: string): string {
@@ -98,31 +97,9 @@ export const selectIsLoadingModelsForProvider = selectIsLoadingModels;
 
 export const selectModelsLoadedForProvider = selectModelsLoaded;
 
-/** Select all workspace models */
-export const selectWorkspaceModels = store.createSelector((state): Record<string, string> => {
-  return state.model.workspaceModels;
-});
-
 /** Select all provider models */
 export const selectProviderModels = store.createSelector((state): Record<string, string> => {
   return state.model.providerModels;
-});
-
-/**
- * Select the default model for a specific workspace.
- * Falls back to the global selected model if no workspace-specific model is set,
- * or if the workspace override's provider is no longer enabled (#584).
- * Bare (non-compound) overrides resolve to the default provider downstream and are returned as-is.
- */
-export const selectWorkspaceDefaultModel = store.createSelector((state, workspaceId: string): string => {
-  const workspaceModel = state.model.workspaceModels[workspaceId];
-  if (workspaceModel && workspaceModel.includes(':')) {
-    const { providerId } = parseCompoundModelId(workspaceModel);
-    if (!selectEnabledProviderIds.select(state).includes(providerId)) {
-      return selectSelectedModel.select(state);
-    }
-  }
-  return workspaceModel || selectSelectedModel.select(state);
 });
 
 export const selectModelPickerCollapsedGroups = store.createSelector((state): string[] => {
@@ -132,3 +109,22 @@ export const selectModelPickerCollapsedGroups = store.createSelector((state): st
 export const selectModelFallbackInfo = store.createSelector((state, agentId: string) => {
   return state.model.fallbackInfoByAgentId[agentId] ?? null;
 });
+
+/**
+ * Pretty display name (catalog `label`) for a (provider, raw model id) pair,
+ * or `undefined` on a lookup miss (catalog not loaded / unknown model).
+ * Catalog values are bare for the registry default provider and
+ * `provider:model` otherwise (see `prefixModelsForProvider` in model-utils).
+ */
+export const selectModelDisplayName = store.createSelector(
+  (state, providerId: string, modelId: string): string | undefined => {
+    const models: Collection<AuggieModel, 'value'> | undefined = state.model?.availableModels;
+    if (!models) return undefined;
+    const compound = getItem(models, `${providerId}:${modelId}`);
+    if (compound) return compound.label;
+    if (providerId === state.model.defaultProviderId) {
+      return getItem(models, modelId)?.label;
+    }
+    return undefined;
+  },
+);

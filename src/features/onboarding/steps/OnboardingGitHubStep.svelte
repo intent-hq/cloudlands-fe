@@ -26,6 +26,7 @@
     selectGitHubAuthRequiresDaemonAuth,
   } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
 
   interface Props {
@@ -92,9 +93,9 @@
       <span class="flex items-center gap-2">
         <Fa icon={faCheck} class="text-green-500" />
         {#if $user$}
-          Connected @{$user$.login}
+          {m.onboarding_githubStep_connectedAs_label({ username: `@${$user$.login}` })}
         {:else}
-          Connected
+          {m.onboarding_githubStep_connected_label()}
         {/if}
       </span>
     </div>
@@ -108,13 +109,13 @@
         <div
           class="w-4 h-4 border-[2px] border-border border-t-blue-600 rounded-full animate-spin"
         ></div>
-        <span>Waiting for authorization...</span>
+        <span>{m.onboarding_githubStep_waitingForAuthorization_label()}</span>
         <button
           type="button"
           class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors ml-2"
           onclick={handleCancel}
         >
-          Cancel
+          {m.onboarding_githubStep_cancel_label()}
         </button>
       </div>
     </div>
@@ -123,14 +124,14 @@
       <div
         class="w-4 h-4 border-[2px] border-border border-t-blue-600 rounded-full animate-spin"
       ></div>
-      <span>Starting authentication...</span>
+      <span>{m.onboarding_githubStep_startingAuthentication_label()}</span>
     </div>
   {:else if $requiresDaemonAuth$}
-    <p class="text-sm text-subtle">Requires daemon authentication.</p>
+    <p class="text-sm text-subtle">{m.onboarding_githubStep_requiresDaemonAuth_label()}</p>
   {:else}
     <Button class="group/button" size="xl" onclick={handleConnect}>
       <Fa icon={faGithub} />
-      Connect GitHub
+      {m.onboarding_githubStep_connectGithub_label()}
     </Button>
   {/if}
 
@@ -141,15 +142,15 @@
   <div class="flex flex-col items-start gap-2 mt-9">
     {#if $isAuthenticated$}
       <Button class="group/button" size="xl" onclick={onContinue}>
-        Continue
+        {m.onboarding_githubStep_continue_label()}
         <span class="ml-1 opacity-50">⌘↵</span>
       </Button>
     {:else}
       <Button class="group/button" size="xl" variant="outline" onclick={handleSkip}>
-        Skip for now
+        {m.onboarding_githubStep_skipForNow_label()}
         <span class="ml-1 opacity-50">⌘↵</span>
       </Button>
-      <p class="text-xs text-muted-foreground">You can connect GitHub later from Settings</p>
+      <p class="text-xs text-muted-foreground">{m.onboarding_githubStep_connectLater_description()}</p>
     {/if}
   </div>
 </div>

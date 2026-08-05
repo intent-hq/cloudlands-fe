@@ -6,7 +6,12 @@ import {
 import type { StoreState } from "../../types";
 import type { ProviderStatus } from "../agent-availability/agent-availability-types";
 import {
-  selectActiveProvider,
+  initialState as providerCatalogInitialState,
+  providerCatalogLoaded,
+  providerCatalogReducer,
+} from "../provider-catalog/provider-catalog-slice";
+import { MOCK_PROVIDER_CATALOG } from "../../../../test/fixtures/provider-catalog.fixture";
+import {
   selectActiveProviderId,
   selectAvailableEnabledProviderIds,
   selectEnabledProviderIds,
@@ -16,13 +21,24 @@ import {
   selectIsProviderEnabled,
 } from "./provider-settings-selectors";
 
+const providerCatalog = providerCatalogReducer(
+  providerCatalogInitialState,
+  providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+);
+
 function mockState(
   enabledProviders: Record<string, boolean>,
   activeProviderId = "auggie",
   providerStatusMap: Record<string, ProviderStatus> = {}
 ): StoreState {
   return {
-    providerSettings: { activeProviderId, enabledProviders },
+    providerCatalog,
+    providerSettings: {
+      activeProviderId,
+      enabledProviders,
+      defaultProviderId: MOCK_PROVIDER_CATALOG.defaultProviderId,
+      nonDisableableProviderIds: [],
+    },
     agentAvailability: {
       providerStatusMap,
       providerLoadingMap: {},
@@ -38,11 +54,6 @@ describe("provider-settings selectors", () => {
   it("should return the active provider id", () => {
     const state = mockState({}, "codex");
     expect(selectActiveProviderId.select(state)).toBe("codex");
-  });
-
-  it("should return the active provider config", () => {
-    const state = mockState({}, "auggie");
-    expect(selectActiveProvider.select(state).id).toBe("auggie");
   });
 
   it("should report whether a provider is active", () => {

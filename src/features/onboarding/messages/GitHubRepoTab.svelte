@@ -16,12 +16,14 @@
    * Components never call IPC directly, per `src/store/renderer/AGENTS.md`.
    */
   import { onMount } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { shell } from '$lib/electron-bridge';
   import Input from '$lib/components/ui/input/input.svelte';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
   import DirectoryPickerModal from './DirectoryPickerModal.svelte';
+  import { pickDirectory } from '$lib/directory-picker-service';
 
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
@@ -298,7 +300,12 @@
   let pickerOpen = $state(false);
 
   function handleSelectCloneFolder() {
-    pickerOpen = true;
+    void pickDirectory({
+      title: m.onboarding_githubRepoTab_selectCloneDest_title(),
+      defaultPath: clonePath || defaultCloneBase,
+      openModal: () => (pickerOpen = true),
+      onSelect: handlePickerSelect,
+    });
   }
 
   function handlePickerSelect(pickedPath: string) {
@@ -353,7 +360,7 @@
 
 <div class="space-y-3">
   <div class="w-full flex space-between items-center">
-    <p class="text-base text-muted-foreground pb-3 flex-1">Clone a repository from GitHub.</p>
+    <p class="text-base text-muted-foreground pb-3 flex-1">{m.onboarding_githubRepoTab_clone_description()}</p>
   </div>
   <!--
     Top row: GitHub URL input + clone destination picker, horizontally
@@ -367,6 +374,7 @@
       class="flex-1 flex items-center rounded-lg py-1 border border-border/50 bg-card/50 overflow-hidden"
     >
       <Fa icon={faGithub} class="ml-3 text-muted-foreground" />
+      <!-- i18n-ignore (domain name prefix) -->
       <span class="text-sm pl-1.5 shrink-0 select-none text-muted-foreground">github.com/</span>
       <Input
         bind:ref={githubInputRef}
@@ -396,19 +404,19 @@
     list an accessible combobox popup driven from the URL input above.
   -->
   {#if !$isAuthenticated$}
-    <GitHubAuthBanner message="Sign in with GitHub to see your repositories" />
+    <GitHubAuthBanner message={m.onboarding_githubRepoTab_signIn_description()} />
   {:else if $reposError$}
     <div
       class="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-xs text-destructive-foreground space-y-2"
     >
-      <p>Couldn't load repositories: {$reposError$}</p>
+      <p>{m.onboarding_githubRepoTab_loadFailed_error({ error: $reposError$ })}</p>
       <button
         type="button"
         class="inline-flex items-center gap-1.5 text-xs underline underline-offset-2 cursor-pointer hover:no-underline"
         onclick={refreshRepos}
       >
         <Fa icon={faSpinner} size="xs" />
-        <span>Try again</span>
+        <span>{m.onboarding_githubRepoTab_tryAgain_label()}</span>
       </button>
     </div>
   {:else}
@@ -416,7 +424,7 @@
       bind:this={listContainerRef}
       id="github-repo-list"
       role="listbox"
-      aria-label="GitHub repositories"
+      aria-label={m.onboarding_githubRepoTab_repoList_ariaLabel()}
       class="max-h-70 overflow-y-auto -mx-1 px-1"
     >
       {#if combinedRepos.length > 0}
@@ -471,8 +479,8 @@
                   if (e.key === 'Enter')
                     openInBrowser(`https://github.com/${repo.owner}/${repo.name}`, e);
                 }}
-                title="Open {repo.owner}/{repo.name} on github.com"
-                aria-label="Open {repo.owner}/{repo.name} on github.com"
+                title={m.onboarding_githubRepoTab_openOnGithub_tooltip({ owner: repo.owner, name: repo.name })}
+                aria-label={m.onboarding_githubRepoTab_openOnGithub_tooltip({ owner: repo.owner, name: repo.name })}
               >
                 <Fa icon={faArrowUpRightFromSquare} size="xs" />
               </span>
@@ -482,20 +490,20 @@
       {:else if $reposLoading$ && !$reposLoaded$}
         <div class="py-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
           <Fa icon={faSpinner} size="xs" class="animate-spin" />
-          <span>Loading your repositories…</span>
+          <span>{m.onboarding_githubRepoTab_loadingRepos_label()}</span>
         </div>
       {:else if githubInput.trim() && $searchLoading$}
         <div class="py-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
           <Fa icon={faSpinner} size="xs" class="animate-spin" />
-          <span>Searching GitHub for "{githubInput.trim()}"…</span>
+          <span>{m.onboarding_githubRepoTab_searching_label({ query: githubInput.trim() })}</span>
         </div>
       {:else if githubInput.trim()}
         <div class="py-4 text-center text-sm text-muted-foreground">
-          No repositories match "{githubInput.trim()}"
+          {m.onboarding_githubRepoTab_noMatches_label({ query: githubInput.trim() })}
         </div>
       {:else}
         <div class="py-4 text-center text-sm text-muted-foreground">
-          No repositories found on your GitHub account
+          {m.onboarding_githubRepoTab_noRepos_label()}
         </div>
       {/if}
     </div>
@@ -505,23 +513,23 @@
 <!--
       Store location picker — horizontally stacked with the URL input.
       Compact one-line layout so it fits in the row without dominating
-      the space. Clicking opens a native folder dialog via Electron.
+      the space. Clicking opens the picker appropriate for the daemon locality.
     -->
 <button
   type="button"
   class="mt-6 flex items-center gap-2 px-3 rounded-lg transition-colors cursor-pointer text-left shrink-0"
   onclick={handleSelectCloneFolder}
-  aria-label="Choose clone destination folder"
-  title="Where to clone the repository"
+  aria-label={m.onboarding_githubRepoTab_chooseCloneDest_ariaLabel()}
+  title={m.onboarding_githubRepoTab_whereToClone_tooltip()}
 >
   <Fa icon={faFolder} class="text-subtle/50 shrink-0 -mb-px" size={20} />
-  <span class="text-sm text-muted-foreground whitespace-nowrap">Store the repository in</span>
+  <span class="text-sm text-muted-foreground whitespace-nowrap">{m.onboarding_githubRepoTab_storeRepoIn_before()}</span>
   <span
     class="text-sm font-medium truncate max-w-40 {clonePath
       ? 'text-foreground'
       : 'text-muted-foreground'}"
   >
-    {clonePath ? clonePath.replace(/^\/Users\/[^/]+/, '~') : 'Select folder'}
+    {clonePath ? clonePath.replace(/^\/Users\/[^/]+/, '~') : m.onboarding_githubRepoTab_selectFolder_label()}
   </span>
 </button>
 
@@ -531,9 +539,9 @@
 
 <DirectoryPickerModal
   open={pickerOpen}
-  title="Select Clone Destination"
+  title={m.onboarding_githubRepoTab_selectCloneDest_title()}
   initialPath={clonePath || defaultCloneBase}
-  selectLabel="Select folder"
+  selectLabel={m.onboarding_githubRepoTab_selectFolder_label()}
   onSelect={handlePickerSelect}
   onClose={() => (pickerOpen = false)}
 />

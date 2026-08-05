@@ -13,7 +13,8 @@ import {
   type TerminalMetadata,
 } from '$store/renderer/slices/terminals/terminals-slice';
 import { selectTerminalsForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
-  import { store as appStore } from '$store/renderer/store';
+import { localizeDaemonTerminalName } from '$lib/utils/terminal-display-name';
+import { store as appStore } from '$store/renderer/store';
 
 const logger = new Logger('TerminalManager');
 
@@ -52,7 +53,10 @@ class RendererTerminalManager {
         terminalId: terminal.id,
         workspaceId: terminal.workspaceId ?? workspaceId,
         createdAt: terminal.createdAt ?? '',
-        title: terminal.customName || terminal.name,
+        // `title` is a display value: user-set customName wins verbatim, then
+        // the daemon spawn-time name localized at read time (the stored wire
+        // `name` stays raw — this read-through view is never persisted back).
+        title: terminal.customName || localizeDaemonTerminalName(terminal.name),
       }));
     } catch (error) {
       logger.error('[RendererTerminalManager] Failed to load terminal metadata:', error);
@@ -102,6 +106,7 @@ class RendererTerminalManager {
     // If forceNew is true, dispose the existing terminal first
     if (forceNew && managed) {
       logger.info(
+        // i18n-ignore (log message, not user-facing)
         `[RendererTerminalManager] Force creating new terminal, disposing existing: ${terminalId}`,
       );
       this.disposeTerminal(terminalId);
@@ -113,12 +118,14 @@ class RendererTerminalManager {
       // This prevents terminals from a different workspace from being reused
       if (managed.workspaceId !== workspaceId) {
         logger.warn(
+          // i18n-ignore (log message, not user-facing)
           `[RendererTerminalManager] Terminal ${terminalId} has mismatched workspaceId (has: ${managed.workspaceId}, requested: ${workspaceId}). Disposing and recreating.`,
         );
         this.disposeTerminal(terminalId);
         managed = undefined;
       } else {
         logger.info(
+          // i18n-ignore (log message, not user-facing)
           `[RendererTerminalManager] Reattaching to existing terminal: ${terminalId} (was attached: ${managed.isAttached})`,
         );
 
@@ -196,6 +203,16 @@ class RendererTerminalManager {
       // Remove from metadata
       this.removeTerminalMetadata(terminalId, managed.workspaceId);
     }
+  }
+
+  /** Release renderer resources for a PTY that has already exited. */
+  disposeExitedTerminal(terminalId: string): void {
+    const managed = this.terminals.get(terminalId);
+    if (!managed) return;
+
+    logger.info(`[RendererTerminalManager] Disposing exited terminal: ${terminalId}`);
+    managed.adapter.dispose({ killPty: false });
+    this.terminals.delete(terminalId);
   }
 
   /**
@@ -285,6 +302,7 @@ class RendererTerminalManager {
 
     if (terminalsToDispose.length > 0) {
       logger.info(
+        // i18n-ignore (log message, not user-facing)
         `[RendererTerminalManager] Disposing ${terminalsToDispose.length} terminals for workspace ${workspaceId}`,
       );
       for (const id of terminalsToDispose) {

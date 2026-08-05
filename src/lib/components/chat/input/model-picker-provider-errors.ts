@@ -1,7 +1,10 @@
 import {
-  getProviderConfig,
-  isProviderAuthenticationError,
-} from '$shared/config/provider-config';
+  selectIsProviderAuthenticationError,
+  selectNormalizedProviderId,
+  selectProviderCatalogEntryOrDefault,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { store as appStore } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
 
 export type ProviderLoadError = {
   providerId: string;
@@ -14,11 +17,12 @@ export type ProviderLoadError = {
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === 'string' && error) return error;
-  return 'Failed to load models';
+  return m.chat_modelPicker_loadFailed_label();
 }
 
 function stripProviderPrefix(message: string, providerId: string, providerName: string): string {
-  const prefixes = [providerName, providerId, getProviderConfig(providerId).command].filter(Boolean);
+  const command = selectProviderCatalogEntryOrDefault.select(appStore.state, providerId)?.command;
+  const prefixes = [providerName, providerId, command].filter(Boolean);
   const trimmed = message.trim();
 
   for (const prefix of prefixes) {
@@ -32,12 +36,13 @@ function stripProviderPrefix(message: string, providerId: string, providerName: 
 }
 
 export function getProviderErrorHint(providerId: string, message: string): string | undefined {
-  const config = getProviderConfig(providerId);
+  const state = appStore.state;
+  const entry = selectProviderCatalogEntryOrDefault.select(state, providerId);
   const lowerMessage = message.toLowerCase();
 
-  if (isProviderAuthenticationError(providerId, message)) {
-    const loginCommand = config.loginCommandHint || `${config.command} login`;
-    return `Run "${loginCommand}" in a terminal.`;
+  if (selectIsProviderAuthenticationError.select(state, providerId, message)) {
+    const loginCommand = entry?.loginCommandHint || `${entry?.command ?? providerId} login`;
+    return m.chat_modelPicker_runLoginHint_label({ command: loginCommand });
   }
 
   if (
@@ -46,21 +51,25 @@ export function getProviderErrorHint(providerId: string, message: string): strin
     lowerMessage.includes('not available')
   ) {
     if (providerId === 'auggie') {
-      return 'Install via "npm install -g @augmentcode/auggie" or use the Auggie setup flow.';
+      return m.chat_modelPicker_installAuggieHint_label();
     }
-    if (config.loginDocsUrl) {
-      return `See setup docs: ${config.loginDocsUrl}`;
+    if (entry?.loginDocsUrl) {
+      return m.chat_modelPicker_setupDocsHint_label({ url: entry.loginDocsUrl });
     }
-    return `Install the ${config.displayName} CLI and make sure "${config.command}" is on PATH.`;
+    return m.chat_modelPicker_installCliHint_label({
+      provider: entry?.displayName ?? providerId,
+      command: entry?.command ?? providerId,
+    });
   }
 
   return undefined;
 }
 
 export function formatProviderLoadError(providerId: string, error: unknown): ProviderLoadError {
-  const normalizedId = getProviderConfig(providerId).id;
-  const providerConfig = getProviderConfig(normalizedId);
-  const providerName = providerConfig.displayName || normalizedId;
+  const state = appStore.state;
+  const normalizedId = selectNormalizedProviderId.select(state, providerId);
+  const entry = selectProviderCatalogEntryOrDefault.select(state, normalizedId);
+  const providerName = entry?.displayName || normalizedId;
   const message = stripProviderPrefix(getErrorMessage(error), normalizedId, providerName);
 
   return {

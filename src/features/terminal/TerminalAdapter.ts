@@ -26,6 +26,7 @@ import { TerminalBufferManager } from './terminal-buffer-manager';
 import { TerminalThemeManager } from './terminal-theme-manager';
 import { terminalHistoryTracker } from './terminal-history-tracker';
 import { isGitHubUrl } from '$shared/utils/link-helpers';
+import { m } from '$shared/paraglide/messages.js';
 import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { store as appStore } from '$store/renderer/store';
@@ -103,7 +104,6 @@ export class TerminalAdapter {
   private ipcCleanup: (() => void) | null = null; // Cleanup function for IPC handlers
   private themeCleanup: (() => void) | null = null; // Cleanup function for theme handler
   private webglContextLostCleanup: (() => void) | null = null; // Cleanup for WebGL context loss listener
-  private pasteListenerContainer: HTMLElement | null = null;
 
   private isDisposed: boolean = false;
   private isXtermOpened: boolean = false; // Track if xterm.open() has been called
@@ -176,12 +176,11 @@ export class TerminalAdapter {
       cursorWidth: 1,
       scrollback: 10000,
       allowTransparency: true,
-      windowsMode: isWindowsPlatform,
+      windowsPty: isWindowsPlatform ? { backend: 'conpty' } : undefined,
       macOptionIsMeta: true,
       rightClickSelectsWord: true,
       convertEol: true,
       drawBoldTextInBrightColors: true,
-      fastScrollModifier: 'ctrl',
       scrollSensitivity: 1,
       theme: this.themeManager.getCurrentTheme(),
     });
@@ -417,7 +416,7 @@ export class TerminalAdapter {
       });
 
       if (!result.success) {
-        throw new Error(result.error || 'Failed to open terminal');
+        throw new Error(result.error || m.terminal_adapter_openFailed_error());
       }
       if (result.id) {
         this.terminalId = result.id;
@@ -448,8 +447,8 @@ export class TerminalAdapter {
    */
   private async findBackendTerminal(): Promise<TerminalTab | null> {
     try {
-      const list = await this.terminals.list(this.workspaceId);
-      return list.find((t) => t.id === this.terminalId) ?? null;
+      const { terminals } = await this.terminals.list(this.workspaceId);
+      return terminals.find((t) => t.id === this.terminalId) ?? null;
     } catch (error) {
       logger.warn('Could not check terminal existence:', error);
       return null;
@@ -491,8 +490,6 @@ export class TerminalAdapter {
     if (!this.container) {
       return;
     }
-
-    const container = this.container;
 
     // Dispose old handlers if they exist to prevent duplicates
     if (this.dataDisposable) {
@@ -594,14 +591,6 @@ export class TerminalAdapter {
       // Return true to allow all other key events to be handled normally
       return true;
     });
-
-    // Intercept paste events to sanitize ANSI escape sequences
-    // We use a paste event listener rather than keyboard handler because:
-    // 1. Keyboard handlers can't fully prevent browser paste behavior
-    // 2. This also handles right-click paste and other paste methods
-    this.cleanupPasteEventListener();
-    container.addEventListener('paste', this.handlePasteEvent);
-    this.pasteListenerContainer = container;
 
     // Handle user input - write method handles state checks
     this.dataDisposable = this.xterm.onData((data) => {
@@ -783,6 +772,7 @@ export class TerminalAdapter {
         const handleContextLost = (event: Event) => {
           event.preventDefault();
           logger.warn(
+            // i18n-ignore (log message, not user-facing)
             `[WebGL] Context lost for terminal ${this.terminalId}, recovering...`,
           );
 
@@ -798,6 +788,7 @@ export class TerminalAdapter {
             const currentTheme = this.themeManager.getCurrentTheme();
             if (!currentTheme.isDark) {
               logger.info(
+                // i18n-ignore (log message, not user-facing)
                 '[WebGL] Skipping WebGL recovery on light theme, using Canvas renderer',
               );
               return;
@@ -806,6 +797,7 @@ export class TerminalAdapter {
             // Guard against infinite recovery loops
             if (this.webglRecoveryAttempts >= TerminalAdapter.MAX_WEBGL_RECOVERY_ATTEMPTS) {
               logger.warn(
+                // i18n-ignore (log message, not user-facing)
                 `[WebGL] Max recovery attempts (${TerminalAdapter.MAX_WEBGL_RECOVERY_ATTEMPTS}) reached for terminal ${this.terminalId}, staying on Canvas renderer`,
               );
               return;
@@ -818,6 +810,7 @@ export class TerminalAdapter {
               logger.info(`[WebGL] Successfully recovered from context loss (attempt ${this.webglRecoveryAttempts})`);
             } catch (error) {
               logger.warn(
+                // i18n-ignore (log message, not user-facing)
                 '[WebGL] Failed to recover from context loss, falling back to Canvas renderer:',
                 error,
               );
@@ -1115,6 +1108,7 @@ export class TerminalAdapter {
       }
 
       logger.debug(
+        // i18n-ignore (log message, not user-facing)
         `Restored terminal buffer for ${this.terminalId} with ${lines.length} lines (prompt removed)`,
       );
     }
@@ -1223,42 +1217,6 @@ export class TerminalAdapter {
           this.stateMachine.reportError(error);
         }
       });
-  }
-
-  /**
-   * Handle paste events by sanitizing ANSI escape sequences from clipboard content.
-   * This prevents pasted text with embedded ANSI codes from corrupting terminal styling state.
-   */
-  private handlePasteEvent = (event: ClipboardEvent): void => {
-    if (this.isDisposed || !this.stateMachine.canAcceptInput()) {
-      return;
-    }
-
-    // Prevent xterm's default paste handling to avoid double-paste
-    event.preventDefault();
-    event.stopPropagation();
-
-    const text = event.clipboardData?.getData('text/plain');
-    if (!text) {
-      return;
-    }
-
-    // Strip ANSI escape sequences from pasted content
-    // Matches: ESC [ followed by optional numbers/semicolons and a letter
-    const sanitizedText = text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-
-    // Write the sanitized text to the terminal
-    this.write(sanitizedText);
-
-    // Reset SGR attributes to default after paste to ensure any residual styling state is cleared
-    this.xterm.write('\x1b[0m');
-  };
-
-  private cleanupPasteEventListener(): void {
-    if (this.pasteListenerContainer) {
-      this.pasteListenerContainer.removeEventListener('paste', this.handlePasteEvent);
-      this.pasteListenerContainer = null;
-    }
   }
 
   /**
@@ -1753,7 +1711,7 @@ export class TerminalAdapter {
 
     // Show error in terminal
     if (!this.isDisposed) {
-      this.xterm.writeln(`\r\n\x1b[31mError: ${error.message}\x1b[0m\r\n`);
+      this.xterm.writeln(`\r\n\x1b[31m${m.terminal_adapter_errorLine_label({ message: error.message })}\x1b[0m\r\n`);
     }
   }
 
@@ -1822,7 +1780,7 @@ export class TerminalAdapter {
       });
 
       if (!result.success) {
-        throw new Error(result.error || 'Failed to reconnect terminal');
+        throw new Error(result.error || m.terminal_adapter_reconnectFailed_error());
       }
       if (result.id) {
         this.terminalId = result.id;
@@ -1842,8 +1800,6 @@ export class TerminalAdapter {
    * Detach terminal from container (for reuse)
    */
   detach(): void {
-    this.cleanupPasteEventListener();
-
     // Clean up IPC handlers to prevent stale handlers during detach
     if (this.ipcCleanup) {
       this.ipcCleanup();
@@ -1888,7 +1844,7 @@ export class TerminalAdapter {
   /**
    * Dispose of the terminal
    */
-  dispose(): void {
+  dispose(options: { killPty?: boolean } = {}): void {
     if (this.isDisposed || this.stateMachine.isDisposed()) {
       return;
     }
@@ -1975,9 +1931,6 @@ export class TerminalAdapter {
       this.themeCleanup = null;
     }
 
-    // Remove paste event listener
-    this.cleanupPasteEventListener();
-
     // Remove any remaining event listeners
     this.eventListeners.forEach((cleanup) => {
       try {
@@ -1988,11 +1941,13 @@ export class TerminalAdapter {
     });
     this.eventListeners = [];
 
-    // Close PTY connection via `terminal.kill` (PROTOCOL §5.13); the daemon
-    // emits `terminal:exit` once the PTY is reaped.
-    this.terminals.kill(this.terminalId).catch((error) => {
-      logger.error('Error killing PTY connection:', error);
-    });
+    if (options.killPty !== false) {
+      // Close PTY connection via `terminal.kill` (PROTOCOL §5.13); the daemon
+      // emits `terminal:exit` once the PTY is reaped.
+      this.terminals.kill(this.terminalId).catch((error) => {
+        logger.error('Error killing PTY connection:', error);
+      });
+    }
 
     // Dispose addons first (before disposing xterm)
     try {

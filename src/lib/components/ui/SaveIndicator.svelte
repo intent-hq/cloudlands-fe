@@ -13,6 +13,7 @@
   scale,
 } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     isDirty?: boolean;
@@ -48,26 +49,26 @@
       case 'saving':
         return {
           icon: faSpinner,
-          tooltip: 'Saving...',
+          tooltip: m.ui_saveIndicator_saving_tooltip(),
           class: 'animate-spin text-blue-500',
         };
       case 'auto-saving':
         return {
           icon: faCloudArrowUp,
-          tooltip: 'Auto-saving...',
+          tooltip: m.ui_saveIndicator_autoSaving_tooltip(),
           class: 'text-ghost animate-pulse',
         };
       case 'unsaved':
         return {
           icon: faCircle,
-          tooltip: 'Click to save (⌘S)',
+          tooltip: m.ui_saveIndicator_clickToSave_tooltip(),
           class: 'text-yellow-500',
         };
       case 'saved':
       default:
         return {
           icon: faCheck,
-          tooltip: 'All changes saved',
+          tooltip: m.ui_saveIndicator_saved_tooltip(),
           class: 'text-green-500',
         };
     }

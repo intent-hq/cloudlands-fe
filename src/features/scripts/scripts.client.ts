@@ -32,7 +32,9 @@ import { createLogger } from '$lib/utils/client-logger';
 import { appClient } from '$lib/client';
 import type { MutationResult } from '$lib/client';
 import { detectScriptCandidates, type PackageManager } from './detect-scripts';
+import { isLiveScriptStatus } from './utils/script-status';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('ScriptsClient');
 
@@ -113,7 +115,17 @@ export const scriptsClient = {
     const scripts = await appClient.scripts.list(workspaceId);
     const existing = scripts.find((script) => script.id === scriptId);
     if (!existing) {
-      return { success: false, error: `Script not found: ${scriptId}` };
+      return { success: false, error: m.scripts_client_notFound_error({ scriptId }) };
+    }
+    // The §5.8 scriptId upsert tears down the script's live PTY group
+    // daemon-side — never issue it against a running script. Refuse and let
+    // the caller surface it so the user can stop the script first.
+    if (existing.runtime?.status === 'running') {
+      logger.info('Refusing script.create upsert for running script', {
+        name: existing.name,
+        scriptId,
+      });
+      return { success: false, error: m.scripts_client_updateRunning_error({ name: existing.name }) };
     }
     const result = await appClient.scripts.create(workspaceId, {
       scriptId,
@@ -158,7 +170,7 @@ export const scriptsClient = {
     const status = await appClient.scripts.status(workspaceId, scriptId);
     return status
       ? { success: true, status }
-      : { success: false, error: 'Failed to read script status' };
+      : { success: false, error: m.scripts_client_statusFailed_error() };
   },
 
   /**
@@ -170,9 +182,15 @@ export const scriptsClient = {
    *  - creates any candidate whose name isn't already registered,
    *  - upserts the existing auto-detected row (reusing its id via
    *    `script.create({ scriptId })`, §5.8) when its command / mode / category
-   *    changed,
+   *    changed — UNLESS that row is currently live (any status outside the
+   *    safe-to-upsert `idle`/`exited` allowlist, e.g. `running` or
+   *    `restarting`): the daemon upsert tears down the live PTY group, so the
+   *    upsert is skipped and the script's name is reported back in
+   *    `skippedRunning` for the caller to surface,
    *  - removes auto-detected rows whose name is no longer produced by any
-   *    manifest,
+   *    manifest — UNLESS that row is currently `running` (removal kills the
+   *    live PTY group), in which case it is skipped and reported in
+   *    `skippedRunning`,
    *  - never touches user-created scripts, even when a manifest exposes the
    *    same name.
    *
@@ -180,13 +198,12 @@ export const scriptsClient = {
    * `removed` = auto-detected rows removed), so repeat clicks resolve to
    * `{ added: 0, removed: 0 }` when nothing changed.
    */
-  async detect(
-    workspaceId: string,
-  ): Promise<{
+  async detect(workspaceId: string): Promise<{
     success: boolean;
     detected?: number;
     added?: number;
     removed?: number;
+    skippedRunning?: string[];
     packageManager?: PackageManager;
     error?: string;
   }> {
@@ -208,6 +225,7 @@ export const scriptsClient = {
       }
 
       const detectedNames = new Set<string>();
+      const skippedRunning: string[] = [];
       let added = 0;
 
       for (const candidate of candidates) {
@@ -235,6 +253,18 @@ export const scriptsClient = {
           existingAuto.category !== candidate.category ||
           existingAuto.mode !== candidate.mode
         ) {
+          // The §5.8 scriptId upsert tears down the script's live PTY group
+          // daemon-side — never issue it against a live script (running,
+          // restarting, or any future transitional status). Skip and let the
+          // caller surface it so the user can stop + re-detect.
+          if (isLiveScriptStatus(existingAuto.runtime?.status)) {
+            skippedRunning.push(candidate.name);
+            logger.info('Skipping script.create upsert for live script', {
+              name: candidate.name,
+              scriptId: existingAuto.id,
+            });
+            continue;
+          }
           const upsertResult = await appClient.scripts.create(workspaceId, {
             scriptId: existingAuto.id,
             name: candidate.name,
@@ -243,9 +273,7 @@ export const scriptsClient = {
             category: candidate.category,
             ...(existingAuto.cwd !== undefined ? { cwd: existingAuto.cwd } : {}),
             ...(existingAuto.env !== undefined ? { env: existingAuto.env } : {}),
-            ...(existingAuto.autoStart !== undefined
-              ? { autoStart: existingAuto.autoStart }
-              : {}),
+            ...(existingAuto.autoStart !== undefined ? { autoStart: existingAuto.autoStart } : {}),
           });
           if (!upsertResult.success) {
             logger.warn('script.create upsert failed for detected candidate', {
@@ -260,6 +288,17 @@ export const scriptsClient = {
       let removed = 0;
       for (const [name, s] of existingAutoByName) {
         if (!detectedNames.has(name)) {
+          // Removing a running script kills its live PTY group daemon-side —
+          // never issue script.remove against a running row. Skip and let the
+          // caller surface it so the user can stop + re-detect.
+          if (s.runtime?.status === 'running') {
+            skippedRunning.push(name);
+            logger.info('Skipping script.remove for running stale script', {
+              name,
+              scriptId: s.id,
+            });
+            continue;
+          }
           const removeResult = await appClient.scripts.remove(workspaceId, s.id);
           if (removeResult.success) {
             removed += 1;
@@ -278,6 +317,7 @@ export const scriptsClient = {
         detected: candidates.length,
         added,
         removed,
+        ...(skippedRunning.length > 0 ? { skippedRunning } : {}),
         packageManager,
       };
     } catch (error) {

@@ -27,12 +27,14 @@ import { LiveGitClient } from "./live-git-client";
 import { LiveIntegrationsClient } from "./live-integrations-client";
 import { LiveModelsClient } from "./live-models-client";
 import { LiveNotesClient } from "./live-notes-client";
+import { LiveProvidersClient } from "./live-providers-client";
 import { LiveScriptsClient } from "./live-scripts-client";
 import { LiveSettingsClient } from "./live-settings-client";
 import { LiveSetupScriptsClient } from "./live-setup-scripts-client";
 import { LiveSkillsClient } from "./live-skills-client";
 import { LiveSpecialistsClient } from "./live-specialists-client";
 import { LiveStatsClient } from "./live-stats-client";
+import { LiveVoiceClient } from "./live-voice-client";
 import { LiveSystemClient } from "./live-system-client";
 import { LiveServerClient } from "./live-server-client";
 import { LiveTasksClient } from "./live-tasks-client";
@@ -56,7 +58,9 @@ export class LiveAppClient implements AppClient {
   readonly setupScripts = new LiveSetupScriptsClient();
   readonly events = new LiveEventsClient();
   readonly models = new LiveModelsClient();
+  readonly providers = new LiveProvidersClient();
   readonly stats = new LiveStatsClient();
+  readonly voice = new LiveVoiceClient();
 
   readonly chat = new LiveChatClient();
   readonly skills = new LiveSkillsClient();

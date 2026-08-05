@@ -8,6 +8,53 @@ import { addTasksBlockSupport } from './tiptap-task-block-extension';
 const AGENT_ANCHOR_REGEX = /<!--agent:([^>]+)-->/;
 
 /**
+ * Regular expression to match empty task items ("[ ]", "[x]" with no content).
+ * Marked 18 no longer tokenizes these as task items, so we detect them manually.
+ */
+const EMPTY_TASK_REGEX = /^\[([ xX])\]\s*$/;
+
+/**
+ * Normalize list item tokens for rendering as block content.
+ *
+ * Marked 18 removed the parser-level paragraph wrapping of top-level text
+ * tokens (tight list items now render without <p>) and prepends a "checkbox"
+ * token to task item tokens. Tiptap expects block-level (<p>-wrapped) content
+ * inside list items, so this helper drops checkbox tokens and wraps runs of
+ * top-level text tokens into synthetic paragraph tokens.
+ */
+function normalizeListItemTokens(tokens: any[]): any[] {
+  const normalized: any[] = [];
+  let currentParagraph: any = null;
+
+  for (const token of tokens) {
+    if (token.type === 'checkbox') {
+      continue;
+    }
+    if (token.type === 'text') {
+      const inlineTokens = token.tokens ? [...token.tokens] : [token];
+      if (currentParagraph) {
+        currentParagraph.raw += token.raw ?? '';
+        currentParagraph.text += token.text ?? '';
+        currentParagraph.tokens.push(...inlineTokens);
+      } else {
+        currentParagraph = {
+          type: 'paragraph',
+          raw: token.raw ?? '',
+          text: token.text ?? '',
+          tokens: inlineTokens,
+        };
+        normalized.push(currentParagraph);
+      }
+    } else {
+      currentParagraph = null;
+      normalized.push(token);
+    }
+  }
+
+  return normalized;
+}
+
+/**
  * Extract agent ID from content and return cleaned content
  */
 function extractAgentAnchor(content: string): { content: string; agentId: string | null } {
@@ -108,12 +155,13 @@ export const createTiptapTaskListMarked = () => {
       },
 
       list(token: any): string | false {
-        // Check which items are task items (including [/] in-progress items)
+        // Check which items are task items (including [/] in-progress items
+        // and empty task items, which marked 18 no longer tokenizes as tasks)
         const isTaskItem = (item: any) => {
           if (item.task === true) return true;
-          // Check for [/] pattern in non-task items
+          // Check for [/] and empty task patterns in non-task items
           const text = item.text || '';
-          return /^\[\/\]\s+/.test(text);
+          return /^\[\/\]\s+/.test(text) || EMPTY_TASK_REGEX.test(text);
         };
 
         const hasTaskItems = token.items.some(isTaskItem);
@@ -165,7 +213,7 @@ export const createTiptapTaskListMarked = () => {
           let content = '';
           if (token.tokens && token.tokens.length > 0) {
             // Parse the tokens to get HTML - this will handle nested lists properly
-            content = this.parser.parse(token.tokens);
+            content = this.parser.parse(normalizeListItemTokens(token.tokens));
           } else {
             // Fallback to text if no tokens
             content = token.text || '';
@@ -195,6 +243,15 @@ export const createTiptapTaskListMarked = () => {
           // We need to manually detect [/] pattern in the text
           const text = token.text || '';
           const rawText = token.raw || '';
+
+          // Empty task items ("- [ ] " with no content) are not tokenized as
+          // tasks by marked 18, so detect and render them manually
+          const emptyTaskMatch = text.match(EMPTY_TASK_REGEX);
+          if (emptyTaskMatch) {
+            const isChecked = emptyTaskMatch[1] !== ' ';
+            const status = isChecked ? 'done' : 'todo';
+            return `<li class="task-item flex items-start gap-2" data-type="taskItem" data-checked="${isChecked}" data-status="${status}"><label><input type="checkbox"${isChecked ? ' checked' : ''}><span></span></label><div><p></p></div></li>`;
+          }
 
           const inProgressMatch =
             text.match(/^\[\/\]\s+(.*)$/) || rawText.match(/^-\s+\[\/\]\s+(.*)$/m);
@@ -227,7 +284,7 @@ export const createTiptapTaskListMarked = () => {
                   tokens: nestedTokens,
                 };
               }
-              content = this.parser.parse(modifiedTokens);
+              content = this.parser.parse(normalizeListItemTokens(modifiedTokens));
             } else {
               content = `<p>${taskContent}</p>`;
             }
@@ -250,7 +307,7 @@ export const createTiptapTaskListMarked = () => {
           let content = '';
           if (token.tokens && token.tokens.length > 0) {
             try {
-              content = this.parser.parse(token.tokens);
+              content = this.parser.parse(normalizeListItemTokens(token.tokens));
             } catch {
               content = token.text || '';
             }

@@ -7,6 +7,7 @@
  * closure of PanelLayout.
  */
 
+import { m } from '$shared/paraglide/messages.js';
 import type { PanelLayoutManager } from '$features/layout/panel-layout-adapter';
 import type { ClientLogger } from '$lib/utils/client-logger';
 import { store as appStore } from '$store/renderer/store';
@@ -74,7 +75,7 @@ export async function openTabFromConfig(
         layoutManager.openTab(
           {
             type: 'agent',
-            title: tab.title || tab.agentName || 'Agent',
+            title: tab.title || tab.agentName || m.layout_aiLayout_agent_fallback(),
             closable: true,
             agentId: tab.agentId,
             workspaceId,
@@ -84,7 +85,10 @@ export async function openTabFromConfig(
       } else {
         // Request a new agent session; the workspace-agent saga opens the tab
         // in the requested panel when creation succeeds.
-        const agentName = tab.newAgentName || tab.title || `Agent ${panelIndex + 1}`;
+        const agentName =
+          tab.newAgentName ||
+          tab.title ||
+          m.layout_aiLayout_agentNumbered_fallback({ number: panelIndex + 1 });
         try {
           appStore.dispatch(createAgentFromConfigRequested(workspaceId, {
             name: agentName,
@@ -107,7 +111,7 @@ export async function openTabFromConfig(
       layoutManager.openTab(
         {
           type: 'note',
-          title: tab.title || tab.noteId || 'Note',
+          title: tab.title || tab.noteId || m.layout_aiLayout_note_fallback(),
           closable: true,
           noteId: tab.noteId,
           workspaceId,
@@ -136,7 +140,7 @@ export async function openTabFromConfig(
       layoutManager.openTab(
         {
           type: 'terminal',
-          title: tab.title || 'Terminal',
+          title: tab.title || m.layout_panelLayout_terminal_fallback(),
           closable: true,
           workspaceId,
         },
@@ -148,7 +152,7 @@ export async function openTabFromConfig(
       layoutManager.openTab(
         {
           type: 'browser',
-          title: tab.title || 'Browser',
+          title: tab.title || m.layout_panelLayout_browser_fallback(),
           closable: true,
           browserUrl: tab.browserUrl || 'about:blank',
           workspaceId,
@@ -161,7 +165,7 @@ export async function openTabFromConfig(
       layoutManager.openTab(
         {
           type: 'changes',
-          title: tab.title || 'Changes',
+          title: tab.title || m.layout_aiLayout_changes_fallback(),
           closable: true,
           workspaceId,
         },
@@ -173,7 +177,7 @@ export async function openTabFromConfig(
       layoutManager.openTab(
         {
           type: 'activity',
-          title: tab.title || 'Activity',
+          title: tab.title || m.layout_aiLayout_activity_fallback(),
           closable: true,
           workspaceId,
         },

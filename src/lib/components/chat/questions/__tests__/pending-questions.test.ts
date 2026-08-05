@@ -7,8 +7,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import { derivePendingQuestions } from '../pending-questions';
+import { deriveWizardPendingQuestions } from '../wizard-gate';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
-import type { AgentMessage, ContentBlock } from '$shared/types';
+import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+import type { StoreState } from '$store/renderer/types';
+import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
 const QUESTION = {
   attachmentId: 'tar-abc123def456',
@@ -121,5 +124,151 @@ describe('derivePendingQuestions', () => {
     expect(pending).not.toBeNull();
     expect(pending!.messageId).toBe('msg-a1');
     expect(pending!.questions[0].header).toBe('Auth method');
+  });
+});
+
+// ============================================================================
+// Wizard gate — waiting on delegated agents (regression)
+// ============================================================================
+
+function makeStoredSession(overrides: Partial<AgentSession> = {}): AgentSession {
+  return {
+    id: 'agent-coordinator' as AgentSession['id'],
+    backendSessionId: null,
+    workspaceId: 'ws-1' as AgentSession['workspaceId'],
+    name: 'Coordinator',
+    status: 'idle' as AgentSession['status'],
+    messages: [],
+    createdAt: '2024-01-01T00:00:00.000Z',
+    updatedAt: '2024-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function stateWith(session: AgentSession): StoreState {
+  return {
+    agentSessions: { byAgentId: { [session.id]: session }, agentIdsByWorkspace: {} },
+  } as unknown as StoreState;
+}
+
+// The suite exercises the REAL production gate — deriveWizardPendingQuestions
+// from ../wizard-gate, the same function ChatPanel.svelte calls — so reverting
+// the gate to the broad running selector fails the regression test below.
+describe('wizard gate while waiting on delegated agents', () => {
+  const AGENT_ID = 'agent-coordinator';
+  // Coordinator asked a question, ended its own turn, and is now paused on
+  // delegated agents (daemon-owned isWaitingForOtherAgents flag).
+  const waitingSession = makeStoredSession({
+    isResponding: false,
+    isStreaming: false,
+    isProcessing: false,
+    isWaitingForOtherAgents: true,
+  });
+  const transcript: AgentMessage[] = [
+    userMessage('msg-u0'),
+    assistantMessage([{ type: 'text', text: 'Delegating; one question:' }, questionBlock()], {
+      id: 'msg-a1',
+    }),
+  ];
+
+  it('REGRESSION: questions pend while the agent only waits on other agents (own turn ended)', () => {
+    const state = stateWith(waitingSession);
+    // Sanity: the broad running gate is true here — gating the wizard on it
+    // is exactly the bug (the wizard never mounted during the waiting window).
+    expect(selectAgentIsRunning.select(state, AGENT_ID)).toBe(true);
+    const pending = deriveWizardPendingQuestions(state, AGENT_ID, transcript);
+    expect(pending).not.toBeNull();
+    expect(pending!.messageId).toBe('msg-a1');
+    expect(pending!.questions[0].header).toBe('Auth method');
+  });
+
+  it('still suppresses the wizard while the agent own turn is active (responding)', () => {
+    const state = stateWith(makeStoredSession({ isResponding: true }));
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, transcript)).toBeNull();
+  });
+
+  it('still suppresses the wizard while the agent own turn is streaming', () => {
+    const state = stateWith(makeStoredSession({ isStreaming: true }));
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, transcript)).toBeNull();
+  });
+
+  it('a trailing user message (e.g. delegated-agent wake report) still supersedes', () => {
+    const state = stateWith(waitingSession);
+    const superseded = [...transcript, userMessage('msg-wake-report')];
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, superseded)).toBeNull();
+  });
+
+  it('an optimistic pending user bubble still suppresses the wizard', () => {
+    const state = stateWith(waitingSession);
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, transcript, true)).toBeNull();
+  });
+});
+
+// ============================================================================
+// Wizard gate — daemon-persisted question dismissal (agent.dismissQuestions)
+// ============================================================================
+
+describe('wizard gate honors the persisted dismissal marker', () => {
+  const AGENT_ID = 'agent-coordinator';
+  const idleSession = makeStoredSession({
+    isResponding: false,
+    isStreaming: false,
+    isProcessing: false,
+  });
+  const transcript: AgentMessage[] = [
+    userMessage('msg-u0'),
+    assistantMessage([{ type: 'text', text: 'One question:' }, questionBlock()], {
+      id: 'msg-a1',
+    }),
+  ];
+
+  it('suppresses the wizard when metadata.dismissedQuestionsMessageId matches the pending message', () => {
+    // The marker is persisted by the daemon (`agent.dismissQuestions`,
+    // PROTOCOL §5.5) and rehydrated into session metadata — so the
+    // suppression survives reload/rehydrate by construction: the gate reads
+    // only rehydrated state, no transient component flag.
+    const state = stateWith(
+      makeStoredSession({
+        ...idleSession,
+        metadata: { dismissedQuestionsMessageId: 'msg-a1' },
+      }),
+    );
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, transcript)).toBeNull();
+  });
+
+  it('a NEWER question-bearing message (different id) pends despite an older dismissal', () => {
+    const state = stateWith(
+      makeStoredSession({
+        ...idleSession,
+        metadata: { dismissedQuestionsMessageId: 'msg-a1' },
+      }),
+    );
+    const newer = [
+      ...transcript,
+      userMessage('msg-u1'),
+      assistantMessage([questionBlock({ header: 'Second round' })], { id: 'msg-a2' }),
+    ];
+    const pending = deriveWizardPendingQuestions(state, AGENT_ID, newer);
+    expect(pending).not.toBeNull();
+    expect(pending!.messageId).toBe('msg-a2');
+  });
+
+  it('no dismissal marker → questions pend normally', () => {
+    const state = stateWith(idleSession);
+    const pending = deriveWizardPendingQuestions(state, AGENT_ID, transcript);
+    expect(pending).not.toBeNull();
+    expect(pending!.messageId).toBe('msg-a1');
+  });
+
+  it('a non-matching dismissal marker does not suppress', () => {
+    const state = stateWith(
+      makeStoredSession({
+        ...idleSession,
+        metadata: { dismissedQuestionsMessageId: 'msg-other' },
+      }),
+    );
+    const pending = deriveWizardPendingQuestions(state, AGENT_ID, transcript);
+    expect(pending).not.toBeNull();
+    expect(pending!.messageId).toBe('msg-a1');
   });
 });

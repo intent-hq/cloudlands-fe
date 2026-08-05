@@ -591,7 +591,7 @@ Some additional notes here.
     });
 
     it('should preserve multiple XML tags in inline code', async () => {
-      const markdown = 'The `<lt;span&gt;` tag is for inline content';
+      const markdown = 'The `<span>` tag is for inline content';
       const html = await processMarkdownToHTML(markdown);
 
       expect(html).toContain('<code>');
@@ -649,6 +649,77 @@ Some additional notes here.
       expect(html).toContain('<code>&lt;img src="..." /&gt;</code>');
       expect(html).toContain('<code>&lt;parent&gt;&lt;child /&gt;&lt;/parent&gt;</code>');
       expect(html).toContain('<code>&lt;button onclick="handler" disabled="true"&gt;</code>');
+    });
+  });
+
+  describe('Whitelisted Inline Tags (br/sub/sup)', () => {
+    it('should render <br> as a real line break outside code blocks', async () => {
+      const html = await processMarkdownToHTML('line one<br>line two');
+
+      expect(html).toContain('<br');
+      expect(html).not.toContain('&lt;br&gt;');
+    });
+
+    it('should render <br/> and <br /> variants', async () => {
+      const html1 = await processMarkdownToHTML('line one<br/>line two');
+      const html2 = await processMarkdownToHTML('line one<br />line two');
+
+      expect(html1).toContain('<br');
+      expect(html1).not.toContain('&lt;br/&gt;');
+      expect(html2).toContain('<br');
+      expect(html2).not.toContain('&lt;br /&gt;');
+    });
+
+    it('should render <sub> and <sup> as real elements', async () => {
+      const subHtml = await processMarkdownToHTML('H<sub>2</sub>O');
+      const supHtml = await processMarkdownToHTML('x<sup>2</sup>');
+
+      expect(subHtml).toContain('<sub>2</sub>');
+      expect(supHtml).toContain('<sup>2</sup>');
+    });
+
+    it('should match whitelisted tags case-insensitively', async () => {
+      const html = await processMarkdownToHTML('line one<BR>H<SUB>2</SUB>O');
+
+      // DOMPurify serializes tag names in lowercase; the key point is they are
+      // not escaped as literal text
+      expect(html).toMatch(/<br\b/i);
+      expect(html).toMatch(/<sub>2<\/sub>/i);
+      expect(html).not.toContain('&lt;BR&gt;');
+      expect(html).not.toContain('&lt;SUB&gt;');
+    });
+
+    it('should keep whitelisted tags with attributes escaped', async () => {
+      const brHtml = await processMarkdownToHTML('line one<br class="x">line two');
+      const subHtml = await processMarkdownToHTML('H<sub id="y">2</sub>O');
+
+      expect(brHtml).toContain('&lt;br class=');
+      expect(brHtml).not.toContain('<br class=');
+      expect(subHtml).toContain('&lt;sub id=');
+      expect(subHtml).not.toContain('<sub id=');
+    });
+
+    it('should keep near-match tags escaped', async () => {
+      const html = await processMarkdownToHTML('a<brx>b and c<subtitle>d</subtitle>e');
+
+      expect(html).toContain('&lt;brx&gt;');
+      expect(html).toContain('&lt;subtitle&gt;');
+      expect(html).toContain('&lt;/subtitle&gt;');
+    });
+
+    it('should keep whitelisted tags literal inside inline code', async () => {
+      const html = await processMarkdownToHTML('Use `<br/>` and `<sub>` in HTML');
+
+      expect(html).toContain('<code>&lt;br/&gt;</code>');
+      expect(html).toContain('<code>&lt;sub&gt;</code>');
+    });
+
+    it('should keep whitelisted tags literal inside fenced code blocks', async () => {
+      const html = await processMarkdownToHTML('```html\nline one<br>H<sub>2</sub>O\n```');
+
+      expect(html).toContain('&lt;br&gt;');
+      expect(html).toContain('&lt;sub&gt;');
+      expect(html).toContain('&lt;/sub&gt;');
     });
   });
 });

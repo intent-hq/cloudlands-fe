@@ -46,11 +46,6 @@
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import { debugConfig } from '$lib/config/debug';
   import type { StarterPrompt } from '$lib/data/starter-prompts';
-  import {
-  selectSelectedModel,
-  selectAvailableModels,
-} from '$store/renderer/slices/model/model-selectors';
-  import { setWorkspaceModel } from '$store/renderer/slices/model/model-slice';
   import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
   setWorkspaceEntity,
@@ -61,8 +56,6 @@
   import {
   selectSpecialists,
   selectEffectiveBehaviorPrompt,
-  selectEffectiveModel,
-  selectEffectiveCodingAgent,
 } from '$store/renderer/slices/specialists/specialists-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import {
@@ -75,15 +68,33 @@
   import { createAgentTypeId } from '$shared/types/agent.types';
   import {
   faMagicWandSparkles,
+  faMicrophone,
   faPaperclip,
   faSpinner,
   faStop,
   faExclamationTriangle,
   faCodeBranch,
 } from '@fortawesome/free-solid-svg-icons';
+  import {
+  selectPttRecording,
+  selectVoiceTranscribing,
+} from '$store/renderer/slices/hardware-console/hardware-console-selectors';
+  import { selectEffectiveVoiceEngine } from '$store/renderer/slices/voice-settings/voice-settings-selectors';
+  import {
+  cancelPromptMicRecording,
+  isPromptMicRecording,
+  togglePromptMicRecording,
+} from '$features/hardware-console/voice/prompt-mic-controller';
+  import { cancelActiveTranscription } from '$features/hardware-console/voice/transcription-cancellation';
+  import type { PttContext } from '$features/hardware-console/voice/ptt-controller';
+  import { showVoiceSetupToast } from '$features/hardware-console/voice/voice-setup-toast';
   import { invoke } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
-  import { enhancePrompt } from '$lib/client/live/live-prompt-enhancement';
+  import {
+    enhancePrompt,
+    EnhancePromptUnavailableError,
+    isEnhancePromptAvailable,
+  } from '$lib/client/live/live-prompt-enhancement';
   import Fa from 'svelte-fa';
   import PullConflictDialog, { type PullErrorType } from '../modals/PullConflictDialog.svelte';
 
@@ -104,13 +115,11 @@
   import SetupScriptModal from '../modals/SetupScriptModal.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { parseCompoundModelId } from '$shared/config/provider-config';
-  import {
-    dropCrossProviderFallbackModel,
-    resolveSubmitModel,
-    resolveSubmitProvider,
-  } from '$lib/utils/effective-model-resolution';
+  import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { parseCompoundModelId } from '$shared/utils/compound-model-id';
+  import { resolveSubmitProvider } from '$lib/utils/effective-model-resolution';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
   import type { ContextItem } from '$lib/components/chat/input/context-api';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
   import {
@@ -119,9 +128,10 @@
   restoreNewWorkspaceDraft,
 } from './initializer/new-workspace-draft';
 
-  const availableModels$ = selectAvailableModels();
-  const selectedModel$ = selectSelectedModel();
   const activeProviderId$ = selectActiveProviderId();
+  const defaultProviderId$ = selectCatalogDefaultProviderId();
+  const pttRecording$ = selectPttRecording();
+  const voiceTranscribing$ = selectVoiceTranscribing();
   const logger = createLogger('CompactWorkspaceInitializer');
 
   // Constants
@@ -430,9 +440,10 @@
   // (e.g., 'claude-code:default' when active provider is now 'opencode') should be discarded
   // since they won't exist in the current model list and cause a flash of the wrong model.
   const restoredModel = savedState?.selectedModel ?? lastSubmittedAgent?.selectedModel;
-  const currentProviderAtInit = $activeProviderId$ ?? 'auggie';
+  const currentProviderAtInit = $activeProviderId$ || $defaultProviderId$;
   const isModelForCurrentProvider =
-    !restoredModel || parseCompoundModelId(restoredModel).providerId === currentProviderAtInit;
+    !restoredModel ||
+    parseCompoundModelId(restoredModel, $defaultProviderId$).providerId === currentProviderAtInit;
 
   let selectedModel = $state<string | undefined>(
     isModelForCurrentProvider ? restoredModel : undefined,
@@ -534,7 +545,11 @@
     if (!settings) return;
     if (settings.selectedSpecialist !== undefined) selectedSpecialist = settings.selectedSpecialist;
     const model = settings.selectedModel;
-    if (model && parseCompoundModelId(model).providerId === ($activeProviderId$ ?? 'auggie')) {
+    if (
+      model &&
+      parseCompoundModelId(model, $defaultProviderId$).providerId ===
+        ($activeProviderId$ || $defaultProviderId$)
+    ) {
       selectedModel = model;
       modelWasOverridden = settings.modelWasOverridden ?? modelWasOverridden;
     }
@@ -867,7 +882,7 @@
           });
 
           // Insert the trailing text inline (not using setContent to avoid newlines)
-          richTextarea.insertText('. Next, I want to ');
+          richTextarea.insertText(m.workspace_compactInitializer_nextIWantTo_text());
         }
       }, 200);
     }
@@ -1047,6 +1062,9 @@
     }, 200);
   });
 
+  // §5.31 gate — enhance is auggie-only; unset active provider defaults to auggie
+  const enhanceAvailable = $derived(isEnhancePromptAvailable($activeProviderId$));
+
   // Enhance prompt state
   let isEnhancing = $state(false);
   let enhanceRequestId = $state(0);
@@ -1065,10 +1083,10 @@
 
   // Progress messages to show during creation - makes wait feel shorter
   const CREATION_STAGES = [
-    'Preparing workspace...',
-    'Setting up git branch...',
-    'Configuring environment...',
-    'Almost ready...',
+    m.workspace_compactInitializer_stagePreparing_label(),
+    m.workspace_compactInitializer_stageGitBranch_label(),
+    m.workspace_compactInitializer_stageEnvironment_label(),
+    m.workspace_compactInitializer_stageAlmostReady_label(),
   ];
 
   // Cycle through creation stages while creating
@@ -1400,6 +1418,7 @@
       parts.push(`Team: ${metadata.teamName}`);
     }
     if (metadata.priority !== undefined) {
+      // i18n-ignore (agent-facing context content, kept in English)
       const priorityLabels = ['No priority', 'Urgent', 'High', 'Medium', 'Low'];
       parts.push(`Priority: ${priorityLabels[metadata.priority] || metadata.priority}`);
     }
@@ -1411,7 +1430,7 @@
   }
 
   async function handleSubmit() {
-    if (!isValid || isCreating) return;
+    if (!isValid || isCreating || isEnhancing) return;
 
     isCreating = true;
     error = null;
@@ -1459,7 +1478,7 @@
               ? await appClient.git.pull(repoPath, branch)
               : undefined;
           if (!pullResult?.success) {
-            pullError = pullResult?.error || 'Failed to pull changes';
+            pullError = pullResult?.error || m.workspace_compactInitializer_pullFailed_error();
             showPullConflictDialog = true;
             isPulling = false;
             isCreating = false;
@@ -1471,7 +1490,7 @@
             branch,
           });
         } catch (err) {
-          pullError = err instanceof Error ? err.message : 'Failed to pull changes';
+          pullError = err instanceof Error ? err.message : m.workspace_compactInitializer_pullFailed_error();
           showPullConflictDialog = true;
           isPulling = false;
           isCreating = false;
@@ -1507,7 +1526,7 @@
         : undefined;
 
       // Get agent name and specialist ID from selected specialist
-      let agentName = 'Agent';
+      let agentName: string = m.workspace_fileChanges_agent_label();
       let specialistId: string | undefined;
 
       if (selectedSpecialist) {
@@ -1515,7 +1534,7 @@
         const specialist = selectSpecialists
           .select(appStore.state)
           .find((s) => s.id === selectedSpecialist);
-        agentName = specialist?.name ?? 'Agent';
+        agentName = specialist?.name ?? m.workspace_fileChanges_agent_label();
         specialistId = selectedSpecialist;
       }
 
@@ -1647,9 +1666,10 @@
           try {
             const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
               await import('$store/renderer/slices/scripts/scripts-selectors');
+            const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
             const scriptId = mention.id;
             const state = appStore.state;
-            const outputLines = selectScriptOutput.select(state, scriptId);
+            const outputLines = scriptOutputToLines(selectScriptOutput.select(state, scriptId));
             const script = selectScriptById.select(state, scriptId);
             const runtime = selectScriptRuntime.select(state, scriptId);
 
@@ -1664,13 +1684,10 @@
               content += `URL: ${runtime.detectedUrl}\n`;
             }
             if (outputLines.length > 0) {
-              const lastLines = outputLines
-                .slice(-100)
-                .map((l: any) => l.text)
-                .join('\n');
+              const lastLines = outputLines.slice(-100).join('\n');
               content += `\nOutput (last ${Math.min(outputLines.length, 100)} lines):\n${lastLines}`;
             } else {
-              content += '\nNo output yet.';
+              content += '\nNo output yet.'; // i18n-ignore (agent-facing context content)
             }
 
             const contextRef: Record<string, any> = {
@@ -1740,76 +1757,24 @@
         );
       }
 
-      // Resolve the model for the selected specialist + provider so the agent is created
-      // with the correct compound model ID (e.g., 'codex:gpt-5.3-codex').
-      // Uses the same shared effective-model resolution the InitialAgentPicker displays,
-      // so the created agent gets exactly the model shown in the picker. An explicit
-      // user override (modelWasOverridden) always wins.
-      // Without this, model would be undefined and the backend falls back to DEFAULT_AGENT_MODEL
-      // (an auggie model), which breaks provider inheritance when the coordinator delegates.
-      const reduxState = appStore.state;
-      let resolvedModel = resolveSubmitModel({
-        modelWasOverridden,
-        overriddenModel: selectedModel,
-        specialistId: selectedSpecialist,
+      // Model resolution is daemon-owned (single resolver, PROTOCOL §5.11):
+      // submit `model` ONLY when the user explicitly picked one in this form.
+      // With no explicit pick the daemon applies its own resolved default at
+      // creation time (the same value the picker previews via
+      // `resolvedModel`), so no client-side tier/preference fallback runs.
+      const resolvedModel =
+        modelWasOverridden && selectedModel ? selectedModel : undefined;
+
+      // Derive the submitted provider from the explicit model (if any) so
+      // intent and daemon spawn can never diverge: the daemon's
+      // resolve_provider_id gives a compound model prefix precedence over the
+      // provider field, and a bare model id resolves to the default provider.
+      // With no explicit model, keep the form's selected provider.
+      const submitProvider = resolveSubmitProvider(
+        resolvedModel,
         selectedProvider,
-        availableModelValues: $availableModels$.map((m) => m.value),
-        globalSelectedModel: $selectedModel$,
-        effectiveCodingAgent: selectedSpecialist
-          ? selectEffectiveCodingAgent.select(reduxState, selectedSpecialist)
-          : undefined,
-        effectiveModel: selectedSpecialist
-          ? selectEffectiveModel.select(reduxState, selectedSpecialist)
-          : undefined,
-        specialistInfo: selectedSpecialist
-          ? selectSpecialists.select(reduxState).find((s) => s.id === selectedSpecialist)
-          : undefined,
-      });
-      // No specialist selected (General/blank agent) and user didn't override the model:
-      // fall back to the global store selection when models haven't loaded yet.
-      if (!resolvedModel && !modelWasOverridden && !selectedSpecialist) {
-        resolvedModel = $selectedModel$;
-      }
-
-      // Validate resolvedModel against available models. Tier-mapped model IDs
-      // (e.g., 'opencode:anthropic/claude-opus-4-5') may not match actual model IDs
-      // returned by the provider CLI, causing a visible flash in the ModelPicker.
-      // Fall back to the model store's validated selected model if the resolved model
-      // doesn't exist in the available list.
-      // Only validate when the form's selectedProvider matches the model store's loaded
-      // provider (active-provider Redux slice) — otherwise the available models are for a
-      // different provider and we can't meaningfully validate.
-      const storeProvider = $activeProviderId$;
-      if (resolvedModel && $availableModels$.length > 0 && selectedProvider === storeProvider) {
-        const availableModelValues = $availableModels$.map((m) => m.value);
-        if (!availableModelValues.includes(resolvedModel)) {
-          logger.warn('Tier-resolved model not in available list, using store default', {
-            resolvedModel,
-            fallback: $selectedModel$,
-            selectedProvider,
-            availableCount: availableModelValues.length,
-          });
-          resolvedModel = $selectedModel$;
-        }
-      }
-
-      // Guard the non-overridden fallback: when the resolved model belongs to
-      // a different provider than the form's selection (e.g. the selected
-      // provider's models haven't loaded and the fallback came from the
-      // default provider's store selection), drop the model so the daemon
-      // uses the selected provider's own default instead of the fallback
-      // silently flipping the submitted provider. Explicit user overrides
-      // (modelWasOverridden) may legitimately cross providers and are kept.
-      if (!modelWasOverridden) {
-        resolvedModel = dropCrossProviderFallbackModel(resolvedModel, selectedProvider);
-      }
-
-      // Derive the submitted provider from the final resolved model so intent
-      // and daemon spawn can never diverge: the daemon's resolve_provider_id
-      // gives a compound model prefix precedence over the provider field, and
-      // a bare model id resolves to the default provider. When no model
-      // resolves, keep the form's selected provider.
-      const submitProvider = resolveSubmitProvider(resolvedModel, selectedProvider);
+        $defaultProviderId$,
+      );
 
       // No client-minted agentId: the daemon assigns the initial agent's id
       // and returns it on the create result (supersedes the fresh-id-per-
@@ -1899,20 +1864,6 @@
         logger.debug('Could not clear workspace storage state', { error });
       }
 
-      // Set workspace default model to the EFFECTIVE model (the one the agent will actually use).
-      // resolvedModel has already been validated against available models above.
-      const effectiveModel = resolvedModel;
-
-      if (effectiveModel) {
-        appStore.dispatch(setWorkspaceModel({ workspaceId: workspace.id, model: effectiveModel }));
-        logger.info('Set workspace default model', {
-          workspaceId: workspace.id,
-          effectiveModel,
-          modelWasOverridden,
-          selectedSpecialist,
-        });
-      }
-
       // Pre-populate Redux with the workspace entity so the workspace page
       // has data on the very first render frame (before sagas/effects run).
       appStore.dispatch(setWorkspaceEntity(workspace));
@@ -1929,7 +1880,7 @@
         const now = new Date().toISOString();
         const scriptToSave = {
           id: uuidv4(),
-          name: setupScriptName || 'Custom Script',
+          name: setupScriptName || m.workspace_setupScriptEditor_customScript_name(),
           content: setupScript.trim(),
           repoPath,
           projectType: 'generic' as string,
@@ -2008,7 +1959,7 @@
         }, 100);
       }
     } catch (err) {
-      error = err instanceof Error ? getGitErrorMessage(err.message) : 'Failed to create workspace';
+      error = err instanceof Error ? getGitErrorMessage(err.message) : m.workspace_compactInitializer_createFailed_error();
     } finally {
       isCreating = false;
     }
@@ -2246,7 +2197,7 @@
           }
         } catch (err) {
           logger.error('Failed to process image', { fileName: file.name, error: err });
-          toast.error(`Failed to process image: ${file.name}`);
+          toast.error(m.workspace_compactInitializer_processImageFailed_error({ fileName: file.name }));
         }
       } else {
         // Non-image files are inserted as mentions
@@ -2281,7 +2232,7 @@
     }
 
     if (oversizedFiles.length > 0) {
-      toast.error(`Files too large (max 10MB): ${oversizedFiles.join(', ')}`);
+      toast.error(m.workspace_compactInitializer_filesTooLarge_error({ files: oversizedFiles.join(', ') }));
     }
   }
 
@@ -2417,6 +2368,7 @@
   }
 
   async function handleEnhancePrompt() {
+    if (!enhanceAvailable) return;
     if (!initialPrompt.trim() || isEnhancing) return;
 
     isEnhancing = true;
@@ -2430,14 +2382,16 @@
 
       initialPrompt = result.enhanced;
       await richTextarea?.setContent(result.enhanced);
-      toast.success('Prompt enhanced');
+      toast.success(m.workspace_compactInitializer_promptEnhanced_toast());
     } catch (error) {
       if (currentRequestId === cancelledRequestId) return;
       logger.error('Failed to enhance prompt:', error);
       toast.error(
-        error instanceof Error && error.message
-          ? `Failed to enhance prompt: ${error.message}`
-          : 'Failed to enhance prompt',
+        error instanceof EnhancePromptUnavailableError
+          ? m.workspace_compactInitializer_enhanceUnavailable_error()
+          : error instanceof Error && error.message
+            ? m.workspace_compactInitializer_enhanceFailedWithMessage_error({ message: error.message })
+            : m.workspace_compactInitializer_enhanceFailed_error(),
       );
     } finally {
       if (currentRequestId !== cancelledRequestId) {
@@ -2452,7 +2406,63 @@
       isEnhancing = false;
     }
   }
+
+  // Prompt mic latch button: same three states as the chat composer's mic
+  // (idle / recording pulse / transcribing spinner). "Recording" renders
+  // only for the session THIS prompt started (ownership via the controller's
+  // session token); `$pttRecording$` drives re-evaluation.
+  const micRecording = $derived($pttRecording$ && isPromptMicRecording());
+  const micTranscribing = $derived($voiceTranscribing$);
+
+  /** Dispatch + hint context for the shared PTT session API. */
+  const micContext: PttContext = {
+    dispatch: (action) => appStore.dispatch(action as { type: string }),
+    showHint: (message) => toast.info(message),
+  };
+
+  function handleMicClick() {
+    // No engine can transcribe (daemon selected, key missing, no OS
+    // fallback): surface the actionable setup toast instead of recording
+    // audio that could never be transcribed. A live recording is never
+    // gated — its stop-click must always land.
+    if (
+      !micRecording &&
+      selectEffectiveVoiceEngine.select(appStore.state) === 'unavailable'
+    ) {
+      showVoiceSetupToast();
+      return;
+    }
+    togglePromptMicRecording(micContext, { focus: () => richTextarea?.focusEnd() });
+  }
+
+  function handleMicEscape(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || !micRecording) return;
+    if (cancelPromptMicRecording(micContext)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }
+
+  // Cancel-while-transcribing: abandon the in-flight session so a hung or
+  // slow transcribe can never insert a late result — the transcribing state
+  // clears immediately and a new recording can start right away.
+  function handleMicCancelTranscription() {
+    cancelActiveTranscription();
+  }
+
+  // A recording left running when this prompt unmounts (modal closed) can
+  // never insert into it — discard the session instead of transcribing into
+  // whatever holds focus later.
+  onDestroy(() => {
+    cancelPromptMicRecording(micContext);
+  });
 </script>
+
+<!-- Esc cancels an in-progress prompt mic recording (discard, no
+     transcription). Capture phase so the modal's own Escape handling (close)
+     never wins while dictation is live; a no-op unless this prompt owns the
+     recording session. -->
+<svelte:window onkeydowncapture={handleMicEscape} />
 
 <!-- Compact Initializer -->
 <div class="w-full mx-auto" bind:this={controlsContainer}>
@@ -2489,7 +2499,7 @@
       >
         <div class="flex flex-col items-center gap-2 text-primary">
           <Fa icon={faPaperclip} class="w-6 h-6" />
-          <span class="text-sm font-medium">Drop files here</span>
+          <span class="text-sm font-medium">{m.workspace_compactInitializer_dropFiles_label()}</span>
         </div>
       </div>
     {/if}
@@ -2499,7 +2509,8 @@
       <RichTextarea
         bind:this={richTextarea}
         bind:value={initialPrompt}
-        placeholder="What would you like to work on?"
+        placeholder={m.workspace_compactInitializer_prompt_placeholder()}
+        disabled={isEnhancing || isCreating}
         repoPath={repoType === 'local' ? repoPath : undefined}
         onfocus={() => {
           isExpanded = true;
@@ -2568,24 +2579,77 @@
           repositoryName={githubRepoInfo?.repo}
         />
 
-        <!-- Enhance prompt button -->
-        <div class="absolute top-2 right-9">
-          <Button
-            type="button"
-            onclick={isEnhancing ? handleCancelEnhance : handleEnhancePrompt}
-            size="icon-xs"
-            variant="ghost-light"
-            disabled={!initialPrompt.trim() && !isEnhancing}
-            tooltip={isEnhancing ? 'Stop enhancing' : 'Enhance prompt'}
-            tooltipSide="top"
-          >
-            {#if isEnhancing}
-              <Fa icon={faStop} size="xs" class="text-destructive-foreground" />
-            {:else}
-              <Fa icon={faMagicWandSparkles} size="xs" />
-            {/if}
-          </Button>
+        <!-- Mic latch button: click starts dictation, click again (Esc
+             cancels) stops and transcribes into this prompt at the caret. -->
+        <div class="absolute top-2 {enhanceAvailable ? 'right-[62px]' : 'right-9'}">
+          {#if micTranscribing}
+            <!-- Clickable while transcribing: cancel abandons the in-flight
+                 session (a hung provider's late result is discarded) and
+                 returns the button to idle immediately. -->
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="ghost-light"
+              onclick={handleMicCancelTranscription}
+              tooltip={m.chat_richInput_micCancelTranscribing_label()}
+              tooltipSide="top"
+              aria-label={m.chat_richInput_micCancelTranscribing_label()}
+              data-testid="initializer-mic-button"
+            >
+              <Fa icon={faSpinner} size="xs" class="animate-spin" />
+            </Button>
+          {:else if micRecording}
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="ghost-light"
+              onclick={handleMicClick}
+              tooltip={m.chat_richInput_micStop_label()}
+              tooltipSide="top"
+              aria-label={m.chat_richInput_micStop_label()}
+              aria-pressed="true"
+              class="text-destructive-foreground animate-pulse"
+              data-testid="initializer-mic-button"
+            >
+              <Fa icon={faMicrophone} size="xs" />
+            </Button>
+          {:else}
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="ghost-light"
+              onclick={handleMicClick}
+              tooltip={m.chat_richInput_micStart_label()}
+              tooltipSide="top"
+              aria-label={m.chat_richInput_micStart_label()}
+              aria-pressed="false"
+              data-testid="initializer-mic-button"
+            >
+              <Fa icon={faMicrophone} size="xs" />
+            </Button>
+          {/if}
         </div>
+
+        <!-- Enhance prompt button (§5.31 auggie-only gate) -->
+        {#if enhanceAvailable}
+          <div class="absolute top-2 right-9">
+            <Button
+              type="button"
+              onclick={isEnhancing ? handleCancelEnhance : handleEnhancePrompt}
+              size="icon-xs"
+              variant="ghost-light"
+              disabled={!initialPrompt.trim() && !isEnhancing}
+              tooltip={isEnhancing ? m.workspace_compactInitializer_stopEnhancing_tooltip() : m.workspace_compactInitializer_enhancePrompt_tooltip()}
+              tooltipSide="top"
+            >
+              {#if isEnhancing}
+                <Fa icon={faStop} size="xs" class="text-destructive-foreground" />
+              {:else}
+                <Fa icon={faMagicWandSparkles} size="xs" />
+              {/if}
+            </Button>
+          </div>
+        {/if}
 
         <!-- File upload button -->
         <Button
@@ -2594,7 +2658,7 @@
           class="absolute top-2 right-2.5"
           size="icon-xs"
           variant="ghost-light"
-          title="Add files"
+          title={m.workspace_compactInitializer_addFiles_tooltip()}
         >
           <Fa icon={faPaperclip} size="xs" />
         </Button>
@@ -2605,7 +2669,7 @@
   <!-- First-time user hint -->
   {#if showFirstTimeHints && !isExpanded}
     <p class="mt-3 text-xs text-subtle leading-relaxed" transition:fade={{ duration: 200 }}>
-      Describe a feature, bug fix, or refactor — the agent will create a branch and start coding.
+      {m.workspace_compactInitializer_firstTimeHint_label()}
     </p>
   {/if}
 
@@ -2621,9 +2685,9 @@
           <div class="flex items-start gap-3">
             <Fa icon={faExclamationTriangle} class="text-destructive-foreground mt-0.5 shrink-0" />
             <div>
-              <p class="font-medium text-destructive-foreground">Git is not installed</p>
+              <p class="font-medium text-destructive-foreground">{m.workspace_compactInitializer_gitNotInstalled_label()}</p>
               <p class="text-subtle mt-1">
-                Git is required to create workspaces. Please install Git and restart the app.
+                {m.workspace_compactInitializer_gitRequired_description()}
               </p>
               <button
                 class="mt-2 text-primary hover:text-primary/80 underline cursor-pointer"
@@ -2635,7 +2699,7 @@
                   }
                 }}
               >
-                Download Git →
+                {m.workspace_compactInitializer_downloadGit_label()}
               </button>
             </div>
           </div>
@@ -2672,12 +2736,12 @@
 
         <!-- Create button -->
         <div class="shrink-0">
-          <Button class="text-white" onclick={handleSubmit} disabled={!isValid || isCreating}>
+          <Button class="text-white" onclick={handleSubmit} disabled={!isValid || isCreating || isEnhancing}>
             {#if isCreating}
               <Fa icon={faSpinner} class="animate-spin" size="sm" />
               <span class="min-w-[160px] text-left">
                 {#if isPulling}
-                  Pulling latest changes...
+                  {m.workspace_compactInitializer_pullingLatest_label()}
                 {:else}
                   {CREATION_STAGES[creationStage]}
                 {/if}
@@ -2688,7 +2752,7 @@
                   {navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'} + ↵
                 </span>
               {/if}
-              <span>Create workspace</span>
+              <span>{m.workspace_compactInitializer_createWorkspace_label()}</span>
             {/if}
           </Button>
         </div>
@@ -2710,17 +2774,17 @@
           transition:slide={{ axis: 'y', duration: 200 }}
         >
           {#if gitAvailable === false}
-            Git is required — install it and restart to continue.
+            {m.workspace_compactInitializer_gitRequiredHint_label()}
           {:else if gitAvailable === null}
-            Checking dependencies...
+            {m.workspace_compactInitializer_checkingDependencies_label()}
           {:else if !repoPath}
-            Select a repository to get started.
+            {m.workspace_compactInitializer_selectRepoHint_label()}
           {:else if !isValidPath}
-            The selected path is not valid.
+            {m.workspace_compactInitializer_invalidPathHint_label()}
           {:else if repoType === 'github' && githubAuthNeeded !== 'none'}
-            GitHub authentication is required.
+            {m.workspace_compactInitializer_githubAuthRequired_label()}
           {:else if !isNewRepo && !branch && repoType !== 'remote'}
-            Waiting for branch selection...
+            {m.workspace_compactInitializer_waitingBranchSelection_label()}
           {/if}
         </div>
       {/if}
@@ -2741,7 +2805,7 @@
             }}
           >
             <Fa icon={faCodeBranch} size="sm" class="shrink-0" />
-            <span>Use PR branch <strong>{selectedPRBranch}</strong></span>
+            <span>{m.workspace_branchSelector_usePrBranch_label()} <strong>{selectedPRBranch}</strong></span>
           </button>
         </div>
       {/if}
@@ -2768,24 +2832,24 @@
               class="flex items-center gap-1 whitespace-nowrap text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               onclick={() => (showSetupScript = !showSetupScript)}
             >
-              <span>Set up dev environment with</span>
+              <span>{m.workspace_compactInitializer_setupDevEnvWith_before()}</span>
               {#if isRepoConfigLoading}
                 <Fa icon={faSpinner} class="animate-spin mx-1.5" size="sm" />
-                <span class="sr-only">Detecting setup script…</span>
+                <span class="sr-only">{m.workspace_compactInitializer_detectingSetupScript_label()}</span>
               {:else}
                 <div class="bg-background px-2 py-0.5 font-medium">{setupScriptName}</div>
-                <p class="text-sm text-subtle">script</p>
+                <p class="text-sm text-subtle">{m.workspace_compactInitializer_setupDevEnvWith_after()}</p>
               {/if}
             </button>
             <!-- Right: rapid fire -->
-            <Tooltip content="Stay on this page after creating a space" side="top" size="sm">
+            <Tooltip content={m.workspace_compactInitializer_rapidFire_tooltip()} side="top" size="sm">
               <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
               <div
                 class="flex whitespace-nowrap items-center gap-2 text-sm text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer select-none ml-auto"
                 onclick={() => (stayOnHomePage = !stayOnHomePage)}
               >
                 <Checkbox checked={stayOnHomePage} size="sm" />
-                <span>Rapid fire mode</span>
+                <span>{m.workspace_compactInitializer_rapidFireMode_label()}</span>
               </div>
             </Tooltip>
           </div>

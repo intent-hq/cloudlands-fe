@@ -16,7 +16,7 @@ const {
   appStoreFactoryMock,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   removeOptimisticNoteMock,
-  selectWorkspaceDefaultModelMock,
+  selectSelectedModelMock,
 } = vi.hoisted(() => ({
   addOptimisticNoteMock: vi.fn(),
   createAgentMock: vi.fn(),
@@ -25,7 +25,7 @@ const {
   findByIdMock: vi.fn(),
   appStoreFactoryMock: vi.fn(),
   removeOptimisticNoteMock: vi.fn(),
-  selectWorkspaceDefaultModelMock: vi.fn(),
+  selectSelectedModelMock: vi.fn(),
 }));
 
 vi.mock('$features/agent/services/agent-factory', () => ({
@@ -72,7 +72,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
-  selectWorkspaceDefaultModel: { select: selectWorkspaceDefaultModelMock },
+  selectSelectedModel: { select: selectSelectedModelMock },
 }));
 
 vi.mock('$shared/services/unified-id.service', () => ({
@@ -136,7 +136,6 @@ describe('task menu actions provider model', () => {
   const legacyState = {
     model: {
       selectedModel: 'legacy-global-model',
-      workspaceModels: { 'ws-1': 'legacy-workspace-model' },
     },
   };
   const logger = {
@@ -150,7 +149,7 @@ describe('task menu actions provider model', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     appStoreFactoryMock.mockReturnValue({ getState: () => legacyState });
-    selectWorkspaceDefaultModelMock.mockReturnValue('selector-workspace-model');
+    selectSelectedModelMock.mockReturnValue('selector-workspace-model');
     findByIdMock.mockReturnValue({ title: 'Parent note' });
     createPrerequisiteMock.mockResolvedValue({
       success: true,
@@ -198,7 +197,7 @@ describe('task menu actions provider model', () => {
     // No client-supplied agentId: the daemon assigns the agent id on create.
     expect(agentsCreateMock.mock.calls[0][0]).not.toHaveProperty('agentId');
     expect(agentsCreateMock.mock.calls[0][0].model).not.toBe(
-      legacyState.model.workspaceModels['ws-1'],
+      legacyState.model.selectedModel,
     );
   });
 

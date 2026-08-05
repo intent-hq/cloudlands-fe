@@ -7,18 +7,13 @@
  * No EventBus imports — persistence, broadcast, and dedup are handled by sagas.
  */
 
-import {
-  ipcMain,
-  BrowserWindow,
-} from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { Logger } from '../../../shared/logger';
+import { m } from '$shared/paraglide/messages.js';
 import { EVENTS_CHANNELS } from '../../../shared/ipc/channels';
 import type { WorkspaceEvent } from '../types';
 import { filterEventsForSubscription } from '../event-filter-engine';
-import {
-  mainDispatch,
-  getMainState,
-} from '../../../store/main/redux-store-bridge';
+import { mainDispatch, getMainState } from '../../../store/main/redux-store-bridge';
 import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 import {
   selectRecentEvents,
@@ -259,8 +254,16 @@ export function setupEventsIPC(): void {
           await import('../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
         const { getMainState } = await import('../../../store/main/redux-store-bridge');
         const state = getMainState();
-        const subscriptions = selectAgentSubscriptions.select(state, params.workspaceId, params.agentId);
-        const delegationGroups = selectDelegationGroupsForParent.select(state, params.workspaceId, params.agentId);
+        const subscriptions = selectAgentSubscriptions.select(
+          state,
+          params.workspaceId,
+          params.agentId,
+        );
+        const delegationGroups = selectDelegationGroupsForParent.select(
+          state,
+          params.workspaceId,
+          params.agentId,
+        );
 
         // Collect all watched agent IDs from subscriptions
         const allWatchedAgentIds = new Set<string>();
@@ -296,31 +299,30 @@ export function setupEventsIPC(): void {
             // Include delegation group info if present
             delegationGroup: sub.filter.delegationGroup
               ? {
-                groupId: sub.filter.delegationGroup.groupId,
-                awaitMode: sub.filter.delegationGroup.awaitMode,
-                expectedAgentIds: sub.filter.delegationGroup.expectedAgentIds,
-              }
+                  groupId: sub.filter.delegationGroup.groupId,
+                  awaitMode: sub.filter.delegationGroup.awaitMode,
+                  expectedAgentIds: sub.filter.delegationGroup.expectedAgentIds,
+                }
               : undefined,
           })),
           // Include delegation group status with agent states
-          delegationGroups: delegationGroups
-            .map((group) => {
-              const groupAgentStatuses: Record<string, string> = {};
-              for (const aid of group.expectedAgentIds) {
-                groupAgentStatuses[aid] = group.completedAgentIds.includes(aid)
-                  ? 'completed'
-                  : selectAgentStatus.select(state, params.workspaceId, aid);
-              }
-              return {
-                groupId: group.groupId,
-                awaitMode: group.awaitMode,
-                expectedAgentIds: group.expectedAgentIds,
-                completedAgentIds: group.completedAgentIds,
-                deletedAgentIds: group.deletedAgentIds,
-                agentStatuses: groupAgentStatuses,
-                delivered: group.delivered,
-              };
-            }),
+          delegationGroups: delegationGroups.map((group) => {
+            const groupAgentStatuses: Record<string, string> = {};
+            for (const aid of group.expectedAgentIds) {
+              groupAgentStatuses[aid] = group.completedAgentIds.includes(aid)
+                ? 'completed'
+                : selectAgentStatus.select(state, params.workspaceId, aid);
+            }
+            return {
+              groupId: group.groupId,
+              awaitMode: group.awaitMode,
+              expectedAgentIds: group.expectedAgentIds,
+              completedAgentIds: group.completedAgentIds,
+              deletedAgentIds: group.deletedAgentIds,
+              agentStatuses: groupAgentStatuses,
+              delivered: group.delivered,
+            };
+          }),
           // Include real-time status for all watched agents (for 'any' mode subscriptions)
           agentStatuses,
         };
@@ -348,14 +350,18 @@ function describeSubscription(sub: any): string {
     const types = sub.filter.eventTypes
       .map((t: string) => t.replace('agent:', '').replace(':', ' '))
       .join(', ');
-    parts.push(`Waiting for: ${types}`);
+    parts.push(m.events_ipc_waitingFor_description({ types }));
   }
 
   if (sub.filter.actorIds && sub.filter.actorIds.length > 0) {
-    parts.push(`from ${sub.filter.actorIds.length} agent(s)`);
+    parts.push(
+      sub.filter.actorIds.length === 1
+        ? m.events_ipc_fromAgents_description_one()
+        : m.events_ipc_fromAgents_description_many({ count: sub.filter.actorIds.length }),
+    );
   }
 
-  return parts.length > 0 ? parts.join(' ') : 'Subscribed to events';
+  return parts.length > 0 ? parts.join(' ') : m.events_ipc_subscribed_description();
 }
 
 /**

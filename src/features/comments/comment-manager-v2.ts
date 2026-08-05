@@ -33,6 +33,7 @@ import {
   selectCommentById,
 } from '$store/renderer/slices/comments/comments-selectors';
 import { store as appStore } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
 import {
   getAnchorOwnerCommentId,
   isProjectionDroppedChar,
@@ -198,9 +199,9 @@ export class CommentManagerV2 {
           return {
             id: comment.id,
             threadId: comment.threadId || `thread-${comment.id}`,
-            content: comment.content || '[Error loading comment]',
+            content: comment.content || m.comments_manager_errorLoading_label(),
             type: 'comment' as const,
-            author: comment.author || 'Unknown',
+            author: comment.author || m.comments_manager_unknownAuthor_label(),
             authorType: comment.authorType || 'user',
             status: comment.status || 'open',
             createdAt: comment.createdAt || new Date().toISOString(),
@@ -1125,6 +1126,7 @@ export class CommentManagerV2 {
       // errors by message text only (console-message carries no structured
       // args), landing this in console-output.log without a debugger.
       console.error(
+        // i18n-ignore (diagnostic log line, not rendered UI text)
         `[CommentDiag] comment.add failed ${JSON.stringify({
           workspaceId: this.workspaceId,
           noteId: this.noteId,

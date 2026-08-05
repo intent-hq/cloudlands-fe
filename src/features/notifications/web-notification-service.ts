@@ -43,12 +43,10 @@ import { addMockIpcListener } from '$shared/ipc-mock-router';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { getPlatform } from '$lib/utils/platform-capabilities';
 import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { AgentIdleEvent } from '$features/events/types';
-import {
-  buildNotificationContent,
-  type NotificationContent,
-} from './utils/notification-content';
+import { buildNotificationContent, type NotificationContent } from './utils/notification-content';
 import { handleNotificationNavigate } from './notification-navigation';
 import { playNotificationSoundPerSettings } from './notification-sound-gate';
 
@@ -63,6 +61,12 @@ let loggedPermissionSkip = false;
 let pendingPermissionRequest: Promise<NotificationPermission> | null = null;
 /** Strong refs so pending notifications aren't GC'd before click (parity with main). */
 const activeNotifications = new Set<Notification>();
+/**
+ * Latest notification per tag. Tag-based replacement may not fire `onclose`
+ * for the replaced instance, so we evict it here to keep the strong-reference
+ * set from growing over repeated same-tag idles.
+ */
+const notificationsByTag = new Map<string, Notification>();
 
 /** True when the browser exposes the Notification API (jsdom-safe guard). */
 function isNotificationSupported(): boolean {
@@ -207,10 +211,33 @@ async function showWebNotification(
   if (!granted) return;
 
   try {
-    const notification = new Notification(content.title, { body: content.body });
+    // Native tag-based replacement: same workspace+agent notifications
+    // replace instead of stacking. No `renotify` — our own sound gate above
+    // already plays the sound on every idle that reaches this path. Test
+    // notifications (no workspaceId/agentId) carry no tag and stack freely.
+    const tag = workspaceId && agentId ? `${workspaceId}:${agentId}` : undefined;
+    const notification = new Notification(content.title, {
+      body: content.body,
+      ...(tag ? { tag } : {}),
+    });
     activeNotifications.add(notification);
-    notification.onclick = () => {
+    if (tag) {
+      // Tag replacement may retire the previous notification WITHOUT an
+      // onclose — evict it so the set cannot leak.
+      const replaced = notificationsByTag.get(tag);
+      if (replaced) {
+        activeNotifications.delete(replaced);
+      }
+      notificationsByTag.set(tag, notification);
+    }
+    const release = () => {
       activeNotifications.delete(notification);
+      if (tag && notificationsByTag.get(tag) === notification) {
+        notificationsByTag.delete(tag);
+      }
+    };
+    notification.onclick = () => {
+      release();
       try {
         window.focus();
       } catch {
@@ -226,10 +253,10 @@ async function showWebNotification(
       notification.close();
     };
     notification.onclose = () => {
-      activeNotifications.delete(notification);
+      release();
     };
     notification.onerror = () => {
-      activeNotifications.delete(notification);
+      release();
       logger.warn('Web notification failed to show', { title: content.title });
     };
   } catch (error) {
@@ -259,6 +286,18 @@ export async function handleWebAgentIdle(event: AgentIdleEvent): Promise<void> {
     // Fast path: explicit background flag on the event payload.
     if (event.data.isBackground === true) {
       logger.debug('Skipping notification for background agent', {
+        workspaceId,
+        agentName: event.data.agentName,
+      });
+      return;
+    }
+
+    // Fast path: the agent ended its turn while awaiting delegated
+    // sub-agents (pending completion watches) — the workspace isn't truly
+    // quiet even if the children haven't started responding yet. Absent on
+    // older daemons, in which case the agent.list gate below still applies.
+    if (event.data.isWaitingForOtherAgents === true) {
+      logger.debug('Skipping notification for agent waiting on other agents', {
         workspaceId,
         agentName: event.data.agentName,
       });
@@ -351,17 +390,21 @@ export async function showTestWebNotification(): Promise<{ success: boolean; err
     if (!isNotificationSupported()) {
       return {
         success: false,
-        error: 'Desktop notifications are not supported on this platform',
+        error: m.notification_not_supported(),
       };
     }
     const granted = await ensurePermission();
     if (!granted) {
-      return { success: false, error: 'Notification permission was not granted' };
+      return { success: false, error: m.notifications_web_permissionNotGranted_error() };
     }
-    await showWebNotification({ title: 'Agent', body: 'Test notification' });
+    await showWebNotification({
+      title: m.notification_specialist_agent(),
+      body: m.notification_test_body(),
+    });
     return { success: true };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : m.notifications_web_unknown_error();
     logger.error('Failed to show test notification', error);
     return { success: false, error: errorMessage };
   }
@@ -381,7 +424,7 @@ export async function requestWebNotificationPermission(): Promise<{
     if (!isNotificationSupported()) {
       return {
         success: false,
-        error: 'Desktop notifications are not supported on this platform',
+        error: m.notification_not_supported(),
       };
     }
     // resolvePermission (not ensurePermission): a thrown requestPermission
@@ -392,7 +435,7 @@ export async function requestWebNotificationPermission(): Promise<{
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : m.notifications_web_unknown_error(),
     };
   }
 }
@@ -417,10 +460,16 @@ export function createWebNotificationMiddleware(): StoreMiddleware {
   };
 }
 
+/** Test-only: observe the strong-reference set size (leak regression). @internal */
+export function __getActiveWebNotificationCountForTesting(): number {
+  return activeNotifications.size;
+}
+
 /** Test-only: reset module state between tests. @internal */
 export function __resetWebNotificationServiceForTesting(): void {
   installed = false;
   loggedPermissionSkip = false;
   pendingPermissionRequest = null;
   activeNotifications.clear();
+  notificationsByTag.clear();
 }

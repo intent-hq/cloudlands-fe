@@ -30,17 +30,23 @@
  * state is read directly off `appStore.state.agentSessions.byAgentId` and the
  * toast lib is imported lazily inside the handler.
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
-import type { AgentSession } from "$shared/types";
-import { appClient } from "$lib/client";
-import { store as appStore } from "$store/renderer/store";
+import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { AgentSession } from '$shared/types';
+import { appClient } from '$lib/client';
+import { store as appStore } from '$store/renderer/store';
 import {
   agentSessionEditAndRegenerateRequested,
   replaceMessages,
-} from "$store/renderer/slices/agent-session/agent-session-slice";
-import { createLogger } from "$lib/utils/client-logger";
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import {
+  chatLastAttemptedMessageSet,
+  chatQueuedRetryRecordsCleared,
+  chatSendStarted,
+} from '$store/renderer/slices/chat-state/chat-state-slice';
+import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 
-const logger = createLogger("EditRegenerateService");
+const logger = createLogger('EditRegenerateService');
 
 /** Direct one-time session read, dependency-light (no selector import). */
 function readSession(agentId: string): AgentSession | undefined {
@@ -51,10 +57,10 @@ function readSession(agentId: string): AgentSession | undefined {
 /** Surface an edit failure to the user (best-effort; never throws). */
 async function showEditError(message: string): Promise<void> {
   try {
-    const { toast } = await import("svelte-sonner");
+    const { toast } = await import('svelte-sonner');
     toast.error(message);
   } catch (error) {
-    logger.error("Failed to surface edit-and-regenerate error", error);
+    logger.error('Failed to surface edit-and-regenerate error', error);
   }
 }
 
@@ -91,18 +97,36 @@ async function handleEditAndRegenerate(
       ...(options?.model !== undefined ? { model: options.model } : {}),
     });
     if (!result.success) {
-      const message = result.error || "Failed to edit message";
-      logger.error("agent.editAndRegenerate failed", message);
+      const message = result.error || m.agent_editRegenerate_failed_error();
+      logger.error('agent.editAndRegenerate failed', message);
       await showEditError(message);
       appStore.dispatch(action.failure(new Error(message)));
       return;
     }
     truncateLocalTranscript(agentId, messageId);
+    // The daemon's editAndRegenerate discards the queue — PROTOCOL §5.5
+    // step (2): any in-flight turn is hard-cancelled and the pending queue
+    // is discarded — so the discarded queue entries never run, no
+    // `agent:queue:processing` will ever promote their parked retry records,
+    // and they are dropped WITHOUT promotion here at the flow site (#999) to
+    // avoid a bounded leak.
+    appStore.dispatch(chatQueuedRetryRecordsCleared(agentId));
+    // Reset chat-state like a normal send (clears any stale error banner and
+    // starts the thinking indicator immediately). Dispatched only AFTER the
+    // wire call succeeds — on failure the transcript and any prior error stay
+    // untouched (a toast is already surfaced above).
+    appStore.dispatch(chatSendStarted(agentId, wsId));
+    // Record the EDITED content as the retry payload (#941): if the
+    // regenerated turn itself fails, the error banner's "Try again" must
+    // resend the edited text, not a stale pre-edit lastAttemptedMessage.
+    appStore.dispatch(chatLastAttemptedMessageSet(agentId, { text: newText }));
     appStore.dispatch(action.success(undefined as never));
   } catch (error) {
-    logger.error("Failed to edit and regenerate", error);
-    await showEditError(error instanceof Error ? error.message : "Failed to edit message");
-    appStore.dispatch(action.failure(toError(error, "Failed to edit message")));
+    logger.error('Failed to edit and regenerate', error);
+    await showEditError(
+      error instanceof Error ? error.message : m.agent_editRegenerate_failed_error(),
+    );
+    appStore.dispatch(action.failure(toError(error, m.agent_editRegenerate_failed_error())));
   }
 }
 
@@ -115,10 +139,8 @@ async function handleEditAndRegenerate(
 export function createEditRegenerateMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     const result = next(action);
-    if (!action || typeof action !== "object") return result;
-    if (
-      (action as { type?: unknown }).type === agentSessionEditAndRegenerateRequested.type
-    ) {
+    if (!action || typeof action !== 'object') return result;
+    if ((action as { type?: unknown }).type === agentSessionEditAndRegenerateRequested.type) {
       void handleEditAndRegenerate(
         action as ReturnType<typeof agentSessionEditAndRegenerateRequested>,
       );

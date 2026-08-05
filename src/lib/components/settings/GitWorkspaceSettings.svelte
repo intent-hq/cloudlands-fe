@@ -1,17 +1,13 @@
 <script lang="ts">
   import { logger } from '../../../shared/logger';
   import { appClient } from '$lib/client';
-  import Fa from 'svelte-fa';
-  import {
-  faInfoCircle,
-} from '@fortawesome/free-solid-svg-icons';
   import { refreshAutoCommitSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { store as appStore } from '$store/renderer/store';
   import { onMount } from 'svelte';
-  import {
-  validateBranchPrefix,
-  sanitizeBranchPrefix,
-} from '$lib/utils/workspace-validation';
+  import { m } from '$shared/paraglide/messages.js';
+  import { validateBranchPrefix, sanitizeBranchPrefix } from '$lib/utils/workspace-validation';
+  import PathSettingField from './PathSettingField.svelte';
+  import { Select } from '$lib/components/ui/select';
 
   // Settings state
   let worktreesLocation = $state('');
@@ -19,10 +15,16 @@
   let autoFetch = $state(false);
   let autoCommit = $state(true);
   let cowIsolation = $state(false);
+  let exposeGitCredential = $state(true);
   let defaultShell = $state('auto');
   let branchPrefix = $state('');
   let branchPrefixError = $state('');
   let settingsError = $state('');
+
+  // The git-credential toggle is only shown when the daemon reports the
+  // setting (older daemons don't have it); we also never write the path back
+  // to a daemon that didn't report it.
+  let gitCredentialSettingSupported = $state(false);
 
   // CoW toggle is visible only when the machine supports it — a direct probe
   // of the workspaces root via `system.capabilities` (PROTOCOL §5.7), with no
@@ -39,6 +41,7 @@
     autoCommit: 'git.autoCommit',
     cowIsolation: 'workspace.cowIsolation',
     branchPrefix: 'workspace.branchPrefix',
+    exposeGitCredential: 'sourceControl.github.exposeGitCredentialToChildren',
   } as const;
 
   // Last-loaded/saved value per daemon path so saves only send changed
@@ -46,15 +49,15 @@
   // (§5.12), so its placeholder must never be written back unchanged.
   let loadedValues: Record<string, unknown> = {};
 
-  // Available shells (filtered by platform)
+  // Available shells (filtered by platform); shell names are product names — not translated
   const isWindows = navigator.platform.startsWith('Win');
   const shellOptions = [
-    { value: 'auto', label: 'Auto-detect (System Default)' },
+    { value: 'auto', label: m.settings_gitWorkspace_shell_autoDetect() },
     ...(isWindows
       ? [
           { value: 'powershell.exe', label: 'PowerShell' },
-          { value: 'cmd.exe', label: 'Command Prompt' },
-          { value: 'bash.exe', label: 'Git Bash' },
+          { value: 'cmd.exe', label: m.settings_gitWorkspace_shell_commandPrompt() },
+          { value: 'bash.exe', label: 'Git Bash' }, // i18n-ignore (product name)
           { value: 'wsl.exe', label: 'WSL' },
         ]
       : [
@@ -64,6 +67,16 @@
           { value: '/usr/bin/fish', label: 'Fish' },
         ]),
   ];
+
+  // Unknown/custom values (e.g. hand-edited settings) fall back to the raw value.
+  const selectedShellLabel = $derived(
+    shellOptions.find((option) => option.value === defaultShell)?.label ?? defaultShell,
+  );
+
+  function handleShellChange(value: string) {
+    defaultShell = value;
+    handleSave();
+  }
 
   onMount(async () => {
     void loadCowCapability();
@@ -90,13 +103,16 @@
       [SETTING_PATHS.autoCommit]: autoCommit,
       [SETTING_PATHS.cowIsolation]: cowIsolation,
       [SETTING_PATHS.branchPrefix]: branchPrefix,
+      ...(gitCredentialSettingSupported
+        ? { [SETTING_PATHS.exposeGitCredential]: exposeGitCredential }
+        : {}),
     };
   }
 
   async function loadSettings() {
     const settings = await appClient.settings.list();
     if (settings.length === 0) {
-      settingsError = 'Failed to load settings from the backend.';
+      settingsError = m.settings_gitWorkspace_loadError();
       return;
     }
     settingsError = '';
@@ -108,6 +124,10 @@
     autoCommit = byPath.get(SETTING_PATHS.autoCommit) !== false;
     cowIsolation = byPath.get(SETTING_PATHS.cowIsolation) === true;
     branchPrefix = stringValue(byPath.get(SETTING_PATHS.branchPrefix));
+    gitCredentialSettingSupported = byPath.has(SETTING_PATHS.exposeGitCredential);
+    // Security-sensitive: only an explicit boolean `true` counts as enabled, so
+    // malformed/unexpected values fail safe to off.
+    exposeGitCredential = byPath.get(SETTING_PATHS.exposeGitCredential) === true;
     loadedValues = currentValues();
   }
 
@@ -125,7 +145,7 @@
       // Refresh global autoCommit so workspaces pick up the new setting
       appStore.dispatch(refreshAutoCommitSettings());
     } catch (error) {
-      settingsError = 'Failed to save settings. Please try again.';
+      settingsError = m.settings_gitWorkspace_saveError();
       logger.error('Failed to save settings:', error);
     }
   }
@@ -136,7 +156,7 @@
   function handleBranchPrefixChange() {
     const validation = validateBranchPrefix(branchPrefix);
     if (!validation.valid) {
-      branchPrefixError = validation.error || 'Invalid branch prefix';
+      branchPrefixError = validation.error || m.settings_gitWorkspace_branchPrefix_invalid();
     } else {
       branchPrefixError = '';
       // Sanitize and normalize the prefix
@@ -153,6 +173,8 @@
     sshKeyPath = '';
     autoFetch = false;
     autoCommit = true;
+    cowIsolation = false;
+    exposeGitCredential = true;
     defaultShell = 'auto';
     branchPrefix = '';
     branchPrefixError = '';
@@ -163,7 +185,9 @@
 <div class="flex flex-col bg-card rounded-xl pt-1 pb-3">
   {#if settingsError}
     <section class="px-6 py-2">
-      <p class="text-xs text-destructive-foreground bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+      <p
+        class="text-xs text-destructive-foreground bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2"
+      >
         {settingsError}
       </p>
     </section>
@@ -173,18 +197,19 @@
   <section class="px-6 py-2">
     <div class="flex items-center justify-between gap-4">
       <label for="worktreesLocation" class="text-sm font-medium text-foreground shrink-0">
-        Worktrees Location
+        {m.settings_gitWorkspace_worktreesLocation_label()}
       </label>
-      <div class="flex gap-2 flex-1 max-w-md">
-        <input
-          id="worktreesLocation"
-          type="text"
-          bind:value={worktreesLocation}
-          onblur={handleSave}
-          class="flex-1 px-3 py-1.5 bg-background border border-border rounded-md text-sm text-foreground transition-all focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-          placeholder="~/intent/workspaces"
-        />
-      </div>
+      <PathSettingField
+        id="worktreesLocation"
+        bind:value={worktreesLocation}
+        placeholder={'~/intent/workspaces' /* i18n-ignore (file path) */}
+        pickerTitle={m.settings_gitWorkspace_worktreesLocation_label()}
+        confirm={{
+          title: m.settings_gitWorkspace_worktreesLocation_confirm_title(),
+          message: m.settings_gitWorkspace_worktreesLocation_confirm_message(),
+        }}
+        onchange={handleSave}
+      />
     </div>
   </section>
 
@@ -192,23 +217,24 @@
   <section class="px-6 py-2">
     <div class="flex items-center justify-between gap-4">
       <div class="shrink-0">
-        <label for="sshKeyPath" class="text-sm font-medium text-foreground"> SSH Key Path </label>
+        <label for="sshKeyPath" class="text-sm font-medium text-foreground">
+          {m.settings_gitWorkspace_sshKeyPath_label()}
+        </label>
         <p class="text-xs text-subtle">
-          SSH key for git operations (e.g., <code class="bg-muted px-1 rounded"
-            >~/.ssh/id_ed25519</code
-          >)
+          {m.settings_gitWorkspace_sshKeyPath_description_before()}
+          <!-- i18n-ignore (file path) -->
+          <code class="bg-muted px-1 rounded">~/.ssh/id_ed25519</code>)
         </p>
       </div>
-      <div class="flex gap-2 flex-1 max-w-md">
-        <input
-          id="sshKeyPath"
-          type="text"
-          bind:value={sshKeyPath}
-          onblur={handleSave}
-          class="flex-1 px-3 py-1.5 bg-background border border-border rounded-md text-sm text-foreground transition-all focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-          placeholder="~/.ssh/id_ed25519"
-        />
-      </div>
+      <PathSettingField
+        mode="file"
+        id="sshKeyPath"
+        bind:value={sshKeyPath}
+        placeholder={'~/.ssh/id_ed25519' /* i18n-ignore (file path) */}
+        defaultPath={'~/.ssh' /* i18n-ignore (file path) */}
+        pickerTitle={m.settings_gitWorkspace_sshKeyPath_label()}
+        onchange={handleSave}
+      />
     </div>
   </section>
 
@@ -216,18 +242,22 @@
   <section class="px-6 py-2">
     <div class="flex items-center justify-between gap-4">
       <label for="defaultShell" class="text-sm font-medium text-foreground shrink-0">
-        Default Shell
+        {m.settings_gitWorkspace_defaultShell_label()}
       </label>
-      <select
-        id="defaultShell"
-        bind:value={defaultShell}
-        onchange={handleSave}
-        class="w-56 px-3 py-1.5 bg-background border border-border rounded-md text-sm text-foreground transition-all focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-      >
-        {#each shellOptions as option (option.value)}
-          <option value={option.value}>{option.label}</option>
-        {/each}
-      </select>
+      <div class="w-56 shrink-0">
+        <Select.Root value={defaultShell} onchange={handleShellChange}>
+          <Select.Trigger id="defaultShell" class="py-1.5">
+            <span class="truncate">{selectedShellLabel}</span>
+          </Select.Trigger>
+          <Select.Content portal class="max-h-[300px] w-56">
+            {#each shellOptions as option (option.value)}
+              <Select.Item value={option.value}>
+                <span class="truncate">{option.label}</span>
+              </Select.Item>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      </div>
     </div>
   </section>
 
@@ -236,12 +266,12 @@
     <div class="flex items-center justify-between gap-4">
       <div class="shrink-0">
         <label for="branchPrefix" class="text-sm font-medium text-foreground">
-          Branch Prefix
+          {m.settings_gitWorkspace_branchPrefix_label()}
         </label>
         <p class="text-xs text-subtle">
-          Prefix for new workspace branches (e.g., <code class="bg-muted px-1 rounded"
-            >feature/</code
-          >)
+          {m.settings_gitWorkspace_branchPrefix_description_before()}
+          <!-- i18n-ignore (branch prefix example) -->
+          <code class="bg-muted px-1 rounded">feature/</code>)
         </p>
       </div>
       <div class="flex flex-col items-end gap-1 flex-1 max-w-md">
@@ -254,7 +284,7 @@
             {branchPrefixError
             ? 'border-destructive focus:border-destructive'
             : 'border-border focus:border-primary'}"
-          placeholder="feature/ or user/name/"
+          placeholder={m.settings_gitWorkspace_branchPrefix_placeholder()}
         />
         {#if branchPrefixError}
           <p class="text-xs text-destructive-foreground">{branchPrefixError}</p>
@@ -273,7 +303,7 @@
           onchange={handleSave}
           class="cursor-pointer"
         />
-        Auto-fetch updates
+        {m.settings_gitWorkspace_autoFetch_label()}
       </label>
       <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
         <input
@@ -282,22 +312,53 @@
           onchange={handleSave}
           class="cursor-pointer"
         />
-        Auto-commit changes
+        {m.settings_gitWorkspace_autoCommit_label()}
       </label>
-      {#if showCowToggle}
-        <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer group">
+    </div>
+  </section>
+
+  <!-- Copy-on-Write isolation -->
+  {#if showCowToggle}
+    <section class="px-6 py-2">
+      <div class="flex items-center gap-2">
+        <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
           <input
             type="checkbox"
             bind:checked={cowIsolation}
             onchange={handleSave}
             class="cursor-pointer"
+            aria-describedby="cow-isolation-description"
           />
-          <span>Use Copy-on-Write isolation</span>
-          <span class="text-subtle hover:text-foreground transition-colors" title="CoW workspaces + per-agent sandboxes. New workspaces are provisioned as instant copy-on-write clones of the repository, and each delegated agent runs in its own CoW sandbox whose changes are merged back automatically when it finishes. Requires filesystem CoW support on the workspaces root (APFS on macOS, btrfs/XFS-reflink on Linux, ReFS/Dev Drive on Windows).">
-            <Fa icon={faInfoCircle} size="sm" />
-          </span>
+          <span>{m.settings_gitWorkspace_cowIsolation_label()}</span>
         </label>
-      {/if}
-    </div>
-  </section>
+        <span
+          class="inline-flex items-center shrink-0 rounded-full bg-muted/20 px-1 text-ui-sm leading-4 text-subtle"
+        >
+          {m.settings_gitWorkspace_experimental_badge()}
+        </span>
+      </div>
+      <p id="cow-isolation-description" class="text-xs text-subtle mt-0.5 ml-6">
+        {m.settings_gitWorkspace_cowIsolation_description()}
+      </p>
+    </section>
+  {/if}
+
+  <!-- Git credentials -->
+  {#if gitCredentialSettingSupported}
+    <section class="px-6 py-2">
+      <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+        <input
+          type="checkbox"
+          bind:checked={exposeGitCredential}
+          onchange={handleSave}
+          class="cursor-pointer"
+          aria-describedby="git-credentials-description"
+        />
+        <span>{m.settings_gitWorkspace_gitCredentials_label()}</span>
+      </label>
+      <p id="git-credentials-description" class="text-xs text-subtle mt-0.5 ml-6">
+        {m.settings_gitWorkspace_gitCredentials_description()}
+      </p>
+    </section>
+  {/if}
 </div>

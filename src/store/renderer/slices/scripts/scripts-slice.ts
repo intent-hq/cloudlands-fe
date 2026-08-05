@@ -14,14 +14,18 @@ import type {
   ScriptWithState,
   ScriptsState,
   ScriptsWorkspaceState,
-  ScriptOutputLine,
+  ScriptOutputBuffer,
+  ScriptOutputChunk,
 } from './scripts-types';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-export const MAX_OUTPUT_LINES = 5000;
+/** Ring-buffer cap on stored chunks (comparable to the old 5000-line cap). */
+export const MAX_OUTPUT_CHUNKS = 5000;
+/** Ring-buffer cap on total stored text (UTF-16 code units) per script. */
+export const MAX_OUTPUT_CHARS = 2_000_000;
 
 // ============================================================================
 // Empty / Initial State
@@ -33,6 +37,29 @@ export const emptyWorkspaceState: ScriptsWorkspaceState = {
   initialized: false,
   loading: false,
 };
+
+export const emptyOutputBuffer: ScriptOutputBuffer = { chunks: [], dropped: 0 };
+
+/**
+ * Evict chunks from the front until both caps hold, bumping `dropped` by the
+ * eviction count. The newest chunk is always kept, even if it alone exceeds
+ * the char cap.
+ */
+function trimOutputBuffer(buffer: ScriptOutputBuffer): ScriptOutputBuffer {
+  const { chunks } = buffer;
+  let total = 0;
+  for (const chunk of chunks) total += chunk.text.length;
+  let start = 0;
+  while (
+    chunks.length - start > 1 &&
+    (chunks.length - start > MAX_OUTPUT_CHUNKS || total > MAX_OUTPUT_CHARS)
+  ) {
+    total -= chunks[start].text.length;
+    start += 1;
+  }
+  if (start === 0) return buffer;
+  return { chunks: chunks.slice(start), dropped: buffer.dropped + start };
+}
 
 const initialState: ScriptsState = {
   byWorkspaceId: {},
@@ -82,15 +109,27 @@ export const updateRuntimeState = createAction(
   }),
 );
 
-/** Append output lines for a script */
+/** Append one raw output chunk for a script */
 export const appendScriptOutput =
-  createAction<[wsId: string, scriptId: string, lines: ScriptOutputLine[]]>('scripts/appendOutput');
+  createAction<[wsId: string, scriptId: string, chunk: ScriptOutputChunk]>('scripts/appendOutput');
 
-/** Set output buffer for a script (used during init to load buffered output) */
+/**
+ * Replace a script's output buffer wholesale. No production dispatcher today
+ * (reopen replay is served straight from the renderer store); kept for tests
+ * and future seeding. The reducer resets `dropped` to 0 — do not dispatch
+ * while a `ScriptOutputViewer` is live, or its absolute stream position would
+ * exceed the new buffer's and it would render nothing until it catches up.
+ */
 export const setScriptOutput =
-  createAction<[wsId: string, scriptId: string, lines: ScriptOutputLine[]]>('scripts/setOutput');
+  createAction<[wsId: string, scriptId: string, chunks: ScriptOutputChunk[]]>('scripts/setOutput');
 
-/** Dispose workspace scripts state */
+/**
+ * Dispose workspace scripts state. No production dispatcher today: scripts
+ * state is intentionally retained for the session across workspace switches
+ * and overlay unmounts (monorepo#1330), matching terminals. Kept for
+ * test-harness state resets (mirroring `setScriptOutput` above); wire it into
+ * a `workspaceDeleted` purge if scripts ever need clearing on delete.
+ */
 export const disposeScripts = createAction<[wsId: string]>('scripts/dispose');
 
 // ============================================================================
@@ -141,23 +180,23 @@ export const scriptsReducer = createReducer<ScriptsState>(initialState)
       },
     });
   })
-  .with(appendScriptOutput, (state, { payload: [wsId, scriptId, lines] }) => {
+  .with(appendScriptOutput, (state, { payload: [wsId, scriptId, chunk] }) => {
     const ws = getWorkspaceState(state, wsId);
-    const current = ws.outputBuffers[scriptId] ?? [];
-    let combined = [...current, ...lines];
-    if (combined.length > MAX_OUTPUT_LINES) {
-      combined = combined.slice(combined.length - MAX_OUTPUT_LINES);
-    }
+    const current = ws.outputBuffers[scriptId] ?? emptyOutputBuffer;
+    const combined = trimOutputBuffer({
+      chunks: [...current.chunks, chunk],
+      dropped: current.dropped,
+    });
     return setWorkspaceState(state, wsId, {
       ...ws,
       outputBuffers: { ...ws.outputBuffers, [scriptId]: combined },
     });
   })
-  .with(setScriptOutput, (state, { payload: [wsId, scriptId, lines] }) => {
+  .with(setScriptOutput, (state, { payload: [wsId, scriptId, chunks] }) => {
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, {
       ...ws,
-      outputBuffers: { ...ws.outputBuffers, [scriptId]: lines },
+      outputBuffers: { ...ws.outputBuffers, [scriptId]: trimOutputBuffer({ chunks, dropped: 0 }) },
     });
   })
   .with(disposeScripts, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));

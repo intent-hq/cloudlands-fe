@@ -21,6 +21,7 @@ import {
   type PersistedWorkspaceState,
 } from "$store/renderer/slices/terminals/terminals-slice";
 import type { StoreState } from "$store/renderer/types";
+import { setScriptsData } from "$store/renderer/slices/scripts/scripts-slice";
 import { createTerminalPersistenceMiddleware } from "./terminal-persistence-service";
 
 const mem = new Map<string, string>();
@@ -319,5 +320,190 @@ describe("terminalPersistenceService — workspace state persistence", () => {
       payload: [string, unknown[], PersistedWorkspaceState];
     };
     expect(lastCall.payload[2]).toBe(explicitState);
+  });
+
+  // Invariant (intent-hq/monorepo#1330): loadWorkspaceTerminals is in
+  // WORKSPACE_STATE_PERSIST_ACTIONS and the reducer forces isOpen=false on an
+  // empty-over-empty pass with no script tab holding the panel, so an empty
+  // hydration COULD durably overwrite a persisted { isOpen: true }. The GAP-5
+  // persist block skips empty-list loadWorkspaceTerminals explicitly
+  // (isEmptyTerminalsHydration), so the guarantee is structural — it does not
+  // depend on the savedState-undefined re-dispatch exiting before the persist
+  // block.
+  it("does not durably persist isOpen=false when a transient empty list clobbers a saved open state (monorepo#1330)", () => {
+    safeLocalStorage.setJSON(WORKSPACE_STATE_STORAGE_KEY, {
+      "ws-1": { isOpen: true, activeTerminalId: "pty-1" },
+    });
+
+    const api = createFakeApi();
+    const middleware = createTerminalPersistenceMiddleware()(api);
+    const next = vi.fn((action) => {
+      api.dispatch(action);
+      return action;
+    });
+    const dispatch = middleware(next);
+
+    // Mount hydration lands with a transient empty list (savedState omitted,
+    // exactly as lifecycle-read-service dispatches it).
+    dispatch(loadWorkspaceTerminals("ws-1", []));
+
+    const stored = safeLocalStorage.getJSON(
+      WORKSPACE_STATE_STORAGE_KEY
+    ) as Record<string, PersistedWorkspaceState>;
+    expect(stored["ws-1"]).toMatchObject({ isOpen: true });
+  });
+
+  // Same invariant via the interceptor's fall-through path: with savedState
+  // explicitly provided the loadWorkspaceTerminals action reaches the GAP-5
+  // persist block, so only the explicit empty-hydration guard protects the
+  // saved open state here.
+  it("skips the GAP-5 persist for an empty-list hydration even when savedState is provided", () => {
+    safeLocalStorage.setJSON(WORKSPACE_STATE_STORAGE_KEY, {
+      "ws-1": { isOpen: true, activeTerminalId: "pty-1" },
+    });
+
+    const api = createFakeApi();
+    const middleware = createTerminalPersistenceMiddleware()(api);
+    const next = vi.fn((action) => {
+      api.dispatch(action);
+      return action;
+    });
+    const dispatch = middleware(next);
+
+    dispatch(loadWorkspaceTerminals("ws-1", [], null));
+
+    const stored = safeLocalStorage.getJSON(
+      WORKSPACE_STATE_STORAGE_KEY
+    ) as Record<string, PersistedWorkspaceState>;
+    expect(stored["ws-1"]).toMatchObject({ isOpen: true });
+  });
+
+  // Regression (intent-hq/monorepo#1411): a script-held panel gets an empty
+  // terminals hydration on every remount (scripts are not in terminal.list).
+  // A mounted→unmounted→mounted cycle must keep the panel open on the script
+  // tab — both in memory (reducer) and durably (localStorage).
+  it("keeps a script-held panel open across a workspace switch-away-and-back cycle (monorepo#1411)", () => {
+    safeLocalStorage.setJSON(WORKSPACE_STATE_STORAGE_KEY, {
+      "ws-1": {
+        isOpen: true,
+        activeTerminalId: null,
+        selectedScriptId: "script-1",
+      },
+    });
+
+    const api = createFakeApi();
+    const middleware = createTerminalPersistenceMiddleware()(api);
+    const next = vi.fn((action) => {
+      api.dispatch(action);
+      return action;
+    });
+    const dispatch = middleware(next);
+
+    // Mount → empty hydration (savedState omitted, as lifecycle-read-service
+    // dispatches it), switch away and back → another empty hydration.
+    dispatch(loadWorkspaceTerminals("ws-1", [], undefined, "boot-1"));
+    dispatch(loadWorkspaceTerminals("ws-1", [], undefined, "boot-1"));
+
+    const ws = (api.getState() as StoreState).terminals.workspaces["ws-1"];
+    expect(ws.isOpen).toBe(true);
+    expect(ws.selectedScriptId).toBe("script-1");
+
+    const stored = safeLocalStorage.getJSON(
+      WORKSPACE_STATE_STORAGE_KEY
+    ) as Record<string, PersistedWorkspaceState>;
+    expect(stored["ws-1"]).toMatchObject({
+      isOpen: true,
+      selectedScriptId: "script-1",
+    });
+  });
+
+  // Review fix (PR #705): a persisted selectedScriptId pointing at a script
+  // deleted out-of-band used to keep isOpen:true forever (nothing renderable,
+  // stuck panel). The reducer now clears the selection when setScriptsData
+  // lands without the script, and this middleware persists that correction so
+  // the stale id cannot be restored on the next launch.
+  it("persists the stale-script-selection clear when setScriptsData lands without the script", () => {
+    safeLocalStorage.setJSON(WORKSPACE_STATE_STORAGE_KEY, {
+      "ws-1": {
+        isOpen: true,
+        activeTerminalId: null,
+        selectedScriptId: "script-gone",
+      },
+    });
+
+    const api = createFakeApi();
+    const middleware = createTerminalPersistenceMiddleware()(api);
+    const next = vi.fn((action) => {
+      api.dispatch(action);
+      return action;
+    });
+    const dispatch = middleware(next);
+
+    // Restore the persisted script-held open panel (empty terminal list).
+    dispatch(loadWorkspaceTerminals("ws-1", [], undefined, "boot-1"));
+    expect(
+      (api.getState() as StoreState).terminals.workspaces["ws-1"].selectedScriptId
+    ).toBe("script-gone");
+
+    // The authoritative script.list lands without the selected script.
+    dispatch(setScriptsData("ws-1", []));
+
+    const ws = (api.getState() as StoreState).terminals.workspaces["ws-1"];
+    expect(ws.selectedScriptId).toBeNull();
+    expect(ws.isOpen).toBe(false);
+
+    const stored = safeLocalStorage.getJSON(
+      WORKSPACE_STATE_STORAGE_KEY
+    ) as Record<string, PersistedWorkspaceState>;
+    expect(stored["ws-1"]).toMatchObject({
+      isOpen: false,
+      selectedScriptId: null,
+    });
+  });
+
+  it("does not persist on setScriptsData when the selected script is present", () => {
+    safeLocalStorage.setJSON(WORKSPACE_STATE_STORAGE_KEY, {
+      "ws-1": {
+        isOpen: true,
+        activeTerminalId: null,
+        selectedScriptId: "script-1",
+      },
+    });
+
+    const api = createFakeApi();
+    const middleware = createTerminalPersistenceMiddleware()(api);
+    const next = vi.fn((action) => {
+      api.dispatch(action);
+      return action;
+    });
+    const dispatch = middleware(next);
+
+    dispatch(loadWorkspaceTerminals("ws-1", [], undefined, "boot-1"));
+    dispatch(
+      setScriptsData("ws-1", [
+        {
+          id: "script-1",
+          workspaceId: "ws-1",
+          name: "dev",
+          command: "pnpm dev",
+          mode: "service",
+          source: "user",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          runtime: { status: "idle", restartCount: 0 },
+        },
+      ])
+    );
+
+    const ws = (api.getState() as StoreState).terminals.workspaces["ws-1"];
+    expect(ws.selectedScriptId).toBe("script-1");
+    expect(ws.isOpen).toBe(true);
+
+    const stored = safeLocalStorage.getJSON(
+      WORKSPACE_STATE_STORAGE_KEY
+    ) as Record<string, PersistedWorkspaceState>;
+    expect(stored["ws-1"]).toMatchObject({
+      isOpen: true,
+      selectedScriptId: "script-1",
+    });
   });
 });

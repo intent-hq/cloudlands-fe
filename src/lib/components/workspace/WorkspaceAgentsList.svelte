@@ -17,6 +17,7 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { onMount } from 'svelte';
   import { getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 
   import {
   selectAgentIsResponding,
@@ -25,6 +26,8 @@
   import Header from '../ui/Header.svelte';
   import { getWorkspaceAgentsVisibilitySummary } from './workspace-agents-list-utils';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     agents?: AgentSession[];
@@ -123,10 +126,15 @@
     const state = appStore.state;
     const isWaiting = selectAgentIsWaiting.select(state, agent.id);
     const isRunning = isAgentRunning(agent.id);
-    return getAvatarState({
-      isStreaming: isRunning,
-      status: isWaiting ? 'waiting' : agent.status,
-    });
+    return getAvatarState(
+      {
+        isStreaming: isRunning,
+        status: isWaiting ? 'waiting' : agent.status,
+      },
+      {
+        attentionKind: getAgentAttentionRequest(agent)?.kind ?? null,
+      },
+    );
   }
 
   // Dedupe agents by ID to avoid duplicate key errors
@@ -265,13 +273,19 @@
 {#if !loading && shouldShowVisibilitySummary}
   <div class="px-3 pb-2 pt-0.5">
     <p class="text-xs text-subtle">
-      Showing {visibilitySummary.topLevelForegroundCount} top-level of {visibilitySummary.totalCount}
-      total
+      {m.workspace_agentsList_visibilitySummary_label({
+        topLevel: formatInteger(visibilitySummary.topLevelForegroundCount),
+        total: formatInteger(visibilitySummary.totalCount),
+      })}
       {#if visibilitySummary.delegatedCount > 0}
-        · {visibilitySummary.delegatedCount} delegated
+        {m.workspace_agentsList_delegatedCount_label({
+          count: formatInteger(visibilitySummary.delegatedCount),
+        })}
       {/if}
       {#if visibilitySummary.backgroundCount > 0}
-        · {visibilitySummary.backgroundCount} background
+        {m.workspace_agentsList_backgroundCount_label({
+          count: formatInteger(visibilitySummary.backgroundCount),
+        })}
       {/if}
     </p>
   </div>
@@ -282,7 +296,7 @@
   {#each agentList as agent, i (agent.id)}
     {#if showCoordinatorBanner && i === 0 && getAgentSpecialistId(agent) === 'spec-writer'}
       <div class="pt-1 pb-0.5">
-        <Header size={6}>Coordinator</Header>
+        <Header size={6}>{m.workspace_agentsList_coordinator_label()}</Header>
       </div>
     {/if}
 
@@ -293,9 +307,9 @@
         .every((a) => getAgentSpecialistId(a) === 'spec-writer')}
       {#if isFirstNonCoordinator}
         <div class="pt-2.5 pb-0.5">
-          <Header size={6}>Your Agents</Header>
+          <Header size={6}>{m.workspace_overviewTimeline_yourAgents_label()}</Header>
           <p class="text-xs text-subtle mt-0.5">
-            The Coordinator can delegate and verify tasks for these agents
+            {m.workspace_overviewTimeline_coordinatorDelegates_description()}
           </p>
         </div>
       {/if}
@@ -342,9 +356,14 @@
           {/if}
           <span class="truncate text-left">
             {#if !isExpanded && runningChildCount > 0}
-              {runningChildCount} / {children.length} delegated running
+              {m.workspace_agentsList_delegatedRunning_label({
+                running: formatInteger(runningChildCount),
+                total: formatInteger(children.length),
+              })}
             {:else}
-              {children.length} delegated
+              {m.workspace_agentsList_delegated_label({
+                count: formatInteger(children.length),
+              })}
             {/if}
           </span>
           <Fa
@@ -452,14 +471,23 @@
           </div>
           <span class="truncate flex-1 min-w-0 text-left">
             {#if runningStandaloneBackgroundCount > 0}
-              {runningStandaloneBackgroundCount} / {standaloneBackgroundCount} background agents running
+              {m.workspace_agentsList_backgroundAgentsRunning_label({
+                running: formatInteger(runningStandaloneBackgroundCount),
+                total: formatInteger(standaloneBackgroundCount),
+              })}
             {:else}
-              {standaloneBackgroundCount} background agents
+              {m.workspace_agentsList_backgroundAgents_label({
+                count: formatInteger(standaloneBackgroundCount),
+              })}
             {/if}
           </span>
         </div>
       {:else}
-        <span>{standaloneBackgroundCount} background agents</span>
+        <span
+          >{m.workspace_agentsList_backgroundAgents_label({
+            count: formatInteger(standaloneBackgroundCount),
+          })}</span
+        >
       {/if}
       <Fa
         icon={faChevronDown}
@@ -497,7 +525,7 @@
       onclick={() => onOpenAgentOverview?.()}
     >
       <Fa icon={faSitemap} size="xs" class="opacity-50" />
-      <span>View agent tree</span>
+      <span>{m.workspace_overviewTimeline_viewAgentTree_label()}</span>
     </button>
   </div>
 {/if}

@@ -18,6 +18,7 @@
   import { scale } from 'svelte/transition';
   import Portal from './Portal.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { m } from '$shared/paraglide/messages.js';
 
   // Props (runes mode)
   let {
@@ -169,7 +170,7 @@
           <div
             class="border border-border bg-popover p-1 shadow-md {contentClass}"
             role="menu"
-            aria-label="Menu"
+            aria-label={m.ui_dropdownMenu_ariaLabel()}
           >
             {@render content?.({ close })}
           </div>
@@ -184,7 +185,7 @@
         <div
           class="border border-border bg-popover p-1 shadow-md {contentClass}"
           role="menu"
-          aria-label="Menu"
+          aria-label={m.ui_dropdownMenu_ariaLabel()}
         >
           {@render content?.({ close })}
         </div>

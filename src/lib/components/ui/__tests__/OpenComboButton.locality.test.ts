@@ -22,6 +22,7 @@ import { toNativePath } from '$lib/utils/path-utils';
 import type { StoreState } from '$store/renderer/types';
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
+import { warmImport } from '../../../../test/warm-import';
 
 let mockStoreState: Partial<StoreState> = {};
 const mockDispatch = vi.fn();
@@ -124,6 +125,13 @@ function actionLabels(container: HTMLElement): string[] {
     (el) => el.textContent?.trim() ?? '',
   );
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/Fa.svelte'));
+warmImport(() => import('./mocks/dropdown-menu.svelte'));
+warmImport(() => import('./mocks/button.svelte'));
+warmImport(() => import('../OpenComboButton.svelte'));
 
 describe('OpenComboButton locality gating (monorepo#883)', () => {
   beforeEach(() => {

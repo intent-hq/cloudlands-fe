@@ -1,6 +1,7 @@
 /**
  * Sentry Integration Constants
  */
+import { m } from '$shared/paraglide/messages.js';
 
 /**
  * IPC channel names for Sentry authentication and issue operations
@@ -65,22 +66,38 @@ export const SENTRY_ISSUE_FILTER_OPTIONS: Array<{
 }> = [
   {
     value: 'unresolved',
-    label: 'Unresolved',
-    description: 'Issues that need attention',
+    get label() {
+      return m.sentryAuth_filter_unresolved_label();
+    },
+    get description() {
+      return m.sentryAuth_filter_unresolved_description();
+    },
   },
   {
     value: 'resolved',
-    label: 'Resolved',
-    description: 'Issues that have been fixed',
+    get label() {
+      return m.sentryAuth_filter_resolved_label();
+    },
+    get description() {
+      return m.sentryAuth_filter_resolved_description();
+    },
   },
   {
     value: 'ignored',
-    label: 'Ignored',
-    description: 'Issues that have been ignored',
+    get label() {
+      return m.sentryAuth_filter_ignored_label();
+    },
+    get description() {
+      return m.sentryAuth_filter_ignored_description();
+    },
   },
   {
     value: 'all',
-    label: 'All Issues',
-    description: 'All issues regardless of status',
+    get label() {
+      return m.sentryAuth_filter_all_label();
+    },
+    get description() {
+      return m.sentryAuth_filter_all_description();
+    },
   },
 ];

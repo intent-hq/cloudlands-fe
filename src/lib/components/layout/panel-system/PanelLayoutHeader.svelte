@@ -66,9 +66,15 @@
   faGlobe,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { generateLayout } from '$lib/client/live/live-prompt-enhancement';
+  import {
+    generateLayout,
+    EnhancePromptUnavailableError,
+    isEnhancePromptAvailable,
+  } from '$lib/client/live/live-prompt-enhancement';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectModelForType } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import {
@@ -84,6 +90,7 @@
 
   const logger = createLogger('PanelLayoutHeader');
   const fastModel$ = selectModelForType('fast');
+  const activeProviderId$ = selectActiveProviderId();
 
   interface Props {
     /** Whether back navigation is available */
@@ -113,6 +120,9 @@
     onApplyContentPreset,
   }: Props = $props();
 
+  // §5.31 gate — AI layout generation is auggie-only; unset active provider defaults to auggie
+  const aiLayoutAvailable = $derived(isEnhancePromptAvailable($activeProviderId$));
+
   // AI prompt state
   let promptValue = $state('');
   let isGenerating = $state(false);
@@ -126,31 +136,31 @@
   const layoutPresets = [
     {
       id: 'single' as const,
-      label: 'Single',
+      label: () => m.layout_layoutHeader_singleShort_label(),
       icon: faGripLines,
       shortcut: '⌘1',
-      description: 'Full-width single panel',
+      description: () => m.layout_layoutHeader_single_description(),
     },
     {
       id: 'split-horizontal' as const,
-      label: 'Side by Side',
+      label: () => m.layout_presets_sideBySide_label(),
       icon: faColumns,
       shortcut: '⌘2',
-      description: 'Two panels side by side',
+      description: () => m.layout_layoutHeader_sideBySide_description(),
     },
     {
       id: 'split-vertical' as const,
-      label: 'Stacked',
+      label: () => m.layout_presets_stacked_label(),
       icon: faTableColumns,
       shortcut: '⌘3',
-      description: 'Two panels stacked',
+      description: () => m.layout_layoutHeader_stacked_description(),
     },
     {
       id: 'three-column' as const,
-      label: 'Three Columns',
+      label: () => m.layout_presets_threeColumns_label(),
       icon: faColumns,
       shortcut: '⌘4',
-      description: 'Three panels in a row',
+      description: () => m.layout_layoutHeader_threeColumns_description(),
     },
   ];
 
@@ -158,33 +168,33 @@
   const contentPresets = [
     {
       id: 'focus-agent' as const,
-      label: 'Focus: Agent Chat',
+      label: () => m.layout_layoutHeader_focusAgent_label(),
       icon: faRobot,
-      description: 'Full screen agent conversation',
+      description: () => m.layout_layoutHeader_focusAgent_description(),
     },
     {
       id: 'focus-code' as const,
-      label: 'Focus: Code',
+      label: () => m.layout_layoutHeader_focusCode_label(),
       icon: faCode,
-      description: 'Agent + Code editor side by side',
+      description: () => m.layout_layoutHeader_focusCode_description(),
     },
     {
       id: 'focus-notes' as const,
-      label: 'Focus: Notes',
+      label: () => m.layout_layoutHeader_focusNotes_label(),
       icon: faFileAlt,
-      description: 'Agent + Spec note side by side',
+      description: () => m.layout_layoutHeader_focusNotes_description(),
     },
     {
       id: 'code-review' as const,
-      label: 'Code Review',
+      label: () => m.layout_layoutHeader_codeReview_label(),
       icon: faColumns,
-      description: 'Agent + Diff viewer + File browser',
+      description: () => m.layout_layoutHeader_codeReview_description(),
     },
     {
       id: 'research' as const,
-      label: 'Research',
+      label: () => m.layout_layoutHeader_research_label(),
       icon: faGlobe,
-      description: 'Agent + Browser + Notes',
+      description: () => m.layout_layoutHeader_research_description(),
     },
   ];
 
@@ -199,6 +209,7 @@
 
   // Handle AI layout suggestion
   async function handleGenerateLayout() {
+    if (!aiLayoutAvailable) return;
     if (!promptValue.trim() || isGenerating) return;
 
     isGenerating = true;
@@ -225,17 +236,19 @@
         applyParsedLayout(layout);
         promptValue = '';
         showPrompt = false;
-        toast.success('Layout updated!');
+        toast.success(m.layout_layoutControls_updated_label());
       } else {
-        toast.error('Could not parse layout suggestion');
+        toast.error(m.layout_layoutControls_parseFailed_error());
         logger.warn('Failed to parse layout response', { response: result.enhanced });
       }
     } catch (error) {
       logger.error('Layout generation failed', error);
       toast.error(
-        error instanceof Error && error.message
-          ? `Layout generation failed: ${error.message}`
-          : 'Layout generation failed',
+        error instanceof EnhancePromptUnavailableError
+          ? m.layout_layoutControls_generationUnavailable_error()
+          : error instanceof Error && error.message
+            ? m.layout_layoutControls_generationFailedWithMessage_error({ message: error.message })
+            : m.layout_layoutControls_generationFailed_error(),
       );
     } finally {
       isGenerating = false;
@@ -265,14 +278,15 @@
       context.agents.length > 0
         ? `\nExisting agents in this workspace:
 ${context.agents.map((a) => `- "${a.name || a.id}" (id: ${a.id}, status: ${a.status})`).join('\n')}`
-        : '\nNo agents exist yet in this workspace.';
+        : '\nNo agents exist yet in this workspace.'; // i18n-ignore (agent-facing prompt, kept in English)
 
     const notesContext =
       context.notes.length > 0
         ? `\nExisting notes in this workspace:
 ${context.notes.map((n) => `- "${n.title}" (id: ${n.id})`).join('\n')}`
-        : '\nNo notes exist yet.';
+        : '\nNo notes exist yet.'; // i18n-ignore (agent-facing prompt, kept in English)
 
+    // i18n-ignore (agent-facing prompt, kept in English)
     return `You are a layout configuration assistant for a panel-based workspace app.
 
 The user wants to reconfigure their panel layout. Based on their request, suggest a layout configuration.
@@ -473,7 +487,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
   <!-- Navigation buttons -->
   <div class="flex items-center gap-0.5 ml-auto">
     <Tooltip
-      content={`Go Back (${getShortcutDisplay('GO_BACK')})`}
+      content={m.layout_layoutHeader_goBack_tooltip({ shortcut: getShortcutDisplay('GO_BACK') })}
       side="bottom"
       delayDuration={300}
     >
@@ -484,13 +498,13 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         )}
         onclick={onGoBack}
         disabled={!canGoBack}
-        aria-label="Go back"
+        aria-label={m.layout_layoutHeader_goBack_ariaLabel()}
       >
         <Fa icon={faArrowLeft} size="sm" />
       </button>
     </Tooltip>
     <Tooltip
-      content={`Go Forward (${getShortcutDisplay('GO_FORWARD')})`}
+      content={m.layout_layoutHeader_goForward_tooltip({ shortcut: getShortcutDisplay('GO_FORWARD') })}
       side="bottom"
       delayDuration={300}
     >
@@ -501,7 +515,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         )}
         onclick={onGoForward}
         disabled={!canGoForward}
-        aria-label="Go forward"
+        aria-label={m.layout_layoutHeader_goForward_ariaLabel()}
       >
         <Fa icon={faArrowRight} size="sm" />
       </button>
@@ -515,7 +529,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
   <div class="preset-dropdown-container relative flex items-center gap-0.5">
     <!-- Quick layout buttons -->
     {#each layoutPresets as preset (preset.id)}
-      <Tooltip content="{preset.label} ({preset.shortcut})" side="bottom" delayDuration={300}>
+      <Tooltip content={m.layout_layoutHeader_presetWithShortcut_tooltip({ label: preset.label(), shortcut: preset.shortcut })} side="bottom" delayDuration={300}>
         <button
           class={cn(
             'p-1.5 rounded transition-colors',
@@ -524,7 +538,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
               : 'text-muted-foreground hover:text-foreground hover:bg-muted',
           )}
           onclick={() => onApplyPreset(preset.id)}
-          aria-label={preset.label}
+          aria-label={preset.label()}
         >
           <Fa
             icon={preset.icon}
@@ -536,14 +550,14 @@ Only respond with the <layout> tag and valid JSON inside it.`;
     {/each}
 
     <!-- Content presets dropdown trigger -->
-    <Tooltip content="Layout Presets" side="bottom" delayDuration={300}>
+    <Tooltip content={m.layout_layoutHeader_layoutPresets_tooltip()} side="bottom" delayDuration={300}>
       <button
         class={cn(
           'p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted',
           showPresetDropdown && 'bg-muted text-foreground',
         )}
         onclick={() => (showPresetDropdown = !showPresetDropdown)}
-        aria-label="More layout presets"
+        aria-label={m.layout_layoutHeader_morePresets_ariaLabel()}
       >
         <Fa icon={faChevronDown} size="xs" />
       </button>
@@ -556,7 +570,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         transition:fade={{ duration: 100 }}
       >
         <div class="px-2 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          Focus Modes
+          {m.layout_layoutHeader_focusModes_header()}
         </div>
         {#each contentPresets as preset (preset.id)}
           <button
@@ -565,8 +579,8 @@ Only respond with the <layout> tag and valid JSON inside it.`;
           >
             <Fa icon={preset.icon} class="w-4 h-4 text-ghost" />
             <div class="flex-1 min-w-0">
-              <div class="font-medium">{preset.label}</div>
-              <div class="text-xs text-subtle truncate">{preset.description}</div>
+              <div class="font-medium">{preset.label()}</div>
+              <div class="text-xs text-subtle truncate">{preset.description()}</div>
             </div>
           </button>
         {/each}
@@ -574,31 +588,33 @@ Only respond with the <layout> tag and valid JSON inside it.`;
     {/if}
   </div>
 
-  <!-- AI Layout prompt toggle -->
-  <Tooltip content="AI Layout Suggestion" side="bottom" delayDuration={300}>
-    <button
-      class={cn(
-        'p-1.5 rounded transition-colors',
-        showPrompt
-          ? 'bg-primary/10 text-primary'
-          : 'text-muted-foreground hover:text-foreground hover:bg-muted',
-      )}
-      onclick={togglePrompt}
-      aria-label="Configure layout with AI"
-    >
-      <Fa icon={faWandMagicSparkles} size="sm" />
-    </button>
-  </Tooltip>
+  <!-- AI Layout prompt toggle (§5.31 auggie-only gate) -->
+  {#if aiLayoutAvailable}
+    <Tooltip content={m.layout_layoutHeader_aiSuggestion_tooltip()} side="bottom" delayDuration={300}>
+      <button
+        class={cn(
+          'p-1.5 rounded transition-colors',
+          showPrompt
+            ? 'bg-primary/10 text-primary'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted',
+        )}
+        onclick={togglePrompt}
+        aria-label={m.layout_layoutHeader_configureWithAi_ariaLabel()}
+      >
+        <Fa icon={faWandMagicSparkles} size="sm" />
+      </button>
+    </Tooltip>
+  {/if}
 
   <!-- AI Prompt input (expanded) -->
-  {#if showPrompt}
+  {#if aiLayoutAvailable && showPrompt}
     <div class="flex items-center gap-1 ml-1" transition:slide={{ duration: 150, axis: 'x' }}>
       <input
         bind:this={promptInputRef}
         bind:value={promptValue}
         onkeydown={handlePromptKeydown}
         type="text"
-        placeholder="Describe your ideal layout..."
+        placeholder={m.layout_layoutHeader_describeIdealLayout_placeholder()}
         disabled={isGenerating}
         class={cn(
           'w-48 h-6 px-2 text-xs rounded border border-border bg-background',
@@ -616,7 +632,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         )}
         onclick={handleGenerateLayout}
         disabled={!promptValue.trim() || isGenerating}
-        aria-label="Generate layout"
+        aria-label={m.layout_layoutHeader_generate_ariaLabel()}
       >
         {#if isGenerating}
           <Fa icon={faSpinner} size="sm" class="animate-spin" />

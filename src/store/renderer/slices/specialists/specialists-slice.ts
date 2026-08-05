@@ -7,7 +7,7 @@ import {
   updateItem,
   type Collection,
 } from "$lib/store-shim/utils/collections/collection-utils";
-import type { ModelTier, SpecialistFileScope } from "$shared/specialist-file-types";
+import type { SpecialistFileScope } from "$shared/specialist-file-types";
 
 // ============================================================================
 // Types (re-exported for consumers)
@@ -35,13 +35,19 @@ export interface FileSpecialist {
   description: string;
   codingAgent?: string;
   model: string;
-  modelTier?: ModelTier;
   behaviorPrompt: string;
   roleReminder?: string;
   filePath: string;
   source: SpecialistFileScope;
   /** When true, excluded from picker surfaces (Settings still shows it). */
   hidden?: boolean;
+  /**
+   * Daemon-computed default-model preview (`specialist.list` resolvedModel/
+   * resolvedProvider, PROTOCOL §5.11). Absent when resolution yields the
+   * provider CLI default ("Provider default").
+   */
+  resolvedModel?: string;
+  resolvedProvider?: string;
 }
 
 export interface FileSpecialistWritePayload {
@@ -50,7 +56,6 @@ export interface FileSpecialistWritePayload {
   description: string;
   codingAgent?: string;
   model?: string;
-  modelTier?: ModelTier;
   roleReminder?: string;
   behaviorPrompt: string;
   scope?: SpecialistFileScope;
@@ -160,7 +165,6 @@ export const switchModelOverridesForProvider = createAction<[newProviderId: stri
 export const exportBuiltinToFile = createAction<[specialistId: string]>("specialists/exportBuiltinToFile");
 export const saveFileSpecialist = createAction<[specialist: FileSpecialistWritePayload]>("specialists/saveFileSpecialist");
 export const deleteFileSpecialist = createAction<[specialist: FileSpecialistReference]>("specialists/deleteFileSpecialist");
-export const openSpecialistsFolder = createAction("specialists/openSpecialistsFolder");
 export const loadFileSpecialists = createAction("specialists/loadFileSpecialists");
 
 

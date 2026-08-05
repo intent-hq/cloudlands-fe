@@ -4,6 +4,7 @@
  */
 
 import type { Note } from "$shared/types";
+import { formatRelativeTime as formatRelative, formatShortDate } from "$lib/i18n/format";
 import type { PaletteMruEntry, PaletteMruEntryType } from "../palette/palette-types";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -25,9 +26,13 @@ export interface WorkspaceObject {
 
 export type MRUEntry = PaletteMruEntry;
 
+/** All palette filter targets: workspace object types plus the palette-only
+ * `workspace` and `message` (chat transcript) sections. */
+export type PaletteFilter = WorkspaceObjectType | "workspace" | "message";
+
 // ── Filter prefix mapping ──────────────────────────────────────────────────
 
-export const FILTER_PREFIXES: Record<string, WorkspaceObjectType | "workspace"> = {
+export const FILTER_PREFIXES: Record<string, PaletteFilter> = {
   "@": "agent",
   "#": "note",
   ">": "terminal",
@@ -35,6 +40,7 @@ export const FILTER_PREFIXES: Record<string, WorkspaceObjectType | "workspace"> 
   "/": "file",
   "*": "workspace",
   "^": "browser",
+  "?": "message",
 };
 
 // ── Pure functions ─────────────────────────────────────────────────────────
@@ -84,28 +90,22 @@ export function fuzzyScore(haystackRaw: string, needleRaw: string): number {
   return score;
 }
 
-/** Format a date string as a relative time label. */
+/**
+ * Format a date string as a compact relative time label in the active locale;
+ * dates older than a week show a short date instead.
+ */
 export function formatRelativeTime(dateStr: Date | string | undefined): string {
   if (!dateStr) return "";
   const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays === 1) return "yesterday";
-  if (diffDays < 7) return `${diffDays}d ago`;
-
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (Number.isNaN(date.getTime())) return "";
+  const diffDays = (Date.now() - date.getTime()) / 86_400_000;
+  if (diffDays >= 7) return formatShortDate(date);
+  return formatRelative(date, { style: "narrow" });
 }
 
 /** Parse a search query for filter prefix. */
 export function parseQueryFilter(query: string): {
-  filter: WorkspaceObjectType | "workspace" | null;
+  filter: PaletteFilter | null;
   searchTerm: string;
 } {
   const trimmed = query.trim();
@@ -120,6 +120,28 @@ export function parseQueryFilter(query: string): {
   }
 
   return { filter: null, searchTerm: trimmed };
+}
+
+/**
+ * Resolve the secondary title-line segments for a chat-message palette row:
+ * the owning workspace's title and its "owner/repo" label. An unknown
+ * workspace yields no segments; a repository without an owner yields just the
+ * repo name.
+ */
+export function buildMessageTitleSegments(
+  workspace:
+    | { id: string; title?: string; repositoryOwner?: string; repositoryName?: string }
+    | undefined,
+): { workspaceName?: string; repoLabel?: string } {
+  if (!workspace) return {};
+  return {
+    workspaceName: workspace.title || workspace.id,
+    repoLabel: workspace.repositoryName
+      ? workspace.repositoryOwner
+        ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
+        : workspace.repositoryName
+      : undefined,
+  };
 }
 
 // ── MRU helpers ────────────────────────────────────────────────────────────

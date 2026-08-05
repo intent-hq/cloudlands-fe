@@ -157,6 +157,7 @@ export function mapLineAttributionsToBlocks(
   const uniquePositions = new Set(positions);
   if (positions.length !== uniquePositions.size) {
     logger.warn(
+      // i18n-ignore (developer log message)
       `[line-to-block-mapper] WARNING: Found ${positions.length - uniquePositions.size} duplicate block positions!`,
     );
     // Log the duplicates
@@ -199,6 +200,7 @@ export function mapLineAttributionsToBlocks(
     // Check if this line is a code fence (opening or closing)
     // Must be ONLY whitespace + backticks + optional language identifier
     // This prevents false positives from corrupted markdown where backticks appear mid-line
+    // i18n-ignore (regex pattern, not user-facing text)
     const isCodeFence = /^\s*```[a-z0-9]*\s*$/i.test(line);
 
     if (isCodeFence) {

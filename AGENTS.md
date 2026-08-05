@@ -56,6 +56,20 @@ src/
 - **Don't export utility functions from orchestration modules** — extract to a dedicated `utils/` file.
 - **Keep utilities dependency-light** — no stores, services, or side effects.
 
+## Internationalization (i18n)
+
+All user-facing strings (labels, aria-labels, placeholders, tooltips, toasts, errors, menu items) go through Paraglide message functions — never hardcode them.
+
+- **Messages**: call `m.*()` (import from `src/shared/paraglide/messages.js`); keys live in `messages/en.json`. Key naming: `{feature}_{component}_{purpose}`, camelCase segments, role suffixes `_label` / `_description` / `_placeholder` / `_ariaLabel` / `_tooltip` / `_error` (e.g. `settings_wsApi_port_invalid`).
+- The compiled output (`src/shared/paraglide/`) is **gitignored** — run `pnpm run generate:i18n` after editing `messages/en.json`.
+- **Interpolation over concatenation**: named params (`"Configure {name} path"`); sentences split by inline markup use `_before` / `_middle` / `_after` key pairs; plurals as `_one` / `_many` key pairs. Gotcha: literal `{`/`}` in a message parses as a parameter — rephrase such strings.
+- **Dates/numbers**: only via `$lib/i18n/format` (renderer) or `src/shared/i18n/formatters.ts` (main/shared) — never ad-hoc `toLocaleString`, direct `date-fns` format calls, or string-built numbers/percentages.
+- **Module-scope constants** holding localized text use property getters (`get description() { return m.…() }`) so strings re-evaluate on locale change; identifier-bearing fields stay literal.
+- **Exemptions** — log lines, wire/IPC constants, agent-generated content, brand names, file paths, URLs, shell commands — mark with `// i18n-ignore (reason)` or `<!-- i18n-ignore (reason) -->` on the same line or the line above.
+- **Enforcement**: `scripts/check-hardcoded-strings.mjs` (chained into `pnpm run lint`) blocks hardcoded strings inside `ENFORCED_DIRS`. New features in enforced dirs must be string-free from day one; when you migrate a directory to messages, add it to `ENFORCED_DIRS`.
+- **Catalog completeness**: `scripts/check-i18n-completeness.mjs` (also chained into `pnpm run lint`) fails CI when any locale catalog diverges from `messages/en.json` — missing keys, extra keys, per-key `{param}` placeholder mismatches, unpaired `_one`/`_many` plurals — or when `messages/*.json` files and the `project.inlang/settings.json` locale registration disagree.
+- **Reference example**: `src/lib/components/settings` (the pilot extraction).
+
 ## Common commands
 
 ```bash
@@ -126,6 +140,27 @@ treat it as the single source of truth.
 - Caches in the renderer are read-through views of BE responses, invalidated by BE-driven
   events, never an alternative source of truth.
 
+### Event-driven refetches — single-flight and coalesced
+
+Daemon events arrive in bursts (agent lifecycle, file changes, task updates). Any handler
+that refetches state in response to daemon events **MUST** be single-flight with trailing
+coalesce:
+
+- **Single-flight**: all triggers share one in-flight promise — never start a second
+  concurrent refetch of the same data.
+- **Trailing coalesce**: events arriving while a refetch is in flight collapse into at
+  most **one** trailing refetch after the current one settles. The leading edge stays
+  immediate (the first event triggers a fetch right away) so freshness is not sacrificed.
+- N events during a fetch must produce at most 1 follow-up fetch, not N.
+
+Do **not** fan out per-workspace daemon RPC loops from an event handler — e.g.
+`workspace.list` followed by a per-workspace RPC for each result multiplies every event
+burst into `O(workspaces)` daemon calls (precedent:
+[intent-hq/monorepo#1395](https://github.com/intent-hq/monorepo/issues/1395), the
+active-streams fan-out). Prefer a targeted query for the affected workspace, or a
+daemon-side aggregate that returns everything in one RPC — if none exists, request one
+on the BE rather than looping on the client.
+
 ### Mutation middleware & soft-hide-then-commit
 
 Some async-action triggers (`*Requested` actions with a `.promise`) lost their handlers
@@ -195,3 +230,7 @@ tracker for all components. Do not track issues in markdown files.
   comment on / link the existing issue instead of filing a duplicate.
 - **Cross-reference**: reference the issue number in related commits/PRs (e.g.
   `fix: correct panel focus (#123)`).
+- **Fix references**: when a PR fixes a monorepo issue, use the full cross-repo form
+  `Fixes intent-hq/monorepo#N` in the squash-commit message or PR body — it auto-closes
+  the issue on merge and lets the release notifier (`scripts/notify-fixed-issues.sh`)
+  comment on it when the fix ships in a beta/stable release.

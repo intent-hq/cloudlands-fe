@@ -242,6 +242,7 @@ const ALLOWED_CHANNELS = [
   "system:check-rtk",
   "system:list-fonts",
   "app:set-badge",
+  "app:set-language-preference",
   "app:version",
   "app:get-version",
   "app:name",
@@ -262,6 +263,8 @@ const ALLOWED_CHANNELS = [
   "window:set-in-workspace",
   "window:set-open-workspace-tabs",
   "window:set-browser-focused",
+  "window:set-full-screen",
+  "window:get-full-screen",
   "terminal:createWithCommand",
   "terminal:professional:create",
   "terminal:professional:list",
@@ -321,6 +324,10 @@ const ALLOWED_CHANNELS = [
   "notification:requestPermission",
   "notification:show",
   "dialog:message",
+  "dialog:open",
+  "voice:local-available",
+  "voice:transcribe-local",
+  "voice:request-local-authorization",
   "shell:open",
   "shell:openPath",
   "shell:openExternal",
@@ -397,7 +404,6 @@ const ALLOWED_CHANNELS = [
   "specialists:read-file",
   "specialists:write-file",
   "specialists:delete-file",
-  "specialists:open-folder",
   "specialists:get-folder-path",
   "specialists:export-builtin",
   "specialists:file-exists",
@@ -519,6 +525,8 @@ const ALLOWED_CHANNELS = [
   "backend:status",
   "backend:spawn-sidecar",
   "backend:get-sidecar-run-log",
+  "hardware-console:clear-lighting",
+  "hardware-console:clear-lighting-done",
   "event:workspace:created",
   "event:workspace:updated",
   "event:workspace:deleted",
@@ -657,7 +665,6 @@ const ALLOWED_CHANNELS = [
   "browser:focus-tab",
   "browser:list-tabs-request",
   "browser:open-tab",
-  "mcp:server-error",
   "script:started",
   "script:stopped",
   "script:output",
@@ -666,7 +673,8 @@ const ALLOWED_CHANNELS = [
   "websocket-api:discovery-auto-disabled",
   "token-usage:changed",
   "backend:notification",
-  "backend:status"
+  "backend:status",
+  "hardware-console:clear-lighting"
 ];
 
 // Dynamic channel patterns that are matched with startsWith()
@@ -828,7 +836,6 @@ const EVENT_CHANNELS = [
   "browser:focus-tab",
   "browser:list-tabs-request",
   "browser:open-tab",
-  "mcp:server-error",
   "script:started",
   "script:stopped",
   "script:output",
@@ -837,7 +844,8 @@ const EVENT_CHANNELS = [
   "websocket-api:discovery-auto-disabled",
   "token-usage:changed",
   "backend:notification",
-  "backend:status"
+  "backend:status",
+  "hardware-console:clear-lighting"
 ];
 
 /**

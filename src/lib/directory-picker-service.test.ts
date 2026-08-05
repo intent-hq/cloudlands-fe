@@ -1,0 +1,190 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  hasCapability: vi.fn(),
+  isDaemonLocal: vi.fn(),
+  openDirectory: vi.fn(),
+  openFile: vi.fn(),
+}));
+
+vi.mock('$lib/electron-bridge', () => ({
+  dialog: { openDirectory: mocks.openDirectory, openFile: mocks.openFile },
+}));
+vi.mock('$lib/utils/platform-capabilities', () => ({
+  hasCapability: mocks.hasCapability,
+}));
+vi.mock('$store/renderer/slices/daemon-health/daemon-health-selectors', () => ({
+  selectIsDaemonLocal: { select: mocks.isDaemonLocal },
+}));
+vi.mock('$store/renderer/store', () => ({
+  store: { state: {} },
+}));
+
+import { pickDirectory, pickFile } from './directory-picker-service';
+
+describe('pickDirectory', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('uses the native picker and selects its path for a local Electron daemon', async () => {
+    mocks.hasCapability.mockReturnValue(true);
+    mocks.isDaemonLocal.mockReturnValue(true);
+    mocks.openDirectory.mockResolvedValue('/Users/me/project');
+    const openModal = vi.fn();
+    const onSelect = vi.fn();
+
+    await pickDirectory({
+      title: 'Select Repository Folder',
+      defaultPath: '/Users/me',
+      openModal,
+      onSelect,
+    });
+
+    expect(mocks.openDirectory).toHaveBeenCalledExactlyOnceWith({
+      title: 'Select Repository Folder',
+      defaultPath: '/Users/me',
+    });
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me/project');
+    expect(openModal).not.toHaveBeenCalled();
+  });
+
+  it('opens the modal without invoking native IPC for a remote daemon', async () => {
+    mocks.hasCapability.mockReturnValue(true);
+    mocks.isDaemonLocal.mockReturnValue(false);
+    const openModal = vi.fn();
+    const onSelect = vi.fn();
+
+    await pickDirectory({ openModal, onSelect });
+
+    expect(openModal).toHaveBeenCalledOnce();
+    expect(mocks.openDirectory).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('opens the modal when native dialogs are unavailable', async () => {
+    mocks.hasCapability.mockReturnValue(false);
+    const openModal = vi.fn();
+
+    await pickDirectory({ openModal, onSelect: vi.fn() });
+
+    expect(openModal).toHaveBeenCalledOnce();
+    expect(mocks.isDaemonLocal).not.toHaveBeenCalled();
+    expect(mocks.openDirectory).not.toHaveBeenCalled();
+  });
+
+  it('leaves the current selection unchanged when the native picker is cancelled', async () => {
+    mocks.hasCapability.mockReturnValue(true);
+    mocks.isDaemonLocal.mockReturnValue(true);
+    mocks.openDirectory.mockResolvedValue(null);
+    const openModal = vi.fn();
+    const onSelect = vi.fn();
+
+    await pickDirectory({ openModal, onSelect });
+
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(openModal).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the modal when the native picker rejects', async () => {
+    mocks.hasCapability.mockReturnValue(true);
+    mocks.isDaemonLocal.mockReturnValue(true);
+    mocks.openDirectory.mockRejectedValue(new Error('Native dialog unavailable'));
+    const openModal = vi.fn();
+    const onSelect = vi.fn();
+
+    await pickDirectory({ openModal, onSelect });
+
+    expect(openModal).toHaveBeenCalledOnce();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('never routes through the file dialog', async () => {
+    mocks.hasCapability.mockReturnValue(true);
+    mocks.isDaemonLocal.mockReturnValue(true);
+    mocks.openDirectory.mockResolvedValue('/Users/me/project');
+
+    await pickDirectory({ openModal: vi.fn(), onSelect: vi.fn() });
+
+    expect(mocks.openFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('pickFile', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('uses the native file picker and selects its path for a local Electron daemon', async () => {
+    mocks.hasCapability.mockReturnValue(true);
+    mocks.isDaemonLocal.mockReturnValue(true);
+    mocks.openFile.mockResolvedValue('/Users/me/.ssh/id_ed25519');
+    const openModal = vi.fn();
+    const onSelect = vi.fn();
+
+    await pickFile({
+      title: 'Choose an SSH key',
+      defaultPath: '/Users/me/.ssh',
+      openModal,
+      onSelect,
+    });
+
+    expect(mocks.openFile).toHaveBeenCalledExactlyOnceWith({
+      title: 'Choose an SSH key',
+      defaultPath: '/Users/me/.ssh',
+    });
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me/.ssh/id_ed25519');
+    expect(openModal).not.toHaveBeenCalled();
+    expect(mocks.openDirectory).not.toHaveBeenCalled();
+  });
+
+  it('opens the modal without invoking native IPC for a remote daemon', async () => {
+    mocks.hasCapability.mockReturnValue(true);
+    mocks.isDaemonLocal.mockReturnValue(false);
+    const openModal = vi.fn();
+    const onSelect = vi.fn();
+
+    await pickFile({ openModal, onSelect });
+
+    expect(openModal).toHaveBeenCalledOnce();
+    expect(mocks.openFile).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('opens the modal when native dialogs are unavailable', async () => {
+    mocks.hasCapability.mockReturnValue(false);
+    const openModal = vi.fn();
+
+    await pickFile({ openModal, onSelect: vi.fn() });
+
+    expect(openModal).toHaveBeenCalledOnce();
+    expect(mocks.isDaemonLocal).not.toHaveBeenCalled();
+    expect(mocks.openFile).not.toHaveBeenCalled();
+  });
+
+  it('leaves the current selection unchanged when the native picker is cancelled', async () => {
+    mocks.hasCapability.mockReturnValue(true);
+    mocks.isDaemonLocal.mockReturnValue(true);
+    mocks.openFile.mockResolvedValue(null);
+    const openModal = vi.fn();
+    const onSelect = vi.fn();
+
+    await pickFile({ openModal, onSelect });
+
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(openModal).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the modal when the native picker rejects', async () => {
+    mocks.hasCapability.mockReturnValue(true);
+    mocks.isDaemonLocal.mockReturnValue(true);
+    mocks.openFile.mockRejectedValue(new Error('Native dialog unavailable'));
+    const openModal = vi.fn();
+    const onSelect = vi.fn();
+
+    await pickFile({ openModal, onSelect });
+
+    expect(openModal).toHaveBeenCalledOnce();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+});

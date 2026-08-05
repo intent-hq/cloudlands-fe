@@ -4,8 +4,11 @@
   the pending questions one at a time; choose-one advances on selection,
   multi-select keeps a Next button, Enter in the free-form field advances,
   Skip clears + advances, Back returns with the previous answer pre-selected.
-  Ignore collapses the well to a compact re-expandable banner (transient —
-  the host owns the collapse flag; nothing is persisted). On the last
+  Hide collapses the well to a compact re-expandable banner (transient —
+  the host owns the collapse flag; nothing is persisted). Dismiss is a
+  destructive action gated behind a confirmation dialog; confirming hands off
+  to `onDismiss` — the host calls `agent.dismissQuestions`, which persists
+  the dismissal (survives reload) and releases the question hold. On the last
   question Send hands the full answers array to `onComplete`. Single-question
   wizards hide the step counter, progress segments, and Back button — none
   carry information when there is only one step.
@@ -31,6 +34,8 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
+  import DismissQuestionsConfirmDialog from './DismissQuestionsConfirmDialog.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     questions: Question[];
@@ -38,9 +43,17 @@
     collapsed?: boolean;
     onToggleCollapsed?: (collapsed: boolean) => void;
     onComplete?: (answers: QuestionAnswer[]) => void;
+    /** Persistent dismissal — host calls `agent.dismissQuestions`. */
+    onDismiss?: () => void;
   }
 
-  let { questions, collapsed = false, onToggleCollapsed, onComplete }: Props = $props();
+  let {
+    questions,
+    collapsed = false,
+    onToggleCollapsed,
+    onComplete,
+    onDismiss,
+  }: Props = $props();
 
   interface DraftAnswer {
     sel: number[];
@@ -49,6 +62,8 @@
   }
 
   let idx = $state(0);
+  // Dismiss is destructive and persistent — gate it behind a confirm dialog.
+  let confirmingDismiss = $state(false);
   // Intentional initial capture: the host remounts the wizard ({#key} on the
   // question-bearing message id) whenever a different question set pends.
   // svelte-ignore state_referenced_locally
@@ -67,6 +82,10 @@
   const nextDisabled = $derived(
     (isMulti || isLast) && draft.sel.length === 0 && !draft.text.trim(),
   );
+  // Single-select answers are mutually exclusive with the free-form Other
+  // input: any raw text disables the option buttons (multi-select allows
+  // options + free text together).
+  const optionsLocked = $derived(!isMulti && draft.text.length > 0);
 
   // Motion: snappy 150ms step transitions, none under prefers-reduced-motion.
   const stepDuration =
@@ -96,6 +115,7 @@
   }
 
   function selectOption(oi: number) {
+    if (optionsLocked) return;
     if (isMulti) {
       draft.sel = draft.sel.includes(oi)
         ? draft.sel.filter((x) => x !== oi)
@@ -137,28 +157,46 @@
   data-question-wizard
 >
   {#if collapsed}
-    <!-- Ignore-collapsed banner: click to re-expand -->
-    <button
-      type="button"
-      class="flex w-full items-center gap-2.5 px-3.5 py-2.25 cursor-pointer rounded-lg bg-transparent border-none text-left font-[inherit] hover:bg-primary/5"
-      onclick={() => onToggleCollapsed?.(false)}
-    >
-      <Fa icon={faCircleQuestion} class="text-xs text-primary" />
-      <span class="text-xs font-medium text-foreground">Agent Has Questions</span>
-      <span
-        class="text-[0.7rem] font-medium px-1.75 py-px rounded-full bg-primary/12 border border-primary/35 text-foreground"
+    <!-- Hide-collapsed banner: click to re-expand; Dismiss is a sibling
+         button (not nested — invalid HTML) that opens the confirm dialog. -->
+    <div class="flex w-full items-center rounded-lg">
+      <button
+        type="button"
+        class="flex flex-1 items-center gap-2.5 px-3.5 py-2.25 cursor-pointer rounded-l-lg bg-transparent border-none text-left font-[inherit] hover:bg-primary/5"
+        onclick={() => onToggleCollapsed?.(false)}
       >
-        {questions.length}
-      </span>
-      <span class="ml-auto text-[0.7rem] text-subtle">Click to expand</span>
-    </button>
+        <Fa icon={faCircleQuestion} class="text-xs text-primary" />
+        <span class="text-xs font-medium text-foreground">{m.chat_questionWizard_title()}</span>
+        <span
+          class="text-[0.7rem] font-medium px-1.75 py-px rounded-full bg-primary/12 border border-primary/35 text-foreground"
+        >
+          {questions.length}
+        </span>
+        <span class="ml-auto text-[0.7rem] text-subtle">{m.chat_questionWizard_clickToExpand_label()}</span>
+      </button>
+      {#if onDismiss}
+        <button
+          type="button"
+          class="border-none bg-transparent text-xs text-destructive-foreground cursor-pointer font-[inherit] px-3 py-2.25 rounded-r-lg hover:bg-destructive"
+          title={m.chat_questionWizard_dismiss_tooltip()}
+          onclick={() => (confirmingDismiss = true)}
+        >
+          {m.chat_questionWizard_dismiss_label()}
+        </button>
+      {/if}
+    </div>
   {:else}
     <!-- Header row -->
     <div class="flex items-center gap-2.5 px-3.5 pt-2.5">
       <Fa icon={faCircleQuestion} class="text-xs text-primary" />
-      <span class="text-xs font-medium text-foreground">Agent Has Questions</span>
+      <span class="text-xs font-medium text-foreground">{m.chat_questionWizard_title()}</span>
       {#if multiStep}
-        <span class="text-xs text-subtle">{idx + 1} of {questions.length}</span>
+        <span class="text-xs text-subtle"
+          >{m.chat_questionWizard_stepCounter_label({
+            current: idx + 1,
+            total: questions.length,
+          })}</span
+        >
         <span class="flex items-center gap-1">
           {#each questions as _, i (i)}
             <span
@@ -174,16 +212,29 @@
       {/if}
       {#if isMulti}
         <span class="text-[0.7rem] px-1.75 py-px rounded-full bg-secondary text-subtle">
-          select all that apply
+          {m.chat_questionWizard_selectAll_label()}
         </span>
       {/if}
-      <button
-        type="button"
-        class="ml-auto border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:text-foreground"
-        onclick={() => onToggleCollapsed?.(true)}
-      >
-        Ignore
-      </button>
+      <span class="ml-auto flex items-center gap-0.5">
+        <button
+          type="button"
+          class="border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:text-foreground"
+          title={m.chat_questionWizard_hide_tooltip()}
+          onclick={() => onToggleCollapsed?.(true)}
+        >
+          {m.chat_questionWizard_hide_label()}
+        </button>
+        {#if onDismiss}
+          <button
+            type="button"
+            class="border-none bg-transparent text-xs text-destructive-foreground cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:bg-destructive"
+            title={m.chat_questionWizard_dismiss_tooltip()}
+            onclick={() => (confirmingDismiss = true)}
+          >
+            {m.chat_questionWizard_dismiss_label()}
+          </button>
+        {/if}
+      </span>
     </div>
 
     {#key idx}
@@ -205,9 +256,12 @@
               <button
                 type="button"
                 aria-pressed={selected}
-                class="flex items-start gap-2.5 rounded-(--radius) px-2.5 py-2 cursor-pointer text-left font-[inherit] {selected
-                  ? 'border border-primary bg-primary/10'
-                  : 'border border-transparent bg-background shadow-xs dark:border-border/60 dark:bg-background/40 hover:border-primary hover:bg-primary/6'}"
+                disabled={optionsLocked}
+                class="flex items-start gap-2.5 rounded-(--radius) px-2.5 py-2 text-left font-[inherit] {selected
+                  ? 'border border-primary bg-primary/10 cursor-pointer'
+                  : optionsLocked
+                    ? 'border border-transparent bg-background shadow-xs dark:border-border/60 dark:bg-background/40 opacity-50 cursor-default'
+                    : 'border border-transparent bg-background shadow-xs dark:border-border/60 dark:bg-background/40 cursor-pointer hover:border-primary hover:bg-primary/6'}"
                 onclick={() => selectOption(oi)}
               >
                 {#if isMulti}
@@ -243,10 +297,13 @@
                  .tiptap-editor: 1rem / 1.5 with the inherited app font stack) -->
             <input
               bind:value={draft.text}
-              oninput={() => (draft.skipped = false)}
+              oninput={() => {
+                draft.skipped = false;
+                if (!isMulti && draft.text.length > 0) draft.sel = [];
+              }}
               onkeydown={handleKeydown}
-              aria-label="Type your own answer"
-              placeholder="Or type your own answer…"
+              aria-label={m.chat_questionWizard_ownAnswer_ariaLabel()}
+              placeholder={m.chat_questionWizard_ownAnswer_placeholder()}
               class="flex-1 border-none outline-none bg-transparent text-[1rem] leading-normal font-[inherit] text-foreground py-1"
             />
             <span class="text-[0.7rem] text-ghost pr-1.5">↵</span>
@@ -265,12 +322,12 @@
               onclick={handleBack}
             >
               <Fa icon={faChevronLeft} class="text-[9px] a11y-ignore" />
-              Back
+              {m.chat_questionWizard_back_label()}
             </button>
           {/if}
           {#if !isMulti && !isLast}
             <span class="text-[0.7rem] text-ghost">
-              Selecting an option moves to the next question
+              {m.chat_questionWizard_selectionAdvances_label()}
             </span>
           {/if}
           <span class="ml-auto flex items-center gap-1.5">
@@ -279,11 +336,11 @@
               class="border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-2 py-1 rounded-(--radius) hover:text-foreground"
               onclick={handleSkip}
             >
-              Skip
+              {m.chat_questionWizard_skip_label()}
             </button>
             {#if showNext}
               <Button size="sm" disabled={nextDisabled} onclick={handleNext}>
-                {isLast ? 'Send' : 'Next'}
+                {isLast ? m.chat_questionWizard_send_label() : m.chat_questionWizard_next_label()}
                 <Fa icon={isLast ? faArrowUp : faArrowRight} class="text-[10px] a11y-ignore" />
               </Button>
             {/if}
@@ -293,3 +350,12 @@
     {/key}
   {/if}
 </div>
+
+<DismissQuestionsConfirmDialog
+  open={confirmingDismiss}
+  onConfirm={() => {
+    confirmingDismiss = false;
+    onDismiss?.();
+  }}
+  onCancel={() => (confirmingDismiss = false)}
+/>

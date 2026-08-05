@@ -31,6 +31,7 @@ describe('TaskStatusIcon', () => {
     ['complete', 'Status: complete'],
     ['waiting', 'Status: waiting'],
     ['discussion_needed', 'Status: discussion needed'],
+    ['blocked', 'Status: blocked'],
     ['review_required', 'Status: review required'],
     ['cancelled', 'Status: cancelled'],
     ['todo', 'Status: not started'],

@@ -39,7 +39,7 @@ export function newIdempotencyKey(): string {
  * A raw string `data` is handled too for transports that skip the
  * normalization.
  */
-function mutationErrorMessage(error: unknown): string {
+export function mutationErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (message === "Internal error" && error && typeof error === "object") {
     const data = (error as { data?: unknown }).data;

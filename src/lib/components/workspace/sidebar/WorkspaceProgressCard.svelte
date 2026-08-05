@@ -23,8 +23,10 @@
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import TaskStatusIndicator from '$lib/components/workspace/TaskStatusIndicator.svelte';
+  import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
   import TaskAgentStatus from '$lib/components/tiptap/TaskAgentStatus.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
+  import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import WorkspaceActionsMenu, {
     type MenuAction,
@@ -33,6 +35,7 @@
   import { toggleSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { handleLink } from '$features/navigation/link-handler';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
+  import { m } from '$shared/paraglide/messages.js';
   import { goto } from '$app/navigation';
   import { onDestroy, tick, onMount } from 'svelte';
   import { writable } from 'svelte/store';
@@ -268,6 +271,19 @@
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
   const currentStatusMessage = $derived($workspace?.statusMessage?.trim() ?? '');
 
+  // Agent-authored status screenshot (intent-hq/monorepo#997). Content-addressed
+  // asset id served via the workspace-asset:// protocol; a failed load hides the
+  // image until the asset id changes (the URL comparison resets naturally).
+  const statusImageUrl = $derived(
+    $workspace?.statusImageAssetId
+      ? `workspace-asset://${$workspace.id}/${$workspace.statusImageAssetId}`
+      : '',
+  );
+  let failedStatusImageUrl = $state('');
+  const showStatusImage = $derived(!!statusImageUrl && statusImageUrl !== failedStatusImageUrl);
+  let statusImageLightboxOpen = $state(false);
+  let statusImageButtonRef: HTMLButtonElement | null = $state(null);
+
   // Copy workspace repo path to clipboard
   let copiedRepoPath = $state(false);
   let repoTooltipOpen = $state(false);
@@ -323,15 +339,15 @@
   async function handleArchive() {
     if (!$workspace) return;
     const { toast } = await import('svelte-sonner');
-    const workspaceTitle = $workspace.title || 'space';
+    const workspaceTitle = $workspace.title || m.workspace_multiSelectSidebar_space_label();
 
     const result = await workspaceClient.archive($workspace.id);
     if (result.ok) {
       appStore.dispatch(loadWorkspacesRequested());
-      toast.warning(`Archived space ${workspaceTitle}`, {
+      toast.warning(m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }), {
         duration: 15000,
         action: {
-          label: 'Undo',
+          label: m.workspace_multiSelectSidebar_undo_label(),
           onClick: async () => {
             const undoResult = await workspaceClient.unarchive($workspace.id);
             if (undoResult.ok) {
@@ -342,28 +358,28 @@
       });
       goto('/');
     } else {
-      toast.error('Failed to archive space');
+      toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
     }
   }
 
   async function handleUnarchive() {
     if (!$workspace) return;
     const { toast } = await import('svelte-sonner');
-    const workspaceTitle = $workspace.title || 'space';
+    const workspaceTitle = $workspace.title || m.workspace_multiSelectSidebar_space_label();
 
     const result = await workspaceClient.unarchive($workspace.id);
     if (result.ok) {
       appStore.dispatch(loadWorkspacesRequested());
-      toast.success(`Unarchived space ${workspaceTitle}`);
+      toast.success(m.workspace_progressCard_unarchivedSpace_toast({ title: workspaceTitle }));
     } else {
-      toast.error('Failed to unarchive space');
+      toast.error(m.workspace_progressCard_unarchiveFailed_error());
     }
   }
 
   function startEditingTitle() {
     if (!$workspace) return;
     isEditingTitle = true;
-    editedTitle = $workspace.title || 'Untitled';
+    editedTitle = $workspace.title || m.workspace_links_untitled_label();
     tick().then(() => {
       if (titleInputRef) {
         titleInputRef.focus();
@@ -394,7 +410,7 @@
       saveTitle();
     } else if (e.key === 'Escape') {
       isEditingTitle = false;
-      editedTitle = $workspace?.title || 'Untitled';
+      editedTitle = $workspace?.title || m.workspace_links_untitled_label();
     }
   }
 
@@ -468,7 +484,10 @@
   }
 
   const sidebarSideAction: MenuAction = $derived({
-    label: $sidebarSide$ === 'left' ? 'Move sidebar to right' : 'Move sidebar to left',
+    label:
+      $sidebarSide$ === 'left'
+        ? m.workspace_sidebarHeader_moveSidebarRight_label()
+        : m.workspace_sidebarHeader_moveSidebarLeft_label(),
     iconSnippet: sidebarSideIconSnippet,
     dividerBefore: true,
     onClick: () => {
@@ -559,7 +578,7 @@
         if (currentReadyIndex >= deduped.length) {
           currentReadyIndex = Math.max(0, deduped.length - 1);
         }
-        readyLogger.info('Ready tasks updated from backend', { count: deduped.length });
+        readyLogger.info('Ready tasks updated from backend', { count: deduped.length }); // i18n-ignore (log line)
       }
     });
 
@@ -833,9 +852,9 @@
     <!-- Header: Title and repo -->
     <div class="w-full">
       <div class="text-sm font-semibold text-foreground truncate">
-        {$workspace?.title || 'Untitled'}
+        {$workspace?.title || m.workspace_links_untitled_label()}
       </div>
-      <div class="text-sm text-subtle truncate mt-0.5 flex items-center gap-1">
+      <div class="text-sm text-subtle truncate mt-0.5 flex items-baseline gap-1">
         <Tooltip
           side="bottom"
           align="start"
@@ -844,27 +863,28 @@
           bind:open={repoTooltipOpen}
           onOpenChange={handleRepoTooltipOpenChange}
           disableCloseOnTriggerClick={true}
+          class="min-w-0"
         >
           {#snippet content()}
             <span>
               {#if $workspace?.skipWorktree}
-                Working directly in your repo at
+                {m.workspace_progressCard_workingDirectlyAt_before()}
                 <span class="underline underline-offset-2 break-all"
                   >{workspacePath.split('/').slice(-2).join('/')}</span
                 >.
               {:else}
-                We have an isolated copy of your repo in the
+                {m.workspace_progressCard_isolatedCopy_before()}
                 <span class="underline underline-offset-2"
-                  >{$workspace?.id || 'workspace'}/repo</span
+                  ><!-- i18n-ignore (file path) -->{$workspace?.id || 'workspace'}/repo</span
                 >
-                folder.
+                {m.workspace_progressCard_isolatedCopy_after()}
               {/if}
               <br /><span class="text-subtle"
-                >Click to copy the path, or open in an app from the <Fa
+                >{m.workspace_progressCard_clickToCopy_before()} <Fa
                   icon={faEllipsisV}
                   class="inline mx-0.5"
                   size="xs"
-                /> menu to the right.</span
+                /> {m.workspace_progressCard_clickToCopy_after()}</span
               >
             </span>
             {#if copiedRepoPath}
@@ -875,7 +895,7 @@
           {/snippet}
           <button
             type="button"
-            class="cursor-pointer bg-transparent border-none p-0 text-inherit font-inherit hover:underline"
+            class="min-w-0 truncate cursor-pointer bg-transparent border-none p-0 text-inherit font-inherit hover:underline"
             onclick={copyRepoPath}
           >
             {#if $workspace?.repositoryOwner && $workspace?.repositoryName}
@@ -885,6 +905,10 @@
             {/if}
           </button>
         </Tooltip>
+        {#if $workspace?.checkoutMode}
+          <span class="mx-1">·</span>
+        {/if}
+        <CheckoutModePill workspace={$workspace} />
         {#if $workspace?.branch}
           <span class="mx-1">·</span>
           <span>{$workspace.branch}</span>
@@ -934,7 +958,7 @@
                outline-none min-w-20 w-full leading-normal
                focus:ring-none! focus:outline-none!
                transition-all duration-150"
-              placeholder="Untitled"
+              placeholder={m.workspace_links_untitled_label()}
             />
           {:else}
             <button
@@ -946,11 +970,11 @@
                disabled:cursor-default disabled:opacity-50 truncate min-w-0"
               class:opacity-50={!$workspace?.title}
               onclick={startEditingTitle}
-              title="Click to edit space title"
+              title={m.workspace_sidebarHeader_editTitle_tooltip()}
               disabled={!$workspace}
             >
               {#if $workspace}
-                {$workspace.title || 'Untitled'}
+                {$workspace.title || m.workspace_links_untitled_label()}
               {/if}
             </button>
           {/if}
@@ -1003,7 +1027,7 @@
         </div>
       </div>
       <!-- repo -->
-      <div class="w-full flex items-center -mt-1.5 gap-1">
+      <div class="w-full flex items-baseline -mt-1.5 gap-1">
         <Tooltip
           side="bottom"
           align="start"
@@ -1012,27 +1036,28 @@
           bind:open={repoTooltipOpen}
           onOpenChange={handleRepoTooltipOpenChange}
           disableCloseOnTriggerClick={true}
+          class="min-w-0"
         >
           {#snippet content()}
             <span>
               {#if $workspace?.skipWorktree}
-                Working directly in your repo at
+                {m.workspace_progressCard_workingDirectlyAt_before()}
                 <span class="underline underline-offset-2 break-all"
                   >{workspacePath.split('/').slice(-2).join('/')}</span
                 >.
               {:else}
-                We have an isolated copy of your repo in the
+                {m.workspace_progressCard_isolatedCopy_before()}
                 <span class="underline underline-offset-2"
-                  >{$workspace?.id || 'workspace'}/repo</span
+                  ><!-- i18n-ignore (file path) -->{$workspace?.id || 'workspace'}/repo</span
                 >
-                folder.
+                {m.workspace_progressCard_isolatedCopy_after()}
               {/if}
               <br /><span class="text-subtle"
-                >Click to copy the path, or open in an app from the <Fa
+                >{m.workspace_progressCard_clickToCopy_before()} <Fa
                   icon={faEllipsisV}
                   class="inline mx-0.5"
                   size="xs"
-                /> menu to the right.</span
+                /> {m.workspace_progressCard_clickToCopy_after()}</span
               >
             </span>
             {#if copiedRepoPath}
@@ -1053,6 +1078,10 @@
             {/if}
           </button>
         </Tooltip>
+        {#if $workspace?.checkoutMode}
+          <span class="mx-1">·</span>
+        {/if}
+        <CheckoutModePill workspace={$workspace} />
       </div>
     </div>
 
@@ -1165,13 +1194,13 @@
               onkeydown={handleStatusMessageKeydown}
               disabled={isSavingStatusMessage}
               maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
-              aria-label="Workspace status"
+              aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
               class="text-xs text-foreground bg-none
                    px-0.5 py-1 rounded
                    outline-none w-full leading-snug
                    focus:ring-none! focus:outline-none!
                    transition-all duration-150 disabled:opacity-50"
-              placeholder="Add workspace status"
+              placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}
             />
           {:else if $workspace && currentStatusMessage}
             <button
@@ -1187,15 +1216,47 @@
               class:text-ghost={!currentStatusMessage}
               onclick={startEditingStatusMessage}
               title={currentStatusMessage
-                ? 'Click to edit workspace status'
-                : 'Click to add workspace status'}
-              aria-label={currentStatusMessage ? 'Edit workspace status' : 'Add workspace status'}
+                ? m.workspace_sidebarHeader_editStatus_tooltip()
+                : m.workspace_sidebarHeader_addStatus_tooltip()}
+              aria-label={currentStatusMessage
+                ? m.workspace_sidebarHeader_editStatus_ariaLabel()
+                : m.workspace_sidebarHeader_addStatus_ariaLabel()}
               disabled={!$workspace}
             >
               {currentStatusMessage}
             </button>
           {/if}
         </div>
+      {/if}
+
+      <!-- status screenshot (agent-authored, intent-hq/monorepo#997) -->
+      {#if showStatusImage}
+        <div class="px-0.5 py-1">
+          <button
+            bind:this={statusImageButtonRef}
+            type="button"
+            class="block w-full cursor-zoom-in bg-transparent border-none p-0
+                 focus-visible:outline focus-visible:outline-1
+                 focus-visible:outline-primary/50 focus-visible:outline-offset-1"
+            onclick={() => (statusImageLightboxOpen = true)}
+            title={m.workspace_progressCard_statusImage_title()}
+            aria-label={m.workspace_progressCard_statusImage_ariaLabel()}
+          >
+            <img
+              src={statusImageUrl}
+              alt={m.workspace_progressCard_statusImage_alt()}
+              class="w-full max-h-48 object-contain rounded-md border border-border"
+              onerror={(e) =>
+                (failedStatusImageUrl = e.currentTarget.getAttribute('src') ?? statusImageUrl)}
+            />
+          </button>
+        </div>
+        <ImageLightbox
+          bind:open={statusImageLightboxOpen}
+          imageUrl={statusImageUrl}
+          imageName="Workspace status screenshot"
+          openerElement={statusImageButtonRef}
+        />
       {/if}
 
       <!-- Ready Tasks Section (excludes spec from display) -->

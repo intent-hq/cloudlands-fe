@@ -2,6 +2,7 @@
   import { Button } from '$lib/components/ui/button';
   import PullRequestCreator from './PullRequestCreator.svelte';
   import type { Workspace } from '$shared/types';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspace: Workspace | null;
@@ -58,11 +59,10 @@
       tabindex="-1"
       onkeydown={(e) => e.stopPropagation()}
     >
-      <h2 class="text-lg font-semibold text-foreground mb-4">Create New Agent</h2>
+      <h2 class="text-lg font-semibold text-foreground mb-4">{m.workspace_modals_createNewAgent_label()}</h2>
 
       <p class="text-sm text-subtle mb-4">
-        A new agent will be created for this workspace. The agent will automatically name itself
-        based on your conversation.
+        {m.workspace_modals_createAgent_description()}
       </p>
 
       {#if createAgentError}
@@ -70,32 +70,33 @@
           <div class="flex items-start gap-2">
             <span class="text-red-500 text-lg">⚠️</span>
             <div class="flex-1">
-              <p class="text-sm text-red-400 font-medium mb-1">Failed to create agent</p>
+              <p class="text-sm text-red-400 font-medium mb-1">{m.workspace_modals_createAgentFailed_error()}</p>
               <p class="text-xs text-red-300">{createAgentError}</p>
 
               {#if showAuthHelper}
                 <div class="mt-3 p-3 bg-primary/10 border border-primary/30 rounded-lg">
                   <p class="text-xs text-blue-300 mb-2">
-                    <strong>How to fix:</strong> Auggie needs to be authenticated on the remote server.
+                    <strong>{m.workspace_modals_howToFix_before()}</strong>
+                    {m.workspace_modals_howToFix_after()}
                   </p>
                   <ol class="text-xs text-blue-200 space-y-2 ml-4 list-decimal">
                     <li>
-                      Click the button below to open a system terminal connected to the remote
-                      server
-                      <Button onclick={onOpenSystemTerminal}>Open System Terminal</Button>
+                      {m.workspace_modals_openTerminalStep_label()}
+                      <Button onclick={onOpenSystemTerminal}>{m.workspace_modals_openSystemTerminal_label()}</Button>
                     </li>
                     <li>
-                      In the terminal, run: <code class="px-1 py-0.5 bg-black/30 rounded font-mono"
-                        >auggie login</code
-                      >
+                      {m.workspace_modals_runInTerminal_before()}
+                      <!-- i18n-ignore (shell command) -->
+                      <code class="px-1 py-0.5 bg-black/30 rounded font-mono">auggie login</code>
                     </li>
-                    <li>Follow the authentication prompts in your browser</li>
-                    <li>Once authenticated, try creating the agent again</li>
+                    <li>{m.workspace_modals_followPrompts_label()}</li>
+                    <li>{m.workspace_modals_tryAgain_label()}</li>
                   </ol>
                   <p class="text-xs text-blue-300 mt-3 italic">
-                    Note: <code class="px-1 py-0.5 bg-black/30 rounded font-mono">auggie login</code
-                    > is an interactive command that requires a browser, so it must be run in a system
-                    terminal.
+                    {m.workspace_modals_note_before()}
+                    <!-- i18n-ignore (shell command) -->
+                    <code class="px-1 py-0.5 bg-black/30 rounded font-mono">auggie login</code>
+                    {m.workspace_modals_note_after()}
                   </p>
                 </div>
               {/if}
@@ -106,10 +107,12 @@
 
       <div class="flex gap-2 justify-end">
         <Button variant="ghost" onclick={onCancelCreateAgent} disabled={creatingAgent}>
-          Cancel
+          {m.workspace_modals_cancel_label()}
         </Button>
         <Button onclick={onCreateAgent} disabled={creatingAgent}>
-          {creatingAgent ? 'Creating...' : 'Create Agent'}
+          {creatingAgent
+            ? m.workspace_modals_creating_label()
+            : m.workspace_modals_createAgent_label()}
         </Button>
       </div>
     </div>

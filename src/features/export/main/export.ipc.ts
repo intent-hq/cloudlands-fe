@@ -4,22 +4,21 @@
  * IPC handlers for exporting chat conversations to HTML files.
  */
 
-import {
-  ipcMain,
-  dialog,
-} from 'electron';
+import { ipcMain, dialog } from 'electron';
 import { promises as fs } from 'fs';
 import { z } from 'zod';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { Logger } from '../../../shared/logger';
 import { exportChatToHtml } from '../chat-html-exporter';
+import { m } from '../../../shared/paraglide/messages.js';
 
 const logger = new Logger('ChatExportIPC');
 
 // Zod schema for validation
 const ExportChatToHtmlSchema = z.object({
   messages: z.array(z.any()),
+  // i18n-ignore (IPC payload validation, developer-facing)
   title: z.string().min(1, 'Title is required'),
 });
 
@@ -61,7 +60,7 @@ export function registerChatExportHandlers(): void {
           // Show save dialog
           const { filePath, canceled } = await dialog.showSaveDialog({
             defaultPath: suggestedFilename,
-            filters: [{ name: 'HTML Files', extensions: ['html'] }],
+            filters: [{ name: m.dialog_html_files_filter(), extensions: ['html'] }],
           });
 
           if (canceled || !filePath) {
@@ -87,7 +86,7 @@ export function registerChatExportHandlers(): void {
           });
           return {
             success: false,
-            error: errorMsg || 'Failed to export chat',
+            error: errorMsg || m.export_ipc_exportFailed_error(),
           };
         }
       },

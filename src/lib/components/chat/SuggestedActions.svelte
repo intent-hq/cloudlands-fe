@@ -15,6 +15,7 @@
   faFileAlt,
   type IconDefinition,
 } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Suggestion {
     id: string;
@@ -33,34 +34,32 @@
   let { onSelect, class: className = '', suggestions: customSuggestions }: Props = $props();
 
   // Default suggestions
-  const defaultSuggestions: Suggestion[] = [
+  const defaultSuggestions: Suggestion[] = $derived([
     {
       id: 'explain',
-      label: 'Explain this codebase',
-      prompt:
-        'Give me a high-level overview of this codebase. What are the main components and how do they work together?',
+      label: m.chat_suggestedActions_explain_label(),
+      prompt: m.chat_suggestedActions_explain_prompt(),
       icon: faLightbulb,
     },
     {
       id: 'implement',
-      label: 'Help me implement a feature',
-      prompt:
-        'I want to implement a new feature. Can you help me plan the approach and identify the files I need to modify?',
+      label: m.chat_suggestedActions_implement_label(),
+      prompt: m.chat_suggestedActions_implement_prompt(),
       icon: faCode,
     },
     {
       id: 'debug',
-      label: 'Debug an issue',
-      prompt: "I'm encountering a bug. Help me investigate and find the root cause.",
+      label: m.chat_suggestedActions_debug_label(),
+      prompt: m.chat_suggestedActions_debug_prompt(),
       icon: faBug,
     },
     {
       id: 'document',
-      label: 'Write documentation',
-      prompt: 'Help me write documentation for the current file or component.',
+      label: m.chat_suggestedActions_document_label(),
+      prompt: m.chat_suggestedActions_document_prompt(),
       icon: faFileAlt,
     },
-  ];
+  ]);
 
   const suggestions = $derived(customSuggestions ?? defaultSuggestions);
 

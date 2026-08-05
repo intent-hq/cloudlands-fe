@@ -5,11 +5,7 @@
  * Allows the frontend to list, read, write, and delete specialist files.
  */
 
-import {
-  ipcMain,
-  shell,
-  type IpcMainInvokeEvent,
-} from 'electron';
+import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
 import { SPECIALISTS_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
@@ -21,9 +17,9 @@ import {
   SpecialistExportBuiltinSchema,
 } from '../../../main/ipc-schemas';
 import { Logger } from '../../../shared/logger';
+import { m } from '../../../shared/paraglide/messages.js';
 import {
   getSpecialistsDirectory,
-  ensureSpecialistsDirectory,
   loadSpecialistFiles,
   loadProjectSpecialistFiles,
   loadSpecialistFile,
@@ -68,7 +64,8 @@ export function setupSpecialistsIPC(): void {
         } catch (error) {
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to list specialist files',
+            error:
+              error instanceof Error ? error.message : m.specialists_ipc_listFilesFailed_error(),
           };
         }
       },
@@ -88,7 +85,8 @@ export function setupSpecialistsIPC(): void {
         } catch (error) {
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to list bundled specialists',
+            error:
+              error instanceof Error ? error.message : m.specialists_ipc_listBundledFailed_error(),
           };
         }
       },
@@ -123,7 +121,7 @@ export function setupSpecialistsIPC(): void {
         } catch (error) {
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to list all specialists',
+            error: error instanceof Error ? error.message : m.specialists_ipc_listAllFailed_error(),
           };
         }
       },
@@ -144,13 +142,14 @@ export function setupSpecialistsIPC(): void {
             validated.workspacePath,
           );
           if (!specialist) {
-            return { success: false, error: 'Specialist file not found' };
+            return { success: false, error: m.specialists_loader_fileNotFound_error() };
           }
           return { success: true, data: specialist };
         } catch (error) {
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to read specialist file',
+            error:
+              error instanceof Error ? error.message : m.specialists_ipc_readFileFailed_error(),
           };
         }
       },
@@ -174,7 +173,8 @@ export function setupSpecialistsIPC(): void {
         } catch (error) {
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to write specialist file',
+            error:
+              error instanceof Error ? error.message : m.specialists_ipc_writeFileFailed_error(),
           };
         }
       },
@@ -202,32 +202,12 @@ export function setupSpecialistsIPC(): void {
         } catch (error) {
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to delete specialist file',
+            error:
+              error instanceof Error ? error.message : m.specialists_ipc_deleteFileFailed_error(),
           };
         }
       },
       SPECIALISTS_CHANNELS.DELETE_FILE,
-    ),
-  );
-
-  // Open the specialists folder
-  ipcMain.handle(
-    SPECIALISTS_CHANNELS.OPEN_FOLDER,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async () => {
-        try {
-          const dir = await ensureSpecialistsDirectory();
-          await shell.openPath(dir);
-          return { success: true, data: dir };
-        } catch (error) {
-          return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Failed to open specialists folder',
-          };
-        }
-      },
-      SPECIALISTS_CHANNELS.OPEN_FOLDER,
     ),
   );
 
@@ -243,7 +223,10 @@ export function setupSpecialistsIPC(): void {
         } catch (error) {
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to get folder path',
+            error:
+              error instanceof Error
+                ? error.message
+                : m.specialists_ipc_getFolderPathFailed_error(),
           };
         }
       },
@@ -265,13 +248,13 @@ export function setupSpecialistsIPC(): void {
           const bundledResult = await loadBundledSpecialistFiles();
           const bundled = bundledResult.specialists.find((s) => s.id === validated.id);
           if (!bundled) {
-            return { success: false, error: 'Bundled specialist not found' };
+            return { success: false, error: m.specialists_ipc_bundledNotFound_error() };
           }
 
           // Check if file already exists
           const exists = await specialistFileExists(validated.id);
           if (exists) {
-            return { success: false, error: 'Specialist file already exists' };
+            return { success: false, error: m.specialists_ipc_fileExists_error() };
           }
 
           // Write to user's specialists folder
@@ -281,7 +264,6 @@ export function setupSpecialistsIPC(): void {
             description: bundled.frontmatter.description,
             codingAgent: bundled.frontmatter.codingAgent,
             model: bundled.frontmatter.model,
-            modelTier: bundled.frontmatter.modelTier,
             roleReminder: bundled.frontmatter.roleReminder,
             hidden: bundled.frontmatter.hidden,
             behaviorPrompt: bundled.behaviorPrompt,
@@ -294,7 +276,7 @@ export function setupSpecialistsIPC(): void {
         } catch (error) {
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to export specialist',
+            error: error instanceof Error ? error.message : m.specialists_ipc_exportFailed_error(),
           };
         }
       },
@@ -318,7 +300,10 @@ export function setupSpecialistsIPC(): void {
         } catch (error) {
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to check file existence',
+            error:
+              error instanceof Error
+                ? error.message
+                : m.specialists_ipc_checkExistenceFailed_error(),
           };
         }
       },

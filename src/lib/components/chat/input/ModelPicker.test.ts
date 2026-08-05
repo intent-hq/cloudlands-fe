@@ -61,9 +61,19 @@ vi.mock('$features/agent/browser', () => ({}));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  // Seed a hydrated §5.38 catalog so the real provider-catalog selectors
+  // (display names, id normalization, compound-id parsing) resolve.
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
+    '$store/renderer/slices/provider-catalog/provider-catalog-slice'
+  );
+  const { MOCK_PROVIDER_CATALOG } = await import('../../../../test/fixtures/provider-catalog.fixture');
+  const providerCatalog = providerCatalogReducer(
+    initialState,
+    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+  );
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => ({ providerCatalog }),
     dispatch: mockSvelteDispatch,
   });
 });
@@ -131,80 +141,6 @@ vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors'
   selectManagedInstallStatusByProvider: () => codexManagedInstallStatus$,
 }));
 
-vi.mock('$shared/config/provider-config', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('$shared/config/provider-config')>();
-
-  return {
-    ...actual,
-    getProviderConfig: (providerId?: string) => {
-      const configs = {
-        auggie: {
-          id: 'auggie',
-          displayName: 'Augment Auggie',
-          command: 'auggie',
-          canBeDisabled: true,
-          loginCommandHint: 'auggie login',
-        },
-        codex: {
-          id: 'codex',
-          displayName: 'OpenAI Codex',
-          command: 'codex-acp',
-          canBeDisabled: true,
-          loginDocsUrl: 'https://developers.openai.com/codex/cli#cli-setup',
-        },
-        'claude-code': {
-          id: 'claude-code',
-          displayName: 'Anthropic Claude Code',
-          command: 'claude-agent-acp',
-          canBeDisabled: true,
-          loginDocsUrl: 'https://code.claude.com/docs/en/quickstart#step-2-log-in-to-your-account',
-        },
-        opencode: {
-          id: 'opencode',
-          displayName: 'OpenCode',
-          command: 'opencode',
-          canBeDisabled: true,
-        },
-      };
-      return (
-        configs[(providerId ?? 'auggie') as keyof typeof configs] ?? {
-          id: providerId ?? 'auggie',
-          displayName: providerId ?? 'auggie',
-          command: providerId ?? 'auggie',
-          canBeDisabled: true,
-        }
-      );
-    },
-    isProviderAuthenticationError: () => false,
-    parseCompoundModelId: (modelId?: string) => {
-      if (!modelId) {
-        return { providerId: '', modelId: '' };
-      }
-
-      const [providerId, ...rest] = modelId.split(':');
-      if (rest.length === 0) {
-        return { providerId: 'auggie', modelId };
-      }
-
-      return { providerId: providerId || 'auggie', modelId: rest.join(':') };
-    },
-    resolvePreferredModel: () => undefined,
-    getAlwaysEnabledProviders: () => [
-      { id: 'auggie', displayName: 'Augment Auggie', canBeDisabled: true },
-    ],
-    ACP_PROVIDERS: {
-      auggie: { id: 'auggie', displayName: 'Augment Auggie', canBeDisabled: true },
-      codex: { id: 'codex', displayName: 'OpenAI Codex', canBeDisabled: true },
-      'claude-code': {
-        id: 'claude-code',
-        displayName: 'Anthropic Claude Code',
-        canBeDisabled: true,
-      },
-      opencode: { id: 'opencode', displayName: 'OpenCode', canBeDisabled: true },
-    },
-  };
-});
-
 const enabledProviderIds$ = writable(['auggie']);
 const activeProviderId$ = writable('auggie');
 // Mirrors `enabledProviderIds$` by default (available === enabled), so every
@@ -247,11 +183,14 @@ import {
   getModelsForProvider,
   getModelsForProviderForLoadingState,
 } from '$store/renderer/slices/model/model-utils';
-import {
-  selectModel,
-  setWorkspaceModel,
-} from '$store/renderer/slices/model/model-slice';
+import { selectModel } from '$store/renderer/slices/model/model-slice';
 import ModelPicker from './ModelPicker.svelte';
+import { warmImport } from '../../../../test/warm-import';
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
 
 afterEach(() => {
   availableProviderOverride$.set(null);
@@ -1069,7 +1008,39 @@ describe('ModelPicker unlocked agent provider handling', () => {
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
   });
 
-  it('restricts to a single provider when providerId is explicitly passed (locked)', async () => {
+  it('retries the disabled agent provider fetch', async () => {
+    let codexAttempts = 0;
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        codexAttempts += 1;
+        if (codexAttempts === 1) throw new Error('Codex unavailable');
+        return {
+          models: [{ value: 'codex:gpt-6-codex', label: 'GPT-6 Codex', description: 'Smarter' }],
+        };
+      }
+      return { models: [] };
+    });
+    enabledProviderIds$.set(['auggie']);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-6-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    await waitFor(() => expect(codexAttempts).toBe(1));
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => expect(codexAttempts).toBe(2));
+    expect(await screen.findByRole('option', { name: /GPT-6 Codex/ })).toBeTruthy();
+  });
+
+  it('shows all enabled providers when providerId is explicitly passed', async () => {
     enabledProviderIds$.set(['auggie', 'codex']);
 
     render(ModelPicker, {
@@ -1083,10 +1054,10 @@ describe('ModelPicker unlocked agent provider handling', () => {
     await fireEvent.click(screen.getByRole('button'));
 
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
-    expect(screen.queryByRole('option', { name: /Sonnet 4\.6/ })).toBeNull();
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
   });
 
-  it('restricts to the locked provider even when it matches the active provider', async () => {
+  it('shows all enabled providers when providerId matches the active provider', async () => {
     enabledProviderIds$.set(['auggie', 'codex']);
     activeProviderId$.set('codex');
     mockModelState.availableModels = [
@@ -1104,7 +1075,7 @@ describe('ModelPicker unlocked agent provider handling', () => {
     await fireEvent.click(screen.getByRole('button'));
 
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
-    expect(screen.queryByRole('option', { name: /Sonnet 4\.6/ })).toBeNull();
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
   });
 });
 
@@ -1146,7 +1117,7 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
   const dispatchedTypes = () =>
     mockSvelteDispatch.mock.calls.map(([action]) => (action as { type?: string }).type);
 
-  it('spawn context (no flags): a pick dispatches neither selectModel nor any per-workspace update', async () => {
+  it('spawn context (no flags): a pick dispatches neither selectModel nor any agent-session update', async () => {
     const { agentClient } = await import('$features/agent/agent.client');
     const onModelChange = vi.fn();
 
@@ -1158,12 +1129,11 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
 
     expect(onModelChange).toHaveBeenCalledWith('model-1');
     expect(dispatchedTypes()).not.toContain(selectModel.type);
-    expect(dispatchedTypes()).not.toContain(setWorkspaceModel.type);
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
   });
 
-  it('chat-input context (updateGlobalStore): a pick updates workspace + agent but never the global default', async () => {
+  it('chat-input context (updateGlobalStore): a pick updates the agent but never the global default', async () => {
     const { agentClient } = await import('$features/agent/agent.client');
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
 
@@ -1179,13 +1149,50 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     await pickModelOne();
 
     await waitFor(() => {
-      expect(dispatchedTypes()).toContain(setWorkspaceModel.type);
+      expect(dispatchedTypes()).toContain('agentSession/updateSession');
     });
-    expect(dispatchedTypes()).toContain('agentSession/updateSession');
     expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith('agent-1', 'model-1', 'ws-1');
     // The global default (selectModel → model.providerDefaults /
     // providers.active persistence) must never fire from the chat input.
     expect(dispatchedTypes()).not.toContain(selectModel.type);
+  });
+
+  it('picking "Default model" drops a deferred update queued during streaming', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
+
+    const { rerender } = render(ModelPicker, {
+      props: {
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        updateGlobalStore: true,
+        deferUpdate: true,
+        showDefaultOption: true,
+        portal: false,
+      },
+    });
+
+    // Pick an explicit model while streaming — the backend update is deferred.
+    await pickModelOne();
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+
+    // Then pick "Default model" — this must clear the queued deferred update.
+    await fireEvent.click(screen.getAllByRole('button')[0]);
+    await fireEvent.click(await screen.findByRole('option', { name: /Default model/ }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Streaming ends: the stale deferred update must not apply.
+    await rerender({
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      updateGlobalStore: true,
+      deferUpdate: false,
+      showDefaultOption: true,
+      portal: false,
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
   });
 
   it('settings context (updateGlobalDefault): a pick dispatches the global selectModel', async () => {
@@ -1202,6 +1209,279 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
       .map(([action]) => action as { type?: string; payload?: unknown })
       .filter((action) => action.type === selectModel.type);
     expect(selectModelActions[0]?.payload).toEqual(['model-1']);
-    expect(dispatchedTypes()).not.toContain(setWorkspaceModel.type);
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+  });
+});
+
+describe('ModelPicker confirmModelChange gate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'gpt5.4';
+    mockModelState.loadError = null;
+    mockModelState.availableModels = [
+      { value: 'model-1', label: 'Model 1', description: 'A model' },
+    ];
+    providerWarnings$.set({});
+    codexManagedInstallStatus$.set(null);
+    mockAgentSession$.set(undefined);
+    vi.mocked(getModelsForProvider).mockResolvedValue([
+      { value: 'model-1', label: 'Model 1', description: 'A model' },
+      { value: 'model-2', label: 'Model 2', description: 'Another model' },
+    ]);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models: await vi.mocked(getModelsForProvider)(providerId),
+    }));
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  it('applies the pick when the gate resolves true', async () => {
+    const onModelChange = vi.fn();
+    const confirmModelChange = vi.fn().mockResolvedValue(true);
+
+    render(ModelPicker, {
+      props: { selectedModel: 'model-1', onModelChange, confirmModelChange, portal: false },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Model 2/ }));
+
+    await waitFor(() => {
+      expect(onModelChange).toHaveBeenCalledWith('model-2');
+    });
+    expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2');
+  });
+
+  it('reverts the pick and skips onModelChange when the gate resolves false', async () => {
+    const onModelChange = vi.fn();
+    const confirmModelChange = vi.fn().mockResolvedValue(false);
+
+    render(ModelPicker, {
+      props: { selectedModel: 'model-1', onModelChange, confirmModelChange, portal: false },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Model 2/ }));
+
+    await waitFor(() => {
+      expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2');
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(onModelChange).not.toHaveBeenCalled();
+    // The trigger still shows the original model after the revert.
+    const trigger = screen
+      .getAllByRole('button')
+      .find((b) => b.textContent?.includes('Model 1') || b.textContent?.includes('Model 2'));
+    expect(trigger?.textContent).toContain('Model 1');
+    expect(trigger?.textContent).not.toContain('Model 2');
+  });
+
+  it('gates switching from an explicit model to "Default model" and passes null as the target', async () => {
+    const onModelChange = vi.fn();
+    const confirmModelChange = vi.fn().mockResolvedValue(true);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'model-1',
+        onModelChange,
+        confirmModelChange,
+        portal: false,
+        showDefaultOption: true,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Default model/ }));
+
+    await waitFor(() => {
+      expect(confirmModelChange).toHaveBeenCalledWith('model-1', null);
+    });
+    // Confirming applies the pick: the trigger now shows "Default model".
+    await waitFor(() => {
+      const trigger = screen
+        .getAllByRole('button')
+        .find((b) => b.textContent?.includes('Default model') || b.textContent?.includes('Model 1'));
+      expect(trigger?.textContent).toContain('Default model');
+    });
+  });
+
+  it('reverts an explicit-to-default pick when the gate resolves false', async () => {
+    const onModelChange = vi.fn();
+    const confirmModelChange = vi.fn().mockResolvedValue(false);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'model-1',
+        onModelChange,
+        confirmModelChange,
+        portal: false,
+        showDefaultOption: true,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Default model/ }));
+
+    await waitFor(() => {
+      expect(confirmModelChange).toHaveBeenCalledWith('model-1', null);
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(onModelChange).not.toHaveBeenCalled();
+    const trigger = screen
+      .getAllByRole('button')
+      .find((b) => b.textContent?.includes('Model 1') || b.textContent?.includes('Default model'));
+    expect(trigger?.textContent).toContain('Model 1');
+  });
+
+  it('does not invoke the gate when re-selecting the current model', async () => {
+    const onModelChange = vi.fn();
+    const confirmModelChange = vi.fn().mockResolvedValue(true);
+
+    render(ModelPicker, {
+      props: { selectedModel: 'model-1', onModelChange, confirmModelChange, portal: false },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Model 1/ }));
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(confirmModelChange).not.toHaveBeenCalled();
+    expect(onModelChange).toHaveBeenCalledWith('model-1');
+  });
+});
+
+describe('ModelPicker specialist inherit state (default-option plumbing)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'gpt5.4';
+    mockModelState.loadError = null;
+    mockModelState.availableModels = [
+      { value: 'model-1', label: 'Model 1', description: 'A model' },
+    ];
+    providerWarnings$.set({});
+    codexManagedInstallStatus$.set(null);
+    mockAgentSession$.set(undefined);
+    vi.mocked(getModelsForProvider).mockResolvedValue([
+      { value: 'model-1', label: 'Model 1', description: 'A model' },
+      { value: 'model-2', label: 'Model 2', description: 'Another model' },
+    ]);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models: await vi.mocked(getModelsForProvider)(providerId),
+    }));
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  it('renders the inherit state with the daemon resolvedModel preview on the trigger (no explicit pin)', async () => {
+    render(ModelPicker, {
+      props: {
+        // Inheriting: no explicit frontmatter model — daemon preview only.
+        selectedModel: undefined,
+        showDefaultOption: true,
+        defaultModelId: 'model-1',
+        defaultOptionLabel: 'Default',
+        defaultOptionDescription: 'Use the global default model',
+        formatDefaultModelLabel: (model: string) => `Default (${model})`,
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      const trigger = screen
+        .getAllByRole('button')
+        .find((b) => b.textContent?.includes('Default'));
+      expect(trigger?.textContent).toContain('Default (Model 1)');
+    });
+  });
+
+  it('renders the pinned state from an explicit model (preview ignored)', async () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'model-2',
+        showDefaultOption: true,
+        defaultModelId: 'model-1',
+        formatDefaultModelLabel: (model: string) => `Default (${model})`,
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      const trigger = screen
+        .getAllByRole('button')
+        .find((b) => b.textContent?.includes('Model'));
+      expect(trigger?.textContent).toContain('Model 2');
+      expect(trigger?.textContent).not.toContain('Default');
+    });
+  });
+
+  it('shows the custom inherit option label/description in the dropdown', async () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'model-2',
+        showDefaultOption: true,
+        defaultOptionLabel: 'Default',
+        defaultOptionDescription: 'Use the global default model',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    const inheritOption = await screen.findByRole('option', { name: /Use the global default model/ });
+    expect(inheritOption.textContent).toContain('Default');
+  });
+
+  it('emits onModelChange("") when the inherit option is picked', async () => {
+    const onModelChange = vi.fn();
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'model-2',
+        onModelChange,
+        showDefaultOption: true,
+        defaultOptionLabel: 'Default',
+        defaultOptionDescription: 'Use the global default model',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(
+      await screen.findByRole('option', { name: /Use the global default model/ }),
+    );
+
+    await waitFor(() => {
+      expect(onModelChange).toHaveBeenCalledWith('');
+    });
+  });
+
+  it('emits the model id unchanged when a concrete model is picked (pin path)', async () => {
+    const onModelChange = vi.fn();
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        onModelChange,
+        showDefaultOption: true,
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Model 2/ }));
+
+    await waitFor(() => {
+      expect(onModelChange).toHaveBeenCalledWith('model-2');
+    });
   });
 });

@@ -1,10 +1,15 @@
 // Electron bridge to replace Tauri API calls
 // This provides a compatibility layer for the Tauri API
 
-import type { DynamicElectronEventName, ElectronEventName } from '$shared/ipc-registry';
+import {
+  IPC_CHANNELS,
+  type DynamicElectronEventName,
+  type ElectronEventName,
+} from '$shared/ipc-registry';
 import { invoke as ipcInvoke } from '$shared/generated/ipc-client';
 import { addMockIpcListener, emitMockIpcEvent } from '$shared/ipc-mock-router';
 import { Logger } from '$shared/logger';
+import { hasCapability } from '$lib/utils/platform-capabilities';
 
 const logger = new Logger('ElectronBridge');
 
@@ -283,10 +288,9 @@ export function off(event: string, _handler: (...args: any[]) => void): void {
   );
 }
 
-// File dialog replacements. Always routes through the dialog:message channel
-// (native-dialog-bridge-seeder); the old window.electronAPI gate silently
-// resolved 0 — the first button, typically a destructive-adjacent 'skip' —
-// on bridge-less web builds instead of failing loudly.
+// File dialog replacements. Native invokes route through
+// native-dialog-bridge-seeder; openDirectory/openFile return null when native
+// dialogs are unavailable so callers can present an in-app fallback.
 export const dialog = {
   async message(
     message: string,
@@ -300,6 +304,25 @@ export const dialog = {
       message,
       ...options,
     });
+  },
+  async openDirectory(
+    options: { title?: string; defaultPath?: string } = {},
+  ): Promise<string | null> {
+    if (!hasCapability('nativeDialogs')) return null;
+
+    const paths = await invoke<string[] | null>(IPC_CHANNELS.DIALOG.OPEN, options);
+    return paths?.[0] ?? null;
+  },
+  async openFile(
+    options: { title?: string; defaultPath?: string } = {},
+  ): Promise<string | null> {
+    if (!hasCapability('nativeDialogs')) return null;
+
+    const paths = await invoke<string[] | null>(IPC_CHANNELS.DIALOG.OPEN, {
+      ...options,
+      mode: 'file',
+    });
+    return paths?.[0] ?? null;
   },
 };
 

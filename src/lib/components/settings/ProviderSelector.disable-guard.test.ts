@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -56,10 +57,24 @@ async function buildState(fileSpecialists: object[]) {
   const { createCollection } = await import(
     '$lib/store-shim/utils/collections/collection-utils'
   );
+  const {
+    initialState: providerCatalogInitialState,
+    providerCatalogLoaded,
+    providerCatalogReducer,
+  } = await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+  const { MOCK_PROVIDER_CATALOG } = await import(
+    '../../../test/fixtures/provider-catalog.fixture'
+  );
   return {
+    providerCatalog: providerCatalogReducer(
+      providerCatalogInitialState,
+      providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+    ),
     providerSettings: {
       activeProviderId: 'auggie',
       enabledProviders: { 'claude-code': true, codex: true },
+      defaultProviderId: MOCK_PROVIDER_CATALOG.defaultProviderId,
+      nonDisableableProviderIds: [],
     },
     model: { ...modelInitialState, providerModels: {} },
     specialists: {
@@ -87,6 +102,11 @@ const availability = {
   },
   hiddenProviders: ['mock', 'cortex', 'opencode', 'pi', 'droid', 'grok'],
 };
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
+warmImport(() => import('./ProviderSelector.svelte'));
 
 describe('ProviderSelector disable guard', () => {
   beforeEach(async () => {
@@ -120,7 +140,7 @@ describe('ProviderSelector disable guard', () => {
         return { success: true, data: availability };
       }
       if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
-        return { success: true, data: { auggie: null, 'claude-code': null, codex: null } };
+        return { success: true, data: { paths: {}, secondaryPaths: {} } };
       }
       return { success: true, data: {} };
     });

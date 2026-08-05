@@ -40,6 +40,7 @@ export function setupFirstVisitStateIPC() {
           return await repository.load(workspaceId);
         } catch (error) {
           logger.error(
+            // i18n-ignore (developer log message)
             `[FirstVisitStateIPC] Failed to load state for workspace: ${validated.workspaceId}`,
             error as Error,
           );
@@ -69,6 +70,7 @@ export function setupFirstVisitStateIPC() {
           return true;
         } catch (error) {
           logger.error(
+            // i18n-ignore (developer log message)
             `[FirstVisitStateIPC] Failed to save state for workspace: ${validated.workspaceId}`,
             error as Error,
           );
@@ -93,6 +95,7 @@ export function setupFirstVisitStateIPC() {
           return true;
         } catch (error) {
           logger.error(
+            // i18n-ignore (developer log message)
             `[FirstVisitStateIPC] Failed to delete state for workspace: ${validated.workspaceId}`,
             error as Error,
           );
@@ -116,6 +119,7 @@ export function setupFirstVisitStateIPC() {
           return await repository.exists(workspaceId);
         } catch (error) {
           logger.error(
+            // i18n-ignore (developer log message)
             `[FirstVisitStateIPC] Failed to check existence for workspace: ${validated.workspaceId}`,
             error as Error,
           );

@@ -11,6 +11,7 @@
   import { slide } from 'svelte/transition';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import type { GroupedOption, OptionGroup } from './types';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     value?: string;
@@ -38,7 +39,7 @@
   let {
     value = $bindable(),
     groups = [],
-    placeholder = 'Select...',
+    placeholder = m.ui_groupedCombobox_select_placeholder(),
     disabled = false,
     onSearch,
     onChange,
@@ -310,7 +311,7 @@
 
         <div class="overflow-auto flex-1">
           {#if filteredGroups.length === 0}
-            <div class="px-3 py-2 text-sm opacity-50">No results found</div>
+            <div class="px-3 py-2 text-sm opacity-50">{m.ui_groupedCombobox_noResults_label()}</div>
           {:else}
             {#each filteredGroups as group (group.key)}
               <!-- Group Header -->

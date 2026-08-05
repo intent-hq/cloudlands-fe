@@ -11,6 +11,8 @@
  * These can be referenced in notes and appear in the context sidebar.
  */
 
+import { m } from '$shared/paraglide/messages.js';
+
 /**
  * Provider identifiers for context items
  */
@@ -171,7 +173,9 @@ export const CONTEXT_PROVIDERS: ContextProviderConfig[] = [
   {
     id: 'internal',
     label: 'Note',
-    description: 'Add a new note',
+    get description() {
+      return m.context_types_addNote_description();
+    },
     requiresAuth: false,
     icon: 'note',
     itemTypes: ['note'],
@@ -179,7 +183,9 @@ export const CONTEXT_PROVIDERS: ContextProviderConfig[] = [
   {
     id: 'linear',
     label: 'Linear',
-    description: 'Link a Linear issue',
+    get description() {
+      return m.context_types_linkLinear_description();
+    },
     requiresAuth: true,
     icon: 'linear',
     itemTypes: ['linear-issue'],
@@ -187,7 +193,9 @@ export const CONTEXT_PROVIDERS: ContextProviderConfig[] = [
   {
     id: 'github',
     label: 'GitHub',
-    description: 'Link a GitHub issue',
+    get description() {
+      return m.context_types_linkGithub_description();
+    },
     requiresAuth: true,
     icon: 'github',
     itemTypes: ['github-issue'],
@@ -195,7 +203,9 @@ export const CONTEXT_PROVIDERS: ContextProviderConfig[] = [
   {
     id: 'sentry',
     label: 'Sentry',
-    description: 'Link a Sentry issue',
+    get description() {
+      return m.context_types_linkSentry_description();
+    },
     requiresAuth: true,
     icon: 'sentry',
     itemTypes: ['sentry-issue'],
@@ -203,7 +213,9 @@ export const CONTEXT_PROVIDERS: ContextProviderConfig[] = [
   {
     id: 'browser',
     label: 'URL',
-    description: 'Add a browser URL',
+    get description() {
+      return m.context_types_addBrowserUrl_description();
+    },
     requiresAuth: false,
     icon: 'browser',
     itemTypes: ['browser-url'],

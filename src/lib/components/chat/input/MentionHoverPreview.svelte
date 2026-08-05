@@ -13,6 +13,7 @@
   faUserTie,
 } from '@fortawesome/free-solid-svg-icons';
   import type { MentionCandidate, MentionType } from '$lib/services/mentions/types';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     mention: MentionCandidate;
@@ -88,7 +89,7 @@
   style="left: {adjustedPos.x}px; top: {adjustedPos.y}px"
   transition:fade={{ duration: 150 }}
   role="tooltip"
-  aria-label="Mention preview"
+  aria-label={m.chat_mentionPreview_ariaLabel()}
   onmouseout={handleMouseOut}
 >
   <!-- Compact single-line format: icon + filename + path -->

@@ -10,6 +10,7 @@ import {
   fireEvent,
   waitFor,
 } from '@testing-library/svelte';
+import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -107,6 +108,13 @@ async function renderBranchDisplay(overrides: Partial<Record<string, unknown>> =
   };
   return render(BranchDisplay, { props: { ...defaults, ...overrides } });
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/MockBranchSelector.svelte'));
+warmImport(() => import('./mocks/MockTooltip.svelte'));
+warmImport(() => import('./mocks/Fa.svelte'));
+warmImport(() => import('../BranchDisplay.svelte'));
 
 describe('BranchDisplay', () => {
   beforeEach(() => {

@@ -2,11 +2,12 @@
  * Sequential Q&A wizard (pixel mock t2 interaction logic): choose-one
  * advances on selection (re-click deselects), multi-select toggles and keeps
  * Next, Enter in the free-form field advances, Skip clears + advances, Back
- * returns with the previous answer pre-selected, Ignore collapses to the
- * banner, and Send on the last question hands back the full answers array.
+ * returns with the previous answer pre-selected, Hide collapses to the
+ * banner, Dismiss is gated behind a confirmation dialog, and Send on the
+ * last question hands back the full answers array.
  */
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import QuestionWizard, { type QuestionAnswer } from '../QuestionWizard.svelte';
 import type { Question } from '$shared/types/question-resource';
 
@@ -41,6 +42,11 @@ const LAST: Question = {
   multiSelect: false,
 };
 
+afterEach(() => {
+  cleanup();
+  document.body.innerHTML = '';
+});
+
 function setup(questions: Question[] = [SINGLE, MULTI, LAST]) {
   const onComplete = vi.fn<(answers: QuestionAnswer[]) => void>();
   const onToggleCollapsed = vi.fn<(collapsed: boolean) => void>();
@@ -68,7 +74,7 @@ describe('QuestionWizard', () => {
     expect(screen.queryByRole('button', { name: /back/i })).toBeNull();
     expect(screen.getByText('Agent Has Questions')).toBeTruthy();
     expect(screen.getByText('select all that apply')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /ignore/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /hide/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /skip/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /send/i })).toBeTruthy();
   });
@@ -195,14 +201,132 @@ describe('QuestionWizard', () => {
     expect(answers[0]).toMatchObject({ selectedLabels: [], freeText: 'Redis', skipped: false });
   });
 
-  it('Ignore requests collapse; collapsed renders the banner that re-expands on click', async () => {
+  it('single-select: typing in the Other input clears the option selection', async () => {
+    const { container } = setup([LAST]);
+    await fireEvent.click(screen.getByText('Migrate silently'));
+    expect(container.querySelector('.border-primary.bg-primary\\/10')).toBeTruthy();
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'R' } });
+    expect(container.querySelector('.border-primary.bg-primary\\/10')).toBeNull();
+    const send = screen.getByRole('button', { name: /send/i });
+    expect((send as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('single-select: option buttons are disabled while Other text is present and clicks are no-ops', async () => {
+    setup();
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'Redis' } });
+    const option = screen.getByText('OS keychain').closest('button') as HTMLButtonElement;
+    expect(option.disabled).toBe(true);
+    await fireEvent.click(option);
+    expect(screen.getByText('1 of 3')).toBeTruthy();
+    expect(option.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('single-select: clearing the Other input re-enables the option buttons', async () => {
+    setup();
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'Redis' } });
+    const option = screen.getByText('OS keychain').closest('button') as HTMLButtonElement;
+    expect(option.disabled).toBe(true);
+    await fireEvent.input(input, { target: { value: '' } });
+    expect(option.disabled).toBe(false);
+    await fireEvent.click(option);
+    expect(screen.getByText('2 of 3')).toBeTruthy();
+  });
+
+  it('single-select: option buttons stay disabled when returning via Back with Other text', async () => {
+    setup();
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'Redis' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.getByText('2 of 3')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: /back/i }));
+    const option = screen.getByText('OS keychain').closest('button') as HTMLButtonElement;
+    expect(option.disabled).toBe(true);
+  });
+
+  it('multi-select: options and Other text coexist; buttons never disabled by text', async () => {
+    const { onComplete } = setup([MULTI]);
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'Also the API' } });
+    const option = screen.getByText('Desktop app').closest('button') as HTMLButtonElement;
+    expect(option.disabled).toBe(false);
+    await fireEvent.click(option);
+    expect(option.getAttribute('aria-pressed')).toBe('true');
+    await fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    expect(onComplete.mock.calls[0][0][0]).toMatchObject({
+      selectedLabels: ['Desktop app'],
+      freeText: 'Also the API',
+    });
+  });
+
+  it('Hide requests collapse; collapsed renders the banner that re-expands on click', async () => {
     const { onToggleCollapsed, rerender } = setup();
-    await fireEvent.click(screen.getByRole('button', { name: /ignore/i }));
+    await fireEvent.click(screen.getByRole('button', { name: /hide/i }));
     expect(onToggleCollapsed).toHaveBeenCalledWith(true);
     await rerender({ collapsed: true });
     expect(screen.getByText('Click to expand')).toBeTruthy();
     expect(screen.queryByText('1 of 3')).toBeNull();
     await fireEvent.click(screen.getByText('Agent Has Questions'));
     expect(onToggleCollapsed).toHaveBeenCalledWith(false);
+  });
+
+  it('Dismiss from the expanded header opens the confirm dialog; confirming fires onDismiss', async () => {
+    const onDismiss = vi.fn();
+    const onToggleCollapsed = vi.fn();
+    const onComplete = vi.fn();
+    render(QuestionWizard, {
+      props: { questions: [SINGLE], onDismiss, onToggleCollapsed, onComplete },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByText('Dismiss questions?')).toBeTruthy();
+    expect(onDismiss).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss questions' }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onToggleCollapsed).not.toHaveBeenCalled();
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('Cancel closes the confirm dialog without dismissing', async () => {
+    const onDismiss = vi.fn();
+    render(QuestionWizard, { props: { questions: [SINGLE], onDismiss } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('Escape and backdrop click close the confirm dialog without dismissing', async () => {
+    const onDismiss = vi.fn();
+    render(QuestionWizard, { props: { questions: [SINGLE], onDismiss } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await fireEvent.click(document.body.querySelector('[role="presentation"]')!);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('Dismiss on the Hide-collapsed banner also goes through the confirm dialog', async () => {
+    const onDismiss = vi.fn();
+    render(QuestionWizard, {
+      props: { questions: [SINGLE], collapsed: true, onDismiss },
+    });
+    expect(screen.getByText('Click to expand')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(onDismiss).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss questions' }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('no onDismiss prop → no Dismiss button rendered (expanded or collapsed)', async () => {
+    const { rerender } = setup([SINGLE]);
+    expect(screen.queryByRole('button', { name: /dismiss/i })).toBeNull();
+    await rerender({ collapsed: true });
+    expect(screen.queryByRole('button', { name: /dismiss/i })).toBeNull();
   });
 });

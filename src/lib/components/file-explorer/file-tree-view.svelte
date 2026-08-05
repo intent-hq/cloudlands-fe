@@ -39,6 +39,7 @@
   } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import VirtualizedFileTree from './VirtualizedFileTree.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
   import type { FlattenedFileNode } from '$store/renderer/slices/file-explorer/file-explorer-types';
 
   // Search result type mapped from daemon search.fileNames (PROTOCOL §5.15)
@@ -587,7 +588,9 @@
           {/each}
         </div>
       {:else if searchResults.length === 0}
-        <div class="text-xs text-subtle py-4 text-center">No files found</div>
+        <div class="text-xs text-subtle py-4 text-center">
+          {m.fileExplorer_treeView_noFiles_label()}
+        </div>
       {:else}
         <ScrollArea class="h-full">
           <div bind:this={searchResultsContainerRef}>

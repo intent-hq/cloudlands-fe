@@ -107,3 +107,7 @@ e2e-reports/
 
 # Sidecar binary staging directory (copy-sidecar.js output)
 resources/sidecar/
+
+# Speech helper staging directory (build-speech-helper.cjs output)
+resources/speech-helper/
+

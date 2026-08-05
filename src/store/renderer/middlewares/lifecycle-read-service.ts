@@ -99,6 +99,10 @@ import {
 import { getAgentLineStats } from "$features/line-changes/line-changes.client";
 import { isAgentDeletionPending } from "$features/agent/utils/pending-agent-deletions";
 import {
+  STALE_RUNTIME_FLAG_CLEAR_OPTIONS,
+  staleRuntimeFlagClearUpsertOptions,
+} from "$features/agent/utils/stale-runtime-flag-clear";
+import {
   bulkUpsertSessions,
   upsertSession,
 } from "../slices/agent-session/agent-session-slice";
@@ -111,6 +115,7 @@ import {
 import {
   hydrateTerminalsRequested,
   loadWorkspaceTerminals,
+  terminalCreated,
 } from "../slices/terminals/terminals-slice";
 import {
   workspaceDeleted,
@@ -419,6 +424,17 @@ function refreshAgentLineStats(agentId: string, forceRefresh: boolean): void {
 function hydrateWorkspaceAgents(wsId: string): void {
   const generation = agentsHydrationGeneration.get(wsId) ?? 0;
   coalesce(`agents:${wsId}`, async () => {
+    // Capture BEFORE the fetch (monorepo#1250): agents whose both-true
+    // runtime-flag pair already exists when this read begins are either
+    // genuinely live (the fresh snapshot reports the turn in flight) or a
+    // stale leftover from a daemon crash mid-turn (the snapshot reports
+    // idle). A pair set DURING the fetch (chatSendStarted racing this read)
+    // keeps the slice pair-guard's default preservation semantics.
+    const sessionsBefore = appStore.state.agentSessions?.byAgentId ?? {};
+    const hadInFlightPairBeforeFetch = (agentId: string): boolean => {
+      const stored = sessionsBefore[agentId];
+      return stored?.isStreaming === true && stored?.isProcessing === true;
+    };
     const listed = await appClient.agents.list(wsId);
     if ((agentsHydrationGeneration.get(wsId) ?? 0) !== generation) return;
     const fetched = listed.filter((agent) => !isAgentDeletionPending(String(agent.id)));
@@ -431,7 +447,22 @@ function hydrateWorkspaceAgents(wsId: string): void {
         : agent;
     });
     appStore.dispatch(setAgents(wsId, agents));
-    appStore.dispatch(bulkUpsertSessions(agents));
+    // Stale-pair convergence (monorepo#1250): bulk-upsert options apply to
+    // the whole batch, so partition — agents whose pre-fetch stale pair meets
+    // an authoritatively idle snapshot get the clear options; everything else
+    // keeps the default pair-guard preservation semantics.
+    const staleClearAgents = agents.filter(
+      (agent) =>
+        staleRuntimeFlagClearUpsertOptions(hadInFlightPairBeforeFetch(String(agent.id)), agent) !==
+        undefined,
+    );
+    const defaultAgents = agents.filter((agent) => !staleClearAgents.includes(agent));
+    if (defaultAgents.length > 0) {
+      appStore.dispatch(bulkUpsertSessions(defaultAgents));
+    }
+    if (staleClearAgents.length > 0) {
+      appStore.dispatch(bulkUpsertSessions(staleClearAgents, STALE_RUNTIME_FLAG_CLEAR_OPTIONS));
+    }
     for (const agent of agents) {
       appStore.dispatch(upsertSession(agent));
     }
@@ -446,18 +477,47 @@ function hydrateWorkspaceAgents(wsId: string): void {
 }
 
 /**
+ * Per-workspace terminal-hydration generation. A successful `terminal.create`
+ * (`terminalCreated`) bumps it and evicts the in-flight `terminals:{wsId}`
+ * entry, so (a) the post-create refetch is not coalesced away behind a fetch
+ * whose snapshot predates the create, and (b) that stale pre-create response
+ * is discarded when it resolves late instead of clobbering the new tab.
+ */
+const terminalsHydrationGeneration = new Map<string, number>();
+
+/**
  * Hydrate a workspace's terminals on mount, mirroring the boot
- * `terminals-scripts-seeder` terminal section. A successful fetch (including
- * an authoritative empty list) dispatches `loadWorkspaceTerminals` to converge
- * the store; a failed fetch is swallowed by the coalesce wrapper and leaves
- * prior tab state intact, so transient errors during workspace switches do NOT
- * clobber live terminals (STAB-24).
+ * `terminals-scripts-seeder` terminal section. A successful non-empty fetch
+ * dispatches `loadWorkspaceTerminals` to converge the store; an empty list
+ * over existing live tabs converges to zero tabs only when the envelope's
+ * `daemonBootId` matches the boot that owned them (authoritative same-boot
+ * empty) — a restart/legacy/unknown-boot empty preserves the tabs
+ * (monorepo#1330/#1334), which then respawn via auto-reconnect. A failed
+ * fetch is swallowed by the coalesce wrapper and leaves prior tab state
+ * intact, so transient errors during workspace switches do NOT clobber live
+ * terminals (STAB-24).
  */
 function hydrateWorkspaceTerminals(wsId: string): void {
   coalesce(`terminals:${wsId}`, async () => {
-    const terminals = await appClient.terminals.list(wsId);
-    appStore.dispatch(loadWorkspaceTerminals(wsId, terminals));
+    const generation = terminalsHydrationGeneration.get(wsId) ?? 0;
+    const { terminals, daemonBootId } = await appClient.terminals.list(wsId);
+    // A create landed mid-flight: this snapshot predates the new PTY — drop
+    // it and let the post-create refetch converge the store.
+    if ((terminalsHydrationGeneration.get(wsId) ?? 0) !== generation) return;
+    appStore.dispatch(loadWorkspaceTerminals(wsId, terminals, undefined, daemonBootId));
   });
+}
+
+/**
+ * Post-create refetch: a `terminal.create` succeeded, so any in-flight
+ * `terminal.list` snapshot predates the new PTY. Bump the generation (the
+ * stale response is discarded on resolve), evict the in-flight entry so the
+ * refetch is not coalesced away, and fetch the fresh list.
+ */
+function refetchTerminalsAfterCreate(wsId: string): void {
+  terminalsHydrationGeneration.set(wsId, (terminalsHydrationGeneration.get(wsId) ?? 0) + 1);
+  inFlight.delete(`terminals:${wsId}`);
+  hydrateWorkspaceTerminals(wsId);
 }
 
 /** First array-payload element as a non-empty workspace id, else undefined. */
@@ -573,15 +633,25 @@ export function createLifecycleReadMiddleware(): StoreMiddleware {
         // on `workspaceUnmounted`, so drop the once-per-workspace init flag
         // too — otherwise a remount of the same workspace id would skip the
         // `workspace.getContext` refetch and stay empty until an event
-        // arrives.
+        // arrives. The terminal-hydration generation entry goes too: it only
+        // needs to be monotonic while a fetch can be in flight, and leaving
+        // it behind grows the map with every workspace ever mounted.
         case workspaceUnmounted.type: {
           const wsId = wsIdOf(action);
-          if (wsId) initializedContextWorkspaces.delete(wsId);
+          if (wsId) {
+            initializedContextWorkspaces.delete(wsId);
+            terminalsHydrationGeneration.delete(wsId);
+          }
           break;
         }
         case hydrateTerminalsRequested.type: {
           const wsId = wsIdOf(action);
           if (wsId) hydrateWorkspaceTerminals(wsId);
+          break;
+        }
+        case terminalCreated.type: {
+          const wsId = wsIdOf(action);
+          if (wsId) refetchTerminalsAfterCreate(wsId);
           break;
         }
       }

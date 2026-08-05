@@ -10,7 +10,6 @@
 
 import type { AgentMessage, Workspace } from '$shared/types';
 import { getRendererStore } from '$store/renderer/renderer-store-bridge';
-import { newAssistantMessage } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
 import { removeWorkspaceAgentState } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   addMessage as addAgentSessionMessage,
@@ -50,9 +49,6 @@ export const rendererStreamStoreShaper: StreamStoreShaper = {
   },
   updateAgentDigest(workspaceId, agentId, digest) {
     getRendererStore().dispatch(updateAgentDigest(workspaceId, agentId, digest));
-  },
-  notifyAssistantMessage(agentId, workspaceId, isBackground) {
-    getRendererStore().dispatch(newAssistantMessage(agentId, workspaceId, isBackground));
   },
   addAgentMessage(agentId, message: AgentMessage) {
     getRendererStore().dispatch(addAgentSessionMessage(agentId, message));

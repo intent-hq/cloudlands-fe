@@ -26,7 +26,7 @@
   selectIsAgentMonospace,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
-  import { selectWorkspaceDefaultModel } from '$store/renderer/slices/model/model-selectors';
+  import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
   import {
   selectSpecialistName,
   selectSpecialists,
@@ -39,6 +39,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
+  import { m } from '$shared/paraglide/messages.js';
   import { deleteAgentWithUndoRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
 
@@ -62,7 +63,7 @@
 
   // Cache $workspace to prevent destruction during store reloads
   const workspace = selectWorkspaceById(workspaceIdStore);
-  const defaultModel = selectWorkspaceDefaultModel(workspaceIdStore);
+  const defaultModel = selectSelectedModel();
 
   // Reactive store subscription for specialist names
   const specialists$ = selectSpecialists();
@@ -139,7 +140,7 @@
     try {
       const formattedText = formatAgentMessagesForClipboard(agentMessages);
       await navigator.clipboard.writeText(formattedText);
-      agentCopyFeedback = 'Copied!';
+      agentCopyFeedback = m.layout_agentTab_copied_label();
       if (agentCopyTimeoutId) clearTimeout(agentCopyTimeoutId);
       agentCopyTimeoutId = setTimeout(() => {
         agentCopyFeedback = null;
@@ -172,7 +173,7 @@
     if (!headerContext || !isActive) return;
     const subtitleParts: string[] = [];
     if (agentSpecialistName) subtitleParts.push(agentSpecialistName);
-    if (delegatedByName) subtitleParts.push(`Delegated by ${delegatedByName}`);
+    if (delegatedByName) subtitleParts.push(m.layout_panelTabBar_delegatedBy_label({ name: delegatedByName }));
     const subtitle = subtitleParts.length > 0 ? subtitleParts.join(' · ') : undefined;
     untrack(() => {
       headerContext.registerActions(agentActions);
@@ -187,7 +188,7 @@
       variant="ghost-light"
       size="icon-xs"
       onclick={handleGoToTaskNote}
-      tooltip="Go to task note"
+      tooltip={m.layout_agentTab_goToTaskNote_tooltip()}
       tooltipSide="bottom"
     >
       <Fa icon={faNote} size="xs" />
@@ -197,16 +198,18 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={() => appStore.dispatch(cycleFontStyle())}
-    tooltip={`Font: ${$fontStyleLabel}`}
+    tooltip={m.layout_agentTab_font_tooltip({ font: $fontStyleLabel })}
     tooltipSide="bottom"
   >
-    <span class="text-xs font-semibold tracking-tight" class:font-mono={$isMonospace}>Aa</span>
+    <span class="text-xs font-semibold tracking-tight" class:font-mono={$isMonospace}
+      >{m.layout_agentTab_fontSample_label()}</span
+    >
   </Button>
   <Button
     variant="ghost-light"
     size="icon-xs"
     onclick={handleCopyAgentConversation}
-    tooltip={agentCopyFeedback || 'Copy conversation'}
+    tooltip={agentCopyFeedback || m.layout_agentTab_copyConversation_tooltip()}
     tooltipSide="bottom"
     disabled={agentMessages.length === 0}
     class={agentCopyFeedback ? 'text-success' : ''}
@@ -217,7 +220,7 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={handleDeleteAgent}
-    tooltip="Delete agent"
+    tooltip={m.layout_agentTab_deleteAgent_tooltip()}
     tooltipSide="bottom"
     disabled={isAgentDeleting}
     class="hover:text-destructive-foreground"
@@ -242,7 +245,7 @@
     {/key}
   {:else}
     <div class="flex items-center justify-center h-full text-subtle">
-      <p>Loading space...</p>
+      <p>{m.layout_agentTab_loadingSpace_label()}</p>
     </div>
   {/if}
 {/if}

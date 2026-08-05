@@ -18,6 +18,7 @@
   import Fa from 'svelte-fa';
   import { navigateToFile } from '$lib/utils/workspace-navigation';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspaceId: string;
@@ -88,7 +89,7 @@
       onclick={() => (isExpanded = !isExpanded)}
     >
       <Fa icon={faChevronDown} size="xs" class="opacity-50 transition-transform duration-200 {isExpanded ? '' : '-rotate-90'}" />
-      <span>Skills</span>
+      <span>{m.workspace_skills_title()}</span>
       <span class="ml-auto text-ui opacity-60">{$skills$.length}</span>
     </button>
 

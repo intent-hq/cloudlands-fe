@@ -17,6 +17,12 @@
     size?: number;
     class?: string;
     specialist?: 'spec-writer' | 'implementor' | 'verifier' | string | null;
+    /**
+     * ACP provider id (auggie, claude-code, codex, ...). When provided it
+     * takes precedence over the agent-session store lookup — needed when the
+     * agent is not in this renderer's store (e.g. another workspace's toast).
+     */
+    provider?: string;
   }
 
   let {
@@ -25,6 +31,7 @@
     size = 40,
     class: className = '',
     specialist = null,
+    provider = undefined,
   }: Props = $props();
 
   // Get specialist icon and glow color
@@ -44,8 +51,9 @@
   let stableFaceSource = $derived(agentId || seed || 'default-face');
   let providerIconSize = $derived(size * (12.3 / 20));
   const agentProvider$ = selectAgentProvider(agentIdStore);
+  let effectiveProvider = $derived(provider !== undefined ? provider : $agentProvider$);
   let providerIconId = $derived(
-    isKnownNonAuggieProvider($agentProvider$) ? $agentProvider$ : undefined,
+    isKnownNonAuggieProvider(effectiveProvider) ? effectiveProvider : undefined,
   );
 
   // Create seeded random generator for face features

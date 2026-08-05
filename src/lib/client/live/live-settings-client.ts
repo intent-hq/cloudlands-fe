@@ -35,6 +35,7 @@ import type {
   AppliedSettingChange,
   AppSettingChange,
   MutationResult,
+  PersistedProviderSettings,
   SettingDefinitionWithValue,
   SettingsClient,
   SubscriptionHandler,
@@ -42,7 +43,6 @@ import type {
   UserRuleState,
 } from "../app-client";
 import type { McpServerConfig } from "$store/renderer/slices/mcp-settings/mcp-settings-types";
-import type { ProviderSettingsState } from "$store/renderer/slices/provider-settings/provider-settings-slice";
 import type { SingleWorkspaceSettings } from "$store/renderer/slices/workspace-settings/workspace-settings-slice";
 import type { BackgroundAgentSettingsState } from "$store/renderer/slices/background-agent-settings/background-agent-settings-slice";
 import type { UserPreferencesState } from "$store/renderer/slices/user-preferences/user-preferences-slice";
@@ -164,7 +164,7 @@ export class LiveSettingsClient implements SettingsClient {
     return { success: true };
   }
 
-  async getProviderSettings(): Promise<ProviderSettingsState | null> {
+  async getProviderSettings(): Promise<PersistedProviderSettings | null> {
     const settings = await this.list();
     const activeProviderId = readString(settings, "providers.active");
     const enabledProviders = readObject(settings, "providers.enabled") as
@@ -178,7 +178,7 @@ export class LiveSettingsClient implements SettingsClient {
   }
 
   async setProviderSettings(
-    settings: Partial<ProviderSettingsState>,
+    settings: Partial<PersistedProviderSettings>,
   ): Promise<MutationResult> {
     return runMutation("settings.update", {
       changes: changesFrom({
@@ -239,23 +239,29 @@ export class LiveSettingsClient implements SettingsClient {
     }
   }
 
-  async getWorkspaceSettings(_workspaceId: string): Promise<SingleWorkspaceSettings | null> {
-    // The daemon owns `git.autoCommit` globally (settings.rs) — there is no
-    // per-workspace branch on the seam today, so every workspaceId surfaces the
-    // same value. Mirrors the mock's singleton behavior.
-    const entry = await this.get("git.autoCommit");
-    if (!entry) return null;
-    return { autoCommitEnabled: Boolean(entry.value) };
+  async getWorkspaceSettings(workspaceId: string): Promise<SingleWorkspaceSettings | null> {
+    // Per-workspace persisted override (PROTOCOL §5.1 workspace.getAutoCommit):
+    // the daemon resolves the workspace's own value when set, else the global
+    // `git.autoCommit` (`source: "global"` for pre-migration rows).
+    try {
+      const result = await backendRequest<{
+        autoCommit?: { enabled?: unknown; source?: string };
+      }>("workspace.getAutoCommit", { workspaceId });
+      if (typeof result?.autoCommit?.enabled !== "boolean") return null;
+      return { autoCommitEnabled: result.autoCommit.enabled };
+    } catch {
+      return null;
+    }
   }
 
   async setWorkspaceSettings(
-    _workspaceId: string,
+    workspaceId: string,
     settings: Partial<SingleWorkspaceSettings>,
   ): Promise<MutationResult> {
-    return runMutation("settings.update", {
-      changes: changesFrom({
-        "git.autoCommit": settings.autoCommitEnabled,
-      }),
+    if (settings.autoCommitEnabled === undefined) return { success: true };
+    return runMutation("workspace.setAutoCommit", {
+      workspaceId,
+      enabled: settings.autoCommitEnabled,
     });
   }
 

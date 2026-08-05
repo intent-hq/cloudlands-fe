@@ -28,6 +28,7 @@ import { createDeltaSubscription } from "./delta-subscription";
 import {
   isEventOneOf,
   listWorkspaceIds,
+  mutationErrorMessage,
   newIdempotencyKey,
   runMutation,
   subscribeWorkspaceIds,
@@ -102,28 +103,36 @@ export class LiveAgentsClient implements AgentsClient {
   // (oldest→newest within the page). The daemon clamps `limit` to `[1,200]` —
   // `pageToken` walks backward to older pages, and `nextToken` is `null` once
   // the oldest message has been returned. The chat-read-service loops on
-  // `nextToken` to assemble the full transcript. `messages` is returned raw;
-  // the agent-session reducer normalizes/sorts/dedups/prunes on ingest.
+  // `nextToken` to assemble the full transcript. `aroundMessageId` (§5.5 seek,
+  // additive) takes precedence over any token daemon-side and resolves to the
+  // page containing that message; seek pages carry `prevToken` (forward cursor
+  // toward the live tail — normalized to null on legacy backward pages, which
+  // never include the key). `messages` is returned raw; the agent-session
+  // reducer normalizes/sorts/dedups/prunes on ingest.
   async getConversation(
     agentId: string,
     limit = 200,
     pageToken?: string,
+    aroundMessageId?: string,
   ): Promise<{
     messages: AgentMessage[];
     truncated: boolean;
     totalMessages: number;
     nextToken: string | null;
+    prevToken: string | null;
   }> {
     const params: Record<string, unknown> = { agentId, limit };
     if (pageToken !== undefined) params.nextToken = pageToken;
+    if (aroundMessageId !== undefined) params.aroundMessageId = aroundMessageId;
     const result = await backendRequest<{
       messages?: unknown[];
       truncated?: boolean;
       totalMessages?: number;
       nextToken?: unknown;
+      prevToken?: unknown;
     }>("agent.getConversation", params);
     if (!result || typeof result !== "object") {
-      return { messages: [], truncated: false, totalMessages: 0, nextToken: null };
+      return { messages: [], truncated: false, totalMessages: 0, nextToken: null, prevToken: null };
     }
     const messages = Array.isArray(result.messages) ? (result.messages as AgentMessage[]) : [];
     return {
@@ -131,6 +140,7 @@ export class LiveAgentsClient implements AgentsClient {
       truncated: Boolean(result.truncated),
       totalMessages: typeof result.totalMessages === "number" ? result.totalMessages : 0,
       nextToken: typeof result.nextToken === "string" ? result.nextToken : null,
+      prevToken: typeof result.prevToken === "string" ? result.prevToken : null,
     };
   }
 
@@ -233,20 +243,30 @@ export class LiveAgentsClient implements AgentsClient {
       imageBlocks?: ImageBlock[];
     },
   ): Promise<MutationResult> {
-    // `agent.queueMessage` returns `{ success, queuedMessage }` (§5.5); we
-    // surface `queuedMessage` on the MutationResult so callers can render the
-    // queue position / id without an extra `agent.getQueue` round-trip.
-    // Optional `imageBlocks` only ride along when supplied (like
-    // `agent.forceMessage`) so the daemon sees an omitted param otherwise.
+    // `agent.queueMessage` returns `{ success, queuedMessage, turnId }`
+    // (§5.5); we surface `queuedMessage` on the MutationResult so callers can
+    // render the queue position / id without an extra `agent.getQueue`
+    // round-trip, plus the entry's turn-correlation id (monorepo#1057 —
+    // top-level `turnId` preferred, `queuedMessage.turnId` as the fallback).
+    // Optional `imageBlocks` only ride along when supplied so the daemon sees
+    // an omitted param otherwise.
     try {
       const params: Record<string, unknown> = { agentId, content: message };
       if (options?.imageBlocks !== undefined) params.imageBlocks = options.imageBlocks;
-      const result = await backendRequest<{ queuedMessage?: QueuedMessage } | undefined>(
-        "agent.queueMessage",
-        params,
-      );
+      const result = await backendRequest<
+        { queuedMessage?: QueuedMessage; turnId?: unknown } | undefined
+      >("agent.queueMessage", params);
       const queuedMessage = result?.queuedMessage;
-      return queuedMessage ? { success: true, queuedMessage } : { success: true };
+      const turnId =
+        typeof result?.turnId === "string"
+          ? result.turnId
+          : typeof queuedMessage?.turnId === "string"
+            ? queuedMessage.turnId
+            : undefined;
+      const mutation: MutationResult = { success: true };
+      if (queuedMessage) mutation.queuedMessage = queuedMessage;
+      if (turnId !== undefined) mutation.turnId = turnId;
+      return mutation;
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
@@ -275,26 +295,37 @@ export class LiveAgentsClient implements AgentsClient {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
-  async force(params: {
+  async sendQueuedNow(params: {
     agentId: string;
-    messageId: string;
-    content: string;
     workspaceId: string;
-    imageBlocks?: ImageBlock[];
-    noteIds?: string[];
+    messageId: string;
   }): Promise<MutationResult> {
-    // `agent.forceMessage` (§5.5) stops the current stream, dequeues, and
-    // delivers atomically. Optional arrays only ride along when supplied so
-    // the daemon sees omitted params rather than explicit nulls/undefined.
-    const rpcParams: Record<string, unknown> = {
-      agentId: params.agentId,
-      messageId: params.messageId,
-      content: params.content,
-      workspaceId: params.workspaceId,
-    };
-    if (params.imageBlocks !== undefined) rpcParams.imageBlocks = params.imageBlocks;
-    if (params.noteIds !== undefined) rpcParams.noteIds = params.noteIds;
-    return runMutation("agent.forceMessage", rpcParams);
+    // `agent.sendQueuedMessageNow` (§5.5) atomically dequeues the persisted
+    // entry and delivers its content as an interrupt send. NOT idempotent:
+    // a missing entry (already drained/removed) rejects with -32602, folded
+    // into `{ success: false, error }` — callers surface it non-destructively
+    // (the entry is gone; nothing to roll back). The delivered arm carries
+    // `turnId` (the entry's preserved turn-correlation id — this path emits
+    // NO `agent:queue:processing` event, the RPC response replaces it, §5.5),
+    // surfaced on the MutationResult (monorepo#1057).
+    try {
+      const result = await backendRequest<{ turnId?: unknown } | undefined>(
+        "agent.sendQueuedMessageNow",
+        {
+          agentId: params.agentId,
+          workspaceId: params.workspaceId,
+          messageId: params.messageId,
+        },
+      );
+      return typeof result?.turnId === "string"
+        ? { success: true, turnId: result.turnId }
+        : { success: true };
+    } catch (error) {
+      // Same error shaping as `runMutation` (which this method bypassed to
+      // extract `turnId`): fold JSON-RPC "Internal error" + `data.detail`
+      // into an actionable message.
+      return { success: false, error: mutationErrorMessage(error) };
+    }
   }
   async getQueue(agentId: string): Promise<QueuedMessage[]> {
     // `agent.getQueue` (§5.5/§6.6) returns `{ success, queue }`; hand the
@@ -321,6 +352,62 @@ export class LiveAgentsClient implements AgentsClient {
     // The daemon cancels the in-flight stream and emits the terminal
     // `agent:stream:end` (§7), which converges the FE streaming state.
     return runMutation("agent.stop", { agentId });
+  }
+  async cancelSubscriptions(params: {
+    agentId: string;
+    workspaceId: string;
+    subscriptionId?: string;
+    groupId?: string;
+  }): Promise<MutationResult> {
+    // `agent.cancelSubscriptions` (§5.5) takes `{ agentId, workspaceId }` plus
+    // optional `subscriptionId` / `groupId` scoping. The optional keys are
+    // omitted entirely when unset — the daemon rejects a present-but-non-string
+    // id with `-32602` rather than coercing it into an unscoped cancel, so an
+    // explicit `undefined` must never hit the wire. Scoped removals publish
+    // `agent:subscriptions-changed` (§6.5), which reconciles the footer UI.
+    const rpcParams: Record<string, unknown> = {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+    };
+    if (params.subscriptionId !== undefined) rpcParams.subscriptionId = params.subscriptionId;
+    if (params.groupId !== undefined) rpcParams.groupId = params.groupId;
+    return runMutation("agent.cancelSubscriptions", rpcParams);
+  }
+  async dismissQuestions(params: {
+    agentId: string;
+    workspaceId: string;
+    messageId: string;
+  }): Promise<MutationResult> {
+    // `agent.dismissQuestions` (§5.5) takes `{ agentId, workspaceId,
+    // messageId }` (all required — workspace mismatch surfaces as NotFound)
+    // and returns `{ success: true, dismissedQuestionsMessageId }`. The daemon
+    // persists the marker in session metadata (survives reload), emits
+    // `agent:updated`, and kicks the queue drain so messages held by the
+    // question hold resume. Idempotent on the same messageId.
+    return runMutation("agent.dismissQuestions", {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      messageId: params.messageId,
+    });
+  }
+  async markSeen(params: {
+    agentId: string;
+    workspaceId: string;
+    messageId: string;
+  }): Promise<MutationResult> {
+    // `agent.markSeen` (§5.5) takes `{ workspaceId, agentId, messageId }`
+    // (all required — workspace mismatch surfaces as NotFound); the wire ack
+    // is `{ success: true, lastSeenMessageId }`, folded by `runMutation` into
+    // a plain `MutationResult`. The daemon persists the marker in session
+    // metadata (survives reload) and emits `agent:updated` so all clients
+    // converge on the advanced marker. Idempotent on the same messageId.
+    // Transport / daemon errors fold into `{ success: false, error }` — the
+    // fire-and-forget trigger never awaits this for UI flow.
+    return runMutation("agent.markSeen", {
+      workspaceId: params.workspaceId,
+      agentId: params.agentId,
+      messageId: params.messageId,
+    });
   }
   async rename(
     agentId: string,
@@ -350,22 +437,25 @@ export class LiveAgentsClient implements AgentsClient {
   async retry(
     agentId: string,
     workspaceId: string,
-  ): Promise<{ ok: true; redriven?: boolean } | { ok: false; error: string }> {
+  ): Promise<{ ok: true; redriven?: boolean; turnId?: string } | { ok: false; error: string }> {
     // `agent.retry` redrives a failed agent spawn. Only valid when agent status
     // is `error`; returns `{ ok: false }` otherwise. On ok:true, `redriven`
     // reports whether a queued message existed and is being redriven (status
     // cleared to pending) or the queue was empty (status cleared to idle —
-    // nothing to redrive). Emits agent:status-changed events.
+    // nothing to redrive). `turnId` (present only with redriven:true, §5.5)
+    // is the redriven head entry's preserved turn-correlation id — the same
+    // id the original send/enqueue RPC returned (monorepo#1057). Emits
+    // agent:status-changed events.
     try {
-      const result = await backendRequest<{ ok?: unknown; redriven?: unknown } | undefined>(
-        "agent.retry",
-        { agentId, workspaceId },
-      );
+      const result = await backendRequest<
+        { ok?: unknown; redriven?: unknown; turnId?: unknown } | undefined
+      >("agent.retry", { agentId, workspaceId });
       if (result?.ok !== true) {
         return { ok: false, error: "Agent not in error status" };
       }
       const redriven = typeof result.redriven === "boolean" ? result.redriven : undefined;
-      return { ok: true, redriven };
+      const turnId = typeof result.turnId === "string" ? result.turnId : undefined;
+      return turnId !== undefined ? { ok: true, redriven, turnId } : { ok: true, redriven };
     } catch (error) {
       // Transport/RPC errors return { ok: false, error } rather than throwing so
       // callers can surface the error and keep the retry button visible.

@@ -1,8 +1,24 @@
 import {
+  beforeAll,
   describe,
   it,
   expect,
+  vi,
 } from "vitest";
+
+// FAKE seam: `$lib/client` is stubbed so importing `dispatchSpecialistList`
+// (which imports the AppClient singleton) never constructs the live client.
+vi.mock("$lib/client", () => ({
+  appClient: {
+    specialists: {
+      create: vi.fn(),
+      edit: vi.fn(),
+      delete: vi.fn(),
+      list: vi.fn(() => Promise.resolve([])),
+    },
+  },
+}));
+
 import {
   filterSpecialistsByGitHubAuth,
   filterPickableSpecialists,
@@ -18,13 +34,18 @@ import {
   selectHasOverrides,
   selectEffectiveCodingAgent,
   selectEffectiveModel,
+  selectExplicitModel,
   selectSpecialistSourceLabel,
 } from "./specialists-selectors";
 import { createCollection } from "$lib/store-shim/utils/collections/collection-utils";
-import { initialState } from "./specialists-slice";
+import { initialState, type FileSpecialist } from "./specialists-slice";
 import type { StoreState } from "../../types";
 import type { ProviderStatus } from "../agent-availability/agent-availability-types";
 import { SPECIALISTS } from "$lib/constants/specialists";
+import { seedProviderCatalog } from "../../../../test/fixtures/provider-catalog.fixture";
+import { store as appStore } from "$store/renderer/store";
+import { dispatchSpecialistList } from "../../../../features/specialists/specialists-mutation-service";
+import type { SpecialistDef } from "$lib/client/app-client";
 
 /**
  * Create a minimal mock StoreState with specialists slice populated.
@@ -340,6 +361,67 @@ describe("specialists selectors", () => {
     });
   });
 
+  describe("selectHasOverrides (diff-based Modified state, monorepo#1450)", () => {
+    const implementor = SPECIALISTS.find((s) => s.id === "implementor")!;
+
+    function overrideFile(overrides: Partial<FileSpecialist> = {}): FileSpecialist {
+      return {
+        id: "implementor",
+        name: implementor.name,
+        description: implementor.description,
+        model: "",
+        behaviorPrompt: implementor.defaultBehaviorPrompt,
+        roleReminder: implementor.roleReminder,
+        filePath: "/Users/test/.intent/specialists/implementor.md",
+        source: "user" as const,
+        ...overrides,
+      };
+    }
+
+    it("is false when the user override file is identical to the bundled defaults", () => {
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection("id", [overrideFile()]),
+      });
+      expect(selectHasOverrides.select(state, "implementor")).toBe(false);
+    });
+
+    it("is true when the override pins an explicit model", () => {
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection("id", [
+          overrideFile({ model: "claude-code:opus4.5" }),
+        ]),
+      });
+      expect(selectHasOverrides.select(state, "implementor")).toBe(true);
+    });
+
+    it("is true when the override customizes the prompt", () => {
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection("id", [
+          overrideFile({ behaviorPrompt: "Custom prompt." }),
+        ]),
+      });
+      expect(selectHasOverrides.select(state, "implementor")).toBe(true);
+    });
+
+    it("is false when no override file exists", () => {
+      const state = mockState({ bundledSpecialists: SPECIALISTS });
+      expect(selectHasOverrides.select(state, "implementor")).toBe(false);
+    });
+
+    it("is false for non-built-in specialists", () => {
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection("id", [
+          overrideFile({ id: "my-custom", model: "gpt-4" }),
+        ]),
+      });
+      expect(selectHasOverrides.select(state, "my-custom")).toBe(false);
+    });
+  });
+
   describe("selectors with missing codingAgentOverrides (legacy electron-store data)", () => {
     /** Simulate old persisted data where codingAgentOverrides didn't exist yet */
     function legacyState() {
@@ -370,7 +452,7 @@ describe("specialists selectors", () => {
     });
   });
 
-  describe("availability-gated coding agent / model resolution (D1-B)", () => {
+  describe("availability-gated coding agent resolution (D1-B)", () => {
     it("selectEffectiveCodingAgent honors an explicit specialist codingAgent regardless of availability", () => {
       const state = mockState(
         {
@@ -407,16 +489,111 @@ describe("specialists selectors", () => {
       const state = mockState({}, "auggie", {});
       expect(selectEffectiveCodingAgent.select(state, "implementor")).toBe("");
     });
+  });
 
-    it("selectEffectiveModel resolves the tier for the active provider when available", () => {
-      const state = mockState({}, "claude-code", { "claude-code": { available: true } });
-      const result = selectEffectiveModel.select(state, "implementor");
-      expect(result).not.toBe("");
+  describe("selectEffectiveModel precedence (explicit model before daemon preview)", () => {
+    // These tests ingest PROTOCOL §5.11-shaped `specialist.list` defs through
+    // the REAL configured store via `dispatchSpecialistList`, mirroring the
+    // daemon's model-first precedence (`resolve_model`).
+    beforeAll(() => appStore.init());
+
+    it("returns the explicit model when a user def carries a model pin", () => {
+      const userDef: SpecialistDef = {
+        id: "implementor",
+        name: "Implementor",
+        description: "Executes implementation tasks, writes code",
+        model: "claude-code:opus-custom",
+        behaviorPrompt: "You implement.",
+        source: "user",
+        path: "/Users/test/.intent/specialists/implementor.md",
+      };
+      dispatchSpecialistList([userDef]);
+
+      expect(selectEffectiveModel.select(appStore.state, "implementor")).toBe(
+        "claude-code:opus-custom",
+      );
     });
 
-    it("selectEffectiveModel returns '' when the active provider is unavailable (no tier can resolve)", () => {
-      const state = mockState({}, "auggie", { auggie: { available: false } });
-      expect(selectEffectiveModel.select(state, "implementor")).toBe("");
+    it("surfaces the daemon resolvedModel preview for inheriting specialists (no client resolution)", () => {
+      seedProviderCatalog(appStore);
+      const inheritingDef: SpecialistDef = {
+        id: "inheriting-custom",
+        name: "Inheriting",
+        description: "custom inheriting specialist",
+        behaviorPrompt: "prompt",
+        source: "user",
+        path: "/Users/test/.intent/specialists/inheriting-custom.md",
+        resolvedModel: "opus4.7",
+        resolvedProvider: "auggie",
+      };
+      dispatchSpecialistList([inheritingDef]);
+
+      // The wire's daemon-computed preview is surfaced verbatim — the client
+      // never resolves the default against the catalog tables itself.
+      expect(selectEffectiveModel.select(appStore.state, "inheriting-custom")).toBe(
+        "opus4.7",
+      );
+    });
+
+    it("returns empty string (provider CLI default) when resolvedModel is omitted from the wire", () => {
+      seedProviderCatalog(appStore);
+      const cliDefaultDef: SpecialistDef = {
+        id: "cli-default-custom",
+        name: "CLI Default",
+        description: "custom specialist without a resolvable model",
+        behaviorPrompt: "prompt",
+        source: "user",
+        path: "/Users/test/.intent/specialists/cli-default-custom.md",
+      };
+      dispatchSpecialistList([cliDefaultDef]);
+
+      // Omitted resolvedModel means the daemon resolution fell through to the
+      // provider CLI default; consumers render "Provider default".
+      expect(selectEffectiveModel.select(appStore.state, "cli-default-custom")).toBe("");
+    });
+  });
+
+  describe("selectExplicitModel (explicit frontmatter model only, no resolved preview)", () => {
+    beforeAll(() => appStore.init());
+
+    it("returns the explicit model when the wire def carries a model key (pinned)", () => {
+      const pinnedDef: SpecialistDef = {
+        id: "implementor",
+        name: "Implementor",
+        description: "Executes implementation tasks, writes code",
+        model: "claude-code:opus-custom",
+        behaviorPrompt: "You implement.",
+        source: "user",
+        path: "/Users/test/.intent/specialists/implementor.md",
+      };
+      dispatchSpecialistList([pinnedDef]);
+
+      expect(selectExplicitModel.select(appStore.state, "implementor")).toBe(
+        "claude-code:opus-custom",
+      );
+    });
+
+    it("returns undefined when the model key is omitted, even with a resolvedModel preview (inheriting)", () => {
+      const inheritingDef: SpecialistDef = {
+        id: "implementor",
+        name: "Implementor",
+        description: "Executes implementation tasks, writes code",
+        behaviorPrompt: "You implement.",
+        source: "user",
+        path: "/Users/test/.intent/specialists/implementor.md",
+        resolvedModel: "opus4.7",
+        resolvedProvider: "auggie",
+      };
+      dispatchSpecialistList([inheritingDef]);
+
+      // The daemon preview must never leak into the explicit value —
+      // selectEffectiveModel is the preview-aware counterpart.
+      expect(selectExplicitModel.select(appStore.state, "implementor")).toBeUndefined();
+      expect(selectEffectiveModel.select(appStore.state, "implementor")).toBe("opus4.7");
+    });
+
+    it("returns undefined for an unknown specialist", () => {
+      expect(selectExplicitModel.select(appStore.state, "no-such-specialist")).toBeUndefined();
     });
   });
 });

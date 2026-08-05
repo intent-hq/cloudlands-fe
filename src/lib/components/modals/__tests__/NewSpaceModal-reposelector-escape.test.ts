@@ -100,8 +100,14 @@ vi.mock('$lib/components/workspace/initializer/AddRemoteSetupModal.svelte', asyn
 
 import NewSpaceModal from '../NewSpaceModal.svelte';
 import RepoSelector from '../../workspace/initializer/RepoSelector.svelte';
+import { warmImport } from '../../../../test/warm-import';
 
 const DROPDOWN_HEADING = 'What repo should we work on?';
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/MockCompactWorkspaceInitializer.svelte'));
+warmImport(() => import('../../workspace/initializer/__tests__/mocks/MockComponent.svelte'));
 
 describe('NewSpaceModal + RepoSelector dropdown Escape ordering', () => {
   afterEach(() => {

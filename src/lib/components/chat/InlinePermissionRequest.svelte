@@ -15,6 +15,8 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { parsePermissionRequest } from './permission-parser';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     request: PermissionRequest;
@@ -107,13 +109,15 @@
       <div>
         <div class="text-sm font-medium text-foreground">{display.question}</div>
         {#if request.agentName}
-          <div class="text-xs text-subtle">from {request.agentName}</div>
+          <div class="text-xs text-subtle">
+            {m.chat_inlinePermission_from_label({ name: request.agentName })}
+          </div>
         {/if}
       </div>
     </div>
     {#if pendingCount > 1}
       <span class="px-2 py-0.5 text-xs bg-muted rounded-full text-subtle">
-        {pendingCount} pending
+        {m.chat_inlinePermission_pending_label({ count: formatInteger(pendingCount) })}
       </span>
     {/if}
   </div>
@@ -137,7 +141,9 @@
         onclick={() => (showDetails = !showDetails)}
       >
         <Fa icon={showDetails ? faChevronUp : faChevronDown} class="text-ui" />
-        {showDetails ? 'Hide' : 'Show'} raw details
+        {showDetails
+          ? m.chat_inlinePermission_hideRawDetails_label()
+          : m.chat_inlinePermission_showRawDetails_label()}
       </button>
 
       {#if showDetails}
@@ -179,7 +185,7 @@
 
     <!-- Keyboard hint -->
     <div class="mt-2 text-xs text-subtle text-center">
-      Press number key to select • Esc to cancel
+      {m.chat_inlinePermission_keyboardHint_label()}
     </div>
   </div>
 </div>

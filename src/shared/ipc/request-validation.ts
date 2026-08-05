@@ -93,6 +93,19 @@ export const AgentDeleteRequestSchema = z.object({
   workspaceId: WorkspaceIdSchema,
 });
 
+// Cancel agent subscriptions (`agent.cancelSubscriptions`, PROTOCOL §5.5).
+// Unscoped (neither optional id) cancels everything the agent registered;
+// `subscriptionId` cancels exactly one completion watch, `groupId` one
+// delegation group plus its grouped watches; both may be combined. The ids
+// must be strings when present — the daemon rejects non-string ids with
+// -32602 rather than coercing to an unscoped cancel.
+export const AgentCancelSubscriptionsRequestSchema = z.object({
+  agentId: AgentIdSchema,
+  workspaceId: WorkspaceIdSchema,
+  subscriptionId: z.string().min(1, 'subscriptionId must be a non-empty string').optional(),
+  groupId: z.string().min(1, 'groupId must be a non-empty string').optional(),
+});
+
 // ============================================================================
 // Workspace IPC Schemas
 // ============================================================================
@@ -149,6 +162,7 @@ const schemas: Record<string, z.ZodSchema<any>> = {
   'agent:send-message': AgentSendMessageRequestSchema,
   'agent:list': AgentListRequestSchema,
   'agent:delete': AgentDeleteRequestSchema,
+  'agent:cancel-subscriptions': AgentCancelSubscriptionsRequestSchema,
   'workspace:create': WorkspaceCreateRequestSchema,
   'workspace:get': WorkspaceGetRequestSchema,
   'file:read': FileReadRequestSchema,

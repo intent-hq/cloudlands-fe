@@ -3,7 +3,13 @@
  * that the removed `user-preferences/sagas/persistence-saga` performed for
  * spellcheck, showArchived, groupByRepo, hasCompletedProviderSetup, agent font
  * style, note font style, code font family, and activity-log presets
- * (GAPs 9-15, 17).
+ * (GAPs 9-15, 17). It also owns the language preference: hydration, persistence,
+ * applying it to the Paraglide runtime via the renderer locale service, and
+ * syncing it to the Electron main process (`app:set-language-preference`) so
+ * native menus/dialogs/notifications follow the same locale. Boot-time
+ * hydration also fetches the installed monospace font list from the main
+ * process (`system:list-fonts`) and dispatches `setSystemFonts` — live mode
+ * only; the mock-driven path seeds fixture fonts through the settings seeder.
  *
  * Beta-updates and notification settings are handled by sibling middlewares and
  * are excluded here to avoid overlap.
@@ -19,6 +25,9 @@
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
+import { applyLanguagePreference } from "$lib/i18n/locale";
+import { isElectron } from "$lib/electron-bridge";
+import { SYSTEM_CHANNELS } from "$shared/ipc/channels";
 import {
   setSpellcheckEnabled,
   toggleSpellcheck,
@@ -33,9 +42,11 @@ import {
   setNoteFontStyle,
   cycleNoteFontStyle,
   setCodeFontFamily,
+  setSystemFonts,
   saveActivityLogPreset,
   deleteActivityLogPreset,
   hydrateActivityLogPresets,
+  setLanguagePreference,
   type FontStyle,
   type ActivityLogPresetPreference,
   FONT_STYLES,
@@ -50,6 +61,7 @@ const AGENT_STORAGE_KEY = "agent-font-settings";
 const NOTE_STORAGE_KEY = "note-font-settings";
 const CODE_STORAGE_KEY = "code-font-settings";
 const ACTIVITY_LOG_PRESETS_STORAGE_KEY = "activityLogPresets";
+const LANGUAGE_PREFERENCE_STORAGE_KEY = "language-preference";
 
 /**
  * Middleware giving the restored user-preferences persistence triggers real handlers
@@ -130,6 +142,44 @@ export function createUserPreferencesPersistenceMiddleware(): StoreMiddleware {
       ) {
         api.dispatch(hydrateActivityLogPresets(storedPresets));
       }
+
+      // Hydrate language preference
+      const storedLanguage = safeLocalStorage.getJSON<string>(LANGUAGE_PREFERENCE_STORAGE_KEY);
+      if (typeof storedLanguage === "string" && storedLanguage.trim() !== "") {
+        api.dispatch(setLanguagePreference(storedLanguage));
+      }
+
+      // Hydrate system fonts from the main process (live mode only — the
+      // mock-driven path seeds fixture fonts through the settings seeder).
+      // Fire-and-forget so a slow/failed IPC call never blocks the other
+      // preference hydrations above.
+      if (isElectron() && typeof window !== "undefined" && window.electronAPI?.invoke) {
+        void window.electronAPI
+          .invoke(SYSTEM_CHANNELS.LIST_FONTS, {})
+          .then((result) => {
+            const envelope = result as
+              | { success: true; data: string[] }
+              | { success: false; error: string }
+              | null;
+            if (envelope?.success && Array.isArray(envelope.data)) {
+              api.dispatch(setSystemFonts(envelope.data));
+            } else {
+              api.dispatch(setSystemFonts([]));
+            }
+          })
+          .catch((error) => {
+            console.warn("Failed to load system fonts:", error);
+            api.dispatch(setSystemFonts([]));
+          });
+      }
+    }
+
+    // Apply the language preference to the Paraglide runtime before the
+    // reducer runs, so components re-rendering from this dispatch already
+    // read messages in the new locale.
+    if (action && action.type === setLanguagePreference.type) {
+      const [preference] = (action as ReturnType<typeof setLanguagePreference>).payload;
+      applyLanguagePreference(preference);
     }
 
     const result = next(action);
@@ -196,6 +246,20 @@ export function createUserPreferencesPersistenceMiddleware(): StoreMiddleware {
         case deleteActivityLogPreset.type: {
           const state = api.getState().userPreferences;
           safeLocalStorage.setJSON(ACTIVITY_LOG_PRESETS_STORAGE_KEY, state.activityLogPresets);
+          break;
+        }
+
+        // Language preference persistence + main-process sync (fire-and-forget)
+        case setLanguagePreference.type: {
+          const state = api.getState().userPreferences;
+          safeLocalStorage.setJSON(LANGUAGE_PREFERENCE_STORAGE_KEY, state.languagePreference);
+          if (isElectron() && typeof window !== "undefined" && window.electronAPI?.invoke) {
+            void window.electronAPI
+              .invoke("app:set-language-preference", { preference: state.languagePreference })
+              .catch(() => {
+                // Non-fatal: main keeps its current locale until the next sync.
+              });
+          }
           break;
         }
       }

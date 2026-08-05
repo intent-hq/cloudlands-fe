@@ -43,6 +43,7 @@ import { createFileRequested } from "$store/renderer/slices/app-layout/app-layou
 import { openWorkspaceFile } from "$store/renderer/slices/workspace-navigation/workspace-navigation-slice";
 import { stripWorkspacePrefix } from "$lib/utils/file-utils";
 import { createLogger } from "$lib/utils/client-logger";
+import { m } from "$shared/paraglide/messages.js";
 
 const logger = createLogger("FilesWriteService");
 
@@ -115,7 +116,13 @@ async function flushContent(key: string): Promise<void> {
     appStore.dispatch(saveFileContentSucceeded(workspaceId, path, content));
   } else {
     logger.error("Failed to save file content", result.error);
-    appStore.dispatch(saveFileContentFailed(workspaceId, path, result.error ?? "Failed to save file"));
+    appStore.dispatch(
+      saveFileContentFailed(
+        workspaceId,
+        path,
+        result.error ?? m.fileExplorer_layout_saveFailed_error(),
+      ),
+    );
   }
 }
 

@@ -23,6 +23,7 @@
  * (no selectors — the active provider is read directly off `appStore.state`).
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
+import { m } from "$shared/paraglide/messages.js";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { createLogger } from "$lib/utils/client-logger";
@@ -53,7 +54,7 @@ async function reloadForActiveProvider(): Promise<void> {
         setLoadingStateForProvider({
           providerId,
           status: "error",
-          error: `No models available for ${providerId}. Please try again.`,
+          error: m.settings_models_noneAvailable({ providerId }),
         }),
       );
       return;
@@ -68,7 +69,9 @@ async function reloadForActiveProvider(): Promise<void> {
     );
   } catch (error) {
     const message =
-      error instanceof Error && error.message ? error.message : "Failed to load models";
+      error instanceof Error && error.message
+        ? error.message
+        : m.settings_models_loadError();
     logger.error("reloadModelsForProvider failed", { providerId, error });
     appStore.dispatch(
       setLoadingStateForProvider({ providerId, status: "error", error: message }),

@@ -34,6 +34,7 @@
   import { toPromptToken } from '$lib/services/mentions/format';
   import Checkbox from '../ui/checkbox/checkbox.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('TaskItemNodeView');
   const TASK_LINK_REGEX = /^intent:\/\/local\/task\/(.+)$/;
@@ -89,7 +90,10 @@
   });
 
   let linkedTaskTitle = $derived(
-    linkedTaskNote?.title ?? `Task not found: ${linkedTaskNoteId ?? 'unknown'}`,
+    linkedTaskNote?.title ??
+      m.tiptap_taskItem_taskNotFound_label({
+        id: linkedTaskNoteId ?? m.tiptap_taskItem_unknownId_label(),
+      }),
   );
   let linkedTaskStatus = $derived(linkedTaskNote?.metadata?.task?.status ?? null);
   let linkedTaskNotFound = $derived(isLinkedTask && !linkedTaskNote);
@@ -440,7 +444,7 @@
                 variant="ghost-light"
                 size="icon-xs"
                 class="shrink-0"
-                title="Convert to inline task"
+                title={m.tiptap_taskItem_convertToInline_tooltip()}
                 onclick={(e) => {
                   e.stopPropagation();
                   convertToInlineTask();
@@ -454,7 +458,7 @@
                 variant="ghost-light"
                 size="icon-xs"
                 class="shrink-0 opacity-30 hover:opacity-100 transition-opacity pb-2"
-                title="Assign to agent"
+                title={m.tiptap_taskItem_assignToAgent_tooltip()}
                 onclick={(e) => {
                   e.stopPropagation();
                   emitLinkedTaskDelegateEvent();
@@ -488,7 +492,7 @@
       </div>
       <div class="flex gap-1 shrink-0 -my-1" contenteditable="false">
         {#if !effectiveChecked}
-          <Tooltip content="Convert to Task Note" side="top">
+          <Tooltip content={m.tiptap_taskItem_convertToTaskNote_tooltip()} side="top">
             <Button
               variant="ghost-light"
               size="icon-xs"

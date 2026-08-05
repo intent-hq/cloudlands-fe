@@ -101,14 +101,17 @@ setTimeout(() => {
 
 // Now import everything else
 import type { BrowserWindow as BrowserWindowType } from 'electron';
-import { dialog, protocol } from 'electron';
+import { dialog, protocol, session } from 'electron';
 import * as fs from 'fs';
 
 import { Logger } from '../shared/logger';
 import { compareWorkspaceActivityDisplayTimeDesc } from '../shared/utils/workspace-activity-time';
 import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapper';
 import { initializeWarningSuppression } from './utils/suppress-warnings';
+import { runWithHardExitTimeout } from './utils/hard-exit-timeout';
 import { setupWebviewSecurity } from './webview-security';
+import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
+import { requestHardwareConsoleLightingClear } from '../features/hardware-console/main/clear-lighting-shutdown';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
 
 // No custom protocol needed - we'll use file:// protocol
@@ -120,6 +123,7 @@ const logStartupTiming = (phase: string) => {
   const elapsed = Date.now() - startupStartTime;
   console.log(`[Startup ${elapsed}ms] ${phase}`);
 };
+// i18n-ignore (developer log message)
 logStartupTiming('Module initialization complete');
 
 // Seed PATH from the daemon (`host.env`, PROTOCOL §5.14) so child processes
@@ -164,6 +168,7 @@ async function seedPathFromHostEnv(): Promise<void> {
         } else if (result.path) {
           process.env.PATH = result.path;
         }
+        // i18n-ignore (developer log message)
         mainLogger.info('Seeded PATH from host.env', {
           pathEntries: result.pathEntries.length,
           shell: result.shell,
@@ -192,6 +197,7 @@ async function seedPathFromHostEnv(): Promise<void> {
 
 // Initialize warning suppression early
 initializeWarningSuppression();
+// i18n-ignore (developer log message)
 logStartupTiming('Warning suppression initialized');
 
 // Register custom protocols before app.whenReady()
@@ -279,10 +285,13 @@ import { setupWorkspaceIPC } from '../features/workspace/main/workspace.ipc';
 import { setupWorkspaceSummaryIPC } from '../features/workspace/main/workspace-summary.ipc';
 import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
+import { setMainLanguagePreference, getMainLanguagePreference } from './main-locale';
 import { buildQuitDialogOptions } from './quit-dialog';
 import { listRespondingAgents } from './running-agents';
+import { m } from '../shared/paraglide/messages.js';
 
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
+import { registerVoiceLocalHandlers } from '../features/voice/main/voice-local.ipc';
 import { cleanupStaleTempFiles } from '../shared/main/temp-files';
 import { initSpecialistsService } from '../features/agent/main/specialists.service';
 import { initAppSettingsService } from '../features/workspace/main/app-settings.service';
@@ -350,6 +359,11 @@ process.on('SIGINT', async () => {
   await gracefulShutdown();
 });
 
+// Hard deadline for the gracefulShutdown() cleanup chain
+// (intent-hq/monorepo#1300). 10s sits comfortably above the sidecar's own
+// 5s SIGTERM→SIGKILL escalation inside stopIntentdSidecar().
+const GRACEFUL_SHUTDOWN_HARD_EXIT_MS = 10_000;
+
 async function gracefulShutdown() {
   // Prevent multiple shutdown attempts
   if (isShuttingDown) {
@@ -357,7 +371,31 @@ async function gracefulShutdown() {
   }
   isShuttingDown = true;
 
+  // Bound the cleanup chain with a hard-exit watchdog: if a cleanup step
+  // stalls and app.exit(0) is never reached, force-exit so SIGTERM/SIGINT
+  // always terminate the process.
+  await runWithHardExitTimeout(
+    performGracefulShutdown,
+    () => {
+      logger.warn(
+        // i18n-ignore (developer log message)
+        `Graceful shutdown did not complete within the ${GRACEFUL_SHUTDOWN_HARD_EXIT_MS}ms hard-exit timeout — forcing exit`,
+      );
+      app.exit(1);
+    },
+    GRACEFUL_SHUTDOWN_HARD_EXIT_MS,
+  );
+}
+
+async function performGracefulShutdown() {
   try {
+    // Ask renderers to clear hardware-console lighting FIRST, while the
+    // windows (which own the WebHID connection) are still alive. Bounded
+    // (750ms overall ack timeout) and fail-soft — never throws, never delays
+    // shutdown beyond the timeout, and stays well within the hard-exit
+    // watchdog above.
+    await requestHardwareConsoleLightingClear(BrowserWindow.getAllWindows(), ipcMain);
+
     // Cleanup terminals gracefully - this properly cleans up PTY processes
     // to prevent Napi::Error crashes during shutdown
     await cleanupTerminals();
@@ -375,6 +413,7 @@ async function gracefulShutdown() {
       logger.info('All script process managers disposed');
     } catch (error) {
       logger.error(
+        // i18n-ignore (developer log message)
         'Error disposing script process managers:',
         error instanceof Error ? error : new Error(String(error)),
       );
@@ -386,6 +425,7 @@ async function gracefulShutdown() {
       logger.info('Backend JSON-RPC client disposed');
     } catch (error) {
       logger.error(
+        // i18n-ignore (developer log message)
         'Error disposing backend client:',
         error instanceof Error ? error : new Error(String(error)),
       );
@@ -404,6 +444,7 @@ async function gracefulShutdown() {
         logger.info('Sidecar daemon stopped');
       } catch (error) {
         logger.error(
+          // i18n-ignore (developer log message)
           'Error stopping sidecar daemon:',
           error instanceof Error ? error : new Error(String(error)),
         );
@@ -420,6 +461,7 @@ async function gracefulShutdown() {
         logger.info('CDP MCP Server stopped');
       } catch (error) {
         logger.error(
+          // i18n-ignore (developer log message)
           'Error stopping CDP MCP Server:',
           error instanceof Error ? error : new Error(String(error)),
         );
@@ -468,6 +510,10 @@ app.whenReady().then(async () => {
   // SECURITY: Setup webview security handlers early, before any windows are created
   setupWebviewSecurity();
 
+  // WebHID handlers for the hardware console (silent grant for supported
+  // Work Louder devices) — must be registered before any windows exist.
+  setupHardwareConsoleMain(session.defaultSession);
+
   // Keep window sessions file up-to-date so it's always available on quit/crash.
   // This debounced saver fires on window move/resize/navigate to ensure the sessions
   // file reflects the latest state even when before-quit can't capture windows (e.g.,
@@ -497,6 +543,11 @@ app.whenReady().then(async () => {
   const isDevMode = process.env.NODE_ENV === 'development';
   const isMacOS = process.platform === 'darwin';
 
+  // Resolve the main-process locale from the OS now that app.getLocale() is
+  // available (the renderer syncs any explicit preference later over
+  // app:set-language-preference).
+  setMainLanguagePreference(getMainLanguagePreference());
+
   // Build version string with commit hash
   const commitHash = BUILD_CONFIG.GIT_COMMIT_HASH;
   const versionWithCommit = commitHash ? `${app.getVersion()} (${commitHash})` : app.getVersion();
@@ -525,8 +576,10 @@ app.whenReady().then(async () => {
   (async () => {
     try {
       const { hostExec } = await import('../shared/main/host-exec.js');
-      const { getDefaultProviderConfig } = await import('../shared/config/provider-config.js');
-      const defaultProvider = getDefaultProviderConfig();
+      const { fetchProviderCatalog } = await import('./utils/provider-catalog-accessor.js');
+      const catalog = await fetchProviderCatalog();
+      const defaultProvider = catalog.providers.find((p) => p.id === catalog.defaultProviderId);
+      if (!defaultProvider) return;
 
       const result = await hostExec(defaultProvider.command, {
         args: ['--version'],
@@ -604,21 +657,21 @@ app.whenReady().then(async () => {
     // Add "No Recent Spaces" if empty
     if (recentWorkspacesSubmenu.length === 0) {
       recentWorkspacesSubmenu.push({
-        label: 'No Recent Spaces',
+        label: m.menu_no_recent_spaces(),
         enabled: false,
       });
     }
 
     const fileMenuItems: Electron.MenuItemConstructorOptions[] = [
       {
-        label: 'New Window',
+        label: m.menu_new_window(),
         accelerator: 'CmdOrCtrl+Shift+N',
         click: () => {
           createWindow();
         },
       },
       {
-        label: 'New Workspace',
+        label: m.menu_new_workspace(),
         accelerator: 'CmdOrCtrl+N',
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -629,7 +682,7 @@ app.whenReady().then(async () => {
       },
       { type: 'separator' },
       {
-        label: 'New Agent',
+        label: m.menu_new_agent(),
         accelerator: 'CmdOrCtrl+T',
         enabled: inWorkspace,
         // Don't register accelerator - let renderer handle Cmd+T first
@@ -643,7 +696,7 @@ app.whenReady().then(async () => {
         },
       },
       {
-        label: 'New Note',
+        label: m.menu_new_note(),
         accelerator: 'CmdOrCtrl+Alt+N',
         enabled: inWorkspace,
         click: () => {
@@ -654,7 +707,7 @@ app.whenReady().then(async () => {
         },
       },
       {
-        label: 'New Terminal',
+        label: m.menu_new_terminal(),
         accelerator: 'CmdOrCtrl+Alt+T',
         enabled: inWorkspace,
         click: () => {
@@ -665,7 +718,7 @@ app.whenReady().then(async () => {
         },
       },
       {
-        label: 'New Browser',
+        label: m.menu_new_browser(),
         accelerator: 'CmdOrCtrl+Alt+B',
         enabled: inWorkspace,
         click: () => {
@@ -677,7 +730,7 @@ app.whenReady().then(async () => {
       },
       { type: 'separator' },
       {
-        label: 'Open Recent',
+        label: m.menu_open_recent(),
         submenu: recentWorkspacesSubmenu,
       },
       { type: 'separator' },
@@ -686,7 +739,7 @@ app.whenReady().then(async () => {
     // Add Settings on Windows (before Close Window)
     if (!isMacOS) {
       fileMenuItems.push({
-        label: 'Settings...',
+        label: m.menu_settings(),
         accelerator: 'CmdOrCtrl+,',
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -700,7 +753,7 @@ app.whenReady().then(async () => {
 
     fileMenuItems.push(
       {
-        label: 'Close Tab',
+        label: m.menu_close_tab(),
         accelerator: 'CmdOrCtrl+W',
         enabled: inWorkspace,
         // Don't register accelerator - let renderer handle Cmd+W first for tabs
@@ -713,7 +766,7 @@ app.whenReady().then(async () => {
         },
       },
       {
-        label: 'Close Window',
+        label: m.menu_close_window(),
         accelerator: 'CmdOrCtrl+Shift+W',
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -724,7 +777,7 @@ app.whenReady().then(async () => {
       },
       { type: 'separator' },
       {
-        label: 'Reopen Closed Tab',
+        label: m.menu_reopen_closed_tab(),
         accelerator: 'CmdOrCtrl+Shift+T',
         enabled: inWorkspace,
         click: () => {
@@ -740,13 +793,13 @@ app.whenReady().then(async () => {
     if (!isMacOS) {
       fileMenuItems.push({ type: 'separator' });
       fileMenuItems.push({
-        label: 'Exit',
+        label: m.menu_exit(),
         role: 'quit',
       });
     }
 
     return {
-      label: 'File',
+      label: m.menu_file(),
       submenu: fileMenuItems,
     };
   };
@@ -760,10 +813,10 @@ app.whenReady().then(async () => {
     // Build the Window menu items
     const windowMenuItems: Electron.MenuItemConstructorOptions[] = [
       { role: 'minimize', accelerator: 'CmdOrCtrl+M' },
-      { role: 'zoom', label: 'Fill' },
+      { role: 'zoom', label: m.menu_window_fill() },
       { type: 'separator' },
       {
-        label: 'Select Previous Tab',
+        label: m.menu_select_previous_tab(),
         accelerator: 'CmdOrCtrl+Shift+[',
         enabled: inWorkspace,
         click: () => {
@@ -774,7 +827,7 @@ app.whenReady().then(async () => {
         },
       },
       {
-        label: 'Select Next Tab',
+        label: m.menu_select_next_tab(),
         accelerator: 'CmdOrCtrl+Shift+]',
         enabled: inWorkspace,
         click: () => {
@@ -789,7 +842,7 @@ app.whenReady().then(async () => {
 
     // Add 'Bring All to Front' only on macOS (role: 'front' is macOS-only)
     if (isMacOS) {
-      windowMenuItems.push({ role: 'front', label: 'Bring All to Front' });
+      windowMenuItems.push({ role: 'front', label: m.menu_bring_all_to_front() });
     }
 
     // Add workspaces with open windows to the Window menu
@@ -840,11 +893,11 @@ app.whenReady().then(async () => {
     // Add About on Windows (macOS uses the app menu)
     if (!isMacOS) {
       helpMenuItems.push({
-        label: `About ${appName}`,
+        label: m.menu_about_app({ appName }),
         click: () => {
           const aboutMessage = [
             `${aboutPanelInfo.applicationName}`,
-            `Version: ${aboutPanelInfo.applicationVersion}`,
+            m.dialog_about_version({ version: aboutPanelInfo.applicationVersion }),
             aboutPanelInfo.providerVersion ? `${aboutPanelInfo.providerVersion}` : '',
             `${aboutPanelInfo.copyright}`,
           ]
@@ -855,20 +908,20 @@ app.whenReady().then(async () => {
           if (mainWindow && !mainWindow.isDestroyed()) {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
-              title: `About ${appName}`,
+              title: m.menu_about_app({ appName }),
               message: aboutMessage,
             });
           } else {
             dialog.showMessageBox({
               type: 'info',
-              title: `About ${appName}`,
+              title: m.menu_about_app({ appName }),
               message: aboutMessage,
             });
           }
         },
       });
       helpMenuItems.push({
-        label: 'Check for Updates...',
+        label: m.menu_check_for_updates(),
         click: async () => {
           const mainWindow = getMainWindow();
           logger.info('[Menu] Check for Updates clicked', {
@@ -906,7 +959,7 @@ app.whenReady().then(async () => {
         },
       });
       helpMenuItems.push({
-        label: "Install 'intent' command in PATH...",
+        label: m.menu_install_cli(),
         click: async () => {
           const mainWindow = getMainWindow();
           try {
@@ -915,26 +968,26 @@ app.whenReady().then(async () => {
               if (mainWindow && !mainWindow.isDestroyed()) {
                 dialog.showMessageBox(mainWindow, {
                   type: 'info',
-                  title: 'CLI Installation',
-                  message: result.message || 'CLI installed successfully',
+                  title: m.dialog_cli_install_title(),
+                  message: result.message || m.dialog_cli_install_success(),
                 });
               } else {
                 dialog.showMessageBox({
                   type: 'info',
-                  title: 'CLI Installation',
-                  message: result.message || 'CLI installed successfully',
+                  title: m.dialog_cli_install_title(),
+                  message: result.message || m.dialog_cli_install_success(),
                 });
               }
             } else {
               dialog.showErrorBox(
-                'CLI Installation Failed',
-                result?.message || 'Failed to install CLI',
+                m.dialog_cli_install_failed_title(),
+                result?.message || m.dialog_cli_install_failed_message(),
               );
             }
           } catch (error) {
             dialog.showErrorBox(
-              'CLI Installation Error',
-              error instanceof Error ? error.message : 'An error occurred',
+              m.dialog_cli_install_error_title(),
+              error instanceof Error ? error.message : m.dialog_cli_install_error_fallback(),
             );
           }
         },
@@ -944,7 +997,7 @@ app.whenReady().then(async () => {
 
     // Add Export Debug Logs (cross-platform)
     helpMenuItems.push({
-      label: 'Export Debug Logs',
+      label: m.menu_export_debug_logs(),
       click: async () => {
         try {
           // Create the debug bundle
@@ -960,7 +1013,7 @@ app.whenReady().then(async () => {
           // Show save dialog
           const { filePath, canceled } = await dialog.showSaveDialog({
             defaultPath: suggestedFilename,
-            filters: [{ name: 'ZIP Files', extensions: ['zip'] }],
+            filters: [{ name: m.dialog_zip_files_filter(), extensions: ['zip'] }],
           });
 
           if (canceled || !filePath) {
@@ -992,9 +1045,9 @@ app.whenReady().then(async () => {
       template.push({
         label: appName,
         submenu: [
-          { role: 'about', label: `About ${appName}` },
+          { role: 'about', label: m.menu_about_app({ appName }) },
           {
-            label: 'Check for Updates...',
+            label: m.menu_check_for_updates(),
             click: async () => {
               const mainWindow = getMainWindow();
               logger.info('[Menu] Check for Updates clicked', {
@@ -1018,6 +1071,7 @@ app.whenReady().then(async () => {
                   });
                 } else {
                   logger.warn(
+                    // i18n-ignore (developer log message)
                     '[Menu] mainWindow not available for sending up-to-date notification',
                   );
                 }
@@ -1035,7 +1089,7 @@ app.whenReady().then(async () => {
           },
           { type: 'separator' },
           {
-            label: 'Settings...',
+            label: m.menu_settings(),
             accelerator: 'CmdOrCtrl+,',
             click: () => {
               const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -1045,7 +1099,7 @@ app.whenReady().then(async () => {
             },
           },
           {
-            label: "Install 'intent' command in PATH...",
+            label: m.menu_install_cli(),
             click: async () => {
               const mainWindow = getMainWindow();
               try {
@@ -1054,26 +1108,26 @@ app.whenReady().then(async () => {
                   if (mainWindow && !mainWindow.isDestroyed()) {
                     dialog.showMessageBox(mainWindow, {
                       type: 'info',
-                      title: 'CLI Installation',
-                      message: result.message || 'CLI installed successfully',
+                      title: m.dialog_cli_install_title(),
+                      message: result.message || m.dialog_cli_install_success(),
                     });
                   } else {
                     dialog.showMessageBox({
                       type: 'info',
-                      title: 'CLI Installation',
-                      message: result.message || 'CLI installed successfully',
+                      title: m.dialog_cli_install_title(),
+                      message: result.message || m.dialog_cli_install_success(),
                     });
                   }
                 } else {
                   dialog.showErrorBox(
-                    'CLI Installation Failed',
-                    result?.message || 'Failed to install CLI',
+                    m.dialog_cli_install_failed_title(),
+                    result?.message || m.dialog_cli_install_failed_message(),
                   );
                 }
               } catch (error) {
                 dialog.showErrorBox(
-                  'CLI Installation Error',
-                  error instanceof Error ? error.message : 'An error occurred',
+                  m.dialog_cli_install_error_title(),
+                  error instanceof Error ? error.message : m.dialog_cli_install_error_fallback(),
                 );
               }
             },
@@ -1081,11 +1135,11 @@ app.whenReady().then(async () => {
           { type: 'separator' },
           { role: 'services' },
           { type: 'separator' },
-          { role: 'hide', label: `Hide ${appName}` },
+          { role: 'hide', label: m.menu_hide_app({ appName }) },
           { role: 'hideOthers' },
           { role: 'unhide' },
           { type: 'separator' },
-          { role: 'quit', label: `Quit ${appName}` },
+          { role: 'quit', label: m.menu_quit_app({ appName }) },
         ],
       });
     }
@@ -1095,10 +1149,10 @@ app.whenReady().then(async () => {
       fileMenu,
       { role: 'editMenu' },
       {
-        label: 'View',
+        label: m.menu_view(),
         submenu: [
           {
-            label: 'Reload',
+            label: m.menu_reload(),
             accelerator: 'CmdOrCtrl+R',
             // Don't register the accelerator - let the renderer handle Cmd+R
             // so browser panels can refresh instead of reloading the whole app
@@ -1115,7 +1169,7 @@ app.whenReady().then(async () => {
           { role: 'toggleDevTools' },
           { type: 'separator' },
           {
-            label: 'Actual Size',
+            label: m.menu_actual_size(),
             accelerator: 'CmdOrCtrl+0',
             click: () => {
               const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -1129,7 +1183,7 @@ app.whenReady().then(async () => {
             },
           },
           {
-            label: 'Zoom In',
+            label: m.menu_zoom_in(),
             accelerator: 'CmdOrCtrl+=',
             click: () => {
               const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -1144,7 +1198,7 @@ app.whenReady().then(async () => {
             },
           },
           {
-            label: 'Zoom Out',
+            label: m.menu_zoom_out(),
             accelerator: 'CmdOrCtrl+-',
             click: () => {
               const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -1163,11 +1217,11 @@ app.whenReady().then(async () => {
         ],
       },
       {
-        label: 'Window',
+        label: m.menu_window(),
         submenu: windowMenuItems,
       },
       {
-        label: 'Help',
+        label: m.menu_help(),
         submenu: helpMenuItems,
       },
     );
@@ -1189,6 +1243,12 @@ app.whenReady().then(async () => {
       rebuildMenu();
       menuRebuildTimeout = null;
     }, 1000);
+  });
+
+  // Rebuild menu when the main-process locale changes (renderer synced a new
+  // language preference over app:set-language-preference)
+  app.on('main-locale-changed', () => {
+    rebuildMenu();
   });
 
   // Rebuild menu when workspace state changes (enables/disables tab menu items)
@@ -1239,7 +1299,8 @@ app.whenReady().then(async () => {
   startupMetrics.start('criticalIPC');
 
   // Initialize specialists service BEFORE workspace IPC - this is critical!
-  // The workspace creation flow calls resolveSpecialistForAgent() which needs the store initialized.
+  // The instruction service calls formatSpecialistsForPrompt(), which needs the
+  // specialist file cache initialized.
   await initSpecialistsService();
 
   // Initialize app settings service for branch prefix and other settings
@@ -1294,6 +1355,12 @@ app.whenReady().then(async () => {
   await seedPathFromHostEnv();
 
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
+
+  // Hydrate the main-process provider catalog cache (non-blocking): the
+  // JSON-RPC client queues the request until the daemon socket connects.
+  const { primeProviderCatalog } = await import('./utils/provider-catalog-accessor.js');
+  primeProviderCatalog();
+
   startupMetrics.end('criticalIPC');
 
   logger.info('Critical IPC handlers registered, creating window');
@@ -1307,6 +1374,7 @@ app.whenReady().then(async () => {
     setupFirstVisitStateIPC();
     setupPanelLayoutHistoryIPC();
     setupUserActivityIPC();
+    registerVoiceLocalHandlers(); // Local OS transcription (macOS speech helper)
 
     // MINIMAL REFACTOR: Commenting out duplicate IPC handler
     registerAgentContextHandlers();
@@ -1604,6 +1672,7 @@ app.on('window-all-closed', async () => {
         createWindow();
       } catch (err) {
         logger.error(
+          // i18n-ignore (developer log message)
           'Failed to re-open window after cancelled quit',
           err instanceof Error ? err : new Error(String(err)),
         );
@@ -1621,6 +1690,7 @@ app.on('window-all-closed', async () => {
       await saveWindowSessions();
     } catch (err) {
       logger.error(
+        // i18n-ignore (developer log message)
         'Failed to save window sessions on window-all-closed',
         err instanceof Error ? err : new Error(String(err)),
       );
@@ -1661,6 +1731,7 @@ app.on('window-all-closed', async () => {
       logger.info('CDP MCP Server stopped');
     } catch (error) {
       logger.error(
+        // i18n-ignore (developer log message)
         'Error stopping CDP MCP Server:',
         error instanceof Error ? error : new Error(String(error)),
       );
@@ -1699,6 +1770,7 @@ if (!gotTheLock) {
   // Log which path is contended before quitting so this isn't a silent no-op — a
   // common failure mode when a foreign Electron dev app shares the same userData dir.
   const contendedUserData = app.getPath('userData');
+  // i18n-ignore (developer log message)
   const message = `Another instance is already running; SingletonLock in userData=${contendedUserData} is held. Exiting.`;
   console.error(`[Main] ${message}`);
   try {

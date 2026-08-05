@@ -20,6 +20,7 @@ import {
   WebSocketDuplex,
 } from './backend-connection';
 import { shouldSpawnSidecar } from './intentd-spawn-policy';
+import { isWindowsPipePath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
 import { JsonRpcClient } from './json-rpc-client';
 
 // `ws` is aliased to a browser stub in `vitest.config.ts`; use createRequire to
@@ -114,6 +115,78 @@ describe('resolveBackendConfig precedence', () => {
   });
 });
 
+describe('win32 named-pipe derivation (pipe-name contract)', () => {
+  // Cross-check vector shared with the Rust implementation in
+  // intent-transport — both sides MUST derive the same pipe name:
+  //   socket path: C:\Users\alice\AppData\Roaming\intentd\data\intentd.sock
+  //   normalized:  c:\users\alice\appdata\roaming\intentd\data\intentd.sock
+  //   sha256:      4f8c75c28cfa6e92da1ca663e86a6f8c68d96047d924499ac04c09f905660611
+  //   hash16:      4f8c75c28cfa6e92
+  //   pipe name:   \\.\pipe\intentd-4f8c75c28cfa6e92
+  const VECTOR_SOCKET = 'C:\\Users\\alice\\AppData\\Roaming\\intentd\\data\\intentd.sock';
+  const VECTOR_PIPE = '\\\\.\\pipe\\intentd-4f8c75c28cfa6e92';
+
+  it('derives the pinned cross-check vector', () => {
+    expect(windowsPipeName(VECTOR_SOCKET)).toBe(VECTOR_PIPE);
+  });
+
+  it('normalization: case and separator variants hash identically', () => {
+    expect(windowsPipeName('c:/users/ALICE/AppData/Roaming/intentd/data/INTENTD.SOCK')).toBe(
+      VECTOR_PIPE,
+    );
+  });
+
+  it('isWindowsPipePath recognises the pipe namespace only', () => {
+    expect(isWindowsPipePath(VECTOR_PIPE)).toBe(true);
+    expect(isWindowsPipePath('\\\\?\\pipe\\intentd-x')).toBe(true);
+    expect(isWindowsPipePath(VECTOR_SOCKET)).toBe(false);
+    expect(isWindowsPipePath('/tmp/intentd.sock')).toBe(false);
+  });
+
+  it('toLocalEndpoint maps sockets to pipes only on win32; pipes pass through', () => {
+    expect(toLocalEndpoint(VECTOR_SOCKET, 'win32')).toBe(VECTOR_PIPE);
+    expect(toLocalEndpoint(VECTOR_PIPE, 'win32')).toBe(VECTOR_PIPE);
+    expect(toLocalEndpoint('/tmp/i.sock', 'darwin')).toBe('/tmp/i.sock');
+    expect(toLocalEndpoint('/tmp/i.sock', 'linux')).toBe('/tmp/i.sock');
+  });
+
+  it('defaultSocketPath on win32 derives the pipe from INTENTD_DATA_DIR\\intentd.sock', () => {
+    const target = defaultSocketPath({ INTENTD_DATA_DIR: 'C:\\dev-seat' }, 'win32');
+    expect(target).toBe(windowsPipeName('C:\\dev-seat\\intentd.sock'));
+    expect(target).toMatch(/^\\\\\.\\pipe\\intentd-[0-9a-f]{16}$/);
+  });
+
+  it('defaultSocketPath on win32 without INTENTD_DATA_DIR mirrors the daemon default (%APPDATA%\\intentd\\data)', () => {
+    const target = defaultSocketPath({ APPDATA: 'C:\\Users\\alice\\AppData\\Roaming' }, 'win32');
+    expect(target).toBe(VECTOR_PIPE);
+  });
+
+  it('resolveBackendConfig maps the INTENTD_SOCKET override through the derivation on win32', () => {
+    const config = resolveBackendConfig(
+      { INTENTD_SOCKET: 'C:\\tmp\\forced.sock' },
+      { platform: 'win32' },
+    );
+    expect(config).toEqual({
+      transport: 'uds',
+      socketPath: windowsPipeName('C:\\tmp\\forced.sock'),
+    });
+  });
+
+  it('resolveBackendConfig passes an already-pipe INTENTD_SOCKET through unchanged on win32', () => {
+    const config = resolveBackendConfig(
+      { INTENTD_SOCKET: '\\\\.\\pipe\\intentd-custom' },
+      { platform: 'win32' },
+    );
+    expect(config).toEqual({ transport: 'uds', socketPath: '\\\\.\\pipe\\intentd-custom' });
+  });
+
+  it('non-win32 platforms keep the plain socket path', () => {
+    expect(defaultSocketPath({ INTENTD_DATA_DIR: '/custom/data' }, 'linux')).toBe(
+      '/custom/data/intentd.sock',
+    );
+  });
+});
+
 describe('resolveBackendConfig × shouldSpawnSidecar pinning', () => {
   // These two functions must not be able to disagree on whether the dev
   // build is talking to a sidecar-spawned intentd over UDS or to an external
@@ -124,7 +197,10 @@ describe('resolveBackendConfig × shouldSpawnSidecar pinning', () => {
     { name: 'no env', env: {} },
     { name: 'INTENTD_SIDECAR=1', env: { INTENTD_SIDECAR: '1' } },
     { name: 'INTENTD_SIDECAR=0', env: { INTENTD_SIDECAR: '0' } },
-    { name: 'INTENTD_SIDECAR=1 + INTENTD_DATA_DIR', env: { INTENTD_SIDECAR: '1', INTENTD_DATA_DIR: '/tmp/x' } },
+    {
+      name: 'INTENTD_SIDECAR=1 + INTENTD_DATA_DIR',
+      env: { INTENTD_SIDECAR: '1', INTENTD_DATA_DIR: '/tmp/x' },
+    },
   ];
 
   for (const { name, env } of matrix) {
@@ -146,10 +222,26 @@ describe('resolveBackendConfig × shouldSpawnSidecar pinning', () => {
   // tcp) rather than the sidecar UDS default — assert that explicitly so we
   // don't accidentally re-route packaged/dev overrides through the sidecar
   // socket.
-  const overrides: Array<{ name: string; env: NodeJS.ProcessEnv; expectTransport: 'uds' | 'ws' | 'tcp' }> = [
-    { name: 'INTENTD_SOCKET', env: { INTENTD_SIDECAR: '1', INTENTD_SOCKET: '/tmp/o.sock' }, expectTransport: 'uds' },
-    { name: 'INTENTD_WS_URL', env: { INTENTD_SIDECAR: '1', INTENTD_WS_URL: 'ws://h:9/ws' }, expectTransport: 'ws' },
-    { name: 'INTENTD_TCP', env: { INTENTD_SIDECAR: '1', INTENTD_TCP: '10.0.0.1:6000' }, expectTransport: 'tcp' },
+  const overrides: Array<{
+    name: string;
+    env: NodeJS.ProcessEnv;
+    expectTransport: 'uds' | 'ws' | 'tcp';
+  }> = [
+    {
+      name: 'INTENTD_SOCKET',
+      env: { INTENTD_SIDECAR: '1', INTENTD_SOCKET: '/tmp/o.sock' },
+      expectTransport: 'uds',
+    },
+    {
+      name: 'INTENTD_WS_URL',
+      env: { INTENTD_SIDECAR: '1', INTENTD_WS_URL: 'ws://h:9/ws' },
+      expectTransport: 'ws',
+    },
+    {
+      name: 'INTENTD_TCP',
+      env: { INTENTD_SIDECAR: '1', INTENTD_TCP: '10.0.0.1:6000' },
+      expectTransport: 'tcp',
+    },
   ];
   for (const { name, env, expectTransport } of overrides) {
     it(`dev+${name} override: sidecar suppressed AND transport is the override`, () => {
@@ -180,9 +272,13 @@ describe('describeBackendConfig', () => {
 class FakeWsDaemon {
   private wss!: import('ws').WebSocketServer;
   url = '';
-  handler: (req: { id?: number | string; method: string; params?: unknown }) =>
-    | { result?: unknown; error?: { code: number; message: string; data?: unknown } }
-    | undefined = () => ({ result: null });
+  handler: (req: {
+    id?: number | string;
+    method: string;
+    params?: unknown;
+  }) =>
+    { result?: unknown; error?: { code: number; message: string; data?: unknown } } | undefined =
+    () => ({ result: null });
   private clients: import('ws').WebSocket[] = [];
 
   async start(): Promise<void> {
@@ -199,7 +295,10 @@ class FakeWsDaemon {
         // MUST send one JSON envelope per WS text frame with no trailing '\n'.
         if (text.includes('\n')) {
           socket.send(
-            JSON.stringify({ jsonrpc: '2.0', error: { code: -1, message: 'framing: newline in frame' } }),
+            JSON.stringify({
+              jsonrpc: '2.0',
+              error: { code: -1, message: 'framing: newline in frame' },
+            }),
           );
           return;
         }
@@ -336,4 +435,3 @@ describe('WebSocketDuplex framing adapter (loopback ws://)', () => {
     duplex.destroy();
   });
 });
-

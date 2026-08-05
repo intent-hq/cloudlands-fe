@@ -50,12 +50,8 @@ export const WORKSPACE_EVENT_TYPE_LITERALS = [
   'agent:message:delivery-failed',
   // Agent streaming events
   'agent:stream:start',
-  'agent:stream:chunk',
-  'agent:stream:content-blocks',
+  'agent:stream:activity',
   'agent:stream:end',
-  'agent:stream:message',
-  'agent:stream:tool_use',
-  'agent:stream:tool_result',
   // Agent queue events
   'agent:queue:updated',
   'agent:queue:processing',
@@ -1057,6 +1053,10 @@ export const AppSetBadgeSchema = z.object({
   count: z.number().int().min(0, 'Badge count must be non-negative'),
 });
 
+export const AppSetLanguagePreferenceSchema = z.object({
+  preference: z.string().min(1),
+});
+
 export const AppPathSchema = z.object({
   name: z.enum([
     'home',
@@ -1104,6 +1104,10 @@ export const WindowSetOpenWorkspaceTabsSchema = z.object({
   workspaceIds: z.array(z.string()),
 });
 
+export const WindowSetFullScreenSchema = z.object({
+  fullScreen: z.boolean(),
+});
+
 export const WindowSetBrowserFocusedSchema = z.object({
   browserFocused: z.boolean(),
 });
@@ -1114,6 +1118,12 @@ export const DialogMessageSchema = z.object({
   title: z.string().optional(),
   type: z.enum(['info', 'warning', 'error', 'question']).optional(),
   buttons: z.array(z.string()).optional(),
+});
+
+export const DialogOpenSchema = z.object({
+  title: z.string().optional(),
+  defaultPath: z.string().optional(),
+  mode: z.enum(['directory', 'file']).optional(),
 });
 
 // SHELL_CHANNELS schemas
@@ -1424,7 +1434,6 @@ export const SpecialistWriteSchema = z
     description: z.string().min(1, 'Description is required'),
     codingAgent: z.string().optional(),
     model: z.string().optional(),
-    modelTier: z.enum(['fast', 'balanced', 'smart']).optional(),
     roleReminder: z.string().optional(),
     hidden: z.boolean().optional(),
     behaviorPrompt: z.string().min(1, 'Behavior prompt is required'),
@@ -1463,3 +1472,21 @@ export const AuggieMcpCheckCodexSchema = z.object({}).strict();
 export const AuggieMcpCheckOpenCodeSchema = z.object({}).strict();
 
 export const AuggieMcpCheckDroidSchema = z.object({}).strict();
+
+// ============================================================================
+// Voice (local OS transcription) Schemas
+// ============================================================================
+
+export const VoiceLocalAvailableSchema = EmptySchema;
+
+export const VoiceRequestLocalAuthorizationSchema = EmptySchema;
+
+/** ~25 MB of base64 ≈ 60s+ of 16 kHz mono WAV — generous dictation ceiling. */
+export const VoiceTranscribeLocalSchema = z.object({
+  /** Base64-encoded audio bytes (no data: URL prefix). */
+  audioBase64: z.string().min(1, 'Audio data is required').max(25_000_000, 'Audio too large'),
+  /** Container MIME type of the recorded audio (e.g. audio/wav). */
+  mimeType: z.string().min(1, 'MIME type is required'),
+  /** Domain keyterms forwarded as SFSpeechRecognizer contextual strings. */
+  contextualStrings: z.array(z.string().max(100)).max(100).optional(),
+});

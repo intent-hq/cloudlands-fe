@@ -12,6 +12,7 @@
    */
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     open?: boolean;
@@ -26,9 +27,9 @@
   <Portal target="body" zIndex={100}>
     <BulkActionConfirmDialog
       {open}
-      title="Edit message and restart from here?"
-      description="All later messages in this conversation will be permanently removed and cannot be recovered. The agent will regenerate its response from this message."
-      confirmText="Edit & regenerate"
+      title={m.chat_editRegenerate_confirm_title()}
+      description={m.chat_editRegenerate_confirm_description()}
+      confirmText={m.chat_editRegenerate_confirm_button()}
       variant="destructive"
       {onConfirm}
       {onCancel}

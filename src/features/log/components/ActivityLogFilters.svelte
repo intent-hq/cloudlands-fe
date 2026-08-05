@@ -7,6 +7,7 @@
 
 <script lang="ts">
   import { slide } from 'svelte/transition';
+  import { Select } from '$lib/components/ui/select';
   import {
   deleteActivityLogPreset,
   saveActivityLogPreset,
@@ -14,6 +15,7 @@
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { selectActivityLogPresets } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   interface Filters {
@@ -60,23 +62,33 @@
     errors: ['error:file', 'error:git', 'error:agent', 'error:system'],
   };
 
-  // Date range options
+  // Date range options (getters so labels re-evaluate on locale change)
   const dateRangeOptions = [
-    { value: 'all', label: 'All Time' },
-    { value: 'today', label: 'Today' },
-    { value: 'yesterday', label: 'Yesterday' },
-    { value: 'week', label: 'Last 7 Days' },
-    { value: 'month', label: 'Last 30 Days' },
-    { value: 'custom', label: 'Custom Range' },
+    { value: 'all', get label() { return m.log_filters_dateRangeAllTime_label(); } },
+    { value: 'today', get label() { return m.log_filters_dateRangeToday_label(); } },
+    { value: 'yesterday', get label() { return m.log_filters_dateRangeYesterday_label(); } },
+    { value: 'week', get label() { return m.log_filters_dateRangeLast7Days_label(); } },
+    { value: 'month', get label() { return m.log_filters_dateRangeLast30Days_label(); } },
+    { value: 'custom', get label() { return m.log_filters_dateRangeCustom_label(); } },
   ];
 
   // Actor filter options (populated dynamically)
   let actorOptions = $state([
-    { value: 'all', label: 'All Actors' },
-    { value: 'user', label: 'User' },
-    { value: 'agent', label: 'Agents' },
-    { value: 'system', label: 'System' },
+    { value: 'all', get label() { return m.log_filters_actorAll_label(); } },
+    { value: 'user', get label() { return m.log_filters_actorUser_label(); } },
+    { value: 'agent', get label() { return m.log_filters_actorAgents_label(); } },
+    { value: 'system', get label() { return m.log_filters_actorSystem_label(); } },
   ]);
+
+  const selectedDateRangeLabel = $derived(
+    dateRangeOptions.find((option) => option.value === filters.dateRange)?.label ??
+      m.log_filters_dateRangeAllTime_label(),
+  );
+
+  const selectedActorLabel = $derived(
+    actorOptions.find((option) => option.value === filters.actorFilter)?.label ??
+      m.log_filters_actorAll_label(),
+  );
 
   // Apply filters
   function applyFilters() {
@@ -99,7 +111,7 @@
 
   // Save current filters as preset
   function savePreset() {
-    const name = prompt('Enter preset name:');
+    const name = prompt(m.log_filters_presetName_prompt());
     if (name) {
       appStore.dispatch(saveActivityLogPreset({ name, filters: { ...filters } }));
     }
@@ -127,29 +139,29 @@
   <div class="flex gap-4 items-center mb-2">
     <label class="flex items-center gap-1 cursor-pointer select-none">
       <input type="checkbox" bind:checked={filters.showFileChanges} class="cursor-pointer" />
-      <span class="text-sm">File Changes</span>
+      <span class="text-sm">{m.log_filters_fileChanges_label()}</span>
     </label>
 
     <label class="flex items-center gap-1 cursor-pointer select-none">
       <input type="checkbox" bind:checked={filters.showAgentActivity} class="cursor-pointer" />
-      <span class="text-sm">Agent Activity</span>
+      <span class="text-sm">{m.log_filters_agentActivity_label()}</span>
     </label>
 
     <label class="flex items-center gap-1 cursor-pointer select-none">
       <input type="checkbox" bind:checked={filters.showSystemEvents} class="cursor-pointer" />
-      <span class="text-sm">System Events</span>
+      <span class="text-sm">{m.log_filters_systemEvents_label()}</span>
     </label>
 
     <label class="flex items-center gap-1 cursor-pointer select-none">
       <input type="checkbox" bind:checked={filters.showErrors} class="cursor-pointer" />
-      <span class="text-sm">Errors</span>
+      <span class="text-sm">{m.log_filters_errors_label()}</span>
     </label>
 
     <button
       class="bg-transparent border-none text-primary cursor-pointer text-sm px-2 py-1 ml-auto hover:underline"
       onclick={() => (showAdvanced = !showAdvanced)}
     >
-      {showAdvanced ? 'Hide' : 'Show'} Advanced
+      {showAdvanced ? m.log_filters_hideAdvanced_label() : m.log_filters_showAdvanced_label()}
     </button>
   </div>
 
@@ -157,7 +169,7 @@
   <div class="relative mt-2">
     <input
       type="text"
-      placeholder="Search activity..."
+      placeholder={m.log_filters_search_placeholder()}
       bind:value={filters.searchQuery}
       class="w-full p-2 pr-8 border border-border rounded text-sm"
     />
@@ -176,41 +188,51 @@
     <div class="mt-4 pt-4 border-t border-border" transition:slide={{ duration: 200 }}>
       <!-- Date Range -->
       <div class="flex items-center gap-2 mb-3">
-        <label for="date-range" class="text-sm min-w-[100px]">Date Range:</label>
-        <select
-          id="date-range"
-          bind:value={filters.dateRange}
-          class="flex-1 px-2 py-1 border border-border rounded text-sm"
-        >
-          {#each dateRangeOptions as option (option.value)}
-            <option value={option.value}>{option.label}</option>
-          {/each}
-        </select>
+        <label for="date-range" class="text-sm min-w-[100px]">{m.log_filters_dateRange_label()}</label>
+        <div class="flex-1 min-w-0">
+          <Select.Root value={filters.dateRange} onchange={(value) => (filters.dateRange = value)}>
+            <Select.Trigger id="date-range" class="py-1">
+              <span class="truncate">{selectedDateRangeLabel}</span>
+            </Select.Trigger>
+            <Select.Content portal class="max-h-[300px]">
+              {#each dateRangeOptions as option (option.value)}
+                <Select.Item value={option.value}>
+                  <span class="truncate">{option.label}</span>
+                </Select.Item>
+              {/each}
+            </Select.Content>
+          </Select.Root>
+        </div>
       </div>
 
       <!-- Actor Filter -->
       <div class="flex items-center gap-2 mb-3">
-        <label for="actor-filter" class="text-sm min-w-[100px]">Actor:</label>
-        <select
-          id="actor-filter"
-          bind:value={filters.actorFilter}
-          class="flex-1 px-2 py-1 border border-border rounded text-sm"
-        >
-          {#each actorOptions as option (option.value)}
-            <option value={option.value}>{option.label}</option>
-          {/each}
-        </select>
+        <label for="actor-filter" class="text-sm min-w-[100px]">{m.log_filters_actor_label()}</label>
+        <div class="flex-1 min-w-0">
+          <Select.Root value={filters.actorFilter} onchange={(value) => (filters.actorFilter = value)}>
+            <Select.Trigger id="actor-filter" class="py-1">
+              <span class="truncate">{selectedActorLabel}</span>
+            </Select.Trigger>
+            <Select.Content portal class="max-h-[300px]">
+              {#each actorOptions as option (option.value)}
+                <Select.Item value={option.value}>
+                  <span class="truncate">{option.label}</span>
+                </Select.Item>
+              {/each}
+            </Select.Content>
+          </Select.Root>
+        </div>
       </div>
 
       <!-- Filter Presets -->
       <div class="mt-4 p-3 bg-muted rounded">
         <div class="flex justify-between items-center mb-2">
-          <span class="text-sm font-medium">Presets:</span>
+          <span class="text-sm font-medium">{m.log_filters_presets_label()}</span>
           <button
             class="px-2 py-1 text-xs bg-primary text-primary-foreground border-none rounded cursor-pointer"
             onclick={savePreset}
           >
-            Save Current
+            {m.log_filters_saveCurrent_label()}
           </button>
         </div>
 
@@ -234,7 +256,7 @@
             {/each}
           </div>
         {:else}
-          <div class="text-sm text-subtle text-center p-2">No saved presets</div>
+          <div class="text-sm text-subtle text-center p-2">{m.log_filters_noSavedPresets_label()}</div>
         {/if}
       </div>
 
@@ -244,7 +266,7 @@
           class="px-4 py-2 bg-muted border border-border rounded cursor-pointer text-sm hover:bg-background"
           onclick={resetFilters}
         >
-          Reset All
+          {m.log_filters_resetAll_label()}
         </button>
       </div>
     </div>

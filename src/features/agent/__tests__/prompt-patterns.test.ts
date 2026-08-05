@@ -89,21 +89,18 @@ describe('Agent Instruction Patterns', () => {
     it('should define spec-writer specialist', () => {
       const specWriter = SPECIALISTS.find((s) => s.id === 'spec-writer');
       expect(specWriter).toBeDefined();
-      expect(specWriter?.defaultModelTier).toBe('smart');
       expect(specWriter?.defaultBehaviorPrompt).toContain('Coordinator');
     });
 
     it('should define implementor specialist', () => {
       const implementor = SPECIALISTS.find((s) => s.id === 'implementor');
       expect(implementor).toBeDefined();
-      expect(implementor?.defaultModelTier).toBe('smart');
       expect(implementor?.defaultBehaviorPrompt).toContain('Implementor');
     });
 
     it('should define verifier specialist', () => {
       const verifier = SPECIALISTS.find((s) => s.id === 'verifier');
       expect(verifier).toBeDefined();
-      expect(verifier?.defaultModelTier).toBe('smart');
       // Verifier prompt says "Verifier" and "Verification Process"
       expect(verifier?.defaultBehaviorPrompt).toContain('Verifier');
       expect(verifier?.defaultBehaviorPrompt).toContain('Verification');

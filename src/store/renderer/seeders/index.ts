@@ -5,6 +5,7 @@
  * side effect so the registry is populated before `seedMockStore()` runs. Each
  * wave appends its own seeder import below; never remove existing entries.
  */
+import './provider-catalog-seeder';
 import './workspaces-seeder';
 import './active-streams-bridge-seeder';
 import './agents-seeder';
@@ -29,4 +30,6 @@ import './panel-layout-bridge-seeder';
 import './auto-update-bridge-seeder';
 import './window-state-bridge-seeder';
 import './native-dialog-bridge-seeder';
+import './voice-local-bridge-seeder';
 import './notification-bridge-seeder';
+import './language-preference-bridge-seeder';

@@ -13,7 +13,7 @@
  */
 
 import type { AgentId, WorkspaceId } from './branded-ids';
-import { parseCompoundModelId } from '$shared/config/provider-config';
+import { parseCompoundModelId } from '$shared/utils/compound-model-id';
 import type { AgentMessage } from './agent-message';
 import { AgentStatus } from './agent.types';
 import type { AgentMetadata } from '../types';
@@ -37,6 +37,12 @@ export interface QueuedMessageContextItem {
 export interface QueuedMessage {
   /** Unique identifier for this queued message */
   id: string;
+  /**
+   * Turn-correlation id (PROTOCOL §6.6). Fresh enqueues set `turnId = id`; a
+   * terminal-failure requeue mints a new entry `id` but PRESERVES the failed
+   * turn's `turnId`. Omitted by older daemons.
+   */
+  turnId?: string;
   /** Stable app-owned logical ID for the user message created from this queue entry */
   appMessageId?: string;
   /** The message content */
@@ -212,6 +218,15 @@ export interface AgentSession {
   /** Last agent response */
   lastAgentResponse?: string;
 
+  /**
+   * Role of the session's newest user/assistant transcript message
+   * (PROTOCOL.md §5.5 `AgentLite` additive field); system rows are
+   * transparent. Omitted by older daemons and when the session has no
+   * user/assistant message. Mid-turn the daemon overlays `'assistant'` once
+   * the in-flight turn has derivable streamed text. Rendered verbatim.
+   */
+  lastMessageRole?: 'user' | 'assistant';
+
   /** Whether the agent is currently responding */
   isResponding?: boolean;
 
@@ -254,10 +269,46 @@ export interface AgentSession {
   stopReason?: string | null;
 
   /**
+   * ISO timestamp of when the latest terminal stop/failure occurred.
+   * Accompanies `stopReason`; exposed top-level on both the full session
+   * projection and `AgentLite` (agent.list / agent.get) per PROTOCOL §5.5.
+   * Rendered verbatim — used for "failed X ago" displays.
+   */
+  stopReasonTimestamp?: string | null;
+
+  /**
+   * Derived corrupted/poisoned-session flag (monorepo#940). Present (`true`)
+   * only when the session is parked in `error` and the failure classifies as
+   * session-fatal — `agent.retry` will recreate the provider session instead
+   * of resuming. Omitted when false and on older daemons.
+   */
+  sessionCorrupted?: boolean;
+
+  /**
    * Cumulative usage counters (PROTOCOL §5.24). Point-read via
    * `agent.getSessionStats`; live-updated by `agent:session-stats-changed`.
    */
   stats?: SessionStats;
+
+  // ========== Attention Request ==========
+  /**
+   * Pending attention request raised by the agent (requestDiscussion /
+   * reportBlocker). Present only while pending — the daemon clears all three
+   * fields when the user next responds, i.e. on a user-origin delivery
+   * (`agent.sendMessage`, `agent.sendQueuedMessageNow`,
+   * `agent.editAndRegenerate`, or a drained user-origin queue entry),
+   * emitting `agent:updated` with `attentionRequestCleared: true`; automatic
+   * deliveries (A2A sends, parent/subscription wakes) do not clear them.
+   * Exposed top-level on the full session projection and under `metadata` on
+   * `AgentLite` (agent.list / agent.get). Rendered verbatim.
+   */
+  attentionRequestKind?: 'discussion' | 'blocker';
+
+  /** Reason text accompanying the pending attention request. */
+  attentionRequestReason?: string;
+
+  /** ISO timestamp when the pending attention request was raised. */
+  attentionRequestTimestamp?: string;
 
   // ========== Metadata & Progress ==========
   /** Session metadata */
@@ -349,9 +400,14 @@ export function isPendingAgentSession(
  * Resolve the provider for an agent session, with fallback chain.
  * Checks top-level `provider`, then `metadata.provider`, then `config.provider`.
  * Filters out the legacy 'acp' value (protocol name, not a real provider).
- * Falls back to inferring provider from the model ID if available.
+ * Falls back to inferring provider from the model ID if available —
+ * `defaultProviderId` (the registry default from the provider catalog)
+ * attributes bare model ids.
  */
-export function getAgentProvider(session: AgentSession): string | undefined {
+export function getAgentProvider(
+  session: AgentSession,
+  defaultProviderId: string,
+): string | undefined {
   const explicit =
     session.provider ?? session.metadata?.provider ?? (session as any).config?.provider;
 
@@ -362,9 +418,11 @@ export function getAgentProvider(session: AgentSession): string | undefined {
 
   // Fallback: infer provider from model ID.
   // parseCompoundModelId handles both compound ('opencode:haiku4.5' -> 'opencode')
-  // and bare ('haiku4.5' -> default provider) model IDs.
+  // and bare ('haiku4.5' -> default provider) model IDs. An empty resolution
+  // (bare id before catalog hydration, or a malformed ':model' prefix) is
+  // "unknown", never an empty-string provider id.
   if (session.model) {
-    return parseCompoundModelId(session.model).providerId;
+    return parseCompoundModelId(session.model, defaultProviderId).providerId || undefined;
   }
 
   return undefined;

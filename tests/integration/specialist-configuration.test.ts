@@ -18,12 +18,8 @@ import {
   MODEL_IDS,
   DEFAULT_AGENT_MODEL,
 } from '../../src/shared/constants/agent-services';
-import {
-  PROVIDER_MODEL_TIERS,
-  getDefaultModelForProvider,
-  getModelTierFromModel,
-  getDefaultProviderId,
-} from '../../src/shared/config/provider-config';
+import { MOCK_PROVIDER_CATALOG } from '../../src/test/fixtures/provider-catalog.fixture';
+import { getModelTierFromCatalog } from '../../src/shared/provider-catalog';
 import {
   writeSpecialistFile,
   ensureSpecialistsDirectory,
@@ -31,12 +27,26 @@ import {
 import {
   initSpecialistsService,
   refreshSpecialistsFromFiles,
-  resolveSpecialistForAgent,
+  getEffectiveSpecialist,
 } from '../../src/features/agent/main/specialists.service';
 
 const { mockSettingsData } = vi.hoisted(() => ({
   mockSettingsData: {} as Record<string, unknown>,
 }));
+
+// Tier/default-provider helpers over the §5.38-shaped mock catalog, replacing
+// the deleted provider-config lookups (the registry now lives in the daemon).
+function getDefaultModelForProvider(providerId: string, tier: 'fast' | 'balanced' | 'smart') {
+  const tiers = MOCK_PROVIDER_CATALOG.providers.find((p) => p.id === providerId)?.modelTiers;
+  if (!tiers) throw new Error(`no tier table for ${providerId}`);
+  return tiers[tier];
+}
+function getModelTierFromModel(modelId: string, preferredProviderId?: string) {
+  return getModelTierFromCatalog(MOCK_PROVIDER_CATALOG.providers, modelId, preferredProviderId);
+}
+function getDefaultProviderId() {
+  return MOCK_PROVIDER_CATALOG.defaultProviderId;
+}
 
 const TEST_HOME = '/tmp/augment-specialist-config-test';
 let originalHome: string | undefined;
@@ -74,6 +84,10 @@ describe('Specialist Configuration', () => {
     originalHome = process.env.HOME;
     process.env.HOME = TEST_HOME;
     await fs.rm(TEST_HOME, { recursive: true, force: true });
+    // specialists.service resolves tiers via the main-process catalog cache;
+    // seed it directly (no live daemon in unit tests).
+    const accessor = await import('../../src/main/utils/provider-catalog-accessor');
+    accessor.setProviderCatalogCacheForTests(MOCK_PROVIDER_CATALOG);
     await initSpecialistsService();
     await refreshSpecialistsFromFiles();
   });
@@ -122,29 +136,15 @@ describe('Specialist Configuration', () => {
   });
 
   describe('Specialist Model Assignments', () => {
-    it('orchestrator uses smart tier for planning', () => {
-      const specialist = getSpecialistById('spec-writer');
-      expect(specialist!.defaultModelTier).toBe('smart');
-    });
-
-    it('implementor uses smart tier for execution', () => {
-      const specialist = getSpecialistById('implementor');
-      expect(specialist!.defaultModelTier).toBe('smart');
-    });
-
-    it('verifier uses smart tier for thorough review', () => {
-      const specialist = getSpecialistById('verifier');
-      expect(specialist!.defaultModelTier).toBe('smart');
-    });
-
-    it('pr-reviewer uses smart tier for thorough review', () => {
-      const specialist = getSpecialistById('pr-reviewer');
-      expect(specialist!.defaultModelTier).toBe('smart');
-    });
-
-    it('ui-designer uses smart tier like other specialists', () => {
-      const specialist = getSpecialistById('ui-designer');
-      expect(specialist!.defaultModelTier).toBe('smart');
+    // Built-ins carry no model pin: absent means "inherit the global
+    // default model".
+    it('no built-in specialist pins a model', () => {
+      for (const specialist of SPECIALISTS) {
+        expect(
+          specialist.defaultModel,
+          `Specialist ${specialist.id} must not pin a defaultModel`,
+        ).toBeUndefined();
+      }
     });
   });
 
@@ -231,15 +231,8 @@ describe('Specialist Configuration', () => {
         expect(specialist.id).toBeDefined();
         expect(specialist.name).toBeDefined();
         expect(specialist.description).toBeDefined();
-        // Most specialists pin a model tier/model. Chief intentionally uses the user's default model.
-        if (specialist.id === 'chief-of-staff') {
-          expect(specialist.defaultModelTier || specialist.defaultModel).toBeUndefined();
-        } else {
-          expect(
-            specialist.defaultModelTier || specialist.defaultModel,
-            `Specialist ${specialist.id} must have either defaultModelTier or defaultModel`,
-          ).toBeDefined();
-        }
+        // No specialist pins a tier/model: absent means inherit the global default.
+        expect(specialist.defaultModel).toBeUndefined();
         expect(specialist.defaultBehaviorPrompt).toBeDefined();
       }
     });
@@ -275,7 +268,7 @@ describe('Specialist Configuration', () => {
 
   describe('Auggie Provider Tier Regression (opus4.7)', () => {
     it('auggie smart tier resolves to opus4.7', () => {
-      expect(PROVIDER_MODEL_TIERS['auggie'].smart).toBe('opus4.7');
+      expect(getDefaultModelForProvider('auggie', 'smart')).toBe('opus4.7');
     });
 
     it('getDefaultModelForProvider(auggie, smart) returns opus4.7', () => {
@@ -294,19 +287,14 @@ describe('Specialist Configuration', () => {
       expect(getDefaultProviderId()).toBe('auggie');
     });
 
-    it('smart-tier specialists resolve to opus4.7 for auggie', () => {
-      const smartSpecialists = SPECIALISTS.filter((s) => s.defaultModelTier === 'smart');
-      expect(smartSpecialists.length).toBeGreaterThan(0);
-      for (const s of smartSpecialists) {
-        const resolved = getDefaultModelForProvider('auggie', s.defaultModelTier!);
-        expect(resolved).toBe('opus4.7');
-      }
+    it('no built-in specialist carries a model pin (built-ins inherit the global default)', () => {
+      expect(SPECIALISTS.filter((s) => s.defaultModel)).toHaveLength(0);
+      expect(getDefaultModelForProvider('auggie', 'smart')).toBe('opus4.7');
     });
 
     it('non-auggie provider tiers are NOT opus4.7', () => {
       // Ensure the change is scoped to auggie only
-      const claudeCode = PROVIDER_MODEL_TIERS['claude-code'];
-      expect(claudeCode.smart).not.toBe('opus4.7');
+      expect(getDefaultModelForProvider('claude-code', 'smart')).not.toBe('opus4.7');
     });
   });
 
@@ -316,14 +304,12 @@ describe('Specialist Configuration', () => {
 
     // Lazy-import so mocks are applied before the module loads
     let getAllEffectiveSpecialists: typeof import('../../src/features/agent/main/specialists.service').getAllEffectiveSpecialists;
-    let resolveSpecialistForAgent: typeof import('../../src/features/agent/main/specialists.service').resolveSpecialistForAgent;
     let initSpecialistsService: typeof import('../../src/features/agent/main/specialists.service').initSpecialistsService;
     let refreshGitHubAuthStatus: typeof import('../../src/features/agent/main/specialists.service').refreshGitHubAuthStatus;
 
     beforeAll(async () => {
       const mod = await import('../../src/features/agent/main/specialists.service');
       getAllEffectiveSpecialists = mod.getAllEffectiveSpecialists;
-      resolveSpecialistForAgent = mod.resolveSpecialistForAgent;
       initSpecialistsService = mod.initSpecialistsService;
       refreshGitHubAuthStatus = mod.refreshGitHubAuthStatus;
       await initSpecialistsService();
@@ -360,49 +346,18 @@ describe('Specialist Configuration', () => {
       expect(ids).toContain('pr-reviewer');
     });
 
-    it('resolveSpecialistForAgent returns null for pr-shepherd when GitHub not authenticated', async () => {
-      mockIsAuthenticated.mockResolvedValue(false);
-      await refreshGitHubAuthStatus();
-
-      const result = resolveSpecialistForAgent('pr-shepherd');
-      expect(result).toBeNull();
-    });
-
-    it('resolveSpecialistForAgent returns config for pr-shepherd when GitHub is authenticated', async () => {
-      mockIsAuthenticated.mockResolvedValue(true);
-      await refreshGitHubAuthStatus();
-
-      const result = resolveSpecialistForAgent('pr-shepherd');
-      expect(result).not.toBeNull();
-      expect(result!.specialistId).toBe('pr-shepherd');
-    });
-
-    it('resolveSpecialistForAgent returns null for pr-reviewer when GitHub not authenticated', async () => {
-      mockIsAuthenticated.mockResolvedValue(false);
-      await refreshGitHubAuthStatus();
-
-      const result = resolveSpecialistForAgent('pr-reviewer');
-      expect(result).toBeNull();
-    });
-
-    it('non-GitHub specialists are unaffected by GitHub auth status', async () => {
-      mockIsAuthenticated.mockResolvedValue(false);
-      await refreshGitHubAuthStatus();
-
-      const result = resolveSpecialistForAgent('implementor');
-      expect(result).not.toBeNull();
-      expect(result!.specialistId).toBe('implementor');
-    });
   });
 
-  describe('resolveSpecialistForAgent coding agent resolution', () => {
+  describe('getEffectiveSpecialist coding agent resolution', () => {
+    // Model resolution is daemon-owned: the main process passes the
+    // frontmatter model through verbatim ('' when no model).
     it('falls back to the caller coding agent for built-in specialists without an explicit codingAgent', () => {
-      const resolved = resolveSpecialistForAgent('implementor', 'codex');
+      const resolved = getEffectiveSpecialist('implementor', 'codex');
 
       expect(resolved).not.toBeNull();
       expect(resolved?.codingAgent).toBe('codex');
-      expect(resolved?.modelTier).toBe('smart');
-      expect(resolved?.model).toBe(getDefaultModelForProvider('codex', 'smart'));
+      // No model synthesis in the main process
+      expect(resolved?.model).toBe('');
     });
 
     it('uses an explicit file specialist codingAgent when present', async () => {
@@ -411,17 +366,15 @@ describe('Specialist Configuration', () => {
         name: 'File Specialist',
         description: 'File-backed specialist',
         codingAgent: 'codex',
-        modelTier: 'fast',
         behaviorPrompt: 'Focus on file-backed work.',
       });
       await refreshSpecialistsFromFiles();
 
-      const resolved = resolveSpecialistForAgent('file-specialist', 'auggie');
+      const resolved = getEffectiveSpecialist('file-specialist', 'auggie');
 
       expect(resolved).not.toBeNull();
       expect(resolved?.codingAgent).toBe('codex');
-      expect(resolved?.modelTier).toBe('fast');
-      expect(resolved?.model).toBe(getDefaultModelForProvider('codex', 'fast'));
+      expect(resolved?.model).toBe('');
     });
 
     // Wave 2: Legacy custom specialists from electron-store are no longer resolved.
@@ -437,7 +390,7 @@ describe('Specialist Configuration', () => {
         },
       ];
 
-      const resolved = resolveSpecialistForAgent('legacy-custom', 'codex');
+      const resolved = getEffectiveSpecialist('legacy-custom', 'codex');
       // Legacy custom specialists are no longer loaded from electron-store
       expect(resolved).toBeNull();
     });
@@ -451,13 +404,81 @@ describe('Specialist Configuration', () => {
         },
       };
 
-      const resolved = resolveSpecialistForAgent('implementor', 'auggie');
+      const resolved = getEffectiveSpecialist('implementor', 'auggie');
 
       expect(resolved).not.toBeNull();
       // Override from electron-store is no longer applied
       expect(resolved?.codingAgent).toBe('auggie');
-      expect(resolved?.modelTier).toBe('smart');
-      expect(resolved?.model).toBe(getDefaultModelForProvider('auggie', 'smart'));
+      expect(resolved?.model).toBe('');
+    });
+
+    // Regression (monorepo#944): the explicit model in the file is passed
+    // through verbatim, even when a retired modelTier key is also declared.
+    it('keeps the explicit model when a file declares a retired modelTier key', async () => {
+      const dir = await ensureSpecialistsDirectory();
+      const content = [
+        '---',
+        'name: "Both Fields"',
+        'description: "Declares both model and a retired modelTier"',
+        'codingAgent: "auggie"',
+        'model: "sonnet4.5"',
+        'modelTier: "smart"',
+        '---',
+        '',
+        'Behavior prompt.',
+      ].join('\n');
+      await fs.writeFile(path.join(dir, 'both-fields.md'), content, 'utf-8');
+      await refreshSpecialistsFromFiles();
+
+      const resolved = getEffectiveSpecialist('both-fields', 'auggie');
+
+      expect(resolved).not.toBeNull();
+      expect(resolved?.model).toBe('sonnet4.5');
+    });
+
+    it('ignores a legacy modelTier-only file (no tier resolution, inherit the default)', async () => {
+      const dir = await ensureSpecialistsDirectory();
+      const content = [
+        '---',
+        'name: "Tier Only"',
+        'description: "Declares only a retired modelTier"',
+        'codingAgent: "auggie"',
+        'modelTier: "fast"',
+        '---',
+        '',
+        'Behavior prompt.',
+      ].join('\n');
+      await fs.writeFile(path.join(dir, 'tier-only.md'), content, 'utf-8');
+      await refreshSpecialistsFromFiles();
+
+      const resolved = getEffectiveSpecialist('tier-only', 'auggie');
+
+      expect(resolved).not.toBeNull();
+      expect(resolved?.model).toBe('');
+    });
+
+    it('getAllEffectiveSpecialists keeps the explicit model when a retired modelTier is declared', async () => {
+      const dir = await ensureSpecialistsDirectory();
+      const content = [
+        '---',
+        'name: "Both Fields List"',
+        'description: "Declares both model and a retired modelTier"',
+        'codingAgent: "auggie"',
+        'model: "sonnet4.5"',
+        'modelTier: "smart"',
+        '---',
+        '',
+        'Behavior prompt.',
+      ].join('\n');
+      await fs.writeFile(path.join(dir, 'both-fields-list.md'), content, 'utf-8');
+      await refreshSpecialistsFromFiles();
+
+      const mod = await import('../../src/features/agent/main/specialists.service');
+      const all = mod.getAllEffectiveSpecialists('auggie');
+      const found = all.find((s) => s.id === 'both-fields-list');
+
+      expect(found).toBeDefined();
+      expect(found?.model).toBe('sonnet4.5');
     });
 
     it('resolves file-based specialist overrides correctly', async () => {
@@ -468,17 +489,15 @@ describe('Specialist Configuration', () => {
         name: 'Implementor',
         description: 'Custom override',
         codingAgent: 'codex',
-        modelTier: 'smart',
         behaviorPrompt: 'Custom prompt.',
       });
       await refreshSpecialistsFromFiles();
 
-      const resolved = resolveSpecialistForAgent('implementor', 'auggie');
+      const resolved = getEffectiveSpecialist('implementor', 'auggie');
 
       expect(resolved).not.toBeNull();
       expect(resolved?.codingAgent).toBe('codex');
-      expect(resolved?.modelTier).toBe('smart');
-      expect(resolved?.model).toBe(getDefaultModelForProvider('codex', 'smart'));
+      expect(resolved?.model).toBe('');
     });
   });
 });

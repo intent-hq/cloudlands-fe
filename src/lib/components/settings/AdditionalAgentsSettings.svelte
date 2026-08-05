@@ -1,33 +1,47 @@
 <script lang="ts">
   import { toast } from 'svelte-sonner';
+  import { m } from '$shared/paraglide/messages.js';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { selectEnabledProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
   import { toggleProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import { selectProviderStatusMap } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
 
-  import { ACP_PROVIDERS, resolveProviderEnabled } from '$shared/config/provider-config';
+  import { selectIsProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import {
+  selectProviderCatalogEntries,
+  selectProviderDisplayName,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   const enabledProviders$ = selectEnabledProviders();
   const providerInUseReasons$ = selectProviderInUseReasons();
+  const catalogEntries$ = selectProviderCatalogEntries();
   const providerStatusMap$ = selectProviderStatusMap();
 
   // Get providers that can be toggled (those marked as canBeDisabled)
-  const additionalProviders = Object.values(ACP_PROVIDERS).filter((p) => p.canBeDisabled);
+  const additionalProviders = $derived($catalogEntries$.filter((p) => p.canBeDisabled));
+
+  // Reactive enabled check (re-runs when the persisted map changes).
+  function isEnabled(providerId: string): boolean {
+    void $enabledProviders$;
+    return selectIsProviderEnabled.select(appStore.state, providerId);
+  }
 
   // Same in-use guard as ProviderSelector's Disable control: a toggle that
   // would disable an in-use provider is rejected with the pinning reason.
   function handleToggle(providerId: string) {
-    const isEnabled = resolveProviderEnabled($enabledProviders$, providerId);
-    if (isEnabled) {
+    if (isEnabled(providerId)) {
       const reason = $providerInUseReasons$[providerId];
       if (reason) {
-        toast.error(`Cannot disable ${ACP_PROVIDERS[providerId]?.displayName || providerId}`, {
-          description: reason,
-        });
+        toast.error(
+          m.settings_additionalAgents_cannotDisable({
+            name: selectProviderDisplayName.select(appStore.state, providerId),
+          }),
+          { description: reason },
+        );
         return;
       }
     }
@@ -37,43 +51,44 @@
 
 <div class="space-y-4">
   <div>
-    <p class="text-sm font-medium text-foreground mb-1">Additional Agents</p>
+    <p class="text-sm font-medium text-foreground mb-1">{m.settings_additionalAgents_title()}</p>
     <p class="text-xs text-subtle">
-      Enable additional ACP-compatible agents. When enabled, their models will appear in the model
-      picker grouped by agent.
+      {m.settings_additionalAgents_description()}
     </p>
   </div>
 
   <div class="space-y-3">
     {#each additionalProviders as provider (provider.id)}
-      {@const isEnabled = resolveProviderEnabled($enabledProviders$, provider.id)}
       {@const isAvailable = $providerStatusMap$[provider.id]?.available ?? false}
       <div class="flex items-center justify-between py-2">
         <div>
           <p class="text-sm font-medium text-foreground mb-1">{provider.displayName}</p>
           <p class="text-xs text-subtle">
-            Use <code class="px-1 py-0.5 bg-muted rounded text-ui">{provider.command}</code> CLI as
-            an agent
+            {m.settings_additionalAgents_cliDescription_before()}
+            <code class="px-1 py-0.5 bg-muted rounded text-ui">{provider.command}</code>
+            {m.settings_additionalAgents_cliDescription_after()}
           </p>
-          {#if isEnabled && !isAvailable}
+          {#if isEnabled(provider.id) && !isAvailable}
             <p class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1 mt-1">
               <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
-              Not installed — won't appear in model pickers until available
+              {m.settings_additionalAgents_notInstalled_label()}
             </p>
           {/if}
         </div>
         <Toggle
-          pressed={isEnabled}
+          pressed={isEnabled(provider.id)}
           onclick={() => handleToggle(provider.id)}
           variant="indicator"
           size="xs"
-          ariaLabel={`Enable ${provider.displayName}`}
+          ariaLabel={m.settings_additionalAgents_enableToggleAriaLabel({
+            name: provider.displayName,
+          })}
         />
       </div>
     {/each}
 
     {#if additionalProviders.length === 0}
-      <p class="text-sm text-subtle italic">No additional agents available</p>
+      <p class="text-sm text-subtle italic">{m.settings_additionalAgents_empty()}</p>
     {/if}
   </div>
 </div>

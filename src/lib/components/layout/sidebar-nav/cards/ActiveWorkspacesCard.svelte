@@ -9,6 +9,7 @@
    * Supports mark-as-read and pin/unpin actions.
    */
   import { goto } from '$app/navigation';
+  import { m } from '$shared/paraglide/messages.js';
   import { openWorkspaceInNewWindow } from '../utils/openWorkspaceInNewWindow';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import {
@@ -20,7 +21,6 @@
   import Header from '$lib/components/ui/Header.svelte';
 
   import {
-  selectActiveStreamsVersion,
   selectPinnedWorkspaceIds,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import {
@@ -28,11 +28,7 @@
   togglePinWorkspace,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
-  import {
-  selectUnreadAgentIds,
-  selectUnreadAgentIdsForWorkspace,
-} from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
-  import { clearWorkspaceUnread } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
+  import { markWorkspaceSeen } from '$features/workspace/mark-workspace-seen';
   import {
   compareWorkspaceActivityDisplayTimeDesc,
   isWorkspaceActivityWithin,
@@ -43,8 +39,6 @@
 
   const workspaceItems = selectWorkspaceItems();
   const hasLoaded$ = selectWorkspaceHasLoaded();
-  const activeStreamsVersion$ = selectActiveStreamsVersion();
-  const unreadAgentIds$ = selectUnreadAgentIds();
   const pinnedIds$ = selectPinnedWorkspaceIds();
 
   interface Props {
@@ -53,16 +47,22 @@
 
   let { expanded = false }: Props = $props();
 
+  // Direct tracker subscription for reactivity (no Redux bridge): bump a
+  // local version counter when the tracker notifies so deriveds recompute.
+  let activeStreamsVersion = $state(0);
+
   // Fetch fresh stream state when the card mounts so data is up-to-date
   onMount(() => {
+    activeStreamsTracker.startPolling();
     activeStreamsTracker.fetchActiveStreams();
+    return activeStreamsTracker.subscribe(() => activeStreamsVersion++);
   });
 
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
   // Running workspaces (streaming agents)
   const runningWorkspaces = $derived.by(() => {
-    void $activeStreamsVersion$;
+    void activeStreamsVersion;
     return $workspaceItems
       .filter((w) => {
         if (w.status === WorkspaceStatusEnum.Archived || w.status === WorkspaceStatusEnum.Deleted)
@@ -76,34 +76,31 @@
       .sort((a, b) => compareWorkspaceActivityDisplayTimeDesc(a.workspace, b.workspace));
   });
 
-  // Unread workspaces (not streaming, has unread, updated within last day)
+  // Unread workspaces (not streaming, BE attention flag raised, updated within last day)
   const unreadWorkspaces = $derived.by(() => {
-    void $activeStreamsVersion$;
-    void $unreadAgentIds$;
+    void activeStreamsVersion;
     const now = Date.now();
-    const state = appStore.state;
     return $workspaceItems
       .filter((w) => {
         if (w.status === WorkspaceStatusEnum.Archived || w.status === WorkspaceStatusEnum.Deleted)
           return false;
         const streamingIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(w.id);
         if (streamingIds.length > 0) return false; // already in running
-        const wsUnreadIds = selectUnreadAgentIdsForWorkspace.select(state, w.id);
-        if (wsUnreadIds.length === 0) return false;
+        if (w.attention !== 'unread') return false;
         // Only show unread if display activity is within the last day.
         return isWorkspaceActivityWithin(w, now, ONE_DAY_MS);
       })
       .map((w) => ({
         workspace: w,
-        unreadIds: selectUnreadAgentIdsForWorkspace.select(state, w.id),
+        // Attention is workspace-level; show member agents as the unread set.
+        unreadIds: w.agentSummary?.agentIds ?? [],
       }))
       .sort((a, b) => compareWorkspaceActivityDisplayTimeDesc(a.workspace, b.workspace));
   });
 
   // Pinned workspaces (not already in running or unread)
   const pinnedWorkspaces = $derived.by(() => {
-    void $activeStreamsVersion$;
-    void $unreadAgentIds$;
+    void activeStreamsVersion;
     const runningIds = new Set(runningWorkspaces.map((r) => r.workspace.id));
     const unreadIds = new Set(unreadWorkspaces.map((u) => u.workspace.id));
     return $pinnedIds$
@@ -182,13 +179,14 @@
     keyboardNavActive = false;
     highlightedIndex = -1;
     appStore.dispatch(closeAll(false));
-    appStore.dispatch(clearWorkspaceUnread(workspaceId));
     goto(route);
   }
 
   function handleMarkAsRead(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
-    appStore.dispatch(clearWorkspaceUnread(workspaceId));
+    // Daemon round-trip (`workspace.markSeen`, §5.1): the resulting
+    // `workspace:attention-changed` event clears the dot on all clients.
+    markWorkspaceSeen(workspaceId);
   }
 
   function handleTogglePin(e: MouseEvent, workspaceId: string) {
@@ -267,9 +265,9 @@
     </div>
   {:else if totalCount === 0}
     <div class="px-3 py-4">
-      <p class="text-sm text-subtle">No active workspaces</p>
+      <p class="text-sm text-subtle">{m.layout_activeCard_noActive_label()}</p>
       <p class="text-sm text-subtle mt-1 leading-tight">
-        Pin workspaces from All Spaces for quick access
+        {m.layout_activeCard_pinHint_description()}
       </p>
     </div>
   {:else}
@@ -278,7 +276,7 @@
         <input
           bind:this={searchInputEl}
           type="text"
-          placeholder="Search spaces..."
+          placeholder={m.layout_activeCard_search_placeholder()}
           bind:value={searchQuery}
           class="w-full px-2.5 py-1.5 text-sm bg-background/30 rounded-md text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
         />
@@ -288,7 +286,7 @@
     <!-- Unread section -->
     {#if filteredUnread.length > 0}
       <div class="section-header px-3 pt-2 pb-1 flex items-center gap-1.5 min-w-0">
-        <Header size={3} class="truncate">Unread</Header>
+        <Header size={3} class="truncate">{m.layout_activeCard_unread_header()}</Header>
       </div>
       {#each filteredUnread as { workspace, unreadIds }, _i (workspace.id)}
         <WorkspaceCard
@@ -311,7 +309,7 @@
     <!-- Running section -->
     {#if filteredRunning.length > 0}
       <div class="section-header px-3 pt-2 pb-1 flex items-center gap-1.5 min-w-0">
-        <Header size={3} class="truncate">Running</Header>
+        <Header size={3} class="truncate">{m.layout_activeCard_running_header()}</Header>
         <span class="text-ui text-subtle shrink-0">{runningWorkspaces.length}</span>
       </div>
       {#each filteredRunning as { workspace, streamingIds }, _i (workspace.id)}
@@ -334,7 +332,7 @@
     <!-- Pinned section -->
     {#if filteredPinned.length > 0}
       <div class="section-header px-3 pt-2 pb-1 flex items-center gap-1.5 min-w-0">
-        <Header size={3} class="truncate">Pinned</Header>
+        <Header size={3} class="truncate">{m.layout_activeCard_pinned_header()}</Header>
       </div>
       {#each filteredPinned as { workspace }, _i (workspace.id)}
         <WorkspaceCard

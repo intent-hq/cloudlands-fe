@@ -1,10 +1,12 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
 import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { flip } from 'svelte/animate';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptCategory,
   ScriptMode,
   ScriptWithState } from '$features/scripts/types';
+  import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 
   import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
@@ -33,6 +35,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   selectUserTerminals as selectTerminalsSelector,
 } from '$store/renderer/slices/terminals/terminals-selectors';
   import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
+  import { terminalDisplayName } from '$lib/utils/terminal-display-name';
 
   const activeWorkspace = selectActiveWorkspace();
 
@@ -55,6 +58,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspaceId: string;
@@ -76,6 +80,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   const logger = createLogger('TerminalSidebar');
 
+  // i18n-ignore (agent-facing prompt, kept in English)
   const SCRIPT_DETECT_PROMPT = `Read package.json (and Makefile, docker-compose.yml, Cargo.toml, or pyproject.toml if they exist) to find runnable scripts.
 
 For each script, determine: name, command, mode ("service" for long-running like dev servers, "command" for one-shot like build/test), category (one of: dev, build, test, lint, typecheck, format, storybook, other).
@@ -133,14 +138,29 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       let addedCount = 0;
       let updatedCount = 0;
       let removedCount = 0;
-
+      const scriptEntries = selectScriptEntries.select(appStore.state);
       const autoDetectedIds = new Set(
-        selectScriptEntries.select(appStore.state).filter((s) => s.source === 'auto-detected').map((s) => s.id),
+        scriptEntries.filter((s) => s.source === 'auto-detected').map((s) => s.id),
       );
+      const entriesById = new Map(scriptEntries.map((s) => [s.id, s]));
+      // A Set so a script skipped by both the remove and update branches (or
+      // duplicated in the agent output) is reported at most once.
+      const skippedRunning = new Set<string>();
 
       if (Array.isArray(parsed.remove)) {
         for (const scriptId of parsed.remove) {
           if (typeof scriptId === 'string' && autoDetectedIds.has(scriptId)) {
+            // Removing a running script kills its live PTY group daemon-side —
+            // skip it and surface the skip so the user can stop + re-detect.
+            const target = entriesById.get(scriptId);
+            if (target?.runtime?.status === 'running') {
+              skippedRunning.add(target.name);
+              logger.info('Skipping script.remove for running script', {
+                name: target.name,
+                scriptId,
+              });
+              continue;
+            }
             await scriptsClient.remove(workspaceId, scriptId);
             appStore.dispatch(removeScript(workspaceId, scriptId));
             removedCount++;
@@ -151,14 +171,25 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       if (Array.isArray(parsed.update)) {
         for (const entry of parsed.update) {
           if (entry.id && typeof entry.id === 'string' && autoDetectedIds.has(entry.id)) {
+            // The update rides the §5.8 script.create scriptId upsert, which
+            // tears down the live PTY group — never send it for a running row.
+            const target = entriesById.get(entry.id);
+            if (target?.runtime?.status === 'running') {
+              skippedRunning.add(target.name);
+              logger.info('Skipping script.update for running script', {
+                name: target.name,
+                scriptId: entry.id,
+              });
+              continue;
+            }
             const updates: Record<string, string> = {};
             if (entry.name) updates.name = entry.name;
             if (entry.command) updates.command = entry.command;
             if (entry.mode && validModes.has(entry.mode)) updates.mode = entry.mode;
             if (entry.category && validCategories.has(entry.category))
               updates.category = entry.category;
-            await scriptsClient.update(workspaceId, entry.id, updates);
-            updatedCount++;
+            const updateResult = await scriptsClient.update(workspaceId, entry.id, updates);
+            if (updateResult.success) updatedCount++;
           }
         }
       }
@@ -188,16 +219,18 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       appStore.dispatch(refreshScripts(workspaceId));
 
       const parts: string[] = [];
-      if (addedCount > 0) parts.push(`+${addedCount} added`);
-      if (updatedCount > 0) parts.push(`~${updatedCount} updated`);
-      if (removedCount > 0) parts.push(`-${removedCount} removed`);
+      if (addedCount > 0) parts.push(m.terminal_sidebar_detectAdded_part({ count: addedCount }));
+      if (updatedCount > 0)
+        parts.push(m.terminal_sidebar_detectUpdated_part({ count: updatedCount }));
+      if (removedCount > 0)
+        parts.push(m.terminal_sidebar_detectRemoved_part({ count: removedCount }));
 
       showAgentAssist = selectScriptEntries.select(appStore.state).length === 0;
 
       if (parts.length > 0) {
-        toast.success(`Scripts updated: ${parts.join(', ')}`, {
+        toast.success(m.terminal_sidebar_scriptsUpdated_success({ changes: parts.join(', ') }), {
           action: {
-            label: 'Undo',
+            label: m.terminal_sidebar_undo_label(),
             onClick: async () => {
               for (const s of selectScriptEntries.select(appStore.state)) {
                 await scriptsClient.remove(workspaceId, s.id);
@@ -215,13 +248,24 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 });
               }
               appStore.dispatch(refreshScripts(workspaceId));
-              toast.success('Scripts restored');
+              toast.success(m.terminal_sidebar_scriptsRestored_success());
             },
           },
           duration: 10000,
         });
       } else {
-        toast.info('No script changes detected');
+        toast.info(m.terminal_sidebar_noScriptChanges_info());
+      }
+      if (skippedRunning.size > 0) {
+        const skippedNames = [...skippedRunning];
+        toast.warning(
+          skippedNames.length === 1
+            ? m.scripts_detect_skippedRunning_one({ name: skippedNames[0] })
+            : m.scripts_detect_skippedRunning_many({
+                count: skippedNames.length,
+                names: skippedNames.join(', '),
+              }),
+        );
       }
       return;
     }
@@ -257,16 +301,20 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       showAgentAssist = selectScriptEntries.select(appStore.state).length === 0;
 
       if (createdCount > 0) {
-        toast.success(`Detected ${createdCount} new script${createdCount === 1 ? '' : 's'}`);
+        toast.success(
+          createdCount === 1
+            ? m.terminal_sidebar_detectedNew_one({ count: createdCount })
+            : m.terminal_sidebar_detectedNew_many({ count: createdCount }),
+        );
       } else {
-        toast.info('No new scripts detected');
+        toast.info(m.terminal_sidebar_noNewScripts_info());
       }
       return;
     }
 
     // Neither format matched
     logger.warn('DETECTED_SCRIPTS result is not recognized format');
-    toast.info('Script detection returned unexpected format');
+    toast.info(m.terminal_sidebar_unexpectedFormat_info());
     await runLocalDetect({ source: 'fallback' });
   }
 
@@ -281,7 +329,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         logger.warn('Failed to parse DETECTED_SCRIPTS result', {
           error: e instanceof Error ? e.message : String(e),
         });
-        toast.info('Agent detection failed, re-scanning local project files...');
+        toast.info(m.terminal_sidebar_agentDetectFailed_info());
         await runLocalDetect({ source: 'fallback' });
       }
     },
@@ -321,7 +369,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       }
 
       logger.warn('Script detection agent failed, falling back to local detection');
-      toast.info('Agent detection failed, re-scanning local project files...');
+      toast.info(m.terminal_sidebar_agentDetectFailed_info());
       await runLocalDetect({ source: 'fallback' });
     },
   });
@@ -332,6 +380,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       logger.info('Running local script detection', { source: options.source ?? 'primary' });
       const result = await scriptsClient.detect(workspaceId);
       if (!result.success) {
+        // i18n-ignore (internal error, caught and surfaced via extracted toast)
         throw new Error(result.error || 'Local script detection failed');
       }
 
@@ -345,10 +394,23 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
       if (detectedCount > 0) {
         toast.success(
-          `Detected ${detectedCount} script${detectedCount === 1 ? '' : 's'} from project files`,
+          detectedCount === 1
+            ? m.terminal_sidebar_detectedFromFiles_one({ count: detectedCount })
+            : m.terminal_sidebar_detectedFromFiles_many({ count: detectedCount }),
         );
       } else {
-        toast.info('No scripts found locally. You can try agent-assisted detection.');
+        toast.info(m.terminal_sidebar_noScriptsLocally_info());
+      }
+      const skippedRunning = result.skippedRunning ?? [];
+      if (skippedRunning.length > 0) {
+        toast.warning(
+          skippedRunning.length === 1
+            ? m.scripts_detect_skippedRunning_one({ name: skippedRunning[0] })
+            : m.scripts_detect_skippedRunning_many({
+                count: skippedRunning.length,
+                names: skippedRunning.join(', '),
+              }),
+        );
       }
       logger.info('Local detection complete', {
         totalScripts: selectScriptEntries.select(appStore.state).length,
@@ -361,7 +423,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         error: e instanceof Error ? e.message : String(e),
         source: options.source ?? 'primary',
       });
-      toast.error('Script detection failed');
+      toast.error(m.terminal_quakeOverlay_detectFailed_error());
     } finally {
       detectFlow = 'idle';
     }
@@ -377,7 +439,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     }));
 
     return existingScripts.length > 0
-      ? `\n\nExisting scripts (do NOT duplicate these, return only changes):\n${JSON.stringify(existingScripts, null, 2)}`
+      ? // i18n-ignore (agent-facing prompt, kept in English)
+        `\n\nExisting scripts (do NOT duplicate these, return only changes):\n${JSON.stringify(existingScripts, null, 2)}`
       : '';
   }
 
@@ -387,6 +450,11 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   let isResizing = $state(false);
   let showAddForm = $state(false);
   let saveToRepoStatus = $state<'idle' | 'saving' | 'saved'>('idle');
+  const saveToRepoTooltip = $derived(
+    saveToRepoStatus === 'saved'
+      ? m.terminal_sidebar_saved_tooltip()
+      : m.terminal_sidebar_saveToRepo_tooltip(),
+  );
 
   // Add form state
   let newName = $state('');
@@ -432,8 +500,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   // ---- Sort function ----
   function sortScripts(scripts: ScriptWithState[]): ScriptWithState[] {
     return [...scripts].sort((a, b) => {
-      // Priority: running > exited > idle
-      const statusPriority = { running: 0, exited: 1, idle: 2 };
+      // Priority: live (running/restarting) > exited > idle
+      const statusPriority = { running: 0, restarting: 0, exited: 1, idle: 2 };
       const aPriority = statusPriority[a.runtime.status] ?? 3;
       const bPriority = statusPriority[b.runtime.status] ?? 3;
 
@@ -447,7 +515,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   // ---- Status dot helpers ----
   function getStatusColor(script: ScriptWithState): string {
     const { status, exitCode } = script.runtime;
-    if (status === 'running') return 'bg-green-500';
+    // Live statuses (running/restarting) reuse the running treatment.
+    if (isLiveScriptStatus(status)) return 'bg-green-500';
     if (status === 'idle') return 'bg-muted-foreground/40';
     // exited
     if (exitCode === 0 || exitCode === null || exitCode === undefined)
@@ -458,14 +527,15 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
   function getStatusLabel(script: ScriptWithState): string {
     const { status, exitCode } = script.runtime;
-    if (status === 'running') return 'Running';
-    if (status === 'idle') return 'Idle';
-    if (exitCode === 0) return 'Exited (0)';
+    if (isLiveScriptStatus(status)) return m.terminal_quakeOverlay_status_running();
+    if (status === 'idle') return m.terminal_quakeOverlay_status_idle();
+    if (exitCode === 0) return m.terminal_quakeOverlay_status_exitedZero();
     if (exitCode !== null && exitCode !== undefined) {
-      if (exitCode >= 128) return `Stopped (signal ${exitCode - 128})`;
-      return `Error (${exitCode})`;
+      if (exitCode >= 128)
+        return m.terminal_quakeOverlay_status_stoppedSignal({ signal: exitCode - 128 });
+      return m.terminal_quakeOverlay_status_errorCode({ code: exitCode });
     }
-    return 'Exited';
+    return m.terminal_quakeOverlay_status_exited();
   }
 
   // ---- Actions ----
@@ -476,15 +546,23 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       tooltip?: string;
       onClick: (e: MouseEvent) => void;
     }> = [];
-    if (script.runtime.status === 'running') {
-      actions.push({ icon: faStop, label: 'Stop', onClick: () => handleStop(script.id) });
+    if (isLiveScriptStatus(script.runtime.status)) {
+      actions.push({
+        icon: faStop,
+        label: m.terminal_quakeOverlay_stop_label(),
+        onClick: () => handleStop(script.id),
+      });
       actions.push({
         icon: faRotateRight,
-        label: 'Restart',
+        label: m.terminal_quakeOverlay_restart_label(),
         onClick: () => handleRestart(script.id),
       });
     } else {
-      actions.push({ icon: faPlay, label: 'Start', onClick: () => handleStart(script.id) });
+      actions.push({
+        icon: faPlay,
+        label: m.terminal_quakeOverlay_start_label(),
+        onClick: () => handleStart(script.id),
+      });
     }
     return actions;
   }
@@ -528,7 +606,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
     const workspace = $activeWorkspace;
     if (!workspace) {
-      toast.info('Open the workspace before asking an agent to inspect scripts.');
+      toast.info(m.terminal_sidebar_openWorkspaceFirst_info());
       return;
     }
 
@@ -573,11 +651,11 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
           saveToRepoStatus = 'idle';
         }, 1500);
       } else {
-        toast.error(result.error || 'Failed to save scripts to repo');
+        toast.error(result.error || m.terminal_sidebar_saveToRepoFailed_error());
         saveToRepoStatus = 'idle';
       }
     } catch {
-      toast.error('Failed to save scripts to repo');
+      toast.error(m.terminal_sidebar_saveToRepoFailed_error());
       saveToRepoStatus = 'idle';
     }
   }
@@ -698,8 +776,13 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
   function finishEditingScript() {
     if (editingScriptId && editingScriptName.trim()) {
-      scriptsClient.update(workspaceId, editingScriptId, { name: editingScriptName.trim() });
-      appStore.dispatch(refreshScripts(workspaceId));
+      void scriptsClient
+        .update(workspaceId, editingScriptId, { name: editingScriptName.trim() })
+        .then((result) => {
+          if (!result.success && result.error) toast.warning(result.error);
+        })
+        .catch((error) => logger.error('Script update failed', error))
+        .finally(() => appStore.dispatch(refreshScripts(workspaceId)));
     }
     editingScriptId = null;
     editingScriptName = '';
@@ -798,8 +881,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         variant="ghost-light"
         size="icon-xs"
         onclick={toggleCollapse}
-        tooltip="Scripts"
-        aria-label="Expand scripts"
+        tooltip={m.terminal_quakeOverlay_scripts_title()}
+        aria-label={m.terminal_sidebar_expandScripts_ariaLabel()}
       >
         <Fa icon={faPlay} size="xs" />
       </Button>
@@ -809,7 +892,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     <div class="flex-1 flex flex-col min-h-0 overflow-y-auto pt-0">
       <!-- Scripts Section -->
       <ListSection
-        title="Scripts"
+        title={m.terminal_quakeOverlay_scripts_title()}
         titleClass="mb-0.5 mt-1.5 px-3.5!"
         icon={faPlay}
         class="py-1 shrink-0"
@@ -824,8 +907,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 e.stopPropagation();
                 handleSaveToRepo();
               }}
-              tooltip={saveToRepoStatus === 'saved' ? 'Saved!' : 'Save scripts to repo'}
-              aria-label="Save scripts to repo"
+              tooltip={saveToRepoTooltip}
+              aria-label={m.terminal_sidebar_saveToRepo_tooltip()}
               disabled={saveToRepoStatus === 'saving'}
             >
               <Fa
@@ -843,7 +926,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               e.stopPropagation();
               showAddForm = !showAddForm;
             }}
-            tooltip="Add script"
+            tooltip={m.terminal_sidebar_addScript_tooltip()}
           >
             <Fa icon={faPlus} size="xs" />
           </Button>
@@ -860,7 +943,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                   );
                 }
               }}
-              title="View detection agent"
+              title={m.terminal_sidebar_viewDetectionAgent_tooltip()}
             >
               <div
                 class="shrink-0 flex-none"
@@ -872,19 +955,19 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                   size={16}
                 />
               </div>
-              <span class="text-ui">Asking agent…</span>
+              <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
             </button>
           {:else if isAgentDetecting}
             <div class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 text-muted-foreground">
               <!-- a11y-ignore -->
               <Fa icon={faSpinner} size="xs" class="animate-spin" />
-              <span class="text-ui">Asking agent…</span>
+              <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
             </div>
           {:else if isLocalDetecting}
             <div class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 text-muted-foreground">
               <!-- a11y-ignore -->
               <Fa icon={faSpinner} size="xs" class="animate-spin" />
-              <span class="text-ui">Scanning files…</span>
+              <span class="text-ui">{m.terminal_sidebar_scanningFiles_label()}</span>
             </div>
           {:else if hasScripts}
             {#if showAgentAssist}
@@ -896,9 +979,9 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                   e.stopPropagation();
                   handleAgentDetect();
                 }}
-                tooltip="Ask an agent to inspect unusual project layouts"
+                tooltip={m.terminal_sidebar_agentAssist_tooltip()}
               >
-                Agent assist
+                {m.terminal_sidebar_agentAssist_label()}
               </Button>
             {/if}
             <Button
@@ -912,7 +995,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 e.stopPropagation();
                 handleDetect();
               }}
-              tooltip="Scan local project files for scripts"
+              tooltip={m.terminal_sidebar_scanLocal_tooltip()}
             >
               <Fa icon={faSearch} size="xs" />
             </Button>
@@ -925,10 +1008,10 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 e.stopPropagation();
                 handleAgentDetect();
               }}
-              tooltip="Use AI to detect scripts from project files"
+              tooltip={m.terminal_sidebar_detectWithAi_tooltip()}
             >
               <Fa icon={faWandMagicSparkles} size="xs" />
-              Detect with AI
+              {m.terminal_sidebar_detectWithAi_label()}
             </Button>
           {/if}
         {/snippet}
@@ -943,18 +1026,18 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             <input
               type="text"
               bind:value={newName}
-              placeholder="Name"
+              placeholder={m.terminal_quakeOverlay_name_placeholder()}
               class="w-full text-xs bg-muted/50 border border-border/40 rounded-md px-2 py-1.5 outline-none focus:border-primary/50 focus:bg-background text-foreground placeholder:text-muted-foreground/50 transition-colors"
             />
             <input
               type="text"
               bind:value={newCommand}
-              placeholder="Command, e.g. npm run dev"
+              placeholder={m.terminal_sidebar_command_placeholder()}
               class="w-full text-xs bg-muted/50 border border-border/40 rounded-md px-2 py-1.5 outline-none focus:border-primary/50 focus:bg-background text-foreground placeholder:text-muted-foreground/50 font-mono transition-colors"
             />
             <div class="flex items-center gap-1.5 justify-end">
               <Button variant="ghost-light" size="xs" onclick={() => (showAddForm = false)}>
-                Cancel
+                {m.terminal_sidebar_cancel_label()}
               </Button>
               <Button
                 variant="default"
@@ -963,7 +1046,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 disabled={!newName.trim() || !newCommand.trim()}
               >
                 <Fa icon={faPlus} size="xs" />
-                Add
+                {m.terminal_sidebar_add_label()}
               </Button>
             </div>
           </div>
@@ -1005,7 +1088,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                       onblur={finishEditingScript}
                       onkeydown={handleEditScriptKeydown}
                       onclick={(e) => e.stopPropagation()}
-                      placeholder="Name"
+                      placeholder={m.terminal_quakeOverlay_name_placeholder()}
                       class="w-full p-0 border-none bg-transparent text-sm outline-none focus:outline-none! focus:ring-0!"
                     />
                   {/snippet}
@@ -1019,7 +1102,9 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 class="w-full text-left px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 onclick={() => (showAllScripts = !showAllScripts)}
               >
-                {showAllScripts ? 'Show less' : `+ ${hiddenScriptCount} scripts`}
+                {showAllScripts
+                  ? m.terminal_sidebar_showLess_label()
+                  : m.terminal_sidebar_moreScripts_label({ count: hiddenScriptCount })}
               </button>
             {/if}
           </ListContainer>
@@ -1046,31 +1131,31 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                       class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('startAll')}
                     >
-                      Start All
+                      {m.terminal_sidebar_startAll_label()}
                     </button>
                     <button
                       type="button"
                       class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('stopAll')}
                     >
-                      Stop All
+                      {m.terminal_sidebar_stopAll_label()}
                     </button>
                   {:else}
                     <!-- Single-select actions -->
-                    {#if script.runtime.status === 'running'}
+                    {#if isLiveScriptStatus(script.runtime.status)}
                       <button
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('stop')}
                       >
-                        Stop
+                        {m.terminal_quakeOverlay_stop_label()}
                       </button>
                       <button
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('restart')}
                       >
-                        Restart
+                        {m.terminal_quakeOverlay_restart_label()}
                       </button>
                     {:else}
                       <button
@@ -1078,7 +1163,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('start')}
                       >
-                        Start
+                        {m.terminal_quakeOverlay_start_label()}
                       </button>
                     {/if}
                     <button
@@ -1086,7 +1171,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                       class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('edit')}
                     >
-                      Edit
+                      {m.terminal_sidebar_edit_label()}
                     </button>
                   {/if}
                   <div class="border-t border-border my-1"></div>
@@ -1095,7 +1180,9 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors text-destructive-foreground hover:bg-destructive/10"
                     onclick={() => handleContextMenuAction('delete')}
                   >
-                    {selectedScriptIds.size > 1 ? `Delete ${selectedScriptIds.size} scripts` : 'Delete'}
+                    {selectedScriptIds.size > 1
+                      ? m.terminal_sidebar_deleteMany_label({ count: selectedScriptIds.size })
+                      : m.terminal_sidebar_delete_label()}
                   </button>
                 {/if}
               {/if}
@@ -1115,13 +1202,13 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         {:else if !showAddForm}
           <div class="px-3 py-3 text-center text-xs text-muted-foreground space-y-2">
             {#if showAgentAssist}
-              <p>No scripts found. Try AI detection for unusual project layouts.</p>
+              <p>{m.terminal_sidebar_noScriptsTryAi_label()}</p>
               <Button variant="outline" size="xs" onclick={handleAgentDetect}>
                 <Fa icon={faWandMagicSparkles} size="xs" />
-                Detect with AI
+                {m.terminal_sidebar_detectWithAi_label()}
               </Button>
             {:else}
-              <p>No scripts found. Add one manually or use AI detection.</p>
+              <p>{m.terminal_sidebar_noScriptsAddManually_label()}</p>
             {/if}
           </div>
         {/if}
@@ -1129,7 +1216,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
       <!-- Terminals Section -->
       <ListSection
-        title="Terminals"
+        title={m.terminal_sidebar_terminals_title()}
         titleClass="mb-0.5 mt-1.5 px-3.5!"
         icon={faTerminal}
         class="py-1 shrink-0"
@@ -1143,8 +1230,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               e.stopPropagation();
               onCreateTerminal?.();
             }}
-            tooltip="New terminal"
-            aria-label="New terminal"
+            tooltip={m.terminal_quakeOverlay_newTerminal_ariaLabel()}
+            aria-label={m.terminal_quakeOverlay_newTerminal_ariaLabel()}
           >
             <Fa icon={faPlus} size="xs" />
           </Button>
@@ -1156,7 +1243,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               <ListItem
                 size="sm"
                 class="pr-2! pl-2!"
-                title={term.customName || term.name || 'Terminal'}
+                title={terminalDisplayName(term)}
                 active={selectedScriptId === null && activeTerminalId === term.id}
                 onclick={() => {
                   onSelectScript?.(null);
@@ -1165,7 +1252,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 actions={[
                   {
                     icon: faTrash,
-                    label: 'Close Terminal',
+                    label: m.terminal_sidebar_closeTerminal_label(),
                     onClick: (e) => {
                       e.stopPropagation();
                       if (workspaceId) appStore.dispatch(removeTerminal(workspaceId, term.id));
@@ -1185,7 +1272,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
           </ListContainer>
         {:else}
           <div class="px-3 py-3 text-center">
-            <p class="text-ui text-muted-foreground">No terminals open</p>
+            <p class="text-ui text-muted-foreground">{m.terminal_sidebar_noTerminals_label()}</p>
           </div>
         {/if}
       </ListSection>

@@ -1,5 +1,11 @@
 import type { DropdownGroup, DropdownOption } from '$lib/components/ui/dropdown';
-import { ACP_PROVIDERS, getProviderConfig } from '$shared/config/provider-config';
+import {
+  selectAllCatalogProviderIds,
+  selectNormalizedProviderId,
+  selectProviderDisplayName,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { store as appStore } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
 
 import {
   formatProviderLoadError,
@@ -12,7 +18,6 @@ type ModelPickerOptions = Parameters<typeof toDropdownOptions>[0];
 interface BuildGroupedModelOptionsParams {
   showDefaultOption: boolean;
   useDefaultOption: DropdownOption;
-  isAgentProviderOverride: boolean;
   effectiveProviderId: string;
   availableModels: ModelPickerOptions;
   enabledProviderIds: string[];
@@ -25,7 +30,6 @@ interface BuildGroupedModelOptionsParams {
 export function buildGroupedModelOptions({
   showDefaultOption,
   useDefaultOption,
-  isAgentProviderOverride,
   effectiveProviderId,
   availableModels,
   enabledProviderIds,
@@ -44,26 +48,18 @@ export function buildGroupedModelOptions({
     });
   }
 
-  if (isAgentProviderOverride) {
-    const providerConfig = getProviderConfig(effectiveProviderId);
-    if (availableModels.length > 0) {
-      groups.push({
-        key: effectiveProviderId,
-        label: providerConfig.displayName,
-        options: toDropdownOptions(availableModels),
-      });
-    }
-    return groups;
-  }
-
+  const state = appStore.state;
   const normalizedEnabledProviderIds = new Set(
-    enabledProviderIds.map((pid) => getProviderConfig(pid).id),
+    enabledProviderIds.map((pid) => selectNormalizedProviderId.select(state, pid)),
   );
   // Keep the agent's current provider group visible even if that provider was
   // since disabled in settings, so the selected model isn't orphaned.
-  const normalizedEffectiveProviderId = getProviderConfig(effectiveProviderId).id;
+  const normalizedEffectiveProviderId = selectNormalizedProviderId.select(
+    state,
+    effectiveProviderId,
+  );
 
-  for (const pid of Object.keys(ACP_PROVIDERS)) {
+  for (const pid of selectAllCatalogProviderIds.select(state)) {
     const isDisabledEffectiveProvider =
       pid === normalizedEffectiveProviderId && !normalizedEnabledProviderIds.has(pid);
     if (!normalizedEnabledProviderIds.has(pid) && !isDisabledEffectiveProvider) continue;
@@ -71,21 +67,22 @@ export function buildGroupedModelOptions({
       allProviderModels[pid] ??
       (isDisabledEffectiveProvider ? toDropdownOptions(availableModels) : undefined);
     if (models && models.length > 0) {
-      const providerConfig = getProviderConfig(pid);
       groups.push({
         key: pid,
-        label: providerConfig.displayName,
+        label: selectProviderDisplayName.select(state, pid),
         options: models,
       });
     } else if (allProviderLoading[pid]) {
-      const providerConfig = getProviderConfig(pid);
+      const displayName = selectProviderDisplayName.select(state, pid);
       groups.push({
         key: pid,
-        label: providerConfig.displayName,
+        label: displayName,
         options: [
           {
             value: `provider-loading:${pid}`,
-            label: `Loading ${providerConfig.displayName} models…`,
+            label: m.chat_modelPicker_loadingProviderModels_label({
+              provider: displayName,
+            }),
             disabled: true,
             class: 'cursor-default disabled:opacity-100',
             data: { providerLoading: true },

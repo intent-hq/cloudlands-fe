@@ -111,9 +111,40 @@ vi.mock('$features/agent/agent.client', () => ({
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  // Hydrated catalog with the synthetic `anthropic` provider these regressions
+  // use, so the real provider-catalog selectors resolve ids/display names.
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
+    '$store/renderer/slices/provider-catalog/provider-catalog-slice'
+  );
+  const providerCatalog = providerCatalogReducer(
+    initialState,
+    providerCatalogLoaded({
+      providers: [
+        {
+          id: 'auggie',
+          displayName: 'Auggie',
+          shortName: 'Auggie',
+          command: 'auggie',
+          isDefault: true,
+          canBeDisabled: true,
+          visible: true,
+        },
+        {
+          id: 'anthropic',
+          displayName: 'Anthropic',
+          shortName: 'Anthropic',
+          command: 'anthropic',
+          isDefault: false,
+          canBeDisabled: true,
+          visible: true,
+        },
+      ],
+      defaultProviderId: 'auggie',
+    }),
+  );
 
   return createAppStoreMockModule({
-    state: () => ({ sessions }),
+    state: () => ({ sessions, providerCatalog }),
     dispatch: mockReduxDispatch,
   });
 });
@@ -178,28 +209,6 @@ vi.mock('$store/renderer/slices/model/model-utils', () => ({
   }),
 }));
 
-vi.mock('$shared/config/provider-config', () => ({
-  ACP_PROVIDERS: {
-    auggie: { id: 'auggie', displayName: 'Auggie' },
-    anthropic: { id: 'anthropic', displayName: 'Anthropic' },
-  },
-  getDefaultProviderId: () => 'auggie',
-  getProviderConfig: (providerId?: string) => ({
-    id: providerId || 'auggie',
-    displayName: providerId || 'auggie',
-    command: providerId || 'auggie',
-  }),
-  isProviderAuthenticationError: () => false,
-  parseCompoundModelId: (modelId?: string) => {
-    if (!modelId) return { providerId: 'auggie', modelId: '' };
-    const [providerId, ...rest] = modelId.split(':');
-    return rest.length
-      ? { providerId, modelId: rest.join(':') }
-      : { providerId: 'auggie', modelId };
-  },
-  resolvePreferredModel: () => undefined,
-}));
-
 vi.mock('$shared/types/agent-session', () => ({
   getAgentProvider: (session: Session) =>
     session.provider ?? (session.metadata?.provider as string | undefined),
@@ -215,6 +224,14 @@ import { store as appStore } from '$store/renderer/store';
 import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { getModelsForProviderForLoadingState } from '$store/renderer/slices/model/model-utils';
 import ModelPicker from '../ModelPicker.svelte';
+import { warmImport } from '../../../../../test/warm-import';
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../../../ui/__tests__/mocks/button.svelte'));
+warmImport(() => import('../../__tests__/mocks/SlotOnly.svelte'));
+warmImport(() => import('../../__tests__/mocks/ProviderIcon.svelte'));
 
 describe('ModelPicker trigger label regressions', () => {
   beforeEach(() => {
@@ -321,6 +338,39 @@ describe('ModelPicker trigger label regressions', () => {
     await tick();
 
     expect(screen.getByRole('button').textContent ?? '').toContain('Auggie Butler');
+  });
+
+  it('prefers defaultModelLabel when defaultModelId cannot be resolved to a label', () => {
+    availableModels$.set([]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelId: 'auggie:not-loaded-yet',
+        defaultModelLabel: 'Provider default',
+        isLocked: true,
+      },
+    });
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Provider default');
+    expect(text).not.toContain('Default model');
+  });
+
+  it('falls back to the bare model id for an unresolvable defaultModelId without defaultModelLabel', () => {
+    availableModels$.set([]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelId: 'auggie:not-loaded-yet',
+        isLocked: true,
+      },
+    });
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('not-loaded-yet');
+    expect(text).not.toContain('Default model');
   });
 
   it('derives the trigger icon from a bare defaultModelId (default provider) instead of the active provider', () => {

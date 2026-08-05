@@ -8,6 +8,7 @@ import { ipcMain } from 'electron';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { z } from 'zod';
 import { Logger } from '$lib/utils/logger';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = new Logger({ category: 'DeepLink-IPC' });
 
@@ -56,13 +57,15 @@ export function registerDeepLinkHandlers(): void {
             success: isValid,
             workspaceId,
             valid: isValid,
-            message: isValid ? 'Workspace validated' : 'Invalid workspace ID',
+            message: isValid
+              ? m.deeplink_ipc_workspaceValidated_message()
+              : m.deeplink_ipc_invalidWorkspaceId_error(),
           };
         } catch (error) {
           logger.error('Failed to validate workspace', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.deeplink_ipc_unknown_error(),
           };
         }
       },
@@ -93,7 +96,7 @@ export function registerDeepLinkHandlers(): void {
           logger.error('Failed to write file', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.deeplink_ipc_unknown_error(),
           };
         }
       },

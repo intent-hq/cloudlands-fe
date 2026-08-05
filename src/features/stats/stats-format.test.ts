@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { store as appStore } from '$store/renderer/store';
+import {
+  MOCK_PROVIDER_CATALOG,
+  seedProviderCatalog,
+} from '../../test/fixtures/provider-catalog.fixture';
 import type { UsageModelStats, UsageProviderStats } from '$lib/client/app-client';
 import {
   formatDuration,
@@ -202,14 +207,27 @@ describe('rankProviders', () => {
 });
 
 describe('providerDisplayName', () => {
+  beforeAll(() => {
+    appStore.init();
+    seedProviderCatalog(appStore);
+  });
+
   it('maps raw provider ids to short app-style names', () => {
     expect(providerDisplayName('auggie')).toBe('Auggie');
     expect(providerDisplayName('claude-code')).toBe('Claude Code');
     expect(providerDisplayName('codex')).toBe('Codex');
+    expect(providerDisplayName('cortex')).toBe('Cortex');
     expect(providerDisplayName('opencode')).toBe('OpenCode');
     expect(providerDisplayName('pi')).toBe('Pi');
     expect(providerDisplayName('droid')).toBe('Droid');
     expect(providerDisplayName('grok')).toBe('Grok');
+  });
+
+  it('covers every catalog provider (drift guard)', () => {
+    for (const provider of MOCK_PROVIDER_CATALOG.providers) {
+      expect(providerDisplayName(provider.id), provider.id).toBe(provider.shortName);
+      expect(provider.shortName, `${provider.id} shortName`).not.toBe('');
+    }
   });
 
   it('renders pre-migration/unattributable usage as Unknown', () => {

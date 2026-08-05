@@ -22,6 +22,7 @@ import type {
 } from '../../shared/types';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { m } from '$shared/paraglide/messages.js';
 
 /** Fold a thrown transport/daemon error into a failed Result. */
 function toError(error: unknown, fallback: string): { ok: false; error: string } {
@@ -48,6 +49,7 @@ class GitClient {
 
         // Check if it's a "handler not registered" error
         const errorMessage = error instanceof Error ? error.message : String(error);
+        // i18n-ignore (matches Electron's internal English error message)
         if (errorMessage.includes('No handler registered') && retries > 0) {
           // Wait a bit before retrying to allow IPC handlers to be registered
           await new Promise((resolve) => setTimeout(resolve, 100));
@@ -69,7 +71,7 @@ class GitClient {
     if (response.success) {
       return { ok: true, data: response.data as T };
     } else {
-      return { ok: false, error: response.error || 'Unknown error' };
+      return { ok: false, error: response.error || m.git_client_unknown_error() };
     }
   }
 
@@ -80,7 +82,7 @@ class GitClient {
       const data = await backendRequest<GitStatus>('git.status', { workspaceId });
       return { ok: true, data };
     } catch (error) {
-      return toError(error, 'Failed to get git status');
+      return toError(error, m.git_client_statusFailed_error());
     }
   }
 
@@ -91,7 +93,7 @@ class GitClient {
       await backendRequest('git.stage', { workspaceId, paths: files });
       return { ok: true, data: undefined };
     } catch (error) {
-      return toError(error, 'Failed to stage files');
+      return toError(error, m.git_client_stageFailed_error());
     }
   }
 
@@ -102,7 +104,7 @@ class GitClient {
       await backendRequest('git.unstage', { workspaceId, paths: files });
       return { ok: true, data: undefined };
     } catch (error) {
-      return toError(error, 'Failed to unstage files');
+      return toError(error, m.git_client_unstageFailed_error());
     }
   }
 
@@ -150,7 +152,7 @@ class GitClient {
       // commit hash in the CommitInfo slot.
       return { ok: true, data: { hash: result?.hash ?? '' } as CommitInfo };
     } catch (error) {
-      return toError(error, 'Failed to commit');
+      return toError(error, m.git_client_commitFailed_error());
     }
   }
 
@@ -185,7 +187,7 @@ class GitClient {
       });
       return { ok: true, data: Array.isArray(result?.items) ? result.items : [] };
     } catch (error) {
-      return toError(error, 'Failed to get git history');
+      return toError(error, m.git_client_historyFailed_error());
     }
   }
 
@@ -206,7 +208,7 @@ class GitClient {
       });
       return { ok: true, data: typeof result?.content === 'string' ? result.content : '' };
     } catch (error) {
-      return toError(error, 'Failed to show file');
+      return toError(error, m.git_client_showFileFailed_error());
     }
   }
 

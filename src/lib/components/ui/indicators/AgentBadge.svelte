@@ -1,6 +1,8 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   /**
    * AgentBadge - Badge showing count of active agents
@@ -27,7 +29,11 @@
     }
   });
 
-  const tooltip = $derived(count === 1 ? '1 unread response' : `${count} unread responses`);
+  const tooltip = $derived(
+    count === 1
+      ? m.ui_agentBadge_unread_one()
+      : m.ui_agentBadge_unread_many({ count: formatInteger(count) }),
+  );
 </script>
 
 {#if count > 0}
@@ -38,7 +44,7 @@
       transition:fade={{ duration: 200 }}
       aria-label={tooltip}
     >
-      <span class="badge-text">{count}</span>
+      <span class="badge-text">{formatInteger(count)}</span>
     </div>
   </Tooltip>
 {/if}

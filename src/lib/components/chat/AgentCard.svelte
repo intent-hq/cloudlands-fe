@@ -6,17 +6,20 @@
    * Uses subscription for real-time updates and displays line changes stats.
    * Reads Redux-owned streaming state for real-time response updates.
    */
-  import { tick } from 'svelte';
+  import { tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import { toast } from 'svelte-sonner';
+  import { createLogger } from '$lib/utils/client-logger';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import {
   selectAgentSession,
   selectAgentIsResponding,
+  selectAgentSessionHasStreamOwnedMessage,
   selectAgentSessionStreamingContent,
   selectAgentIsWaiting,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectChatReceivedFirstChunk } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import {
   deleteAgentWithUndoRequested,
   ensureAgentSessionLoaded,
@@ -25,7 +28,8 @@
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
-  import { getLastMeaningfulLine } from '$lib/utils/text-utils';
+  import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
+  import { getLastMeaningfulLine, stripUserMessagePrefixes } from '$lib/utils/text-utils';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
@@ -51,6 +55,7 @@
   faTrash,
 } from '@fortawesome/free-solid-svg-icons';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
   import { invoke } from '$lib/electron-bridge';
   import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 
@@ -80,6 +85,8 @@
     workspace?: Workspace | null;
     /** Whether the agent has finished its delegated work (forces completed avatar state) */
     isCompleted?: boolean;
+    /** Optional actions rendered in the header row, before the relative timestamp */
+    headerActions?: Snippet;
   }
 
   let {
@@ -96,7 +103,10 @@
     hidePreview = false,
     workspace = null,
     isCompleted = false,
+    headerActions,
   }: Props = $props();
+
+  const logger = createLogger('AgentCard');
 
   // svelte-ignore state_referenced_locally -- selectors are initialized with the current agent; the effect below mirrors prop changes.
   const agentIdStore = writable(agentId);
@@ -129,7 +139,8 @@
     // @ts-expect-error - userAgentData is not in all browsers
     (navigator.userAgentData?.platform === 'macOS' ||
       /Mac|iPhone|iPad|iPod/.test(navigator.userAgent));
-  const fileManagerName = isWindows ? 'Explorer' : isMac ? 'Finder' : 'File Manager';
+  // i18n-ignore (Explorer/Finder are OS brand names)
+  const fileManagerName = isWindows ? 'Explorer' : isMac ? 'Finder' : m.chat_agentCard_fileManager_label();
 
   // Start editing the agent name
   async function startEditing() {
@@ -170,7 +181,7 @@
               nameExplicitlySet: previousNameExplicitlySet,
             } as any),
           );
-          toast.error('Failed to rename agent');
+          toast.error(m.chat_agentCard_renameFailed_error());
         });
       }
     }
@@ -228,7 +239,7 @@
     const items: SidebarMenuEntry[] = [
       {
         id: 'open',
-        label: 'Open',
+        label: m.chat_agentCard_menu_open_label(),
         icon: faArrowUpRightFromSquare,
         onClick: () => {
           {
@@ -246,7 +257,7 @@
       },
       {
         id: 'rename',
-        label: 'Rename',
+        label: m.chat_agentCard_menu_rename_label(),
         icon: faPen,
         onClick: () => {
           startEditing();
@@ -262,7 +273,7 @@
     if (sandboxPath && selectIsDaemonLocal.select(appStore.state)) {
       items.push({
         id: 'reveal-sandbox',
-        label: `Reveal in ${fileManagerName}`,
+        label: m.chat_agentCard_menu_revealIn_label({ fileManager: fileManagerName }),
         icon: faFolderOpen,
         onClick: async () => {
           closeContextMenu();
@@ -270,7 +281,9 @@
             await invoke('shell:showItemInFolder', { path: sandboxPath });
           } catch (error) {
             toast.error(
-              error instanceof Error ? error.message : `Failed to reveal in ${fileManagerName}`,
+              error instanceof Error
+                ? error.message
+                : m.chat_agentCard_revealFailed_error({ fileManager: fileManagerName }),
             );
           }
         },
@@ -281,7 +294,7 @@
     if (avatarState === 'running' || avatarState === 'responding') {
       items.push({
         id: 'stop',
-        label: 'Stop',
+        label: m.chat_agentCard_menu_stop_label(),
         icon: faStop,
         onClick: async () => {
           const wsId = $agent$?.workspaceId
@@ -289,12 +302,20 @@
             : workspace?.id
               ? String(workspace.id)
               : undefined;
-          if (wsId) {
-            const action = stopAgentSessionRequested(wsId, agentId);
-            appStore.dispatch(action);
-            await action.promise;
+          // The stop trigger settles for real now (agent-mutation-service
+          // forwards agent.stop) — guard so a daemon-side failure cannot
+          // become an unhandled rejection that skips closing the menu.
+          try {
+            if (wsId) {
+              const action = stopAgentSessionRequested(wsId, agentId);
+              appStore.dispatch(action);
+              await action.promise;
+            }
+          } catch (error) {
+            logger.error('Failed to stop agent', { agentId, error });
+          } finally {
+            closeContextMenu();
           }
-          closeContextMenu();
         },
       });
     }
@@ -302,7 +323,7 @@
     items.push({ type: 'separator' });
     items.push({
       id: 'delete',
-      label: 'Delete',
+      label: m.chat_agentCard_menu_delete_label(),
       icon: faTrash,
       destructive: true,
       onClick: async () => {
@@ -359,18 +380,22 @@
 
   // Streaming state is derived from Redux-owned stream lifecycle/message state.
   const streamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
+  const hasStreamOwnedMessage$ = selectAgentSessionHasStreamOwnedMessage(agentIdStore);
+  // Per-turn "response text landed this turn" flag (chat-state): reset by
+  // `agent:stream:end`, flipped by the first text-bearing activity ping.
+  const receivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
   const streamingBuffer = $derived($streamingContent$);
   const isStreamActive = $derived($agentIsResponding$ && !$agentIsWaiting$);
 
   // Extract display data
-  const displayName = $derived(agentData?.name || agentName || 'Agent');
-  const lastUserMsg = $derived(
-    // filter out [Currently viewing: ...] prefixes and @context[...] mentions (raw base64/pipe format)
-    agentData?.lastUserMessage
-      ?.replace(/^\[.*?\]\s*/g, '')
-      ?.replace(/@context\[[^\]]*\]/g, '')
-      ?.trim() || '',
-  );
+  const displayName = $derived(agentData?.name || agentName || m.chat_shared_agentName_fallback());
+  // filter out [Currently viewing: ...] prefixes and @context[...] mentions
+  // (raw base64/pipe format) — shared with the HUD card line derivation.
+  const lastUserMsg = $derived(stripUserMessagePrefixes(agentData?.lastUserMessage ?? ''));
+  // Pending attention request (discussion/blocker) from the daemon session
+  // fields; null when none is pending (retired on agent:updated clear).
+  const attentionRequest = $derived(getAgentAttentionRequest($agent$));
+
   // Use centralized getAvatarState for consistent state calculation
   const avatarState = $derived(
     getAvatarState(
@@ -381,6 +406,7 @@
       {
         hasPermissionRequest: $agentPermCount > 0,
         isCompleted,
+        attentionKind: attentionRequest?.kind ?? null,
       },
     ),
   );
@@ -397,17 +423,52 @@
     return typeof path === 'string' && path.length > 0 ? path : null;
   });
 
-  // Show streaming content if actively streaming, otherwise show last response.
-  // When actively streaming, prefer the live text buffer so we reflect
-  // character-by-character progress. Tool previews (lastToolUse) only kick in
-  // when there's no meaningful text to show.
-  const lastResponse = $derived.by(() => {
-    if (isStreamActive && streamingBuffer) {
+  // Preview precedence while a turn is live:
+  //   1. the stream-owned chat.subscribe buffer (viewed agent only —
+  //      character-level progress from the standing delta stream);
+  //   2. the session's push-applied `lastAgentResponse` (refreshed ~1s by
+  //      `agent:stream:activity`, intentd#792) so a non-viewed watched
+  //      agent's preview advances mid-turn instead of freezing on stale
+  //      transcript-derived peek text — gated on the per-turn
+  //      `receivedFirstChunk` flag (reset by `agent:stream:end`, flipped by
+  //      a text-bearing `agent:stream:activity`) so a leftover previous-turn
+  //      `lastAgentResponse` doesn't masquerade as this turn's text in the
+  //      pre-first-token window;
+  //   3. the persisted transcript peek text (idle agents).
+  // Tool previews (lastToolUse) only kick in when there's no text to show.
+  const liveResponseLine = $derived.by(() => {
+    if (isStreamActive && $hasStreamOwnedMessage$ && streamingBuffer) {
       const line = getLastMeaningfulLine(streamingBuffer);
       if (line) return line;
     }
-    return agentData?.lastResponse ? getLastMeaningfulLine(agentData.lastResponse) : '';
+    if ($agentIsResponding$ && $receivedFirstChunk$ && $agent$?.lastAgentResponse) {
+      const line = getLastMeaningfulLine($agent$.lastAgentResponse);
+      if (line) return line;
+    }
+    return '';
   });
+  const lastResponse = $derived(
+    liveResponseLine ||
+      (agentData?.lastResponse ? getLastMeaningfulLine(agentData.lastResponse) : ''),
+  );
+
+  // Freshness-wins preview: when the newest transcript message is the user's
+  // (wire `lastMessageRole`, transcript-derived fallback in agent-peek-utils)
+  // and no streamed text exists yet for an in-flight turn, the user's first
+  // line outranks digest/completionReport/lastResponse/lastToolUse (attention
+  // requests still take top precedence). Absent role (older daemon) keeps the
+  // existing precedence. Once streamed text lands (or the daemon overlay flips
+  // the role to "assistant"), the live-preview precedence above resumes.
+  // Text source: transcript-derived first, then the wire `lastUserMessage`
+  // (AgentLite list/get projection) for sessions without a loaded transcript.
+  const userFirstLine = $derived(
+    stripUserMessagePrefixes(agentData?.lastUserMessage || $agent$?.lastUserMessage || '')
+      .split('\n')[0]
+      ?.trim() ?? '',
+  );
+  const showUserMessagePreview = $derived(
+    agentData?.lastMessageRole === 'user' && !!userFirstLine && !liveResponseLine,
+  );
 
   // Tool-use block to preview when the latest thing the agent did was a tool
   // call (see agent-peek-utils). Only used when there's no text to display.
@@ -422,18 +483,36 @@
     if (isRunning) return 'agent-glow-active';
     if (avatarState === 'failed') return 'shadow shadow-red-500 shadow-sm';
     if (avatarState === 'needs-permission') return 'shadow shadow-amber-500 shadow-sm';
+    if (avatarState === 'attention-discussion') return 'shadow shadow-amber-500 shadow-sm';
+    if (avatarState === 'attention-blocker') return 'shadow shadow-red-500 shadow-sm';
     if (avatarState === 'waiting') return 'shadow shadow-amber-500 shadow-sm';
     return 'glow-transparent';
   });
 
   // Show completion report if available - priority order:
+  // 0. Live session digest while responding (push-applied from
+  //    `agent:stream:activity` and cleared at each turn's first ping by the
+  //    events bridge, monorepo#1327 — so mid-turn it is this turn's digest,
+  //    modulo the sub-second window before that first ping lands, during
+  //    which the previous turn's digest may briefly linger)
   // 1. Digest from <agent_digest> tag (most concise, agent-provided summary)
   // 2. Completion report from report_to_parent tool (prop from event data)
   // 3. Completion report from agent metadata
   // 4. lastResponseSummary (fallback from event data)
-  const effectiveCompletionReport = $derived(
-    agentData?.digest || completionReport || agentData?.completionReport || lastResponseSummary,
-  );
+  // Sources 1-4 are previous-turn summaries: while the agent is responding
+  // they must never be the preview (monorepo#1327) — including the tool-only
+  // no-text window where no `receivedFirstChunk` flip has happened yet — so
+  // the derivation yields undefined and the render chain falls through to
+  // live text / newest user message / tool preview. They remain the fallback
+  // for idle agents between turns.
+  const effectiveCompletionReport = $derived.by(() => {
+    if ($agentIsResponding$) {
+      return $agent$?.digest || undefined;
+    }
+    return (
+      agentData?.digest || completionReport || agentData?.completionReport || lastResponseSummary
+    );
+  });
 
   // Handle click - navigate to agent
   function handleClick(event: MouseEvent) {
@@ -525,12 +604,12 @@
               <span
                 class="delegated-by-text ml-1 min-w-0 shrink truncate whitespace-nowrap text-ui text-subtle"
               >
-                · Delegated by {delegatedByName}
+                {m.chat_agentCard_delegatedBy_label({ name: delegatedByName })}
               </span>
             {/if}
             {#if isBackground}
               <div class="ml-auto px-1 py-0.5 text-ui font-bold bg-muted text-subtle rounded mr-1">
-                BG
+                {m.chat_agentCard_background_badge()}
               </div>
             {/if}
           </div>
@@ -543,15 +622,44 @@
                 size="xs"
               />
             {/if}
+            {#if headerActions}
+              {@render headerActions()}
+            {/if}
             {#if updatedAt}
               <RelativeTime date={updatedAt} compact class="text-ui text-subtle" />
             {/if}
           </div>
         </div>
 
-        <!-- Message preview - show completion report if available, otherwise last response -->
+        <!-- Message preview - attention request takes precedence, then the newest
+             user message (freshness wins), then completion report (suppressed in
+             favor of this-turn live text while a turn streams, monorepo#1327),
+             then last response -->
         {#if !hidePreview}
-          {#if effectiveCompletionReport}
+          {#if attentionRequest}
+            <div class="mt-0.5" transition:slide={{ axis: 'y', duration: 150 }}>
+              <p
+                class="text-sm truncate {attentionRequest.kind === 'blocker'
+                  ? 'text-red-500'
+                  : 'text-amber-500'}"
+                data-testid="agent-card-attention"
+              >
+                {attentionRequest.kind === 'blocker'
+                  ? m.chat_agentCard_attentionBlocker_label()
+                  : m.chat_agentCard_attentionDiscussion_label()}{#if attentionRequest.reason}<span
+                    class="text-subtle"
+                  >
+                    · {attentionRequest.reason}</span
+                  >{/if}
+              </p>
+            </div>
+          {:else if showUserMessagePreview}
+            <div class="mt-0.5">
+              <p class="text-sm text-subtle truncate" data-testid="agent-card-preview">
+                {userFirstLine}
+              </p>
+            </div>
+          {:else if effectiveCompletionReport}
             <div class="mt-0.5">
               <p class="text-sm text-subtle truncate">
                 {effectiveCompletionReport}

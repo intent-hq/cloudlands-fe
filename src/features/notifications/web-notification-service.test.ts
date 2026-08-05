@@ -45,6 +45,7 @@ import {
   showTestWebNotification,
   requestWebNotificationPermission,
   __resetWebNotificationServiceForTesting,
+  __getActiveWebNotificationCountForTesting,
 } from './web-notification-service';
 import { emitMockIpcEvent, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -65,7 +66,7 @@ class MockNotification {
   close = vi.fn();
   constructor(
     public title: string,
-    public options?: { body?: string },
+    public options?: { body?: string; tag?: string },
   ) {
     MockNotification.instances.push(this);
   }
@@ -266,6 +267,47 @@ describe('web-notification-service', () => {
       expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
     });
 
+    it('tags idle notifications with workspaceId:agentId so same-agent banners replace', async () => {
+      await handleWebAgentIdle(makeIdleEvent());
+
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(MockNotification.instances[0].options?.tag).toBe('ws-1:agent-1');
+    });
+
+    it('sound gate still runs on every tagged idle notification', async () => {
+      await handleWebAgentIdle(makeIdleEvent());
+      await handleWebAgentIdle(makeIdleEvent());
+      await flushAsync();
+
+      expect(MockNotification.instances).toHaveLength(2);
+      expect(MockNotification.instances[0].options?.tag).toBe('ws-1:agent-1');
+      expect(MockNotification.instances[1].options?.tag).toBe('ws-1:agent-1');
+      expect(mockPlayNotificationSound).toHaveBeenCalledTimes(2);
+    });
+
+    it('evicts the replaced same-tag notification from the strong-ref set even without onclose (leak regression)', async () => {
+      await handleWebAgentIdle(makeIdleEvent());
+      await handleWebAgentIdle(makeIdleEvent());
+      await handleWebAgentIdle(makeIdleEvent());
+
+      // Three same-tag idles, no onclose fired: only the latest survives.
+      expect(MockNotification.instances).toHaveLength(3);
+      expect(__getActiveWebNotificationCountForTesting()).toBe(1);
+
+      // Closing the survivor drains the set.
+      MockNotification.instances[2].onclose?.();
+      expect(__getActiveWebNotificationCountForTesting()).toBe(0);
+    });
+
+    it('distinct-tag notifications never evict each other', async () => {
+      stubBackendWire({ workspaceIds: ['ws-1', 'ws-2'] });
+      await handleWebAgentIdle(makeIdleEvent());
+      await handleWebAgentIdle(makeIdleEvent({ agentId: 'agent-1' }, 'ws-2'));
+
+      expect(MockNotification.instances).toHaveLength(2);
+      expect(__getActiveWebNotificationCountForTesting()).toBe(2);
+    });
+
     it('falls back to "Agent"/"Finished" without specialist/taskTitle/workspace title', async () => {
       stubBackendWire({ workspaceGetResult: { workspace: { id: 'ws-1', title: '' } } });
       await handleWebAgentIdle(makeIdleEvent());
@@ -330,6 +372,29 @@ describe('web-notification-service', () => {
 
       expect(MockNotification.instances).toHaveLength(0);
       expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls('ws-1', { workspaceGet: false }));
+    });
+
+    it('skips when the agent is waiting on other agents (event fast path, no agent.list read)', async () => {
+      await handleWebAgentIdle(makeIdleEvent({ isWaitingForOtherAgents: true }));
+
+      expect(MockNotification.instances).toHaveLength(0);
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+      );
+    });
+
+    it('does not skip when isWaitingForOtherAgents is false (existing behavior)', async () => {
+      await handleWebAgentIdle(makeIdleEvent({ isWaitingForOtherAgents: false }));
+
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
+    });
+
+    it('does not skip when isWaitingForOtherAgents is absent (older daemons)', async () => {
+      await handleWebAgentIdle(makeIdleEvent());
+
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
     });
 
     it('skips when other agents are still active in the workspace', async () => {
@@ -541,12 +606,13 @@ describe('web-notification-service', () => {
   });
 
   describe('test notification + permission envelopes', () => {
-    it('showTestWebNotification shows the Electron-parity test payload', async () => {
+    it('showTestWebNotification shows the Electron-parity test payload without a tag', async () => {
       const result = await showTestWebNotification();
 
       expect(result).toEqual({ success: true });
       expect(MockNotification.instances[0].title).toBe('Agent');
       expect(MockNotification.instances[0].options?.body).toBe('Test notification');
+      expect(MockNotification.instances[0].options).not.toHaveProperty('tag');
     });
 
     it('showTestWebNotification folds a denied permission to a shaped failure', async () => {

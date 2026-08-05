@@ -9,6 +9,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { stopAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   const logger = createLogger('SpecWritingOnboarding');
@@ -53,36 +54,36 @@
             1
           </div>
           <div class="step-content">
-            <h4>Creating Spec</h4>
+            <h4>{m.workspace_specOnboarding_creatingSpec_label()}</h4>
             <p>
-              The Coordinator is analyzing your codebase and writing a spec. Once ready, you
-              can review, edit, or iterate on it with agents.
+              {m.workspace_specOnboarding_creatingSpec_description()}
             </p>
             <p class="secondary">
-              <em>Want to take over?</em>
+              <em>{m.workspace_specOnboarding_takeOver_before()}</em>
               <!-- svelte-ignore a11y_missing_attribute -->
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <a
                 onclick={handleStopCoordinator}
                 onkeydown={(e) => e.key === 'Enter' && handleStopCoordinator()}
               >
-                {isStopping ? 'Stopping...' : 'Stop the Coordinator'}
+                {isStopping
+                  ? m.workspace_specOnboarding_stopping_label()
+                  : m.workspace_specOnboarding_stopCoordinator_label()}
               </a>
-              to edit manually.
+              {m.workspace_specOnboarding_takeOver_after()}
             </p>
           </div>
         </li>
         <li class="step">
           <div class="step-marker">2</div>
           <div class="step-content">
-            <h4>Implement</h4>
+            <h4>{m.workspace_specOnboarding_implement_label()}</h4>
             <p>
-              Once you're happy with the spec, ask the Coordinator to start implementing. It will
-              delegate tasks to agents—independent tasks run in parallel, dependent ones wait.
+              {m.workspace_specOnboarding_implement_description()}
             </p>
 
             <p class="secondary">
-              You can always edit the code yourself from the Files tab, or in your usual IDE.
+              {m.workspace_specOnboarding_editYourself_description()}
             </p>
           </div>
         </li>
@@ -90,12 +91,11 @@
         <li class="step">
           <div class="step-marker">3</div>
           <div class="step-content">
-            <h4>Accept changes</h4>
+            <h4>{m.workspace_specOnboarding_acceptChanges_label()}</h4>
             <p>
-              Review the changes in the Changes tab, run from the terminal, or test in a browser
-              panel.
+              {m.workspace_specOnboarding_acceptChanges_description()}
             </p>
-            <p class="secondary">Stage, commit, create a PR, and/or merge to fit your workflow.</p>
+            <p class="secondary">{m.workspace_specOnboarding_stageCommit_description()}</p>
           </div>
         </li>
       </ol>

@@ -7,20 +7,25 @@
  * `availablePeriods`; the FE never fabricates periods.
  */
 import type { UsageStatsPeriod } from '$lib/client/app-client';
+import { formatDatePattern } from '$lib/i18n/format';
+import { m } from '$shared/paraglide/messages.js';
 
 export type StatsMode = UsageStatsPeriod;
 
-/** Mode toggle order per Spec D11: 24H first. */
+/** Mode toggle order per Spec D11: 24H first (label getters re-evaluate on locale change). */
 export const STATS_MODES: { mode: StatsMode; label: string }[] = [
-  { mode: '24h', label: '24H' },
-  { mode: 'month', label: 'Month' },
-  { mode: 'year', label: 'Year' },
+  { mode: '24h', get label() { return m.stats_period_mode24h_label(); } },
+  { mode: 'month', get label() { return m.stats_period_modeMonth_label(); } },
+  { mode: 'year', get label() { return m.stats_period_modeYear_label(); } },
 ];
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
+/** Date for a "YYYY-MM" key, or null when the key doesn't parse. */
+function monthKeyToDate(key: string): Date | null {
+  const year = Number(key.slice(0, 4));
+  const month = Number(key.slice(5, 7));
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
+  return new Date(year, month - 1, 1);
+}
 
 /** "YYYY-MM" for the current local month. */
 export function currentMonthKey(now: Date = new Date()): string {
@@ -41,17 +46,16 @@ export function localTzOffsetMinutes(now: Date = new Date()): number {
 /** Full dropdown label for a period key ("2026-07" → "July 2026"). */
 export function periodLabel(mode: StatsMode, key: string): string {
   if (mode !== 'month') return key;
-  const month = Number(key.slice(5, 7));
-  const name = MONTH_NAMES[month - 1];
-  return name ? `${name} ${key.slice(0, 4)}` : key;
+  const date = monthKeyToDate(key);
+  return date ? formatDatePattern(date, 'MMMM yyyy') : key;
 }
 
 /** Card-corner short label ("2026-07" → "JUL 2026"; 24h → "LAST 24H"). */
 export function shortLabel(mode: StatsMode, key: string): string {
-  if (mode === '24h') return 'LAST 24H';
+  if (mode === '24h') return m.stats_period_last24h_label();
   if (mode !== 'month') return key;
-  const name = periodLabel('month', key);
-  return name === key ? key : `${name.slice(0, 3).toUpperCase()} ${key.slice(0, 4)}`;
+  const date = monthKeyToDate(key);
+  return date ? formatDatePattern(date, 'MMM yyyy').toUpperCase() : key;
 }
 
 /**

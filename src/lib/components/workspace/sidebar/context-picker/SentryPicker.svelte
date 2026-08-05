@@ -28,6 +28,7 @@
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   interface Props {
@@ -117,36 +118,36 @@
 {#if !$isAuthenticated$}
   <div class="p-6 flex flex-col items-center gap-4">
     <SentryIcon size={48} class="text-subtle" />
-    <p class="text-sm text-subtle text-center">Connect to Sentry to see your issues</p>
+    <p class="text-sm text-subtle text-center">{m.workspace_sentryPicker_connectPrompt_label()}</p>
 
     {#if showConfigForm}
       <div class="w-full space-y-3">
         <Input
           bind:value={sentryOrg}
-          placeholder="Organization slug"
+          placeholder={m.workspace_sentryPicker_orgSlug_placeholder()}
           class="h-9"
         />
         <Input
           bind:value={sentryToken}
-          placeholder="Auth token"
+          placeholder={m.workspace_sentryPicker_authToken_placeholder()}
           type="password"
           class="h-9"
         />
         <div class="flex gap-2">
           <Button variant="outline" onclick={() => (showConfigForm = false)} class="flex-1">
-            Cancel
+            {m.workspace_prCreator_cancel_label()}
           </Button>
           <Button onclick={handleConnect} disabled={$storeIsConnecting$ || !sentryOrg || !sentryToken} class="flex-1">
             {#if $storeIsConnecting$}
               <Fa icon={faSpinner} class="animate-spin mr-2" />
             {/if}
-            Connect
+            {m.workspace_sentryPicker_connect_label()}
           </Button>
         </div>
       </div>
     {:else}
       <Button onclick={() => (showConfigForm = true)}>
-        Configure Sentry
+        {m.workspace_sentryPicker_configure_label()}
       </Button>
     {/if}
   </div>
@@ -161,7 +162,7 @@
       <Fa icon={faSearch} class="absolute left-3 top-1/2 -translate-y-1/2 text-ghost" size="sm" />
       <Input
         bind:value={searchQuery}
-        placeholder="Search issues..."
+        placeholder={m.workspace_contextPicker_searchIssues_placeholder()}
         class="pl-9 h-9"
         autofocus
       />

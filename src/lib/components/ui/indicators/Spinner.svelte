@@ -4,6 +4,7 @@
    * Uses the same color generation as AuggieAvatar for consistent theming.
    */
   import { getRandomColorsWithSeed } from '$lib/components/ui/auggie-avatar/avatar-constants';
+  import { m } from '$shared/paraglide/messages.js';
 
   type Variant = 'wave' | 'stair' | 'snake' | 'shuffle' | 'pulse';
 
@@ -36,7 +37,7 @@
   class="spinner-container inline-flex items-center {className}"
   style="--size: {size}px; --gap: {gap}px; --color1: {color1}; --color2: {color2};"
   role="status"
-  aria-label="Loading"
+  aria-label={m.ui_spinner_loading_ariaLabel()}
   data-variant={variant}
 >
   <div class="spinner-track">

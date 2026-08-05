@@ -3,11 +3,7 @@
 
   Streaming status indicator:
   - Normal: Spinner with "Thinking"
-  - Stalled: Warning with status page link and Stop button (driven by chat sagas)
   - Error/Timeout: clear failed state with Try Again button
-
-  Stall detection is handled entirely by chat sagas (which have context about
-  running tools, stream start time, etc.) and surfaced via the `isStalled` prop.
 -->
 <script lang="ts">
   import { fade } from 'svelte/transition';
@@ -21,7 +17,9 @@
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
   import { Spinner } from '$lib/components/ui/indicators';
-  import { formatDuration } from './streaming-status-utils';
+  import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+  import { deriveErrorDisplay, formatDuration, formatElapsed } from './streaming-status-utils';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Whether streaming is active */
@@ -36,8 +34,13 @@
     streamingContentLength?: number;
     /** Error message if connection failed */
     error?: string | null;
-    /** Whether the stream appears stalled (no chunks received recently) */
-    isStalled?: boolean;
+    /**
+     * Daemon-derived corrupted-session flag (monorepo#940) — when true, the
+     * error surface shows recreate-aware copy instead of the raw error.
+     */
+    sessionCorrupted?: boolean;
+    /** ISO timestamp of when the failure occurred - renders a live "failed X ago" */
+    failedAt?: string | null;
     /** Model unavailable info - when set, shows retry with suggested model */
     modelUnavailable?: {
       failedModel: string;
@@ -55,8 +58,6 @@
     onRetryWithModel?: (model: string) => void;
     /** Callback to stop streaming */
     onStop?: () => void;
-    /** Display name of the model provider (e.g. "Claude Code") for contextual messages */
-    providerName?: string | null;
     /** Seed for spinner colors (typically agent ID) */
     seed?: string;
     /** Additional class names */
@@ -72,13 +73,12 @@
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     streamingContentLength = 0,
     error = null,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    isStalled = false,
+    sessionCorrupted = false,
+    failedAt = null,
     modelUnavailable = null,
     statusEvents = [],
     streamingStartTime = null,
     hasPendingPermission = false,
-    providerName = null,
     onRetry,
     onRetryWithModel,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -176,7 +176,7 @@
   let elapsedTime = $derived.by(() => {
     if (!latestEvent) return '';
     const elapsed = nowMs - latestEvent.timestamp;
-    return `${formatDuration(elapsed)} ago`;
+    return m.chat_streamingStatus_elapsedAgo_label({ duration: formatElapsed(elapsed) });
   });
 
   // Completed events with their durations
@@ -204,25 +204,13 @@
     return completed.reverse();
   });
 
-  // Provider status page URLs — used in stalled messages
-  const PROVIDER_STATUS_URLS: Record<string, string> = {
-    'Augment Auggie': 'https://status.augmentcode.com/',
-    'Anthropic Claude Code': 'https://status.anthropic.com/',
-    'OpenAI Codex': 'https://status.openai.com/',
-  };
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  let providerStatusUrl = $derived(
-    providerName ? (PROVIDER_STATUS_URLS[providerName] ?? null) : null,
-  );
 
   // Determine current status
-  type Status = 'normal' | 'stalled' | 'error' | 'model-unavailable';
+  type Status = 'normal' | 'error' | 'model-unavailable';
 
   let status: Status = $derived.by(() => {
     if (modelUnavailable) return 'model-unavailable';
     if (error) return 'error';
-    // if (isStalled) return 'stalled'; // All stall detection is handled by chat sagas
     return 'normal';
   });
 
@@ -232,29 +220,17 @@
     error || modelUnavailable || ((isStreaming || isProcessing) && !hasPendingPermission),
   );
 
-  // Whether we've received any streaming data — used to distinguish
-  // "no data" (network/provider unknown) from "mid-stream silence" (agent working)
-
-  // Status message - differentiated by whether we've received data:
-  // - No data: neutral messages (could be network, provider, or agent)
-  // - Has data: agent-specific messages (connection was working, agent is slow)
+  // Status message: the raw error when one is set, otherwise "Thinking"
   let statusMessage = $derived.by(() => {
     if (error) {
       return error;
     }
-
-    // if (status === 'stalled') {
-    //   if (hasReceivedData) {
-    //     return providerName
-    //       ? `Your model provider, ${providerName}, is taking longer than usual to respond.`
-    //       : 'Agent is taking longer than usual to respond.';
-    //   } else {
-    //     return 'No response received. Check your network connection or try again.';
-    //   }
-    // }
-
-    return 'Thinking';
+    return m.chat_streamingStatus_thinking_label();
   });
+
+  // Error surface copy: recreate-aware when the daemon flagged the session
+  // corrupted (monorepo#940), otherwise identical to the raw-error rendering.
+  let errorDisplay = $derived(deriveErrorDisplay(error, sessionCorrupted));
 </script>
 
 {#if visible}
@@ -277,15 +253,24 @@
         {#if status === 'model-unavailable' && modelUnavailable}
           <Fa icon={faExclamationTriangle} class="text-amber-500/70 shrink-0" />
           <span class="text-amber-600 dark:text-amber-400 text-sm">
-            Model <code class="px-1 py-0.5 bg-muted rounded text-ui"
-              >{modelUnavailable.failedModel}</code
-            > is not available
+            {m.chat_streamingStatus_modelUnavailable_before()} <code
+              class="px-1 py-0.5 bg-muted rounded text-ui">{modelUnavailable.failedModel}</code
+            > {m.chat_streamingStatus_modelUnavailable_after()}
           </span>
-        {:else if status === 'error' && error}
+        {:else if status === 'error' && errorDisplay}
           <Fa icon={faExclamationTriangle} class="text-destructive-foreground/70 shrink-0" />
           <div class="flex flex-col gap-0.5">
-            <span class="text-destructive-foreground text-sm font-medium" data-testid="error-title">Response failed</span>
-            <span class="text-destructive-foreground text-sm" data-testid="error-message">{statusMessage}</span>
+            <span class="text-destructive-foreground text-sm font-medium" data-testid="error-title"
+              >{errorDisplay.title}{#if failedAt}
+                <span class="text-destructive-foreground/60 text-xs font-normal" data-testid="error-failed-at">
+                  <!-- i18n-ignore (punctuation separator) -->
+                  · <RelativeTime date={failedAt} />
+                </span>
+              {/if}</span>
+            <span class="text-destructive-foreground text-sm" data-testid="error-message">{errorDisplay.message}</span>
+            {#if errorDisplay.detail}
+              <span class="text-destructive-foreground/60 text-xs" data-testid="error-detail">{errorDisplay.detail}</span>
+            {/if}
           </div>
         {:else}
           <!-- Normal - show spinner -->
@@ -317,12 +302,12 @@
             class="h-7 px-2 text-sm gap-1.5"
           >
             <Fa icon={faRotateRight} class="size-3" />
-            Retry with {modelUnavailable.nextAvailableModel}
+            {m.chat_streamingStatus_retryWith_label({ model: modelUnavailable.nextAvailableModel })}
           </Button>
         {:else if status === 'error' && onRetry && !isStreaming && !isProcessing}
           <Button variant="ghost" size="sm" onclick={onRetry} class="h-7 px-2 text-sm gap-1.5">
             <Fa icon={faRotateRight} class="size-3" />
-            Try again
+            {m.chat_streamingStatus_tryAgain_label()}
           </Button>
         {/if}
       </div>
@@ -335,7 +320,7 @@
           <div class="flex items-center gap-1.5 text-xs {event.level === 'warn' ? 'text-amber-500' : event.level === 'error' ? 'text-destructive-foreground' : 'text-ghost'}">
             <span class="w-3 text-ghost/30">│</span>
             <span>{event.message}</span>
-            <span class="text-ghost/60">took {duration}</span>
+            <span class="text-ghost/60">{m.chat_streamingStatus_took_label({ duration })}</span>
           </div>
         {/each}
       </div>

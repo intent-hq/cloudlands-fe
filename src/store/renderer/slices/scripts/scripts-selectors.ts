@@ -4,8 +4,9 @@
 
 import { store } from "../../store";
 import { createDefaultRuntimeState } from '$features/scripts/types';
+import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 import type { ScriptWithState } from './scripts-types';
-import { emptyWorkspaceState } from './scripts-slice';
+import { emptyOutputBuffer, emptyWorkspaceState } from './scripts-slice';
 import type { StoreState } from '$store/renderer/types';
 
 function getActiveWs(state: StoreState) {
@@ -30,11 +31,11 @@ export const selectScriptEntries = store.createSelector((state): ScriptWithState
   return Object.values(ws.scripts);
 });
 
-/** Running scripts (active workspace). */
+/** Live scripts — running or restarting (active workspace). */
 export const selectRunningScripts = store.createSelector((state): ScriptWithState[] => {
   return selectScriptEntries
     .select(state)
-    .filter((s) => (s.runtime ?? createDefaultRuntimeState()).status === 'running');
+    .filter((s) => isLiveScriptStatus((s.runtime ?? createDefaultRuntimeState()).status));
 });
 
 /** Get a specific script by ID (active workspace). */
@@ -49,10 +50,10 @@ export const selectScriptRuntime = store.createSelector((state, scriptId: string
   return ws.scripts[scriptId]?.runtime ?? createDefaultRuntimeState();
 });
 
-/** Get output lines for a specific script (active workspace). */
+/** Get the raw-chunk output buffer for a specific script (active workspace). */
 export const selectScriptOutput = store.createSelector((state, scriptId: string) => {
   const ws = getActiveWs(state);
-  return ws.outputBuffers[scriptId] ?? [];
+  return ws.outputBuffers[scriptId] ?? emptyOutputBuffer;
 });
 
 /** Scripts data for a specific workspace (parameterized). */

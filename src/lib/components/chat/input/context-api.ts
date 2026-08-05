@@ -6,6 +6,7 @@
 import { invoke } from '$lib/electron-bridge';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 import type { Workspace } from '../../../../shared/types';
 
 const logger = createLogger('ContextAPI');
@@ -126,7 +127,7 @@ export async function readFile(path: string, options?: ReadFileOptions): Promise
     if (result && typeof result === 'object' && 'success' in result) {
       const fileResult = result as FileReadResult;
       if (!fileResult.success) {
-        const errorMsg = fileResult.error?.message || 'Failed to read file';
+        const errorMsg = fileResult.error?.message || m.chat_contextApi_readFileFailed_error();
         logger.warn('File read failed', { path, error: errorMsg });
         throw new Error(errorMsg);
       }

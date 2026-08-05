@@ -1,5 +1,6 @@
 <script lang="ts">
   import Button from '$lib/components/ui/button/button.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     onImport: (json: string) => Promise<void>;
@@ -23,7 +24,7 @@
     error = '';
 
     if (!jsonContent.trim()) {
-      error = 'Please paste your MCP server JSON configuration';
+      error = m.settings_mcp_import_emptyError();
       return;
     }
 
@@ -33,19 +34,19 @@
 
       // Check for expected structure
       if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        error = 'Expected an object with server configurations (e.g., { "server-name": { ... } })';
+        error = m.settings_mcp_import_structureError();
         return;
       }
 
       // Check if there are any servers
       const keys = Object.keys(parsed);
       if (keys.length === 0) {
-        error = 'No server configurations found in JSON';
+        error = m.settings_mcp_import_noServersError();
         return;
       }
 
     } catch {
-      error = 'Invalid JSON format';
+      error = m.settings_mcp_import_invalidJsonError();
       return;
     }
 
@@ -53,7 +54,7 @@
     try {
       await onImport(jsonContent);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Import failed';
+      error = e instanceof Error ? e.message : m.settings_mcp_import_failedError();
     } finally {
       importing = false;
     }
@@ -62,18 +63,18 @@
 
 <div class="space-y-4">
   <div>
-    <span class="block text-sm font-medium mb-1.5">Paste MCP Server JSON</span>
+    <span class="block text-sm font-medium mb-1.5">{m.settings_mcp_import_title()}</span>
     <textarea
       bind:value={jsonContent}
       onkeydown={handleKeydown}
-      placeholder={`{"my-server": {"command": "npx", "args": ["-y", "@some/mcp-server"]}}`}
+      placeholder={/* i18n-ignore (JSON config example) */ `{"my-server": {"command": "npx", "args": ["-y", "@some/mcp-server"]}}`}
       rows={12}
       class="w-full px-3 py-2 text-sm font-mono rounded-md border border-border
              bg-background focus:outline-none focus:ring-2 focus:ring-primary/30
              focus:border-primary resize-none"
     ></textarea>
     <p class="text-xs text-subtle mt-1">
-      Supports MCP server JSON format from Claude Desktop, VS Code, etc.
+      {m.settings_mcp_import_formatHint()}
     </p>
   </div>
 
@@ -82,9 +83,9 @@
   {/if}
 
   <div class="flex gap-2">
-    <Button variant="outline" onclick={onCancel} class="flex-1">Cancel</Button>
+    <Button variant="outline" onclick={onCancel} class="flex-1">{m.settings_mcp_import_cancel()}</Button>
     <Button onclick={handleImport} disabled={importing} class="flex-1">
-      {importing ? 'Importing...' : 'Import Servers'}
+      {importing ? m.settings_mcp_import_importing() : m.settings_mcp_import_importServers()}
     </Button>
   </div>
 </div>

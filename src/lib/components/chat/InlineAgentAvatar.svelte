@@ -14,11 +14,13 @@
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
+  import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import type { Workspace } from '$shared/types';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     agentId: string;
@@ -46,6 +48,9 @@
     }
   });
 
+  // Pending attention request (discussion/blocker), if any
+  const attentionRequest = $derived(getAgentAttentionRequest($agent$));
+
   // Get avatar state
   const state = $derived(
     getAvatarState(
@@ -56,6 +61,7 @@
       {
         hasPermissionRequest: $permissionCount > 0,
         isCompleted,
+        attentionKind: attentionRequest?.kind ?? null,
       },
     ),
   );
@@ -74,7 +80,7 @@
   });
 
   // Display name for tooltip
-  const displayName = $derived(agentData?.name || 'Agent');
+  const displayName = $derived(agentData?.name || m.chat_shared_agentName_fallback());
 </script>
 
 <!-- Provider ensures proper context and cleanup during component destruction -->
@@ -87,6 +93,14 @@
     </Tooltip.Trigger>
     <Tooltip.Content side="top" class="text-xs">
       <p>{displayName}</p>
+      {#if attentionRequest}
+        <p class={attentionRequest.kind === 'blocker' ? 'text-red-500' : 'text-amber-500'}>
+          {attentionRequest.kind === 'blocker'
+            ? m.chat_agentCard_attentionBlocker_label()
+            : m.chat_agentCard_attentionDiscussion_label()}{#if attentionRequest.reason}
+            · {attentionRequest.reason}{/if}
+        </p>
+      {/if}
     </Tooltip.Content>
   </Tooltip.Root>
 </Tooltip.Provider>

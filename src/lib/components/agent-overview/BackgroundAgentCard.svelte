@@ -17,7 +17,12 @@
   import { Spinner } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import { classifyTool } from '$lib/components/chat/tool-classifier';
-  import { selectAgentIsWaitingForOtherAgents } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import {
+  selectAgentAttentionRequest,
+  selectAgentIsWaitingForOtherAgents,
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import type { AgentAttentionKind } from '$shared/utils/agent-attention';
+  import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
 
   interface Props {
     agent: AgentNode;
@@ -30,17 +35,26 @@
 
   const isActive = $derived(agent.status === 'responding');
   const agentIsWaitingForOtherAgents$ = selectAgentIsWaitingForOtherAgents(agent.agentId);
+  const attentionRequest$ = selectAgentAttentionRequest(agent.agentId);
 
   // Map agent status to avatar state
-  function getAvatarState(status: AgentNode['status'], waitingForOtherAgents: boolean): AvatarState {
-    if (waitingForOtherAgents) return 'waiting';
-    if (status === 'responding') return 'running';
+  function getAvatarState(
+    status: AgentNode['status'],
+    waitingForOtherAgents: boolean,
+    attentionKind: AgentAttentionKind | null,
+  ): AvatarState {
     if (status === 'completed') return 'completed';
     if (status === 'failed') return 'failed';
+    if (attentionKind === 'discussion') return 'attention-discussion';
+    if (attentionKind === 'blocker') return 'attention-blocker';
+    if (waitingForOtherAgents) return 'waiting';
+    if (status === 'responding') return 'running';
     return 'idle';
   }
 
-  const avatarState = $derived(getAvatarState(agent.status, $agentIsWaitingForOtherAgents$));
+  const avatarState = $derived(
+    getAvatarState(agent.status, $agentIsWaitingForOtherAgents$, $attentionRequest$?.kind ?? null),
+  );
 </script>
 
 <button
@@ -69,6 +83,19 @@
       {:else}
         <Spinner seed={agent.agentId} size={4} />
       {/if}
+    </div>
+  {:else if $attentionRequest$?.timestamp}
+    <!-- Compact "X ago" for a pending attention request -->
+    <div
+      class="status-indicator absolute bottom-0 transform translate-y-1/2 flex items-center justify-center"
+    >
+      <RelativeTime
+        date={$attentionRequest$.timestamp}
+        compact
+        class="text-ui leading-none {$attentionRequest$.kind === 'blocker'
+          ? 'text-red-500'
+          : 'text-amber-500'}"
+      />
     </div>
   {/if}
 </button>

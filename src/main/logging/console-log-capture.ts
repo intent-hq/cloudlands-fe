@@ -14,7 +14,6 @@ import * as path from 'path';
 
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10 MB
 
- 
 const ANSI_REGEX = /\x1b\[[0-9;]*[a-zA-Z]/g;
 
 let logFd: number | null = null;
@@ -105,6 +104,7 @@ export function setupConsoleLogCapture(): void {
     if (logFd !== null) {
       try {
         const quitTimestamp = new Date().toISOString();
+        // i18n-ignore (log file marker)
         fs.writeSync(logFd, `--- Session ended at ${quitTimestamp} ---\n`);
         fs.closeSync(logFd);
       } catch {
@@ -114,4 +114,3 @@ export function setupConsoleLogCapture(): void {
     }
   });
 }
-

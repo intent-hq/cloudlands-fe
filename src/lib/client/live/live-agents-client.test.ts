@@ -230,6 +230,40 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(await client.queue('agent-1', 'later')).toEqual({ success: true });
   });
 
+  it('queue surfaces the top-level turnId from the §5.5 response (monorepo#1057)', async () => {
+    const queuedMessage = {
+      id: 'qm-1',
+      content: 'later',
+      queuedAt: '2026-06-29T00:00:00.000Z',
+      position: 0,
+      turnId: 'qm-1',
+    };
+    backend.onRequest('agent.queueMessage', () => ({
+      success: true,
+      queuedMessage,
+      turnId: 'qm-1',
+    }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.queue('agent-1', 'later');
+    expect(result).toEqual({ success: true, queuedMessage, turnId: 'qm-1' });
+  });
+
+  it('queue falls back to queuedMessage.turnId when the top-level field is absent', async () => {
+    const queuedMessage = {
+      id: 'qm-2',
+      content: 'later',
+      queuedAt: '2026-06-29T00:00:00.000Z',
+      position: 0,
+      turnId: 'turn-preserved',
+    };
+    backend.onRequest('agent.queueMessage', () => ({ success: true, queuedMessage }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.queue('agent-1', 'later');
+    expect(result.turnId).toBe('turn-preserved');
+  });
+
   it('queue forwards imageBlocks on agent.queueMessage params when supplied (§5.5)', async () => {
     // PROTOCOL §5.5: agent.queueMessage accepts optional imageBlocks; the
     // daemon persists them on the QueuedMessage so queued attachments
@@ -363,79 +397,118 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result).toEqual({ success: false, error: 'not found: queued message' });
   });
 
-  it('force forwards agent.forceMessage with §5.5 params and folds the daemon body into success', async () => {
-    // PROTOCOL §5.5: `{ agentId, messageId, content, workspaceId,
-    // imageBlocks?, noteIds? }` → service result (stops the stream first).
-    backend.onRequest('agent.forceMessage', () => ({
+  it('sendQueuedNow forwards agent.sendQueuedMessageNow with §5.5 params and folds the daemon body into success', async () => {
+    // PROTOCOL §5.5: `{ agentId, workspaceId, messageId }` →
+    // `{ success, queued: false, messageId }` (atomic dequeue + interrupt send).
+    backend.onRequest('agent.sendQueuedMessageNow', () => ({
       success: true,
       queued: false,
-      messageId: 'msg-9',
+      messageId: 'qm-9',
     }));
     const client = new LiveAgentsClient();
 
-    const blocks = [{ type: 'image' as const, data: 'abc', mimeType: 'image/png' }];
-    const noteIds = ['note-1', 'note-2'];
-    const result = await client.force({
+    const result = await client.sendQueuedNow({
       agentId: 'agent-1',
-      messageId: 'msg-9',
-      content: 'stop and run this',
       workspaceId: 'ws-1',
-      imageBlocks: blocks,
-      noteIds,
+      messageId: 'qm-9',
     });
 
     expect(result.success).toBe(true);
     expect(backend.requests[0]).toEqual({
-      method: 'agent.forceMessage',
+      method: 'agent.sendQueuedMessageNow',
       params: {
         agentId: 'agent-1',
-        messageId: 'msg-9',
-        content: 'stop and run this',
         workspaceId: 'ws-1',
-        imageBlocks: blocks,
-        noteIds,
+        messageId: 'qm-9',
       },
     });
   });
 
-  it('force omits imageBlocks / noteIds when the caller does not supply them', async () => {
-    backend.onRequest('agent.forceMessage', () => ({ success: true, queued: false }));
+  it('sendQueuedNow surfaces the delivered arm\u2019s turnId (monorepo#1057)', async () => {
+    // §5.5: the delivered arm is `{ success: true, queued: false, messageId,
+    // turnId }` — this path emits NO agent:queue:processing event, so the
+    // RPC's turnId is the promotion signal the caller dispatches from.
+    backend.onRequest('agent.sendQueuedMessageNow', () => ({
+      success: true,
+      queued: false,
+      messageId: 'qm-9',
+      turnId: 'turn-preserved',
+    }));
     const client = new LiveAgentsClient();
 
-    await client.force({
+    const result = await client.sendQueuedNow({
       agentId: 'agent-1',
-      messageId: 'msg-9',
-      content: 'go',
       workspaceId: 'ws-1',
+      messageId: 'qm-9',
     });
-
-    const params = backend.requests[0]?.params as Record<string, unknown>;
-    expect(params).toEqual({
-      agentId: 'agent-1',
-      messageId: 'msg-9',
-      content: 'go',
-      workspaceId: 'ws-1',
-    });
-    expect(params).not.toHaveProperty('imageBlocks');
-    expect(params).not.toHaveProperty('noteIds');
+    expect(result).toEqual({ success: true, turnId: 'turn-preserved' });
   });
 
-  it('force folds a raw BackendError into {success:false,error} (no throw)', async () => {
-    backend.onRequest('agent.forceMessage', () => {
+  it('sendQueuedNow folds the -32602 missing-entry rejection into {success:false,error} (no throw)', async () => {
+    // NOT idempotent (§5.5): an already-drained/removed entry rejects with
+    // -32602 — the seam folds it into a MutationResult instead of throwing.
+    backend.onRequest('agent.sendQueuedMessageNow', () => {
       throw new BackendError(
-        buildErrorPayload('BACKEND_ERROR', 'not found: agent session', { rpcCode: -32004 }),
+        buildErrorPayload('INVALID_PARAMS', 'not found: queued message', { rpcCode: -32602 }),
       );
     });
     const client = new LiveAgentsClient();
 
-    const result = await client.force({
-      agentId: 'agent-ghost',
-      messageId: 'msg-9',
-      content: 'go',
+    const result = await client.sendQueuedNow({
+      agentId: 'agent-1',
       workspaceId: 'ws-1',
+      messageId: 'qm-gone',
     });
     expect(result.success).toBe(false);
-    expect(result.error).toContain('not found: agent session');
+    expect(result.error).toContain('not found: queued message');
+  });
+
+  it('sendQueuedNow does NOT surface a turnId on the slot-race restore arm (no queuedMessage fallback)', async () => {
+    // §5.5 slot-race arm: `{ success: true, queued: true, queuedMessage }` —
+    // the entry was RESTORED at the queue front, not delivered. Unlike
+    // `queue()`, this method must not fall back to `queuedMessage.turnId`:
+    // a restore surfaced as a delivery would promote the parked record.
+    backend.onRequest('agent.sendQueuedMessageNow', () => ({
+      success: true,
+      queued: true,
+      queuedMessage: {
+        id: 'qm-9',
+        content: 'held',
+        queuedAt: '2026-01-01T00:00:00.000Z',
+        position: 0,
+        turnId: 'turn-restored',
+      },
+    }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.sendQueuedNow({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageId: 'qm-9',
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it('sendQueuedNow folds JSON-RPC "Internal error" + data.detail into the error like runMutation', async () => {
+    // Regression: extracting turnId bypassed runMutation, which must not lose
+    // the shared mutationErrorMessage shaping (generic "Internal error"
+    // messages fold in `data.detail` so toasts stay actionable).
+    backend.onRequest('agent.sendQueuedMessageNow', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'Internal error', {
+          rpcCode: -32603,
+          data: { detail: 'queue store unavailable' },
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.sendQueuedNow({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageId: 'qm-9',
+    });
+    expect(result).toEqual({ success: false, error: 'Internal error: queue store unavailable' });
   });
 
   it('getQueue forwards agent.getQueue and returns the daemon queue array verbatim (incl. messageMetadata)', async () => {
@@ -577,6 +650,160 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     const result = await client.stop('agent-1');
     expect(result.success).toBe(false);
     expect(result.error).toContain('stop boom');
+  });
+
+  it('cancelSubscriptions forwards the unscoped §5.5 request with no optional keys on the wire', async () => {
+    // PROTOCOL §5.5: unscoped agent.cancelSubscriptions takes exactly
+    // `{ agentId, workspaceId }` — a present-but-non-string subscriptionId /
+    // groupId is rejected with -32602, so undefined must never be serialized.
+    backend.onRequest('agent.cancelSubscriptions', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.cancelSubscriptions({ agentId: 'agent-1', workspaceId: 'ws-1' });
+    expect(result).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.cancelSubscriptions',
+      params: { agentId: 'agent-1', workspaceId: 'ws-1' },
+    });
+  });
+
+  it('cancelSubscriptions forwards subscriptionId scoping (§5.5 scoped watch cancel)', async () => {
+    backend.onRequest('agent.cancelSubscriptions', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    await client.cancelSubscriptions({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      subscriptionId: 'watch-1',
+    });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.cancelSubscriptions',
+      params: { agentId: 'agent-1', workspaceId: 'ws-1', subscriptionId: 'watch-1' },
+    });
+  });
+
+  it('cancelSubscriptions forwards groupId scoping (§5.5 scoped group cancel)', async () => {
+    backend.onRequest('agent.cancelSubscriptions', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    await client.cancelSubscriptions({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      groupId: 'grp-1',
+    });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.cancelSubscriptions',
+      params: { agentId: 'agent-1', workspaceId: 'ws-1', groupId: 'grp-1' },
+    });
+  });
+
+  it('cancelSubscriptions folds an unknown-id -32602 rejection into a non-success result', async () => {
+    // PROTOCOL §5.5: an id that does not name a watch/group owned by agentId
+    // rejects with -32602 BEFORE anything is removed (all-or-nothing).
+    backend.onRequest('agent.cancelSubscriptions', () => {
+      throw new BackendError(
+        buildErrorPayload('INVALID_PARAMS', 'unknown subscription id: watch-missing', {
+          rpcCode: -32602,
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.cancelSubscriptions({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      subscriptionId: 'watch-missing',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('unknown subscription id');
+  });
+
+  it('dismissQuestions forwards agent.dismissQuestions with §5.5 params and folds the ack into success', async () => {
+    // PROTOCOL §5.5: agent.dismissQuestions takes `{ agentId, workspaceId,
+    // messageId }` (all required) and returns `{ success: true,
+    // dismissedQuestionsMessageId }`. The daemon persists the marker in
+    // session metadata (survives reload) and emits `agent:updated`.
+    backend.onRequest('agent.dismissQuestions', () => ({
+      success: true,
+      dismissedQuestionsMessageId: 'msg-q1',
+    }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.dismissQuestions({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageId: 'msg-q1',
+    });
+    expect(result).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.dismissQuestions',
+      params: { agentId: 'agent-1', workspaceId: 'ws-1', messageId: 'msg-q1' },
+    });
+  });
+
+  it('dismissQuestions folds a daemon NotFound rejection into {success:false,error} (no throw)', async () => {
+    // Workspace mismatch / unknown agent rejects with NotFound (-32004) per
+    // the §5.5 contract — the mutation seam never throws.
+    backend.onRequest('agent.dismissQuestions', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'not found: agent session agent-x', {
+          rpcCode: -32004,
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.dismissQuestions({
+      agentId: 'agent-x',
+      workspaceId: 'ws-1',
+      messageId: 'msg-q1',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not found: agent session');
+  });
+
+  it('markSeen forwards agent.markSeen with §5.5 params and folds the ack into success', async () => {
+    // PROTOCOL §5.5: agent.markSeen takes `{ workspaceId, agentId,
+    // messageId }` (all required) and returns `{ success: true,
+    // lastSeenMessageId }`. The daemon persists the marker in session
+    // metadata (served on AgentLite) and emits `agent:updated`.
+    backend.onRequest('agent.markSeen', () => ({
+      success: true,
+      lastSeenMessageId: 'msg-9',
+    }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.markSeen({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageId: 'msg-9',
+    });
+    expect(result).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.markSeen',
+      params: { workspaceId: 'ws-1', agentId: 'agent-1', messageId: 'msg-9' },
+    });
+  });
+
+  it('markSeen folds a daemon NotFound rejection into {success:false,error} (no throw)', async () => {
+    // Workspace mismatch / unknown agent rejects with NotFound (-32004) —
+    // the mutation seam never throws (the trigger is fire-and-forget).
+    backend.onRequest('agent.markSeen', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'not found: agent session agent-x', {
+          rpcCode: -32004,
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.markSeen({
+      agentId: 'agent-x',
+      workspaceId: 'ws-1',
+      messageId: 'msg-9',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not found: agent session');
   });
 
   it('rename forwards agent.rename with §5.5 params and folds the ack into success', async () => {
@@ -742,6 +969,38 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(agent?.waitingForAgentIds).toBeUndefined();
   });
 
+  it('list carries lastMessageRole + lastUserMessage verbatim (§5.5 additive freshness fields)', async () => {
+    backend.onRequest('agent.list', () => ({
+      agents: [
+        {
+          id: 'agent-1',
+          workspaceId: 'ws-1',
+          name: 'A1',
+          status: 'idle',
+          lastUserMessage: 'newest user line\nsecond line',
+          lastMessageRole: 'user',
+        },
+      ],
+    }));
+    const client = new LiveAgentsClient();
+
+    const [agent] = await client.list('ws-1');
+    expect(agent).toMatchObject({
+      lastUserMessage: 'newest user line\nsecond line',
+      lastMessageRole: 'user',
+    });
+  });
+
+  it('does not synthesize lastMessageRole when the daemon omits it (older daemon)', async () => {
+    backend.onRequest('agent.get', () => ({
+      agent: { id: 'agent-1', workspaceId: 'ws-1', name: 'A1', status: 'idle' },
+    }));
+    const client = new LiveAgentsClient();
+
+    const agent = await client.get('agent-1');
+    expect(agent?.lastMessageRole).toBeUndefined();
+  });
+
   // ---- §5.5 agent.getConversation pagination -----------------------------
 
   it('getConversation forwards limit only when no pageToken is given (first page)', async () => {
@@ -795,6 +1054,40 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(page.nextToken).toBeNull();
   });
 
+  it('getConversation forwards aroundMessageId (§5.5 seek) and surfaces prevToken', async () => {
+    backend.onRequest('agent.getConversation', () => ({
+      messages: [{ id: 'msg-target' }],
+      truncated: true,
+      totalMessages: 900,
+      nextToken: 'older-tok',
+      prevToken: 'newer-tok',
+    }));
+    const client = new LiveAgentsClient();
+
+    const page = await client.getConversation('agent-1', 200, undefined, 'msg-target');
+
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.getConversation',
+      params: { agentId: 'agent-1', limit: 200, aroundMessageId: 'msg-target' },
+    });
+    expect(page.nextToken).toBe('older-tok');
+    expect(page.prevToken).toBe('newer-tok');
+    expect(page.messages).toHaveLength(1);
+  });
+
+  it('getConversation normalizes a missing prevToken to null (legacy backward pages)', async () => {
+    backend.onRequest('agent.getConversation', () => ({
+      messages: [],
+      truncated: false,
+      totalMessages: 0,
+      nextToken: null,
+    }));
+    const client = new LiveAgentsClient();
+
+    const page = await client.getConversation('agent-1');
+    expect(page.prevToken).toBeNull();
+  });
+
   describe('retry', () => {
     it('calls agent.retry with correct params and returns ok:true on success', async () => {
       backend.onRequest('agent.retry', (params) => {
@@ -826,6 +1119,21 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
       const result = await client.retry('agent-old-daemon', 'ws-1');
       expect(result).toEqual({ ok: true, redriven: undefined });
+    });
+
+    it('surfaces the redriven head entry\u2019s turnId (monorepo#1057)', async () => {
+      // §5.5: turnId is present only with redriven:true — the requeued
+      // entry's PRESERVED turn-correlation id (same id the original
+      // send/enqueue RPC returned), peeked before the drain pops it.
+      backend.onRequest('agent.retry', () => ({
+        ok: true,
+        redriven: true,
+        turnId: 'turn-original',
+      }));
+      const client = new LiveAgentsClient();
+
+      const result = await client.retry('agent-retry-1', 'ws-retry-1');
+      expect(result).toEqual({ ok: true, redriven: true, turnId: 'turn-original' });
     });
 
     it('returns ok:false with error message when backend returns ok:false', async () => {

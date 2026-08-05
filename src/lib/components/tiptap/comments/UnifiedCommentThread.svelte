@@ -21,6 +21,8 @@
   import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
   import { updateCommentAction } from '$store/renderer/slices/comments/comments-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   type CommentType = 'comment' | 'suggestion' | 'change-request' | 'question' | string;
 
@@ -235,8 +237,9 @@
             }}
             type="button"
           >
-            Show {replies.length}
-            {replies.length === 1 ? 'reply' : 'replies'}
+            {replies.length === 1
+              ? m.tiptap_commentThread_showReplies_one()
+              : m.tiptap_commentThread_showReplies_many({ count: formatInteger(replies.length) })}
           </button>
         </div>
       {/if}
@@ -245,7 +248,7 @@
         <div class="ml-8">
           <span
             class="text-xs text-amber-600 mt-1 inline-block"
-            title="Comment text not found in document">(unlinked)</span
+            title={m.tiptap_commentThread_unlinked_tooltip()}>{m.tiptap_commentThread_unlinked_label()}</span
           >
         </div>
       {/if}
@@ -290,7 +293,7 @@
             <TipTapEditor
               bind:this={replyEditor}
               value={replyValue}
-              placeholder="Reply..."
+              placeholder={m.tiptap_commentThread_reply_placeholder()}
               minHeight={32}
               maxHeight={160}
               {workspace}
@@ -298,13 +301,13 @@
               onSubmit={() => submitReply()}
             />
           </div>
-          <Button variant="ghost-light" size="icon-sm" tooltip="Attach">
+          <Button variant="ghost-light" size="icon-sm" tooltip={m.tiptap_commentThread_attach_tooltip()}>
             <Fa icon={faPaperclip} size="sm" class="text-ghost" />
           </Button>
           <Button
             variant="ghost-light"
             size="icon-sm"
-            tooltip="Mention"
+            tooltip={m.tiptap_commentThread_mention_tooltip()}
             onclick={() => replyEditor?.insertAtSymbol?.()}
           >
             <Fa icon={faAt} size="sm" class="text-ghost" />
@@ -313,7 +316,7 @@
             variant="ghost-light"
             size="icon-sm"
             class="rounded-full bg-muted text-foreground hover:bg-muted/80"
-            tooltip="Send"
+            tooltip={m.tiptap_commentThread_send_tooltip()}
             onclick={() => submitReply()}
           >
             <Fa icon={faArrowUp} size="sm" />

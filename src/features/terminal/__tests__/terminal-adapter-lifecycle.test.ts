@@ -5,7 +5,7 @@ import type { TerminalsClient } from '$lib/client';
 /** Build a TerminalsClient stub that swallows daemon traffic for DOM-focused tests. */
 function fakeTerminalsClient(): TerminalsClient {
   return {
-    list: vi.fn(async () => []),
+    list: vi.fn(async () => ({ terminals: [], daemonBootId: 'boot-test' })),
     create: vi.fn(async () => ({ success: true, id: 'term-1' })),
     write: vi.fn(async () => ({ success: true })),
     resize: vi.fn(async () => ({ success: true })),
@@ -41,9 +41,14 @@ vi.mock('@xterm/xterm', () => {
     refresh = vi.fn();
     dispose = vi.fn();
     getSelection = vi.fn(() => '');
+    dataHandler?: (data: string) => void;
 
     constructor(options: any) {
       this.options = options;
+      this.onData.mockImplementation((handler: (data: string) => void) => {
+        this.dataHandler = handler;
+        return { dispose: vi.fn() };
+      });
       xtermMock.instances.push(this);
     }
   }
@@ -118,10 +123,9 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     };
   });
 
-  it('removes paste listener and releases detached container references', () => {
+  it('does not register a container-level paste listener (xterm owns paste natively)', () => {
     const container = document.createElement('div');
     const addSpy = vi.spyOn(container, 'addEventListener');
-    const removeSpy = vi.spyOn(container, 'removeEventListener');
     const terminals = fakeTerminalsClient();
     const adapter = new TerminalAdapter({
       workspaceId: 'ws-1',
@@ -131,11 +135,26 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     });
 
     (adapter as any).setupXTermEventHandlers();
-    expect(addSpy).toHaveBeenCalledWith('paste', (adapter as any).handlePasteEvent);
+
+    const pasteRegistrations = addSpy.mock.calls.filter(([type]) => type === 'paste');
+    expect(pasteRegistrations).toHaveLength(0);
 
     adapter.detach();
+  });
 
-    expect(removeSpy).toHaveBeenCalledWith('paste', (adapter as any).handlePasteEvent);
+  it('releases detached container references', () => {
+    const container = document.createElement('div');
+    const terminals = fakeTerminalsClient();
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals },
+    });
+
+    (adapter as any).setupXTermEventHandlers();
+    adapter.detach();
+
     expect((adapter as any).container).toBeNull();
     expect((adapter as any).themeManager.container).toBeNull();
   });
@@ -155,11 +174,25 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     expect(terminals.kill).toHaveBeenCalledWith('term-1');
   });
 
-  it('moves paste listener and theme container on reattach', async () => {
+  it('dispose({ killPty: false }) releases renderer resources without killing an exited PTY', () => {
+    const container = document.createElement('div');
+    const terminals = fakeTerminalsClient();
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals },
+    });
+
+    adapter.dispose({ killPty: false });
+
+    expect(terminals.kill).not.toHaveBeenCalled();
+    expect((adapter as any).xterm.dispose).toHaveBeenCalled();
+  });
+
+  it('moves theme container on reattach', async () => {
     const firstContainer = document.createElement('div');
     const secondContainer = document.createElement('div');
-    const firstRemoveSpy = vi.spyOn(firstContainer, 'removeEventListener');
-    const secondAddSpy = vi.spyOn(secondContainer, 'addEventListener');
     const adapter = new TerminalAdapter({
       workspaceId: 'ws-1',
       terminalId: 'term-1',
@@ -170,14 +203,12 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     (adapter as any).setupXTermEventHandlers();
     await adapter.reattach(secondContainer);
 
-    expect(firstRemoveSpy).toHaveBeenCalledWith('paste', (adapter as any).handlePasteEvent);
-    expect(secondAddSpy).toHaveBeenCalledWith('paste', (adapter as any).handlePasteEvent);
     expect((adapter as any).themeManager.container).toBe(secondContainer);
 
     adapter.detach();
   });
 
-  it('write() forwards xterm onData input through TerminalsClient.write', () => {
+  it('forwards xterm onData DEL unchanged through TerminalsClient.write', () => {
     const container = document.createElement('div');
     const terminals = fakeTerminalsClient();
     const adapter = new TerminalAdapter({
@@ -191,9 +222,35 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     (adapter as any).stateMachine.transition('connect');
     (adapter as any).stateMachine.transition('connected');
 
-    adapter.write('ls\n');
+    (adapter as any).setupXTermEventHandlers();
+    const xterm = (adapter as any).xterm;
+    xterm.dataHandler('\x7f');
 
-    expect(terminals.write).toHaveBeenCalledWith('term-1', 'ls\n');
+    expect(terminals.write).toHaveBeenCalledWith('term-1', '\x7f');
+  });
+
+  it('passes PTY erase echo unchanged from terminal:data to xterm.write', () => {
+    const container = document.createElement('div');
+    const terminals = fakeTerminalsClient();
+    let capturedHandlers: any;
+    terminals.subscribeEvents = vi.fn((_id: string, handlers: any) => {
+      capturedHandlers = handlers;
+      return () => {};
+    }) as any;
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals },
+    });
+    (adapter as any).stateMachine.transition('initialize');
+    (adapter as any).stateMachine.transition('connect');
+    (adapter as any).stateMachine.transition('connected');
+    (adapter as any).setupIpcEventHandlers();
+
+    capturedHandlers.onData({ terminalId: 'term-1', chunk: '\x08 \x08' });
+
+    expect((adapter as any).xterm.write).toHaveBeenCalledWith('\x08 \x08');
   });
 
   it('resize() forwards dimensions through TerminalsClient.resize', () => {
@@ -281,9 +338,10 @@ describe('TerminalAdapter cursor suppression on exit', () => {
     const terminals = fakeTerminalsClient();
     // Daemon terminal.list shape: already-exited PTY (isExecutingCommand: false
     // on the wire → isExecuting: false on TerminalTab).
-    terminals.list = vi.fn(async () => [
-      { id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: false },
-    ]) as any;
+    terminals.list = vi.fn(async () => ({
+      terminals: [{ id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: false }],
+      daemonBootId: 'boot-test',
+    })) as any;
     const adapter = new TerminalAdapter({
       workspaceId: 'ws-1',
       terminalId: 'pty-0',
@@ -306,9 +364,10 @@ describe('TerminalAdapter cursor suppression on exit', () => {
       value: () => ({ width: 800, height: 600 }),
     });
     const terminals = fakeTerminalsClient();
-    terminals.list = vi.fn(async () => [
-      { id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: true },
-    ]) as any;
+    terminals.list = vi.fn(async () => ({
+      terminals: [{ id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: true }],
+      daemonBootId: 'boot-test',
+    })) as any;
     const adapter = new TerminalAdapter({
       workspaceId: 'ws-1',
       terminalId: 'pty-0',
@@ -329,9 +388,10 @@ describe('TerminalAdapter cursor suppression on exit', () => {
       value: () => ({ width: 800, height: 600 }),
     });
     const terminals = fakeTerminalsClient();
-    terminals.list = vi.fn(async () => [
-      { id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: false },
-    ]) as any;
+    terminals.list = vi.fn(async () => ({
+      terminals: [{ id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: false }],
+      daemonBootId: 'boot-test',
+    })) as any;
     const adapter = new TerminalAdapter({
       workspaceId: 'ws-1',
       terminalId: 'pty-0',

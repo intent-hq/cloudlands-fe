@@ -34,6 +34,7 @@ import {
   openTabInAdjacentOrSplit,
 } from "$store/renderer/slices/panel-layout/panel-layout-slice";
 import type { PanelTab } from "$store/renderer/slices/panel-layout/panel-layout-types";
+import { m } from "$shared/paraglide/messages.js";
 
 /**
  * Hydrate a selected agent's session and open (or focus) its conversation tab.
@@ -47,7 +48,7 @@ export function openAgentTab(wsId: string, detail: OpenAgentTabDetail): void {
   // Kick off the (deduped) on-demand session/conversation load.
   appStore.dispatch(ensureAgentSessionLoaded(wsId, agentId));
 
-  const title = appStore.state.agentSessions?.byAgentId[agentId]?.name || "Agent";
+  const title = appStore.state.agentSessions?.byAgentId[agentId]?.name || m.layout_tabTypes_agent_title();
   const tab: Omit<PanelTab, "id"> = {
     type: "agent",
     title,

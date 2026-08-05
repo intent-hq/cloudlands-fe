@@ -3,11 +3,14 @@
    * Modal for resuming or abandoning interrupted agents after intentd restart.
    * Grouped by workspace with checkboxes (all checked by default).
    */
+  import { untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faExclamationTriangle, faXmark } from '@fortawesome/free-solid-svg-icons';
   import Portal from '$lib/components/ui/Portal.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
+  import { formatDateTime } from '$lib/i18n/format';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     open?: boolean;
@@ -48,9 +51,20 @@
   // All agents checked by default
   let checkedAgents = $state<Set<string>>(new Set(agents.map((a) => a.agentId)));
 
-  // Reset checked state when agents change
+  // Reconcile checked state when agents change: survivors of a cross-window
+  // prune keep their checkbox state; agents not previously listed default to
+  // checked.
+  let knownAgentIds = new Set(agents.map((a) => a.agentId));
   $effect(() => {
-    checkedAgents = new Set(agents.map((a) => a.agentId));
+    const checked = untrack(() => checkedAgents);
+    const next = new Set<string>();
+    for (const agent of agents) {
+      if (!knownAgentIds.has(agent.agentId) || checked.has(agent.agentId)) {
+        next.add(agent.agentId);
+      }
+    }
+    knownAgentIds = new Set(agents.map((a) => a.agentId));
+    checkedAgents = next;
   });
 
   function close() {
@@ -117,10 +131,10 @@
             </div>
             <div>
               <h2 id={dialogTitleId} class="text-lg font-semibold leading-6">
-                Agents were interrupted
+                {m.modals_interruptedAgents_title()}
               </h2>
               <p class="mt-1 text-sm text-subtle">
-                Intent restarted while these agents were working. Resume selected or abandon all.
+                {m.modals_interruptedAgents_description()}
               </p>
             </div>
           </div>
@@ -128,7 +142,7 @@
             variant="ghost"
             size="icon-sm"
             class="-mr-1 mt-0.5 text-subtle hover:text-foreground"
-            aria-label="Close interrupted agents dialog"
+            aria-label={m.modals_interruptedAgents_close_ariaLabel()}
             onclick={close}
           >
             <Fa icon={faXmark} />
@@ -155,7 +169,10 @@
                     <div class="flex-1 min-w-0">
                       <p class="text-sm text-foreground truncate">{agent.agentName}</p>
                       <p class="text-xs text-subtle">
-                        {agent.prevStatus} • interrupted {new Date(agent.interruptedAt).toLocaleString()}
+                        {m.modals_interruptedAgents_statusLine_label({
+                          status: agent.prevStatus,
+                          timestamp: formatDateTime(agent.interruptedAt),
+                        })}
                       </p>
                     </div>
                   </div>
@@ -168,9 +185,9 @@
         <div
           class="flex flex-col-reverse gap-2 border-t border-border/70 bg-muted/20 px-6 py-4 sm:flex-row sm:justify-end"
         >
-          <Button variant="outline" onclick={handleAbandonAll}>Abandon all</Button>
+          <Button variant="outline" onclick={handleAbandonAll}>{m.modals_interruptedAgents_abandonAll_label()}</Button>
           <Button variant="default" class="sm:min-w-[11rem]" onclick={handleResumeSelected}>
-            Resume selected
+            {m.modals_interruptedAgents_resumeSelected_label()}
           </Button>
         </div>
       </div>

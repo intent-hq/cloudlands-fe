@@ -5,7 +5,7 @@
 import { toast } from '$lib/components/ui/toast';
 import ErrorToast from '$lib/components/ui/toast/ErrorToast.svelte';
 import { errorReporter } from '$lib/utils/error-reporter';
-import { selectWorkspaceDefaultModel } from '$store/renderer/slices/model/model-selectors';
+import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
 import { selectCurrentWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
@@ -13,19 +13,22 @@ import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace
 import type { AppError } from '$lib/utils/error-handler.svelte';
 import { errorHandler } from '$lib/utils/error-handler.svelte';
 import { store as appStore } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
+import { formatDateTime } from '$lib/i18n/format';
 
-const APP_NAME = 'Intent';
+const APP_NAME = 'Intent'; // i18n-ignore (brand name)
 
 /**
  * Copy error details to clipboard for support
+ * (report body is agent/support-facing markdown, kept in English)
  */
 async function copyError(error: AppError): Promise<void> {
   const lines = [
-    '## 🐛 Error Report',
+    '## 🐛 Error Report', // i18n-ignore (support report content)
     '',
     `**Error:** ${error.title}`,
     `**Message:** ${error.message}`,
-    `**Time:** ${error.timestamp.toLocaleString()}`,
+    `**Time:** ${formatDateTime(error.timestamp)}`,
     `**ID:** \`${error.id}\``,
     '',
   ];
@@ -42,10 +45,10 @@ async function copyError(error: AppError): Promise<void> {
 
   lines.push('');
   lines.push('---');
-  lines.push('*Paste this into a support message or GitHub issue.*');
+  lines.push('*Paste this into a support message or GitHub issue.*'); // i18n-ignore (support report content)
 
   await navigator.clipboard.writeText(lines.join('\n'));
-  toast.success('Copied! Paste into a support message.');
+  toast.success(m.error_toast_copied_message());
 }
 
 /**
@@ -54,7 +57,7 @@ async function copyError(error: AppError): Promise<void> {
 async function sendToAgent(error: AppError): Promise<void> {
   const workspace = selectCurrentWorkspace.select(appStore.state);
   if (!workspace) {
-    toast.error('No space selected');
+    toast.error(m.error_toast_noSpace_error());
     return;
   }
 
@@ -62,25 +65,32 @@ async function sendToAgent(error: AppError): Promise<void> {
     workspaceId: workspace.id,
   });
 
+  // i18n-ignore (agent prompt content)
   const prompt = `I'm using ${APP_NAME} and encountered a bug. Help me figure out what went wrong.
 
 ${report.agentPrompt}`;
 
   const state = appStore.state;
-  appStore.dispatch(createAgentFromConfigRequested(workspace.id, {
-    name: 'Debug Agent',
-    // Generated placeholder — keep the session self-renameable.
-    nameExplicitlySet: false,
-    workspaceId: WorkspaceId(workspace.id),
-    agentType: createAgentTypeId('debug'),
-    initialMessage: prompt,
-    model: selectWorkspaceDefaultModel.select(state, workspace.id),
-    source: 'error-toast',
-    metadata: {
-      source: 'error-toast',
-      errorId: error.id,
-    },
-  }, { openAgent: true }));
+  appStore.dispatch(
+    createAgentFromConfigRequested(
+      workspace.id,
+      {
+        name: m.error_toast_debugAgent_name(),
+        // Generated placeholder — keep the session self-renameable.
+        nameExplicitlySet: false,
+        workspaceId: WorkspaceId(workspace.id),
+        agentType: createAgentTypeId('debug'),
+        initialMessage: prompt,
+        model: selectSelectedModel.select(state),
+        source: 'error-toast',
+        metadata: {
+          source: 'error-toast',
+          errorId: error.id,
+        },
+      },
+      { openAgent: true },
+    ),
+  );
 
   errorHandler.dismiss(error.id);
 }
@@ -92,9 +102,24 @@ async function attemptRecovery(error: AppError): Promise<void> {
   const success = await errorHandler.attemptRecovery(error.id);
   if (success) {
     errorHandler.dismiss(error.id);
-    toast.success('Successfully recovered from error');
+    toast.success(m.error_recovery_success());
   } else {
-    toast.error('Recovery attempt failed. Please try again.');
+    toast.error(m.error_recovery_failed());
+  }
+}
+
+/**
+ * Severity-tinted border class for the Sonner toast wrapper — ErrorToast is
+ * content-only, so the single wrapper border carries the tint.
+ */
+function getWrapperBorderClass(type: string): string {
+  switch (type) {
+    case 'warning':
+      return '!border-amber-500/50';
+    case 'info':
+      return '!border-blue-500/50';
+    default:
+      return '!border-destructive/50';
   }
 }
 
@@ -110,5 +135,6 @@ export function showErrorToast(error: AppError): void {
       onRetry: error.recoverable ? () => attemptRecovery(error) : undefined,
     },
     duration: error.type === 'info' ? 5000 : 15000,
+    class: getWrapperBorderClass(error.type),
   });
 }

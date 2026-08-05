@@ -6,6 +6,7 @@
   import TaskStatusIcon from '../tiptap/TaskStatusIcon.svelte';
 
   import { updateTaskNoteStatus } from '$features/tasks/tasks-write-service';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   let {
@@ -29,6 +30,7 @@
     'not_started',
     'waiting',
     'discussion_needed',
+    'blocked',
     'in_progress',
     'review_required',
     'complete',
@@ -36,19 +38,37 @@
   ];
 
   const statusLabels: Record<TaskStatus, string> = {
-    not_started: 'Not Started',
-    waiting: 'Waiting',
-    discussion_needed: 'Discussion Needed',
-    in_progress: 'In Progress',
-    review_required: 'Review Required',
-    complete: 'Complete',
-    cancelled: 'Cancelled',
+    get not_started() {
+      return m.workspace_taskStatus_notStarted_label();
+    },
+    get waiting() {
+      return m.workspace_taskStatus_waiting_label();
+    },
+    get discussion_needed() {
+      return m.workspace_taskStatus_discussionNeeded_label();
+    },
+    get blocked() {
+      return m.workspace_taskStatus_blocked_label();
+    },
+    get in_progress() {
+      return m.workspace_taskStatus_inProgress_label();
+    },
+    get review_required() {
+      return m.workspace_taskStatus_reviewRequired_label();
+    },
+    get complete() {
+      return m.workspace_taskStatus_complete_label();
+    },
+    get cancelled() {
+      return m.workspace_taskStatus_cancelled_label();
+    },
   };
 
   const statusColors: Record<TaskStatus, string> = {
     not_started: 'bg-gray-400/10 text-gray-400',
     waiting: 'bg-gray-300/10 text-gray-400',
     discussion_needed: 'bg-amber-500/10 text-amber-700/70',
+    blocked: 'bg-red-500/10 text-red-600',
     in_progress: 'bg-sky-400/10 text-sky-600',
     review_required: 'bg-blue-500/10 text-blue-600',
     complete: 'bg-emerald-500/10 text-emerald-700/70',
@@ -60,6 +80,7 @@
     not_started: 'bg-gray-400',
     waiting: 'bg-gray-300',
     discussion_needed: 'bg-amber-500',
+    blocked: 'bg-red-500',
     in_progress: 'bg-sky-400',
     review_required: 'bg-blue-500',
     complete: 'bg-emerald-500',

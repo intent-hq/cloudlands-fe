@@ -214,6 +214,52 @@ export interface NavigationItem {
 
 export const WORKSPACE_STATUS_MESSAGE_MAX_LENGTH = 500;
 
+/** Canonical wire values for the BE-owned current-cycle `workspace.displayStatus`
+ *  (intent-hq/intentd#600). Single source of truth — the union type, the runtime
+ *  guard, and every consumer set derive from this array. `idle` (intentd#793)
+ *  folds live agent activity into the daemon-side derivation: a running agent
+ *  promotes to `in_progress`, and without one the task-stage rollups
+ *  (`in_progress`/`not_started`) demote to `idle`. */
+export const WORKSPACE_DISPLAY_STATUS_VALUES = [
+  'needs_attention',
+  'not_started',
+  'in_progress',
+  'idle',
+  'complete',
+  'pr_ready',
+  'pr_open',
+  'pr_merged',
+] as const;
+
+export type WorkspaceDisplayStatus = (typeof WORKSPACE_DISPLAY_STATUS_VALUES)[number];
+
+/** Runtime guard for BE-sent displayStatus values. Unknown wire values (a future
+ *  daemon's new value, or a malformed one) must be treated as absent so the FE
+ *  defaults to 'not_started' instead of rendering an unknown group — there
+ *  is no local re-derivation from PR/task fields. */
+export function isWorkspaceDisplayStatus(value: unknown): value is WorkspaceDisplayStatus {
+  return (
+    typeof value === 'string' && (WORKSPACE_DISPLAY_STATUS_VALUES as readonly string[]).includes(value)
+  );
+}
+
+/** BE-owned dismissible attention flag values (blue dot; PROTOCOL §5.1 / §9.9).
+ *  Snake_case wire values matching `intent-core::model::WorkspaceAttention`.
+ *  Single source of truth — the union type and the runtime guard derive from
+ *  this array. */
+export const WORKSPACE_ATTENTION_VALUES = ['none', 'unread', 'review_required'] as const;
+
+export type WorkspaceAttention = (typeof WORKSPACE_ATTENTION_VALUES)[number];
+
+/** Runtime guard for BE-sent attention values. Unknown wire values (a future
+ *  daemon's new value, or a malformed one) must be treated as absent so the FE
+ *  defaults to 'none' instead of rendering an unknown state. */
+export function isWorkspaceAttention(value: unknown): value is WorkspaceAttention {
+  return (
+    typeof value === 'string' && (WORKSPACE_ATTENTION_VALUES as readonly string[]).includes(value)
+  );
+}
+
 export interface Workspace {
   id: WorkspaceId;
   name?: string; // Added for compatibility with agent system
@@ -235,8 +281,21 @@ export interface Workspace {
   status: WorkspaceStatus;
   /** User-facing high-level work status message. Distinct from lifecycle status. */
   statusMessage?: string;
+  /** Agent-authored status screenshot reference (intent-hq/monorepo#997). A
+   *  content-addressed asset id rendered via `workspace-asset://{id}/{assetId}`;
+   *  omitted on the wire until an agent sets one. */
+  statusImageAssetId?: string;
   /** BE-derived in-flight agent state (green dot). Read-only; computed from agent runtime. */
   activity?: 'idle' | 'agent_running';
+  /** BE-owned current-cycle display status (intent-hq/intentd#600). Precedence is
+   *  daemon-side: open/draft PR → open tasks → merged PR → complete. Optional on
+   *  decode — when absent (older daemons) the FE defaults to 'not_started'. */
+  displayStatus?: WorkspaceDisplayStatus;
+  /** BE-owned dismissible attention flag (blue dot; PROTOCOL §5.1 / §9.9). The
+   *  daemon raises 'unread' when an agent finishes its work; cleared via
+   *  `workspace.markSeen` / `workspace.dismissAttention`. Optional on decode —
+   *  when absent (older daemons) the FE treats it as 'none'. */
+  attention?: WorkspaceAttention;
   createdAt: string;
   updatedAt: string;
   lastActivity?: string;
@@ -273,6 +332,24 @@ export interface Workspace {
   cowSupported?: boolean;
   /** How the daemon provisioned this workspace's checkout (PROTOCOL §5.1). Immutable; omitted for rows without a daemon-provisioned checkout (skip-isolation/direct, remote, …). */
   checkoutMode?: 'cow' | 'worktree';
+  /** Cached physical disk usage of the workspace directory (PROTOCOL §5.1); omitted until the daemon's first computation completes. */
+  diskUsage?: WorkspaceDiskUsage;
+}
+
+/**
+ * Physical disk usage aggregate for a workspace directory (PROTOCOL §5.1).
+ * Bytes are physical/allocated (hard links deduped; CoW-shared extents
+ * excluded best-effort).
+ */
+export interface WorkspaceDiskUsage {
+  /** Physical bytes for the whole workspace folder. */
+  bytes: number;
+  /** Files occupying physical space. */
+  fileCount: number;
+  /** RFC-3339 timestamp of the computation. */
+  computedAt: string;
+  /** Per-top-level-directory breakdown. */
+  breakdown: Array<{ name: string; bytes: number; fileCount: number }>;
 }
 
 /**
@@ -514,6 +591,11 @@ export interface WorkspaceAgentInfo {
   lastActivity?: string;
   isStreaming?: boolean;
   isResponding?: boolean;
+  /**
+   * Delegating/spawning agent's id (PROTOCOL §5.1, v2.9 additive) — omitted
+   * for root agents, so clients can rebuild the delegation tree.
+   */
+  parentAgentId?: string;
 }
 
 /**
@@ -769,6 +851,7 @@ export interface TaskMetadata {
  * - not_started: Task accepted but not yet being worked on
  * - waiting: Waiting on dependencies
  * - discussion_needed: Agent signals need for user planning input
+ * - blocked: Agent reports a blocker it cannot resolve
  * - in_progress: Agent actively working on task
  * - review_required: Agent signals work ready for user review
  * - complete: User accepts the task output
@@ -778,6 +861,7 @@ export type TaskStatus =
   | 'not_started' // Task accepted but not started
   | 'waiting' // Waiting on dependencies
   | 'discussion_needed' // Agent needs user planning input
+  | 'blocked' // Agent reports an unresolvable blocker
   | 'in_progress' // Agent actively working
   | 'review_required' // Work ready for user review
   | 'complete' // User accepts output
@@ -958,6 +1042,20 @@ export interface AgentMetadata {
   sandboxPath?: string; // Absolute daemon-host path of the sandbox directory
   sandboxId?: string; // Sandbox identifier
   sandboxBranch?: string; // Git branch checked out inside the sandbox
+  // Question-hold dismissal marker (PROTOCOL §5.5, `agent.dismissQuestions`):
+  // id of the question-bearing assistant message the user dismissed. Persisted
+  // by the daemon in session metadata so the dismissed question set never
+  // re-surfaces (survives reload).
+  dismissedQuestionsMessageId?: string;
+  // Per-conversation seen marker (PROTOCOL §5.5, `agent.markSeen`): id of the
+  // newest message the user had seen. Persisted by the daemon in session
+  // metadata, served on AgentLite / agent.getSession, converged via
+  // `agent:updated`. Anchors the presentation-only "New messages" divider.
+  lastSeenMessageId?: string;
+  // Completion report persisted by `agent.reportToParent` and re-served on
+  // agent.get / agent.list AgentLite metadata (PROTOCOL §5.5); feeds
+  // AgentCard's effectiveCompletionReport preview.
+  completionReport?: string;
   // Allow additional properties for flexibility with proper typing
   [key: string]: string | number | boolean | null | undefined | any[] | ContextReference[];
 }

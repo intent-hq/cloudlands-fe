@@ -21,6 +21,7 @@
 } from './unified-diff-merger';
   import { TrackedChangeDiffViewer } from '$lib/components/ui/diff';
   import { selectDiffSideBySide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
+  import { m } from '$shared/paraglide/messages.js';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 
@@ -63,7 +64,7 @@
   const mergedContent = $derived(buildContentFromMergedHunks(mergedHunks));
 
   // File path from the first part
-  const filePath = $derived(parts[0]?.change.filePath || 'file');
+  const filePath = $derived(parts[0]?.change.filePath || m.chat_toolClassifier_file_subject());
 
   // Starting line number in the working tree for the merged snippet. Used so
   // the diff viewer gutter shows real file line numbers.
@@ -100,7 +101,7 @@
 
 {#if mergedHunks.length === 0}
   <div class="flex items-center justify-center py-8 text-subtle text-sm">
-    No changes to display
+    {m.chat_unifiedMultiStageDiff_noChanges_label()}
   </div>
 {:else if workspaceId}
   <div class="unified-multi-stage-diff">
@@ -119,7 +120,7 @@
   </div>
 {:else}
   <div class="flex items-center justify-center h-24 text-subtle">
-    No workspace available
+    {m.chat_unifiedMultiStageDiff_noWorkspace_label()}
   </div>
 {/if}
 

@@ -1,5 +1,6 @@
 /**
- * Resolves the effective model to use for the initial onboarding agent.
+ * Resolves the provider (and any explicit model override) to use for the
+ * initial onboarding agent.
  *
  * Resolution is provider-availability aware: the returned provider is always
  * one that is installed AND authenticated on the user's machine, so the
@@ -14,12 +15,11 @@
  *   4. the app's default provider (Auggie)
  *   5. the first usable provider
  *
- * Model selection:
- *   - Providers with tier mappings (auggie, claude-code, codex, cortex) use
- *     the specialist's tier/defaultModel, same as before.
- *   - Providers with dynamic models (opencode) never synthesize a tier model.
- *     We read `selectAvailableModels` and, if empty, trigger
- *     `reloadModelsForProvider` and fetch via `getModelsForProvider`.
+ * Model selection is daemon-owned (single resolver, PROTOCOL §5.11): the
+ * returned `model` is set only for an explicit specialist user override that
+ * matches the resolved provider. Otherwise it is undefined and the daemon
+ * applies its resolved default (specialist frontmatter > settings chain >
+ * provider CLI default) at creation time.
  */
 
 import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -28,20 +28,8 @@ import {
   selectEffectiveBehaviorPrompt,
   selectUserOverrides,
 } from '$store/renderer/slices/specialists/specialists-selectors';
-import {
-  selectSelectedModel,
-  selectAvailableModels,
-} from '$store/renderer/slices/model/model-selectors';
-import {
-  PROVIDER_MODEL_TIERS,
-  getDefaultModelForProvider,
-  getDefaultProviderId,
-  isModelValidForProvider,
-  parseCompoundModelId,
-} from '$shared/config/provider-config';
-import { resolvePreferredDefaultModel } from '$lib/utils/effective-model-resolution';
-import { getModelsForProvider } from '$store/renderer/slices/model/model-utils';
-import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
+import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { splitCompoundModelId } from '$shared/utils/compound-model-id';
 import {
   getProviderAvailability,
   type ProviderAvailabilityResult,
@@ -49,20 +37,21 @@ import {
 } from '$features/providers/provider-availability.client';
 import type { StoreState } from '$store/renderer/types';
 import { createLogger } from '$lib/utils/client-logger';
-import { store as appStore } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('resolve-onboarding-model');
 const specialistId = 'spec-writer';
 
 export interface ResolvedModelConfig {
   provider: string;
-  model: string;
+  /** Explicit override only; undefined ⇒ the daemon resolves the default. */
+  model: string | undefined;
   behaviorPrompt: string | undefined;
   specialistId: string;
 }
 
 function getProviderForModel(model: string, fallbackProvider: string): string {
-  return model.includes(':') ? parseCompoundModelId(model).providerId : fallbackProvider;
+  return splitCompoundModelId(model).providerId || fallbackProvider;
 }
 
 /** Map a provider ID to its status within a ProviderAvailabilityResult. */
@@ -156,67 +145,49 @@ function resolveUsableProvider(
 }
 
 /**
- * Resolve a model for a provider whose models are dynamic (i.e. not in
- * PROVIDER_MODEL_TIERS — e.g. opencode). Reads from Redux when the provider
- * matches the active one; if the list is empty we fetch fresh via
- * getModelsForProvider and dispatch reloadModelsForProvider so the store
- * stays in sync for the rest of the UI.
+ * Given the current Redux state, resolve the provider, behavior prompt, and
+ * any explicit model override for the initial onboarding "Coordinator" agent.
+ * Returns a provider that is guaranteed to be available + authenticated on
+ * the user's machine.
+ *
+ * `userSelectedModel` is an explicit pick from the onboarding prompt-step
+ * model picker: it wins outright (provider follows the compound id, bare ids
+ * belong to the default provider) under the same user-explicit gate as a
+ * provider-card click — relaxed auth, never silently switched away from.
  */
-async function resolveDynamicProviderModel(
+export async function resolveOnboardingModel(
   state: StoreState,
-  provider: string,
-  activeProvider: string,
-): Promise<string | undefined> {
-  const storeModel = selectSelectedModel.select(state, provider);
-
-  if (provider === activeProvider) {
-    // Only trust entries that actually belong to this provider — right after
-    // a provider switch the flat `availableModels` list can still hold the
-    // previous provider's catalog until reloadModelsForProvider resolves, and
-    // resolving against it would return another provider's model id.
-    const fromStore = selectAvailableModels
-      .select(state)
-      .map((m) => m.value)
-      .filter((value) => isModelValidForProvider(value, provider));
-    const picked = resolvePreferredDefaultModel(fromStore, storeModel);
-    if (picked) return picked;
-  }
-
-  try {
-    const fetched = await getModelsForProvider(provider);
-    const values = fetched.map((m) => m.value);
-    if (values.length > 0) {
-      // Nudge the store to reload models for the active provider so later
-      // UI reads (ModelPicker, agent cards) stay consistent with our pick.
-      if (provider === activeProvider) {
-        try {
-          appStore.dispatch(reloadModelsForProvider());
-        } catch (err) {
-          logger.debug('reloadModelsForProvider dispatch failed (non-fatal)', { error: err });
-        }
-      }
-      return resolvePreferredDefaultModel(values, storeModel) ?? values[0];
-    }
-  } catch (err) {
-    logger.warn('Failed to fetch models for dynamic provider', { provider, error: err });
-  }
-
-  return undefined;
-}
-
-/**
- * Given the current Redux state, resolve the model, provider, and behavior
- * prompt for the initial onboarding "Coordinator" agent. Returns a provider
- * that is guaranteed to be available + authenticated on the user's machine.
- */
-export async function resolveOnboardingModel(state: StoreState): Promise<ResolvedModelConfig> {
+  userSelectedModel?: string,
+): Promise<ResolvedModelConfig> {
   const activeProvider = selectActiveProviderId.select(state);
-  const defaultProviderId = getDefaultProviderId();
+  const defaultProviderId = selectCatalogDefaultProviderId.select(state);
   const specialist = selectSpecialists.select(state).find((s) => s.id === specialistId);
   const behaviorPrompt = selectEffectiveBehaviorPrompt.select(state, specialistId) || undefined;
   const specialistOverride = selectUserOverrides.select(state).modelOverrides[specialistId];
 
   const availability = await getProviderAvailability();
+
+  if (userSelectedModel) {
+    const pickedProvider = getProviderForModel(userSelectedModel, defaultProviderId);
+    const pickedStatus = getProviderStatus(availability, pickedProvider);
+    if (!isProviderUserExplicitUsable(pickedStatus)) {
+      throw new Error(
+        m.onboarding_resolveModel_providerUnavailable_error({ provider: pickedProvider }),
+      );
+    }
+    logger.info('Using user-selected onboarding model', {
+      model: userSelectedModel,
+      provider: pickedProvider,
+      authenticated: pickedStatus?.authenticated,
+    });
+    return {
+      provider: pickedProvider,
+      model: userSelectedModel,
+      behaviorPrompt,
+      specialistId,
+    };
+  }
+
   const usable = getUsableProviderIds(availability);
 
   const overrideProvider = specialistOverride
@@ -244,7 +215,7 @@ export async function resolveOnboardingModel(state: StoreState): Promise<Resolve
       });
     } else {
       throw new Error(
-        `Selected provider '${activeProvider}' is not available. Please install and authenticate it, or pick a different provider.`,
+        m.onboarding_resolveModel_providerUnavailable_error({ provider: activeProvider }),
       );
     }
   } else {
@@ -267,86 +238,19 @@ export async function resolveOnboardingModel(state: StoreState): Promise<Resolve
     }
   }
 
+  // Model resolution is daemon-owned: only an explicit specialist user
+  // override that matches the resolved provider is submitted. Everything else
+  // (frontmatter model/tier, settings chain, provider CLI default) is
+  // resolved by the daemon at creation time.
   let resolvedModel: string | undefined;
-
-  // 1. Specialist user override — honor only if it matches the resolved provider
-  // (which already respects its encoded provider when that provider is usable).
   if (specialistOverride && overrideProvider === provider) {
     resolvedModel = specialistOverride;
     logger.info('Using specialist model override', { specialistId, override: specialistOverride });
-  } else if (specialist?.defaultModelTier && provider in PROVIDER_MODEL_TIERS) {
-    // 2. Specialist tier → provider tier model
-    const baseModel = getDefaultModelForProvider(provider, specialist.defaultModelTier);
-    resolvedModel = provider !== defaultProviderId ? `${provider}:${baseModel}` : baseModel;
-  } else if (specialist?.defaultModel && provider in PROVIDER_MODEL_TIERS) {
-    // 3. Specialist explicit default (only for tier-backed providers; for
-    // dynamic providers we never copy a tier-style default across providers).
-    const { providerId: defaultModelProvider } = parseCompoundModelId(specialist.defaultModel);
-    if (defaultModelProvider === provider) {
-      resolvedModel = specialist.defaultModel;
-    }
-  }
-
-  const storeModel = selectSelectedModel.select(state, provider);
-
-  // 4. Fallback: provider-specific model discovery.
-  if (!resolvedModel) {
-    if (provider in PROVIDER_MODEL_TIERS) {
-      // Tier-backed provider: prefer the user's selected/preferred model
-      // if it matches the active provider's loaded list, otherwise pick
-      // the smart tier as a safe default for the Coordinator role.
-      const fromStore =
-        provider === activeProvider
-          ? selectAvailableModels.select(state).map((m) => m.value)
-          : [];
-      resolvedModel = resolvePreferredDefaultModel(fromStore, storeModel);
-      if (!resolvedModel) {
-        const smart = getDefaultModelForProvider(provider, 'smart');
-        resolvedModel = provider !== defaultProviderId ? `${provider}:${smart}` : smart;
-      }
-    } else {
-      // Dynamic-model provider (e.g. opencode). Never synthesize a tier model.
-      resolvedModel = await resolveDynamicProviderModel(state, provider, activeProvider);
-    }
-  }
-
-  // 5. Validate tier-backed results against the live model list when we can.
-  if (
-    resolvedModel &&
-    provider in PROVIDER_MODEL_TIERS &&
-    provider === activeProvider
-  ) {
-    const availableModels = selectAvailableModels.select(state);
-    if (availableModels.length > 0) {
-      const values = availableModels.map((m) => m.value);
-      if (!values.includes(resolvedModel)) {
-        const fallback = resolvePreferredDefaultModel(values, storeModel) ?? storeModel;
-        logger.warn('Resolved model not in available list, using store default', {
-          resolvedModel,
-          fallback,
-          provider,
-          availableCount: values.length,
-        });
-        resolvedModel = fallback;
-      }
-    }
-  }
-
-  const finalModel = resolvedModel || storeModel;
-
-  // Never return an empty model for a non-Auggie provider: downstream
-  // `workspace.service.ts` would treat it as "no model" and fall back to
-  // `DEFAULT_AGENT_MODEL = 'opus4.6'`, producing an invalid compound like
-  // `{ provider: 'opencode', model: 'opus4.6' }` that fails at spawn time.
-  if (!finalModel && provider !== defaultProviderId) {
-    throw new Error(
-      `Could not resolve a model for provider '${provider}'. Please ensure ${provider} is installed and authenticated, then try again.`,
-    );
   }
 
   return {
     provider,
-    model: finalModel,
+    model: resolvedModel,
     behaviorPrompt,
     specialistId,
   };

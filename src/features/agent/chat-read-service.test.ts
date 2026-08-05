@@ -2,11 +2,10 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { AgentStatus } from "$shared/types/agent.types";
 import type { AgentSession, AgentMessage } from "$shared/types";
 
-// FAKE seam: appClient.agents.get + agents.getConversation + chat.subscribeSnapshot
-// are stubbed so no daemon call (and never a mutation) happens. The service runs
-// against the REAL configured store so the initializeChatRequested middleware, dedup,
-// and upsert hydration are exercised end to end. READ-ONLY: only `get`/`getConversation`/
-// `subscribeSnapshot`.
+// FAKE seam: appClient.agents.get + agents.getConversation are stubbed so no
+// daemon call (and never a mutation) happens. The service runs against the
+// REAL configured store so the initializeChatRequested middleware and upsert
+// hydration are exercised end to end. READ-ONLY: only `get`/`getConversation`.
 vi.mock("$lib/client", () => ({
   appClient: {
     agents: {
@@ -21,27 +20,21 @@ vi.mock("$lib/client", () => ({
       ),
     },
     chat: {
-      subscribeSnapshot: vi.fn(() =>
-        Promise.resolve({
-          messages: [] as AgentMessage[],
-        }),
-      ),
+      // Standing subscription (chat-subscribe-service, same
+      // initializeChatRequested trigger): inert here so this suite exercises
+      // the read path alone.
+      subscribe: vi.fn(() => () => {}),
     },
   },
 }));
 
-// Mock the seedStreamFromSnapshot function to verify it's called correctly
-vi.mock("$features/events/daemon-events-bridge.client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("$features/events/daemon-events-bridge.client")>();
-  return {
-    ...actual,
-    seedStreamFromSnapshot: vi.fn(),
-  };
-});
-
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
-import { initializeChatRequested } from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
+  chatSendStarted,
+  initializeChatRequested,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
+import { bulkUpsertSessions } from "$store/renderer/slices/agent-session/agent-session-slice";
 import {
   selectAgentMessages,
   selectAgentSession,
@@ -55,11 +48,9 @@ import {
   removePendingAgentDeletion,
   setPendingAgentDeletion,
 } from "./utils/pending-agent-deletions";
-import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
 import { shouldShowStoppedIndicator } from "$lib/components/chat/message-display-utils";
 
 const agentsApi = appClient.agents as unknown as Record<string, ReturnType<typeof vi.fn>>;
-const chatApi = appClient.chat as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const WS = "ws-chat-read-1";
 const AGENT = "agent-chat-read-1";
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -104,7 +95,6 @@ describe("chatReadService (fake seam, real store)", () => {
     clearPendingAgentDeletions();
     agentsApi.get.mockResolvedValue(null as never);
     agentsApi.getConversation.mockResolvedValue(conversation([]) as never);
-    chatApi.subscribeSnapshot.mockResolvedValue({ messages: [] } as never);
   });
 
   it("loadChatTranscript fetches session + transcript and hydrates messages", async () => {
@@ -234,10 +224,13 @@ describe("chatReadService (fake seam, real store)", () => {
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual(["prior"]);
   });
 
-  it("coalesces concurrent loads for the same agent into one fetch", async () => {
+  it("coalesces concurrent loads into one shared fetch", async () => {
     agentsApi.get.mockResolvedValue(makeSession() as never);
     agentsApi.getConversation.mockResolvedValue(conversation([makeMessage("c", "shared")]) as never);
 
+    // Requests arriving while a load is in flight share the in-flight read —
+    // post-hydration convergence is owned by the standing chat.subscribe
+    // delta reconcile, so no follow-up rerun is scheduled.
     await Promise.all([
       loadChatTranscript(AGENT),
       loadChatTranscript(AGENT),
@@ -248,14 +241,17 @@ describe("chatReadService (fake seam, real store)", () => {
   });
 
   it("dispatching initializeChatRequested triggers a load (middleware wiring)", async () => {
-    agentsApi.get.mockResolvedValueOnce(makeSession() as never);
+    // Own agent id: keeps this wiring assertion independent of transcript
+    // state that earlier tests left behind for the shared AGENT.
+    const agentId = "agent-middleware-wiring";
+    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
     agentsApi.getConversation.mockResolvedValueOnce(conversation([makeMessage("via-action", "x")]) as never);
 
-    appStore.dispatch(initializeChatRequested(AGENT, { wsId: WS }));
+    appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
     await flush();
 
-    expect(agentsApi.getConversation).toHaveBeenCalledWith(AGENT, 200, undefined);
-    expect(selectAgentMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual(["via-action"]);
+    expect(agentsApi.getConversation).toHaveBeenCalledWith(agentId, 200, undefined);
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual(["via-action"]);
   });
 
   it("hydrating a COMPLETED session renders BE state as-is (Idle => not Thinking, composer ungated)", async () => {
@@ -415,14 +411,21 @@ describe("chatReadService (fake seam, real store)", () => {
     );
   });
 
-  it("tab-switch mid-turn keeps interim blocks via full transcript reload", async () => {
-    // The in-flight assistant message may be included in the conversation
-    // transcript when the daemon has it. A re-mount re-hydrates it.
+  // Regression: re-entering a conversation mid-turn briefly rendered the
+  // in-flight streamed text (from the chat.subscribe seq-0 snapshot) and then
+  // it DISAPPEARED until the next delta. Root cause: this read pages
+  // agent.getConversation, which returns PERSISTED rows only (PROTOCOL §5.5 —
+  // the live partial turn is carried solely by the chat.subscribe snapshot,
+  // §7.1), and its full-list upsert landed AFTER the snapshot, clobbering the
+  // snapshot-delivered partial assistant message. The read must preserve the
+  // stream-owned in-flight message it cannot see.
+  it("tab-switch mid-turn keeps the snapshot-delivered in-flight message (persisted-only read must not clobber it)", async () => {
     const agentId = "agent-tabswitch-inflight";
     const session = makeSession({
       id: agentId,
       status: AgentStatus.Active,
       isResponding: true,
+      isProcessing: true,
       isStreaming: true,
     });
     const userTurn: AgentMessage = {
@@ -439,24 +442,27 @@ describe("chatReadService (fake seam, real store)", () => {
       contentBlocks: [{ type: "text", id: "a1:0", text: "Working" }],
     } as unknown as AgentMessage;
 
-    agentsApi.get.mockResolvedValue(session as never);
-    agentsApi.getConversation.mockResolvedValue({
-      messages: [userTurn, partial],
-      truncated: false,
-      totalMessages: 2,
-      nextToken: null,
-    } as never);
-
-    // First mount hydrates the transcript.
-    await loadChatTranscript(agentId);
+    // Seed the store as the standing chat.subscribe seq-0 snapshot does on
+    // re-entry: full session with the synthetic in-flight assistant message
+    // and the in-flight flag pair set.
+    appStore.dispatch(bulkUpsertSessions([{ ...session, messages: [userTurn, partial] }]));
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
       "u1",
       "a1",
     ]);
 
-    // Simulate switching away and back — a fresh mount dispatches
-    // initializeChatRequested again, which re-runs loadChatTranscript.
+    // The persisted read races in AFTER the snapshot: agent.getConversation
+    // carries only the persisted user row — never the live partial turn.
+    agentsApi.get.mockResolvedValue(session as never);
+    agentsApi.getConversation.mockResolvedValue({
+      messages: [userTurn],
+      truncated: false,
+      totalMessages: 1,
+      nextToken: null,
+    } as never);
+
     await loadChatTranscript(agentId);
+
     const after = selectAgentMessages.select(appStore.state, agentId);
     expect(after.map((m) => m.id)).toEqual(["u1", "a1"]);
     const streamed = after[1] as AgentMessage & { isStreaming?: boolean };
@@ -464,130 +470,168 @@ describe("chatReadService (fake seam, real store)", () => {
     expect(streamed.contentBlocks?.[0]).toMatchObject({ type: "text", text: "Working" });
   });
 
-  // Regression (STAB-TBD): Re-entering a streaming conversation shows blank gap until
-  // next tool call. Root cause: agent.getConversation returns persisted-only, dropping
-  // the live-turn partial assistant that chat.subscribe seq-0 snapshot merges. Fix:
-  // fetch chat.subscribeSnapshot after getConversation paging and merge the in-flight
-  // assistant message (dedup by ID, persisted wins). Also seed the bridge stream
-  // accumulator so subsequent chunks pass the regression guard.
-  it("merges chat.subscribe snapshot in-flight message into hydrated transcript", async () => {
-    const agentId = "agent-rejoin-stream";
-    agentsApi.get.mockResolvedValueOnce(
+  // Regression (monorepo#1160): a daemon crash mid-turn leaves a renderer-
+  // local stream-owned partial in the store that the daemon never persisted.
+  // On the next hydrate the fresh session reports IDLE (no turnInFlight /
+  // isResponding / isStreaming), so preservation must not apply — otherwise
+  // the ghost row survives every rehydrate forever.
+  it("drops a stale stream-owned ghost when the fresh session reports no turn in flight", async () => {
+    const agentId = "agent-stale-ghost-idle";
+    const userTurn: AgentMessage = {
+      id: "gu1",
+      role: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      contentBlocks: [{ type: "text", text: "hi" }],
+    };
+    const ghostPartial = {
+      id: "ga1",
+      role: "assistant",
+      timestamp: "2026-01-01T00:00:00.500Z",
+      isStreaming: true,
+      contentBlocks: [{ type: "text", id: "ga1:0", text: "Working" }],
+    } as unknown as AgentMessage;
+
+    // Seed the store as a pre-crash snapshot did: in-flight session (the
+    // crash-orphaned both-true pair) with the synthetic stream-owned
+    // assistant message.
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          ...makeSession({
+            id: agentId,
+            status: AgentStatus.Active,
+            isResponding: true,
+            isProcessing: true,
+            isStreaming: true,
+          }),
+          messages: [userTurn, ghostPartial],
+        },
+      ]),
+    );
+
+    // Post-restart daemon state (PROTOCOL §5.5 AgentLite): the session is
+    // idle and the persisted transcript never contains the partial row.
+    agentsApi.get.mockResolvedValue(
       makeSession({
         id: agentId,
-        status: AgentStatus.Active,
-        isResponding: true,
-        isStreaming: true,
+        status: AgentStatus.Idle,
+        isResponding: false,
+        isProcessing: false,
+        isStreaming: false,
       }) as never,
     );
-    const userTurn: AgentMessage = {
-      id: "0190b1c2-user",
-      role: "user",
-      timestamp: "2026-07-17T10:00:00.000Z",
-      contentBlocks: [{ type: "text", text: "Run build" }],
-    };
-    // agent.getConversation returns persisted-only (user turn only).
-    agentsApi.getConversation.mockResolvedValueOnce(
-      conversation([userTurn]) as never,
-    );
-
-    const inFlightAssistant: AgentMessage = {
-      id: "0190b1c2-asst",
-      role: "assistant",
-      timestamp: "2026-07-17T10:00:01.000Z",
-      isStreaming: true,
-      contentBlocks: [
-        { type: "text", id: "0190b1c2-asst:0", text: "Running npm build..." },
-      ],
-    } as AgentMessage;
-    // chat.subscribeSnapshot returns the snapshot with in-flight partial.
-    chatApi.subscribeSnapshot.mockResolvedValueOnce({
-      messages: [userTurn, inFlightAssistant],
-    } as never);
-
-    await loadChatTranscript(agentId);
-
-    // Verify the in-flight message was merged into the hydrated transcript.
-    // Messages are newest-first, so in-flight assistant comes before user.
-    const rendered = selectAgentMessages.select(appStore.state, agentId);
-    expect(rendered.map((m) => m.id)).toEqual(["0190b1c2-user", "0190b1c2-asst"]);
-    const merged = rendered[1] as AgentMessage & { isStreaming?: boolean };
-    expect(merged.isStreaming).toBe(true);
-    expect(merged.contentBlocks?.map((b) => b.type)).toEqual(["text"]);
-
-    // Verify seedStreamFromSnapshot was called to prime the accumulator.
-    expect(seedStreamFromSnapshot).toHaveBeenCalledWith(
-      agentId,
-      inFlightAssistant,
-      WS,
-    );
-  });
-
-  it("snapshot merge skips in-flight message already in persisted set (dedup by ID)", async () => {
-    const agentId = "agent-rejoin-dedup";
-    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
-
-    const finalizedAssistant: AgentMessage = {
-      id: "0190b2d3-asst",
-      role: "assistant",
-      timestamp: "2026-07-17T10:00:00.000Z",
-      contentBlocks: [{ type: "text", text: "Done" }],
-    };
-    // agent.getConversation returns the persisted finalized message.
-    agentsApi.getConversation.mockResolvedValueOnce(
-      conversation([finalizedAssistant]) as never,
-    );
-
-    const staleSnapshot: AgentMessage = {
-      id: "0190b2d3-asst",
-      role: "assistant",
-      timestamp: "2026-07-17T10:00:00.000Z",
-      isStreaming: true,
-      contentBlocks: [{ type: "text", text: "Working..." }],
-    } as AgentMessage;
-    // chat.subscribeSnapshot returns a stale in-flight copy with the same ID.
-    chatApi.subscribeSnapshot.mockResolvedValueOnce({
-      messages: [staleSnapshot],
-    } as never);
-
-    await loadChatTranscript(agentId);
-
-    // The persisted copy should win; snapshot's stale in-flight is ignored.
-    const rendered = selectAgentMessages.select(appStore.state, agentId);
-    expect(rendered.map((m) => m.id)).toEqual(["0190b2d3-asst"]);
-    const stored = rendered[0] as AgentMessage & { isStreaming?: boolean };
-    expect(stored.isStreaming).toBeUndefined(); // finalized
-    expect(stored.contentBlocks?.[0]).toMatchObject({ type: "text", text: "Done" });
-
-    // seedStreamFromSnapshot should NOT be called when deduped.
-    expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
-  });
-
-  it("snapshot merge no-op when snapshot has no in-flight assistant message", async () => {
-    const agentId = "agent-rejoin-noinflight";
-    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
-
-    const userTurn: AgentMessage = {
-      id: "0190b3e4-user",
-      role: "user",
-      timestamp: "2026-07-17T10:00:00.000Z",
-      contentBlocks: [{ type: "text", text: "Hello" }],
-    };
-    agentsApi.getConversation.mockResolvedValueOnce(
-      conversation([userTurn]) as never,
-    );
-    // Snapshot has no in-flight assistant message (no isStreaming:true).
-    chatApi.subscribeSnapshot.mockResolvedValueOnce({
+    agentsApi.getConversation.mockResolvedValue({
       messages: [userTurn],
+      truncated: false,
+      totalMessages: 1,
+      nextToken: null,
     } as never);
 
     await loadChatTranscript(agentId);
 
-    const rendered = selectAgentMessages.select(appStore.state, agentId);
-    expect(rendered.map((m) => m.id)).toEqual(["0190b3e4-user"]);
+    // The ghost partial is evicted — only the persisted row remains.
+    const after = selectAgentMessages.select(appStore.state, agentId);
+    expect(after.map((m) => m.id)).toEqual(["gu1"]);
 
-    // seedStreamFromSnapshot should not be called when no in-flight message.
-    expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
+    // Runtime-flag convergence (monorepo#1250): the pre-fetch crash-orphaned
+    // pair meets an authoritatively idle snapshot, so the explicit-false
+    // flags win over the upsert pair-guard and the responding indicator dies.
+    const stored = selectAgentSession.select(appStore.state, agentId);
+    expect(stored?.isStreaming).toBe(false);
+    expect(stored?.isProcessing).toBe(false);
+    expect(stored?.isResponding).toBe(false);
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+  });
+
+  // Designed race (monorepo#1250 non-goal): a turn that starts WHILE the
+  // transcript read is in flight must keep its runtime flags — the idle
+  // snapshot the read fetched predates the send and is stale for these
+  // ephemeral flags. Only a pair that predates the fetch may be cleared.
+  it("preserves a turn started during the read (chatSendStarted racing the fetch)", async () => {
+    const agentId = "agent-race-send-during-read";
+    let resolveGet!: (value: unknown) => void;
+    agentsApi.get.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveGet = resolve;
+      }) as never,
+    );
+    agentsApi.getConversation.mockResolvedValue(conversation([]) as never);
+
+    const load = loadChatTranscript(agentId);
+    // The send begins while agent.get is in flight: the pair is set now.
+    appStore.dispatch(chatSendStarted(agentId, WS));
+    // The fetched snapshot predates the send, so it reports idle.
+    resolveGet(
+      makeSession({
+        id: agentId,
+        status: AgentStatus.Idle,
+        isResponding: false,
+        isProcessing: false,
+        isStreaming: false,
+      }),
+    );
+    await load;
+
+    const stored = selectAgentSession.select(appStore.state, agentId);
+    expect(stored?.isStreaming).toBe(true);
+    expect(stored?.isProcessing).toBe(true);
+  });
+
+  it("does not resurrect a finalized turn: fetched persisted row with the same id wins over the stale streaming copy", async () => {
+    // If the turn finalized between the snapshot and the read completing, the
+    // persisted read already carries the final row under the SAME message id.
+    // The fetched (final) copy must win — no duplicate, no stale partial.
+    const agentId = "agent-finalized-during-read";
+    const userTurn: AgentMessage = {
+      id: "fu1",
+      role: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      contentBlocks: [{ type: "text", text: "go" }],
+    };
+    const stalePartial = {
+      id: "fa1",
+      role: "assistant",
+      timestamp: "2026-01-01T00:00:00.500Z",
+      isStreaming: true,
+      contentBlocks: [{ type: "text", id: "fa1:0", text: "Work" }],
+    } as unknown as AgentMessage;
+    const finalRow: AgentMessage = {
+      id: "fa1",
+      role: "assistant",
+      timestamp: "2026-01-01T00:00:00.500Z",
+      contentBlocks: [
+        { type: "text", text: "Work complete" },
+        { type: "text", text: "All checks passed." },
+      ],
+    };
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          ...makeSession({
+            id: agentId,
+            status: AgentStatus.Active,
+            isProcessing: true,
+            isStreaming: true,
+          }),
+          messages: [userTurn, stalePartial],
+        },
+      ]),
+    );
+
+    agentsApi.get.mockResolvedValue(makeSession({ id: agentId }) as never);
+    agentsApi.getConversation.mockResolvedValue({
+      messages: [userTurn, finalRow],
+      truncated: false,
+      totalMessages: 2,
+      nextToken: null,
+    } as never);
+
+    await loadChatTranscript(agentId);
+
+    const after = selectAgentMessages.select(appStore.state, agentId);
+    expect(after.map((m) => m.id)).toEqual(["fu1", "fa1"]);
+    expect(after[1].contentBlocks?.[0]).toMatchObject({ type: "text", text: "Work complete" });
+    expect((after[1] as AgentMessage & { isStreaming?: boolean }).isStreaming).toBeUndefined();
   });
 
   // Regression (intentd#336): after a user interrupts mid-stream, the daemon
@@ -634,10 +678,6 @@ describe("chatReadService (fake seam, real store)", () => {
     agentsApi.getConversation.mockResolvedValueOnce(
       conversation([userTurn, interruptedPartial]) as never,
     );
-    // The turn ended: the snapshot carries no in-flight assistant message.
-    chatApi.subscribeSnapshot.mockResolvedValueOnce({
-      messages: [userTurn, interruptedPartial],
-    } as never);
 
     await loadChatTranscript(agentId);
 
@@ -720,7 +760,7 @@ describe("chatReadService (fake seam, real store)", () => {
 
     // All complete with settled status
     expect(selectTranscriptHydration.select(appStore.state, agentId)).toBe("settled");
-    // Only one network call happened (coalesced)
+    // All three calls share the single in-flight fetch.
     expect(agentsApi.getConversation).toHaveBeenCalledTimes(1);
   });
 
@@ -755,6 +795,38 @@ describe("chatReadService (fake seam, real store)", () => {
     // had messages)" from "existing session (hydration failed)". This test
     // exercises the service-level hydration lifecycle; the ChatPanel guard
     // logic is tested separately in component tests.
+  });
+
+  // BE-truncation convergence: the hydration read replaces the transcript
+  // with the fetched set as-is, so a BE-side truncation (edit/regenerate
+  // refetch convergence, iOS editAndRegenerate, daemon agent.replaceMessages)
+  // SHRINKS the transcript instead of leaving ghost rows.
+  it("shrinks the transcript when a refetch returns a BE-truncated set", async () => {
+    const agentId = "agent-truncation-converge";
+    const userTurn: AgentMessage = {
+      id: "trunc-user",
+      role: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      contentBlocks: [{ type: "text", text: "keep me" }],
+    };
+    agentsApi.get.mockResolvedValue(makeSession({ id: agentId }) as never);
+    agentsApi.getConversation.mockResolvedValueOnce(
+      conversation([userTurn, makeMessage("trunc-asst-old", "dropped by BE")]) as never,
+    );
+    await loadChatTranscript(agentId);
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "trunc-user",
+      "trunc-asst-old",
+    ]);
+
+    // BE truncated the transcript (e.g. edit/regenerate); the refetch returns
+    // [user] only. trunc-asst-old must be dropped, not retained as a ghost.
+    agentsApi.getConversation.mockResolvedValueOnce(conversation([userTurn]) as never);
+    await loadChatTranscript(agentId);
+
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "trunc-user",
+    ]);
   });
 });
 

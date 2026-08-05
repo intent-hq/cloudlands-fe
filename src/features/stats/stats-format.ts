@@ -6,7 +6,15 @@
  * counts degrade gracefully instead of rendering "0M". All helpers are pure
  * and NaN-safe: a zero-data period renders zeroes, never NaN.
  */
-import type { UsageModelStats, UsageProviderStats, UsageTokenTotals } from '$lib/client/app-client';
+import { selectProviderCatalogEntry } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { store as appStore } from '$store/renderer/store';
+import type {
+  UsageModelStats,
+  UsageProviderStats,
+  UsageTokenTotals,
+} from '$lib/client/app-client';
+import { formatInteger, formatNumber } from '$lib/i18n/format';
+import { m } from '$shared/paraglide/messages.js';
 
 /** Sum of the 4 separate token counters (Spec D6). */
 export function totalTokens(t: UsageTokenTotals): number {
@@ -31,24 +39,26 @@ export function formatTokens(count: number): string {
 
 /** "2h 14m" / "42m" longest-run duration (design's h/m format, padded minutes). */
 export function formatDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms <= 0) return '0m';
+  if (!Number.isFinite(ms) || ms <= 0) return m.stats_format_durationMinutes_label({ minutes: 0 });
   const totalMinutes = Math.round(ms / 60_000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  if (hours === 0) return `${minutes}m`;
-  return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+  if (hours === 0) return m.stats_format_durationMinutes_label({ minutes });
+  return m.stats_format_durationHoursMinutes_label({
+    hours,
+    minutes: String(minutes).padStart(2, '0'),
+  });
 }
 
-/** Thousands-separated integer (the design uses en-US grouping). */
+/** Thousands-separated integer in the active locale. */
 export function formatInt(n: number): string {
-  if (!Number.isFinite(n)) return '0';
-  return Math.round(n).toLocaleString('en-US');
+  return formatInteger(n);
 }
 
 /** "61%" share label for a 0..1 fraction. */
 export function formatShare(share: number): string {
-  if (!Number.isFinite(share) || share <= 0) return '0%';
-  return `${Math.round(share * 100)}%`;
+  const value = Number.isFinite(share) && share > 0 ? share : 0;
+  return formatNumber(value, { style: 'percent', maximumFractionDigits: 0 });
 }
 
 /** Share-bar / rank palette from the design (1st → 4th). */
@@ -116,23 +126,14 @@ export function rankProviders(byProvider: UsageProviderStats[], limit = 4): Rank
 }
 
 /**
- * Short app-style display names for the raw provider ids carried on the wire.
- * Dependency-light on purpose (no import of the main-process provider config);
- * unrecognized ids pass through as-is.
+ * Pretty-print a raw provider id (`claude-code` → "Claude Code") using the
+ * daemon catalog's `shortName` (single source of truth), so new providers
+ * pick up a short name automatically; `unknown` covers
+ * pre-migration/unattributable usage and unrecognized ids pass through as-is.
  */
-const PROVIDER_SHORT_NAMES: Record<string, string> = {
-  auggie: 'Auggie',
-  'claude-code': 'Claude Code',
-  codex: 'Codex',
-  opencode: 'OpenCode',
-  pi: 'Pi',
-  droid: 'Droid',
-  grok: 'Grok',
-  unsloth: 'Unsloth',
-  unknown: 'Unknown',
-};
-
-/** Pretty-print a raw provider id (`claude-code` → "Claude Code"). */
 export function providerDisplayName(providerId: string): string {
-  return PROVIDER_SHORT_NAMES[providerId] ?? providerId;
+  if (providerId === 'unknown') return 'Unknown';
+  return (
+    selectProviderCatalogEntry.select(appStore.state, providerId)?.shortName ?? providerId
+  );
 }

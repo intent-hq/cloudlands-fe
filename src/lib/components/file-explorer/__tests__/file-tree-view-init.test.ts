@@ -4,6 +4,7 @@
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FileTreeView from '../file-tree-view.svelte';
+import { warmImport } from '../../../../test/warm-import';
 
 const {
   appStore,
@@ -130,6 +131,10 @@ async function markInitializationSettled() {
   });
   await waitFor(() => expect(initializationDispatches()).toHaveLength(1));
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../chat/__tests__/mocks/SlotOnly.svelte'));
 
 describe('FileTreeView initialization trigger', () => {
   beforeEach(() => {

@@ -1,4 +1,5 @@
 import { providerSettingsReducer } from "./slices/provider-settings/provider-settings-slice";
+import { providerCatalogReducer } from "./slices/provider-catalog/provider-catalog-slice";
 import { backgroundAgentSettingsReducer } from "./slices/background-agent-settings/background-agent-settings-slice";
 import { externalEditorsReducer } from "./slices/external-editors/external-editors-slice";
 import { uiLayoutReducer } from "./slices/ui-layout/ui-layout-slice";
@@ -35,7 +36,9 @@ import { githubAuthReducer } from "./slices/github-auth/github-auth-slice";
 import { githubReposReducer } from "./slices/github-repos/github-repos-slice";
 import { githubRepoSearchReducer } from "./slices/github-repo-search/github-repo-search-slice";
 import { directoryPickerReducer } from "./slices/directory-picker/directory-picker-slice";
+import { legacyImportReducer } from "./slices/legacy-import/legacy-import-slice";
 import { linearAuthReducer } from "./slices/linear-auth/linear-auth-slice";
+import { voiceSettingsReducer } from "./slices/voice-settings/voice-settings-slice";
 import { browserReducer } from "./slices/browser/browser-slice";
 import { sentryAuthReducer } from "./slices/sentry-auth/sentry-auth-slice";
 import { contextReducer } from "./slices/context/context-slice";
@@ -48,10 +51,12 @@ import { autoUpdateReducer } from "./slices/auto-update/auto-update-slice";
 import { sidebarNavReducer } from "./slices/sidebar-nav/sidebar-nav-slice";
 import { scriptsReducer } from "./slices/scripts/scripts-slice";
 import { statsReducer } from "./slices/stats/stats-slice";
+import { backgroundHooksReducer } from "./slices/background-hooks/background-hooks-slice";
 import { agentFollowReducer } from "./slices/agent-follow/agent-follow-slice";
 import { gitReducer } from "./slices/git/git-slice";
 import { fileTrackingReducer } from "./slices/changes/changes-slice";
 import { agentLockReducer } from "./slices/agent-lock/agent-lock-slice";
+import { hardwareConsoleReducer } from "./slices/hardware-console/hardware-console-slice";
 import { panelLayoutReducer } from "./slices/panel-layout/panel-layout-slice";
 import { streamingConfigReducer } from "./slices/streaming-config/streaming-config-slice";
 import { unreadTrackingReducer } from "./slices/unread-tracking/unread-tracking-slice";
@@ -78,9 +83,11 @@ import { proposalLifecycleReducer } from "./slices/proposal-lifecycle/proposal-l
 import { prBranchLookupReducer } from "./slices/pr-branch-lookup/pr-branch-lookup-slice";
 import { daemonHealthReducer } from "./slices/daemon-health/daemon-health-slice";
 import { hostRequirementsReducer } from "./slices/host-requirements/host-requirements-slice";
+import { hudReducer } from "./slices/hud/hud-slice";
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
+  providerCatalog: providerCatalogReducer,
   backgroundAgentSettings: backgroundAgentSettingsReducer,
   externalEditors: externalEditorsReducer,
   uiLayout: uiLayoutReducer,
@@ -117,7 +124,9 @@ export const reducers = {
   githubRepos: githubReposReducer,
   githubRepoSearch: githubRepoSearchReducer,
   directoryPicker: directoryPickerReducer,
+  legacyImport: legacyImportReducer,
   linearAuth: linearAuthReducer,
+  voiceSettings: voiceSettingsReducer,
   sentryAuth: sentryAuthReducer,
   browser: browserReducer,
   context: contextReducer,
@@ -130,10 +139,12 @@ export const reducers = {
   sidebarNav: sidebarNavReducer,
   scripts: scriptsReducer,
   stats: statsReducer,
+  backgroundHooks: backgroundHooksReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
   changes: fileTrackingReducer,
   agentLock: agentLockReducer,
+  hardwareConsole: hardwareConsoleReducer,
   panelLayout: panelLayoutReducer,
   streamingConfig: streamingConfigReducer,
   unreadTracking: unreadTrackingReducer,
@@ -160,4 +171,5 @@ export const reducers = {
   prBranchLookup: prBranchLookupReducer,
   daemonHealth: daemonHealthReducer,
   hostRequirements: hostRequirementsReducer,
+  hud: hudReducer,
 } as const;

@@ -6,6 +6,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { TaskDiffCounts } from './tool-result-parser';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     counts: TaskDiffCounts;
@@ -19,19 +20,19 @@
 {#if hasChanges}
   <div class="task-diff-badges">
     {#if counts.created > 0}
-      <span class="badge badge-created" title="Created">
+      <span class="badge badge-created" title={m.chat_taskDiffBadges_created_title()}>
         <Fa icon={faCirclePlus} size="xs" />
         <span class="count">{counts.created}</span>
       </span>
     {/if}
     {#if counts.updated > 0}
-      <span class="badge badge-updated" title="Updated">
+      <span class="badge badge-updated" title={m.chat_taskDiffBadges_updated_title()}>
         <Fa icon={faArrowUp} size="xs" />
         <span class="count">{counts.updated}</span>
       </span>
     {/if}
     {#if counts.deleted > 0}
-      <span class="badge badge-deleted" title="Deleted">
+      <span class="badge badge-deleted" title={m.chat_taskDiffBadges_deleted_title()}>
         <Fa icon={faTrash} size="xs" />
         <span class="count">{counts.deleted}</span>
       </span>

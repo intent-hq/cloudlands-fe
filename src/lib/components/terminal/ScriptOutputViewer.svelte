@@ -32,10 +32,12 @@
   selectScriptOutput,
 } from '$store/renderer/slices/scripts/scripts-selectors';
   import { removeScript } from '$store/renderer/slices/scripts/scripts-slice';
+  import { scriptOutputTailText } from '$lib/utils/script-output-text';
   import { TerminalThemeManager } from '$features/terminal/terminal-theme-manager';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   interface Props {
@@ -61,10 +63,10 @@
   // Reactive state from Redux store
   const script$ = selectScriptById(scriptId);
   const runtime$ = selectScriptRuntime(scriptId);
-  const outputLines$ = selectScriptOutput(scriptId);
+  const output$ = selectScriptOutput(scriptId);
 
-  // Track how many lines we've already written to xterm
-  let writtenLineCount = $state(0);
+  // Stream position already written to xterm: buffer.dropped + chunk index.
+  let writtenChunkCount = $state(0);
 
   const isFailing = $derived(
     $runtime$.status === 'exited' &&
@@ -155,12 +157,12 @@
 
   function loadBufferedOutput(): void {
     if (!xterm) return;
-    const lines = selectScriptOutput.select(appStore.state, scriptId);
-    if (lines.length > 0) {
-      const text = lines.map((l) => l.text).join('\n');
-      xterm.write(text);
-      writtenLineCount = lines.length;
+    const buffer = selectScriptOutput.select(appStore.state, scriptId);
+    if (buffer.chunks.length > 0) {
+      // Replay the raw stream verbatim — plain concatenation, no separators.
+      xterm.write(buffer.chunks.map((c) => c.text).join(''));
     }
+    writtenChunkCount = buffer.dropped + buffer.chunks.length;
   }
 
   function disposeXterm(): void {
@@ -179,24 +181,21 @@
     xterm?.dispose();
     xterm = null;
     fitAddon = null;
-    writtenLineCount = 0;
+    writtenChunkCount = 0;
   }
 
   // ---- Real-time streaming via $effect ----
 
   $effect(() => {
-    const lines = $outputLines$; // tracked — triggers effect on new output
-    const written = untrack(() => writtenLineCount); // NOT tracked — avoids cycle
-    if (!xterm || lines.length <= written) return;
+    const buffer = $output$; // tracked — triggers effect on new output
+    const written = untrack(() => writtenChunkCount); // NOT tracked — avoids cycle
+    const total = buffer.dropped + buffer.chunks.length;
+    if (!xterm || total <= written) return;
 
-    const newLines = lines.slice(written);
-    const text = newLines.map((l) => l.text).join('\n');
-    if (written > 0) {
-      xterm.write('\n' + text);
-    } else {
-      xterm.write(text);
-    }
-    writtenLineCount = lines.length;
+    // Write only chunks not yet rendered, verbatim — no injected newlines.
+    const startIndex = Math.max(written - buffer.dropped, 0);
+    xterm.write(buffer.chunks.slice(startIndex).map((c) => c.text).join(''));
+    writtenChunkCount = total;
   });
 
   // ---- Start ----
@@ -218,24 +217,24 @@
 
   async function handleAskAgent(): Promise<void> {
     if (!workspaceId) {
-      toast.error('No workspace selected');
+      toast.error(m.terminal_scriptOutput_noWorkspace_error());
       return;
     }
 
-    const lines = selectScriptOutput.select(appStore.state, scriptId);
-    const lastLines = lines
-      .slice(-100)
-      .map((l) => l.text)
-      .join('\n');
+    const buffer = selectScriptOutput.select(appStore.state, scriptId);
+    const lastLines = scriptOutputTailText(buffer, 100);
     const exitCode = $runtime$.exitCode;
     const failedText =
       exitCode !== null && exitCode !== 0 ? ` failed with exit code ${exitCode}` : '';
 
+    // i18n-ignore (agent-facing prompt, kept in English)
     const prompt = `The script '${$script$?.name}'${failedText}.\n\nCommand: \`${$script$?.command}\`\n\nOutput (last 100 lines):\n\`\`\`\n${lastLines}\n\`\`\`\n\nPlease analyze the error and suggest how to fix this script. If you can identify the issue, update the script command using the \`create_script\` MCP tool with scriptId="${scriptId}".`;
 
     try {
       appStore.dispatch(createAgentFromConfigRequested(workspaceId, {
-        name: `Fix: ${$script$?.name ?? 'script'}`,
+        name: m.terminal_scriptOutput_fixAgentName_label({
+          name: $script$?.name ?? m.terminal_scriptOutput_script_fallback(),
+        }),
         // Derived from the script name, not user-chosen — keep the session
         // self-renameable.
         nameExplicitlySet: false,
@@ -244,7 +243,7 @@
         source: 'error-notification',
       }, { openAgent: true }));
     } catch {
-      toast.error('Failed to create agent');
+      toast.error(m.workspace_modals_createAgentFailed_error());
     }
   }
 
@@ -252,7 +251,7 @@
 
   // Reset xterm when transitioning back to empty state
   $effect(() => {
-    const isEmptyState = $runtime$.status === 'idle' && $outputLines$.length === 0;
+    const isEmptyState = $runtime$.status === 'idle' && $output$.chunks.length === 0;
     if (isEmptyState && xterm) {
       disposeXterm();
     }
@@ -260,7 +259,7 @@
 
   // Initialize xterm when the container is visible (not during empty state)
   $effect(() => {
-    const isEmptyState = $runtime$.status === 'idle' && $outputLines$.length === 0;
+    const isEmptyState = $runtime$.status === 'idle' && $output$.chunks.length === 0;
     if (!isEmptyState && xtermContainer && !xterm) {
       // Container just became visible, initialize xterm
       // Use requestAnimationFrame to ensure DOM has updated
@@ -287,7 +286,7 @@
         <div class="w-4 h-4 rounded-full bg-destructive flex items-center justify-center">
           <Fa icon={faXmark} size="xs" />
         </div>
-        <span>Build failed with exit code {$runtime$.exitCode}</span>
+        <span>{m.terminal_scriptOutput_buildFailed_label({ exitCode: $runtime$.exitCode ?? 0 })}</span>
       </div>
       <Button
         variant="outline"
@@ -296,12 +295,12 @@
         onclick={handleAskAgent}
       >
         <Fa icon={faWandMagicSparkles} size="sm" class="mr-1.5" />
-        Ask AI to Fix
+        {m.terminal_scriptOutput_askAiToFix_label()}
       </Button>
     </div>
   {/if}
 
-  {#if $runtime$.status === 'idle' && $outputLines$.length === 0}
+  {#if $runtime$.status === 'idle' && $output$.chunks.length === 0}
     <!-- Empty state: script hasn't been run yet -->
     <div class="flex-1 flex items-center justify-center px-4 py-8">
       <div class="flex items-center gap-3 text-sm">
@@ -316,14 +315,14 @@
           class="text-muted-foreground hover:text-foreground"
         >
           <Fa icon={faPlay} class="h-3 w-3 mr-1" />
-          Run
+          {m.terminal_scriptOutput_run_label()}
         </Button>
       </div>
     </div>
   {/if}
 
   <!-- xterm output (hidden when empty state is showing) -->
-  <div class="flex-1 relative overflow-hidden" class:hidden={$runtime$.status === 'idle' && $outputLines$.length === 0}>
+  <div class="flex-1 relative overflow-hidden" class:hidden={$runtime$.status === 'idle' && $output$.chunks.length === 0}>
     <div class="xterm-output" bind:this={xtermContainer}></div>
   </div>
 </div>

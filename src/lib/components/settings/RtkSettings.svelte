@@ -13,16 +13,18 @@
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
   import { onMount } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { invoke } from '$shared/generated/ipc-client';
   import { appClient } from '$lib/client';
 
   import {
   addTerminal,
   openTerminalOverlay,
-  toggleTerminalOverlay,
+  terminalCreated,
 } from '$store/renderer/slices/terminals/terminals-slice';
   import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { toast } from '$lib/components/ui/toast';
 
 
   let rtkAvailable = $state(false);
@@ -38,7 +40,7 @@
     // Read rtk.enabled from daemon settings catalog (LiveSettingsClient.get folds errors to null)
     const entry = await appClient.settings.get(SETTING_PATH);
     if (entry === null) {
-      settingsError = 'Failed to load RTK settings from the daemon.';
+      settingsError = m.settings_rtk_loadError();
       console.error('Failed to load RTK settings: daemon returned null');
     } else {
       rtkEnabled = typeof entry.value === 'boolean' ? entry.value : false;
@@ -72,18 +74,30 @@
 
   async function installRtk() {
     try {
-      // Create a new terminal tab and open the overlay
-      const termId = `terminal-${Date.now()}`;
-      appStore.dispatch(addTerminal(ROOT_WORKSPACE_ID, termId, 'Install RTK'));
+      // Daemon-first create (`terminal.create`, PROTOCOL §5.13): key the tab
+      // by the daemon-assigned id so hydration/writes address the real PTY.
+      const result = await appClient.terminals.create({
+        workspaceId: ROOT_WORKSPACE_ID,
+        cols: 80,
+        rows: 24,
+      });
+      if (!result.success || !result.id) {
+        // Daemon-first invariant: never fabricate a tab without a PTY behind
+        // it — surface the failure instead.
+        console.error('Failed to create install terminal:', result.success ? 'missing id' : result.error);
+        toast.error(m.terminal_adapter_openFailed_error());
+        return;
+      }
+      const termId = result.id;
+      appStore.dispatch(addTerminal(ROOT_WORKSPACE_ID, termId, m.settings_rtk_installTerminalTitle()));
+      appStore.dispatch(terminalCreated(ROOT_WORKSPACE_ID));
       appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, termId));
 
       // Wait briefly for the terminal to initialize, then write the command
+      // via `terminal.write` (PROTOCOL §5.13) using the daemon-assigned id.
       setTimeout(async () => {
         try {
-          await invoke('terminal:professional:write', {
-            terminalId: termId,
-            data: 'brew install rtk\n',
-          });
+          await appClient.terminals.write(termId, 'brew install rtk\n');
         } catch {
           // Terminal might not be ready yet - user can type manually
         }
@@ -94,9 +108,11 @@
       for (const delay of pollIntervals) {
         setTimeout(() => recheckRtk(), delay);
       }
-    } catch {
-      // Fallback: just open the terminal
-      appStore.dispatch(toggleTerminalOverlay(ROOT_WORKSPACE_ID));
+    } catch (error) {
+      // Daemon-first invariant: no fabricated fallback tab — surface the
+      // failure instead.
+      console.error('Failed to create install terminal:', error);
+      toast.error(m.terminal_adapter_openFailed_error());
     }
   }
 
@@ -109,7 +125,7 @@
       rtkEnabled = newValue;
       settingsError = '';
     } catch (error) {
-      settingsError = 'Failed to save RTK setting.';
+      settingsError = m.settings_rtk_saveError();
       console.error('Failed to update rtk.enabled setting:', error);
     } finally {
       updating = false;
@@ -125,17 +141,18 @@
   {/if}
   <div class="flex justify-between">
     <div>
-      <p class="text-sm font-medium text-foreground">RTK command optimization</p>
+      <p class="text-sm font-medium text-foreground">{m.settings_rtk_label()}</p>
       <p class="text-xs text-subtle">
         {#if rtkAvailable}
-          Agents will prefix supported commands with rtk for compressed, LLM-friendly output.
+          {m.settings_rtk_enabledDescription()}
         {:else}
-          <span class="text-muted-foreground">rtk is not installed</span>
+          <span class="text-muted-foreground">{m.settings_rtk_notInstalled()}</span>
           <button
             type="button"
             class="text-primary hover:underline cursor-pointer text-xs ml-1"
             onclick={recheckRtk}
-            disabled={checking}>{checking ? 'Checking…' : 'Check again'}</button
+            disabled={checking}
+            >{checking ? m.settings_rtk_checking() : m.settings_rtk_checkAgain()}</button
           >
         {/if}
       </p>
@@ -147,23 +164,24 @@
       size="xs"
       class="mb-auto"
       disabled={!rtkAvailable}
-      ariaLabel="RTK command optimization"
+      ariaLabel={m.settings_rtk_label()}
     />
   </div>
   {#if !rtkAvailable}
     <p class="text-xs text-muted-foreground mt-2">
-      RTK compresses CLI output for faster, cheaper agent interactions. Install with
+      {m.settings_rtk_installHint_before()}
       <button
         type="button"
         class="text-primary hover:underline cursor-pointer font-mono"
-        onclick={installRtk}>brew install rtk</button
+        onclick={installRtk}><!-- i18n-ignore (shell command) -->brew install rtk</button
       >
-      or visit
+      {m.settings_rtk_installHint_orVisit()}
       <a
         href="https://github.com/rtk-ai/rtk"
         target="_blank"
         rel="noopener noreferrer"
-        class="text-primary hover:underline">github.com/rtk-ai/rtk</a
+        class="text-primary hover:underline"
+        ><!-- i18n-ignore (URL) -->github.com/rtk-ai/rtk</a
       >.
     </p>
   {/if}

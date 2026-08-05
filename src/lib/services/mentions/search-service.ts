@@ -1,8 +1,5 @@
 import { logger } from '$lib/utils/client-logger';
-import {
-  fuzzyMatch,
-  pathFuzzyMatch,
-} from './fuzzy-matcher';
+import { fuzzyMatch, pathFuzzyMatch } from './fuzzy-matcher';
 
 /**
  * Debounced Search Service with Caching and Cancellation
@@ -68,6 +65,7 @@ export class DebouncedSearchService {
           }
 
           logger.debug(
+            // i18n-ignore (log message)
             '[SearchService] Searching with providers:',
             providers.map((p) => p.id),
           );
@@ -169,10 +167,7 @@ export class DebouncedSearchService {
    * Apply fuzzy matching to refine and re-score results
    * This improves ranking by using VS Code-style fuzzy matching
    */
-  private applyFuzzyMatching(
-    query: string,
-    results: MentionCandidate[],
-  ): MentionCandidate[] {
+  private applyFuzzyMatching(query: string, results: MentionCandidate[]): MentionCandidate[] {
     if (!query || query.length === 0) {
       return results;
     }
@@ -182,8 +177,10 @@ export class DebouncedSearchService {
       let fuzzyScore = 0;
 
       // Try matching against full path (most important for path queries)
-      const fullPath = result.meta?.path || result.meta?.fullPath ||
-                       (result.subtitle ? `${result.subtitle}/${result.label}` : result.label);
+      const fullPath =
+        result.meta?.path ||
+        result.meta?.fullPath ||
+        (result.subtitle ? `${result.subtitle}/${result.label}` : result.label);
       if (fullPath) {
         const pathMatch = pathFuzzyMatch(query, fullPath);
         if (pathMatch) {
@@ -215,7 +212,7 @@ export class DebouncedSearchService {
 
       return {
         ...result,
-        score: fuzzyScore > 0 ? fuzzyScore : result.score ?? 0,
+        score: fuzzyScore > 0 ? fuzzyScore : (result.score ?? 0),
       };
     });
 

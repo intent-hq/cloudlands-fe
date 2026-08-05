@@ -12,7 +12,18 @@ import {
   vi,
 } from 'vitest';
 
-const { mockDetect, mockExecute, mockDispatch, scriptEntries, activeWorkspaceState, toast } = vi.hoisted(() => {
+const {
+  mockDetect,
+  mockExecute,
+  mockDispatch,
+  mockScriptCreate,
+  mockScriptUpdate,
+  mockScriptRemove,
+  backgroundAgentOptions,
+  scriptEntries,
+  activeWorkspaceState,
+  toast,
+} = vi.hoisted(() => {
   const mockDetect = vi.fn();
   const mockExecute = vi.fn();
   const mockDispatch = vi.fn();
@@ -20,6 +31,12 @@ const { mockDetect, mockExecute, mockDispatch, scriptEntries, activeWorkspaceSta
     mockDetect,
     mockExecute,
     mockDispatch,
+    mockScriptCreate: vi.fn(),
+    mockScriptUpdate: vi.fn(),
+    mockScriptRemove: vi.fn(),
+    backgroundAgentOptions: {
+      value: null as { onResult: (result: string) => Promise<void> } | null,
+    },
     scriptEntries: {
       value: [] as any[],
     },
@@ -30,6 +47,7 @@ const { mockDetect, mockExecute, mockDispatch, scriptEntries, activeWorkspaceSta
       success: vi.fn(),
       info: vi.fn(),
       error: vi.fn(),
+      warning: vi.fn(),
     },
   };
 });
@@ -37,9 +55,9 @@ const { mockDetect, mockExecute, mockDispatch, scriptEntries, activeWorkspaceSta
 vi.mock('$features/scripts/scripts.client', () => ({
   scriptsClient: {
     detect: mockDetect,
-    create: vi.fn(),
-    update: vi.fn(),
-    remove: vi.fn(),
+    create: mockScriptCreate,
+    update: mockScriptUpdate,
+    remove: mockScriptRemove,
     start: vi.fn(),
     stop: vi.fn(),
     restart: vi.fn(),
@@ -100,11 +118,14 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 vi.mock('$lib/hooks/use-background-agent.svelte', () => ({
-  useBackgroundAgent: () => ({
-    execute: mockExecute,
-    cancel: vi.fn(),
-    reset: vi.fn(),
-  }),
+  useBackgroundAgent: (_name: string, options: any) => {
+    backgroundAgentOptions.value = options;
+    return {
+      execute: mockExecute,
+      cancel: vi.fn(),
+      reset: vi.fn(),
+    };
+  },
 }));
 
 vi.mock('$store/renderer/slices/background-agent-executor/background-agent-executor-selectors', () => ({
@@ -150,6 +171,13 @@ vi.mock('$lib/components/ui/button/button.svelte', async () => {
 });
 
 import TerminalSidebar from '../TerminalSidebar.svelte';
+import { warmImport } from '../../../../test/warm-import';
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
+warmImport(() => import('./mocks/MockButton.svelte'));
 
 describe('TerminalSidebar detection flow', () => {
   beforeEach(() => {
@@ -259,6 +287,80 @@ describe('TerminalSidebar detection flow', () => {
     });
   });
 });
+
+describe('TerminalSidebar agent detection result handling (running-script guard)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
+    // §5.8 script.list shape: camelCase definition + merged runtime block.
+    scriptEntries.value = [
+      {
+        id: 'auto-running',
+        name: 'dev',
+        command: 'pnpm dev',
+        mode: 'service',
+        category: 'dev',
+        source: 'auto-detected',
+        runtime: { status: 'running', pid: 4242, restartCount: 0 },
+      },
+      {
+        id: 'auto-idle',
+        name: 'build',
+        command: 'pnpm build',
+        mode: 'command',
+        category: 'build',
+        source: 'auto-detected',
+        runtime: { status: 'idle', exitCode: null },
+      },
+      {
+        id: 'auto-stale',
+        name: 'stale',
+        command: 'pnpm stale',
+        mode: 'command',
+        category: 'other',
+        source: 'auto-detected',
+        runtime: { status: 'idle', exitCode: null },
+      },
+    ] as any[];
+    mockScriptUpdate.mockResolvedValue({ success: true });
+    mockScriptCreate.mockResolvedValue({
+      success: true,
+      data: { id: 'auto-lint', name: 'lint', command: 'pnpm lint', mode: 'command' },
+    });
+    mockScriptRemove.mockResolvedValue({ success: true });
+  });
+
+  it('skips the running script in the update loop, surfaces the skipped-running toast, and still applies other entries', async () => {
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+
+    // The daemon-side scriptId upsert tears down the live PTY group, so the
+    // update entry targeting the running auto-detected script must not upsert.
+    await backgroundAgentOptions.value!.onResult(
+      JSON.stringify({
+        add: [{ name: 'lint', command: 'pnpm lint', mode: 'command', category: 'lint' }],
+        update: [
+          { id: 'auto-running', command: 'pnpm dev --host' },
+          { id: 'auto-idle', command: 'pnpm build --clean' },
+        ],
+        remove: ['auto-stale'],
+      }),
+    );
+
+    expect(mockScriptUpdate).toHaveBeenCalledTimes(1);
+    expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', 'auto-idle', {
+      command: 'pnpm build --clean',
+    });
+    expect(mockScriptCreate).toHaveBeenCalledWith(
+      'ws-1',
+      expect.objectContaining({ name: 'lint', command: 'pnpm lint', mode: 'command' }),
+    );
+    expect(mockScriptRemove).toHaveBeenCalledWith('ws-1', 'auto-stale');
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(toast.warning).toHaveBeenCalledWith(expect.stringContaining('"dev"'));
+    expect(toast.success).toHaveBeenCalled();
+  });
+});
+
 
 describe('TerminalSidebar context menu Escape handling', () => {
   beforeEach(() => {

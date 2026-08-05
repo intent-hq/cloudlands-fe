@@ -188,7 +188,7 @@ export function sanitizeCommentHTML(html: string): string {
 export function sanitizeMarkdownHTML(html: string): string {
   return sanitizeHTML(html, {
     // Allow more tags for markdown
-    ALLOWED_TAGS: [...ALLOWED_TAGS, 'img', 'hr', 'details', 'summary'],
+    ALLOWED_TAGS: [...ALLOWED_TAGS, 'img', 'hr', 'details', 'summary', 'sub', 'sup'],
     // Allow all attributes from ALLOWED_ATTRIBUTES plus img attributes
     // DOMPurify expects attribute names in the array, not "tag:attr" format
     ALLOWED_ATTR: [

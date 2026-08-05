@@ -16,6 +16,8 @@
   faPaperPlane,
   faRotateRight,
   faBell,
+  faBolt,
+  faCircleQuestion,
 } from '@fortawesome/free-solid-svg-icons';
   import {
   fly,
@@ -26,18 +28,36 @@
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
+  import { getHookWakeAttribution, stripHookWakePrefix } from '$lib/utils/hook-wake-attribution';
   import { summarizeEventWake } from './event-wake-summary';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     messages: QueuedMessage[];
     disabled?: boolean;
+    /**
+     * The daemon is parking these deliveries behind pending Agent Q&A
+     * questions (question hold, PROTOCOL §5.5): render a hint that the queue
+     * is deliberately held — not stalled — until the user answers or
+     * dismisses the questions.
+     */
+    heldForQuestions?: boolean;
     onedit?: (messageId: string, content: string, editing?: boolean) => Promise<{ success: boolean; error?: string }>;
     onremove?: (messageId: string) => void;
     onsendnow?: (messageId: string) => void;
     ondone?: () => void;
   }
 
-  let { messages = [], disabled = false, onedit, onremove, onsendnow, ondone }: Props = $props();
+  let {
+    messages = [],
+    disabled = false,
+    heldForQuestions = false,
+    onedit,
+    onremove,
+    onsendnow,
+    ondone,
+  }: Props = $props();
 
   // Track which message is being edited
   let editingId = $state<string | null>(null);
@@ -58,7 +78,7 @@
     index: number,
   ) {
     lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
-    lightboxImageName = `Attached image ${index + 1}`;
+    lightboxImageName = m.chat_chatMessage_attachedImage_alt({ number: formatInteger(index + 1) });
     lightboxOpenerElement = openerElement;
     lightboxOpen = true;
   }
@@ -224,15 +244,29 @@
   }
 
   /**
+   * Background-hook wake attribution for a queued entry
+   * (`messageMetadata.type === 'hook_wake'`, PROTOCOL §5.40). Returns null
+   * when absent/malformed so the entry renders as a normal queued message.
+   */
+  function queuedHookWakeAttribution(message: QueuedMessage) {
+    return getHookWakeAttribution(message.messageMetadata);
+  }
+
+  /**
    * Exposed function for parent components to programmatically start editing
    * the last queued message (e.g., when user presses Up arrow in chat input).
-   * Skips system event-notification wakes and agent-to-agent messages
-   * (not user-editable).
+   * Skips system event-notification wakes, agent-to-agent messages, and
+   * hook wakes (not user-editable).
    * Returns true if editing was started, false if no messages to edit.
    */
   export function editLastMessage(): boolean {
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (isEventNotification(messages[i]) || queuedAgentAttribution(messages[i])) continue;
+      if (
+        isEventNotification(messages[i]) ||
+        queuedAgentAttribution(messages[i]) ||
+        queuedHookWakeAttribution(messages[i])
+      )
+        continue;
       startEdit(messages[i]);
       editStartedProgrammatically = true;
       return true;
@@ -253,11 +287,14 @@
             e.stopPropagation();
             openImageLightbox(block, e.currentTarget, i);
           }}
-          aria-label="View attached image {i + 1} of {message.imageBlocks.length} full size"
+          aria-label={m.chat_chatMessage_viewAttachedImage_ariaLabel({
+            number: formatInteger(i + 1),
+            total: formatInteger(message.imageBlocks?.length ?? 0),
+          })}
         >
           <img
             src="data:{block.mimeType};base64,{block.data}"
-            alt="Attached image {i + 1}"
+            alt={m.chat_chatMessage_attachedImage_alt({ number: formatInteger(i + 1) })}
             class="h-[1.1em] w-[1.1em] rounded-sm border border-border object-cover hover:opacity-90 transition-opacity"
           />
         </button>
@@ -270,16 +307,37 @@
   <div class="relative border-t border-border/50 pt-3 pb-2 px-2 z-20" transition:slide={{ duration: 200 }}>
     <div class="flex items-center gap-1.5 text-xs text-subtle mb-2 px-2.5">
         <Fa icon={faListOl} class="w-3 h-3" />
-        <span>Queued messages ({messages.length})</span>
+        <span>{m.chat_queuedMessages_header_label({ count: formatInteger(messages.length) })}</span>
       </div>
+
+      {#if heldForQuestions}
+        <div
+          class="flex items-center gap-1.5 text-xs text-warning mb-2 px-2.5"
+          data-testid="queued-messages-held-hint"
+          role="status"
+          transition:slide={{ duration: 200 }}
+        >
+          <div aria-hidden="true" class="shrink-0">
+            <Fa icon={faCircleQuestion} class="w-3 h-3" />
+          </div>
+          <span>
+            {messages.length === 1
+              ? m.chat_queuedMessages_heldForQuestionsHint_one()
+              : m.chat_queuedMessages_heldForQuestionsHint_many({
+                  count: formatInteger(messages.length),
+                })}
+          </span>
+        </div>
+      {/if}
 
       <div class="space-y-px">
         {#each messages as message (message.id)}
           {@const agentAttr = queuedAgentAttribution(message)}
+          {@const hookWakeAttr = queuedHookWakeAttribution(message)}
           <div
             class="group flex items-start gap-2 px-2.5 py-1 text-subtle text-sm grid {message.editing ? 'opacity-60' : ''}"
             transition:fly={{ y: 10, duration: 200 }}
-            title={message.editing ? 'Held for editing' : undefined}
+            title={message.editing ? m.chat_queuedMessages_heldForEditing_title() : undefined}
           >
             {#if editingId === message.id}
               <!-- Edit mode -->
@@ -304,7 +362,7 @@
                   size="icon-xs"
                   class="-my-1"
                   onclick={saveEdit}
-                  tooltip="Save"
+                  tooltip={m.chat_queuedMessages_save_tooltip()}
                 >
                   <Fa icon={faCheck} class="w-3 h-3" />
                 </Button>
@@ -313,7 +371,7 @@
                   size="icon-xs"
                   class="-my-1"
                   onclick={cancelEdit}
-                  tooltip="Cancel"
+                  tooltip={m.chat_queuedMessages_cancel_tooltip()}
                 >
                   <Fa icon={faTimes} class="w-3 h-3" />
                 </Button>
@@ -325,12 +383,12 @@
                 {#if message.requeuedAfterFailure}
                   <div
                     class="flex items-center gap-1 text-warning text-xs shrink-0"
-                    title="Failed — will retry"
+                    title={m.chat_queuedMessages_failedWillRetry_label()}
                   >
                     <div aria-hidden="true">
                       <Fa icon={faRotateRight} class="w-3 h-3" />
                     </div>
-                    <span class="sr-only">Failed — will retry</span>
+                    <span class="sr-only">{m.chat_queuedMessages_failedWillRetry_label()}</span>
                   </div>
                 {/if}
                 <div aria-hidden="true" class="shrink-0">
@@ -355,7 +413,7 @@
                       size="icon-xs"
                       class="-my-1"
                       onclick={() => onsendnow?.(message.id)}
-                      tooltip="Send now (interrupts current stream)"
+                      tooltip={m.chat_queuedMessages_sendNow_tooltip()}
                     >
                       <Fa icon={faPaperPlane} class="w-3 h-3" />
                     </Button>
@@ -364,7 +422,7 @@
                       size="icon-xs"
                       class="-my-1"
                       onclick={() => handleRemove(message.id)}
-                      tooltip="Remove"
+                      tooltip={m.chat_queuedMessages_remove_tooltip()}
                     >
                       <Fa icon={faTrash} class="w-3 h-3" />
                     </Button>
@@ -377,12 +435,12 @@
                 {#if message.requeuedAfterFailure}
                   <div
                     class="flex items-center gap-1 text-warning text-xs shrink-0"
-                    title="Failed — will retry"
+                    title={m.chat_queuedMessages_failedWillRetry_label()}
                   >
                     <div aria-hidden="true">
                       <Fa icon={faRotateRight} class="w-3 h-3" />
                     </div>
-                    <span class="sr-only">Failed — will retry</span>
+                    <span class="sr-only">{m.chat_queuedMessages_failedWillRetry_label()}</span>
                   </div>
                 {/if}
                 <div class="shrink-0" data-testid="queued-agent-message-avatar">
@@ -406,7 +464,7 @@
                       size="icon-xs"
                       class="-my-1"
                       onclick={() => onsendnow?.(message.id)}
-                      tooltip="Send now (interrupts current stream)"
+                      tooltip={m.chat_queuedMessages_sendNow_tooltip()}
                     >
                       <Fa icon={faPaperPlane} class="w-3 h-3" />
                     </Button>
@@ -415,7 +473,59 @@
                       size="icon-xs"
                       class="-my-1"
                       onclick={() => handleRemove(message.id)}
-                      tooltip="Remove"
+                      tooltip={m.chat_queuedMessages_remove_tooltip()}
+                    >
+                      <Fa icon={faTrash} class="w-3 h-3" />
+                    </Button>
+                  </div>
+                {/if}
+              </div>
+            {:else if hookWakeAttr}
+              <!-- Background-hook wake: compact attribution row, no edit -->
+              <div class="col-span-full row-span-full flex flex-1 min-w-0 items-center gap-2">
+                {#if message.requeuedAfterFailure}
+                  <div
+                    class="flex items-center gap-1 text-warning text-xs shrink-0"
+                    title={m.chat_queuedMessages_failedWillRetry_label()}
+                  >
+                    <div aria-hidden="true">
+                      <Fa icon={faRotateRight} class="w-3 h-3" />
+                    </div>
+                    <span class="sr-only">{m.chat_queuedMessages_failedWillRetry_label()}</span>
+                  </div>
+                {/if}
+                <div aria-hidden="true" class="shrink-0" data-testid="queued-hook-wake-icon">
+                  <Fa icon={faBolt} class="w-3 h-3" />
+                </div>
+                <div
+                  class="flex-1 min-w-0 truncate"
+                  transition:slide={{ axis: 'y', duration: 200 }}
+                  title={message.content}
+                >
+                  <span class="text-foreground font-medium">{hookWakeAttr.displayName}</span>
+                  <span class="text-xs opacity-70">
+                    — {stripHookWakePrefix(message.content)}</span
+                  >
+                </div>
+                {#if !disabled}
+                  <div
+                    class="flex items-center gap-1 opacity-30 group-hover:opacity-100 transition-opacity"
+                  >
+                    <Button
+                      variant="ghost-light"
+                      size="icon-xs"
+                      class="-my-1"
+                      onclick={() => onsendnow?.(message.id)}
+                      tooltip={m.chat_queuedMessages_sendNow_tooltip()}
+                    >
+                      <Fa icon={faPaperPlane} class="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="ghost-light"
+                      size="icon-xs"
+                      class="-my-1"
+                      onclick={() => handleRemove(message.id)}
+                      tooltip={m.chat_queuedMessages_remove_tooltip()}
                     >
                       <Fa icon={faTrash} class="w-3 h-3" />
                     </Button>
@@ -428,12 +538,12 @@
                 {#if message.requeuedAfterFailure}
                   <div
                     class="flex items-center gap-1 text-warning text-xs shrink-0"
-                    title="Failed — will retry"
+                    title={m.chat_queuedMessages_failedWillRetry_label()}
                   >
                     <div aria-hidden="true">
                       <Fa icon={faRotateRight} class="w-3 h-3" />
                     </div>
-                    <span class="sr-only">Failed — will retry</span>
+                    <span class="sr-only">{m.chat_queuedMessages_failedWillRetry_label()}</span>
                   </div>
                 {/if}
                 {@render imageThumbnails(message)}
@@ -442,7 +552,9 @@
                   transition:slide={{ axis: 'y', duration: 200 }}
                   onclick={() => startEdit(message)}
                 >
-                  {message.requeuedAfterFailure ? '(Failed — will retry) ' : ''}{message.content}
+                  {message.requeuedAfterFailure
+                    ? m.chat_queuedMessages_failedWillRetryPrefix_label() + ' '
+                    : ''}{message.content}
                 </button>
                 {#if !disabled}
                   <div
@@ -453,7 +565,7 @@
                       size="icon-xs"
                       class="-my-1"
                       onclick={() => onsendnow?.(message.id)}
-                      tooltip="Send now (interrupts current stream)"
+                      tooltip={m.chat_queuedMessages_sendNow_tooltip()}
                     >
                       <Fa icon={faPaperPlane} class="w-3 h-3" />
                     </Button>
@@ -462,7 +574,7 @@
                       size="icon-xs"
                       class="-my-1"
                       onclick={() => startEdit(message)}
-                      tooltip="Edit"
+                      tooltip={m.chat_queuedMessages_edit_tooltip()}
                     >
                       <Fa icon={faPen} class="w-3 h-3" />
                     </Button>
@@ -471,7 +583,7 @@
                       size="icon-xs"
                       class="-my-1"
                       onclick={() => handleRemove(message.id)}
-                      tooltip="Remove"
+                      tooltip={m.chat_queuedMessages_remove_tooltip()}
                     >
                       <Fa icon={faTrash} class="w-3 h-3" />
                     </Button>

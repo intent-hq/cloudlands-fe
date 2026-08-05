@@ -41,6 +41,7 @@ import {
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { createLogger } from "$lib/utils/client-logger";
 import { isAgentDeletionPending } from "./utils/pending-agent-deletions";
+import { staleRuntimeFlagClearUpsertOptions } from "./utils/stale-runtime-flag-clear";
 
 const logger = createLogger("AgentReadService");
 
@@ -63,6 +64,14 @@ export async function ensureAgentSession(agentId: string): Promise<void> {
 
   const run = (async () => {
     try {
+      // Capture BEFORE the fetch (monorepo#1250): a pre-existing both-true
+      // runtime-flag pair paired with a fresh session the daemon reports
+      // idle is a crash-orphaned leftover; a pair set DURING the fetch
+      // (chatSendStarted racing this read) keeps the pair-guard's default
+      // preservation semantics.
+      const storedBefore = appStore.state.agentSessions?.byAgentId[agentId];
+      const hadInFlightPairBeforeFetch =
+        storedBefore?.isStreaming === true && storedBefore?.isProcessing === true;
       const session = await appClient.agents.get(agentId);
       // Re-check after the fetch: a deletion may have become pending while
       // `agent.get` was in flight; upserting now would resurrect the
@@ -80,7 +89,12 @@ export async function ensureAgentSession(agentId: string): Promise<void> {
           existing && existing.messages.length > 0
             ? { ...session, messages: existing.messages }
             : session;
-        appStore.dispatch(bulkUpsertSessions([merged]));
+        appStore.dispatch(
+          bulkUpsertSessions(
+            [merged],
+            staleRuntimeFlagClearUpsertOptions(hadInFlightPairBeforeFetch, session),
+          ),
+        );
         appStore.dispatch(upsertSession(merged));
       }
     } catch (error) {

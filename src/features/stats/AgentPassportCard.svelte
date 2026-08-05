@@ -9,6 +9,7 @@
    */
   import Logo from '$lib/components/Logo.svelte';
   import type { UsageStatsResult } from '$lib/client/app-client';
+  import { m } from '$shared/paraglide/messages.js';
   import { formatDuration, formatInt, formatTokens, totalTokens } from './stats-format';
 
   let { data, label }: { data: UsageStatsResult | null; label: string } = $props();
@@ -23,41 +24,42 @@
   <div class="head">
     <div class="head-brand">
       <Logo width={26} />
-      <span class="head-title">AGENT PASSPORT</span>
+      <span class="head-title">{m.stats_passportCard_title_label()}</span>
     </div>
     <span class="head-label">{label}</span>
   </div>
   <div class="rule"></div>
   <div class="hero">
-    <div class="hero-label">TOKENS PROCESSED</div>
+    <div class="hero-label">{m.stats_passportCard_tokensProcessed_label()}</div>
     <div class="hero-value">{formatTokens(totalTokens(totals))}</div>
     <div class="counters">
-      <span class="counter-in">↓ {formatTokens(totals.inputTokens)} in</span>
-      <span class="counter-out">↑ {formatTokens(totals.outputTokens)} out</span>
-      <span class="counter-cread">⇣ {formatTokens(totals.cacheReadTokens)} cache read</span>
-      <span class="counter-cwrite">⇡ {formatTokens(totals.cacheCreationTokens)} cache write</span>
+      <span class="counter-in">{m.stats_passportCard_input_label({ amount: formatTokens(totals.inputTokens) })}</span>
+      <span class="counter-out">{m.stats_passportCard_output_label({ amount: formatTokens(totals.outputTokens) })}</span>
+      <span class="counter-cread">{m.stats_passportCard_cacheRead_label({ amount: formatTokens(totals.cacheReadTokens) })}</span>
+      <span class="counter-cwrite">{m.stats_passportCard_cacheWrite_label({ amount: formatTokens(totals.cacheCreationTokens) })}</span>
     </div>
   </div>
   <div class="grid">
     <div>
-      <div class="stat-label">AGENT RUNS</div>
+      <div class="stat-label">{m.stats_passportCard_agentRuns_label()}</div>
       <div class="stat-big">{formatInt(data?.runs ?? 0)}</div>
     </div>
     <div>
-      <div class="stat-label">SESSIONS</div>
+      <div class="stat-label">{m.stats_passportCard_sessions_label()}</div>
       <div class="stat-big">{formatInt(data?.sessions ?? 0)}</div>
     </div>
     <div>
-      <div class="stat-label">TOP MODEL</div>
+      <div class="stat-label">{m.stats_passportCard_topModel_label()}</div>
       <div class="stat-small stat-clip">{topModel}</div>
     </div>
     <div>
-      <div class="stat-label">LONGEST RUN</div>
+      <div class="stat-label">{m.stats_passportCard_longestRun_label()}</div>
       <div class="stat-small">{formatDuration(data?.longestRunMs ?? 0)}</div>
     </div>
   </div>
   <div class="foot">
-    <span class="foot-brand">Built with Intent</span>
+    <span class="foot-brand">{m.stats_card_builtWith_label()}</span>
+    <!-- i18n-ignore (brand URL) -->
     <span class="foot-url">intentapp.dev</span>
   </div>
 </div>

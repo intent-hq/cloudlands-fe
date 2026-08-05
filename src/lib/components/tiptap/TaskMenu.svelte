@@ -35,6 +35,7 @@
   faRobot,
   faList,
 } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     id: string; // Must match popovertarget attribute on trigger button
@@ -75,12 +76,12 @@
 >
   <button class="task-menu-item" onclick={() => handleAction('assign-agent')}>
     <Fa icon={faRobot} size="sm" class="w-4 h-4" />
-    <span>Assign to agent</span>
+    <span>{m.tiptap_taskMenu_assignToAgent_label()}</span>
   </button>
 
   <button class="task-menu-item" onclick={() => handleAction('task-breakdown')}>
     <Fa icon={faList} size="sm" class="w-4 h-4" />
-    <span>Break task into subtasks</span>
+    <span>{m.tiptap_taskMenu_breakIntoSubtasks_label()}</span>
   </button>
 </div>
 

@@ -14,6 +14,7 @@
   import type { AgentSession, Workspace } from '$shared/types';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     session?: AgentSession | null;
@@ -38,7 +39,7 @@
     isProcessing = false,
     isStreaming = false,
     disabled = false,
-    placeholder = 'Type a message...',
+    placeholder = m.chat_agentInputArea_input_placeholder(),
     showStopButton = false,
     showNewChatButton = false,
     contextReferences = [],
@@ -167,7 +168,7 @@
 <div
   class="flex flex-col gap-2 p-4 bg-background border-t border-border"
   role="group"
-  aria-label="Chat input area and context references"
+  aria-label={m.chat_agentInputArea_group_ariaLabel()}
   ondrop={handleDrop}
   ondragover={handleDragOver}
 >
@@ -177,7 +178,7 @@
         <div
           class="flex items-center gap-1 px-2 py-1 bg-muted border border-border rounded-full text-sm"
         >
-          <span>{ref.name || ref.type || 'Context'}</span>
+          <span>{ref.name || ref.type || m.chat_shared_context_fallback()}</span>
           <button
             class="flex items-center justify-center size-4 p-0 bg-transparent border-none text-muted-foreground cursor-pointer transition-colors hover:text-destructive-foreground"
             onclick={() => {
@@ -204,13 +205,23 @@
 
     <div class="flex gap-1">
       {#if showStopButton && (isProcessing || isStreaming)}
-        <TooltipShortcut label="Stop generation" shortcut="esc" side="top" delayDuration={200}>
+        <TooltipShortcut
+          label={m.chat_agentInputArea_stopGeneration_label()}
+          shortcut="esc"
+          side="top"
+          delayDuration={200}
+        >
           <Button variant="ghost" size="sm" onclick={handleStop}>
             <Fa icon={faStop} />
           </Button>
         </TooltipShortcut>
       {:else if canSend}
-        <TooltipShortcut label="Send message" shortcut="cmd+enter" side="top" delayDuration={200}>
+        <TooltipShortcut
+          label={m.chat_agentInputArea_sendMessage_label()}
+          shortcut="cmd+enter"
+          side="top"
+          delayDuration={200}
+        >
           <Button variant="ghost" size="sm" onclick={handleSend}>
             <Fa icon={faPaperPlane} />
           </Button>
@@ -218,7 +229,11 @@
       {/if}
 
       {#if showNewChatButton && session}
-        <TooltipShortcut label="Start new chat" side="top" delayDuration={200}>
+        <TooltipShortcut
+          label={m.chat_agentInputArea_startNewChat_label()}
+          side="top"
+          delayDuration={200}
+        >
           <Button variant="ghost" size="sm" onclick={handleNewChat}>
             <Fa icon={faPlus} />
           </Button>

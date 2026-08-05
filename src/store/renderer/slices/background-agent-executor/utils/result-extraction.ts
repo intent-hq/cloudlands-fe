@@ -18,6 +18,7 @@ export function cleanModelFallbackMessages(content: string): string {
   if (!content) return content;
 
   let cleaned = content;
+  // i18n-ignore (matches model-fallback status text emitted in English)
   cleaned = cleaned.replace(/>\s*⚠️\s*Model\s*`[^`]*`\s*is not available\..*?\n\n?/gi, '');
   cleaned = cleaned.replace(/>\s*❌\s*\*\*All models unavailable\*\*[\s\S]*?(?=\n\n|$)/gi, '');
   cleaned = cleaned.replace(/>\s*⚠️[^\n]*Model[^\n]*not available[^\n]*\n\n?/gi, '');
@@ -104,18 +105,21 @@ export function extractResultFromMessages(
   // If tag was specified but not found, log a warning
   if (!extractedResult && resultTag && forceExtract) {
     logger.warn(
+      // i18n-ignore (developer log message)
       `Expected <${resultTag}> tag not found in response. ` +
+        // i18n-ignore (developer log message)
         'The model did not follow the expected output format.',
       { contentLength: content.length, contentPreview: content.substring(0, 200) },
     );
     return {
       result: null,
       error:
+        // i18n-ignore (internal extraction diagnostic)
         `Expected <${resultTag}> tag not found in response. ` +
+        // i18n-ignore (internal extraction diagnostic)
         'Please try again or use a different model.',
     };
   }
 
   return { result: extractedResult, error: null };
 }
-

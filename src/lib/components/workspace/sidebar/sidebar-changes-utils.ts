@@ -10,6 +10,8 @@ import type {
   PRInfo,
   UIFileChange,
 } from '$lib/components/file-tracking/accept-changes/types';
+import { m } from '$shared/paraglide/messages.js';
+import { formatInteger } from '$lib/i18n/format';
 
 /**
  * Validate a git branch name according to git-check-ref-format rules.
@@ -17,50 +19,50 @@ import type {
  */
 export function getBranchNameValidationError(name: string): string | undefined {
   if (!name || name.trim().length === 0) {
-    return 'Branch name cannot be empty';
+    return m.workspace_sidebarHeader_branchEmpty_error();
   }
   if (/[\s~^:\\?*\[\\]/.test(name)) {
-    return 'Branch name contains invalid characters';
+    return m.workspace_sidebarHeader_branchInvalidChars_error();
   }
   if (name.includes('@{')) {
-    return 'Branch name cannot contain the sequence @{';
+    return m.workspace_sidebarChanges_branchAtBrace_error({ seq: '@{' });
   }
   if (name === '@') {
-    return 'Branch name cannot be @';
+    return m.workspace_sidebarChanges_branchAt_error({ symbol: '@' });
   }
   if (name.startsWith('.')) {
-    return "Branch name cannot start with '.'";
+    return m.workspace_sidebarHeader_branchStartsDot_error();
   }
   if (name.endsWith('.lock')) {
-    return "Branch name cannot end with '.lock'";
+    return m.workspace_sidebarHeader_branchEndsLock_error();
   }
   if (name.includes('..')) {
-    return "Branch name cannot contain '..'";
+    return m.workspace_sidebarHeader_branchDoubleDot_error();
   }
   if (name.startsWith('/') || name.endsWith('/')) {
-    return 'Branch name cannot start or end with /';
+    return m.workspace_sidebarHeader_branchSlashEnds_error();
   }
   if (name.includes('//')) {
-    return 'Branch name cannot contain consecutive slashes';
+    return m.workspace_sidebarHeader_branchDoubleSlash_error();
   }
   if (name.startsWith('-')) {
-    return "Branch name cannot start with '-'";
+    return m.workspace_sidebarHeader_branchStartsDash_error();
   }
   if (name.endsWith('.')) {
-    return 'Branch name cannot end with a period';
+    return m.workspace_sidebarChanges_branchEndsPeriod_error();
   }
   // Per-component validation: each slash-separated component must not start with '.' or end with '.lock'
   const components = name.split('/');
   for (const component of components) {
     if (component.startsWith('.')) {
-      return "Branch name component cannot start with '.'";
+      return m.workspace_sidebarChanges_branchComponentStartsDot_error();
     }
     if (component.endsWith('.lock')) {
-      return "Branch name component cannot end with '.lock'";
+      return m.workspace_sidebarChanges_branchComponentEndsLock_error();
     }
   }
   if (name.length > 250) {
-    return 'Branch name is too long (max 250 characters)';
+    return m.workspace_sidebarHeader_branchTooLong_error();
   }
   return undefined;
 }
@@ -142,15 +144,20 @@ export function getPushTooltip(
 ): string {
   const count = getCommitsToPushCount(allCommits, commitIndex);
   const branchSuffix = branchName ? ` (origin/${branchName})` : '';
-  const commitWord = count === 1 ? 'commit' : 'commits';
   if (hasPR) {
     return count === 1
-      ? `Add commit to PR${branchSuffix}`
-      : `Add ${count} ${commitWord} to PR${branchSuffix}`;
+      ? m.workspace_sidebarChanges_addToPr_one({ suffix: branchSuffix })
+      : m.workspace_sidebarChanges_addToPr_many({
+          count: formatInteger(count),
+          suffix: branchSuffix,
+        });
   }
   return count === 1
-    ? `Push commit to remote${branchSuffix}`
-    : `Push ${count} ${commitWord} to remote${branchSuffix}`;
+    ? m.workspace_sidebarChanges_pushToRemote_one({ suffix: branchSuffix })
+    : m.workspace_sidebarChanges_pushToRemote_many({
+        count: formatInteger(count),
+        suffix: branchSuffix,
+      });
 }
 
 /** Get tooltip text for the undo push button at a given commit index. */
@@ -161,10 +168,12 @@ export function getUndoTooltip(
 ): string {
   const count = getCommitsToUndoCount(allCommits, commitIndex);
   const branchSuffix = branchName ? ` (origin/${branchName})` : '';
-  const commitWord = count === 1 ? 'commit' : 'commits';
   return count === 1
-    ? `Undo push from remote${branchSuffix}`
-    : `Undo ${count} ${commitWord} from remote${branchSuffix}`;
+    ? m.workspace_sidebarChanges_undoPush_one({ suffix: branchSuffix })
+    : m.workspace_sidebarChanges_undoPush_many({
+        count: formatInteger(count),
+        suffix: branchSuffix,
+      });
 }
 
 
@@ -172,10 +181,9 @@ export function getUndoTooltip(
 /** Get tooltip text for the undo commit button (local commits). */
 export function getUndoCommitTooltip(allCommits: CommitInfo[], commitIndex: number): string {
   const count = getLocalCommitsToUndoCount(allCommits, commitIndex);
-  const commitWord = count === 1 ? 'commit' : 'commits';
   return count === 1
-    ? 'Undo commit (bring changes back to staging)'
-    : `Undo ${count} ${commitWord} (bring changes back to staging)`;
+    ? m.workspace_sidebarChanges_undoCommit_one()
+    : m.workspace_sidebarChanges_undoCommit_many({ count: formatInteger(count) });
 }
 
 /** Check if a commit at the given index can be amended. Only HEAD (index 0) can. */

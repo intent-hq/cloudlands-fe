@@ -4,12 +4,7 @@
  */
 
 import { EventEmitter } from 'events';
-import {
-  ToolExecutionStatus,
-  type Tool,
-  type ToolExecution,
-  type ToolResult,
-} from './types';
+import { ToolExecutionStatus, type Tool, type ToolExecution, type ToolResult } from './types';
 
 export class ExecutionManager extends EventEmitter {
   private executions: Map<string, ToolExecution> = new Map();
@@ -66,6 +61,7 @@ export class ExecutionManager extends EventEmitter {
     // Placeholder implementation
     return {
       success: true,
+      // i18n-ignore (internal placeholder result)
       data: { message: `Executed tool ${tool.name}` },
       metadata: {
         duration: 0,

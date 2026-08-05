@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import {
     faFile,
     faCodeCompare,
@@ -15,6 +16,12 @@
   import { extractAllContent } from '$shared/types';
   import RulesInspector from './RulesInspector.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
+  import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import DiscussionRequestNotice from './DiscussionRequestNotice.svelte';
+  import BlockerReportNotice from './BlockerReportNotice.svelte';
+  import TurnFailureNotice from './TurnFailureNotice.svelte';
+  import { getModelChangeNotice } from './model-change-notice';
+  import { getAttentionNotice } from './attention-notice';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
   import { slide } from 'svelte/transition';
   import type { ContextItem } from './input/context-api';
@@ -33,9 +40,17 @@
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
+  import QueuedMessageNoticeHeader from './QueuedMessageNoticeHeader.svelte';
+  import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
+  import HookWakeAttributionHeader from './HookWakeAttributionHeader.svelte';
+  import { getHookWakeAttribution, stripHookWakePrefix } from '$lib/utils/hook-wake-attribution';
+  import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
+  import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 
@@ -200,6 +215,15 @@
       : 'assistant',
   );
 
+  // Daemon-persisted model-change transcript row (metadata type "model_changed")
+  let modelChangeNotice = $derived(getModelChangeNotice(message));
+
+  // Daemon-persisted attention-request row (meta.kind "discussion-request"/"blocker-report")
+  let attentionNotice = $derived(getAttentionNotice(message));
+
+  // Daemon-delivered dismissal notification row (metadata type "questions_dismissed")
+  let questionsDismissedNotice = $derived(getQuestionsDismissedNotice(message));
+
   let shouldShowStoppedIndicator = $derived.by(() => {
     return resolveShouldShowStoppedIndicator({
       message,
@@ -213,6 +237,29 @@
   let agentAttribution = $derived(
     role === 'user' ? getAgentMessageAttribution(message?.metadata) : null,
   );
+
+  // Queued-delivery info for messages drained from the pending queue
+  // (metadata-first, null when absent/malformed so old transcripts keep
+  // rendering the raw [SYSTEM NOTE] unchanged).
+  let queueInfo = $derived(role === 'user' ? getQueueInfo(message?.metadata) : null);
+
+  // Background-hook wake attribution (PROTOCOL §5.40): the daemon tags the
+  // row's `metadata` AND the persisted text block's `messageMetadata` with
+  // `{ type: 'hook_wake', hookId, hookName, reason }` — check both so older
+  // rows missing one surface still render the chip.
+  let hookWakeAttribution = $derived.by(() => {
+    if (role !== 'user') return null;
+    const fromRow = getHookWakeAttribution(message?.metadata);
+    if (fromRow) return fromRow;
+    const blocks = Array.isArray(message?.contentBlocks) ? message.contentBlocks : [];
+    for (const block of blocks) {
+      if (block.type === 'text') {
+        const fromBlock = getHookWakeAttribution(block.messageMetadata);
+        if (fromBlock) return fromBlock;
+      }
+    }
+    return null;
+  });
 
   // Local state
   let messageElement: HTMLDivElement;
@@ -382,7 +429,7 @@
             const json = JSON.parse(decoded);
             provider = json.provider || 'browser';
             identifier = json.identifier || '';
-            title = json.title || identifier || 'Context';
+            title = json.title || identifier || m.chat_shared_context_fallback();
             url = json.url;
           } catch {
             // Fall back to treating as pipe-separated format
@@ -487,7 +534,7 @@
       if (refType === 'linear' || refType === 'linear-issue' || provider === 'linear') {
         pills.push({
           type: 'linear',
-          label: ref.identifier || ref.title || 'Linear Issue',
+          label: ref.identifier || ref.title || m.chat_chatMessage_linearIssue_fallback(),
           icon: faFile,
           url: ref.url,
           content: ref.title || ref.description,
@@ -499,7 +546,7 @@
         const fixedUrl = fixGitHubUrl(provider, ref.identifier, ref.url, ref.metadata);
         pills.push({
           type: 'github',
-          label: ref.identifier || ref.title || 'GitHub Issue',
+          label: ref.identifier || ref.title || m.chat_chatMessage_githubIssue_fallback(),
           icon: faFile,
           url: fixedUrl,
           content: ref.title || ref.description,
@@ -509,7 +556,7 @@
       else if (refType === 'sentry' || refType === 'sentry-issue' || provider === 'sentry') {
         pills.push({
           type: 'sentry',
-          label: ref.identifier || ref.title || 'Sentry Issue',
+          label: ref.identifier || ref.title || m.chat_chatMessage_sentryIssue_fallback(),
           icon: faFile,
           url: ref.url,
           content: ref.title || ref.description,
@@ -519,7 +566,7 @@
       else if (refType === 'note') {
         pills.push({
           type: 'note',
-          label: ref.title || ref.identifier || 'Note',
+          label: ref.title || ref.identifier || m.chat_shared_note_fallback(),
           icon: faNoteSticky,
           noteId: ref.noteId || ref.identifier,
           content: ref.content || ref.description,
@@ -529,7 +576,7 @@
       else if (refType === 'spec') {
         pills.push({
           type: 'spec',
-          label: 'Spec',
+          label: m.chat_shared_spec_label(),
           icon: faClipboard,
           content: ref.content || ref.description,
         });
@@ -538,7 +585,7 @@
       else if (refType === 'file') {
         pills.push({
           type: 'file',
-          label: ref.path?.split('/').pop() || ref.title || 'File',
+          label: ref.path?.split('/').pop() || ref.title || m.chat_shared_file_fallback(),
           icon: faFile,
           path: ref.path,
           content: ref.content,
@@ -548,7 +595,7 @@
       else if (refType === 'diff') {
         pills.push({
           type: 'diff',
-          label: ref.path?.split('/').pop() || 'Diff',
+          label: ref.path?.split('/').pop() || m.chat_shared_diff_fallback(),
           icon: faCodeCompare,
           path: ref.path,
           content: ref.content,
@@ -558,7 +605,7 @@
       else if (ref.url) {
         pills.push({
           type: 'external',
-          label: ref.title || ref.identifier || 'External Link',
+          label: ref.title || ref.identifier || m.chat_chatMessage_externalLink_fallback(),
           icon: faFile,
           url: ref.url,
           content: ref.content || ref.description,
@@ -627,7 +674,9 @@
   // Open image in lightbox
   function openImageLightbox(imageBlock: ContentBlock & { data: string; mimeType: string }, openerElement: HTMLButtonElement, index: number = 0) {
     lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
-    lightboxImageName = imageBlock.fileName || `Attached Image ${index + 1}`;
+    lightboxImageName =
+      imageBlock.fileName ||
+      m.chat_chatMessage_attachedImage_fallback({ number: formatInteger(index + 1) });
     lightboxOpenerElement = openerElement;
     lightboxOpen = true;
   }
@@ -644,9 +693,17 @@
 
   // Parse context and get clean text for user messages
   const parsedMessage = $derived.by(() => {
-    const rawText = extractTextFromMessage();
+    // Display-only strip of the daemon's literal `[Background hook "…"]`
+    // prefix on wake rows — the attribution chip already names the hook.
+    const rawText = hookWakeAttribution
+      ? stripHookWakePrefix(extractTextFromMessage())
+      : extractTextFromMessage();
     if (role === 'user') {
-      const parsed = parseContextFromMessage(rawText);
+      // Hide the daemon's dequeue-wait [SYSTEM NOTE] from the displayed body
+      // when structured queueInfo metadata renders it as a chip instead.
+      const parsed = parseContextFromMessage(
+        queueInfo ? stripDequeueWaitNote(rawText) : rawText,
+      );
       // Get metadata refs for URL lookup
       const metadataRefs = message?.metadata?.contextReferences;
 
@@ -746,6 +803,7 @@
           const isError = (block as any).is_error || (block as any).isError || false;
           const content =
             (block as any).content || (block as any).output || (block as any).text || '';
+          // i18n-ignore (plain-text clipboard transcript serialization)
           const prefix = isError ? '❌ Tool Error' : '✅ Tool Result';
           parts.push(`${prefix}:\n${safeStringify(content)}`);
           // Track the tool_use_id to avoid duplication from toolResults array
@@ -782,6 +840,7 @@
         if (result.toolCallId && processedToolIds.has(result.toolCallId)) continue;
         const isError = result.isError || false;
         const content = result.content || '';
+        // i18n-ignore (plain-text clipboard transcript serialization)
         const prefix = isError ? '❌ Tool Error' : '✅ Tool Result';
         parts.push(`${prefix}:\n${safeStringify(content)}`);
       }
@@ -799,8 +858,10 @@
 
   // Handle edit mode
   function handleStartEdit() {
-    // Parse the stored message to extract context and user message
-    const rawText = getMessageText();
+    // Parse the stored message to extract context and user message; the
+    // dequeue-wait [SYSTEM NOTE] hidden from the body stays out of the edit
+    // box too (it must not be re-sent as user text).
+    const rawText = queueInfo ? stripDequeueWaitNote(getMessageText()) : getMessageText();
     const parsed = parseStoredMessage(rawText);
     editValue = parsed.userMessage;
 
@@ -824,7 +885,7 @@
             id: `file-${message.id}-${index}`,
             type: 'file',
             label: block.fileName,
-            description: block.mimeType || 'File',
+            description: block.mimeType || m.chat_shared_file_fallback(),
             fileData: block.data,
             fileMimeType: block.mimeType,
           });
@@ -909,7 +970,13 @@
 
 {#if !message}
   <!-- Guard against null message prop -->
-  <div class="text-subtle text-sm p-2">Loading...</div>
+  <div class="text-subtle text-sm p-2">{m.chat_chatMessage_loading_label()}</div>
+{:else if modelChangeNotice}
+  <!-- Daemon-persisted model-change notice row - centered inline divider -->
+  <ModelChangeNotice notice={modelChangeNotice} fallbackText={extractAllContent(message) || undefined} />
+{:else if questionsDismissedNotice}
+  <!-- Daemon-delivered dismissal notification row - compact centered chip -->
+  <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
 {:else if questionOnlyTurn && !shouldShowStoppedIndicator}
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div
@@ -935,7 +1002,7 @@
             editMode={true}
             selectedModel={editSelectedModel}
             onmodelChange={(model) => (editSelectedModel = model)}
-            placeholder="Edit your message..."
+            placeholder={m.chat_chatMessage_edit_placeholder()}
             onsubmit={() => (showEditConfirm = true)}
             oncancel={handleCancelEdit}
           />
@@ -944,10 +1011,13 @@
         <!-- Full expanded version - uses negative margin to overlap the sticky header in ChatPanel -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
-          class="relative bg-sidebar rounded-xs px-2 pt-2 pb-2 {onEditSubmit && !agentAttribution
+          class="relative bg-sidebar rounded-xs px-2 pt-2 pb-2 {onEditSubmit &&
+          !agentAttribution &&
+          !hookWakeAttribution
             ? 'cursor-pointer'
             : 'cursor-default'} overflow-hidden z-20"
-          ondblclick={() => onEditSubmit && !agentAttribution && handleStartEdit()}
+          ondblclick={() =>
+            onEditSubmit && !agentAttribution && !hookWakeAttribution && handleStartEdit()}
         >
           <!-- Actions -->
           <div
@@ -969,16 +1039,25 @@
           <!-- Sender attribution header for agent-to-agent messages -->
           {#if agentAttribution}
             <AgentMessageAttributionHeader attribution={agentAttribution} class="mb-1.5" />
+          {:else if hookWakeAttribution}
+            <!-- Background-hook wake attribution header (PROTOCOL §5.40) -->
+            <HookWakeAttributionHeader attribution={hookWakeAttribution} class="mb-1.5" />
+          {/if}
+
+          <!-- Queued-delivery notice for messages drained from the pending queue -->
+          {#if queueInfo}
+            <QueuedMessageNoticeHeader {queueInfo} class="mb-1.5" />
           {/if}
 
           <!-- Message content - line-clamp-6 -->
           <div
-            class="leading-normal text-subtle whitespace-pre-wrap select-text line-clamp-6 {onEditSubmit &&
-            !agentAttribution
+            class="leading-normal text-subtle select-text line-clamp-6 {onEditSubmit &&
+            !agentAttribution &&
+            !hookWakeAttribution
               ? 'cursor-pointer'
               : 'cursor-text'}"
             onclick={(e) => {
-              if (onEditSubmit && !agentAttribution) {
+              if (onEditSubmit && !agentAttribution && !hookWakeAttribution) {
                 e.preventDefault();
                 e.stopPropagation();
                 handleStartEdit();
@@ -1012,7 +1091,7 @@
             <!-- Render text with inline @mentions as chips -->
             {#each parsedMessage.segments as segment, i (i)}
               {#if segment.type === 'text'}
-                <span>{segment.content}</span>
+                <span class="whitespace-pre-wrap">{segment.content}</span>
               {:else if segment.type === 'mention'}
                 {@const isContextProvider = ['linear', 'github', 'sentry', 'browser'].includes(
                   segment.mentionType,
@@ -1089,11 +1168,14 @@
                       e.currentTarget.click();
                     }
                   }}
-                  aria-label="View attached image {i + 1} of {imageBlocks.length} full size"
+                  aria-label={m.chat_chatMessage_viewAttachedImage_ariaLabel({
+                    number: formatInteger(i + 1),
+                    total: formatInteger(imageBlocks.length),
+                  })}
                 >
                   <img
                     src="data:{imageBlock.mimeType};base64,{imageBlock.data}"
-                    alt="Attached image {i + 1}"
+                    alt={m.chat_chatMessage_attachedImage_alt({ number: formatInteger(i + 1) })}
                     class="w-full h-full rounded border border-border object-cover hover:opacity-90 transition-opacity"
                   />
                 </button>
@@ -1117,7 +1199,7 @@
                     link.click();
                     document.body.removeChild(link);
                   }}
-                  title={`Download ${fileBlock.fileName}`}
+                  title={m.chat_chatMessage_download_title({ name: `${fileBlock.fileName}` })}
                 >
                   <Fa icon={faFile} class="w-3 h-3" />
                   <span class="truncate max-w-[150px]">{fileBlock.fileName}</span>
@@ -1133,7 +1215,7 @@
               title={message.error}
             >
               <Fa icon={faCircleExclamation} class="size-2.5 mt-px" />
-              <span>Failed to send</span>
+              <span>{m.chat_chatMessage_failedToSend_label()}</span>
             </div>
           {/if}
         </div>
@@ -1152,7 +1234,7 @@
         {#if shouldShowStoppedIndicator}
           <div class="flex items-center gap-2 text-subtle font-medium text-sm mt-5">
             <Fa icon={faSquare} class="size-2.5 opacity-50 mt-px" />
-            <span>Stopped</span>
+            <span>{m.chat_chatMessage_stopped_label()}</span>
           </div>
         {/if}
 
@@ -1171,8 +1253,16 @@
         {/if}
       </div>
     {:else if role === 'system'}
-      <!-- System Message - render as interruption notice -->
-      <InterruptionNotice message={extractAllContent(message)} />
+      <!-- System Message - attention-request notice or interruption banner -->
+      {#if attentionNotice?.kind === 'discussion-request'}
+        <DiscussionRequestNotice reason={attentionNotice.reason} />
+      {:else if attentionNotice?.kind === 'blocker-report'}
+        <BlockerReportNotice reason={attentionNotice.reason} />
+      {:else if attentionNotice?.kind === 'turn-failure'}
+        <TurnFailureNotice reason={attentionNotice.reason} />
+      {:else}
+        <InterruptionNotice message={extractAllContent(message)} />
+      {/if}
     {/if}
   </div>
 {/if}

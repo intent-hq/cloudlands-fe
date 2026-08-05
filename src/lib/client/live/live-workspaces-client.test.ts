@@ -12,6 +12,7 @@ vi.mock("./backend-transport", () => ({
 }));
 
 import { backendRequest } from "./backend-transport";
+import { BackendError } from "./backend-transport-types";
 import { LiveWorkspacesClient } from "./live-workspaces-client";
 
 const mockedRequest = vi.mocked(backendRequest);
@@ -245,6 +246,160 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
   });
 });
 
+describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("sends workspace.list and passes the BE-owned displayStatus through normalization", async () => {
+    // intent-hq/intentd#600: the daemon computes the current-cycle
+    // `displayStatus` (snake_case wire values) and the FE renders it verbatim
+    // — the normalizer must not strip or remap it.
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          title: "Rollup ws",
+          branch: "intent/rollup",
+          status: "Active",
+          displayStatus: "in_progress",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          updatedAt: "2026-07-01T00:00:00.000Z",
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list({ includeArchived: true });
+
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", { includeArchived: true });
+    expect(workspaces).toHaveLength(1);
+    expect(workspaces[0]).toMatchObject({
+      id: "11111111-1111-4111-8111-111111111111",
+      title: "Rollup ws",
+      displayStatus: "in_progress",
+    });
+  });
+
+  it("passes the 'idle' wire value through normalization (intentd#793)", async () => {
+    // intentd#793 folds live agent activity into the derivation: a quiet
+    // task-stage rollup reaches the wire as `idle`, consumed verbatim.
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          title: "Quiet ws",
+          branch: "intent/quiet",
+          status: "Active",
+          displayStatus: "idle",
+          activity: "idle",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          updatedAt: "2026-07-01T00:00:00.000Z",
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", undefined);
+    expect(workspaces[0]?.displayStatus).toBe("idle");
+  });
+
+  it("passes a needs_attention snapshot through normalization verbatim", async () => {
+    // Step-0 attention rollup (PROTOCOL §5.1): `needs_attention` outranks
+    // every other displayStatus, including `in_progress`. The list snapshot
+    // must surface it verbatim — the renderer maps derive the needs-attention
+    // state from this entity value, with no local re-derivation.
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          title: "Attention ws",
+          branch: "intent/attention",
+          status: "Active",
+          displayStatus: "needs_attention",
+          createdAt: "2026-08-01T00:00:00.000Z",
+          updatedAt: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", undefined);
+    expect(workspaces[0]).toMatchObject({
+      id: "44444444-4444-4444-8444-444444444444",
+      displayStatus: "needs_attention",
+    });
+  });
+
+  it("leaves displayStatus undefined when an older daemon omits the field", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          title: "Legacy ws",
+          branch: "intent/legacy",
+          status: "Active",
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", undefined);
+    expect(workspaces[0]?.displayStatus).toBeUndefined();
+  });
+
+  it("passes the BE-owned attention flag through normalization (PROTOCOL §5.1 / §9.9)", async () => {
+    // The daemon serves `attention` on every `workspace.*` Workspace payload
+    // (snake_case wire values `none`/`unread`/`review_required`); the
+    // normalizer must retain it verbatim so unread indicators can render it.
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          title: "Unread ws",
+          branch: "intent/unread",
+          status: "Active",
+          attention: "unread",
+          createdAt: "2026-08-01T00:00:00.000Z",
+          updatedAt: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", undefined);
+    expect(workspaces[0]).toMatchObject({
+      id: "55555555-5555-4555-8555-555555555555",
+      attention: "unread",
+    });
+  });
+
+  it("leaves attention undefined when an older daemon omits the field", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: "66666666-6666-4666-8666-666666666666",
+          title: "Legacy attention ws",
+          branch: "intent/legacy-attention",
+          status: "Active",
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(workspaces[0]?.attention).toBeUndefined();
+  });
+});
+
+
 describe("LiveWorkspacesClient update/archive/unarchive (PROTOCOL §5.1, fake transport)", () => {
   afterEach(() => vi.clearAllMocks());
 
@@ -337,6 +492,66 @@ describe("LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)",
     const client = new LiveWorkspacesClient();
 
     expect(await client.getTokenUsage("ws-abc")).toBeNull();
+  });
+});
+
+describe("LiveWorkspacesClient.diskUsage (PROTOCOL §5.1, fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("sends workspace.diskUsage with the workspaceId and surfaces { diskUsage, refreshing }", async () => {
+    // PROTOCOL §5.1 response shape, verbatim (background refresh in flight).
+    const diskUsage = {
+      bytes: 2_330_000_000,
+      fileCount: 12345,
+      computedAt: "2026-08-01T12:00:00Z",
+      breakdown: [{ name: "repo", bytes: 2_000_000_000, fileCount: 12000 }],
+    };
+    mockedRequest.mockResolvedValueOnce({ diskUsage, refreshing: true });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.diskUsage("ws-abc")).toEqual({ diskUsage, refreshing: true });
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.diskUsage", {
+      workspaceId: "ws-abc",
+    });
+  });
+
+  it("omits diskUsage while the first walk runs (refreshing only)", async () => {
+    mockedRequest.mockResolvedValueOnce({ refreshing: true });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.diskUsage("ws-abc")).toEqual({ refreshing: true });
+  });
+
+  it("returns refreshing:false when the daemon settles with no usage", async () => {
+    mockedRequest.mockResolvedValueOnce({ refreshing: false });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.diskUsage("ws-abc")).toEqual({ refreshing: false });
+  });
+
+  it("returns null when the daemon predates the method (-32601 METHOD_NOT_FOUND)", async () => {
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({
+        code: "METHOD_NOT_FOUND",
+        message: "method not found",
+        rpcCode: -32601,
+      }),
+    );
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.diskUsage("ws-abc")).toBeNull();
+  });
+
+  it("propagates non-METHOD_NOT_FOUND errors", async () => {
+    const error = new BackendError({
+      code: "INVALID_PARAMS",
+      message: "bad params",
+      rpcCode: -32602,
+    });
+    mockedRequest.mockRejectedValueOnce(error);
+    const client = new LiveWorkspacesClient();
+
+    await expect(client.diskUsage("ws-abc")).rejects.toBe(error);
   });
 });
 

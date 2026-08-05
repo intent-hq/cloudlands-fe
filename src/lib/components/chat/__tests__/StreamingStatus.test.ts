@@ -32,8 +32,11 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
 import StreamingStatus from '../StreamingStatus.svelte';
 import {
   formatDuration,
+  formatElapsed,
   computeCompletedEvents,
+  deriveErrorDisplay,
   shouldAppendStreamingEvent,
+  SESSION_CORRUPTED,
   type StatusEvent,
 } from '../streaming-status-utils';
 
@@ -59,6 +62,41 @@ describe('StreamingStatus rendered UI', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: /try again/i }));
     expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it('renders recreate-aware corrupted-session copy with the raw error as secondary detail (monorepo#940)', async () => {
+    const onRetry = vi.fn();
+    render(StreamingStatus, {
+      props: {
+        error: 'JSON-RPC error -32603: prompt rejected by provider',
+        sessionCorrupted: true,
+        onRetry,
+      },
+    });
+
+    expect(screen.getByTestId('error-title').textContent).toBe('Agent session corrupted');
+    expect(screen.getByTestId('error-message').textContent).toBe(
+      'Try again will start a fresh session and carry over the conversation history',
+    );
+    expect(screen.getByTestId('error-detail').textContent).toBe(
+      'JSON-RPC error -32603: prompt rejected by provider',
+    );
+
+    // The Retry affordance itself is unchanged
+    await fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it('renders ordinary error copy without secondary detail when the flag is absent (older daemons)', () => {
+    render(StreamingStatus, {
+      props: {
+        error: 'Stream timeout after 10 minutes',
+      },
+    });
+
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+    expect(screen.getByTestId('error-message').textContent).toBe('Stream timeout after 10 minutes');
+    expect(screen.queryByTestId('error-detail')).toBeNull();
   });
 
   it('keeps terminal failure visible even if a stale permission request flag remains set', () => {
@@ -156,6 +194,30 @@ describe('StreamingStatus rendered UI', () => {
     const errorTitle = screen.getByTestId('error-title');
     expect(errorTitle.className).toContain('text-destructive-foreground');
   });
+
+  it('renders a live "failed X ago" span next to the error title when failedAt is set', () => {
+    render(StreamingStatus, {
+      props: {
+        error: 'Stream timeout after 10 minutes',
+        failedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      },
+    });
+
+    const failedAtEl = screen.getByTestId('error-failed-at');
+    expect(failedAtEl).toBeTruthy();
+    expect(screen.getByTestId('error-title').textContent).toContain('Response failed');
+  });
+
+  it('omits the failed-X-ago span when failedAt is absent (older daemons / transient chat errors)', () => {
+    render(StreamingStatus, {
+      props: {
+        error: 'Stream timeout after 10 minutes',
+      },
+    });
+
+    expect(screen.queryByTestId('error-failed-at')).toBeNull();
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+  });
 });
 
 describe('StreamingStatus utilities', () => {
@@ -189,6 +251,59 @@ describe('StreamingStatus utilities', () => {
       expect(formatDuration(3600000)).toBe('1h 0m 0s');
       expect(formatDuration(3661000)).toBe('1h 1m 1s');
       expect(formatDuration(7322000)).toBe('2h 2m 2s');
+    });
+  });
+
+  describe('formatElapsed', () => {
+    it('clamps sub-second values to 1s (never "0s" or "0.Xs")', () => {
+      expect(formatElapsed(0)).toBe('1s');
+      expect(formatElapsed(100)).toBe('1s');
+      expect(formatElapsed(400)).toBe('1s');
+      expect(formatElapsed(999)).toBe('1s');
+    });
+
+    it('rounds to the nearest whole second (never a decimal)', () => {
+      expect(formatElapsed(1400)).toBe('1s');
+      expect(formatElapsed(1500)).toBe('2s');
+      expect(formatElapsed(2300)).toBe('2s');
+      expect(formatElapsed(5700)).toBe('6s');
+      expect(formatElapsed(9999)).toBe('10s');
+    });
+
+    it('passes through to m/h formatting above 60s', () => {
+      expect(formatElapsed(59400)).toBe('59s');
+      expect(formatElapsed(60000)).toBe('1m 0s');
+      expect(formatElapsed(90499)).toBe('1m 30s');
+      expect(formatElapsed(3661000)).toBe('1h 1m 1s');
+    });
+  });
+
+  describe('deriveErrorDisplay', () => {
+    it('returns null when there is no error', () => {
+      expect(deriveErrorDisplay(null)).toBeNull();
+      expect(deriveErrorDisplay(undefined)).toBeNull();
+      expect(deriveErrorDisplay('', true)).toBeNull();
+    });
+
+    it('maps an ordinary error to the pre-existing rendering (flag absent or false)', () => {
+      const expected = {
+        corrupted: false,
+        title: 'Response failed',
+        message: 'Spawn timeout',
+        detail: null,
+      };
+      expect(deriveErrorDisplay('Spawn timeout')).toEqual(expected);
+      expect(deriveErrorDisplay('Spawn timeout', false)).toEqual(expected);
+      expect(deriveErrorDisplay('Spawn timeout', undefined)).toEqual(expected);
+    });
+
+    it('maps a corrupted-session error to recreate-aware copy with the raw error as detail', () => {
+      expect(deriveErrorDisplay('JSON-RPC error -32603: invalid argument', true)).toEqual({
+        corrupted: true,
+        title: SESSION_CORRUPTED.title,
+        message: SESSION_CORRUPTED.message,
+        detail: 'JSON-RPC error -32603: invalid argument',
+      });
     });
   });
 

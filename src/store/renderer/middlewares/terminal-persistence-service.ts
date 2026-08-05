@@ -34,6 +34,8 @@ import {
   closeTerminalOverlay,
   toggleTerminalOverlay,
   selectTerminal,
+  selectScript,
+  clearScriptSelection,
   addTerminal,
   loadWorkspaceTerminals,
   hydrateHeight,
@@ -44,6 +46,7 @@ import {
   type TerminalMetadata,
   type PersistedWorkspaceState,
 } from "../slices/terminals/terminals-slice";
+import { setScriptsData } from "../slices/scripts/scripts-slice";
 
 // ============================================================================
 // Constants
@@ -252,6 +255,7 @@ function saveWorkspaceState(
   states[wsId] = {
     isOpen: state.isOpen,
     activeTerminalId: state.activeTerminalId,
+    selectedScriptId: state.selectedScriptId ?? null,
   };
   safeLocalStorage.setJSON(WORKSPACE_STATE_STORAGE_KEY, states);
 }
@@ -266,10 +270,32 @@ const WORKSPACE_STATE_PERSIST_ACTIONS = new Set<string>([
   closeTerminalOverlay.type,
   toggleTerminalOverlay.type,
   selectTerminal.type,
+  selectScript.type,
+  clearScriptSelection.type,
   addTerminal.type,
   removeTerminal.type,
   loadWorkspaceTerminals.type,
 ]);
+
+/**
+ * GAP-5 guard: an empty-list `loadWorkspaceTerminals` never durably
+ * overwrites a saved open state. Restart/legacy/unknown-boot empties are
+ * transient (monorepo#1330) — the reducer preserves existing live tabs and
+ * forces isOpen=false in memory only on the empty-over-empty pass with no
+ * script tab holding the panel (a script-held panel keeps isOpen,
+ * monorepo#1411). Even a same-boot authoritative empty (converge-to-zero,
+ * monorepo#1334) skips the persist: the in-memory close is enough, and
+ * keeping the saved open state lets the panel restore when terminals
+ * reappear.
+ */
+function isEmptyTerminalsHydration(action: {
+  type: string;
+  payload?: unknown;
+}): boolean {
+  if (action.type !== loadWorkspaceTerminals.type) return false;
+  const terminals = (action.payload as [string, unknown[], ...unknown[]])[1];
+  return Array.isArray(terminals) && terminals.length === 0;
+}
 
 /**
  * Middleware restoring terminal persistence behaviors from the deleted
@@ -287,25 +313,50 @@ export function createTerminalPersistenceMiddleware(): StoreMiddleware {
       // Intercept loadWorkspaceTerminals to restore saved state from localStorage
       // (lifecycle-read-service dispatches it without savedState)
       if (action?.type === loadWorkspaceTerminals.type) {
-        const [wsId, terminals, savedState] = action.payload as [
+        const [wsId, terminals, savedState, daemonBootId] = action.payload as [
           string,
           unknown[],
-          PersistedWorkspaceState | null | undefined
+          PersistedWorkspaceState | null | undefined,
+          string | undefined
         ];
         // If savedState is not already provided, load it from localStorage
         if (savedState === undefined) {
           const loadedState = loadWorkspaceState(wsId);
-          // Re-dispatch with the loaded state
+          // Re-dispatch with the loaded state, keeping the envelope's boot id
           return next({
             ...action,
-            payload: [wsId, terminals, loadedState],
+            payload: [wsId, terminals, loadedState, daemonBootId],
           });
         }
       }
 
+      // Stale-script-selection clear (item: stuck-state guard): the terminals
+      // reducer clears selectedScriptId (and possibly isOpen) when
+      // setScriptsData lands without the selected script. Persist that
+      // correction, otherwise the stale id is restored from localStorage on
+      // the next launch and recreates the stuck state.
+      const priorScriptSelection =
+        action?.type === setScriptsData.type
+          ? (api.getState() as StoreState).terminals.workspaces[
+              (action.payload as { wsId: string }).wsId
+            ]?.selectedScriptId
+          : undefined;
+
       const result = next(action);
 
       if (!action) return result;
+
+      if (action.type === setScriptsData.type) {
+        const wsId = (action.payload as { wsId: string }).wsId;
+        const ws = (api.getState() as StoreState).terminals.workspaces[wsId];
+        if (ws && priorScriptSelection != null && ws.selectedScriptId === null) {
+          saveWorkspaceState(wsId, {
+            isOpen: ws.isOpen,
+            activeTerminalId: ws.activeTerminalId,
+            selectedScriptId: ws.selectedScriptId,
+          });
+        }
+      }
 
       // GAP 2: Persist height changes
       if (action.type === setTerminalOverlayHeight.type) {
@@ -342,8 +393,12 @@ export function createTerminalPersistenceMiddleware(): StoreMiddleware {
         removeTerminalMetadataFromStorage(termId, wsId);
       }
 
-      // GAP 5: Persist per-workspace overlay state
-      if (WORKSPACE_STATE_PERSIST_ACTIONS.has(action.type)) {
+      // GAP 5: Persist per-workspace overlay state (except transient
+      // empty-list hydrations — see isEmptyTerminalsHydration)
+      if (
+        WORKSPACE_STATE_PERSIST_ACTIONS.has(action.type) &&
+        !isEmptyTerminalsHydration(action)
+      ) {
         const wsId = (action.payload as [string, ...unknown[]])[0];
         if (!wsId) return result;
         const state = api.getState() as StoreState;
@@ -352,6 +407,7 @@ export function createTerminalPersistenceMiddleware(): StoreMiddleware {
           saveWorkspaceState(wsId, {
             isOpen: ws.isOpen,
             activeTerminalId: ws.activeTerminalId,
+            selectedScriptId: ws.selectedScriptId,
           });
         }
       }
