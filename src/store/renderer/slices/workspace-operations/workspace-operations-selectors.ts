@@ -24,6 +24,10 @@ export const selectRunningAgentNamesForArchive = store.createSelector((state) =>
   return state.workspaceOperations.runningAgentNamesForArchive;
 });
 
+export const selectPendingArchiveWorkspaceId = store.createSelector((state) => {
+  return state.workspaceOperations.pendingArchiveWorkspaceId;
+});
+
 export const selectActiveHookNamesForArchive = store.createSelector((state) => {
   return state.workspaceOperations.activeHookNamesForArchive;
 });
@@ -46,6 +50,10 @@ export const selectShowBulkDeleteArchivedConfirm = store.createSelector((state) 
 
 export const selectPendingBulkRepoKey = store.createSelector((state) => {
   return state.workspaceOperations.pendingBulkRepoKey;
+});
+
+export const selectBulkArchiveComputeToken = store.createSelector((state) => {
+  return state.workspaceOperations.bulkArchiveComputeToken;
 });
 
 export const selectPendingBulkDeleteRepoKey = store.createSelector((state) => {
