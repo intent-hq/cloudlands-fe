@@ -213,6 +213,38 @@ describe('clipboard-formatters', () => {
       expect(result).toContain('✅ Tool Result:');
     });
 
+    it('labels system rows as System', () => {
+      const messages = [
+        { role: 'user', contentBlocks: [{ type: 'text', text: 'Hello' }] },
+        {
+          role: 'system',
+          contentBlocks: [
+            { type: 'text', text: 'Model changed from Claude Opus 4.5 to Claude Sonnet 4.5' },
+          ],
+        },
+        { role: 'assistant', contentBlocks: [{ type: 'text', text: 'Hi there!' }] },
+      ];
+      const result = formatAgentMessagesForClipboard(messages);
+      expect(result).toContain(
+        'System:\nModel changed from Claude Opus 4.5 to Claude Sonnet 4.5',
+      );
+      expect(result).toContain('User:\nHello');
+      expect(result).toContain('Assistant:\nHi there!');
+    });
+
+    it('uses --- separators around interleaved system rows', () => {
+      const messages = [
+        { role: 'assistant', contentBlocks: [{ type: 'text', text: 'Response' }] },
+        { role: 'system', contentBlocks: [{ type: 'text', text: 'Notice' }] },
+        { role: 'user', contentBlocks: [{ type: 'text', text: 'Follow up' }] },
+      ];
+      const result = formatAgentMessagesForClipboard(messages);
+      // system rows do not trigger the assistant→user heavy separator
+      expect(result).not.toContain('='.repeat(80));
+      const matches = result.match(/\n---\n/g);
+      expect(matches?.length).toBe(2);
+    });
+
     it('adds separator between user and assistant', () => {
       const messages = [
         { role: 'assistant', contentBlocks: [{ type: 'text', text: 'Response' }] },
