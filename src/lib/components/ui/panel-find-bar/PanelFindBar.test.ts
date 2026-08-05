@@ -13,6 +13,7 @@ import {
   vi,
 } from 'vitest';
 import PanelFindBarTestHarness from './__tests__/PanelFindBarTestHarness.svelte';
+import { warmImport } from '../../../../test/warm-import';
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('../__tests__/mocks/Fa.svelte')).default,
@@ -33,6 +34,10 @@ afterEach(() => {
 function getFindInput() {
   return screen.getByRole('textbox', { name: 'Test find' }) as HTMLInputElement;
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../__tests__/mocks/Fa.svelte'));
 
 describe('PanelFindBar', () => {
   it('updates the bound query and calls input callbacks for each input event', async () => {

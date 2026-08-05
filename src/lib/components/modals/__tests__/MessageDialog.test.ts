@@ -3,6 +3,7 @@
  */
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
+import { warmImport } from '../../../../test/warm-import';
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
@@ -15,6 +16,11 @@ const PROPS = {
   type: 'warning' as const,
   buttons: ['Skip', 'Rename', 'Overwrite'],
 };
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../MessageDialog.svelte'));
 
 describe('MessageDialog', () => {
   it('renders title, message, and one button per label; clicks resolve the button index', async () => {

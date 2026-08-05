@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import ProviderPathConfig from './ProviderPathConfig.svelte';
+import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
   mockSettingsGet: vi.fn(),
@@ -57,6 +58,11 @@ const flush = async () => {
 async function openPopup(providerName: string) {
   await fireEvent.click(screen.getByTitle(`Configure ${providerName} path`));
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
+warmImport(() => import('$features/onboarding/messages/__tests__/mocks/MockDirectoryPickerModal.svelte'));
 
 describe('ProviderPathConfig', () => {
   beforeEach(() => {

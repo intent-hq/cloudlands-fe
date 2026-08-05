@@ -12,6 +12,7 @@ import {
 } from '@testing-library/svelte';
 import type { TrackedChange } from '$features/file-tracking/types';
 import { ChangeStage } from '$features/file-tracking/types';
+import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -105,6 +106,11 @@ async function renderDrawer(overrides: Partial<Record<string, unknown>> = {}) {
   const result = render(CommitDrawer, { props: { ...defaults, ...overrides } });
   return { ...result, onCommit };
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/Fa.svelte'));
+warmImport(() => import('../CommitDrawer.svelte'));
 
 describe('CommitDrawer', () => {
   beforeEach(() => {

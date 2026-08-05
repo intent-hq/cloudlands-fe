@@ -18,6 +18,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { cleanup, render, screen, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Workspace } from '$shared/types';
+import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
   runShrinkWorkspaceAction: vi.fn().mockResolvedValue(undefined),
@@ -73,6 +74,11 @@ async function renderPill(props: Record<string, unknown>) {
   const CheckoutModePill = (await import('../CheckoutModePill.svelte')).default;
   return render(CheckoutModePill, { props });
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/MockTooltipWithContent.svelte'));
+warmImport(() => import('../CheckoutModePill.svelte'));
 
 describe('CheckoutModePill', () => {
   beforeEach(() => {

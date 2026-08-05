@@ -82,6 +82,7 @@ import RootQuakeTerminalOverlay from '../RootQuakeTerminalOverlay.svelte';
 import { store as appStore } from '$store/renderer/store';
 import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
+import { warmImport } from '../../../../test/warm-import';
 
 function dispatchedTypes(): string[] {
   return (appStore as any).__dispatched.map((action: { type: string }) => action.type);
@@ -90,6 +91,13 @@ function dispatchedTypes(): string[] {
 function fireCreateNewEvent() {
   dispatchWindowEvent('workspace:new-terminal', { workspaceId: ROOT_WORKSPACE_ID });
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockTooltip.svelte'));
+warmImport(() => import('./mocks/MockButton.svelte'));
 
 describe('RootQuakeTerminalOverlay createNewTerminal (PR #705 review)', () => {
   beforeEach(() => {
