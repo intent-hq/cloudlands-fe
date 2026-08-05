@@ -22,7 +22,7 @@ import {
 
 import { invoke } from '$lib/electron-bridge';
 import { getProposalId } from '$lib/components/chat/proposals/proposal-id';
-import { getRunningAgentNames, hasRunningAgents } from '$lib/utils/delete-warning-utils';
+import { getActiveWorkNames, type ActiveWorkNames } from '$lib/utils/delete-warning-utils';
 import { createLogger } from '$lib/utils/client-logger';
 import type { WorkspaceProposalApplyPayload } from '$shared/app-workspace-operations';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
@@ -55,23 +55,30 @@ import {
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import {
   applyWorkspaceProposal,
+  bulkArchiveActiveWorkComputed,
+  closeArchiveWarning,
   closeBulkArchiveConfirm,
   closeBulkDeleteArchivedConfirm,
   closeBulkDeleteWarningConfirm,
   closeDeleteWarning,
   closeRemoveRepoConfirm,
+  confirmArchiveWorkspace,
   confirmBulkArchive,
   confirmBulkDeleteArchived,
   confirmBulkDeleteWarning,
   confirmDeleteWorkspace,
   confirmRemoveRepo,
   openBulkDeleteWarningConfirm,
+  openArchiveWarning,
+  openBulkArchiveConfirm,
   openDeleteWarning,
   requestArchiveWorkspace,
   requestDeleteWorkspace,
   requestUnarchiveWorkspace,
 } from '../workspace-operations-slice';
 import {
+  selectBulkArchiveComputeToken,
+  selectPendingArchiveWorkspaceId,
   selectPendingBulkDeleteRepoKey,
   selectPendingBulkRepoKey,
   selectPendingDeleteWorkspaceId,
@@ -110,6 +117,24 @@ function activeForRepo(repoKey: string, workspaces: Workspace[]): Workspace[] {
       workspace.status !== WorkspaceStatusEnum.Deleted &&
       workspaceMatchesRepoKey(workspace, repoKey),
   );
+}
+
+function hasActiveWork({ agentNames, hookNames }: ActiveWorkNames): boolean {
+  return agentNames.length > 0 || hookNames.length > 0;
+}
+
+function countActiveWork(items: ActiveWorkNames[]): { agentCount: number; hookCount: number } {
+  return items.reduce(
+    (counts, item) => ({
+      agentCount: counts.agentCount + item.agentNames.length,
+      hookCount: counts.hookCount + item.hookNames.length,
+    }),
+    { agentCount: 0, hookCount: 0 },
+  );
+}
+
+function* collectActiveWork(workspaces: Workspace[]): SagaGenerator<ActiveWorkNames[]> {
+  return yield* call(() => Promise.all(workspaces.map((workspace) => getActiveWorkNames(workspace.id))));
 }
 
 function archivedForRepo(repoKey: string, workspaces: Workspace[]): Workspace[] {
@@ -203,12 +228,13 @@ function* requestDelete(
   pending: Map<string, Task>,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
-  if (hasRunningAgents(workspaceId)) {
-    yield* put(openDeleteWarning({ workspaceId, agentNames: getRunningAgentNames(workspaceId) }));
-    return;
-  }
   const workspace = yield* selectWorkspaceById.effect(workspaceId);
   if (!workspace) return;
+  const activeWork = yield* call(getActiveWorkNames, workspaceId);
+  if (hasActiveWork(activeWork)) {
+    yield* put(openDeleteWarning({ workspaceId, ...activeWork }));
+    return;
+  }
   yield* call(navigateAwayIfViewing, workspaceId);
   yield* startDeletion(workspace, pending);
 }
@@ -221,6 +247,13 @@ function* confirmDelete(pending: Map<string, Task>): SagaGenerator<void> {
   if (!workspace) return;
   yield* call(navigateAwayIfViewing, workspaceId);
   yield* startDeletion(workspace, pending);
+}
+
+function* confirmArchive(): SagaGenerator<void> {
+  const workspaceId = yield* selectPendingArchiveWorkspaceId.effect();
+  yield* put(closeArchiveWarning());
+  if (!workspaceId) return;
+  yield* call(archiveWorkspaceById, workspaceId);
 }
 
 function* watchDeleteRequests(pending: Map<string, Task>): SagaGenerator<void> {
@@ -259,6 +292,17 @@ function* watchArchiveUndo(workspaceId: WorkspaceId, undo: Channel<true>): SagaG
 
 function* archive(action: ReturnType<typeof requestArchiveWorkspace>): SagaGenerator<void> {
   const [workspaceId] = action.payload;
+  const workspace = yield* selectWorkspaceById.effect(workspaceId);
+  if (!workspace) return;
+  const activeWork = yield* call(getActiveWorkNames, workspaceId);
+  if (hasActiveWork(activeWork)) {
+    yield* put(openArchiveWarning({ workspaceId, ...activeWork }));
+    return;
+  }
+  yield* call(archiveWorkspaceById, workspaceId);
+}
+
+function* archiveWorkspaceById(workspaceId: string): SagaGenerator<void> {
   const toast = yield* call(getToast);
   const workspace = yield* selectWorkspaceById.effect(workspaceId);
   yield* call(navigateAwayIfViewing, workspaceId);
@@ -391,6 +435,17 @@ function* bulkArchive(): SagaGenerator<void> {
   }
 }
 
+function* computeBulkArchiveActiveWork(
+  action: ReturnType<typeof openBulkArchiveConfirm>,
+): SagaGenerator<void> {
+  const [repoKey] = action.payload;
+  const token = yield* selectBulkArchiveComputeToken.effect();
+  const workspaces = yield* selectWorkspaceItems.effect();
+  const targets = activeForRepo(repoKey, workspaces);
+  const counts = countActiveWork(yield* collectActiveWork(targets));
+  yield* put(bulkArchiveActiveWorkComputed({ repoKey, ...counts, token }));
+}
+
 function* performBulkDelete(repoKey: string): SagaGenerator<void> {
   const toast = yield* call(getToast);
   const workspaces = yield* selectWorkspaceItems.effect();
@@ -450,8 +505,9 @@ function* bulkDeleteArchived(): SagaGenerator<void> {
     (yield* call(getToast)).info(m.workspace_ops_noArchivedToDelete_message());
     return;
   }
-  if (targets.some((workspace) => hasRunningAgents(workspace.id))) {
-    yield* put(openBulkDeleteWarningConfirm({ repoKey, workspaceCount: targets.length }));
+  const counts = countActiveWork(yield* collectActiveWork(targets));
+  if (counts.agentCount > 0 || counts.hookCount > 0) {
+    yield* put(openBulkDeleteWarningConfirm({ repoKey, workspaceCount: targets.length, ...counts }));
     return;
   }
   yield* performBulkDelete(repoKey);
@@ -650,7 +706,9 @@ export function* workspaceOperationsSaga(): SagaGenerator<void> {
       fork(flushOnUnload, unload, pending),
       fork(watchDeleteRequests, pending),
       fork(watchDeleteConfirmations, pending),
+      takeEvery(confirmArchiveWorkspace, confirmArchive),
       takeEvery(requestArchiveWorkspace, archive),
+      takeEvery(openBulkArchiveConfirm, computeBulkArchiveActiveWork),
       takeEvery(requestUnarchiveWorkspace, unarchive),
       takeEvery(confirmBulkArchive, bulkArchive),
       takeEvery(confirmBulkDeleteArchived, bulkDeleteArchived),
