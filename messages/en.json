@@ -2404,7 +2404,7 @@
   "hud_takeover_kindManual_label": "WORKSPACE VIEW",
   "hud_takeover_kindWorkspaceIdle_label": "WORKSPACE IDLE",
   "hud_takeover_kindPrOpen_label": "PR OPEN",
-  "hud_takeover_kindPrReady_label": "PR READY",
+  "hud_takeover_kindPrReady_label": "PR MERGEABLE",
   "hud_takeover_kindPrMerged_label": "PR MERGED",
   "hud_takeover_kindWorkspaceComplete_label": "COMPLETE",
   "hud_takeover_taskComplete_label": "COMPLETE",

@@ -208,11 +208,13 @@ describe('HudTakeoverOverlay status-update banner hierarchy', () => {
     expect(screen.queryByTestId('hud-takeover-banner-status')).toBeNull();
   });
 
+  // jsdom normalizes concrete hsl() colors to rgb, so the card's purple
+  // prMerged accent (hsl(262 60% 62%)) asserts as its rgb serialization.
   it.each([
-    ['workspace_idle', 'WORKSPACE IDLE', 'hsl(var(--text-subtle))'],
+    ['workspace_idle', 'WORKSPACE IDLE', 'hsl(var(--text-ghost))'],
     ['pr_open', 'PR OPEN', 'hsl(var(--ring))'],
-    ['pr_ready', 'PR READY', 'hsl(var(--ring))'],
-    ['pr_merged', 'PR MERGED', 'hsl(var(--primary))'],
+    ['pr_ready', 'PR MERGEABLE', 'hsl(var(--ring))'],
+    ['pr_merged', 'PR MERGED', 'rgb(143, 100, 216)'],
     ['workspace_complete', 'COMPLETE', 'hsl(var(--primary))'],
   ] as const)(
     'workspace displayStatus banner (%s): kind chip + workspace name headline, no subtitle',

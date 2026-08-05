@@ -6,6 +6,7 @@
  */
 import { m } from '$shared/paraglide/messages.js';
 import type { HudAgentStateBucket } from '$store/renderer/slices/hud/hud-types';
+import { HUD_STATE_COLORS } from '../grid/hud-card-meta';
 import type { HudTakeoverKind, HudTakeoverTrigger } from './hud-takeover-queue';
 
 /** Localized banner-chip label for a takeover kind. */
@@ -38,18 +39,18 @@ export function takeoverKindLabel(kind: HudTakeoverKind): string {
   }
 }
 
-/** Accent color for a takeover kind (mock `kc`). */
+/**
+ * Accent color for a takeover kind (mock `kc`). The workspace displayStatus
+ * kinds reuse the canonical card table (`HUD_STATE_COLORS`) so chip and card
+ * can never drift for the same wire state.
+ */
 export function takeoverKindColor(kind: HudTakeoverKind): string {
   switch (kind) {
     case 'task_complete':
     case 'agent_started':
-    case 'pr_merged':
-    case 'workspace_complete':
       return 'hsl(var(--primary))';
     case 'agent_delegated':
     case 'status_update':
-    case 'pr_open':
-    case 'pr_ready':
     case 'manual':
       return 'hsl(var(--ring))';
     case 'agent_failed':
@@ -57,7 +58,14 @@ export function takeoverKindColor(kind: HudTakeoverKind): string {
     case 'question_asked':
       return 'hsl(var(--warning))';
     case 'workspace_idle':
-      return 'hsl(var(--text-subtle))';
+      return HUD_STATE_COLORS.idle;
+    case 'pr_open':
+    case 'pr_ready':
+      return HUD_STATE_COLORS.pr;
+    case 'pr_merged':
+      return HUD_STATE_COLORS.prMerged;
+    case 'workspace_complete':
+      return HUD_STATE_COLORS.done;
   }
 }
 
