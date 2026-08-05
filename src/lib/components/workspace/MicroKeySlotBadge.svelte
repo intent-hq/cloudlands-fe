@@ -22,6 +22,7 @@
   import { AGENT_KEY_COUNT } from '$features/hardware-console/assignment/key-assignment';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { slotHoverClasses as slotHoverClassesFor } from '$lib/components/ui/toast/micro-key-slot-colors';
 
   interface Props {
     workspaceId: string;
@@ -32,19 +33,7 @@
   let { workspaceId, slot }: Props = $props();
 
   /** Hover deepens the square's pastel slot tint (matches its 0-based palette). */
-  const SLOT_HOVER_CLASSES = [
-    'hover:bg-rose-500/25',
-    'hover:bg-amber-500/25',
-    'hover:bg-yellow-500/25',
-    'hover:bg-emerald-500/25',
-    'hover:bg-sky-500/25',
-    'hover:bg-violet-500/25',
-  ];
-
-  const slotHoverClasses = $derived(
-    SLOT_HOVER_CLASSES[((slot % SLOT_HOVER_CLASSES.length) + SLOT_HOVER_CLASSES.length) %
-      SLOT_HOVER_CLASSES.length]
-  );
+  const slotHoverClasses = $derived(slotHoverClassesFor(slot));
 
   let menu: { x: number; y: number } | null = $state(null);
 

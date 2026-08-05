@@ -9,6 +9,7 @@
    */
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { slotColorClasses as slotColorClassesFor } from '$lib/components/ui/toast/micro-key-slot-colors';
 
   interface Props {
     /** Resolved 0-based slot the workspace occupies. */
@@ -19,25 +20,7 @@
 
   let { slot, class: className = '' }: Props = $props();
 
-  /**
-   * Pastel rainbow per-slot palette (0-based slot → classes), cycling with
-   * `slot % 6` for safety: red/rose, orange/amber, yellow, green/emerald,
-   * blue/sky, purple/violet. Soft translucent backgrounds/borders work in
-   * both themes; the text shade flips for dark mode.
-   */
-  const SLOT_COLOR_CLASSES = [
-    'border-rose-500/30 bg-rose-500/15 text-rose-700 dark:text-rose-300',
-    'border-amber-500/30 bg-amber-500/15 text-amber-700 dark:text-amber-300',
-    'border-yellow-500/30 bg-yellow-500/15 text-yellow-700 dark:text-yellow-300',
-    'border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-    'border-sky-500/30 bg-sky-500/15 text-sky-700 dark:text-sky-300',
-    'border-violet-500/30 bg-violet-500/15 text-violet-700 dark:text-violet-300',
-  ];
-
-  const slotColorClasses = $derived(
-    SLOT_COLOR_CLASSES[((slot % SLOT_COLOR_CLASSES.length) + SLOT_COLOR_CLASSES.length) %
-      SLOT_COLOR_CLASSES.length]
-  );
+  const slotColorClasses = $derived(slotColorClassesFor(slot));
 </script>
 
 <span
