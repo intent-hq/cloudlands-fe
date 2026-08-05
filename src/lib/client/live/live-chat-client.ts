@@ -19,9 +19,11 @@
  * message (created on first appearance). `removedIds` are block ids the
  * persisted message does not contain (orphan self-heal). Sequence gaps
  * trigger resnapshot (unsubscribe + fresh `chat.subscribe`); a transport
- * reconnect re-registers against the daemon's rebuilt registry; pushes that
- * race the subscribe reply are buffered pre-ack and replayed (the same
- * buffering `subscribeSnapshot` uses). The §6.9 invariant: the seq-0
+ * reconnect re-registers against the daemon's rebuilt registry; a rejected
+ * registration or a missing seq-0 snapshot self-heals via a delayed
+ * re-registration with exponential backoff (intent-hq/monorepo#1394) — no
+ * reconnect required; pushes that race the subscribe reply are buffered
+ * pre-ack and replayed (the same buffering `subscribeSnapshot` uses). The §6.9 invariant: the seq-0
  * snapshot reduced with every delta — honoring `removedIds` — equals a fresh
  * `agent.getConversation` snapshot.
  */
@@ -56,6 +58,18 @@ const EMPTY_SNAPSHOT: ChatSnapshotResult = { messages: [], truncated: false, tot
 
 /** Wall-clock ceiling for the seq-0 push after `chat.subscribe` resolves. */
 const SNAPSHOT_TIMEOUT_MS = 5_000;
+
+/**
+ * Initial delay before a self-heal re-registration of the standing
+ * subscription (rejected `chat.subscribe` or seq-0 snapshot timeout). Each
+ * consecutive failure doubles the delay up to `MAX_RETRY_DELAY_MS`; the
+ * backoff resets once a snapshot hydrates the transcript (and on transport
+ * reconnect).
+ */
+const INITIAL_RETRY_DELAY_MS = 1_000;
+
+/** Ceiling for the self-heal retry backoff. */
+const MAX_RETRY_DELAY_MS = 30_000;
 
 /**
  * Bound for the standing subscription's pre-ack push buffer: pushes whose
@@ -427,9 +441,9 @@ export class LiveChatClient implements ChatClient {
     // subscription's behavior — registration, retry, and gap semantics are
     // unchanged whether or not a listener is attached.
     let phase: ChatLiveStreamPhase | undefined;
-    // Observational seq-0 ceiling after the subscribe ack: fires `delayed`
-    // when the snapshot has not applied in time. Purely a phase report — no
-    // retry is triggered (the reconnect handler remains the recovery path).
+    // seq-0 ceiling after the subscribe ack: on timeout it reports `delayed`
+    // and schedules a self-heal resubscribe (unsubscribe the stale
+    // registration + fresh `chat.subscribe`) on the retry backoff schedule.
     let snapshotTimer: ReturnType<typeof setTimeout> | undefined;
 
     const setPhase = (next: ChatLiveStreamPhase): void => {
@@ -443,6 +457,48 @@ export class LiveChatClient implements ChatClient {
         clearTimeout(snapshotTimer);
         snapshotTimer = undefined;
       }
+    };
+    // Self-heal retry (intent-hq/monorepo#1394): a rejected registration or a
+    // missing seq-0 snapshot schedules exactly ONE delayed re-registration,
+    // doubling the delay per consecutive failure up to the cap, so the
+    // transcript recovers without waiting for a transport reconnect. The
+    // timer is cancelled when a snapshot arrives, on reconnect (the handler
+    // re-registers anyway), and on dispose.
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryDelayMs = INITIAL_RETRY_DELAY_MS;
+    // True while a backoff recovery is pending or in flight: the phase keeps
+    // reporting `delayed` (no connecting/awaiting-snapshot flap) until a
+    // snapshot hydrates the transcript.
+    let retrying = false;
+
+    const clearRetryTimer = (): void => {
+      if (retryTimer !== undefined) {
+        clearTimeout(retryTimer);
+        retryTimer = undefined;
+      }
+    };
+
+    const resetBackoff = (): void => {
+      clearRetryTimer();
+      retrying = false;
+      retryDelayMs = INITIAL_RETRY_DELAY_MS;
+    };
+
+    const scheduleRetry = (): void => {
+      if (disposed) return;
+      setPhase("delayed");
+      retrying = true;
+      clearRetryTimer();
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        if (disposed) return;
+        // Best-effort release of a stale acked registration (its seq-0 never
+        // arrived) before the fresh `chat.subscribe`; after a rejected
+        // registration there is no id and this only bumps the generation.
+        unregister();
+        register();
+      }, retryDelayMs);
+      retryDelayMs = Math.min(retryDelayMs * 2, MAX_RETRY_DELAY_MS);
     };
     // Registration-generation token: bumped whenever a newer registration or
     // a teardown (resnapshot, reconnect, dispose) supersedes prior in-flight
@@ -470,6 +526,9 @@ export class LiveChatClient implements ChatClient {
       if (push.kind === "snapshot") {
         awaitingResnapshot = false;
         clearSnapshotTimer();
+        // Hydration cancels any pending self-heal retry and resets its
+        // backoff to the initial delay.
+        resetBackoff();
         // A snapshot push (applied or a stale re-delivery on an already-live
         // transcript) means the stream is hydrated either way.
         setPhase("live");
@@ -491,8 +550,9 @@ export class LiveChatClient implements ChatClient {
       generation += 1;
       const thisGeneration = generation;
       // A recovery registration (gap) reports `resyncing`; a first/reconnect
-      // registration reports `connecting`.
-      setPhase(awaitingResnapshot ? "resyncing" : "connecting");
+      // registration reports `connecting`; a backoff retry keeps reporting
+      // `delayed` until a snapshot hydrates.
+      if (!retrying) setPhase(awaitingResnapshot ? "resyncing" : "connecting");
       backendRequest<{ subscriptionId?: string }>("chat.subscribe", { agentId })
         .then((result) => {
           const id = result?.subscriptionId;
@@ -509,22 +569,25 @@ export class LiveChatClient implements ChatClient {
           }
           subscriptionId = id;
           // Ack received: awaiting the seq-0 snapshot (a recovery snapshot
-          // keeps reporting `resyncing`). The timer only REPORTS `delayed` on
-          // timeout — recovery still rides the reconnect handler.
-          if (!awaitingResnapshot) setPhase("awaiting-snapshot");
+          // keeps reporting `resyncing`; a backoff retry keeps `delayed`).
+          if (!awaitingResnapshot && !retrying) setPhase("awaiting-snapshot");
           clearSnapshotTimer();
           snapshotTimer = setTimeout(() => {
             snapshotTimer = undefined;
-            setPhase("delayed");
+            // Ack without seq-0: report `delayed` and self-heal by
+            // unsubscribing the stale registration and re-registering on the
+            // backoff schedule (intent-hq/monorepo#1394).
+            scheduleRetry();
           }, SNAPSHOT_TIMEOUT_MS);
           const matched = buffered.filter((p) => p.subscriptionId === id);
           buffered = [];
           for (const p of matched) processPush(p);
         })
         .catch(() => {
-          // Registration failure: the reconnect handler retries on the next
-          // transport recovery; the transcript keeps its last emitted state.
-          if (generation === thisGeneration) setPhase("delayed");
+          // Registration failure: report `delayed` and schedule a backoff
+          // retry so the stream recovers without a transport reconnect
+          // (intent-hq/monorepo#1394); the transcript keeps its last state.
+          if (generation === thisGeneration) scheduleRetry();
         });
     };
 
@@ -543,6 +606,13 @@ export class LiveChatClient implements ChatClient {
     const resnapshot = (): void => {
       if (awaitingResnapshot) return;
       awaitingResnapshot = true;
+      // The gap registration IS the recovery: drop any pending self-heal
+      // retry — and the prior ack's seq-0 ceiling, which could otherwise
+      // still fire scheduleRetry() mid-recovery — so neither causes a
+      // redundant unsubscribe/subscribe cycle on top of this one (the
+      // backoff level is kept — hydration resets it).
+      clearRetryTimer();
+      clearSnapshotTimer();
       reconciler.reset();
       unregister();
       register();
@@ -563,6 +633,9 @@ export class LiveChatClient implements ChatClient {
       awaitingResnapshot = false;
       buffered = [];
       clearSnapshotTimer();
+      // The reconnect registration IS the recovery: drop any pending retry
+      // and start the backoff schedule fresh.
+      resetBackoff();
       reconciler.reset();
       register();
     });
@@ -572,6 +645,7 @@ export class LiveChatClient implements ChatClient {
     return () => {
       disposed = true;
       clearSnapshotTimer();
+      clearRetryTimer();
       off();
       offReconnect();
       unregister();
