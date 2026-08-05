@@ -1504,4 +1504,52 @@ describe("LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)", (
     expect(unsubscribeCalls()).toHaveLength(1);
     off();
   });
+
+  it("a gap-triggered resnapshot clears the prior ack's seq-0 ceiling (no stale timeout retry)", async () => {
+    vi.useFakeTimers();
+    // First registration acks immediately; the resnapshot's registration is
+    // held in flight so the prior ack's 5s deadline can elapse mid-recovery.
+    let n = 0;
+    let resolveInFlight: (() => void) | undefined;
+    mockedRequest.mockImplementation(async (method: string) => {
+      if (method === "chat.subscribe") {
+        n += 1;
+        const result = { subscriptionId: `sub-${n}` };
+        if (n === 1) return result;
+        return new Promise((resolve) => {
+          resolveInFlight = () => resolve(result);
+        });
+      }
+      return {};
+    });
+    const client = new LiveChatClient();
+    const off = client.subscribe("agent-1", () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(subscribeCalls()).toHaveLength(1);
+
+    // A gap lands just before the 5s seq-0 deadline: resnapshot unsubscribes
+    // sub-1 and re-registers (ack still in flight).
+    await vi.advanceTimersByTimeAsync(4_999);
+    deltaPush("sub-1", 3, { added: [], updated: [], removedIds: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(unsubscribeCalls()).toEqual([["chat.unsubscribe", { subscriptionId: "sub-1" }]]);
+    expect(subscribeCalls()).toHaveLength(2);
+
+    // The prior ack's deadline (t=5s) elapses while the recovery ack is in
+    // flight; its stale timer must NOT fire scheduleRetry() and cause an
+    // extra unregister/register (which would also orphan the in-flight ack).
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(subscribeCalls()).toHaveLength(2);
+    expect(unsubscribeCalls()).toHaveLength(1);
+
+    // The recovery ack resolves and its seq-0 snapshot (§7.1) hydrates;
+    // nothing further goes on the wire.
+    resolveInFlight?.();
+    await vi.advanceTimersByTimeAsync(0);
+    snapshotPush("sub-2", 0, SEEDED_SNAPSHOT);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(subscribeCalls()).toHaveLength(2);
+    expect(unsubscribeCalls()).toHaveLength(1);
+    off();
+  });
 });

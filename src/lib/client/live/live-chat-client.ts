@@ -607,9 +607,12 @@ export class LiveChatClient implements ChatClient {
       if (awaitingResnapshot) return;
       awaitingResnapshot = true;
       // The gap registration IS the recovery: drop any pending self-heal
-      // retry so it cannot fire a redundant unsubscribe/subscribe cycle on
-      // top of this one (the backoff level is kept — hydration resets it).
+      // retry — and the prior ack's seq-0 ceiling, which could otherwise
+      // still fire scheduleRetry() mid-recovery — so neither causes a
+      // redundant unsubscribe/subscribe cycle on top of this one (the
+      // backoff level is kept — hydration resets it).
       clearRetryTimer();
+      clearSnapshotTimer();
       reconciler.reset();
       unregister();
       register();
