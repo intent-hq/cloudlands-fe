@@ -95,7 +95,12 @@ describe("workspaceOperationsReducer", () => {
 
     const computed = workspaceOperationsReducer(
       opened,
-      bulkArchiveActiveWorkComputed({ repoKey: "owner/repo", agentCount: 2, hookCount: 1 })
+      bulkArchiveActiveWorkComputed({
+        repoKey: "owner/repo",
+        agentCount: 2,
+        hookCount: 1,
+        token: opened.bulkArchiveComputeToken,
+      })
     );
 
     expect(computed.bulkArchiveActiveAgentCount).toBe(2);
@@ -109,13 +114,19 @@ describe("workspaceOperationsReducer", () => {
   });
 
   it("drops late active-work results when the confirm is closed or for another repo", () => {
-    const closedState = workspaceOperationsReducer(
-      workspaceOperationsReducer(initialState, openBulkArchiveConfirm("owner/repo")),
-      closeBulkArchiveConfirm()
+    const firstOpen = workspaceOperationsReducer(
+      initialState,
+      openBulkArchiveConfirm("owner/repo")
     );
+    const closedState = workspaceOperationsReducer(firstOpen, closeBulkArchiveConfirm());
     const afterLate = workspaceOperationsReducer(
       closedState,
-      bulkArchiveActiveWorkComputed({ repoKey: "owner/repo", agentCount: 2, hookCount: 1 })
+      bulkArchiveActiveWorkComputed({
+        repoKey: "owner/repo",
+        agentCount: 2,
+        hookCount: 1,
+        token: firstOpen.bulkArchiveComputeToken,
+      })
     );
 
     expect(afterLate.bulkArchiveActiveAgentCount).toBe(0);
@@ -127,11 +138,55 @@ describe("workspaceOperationsReducer", () => {
     );
     const afterMismatch = workspaceOperationsReducer(
       reopened,
-      bulkArchiveActiveWorkComputed({ repoKey: "owner/repo", agentCount: 2, hookCount: 1 })
+      bulkArchiveActiveWorkComputed({
+        repoKey: "owner/repo",
+        agentCount: 2,
+        hookCount: 1,
+        token: reopened.bulkArchiveComputeToken,
+      })
     );
 
     expect(afterMismatch.bulkArchiveActiveAgentCount).toBe(0);
     expect(afterMismatch.bulkArchiveActiveHookCount).toBe(0);
+  });
+
+  it("drops a stale compute after a close→reopen for the same repo (token mismatch)", () => {
+    const firstOpen = workspaceOperationsReducer(
+      initialState,
+      openBulkArchiveConfirm("owner/repo")
+    );
+    const reopened = workspaceOperationsReducer(
+      workspaceOperationsReducer(firstOpen, closeBulkArchiveConfirm()),
+      openBulkArchiveConfirm("owner/repo")
+    );
+
+    // Stale compute from the first open carries the old token — dropped.
+    const afterStale = workspaceOperationsReducer(
+      reopened,
+      bulkArchiveActiveWorkComputed({
+        repoKey: "owner/repo",
+        agentCount: 2,
+        hookCount: 1,
+        token: firstOpen.bulkArchiveComputeToken,
+      })
+    );
+
+    expect(afterStale.bulkArchiveActiveAgentCount).toBe(0);
+    expect(afterStale.bulkArchiveActiveHookCount).toBe(0);
+
+    // The fresh compute with the current token still folds.
+    const afterFresh = workspaceOperationsReducer(
+      afterStale,
+      bulkArchiveActiveWorkComputed({
+        repoKey: "owner/repo",
+        agentCount: 0,
+        hookCount: 0,
+        token: reopened.bulkArchiveComputeToken,
+      })
+    );
+
+    expect(afterFresh.bulkArchiveActiveAgentCount).toBe(0);
+    expect(afterFresh.bulkArchiveActiveHookCount).toBe(0);
   });
 
   it("tracks and clears pending repo removal", () => {

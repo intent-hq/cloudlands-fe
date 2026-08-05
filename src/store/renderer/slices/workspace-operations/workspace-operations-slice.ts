@@ -14,6 +14,8 @@ export type WorkspaceOperationsState = {
   showBulkArchiveConfirm: boolean;
   bulkArchiveActiveAgentCount: number;
   bulkArchiveActiveHookCount: number;
+  /** Monotonic token; only the compute matching the latest open folds its counts. */
+  bulkArchiveComputeToken: number;
   showBulkDeleteArchivedConfirm: boolean;
   pendingBulkRepoKey: string | undefined;
   pendingBulkDeleteRepoKey: string | null;
@@ -37,6 +39,7 @@ export const initialState: WorkspaceOperationsState = {
   showBulkArchiveConfirm: false,
   bulkArchiveActiveAgentCount: 0,
   bulkArchiveActiveHookCount: 0,
+  bulkArchiveComputeToken: 0,
   showBulkDeleteArchivedConfirm: false,
   pendingBulkRepoKey: undefined,
   pendingBulkDeleteRepoKey: null,
@@ -107,7 +110,7 @@ export const closeBulkArchiveConfirm = createAction(
 export const confirmBulkArchive = createAction("workspaceOperations/confirmBulkArchive");
 
 export const bulkArchiveActiveWorkComputed = createAction<
-  [payload: { repoKey: string; agentCount: number; hookCount: number }]
+  [payload: { repoKey: string; agentCount: number; hookCount: number; token: number }]
 >("workspaceOperations/bulkArchiveActiveWorkComputed");
 
 export const openBulkDeleteArchivedConfirm = createAction<[repoKey: string]>(
@@ -179,6 +182,7 @@ export const workspaceOperationsReducer = createReducer<WorkspaceOperationsState
     pendingBulkRepoKey: repoKey,
     bulkArchiveActiveAgentCount: 0,
     bulkArchiveActiveHookCount: 0,
+    bulkArchiveComputeToken: state.bulkArchiveComputeToken + 1,
   }))
   .with(closeBulkArchiveConfirm, (state) => ({
     ...state,
@@ -189,10 +193,14 @@ export const workspaceOperationsReducer = createReducer<WorkspaceOperationsState
   }))
   .with(
     bulkArchiveActiveWorkComputed,
-    (state, { payload: [{ repoKey, agentCount, hookCount }] }) => {
+    (state, { payload: [{ repoKey, agentCount, hookCount, token }] }) => {
       // Ignore late results for a confirm that has been closed or reopened
-      // for a different repo since the computation started.
-      if (!state.showBulkArchiveConfirm || state.pendingBulkRepoKey !== repoKey) {
+      // (same or different repo) since the computation started.
+      if (
+        !state.showBulkArchiveConfirm ||
+        state.pendingBulkRepoKey !== repoKey ||
+        state.bulkArchiveComputeToken !== token
+      ) {
         return state;
       }
       return {

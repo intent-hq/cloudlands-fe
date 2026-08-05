@@ -156,11 +156,14 @@ async function countBulkActiveWork(
  * reopened for a different repo in the meantime.
  */
 async function computeBulkArchiveActiveWork(repoKey: string): Promise<void> {
+  // Capture the token minted by openBulkArchiveConfirm (the middleware runs
+  // after the reducer) so only the newest compute folds its counts — a stale
+  // in-flight compute from a previous open of the same repo is dropped.
+  const token = appStore.state.workspaceOperations.bulkArchiveComputeToken;
   const toArchive = getActiveWorkspacesForRepo(repoKey, readWorkspaces());
   if (toArchive.length === 0) return;
   const { agentCount, hookCount } = await countBulkActiveWork(toArchive);
-  if (agentCount === 0 && hookCount === 0) return;
-  appStore.dispatch(bulkArchiveActiveWorkComputed({ repoKey, agentCount, hookCount }));
+  appStore.dispatch(bulkArchiveActiveWorkComputed({ repoKey, agentCount, hookCount, token }));
 }
 
 /**
