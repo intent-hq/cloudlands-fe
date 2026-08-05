@@ -10,11 +10,28 @@
  * parameter — no store or selector imports.
  */
 import type { Specialist } from '$lib/constants/specialists';
+import type { SpecialistModelOption } from '$shared/specialist-file-types';
 import type { FileSpecialist } from '$store/renderer/slices/specialists/specialists-slice';
 
 /** Treat `undefined` and `''` as equal (both mean "not set" on the wire). */
 function normalized(value: string | undefined): string {
   return value ?? '';
+}
+
+/**
+ * Ordered equality for `modelOptions` lists; `undefined` and `[]` compare
+ * equal (both mean "no options" — the wire omits empty lists, PROTOCOL §5.11).
+ */
+function modelOptionsEqual(
+  a: SpecialistModelOption[] | undefined,
+  b: SpecialistModelOption[] | undefined,
+): boolean {
+  const left = a ?? [];
+  const right = b ?? [];
+  return (
+    left.length === right.length &&
+    left.every((opt, i) => opt.model === right[i].model && opt.hint === right[i].hint)
+  );
 }
 
 /**
@@ -50,6 +67,7 @@ export function isRedundantBuiltInOverride(
     normalized(fileSpec.name) === normalized(bundled.name) &&
     normalized(fileSpec.description) === normalized(bundled.description) &&
     normalized(fileSpec.behaviorPrompt) === normalized(bundled.defaultBehaviorPrompt) &&
-    normalized(fileSpec.roleReminder) === normalized(bundled.roleReminder)
+    normalized(fileSpec.roleReminder) === normalized(bundled.roleReminder) &&
+    modelOptionsEqual(fileSpec.modelOptions, bundled.modelOptions)
   );
 }

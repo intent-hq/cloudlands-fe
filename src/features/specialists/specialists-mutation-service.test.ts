@@ -353,6 +353,86 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
         "/ws/path",
       );
     });
+
+    it("keeps a non-empty modelOptions list on the wire verbatim (edit)", async () => {
+      const options = [
+        { model: "opencode:kimi-k3", hint: "cheap" },
+        { model: "claude-code:opus4.5", hint: "" },
+      ];
+      const existingFile: FileSpecialist = {
+        id: "reviewer",
+        name: "Reviewer",
+        description: "Reviews",
+        model: "",
+        behaviorPrompt: "You review.",
+        filePath: "/home/u/.intent/specialists/reviewer.md",
+        source: "user",
+      };
+      // PROTOCOL-shaped response: modelOptions echoed on the resolved def.
+      edit.mockResolvedValue({ ...USER_DEF, modelOptions: options });
+      list.mockResolvedValue([{ ...USER_DEF, modelOptions: options }]);
+      appStore.dispatch(setFileSpecialists([existingFile]));
+
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: "reviewer",
+          name: "Reviewer",
+          description: "Reviews",
+          modelOptions: options,
+          behaviorPrompt: "You review.",
+        }),
+      );
+      await flush();
+
+      expect(edit).toHaveBeenCalledTimes(1);
+      const sentSpec = edit.mock.calls[0][1] as SpecialistDef;
+      expect(sentSpec.modelOptions).toEqual(options);
+
+      // The refetched PROTOCOL-shaped list lands in the store with the
+      // options carried through.
+      const stored = (appStore.state as any).specialists.fileSpecialists.map["reviewer"];
+      expect(stored.modelOptions).toEqual(options);
+    });
+
+    it("omits modelOptions from the wire when the list is empty (inherit-on-omit)", async () => {
+      create.mockResolvedValue(USER_DEF);
+      appStore.dispatch(setFileSpecialists([]));
+
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: "reviewer",
+          name: "Reviewer",
+          description: "Reviews",
+          modelOptions: [],
+          behaviorPrompt: "You review.",
+        }),
+      );
+      await flush();
+
+      const sentSpec = create.mock.calls[0][1] as SpecialistDef;
+      expect(sentSpec.modelOptions).toBeUndefined();
+      // The JSON-RPC serialization drops undefined keys — `modelOptions`
+      // must not appear on the wire (PROTOCOL §5.11: never null/[]).
+      expect(JSON.stringify(sentSpec)).not.toContain('"modelOptions"');
+    });
+
+    it("omits modelOptions from the wire when the payload leaves it undefined", async () => {
+      create.mockResolvedValue(USER_DEF);
+      appStore.dispatch(setFileSpecialists([]));
+
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: "reviewer",
+          name: "Reviewer",
+          description: "Reviews",
+          behaviorPrompt: "You review.",
+        }),
+      );
+      await flush();
+
+      const sentSpec = create.mock.calls[0][1] as SpecialistDef;
+      expect(JSON.stringify(sentSpec)).not.toContain('"modelOptions"');
+    });
   });
 
   describe("reset all to default (Settings → AI Behavior button)", () => {
@@ -612,6 +692,30 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
       ).toBe(false);
       expect(
         isRedundantBuiltInOverride({ ...identicalOverride, id: "my-custom" }, SPECIALISTS),
+      ).toBe(false);
+    });
+
+    it("is false when modelOptions differ from the bundled definition", () => {
+      const withOptions = {
+        ...identicalOverride,
+        modelOptions: [{ model: "opencode:kimi-k3", hint: "cheap" }],
+      };
+      expect(isRedundantBuiltInOverride(withOptions, SPECIALISTS)).toBe(false);
+      // undefined and [] both mean "no options" and compare equal.
+      expect(
+        isRedundantBuiltInOverride({ ...identicalOverride, modelOptions: [] }, SPECIALISTS),
+      ).toBe(true);
+      // Identical lists on both sides are redundant.
+      const bundledWithOptions = [
+        { ...implementor, modelOptions: [{ model: "opencode:kimi-k3", hint: "cheap" }] },
+      ];
+      expect(isRedundantBuiltInOverride(withOptions, bundledWithOptions)).toBe(true);
+      // Same models but a different hint is a real customization.
+      expect(
+        isRedundantBuiltInOverride(
+          { ...withOptions, modelOptions: [{ model: "opencode:kimi-k3", hint: "fast" }] },
+          bundledWithOptions,
+        ),
       ).toBe(false);
     });
 
