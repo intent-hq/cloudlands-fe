@@ -17,6 +17,7 @@ import {
   addVoiceVocabularyTerm,
   changeVoiceEngine,
   changeVoiceInputDevice,
+  changeVoiceLanguage,
   changeVoiceOpenAiModel,
   changeVoiceProvider,
   clearVoiceKey,
@@ -28,6 +29,7 @@ import {
   setVoiceInputDevices,
   setVoiceInputDeviceValue,
   setVoiceKeyConfigured,
+  setVoiceLanguageValue,
   setVoiceOpenAiModelValue,
   setVoiceOsEngineAvailable,
   setVoiceProviderValue,
@@ -40,6 +42,7 @@ import {
   isVoiceOpenAiModel,
   loadVoiceSettings,
   saveVoiceApiKey,
+  setVoiceLanguage,
   setVoiceOpenAiModel,
   setVoiceProvider,
   setVoiceVocabulary,
@@ -85,13 +88,14 @@ export async function initializeVoiceSettingsFlow(): Promise<void> {
         snapshot.keyConfigured,
         snapshot.vocabulary,
         snapshot.openaiModel,
+        snapshot.language,
       ),
     );
   } catch (error) {
     appStore.dispatch(setVoiceSettingsSnapshot(false, "elevenlabs", {
       elevenlabs: false,
       openai: false,
-    }, null, null));
+    }, null, null, null));
     appStore.dispatch(setVoiceSettingsError(m.settings_voice_loadFailed_error()));
     logger.error("initialize error", error);
   }
@@ -246,6 +250,26 @@ export async function changeVoiceOpenAiModelFlow(model: VoiceOpenAiModel): Promi
   }
 }
 
+/**
+ * Persist the language hint (`""` = auto-detect); roll back the optimistic
+ * value on failure. A `null` previous value means the daemon's catalog lacks
+ * the setting (the panel hides the selector) — the write is skipped
+ * defensively.
+ */
+export async function changeVoiceLanguageFlow(language: string): Promise<void> {
+  const previous = appStore.state.voiceSettings.language;
+  if (previous === null || language === previous) return;
+  appStore.dispatch(setVoiceSettingsError(null));
+  appStore.dispatch(setVoiceLanguageValue(language));
+  try {
+    await setVoiceLanguage(language);
+  } catch (error) {
+    appStore.dispatch(setVoiceLanguageValue(previous));
+    appStore.dispatch(setVoiceSettingsError(m.settings_voice_languageSaveFailed_error()));
+    logger.error("language change error", error);
+  }
+}
+
 /** Store a pasted API key through the daemon secrets-file path. */
 export async function saveVoiceKeyFlow(provider: VoiceProvider, apiKey: string): Promise<void> {
   appStore.dispatch(setVoiceSettingsError(null));
@@ -276,12 +300,29 @@ export async function clearVoiceKeyFlow(provider: VoiceProvider): Promise<void> 
   }
 }
 
+let bootHydrated = false;
+
+/** Test-only — reset the boot-hydration guard so each test fixture can boot fresh. */
+export function __resetVoiceSettingsBootHydrationForTests(): void {
+  bootHydrated = false;
+}
+
 /**
  * Middleware that gives the voice settings triggers a real handler.
  * Fire-and-forget — dispatch stays synchronous and never throws.
+ *
+ * Boot hydration (same first-dispatched-action pattern as
+ * settings-hydration-service): the snapshot read runs once at boot so the
+ * dictation path sees the hydrated `voice.language` / `voice.vocabulary`
+ * even when the settings panel never mounts. The panel's own
+ * `initializeVoiceSettings` dispatch simply re-reads.
  */
 export function createVoiceSettingsMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
+    if (!bootHydrated) {
+      bootHydrated = true;
+      void initializeVoiceSettingsFlow();
+    }
     // Vocabulary edits reduce optimistically, so the pre-dispatch array is the
     // rollback target — capture it before the reducer runs.
     const isVocabularyEdit =
@@ -319,6 +360,11 @@ export function createVoiceSettingsMiddleware(): StoreMiddleware {
       case changeVoiceOpenAiModel.type: {
         const payload = Array.isArray(action.payload) ? action.payload : [];
         if (isVoiceOpenAiModel(payload[0])) void changeVoiceOpenAiModelFlow(payload[0]);
+        break;
+      }
+      case changeVoiceLanguage.type: {
+        const payload = Array.isArray(action.payload) ? action.payload : [];
+        if (typeof payload[0] === "string") void changeVoiceLanguageFlow(payload[0]);
         break;
       }
       case saveVoiceKey.type: {

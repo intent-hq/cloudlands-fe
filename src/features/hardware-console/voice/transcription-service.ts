@@ -227,13 +227,21 @@ function transcribeWithSelectedEngine(
 ): Promise<{ text: string }> {
   const voiceSettings = (
     appStore.state as {
-      voiceSettings?: EffectiveVoiceEngineInputs & { vocabulary?: string[] | null };
+      voiceSettings?: EffectiveVoiceEngineInputs & {
+        vocabulary?: string[] | null;
+        language?: string | null;
+      };
     }
   ).voiceSettings;
   if (voiceSettings && resolveEffectiveVoiceEngine(voiceSettings) === 'os') {
+    // The hydrated `voice.language` setting is the OS-engine counterpart of
+    // the daemon's server-side language resolution (§5.41): non-blank ⇒ the
+    // recognizer locale; blank/null ⇒ system locale.
+    const language = voiceSettings.language;
     return transcribeWithOs(
       audio,
       mergeOsContextualStrings(voiceSettings.vocabulary, context?.keyterms),
+      typeof language === 'string' && language.trim().length > 0 ? language.trim() : undefined,
     );
   }
   return appClient.voice.transcribe(audio, mimeType, context);

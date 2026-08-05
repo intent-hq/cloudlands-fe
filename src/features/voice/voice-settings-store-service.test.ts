@@ -17,11 +17,13 @@ vi.mock("$features/voice/os-transcription-service", () => ({
   },
 }));
 
-// FAKE seam: only the daemon-write helper is stubbed (partial mock) — the
-// constants and type guards stay real so the flows exercise real validation.
+// FAKE seam: only the daemon-touching helpers are stubbed (partial mock) —
+// the constants and type guards stay real so the flows exercise real validation.
 vi.mock("$features/voice/voice-settings-service", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./voice-settings-service")>()),
+  loadVoiceSettings: vi.fn(),
   setVoiceOpenAiModel: vi.fn(),
+  setVoiceLanguage: vi.fn(),
 }));
 
 import {
@@ -33,6 +35,7 @@ import {
   setVoiceEngineValue,
   setVoiceInputDevices,
   setVoiceInputDeviceValue,
+  setVoiceLanguageValue,
   setVoiceOpenAiModelValue,
   setVoiceOsEngineAvailable,
   setVoiceSettingsError,
@@ -42,11 +45,18 @@ import {
   resetVoiceInputDevicePreferenceSession,
   VOICE_INPUT_DEVICE_STORAGE_KEY,
 } from "$features/voice/voice-input-device-preference";
-import { setVoiceOpenAiModel } from "$features/voice/voice-settings-service";
 import {
+  loadVoiceSettings,
+  setVoiceLanguage,
+  setVoiceOpenAiModel,
+} from "$features/voice/voice-settings-service";
+import {
+  __resetVoiceSettingsBootHydrationForTests,
   changeVoiceEngineFlow,
   changeVoiceInputDeviceFlow,
+  changeVoiceLanguageFlow,
   changeVoiceOpenAiModelFlow,
+  createVoiceSettingsMiddleware,
   hydrateVoiceEngineFlow,
   hydrateVoiceInputDeviceFlow,
   refreshVoiceInputDevicesFlow,
@@ -55,7 +65,9 @@ import {
 
 const availableMock = vi.mocked(isOsTranscriptionAvailable);
 const requestAuthMock = vi.mocked(requestOsSpeechAuthorization);
+const loadSettingsMock = vi.mocked(loadVoiceSettings);
 const setModelMock = vi.mocked(setVoiceOpenAiModel);
+const setLanguageMock = vi.mocked(setVoiceLanguage);
 // The global test setup replaces window.localStorage with vi.fn stubs.
 const getItemMock = vi.mocked(window.localStorage.getItem);
 const setItemMock = vi.mocked(window.localStorage.setItem);
@@ -64,7 +76,14 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 const state = () => appStore.state.voiceSettings;
 
 describe("voiceSettingsStoreService engine flows (fake seams, real store)", () => {
-  beforeAll(() => appStore.init());
+  // Burn the middleware's one-time boot hydration before the flow tests run —
+  // its async engine/device hydration would otherwise race the assertions.
+  beforeAll(async () => {
+    appStore.init();
+    appStore.dispatch(setVoiceSettingsError(null));
+    await flush();
+    appStore.dispatch(setVoiceSettingsError(null));
+  });
   beforeEach(() => {
     requestAuthMock.mockResolvedValue("authorized");
     availableMock.mockResolvedValue(true);
@@ -228,6 +247,64 @@ describe("voiceSettingsStoreService OpenAI model flow (fake seam, real store)", 
   });
 });
 
+describe("voiceSettingsStoreService language flow (fake seam, real store)", () => {
+  beforeAll(() => appStore.init());
+  beforeEach(() => {
+    setLanguageMock.mockResolvedValue(undefined);
+    appStore.dispatch(setVoiceLanguageValue(""));
+    appStore.dispatch(setVoiceSettingsError(null));
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+    appStore.dispatch(setVoiceLanguageValue(null));
+    appStore.dispatch(setVoiceSettingsError(null));
+  });
+
+  it("applies the language optimistically and persists through the seam", async () => {
+    await changeVoiceLanguageFlow("de");
+
+    expect(state().language).toBe("de");
+    expect(setLanguageMock).toHaveBeenCalledWith("de");
+    expect(state().error).toBeNull();
+  });
+
+  it("persists the auto-detect sentinel (empty string)", async () => {
+    appStore.dispatch(setVoiceLanguageValue("de"));
+
+    await changeVoiceLanguageFlow("");
+
+    expect(state().language).toBe("");
+    expect(setLanguageMock).toHaveBeenCalledWith("");
+  });
+
+  it("rolls back to the previous language and surfaces an error when the write fails", async () => {
+    appStore.dispatch(setVoiceLanguageValue("de"));
+    setLanguageMock.mockRejectedValue(new Error("settings.update did not apply voice.language"));
+
+    await changeVoiceLanguageFlow("fr");
+
+    expect(state().language).toBe("de");
+    expect(state().error).not.toBeNull();
+  });
+
+  it("re-selecting the current language is a no-op — no daemon write", async () => {
+    appStore.dispatch(setVoiceLanguageValue("de"));
+
+    await changeVoiceLanguageFlow("de");
+
+    expect(setLanguageMock).not.toHaveBeenCalled();
+  });
+
+  it("skips the write when the daemon's catalog lacks the setting (null state)", async () => {
+    appStore.dispatch(setVoiceLanguageValue(null));
+
+    await changeVoiceLanguageFlow("de");
+
+    expect(setLanguageMock).not.toHaveBeenCalled();
+    expect(state().language).toBeNull();
+  });
+});
+
 describe("voiceSettingsStoreService input-device flows (fake MediaDevices, real store)", () => {
   const enumerateDevices = vi.fn();
   const addEventListener = vi.fn();
@@ -318,5 +395,41 @@ describe("voiceSettingsStoreService input-device flows (fake MediaDevices, real 
 
     expect(setItemMock).not.toHaveBeenCalled();
     expect(removeItemMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("createVoiceSettingsMiddleware boot hydration (fake seams, real store)", () => {
+  beforeAll(() => appStore.init());
+  beforeEach(() => {
+    __resetVoiceSettingsBootHydrationForTests();
+    availableMock.mockResolvedValue(false);
+    loadSettingsMock.mockResolvedValue({
+      available: true,
+      provider: "elevenlabs",
+      keyConfigured: { elevenlabs: true, openai: false },
+      vocabulary: [],
+      openaiModel: null,
+      language: "de",
+    });
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+    __resetVoiceSettingsBootHydrationForTests();
+    appStore.dispatch(setVoiceSettingsError(null));
+  });
+
+  it("hydrates the daemon snapshot once on the first dispatched action — dictation sees voice.language without the settings panel ever mounting", async () => {
+    const middleware = createVoiceSettingsMiddleware();
+    const invoke = middleware({
+      dispatch: (action) => appStore.dispatch(action),
+      getState: () => appStore.state,
+    })((action) => action);
+
+    invoke({ type: "unrelated/action" });
+    invoke({ type: "another/action" });
+    await flush();
+
+    expect(loadSettingsMock).toHaveBeenCalledTimes(1);
+    expect(state().language).toBe("de");
   });
 });

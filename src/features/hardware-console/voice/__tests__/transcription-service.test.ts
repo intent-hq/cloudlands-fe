@@ -245,16 +245,55 @@ describe('handleFinishedRecording', () => {
     await vi.advanceTimersByTimeAsync(1000);
     await flow;
 
-    expect(transcribeWithOsMock).toHaveBeenCalledWith(RECORDING.blob, [
-      'Feature add',
-      'feature-add',
-      'Coordinator',
-      'PTT hold action',
-    ]);
+    expect(transcribeWithOsMock).toHaveBeenCalledWith(
+      RECORDING.blob,
+      ['Feature add', 'feature-add', 'Coordinator', 'PTT hold action'],
+      undefined,
+    );
     // The daemon wire path must not be touched by the OS engine.
     expect(mockInvoke).not.toHaveBeenCalled();
     expect(insertText).toHaveBeenCalledWith('local transcript');
     expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('forwards the hydrated voice.language to the OS engine as the recognizer locale', async () => {
+    mockState.voiceSettings = { engine: 'os', language: 'de' };
+    transcribeWithOsMock.mockResolvedValue({ text: 'hallo welt', durationMs: 900 });
+    vi.stubGlobal('window', { electronAPI: { invoke: vi.fn(), on: vi.fn(), offById: vi.fn() } });
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, {
+      focusComposer: vi.fn(),
+      insertText: vi.fn().mockReturnValue(true),
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(transcribeWithOsMock).toHaveBeenCalledWith(
+      RECORDING.blob,
+      expect.any(Array),
+      'de',
+    );
+  });
+
+  it('omits the OS engine locale when voice.language is blank or unset (system locale)', async () => {
+    mockState.voiceSettings = { engine: 'os', language: '  ' };
+    transcribeWithOsMock.mockResolvedValue({ text: 'ok', durationMs: 900 });
+    vi.stubGlobal('window', { electronAPI: { invoke: vi.fn(), on: vi.fn(), offById: vi.fn() } });
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, {
+      focusComposer: vi.fn(),
+      insertText: vi.fn().mockReturnValue(true),
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(transcribeWithOsMock).toHaveBeenCalledWith(
+      RECORDING.blob,
+      expect.any(Array),
+      undefined,
+    );
   });
 
   it('biases the hydrated voice.vocabulary into the OS engine contextual strings (vocabulary first, deduped)', async () => {
@@ -273,14 +312,11 @@ describe('handleFinishedRecording', () => {
     await vi.advanceTimersByTimeAsync(1000);
     await flow;
 
-    expect(transcribeWithOsMock).toHaveBeenCalledWith(RECORDING.blob, [
-      'intentd',
-      'Cloudlands',
-      'feature-add',
-      'Feature add',
-      'Coordinator',
-      'PTT hold action',
-    ]);
+    expect(transcribeWithOsMock).toHaveBeenCalledWith(
+      RECORDING.blob,
+      ['intentd', 'Cloudlands', 'feature-add', 'Feature add', 'Coordinator', 'PTT hold action'],
+      undefined,
+    );
   });
 
   it('falls back to the OS engine when the daemon provider key is missing and OS is available', async () => {
