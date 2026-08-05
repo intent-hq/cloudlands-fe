@@ -469,7 +469,35 @@ describe('handleFinishedRecording', () => {
     );
   });
 
-  it('surfaces the daemon no-API-key error as a Settings hint toast', async () => {
+  it('surfaces the structured no-API-key error (data.code, PROTOCOL §5.41 v4.4+) as a Settings hint toast', async () => {
+    const transcribe = vi.fn().mockRejectedValue(
+      Object.assign(new Error('Internal error'), {
+        data: {
+          code: 'voice-no-api-key',
+          detail:
+            'voice: no API key found for elevenlabs (set voice.elevenlabs.apiKey or ELEVENLABS_API_KEY)',
+        },
+      }),
+    );
+    await handleFinishedRecording(RECORDING, {
+      transcribe,
+      insertText: vi.fn(),
+      focusComposer: vi.fn(),
+    });
+    expect(toastError).toHaveBeenCalledWith(
+      m.hardwareConsole_voice_noKey_error(),
+      expect.objectContaining({
+        description:
+          'voice: no API key found for elevenlabs (set voice.elevenlabs.apiKey or ELEVENLABS_API_KEY)',
+      }),
+    );
+    expect(dispatched.some((action) => action.type === actionHudHidden.type)).toBe(true);
+    expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(
+      true,
+    );
+  });
+
+  it('surfaces the plain-string no-API-key error (older daemons) via the message sniff fallback', async () => {
     const transcribe = vi.fn().mockRejectedValue(
       Object.assign(new Error('Internal error'), {
         data: 'voice: no API key found for elevenlabs (set voice.elevenlabs.apiKey or ELEVENLABS_API_KEY)',
@@ -487,6 +515,23 @@ describe('handleFinishedRecording', () => {
     expect(dispatched.some((action) => action.type === actionHudHidden.type)).toBe(true);
     expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(
       true,
+    );
+  });
+
+  it('does not show the no-key toast for a structured error with a different data.code', async () => {
+    const transcribe = vi.fn().mockRejectedValue(
+      Object.assign(new Error('Invalid params'), {
+        data: { code: 'invalid-params', detail: 'audio must be non-empty base64' },
+      }),
+    );
+    await handleFinishedRecording(RECORDING, {
+      transcribe,
+      insertText: vi.fn(),
+      focusComposer: vi.fn(),
+    });
+    expect(toastError).toHaveBeenCalledWith(
+      m.hardwareConsole_voice_transcribeFailed_error(),
+      expect.objectContaining({ description: 'audio must be non-empty base64' }),
     );
   });
 

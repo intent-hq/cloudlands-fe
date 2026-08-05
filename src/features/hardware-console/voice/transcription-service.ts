@@ -240,21 +240,31 @@ function transcribeWithSelectedEngine(
 }
 
 /**
- * Matches the daemon's descriptive no-API-key message (intent-voice registry).
- * PROTOCOL §5.41 carries no structured code for this case today, so message
- * sniffing is the only option; intent-hq/monorepo#1448 tracks adding an
- * `error.data.code` (`voice-no-api-key`) so this can match on the code instead.
+ * Matches the daemon's no-API-key failure (intent-voice registry). Daemons on
+ * PROTOCOL §5.41 v4.4+ carry a structured `error.data.code`
+ * (`voice-no-api-key`, intent-hq/monorepo#1448), matched first; the
+ * descriptive-message sniff is kept only as a fallback for older daemons
+ * whose `error.data` is the plain string.
  */
 function isNoApiKeyError(error: unknown): boolean {
-  const parts: unknown[] = [
-    (error as { message?: unknown })?.message,
-    (error as { data?: unknown })?.data,
-  ];
+  const data = (error as { data?: unknown })?.data;
+  if (
+    typeof data === 'object' &&
+    data !== null &&
+    (data as { code?: unknown }).code === 'voice-no-api-key'
+  ) {
+    return true;
+  }
+  const parts: unknown[] = [(error as { message?: unknown })?.message, data];
   return parts.some((part) => typeof part === 'string' && /no API key/i.test(part));
 }
 
 function errorDetail(error: unknown): string | undefined {
   const data = (error as { data?: unknown })?.data;
+  if (typeof data === 'object' && data !== null) {
+    const detail = (data as { detail?: unknown }).detail;
+    if (typeof detail === 'string' && detail.trim().length > 0) return detail;
+  }
   if (typeof data === 'string' && data.trim().length > 0) return data;
   const message = (error as { message?: unknown })?.message;
   return typeof message === 'string' && message.trim().length > 0 ? message : undefined;
