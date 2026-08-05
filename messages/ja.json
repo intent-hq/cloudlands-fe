@@ -1864,6 +1864,7 @@
   "chat_chatPanel_autoScrollLocked_tooltip": "自動スクロールはロック中（クリックで解除）",
   "chat_chatPanel_autoScrollUnlocked_tooltip": "自動スクロールは解除中（クリックでロック）",
   "chat_chatPanel_scrollToBottom_tooltip": "一番下へスクロール",
+  "chat_newMessagesDivider_label": "新着メッセージ",
   "chat_previewToolLabel_tool_fallback": "ツール",
   "chat_shared_browser_fallback": "ブラウザー",
   "chat_shared_diff_fallback": "差分",

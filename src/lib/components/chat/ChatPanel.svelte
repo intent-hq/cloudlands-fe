@@ -128,6 +128,8 @@
   import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
   import ChatMessage from './ChatMessage.svelte';
   import DateSeparator from './DateSeparator.svelte';
+  import NewMessagesDivider from './NewMessagesDivider.svelte';
+  import { resolveNewMessagesDividerAnchor } from './new-messages-divider';
   import EventWakeupBanner from './EventWakeupBanner.svelte';
   import { parseAgentEvents } from './event-wake-summary';
   import AgentCard from './AgentCard.svelte';
@@ -1401,6 +1403,23 @@
   // We'll handle the streaming state when rendering
   let groupedMessages = $derived(groupMessagesByDate($agentMessages$));
 
+  // ── "New messages" divider (unread marker, PROTOCOL §5.5 agent.markSeen) ──
+  // Id of the message the presentation-only divider renders after, or null
+  // when today's behavior applies (no marker / marker at newest / dangling
+  // marker). Marker updates from other clients converge via agent:updated →
+  // session metadata upserts, so the divider position is live-derived.
+  const newMessagesDividerAnchorId = $derived(
+    resolveNewMessagesDividerAnchor(
+      $agentMessages$.map((message) => message.id),
+      typeof $agentSession$?.metadata?.lastSeenMessageId === 'string'
+        ? $agentSession$.metadata.lastSeenMessageId
+        : undefined,
+    ),
+  );
+  // One-shot guard: the divider entry-positioning happens once per panel mount
+  // (first transcript availability), never again on later marker convergence.
+  let hasAppliedNewMessagesEntryScroll = false;
+
   // Get the auggie session ID from the most recent assistant message's metadata
   // This is the raw UUID format that auggie uses, needed for debugging/support
   let auggieSessionId = $derived.by(() => {
@@ -1457,17 +1476,25 @@
       currentCount > previousMessageCount &&
       (isFirstMessage || (shouldFollowBottom && !isScrollUnlocked));
     if (shouldScroll) {
-      // New message added - scroll to bottom after DOM updates
-      // Re-enable auto-follow when first message is added
-      if (isFirstMessage) {
-        shouldFollowBottom = true;
-        isScrollUnlocked = false;
+      // Unread-marker entry: on the first transcript hydration with a valid
+      // seen marker, land at the "New messages" divider instead of the bottom
+      // and leave follow disabled — the arrow button still scrolls to the end.
+      if (isFirstMessage && !hasAppliedNewMessagesEntryScroll && newMessagesDividerAnchorId) {
+        hasAppliedNewMessagesEntryScroll = true;
+        void scrollToNewMessagesDivider(newMessagesDividerAnchorId);
+      } else {
+        // New message added - scroll to bottom after DOM updates
+        // Re-enable auto-follow when first message is added
+        if (isFirstMessage) {
+          shouldFollowBottom = true;
+          isScrollUnlocked = false;
+        }
+        tick().then(() => {
+          // Guard against component destruction during tick
+          if (isComponentDestroyed) return;
+          if (scrollContainer) scrollToBottomUtil(scrollContainer);
+        });
       }
-      tick().then(() => {
-        // Guard against component destruction during tick
-        if (isComponentDestroyed) return;
-        if (scrollContainer) scrollToBottomUtil(scrollContainer);
-      });
     }
     previousMessageCount = currentCount;
   });
@@ -1750,8 +1777,15 @@
     requestAnimationFrame(() => {
       if (scrollContainer) {
         if ($agentMessages$.length > 0) {
-          // Scroll to bottom if there are messages
-          scrollToBottomUtil(scrollContainer);
+          if (!hasAppliedNewMessagesEntryScroll && newMessagesDividerAnchorId) {
+            // Unread-marker entry (remount with the transcript already
+            // loaded): land at the "New messages" divider instead of the bottom.
+            hasAppliedNewMessagesEntryScroll = true;
+            void scrollToNewMessagesDivider(newMessagesDividerAnchorId);
+          } else {
+            // Scroll to bottom if there are messages
+            scrollToBottomUtil(scrollContainer);
+          }
         } else {
           // Scroll to top for empty panel (shows specialist switcher)
           scrollContainer.scrollTop = 0;
@@ -2114,6 +2148,27 @@
     }
     logger.warn('[ChatPanel] Message turn not rendered after force-visible', { messageId });
     return null;
+  }
+
+  // Entry positioning for the unread marker: force-render the anchor message's
+  // turn (it may be a virtualized LazyTurn placeholder), then land the viewport
+  // on the "New messages" divider rendered right after it. Follow stays
+  // disabled (forceRenderAndFindMessage drops it) so streaming growth doesn't
+  // yank the viewport down. Falls back to today's scroll-to-bottom if the
+  // anchor never renders.
+  async function scrollToNewMessagesDivider(anchorMessageId: string) {
+    const anchorElement = await forceRenderAndFindMessage(anchorMessageId);
+    if (isComponentDestroyed || !scrollContainer) return;
+    const dividerElement = scrollContainer.querySelector(
+      '[data-new-messages-divider]',
+    ) as HTMLElement | null;
+    const targetElement = dividerElement ?? anchorElement;
+    if (!targetElement) {
+      shouldFollowBottom = true;
+      scrollToBottomUtil(scrollContainer);
+      return;
+    }
+    smoothScrollTo(targetElement, 'center');
   }
 
   // Collect ranges for every case-insensitive occurrence of each query token
@@ -3619,6 +3674,13 @@
                 />
               </div>
             {/if}
+            <!-- Presentation-only unread marker (PROTOCOL §5.5 agent.markSeen):
+                 rendered after the anchor message; never part of the transcript -->
+            {#snippet newMessagesDividerAfter(messageId: string)}
+              {#if newMessagesDividerAnchorId === messageId}
+                <NewMessagesDivider />
+              {/if}
+            {/snippet}
             <!-- PERF: Use keyed each blocks for efficient list diffing -->
             {#each groupedMessages as group, groupIndex (group.messages[0]?.id ?? groupIndex)}
               <DateSeparator label={formatDistanceToNow(group.date)} />
@@ -3712,6 +3774,7 @@
                             {/if}
                           </div>
                         {/if}
+                        {@render newMessagesDividerAfter(message.id)}
                       {/if}
                       <!-- User message (sticky within this turn) - skip for event notifications (already shown above) -->
                       <!-- Also skip messages starting with [WORKSPACE EVENTS] as a fallback in case metadata is missing -->
@@ -3746,6 +3809,7 @@
                             title={extractAllContent(turn.userMessage) || undefined}
                           />
                         </div>
+                        {@render newMessagesDividerAfter(turn.userMessage.id)}
                       {:else if turn.userMessage && !isEventNotification}
                         {@const message = turn.userMessage}
                         {@const globalIndex = getMessageIndex(message.id)}
@@ -3769,6 +3833,7 @@
                             backendSessionId={auggieSessionId}
                           />
                         </div>
+                        {@render newMessagesDividerAfter(message.id)}
                       {/if}
 
                       <!-- Model-change notices (daemon-persisted, after the user row, before assistant output) -->
@@ -3781,6 +3846,7 @@
                               fallbackText={extractAllContent(noticeMessage) || undefined}
                             />
                           </div>
+                          {@render newMessagesDividerAfter(noticeMessage.id)}
                         {/if}
                       {/each}
 
@@ -3890,6 +3956,7 @@
                             workspaceId={workspace.id}
                           />
                         {/if}
+                        {@render newMessagesDividerAfter(message.id)}
                       {/each}
                     {/snippet}
                   </LazyTurn>
