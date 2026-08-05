@@ -1155,7 +1155,8 @@ describe("LiveChatClient.subscribe phase reporting (onPhase)", () => {
     off();
   });
 
-  it("reports delayed when chat.subscribe rejects", async () => {
+  it("reports delayed when chat.subscribe rejects and keeps delayed across backoff retries", async () => {
+    vi.useFakeTimers();
     mockedRequest.mockImplementation(async (method: string) => {
       if (method === "chat.subscribe") throw new Error("transport down");
       return {};
@@ -1163,13 +1164,19 @@ describe("LiveChatClient.subscribe phase reporting (onPhase)", () => {
     const client = new LiveChatClient();
     const phases: string[] = [];
     const off = client.subscribe("agent-1", () => {}, (p) => phases.push(p));
-    await flush();
+    await vi.advanceTimersByTimeAsync(0);
 
+    expect(phases).toEqual(["connecting", "delayed"]);
+
+    // The backoff retry re-registers without flapping back to connecting —
+    // the phase stays delayed while self-healing.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(mockedRequest.mock.calls.filter(([m]) => m === "chat.subscribe")).toHaveLength(2);
     expect(phases).toEqual(["connecting", "delayed"]);
     off();
   });
 
-  it("reports delayed when the seq-0 snapshot times out, then live when it finally lands", async () => {
+  it("reports delayed when the seq-0 snapshot times out, then live when it lands before the retry", async () => {
     vi.useFakeTimers();
     mockChatSubscribe();
     const client = new LiveChatClient();
@@ -1178,13 +1185,18 @@ describe("LiveChatClient.subscribe phase reporting (onPhase)", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(phases).toEqual(["connecting", "awaiting-snapshot"]);
 
-    // SNAPSHOT_TIMEOUT_MS elapses without the seq-0 push.
+    // SNAPSHOT_TIMEOUT_MS elapses without the seq-0 push: delayed is
+    // reported and a resubscribe retry is armed.
     await vi.advanceTimersByTimeAsync(5_000);
     expect(phases).toEqual(["connecting", "awaiting-snapshot", "delayed"]);
 
-    // Late snapshot still hydrates (the timer is observational only).
+    // The late snapshot (before the retry fires) still hydrates and cancels
+    // the pending retry: no unsubscribe/resubscribe ever goes out.
     snapshotPush("sub-1", 0, SEEDED_SNAPSHOT);
     expect(phases).toEqual(["connecting", "awaiting-snapshot", "delayed", "live"]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(mockedRequest.mock.calls.filter(([m]) => m === "chat.subscribe")).toHaveLength(1);
+    expect(mockedRequest).not.toHaveBeenCalledWith("chat.unsubscribe", expect.anything());
     off();
   });
 
@@ -1232,6 +1244,229 @@ describe("LiveChatClient.subscribe phase reporting (onPhase)", () => {
     deltaPush("sub-1", 1, { added: [], updated: [], removedIds: [] });
 
     expect(phases).toEqual(["connecting", "awaiting-snapshot", "live"]);
+    off();
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Self-heal retry (intent-hq/monorepo#1394): a rejected registration or a
+// missing seq-0 snapshot re-registers on an exponential backoff schedule —
+// no transport reconnect required. Timers are cancelled by hydration,
+// reconnect, and dispose; the backoff resets once healthy.
+// ---------------------------------------------------------------------------
+
+describe("LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    reset();
+  });
+
+  const subscribeCalls = () => mockedRequest.mock.calls.filter(([m]) => m === "chat.subscribe");
+  const unsubscribeCalls = () =>
+    mockedRequest.mock.calls.filter(([m]) => m === "chat.unsubscribe");
+
+  /** Sequentially-minted ids like `mockChatSubscribe`, rejecting while `fail()`. */
+  function mockFlakyChatSubscribe(fail: () => boolean, prefix = "sub"): void {
+    let n = 0;
+    mockedRequest.mockImplementation(async (method: string) => {
+      if (method === "chat.subscribe") {
+        n += 1;
+        if (fail()) throw new Error("transport down");
+        return { subscriptionId: `${prefix}-${n}` };
+      }
+      return {};
+    });
+  }
+
+  it("recovers from a rejected chat.subscribe via a delayed retry, no reconnect", async () => {
+    vi.useFakeTimers();
+    let failures = 1;
+    mockFlakyChatSubscribe(() => failures-- > 0);
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: unknown[] }> = [];
+    const phases: string[] = [];
+    const off = client.subscribe("agent-1", (t) => seen.push(t), (p) => phases.push(p));
+    await vi.advanceTimersByTimeAsync(0);
+
+    // First registration rejected: exactly one wire attempt, phase delayed.
+    expect(subscribeCalls()).toEqual([["chat.subscribe", { agentId: "agent-1" }]]);
+    expect(phases).toEqual(["connecting", "delayed"]);
+
+    // Nothing fires before the 1s initial backoff elapses.
+    await vi.advanceTimersByTimeAsync(999);
+    expect(subscribeCalls()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(subscribeCalls()).toEqual([
+      ["chat.subscribe", { agentId: "agent-1" }],
+      ["chat.subscribe", { agentId: "agent-1" }],
+    ]);
+    // A rejected registration acked no id — no unsubscribe frame on retry.
+    expect(unsubscribeCalls()).toEqual([]);
+
+    // The §7.1 seq-0 recovery snapshot on the retried registration hydrates.
+    snapshotPush("sub-2", 0, SEEDED_SNAPSHOT);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].messages.map((m) => (m as { id: string }).id)).toEqual(["0190a1b2-user"]);
+    expect(phases).toEqual(["connecting", "delayed", "live"]);
+    off();
+  });
+
+  it("backs off exponentially across consecutive rejections, capped at 30s", async () => {
+    vi.useFakeTimers();
+    mockFlakyChatSubscribe(() => true);
+    const client = new LiveChatClient();
+    const off = client.subscribe("agent-1", () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(subscribeCalls()).toHaveLength(1);
+
+    // Delays double per consecutive failure: 1s, 2s, 4s, 8s, 16s, then 30s cap.
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000]) {
+      const before = subscribeCalls().length;
+      await vi.advanceTimersByTimeAsync(delay - 1);
+      expect(subscribeCalls()).toHaveLength(before);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(subscribeCalls()).toHaveLength(before + 1);
+    }
+    // 32s would exceed the cap: the next two retries fire at 30s each.
+    for (let i = 0; i < 2; i++) {
+      const before = subscribeCalls().length;
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(subscribeCalls()).toHaveLength(before);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(subscribeCalls()).toHaveLength(before + 1);
+    }
+    off();
+  });
+
+  it("resets the backoff to the initial delay once a snapshot hydrates", async () => {
+    vi.useFakeTimers();
+    let fail = true;
+    mockFlakyChatSubscribe(() => fail);
+    const client = new LiveChatClient();
+    const off = client.subscribe("agent-1", () => {});
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Two failures walk the backoff to 4s-next (1s and 2s retries consumed).
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(subscribeCalls()).toHaveLength(3);
+
+    // Third retry (4s) succeeds and its seq-0 snapshot hydrates → reset.
+    fail = false;
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(subscribeCalls()).toHaveLength(4);
+    snapshotPush("sub-4", 0, SEEDED_SNAPSHOT);
+
+    // A later gap-triggered re-registration fails again: the retry fires at
+    // the INITIAL 1s delay, not a continuation of the previous backoff.
+    fail = true;
+    deltaPush("sub-4", 5, { added: [], updated: [], removedIds: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(subscribeCalls()).toHaveLength(5);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(subscribeCalls()).toHaveLength(5);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(subscribeCalls()).toHaveLength(6);
+    off();
+  });
+
+  it("resubscribes after a seq-0 timeout: unsubscribes the stale registration and hydrates fresh", async () => {
+    vi.useFakeTimers();
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: unknown[] }> = [];
+    const phases: string[] = [];
+    const off = client.subscribe("agent-1", (t) => seen.push(t), (p) => phases.push(p));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(subscribeCalls()).toEqual([["chat.subscribe", { agentId: "agent-1" }]]);
+
+    // Acked but no seq-0 within SNAPSHOT_TIMEOUT_MS: delayed + retry armed.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(phases).toEqual(["connecting", "awaiting-snapshot", "delayed"]);
+    expect(unsubscribeCalls()).toEqual([]);
+
+    // The retry best-effort releases the stale registration and re-registers.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(unsubscribeCalls()).toEqual([["chat.unsubscribe", { subscriptionId: "sub-1" }]]);
+    expect(subscribeCalls()).toEqual([
+      ["chat.subscribe", { agentId: "agent-1" }],
+      ["chat.subscribe", { agentId: "agent-1" }],
+    ]);
+
+    // The recovery seq-0 snapshot (§7.1) hydrates the transcript.
+    snapshotPush("sub-2", 0, SEEDED_SNAPSHOT);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].messages.map((m) => (m as { id: string }).id)).toEqual(["0190a1b2-user"]);
+    expect(phases).toEqual(["connecting", "awaiting-snapshot", "delayed", "live"]);
+
+    // Hydration cancelled the timers: nothing further goes on the wire.
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(subscribeCalls()).toHaveLength(2);
+    expect(unsubscribeCalls()).toHaveLength(1);
+    off();
+  });
+
+  it("repeated seq-0 timeouts back off on the same schedule (no 5s hammering)", async () => {
+    vi.useFakeTimers();
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const off = client.subscribe("agent-1", () => {});
+    await vi.advanceTimersByTimeAsync(0);
+
+    // First timeout (5s) → retry after 1s.
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(subscribeCalls()).toHaveLength(2);
+    expect(unsubscribeCalls()).toEqual([["chat.unsubscribe", { subscriptionId: "sub-1" }]]);
+
+    // Second timeout → retry after 2s (doubled), not another 1s.
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(subscribeCalls()).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(subscribeCalls()).toHaveLength(3);
+    expect(unsubscribeCalls()).toEqual([
+      ["chat.unsubscribe", { subscriptionId: "sub-1" }],
+      ["chat.unsubscribe", { subscriptionId: "sub-2" }],
+    ]);
+    off();
+  });
+
+  it("cancels a pending retry on dispose — no request fires after off()", async () => {
+    vi.useFakeTimers();
+    mockFlakyChatSubscribe(() => true);
+    const client = new LiveChatClient();
+    const off = client.subscribe("agent-1", () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(subscribeCalls()).toHaveLength(1);
+
+    off();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(subscribeCalls()).toHaveLength(1);
+    expect(unsubscribeCalls()).toEqual([]);
+  });
+
+  it("a transport reconnect supersedes a pending retry (no duplicate registration)", async () => {
+    vi.useFakeTimers();
+    let fail = true;
+    mockFlakyChatSubscribe(() => fail);
+    const client = new LiveChatClient();
+    const off = client.subscribe("agent-1", () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(subscribeCalls()).toHaveLength(1);
+
+    // Reconnect before the 1s retry fires: its registration IS the recovery.
+    fail = false;
+    emitReconnect();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(subscribeCalls()).toHaveLength(2);
+    snapshotPush("sub-2", 0, SEEDED_SNAPSHOT);
+
+    // The pre-reconnect retry never fires — no third registration.
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(subscribeCalls()).toHaveLength(2);
     off();
   });
 });
