@@ -59,7 +59,8 @@
 
   <div class="space-y-3">
     {#each additionalProviders as provider (provider.id)}
-      {@const isAvailable = $providerStatusMap$[provider.id]?.available ?? false}
+      {@const statusEntry = $providerStatusMap$[provider.id]}
+      {@const isKnownUnavailable = statusEntry !== undefined && !statusEntry.available}
       <div class="flex items-center justify-between py-2">
         <div>
           <p class="text-sm font-medium text-foreground mb-1">{provider.displayName}</p>
@@ -68,7 +69,7 @@
             <code class="px-1 py-0.5 bg-muted rounded text-ui">{provider.command}</code>
             {m.settings_additionalAgents_cliDescription_after()}
           </p>
-          {#if isEnabled(provider.id) && !isAvailable}
+          {#if isEnabled(provider.id) && isKnownUnavailable}
             <p class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1 mt-1">
               <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
               {m.settings_additionalAgents_notInstalled_label()}

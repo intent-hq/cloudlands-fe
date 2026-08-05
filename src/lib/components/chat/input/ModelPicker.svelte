@@ -45,7 +45,10 @@
   setModelPickerGroupCollapsed,
 } from '$store/renderer/slices/model/model-slice';
   import type { ModelFallbackInfo } from '$store/renderer/slices/model/model-types';
-  import { selectManagedInstallStatusByProvider } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+  import {
+  selectHasCheckedOnce,
+  selectManagedInstallStatusByProvider,
+} from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import {
   selectActiveProviderId,
   selectAvailableEnabledProviderIds,
@@ -117,6 +120,7 @@
   const loadError$ = selectLoadError();
   const allProviderWarnings$ = selectAllProviderWarnings();
   const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
+  const hasCheckedOnce$ = selectHasCheckedOnce();
 
   interface Props {
     selectedModel?: string | null;
@@ -694,15 +698,25 @@
   // default provider/model (e.g. Auggie's opus4.7) — surface an explicit
   // failure instead. Per-provider fetch failures / a single unavailable
   // effective provider are handled by the existing warning/fallback paths.
+  // Gated on hasCheckedOnce: before the first availability check resolves,
+  // availableEnabledProviderIds is empty by default, which is "unknown" —
+  // not "confirmed unavailable" — so this must not trip during initial load.
   const hasNoAvailableProvider = $derived(
-    !providerId && $availableEnabledProviderIds$.length === 0,
+    !providerId && $hasCheckedOnce$ && $availableEnabledProviderIds$.length === 0,
   );
+
+  let noProviderToastShown = false;
 
   $effect(() => {
     if (hasNoAvailableProvider) {
-      toast.error(m.chat_modelPicker_noProviderAvailable_toast(), {
-        duration: 6000,
-      });
+      if (!noProviderToastShown) {
+        noProviderToastShown = true;
+        toast.error(m.chat_modelPicker_noProviderAvailable_toast(), {
+          duration: 6000,
+        });
+      }
+    } else {
+      noProviderToastShown = false;
     }
   });
 

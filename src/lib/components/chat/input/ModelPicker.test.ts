@@ -137,8 +137,10 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectAllProviderWarnings: () => providerWarnings$,
 }));
 
+const hasCheckedOnce$ = writable(true);
 vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
   selectManagedInstallStatusByProvider: () => codexManagedInstallStatus$,
+  selectHasCheckedOnce: () => hasCheckedOnce$,
 }));
 
 const enabledProviderIds$ = writable(['auggie']);
@@ -770,12 +772,29 @@ describe('ModelPicker availability gating', () => {
     enabledProviderIds$.set(['auggie']);
     activeProviderId$.set('auggie');
     availableProviderOverride$.set(null);
+    hasCheckedOnce$.set(true);
   });
 
   afterEach(() => {
     cleanup();
     document.body.innerHTML = '';
     availableProviderOverride$.set(null);
+    hasCheckedOnce$.set(true);
+  });
+
+  it('does not show the no-provider failure notice or toast while availability has not been checked yet', async () => {
+    const { toast } = await import('svelte-sonner');
+    hasCheckedOnce$.set(false);
+    availableProviderOverride$.set([]);
+
+    render(ModelPicker, {
+      props: { portal: false },
+    });
+
+    await screen.findByRole('button');
+
+    expect(screen.queryByText('No provider available')).toBeNull();
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
   });
 
   it('shows a failure notice and fires a toast when no provider is available', async () => {

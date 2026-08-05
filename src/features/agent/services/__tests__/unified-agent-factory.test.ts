@@ -472,11 +472,14 @@ describe('UnifiedAgentFactory', () => {
   });
 
   describe('active-provider availability guard (D1-B)', () => {
-    it('refuses to create an agent when the active provider (implicit, no explicit config.provider) is unavailable', async () => {
+    it('refuses to create an agent when the active provider (implicit, no explicit config.provider) is confirmed unavailable', async () => {
       mockStoreState.current = {
         ...mockStoreState.current,
         providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
-        agentAvailability: { providerStatusMap: { 'claude-code': { available: false } } },
+        agentAvailability: {
+          hasCheckedOnce: true,
+          providerStatusMap: { 'claude-code': { available: false } },
+        },
       };
 
       const result = await factory.createAgent(mockWorkspace, {
@@ -493,7 +496,10 @@ describe('UnifiedAgentFactory', () => {
       mockStoreState.current = {
         ...mockStoreState.current,
         providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
-        agentAvailability: { providerStatusMap: { 'claude-code': { available: true } } },
+        agentAvailability: {
+          hasCheckedOnce: true,
+          providerStatusMap: { 'claude-code': { available: true } },
+        },
       };
 
       const result = await factory.createAgent(mockWorkspace, {
@@ -508,13 +514,31 @@ describe('UnifiedAgentFactory', () => {
       mockStoreState.current = {
         ...mockStoreState.current,
         providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
-        agentAvailability: { providerStatusMap: { 'claude-code': { available: false } } },
+        agentAvailability: {
+          hasCheckedOnce: true,
+          providerStatusMap: { 'claude-code': { available: false } },
+        },
       };
 
       const result = await factory.createAgent(mockWorkspace, {
         name: 'Test Agent',
         workspaceId: mockWorkspace.id as any,
         provider: 'auggie',
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('does not refuse implicit creation while availability is still unknown (hasCheckedOnce false)', async () => {
+      mockStoreState.current = {
+        ...mockStoreState.current,
+        providerSettings: { activeProviderId: 'claude-code', enabledProviders: {} },
+        agentAvailability: { hasCheckedOnce: false, providerStatusMap: {} },
+      };
+
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'Test Agent',
+        workspaceId: mockWorkspace.id as any,
       });
 
       expect(result.success).toBe(true);

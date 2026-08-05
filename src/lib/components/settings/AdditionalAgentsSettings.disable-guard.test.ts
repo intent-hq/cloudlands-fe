@@ -186,3 +186,34 @@ describe('AdditionalAgentsSettings availability honesty', () => {
     expect(claudeCodeRow?.textContent).not.toContain('Not installed');
   });
 });
+
+describe('AdditionalAgentsSettings loading/unknown availability', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const base = await buildState([]);
+    mocks.state.current = {
+      ...base,
+      providerSettings: {
+        activeProviderId: 'auggie',
+        enabledProviders: { 'claude-code': true, codex: true },
+      },
+      // No entries yet for either provider — availability hasn't been
+      // checked, which must not be mistaken for "confirmed unavailable".
+      agentAvailability: { ...base.agentAvailability, providerStatusMap: {} },
+    };
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('does not show a not-installed warning while availability is still unknown', async () => {
+    const AdditionalAgentsSettings = (await import('./AdditionalAgentsSettings.svelte')).default;
+    const result = render(AdditionalAgentsSettings);
+    await waitFor(() => {
+      expect(result.getAllByRole('switch', { hidden: true }).length).toBeGreaterThan(0);
+    });
+    const codexRow = result.getByText('OpenAI Codex').closest('div');
+    expect(codexRow?.textContent).not.toContain('Not installed');
+  });
+});
