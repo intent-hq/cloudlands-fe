@@ -159,6 +159,12 @@
   const microConnected$ = microConnectedReadable();
   const workspaceKeySlot$ = selectWorkspaceResolvedKeySlot(workspaceIdStore);
 
+  // Whether the second (repo) row renders its owner/repo text; when it
+  // doesn't, the micro-key badge moves inline into the title row.
+  const showRepoLine = $derived(
+    !hideRepoAvatar && Boolean(workspace?.repositoryOwner && workspace?.repositoryName),
+  );
+
   // Load canonical tasks for progress display (no-op once initialized).
   $effect(() => {
     const workspaceId = workspace?.id;
@@ -515,6 +521,12 @@
           </div>
         {/if}
 
+        {#if $microConnected$ && $workspaceKeySlot$ !== null && !showRepoLine}
+          <span class="wc-secondary shrink-0 flex items-center">
+            <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
+          </span>
+        {/if}
+
         {#if prStatus}
           {@const statusColor =
             prStatus === PullRequestStatus.Merged
@@ -559,16 +571,14 @@
         </span>
       </div>
 
-      {#if ($microConnected$ && $workspaceKeySlot$ !== null) || (!hideRepoAvatar && workspace.repositoryOwner && workspace.repositoryName)}
+      {#if showRepoLine}
         <div class="wc-repo flex items-center gap-1.5 min-w-0">
           {#if $microConnected$ && $workspaceKeySlot$ !== null}
             <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
           {/if}
-          {#if !hideRepoAvatar && workspace.repositoryOwner && workspace.repositoryName}
-            <span class="min-w-0 truncate text-ui text-subtle">
-              {workspace.repositoryOwner}/{workspace.repositoryName}
-            </span>
-          {/if}
+          <span class="min-w-0 truncate text-ui text-subtle">
+            {workspace.repositoryOwner}/{workspace.repositoryName}
+          </span>
         </div>
       {/if}
     </div>

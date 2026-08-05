@@ -9,6 +9,7 @@
    */
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { slotColorClasses as slotColorClassesFor } from '$lib/components/ui/toast/micro-key-slot-colors';
 
   interface Props {
     /** Resolved 0-based slot the workspace occupies. */
@@ -18,10 +19,12 @@
   }
 
   let { slot, class: className = '' }: Props = $props();
+
+  const slotColorClasses = $derived(slotColorClassesFor(slot));
 </script>
 
 <span
-  class="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-border/60 bg-muted/40 text-[10px] font-medium leading-none text-subtle a11y-ignore {className}"
+  class="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border text-[10px] font-medium leading-none a11y-ignore {slotColorClasses} {className}"
   title={m.workspace_microKeyBadge_tooltip({ number: formatInteger(slot + 1) })}
 >
   {formatInteger(slot + 1)}
