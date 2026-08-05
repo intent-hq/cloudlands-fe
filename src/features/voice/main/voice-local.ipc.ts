@@ -130,7 +130,13 @@ function runHelper(
       helperPath,
       args,
       { timeout: HELPER_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 },
-      (error, stdout) => {
+      (error, stdout, stderr) => {
+        if (typeof stderr === 'string' && stderr.trim().length > 0) {
+          // The helper's diagnostics (e.g. requested-locale resolution or the
+          // system-locale fallback) go to stderr — surface them in the main
+          // log so a "wrong language" report has a trail.
+          logger.warn('speech helper stderr', { stderr: stderr.trim() });
+        }
         if (error && typeof error.code !== 'number') {
           // Spawn failure or timeout kill — no parseable helper output.
           reject(error);
@@ -146,6 +152,7 @@ export async function transcribeWithOsHelper(
   audioBase64: string,
   mimeType: string,
   contextualStrings?: string[],
+  locale?: string,
 ): Promise<VoiceTranscribeLocalSuccess | VoiceTranscribeLocalFailure> {
   if (process.platform !== 'darwin') {
     return {
@@ -174,6 +181,9 @@ export async function transcribeWithOsHelper(
     const args = [tempFile];
     if (contextualStrings && contextualStrings.length > 0) {
       args.push('--contextual-strings', JSON.stringify(contextualStrings));
+    }
+    if (locale && locale.trim().length > 0) {
+      args.push('--locale', locale.trim());
     }
     const { stdout, exitCode } = await runHelper(helperPath, args);
     let parsed: Record<string, unknown>;
@@ -289,7 +299,12 @@ export function registerVoiceLocalHandlers(): void {
     createSafeValidatedHandler(
       VoiceTranscribeLocalSchema,
       async (_event, request) =>
-        transcribeWithOsHelper(request.audioBase64, request.mimeType, request.contextualStrings),
+        transcribeWithOsHelper(
+          request.audioBase64,
+          request.mimeType,
+          request.contextualStrings,
+          request.locale,
+        ),
       VOICE_CHANNELS.TRANSCRIBE_LOCAL,
     ),
   );

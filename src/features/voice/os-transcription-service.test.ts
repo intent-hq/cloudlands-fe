@@ -59,6 +59,29 @@ describe("transcribeWithOs", () => {
     });
   });
 
+  it("forwards the trimmed locale on voice:transcribe-local", async () => {
+    invokeMock.mockResolvedValue({ success: true, text: "hallo", durationMs: 500 });
+
+    await transcribeWithOs(AUDIO, undefined, " de ");
+
+    expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.VOICE.TRANSCRIBE_LOCAL, {
+      audioBase64: "AQID",
+      mimeType: "audio/wav",
+      locale: "de",
+    });
+  });
+
+  it("omits the locale when blank or absent (system locale)", async () => {
+    invokeMock.mockResolvedValue({ success: true, text: "", durationMs: null });
+
+    await transcribeWithOs(AUDIO, undefined, "   ");
+
+    expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.VOICE.TRANSCRIBE_LOCAL, {
+      audioBase64: "AQID",
+      mimeType: "audio/wav",
+    });
+  });
+
   it("throws a typed OsTranscriptionError with the main process error code", async () => {
     invokeMock.mockResolvedValue({
       success: false,

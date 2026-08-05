@@ -28,6 +28,8 @@ export interface VoiceSettingsSliceState {
   vocabulary: string[] | null;
   /** OpenAI transcription model; `null` when the daemon's catalog lacks the setting. */
   openaiModel: VoiceOpenAiModel | null;
+  /** Language hint (ISO-639-1; `""` = auto-detect); `null` when the daemon's catalog lacks the setting. */
+  language: string | null;
   /** Selected microphone device id; `null` = system default. */
   inputDeviceId: string | null;
   /** Enumerated audio-input devices (refreshed on `devicechange`). */

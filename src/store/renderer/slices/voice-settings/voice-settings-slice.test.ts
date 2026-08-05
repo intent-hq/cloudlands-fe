@@ -8,6 +8,7 @@ import {
   setVoiceInputDevices,
   setVoiceInputDeviceValue,
   setVoiceKeyConfigured,
+  setVoiceLanguageValue,
   setVoiceOpenAiModelValue,
   setVoiceOsEngineAvailable,
   setVoiceProviderValue,
@@ -28,6 +29,7 @@ describe("voiceSettingsReducer", () => {
       keyConfigured: { elevenlabs: false, openai: false },
       vocabulary: null,
       openaiModel: null,
+      language: null,
       inputDeviceId: null,
       inputDevices: [],
       busyProvider: null,
@@ -44,6 +46,7 @@ describe("voiceSettingsReducer", () => {
         { elevenlabs: true, openai: false },
         ["intentd"],
         "gpt-4o-transcribe",
+        "de",
       ),
     );
     expect(state.isLoading).toBe(false);
@@ -52,6 +55,7 @@ describe("voiceSettingsReducer", () => {
     expect(state.keyConfigured).toEqual({ elevenlabs: true, openai: false });
     expect(state.vocabulary).toEqual(["intentd"]);
     expect(state.openaiModel).toBe("gpt-4o-transcribe");
+    expect(state.language).toBe("de");
   });
 
   it("marks unavailable (pre-voice daemon) while still clearing loading", () => {
@@ -63,12 +67,14 @@ describe("voiceSettingsReducer", () => {
         { elevenlabs: false, openai: false },
         null,
         null,
+        null,
       ),
     );
     expect(state.isLoading).toBe(false);
     expect(state.available).toBe(false);
     expect(state.vocabulary).toBeNull();
     expect(state.openaiModel).toBeNull();
+    expect(state.language).toBeNull();
   });
 
   it("sets the OpenAI model value (optimistic apply and rollback)", () => {
@@ -76,6 +82,15 @@ describe("voiceSettingsReducer", () => {
     expect(applied.openaiModel).toBe("whisper-1");
     const rolledBack = voiceSettingsReducer(applied, setVoiceOpenAiModelValue(null));
     expect(rolledBack.openaiModel).toBeNull();
+  });
+
+  it("sets the language value (optimistic apply, auto-detect, and rollback)", () => {
+    const applied = voiceSettingsReducer(initialState, setVoiceLanguageValue("de"));
+    expect(applied.language).toBe("de");
+    const auto = voiceSettingsReducer(applied, setVoiceLanguageValue(""));
+    expect(auto.language).toBe("");
+    const rolledBack = voiceSettingsReducer(auto, setVoiceLanguageValue(null));
+    expect(rolledBack.language).toBeNull();
   });
 
   it("sets the provider value", () => {
