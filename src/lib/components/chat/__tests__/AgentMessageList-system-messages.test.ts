@@ -166,10 +166,16 @@ describe('AgentMessageList - System Messages', () => {
 
     render(AgentMessageList, { props: { messages } });
 
-    // Rendered as a status divider, not an interruption alert
+    // Rendered as a status divider, not an interruption alert. Each side is
+    // "<PrettyName> (<providerId> / <modelId>)"; with the empty mocked store
+    // the pretty name falls back to the raw model id.
     expect(screen.getByRole('status')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.getByText(/Switched from .*sonnet4\.6.* to .*gpt-5-codex/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Switched from sonnet4.6 (auggie / sonnet4.6) to gpt-5-codex (codex / gpt-5-codex)',
+      ),
+    ).toBeTruthy();
   });
 
   it('renders "default model" when model_changed from/to are null (provider default)', () => {
@@ -195,7 +201,11 @@ describe('AgentMessageList - System Messages', () => {
     render(AgentMessageList, { props: { messages } });
 
     expect(screen.getByRole('status')).toBeTruthy();
-    expect(screen.getByText(/Switched from .*default model.* to .*gpt-5-codex/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Switched from auggie default model (auggie) to gpt-5-codex (codex / gpt-5-codex)',
+      ),
+    ).toBeTruthy();
   });
 
   it('renders no model-change notice when the transcript has no model_changed row', () => {
