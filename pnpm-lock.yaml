@@ -152,8 +152,8 @@ importers:
         specifier: ^4.4.0
         version: 4.4.0
       diff:
-        specifier: ^8.0.2
-        version: 8.0.4
+        specifier: ^9.0.0
+        version: 9.0.0
       dompurify:
         specifier: ^3.4.12
         version: 3.4.12
@@ -2919,10 +2919,6 @@ packages:
 
   devtools-protocol@0.0.1173815:
     resolution: {integrity: sha512-CmsjkudmgCMeae8FSJB4GV8COZwOk6dJKyE9HS2F/ih/sA8uTdbPKHg5F7DsrOYLEET/QKK00LJCU4YoyG+uHg==}
-
-  diff@8.0.4:
-    resolution: {integrity: sha512-DPi0FmjiSU5EvQV0++GFDOJ9ASQUVFh5kD+OzOnYdi7n3Wpm9hWWGfB/O2blfHcMVTL5WkQXSnRiK9makhrcnw==}
-    engines: {node: '>=0.3.1'}
 
   diff@9.0.0:
     resolution: {integrity: sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw==}
@@ -7819,8 +7815,6 @@ snapshots:
       dequal: 2.0.3
 
   devtools-protocol@0.0.1173815: {}
-
-  diff@8.0.4: {}
 
   diff@9.0.0: {}
 
