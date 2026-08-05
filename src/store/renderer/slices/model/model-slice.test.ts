@@ -104,6 +104,19 @@ describe('modelReducer', () => {
     expect(state.availableModels).toEqual(createCollection('value', mockModels));
   });
 
+  it('attributes available models to the explicit providerId when given', () => {
+    const state = modelReducer(initialState, setAvailableModels(mockModels, 'codex'));
+
+    expect(state.availableModelsProviderId).toBe('codex');
+  });
+
+  it('attributes available models to the default provider when no providerId is given', () => {
+    const withActive = modelReducer(initialState, setActiveProvider('grok'));
+    const state = modelReducer(withActive, setAvailableModels(mockModels));
+
+    expect(state.availableModelsProviderId).toBe('grok');
+  });
+
   it('stores selected models in providerModels using provider normalization', () => {
     const defaultState = modelReducer(
       initialState,

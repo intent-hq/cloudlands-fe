@@ -1,6 +1,7 @@
 <script lang="ts">
   /* eslint-disable max-lines */
   import {
+  onMount,
   tick,
   untrack,
 } from 'svelte';
@@ -30,6 +31,7 @@
   import {
   selectSelectedModel,
   selectAvailableModels,
+  selectAvailableModelsProviderId,
   selectModelFallbackInfo,
   selectModelPickerCollapsedGroups,
   selectIsLoadingModels,
@@ -49,6 +51,7 @@
   selectHasCheckedOnce,
   selectManagedInstallStatusByProvider,
 } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+  import { ensureProvidersChecked } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import {
   selectActiveProviderId,
   selectAvailableEnabledProviderIds,
@@ -114,12 +117,22 @@
   const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
+  const availableModelsProviderId$ = selectAvailableModelsProviderId();
   const collapsedGroupKeys$ = selectModelPickerCollapsedGroups();
   const isLoadingModels$ = selectIsLoadingModels();
   const loadError$ = selectLoadError();
   const allProviderWarnings$ = selectAllProviderWarnings();
   const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
   const hasCheckedOnce$ = selectHasCheckedOnce();
+
+  // The availability status map gates which providers the picker offers, but
+  // outside onboarding nothing else triggers the bulk check — a fresh session
+  // that never mounted AgentGrid would sit on an empty map forever. The
+  // trigger is ensure-once and the middleware coalesces overlapping bulk
+  // checks, so multiple pickers mounting concurrently cause no duplicate probes.
+  onMount(() => {
+    appStore.dispatch(ensureProvidersChecked());
+  });
 
   interface Props {
     selectedModel?: string | null;
@@ -377,6 +390,14 @@
     agentProviderLoading
       ? []
       : (agentProviderModels ?? (agentProviderError ? [] : $availableModels$)),
+  );
+  // Which provider `availableModels` was loaded for: the per-agent fetch is
+  // for the effective provider by construction; the global catalog carries
+  // explicit provenance ('' before the first load).
+  const availableModelsProviderId = $derived(
+    !agentProviderLoading && agentProviderModels
+      ? effectiveProviderId
+      : $availableModelsProviderId$,
   );
   const isLoadingModels = $derived(
     agentProviderLoading ||
@@ -644,12 +665,21 @@
     },
   };
 
+  // Same provenance gate as the grouped fallback: only offer the shared
+  // catalog for a disabled effective provider when it was loaded for it.
+  const fallbackModelsMatchEffectiveProvider = $derived(
+    availableModelsProviderId !== '' &&
+      normalizeProviderId(availableModelsProviderId) === normalizeProviderId(effectiveProviderId),
+  );
+
   const flatModelOptions = $derived<DropdownOption[]>([
     ...(showDefaultOption ? [useDefaultOption] : []),
     ...$availableEnabledProviderIds$.flatMap((pid) => allProviderModels[normalizeProviderId(pid)] ?? []),
     // Keep the agent's current provider selectable even if it was since
     // disabled, so the selected model isn't treated as unavailable.
-    ...(isEffectiveProviderAvailable ? [] : toDropdownOptions(availableModels)),
+    ...(isEffectiveProviderAvailable || !fallbackModelsMatchEffectiveProvider
+      ? []
+      : toDropdownOptions(availableModels)),
   ]);
 
   const hasLoadedModelOptions = $derived(
@@ -746,6 +776,7 @@
       useDefaultOption,
       effectiveProviderId,
       availableModels,
+      availableModelsProviderId,
       enabledProviderIds: $availableEnabledProviderIds$,
       allProviderModels,
       allProviderLoading,

@@ -45,7 +45,7 @@ async function reloadForActiveProvider(): Promise<void> {
   );
   // Clear the previous catalog so the picker never renders stale rows for the
   // new provider between the trigger and the fetch resolving.
-  appStore.dispatch(setAvailableModels([]));
+  appStore.dispatch(setAvailableModels([], providerId));
 
   try {
     const models = await appClient.models.list();
@@ -59,7 +59,7 @@ async function reloadForActiveProvider(): Promise<void> {
       );
       return;
     }
-    appStore.dispatch(setAvailableModels(models));
+    appStore.dispatch(setAvailableModels(models, providerId));
     appStore.dispatch(
       setLoadingStateForProvider({
         providerId,

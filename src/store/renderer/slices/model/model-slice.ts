@@ -73,6 +73,7 @@ function buildLoadingState(
 
 export const initialState: ModelState = {
   availableModels: createCollection<AuggieModel, 'value'>('value'),
+  availableModelsProviderId: '',
   loadingState: {},
   providerModels: {},
   modelPickerCollapsedGroups: [],
@@ -87,7 +88,9 @@ export const initialState: ModelState = {
 export const setSelectedModel =
   createAction<[payload: { providerId: string; model: string }]>('model/setSelectedModel');
 
-export const setAvailableModels = createAction<[models: AuggieModel[]]>('model/setAvailableModels');
+export const setAvailableModels = createAction<[models: AuggieModel[], providerId?: string]>(
+  'model/setAvailableModels',
+);
 
 export const setLoadingStateForProvider = createAction<
   [
@@ -180,9 +183,13 @@ export const modelReducer = createReducer<ModelState>(initialState)
       [providerId]: normalizeModelForProvider(providerId, model, state.defaultProviderId),
     },
   }))
-  .with(setAvailableModels, (state, { payload: [models] }) => ({
+  .with(setAvailableModels, (state, { payload: [models, providerId] }) => ({
     ...state,
     availableModels: createCollection<AuggieModel, 'value'>('value', models),
+    // Both writers (model-reload-service, boot seeder) load for the active
+    // provider, which `defaultProviderId` mirrors — so it is the correct
+    // attribution when the dispatch does not carry one explicitly.
+    availableModelsProviderId: providerId ?? state.defaultProviderId,
   }))
   .with(
     setLoadingStateForProvider,
