@@ -21,7 +21,6 @@ import {
 } from '$lib/constants/specialists';
 import {
   getDefaultModelForProvider,
-  getDefaultProviderId,
   getModelTierFromModel,
   PROVIDER_MODEL_TIERS,
   type ModelTier,
@@ -258,11 +257,20 @@ export async function refreshSpecialistsFromFiles(workspacePath?: string): Promi
 // through the file-based system. The electron-store is only used for
 // one-time migration during initSpecialistsService().
 
+/**
+ * Resolve the coding agent for a specialist. Per decision D1(B): never
+ * silently fall back to the hardcoded default provider
+ * (`getDefaultProviderId()` = Auggie) — that's how a delegated specialist
+ * with no explicit `codingAgent` ended up spawning on an uninstalled Auggie
+ * binary. Callers must thread an already availability-validated provider as
+ * `fallbackCodingAgent`; when neither is supplied, this returns `''` so
+ * callers can surface a failure instead of a doomed spawn.
+ */
 function resolveSpecialistCodingAgent(
   explicitCodingAgent: string | undefined,
   fallbackCodingAgent?: string,
 ): string {
-  return explicitCodingAgent || fallbackCodingAgent || getDefaultProviderId();
+  return explicitCodingAgent || fallbackCodingAgent || '';
 }
 
 /**

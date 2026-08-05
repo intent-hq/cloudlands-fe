@@ -690,8 +690,13 @@
               >
                 {selectingProviderId === 'auggie' ? 'Switching...' : 'Set as default'}
               </button>
-            {:else if isAuggieActive}
+            {:else if isAuggieActive && isAuggieReady}
               <span class="text-xs text-subtle flex items-center gap-1"> Default </span>
+            {:else if isAuggieActive}
+              <span class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1">
+                <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
+                Default (unavailable)
+              </span>
             {/if}
           </div>
         </div>
@@ -866,6 +871,12 @@
                 </button>
               {/if}
             {:else}
+              {#if isActive}
+                <span class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1">
+                  <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
+                  Default (unavailable)
+                </span>
+              {/if}
               <button
                 type="button"
                 class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"

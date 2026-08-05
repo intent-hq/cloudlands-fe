@@ -48,7 +48,7 @@
   import { selectManagedInstallStatusByProvider } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import {
   selectActiveProviderId,
-  selectEnabledProviderIds,
+  selectAvailableEnabledProviderIds,
 } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
   getModelsForProvider,
@@ -87,7 +87,7 @@
   const logger = createLogger('ModelPicker');
 
   const activeProviderId$ = selectActiveProviderId();
-  const enabledProviderIds$ = selectEnabledProviderIds();
+  const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
   const collapsedGroupKeys$ = selectModelPickerCollapsedGroups();
@@ -269,17 +269,17 @@
     );
   }
 
-  const isEffectiveProviderEnabled = $derived(
-    isProviderEnabled($enabledProviderIds$, effectiveProviderId),
+  const isEffectiveProviderAvailable = $derived(
+    isProviderEnabled($availableEnabledProviderIds$, effectiveProviderId),
   );
 
   // The per-agent fetch is only needed when the effective provider's models
   // aren't already covered elsewhere: the locked case, or an unlocked agent
-  // whose provider was since disabled (fetchAllProviderModels only fetches
-  // enabled providers). Skipping it otherwise avoids a duplicate wire fetch.
+  // whose provider is since unavailable (fetchAllProviderModels only fetches
+  // available providers). Skipping it otherwise avoids a duplicate wire fetch.
   const usesAgentProviderFetch = $derived(
     effectiveProviderId !== $activeProviderId$ &&
-      (isAgentProviderOverride || !isEffectiveProviderEnabled),
+      (isAgentProviderOverride || !isEffectiveProviderAvailable),
   );
 
   // Separate generation counter from fetchAllProviderModels: in unlocked mode
@@ -316,7 +316,7 @@
   let fetchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     if (isAgentProviderOverride) return;
-    const providerIds = $enabledProviderIds$;
+    const providerIds = $availableEnabledProviderIds$;
     clearTimeout(fetchDebounceTimer);
     fetchDebounceTimer = setTimeout(() => fetchAllProviderModels(providerIds), 50);
   });
@@ -404,7 +404,7 @@
       }
     } else {
       lastFetchedProviderIds = '';
-      fetchAllProviderModels($enabledProviderIds$);
+      fetchAllProviderModels($availableEnabledProviderIds$);
     }
   }
 
@@ -420,7 +420,7 @@
         agentProviderError = null;
       } else {
         lastFetchedProviderIds = '';
-        fetchAllProviderModels($enabledProviderIds$);
+        fetchAllProviderModels($availableEnabledProviderIds$);
       }
     } catch (err) {
       if (isAgentProviderOverride) {
@@ -612,10 +612,10 @@
     ...(isAgentProviderOverride
       ? toDropdownOptions(availableModels)
       : [
-          ...$enabledProviderIds$.flatMap((pid) => allProviderModels[getProviderConfig(pid).id] ?? []),
-          // Keep the agent's current provider selectable even if it was since
-          // disabled, so the selected model isn't treated as unavailable.
-          ...(isEffectiveProviderEnabled ? [] : toDropdownOptions(availableModels)),
+          ...$availableEnabledProviderIds$.flatMap((pid) => allProviderModels[getProviderConfig(pid).id] ?? []),
+          // Keep the agent's current provider selectable even if it since
+          // became unavailable, so the selected model isn't orphaned.
+          ...(isEffectiveProviderAvailable ? [] : toDropdownOptions(availableModels)),
         ]),
   ]);
 
@@ -628,7 +628,7 @@
       return [formatProviderLoadError(effectiveProviderId, agentProviderError)];
     }
 
-    return $enabledProviderIds$
+    return $availableEnabledProviderIds$
       .map((pid) => allProviderErrors[getProviderConfig(pid).id])
       .filter((error): error is ProviderLoadError => Boolean(error));
   });
@@ -649,7 +649,7 @@
       return warning ? [warning] : [];
     }
 
-    return $enabledProviderIds$
+    return $availableEnabledProviderIds$
       .map((pid) => getProviderWarningNotice(pid, warnings))
       .filter((warning): warning is ProviderWarningNotice => Boolean(warning));
   });
@@ -666,6 +666,22 @@
     const progress = $codexManagedInstallStatus$?.downloadProgress;
     if (typeof progress !== 'number') return 'This may take a moment.';
     return `Download progress: ${Math.round(progress * 100)}%.`;
+  });
+
+  // D1(B): when no provider is available at all, never fall back to a
+  // default provider/model (e.g. Auggie's opus4.7) — surface an explicit
+  // failure instead. Per-provider fetch failures / a single unavailable
+  // effective provider are handled by the existing warning/fallback paths.
+  const hasNoAvailableProvider = $derived(
+    !isAgentProviderOverride && $availableEnabledProviderIds$.length === 0,
+  );
+
+  $effect(() => {
+    if (hasNoAvailableProvider) {
+      toast.error('No AI provider is available. Install or enable a provider in Settings.', {
+        duration: 6000,
+      });
+    }
   });
 
   const blockingLoadError = $derived.by<ProviderLoadError | null>(() => {
@@ -696,7 +712,7 @@
       isAgentProviderOverride,
       effectiveProviderId,
       availableModels,
-      enabledProviderIds: $enabledProviderIds$,
+      enabledProviderIds: $availableEnabledProviderIds$,
       allProviderModels,
       allProviderLoading,
       allProviderErrors,
@@ -806,7 +822,7 @@
         isAgentProviderOverride,
         agentProviderModels,
         agentProviderError,
-        enabledProviderIds: $enabledProviderIds$,
+        enabledProviderIds: $availableEnabledProviderIds$,
         allProviderModels,
         modelProvider,
       })
@@ -1181,6 +1197,14 @@
       <ModelPickerEmptyState {isLoadingModels} {blockingLoadError} onRetry={handleRetry} />
     {/snippet}
   </Dropdown>
+
+  <ModelPickerProviderNotice
+    warning={hasNoAvailableProvider ? 'No AI provider is available' : undefined}
+    show={hasNoAvailableProvider}
+    title="No provider available"
+    description="Install or enable an AI provider in Settings to select a model."
+    variant="warning"
+  />
 
   <ModelPickerProviderNotice
     warning={isCodexManagedInstallInstalling ? 'Codex managed setup in progress' : codexFallbackWarning?.message}

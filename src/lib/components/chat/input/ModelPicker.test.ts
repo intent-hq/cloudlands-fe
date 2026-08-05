@@ -14,6 +14,7 @@ import {
   waitFor,
 } from '@testing-library/svelte';
 import {
+  derived,
   readable,
   writable,
 } from 'svelte/store';
@@ -206,12 +207,21 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
 
 const enabledProviderIds$ = writable(['auggie']);
 const activeProviderId$ = writable('auggie');
+// Mirrors `enabledProviderIds$` by default (available === enabled), so every
+// existing test that only manipulates `enabledProviderIds$` keeps working
+// unchanged. Tests exercising availability gating set this override to a
+// distinct list (or `[]`) to diverge available from enabled.
+const availableProviderOverride$ = writable<string[] | null>(null);
+const availableEnabledProviderIds$ = derived(
+  [enabledProviderIds$, availableProviderOverride$],
+  ([enabled, override]) => override ?? enabled,
+);
 const mockAgentSession$ = writable<
   { id: string; workspaceId: string; provider?: string } | undefined
 >(undefined);
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
-  selectEnabledProviderIds: () => enabledProviderIds$,
+  selectAvailableEnabledProviderIds: () => availableEnabledProviderIds$,
 }));
 
 vi.mock('$shared/types/agent-session', () => ({
@@ -242,6 +252,10 @@ import {
   setWorkspaceModel,
 } from '$store/renderer/slices/model/model-slice';
 import ModelPicker from './ModelPicker.svelte';
+
+afterEach(() => {
+  availableProviderOverride$.set(null);
+});
 
 describe('ModelPicker locked state', () => {
   beforeEach(() => {
@@ -801,6 +815,89 @@ describe('ModelPicker multi-provider mode', () => {
 
     // Reset for other tests
     activeProviderId$.set('auggie');
+  });
+});
+
+describe('ModelPicker availability gating', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'gpt5.4';
+    mockModelState.loadError = null;
+    mockModelState.availableModels = [];
+    providerWarnings$.set({});
+    codexManagedInstallStatus$.set(null);
+    mockSvelteDispatch.mockClear();
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models: [] });
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+    availableProviderOverride$.set(null);
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+    availableProviderOverride$.set(null);
+  });
+
+  it('shows a failure notice and fires a toast when no provider is available', async () => {
+    const { toast } = await import('svelte-sonner');
+    availableProviderOverride$.set([]);
+
+    render(ModelPicker, {
+      props: { portal: false },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalled();
+    });
+    expect(screen.getByText('No provider available')).toBeTruthy();
+  });
+
+  it('does not show the no-provider failure notice or toast when a provider is available', async () => {
+    const { toast } = await import('svelte-sonner');
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'auggie:sonnet4.6', label: 'Sonnet 4.6', description: 'Smart model' }],
+    });
+
+    render(ModelPicker, {
+      props: { portal: false },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+    });
+
+    expect(screen.queryByText('No provider available')).toBeNull();
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+  });
+
+  it('excludes an enabled-but-unavailable provider from the rendered model list', async () => {
+    const { toast } = await import('svelte-sonner');
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return {
+          models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
+        };
+      }
+      return { models: [{ value: 'auggie:sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' }] };
+    });
+    enabledProviderIds$.set(['auggie', 'codex']);
+    availableProviderOverride$.set(['codex']);
+
+    render(ModelPicker, {
+      props: { selectedModel: 'codex:gpt-5-codex', portal: false },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+    });
+    expect(vi.mocked(getModelsForProviderForLoadingState)).not.toHaveBeenCalledWith('auggie');
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /Sonnet 4\.6/ })).toBeNull();
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
   });
 });
 

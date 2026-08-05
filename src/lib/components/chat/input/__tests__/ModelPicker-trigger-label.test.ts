@@ -159,7 +159,7 @@ vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors'
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
-  selectEnabledProviderIds: () => enabledProviderIds$,
+  selectAvailableEnabledProviderIds: () => enabledProviderIds$,
 }));
 
 vi.mock('$store/renderer/slices/model/model-utils', () => ({

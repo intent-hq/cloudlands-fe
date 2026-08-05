@@ -25,7 +25,10 @@ import {
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { selectTopLevelContextItems } from '$store/renderer/slices/context/context-selectors';
-import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+import {
+  selectActiveProviderId,
+  selectAvailableEnabledProviderIds,
+} from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 
 import {
   getDefaultModelForProvider,
@@ -325,6 +328,28 @@ export class UnifiedAgentFactory {
       if (!provider && !isBackend) {
         const activeId = await getActiveProviderId();
         if (activeId) {
+          // D1(B): never silently spawn on an unavailable provider — this is
+          // how an implicit (no explicit provider/specialist codingAgent)
+          // agent creation ended up targeting an uninstalled Auggie binary.
+          // An explicit config.provider is a caller's deliberate choice and
+          // is not gated here; only this active-provider fallback is.
+          let isActiveProviderAvailable = true;
+          try {
+            isActiveProviderAvailable = selectAvailableEnabledProviderIds
+              .select(appStore.state)
+              .includes(activeId);
+          } catch {
+            // Availability data not resolvable — don't block on an unknown state.
+          }
+          if (!isActiveProviderAvailable) {
+            logger.error('Active provider is unavailable; refusing to create agent', {
+              provider: activeId,
+            });
+            return {
+              success: false,
+              error: `The active provider "${activeId}" is not available. Install it or switch providers in Settings before creating an agent.`,
+            };
+          }
           provider = activeId;
           logger.debug('Using active provider from store', { provider });
         }

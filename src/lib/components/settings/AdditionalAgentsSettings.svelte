@@ -4,12 +4,16 @@
   import { selectEnabledProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
   import { toggleProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { selectProviderStatusMap } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
 
   import { ACP_PROVIDERS, resolveProviderEnabled } from '$shared/config/provider-config';
   import { store as appStore } from '$store/renderer/store';
+  import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
+  import Fa from 'svelte-fa';
 
   const enabledProviders$ = selectEnabledProviders();
   const providerInUseReasons$ = selectProviderInUseReasons();
+  const providerStatusMap$ = selectProviderStatusMap();
 
   // Get providers that can be toggled (those marked as canBeDisabled)
   const additionalProviders = Object.values(ACP_PROVIDERS).filter((p) => p.canBeDisabled);
@@ -42,6 +46,8 @@
 
   <div class="space-y-3">
     {#each additionalProviders as provider (provider.id)}
+      {@const isEnabled = resolveProviderEnabled($enabledProviders$, provider.id)}
+      {@const isAvailable = $providerStatusMap$[provider.id]?.available ?? false}
       <div class="flex items-center justify-between py-2">
         <div>
           <p class="text-sm font-medium text-foreground mb-1">{provider.displayName}</p>
@@ -49,9 +55,15 @@
             Use <code class="px-1 py-0.5 bg-muted rounded text-ui">{provider.command}</code> CLI as
             an agent
           </p>
+          {#if isEnabled && !isAvailable}
+            <p class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1 mt-1">
+              <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
+              Not installed — won't appear in model pickers until available
+            </p>
+          {/if}
         </div>
         <Toggle
-          pressed={resolveProviderEnabled($enabledProviders$, provider.id)}
+          pressed={isEnabled}
           onclick={() => handleToggle(provider.id)}
           variant="indicator"
           size="xs"

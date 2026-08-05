@@ -7,6 +7,7 @@ import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
 import {
   selectActiveProviderId,
+  selectAvailableEnabledProviderIds,
   selectEnabledProviderIds,
 } from '../provider-settings/provider-settings-selectors';
 import { parseCompoundModelId } from '$shared/config/provider-config';
@@ -16,11 +17,31 @@ function getEffectiveProviderId(state: any, providerId?: string): string {
   return providerId ?? selectActiveProviderId.select(state);
 }
 
-/** Select the currently selected model value */
+/**
+ * Select the currently selected model value.
+ *
+ * Prefers the persisted model for the effective provider. When nothing is
+ * persisted, falls back to `MODEL_DEFAULTS.UI_INITIAL_MODEL` only if the
+ * effective provider is actually available — per decision D1(B) we never
+ * fabricate a default model for a provider that isn't installed, since that
+ * would mask the failure instead of surfacing it. Returns `''` when nothing
+ * is resolvable; pair with `selectHasResolvableModel` to detect that state.
+ */
 export const selectSelectedModel = store.createSelector((state, providerId?: string): string => {
   const effectiveProviderId = getEffectiveProviderId(state, providerId);
-  return state.model.providerModels[effectiveProviderId] ?? MODEL_DEFAULTS.UI_INITIAL_MODEL;
+  const persisted = state.model.providerModels[effectiveProviderId];
+  if (persisted) return persisted;
+
+  const isAvailable = selectAvailableEnabledProviderIds.select(state).includes(effectiveProviderId);
+  return isAvailable ? MODEL_DEFAULTS.UI_INITIAL_MODEL : '';
 });
+
+/** Whether `selectSelectedModel` resolved to an actual model for the effective provider. */
+export const selectHasResolvableModel = store.createSelector(
+  (state, providerId?: string): boolean => {
+    return selectSelectedModel.select(state, providerId) !== '';
+  }
+);
 
 const selectAvailableModelsCollection = store.createSelector(
   (state): Collection<AuggieModel, 'value'> => {

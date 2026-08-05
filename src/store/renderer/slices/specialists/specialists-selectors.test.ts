@@ -17,21 +17,35 @@ import {
   selectSpecialistsFolderPath,
   selectHasOverrides,
   selectEffectiveCodingAgent,
+  selectEffectiveModel,
   selectSpecialistSourceLabel,
 } from "./specialists-selectors";
 import { createCollection } from "$lib/store-shim/utils/collections/collection-utils";
 import { initialState } from "./specialists-slice";
 import type { StoreState } from "../../types";
+import type { ProviderStatus } from "../agent-availability/agent-availability-types";
 import { SPECIALISTS } from "$lib/constants/specialists";
 
 /**
  * Create a minimal mock StoreState with specialists slice populated.
  */
-function mockState(overrides: Partial<typeof initialState> = {}): StoreState {
+function mockState(
+  overrides: Partial<typeof initialState> = {},
+  activeProviderId = "auggie",
+  providerStatusMap: Record<string, ProviderStatus> = {},
+): StoreState {
   return {
     specialists: { ...initialState, ...overrides },
     featureCodes: { activeFeatures: [], initialized: true },
-    providerSettings: { activeProviderId: "auggie", enabledProviders: {} },
+    providerSettings: { activeProviderId, enabledProviders: {} },
+    agentAvailability: {
+      providerStatusMap,
+      providerLoadingMap: {},
+      providerUserInfoLoadingMap: {},
+      hasCheckedOnce: false,
+      watchedTerminalIds: [],
+      npxStatus: null,
+    },
     githubAuth: { isAuthenticated: false },
   } as unknown as StoreState;
 }
@@ -349,8 +363,60 @@ describe("specialists selectors", () => {
         providerSettings: { activeProviderId: "auggie", enabledProviders: {} },
       } as StoreState;
       expect(() => selectEffectiveCodingAgent.select(state, "nonexistent-specialist")).not.toThrow();
+      // The active provider ("auggie") has no reported availability in this
+      // state, so per D1(B) it must NOT be silently handed back.
       const result = selectEffectiveCodingAgent.select(state, "nonexistent-specialist");
-      expect(result).toBe("auggie");
+      expect(result).toBe("");
+    });
+  });
+
+  describe("availability-gated coding agent / model resolution (D1-B)", () => {
+    it("selectEffectiveCodingAgent honors an explicit specialist codingAgent regardless of availability", () => {
+      const state = mockState(
+        {
+          fileSpecialists: createCollection("id", [
+            {
+              id: "custom-spec",
+              name: "Custom",
+              description: "d",
+              codingAgent: "codex",
+              model: "",
+              behaviorPrompt: "prompt",
+              filePath: "/Users/test/.intent/specialists/custom-spec.md",
+              source: "user" as const,
+            },
+          ]),
+        },
+        "auggie",
+        {},
+      );
+      expect(selectEffectiveCodingAgent.select(state, "custom-spec")).toBe("codex");
+    });
+
+    it("selectEffectiveCodingAgent returns the active provider when it is available", () => {
+      const state = mockState({}, "auggie", { auggie: { available: true } });
+      expect(selectEffectiveCodingAgent.select(state, "implementor")).toBe("auggie");
+    });
+
+    it("selectEffectiveCodingAgent returns '' (not a silent switch) when the active provider is unavailable", () => {
+      const state = mockState({}, "auggie", { auggie: { available: false } });
+      expect(selectEffectiveCodingAgent.select(state, "implementor")).toBe("");
+    });
+
+    it("selectEffectiveCodingAgent returns '' when nothing has been checked yet (none available)", () => {
+      const state = mockState({}, "auggie", {});
+      expect(selectEffectiveCodingAgent.select(state, "implementor")).toBe("");
+    });
+
+    it("selectEffectiveModel resolves the tier for the active provider when available", () => {
+      const state = mockState({}, "claude-code", { "claude-code": { available: true } });
+      const result = selectEffectiveModel.select(state, "implementor");
+      expect(result).not.toBe("");
+    });
+
+    it("selectEffectiveModel returns '' when the active provider is unavailable (no tier can resolve)", () => {
+      const state = mockState({}, "auggie", { auggie: { available: false } });
+      expect(selectEffectiveModel.select(state, "implementor")).toBe("");
     });
   });
 });

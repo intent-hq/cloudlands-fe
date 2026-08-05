@@ -5,6 +5,7 @@ import {
   getProviderConfig,
   resolveProviderEnabled,
 } from "$shared/config/provider-config";
+import { selectProviderStatusMap } from "../agent-availability/agent-availability-selectors";
 
 export const selectActiveProviderId = store.createSelector(
   (state): string => {
@@ -53,5 +54,38 @@ export const selectEnabledProviderIds = store.createSelector(
     }
 
     return [...enabled];
+  }
+);
+
+/**
+ * A provider is hidden when it's gated behind an env var / feature code the
+ * renderer cannot verify — mirrors the default-deny gating in
+ * `provider-status-bridge-seeder.ts`'s `computeHiddenProviders`.
+ */
+function isProviderHidden(providerId: string): boolean {
+  const config = getProviderConfig(providerId);
+  return Boolean(config.requiresEnvVar || config.requiresFeatureCode);
+}
+
+/**
+ * Enabled provider ids that are also known-available (per the
+ * agent-availability slice) and not hidden. This is the availability-gated
+ * pool the UI should offer for selection — per decision D1(B) we never
+ * auto-switch into it, we only use it to detect/surface failure.
+ */
+export const selectAvailableEnabledProviderIds = store.createSelector(
+  (state): string[] => {
+    const statusMap = selectProviderStatusMap.select(state);
+    return selectEnabledProviderIds
+      .select(state)
+      .filter((id) => !isProviderHidden(id) && statusMap[id]?.available === true);
+  }
+);
+
+/** Whether the currently active provider is in the available+enabled set. */
+export const selectIsActiveProviderAvailable = store.createSelector(
+  (state): boolean => {
+    const activeProviderId = selectActiveProviderId.select(state);
+    return selectAvailableEnabledProviderIds.select(state).includes(activeProviderId);
   }
 );
