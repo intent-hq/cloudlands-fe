@@ -33,7 +33,7 @@
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
-  import { isQuestionOnlyContent } from './message-display-utils';
+  import { isQuestionOnlyContent, resolveStoppedIndicatorLabel } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
   import { isImageBlock } from '$shared/types/content-block.guards';
@@ -230,6 +230,24 @@
       isStreaming,
       suppressCoordinationStoppedIndicator,
     });
+  });
+
+  // Reason-specific Stopped label (PROTOCOL §7 interrupted-row metadata);
+  // legacy rows without `interruptReason` keep the generic "Stopped".
+  let stoppedIndicatorLabel = $derived.by(() => {
+    const label = resolveStoppedIndicatorLabel(message);
+    switch (label.kind) {
+      case 'preempted-by-message':
+        return m.chat_chatMessage_stoppedPreemptedByMessage_label();
+      case 'preempted-by-agent':
+        return m.chat_chatMessage_stoppedPreemptedByAgent_label({ name: label.name });
+      case 'daemon-shutdown':
+        return m.chat_chatMessage_stoppedDaemonRestarted_label();
+      case 'agent-stopped':
+        return m.chat_chatMessage_stoppedAgentTerminated_label();
+      default:
+        return m.chat_chatMessage_stopped_label();
+    }
   });
 
   // Sender attribution for agent-to-agent messages (metadata-first, null when
@@ -1234,7 +1252,7 @@
         {#if shouldShowStoppedIndicator}
           <div class="flex items-center gap-2 text-subtle font-medium text-sm mt-5">
             <Fa icon={faSquare} class="size-2.5 opacity-50 mt-px" />
-            <span>{m.chat_chatMessage_stopped_label()}</span>
+            <span>{stoppedIndicatorLabel}</span>
           </div>
         {/if}
 
