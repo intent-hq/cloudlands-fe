@@ -9,6 +9,7 @@ import {
   checkHostRequirementsRequested,
   checkHostRequirementsStarted,
   ensureHostRequirementsChecked,
+  ghRequirementResolved,
   gitRequirementResolved,
   nodeRequirementResolved,
 } from '../host-requirements-slice';
@@ -23,6 +24,11 @@ interface CheckGitResponse {
 interface CheckNodeResponse {
   success: boolean;
   data?: { available: boolean; versionOk: boolean; version?: string };
+}
+
+interface CheckGhResponse {
+  success: boolean;
+  data?: { available: boolean; version?: string };
 }
 
 function* checkGitRequirement() {
@@ -53,10 +59,24 @@ function* checkNodeRequirement() {
   }
 }
 
+function* checkGhRequirement() {
+  try {
+    const result: CheckGhResponse = yield* call(
+      invoke<CheckGhResponse>,
+      IPC_CHANNELS.SYSTEM.CHECK_GH,
+    );
+    const data = result.success ? result.data : undefined;
+    yield* put(ghRequirementResolved(data?.available === true, data?.version));
+  } catch (error) {
+    logger.error('gh requirement check failed', { error });
+    yield* put(ghRequirementResolved(false));
+  }
+}
+
 function* runHostRequirementsCheck() {
   yield* put(checkHostRequirementsStarted());
   try {
-    yield* all([call(checkGitRequirement), call(checkNodeRequirement)]);
+    yield* all([call(checkGitRequirement), call(checkNodeRequirement), call(checkGhRequirement)]);
   } finally {
     yield* put(checkHostRequirementsComplete());
   }
