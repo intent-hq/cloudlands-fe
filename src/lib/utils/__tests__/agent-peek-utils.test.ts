@@ -207,4 +207,76 @@ describe('getAgentPeekData', () => {
       expect(getAgentPeekData(makeSession([]))?.lastMessageRole).toBeUndefined();
     });
   });
+
+  describe('wire preview fallback (AgentLite §5.5 lastAgentResponse/lastUserMessage)', () => {
+    function makeUserMessage(text: string): AgentMessage {
+      return {
+        id: 'u1',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text } as any],
+        timestamp: new Date().toISOString(),
+      } as AgentMessage;
+    }
+
+    it('falls back to wire lastAgentResponse when the transcript has no assistant message', () => {
+      const session = {
+        ...makeSession([makeUserMessage('initial delegation prompt')]),
+        lastAgentResponse: 'Real last response from the wire',
+      };
+      const data = getAgentPeekData(session);
+      expect(data?.lastResponse).toBe('Real last response from the wire');
+      // Transcript-derived user message stays authoritative
+      expect(data?.lastUserMessage).toBe('initial delegation prompt');
+    });
+
+    it('falls back to wire fields when the transcript is empty', () => {
+      const session = {
+        ...makeSession([]),
+        lastAgentResponse: 'wire response',
+        lastUserMessage: 'wire user message',
+      };
+      const data = getAgentPeekData(session);
+      expect(data?.lastResponse).toBe('wire response');
+      expect(data?.lastUserMessage).toBe('wire user message');
+    });
+
+    it('keeps the transcript-derived response when an assistant message exists', () => {
+      const session = {
+        ...makeSession([makeAssistantMessage([{ type: 'text', text: 'transcript answer' }])]),
+        lastAgentResponse: 'stale wire response',
+      };
+      expect(getAgentPeekData(session)?.lastResponse).toBe('transcript answer');
+    });
+
+    it('does not override a tool-only transcript assistant message', () => {
+      const session = {
+        ...makeSession([
+          makeAssistantMessage([
+            { type: 'tool_use', id: 't1', name: 'view', input: { path: 'foo.ts' } },
+          ]),
+        ]),
+        lastAgentResponse: 'stale wire response',
+      };
+      const data = getAgentPeekData(session);
+      expect(data?.lastResponse).toBe('');
+      expect(data?.lastToolUse?.name).toBe('view');
+    });
+
+    it('extracts a digest from the wire fallback text', () => {
+      const session = {
+        ...makeSession([]),
+        lastAgentResponse: 'Full details here <agent_digest>Concise summary</agent_digest>',
+      };
+      const data = getAgentPeekData(session);
+      expect(data?.digest).toBe('Concise summary');
+      expect(data?.lastResponse).toBe('Full details here');
+    });
+
+    it('fabricates nothing when both transcript and wire fields are absent', () => {
+      const data = getAgentPeekData(makeSession([]));
+      expect(data?.lastResponse).toBe('');
+      expect(data?.lastUserMessage).toBe('');
+      expect(data?.digest).toBeUndefined();
+    });
+  });
 });
