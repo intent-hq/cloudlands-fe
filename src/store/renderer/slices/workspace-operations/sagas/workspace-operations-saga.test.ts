@@ -8,8 +8,7 @@ const mocks = vi.hoisted(() => ({
   deleteWorkspace: vi.fn(),
   create: vi.fn(),
   navigate: vi.fn(),
-  hasRunningAgents: vi.fn(),
-  getRunningAgentNames: vi.fn(),
+  getActiveWorkNames: vi.fn(),
   invoke: vi.fn(),
   toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
@@ -25,8 +24,7 @@ vi.mock('$features/workspace/navigate-away-if-viewing', () => ({
   navigateAwayIfViewing: mocks.navigate,
 }));
 vi.mock('$lib/utils/delete-warning-utils', () => ({
-  hasRunningAgents: mocks.hasRunningAgents,
-  getRunningAgentNames: mocks.getRunningAgentNames,
+  getActiveWorkNames: mocks.getActiveWorkNames,
 }));
 vi.mock('svelte-sonner', () => ({ toast: mocks.toast }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
@@ -44,6 +42,7 @@ import {
 } from '../../workspace/workspace-slice';
 import {
   applyWorkspaceProposal,
+  confirmArchiveWorkspace,
   confirmBulkArchive,
   confirmBulkDeleteArchived,
   confirmBulkDeleteWarning,
@@ -154,8 +153,7 @@ function harness(seed: Workspace[]) {
 describe('workspaceOperationsSaga', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mocks.hasRunningAgents.mockReturnValue(false);
-    mocks.getRunningAgentNames.mockReturnValue([]);
+    mocks.getActiveWorkNames.mockResolvedValue({ agentNames: [], hookNames: [] });
     mocks.navigate.mockResolvedValue(undefined);
   });
   afterEach(() => vi.useRealTimers());
@@ -230,15 +228,14 @@ describe('workspaceOperationsSaga', () => {
   });
 
   it('shows the delete warning, confirms it, and restores the soft-hidden workspace on undo', async () => {
-    mocks.hasRunningAgents.mockReturnValue(true);
-    mocks.getRunningAgentNames.mockReturnValue(['Ada']);
+    mocks.getActiveWorkNames.mockResolvedValue({ agentNames: ['Ada'], hookNames: ['ci-watch'] });
     const run = harness([workspace('ws-1')]);
     run.send(requestDeleteWorkspace('ws-1'));
     await settle();
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openDeleteWarning',
-      payload: [{ workspaceId: 'ws-1', agentNames: ['Ada'] }],
+      payload: [{ workspaceId: 'ws-1', agentNames: ['Ada'], hookNames: ['ci-watch'] }],
     });
 
     run.send(confirmDeleteWorkspace());
@@ -248,6 +245,28 @@ describe('workspaceOperationsSaga', () => {
     await settle();
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
     expect(getItem(run.state().workspace.workspaces, 'ws-1')).toMatchObject({ id: 'ws-1' });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('shows the archive warning for active hooks and archives after confirmation', async () => {
+    mocks.getActiveWorkNames.mockResolvedValue({ agentNames: [], hookNames: ['pr-watch'] });
+    mocks.archive.mockResolvedValue({ ok: true, data: workspace('ws-1', WorkspaceStatusEnum.Archived) });
+    const run = harness([workspace('ws-1')]);
+
+    run.send(requestArchiveWorkspace('ws-1'));
+    await settle();
+
+    expect(mocks.archive).not.toHaveBeenCalled();
+    expect(run.dispatch.mock.calls.flat()).toContainEqual({
+      type: 'workspaceOperations/openArchiveWarning',
+      payload: [{ workspaceId: 'ws-1', agentNames: [], hookNames: ['pr-watch'] }],
+    });
+
+    run.send(confirmArchiveWorkspace());
+    await settle();
+
+    expect(mocks.archive).toHaveBeenCalledExactlyOnceWith('ws-1');
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -326,7 +345,13 @@ describe('workspaceOperationsSaga', () => {
     await empty.task.toPromise();
 
     vi.clearAllMocks();
-    mocks.hasRunningAgents.mockReturnValue(true);
+    mocks.getActiveWorkNames.mockImplementation((workspaceId: string) =>
+      Promise.resolve(
+        workspaceId === 'ws-2'
+          ? { agentNames: [], hookNames: ['pr-watch'] }
+          : { agentNames: ['Ada'], hookNames: [] },
+      ),
+    );
     mocks.deleteWorkspace
       .mockResolvedValueOnce({ ok: true, data: undefined })
       .mockResolvedValueOnce({ ok: false, error: 'timed out waiting' })
@@ -342,7 +367,7 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
     expect(guarded.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openBulkDeleteWarningConfirm',
-      payload: [{ repoKey: 'intent-hq/repo', workspaceCount: 3 }],
+      payload: [{ repoKey: 'intent-hq/repo', workspaceCount: 3, agentCount: 2, hookCount: 1 }],
     });
     guarded.send(confirmBulkDeleteWarning());
     await settle();
