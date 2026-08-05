@@ -1047,6 +1047,11 @@ export interface AgentMetadata {
   // by the daemon in session metadata so the dismissed question set never
   // re-surfaces (survives reload).
   dismissedQuestionsMessageId?: string;
+  // Per-conversation seen marker (PROTOCOL §5.5, `agent.markSeen`): id of the
+  // newest message the user had seen. Persisted by the daemon in session
+  // metadata, served on AgentLite / agent.getSession, converged via
+  // `agent:updated`. Anchors the presentation-only "New messages" divider.
+  lastSeenMessageId?: string;
   // Completion report persisted by `agent.reportToParent` and re-served on
   // agent.get / agent.list AgentLite metadata (PROTOCOL §5.5); feeds
   // AgentCard's effectiveCompletionReport preview.

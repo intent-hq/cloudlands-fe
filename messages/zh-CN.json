@@ -1864,6 +1864,7 @@
   "chat_chatPanel_autoScrollLocked_tooltip": "自动滚动已锁定（点击解锁）",
   "chat_chatPanel_autoScrollUnlocked_tooltip": "自动滚动已解锁（点击锁定）",
   "chat_chatPanel_scrollToBottom_tooltip": "滚动到底部",
+  "chat_newMessagesDivider_label": "新消息",
   "chat_previewToolLabel_tool_fallback": "工具",
   "chat_shared_browser_fallback": "浏览器",
   "chat_shared_diff_fallback": "差异",

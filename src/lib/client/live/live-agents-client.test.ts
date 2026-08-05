@@ -762,6 +762,50 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result.error).toContain('not found: agent session');
   });
 
+  it('markSeen forwards agent.markSeen with §5.5 params and folds the ack into success', async () => {
+    // PROTOCOL §5.5: agent.markSeen takes `{ workspaceId, agentId,
+    // messageId }` (all required) and returns `{ success: true,
+    // lastSeenMessageId }`. The daemon persists the marker in session
+    // metadata (served on AgentLite) and emits `agent:updated`.
+    backend.onRequest('agent.markSeen', () => ({
+      success: true,
+      lastSeenMessageId: 'msg-9',
+    }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.markSeen({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageId: 'msg-9',
+    });
+    expect(result).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.markSeen',
+      params: { workspaceId: 'ws-1', agentId: 'agent-1', messageId: 'msg-9' },
+    });
+  });
+
+  it('markSeen folds a daemon NotFound rejection into {success:false,error} (no throw)', async () => {
+    // Workspace mismatch / unknown agent rejects with NotFound (-32004) —
+    // the mutation seam never throws (the trigger is fire-and-forget).
+    backend.onRequest('agent.markSeen', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'not found: agent session agent-x', {
+          rpcCode: -32004,
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.markSeen({
+      agentId: 'agent-x',
+      workspaceId: 'ws-1',
+      messageId: 'msg-9',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not found: agent session');
+  });
+
   it('rename forwards agent.rename with §5.5 params and folds the ack into success', async () => {
     // PROTOCOL §5.5: agent.rename takes `{ agentId, name }` (name non-empty)
     // and returns `{ success: true, name }`; an applied rename emits

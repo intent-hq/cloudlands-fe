@@ -590,6 +590,7 @@ type SessionComparisonSnapshot = Pick<
   completionReport: string | undefined;
   taskNoteId: string | undefined;
   dismissedQuestionsMessageId: string | undefined;
+  lastSeenMessageId: string | undefined;
   sandboxId: string | undefined;
   sandboxPath: string | undefined;
   sandboxBranch: string | undefined;
@@ -648,6 +649,11 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
       typeof metadata?.dismissedQuestionsMessageId === 'string'
         ? metadata.dismissedQuestionsMessageId
         : undefined,
+    // Seen marker (PROTOCOL §5.5 agent.markSeen) — anchors the "New messages"
+    // divider; a cross-client agent:updated convergence whose only change is
+    // this marker must not be swallowed as a no-op.
+    lastSeenMessageId:
+      typeof metadata?.lastSeenMessageId === 'string' ? metadata.lastSeenMessageId : undefined,
     // Sandbox fields settle onto the session AFTER creation (async CoW
     // provisioning, settle_provisioned_sandbox) and gate the reveal-sandbox
     // affordance — the settling re-hydration must not be swallowed either.

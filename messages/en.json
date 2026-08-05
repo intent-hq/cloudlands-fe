@@ -1865,6 +1865,7 @@
   "chat_chatPanel_autoScrollLocked_tooltip": "Auto-scroll locked (click to unlock)",
   "chat_chatPanel_autoScrollUnlocked_tooltip": "Auto-scroll unlocked (click to lock)",
   "chat_chatPanel_scrollToBottom_tooltip": "Scroll to bottom",
+  "chat_newMessagesDivider_label": "New messages",
   "chat_previewToolLabel_tool_fallback": "Tool",
   "chat_shared_browser_fallback": "Browser",
   "chat_shared_diff_fallback": "Diff",
