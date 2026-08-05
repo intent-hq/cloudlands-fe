@@ -2,11 +2,12 @@
  * Host Requirements Slice
  *
  * Actions and reducer for tracking daemon-host tool requirements (git +
- * node). Mirrors the agent-availability idiom: trigger actions are consumed
- * by the host-requirements check service (middleware), which probes via the
- * legacy IPC bridges (system:check-git / system:check-node → daemon host.*)
- * and dispatches the per-tool resolved actions plus a completion action so
- * the state ALWAYS lands terminal — never stuck on "checking".
+ * node, plus the informational gh probe). Mirrors the agent-availability
+ * idiom: trigger actions are consumed by the host-requirements check service
+ * (middleware), which probes via the legacy IPC bridges (system:check-git /
+ * system:check-node / system:check-gh → daemon host.*) and dispatches the
+ * per-tool resolved actions plus a completion action so the state ALWAYS
+ * lands terminal — never stuck on "checking".
  */
 
 import { createAction } from '$lib/store-shim/utils/store/create-action';
@@ -20,6 +21,7 @@ import type { HostRequirementsState } from './host-requirements-types';
 export const initialState: HostRequirementsState = {
   git: { checked: false, available: false },
   node: { checked: false, ok: false },
+  gh: { checked: false, available: false },
   checking: false,
   hasCheckedOnce: false,
 };
@@ -53,6 +55,11 @@ export const nodeRequirementResolved = createAction<[ok: boolean, version?: stri
   'hostRequirements/nodeRequirementResolved',
 );
 
+/** gh probe settled (informational — never gates). A failed probe folds to available:false. */
+export const ghRequirementResolved = createAction<[available: boolean, version?: string]>(
+  'hostRequirements/ghRequirementResolved',
+);
+
 /** Every probe in the group settled — the state is terminal. */
 export const checkHostRequirementsComplete = createAction(
   'hostRequirements/checkHostRequirementsComplete',
@@ -74,6 +81,10 @@ export const hostRequirementsReducer = createReducer<HostRequirementsState>(init
   .with(nodeRequirementResolved, (state, { payload: [ok, version] }) => ({
     ...state,
     node: { checked: true, ok, version },
+  }))
+  .with(ghRequirementResolved, (state, { payload: [available, version] }) => ({
+    ...state,
+    gh: available ? { checked: true, available: true, version } : { checked: true, available: false },
   }))
   .with(checkHostRequirementsComplete, (state) => ({
     ...state,

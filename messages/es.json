@@ -2938,6 +2938,8 @@
   "onboarding_requirementsStep_installNode_label": "Instalar Node.js",
   "onboarding_requirementsStep_nodeTooOld_description": "Se requiere Node.js {minimum}+. Tiene instalada la versión {version}.",
   "onboarding_requirementsStep_nodeMissing_description": "Se requiere Node.js {minimum}+, pero no se encontró.",
+  "onboarding_requirementsStep_ghOptional_label": "Opcional",
+  "onboarding_requirementsStep_ghMissing_description": "No se encontró la CLI de GitHub (gh). Es opcional: los agentes la usan para flujos de trabajo adicionales de GitHub cuando está instalada.",
   "onboarding_requirementsStep_checkAgain_label": "Comprobar de nuevo",
   "onboarding_requirementsStep_recheck_description": "Volvemos a comprobarlo automáticamente cuando regrese a la aplicación.",
   "onboarding_creationError_authRequired_title": "Se requiere autenticación de GitHub",

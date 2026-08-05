@@ -2938,6 +2938,8 @@
   "onboarding_requirementsStep_installNode_label": "Node.js 설치",
   "onboarding_requirementsStep_nodeTooOld_description": "Node.js {minimum} 이상이 필요합니다. 현재 {version}이(가) 설치되어 있습니다.",
   "onboarding_requirementsStep_nodeMissing_description": "Node.js {minimum} 이상이 필요하지만 찾을 수 없습니다.",
+  "onboarding_requirementsStep_ghOptional_label": "선택 사항",
+  "onboarding_requirementsStep_ghMissing_description": "GitHub CLI(gh)를 찾을 수 없습니다. 선택 사항이며, 설치되어 있으면 에이전트가 추가 GitHub 워크플로에 사용합니다.",
   "onboarding_requirementsStep_checkAgain_label": "다시 확인",
   "onboarding_requirementsStep_recheck_description": "앱으로 돌아오면 자동으로 다시 확인합니다.",
   "onboarding_creationError_authRequired_title": "GitHub 인증 필요",

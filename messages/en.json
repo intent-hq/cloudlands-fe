@@ -2939,6 +2939,8 @@
   "onboarding_requirementsStep_installNode_label": "Install Node.js",
   "onboarding_requirementsStep_nodeTooOld_description": "Node.js {minimum}+ is required. You have {version} installed.",
   "onboarding_requirementsStep_nodeMissing_description": "Node.js {minimum}+ is required, but it wasn't found.",
+  "onboarding_requirementsStep_ghOptional_label": "Optional",
+  "onboarding_requirementsStep_ghMissing_description": "The GitHub CLI (gh) wasn't found. It's optional — agents can use it for extra GitHub workflows when installed.",
   "onboarding_requirementsStep_checkAgain_label": "Check again",
   "onboarding_requirementsStep_recheck_description": "We re-check automatically when you come back to the app.",
   "onboarding_creationError_authRequired_title": "GitHub authentication required",

@@ -28,9 +28,24 @@ export interface NodeRequirementStatus {
   version?: string;
 }
 
+/**
+ * Terminal probe result for the GitHub CLI (gh) on the daemon host.
+ * Informational only — gh presence NEVER gates onboarding
+ * (selectAllRequirementsMet ignores it).
+ */
+export interface GhRequirementStatus {
+  /** Whether the gh probe has settled at least once. */
+  checked: boolean;
+  /** `host.findBinary { name:"gh" }` availability answer; false until checked. */
+  available: boolean;
+  /** Probed version string, when the daemon reported one. */
+  version?: string;
+}
+
 export interface HostRequirementsState {
   git: GitRequirementStatus;
   node: NodeRequirementStatus;
+  gh: GhRequirementStatus;
   /** True while a requirements check group is in flight. */
   checking: boolean;
   /** Flips true once the first check group settles (success OR failure). */

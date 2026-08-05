@@ -47,6 +47,7 @@ import OnboardingRequirementsStep from './OnboardingRequirementsStep.svelte';
 const uncheckedState = (): HostRequirementsState => ({
   git: { checked: false, available: false },
   node: { checked: false, ok: false },
+  gh: { checked: false, available: false },
   checking: true,
   hasCheckedOnce: false,
 });
@@ -54,6 +55,7 @@ const uncheckedState = (): HostRequirementsState => ({
 const failedState = (): HostRequirementsState => ({
   git: { checked: true, available: false },
   node: { checked: true, ok: false },
+  gh: { checked: true, available: false },
   checking: false,
   hasCheckedOnce: true,
 });
@@ -61,6 +63,7 @@ const failedState = (): HostRequirementsState => ({
 const metState = (): HostRequirementsState => ({
   git: { checked: true, available: true, version: 'git version 2.44.0' },
   node: { checked: true, ok: true, version: '22.4.0' },
+  gh: { checked: true, available: true, version: '2.62.0' },
   checking: false,
   hasCheckedOnce: true,
 });
@@ -185,5 +188,25 @@ describe('OnboardingRequirementsStep', () => {
     expect(container.textContent).toContain('git version 2.44.0');
     expect(container.textContent).toContain('v22.4.0');
     expect(container.textContent).not.toContain("wasn't found");
+  });
+
+  it('renders the gh row with its version when gh is available', () => {
+    mocks.hostRequirements.value = metState();
+    const { container } = render(OnboardingRequirementsStep);
+    const ghCard = container.querySelector('[data-testid="requirement-gh"]');
+    expect(ghCard!.textContent).toContain('GitHub CLI');
+    expect(ghCard!.textContent).toContain('2.62.0');
+    expect(ghCard!.textContent).toContain('Optional');
+  });
+
+  it('shows the informational gh-missing description without gating the step', () => {
+    // gh missing while git + node are met: the gh row explains itself but the
+    // results posture is unchanged (no failure card, no gate).
+    mocks.hostRequirements.value = { ...metState(), gh: { checked: true, available: false } };
+    const { container } = render(OnboardingRequirementsStep);
+    const ghCard = container.querySelector('[data-testid="requirement-gh"]');
+    expect(ghCard!.textContent).toContain("The GitHub CLI (gh) wasn't found");
+    expect(container.textContent).toContain('git version 2.44.0');
+    expect(container.textContent).toContain('v22.4.0');
   });
 });

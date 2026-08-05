@@ -2,10 +2,11 @@
   /**
    * OnboardingRequirementsStep — the pre-onboarding requirements gate.
    *
-   * Renders the terminal git/node probe results from the hostRequirements
+   * Renders the terminal git/node/gh probe results from the hostRequirements
    * slice (populated by the host-requirements check service over the
-   * system:check-git / system:check-node bridges → daemon host.*, PROTOCOL
-   * §5.14). The page-level gate auto-advances when selectAllRequirementsMet;
+   * system:check-git / system:check-node / system:check-gh bridges → daemon
+   * host.*, PROTOCOL §5.14). The gh row is informational only — it never
+   * gates. The page-level gate auto-advances when selectAllRequirementsMet;
    * this component owns the blocked posture: per-tool status cards with
    * platform-aware install guidance (daemon host.os via the daemon-health
    * slice's system.status poll — no component-side wire fetch), copyable
@@ -20,6 +21,7 @@
   import {
     faArrowRotateRight,
     faCheck,
+    faCircleInfo,
     faCircleNotch,
     faExternalLinkAlt,
     faPaste,
@@ -34,6 +36,7 @@
     ensureHostRequirementsChecked,
   } from '$store/renderer/slices/host-requirements/host-requirements-slice';
   import {
+    selectGhRequirement,
     selectGitRequirement,
     selectHostRequirementsChecking,
     selectHostRequirementsHasCheckedOnce,
@@ -45,6 +48,7 @@
 
   const git$ = selectGitRequirement();
   const node$ = selectNodeRequirement();
+  const gh$ = selectGhRequirement();
   const checking$ = selectHostRequirementsChecking();
   const hasCheckedOnce$ = selectHostRequirementsHasCheckedOnce();
   const daemonStats$ = selectDaemonHealthStats();
@@ -275,6 +279,34 @@
       {/if}
     </div>
 
+    <!-- GitHub CLI (gh) — informational only, never blocks continuing. -->
+    <div class="requirement-card" data-testid="requirement-gh">
+      <div class="flex items-center gap-3">
+        {#if $gh$.available}
+          <span class="status-icon status-ok"><Fa icon={faCheck} size="sm" /></span>
+        {:else}
+          <span class="status-icon status-info"><Fa icon={faCircleInfo} size="sm" /></span>
+        {/if}
+        <div class="flex-1 min-w-0">
+          <p class="font-medium">
+            <!-- i18n-ignore (brand/tool name) -->
+            GitHub CLI
+            {#if $gh$.available && $gh$.version}
+              <span class="text-muted-foreground font-normal text-sm">{$gh$.version}</span>
+            {/if}
+            <span class="text-muted-foreground font-normal text-sm">
+              {m.onboarding_requirementsStep_ghOptional_label()}
+            </span>
+          </p>
+          {#if !$gh$.available}
+            <p class="text-sm text-muted-foreground">
+              {m.onboarding_requirementsStep_ghMissing_description()}
+            </p>
+          {/if}
+        </div>
+      </div>
+    </div>
+
     <div class="flex flex-col items-start gap-2 mt-2">
       <Button variant="outline" size="lg" disabled={$checking$} onclick={checkAgain}>
         {#if $checking$}
@@ -319,6 +351,11 @@
   .status-missing {
     background: hsl(38 92% 50% / 0.15);
     color: hsl(38 92% 45%);
+  }
+
+  .status-info {
+    background: hsl(var(--muted));
+    color: hsl(var(--muted-foreground));
   }
 
   .guidance {

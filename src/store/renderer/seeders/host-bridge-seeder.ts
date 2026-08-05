@@ -172,6 +172,32 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_NODE, async () => {
 });
 
 /**
+ * `system:check-gh` → daemon `host.findBinary` (name `gh`).
+ *
+ * Informational probe for the host-requirements step: gh presence is
+ * surfaced alongside git/node but NEVER gates onboarding. The daemon body
+ * folds to `{ available, version? }` under `data` (version forwarded
+ * verbatim, CHECK_GIT idiom). Mirrors the sibling probes: a missing gh
+ * binary — or a failed probe — is never an RPC error; it folds to
+ * `{ available:false }`.
+ */
+registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_GH, async () => {
+  try {
+    const result = await backendRequest<HostFindBinaryResult>("host.findBinary", {
+      name: "gh",
+    });
+    const available = result?.available === true;
+    const version = typeof result?.version === "string" ? result.version : undefined;
+    return {
+      success: true,
+      data: available ? { available: true, version } : { available: false },
+    };
+  } catch {
+    return { success: true, data: { available: false } };
+  }
+});
+
+/**
  * `system:list-fonts` — installed monospace font enumeration. Font detection
  * is CLIENT-machine work (the Electron main process runs `font-list` in
  * system.ipc.ts LIST_FONTS), not a daemon concern, so there is no `host.*`

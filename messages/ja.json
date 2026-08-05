@@ -2938,6 +2938,8 @@
   "onboarding_requirementsStep_installNode_label": "Node.js をインストール",
   "onboarding_requirementsStep_nodeTooOld_description": "Node.js {minimum} 以降が必要です。現在 {version} がインストールされています。",
   "onboarding_requirementsStep_nodeMissing_description": "Node.js {minimum} 以降が必要ですが、見つかりませんでした。",
+  "onboarding_requirementsStep_ghOptional_label": "任意",
+  "onboarding_requirementsStep_ghMissing_description": "GitHub CLI（gh）が見つかりませんでした。任意のツールです。インストールされている場合、エージェントが追加の GitHub ワークフローに使用します。",
   "onboarding_requirementsStep_checkAgain_label": "再確認",
   "onboarding_requirementsStep_recheck_description": "アプリに戻ると自動的に再確認します。",
   "onboarding_creationError_authRequired_title": "GitHub 認証が必要です",
