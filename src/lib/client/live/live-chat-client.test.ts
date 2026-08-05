@@ -1469,4 +1469,39 @@ describe("LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)", (
     expect(subscribeCalls()).toHaveLength(2);
     off();
   });
+
+  it("a gap-triggered resnapshot supersedes a pending retry (no extra unsubscribe/subscribe cycle)", async () => {
+    vi.useFakeTimers();
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const off = client.subscribe("agent-1", () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(subscribeCalls()).toHaveLength(1);
+
+    // Acked but no seq-0 within SNAPSHOT_TIMEOUT_MS: a 1s retry is armed.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(unsubscribeCalls()).toEqual([]);
+
+    // A delta lands before any snapshot: gap → resnapshot re-registers
+    // immediately (unsubscribe sub-1 + fresh subscribe) and cancels the
+    // pending retry — the resnapshot registration IS the recovery.
+    deltaPush("sub-1", 3, { added: [], updated: [], removedIds: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(unsubscribeCalls()).toEqual([["chat.unsubscribe", { subscriptionId: "sub-1" }]]);
+    expect(subscribeCalls()).toHaveLength(2);
+
+    // The superseded retry's deadline passes BEFORE the recovery snapshot
+    // arrives: it must not fire an extra unsubscribe/subscribe cycle on top
+    // of the resnapshot's registration.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(subscribeCalls()).toHaveLength(2);
+    expect(unsubscribeCalls()).toHaveLength(1);
+
+    // The resnapshot's seq-0 snapshot hydrates; nothing further on the wire.
+    snapshotPush("sub-2", 0, SEEDED_SNAPSHOT);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(subscribeCalls()).toHaveLength(2);
+    expect(unsubscribeCalls()).toHaveLength(1);
+    off();
+  });
 });

@@ -606,6 +606,10 @@ export class LiveChatClient implements ChatClient {
     const resnapshot = (): void => {
       if (awaitingResnapshot) return;
       awaitingResnapshot = true;
+      // The gap registration IS the recovery: drop any pending self-heal
+      // retry so it cannot fire a redundant unsubscribe/subscribe cycle on
+      // top of this one (the backoff level is kept — hydration resets it).
+      clearRetryTimer();
       reconciler.reset();
       unregister();
       register();
