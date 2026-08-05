@@ -9,7 +9,6 @@ import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { getAvailableIdsFromResult } from '$shared/types/provider-availability';
 import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
-import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('ProviderAvailabilityClient');
 
@@ -93,22 +92,11 @@ export async function getProviderAvailability(
     cachedResult = result.data || getDefaultResult();
     cacheTimestamp = now;
 
-    // Validate the active provider against the set of available + visible providers.
-    // Hidden providers (env var gate) are excluded so they cannot be selected as active.
-    try {
-      const availableIds = getAvailableIdsFromResult(
-        cachedResult.providers,
-        cachedResult.hiddenProviders ?? [],
-      );
-
-      const { validateActiveProvider } = await import(
-        '$store/renderer/slices/provider-settings/provider-settings-slice'
-      );
-      appStore.dispatch(validateActiveProvider(availableIds));
-    } catch (e) {
-      // Non-critical — store validation is best-effort
-      logger.debug('Failed to validate active provider against availability', { error: e });
-    }
+    // Per decision D1(B), the active provider is never silently switched
+    // based on availability — the agent-availability slice (populated
+    // elsewhere from this same result) is the source of truth for
+    // `selectIsActiveProviderAvailable` / `selectAvailableEnabledProviderIds`,
+    // which the UI uses to surface a failure state instead.
 
     logger.debug('Provider availability fetched', {
       hasAnyProvider: cachedResult.hasAnyProvider,

@@ -31,6 +31,9 @@ async function buildState(fileSpecialists: object[]) {
   const { initialState: modelInitialState } = await import(
     '$store/renderer/slices/model/model-slice'
   );
+  const { initialState: agentAvailabilityInitialState } = await import(
+    '$store/renderer/slices/agent-availability/agent-availability-slice'
+  );
   const { createCollection } = await import(
     '$lib/store-shim/utils/collections/collection-utils'
   );
@@ -57,6 +60,10 @@ async function buildState(fileSpecialists: object[]) {
     },
     featureCodes: { activeFeatures: [], initialized: true },
     githubAuth: { isAuthenticated: false },
+    agentAvailability: {
+      ...agentAvailabilityInitialState,
+      providerStatusMap: { 'claude-code': { available: true }, codex: { available: true } },
+    },
   };
 }
 
@@ -135,5 +142,78 @@ describe('AdditionalAgentsSettings disable guard', () => {
         payload: ['claude-code'],
       }),
     );
+  });
+});
+
+describe('AdditionalAgentsSettings availability honesty', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const base = await buildState([]);
+    mocks.state.current = {
+      ...base,
+      providerSettings: {
+        activeProviderId: 'auggie',
+        enabledProviders: { 'claude-code': true, codex: true },
+      },
+      agentAvailability: {
+        ...base.agentAvailability,
+        providerStatusMap: { 'claude-code': { available: true }, codex: { available: false } },
+      },
+    };
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('shows a not-installed warning for an enabled-but-unavailable provider', async () => {
+    const AdditionalAgentsSettings = (await import('./AdditionalAgentsSettings.svelte')).default;
+    const result = render(AdditionalAgentsSettings);
+    await waitFor(() => {
+      expect(result.getAllByRole('switch', { hidden: true }).length).toBeGreaterThan(0);
+    });
+    const codexRow = result.getByText('OpenAI Codex').closest('div');
+    expect(codexRow?.textContent).toContain('Not installed');
+  });
+
+  it('does not show a not-installed warning for an enabled-and-available provider', async () => {
+    const AdditionalAgentsSettings = (await import('./AdditionalAgentsSettings.svelte')).default;
+    const result = render(AdditionalAgentsSettings);
+    await waitFor(() => {
+      expect(result.getAllByRole('switch', { hidden: true }).length).toBeGreaterThan(0);
+    });
+    const claudeCodeRow = result.getByText('Anthropic Claude Code').closest('div');
+    expect(claudeCodeRow?.textContent).not.toContain('Not installed');
+  });
+});
+
+describe('AdditionalAgentsSettings loading/unknown availability', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const base = await buildState([]);
+    mocks.state.current = {
+      ...base,
+      providerSettings: {
+        activeProviderId: 'auggie',
+        enabledProviders: { 'claude-code': true, codex: true },
+      },
+      // No entries yet for either provider — availability hasn't been
+      // checked, which must not be mistaken for "confirmed unavailable".
+      agentAvailability: { ...base.agentAvailability, providerStatusMap: {} },
+    };
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('does not show a not-installed warning while availability is still unknown', async () => {
+    const AdditionalAgentsSettings = (await import('./AdditionalAgentsSettings.svelte')).default;
+    const result = render(AdditionalAgentsSettings);
+    await waitFor(() => {
+      expect(result.getAllByRole('switch', { hidden: true }).length).toBeGreaterThan(0);
+    });
+    const codexRow = result.getByText('OpenAI Codex').closest('div');
+    expect(codexRow?.textContent).not.toContain('Not installed');
   });
 });

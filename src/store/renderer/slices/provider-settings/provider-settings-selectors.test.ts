@@ -4,6 +4,7 @@ import {
   it,
 } from "vitest";
 import type { StoreState } from "../../types";
+import type { ProviderStatus } from "../agent-availability/agent-availability-types";
 import {
   initialState as providerCatalogInitialState,
   providerCatalogLoaded,
@@ -12,8 +13,10 @@ import {
 import { MOCK_PROVIDER_CATALOG } from "../../../../test/fixtures/provider-catalog.fixture";
 import {
   selectActiveProviderId,
+  selectAvailableEnabledProviderIds,
   selectEnabledProviderIds,
   selectEnabledProviders,
+  selectIsActiveProviderAvailable,
   selectIsProviderActive,
   selectIsProviderEnabled,
 } from "./provider-settings-selectors";
@@ -25,7 +28,8 @@ const providerCatalog = providerCatalogReducer(
 
 function mockState(
   enabledProviders: Record<string, boolean>,
-  activeProviderId = "auggie"
+  activeProviderId = "auggie",
+  providerStatusMap: Record<string, ProviderStatus> = {}
 ): StoreState {
   return {
     providerCatalog,
@@ -34,6 +38,14 @@ function mockState(
       enabledProviders,
       defaultProviderId: MOCK_PROVIDER_CATALOG.defaultProviderId,
       nonDisableableProviderIds: [],
+    },
+    agentAvailability: {
+      providerStatusMap,
+      providerLoadingMap: {},
+      providerUserInfoLoadingMap: {},
+      hasCheckedOnce: false,
+      watchedTerminalIds: [],
+      npxStatus: null,
     },
   } as unknown as StoreState;
 }
@@ -120,6 +132,55 @@ describe("provider-settings selectors", () => {
     it("should include the active provider even when explicitly disabled", () => {
       const state = mockState({ "claude-code": false }, "claude-code");
       expect(selectEnabledProviderIds.select(state)).toContain("claude-code");
+    });
+  });
+
+  describe("availability-gated selectors", () => {
+    it("should exclude enabled-but-unavailable providers", () => {
+      const state = mockState(
+        { "claude-code": true },
+        "auggie",
+        { auggie: { available: true }, "claude-code": { available: false } }
+      );
+      const ids = selectAvailableEnabledProviderIds.select(state);
+      expect(ids).toContain("auggie");
+      expect(ids).not.toContain("claude-code");
+    });
+
+    it("should exclude hidden providers even when reported available", () => {
+      const state = mockState(
+        {},
+        "auggie",
+        { auggie: { available: true }, mock: { available: true } }
+      );
+      const ids = selectAvailableEnabledProviderIds.select(state);
+      expect(ids).not.toContain("mock");
+    });
+
+    it("should include available and enabled providers", () => {
+      const state = mockState(
+        { "claude-code": true },
+        "auggie",
+        { auggie: { available: true }, "claude-code": { available: true } }
+      );
+      const ids = selectAvailableEnabledProviderIds.select(state);
+      expect(ids).toContain("auggie");
+      expect(ids).toContain("claude-code");
+    });
+
+    it("should report the active provider as available when it is in the available set", () => {
+      const state = mockState({}, "auggie", { auggie: { available: true } });
+      expect(selectIsActiveProviderAvailable.select(state)).toBe(true);
+    });
+
+    it("should report the active provider as unavailable when it is not in the available set", () => {
+      const state = mockState({}, "auggie", { auggie: { available: false } });
+      expect(selectIsActiveProviderAvailable.select(state)).toBe(false);
+    });
+
+    it("should report the active provider as unavailable when nothing has been checked yet", () => {
+      const state = mockState({}, "auggie");
+      expect(selectIsActiveProviderAvailable.select(state)).toBe(false);
     });
   });
 });

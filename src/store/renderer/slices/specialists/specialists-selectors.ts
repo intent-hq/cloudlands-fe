@@ -9,7 +9,10 @@ import {
   GITHUB_DEPENDENT_SPECIALIST_IDS,
   type Specialist,
 } from "$lib/constants/specialists";
-import { selectActiveProviderId } from "../provider-settings/provider-settings-selectors";
+import {
+    selectActiveProviderId,
+    selectIsActiveProviderAvailable,
+} from "../provider-settings/provider-settings-selectors";
 import type { FileSpecialist, SpecialistOverrides } from "./specialists-slice";
 import { selectGitHubAuthIsAuthenticated } from "../github-auth/github-auth-selectors";
 import { isRedundantBuiltInOverride } from "$lib/components/settings/utils/builtin-override-redundancy";
@@ -250,7 +253,12 @@ export const selectSpecialistFilePath = store.createSelector((state, specialistI
         }).filePath;
     return undefined;
 });
-/** Get the effective coding agent for a specialist (file value → bundled default → active provider) */
+/**
+ * Get the effective coding agent for a specialist (file value → bundled
+ * default → active provider, when available). Returns `''` when nothing
+ * resolvable (D1(B) — never a doomed/unavailable provider); pair with
+ * `selectIsActiveProviderAvailable` or check for `''` to surface a failure.
+ */
 export const selectEffectiveCodingAgent = store.createSelector((state, specialistId: string): string => {
     // Wave 2: File specialists already have the correct codingAgent baked in.
     // Check file specialist first, then fall back to bundled/hardcoded.
@@ -258,9 +266,20 @@ export const selectEffectiveCodingAgent = store.createSelector((state, specialis
     if (file?.codingAgent) return file.codingAgent;
     return selectResolvedDefaultCodingAgent.select(state, specialistId);
 });
-/** Get the resolved default coding agent for a specialist (specialist default → active provider) */
+/**
+ * Get the resolved default coding agent for a specialist (specialist default
+ * → active provider, when available).
+ *
+ * Per decision D1(B): never silently switch to a different provider. The
+ * specialist's own explicit `codingAgent` is always honored (it's a
+ * deliberate choice). Absent that, the active provider is only used when
+ * it's actually available — an unavailable active provider resolves to `''`
+ * so callers can detect and surface the failure instead of spawning on a
+ * doomed (e.g. uninstalled Auggie) provider.
+ */
 const selectResolvedDefaultCodingAgent = store.createSelector((state, specialistId: string): string => {
     const specialists = selectSpecialists.select(state);
     const specialist = specialists.find((s: Specialist) => s.id === specialistId);
-    return specialist?.codingAgent || selectActiveProviderId.select(state);
+    if (specialist?.codingAgent) return specialist.codingAgent;
+    return selectIsActiveProviderAvailable.select(state) ? selectActiveProviderId.select(state) : '';
 });

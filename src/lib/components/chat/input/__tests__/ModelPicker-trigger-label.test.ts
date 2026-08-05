@@ -186,11 +186,12 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 
 vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
   selectManagedInstallStatusByProvider: () => writable(null),
+  selectHasCheckedOnce: () => writable(true),
 }));
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
-  selectEnabledProviderIds: () => enabledProviderIds$,
+  selectAvailableEnabledProviderIds: () => enabledProviderIds$,
 }));
 
 vi.mock('$store/renderer/slices/model/model-utils', () => ({

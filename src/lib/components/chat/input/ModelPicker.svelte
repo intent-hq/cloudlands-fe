@@ -45,10 +45,13 @@
   setModelPickerGroupCollapsed,
 } from '$store/renderer/slices/model/model-slice';
   import type { ModelFallbackInfo } from '$store/renderer/slices/model/model-types';
-  import { selectManagedInstallStatusByProvider } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+  import {
+  selectHasCheckedOnce,
+  selectManagedInstallStatusByProvider,
+} from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import {
   selectActiveProviderId,
-  selectEnabledProviderIds,
+  selectAvailableEnabledProviderIds,
 } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
   getModelsForProvider,
@@ -109,7 +112,7 @@
   }
 
   const activeProviderId$ = selectActiveProviderId();
-  const enabledProviderIds$ = selectEnabledProviderIds();
+  const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
   const collapsedGroupKeys$ = selectModelPickerCollapsedGroups();
@@ -117,6 +120,7 @@
   const loadError$ = selectLoadError();
   const allProviderWarnings$ = selectAllProviderWarnings();
   const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
+  const hasCheckedOnce$ = selectHasCheckedOnce();
 
   interface Props {
     selectedModel?: string | null;
@@ -312,15 +316,15 @@
     );
   }
 
-  const isEffectiveProviderEnabled = $derived(
-    isProviderEnabled($enabledProviderIds$, effectiveProviderId),
+  const isEffectiveProviderAvailable = $derived(
+    isProviderEnabled($availableEnabledProviderIds$, effectiveProviderId),
   );
 
   // The per-agent fetch is only needed when the effective provider's models
   // aren't already covered by the all-providers fetch because the agent's
-  // provider was since disabled. Skipping it otherwise avoids a duplicate fetch.
+  // provider is since unavailable. Skipping it otherwise avoids a duplicate fetch.
   const usesAgentProviderFetch = $derived(
-    effectiveProviderId !== $activeProviderId$ && !isEffectiveProviderEnabled,
+    effectiveProviderId !== $activeProviderId$ && !isEffectiveProviderAvailable,
   );
 
   // Separate generation counter from fetchAllProviderModels: in unlocked mode
@@ -363,7 +367,7 @@
 
   let fetchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
-    const providerIds = $enabledProviderIds$;
+    const providerIds = $availableEnabledProviderIds$;
     clearTimeout(fetchDebounceTimer);
     fetchDebounceTimer = setTimeout(() => fetchAllProviderModels(providerIds), 50);
   });
@@ -432,7 +436,7 @@
 
   async function handleRetry() {
     lastFetchedProviderIds = '';
-    const requests = [fetchAllProviderModels($enabledProviderIds$)];
+    const requests = [fetchAllProviderModels($availableEnabledProviderIds$)];
     if (usesAgentProviderFetch) {
       requests.push(fetchAgentProviderModels(effectiveProviderId));
     }
@@ -445,7 +449,7 @@
     isRefreshing = true;
     try {
       lastFetchedProviderIds = '';
-      const requests = [fetchAllProviderModels($enabledProviderIds$)];
+      const requests = [fetchAllProviderModels($availableEnabledProviderIds$)];
       if (usesAgentProviderFetch) {
         requests.push(fetchAgentProviderModels(effectiveProviderId));
       }
@@ -643,10 +647,10 @@
 
   const flatModelOptions = $derived<DropdownOption[]>([
     ...(showDefaultOption ? [useDefaultOption] : []),
-    ...$enabledProviderIds$.flatMap((pid) => allProviderModels[normalizeProviderId(pid)] ?? []),
+    ...$availableEnabledProviderIds$.flatMap((pid) => allProviderModels[normalizeProviderId(pid)] ?? []),
     // Keep the agent's current provider selectable even if it was since
     // disabled, so the selected model isn't treated as unavailable.
-    ...(isEffectiveProviderEnabled ? [] : toDropdownOptions(availableModels)),
+    ...(isEffectiveProviderAvailable ? [] : toDropdownOptions(availableModels)),
   ]);
 
   const hasLoadedModelOptions = $derived(
@@ -654,7 +658,7 @@
   );
 
   const providerLoadWarnings = $derived.by<ProviderLoadError[]>(() => {
-    return $enabledProviderIds$
+    return $availableEnabledProviderIds$
       .map((pid) => allProviderErrors[normalizeProviderId(pid)])
       .filter((error): error is ProviderLoadError => Boolean(error));
   });
@@ -669,7 +673,7 @@
 
   const providerFallbackWarnings = $derived.by<ProviderWarningNotice[]>(() => {
     const warnings = $allProviderWarnings$;
-    return $enabledProviderIds$
+    return $availableEnabledProviderIds$
       .map((pid) => getProviderWarningNotice(pid, warnings))
       .filter((warning): warning is ProviderWarningNotice => Boolean(warning));
   });
@@ -688,6 +692,32 @@
     return m.chat_modelPicker_downloadProgress_label({
       percent: formatInteger(Math.round(progress * 100)),
     });
+  });
+
+  // D1(B): when no provider is available at all, never fall back to a
+  // default provider/model (e.g. Auggie's opus4.7) — surface an explicit
+  // failure instead. Per-provider fetch failures / a single unavailable
+  // effective provider are handled by the existing warning/fallback paths.
+  // Gated on hasCheckedOnce: before the first availability check resolves,
+  // availableEnabledProviderIds is empty by default, which is "unknown" —
+  // not "confirmed unavailable" — so this must not trip during initial load.
+  const hasNoAvailableProvider = $derived(
+    !providerId && $hasCheckedOnce$ && $availableEnabledProviderIds$.length === 0,
+  );
+
+  let noProviderToastShown = false;
+
+  $effect(() => {
+    if (hasNoAvailableProvider) {
+      if (!noProviderToastShown) {
+        noProviderToastShown = true;
+        toast.error(m.chat_modelPicker_noProviderAvailable_toast(), {
+          duration: 6000,
+        });
+      }
+    } else {
+      noProviderToastShown = false;
+    }
   });
 
   const blockingLoadError = $derived.by<ProviderLoadError | null>(() => {
@@ -717,7 +747,7 @@
       useDefaultOption,
       effectiveProviderId,
       availableModels,
-      enabledProviderIds: $enabledProviderIds$,
+      enabledProviderIds: $availableEnabledProviderIds$,
       allProviderModels,
       allProviderLoading,
       allProviderErrors,
@@ -833,7 +863,7 @@
       !isUserProviderSettled({
         agentProviderModels,
         agentProviderError,
-        enabledProviderIds: $enabledProviderIds$,
+        enabledProviderIds: $availableEnabledProviderIds$,
         allProviderModels,
         modelProvider,
       })
@@ -1231,6 +1261,14 @@
       <ModelPickerEmptyState {isLoadingModels} {blockingLoadError} onRetry={handleRetry} />
     {/snippet}
   </Dropdown>
+
+  <ModelPickerProviderNotice
+    warning={hasNoAvailableProvider ? m.chat_modelPicker_noProviderAvailable_title() : undefined}
+    show={hasNoAvailableProvider}
+    title={m.chat_modelPicker_noProviderAvailable_title()}
+    description={m.chat_modelPicker_noProviderAvailable_description()}
+    variant="warning"
+  />
 
   <ModelPickerProviderNotice
     warning={isCodexManagedInstallInstalling
