@@ -88,15 +88,16 @@ export const cancelBackgroundHookRequested = createAction<
 
 // ── Reducer ──
 
-export const backgroundHooksReducer = createReducer<BackgroundHooksState>(initialState)
-  .with(backgroundHooksUpdated, (state, { payload: [workspaceId, hooks] }) =>
+export const backgroundHooksReducer = createReducer<BackgroundHooksState>(initialState);
+backgroundHooksReducer.with(backgroundHooksUpdated, (state, { payload: [workspaceId, hooks] }) =>
     setWorkspaceState(state, workspaceId, {
       hooks: createCollection<BackgroundHook, "hookId">("hookId", hooks),
     }),
-  )
-  .with(backgroundHooksCleared, (state, { payload: [workspaceId] }) =>
+  );
+backgroundHooksReducer.with(backgroundHooksCleared, (state, { payload: [workspaceId] }) =>
     clearWorkspaceState(state, workspaceId),
-  )
-  .with(removeWorkspaceEntity, (state, { payload: [wsId] }) =>
+  );
+backgroundHooksReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) =>
     clearWorkspaceState(state, wsId),
   );
+
