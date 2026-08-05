@@ -73,6 +73,16 @@ import { m } from "$shared/paraglide/messages.js";
 
 const logger = createLogger("VoiceSettingsService");
 
+type VoiceSettingsAction = { type: string; payload?: unknown };
+
+function isVoiceSettingsAction(action: unknown): action is VoiceSettingsAction {
+  return (
+    typeof action === "object" &&
+    action !== null &&
+    typeof (action as { type?: unknown }).type === "string"
+  );
+}
+
 function isVoiceProvider(value: unknown): value is VoiceProvider {
   return value === "elevenlabs" || value === "openai";
 }
@@ -369,6 +379,7 @@ export function createVoiceSettingsMiddleware(): StoreMiddleware {
       bootHydrated = true;
       void initializeVoiceSettingsFlow();
     }
+    if (!isVoiceSettingsAction(action)) return next(action);
     // Vocabulary edits reduce optimistically, so the pre-dispatch array is the
     // rollback target — capture it before the reducer runs.
     const isVocabularyEdit =
