@@ -175,6 +175,16 @@
     return currentSpecialist?.modelOptions;
   });
 
+  // Effective behavior prompt (override → bundled). Reactive to file
+  // specialist changes so the prompt textarea resyncs after each post-save
+  // refetch (mirrors savedModelOptions).
+  const effectiveBehaviorPrompt = $derived.by(() => {
+    void $fileSpecialists$; // track file specialist changes
+    return currentSpecialist
+      ? selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id)
+      : '';
+  });
+
   // Sync specialist model value when specialist changes or file specialists
   // change. The picker's selected value is the EXPLICIT frontmatter model
   // only — undefined when inheriting (the daemon resolvedModel preview is
@@ -714,10 +724,7 @@
     <!-- System Prompt (1fr) -->
     <div class="min-h-0 h-full">
       <AutoSaveTextarea
-        value={selectEffectiveBehaviorPrompt.select(
-          appStore.state,
-          currentSpecialist.id,
-        )}
+        value={effectiveBehaviorPrompt}
         originalValue={currentSpecialist.defaultBehaviorPrompt}
         label={m.settings_aiBehavior_systemPrompt_label()}
         labelClass="text-sm font-medium text-foreground"

@@ -41,6 +41,45 @@ export function shouldShowStoppedIndicator({
 }
 
 /**
+ * Reason-specific Stopped-indicator label resolution. Interrupted assistant
+ * rows carry an optional `interruptReason` (plus `interruptedBy` for
+ * preemptions) in their metadata (PROTOCOL §7 interrupted-row metadata);
+ * legacy rows without a reason — and unknown future reasons — resolve to the
+ * generic `stopped` label. The resolver returns a label descriptor rather
+ * than localized text so ChatMessage owns the Paraglide message calls.
+ */
+export type StoppedIndicatorLabel =
+  | { kind: 'stopped' }
+  | { kind: 'preempted-by-message' }
+  | { kind: 'preempted-by-agent'; name: string }
+  | { kind: 'daemon-shutdown' }
+  | { kind: 'agent-stopped' };
+
+export function resolveStoppedIndicatorLabel(message?: AgentMessage): StoppedIndicatorLabel {
+  const reason = message?.metadata?.interruptReason;
+  switch (reason) {
+    case 'preempted_by_message': {
+      const interruptedBy = message?.metadata?.interruptedBy;
+      if (
+        interruptedBy?.kind === 'agent' &&
+        typeof interruptedBy.name === 'string' &&
+        interruptedBy.name.length > 0
+      ) {
+        return { kind: 'preempted-by-agent', name: interruptedBy.name };
+      }
+      return { kind: 'preempted-by-message' };
+    }
+    case 'daemon_shutdown':
+      return { kind: 'daemon-shutdown' };
+    case 'agent_stopped':
+      return { kind: 'agent-stopped' };
+    case 'user_stop':
+    default:
+      return { kind: 'stopped' };
+  }
+}
+
+/**
  * Agent Q&A wizard-only rendering: true when the blocks contain at least one
  * question resource block and NOTHING else that would render in the
  * transcript (text blocks that are empty or suggested-prompts-only count as

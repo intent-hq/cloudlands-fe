@@ -19,6 +19,7 @@
    * fallback when the connection mode is external or the sidecar supervisor
    * gave up restarting.
    */
+  import { page } from '$app/stores';
   import { store as appStore } from '$store/renderer/store';
   import {
     selectDaemonHealth,
@@ -57,9 +58,15 @@
   // before it fires cancels the overlay entirely (no flash on quick blips).
   let visible = $state(false);
   let graceTimer: ReturnType<typeof setTimeout> | null = null;
+  const isSandboxPage = $derived(
+    $page.url.pathname === '/sandbox' ||
+      $page.url.pathname.startsWith('/sandbox/') ||
+      $page.url.pathname === '/test' ||
+      $page.url.pathname.startsWith('/test/'),
+  );
 
   $effect(() => {
-    if ($health$ === 'down') {
+    if ($health$ === 'down' && !isSandboxPage) {
       if (!visible && graceTimer === null) {
         graceTimer = setTimeout(() => {
           graceTimer = null;

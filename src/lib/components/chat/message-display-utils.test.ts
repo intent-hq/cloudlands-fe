@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
-import { isQuestionOnlyContent, shouldShowStoppedIndicator } from './message-display-utils';
+import {
+  isQuestionOnlyContent,
+  resolveStoppedIndicatorLabel,
+  shouldShowStoppedIndicator,
+} from './message-display-utils';
 
 function assistant(overrides: Partial<AgentMessage> = {}): AgentMessage {
   return {
@@ -90,6 +94,82 @@ describe('message display utils', () => {
         isStreaming: false,
       }),
     ).toBe(false);
+  });
+});
+
+// Reason-specific Stopped-indicator labels (PROTOCOL §7 interrupted-row
+// metadata): `interruptReason` + `interruptedBy` map to reason-specific
+// labels; legacy rows without a reason keep the generic "Stopped".
+describe('resolveStoppedIndicatorLabel', () => {
+  const interrupted = (extra: Record<string, unknown> = {}) =>
+    assistant({ metadata: { interrupted: true, stopReason: 'interrupted', ...extra } });
+
+  it('resolves generic stopped for legacy rows without interruptReason', () => {
+    expect(resolveStoppedIndicatorLabel(interrupted())).toEqual({ kind: 'stopped' });
+  });
+
+  it('resolves generic stopped for an undefined message', () => {
+    expect(resolveStoppedIndicatorLabel(undefined)).toEqual({ kind: 'stopped' });
+  });
+
+  it('resolves generic stopped for user_stop', () => {
+    expect(resolveStoppedIndicatorLabel(interrupted({ interruptReason: 'user_stop' }))).toEqual({
+      kind: 'stopped',
+    });
+  });
+
+  it('resolves preempted-by-message for a user-sent preemption', () => {
+    expect(
+      resolveStoppedIndicatorLabel(
+        interrupted({ interruptReason: 'preempted_by_message', interruptedBy: { kind: 'user' } }),
+      ),
+    ).toEqual({ kind: 'preempted-by-message' });
+  });
+
+  it('resolves preempted-by-agent with the sender name for an agent-sent preemption', () => {
+    expect(
+      resolveStoppedIndicatorLabel(
+        interrupted({
+          interruptReason: 'preempted_by_message',
+          interruptedBy: { kind: 'agent', agentId: 'agent-1', name: 'Coordinator' },
+        }),
+      ),
+    ).toEqual({ kind: 'preempted-by-agent', name: 'Coordinator' });
+  });
+
+  it('falls back to preempted-by-message when the agent sender has no name', () => {
+    expect(
+      resolveStoppedIndicatorLabel(
+        interrupted({
+          interruptReason: 'preempted_by_message',
+          interruptedBy: { kind: 'agent', agentId: 'agent-1' },
+        }),
+      ),
+    ).toEqual({ kind: 'preempted-by-message' });
+  });
+
+  it('falls back to preempted-by-message when interruptedBy is absent', () => {
+    expect(
+      resolveStoppedIndicatorLabel(interrupted({ interruptReason: 'preempted_by_message' })),
+    ).toEqual({ kind: 'preempted-by-message' });
+  });
+
+  it('resolves daemon-shutdown', () => {
+    expect(
+      resolveStoppedIndicatorLabel(interrupted({ interruptReason: 'daemon_shutdown' })),
+    ).toEqual({ kind: 'daemon-shutdown' });
+  });
+
+  it('resolves agent-stopped', () => {
+    expect(resolveStoppedIndicatorLabel(interrupted({ interruptReason: 'agent_stopped' }))).toEqual(
+      { kind: 'agent-stopped' },
+    );
+  });
+
+  it('resolves generic stopped for an unknown future reason', () => {
+    expect(
+      resolveStoppedIndicatorLabel(interrupted({ interruptReason: 'some_future_reason' })),
+    ).toEqual({ kind: 'stopped' });
   });
 });
 

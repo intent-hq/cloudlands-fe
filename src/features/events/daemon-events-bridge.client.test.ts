@@ -207,7 +207,10 @@ import {
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 import { disposeScripts, upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
 import type { ScriptOutputBuffer } from '$store/renderer/slices/scripts/scripts-types';
-import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
+import {
+  resolveStoppedIndicatorLabel,
+  shouldShowStoppedIndicator,
+} from '$lib/components/chat/message-display-utils';
 import {
   clearAgentFailureRegistry,
   listAgentFailureEntries,
@@ -1828,6 +1831,108 @@ describe('daemonEventsBridge (interrupt regression — subscription-written delt
     expect(shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false })).toBe(
       true,
     );
+  });
+
+  it('reason-carrying interruption: stream:end with interruptReason + persisted row metadata resolve the reason-specific label', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    seedSubscriptionPartial();
+    // PROTOCOL §7: the terminal `agent:stream:end` on a preemption carries
+    // `interruptReason`/`interruptedBy` alongside `stopReason: "interrupted"`.
+    // The bridge treats them as pass-through (the transcript metadata arrives
+    // via the persisted row); the event must be handled without error and the
+    // busy flags must still clear.
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        stopReason: 'interrupted',
+        messageId: MESSAGE_ID,
+        interruptReason: 'preempted_by_message',
+        interruptedBy: { kind: 'agent', agentId: 'agent-sender-1', name: 'Coordinator' },
+      }),
+    );
+    handler(
+      notification('agent:idle', {
+        agentId: AGENT,
+        status: 'idle',
+        isActive: false,
+        reason: 'interrupted',
+      }),
+    );
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+
+    // The persisted interrupted row (delivered by the chat.subscribe delta /
+    // hydration reconcile) carries the same reason metadata next to the
+    // existing `interrupted`/`stopReason` fields.
+    const session = readSession();
+    const persistedInterrupted = {
+      id: MESSAGE_ID,
+      role: 'assistant',
+      timestamp: '2026-01-02T00:00:01.000Z',
+      contentBlocks: [{ type: 'text', id: `${MESSAGE_ID}:0`, text: 'Partial ' }],
+      metadata: {
+        interrupted: true,
+        stopReason: 'interrupted',
+        interruptReason: 'preempted_by_message',
+        interruptedBy: { kind: 'agent', agentId: 'agent-sender-1', name: 'Coordinator' },
+      },
+    } as unknown as AgentMessage;
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          ...session!,
+          isStreaming: false,
+          status: AgentStatus.Idle,
+          messages: [
+            ...(session!.messages ?? []).filter((m) => m.role !== 'assistant'),
+            persistedInterrupted,
+          ],
+        },
+      ]),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false })).toBe(
+      true,
+    );
+    expect(resolveStoppedIndicatorLabel(assistantMessages[0])).toEqual({
+      kind: 'preempted-by-agent',
+      name: 'Coordinator',
+    });
+  });
+
+  it('legacy interrupted row without interruptReason resolves the generic stopped label', async () => {
+    await primeBridge();
+
+    seedSubscriptionPartial();
+    const session = readSession();
+    const legacyInterrupted = {
+      id: MESSAGE_ID,
+      role: 'assistant',
+      timestamp: '2026-01-02T00:00:01.000Z',
+      contentBlocks: [{ type: 'text', id: `${MESSAGE_ID}:0`, text: 'Partial ' }],
+      metadata: { interrupted: true, stopReason: 'interrupted' },
+    } as unknown as AgentMessage;
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          ...session!,
+          isStreaming: false,
+          status: AgentStatus.Idle,
+          messages: [
+            ...(session!.messages ?? []).filter((m) => m.role !== 'assistant'),
+            legacyInterrupted,
+          ],
+        },
+      ]),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(resolveStoppedIndicatorLabel(assistantMessages[0])).toEqual({ kind: 'stopped' });
   });
 });
 
