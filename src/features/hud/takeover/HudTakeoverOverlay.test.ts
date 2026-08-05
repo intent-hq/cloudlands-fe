@@ -237,8 +237,8 @@ describe('HudTakeoverOverlay attention banner (question / blocker / discussion)'
     const headline = banner.querySelector('.ov-banner-big');
     const subtitle = screen.getByTestId('hud-takeover-banner-attention');
     expect(chip?.textContent?.trim()).toBe('QUESTION');
-    // The dot-matrix line (`.ov-banner-big` keeps the mock's radial-gradient
-    // text treatment) renders the AGENT name, not the question text.
+    // The dot-matrix line (`.ov-banner-big`, rendered in the Doto dot-matrix
+    // font) renders the AGENT name, not the question text.
     expect(headline?.textContent?.trim()).toBe('Coordinator');
     // Sub-title = the question text with the card footer's shared Q: prefix.
     expect(subtitle.textContent?.trim()).toBe(

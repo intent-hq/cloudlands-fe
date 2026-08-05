@@ -369,12 +369,7 @@
                           : takeoverKindLabel(banner.kind)}
                       </span>
                       {#if bv.big}
-                        <div
-                          class="ov-banner-big"
-                          class:ov-banner-big-wrap={bv.wrap}
-                          style:color
-                          style:--banner-color={color}
-                        >
+                        <div class="ov-banner-big" class:ov-banner-big-wrap={bv.wrap} style:color>
                           {bv.big}
                         </div>
                       {/if}
@@ -1009,14 +1004,9 @@
     text-transform: uppercase;
   }
   .ov-banner-big {
-    font: 600 42px 'JetBrains Mono', monospace;
-    letter-spacing: 0.14em;
+    font: 700 42px 'Doto', 'JetBrains Mono', monospace;
+    letter-spacing: 0.08em;
     line-height: 1.05;
-    background-image: radial-gradient(circle, var(--banner-color) 1.4px, transparent 1.7px);
-    background-size: 6px 6px;
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
     white-space: nowrap;
     overflow: hidden;
     text-transform: uppercase;
