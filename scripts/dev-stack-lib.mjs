@@ -101,12 +101,17 @@ export function classifySignal(signalCount) {
 
 /**
  * Resolve the grace period (ms) before escalating SIGTERM → SIGKILL.
+ * A missing, blank, or invalid value falls back (note Number('') === 0, so
+ * blank must be checked explicitly or an empty env var would mean "no grace").
  *
  * @param {string | undefined} envValue DEV_STACK_KILL_TIMEOUT_MS
  * @param {number} fallback
  * @returns {number}
  */
 export function resolveKillTimeout(envValue, fallback = 5000) {
+  if (typeof envValue !== 'string' || envValue.trim() === '') {
+    return fallback;
+  }
   const parsed = Number(envValue);
   if (Number.isFinite(parsed) && parsed >= 0) {
     return parsed;

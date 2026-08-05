@@ -120,4 +120,9 @@ describe('resolveKillTimeout', () => {
     expect(resolveKillTimeout('abc')).toBe(5000);
     expect(resolveKillTimeout('-1')).toBe(5000);
   });
+
+  it('falls back for blank values (Number("") === 0 must not mean zero grace)', () => {
+    expect(resolveKillTimeout('')).toBe(5000);
+    expect(resolveKillTimeout(' ')).toBe(5000);
+  });
 });
