@@ -24,6 +24,10 @@ import {
 import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import {
+  refreshWorkspaceSubscriptionEntriesRequested,
+  removeWatchedAgent,
+} from '../../agent-subscription-ui/agent-subscription-ui-slice';
+import {
   activateAgentRequested,
   commitPendingAgentDeletionRequested,
   deleteAgentWithUndoRequested,
@@ -161,17 +165,45 @@ describe('agentMutationSaga', () => {
   });
 
   it('soft-hides without a wire call and undo wins the timer race', async () => {
-    const { channel, task } = start();
+    const { channel, dispatched, task } = start();
     const deletion = deleteAgentWithUndoRequested(WS, A1, 'Agent');
     channel.put(deletion);
     await expect(deletion.promise).resolves.toEqual(session());
     expect(mocks.deleteAgent).not.toHaveBeenCalled();
+    expect(dispatched).toContainEqual(removeWatchedAgent(WS, A1));
 
     const undo = undoAgentDeletionRequested(WS, A1);
     channel.put(undo);
     await expect(undo.promise).resolves.toBe(true);
+    expect(dispatched).toContainEqual(refreshWorkspaceSubscriptionEntriesRequested(WS));
     await vi.advanceTimersByTimeAsync(15_000);
     expect(mocks.deleteAgent).not.toHaveBeenCalled();
+    await stop(task);
+  });
+
+  it('refetches subscription entries when a pending delete commit restores on daemon failure', async () => {
+    mocks.deleteAgent.mockResolvedValue({ success: false, error: 'delete rejected' });
+    const { channel, dispatched, task } = start();
+    const deletion = deleteAgentWithUndoRequested(WS, A1);
+    channel.put(deletion);
+    await deletion.promise;
+    channel.put(commitPendingAgentDeletionRequested(WS, A1));
+    await settle();
+
+    expect(mocks.deleteAgent).toHaveBeenCalledWith(A1, WS);
+    expect(dispatched).toContainEqual(refreshWorkspaceSubscriptionEntriesRequested(WS));
+    await stop(task);
+  });
+
+  it('refetches subscription entries when immediate delete restores on daemon failure', async () => {
+    mocks.deleteAgent.mockResolvedValue({ success: false, error: 'delete rejected' });
+    const { channel, dispatched, task } = start();
+    const action = deleteAgentSessionRequested(WS, A1);
+    channel.put(action);
+
+    await expect(action.promise).rejects.toThrow('delete rejected');
+    expect(dispatched).toContainEqual(removeWatchedAgent(WS, A1));
+    expect(dispatched).toContainEqual(refreshWorkspaceSubscriptionEntriesRequested(WS));
     await stop(task);
   });
 

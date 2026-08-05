@@ -24,7 +24,7 @@ vi.mock('$lib/client', () => ({
 }));
 
 import type { AgentSession, Workspace } from '$shared/types';
-import { AgentStatus } from '$shared/types';
+import { AgentStatus, WorkspaceStatusEnum } from '$shared/types';
 import {
   agentSessionReducer,
   agentSessionRetryLastMessageRequested,
@@ -78,14 +78,16 @@ function session(overrides: Partial<AgentSession> = {}): AgentSession {
 function harness(
   seedSession = session(),
   getStateError?: () => Error | undefined,
+  workspaceRecord?: Workspace,
 ) {
   const channel = stdChannel();
   let agentSessions = agentSessionReducer(sessionInitialState, bulkUpsertSessions([seedSession]));
   let chatState = chatInitialState;
   let agentQueue = queueInitialState;
+  const workspaceEntity = workspaceRecord ?? ({ id: WS, name: 'Workspace', path: '/repo' } as Workspace);
   const workspace = {
     ...workspaceInitialState,
-    workspaces: createCollection('id', [{ id: WS, name: 'Workspace', path: '/repo' } as Workspace]),
+    workspaces: createCollection('id', [workspaceEntity]),
   };
   const dispatch = vi.fn((action) => {
     agentSessions = agentSessionReducer(agentSessions, action);
@@ -322,7 +324,53 @@ describe('chatSendSaga', () => {
     run.channel.put(retry);
 
     await expect(retry.promise).resolves.toBeUndefined();
-    expect(mocks.toastInfo).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('shows one archived-workspace suggestion toast while still sending normally', async () => {
+    mocks.send.mockResolvedValue(undefined);
+    const archivedWorkspace = {
+      id: WS,
+      name: 'Workspace',
+      path: '/repo',
+      status: WorkspaceStatusEnum.Archived,
+      archived: true,
+    } as Workspace;
+    const run = harness(session(), undefined, archivedWorkspace);
+    run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'hello archived' }));
+    await settle();
+
+    expect(mocks.send).toHaveBeenCalledWith(
+      AGENT,
+      'hello archived',
+      expect.objectContaining({ id: WS }),
+      expect.any(Object),
+    );
+    await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
+    const [, options] = mocks.toastInfo.mock.calls[0] as [string, { id?: string; action?: { label?: string } }];
+    expect(options.id).toBe(`chat-send-unarchive-${WS}`);
+    expect(options.action?.label).toBeTruthy();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('shows the archived-workspace suggestion when the archived flag is set but status is stale', async () => {
+    mocks.send.mockResolvedValue(undefined);
+    const archivedWorkspace = {
+      id: WS,
+      name: 'Workspace',
+      path: '/repo',
+      status: WorkspaceStatusEnum.Active,
+      archived: true,
+    } as Workspace;
+    const run = harness(session(), undefined, archivedWorkspace);
+    run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'hello stale-status' }));
+    await settle();
+
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
     run.task.cancel();
     await run.task.toPromise();
   });

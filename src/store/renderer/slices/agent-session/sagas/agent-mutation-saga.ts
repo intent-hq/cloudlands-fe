@@ -24,7 +24,11 @@ import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { AgentActivationState } from '$shared/types/agent-session';
 import { pruneRecentlyClosed } from '../../panel-layout/panel-layout-slice';
-import { cancelAgentSubscriptionsRequested } from '../../agent-subscription-ui/agent-subscription-ui-slice';
+import {
+  cancelAgentSubscriptionsRequested,
+  refreshWorkspaceSubscriptionEntriesRequested,
+  removeWatchedAgent,
+} from '../../agent-subscription-ui/agent-subscription-ui-slice';
 import { agentSessionDismissQuestionsRequested } from '../agent-session-slice';
 import {
   activateAgentRequested,
@@ -99,7 +103,13 @@ function* persistSession(session: AgentSession): SagaGenerator<void> {
 function* softHide(wsId: string, agentId: string): SagaGenerator<void> {
   yield* put(removeAgent(wsId, agentId));
   yield* put(removeSession(agentId));
+  yield* put(removeWatchedAgent(wsId, agentId));
   yield* put(pruneRecentlyClosed(wsId, { agentId }));
+}
+
+function* restoreHiddenSession(wsId: string, session: AgentSession): SagaGenerator<void> {
+  yield* call(persistSession, session);
+  yield* put(refreshWorkspaceSubscriptionEntriesRequested(wsId));
 }
 
 function* restoreAgent(
@@ -301,13 +311,13 @@ function* commitDeletion(agentId: string, cancelTimer = true): SagaGenerator<voi
       pending.wsId,
     );
     if (!result.success) {
-      yield* call(persistSession, pending.snapshot);
+      yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
       yield* call(showError, result.error || m.agent_mutation_deleteFailed_error());
       return;
     }
     yield* put(pruneRecentlyClosed(pending.wsId, { agentId: pending.agentId }));
   } catch (error) {
-    yield* call(persistSession, pending.snapshot);
+    yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
     yield* call(showError, mutationError(error, m.agent_mutation_deleteFailed_error()).message);
   }
 }
@@ -358,7 +368,7 @@ function* undoDeletion(action: ReturnType<typeof undoAgentDeletionRequested>): S
     } else {
       yield* call(cancelPendingTimer, agentId);
       removePendingAgentDeletion(agentId);
-      yield* call(persistSession, pending.snapshot);
+      yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
       yield* put(action.success(true));
     }
     settled = true;
@@ -382,7 +392,7 @@ function* deleteImmediately(
     yield* call(softHide, wsId, agentId);
     const result = yield* call([appClient.agents, appClient.agents.delete], agentId, wsId);
     if (!result.success) {
-      if (snapshot) yield* call(persistSession, snapshot);
+      if (snapshot) yield* call(restoreHiddenSession, wsId, snapshot);
       yield* call(showError, result.error || m.agent_mutation_deleteFailed_error());
       yield* put(action.failure(new Error(result.error || m.agent_mutation_deleteFailed_error())));
       settled = true;
@@ -391,12 +401,12 @@ function* deleteImmediately(
     yield* put(action.success(undefined as never));
     settled = true;
   } catch (error) {
-    if (snapshot) yield* call(persistSession, snapshot);
+    if (snapshot) yield* call(restoreHiddenSession, wsId, snapshot);
     yield* put(action.failure(mutationError(error, m.agent_mutation_deleteSessionFailed_error())));
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {
-      if (snapshot) yield* call(persistSession, snapshot);
+      if (snapshot) yield* call(restoreHiddenSession, wsId, snapshot);
       yield* put(action.failure(new Error(m.agent_mutation_deleteSessionFailed_error())));
     }
   }

@@ -10,6 +10,7 @@ import {
   checkHostRequirementsRequested,
   checkHostRequirementsStarted,
   ensureHostRequirementsChecked,
+  ghRequirementResolved,
   gitRequirementResolved,
   nodeRequirementResolved,
 } from '../host-requirements-slice';
@@ -25,14 +26,18 @@ describe('hostRequirementsSaga', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('fans out exact IPC probes and maps only the terminal payload fields', async () => {
-    mocks.invoke.mockImplementation(async (channel: string) =>
-      channel === IPC_CHANNELS.SYSTEM.CHECK_GIT
-        ? { success: true, data: { available: true, version: 'git 2.45', wireOnly: 'drop' } }
-        : {
-            success: true,
-            data: { available: true, versionOk: false, version: '18.0', wireOnly: 'drop' },
-          },
-    );
+    mocks.invoke.mockImplementation(async (channel: string) => {
+      if (channel === IPC_CHANNELS.SYSTEM.CHECK_GIT) {
+        return { success: true, data: { available: true, version: 'git 2.45', wireOnly: 'drop' } };
+      }
+      if (channel === IPC_CHANNELS.SYSTEM.CHECK_GH) {
+        return { success: true, data: { available: true, version: '2.62.0', wireOnly: 'drop' } };
+      }
+      return {
+        success: true,
+        data: { available: true, versionOk: false, version: '18.0', wireOnly: 'drop' },
+      };
+    });
     const channel = stdChannel();
     const dispatch = vi.fn();
     const task = runSaga(
@@ -43,12 +48,13 @@ describe('hostRequirementsSaga', () => {
     await settle();
 
     expect(mocks.invoke.mock.calls.map(([name]) => name).sort()).toEqual(
-      [IPC_CHANNELS.SYSTEM.CHECK_GIT, IPC_CHANNELS.SYSTEM.CHECK_NODE].sort(),
+      [IPC_CHANNELS.SYSTEM.CHECK_GIT, IPC_CHANNELS.SYSTEM.CHECK_GH, IPC_CHANNELS.SYSTEM.CHECK_NODE].sort(),
     );
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       checkHostRequirementsStarted(),
       gitRequirementResolved(true, 'git 2.45'),
       nodeRequirementResolved(false, '18.0'),
+      ghRequirementResolved(true, '2.62.0'),
       checkHostRequirementsComplete(),
     ]);
     task.cancel();
@@ -91,7 +97,7 @@ describe('hostRequirementsSaga', () => {
     channel.put(checkHostRequirementsRequested());
     channel.put(checkHostRequirementsRequested());
     await settle();
-    expect(mocks.invoke).toHaveBeenCalledTimes(2);
+    expect(mocks.invoke).toHaveBeenCalledTimes(3);
     release();
     await settle();
     task.cancel();
