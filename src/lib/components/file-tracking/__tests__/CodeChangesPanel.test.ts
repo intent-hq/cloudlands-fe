@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import type { TrackedChange } from '$features/file-tracking/types';
 import { ChangeStage } from '$features/file-tracking/types';
+import { warmImport } from '../../../../test/warm-import';
 
 if (typeof Element.prototype.scrollIntoView !== 'function') {
   Element.prototype.scrollIntoView = vi.fn();
@@ -128,6 +129,12 @@ async function renderPanel(props: Record<string, any> = {}) {
   const CodeChangesPanel = (await import('../CodeChangesPanel.svelte')).default;
   return render(CodeChangesPanel, { props: { workspaceId: 'ws-1', ...props } });
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/Fa.svelte'));
+warmImport(() => import('./mocks/MockFileChangesList.svelte'));
+warmImport(() => import('../CodeChangesPanel.svelte'));
 
 describe('CodeChangesPanel git-write-service routing', () => {
   beforeEach(() => {

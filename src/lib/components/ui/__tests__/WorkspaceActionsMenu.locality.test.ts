@@ -20,6 +20,7 @@ import { createCollection } from '$lib/store-shim/utils/collections/collection-u
 import type { StoreState } from '$store/renderer/types';
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
+import { warmImport } from '../../../../test/warm-import';
 
 let mockStoreState: Partial<StoreState> = {};
 const mockDispatch = vi.fn();
@@ -99,6 +100,12 @@ async function renderMenu() {
   });
   return container;
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/Fa.svelte'));
+warmImport(() => import('./mocks/button.svelte'));
+warmImport(() => import('../WorkspaceActionsMenu.svelte'));
 
 describe('WorkspaceActionsMenu locality gating (monorepo#883)', () => {
   beforeEach(() => {

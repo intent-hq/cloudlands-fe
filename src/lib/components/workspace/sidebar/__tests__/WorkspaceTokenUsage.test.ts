@@ -11,6 +11,7 @@ import {
 import { render, screen } from '@testing-library/svelte';
 import type { WorkspaceTokenUsageState } from '$store/renderer/slices/token-usage/token-usage-types';
 import { emptyWorkspaceTokenUsageState } from '$store/renderer/slices/token-usage/token-usage-types';
+import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -58,6 +59,11 @@ async function renderTokenUsage(workspaceId = 'ws-1') {
   const WorkspaceTokenUsage = (await import('../WorkspaceTokenUsage.svelte')).default;
   return render(WorkspaceTokenUsage, { props: { workspaceId } });
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/MockTooltipRich.svelte'));
+warmImport(() => import('../WorkspaceTokenUsage.svelte'));
 
 describe('WorkspaceTokenUsage', () => {
   beforeEach(() => {

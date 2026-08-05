@@ -3,6 +3,7 @@
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -30,6 +31,10 @@ beforeEach(() => {
     return 0;
   });
 });
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../NavLink.svelte'));
 
 describe('NavLink', () => {
   it('dispatches the canonical registry target for known hash aliases', async () => {

@@ -86,6 +86,7 @@ vi.mock('$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte', async ()
 }));
 
 import AgentHierarchyCard from '../AgentHierarchyCard.svelte';
+import { warmImport } from '../../../../test/warm-import';
 
 function makeAgent(overrides: Partial<AgentNode> = {}): AgentNode {
   return {
@@ -105,6 +106,11 @@ function makeAgent(overrides: Partial<AgentNode> = {}): AgentNode {
     ...overrides,
   };
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('../../chat/__tests__/mocks/MockAvatarWithState.svelte'));
 
 describe('AgentHierarchyCard Thinking consumer wiring', () => {
   beforeEach(() => {

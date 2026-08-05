@@ -12,6 +12,7 @@ import {
 } from '@testing-library/svelte';
 import type { CommitInfo } from '$features/file-tracking/types';
 import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
+import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -217,6 +218,14 @@ async function renderTimeline(overrides: Partial<Record<string, unknown>> = {}) 
   };
   return render(CommitsTimeline, { props: { ...defaults, ...overrides } });
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('./mocks/MockFileRow.svelte'));
+warmImport(() => import('./mocks/MockSidebarContextMenu.svelte'));
+warmImport(() => import('./mocks/MockSimple.svelte'));
+warmImport(() => import('./mocks/Fa.svelte'));
+warmImport(() => import('../CommitsTimeline.svelte'));
 
 describe('CommitsTimeline', () => {
   beforeEach(() => {

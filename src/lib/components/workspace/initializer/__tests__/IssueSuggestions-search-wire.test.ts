@@ -88,6 +88,7 @@ vi.mock('$lib/components/ui/Header.svelte', async () => ({
 }));
 
 import IssueSuggestions from '../IssueSuggestions.svelte';
+import { warmImport } from '../../../../../test/warm-import';
 
 /** Captured IntersectionObserver instances so tests can fire intersections. */
 const observers: Array<{
@@ -136,6 +137,11 @@ const ghPull = (id: string, number: number) => ({
   htmlUrl: `https://github.com/o/r/pull/${number}`,
   state: 'open' as const,
 });
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
+warmImport(() => import('./mocks/MockComponent.svelte'));
 
 describe('IssueSuggestions server-side search + pagination wire contract', () => {
   beforeEach(() => {

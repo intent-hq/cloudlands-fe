@@ -16,6 +16,7 @@ import {
 } from '@testing-library/svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -199,6 +200,14 @@ function makeNote(overrides: Partial<Note>): Note {
     ...overrides,
   };
 }
+
+// Pre-warm the component module graph so the cold dynamic import is not
+// billed to the first test's timeout (intent-hq/monorepo#1464).
+warmImport(() => import('../../../terminal/__tests__/mocks/MockButton.svelte'));
+warmImport(() => import('./mocks/MockSimple.svelte'));
+warmImport(() => import('./mocks/MockTooltip.svelte'));
+warmImport(() => import('./mocks/Fa.svelte'));
+warmImport(() => import('../WorkspaceProgressCard.svelte'));
 
 describe('WorkspaceProgressCard status message', () => {
   beforeEach(() => {
