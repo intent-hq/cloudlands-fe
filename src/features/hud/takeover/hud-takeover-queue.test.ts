@@ -626,4 +626,102 @@ describe('hud-takeover-queue', () => {
       ['ws-2', false],
     ]);
   });
+
+  it('an event trigger never merges into a PENDING viewer entry (monorepo#1492)', () => {
+    // ws-2 is displayed; a manual viewer for ws-1 waits at the front of pending.
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-2'), T0, NO_BLINK);
+    state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
+    const at = T0 + HUD_TAKEOVER_OPEN_MS + 100;
+    state = requestImmediateTakeover(state, trigger('ws-1', { kind: 'manual' }), at, NO_BLINK);
+    expect(state.pending.map((e) => [e.workspaceId, e.isViewer])).toEqual([['ws-1', true]]);
+    // The event trigger must NOT coalesce into the pending viewer: the viewer
+    // keeps its single manual trigger (and viewer semantics) and the event
+    // gets its own non-viewer entry, appended FIFO behind it.
+    state = enqueueTakeover(state, trigger('ws-1', { kind: 'task_complete' }), at + 10, NO_BLINK);
+    expect(state.pending.map((e) => [e.workspaceId, e.isViewer])).toEqual([
+      ['ws-1', true],
+      ['ws-1', false],
+    ]);
+    expect(state.pending[0].triggers.map((t) => t.kind)).toEqual(['manual']);
+    expect(state.pending[1].triggers.map((t) => t.kind)).toEqual(['task_complete']);
+    // A further ws-1 event trigger coalesces into the EVENT entry, not the viewer.
+    state = enqueueTakeover(state, trigger('ws-1', { kind: 'agent_failed' }), at + 20, NO_BLINK);
+    expect(state.pending.map((e) => [e.workspaceId, e.isViewer])).toEqual([
+      ['ws-1', true],
+      ['ws-1', false],
+    ]);
+    expect(state.pending[0].triggers).toHaveLength(1);
+    expect(state.pending[1].triggers).toHaveLength(2);
+  });
+
+  it('a pending viewer and its workspace event entry both play, in queue order', () => {
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-2'), T0, NO_BLINK);
+    state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
+    const at = T0 + HUD_TAKEOVER_OPEN_MS + 100;
+    state = requestImmediateTakeover(state, trigger('ws-1', { kind: 'manual' }), at, NO_BLINK);
+    state = enqueueTakeover(state, trigger('ws-1', { kind: 'task_complete' }), at + 10, NO_BLINK);
+    expect(state.phase).toBe('closing');
+    // The viewer opens first: deadline-free dwell, manual DISMISS only.
+    state = tickTakeoverQueue(state, state.phaseEndsAtMs!, NO_BLINK);
+    state = tickTakeoverQueue(state, state.phaseEndsAtMs!, NO_BLINK);
+    expect(state.phase).toBe('dwelling');
+    expect(state.active?.isViewer).toBe(true);
+    expect(state.phaseEndsAtMs).toBeNull();
+    const dismissAt = at + 60_000;
+    state = dismissTakeover(state, dismissAt);
+    state = tickTakeoverQueue(state, dismissAt + HUD_TAKEOVER_CLOSE_MS, NO_BLINK);
+    // Then the event entry plays as a normal banner takeover with a dwell.
+    expect(state.active?.workspaceId).toBe('ws-1');
+    expect(state.active?.isViewer).toBe(false);
+    expect(activeTakeoverTrigger(state)?.kind).toBe('task_complete');
+    state = tickTakeoverQueue(state, state.phaseEndsAtMs!, NO_BLINK);
+    expect(state.phase).toBe('dwelling');
+    expect(state.phaseEndsAtMs).not.toBeNull();
+  });
+
+  it('an event trigger for the DISPLAYED workspace lands behind its pending viewer, not inside it', () => {
+    // A ws-1 viewer is open, then dismissed; while its close plays, the card
+    // is clicked again: a fresh ws-1 viewer waits at the front of pending
+    // while ws-1 is still the displayed workspace.
+    let state = requestImmediateTakeover(
+      createHudTakeoverQueue(),
+      trigger('ws-1', { kind: 'manual' }),
+      T0,
+      NO_BLINK,
+    );
+    state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS, NO_BLINK);
+    expect(state.phase).toBe('dwelling');
+    const dismissAt = T0 + HUD_TAKEOVER_OPEN_MS + 100;
+    state = dismissTakeover(state, dismissAt);
+    expect(state.phase).toBe('closing');
+    state = requestImmediateTakeover(state, trigger('ws-1', { kind: 'manual' }), dismissAt + 10, NO_BLINK);
+    expect(state.active?.workspaceId).toBe('ws-1');
+    expect(state.pending.map((e) => [e.workspaceId, e.isViewer])).toEqual([['ws-1', true]]);
+    // The displayed-workspace event trigger takes the queue-jump path: it
+    // must NOT merge into the pending viewer — it gets its own non-viewer
+    // entry inserted behind it (insertBehindLeadingViewers), cap-exempt.
+    state = enqueueTakeover(state, trigger('ws-1', { kind: 'task_complete' }), dismissAt + 20, NO_BLINK);
+    expect(state.pending.map((e) => [e.workspaceId, e.isViewer])).toEqual([
+      ['ws-1', true],
+      ['ws-1', false],
+    ]);
+    expect(state.pending[0].triggers.map((t) => t.kind)).toEqual(['manual']);
+    expect(state.pending[1].triggers.map((t) => t.kind)).toEqual(['task_complete']);
+  });
+
+  it('a non-displayed workspace with only a pending viewer still respects the pending cap', () => {
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-0'), T0, NO_BLINK);
+    state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
+    const at = T0 + HUD_TAKEOVER_OPEN_MS + 100;
+    state = requestImmediateTakeover(state, trigger('ws-1', { kind: 'manual' }), at, NO_BLINK);
+    for (let i = 2; i <= HUD_TAKEOVER_MAX_PENDING; i++) {
+      state = enqueueTakeover(state, trigger(`ws-${i}`), at + i, NO_BLINK);
+    }
+    expect(state.pending).toHaveLength(HUD_TAKEOVER_MAX_PENDING);
+    // ws-1 is not displayed and has no pending EVENT entry to coalesce into:
+    // the trigger is dropped by the cap rather than merged into the viewer.
+    const overflow = enqueueTakeover(state, trigger('ws-1'), at + 100, NO_BLINK);
+    expect(overflow).toBe(state);
+    expect(overflow.pending[0].triggers.map((t) => t.kind)).toEqual(['manual']);
+  });
 });

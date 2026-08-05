@@ -12,7 +12,7 @@
  *    'blinking' phase (latest trigger wins the banner; earlier banners of
  *    the same display are kept so multi-event takeovers can stack banners,
  *    mock `ovDefs().banners`); triggers for a QUEUED workspace always
- *    coalesce into its pending entry;
+ *    coalesce into its pending EVENT entry (never into a pending viewer);
  *  - a trigger for the workspace currently displayed (opening, dwelling or
  *    closing) queues at the FRONT of pending — behind any pending manual
  *    VIEWER entries, which keep precedence — and bypasses the pending cap,
@@ -232,7 +232,10 @@ function insertBehindLeadingViewers(
  * manual viewers, and exempt from the pending cap (it adds at most one
  * entry for the on-screen workspace) — so that workspace re-animates next
  * after the close; other workspaces coalesce into their pending entry or
- * append FIFO at the back. An active manual VIEWER is never coalesced into.
+ * append FIFO at the back. A manual VIEWER — active OR pending — is never
+ * coalesced into: the pending lookup skips viewer entries, so an event
+ * trigger always lands in its own non-viewer entry, subject to the pending
+ * cap for non-displayed workspaces (monorepo#1492).
  */
 export function enqueueTakeover(
   state: HudTakeoverQueueState,
@@ -257,7 +260,7 @@ export function enqueueTakeover(
   }
   const jumpsQueue = state.active.workspaceId === trigger.workspaceId;
   const pendingIndex = state.pending.findIndex(
-    (entry) => entry.workspaceId === trigger.workspaceId,
+    (entry) => !entry.isViewer && entry.workspaceId === trigger.workspaceId,
   );
   if (pendingIndex >= 0) {
     const merged = appendTrigger(state.pending[pendingIndex], trigger);
