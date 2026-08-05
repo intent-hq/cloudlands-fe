@@ -1,5 +1,5 @@
 /**
- * Fire-and-forget `agent.markSeen` trigger (PROTOCOL §4.5).
+ * Fire-and-forget `agent.markSeen` trigger (PROTOCOL §5.5).
  *
  * Advances the per-conversation seen marker while the user is actually
  * looking at the end of the transcript. The ONLY trigger is the viewport
@@ -46,6 +46,23 @@ const pendingByAgent = new Map<string, PendingTrigger>();
 const lastSentByAgent = new Map<string, string>();
 
 /**
+ * Bound on the per-agent dedupe map so it cannot grow without limit across
+ * many agent sessions in a long-lived renderer. Eviction is LRU-ish: Map
+ * iteration order is insertion order and `recordLastSent` re-inserts on every
+ * write, so the first key is always the least recently sent.
+ */
+export const MARK_AGENT_SEEN_DEDUPE_LIMIT = 200;
+
+function recordLastSent(agentId: string, messageId: string): void {
+  lastSentByAgent.delete(agentId);
+  lastSentByAgent.set(agentId, messageId);
+  if (lastSentByAgent.size > MARK_AGENT_SEEN_DEDUPE_LIMIT) {
+    const oldest = lastSentByAgent.keys().next().value;
+    if (oldest !== undefined) lastSentByAgent.delete(oldest);
+  }
+}
+
+/**
  * Newest persisted message id in transcript order — streaming rows (partial
  * assistant output not yet persisted daemon-side) are never eligible: the
  * marker must only ever point at a message the daemon can resolve.
@@ -88,9 +105,13 @@ export function cancelPendingMarkAgentSeen(agentId: string): void {
 
 /** Evaluate all gates from a live snapshot, then send at most one request. */
 async function fire(
-  agentId: string,
+  _requestAgentId: string,
   getSnapshot: () => MarkAgentSeenSnapshot | null,
 ): Promise<void> {
+  // Dedupe bookkeeping is keyed by the fire-time snapshot's agentId — the
+  // same identity the viewed gate and the mutation use — never by the
+  // request-time key, so the two can never diverge.
+  let dedupeKey: string | null = null;
   let recordedId: string | null = null;
   try {
     const snapshot = getSnapshot();
@@ -116,8 +137,9 @@ async function fire(
 
     // Dedupe: the daemon call is idempotent but there is no point re-sending
     // the same marker while the user sits at the bottom.
-    if (lastSentByAgent.get(agentId) === snapshot.messageId) return;
-    lastSentByAgent.set(agentId, snapshot.messageId);
+    dedupeKey = snapshot.agentId;
+    if (lastSentByAgent.get(dedupeKey) === snapshot.messageId) return;
+    recordLastSent(dedupeKey, snapshot.messageId);
     recordedId = snapshot.messageId;
 
     const result = await appClient.agents.markSeen({
@@ -125,14 +147,18 @@ async function fire(
       agentId: snapshot.agentId,
       messageId: snapshot.messageId,
     });
-    if (!result.success && lastSentByAgent.get(agentId) === recordedId) {
+    if (!result.success && lastSentByAgent.get(dedupeKey) === recordedId) {
       // Roll back the dedupe record so the next trigger retries naturally.
-      lastSentByAgent.delete(agentId);
+      lastSentByAgent.delete(dedupeKey);
     }
   } catch {
     // Fire-and-forget: the marker stays behind and the next trigger retries.
-    if (recordedId !== null && lastSentByAgent.get(agentId) === recordedId) {
-      lastSentByAgent.delete(agentId);
+    if (
+      dedupeKey !== null &&
+      recordedId !== null &&
+      lastSentByAgent.get(dedupeKey) === recordedId
+    ) {
+      lastSentByAgent.delete(dedupeKey);
     }
   }
 }

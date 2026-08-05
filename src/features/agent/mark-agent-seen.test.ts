@@ -27,6 +27,7 @@ vi.mock('$store/renderer/store', () => ({
 
 import {
   MARK_AGENT_SEEN_DEBOUNCE_MS,
+  MARK_AGENT_SEEN_DEDUPE_LIMIT,
   cancelPendingMarkAgentSeen,
   newestPersistedMessageId,
   requestMarkAgentSeen,
@@ -231,5 +232,28 @@ describe('requestMarkAgentSeen (debounced at-bottom trigger)', () => {
     await fireDebounce();
 
     expect(mockMarkSeen).toHaveBeenCalledTimes(2);
+  });
+
+  it('bounds the dedupe map: evicted agents re-send their marker (no unbounded growth)', async () => {
+    // Fill the dedupe map past the limit with other agents; the first agent's
+    // record is evicted (insertion-order LRU), so re-triggering the same
+    // marker id for it fires again instead of being deduped forever.
+    const firstAgentId = nextAgentId();
+    mockState.unreadTracking.currentlyViewedAgentId = firstAgentId;
+    requestMarkAgentSeen(firstAgentId, snapshotOf({ agentId: firstAgentId }));
+    await fireDebounce();
+    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
+
+    for (let i = 0; i < MARK_AGENT_SEEN_DEDUPE_LIMIT; i++) {
+      const otherId = nextAgentId();
+      mockState.unreadTracking.currentlyViewedAgentId = otherId;
+      requestMarkAgentSeen(otherId, snapshotOf({ agentId: otherId }));
+      await fireDebounce();
+    }
+
+    mockState.unreadTracking.currentlyViewedAgentId = firstAgentId;
+    requestMarkAgentSeen(firstAgentId, snapshotOf({ agentId: firstAgentId })); // same msg-1
+    await fireDebounce();
+    expect(mockMarkSeen).toHaveBeenCalledTimes(MARK_AGENT_SEEN_DEDUPE_LIMIT + 2);
   });
 });

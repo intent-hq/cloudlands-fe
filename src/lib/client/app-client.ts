@@ -559,13 +559,15 @@ export interface AgentsClient {
     messageId: string;
   }): Promise<MutationResult>;
   /**
-   * Advance the per-conversation seen marker (`agent.markSeen`, §4.5). The
+   * Advance the per-conversation seen marker (`agent.markSeen`, §5.5). The
    * daemon persists `lastSeenMessageId` in session metadata — served on
-   * `AgentLite` and converging via `agent:updated` — and returns
-   * `{ success: true, lastSeenMessageId }`. Fired fire-and-forget by the
-   * viewport trigger while the user is viewing the conversation at-bottom;
-   * callers never await it for UI flow. A nonexistent agent or a workspace
-   * mismatch rejects (folded into `{ success: false, error }`).
+   * `AgentLite` and converging via `agent:updated`. The wire ack carries
+   * `{ success: true, lastSeenMessageId }`, but this seam folds it into a
+   * plain `MutationResult` — callers read the advanced marker from session
+   * metadata, not from this result. Fired fire-and-forget by the viewport
+   * trigger while the user is viewing the conversation at-bottom; callers
+   * never await it for UI flow. A nonexistent agent or a workspace mismatch
+   * rejects (folded into `{ success: false, error }`).
    */
   markSeen(params: {
     agentId: string;

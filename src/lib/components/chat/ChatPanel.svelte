@@ -2540,7 +2540,7 @@
     }
   });
 
-  // Advance the per-conversation seen marker (agent.markSeen, PROTOCOL §4.5)
+  // Advance the per-conversation seen marker (agent.markSeen, PROTOCOL §5.5)
   // while the user is viewing the end of the transcript. The ONLY trigger is
   // the viewport being at the very bottom with this panel active — scrolling
   // mid-conversation never produces a backend call. The request is debounced

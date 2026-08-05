@@ -762,8 +762,8 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result.error).toContain('not found: agent session');
   });
 
-  it('markSeen forwards agent.markSeen with §4.5 params and folds the ack into success', async () => {
-    // PROTOCOL §4.5: agent.markSeen takes `{ workspaceId, agentId,
+  it('markSeen forwards agent.markSeen with §5.5 params and folds the ack into success', async () => {
+    // PROTOCOL §5.5: agent.markSeen takes `{ workspaceId, agentId,
     // messageId }` (all required) and returns `{ success: true,
     // lastSeenMessageId }`. The daemon persists the marker in session
     // metadata (served on AgentLite) and emits `agent:updated`.
