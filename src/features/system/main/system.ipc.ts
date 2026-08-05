@@ -2515,19 +2515,13 @@ export function setupSystemIPC() {
           }
           const allFonts = await getFonts();
 
-          // Clean up font names (font-list returns them with quotes)
-          const cleanedFonts = allFonts.map((font: string) => font.replace(/^["']|["']$/g, ''));
+          // Clean up font names (font-list returns them with quotes), remove duplicates,
+          // and keep the response order deterministic without filtering installed families.
+          const cleanedFonts = Array.from(
+            new Set(allFonts.map((font: string) => font.trim().replace(/^["']|["']$/g, ''))),
+          ).sort((a: string, b: string) => a.localeCompare(b));
 
-          // Filter for monospace fonts by checking known patterns
-          const monoFonts = cleanedFonts
-            .filter((name: string) =>
-              /mono|code|consol|courier|terminal|fixed|hack|source.*pro|fira|jetbrains|sf.*mono|menlo|monaco|andale|iosevka|inconsolata|dejavu.*mono|liberation.*mono|ubuntu.*mono|droid.*mono|noto.*mono|roboto.*mono|cascadia|operator|input|pragmata|anonymous|hermit|envy/i.test(
-                name,
-              ),
-            )
-            .sort((a: string, b: string) => a.localeCompare(b));
-
-          return { success: true, data: monoFonts };
+          return { success: true, data: cleanedFonts };
         } catch (error) {
           logger.error('Failed to list fonts', { error });
           return { success: false, error: m.system_ipc_enumerateFontsFailed_error() };
