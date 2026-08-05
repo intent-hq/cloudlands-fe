@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   HUD_FEED_LIMIT,
-  HUD_RATE_5S_BAR_COUNT,
-  HUD_RATE_5S_BUCKET_MS,
   hudActivated,
   hudAttentionChanged,
   hudDeactivated,
@@ -13,8 +11,6 @@ import {
   hudGridFilterStateToggled,
   hudQuestionCaptured,
   hudQuestionSuperseded,
-  hudRate5sBackfilled,
-  hudRate5sTokensObserved,
   hudRateHistoryFailed,
   hudRateHistoryLoaded,
   hudReducer,
@@ -23,7 +19,6 @@ import {
   hudUsageFailed,
   hudUsageLoaded,
   initialState,
-  toRate5sBucketStart,
   type HudFeedEntry,
   type HudState,
 } from './hud-slice';
@@ -221,69 +216,6 @@ describe('hud-slice reducer', () => {
     let state = hudReducer(activeState(), hudTakeoverRequested('ws-1'));
     state = hudReducer(state, hudTakeoverRequestCleared());
     expect(state.takeoverRequestWorkspaceId).toBeNull();
-  });
-});
-
-describe('hud-slice 5s token buckets (TOK/S chart)', () => {
-  // Aligned base instant so bucket math is exact.
-  const BASE = toRate5sBucketStart(1_753_900_000_000);
-
-  it('accumulates same-bucket deltas and keeps buckets chronological', () => {
-    let state = activeState();
-    state = hudReducer(state, hudRate5sTokensObserved(100, BASE + 1_000));
-    state = hudReducer(state, hudRate5sTokensObserved(50, BASE + 4_000));
-    state = hudReducer(state, hudRate5sTokensObserved(30, BASE + 6_000));
-    expect(state.rate5s.buckets).toEqual([
-      { startMs: BASE, tokens: 150 },
-      { startMs: BASE + HUD_RATE_5S_BUCKET_MS, tokens: 30 },
-    ]);
-  });
-
-  it('ignores non-positive deltas and observations while inactive', () => {
-    const inactive = hudReducer(initialState, hudRate5sTokensObserved(100, BASE));
-    expect(inactive.rate5s.buckets).toEqual([]);
-    let state = activeState();
-    state = hudReducer(state, hudRate5sTokensObserved(0, BASE));
-    state = hudReducer(state, hudRate5sTokensObserved(-5, BASE));
-    expect(state.rate5s.buckets).toEqual([]);
-  });
-
-  it('prunes buckets outside the trailing 40-slot window', () => {
-    let state = activeState();
-    state = hudReducer(state, hudRate5sTokensObserved(10, BASE));
-    const beyond = BASE + HUD_RATE_5S_BAR_COUNT * HUD_RATE_5S_BUCKET_MS;
-    state = hudReducer(state, hudRate5sTokensObserved(20, beyond));
-    expect(state.rate5s.buckets).toEqual([{ startMs: beyond, tokens: 20 }]);
-  });
-
-  it('backfills minute samples split evenly across 5s slots, once, live buckets winning', () => {
-    const nowMs = BASE + 60_000;
-    const minuteUtc = new Date(BASE).toISOString();
-    let state = activeState();
-    state = hudReducer(state, hudRate5sTokensObserved(99, BASE + 10_000));
-    state = hudReducer(
-      state,
-      hudRate5sBackfilled([{ bucketUtc: minuteUtc, tokens: 120 }], nowMs),
-    );
-    expect(state.rate5s.backfilled).toBe(true);
-    const bucketAt = (offset: number) =>
-      state.rate5s.buckets.find((b) => b.startMs === BASE + offset);
-    expect(bucketAt(0)?.tokens).toBe(10); // 120 / 12 slots
-    expect(bucketAt(10_000)?.tokens).toBe(99); // live delta wins
-    // Repeat backfills are ignored (one-shot).
-    const repeat = hudReducer(
-      state,
-      hudRate5sBackfilled([{ bucketUtc: minuteUtc, tokens: 999 }], nowMs),
-    );
-    expect(repeat).toBe(state);
-  });
-
-  it('backfill never writes future slots past nowMs', () => {
-    const nowMs = BASE + 20_000;
-    const minuteUtc = new Date(BASE).toISOString();
-    let state = activeState();
-    state = hudReducer(state, hudRate5sBackfilled([{ bucketUtc: minuteUtc, tokens: 120 }], nowMs));
-    expect(Math.max(...state.rate5s.buckets.map((b) => b.startMs))).toBeLessThanOrEqual(nowMs);
   });
 });
 

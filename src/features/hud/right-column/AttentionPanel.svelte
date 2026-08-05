@@ -190,6 +190,7 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    min-width: 0;
   }
   .hud-attention-row {
     border-left: 2px solid hsl(var(--warning));
@@ -197,6 +198,7 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
+    min-width: 0;
   }
   .hud-attention-row-hint {
     animation: hud-hint-w 2.5s ease-out both;
@@ -250,6 +252,9 @@
       500 10.5px 'JetBrains Mono',
       monospace;
     color: hsl(var(--text-subtle));
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
   @keyframes hud-attention-blink {
     0%,
