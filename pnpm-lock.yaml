@@ -110,8 +110,8 @@ importers:
         specifier: ^3.29.2
         version: 3.29.2(@floating-ui/dom@1.7.6)(@tiptap/core@3.29.2(@tiptap/pm@3.29.2))(@tiptap/pm@3.29.2)
       '@types/cheerio':
-        specifier: ^0.22.35
-        version: 0.22.35
+        specifier: ^1.0.0
+        version: 1.0.0
       '@types/ssh2':
         specifier: ^1.15.5
         version: 1.15.5
@@ -1898,8 +1898,9 @@ packages:
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
 
-  '@types/cheerio@0.22.35':
-    resolution: {integrity: sha512-yD57BchKRvTV+JD53UZ6PD8KWY5g5rvvMLRnZR3EQBCZXiDT/HR+pKpMzFGlWNhFrXlo7VPZXtKvIEwZkAWOIA==}
+  '@types/cheerio@1.0.0':
+    resolution: {integrity: sha512-zAaImHWoh5RY2CLgU2mvg3bl2k3F65B0N5yphuII3ythFLPmJhL7sj1RDu6gSxcgqHlETbr/lhA2OBY+WF1fXQ==}
+    deprecated: This is a stub types definition. cheerio provides its own type definitions, so you do not need this installed.
 
   '@types/chrome-remote-interface@0.34.0':
     resolution: {integrity: sha512-4q8pMUvasrAkB7bejGWw5igboAvBz7vJRZq+295yFONGoeN7X/hfq8Mq4vTxUQKnENbR9tqksP8RZsLxlRtsWQ==}
@@ -6627,9 +6628,9 @@ snapshots:
       '@types/deep-eql': 4.0.2
       assertion-error: 2.0.1
 
-  '@types/cheerio@0.22.35':
+  '@types/cheerio@1.0.0':
     dependencies:
-      '@types/node': 22.19.19
+      cheerio: 1.2.0
 
   '@types/chrome-remote-interface@0.34.0':
     dependencies:
