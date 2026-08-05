@@ -76,6 +76,16 @@ import {
 
 const logger = createLogger('HardwareConsoleVoiceTranscription');
 
+type TranscriptionAction = { type: string; payload?: unknown };
+
+function isTranscriptionAction(action: unknown): action is TranscriptionAction {
+  return (
+    typeof action === 'object' &&
+    action !== null &&
+    typeof (action as { type?: unknown }).type === 'string'
+  );
+}
+
 /** Re-show cadence for the in-flight HUD label (< ACTION_HUD_HIDE_MS). */
 export const TRANSCRIBING_HUD_REFRESH_MS = 800;
 
@@ -581,6 +591,7 @@ export async function runTranscriptionFlow(
 export function createVoiceTranscriptionMiddleware(deps: TranscriptionDeps = {}): StoreMiddleware {
   return () => (next) => (action) => {
     const result = next(action);
+    if (!isTranscriptionAction(action)) return result;
     if (action && action.type === pttRecordingFinished.type) {
       const [recording] = (action as { payload: [PttRecordingFinishedPayload] }).payload;
       void runTranscriptionFlow(recording, { autoSend: recording.autoSend === true }, deps);
