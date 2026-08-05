@@ -162,15 +162,35 @@ describe('hud-takeover-triggers', () => {
     expect(mapEventToTakeoverTrigger(event('workspace:updated'))).toBeNull();
   });
 
-  it('does NOT fire a status_update on displayStatus transitions', () => {
+  it('fires on allowlisted displayStatus transitions with the per-value kind', () => {
+    const expected: Record<string, string> = {
+      idle: 'workspace_idle',
+      pr_open: 'pr_open',
+      pr_ready: 'pr_ready',
+      pr_merged: 'pr_merged',
+      complete: 'workspace_complete',
+    };
+    for (const [displayStatus, kind] of Object.entries(expected)) {
+      expect(
+        mapEventToTakeoverTrigger(event('workspace:displayStatus-changed', { displayStatus })),
+      ).toMatchObject({ kind, detail: '' });
+    }
+  });
+
+  it('ignores non-allowlisted displayStatus transitions', () => {
+    for (const displayStatus of ['in_progress', 'needs_attention', 'not_started', 'unknown', '']) {
+      expect(
+        mapEventToTakeoverTrigger(event('workspace:displayStatus-changed', { displayStatus })),
+      ).toBeNull();
+    }
+    expect(mapEventToTakeoverTrigger(event('workspace:displayStatus-changed'))).toBeNull();
+  });
+
+  it('per-agent idle events remain non-triggers (workspace-level only)', () => {
+    expect(mapEventToTakeoverTrigger(event('agent:idle', { agentId: AGENT_UUID }))).toBeNull();
     expect(
       mapEventToTakeoverTrigger(
-        event('workspace:displayStatus-changed', { displayStatus: 'in_progress' }),
-      ),
-    ).toBeNull();
-    expect(
-      mapEventToTakeoverTrigger(
-        event('workspace:displayStatus-changed', { displayStatus: 'pr_open' }),
+        event('agent:status-changed', { agentId: AGENT_UUID, status: 'idle' }),
       ),
     ).toBeNull();
   });
@@ -308,6 +328,7 @@ describe('hud-takeover-triggers', () => {
         'agent:stream:end',
         'task:status-changed',
         'workspace:attention-changed',
+        'workspace:displayStatus-changed',
         'workspace:updated',
       ].sort(),
     );
