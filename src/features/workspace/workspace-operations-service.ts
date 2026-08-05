@@ -40,6 +40,7 @@ import {
 } from '$store/renderer/slices/workspace/workspace-slice';
 import {
   applyWorkspaceProposal,
+  bulkArchiveActiveWorkComputed,
   closeArchiveWarning,
   closeBulkArchiveConfirm,
   closeBulkDeleteArchivedConfirm,
@@ -53,6 +54,7 @@ import {
   confirmDeleteWorkspace,
   confirmRemoveRepo,
   openArchiveWarning,
+  openBulkArchiveConfirm,
   openBulkDeleteWarningConfirm,
   openDeleteWarning,
   requestArchiveWorkspace,
@@ -128,6 +130,37 @@ function getArchivedWorkspacesForRepo(repoKey: string, workspaces: Workspace[]):
       workspace.status === WorkspaceStatusEnum.Archived &&
       workspaceMatchesRepoKey(workspace, repoKey),
   );
+}
+
+/** Aggregate streaming-agent / active-hook counts across a set of workspaces. */
+async function countBulkActiveWork(
+  workspaces: Workspace[],
+): Promise<{ agentCount: number; hookCount: number }> {
+  const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+  const results = await Promise.all(
+    workspaces.map((workspace) => getActiveWorkNames(workspace.id)),
+  );
+  let agentCount = 0;
+  let hookCount = 0;
+  for (const { agentNames, hookNames } of results) {
+    agentCount += agentNames.length;
+    hookCount += hookNames.length;
+  }
+  return { agentCount, hookCount };
+}
+
+/**
+ * Compute the active work behind an open bulk-archive confirm and fold the
+ * counts into the slice so the dialog can warn about it. Fire-and-forget from
+ * the middleware; the reducer drops late results if the confirm was closed or
+ * reopened for a different repo in the meantime.
+ */
+async function computeBulkArchiveActiveWork(repoKey: string): Promise<void> {
+  const toArchive = getActiveWorkspacesForRepo(repoKey, readWorkspaces());
+  if (toArchive.length === 0) return;
+  const { agentCount, hookCount } = await countBulkActiveWork(toArchive);
+  if (agentCount === 0 && hookCount === 0) return;
+  appStore.dispatch(bulkArchiveActiveWorkComputed({ repoKey, agentCount, hookCount }));
 }
 
 /**
@@ -463,7 +496,7 @@ async function performBulkDeleteArchived(repoKey: string): Promise<void> {
   }
 }
 
-/** Bulk-delete archived workspaces; defer to the warning modal if agents run. */
+/** Bulk-delete archived workspaces; defer to the warning modal on active work. */
 export async function bulkDeleteArchived(): Promise<void> {
   const repoKey = appStore.state.workspaceOperations.pendingBulkRepoKey;
   appStore.dispatch(closeBulkDeleteArchivedConfirm());
@@ -479,9 +512,16 @@ export async function bulkDeleteArchived(): Promise<void> {
     return;
   }
 
-  const { hasRunningAgents } = await import('$lib/utils/delete-warning-utils');
-  if (toDelete.some((workspace) => hasRunningAgents(workspace.id))) {
-    appStore.dispatch(openBulkDeleteWarningConfirm({ repoKey, workspaceCount: toDelete.length }));
+  const { agentCount, hookCount } = await countBulkActiveWork(toDelete);
+  if (agentCount > 0 || hookCount > 0) {
+    appStore.dispatch(
+      openBulkDeleteWarningConfirm({
+        repoKey,
+        workspaceCount: toDelete.length,
+        agentCount,
+        hookCount,
+      }),
+    );
     return;
   }
 
@@ -769,6 +809,9 @@ export function createWorkspaceOperationsMiddleware(): StoreMiddleware {
           break;
         case confirmArchiveWorkspace.type:
           void confirmArchiveFromWarning();
+          break;
+        case openBulkArchiveConfirm.type:
+          if (typeof payload[0] === 'string') void computeBulkArchiveActiveWork(payload[0]);
           break;
         case confirmBulkArchive.type:
           void bulkArchive();
