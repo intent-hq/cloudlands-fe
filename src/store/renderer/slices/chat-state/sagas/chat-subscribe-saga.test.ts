@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { AgentStatus } from "$shared/types/agent.types";
 import type { AgentMessage, AgentSession } from "$shared/types";
 import type { ChatLiveStreamPhase, ChatTranscript } from "$lib/client/app-client";
@@ -6,7 +6,7 @@ import type { ChatLiveStreamPhase, ChatTranscript } from "$lib/client/app-client
 // FAKE seam: chat.subscribe is stubbed so no daemon call happens; each call
 // records its handler (so tests can push §7.1-shaped reconciled transcripts)
 // and returns a spy disposer. agents.get/getConversation + subscribeSnapshot
-// keep the sibling chat-read middleware (same initializeChatRequested
+// keep the sibling chat-read saga (same initializeChatRequested
 // trigger, real store) inert. READ-ONLY: never a mutation.
 vi.mock("$lib/client", () => {
   const subscriptions: Array<{
@@ -71,14 +71,15 @@ import {
   markAgentAsViewed,
 } from "$store/renderer/slices/unread-tracking/unread-tracking-slice";
 import {
-  __resetChatSubscribeServiceForTests,
+  __resetChatSubscribeSagaForTests,
+  chatSubscribeSaga,
   hasLiveChatSubscription,
-} from "./chat-subscribe-service";
+} from "./chat-subscribe-saga";
 import {
   clearPendingAgentDeletions,
   removePendingAgentDeletion,
   setPendingAgentDeletion,
-} from "./utils/pending-agent-deletions";
+} from "$features/agent/utils/pending-agent-deletions";
 import { shouldShowStoppedIndicator } from "$lib/components/chat/message-display-utils";
 
 type FakeSubscription = {
@@ -134,10 +135,16 @@ function openChat(agentId: string): FakeSubscription {
   return sub;
 }
 
-describe("chatSubscribeService (fake seam, real store)", () => {
-  beforeAll(() => appStore.init());
+describe("chatSubscribeSaga (fake seam, real store)", () => {
+  let stopSaga: (() => void) | undefined;
+
+  beforeAll(() => {
+    appStore.init();
+    stopSaga = appStore.runSaga(chatSubscribeSaga);
+  });
+  afterAll(() => stopSaga?.());
   afterEach(() => {
-    __resetChatSubscribeServiceForTests();
+    __resetChatSubscribeSagaForTests();
     clearPendingAgentDeletions();
     fakeSubscriptions.length = 0;
     vi.clearAllMocks();
@@ -152,6 +159,20 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     const calls = chatApi.subscribe.mock.calls.filter(([id]) => id === agentId);
     expect(calls).toHaveLength(1);
     expect(calls[0][0]).toBe(agentId);
+  });
+
+  it("closes standing subscriptions when the root saga is cancelled", () => {
+    const agentId = "agent-sub-cancel";
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler(transcript([]));
+
+    stopSaga?.();
+    stopSaga = undefined;
+
+    expect(sub.unsubscribe).toHaveBeenCalledOnce();
+    expect(hasLiveChatSubscription(agentId)).toBe(false);
+    stopSaga = appStore.runSaga(chatSubscribeSaga);
   });
 
   it("hydrates the transcript from the seq-0 snapshot emit and live-updates on delta emits", () => {

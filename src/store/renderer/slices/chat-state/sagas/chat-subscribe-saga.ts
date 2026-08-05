@@ -1,9 +1,9 @@
 /**
- * Chat subscribe service — feeds the STANDING `chat.subscribe` transcript
+ * Chat subscribe saga — feeds the STANDING `chat.subscribe` transcript
  * (PROTOCOL §7.1) into the agent-session slice so ChatPanel renders from the
  * live-reconciled stream, sibling to `chat-read-service.ts`.
  *
- * `createChatSubscribeMiddleware()` observes every dispatched action:
+ * `chatSubscribeSaga()` observes the concrete subscription lifecycle actions:
  *  - `initializeChatRequested` opens one standing subscription for that agent
  *    (deduped per agent id; skipped while a soft-hidden deletion is pending).
  *  - `markAgentAsViewed` swaps subscriptions on agent switch: it closes every
@@ -58,11 +58,10 @@
  * subscription has emitted its seq-0 snapshot, which consumers (e.g. the
  * bridge's agent:message refetch gate) use to skip redundant fetches.
  *
- * Dependency-light per src/store AGENTS.md: imports only the AppClient seam,
- * the configured store, slice actions, the shared dedup util, and the logger
- * (NOT selectors).
+ * The root-owned saga takes each lifecycle action after reducers have applied
+ * it, preserving the former post-action state-read semantics.
  */
-import type { StoreMiddleware } from "@augmentcode/themis/types";
+import { call, take } from "typed-redux-saga";
 import type { AgentMessage } from "$shared/types";
 import type { ChatTranscript, Unsubscribe } from "$lib/client/app-client";
 import { appClient } from "$lib/client";
@@ -87,9 +86,9 @@ import {
 import { deduplicateAgentMessages } from "$shared/utils/message-dedup";
 import { CHIEF_WORKSPACE_ID } from "$shared/types/branded-ids";
 import { createLogger } from "$lib/utils/client-logger";
-import { isAgentDeletionPending } from "./utils/pending-agent-deletions";
+import { isAgentDeletionPending } from "$features/agent/utils/pending-agent-deletions";
 
-const logger = createLogger("ChatSubscribeService");
+const logger = createLogger("ChatSubscribeSaga");
 
 interface SubscriptionEntry {
   unsubscribe: Unsubscribe;
@@ -336,90 +335,90 @@ function closeNonChiefChatSubscriptions(): void {
 }
 
 /** Test-only: dispose everything and reset module state. */
-export function __resetChatSubscribeServiceForTests(): void {
+export function __resetChatSubscribeSagaForTests(): void {
   closeAllChatSubscriptions();
 }
 
-/**
- * Middleware wiring the subscription lifecycle to the store's action stream.
- * Runs after the reducer so state reads observe the post-action state.
- */
-export function createChatSubscribeMiddleware(): StoreMiddleware {
-  return () => (next) => (action) => {
-    const result = next(action);
-    if (!action || typeof action !== "object") return result;
-    const { type } = action as { type?: unknown };
-    try {
-      if (type === initializeChatRequested.type) {
-        const payload = (action as { payload?: { agentId?: unknown; wsId?: unknown } }).payload;
-        const agentId = payload && typeof payload === "object" ? payload.agentId : undefined;
-        const wsId = payload && typeof payload === "object" ? payload.wsId : undefined;
-        if (typeof agentId === "string" && agentId.length > 0) {
-          openChatSubscription(agentId, typeof wsId === "string" ? wsId : undefined);
-        }
-      } else if (type === markAgentAsViewed.type) {
-        const [agentId] = (action as { payload: [string] }).payload;
-        if (typeof agentId === "string" && agentId.length > 0) {
-          closeOtherChatSubscriptions(agentId);
-          // (Re)open for the newly viewed agent when its session is already
-          // known — ChatPanel's initializeChatRequested covers first-open.
-          if (readSession(agentId)) {
-            openChatSubscription(agentId, readSession(agentId)?.workspaceId);
-          }
-        }
-      } else if (type === transcriptHydrationSettled.type) {
-        // A slower full-history hydrate (chat-read-service) may have landed a
-        // paged fetch that predates a row this stream already finalized —
-        // clobbering it (the persisted row is not stream-owned, so the read
-        // side's isStreaming guard cannot preserve it). Re-assert the
-        // canonical reconciled transcript against the post-hydrate store.
-        // The reducer for this action has already run, and applyTranscript's
-        // streaming edge is keyed on entry.wasStreaming, so a re-apply with
-        // the same transcript never re-dispatches a consumed flag edge.
-        const [agentId] = (action as { payload: [string] }).payload;
-        if (typeof agentId === "string") {
-          const entry = subscriptions.get(agentId);
-          if (entry?.hasEmitted && entry.lastTranscript) {
-            applyTranscript(agentId, entry, entry.lastTranscript);
-          }
-        }
-      } else if (type === clearCurrentlyViewedAgent.type) {
-        const [scopeAgentId] = (action as { payload: [string?] }).payload ?? [];
-        if (typeof scopeAgentId === "string" && isChiefChatAgent(scopeAgentId)) {
-          // The swap exempts chief-workspace subscriptions, so this scoped
-          // clear (ChiefCard collapse / thread-switch destroy) is their only
-          // viewed-lifecycle teardown — close exactly this subscription, even
-          // while another agent remains viewed. No close-all: the chief
-          // panel closing says nothing about the chat area (monorepo#1421).
-          closeChatSubscription(scopeAgentId);
-        } else if (readCurrentlyViewedAgentId() === null) {
-          // Runs post-reducer: a scoped clear from a background/deactivating
-          // panel that does not match the viewed agent is a reducer no-op, so
-          // an agent still being viewed means the chat did NOT close — keep
-          // its standing subscription (monorepo#1215). Chief subscriptions
-          // are spared: their panel is still open (monorepo#1421).
-          closeNonChiefChatSubscriptions();
-        }
-      } else if (type === removeSession.type) {
-        const [agentId] = (action as { payload: [string] }).payload;
-        if (typeof agentId === "string") closeChatSubscription(agentId);
-      } else if (type === removeWorkspaceSessions.type) {
-        const [wsId] = (action as { payload: [string] }).payload;
-        if (typeof wsId === "string") closeWorkspaceChatSubscriptions(wsId);
-      } else if (type === workspaceDeleted.type) {
-        const [wsId, agentIds] = (action as { payload: [string, string[]] }).payload;
-        if (typeof wsId === "string") closeWorkspaceChatSubscriptions(wsId);
-        if (Array.isArray(agentIds)) {
-          for (const agentId of agentIds) {
-            if (typeof agentId === "string") closeChatSubscription(agentId);
-          }
-        }
-      } else if (type === clearAllSessions.type) {
-        closeAllChatSubscriptions();
-      }
-    } catch (error) {
-      logger.error("chat-subscribe middleware failed", error);
+type ChatSubscribeAction = { type: string; payload?: unknown };
+
+function handleChatSubscribeAction(action: ChatSubscribeAction): void {
+  if (action.type === initializeChatRequested.type) {
+    const payload = action.payload as { agentId?: unknown; wsId?: unknown } | undefined;
+    const agentId = payload?.agentId;
+    const wsId = payload?.wsId;
+    if (typeof agentId === "string" && agentId.length > 0) {
+      openChatSubscription(agentId, typeof wsId === "string" ? wsId : undefined);
     }
-    return result;
-  };
+  } else if (action.type === markAgentAsViewed.type) {
+    const [agentId] = action.payload as [string];
+    if (typeof agentId === "string" && agentId.length > 0) {
+      closeOtherChatSubscriptions(agentId);
+      // (Re)open for the newly viewed agent when its session is already
+      // known — ChatPanel's initializeChatRequested covers first-open.
+      if (readSession(agentId)) {
+        openChatSubscription(agentId, readSession(agentId)?.workspaceId);
+      }
+    }
+  } else if (action.type === transcriptHydrationSettled.type) {
+    // A slower full-history hydrate (chat-read saga) may have landed a paged
+    // fetch that predates a row this stream already finalized — clobbering it.
+    // Re-assert the canonical transcript against the post-hydrate store.
+    const [agentId] = action.payload as [string];
+    if (typeof agentId === "string") {
+      const entry = subscriptions.get(agentId);
+      if (entry?.hasEmitted && entry.lastTranscript) {
+        applyTranscript(agentId, entry, entry.lastTranscript);
+      }
+    }
+  } else if (action.type === clearCurrentlyViewedAgent.type) {
+    const [scopeAgentId] = (action.payload as [string?] | undefined) ?? [];
+    if (typeof scopeAgentId === "string" && isChiefChatAgent(scopeAgentId)) {
+      closeChatSubscription(scopeAgentId);
+    } else if (readCurrentlyViewedAgentId() === null) {
+      // Post-reducer: an ignored scoped clear leaves an agent viewed, so keep
+      // its subscription. Chief subscriptions have an independent lifecycle.
+      closeNonChiefChatSubscriptions();
+    }
+  } else if (action.type === removeSession.type) {
+    const [agentId] = action.payload as [string];
+    if (typeof agentId === "string") closeChatSubscription(agentId);
+  } else if (action.type === removeWorkspaceSessions.type) {
+    const [wsId] = action.payload as [string];
+    if (typeof wsId === "string") closeWorkspaceChatSubscriptions(wsId);
+  } else if (action.type === workspaceDeleted.type) {
+    const [wsId, agentIds] = action.payload as [string, string[]];
+    if (typeof wsId === "string") closeWorkspaceChatSubscriptions(wsId);
+    if (Array.isArray(agentIds)) {
+      for (const agentId of agentIds) {
+        if (typeof agentId === "string") closeChatSubscription(agentId);
+      }
+    }
+  } else if (action.type === clearAllSessions.type) {
+    closeAllChatSubscriptions();
+  }
+}
+
+/** Root-owned standing chat subscription lifecycle. */
+export function* chatSubscribeSaga() {
+  try {
+    while (true) {
+      const action: ChatSubscribeAction = yield* take([
+        initializeChatRequested,
+        markAgentAsViewed,
+        transcriptHydrationSettled,
+        clearCurrentlyViewedAgent,
+        removeSession,
+        removeWorkspaceSessions,
+        workspaceDeleted,
+        clearAllSessions,
+      ]);
+      try {
+        yield* call(handleChatSubscribeAction, action);
+      } catch (error) {
+        logger.error("chat-subscribe saga action failed", error);
+      }
+    }
+  } finally {
+    yield* call(closeAllChatSubscriptions);
+  }
 }
