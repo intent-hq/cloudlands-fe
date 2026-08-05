@@ -4,6 +4,13 @@ import type {
 } from "$features/voice/voice-settings-service";
 import type { VoiceEngine } from "$features/voice/voice-engine-preference";
 
+/** Serializable projection of an audio-input MediaDeviceInfo. */
+export interface VoiceInputDevice {
+  deviceId: string;
+  /** Empty until the user grants microphone permission (Web API behavior). */
+  label: string;
+}
+
 export interface VoiceSettingsSliceState {
   /** True until the initial daemon read settles. */
   isLoading: boolean;
@@ -21,6 +28,10 @@ export interface VoiceSettingsSliceState {
   vocabulary: string[] | null;
   /** OpenAI transcription model; `null` when the daemon's catalog lacks the setting. */
   openaiModel: VoiceOpenAiModel | null;
+  /** Selected microphone device id; `null` = system default. */
+  inputDeviceId: string | null;
+  /** Enumerated audio-input devices (refreshed on `devicechange`). */
+  inputDevices: VoiceInputDevice[];
   /** Provider with an in-flight key write/clear, if any. */
   busyProvider: VoiceProvider | null;
   /** Localized error surfaced by the last failed operation. */

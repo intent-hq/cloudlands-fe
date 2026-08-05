@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PTT_MAX_RECORDING_MS,
   VoiceRecorder,
+  buildRecorderConstraints,
   isVoiceRecordingSupported,
   pickRecorderMimeType,
   type VoiceRecordingResult,
@@ -73,7 +74,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function makeRecorder(overrides: { maxDurationMs?: number } = {}) {
+function makeRecorder(overrides: { maxDurationMs?: number; deviceId?: string | null } = {}) {
   const onFinished = vi.fn<(result: VoiceRecordingResult) => void>();
   const onError = vi.fn();
   const recorder = new VoiceRecorder({ onFinished, onError, ...overrides });
@@ -85,6 +86,15 @@ describe('environment probes', () => {
     expect(isVoiceRecordingSupported()).toBe(true);
     vi.stubGlobal('navigator', {});
     expect(isVoiceRecordingSupported()).toBe(false);
+  });
+
+  it('buildRecorderConstraints uses an ideal device constraint only when a device is set', () => {
+    expect(buildRecorderConstraints(null)).toEqual({ audio: true });
+    expect(buildRecorderConstraints(undefined)).toEqual({ audio: true });
+    expect(buildRecorderConstraints('')).toEqual({ audio: true });
+    expect(buildRecorderConstraints('mic-1')).toEqual({
+      audio: { deviceId: { ideal: 'mic-1' } },
+    });
   });
 
   it('pickRecorderMimeType prefers webm/opus', () => {
@@ -117,6 +127,20 @@ describe('VoiceRecorder lifecycle', () => {
     expect(result.blob.size).toBeGreaterThan(0);
     expect(onError).not.toHaveBeenCalled();
     expect(recorder.state).toBe('stopped');
+  });
+
+  it('captures from the system default when no device is selected', async () => {
+    const { recorder } = makeRecorder();
+    await recorder.start();
+    expect(getUserMedia).toHaveBeenCalledWith({ audio: true });
+  });
+
+  it('requests the selected device as an ideal constraint (degrades to default)', async () => {
+    const { recorder } = makeRecorder({ deviceId: 'mic-abc123' });
+    await recorder.start();
+    expect(getUserMedia).toHaveBeenCalledWith({
+      audio: { deviceId: { ideal: 'mic-abc123' } },
+    });
   });
 
   it('releases the microphone tracks on stop', async () => {

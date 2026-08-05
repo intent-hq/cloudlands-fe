@@ -31,16 +31,25 @@ import {
 import { store as appStore } from "$store/renderer/store";
 import {
   setVoiceEngineValue,
+  setVoiceInputDevices,
+  setVoiceInputDeviceValue,
   setVoiceOpenAiModelValue,
   setVoiceOsEngineAvailable,
   setVoiceSettingsError,
 } from "$store/renderer/slices/voice-settings/voice-settings-slice";
 import { VOICE_ENGINE_STORAGE_KEY } from "$features/voice/voice-engine-preference";
+import {
+  resetVoiceInputDevicePreferenceSession,
+  VOICE_INPUT_DEVICE_STORAGE_KEY,
+} from "$features/voice/voice-input-device-preference";
 import { setVoiceOpenAiModel } from "$features/voice/voice-settings-service";
 import {
   changeVoiceEngineFlow,
+  changeVoiceInputDeviceFlow,
   changeVoiceOpenAiModelFlow,
   hydrateVoiceEngineFlow,
+  hydrateVoiceInputDeviceFlow,
+  refreshVoiceInputDevicesFlow,
   requestOsSpeechAuthorizationFlow,
 } from "./voice-settings-store-service";
 
@@ -50,6 +59,7 @@ const setModelMock = vi.mocked(setVoiceOpenAiModel);
 // The global test setup replaces window.localStorage with vi.fn stubs.
 const getItemMock = vi.mocked(window.localStorage.getItem);
 const setItemMock = vi.mocked(window.localStorage.setItem);
+const removeItemMock = vi.mocked(window.localStorage.removeItem);
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const state = () => appStore.state.voiceSettings;
 
@@ -215,5 +225,98 @@ describe("voiceSettingsStoreService OpenAI model flow (fake seam, real store)", 
 
     expect(setModelMock).not.toHaveBeenCalled();
     expect(state().openaiModel).toBeNull();
+  });
+});
+
+describe("voiceSettingsStoreService input-device flows (fake MediaDevices, real store)", () => {
+  const enumerateDevices = vi.fn();
+  const addEventListener = vi.fn();
+
+  beforeAll(() => appStore.init());
+  beforeEach(() => {
+    enumerateDevices.mockResolvedValue([
+      { kind: "audioinput", deviceId: "mic-1", label: "USB Mic" },
+      { kind: "audioinput", deviceId: "", label: "" }, // permission-less placeholder
+      { kind: "audiooutput", deviceId: "spk-1", label: "Speakers" },
+      { kind: "videoinput", deviceId: "cam-1", label: "Camera" },
+    ]);
+    vi.stubGlobal("navigator", { mediaDevices: { enumerateDevices, addEventListener } });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+    resetVoiceInputDevicePreferenceSession();
+    getItemMock.mockReset().mockReturnValue(null);
+    setItemMock.mockReset();
+    appStore.dispatch(setVoiceInputDeviceValue(null));
+    appStore.dispatch(setVoiceInputDevices([]));
+  });
+
+  it("refresh enumerates and keeps only audio inputs with real device ids", async () => {
+    await refreshVoiceInputDevicesFlow();
+
+    expect(state().inputDevices).toEqual([{ deviceId: "mic-1", label: "USB Mic" }]);
+  });
+
+  it("refresh leaves the list alone when enumeration fails", async () => {
+    appStore.dispatch(setVoiceInputDevices([{ deviceId: "mic-1", label: "USB Mic" }]));
+    enumerateDevices.mockRejectedValue(new Error("NotAllowedError"));
+
+    await refreshVoiceInputDevicesFlow();
+
+    expect(state().inputDevices).toEqual([{ deviceId: "mic-1", label: "USB Mic" }]);
+  });
+
+  // NOTE: this test must be the first hydrate call in the suite — the
+  // devicechange listener is registered once per renderer (module-level guard),
+  // so only the first hydration records the registration on the mock.
+  it("hydration registers a devicechange listener that re-enumerates the device list", async () => {
+    await hydrateVoiceInputDeviceFlow();
+
+    const registration = addEventListener.mock.calls.find(([event]) => event === "devicechange");
+    expect(registration).toBeDefined();
+
+    enumerateDevices.mockResolvedValue([
+      { kind: "audioinput", deviceId: "mic-2", label: "Headset" },
+    ]);
+    (registration![1] as () => void)();
+    await flush();
+    expect(state().inputDevices).toEqual([{ deviceId: "mic-2", label: "Headset" }]);
+  });
+
+  it("hydration loads the persisted preference and enumerates devices", async () => {
+    getItemMock.mockImplementation((key) =>
+      key === VOICE_INPUT_DEVICE_STORAGE_KEY ? "mic-1" : null,
+    );
+
+    await hydrateVoiceInputDeviceFlow();
+
+    expect(state().inputDeviceId).toBe("mic-1");
+    expect(state().inputDevices).toEqual([{ deviceId: "mic-1", label: "USB Mic" }]);
+  });
+
+  it("changing the device applies it to the store and persists locally", () => {
+    changeVoiceInputDeviceFlow("mic-1");
+
+    expect(state().inputDeviceId).toBe("mic-1");
+    expect(setItemMock).toHaveBeenCalledWith(VOICE_INPUT_DEVICE_STORAGE_KEY, "mic-1");
+  });
+
+  it("selecting the system default clears the persisted preference", () => {
+    appStore.dispatch(setVoiceInputDeviceValue("mic-1"));
+
+    changeVoiceInputDeviceFlow(null);
+
+    expect(state().inputDeviceId).toBeNull();
+    expect(removeItemMock).toHaveBeenCalledWith(VOICE_INPUT_DEVICE_STORAGE_KEY);
+  });
+
+  it("re-selecting the current device is a no-op — no persistence write", () => {
+    appStore.dispatch(setVoiceInputDeviceValue("mic-1"));
+
+    changeVoiceInputDeviceFlow("mic-1");
+
+    expect(setItemMock).not.toHaveBeenCalled();
+    expect(removeItemMock).not.toHaveBeenCalled();
   });
 });
