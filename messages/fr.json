@@ -1591,6 +1591,7 @@
   "chat_autoCommitStatus_hooksFailedAfter_label": "· hooks en échec après {count} tentatives",
   "chat_blockerReportNotice_title_label": "Blocage signalé",
   "chat_discussionRequestNotice_title_label": "Discussion demandée",
+  "chat_draftGate_loading_label": "Chargement du brouillon du message",
   "chat_turnFailureNotice_title_label": "Échec du tour",
   "chat_msgAttribution_openAgent_title": "Ouvrir l'agent {name}",
   "chat_msgAttribution_sentMessage_after": "a envoyé un message",

@@ -117,10 +117,8 @@
 } from '$shared/types';
   import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
   import type { ContextItem } from './input/context-api';
-  import {
-    deserializeDraftAttachments,
-    serializeDraftAttachments,
-  } from './chat-draft-attachments';
+  import { createChatDraftManager } from './chat-panel-draft.svelte';
+  import ChatDraftLoadingGate from './ChatDraftLoadingGate.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
   import {
     getQueueInfo,
@@ -1085,49 +1083,21 @@
     }
   });
 
-  // Restore draft from backend on mount
-  let draftRestored = $state(false);
-  $effect(() => {
-    if (draftRestored || !workspace || !agentId) return;
-
-    untrack(async () => {
-      const draft = await appClient.drafts.get(workspace.id, agentId);
-      if (!draft) return;
-      if (draft.attachments?.length && contextItems.length === 0) {
-        contextItems = deserializeDraftAttachments(draft.attachments);
-      }
-      if (draft.text && !inputValue) {
-        inputValue = draft.text;
-        setTimeout(() => {
-          inputComponent?.setContent?.(draft.text);
-        }, 50);
-      }
-    });
-
-    draftRestored = true;
-  });
-
-  // Save draft to backend (debounced)
-  let saveTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  $effect(() => {
-    if (!workspace || !agentId) return;
-    const currentValue = inputValue;
-    const currentAttachments = serializeDraftAttachments(contextItems);
-
-    if (saveTimeoutId) clearTimeout(saveTimeoutId);
-
-    saveTimeoutId = setTimeout(() => {
-      appClient.drafts
-        .set(
-          workspace.id,
-          agentId,
-          currentValue,
-          currentAttachments.length > 0 ? currentAttachments : undefined,
-        )
-        .catch((err) => {
-          logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
-        });
-    }, 500); // 500ms debounce
+  // Draft restore/save lifecycle (gated restore + debounced save); see
+  // chat-panel-draft.svelte.ts. While gateActive the composer blocks typing
+  // and shows the ChatDraftLoadingGate indicator.
+  const draftManager = createChatDraftManager({
+    drafts: appClient.drafts,
+    workspaceId: () => workspace?.id,
+    agentId: () => agentId,
+    inputValue: () => inputValue,
+    setInputValue: (text) => (inputValue = text),
+    contextItems: () => contextItems,
+    setContextItems: (items) => (contextItems = items),
+    applyEditorContent: (text) => inputComponent?.setContent?.(text),
+    onSaveError: (err) => {
+      logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
+    },
   });
 
   // Reference to QueuedMessageList for programmatic editing via Up arrow
@@ -4061,6 +4031,9 @@
       {/key}
     {/if}
     {#if !pendingQuestions || questionWizardCollapsed}
+      {#if draftManager.gateActive}
+        <ChatDraftLoadingGate />
+      {/if}
       <SimpleRichInput
         bind:this={inputComponent}
         bind:contextItems
@@ -4070,7 +4043,7 @@
         onstop={handleStop}
         onHistoryPrev={handleHistoryPrev}
         onHistoryNext={handleHistoryNext}
-        disabled={!workspace || !$agentSession$}
+        disabled={!workspace || !$agentSession$ || draftManager.gateActive}
         isStreaming={$agentSessionIsStreaming$}
         isResponding={$agentIsResponding$}
         {workspace}
