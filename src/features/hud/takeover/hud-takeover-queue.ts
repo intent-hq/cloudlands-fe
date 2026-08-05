@@ -33,6 +33,11 @@ export const HUD_TAKEOVER_KINDS = [
   'agent_failed',
   'question_asked',
   'status_update',
+  'workspace_idle',
+  'pr_open',
+  'pr_ready',
+  'pr_merged',
+  'workspace_complete',
   'manual',
 ] as const;
 

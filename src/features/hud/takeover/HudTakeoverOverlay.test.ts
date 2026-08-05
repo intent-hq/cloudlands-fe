@@ -207,6 +207,43 @@ describe('HudTakeoverOverlay status-update banner hierarchy', () => {
     );
     expect(screen.queryByTestId('hud-takeover-banner-status')).toBeNull();
   });
+
+  // jsdom normalizes concrete hsl() colors to rgb, so the card's purple
+  // prMerged accent (hsl(262 60% 62%)) asserts as its rgb serialization.
+  it.each([
+    ['workspace_idle', 'WORKSPACE IDLE', 'hsl(var(--text-ghost))'],
+    ['pr_open', 'PR OPEN', 'hsl(var(--ring))'],
+    ['pr_ready', 'PR MERGEABLE', 'hsl(var(--ring))'],
+    ['pr_merged', 'PR MERGED', 'rgb(143, 100, 216)'],
+    ['workspace_complete', 'COMPLETE', 'hsl(var(--primary))'],
+  ] as const)(
+    'workspace displayStatus banner (%s): kind chip + workspace name headline, no subtitle',
+    (kind, chipLabel, color) => {
+      seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+
+      render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+      emitTakeoverTrigger({
+        workspaceId: WS,
+        kind,
+        detail: '',
+        raisedAtMs: NOW_MS,
+        changedTaskId: null,
+      });
+      flushSync();
+
+      const banner = screen.getByTestId('hud-takeover-banner');
+      const chip = banner.querySelector<HTMLElement>('.ov-banner-chip');
+      expect(chip?.textContent?.trim()).toBe(chipLabel);
+      expect(chip?.style.color).toBe(color);
+      // Workspace title on the dot-matrix headline; no raw wire word, no
+      // status subtitle, no repo-ref sub-line.
+      expect(banner.querySelector('.ov-banner-big')?.textContent?.trim()).toBe(
+        'Sidecar auto-update',
+      );
+      expect(screen.queryByTestId('hud-takeover-banner-status')).toBeNull();
+      expect(banner.querySelector('.ov-banner-sub')).toBeNull();
+    },
+  );
 });
 
 describe('HudTakeoverOverlay attention banner (question / blocker / discussion)', () => {
