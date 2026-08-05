@@ -83,13 +83,16 @@ async function handleNotificationShow(data?: NotificationShowEvent): Promise<voi
  * `handleNotificationNavigate` (same routing as `notification:navigate`,
  * including the chief → Assistant panel case) and dismisses.
  *
- * When a micro is connected AND the target workspace resolves to a key slot,
- * the toast renders through a custom component that carries the slot square
- * (a plain `toast(...)` cannot); otherwise the plain toast is unchanged. Both
- * the resolver and the component are lazy-imported per middleware
- * conventions. The badge path is best-effort: any failure in it (resolver
- * import/resolution, custom component import/render) falls back to the plain
- * toast — only a missing toast lib drops the toast entirely.
+ * When the payload carries `structured` content OR the target workspace
+ * resolves to a connected-micro key slot, the toast renders through a custom
+ * component that carries the three-line layout and/or the slot square (a
+ * plain `toast(...)` cannot); only when both are absent is the plain toast
+ * used. Both the resolver and the component are lazy-imported per middleware
+ * conventions. Key-slot resolution is best-effort: a resolver import or
+ * resolution failure degrades to a slot-less custom toast when `structured`
+ * is present (plain toast otherwise) — a custom component import/render
+ * failure falls back to the plain toast, and only a missing toast lib drops
+ * the toast entirely.
  */
 async function showNavigateToast(
   data: NotificationShowEvent,
@@ -114,11 +117,16 @@ async function showNavigateToast(
   };
 
   try {
-    const { resolveConnectedWorkspaceKeySlot } = await import(
-      "$features/hardware-console/assignment/connected-key-slot"
-    );
-    const keySlot = resolveConnectedWorkspaceKeySlot(navigateTarget.workspaceId);
-    if (keySlot === null) {
+    let keySlot: number | null = null;
+    try {
+      const { resolveConnectedWorkspaceKeySlot } = await import(
+        "$features/hardware-console/assignment/connected-key-slot"
+      );
+      keySlot = resolveConnectedWorkspaceKeySlot(navigateTarget.workspaceId);
+    } catch {
+      // Slot resolution is best-effort - render without the slot square
+    }
+    if (keySlot === null && !data.structured) {
       showPlainToast();
       return;
     }
@@ -140,7 +148,7 @@ async function showNavigateToast(
       },
     });
   } catch {
-    // Badge path failed - degrade to the badge-less plain toast
+    // Custom toast path failed - degrade to the plain toast
     try {
       showPlainToast();
     } catch {

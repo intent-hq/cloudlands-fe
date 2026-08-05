@@ -373,9 +373,16 @@ describe('createNotificationIpcMiddleware', () => {
         expect(options.componentProps.structured).toBeUndefined();
       });
 
-      it('structured payload does not alter the plain-toast fallback path', async () => {
+      it('renders the custom toast with a null keySlot when structured is present but no slot resolves', async () => {
         microStatusMock.value = 'connected';
         resolvedKeySlotSelectMock.mockImplementation(() => null);
+        const structured = {
+          agentId: 'agent-1',
+          workspaceTitle: 'My Workspace',
+          specialist: 'spec-writer',
+          specialistDisplayName: 'Coordinator',
+          provider: 'auggie',
+        };
         const { showHandler } = setupMiddleware();
 
         await showHandler({
@@ -383,15 +390,64 @@ describe('createNotificationIpcMiddleware', () => {
           body: 'Finished',
           timestamp: 't',
           navigateTarget: { workspaceId: 'ws-123' },
-          structured: { specialistDisplayName: 'Coordinator' },
+          structured,
         });
 
-        expect(mockToastCustom).not.toHaveBeenCalled();
-        expect(mockToast).toHaveBeenCalledTimes(1);
-        expect(mockToast).toHaveBeenCalledWith(
-          'Agent',
-          expect.objectContaining({ description: 'Finished' }),
-        );
+        expect(mockToast).not.toHaveBeenCalled();
+        expect(mockToastCustom).toHaveBeenCalledTimes(1);
+        const options = mockToastCustom.mock.calls[0][1] as {
+          componentProps: Record<string, unknown>;
+        };
+        expect(options.componentProps.keySlot).toBeNull();
+        expect(options.componentProps.structured).toEqual(structured);
+      });
+
+      it('renders the custom toast with a null keySlot when structured is present and the micro is disconnected', async () => {
+        microStatusMock.value = 'disconnected';
+        resolvedKeySlotSelectMock.mockImplementation(() => 3);
+        const structured = { agentId: 'agent-1', specialistDisplayName: 'Coordinator' };
+        const { showHandler } = setupMiddleware();
+
+        await showHandler({
+          title: 'Agent',
+          body: 'Finished',
+          timestamp: 't',
+          navigateTarget: { workspaceId: 'ws-123' },
+          structured,
+        });
+
+        expect(mockToast).not.toHaveBeenCalled();
+        expect(mockToastCustom).toHaveBeenCalledTimes(1);
+        const options = mockToastCustom.mock.calls[0][1] as {
+          componentProps: Record<string, unknown>;
+        };
+        expect(options.componentProps.keySlot).toBeNull();
+        expect(options.componentProps.structured).toEqual(structured);
+      });
+
+      it('renders the custom toast with a null keySlot when slot resolution throws and structured is present', async () => {
+        microStatusMock.value = 'connected';
+        resolvedKeySlotSelectMock.mockImplementation(() => {
+          throw new Error('resolver boom');
+        });
+        const structured = { agentId: 'agent-1', specialistDisplayName: 'Coordinator' };
+        const { showHandler } = setupMiddleware();
+
+        await showHandler({
+          title: 'Agent',
+          body: 'Finished',
+          timestamp: 't',
+          navigateTarget: { workspaceId: 'ws-123' },
+          structured,
+        });
+
+        expect(mockToast).not.toHaveBeenCalled();
+        expect(mockToastCustom).toHaveBeenCalledTimes(1);
+        const options = mockToastCustom.mock.calls[0][1] as {
+          componentProps: Record<string, unknown>;
+        };
+        expect(options.componentProps.keySlot).toBeNull();
+        expect(options.componentProps.structured).toEqual(structured);
       });
 
       it('custom-toast action dismisses the toast and navigates with the exact payload', async () => {
@@ -410,7 +466,7 @@ describe('createNotificationIpcMiddleware', () => {
         expect(goto).toHaveBeenCalledWith('/workspace/ws-123');
       });
 
-      it('keeps the plain toast when the micro is disconnected, even if the workspace holds a slot', async () => {
+      it('keeps the plain toast when structured is absent and the micro is disconnected, even if the workspace holds a slot', async () => {
         microStatusMock.value = 'disconnected';
         resolvedKeySlotSelectMock.mockImplementation(() => 3);
 
@@ -421,7 +477,7 @@ describe('createNotificationIpcMiddleware', () => {
         expect(mockToast).toHaveBeenCalledTimes(1);
       });
 
-      it('keeps the plain toast when connected but the workspace holds no slot', async () => {
+      it('keeps the plain toast when structured is absent, connected, and the workspace holds no slot', async () => {
         microStatusMock.value = 'connected';
         resolvedKeySlotSelectMock.mockImplementation(() => null);
 
@@ -431,7 +487,7 @@ describe('createNotificationIpcMiddleware', () => {
         expect(mockToast).toHaveBeenCalledTimes(1);
       });
 
-      it('falls back to the plain toast when slot resolution throws', async () => {
+      it('falls back to the plain toast when slot resolution throws and structured is absent', async () => {
         microStatusMock.value = 'connected';
         resolvedKeySlotSelectMock.mockImplementation(() => {
           throw new Error('resolver boom');
@@ -455,6 +511,29 @@ describe('createNotificationIpcMiddleware', () => {
         });
 
         await show();
+
+        expect(mockToast).toHaveBeenCalledTimes(1);
+        expect(mockToast).toHaveBeenCalledWith(
+          'Agent',
+          expect.objectContaining({ description: 'Finished' }),
+        );
+      });
+
+      it('falls back to the plain toast (structured dropped) when the custom toast rendering throws with structured present', async () => {
+        microStatusMock.value = 'connected';
+        resolvedKeySlotSelectMock.mockImplementation(() => null);
+        mockToastCustom.mockImplementation(() => {
+          throw new Error('custom render boom');
+        });
+        const { showHandler } = setupMiddleware();
+
+        await showHandler({
+          title: 'Agent',
+          body: 'Finished',
+          timestamp: 't',
+          navigateTarget: { workspaceId: 'ws-123' },
+          structured: { agentId: 'agent-1', specialistDisplayName: 'Coordinator' },
+        });
 
         expect(mockToast).toHaveBeenCalledTimes(1);
         expect(mockToast).toHaveBeenCalledWith(
