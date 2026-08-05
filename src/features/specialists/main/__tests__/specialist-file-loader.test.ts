@@ -24,6 +24,7 @@ import {
 } from 'vitest';
 import {
   parseSpecialistFile,
+  parseModelOptionsScalar,
   writeSpecialistFile,
   loadSpecialistFile,
   loadProjectSpecialistFiles,
@@ -436,6 +437,53 @@ Body`;
     });
   });
 
+  describe('modelOptions frontmatter scalar (PROTOCOL §5.11 lenient reads)', () => {
+    it('should parse a valid single-line JSON-array scalar', () => {
+      const content = `---
+name: "With Options"
+description: "Has model options"
+modelOptions: [{"model":"opencode:kimi-k3","hint":"cheap"},{"model":"opus4.5","hint":""}]
+---
+
+Prompt.`;
+
+      const result = parseSpecialistFile('/path/to/with-options.md', content);
+      expect('error' in result).toBe(false);
+      if (!('error' in result)) {
+        expect(result.frontmatter.modelOptions).toEqual([
+          { model: 'opencode:kimi-k3', hint: 'cheap' },
+          { model: 'opus4.5', hint: '' },
+        ]);
+      }
+    });
+
+    it('should treat an unparseable scalar as an omitted key', () => {
+      expect(parseModelOptionsScalar('not json')).toBeUndefined();
+      expect(parseModelOptionsScalar('{"model":"a"}')).toBeUndefined();
+      expect(parseModelOptionsScalar(undefined)).toBeUndefined();
+      expect(parseModelOptionsScalar('')).toBeUndefined();
+    });
+
+    it('should keep a literal [] as an explicit clear', () => {
+      expect(parseModelOptionsScalar('[]')).toEqual([]);
+    });
+
+    it('should skip unusable entries individually and default hint to ""', () => {
+      expect(
+        parseModelOptionsScalar(
+          '[{"model":"good"},"junk",{"hint":"no model"},{"model":""},{"model":"ok","hint":42}]',
+        ),
+      ).toEqual([
+        { model: 'good', hint: '' },
+        { model: 'ok', hint: '' },
+      ]);
+    });
+
+    it('should treat a non-empty array of all-unusable entries as omitted (inherits)', () => {
+      expect(parseModelOptionsScalar('[{"hint":"no model"},"junk"]')).toBeUndefined();
+    });
+  });
+
   describe('Persistence and migration', () => {
     it('should round-trip codingAgent when writing and loading a specialist file', async () => {
       await writeSpecialistFile({
@@ -483,6 +531,49 @@ Body`;
       expect(loaded).not.toBeNull();
       expect(loaded?.rawContent).not.toContain('hidden:');
       expect(loaded?.frontmatter.hidden).toBeUndefined();
+    });
+
+    it('should round-trip modelOptions when writing and loading a specialist file', async () => {
+      const modelOptions = [
+        { model: 'opencode:kimi-k3', hint: 'cheap' },
+        { model: 'opus4.5', hint: '' },
+      ];
+      await writeSpecialistFile({
+        id: 'options-round-trip',
+        name: 'Options Round Trip',
+        description: 'Model options round-trip test specialist',
+        modelOptions,
+        behaviorPrompt: 'Options prompt',
+      });
+
+      const loaded = await loadSpecialistFile('options-round-trip');
+
+      expect(loaded).not.toBeNull();
+      expect(loaded?.rawContent).toContain(`modelOptions: ${JSON.stringify(modelOptions)}`);
+      expect(loaded?.frontmatter.modelOptions).toEqual(modelOptions);
+    });
+
+    it('should omit the modelOptions key when undefined and write [] verbatim', async () => {
+      await writeSpecialistFile({
+        id: 'no-options',
+        name: 'No Options',
+        description: 'No model options',
+        behaviorPrompt: 'Prompt',
+      });
+      const noOptions = await loadSpecialistFile('no-options');
+      expect(noOptions?.rawContent).not.toContain('modelOptions:');
+      expect(noOptions?.frontmatter.modelOptions).toBeUndefined();
+
+      await writeSpecialistFile({
+        id: 'cleared-options',
+        name: 'Cleared Options',
+        description: 'Explicit clear',
+        modelOptions: [],
+        behaviorPrompt: 'Prompt',
+      });
+      const cleared = await loadSpecialistFile('cleared-options');
+      expect(cleared?.rawContent).toContain('modelOptions: []');
+      expect(cleared?.frontmatter.modelOptions).toEqual([]);
     });
 
     it('should write and load project-level specialists from the workspace path', async () => {

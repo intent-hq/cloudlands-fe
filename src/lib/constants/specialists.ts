@@ -1,5 +1,5 @@
 import { m } from '$shared/paraglide/messages.js';
-import type { SpecialistSource } from '$shared/specialist-file-types';
+import type { SpecialistModelOption, SpecialistSource } from '$shared/specialist-file-types';
 
 /** Known built-in specialist IDs */
 export type BuiltinSpecialistId =
@@ -58,6 +58,11 @@ export interface Specialist {
    */
   resolvedModel?: string;
   resolvedProvider?: string;
+  /**
+   * Ordered delegation model options (`specialist.list` modelOptions,
+   * PROTOCOL §5.11). Absent when the resolved list is empty.
+   */
+  modelOptions?: SpecialistModelOption[];
 }
 
 export const SPECIALISTS: Specialist[] = [

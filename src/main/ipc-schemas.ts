@@ -1436,6 +1436,14 @@ export const SpecialistWriteSchema = z
     model: z.string().optional(),
     roleReminder: z.string().optional(),
     hidden: z.boolean().optional(),
+    modelOptions: z
+      .array(
+        z.object({
+          model: z.string().min(1, 'Model is required'),
+          hint: z.string(),
+        }),
+      )
+      .optional(),
     behaviorPrompt: z.string().min(1, 'Behavior prompt is required'),
     scope: z.enum(['user', 'project']).optional(),
     workspacePath: z.string().optional(),
