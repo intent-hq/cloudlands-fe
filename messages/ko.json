@@ -5284,5 +5284,6 @@
   "settings_voice_osEngine_description": "음성은 macOS 음성 인식으로 전사됩니다. 가능한 경우 이 Mac에서 처리되며, 그렇지 않으면 Apple의 서버 기반 인식이 사용됩니다. API 키가 필요 없습니다.",
   "settings_voice_osEngineUnavailable_error": "이 기기에서는 OS 받아쓰기를 사용할 수 없습니다.",
   "settings_voice_osEngine_helperMissing_description": "음성 도우미를 사용할 수 없음",
-  "settings_voice_osEngine_permissionNote": "처음 활성화하면 macOS가 음성 인식 권한을 요청합니다 — 허용될 때까지 받아쓰기가 작동하지 않습니다."
+  "settings_voice_osEngine_permissionNote": "처음 활성화하면 macOS가 음성 인식 권한을 요청합니다 — 허용될 때까지 받아쓰기가 작동하지 않습니다.",
+  "splash_gettingReady_label": "빌드를 준비하는 중입니다"
 }

@@ -5284,5 +5284,6 @@
   "settings_voice_osEngine_description": "La voix est transcrite avec la reconnaissance vocale de macOS — sur ce Mac lorsque c'est possible, sinon via la reconnaissance sur les serveurs d'Apple. Aucune clé API requise.",
   "settings_voice_osEngineUnavailable_error": "La dictée du système n'est pas disponible sur cet appareil.",
   "settings_voice_osEngine_helperMissing_description": "Assistant vocal indisponible",
-  "settings_voice_osEngine_permissionNote": "macOS demandera l'autorisation de reconnaissance vocale à la première activation — la dictée ne fonctionnera pas tant qu'elle n'est pas accordée."
+  "settings_voice_osEngine_permissionNote": "macOS demandera l'autorisation de reconnaissance vocale à la première activation — la dictée ne fonctionnera pas tant qu'elle n'est pas accordée.",
+  "splash_gettingReady_label": "Nous préparons tout pour construire"
 }

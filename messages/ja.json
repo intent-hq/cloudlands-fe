@@ -5284,5 +5284,6 @@
   "settings_voice_osEngine_description": "音声は macOS の音声認識で文字起こしされます。可能な場合はこの Mac 上で処理され、できない場合は Apple のサーバーベースの認識が使用されます。APIキー不要。",
   "settings_voice_osEngineUnavailable_error": "OS音声入力はこのデバイスでは利用できません。",
   "settings_voice_osEngine_helperMissing_description": "音声ヘルパーが利用できません",
-  "settings_voice_osEngine_permissionNote": "初回有効化時に macOS が音声認識の許可を求めます — 許可されるまで音声入力は機能しません。"
+  "settings_voice_osEngine_permissionNote": "初回有効化時に macOS が音声認識の許可を求めます — 許可されるまで音声入力は機能しません。",
+  "splash_gettingReady_label": "ビルドの準備をしています"
 }

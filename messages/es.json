@@ -5284,5 +5284,6 @@
   "settings_voice_osEngine_description": "La voz se transcribe con el reconocimiento de voz de macOS: en este Mac cuando es posible, con el reconocimiento en servidores de Apple como alternativa. No se necesita clave API.",
   "settings_voice_osEngineUnavailable_error": "El dictado del SO no está disponible en este dispositivo.",
   "settings_voice_osEngine_helperMissing_description": "Asistente de voz no disponible",
-  "settings_voice_osEngine_permissionNote": "macOS pedirá permiso de reconocimiento de voz la primera vez que lo actives — el dictado no funcionará hasta que se permita."
+  "settings_voice_osEngine_permissionNote": "macOS pedirá permiso de reconocimiento de voz la primera vez que lo actives — el dictado no funcionará hasta que se permita.",
+  "splash_gettingReady_label": "Preparando todo para construir"
 }

@@ -5284,5 +5284,6 @@
   "settings_voice_osEngine_description": "Sprache wird mit der macOS-Spracherkennung transkribiert — wenn möglich auf diesem Mac, andernfalls über Apples serverbasierte Erkennung. Kein API-Schlüssel nötig.",
   "settings_voice_osEngineUnavailable_error": "OS-Diktat ist auf diesem Gerät nicht verfügbar.",
   "settings_voice_osEngine_helperMissing_description": "Sprach-Helfer nicht verfügbar",
-  "settings_voice_osEngine_permissionNote": "macOS fragt beim ersten Aktivieren nach der Berechtigung zur Spracherkennung — das Diktat funktioniert erst, wenn sie erteilt wurde."
+  "settings_voice_osEngine_permissionNote": "macOS fragt beim ersten Aktivieren nach der Berechtigung zur Spracherkennung — das Diktat funktioniert erst, wenn sie erteilt wurde.",
+  "splash_gettingReady_label": "Wir bereiten alles zum Bauen vor"
 }
