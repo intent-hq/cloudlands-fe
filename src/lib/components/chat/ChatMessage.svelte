@@ -245,8 +245,15 @@
         return m.chat_chatMessage_stoppedDaemonRestarted_label();
       case 'agent-stopped':
         return m.chat_chatMessage_stoppedAgentTerminated_label();
-      default:
+      case 'stopped':
         return m.chat_chatMessage_stopped_label();
+      default: {
+        // Compile-time exhaustiveness: a new descriptor kind is a type error
+        // here; at runtime it still falls back to the generic "Stopped".
+        const _exhaustive: never = label;
+        void _exhaustive;
+        return m.chat_chatMessage_stopped_label();
+      }
     }
   });
 
