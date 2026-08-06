@@ -507,7 +507,13 @@
     if (pendingQuestions) {
       return [];
     }
-    const messageContent = extractAllContent(lastAssistantMessage);
+    // Join text blocks with a newline (not extractAllContent's ''): the prompts
+    // block is line-oriented, and fusing the last line of one block with the
+    // first line of the next would hide or corrupt the opener/closer lines.
+    const messageContent = (lastAssistantMessage.contentBlocks ?? [])
+      .filter((b) => b.type === 'text')
+      .map((b) => b.text ?? '')
+      .join('\n');
     const { prompts } = parseSuggestedPrompts(messageContent);
     return prompts;
   });
