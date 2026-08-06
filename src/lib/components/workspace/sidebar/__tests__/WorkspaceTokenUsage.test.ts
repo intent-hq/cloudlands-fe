@@ -1,13 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import type { WorkspaceTokenUsageState } from '$store/renderer/slices/token-usage/token-usage-types';
 import { emptyWorkspaceTokenUsageState } from '$store/renderer/slices/token-usage/token-usage-types';
@@ -31,7 +25,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -299,6 +294,153 @@ describe('WorkspaceTokenUsage', () => {
     expect(agentText).not.toContain('IdleAgent');
   });
 
+  it('renders a cost column and total when the daemon reports cost', async () => {
+    mocks.state.usage = makeUsage({
+      byAgentId: {
+        'agent-a': {
+          agentId: 'agent-a',
+          sessionId: 'sess-a',
+          lastMessageId: 'msg-1',
+          computedAt: 1000,
+          inputTokens: 1000,
+          outputTokens: 30000,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          cost: { amount: 1.5, currency: 'USD' },
+          byModel: {},
+        },
+      },
+      totals: {
+        inputTokens: 1000,
+        outputTokens: 30000,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        cost: { amount: 1.5, currency: 'USD' },
+      },
+      byModel: {
+        'model-big': {
+          inputTokens: 1000,
+          outputTokens: 30000,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          cost: { amount: 1.5, currency: 'USD' },
+        },
+      },
+      lastScanAt: 5000,
+      isStale: false,
+    });
+    mocks.state.agents = [{ id: 'agent-a', name: 'Alpha' }];
+
+    await renderTokenUsage();
+
+    const modelSection = screen.getByTestId('token-usage-by-model');
+    const agentSection = screen.getByTestId('token-usage-by-agent');
+    expect(modelSection.className).toContain('grid-cols-[1fr_auto_auto_auto_auto]');
+    expect(agentSection.className).toContain('grid-cols-[1fr_auto_auto_auto_auto]');
+    expect(modelSection.textContent).toContain('Cost');
+    expect(modelSection.textContent).toContain('$1.50');
+    expect(agentSection.textContent).toContain('$1.50');
+
+    const totalCost = screen.getByTestId('token-usage-total-cost');
+    expect(totalCost.textContent).toContain('Total cost');
+    expect(totalCost.textContent).toContain('$1.50');
+  });
+
+  it('renders a placeholder for rows without cost when some entry has cost', async () => {
+    mocks.state.usage = makeUsage({
+      totals: {
+        inputTokens: 1000,
+        outputTokens: 30000,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+      byModel: {
+        'model-priced': {
+          inputTokens: 500,
+          outputTokens: 20000,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          cost: { amount: 2, currency: 'USD' },
+        },
+        'model-free': {
+          inputTokens: 500,
+          outputTokens: 10000,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        },
+      },
+      lastScanAt: 5000,
+      isStale: false,
+    });
+
+    await renderTokenUsage();
+
+    const modelSection = screen.getByTestId('token-usage-by-model');
+    expect(modelSection.textContent).toContain('$2.00');
+    expect(modelSection.textContent).toContain('—');
+    // No workspace-wide cost reported → no total row.
+    expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
+  });
+
+  it('keeps the four-column layout when no cost is reported', async () => {
+    mocks.state.usage = makeUsage({
+      totals: {
+        inputTokens: 10,
+        outputTokens: 20,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+      byModel: {
+        'model-live': {
+          inputTokens: 10,
+          outputTokens: 20,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        },
+      },
+      lastScanAt: 5000,
+      isStale: false,
+    });
+
+    await renderTokenUsage();
+
+    const modelSection = screen.getByTestId('token-usage-by-model');
+    expect(modelSection.className).toContain('grid-cols-[1fr_auto_auto_auto]');
+    expect(modelSection.className).not.toContain('grid-cols-[1fr_auto_auto_auto_auto]');
+    expect(modelSection.textContent).not.toContain('Cost');
+    expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
+  });
+
+  it('keeps the four-column layout when a reported amount is not finite', async () => {
+    mocks.state.usage = makeUsage({
+      totals: {
+        inputTokens: 10,
+        outputTokens: 20,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        cost: { amount: Number.NaN, currency: 'USD' },
+      },
+      byModel: {
+        'model-live': {
+          inputTokens: 10,
+          outputTokens: 20,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          cost: { amount: Number.POSITIVE_INFINITY, currency: 'USD' },
+        },
+      },
+      lastScanAt: 5000,
+      isStale: false,
+    });
+
+    await renderTokenUsage();
+
+    const modelSection = screen.getByTestId('token-usage-by-model');
+    expect(modelSection.className).not.toContain('grid-cols-[1fr_auto_auto_auto_auto]');
+    expect(modelSection.textContent).not.toContain('Cost');
+    expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
+  });
+
   it('shows a subtle updating hint when the data is stale', async () => {
     mocks.state.usage = makeUsage({
       totals: {
@@ -323,4 +465,3 @@ describe('WorkspaceTokenUsage', () => {
     expect(container.textContent?.trim()).toBe('');
   });
 });
-

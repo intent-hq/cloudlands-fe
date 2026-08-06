@@ -158,6 +158,33 @@ export function createFormatters(getLocale: () => string) {
   }
 
   /**
+   * Locale currency amount for an ISO 4217 code, e.g. 1.5 / "USD" → "$1.50".
+   * Sub-unit amounts keep up to 4 fraction digits so small provider-reported
+   * costs do not collapse to "$0.00"; larger amounts use the currency's own
+   * decimal convention (JPY → "¥100", JOD → 3 digits). Invalid amounts → "";
+   * a currency code `Intl` rejects falls back to a plain number plus the code.
+   */
+  function formatCurrency(amount: number, currency: string): string {
+    if (!Number.isFinite(amount)) return '';
+    const locale = getLocale();
+    const subUnit = amount !== 0 && Math.abs(amount) < 1;
+    const digits = subUnit ? { minimumFractionDigits: 2, maximumFractionDigits: 4 } : {};
+    try {
+      return numberFormat(locale, {
+        style: 'currency',
+        currency,
+        ...digits,
+      }).format(amount);
+    } catch {
+      const formatted = numberFormat(locale, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: subUnit ? 4 : 2,
+      }).format(amount);
+      return `${formatted} ${currency}`;
+    }
+  }
+
+  /**
    * Binary (base-1024) byte size with `B/Ki/Mi/Gi/Ti` suffix, 3 significant
    * digits (e.g. 2330000000 → "2.17Gi"). Invalid input → "".
    */
@@ -314,6 +341,7 @@ export function createFormatters(getLocale: () => string) {
   return {
     formatNumber,
     formatInteger,
+    formatCurrency,
     formatBytesBinary,
     formatRelativeTime,
     formatCompactRelativeTime,
