@@ -60,6 +60,29 @@
   // Focus management: save/restore focus when card opens/closes
   let previouslyFocused: HTMLElement | null = null;
   let contentEl: HTMLDivElement | null = $state(null);
+  let cardEl: HTMLDivElement | null = $state(null);
+
+  // Outside-click dismissal: while a card is showing, a pointerdown outside both
+  // the card and the nav rail closes it — unpinned expanded cards included (the
+  // "stays until clicked elsewhere" contract). Clicks inside the card or the nav,
+  // or while a sidebar context menu is open, do not dismiss; a pinned+expanded
+  // card stays open (pin means pin).
+  $effect(() => {
+    if (!$activeCard$) return;
+    const handlePointerDown = (e: PointerEvent) => {
+      const node = e.target instanceof Node ? e.target : null;
+      if (!node) return;
+      if (cardEl?.contains(node)) return;
+      const el = node instanceof Element ? node : node.parentElement;
+      if (el?.closest('.sidebar-nav')) return;
+      const state = appStore.state;
+      if (selectContextMenuOpen.select(state)) return;
+      if (selectIsCardPinned.select(state) && selectExpandedItem.select(state) !== null) return;
+      appStore.dispatch(closeHoverCards());
+    };
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    return () => document.removeEventListener('pointerdown', handlePointerDown, true);
+  });
 
   $effect(() => {
     if ($activeCard$) {
@@ -94,8 +117,10 @@
   }
 
   function handleCardMouseLeave() {
-    // If the card is pinned open, don't auto-close
-    if ($isCardPinned$) return;
+    // If an expanded card is pinned open, don't auto-close. The pin only gates
+    // expanded cards — the pin affordance doesn't render on transient
+    // (non-expanded) cards, so they must never be pin-wedged open.
+    if ($isCardPinned$ && isExpanded) return;
 
     if ($contextMenuOpen$) {
       appStore.dispatch(setDeferredLeave('card'));
@@ -140,6 +165,7 @@
 {#if $activeCard$}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
+    bind:this={cardEl}
     class="sidebar-hover-card fixed z-100"
     style={cardStyle}
     onmouseenter={handleCardMouseEnter}
