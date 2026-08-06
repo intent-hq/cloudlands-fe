@@ -1758,10 +1758,17 @@ interface SuggestedPromptsBlock {
 }
 
 /**
- * Locate every well-formed suggested-prompts block in the content, in order.
+ * Locate every accepted suggested-prompts block in the content, in order.
  *
- * A block is well-formed only when its opener sits outside any fenced code
- * region and is followed by a `-->` standing alone on its own line.
+ * A block is accepted only when all of the following hold:
+ * - its opener ends its own line and sits outside any fenced code region;
+ * - it is closed by a `-->` standing alone on its own line, also outside any
+ *   fenced code region (fence state is tracked across the whole scan, so a
+ *   `-->` inside a fenced example after an opener cannot close the block);
+ * - none of its captured lines looks like response body text.
+ *
+ * Blocks that fail any of these are not returned at all, so callers never
+ * strip them from the rendered content.
  */
 function findSuggestedPromptsBlocks(content: string): SuggestedPromptsBlock[] {
   const lines = content.split('\n');
@@ -1774,9 +1781,10 @@ function findSuggestedPromptsBlocks(content: string): SuggestedPromptsBlock[] {
 
   const blocks: SuggestedPromptsBlock[] = [];
   let fence: { char: string; length: number } | null = null;
-  let i = 0;
+  let openerIndex = -1;
+  let openerStart = 0;
 
-  while (i < lines.length) {
+  for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trimEnd();
 
     const fenceMatch = line.match(FENCE_LINE_REGEX);
@@ -1791,45 +1799,35 @@ function findSuggestedPromptsBlocks(content: string): SuggestedPromptsBlock[] {
       ) {
         fence = null;
       }
-      i++;
       continue;
     }
 
-    if (fence) {
-      i++;
-      continue;
-    }
+    if (fence) continue;
 
-    const openerMatch = line.match(SUGGESTED_PROMPTS_OPENER_REGEX);
-    if (!openerMatch) {
-      i++;
-      continue;
-    }
-
-    let closerIndex = -1;
-    let j = i + 1;
-    for (; j < lines.length; j++) {
-      const candidate = lines[j].trimEnd();
-      if (SUGGESTED_PROMPTS_CLOSER_REGEX.test(candidate)) {
-        closerIndex = j;
-        break;
+    if (openerIndex === -1) {
+      const openerMatch = line.match(SUGGESTED_PROMPTS_OPENER_REGEX);
+      if (openerMatch) {
+        openerIndex = i;
+        openerStart = offsets[i] + (openerMatch.index ?? 0);
       }
-      // A second opener means the first one was never closed.
-      if (SUGGESTED_PROMPTS_OPENER_REGEX.test(candidate)) break;
-    }
-
-    if (closerIndex === -1) {
-      // Unclosed opener — resume scanning from wherever we stopped.
-      i = j > i ? j : i + 1;
       continue;
     }
 
-    blocks.push({
-      start: offsets[i] + (openerMatch.index ?? 0),
-      end: offsets[closerIndex] + lines[closerIndex].length,
-      body: lines.slice(i + 1, closerIndex),
-    });
-    i = closerIndex + 1;
+    if (SUGGESTED_PROMPTS_CLOSER_REGEX.test(line)) {
+      const body = lines.slice(openerIndex + 1, i);
+      if (!body.some((bodyLine) => looksLikeBodyText(bodyLine.trim()))) {
+        blocks.push({ start: openerStart, end: offsets[i] + lines[i].length, body });
+      }
+      openerIndex = -1;
+      continue;
+    }
+
+    // A second opener means the first one was never closed.
+    const reopenMatch = line.match(SUGGESTED_PROMPTS_OPENER_REGEX);
+    if (reopenMatch) {
+      openerIndex = i;
+      openerStart = offsets[i] + (reopenMatch.index ?? 0);
+    }
   }
 
   return blocks;
@@ -1837,7 +1835,7 @@ function findSuggestedPromptsBlocks(content: string): SuggestedPromptsBlock[] {
 
 /** True when a captured line looks like response body text rather than a prompt. */
 function looksLikeBodyText(line: string): boolean {
-  return BODY_TEXT_LINE_PATTERNS.some((pattern) => pattern.test(line));
+  return line.length > 0 && BODY_TEXT_LINE_PATTERNS.some((pattern) => pattern.test(line));
 }
 
 /**
@@ -1862,10 +1860,12 @@ function looksLikeBodyText(line: string): boolean {
  * Label|delay:30|Check build results
  * -->
  *
- * Only well-formed blocks count: the opener must sit outside any code fence and
- * the closing `-->` must stand alone on its own line. The last such block wins,
- * and it is discarded entirely if any captured line looks like response body
- * text — so a Mermaid diagram or table can never surface as prompt chips.
+ * Only accepted blocks count: the opener and the standalone `-->` closer must
+ * both sit outside any code fence, and no captured line may look like response
+ * body text. A block that fails any of these is left untouched in
+ * `cleanedContent` rather than stripped, so a Mermaid diagram or table can
+ * neither surface as prompt chips nor disappear from the rendered message. The
+ * last accepted block wins.
  */
 export function parseSuggestedPrompts(content: string): {
   prompts: SuggestedPrompt[];
@@ -1880,7 +1880,7 @@ export function parseSuggestedPrompts(content: string): {
     return { prompts: [], cleanedContent: content };
   }
 
-  // Remove every well-formed block from the content (never body text).
+  // Remove every accepted block from the content (never body text).
   let cleanedContent = '';
   let cursor = 0;
   for (const block of blocks) {
@@ -1889,14 +1889,11 @@ export function parseSuggestedPrompts(content: string): {
   }
   cleanedContent = (cleanedContent + content.slice(cursor)).trim();
 
-  // The last well-formed block wins.
+  // The last accepted block wins; body-text rejection already happened during
+  // the scan, so every block here is safe to surface.
   const lines = blocks[blocks.length - 1].body
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-
-  if (lines.some(looksLikeBodyText)) {
-    return { prompts: [], cleanedContent };
-  }
 
   const prompts: SuggestedPrompt[] = lines
     .map((line): SuggestedPrompt | null => {
@@ -1934,7 +1931,7 @@ export function parseSuggestedPrompts(content: string): {
 }
 
 /**
- * Check if content contains a well-formed suggested prompts block
+ * Check if content contains an accepted suggested prompts block
  */
 export function hasSuggestedPrompts(content: string): boolean {
   if (!content) return false;
