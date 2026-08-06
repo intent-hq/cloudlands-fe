@@ -2023,6 +2023,7 @@
   "chat_toolClassifier_searchCommits_label": "커밋 검색",
   "chat_toolClassifier_searchWeb_label": "웹 검색",
   "chat_toolClassifier_search_label": "검색",
+  "chat_toolClassifier_loadingTools_label": "도구 로드 중",
   "chat_toolClassifier_read_label": "읽기",
   "chat_toolClassifier_edit_label": "편집",
   "chat_toolClassifier_listContents_label": "내용 나열",

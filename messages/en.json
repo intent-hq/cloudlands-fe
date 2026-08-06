@@ -2024,6 +2024,7 @@
   "chat_toolClassifier_searchCommits_label": "Search commits",
   "chat_toolClassifier_searchWeb_label": "Search web",
   "chat_toolClassifier_search_label": "Search",
+  "chat_toolClassifier_loadingTools_label": "Loading tools",
   "chat_toolClassifier_read_label": "Read",
   "chat_toolClassifier_edit_label": "Edit",
   "chat_toolClassifier_listContents_label": "List Contents",
