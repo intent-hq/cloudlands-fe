@@ -79,7 +79,12 @@
     >
       {#if agent.activeToolName}
         {@const toolDisplay = classifyTool(agent.activeToolName, {})}
-        <Fa icon={toolDisplay.icon} class="w-3 h-3 text-ghost" />
+        {#if toolDisplay.hidden}
+          <!-- No usable label yet: fall back to the spinner, never an icon-only placeholder -->
+          <Spinner seed={agent.agentId} size={4} />
+        {:else}
+          <Fa icon={toolDisplay.icon} class="w-3 h-3 text-ghost" />
+        {/if}
       {:else}
         <Spinner seed={agent.agentId} size={4} />
       {/if}

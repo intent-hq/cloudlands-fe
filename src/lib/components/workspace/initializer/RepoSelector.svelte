@@ -85,7 +85,6 @@
     path: string;
     type: 'local' | 'github' | 'remote';
     githubUrl?: string;
-    clonePath?: string; // User-selected folder where the repo should be cloned
     isNewRepo?: boolean;
     isValidPath?: boolean;
     scope?: string; // Relative path from git root for scoped subdirectories
@@ -195,7 +194,7 @@
   // TABBED INTERFACE STATE
   // ═══════════════════════════════════════════════════════════════════════════
   type TabId = 'local' | 'github' | 'new' | 'remote';
-  let activeTab = $state<TabId>('local');
+  let activeTab = $state<TabId>('github');
 
   // ═══════════════════════════════════════════════════════════════════════════
   // FOLDER-PICKER STATE
@@ -203,7 +202,7 @@
   // One picker is open at a time. Local Electron uses the native dialog; remote
   // and web flows use DirectoryPickerModal. `folderPickerPurpose` routes the
   // picked path back to the right destination.
-  type FolderPickerPurpose = 'select-repo' | 'new-repo-parent' | 'github-clone-parent';
+  type FolderPickerPurpose = 'select-repo' | 'new-repo-parent';
   let folderPickerOpen = $state(false);
   let folderPickerPurpose = $state<FolderPickerPurpose>('select-repo');
   let folderPickerTitle = $state<string>(m.workspace_repoSelector_selectFolder_title());
@@ -272,10 +271,6 @@
   // GitHub URL input for the tabbed interface
   let githubUrlInput = $state('');
 
-  // GitHub clone destination (same pattern as new repo)
-  let githubCloneParentPath = $state('');
-  let githubCloneFolderName = $state('');
-
   // Confirmed GitHub URL - only set when user explicitly confirms a GitHub repo
   // This is separate from inputValue which changes as user types
   let confirmedGithubUrl = $state('');
@@ -326,13 +321,6 @@
     path: string;
   } | null>(null);
   let isCheckingNewRepoPath = $state(false);
-
-  // Computed full path for GitHub clone
-  const githubCloneFullPath = $derived(
-    githubCloneParentPath && githubCloneFolderName
-      ? joinNativePath(githubCloneParentPath, githubCloneFolderName)
-      : githubCloneParentPath || '',
-  );
 
   // ═══════════════════════════════════════════════════════════════════════════
   // NON-GIT FOLDER HANDLING
@@ -409,8 +397,8 @@
         }
       }
     } else {
-      // No value selected, default to local
-      activeTab = 'local';
+      // No value selected, default to the "Pick a repo" tab
+      activeTab = 'github';
     }
 
     // Focus input - always autofocus for better UX
@@ -466,20 +454,6 @@
   $effect(() => {
     if (activeTab === 'new' && !newRepoParentPath) {
       newRepoParentPath = getDefaultParentPath();
-    }
-  });
-
-  // Initialize parent path when switching to github tab
-  $effect(() => {
-    if (activeTab === 'github' && !githubCloneParentPath) {
-      githubCloneParentPath = getDefaultParentPath();
-    }
-  });
-
-  // Auto-set folder name when GitHub repo is detected
-  $effect(() => {
-    if (detectedGitHub) {
-      githubCloneFolderName = detectedGitHub.repo;
     }
   });
 
@@ -550,17 +524,26 @@
       // Build a map of repos by path (persistent registry first, then workspace-derived)
       const repoMap = new Map<
         string,
-        { path: string; type: 'local' | 'github'; name: string; owner?: string }
+        { path: string; type: 'local' | 'github'; githubUrl?: string; name: string; owner?: string }
       >();
 
       for (const repo of $workspaceInitializerRecentRepos$) {
         repoMap.set(repo.path, repo);
       }
 
-      // Add persistent registry repos
+      // Add persistent registry repos. Path-less GitHub picks carry a
+      // githubUrl and use the owner/repo shorthand as their key.
       if (registryResult?.success && Array.isArray(registryResult.data)) {
         for (const repo of registryResult.data) {
-          if (repo.path && !repo.path.includes('/.clones/')) {
+          if (repo.githubUrl) {
+            repoMap.set(repo.path, {
+              path: repo.path,
+              type: 'github' as const,
+              githubUrl: repo.githubUrl,
+              name: repo.name,
+              owner: repo.owner,
+            });
+          } else if (repo.path && !repo.path.includes('/.clones/')) {
             repoMap.set(repo.path, {
               path: repo.path,
               type: 'local' as const,
@@ -899,7 +882,12 @@
 
   // Handle selecting a recent repo
   function handleSelectRepo(repo: any) {
-    selectedValue = repo.path;
+    // GitHub picks are path-less: identify the repo by its owner/repo shorthand
+    const githubInfo =
+      repo.type === 'github' && repo.githubUrl ? parseGitHubUrl(repo.githubUrl) : null;
+    const path = githubInfo ? `${githubInfo.owner}/${githubInfo.repo}` : repo.path;
+
+    selectedValue = path;
     inputValue = repo.type === 'github' ? repo.githubUrl : repo.path;
     selectedRepoType = repo.type;
     // Set confirmedGithubUrl for GitHub repos, clear it for local repos
@@ -913,15 +901,13 @@
 
     // Only pass githubUrl if it's actually a GitHub repo
     const detail: RepoChangeDetail = {
-      path: repo.path,
+      path,
       type: repo.type,
       isNewRepo: false,
       isValidPath: true,
     };
     if (repo.type === 'github' && repo.githubUrl) {
       detail.githubUrl = repo.githubUrl;
-      // For GitHub repos, path IS the clone destination
-      detail.clonePath = repo.path;
     }
 
     onchangeWithTracking(detail);
@@ -1052,18 +1038,8 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // GITHUB CLONE FOLDER HANDLERS
+  // GITHUB PICK HANDLERS
   // ═══════════════════════════════════════════════════════════════════════════
-
-  // Open the appropriate folder picker to choose a clone target folder.
-  function handleSelectGitHubCloneParent() {
-    isDialogOpen = true;
-    openFolderPicker(
-      'github-clone-parent',
-      m.workspace_repoSelector_selectCloneFolder_title(),
-      githubCloneParentPath || undefined,
-    );
-  }
 
   // Dispatch a picked path to the right destination.
   async function handleFolderPickerSelect(path: string): Promise<void> {
@@ -1076,9 +1052,6 @@
     if (purpose === 'new-repo-parent') {
       newRepoParentPath = path;
       saveDefaultParentPath(newRepoParentPath);
-    } else if (purpose === 'github-clone-parent') {
-      githubCloneParentPath = path;
-      saveDefaultParentPath(githubCloneParentPath);
     }
     isDialogOpen = false;
     // Re-open the dropdown so the user lands back in the correct flow.
@@ -1095,31 +1068,42 @@
     }
   }
 
-  // Confirm and select the GitHub clone
-  function handleConfirmGitHubClone() {
-    if (!detectedGitHub || !githubCloneParentPath || !githubCloneFolderName) return;
+  // Confirm the picked GitHub repo — path-less selection, no clone destination.
+  // Falls back to parsing the raw input so Enter works before the debounced
+  // detection has run.
+  function handleConfirmGitHubPick() {
+    let picked = detectedGitHub;
+    if (!picked) {
+      const parsed = parseGitHubUrl(githubUrlInput);
+      if (parsed) {
+        picked = {
+          owner: parsed.owner,
+          repo: parsed.repo,
+          url: `https://github.com/${parsed.owner}/${parsed.repo}`,
+        };
+      }
+    }
+    if (!picked) return;
 
-    const clonePath = joinNativePath(githubCloneParentPath, githubCloneFolderName);
+    const shorthand = `${picked.owner}/${picked.repo}`;
 
     const detail: RepoChangeDetail = {
-      path: clonePath,
+      path: shorthand,
       type: 'github',
-      githubUrl: detectedGitHub.url,
-      clonePath,
+      githubUrl: picked.url,
       isNewRepo: false,
       isValidPath: true,
     };
 
-    selectedValue = clonePath;
-    inputValue = detectedGitHub.url;
-    confirmedGithubUrl = detectedGitHub.url;
+    selectedValue = shorthand;
+    inputValue = picked.url;
+    confirmedGithubUrl = picked.url;
     selectedRepoType = 'github';
     isValidPath = true;
     validationMessage = '';
 
     onchangeWithTracking(detail);
 
-    saveDefaultParentPath(githubCloneParentPath);
     saveLastSelectedRepo(detail);
 
     // Close the dropdown
@@ -1242,7 +1226,7 @@
 
       <!-- Tab bar -->
       <div class="flex gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1">
-        {#each [{ id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'github' as TabId, label: m.workspace_repoSelector_cloneFromGithub_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
+        {#each [{ id: 'github' as TabId, label: m.workspace_repoSelector_pickARepo_tab() }, { id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
           <button
             type="button"
             class="flex-1 px-3 py-1.5 text-sm rounded-md cursor-pointer transition-all {activeTab ===
@@ -1273,7 +1257,7 @@
             <Fa icon={faFolder} class="text-ghost opacity-50" />
           </button>
         {:else if activeTab === 'github'}
-          <!-- GitHub: URL input with prefix -->
+          <!-- GitHub: URL input with prefix (path-less pick — no clone destination) -->
           <div class="flex items-center rounded-lg bg-sidebar">
             <Fa icon={faGithub} class="ml-3" />
             <!-- i18n-ignore (domain prefix) -->
@@ -1289,71 +1273,20 @@
                 if (e.key === 'Enter') {
                   e.preventDefault();
                   e.stopPropagation();
-                  if (detectedGitHub && githubCloneParentPath && githubCloneFolderName) {
-                    handleConfirmGitHubClone();
-                  }
+                  handleConfirmGitHubPick();
                 }
               }}
               class="bg-sidebar border-none px-1 py-2.5! h-auto"
               noFocusStyle
             />
           </div>
-          <!-- Parent folder picker -->
-          <button
-            type="button"
-            class="w-full min-w-0 flex items-center gap-3 mt-2 text-left cursor-pointer"
-            onclick={handleSelectGitHubCloneParent}
-          >
-            <span class="text-sm text-subtle shrink-0 w-24 pl-1">{m.workspace_repoSelector_cloneInto_label()}</span>
-            <span
-              class="flex-1 text-sm px-3 py-2.5 bg-sidebar rounded-lg flex items-center shrink justify-between {githubCloneParentPath
-                ? 'text-foreground'
-                : 'text-subtle'} truncate"
-            >
-              <div class="truncate">
-                {githubCloneParentPath || m.workspace_repoSelector_selectFolder_placeholder()}
-              </div>
-              <Fa icon={faFolder} class="text-ghost shrink-0 opacity-50" />
-            </span>
-          </button>
-          <!-- Folder name -->
-          <div class="flex items-center gap-3 mt-2">
-            <span class="text-sm text-subtle shrink-0 w-24 pl-1">{m.workspace_repoSelector_folderName_label()}</span>
-            <Input
-              type="text"
-              bind:value={githubCloneFolderName}
-              onkeydown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (detectedGitHub && githubCloneParentPath && githubCloneFolderName) {
-                    handleConfirmGitHubClone();
-                  }
-                }
-              }}
-              placeholder={detectedGitHub?.repo || 'repo-name' /* i18n-ignore (example folder name) */}
-              class="bg-sidebar border-none"
-              noFocusStyle
-            />
-          </div>
-          <!-- Full path preview + clone button -->
+          <!-- Detected repo + select button -->
           {#if detectedGitHub}
             <div class="flex items-center justify-between gap-2 mt-2 px-1">
-              {#if githubCloneFullPath}
-                <span class="text-sm text-subtle truncate flex-1">
-                  {githubCloneFullPath}
-                </span>
-                <Button size="sm" onclick={handleConfirmGitHubClone} class="shrink-0">{m.workspace_repoSelector_clone_label()}</Button>
-              {:else}
-                <span class="text-sm text-subtle truncate flex-1">
-                  {#if !githubCloneParentPath}
-                    {m.workspace_repoSelector_selectFolderToCloneInto_label()}
-                  {:else if !githubCloneFolderName}
-                    {m.workspace_repoSelector_enterFolderName_label()}
-                  {/if}
-                </span>
-                <Button size="sm" disabled class="shrink-0">{m.workspace_repoSelector_clone_label()}</Button>
-              {/if}
+              <span class="text-sm text-subtle truncate flex-1">
+                {detectedGitHub.owner}/{detectedGitHub.repo}
+              </span>
+              <Button size="sm" onclick={handleConfirmGitHubPick} class="shrink-0">{m.workspace_repoSelector_select_label()}</Button>
             </div>
           {/if}
         {:else if activeTab === 'new'}

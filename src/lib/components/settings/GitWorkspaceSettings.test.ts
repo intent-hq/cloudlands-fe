@@ -64,7 +64,6 @@ const baseSettings = [
   { path: 'workspace.worktreesLocation', value: '' },
   { path: 'workspace.sshKeyPath', value: '' },
   { path: 'workspace.defaultShell', value: 'auto' },
-  { path: 'workspace.autoFetch', value: false },
   { path: 'git.autoCommit', value: true },
   { path: 'workspace.cowIsolation', value: false },
   { path: 'workspace.branchPrefix', value: '' },
@@ -134,7 +133,9 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
 
     // Wait for load to settle (a sibling toggle is rendered), then assert absence.
     await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: /Auto-fetch updates/ })).toBeTruthy();
+      expect(
+        screen.getByRole('checkbox', { name: /Enable auto-commit for new workspaces/ }),
+      ).toBeTruthy();
     });
     expect(screen.queryByRole('checkbox', { name: GIT_CRED_LABEL })).toBeNull();
   });
@@ -509,14 +510,14 @@ describe('GitWorkspaceSettings — path picker fields (PathSettingField)', () =>
     mocks.mockSettingsList.mockResolvedValue(withValues({ 'workspace.sshKeyPath': REDACTED }));
     render(GitWorkspaceSettings);
 
-    const autoFetch = await waitFor(() =>
-      screen.getByRole('checkbox', { name: /Auto-fetch updates/ }),
+    const autoCommit = await waitFor(() =>
+      screen.getByRole('checkbox', { name: /Enable auto-commit for new workspaces/ }),
     );
-    await fireEvent.click(autoFetch);
+    await fireEvent.click(autoCommit);
 
     await waitFor(() => {
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
-        { path: 'workspace.autoFetch', value: true },
+        { path: 'git.autoCommit', value: false },
       ]);
     });
   });

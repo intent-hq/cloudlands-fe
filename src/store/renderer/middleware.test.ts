@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
   const chatReadMiddleware = createPassthroughMiddleware();
   const chatSubscribeMiddleware = createPassthroughMiddleware();
   const chatSendMiddleware = createPassthroughMiddleware();
+  const markAgentSeenTriggerMiddleware = createPassthroughMiddleware();
   const permissionResponseMiddleware = createPassthroughMiddleware();
   const daemonEventsBridgeMiddleware = createPassthroughMiddleware();
   const agentFailureToastMiddleware = createPassthroughMiddleware();
@@ -71,6 +72,7 @@ const mocks = vi.hoisted(() => {
   const tabStatePersistenceMiddleware = createPassthroughMiddleware();
   const panelLayoutPersistenceMiddleware = createPassthroughMiddleware();
   const fileContentPruneService = createPassthroughMiddleware();
+  const dividerSessionBoundaryService = createPassthroughMiddleware();
   const terminalPersistenceMiddleware = createPassthroughMiddleware();
   const externalEditorsPersistenceMiddleware = createPassthroughMiddleware();
   const zoomSyncMiddleware = createPassthroughMiddleware();
@@ -89,6 +91,7 @@ const mocks = vi.hoisted(() => {
   const workspaceInitializerPersistenceMiddleware = createPassthroughMiddleware();
   const themeMutationMiddleware = createPassthroughMiddleware();
   const autoUpdateMutationMiddleware = createPassthroughMiddleware();
+  const releaseNotesMutationMiddleware = createPassthroughMiddleware();
   const specialistsMutationMiddleware = createPassthroughMiddleware();
   const loggerMiddleware = createPassthroughMiddleware();
   const refCheckMiddleware = createPassthroughMiddleware();
@@ -104,6 +107,8 @@ const mocks = vi.hoisted(() => {
     createChatReadMiddleware: vi.fn(() => chatReadMiddleware),
     createChatSubscribeMiddleware: vi.fn(() => chatSubscribeMiddleware),
     createChatSendMiddleware: vi.fn(() => chatSendMiddleware),
+    createMarkAgentSeenTriggerMiddleware: vi.fn(() => markAgentSeenTriggerMiddleware),
+    markAgentSeenAtBoundary: vi.fn(),
     createPermissionResponseMiddleware: vi.fn(() => permissionResponseMiddleware),
     createDaemonEventsBridgeMiddleware: vi.fn(() => daemonEventsBridgeMiddleware),
     createAgentFailureToastMiddleware: vi.fn(() => agentFailureToastMiddleware),
@@ -163,6 +168,7 @@ const mocks = vi.hoisted(() => {
     createTabStatePersistenceMiddleware: vi.fn(() => tabStatePersistenceMiddleware),
     createPanelLayoutPersistenceMiddleware: vi.fn(() => panelLayoutPersistenceMiddleware),
     createFileContentPruneService: vi.fn(() => fileContentPruneService),
+    createDividerSessionBoundaryService: vi.fn(() => dividerSessionBoundaryService),
     createTerminalPersistenceMiddleware: vi.fn(() => terminalPersistenceMiddleware),
     createExternalEditorsPersistenceMiddleware: vi.fn(() => externalEditorsPersistenceMiddleware),
     createZoomSyncMiddleware: vi.fn(() => zoomSyncMiddleware),
@@ -187,6 +193,7 @@ const mocks = vi.hoisted(() => {
     createWorkspaceInitializerPersistenceMiddleware: vi.fn(() => workspaceInitializerPersistenceMiddleware),
     createThemeMutationMiddleware: vi.fn(() => themeMutationMiddleware),
     createAutoUpdateMutationMiddleware: vi.fn(() => autoUpdateMutationMiddleware),
+    createReleaseNotesMutationMiddleware: vi.fn(() => releaseNotesMutationMiddleware),
     createSpecialistsMutationMiddleware: vi.fn(() => specialistsMutationMiddleware),
     createLoggerMiddleware: vi.fn(() => loggerMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
@@ -200,6 +207,7 @@ const mocks = vi.hoisted(() => {
     chatReadMiddleware,
     chatSubscribeMiddleware,
     chatSendMiddleware,
+    markAgentSeenTriggerMiddleware,
     permissionResponseMiddleware,
     daemonEventsBridgeMiddleware,
     agentFailureToastMiddleware,
@@ -249,6 +257,7 @@ const mocks = vi.hoisted(() => {
     tabStatePersistenceMiddleware,
     panelLayoutPersistenceMiddleware,
     fileContentPruneService,
+    dividerSessionBoundaryService,
     terminalPersistenceMiddleware,
     externalEditorsPersistenceMiddleware,
     zoomSyncMiddleware,
@@ -267,6 +276,7 @@ const mocks = vi.hoisted(() => {
     workspaceInitializerPersistenceMiddleware,
     themeMutationMiddleware,
     autoUpdateMutationMiddleware,
+    releaseNotesMutationMiddleware,
     specialistsMutationMiddleware,
     loggerMiddleware,
     structuredCloneMiddleware,
@@ -285,6 +295,10 @@ vi.mock("$features/agent/chat-subscribe-service", () => ({
   createChatSubscribeMiddleware: mocks.createChatSubscribeMiddleware,
 }));
 vi.mock("$features/agent/chat-send-service", () => ({ createChatSendMiddleware: mocks.createChatSendMiddleware }));
+vi.mock("$features/agent/mark-agent-seen", () => ({
+  createMarkAgentSeenTriggerMiddleware: mocks.createMarkAgentSeenTriggerMiddleware,
+  markAgentSeenAtBoundary: mocks.markAgentSeenAtBoundary,
+}));
 vi.mock("$features/permission/permission-response-service", () => ({
   createPermissionResponseMiddleware: mocks.createPermissionResponseMiddleware,
 }));
@@ -437,6 +451,9 @@ vi.mock("./middlewares/panel-layout-persistence-service", () => ({
 vi.mock("./middlewares/file-content-prune-service", () => ({
   createFileContentPruneService: mocks.createFileContentPruneService,
 }));
+vi.mock("./middlewares/divider-session-boundary-service", () => ({
+  createDividerSessionBoundaryService: mocks.createDividerSessionBoundaryService,
+}));
 vi.mock("./middlewares/terminal-persistence-service", () => ({
   createTerminalPersistenceMiddleware: mocks.createTerminalPersistenceMiddleware,
 }));
@@ -492,6 +509,9 @@ vi.mock("$features/theme/theme-service", () => ({
 }));
 vi.mock("$features/auto-update/auto-update-mutation-service", () => ({
   createAutoUpdateMutationMiddleware: mocks.createAutoUpdateMutationMiddleware,
+}));
+vi.mock("$features/release-notes/release-notes-mutation-service", () => ({
+  createReleaseNotesMutationMiddleware: mocks.createReleaseNotesMutationMiddleware,
 }));
 vi.mock("$features/specialists/specialists-mutation-service", () => ({
   createSpecialistsMutationMiddleware: mocks.createSpecialistsMutationMiddleware,
@@ -556,6 +576,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatReadMiddleware,
       mocks.chatSubscribeMiddleware,
       mocks.chatSendMiddleware,
+      mocks.markAgentSeenTriggerMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
@@ -607,6 +628,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.browserPersistenceMiddleware,
       mocks.panelLayoutPersistenceMiddleware,
       mocks.fileContentPruneService,
+      mocks.dividerSessionBoundaryService,
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
@@ -623,6 +645,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.workspaceInitializerPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
+      mocks.releaseNotesMutationMiddleware,
       mocks.specialistsMutationMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -645,6 +668,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatReadMiddleware,
       mocks.chatSubscribeMiddleware,
       mocks.chatSendMiddleware,
+      mocks.markAgentSeenTriggerMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
@@ -696,6 +720,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.browserPersistenceMiddleware,
       mocks.panelLayoutPersistenceMiddleware,
       mocks.fileContentPruneService,
+      mocks.dividerSessionBoundaryService,
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
@@ -712,6 +737,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.workspaceInitializerPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
+      mocks.releaseNotesMutationMiddleware,
       mocks.specialistsMutationMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -734,6 +760,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatReadMiddleware,
       mocks.chatSubscribeMiddleware,
       mocks.chatSendMiddleware,
+      mocks.markAgentSeenTriggerMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
@@ -785,6 +812,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.browserPersistenceMiddleware,
       mocks.panelLayoutPersistenceMiddleware,
       mocks.fileContentPruneService,
+      mocks.dividerSessionBoundaryService,
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
@@ -801,6 +829,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.workspaceInitializerPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
+      mocks.releaseNotesMutationMiddleware,
       mocks.specialistsMutationMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -824,6 +853,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatReadMiddleware,
       mocks.chatSubscribeMiddleware,
       mocks.chatSendMiddleware,
+      mocks.markAgentSeenTriggerMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
@@ -875,6 +905,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.browserPersistenceMiddleware,
       mocks.panelLayoutPersistenceMiddleware,
       mocks.fileContentPruneService,
+      mocks.dividerSessionBoundaryService,
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
@@ -891,6 +922,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.workspaceInitializerPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
+      mocks.releaseNotesMutationMiddleware,
       mocks.specialistsMutationMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
@@ -931,6 +963,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatReadMiddleware,
       mocks.chatSubscribeMiddleware,
       mocks.chatSendMiddleware,
+      mocks.markAgentSeenTriggerMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
@@ -982,6 +1015,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.browserPersistenceMiddleware,
       mocks.panelLayoutPersistenceMiddleware,
       mocks.fileContentPruneService,
+      mocks.dividerSessionBoundaryService,
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
@@ -998,6 +1032,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.workspaceInitializerPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
+      mocks.releaseNotesMutationMiddleware,
       mocks.specialistsMutationMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
@@ -1078,6 +1113,38 @@ describe("hardware-console middleware gating in the HUD window", () => {
     expect(middleware.indexOf(mocks.daemonHealthMiddleware)).toBe(
       start + hardwareConsoleMiddlewares.length,
     );
+  });
+});
+
+describe("divider-session boundary → markSeen wiring", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.stubEnv("DEV", false);
+    vi.clearAllMocks();
+    setLocalStorageEntries({});
+    delete (window as Window & { intentFlags?: unknown }).intentFlags;
+  });
+
+  it("wires the onBoundary seam to markAgentSeenAtBoundary with the boundary's agent ids", async () => {
+    await import("./middleware");
+
+    expect(mocks.createDividerSessionBoundaryService).toHaveBeenCalledTimes(1);
+    const options = mocks.createDividerSessionBoundaryService.mock.calls[0]?.[0] as
+      | { onBoundary?: (boundary: { kind: string; agentIds: string[] }) => void }
+      | undefined;
+    expect(options?.onBoundary).toBeTypeOf("function");
+
+    // Tab-close boundary: the third discrete markSeen trigger fires for the
+    // affected agents (the user was looking right up to the boundary).
+    options!.onBoundary!({ kind: "tab-close", agentIds: ["a1", "a2"] });
+    expect(mocks.markAgentSeenAtBoundary).toHaveBeenCalledTimes(1);
+    expect(mocks.markAgentSeenAtBoundary).toHaveBeenCalledWith(["a1", "a2"]);
+
+    // Workspace-switch boundary routes through the same seam.
+    options!.onBoundary!({ kind: "workspace-switch", agentIds: ["a3"] });
+    expect(mocks.markAgentSeenAtBoundary).toHaveBeenCalledTimes(2);
+    expect(mocks.markAgentSeenAtBoundary).toHaveBeenLastCalledWith(["a3"]);
   });
 });
 

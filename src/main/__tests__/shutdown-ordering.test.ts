@@ -21,6 +21,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 
 const INDEX_PATH = path.resolve(__dirname, '..', 'index.ts');
+const QUIT_CONFIRMATION_PATH = path.resolve(__dirname, '..', 'quit-confirmation.ts');
 
 interface CallSite {
   text: string;
@@ -30,6 +31,11 @@ interface CallSite {
 function parseIndex(): ts.SourceFile {
   const src = fs.readFileSync(INDEX_PATH, 'utf8');
   return ts.createSourceFile(INDEX_PATH, src, ts.ScriptTarget.Latest, true);
+}
+
+function parseQuitConfirmation(): ts.SourceFile {
+  const src = fs.readFileSync(QUIT_CONFIRMATION_PATH, 'utf8');
+  return ts.createSourceFile(QUIT_CONFIRMATION_PATH, src, ts.ScriptTarget.Latest, true);
 }
 
 function callsitesIn(node: ts.Node): CallSite[] {
@@ -293,28 +299,65 @@ describe('gracefulShutdown call ordering (AST)', () => {
     // main-process messageAccumulator Redux slice and threw
     // `Cannot read properties of undefined (reading 'accumulators')` on every
     // quit. The prompt must ask the daemon (listRespondingAgents) instead and
-    // never touch the dead store paths again.
+    // never touch the dead store paths again. The prompt now lives in
+    // src/main/quit-confirmation.ts (extracted so the auto-update service can
+    // run it before quitAndInstall without importing index.ts).
+    const sf = parseQuitConfirmation();
+    const fn = findConfirmQuit(sf);
+    const calls = callsitesIn(fn.body!);
+    expect(calls.some((c) => c.text.endsWith('listRespondingAgents'))).toBe(true);
+    expect(calls.some((c) => c.text === 'agentBackendHandler.getActiveStreams')).toBe(false);
+    expect(calls.some((c) => c.text.includes('messageAccumulator'))).toBe(false);
+  });
+
+  it('before-quit skips the running-agent prompt while an update install is in flight (no double prompt)', () => {
+    // installUpdate() runs the confirmation BEFORE quitAndInstall() (while the
+    // windows are still open), so the before-quit handler must not re-prompt
+    // on the confirmed install path: its confirmQuitWithRunningAgents call has
+    // to be guarded on `!isInstallingUpdate`.
     const sf = parseIndex();
-    let fn: ts.FunctionLikeDeclaration | undefined;
+    let handler: ts.FunctionLikeDeclaration | undefined;
     const visit = (n: ts.Node) => {
-      if (fn) return;
-      if (
-        ts.isFunctionDeclaration(n) &&
-        n.name?.text === 'confirmQuitWithRunningAgents' &&
-        n.body
-      ) {
-        fn = n;
-        return;
+      if (handler) return;
+      if (ts.isCallExpression(n) && n.expression.getText().endsWith('app.on')) {
+        const [evtArg, handlerArg] = n.arguments;
+        if (
+          evtArg &&
+          ts.isStringLiteral(evtArg) &&
+          evtArg.text === 'before-quit' &&
+          handlerArg &&
+          (ts.isArrowFunction(handlerArg) || ts.isFunctionExpression(handlerArg))
+        ) {
+          handler = handlerArg;
+          return;
+        }
       }
       ts.forEachChild(n, visit);
     };
     visit(sf);
-    expect(fn, 'confirmQuitWithRunningAgents not found in src/main/index.ts').toBeDefined();
+    expect(handler, 'before-quit handler not found in src/main/index.ts').toBeDefined();
 
-    const calls = callsitesIn(fn!.body!);
-    expect(calls.some((c) => c.text === 'listRespondingAgents')).toBe(true);
-    expect(calls.some((c) => c.text === 'agentBackendHandler.getActiveStreams')).toBe(false);
-    expect(calls.some((c) => c.text.includes('messageAccumulator'))).toBe(false);
+    // Find the guard `if (!isInstallingUpdate) { ... }` and require the prompt
+    // call to live inside it (and nowhere else in the handler).
+    let guard: ts.IfStatement | undefined;
+    const findGuard = (n: ts.Node) => {
+      if (guard) return;
+      if (ts.isIfStatement(n) && n.expression.getText() === '!isInstallingUpdate') {
+        guard = n;
+        return;
+      }
+      ts.forEachChild(n, findGuard);
+    };
+    findGuard(handler!.body!);
+    expect(guard, 'before-quit must guard the prompt on !isInstallingUpdate').toBeDefined();
+
+    const guardedCalls = callsitesIn(guard!.thenStatement);
+    expect(guardedCalls.some((c) => c.text === 'confirmQuitWithRunningAgents')).toBe(true);
+
+    const allPromptCalls = callsitesIn(handler!.body!).filter(
+      (c) => c.text === 'confirmQuitWithRunningAgents',
+    );
+    expect(allPromptCalls).toHaveLength(1);
   });
 
   it('main process registers exactly one SIGINT and one SIGTERM handler (single-owner invariant)', () => {
@@ -348,7 +391,9 @@ function findConfirmQuit(sf: ts.SourceFile): ts.FunctionLikeDeclaration {
     ts.forEachChild(n, visit);
   };
   visit(sf);
-  if (!found) throw new Error('confirmQuitWithRunningAgents not found in src/main/index.ts');
+  if (!found) {
+    throw new Error('confirmQuitWithRunningAgents not found in src/main/quit-confirmation.ts');
+  }
   return found;
 }
 
@@ -400,13 +445,14 @@ describe('external-daemon-aware quit flow (AST)', () => {
     // The dialog copy lives in the pure, unit-tested buildQuitDialogOptions
     // helper (quit-dialog.test.ts asserts the per-mode copy). The prompt must
     // feed it the live connection mode and keep the zero-agent fast path
-    // (listRespondingAgents) intact in every mode.
-    const sf = parseIndex();
+    // (listRespondingAgents) intact in every mode. Behavior is unit-tested in
+    // quit-confirmation.test.ts; this AST check guards the wiring shape.
+    const sf = parseQuitConfirmation();
     const fn = findConfirmQuit(sf);
     const calls = callsitesIn(fn.body!);
-    expect(calls.some((c) => c.text === 'listRespondingAgents')).toBe(true);
-    expect(calls.some((c) => c.text === 'getConnectionMode')).toBe(true);
-    expect(calls.some((c) => c.text === 'buildQuitDialogOptions')).toBe(true);
-    expect(calls.some((c) => c.text === 'dialog.showMessageBox')).toBe(true);
+    expect(calls.some((c) => c.text.endsWith('listRespondingAgents'))).toBe(true);
+    expect(calls.some((c) => c.text.endsWith('getConnectionMode'))).toBe(true);
+    expect(calls.some((c) => c.text.endsWith('buildQuitDialogOptions'))).toBe(true);
+    expect(calls.some((c) => c.text.endsWith('showMessageBox'))).toBe(true);
   });
 });

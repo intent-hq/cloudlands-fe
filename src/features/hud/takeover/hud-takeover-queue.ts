@@ -95,6 +95,15 @@ export type HudTakeoverPhase = 'idle' | 'blinking' | 'opening' | 'dwelling' | 'c
 /** Caller-supplied animation gate: `blink: false` (reduced motion) skips the pre-roll. */
 export interface HudTakeoverOptions {
   blink?: boolean;
+  /**
+   * Extra dwell (ms, >= 0) added at the opening → dwelling transition on top
+   * of the CLAMPED `takeoverDwellMs` — the caller's measured banner-scroll
+   * duration (see `bannerScrollDurationS` in `hud-takeover-layout.ts`), so a
+   * long overflow scroll is never eaten by the dwell cap. Ignored everywhere
+   * else (and for viewers, which dwell with no deadline); negative values are
+   * treated as 0. Default 0 keeps timing byte-identical.
+   */
+  extraDwellMs?: number;
 }
 
 export interface HudTakeoverQueueState {
@@ -385,10 +394,15 @@ export function tickTakeoverQueue(
     return { ...state, phase: 'opening', phaseEndsAtMs: anchor + HUD_TAKEOVER_OPEN_MS };
   }
   if (state.phase === 'opening') {
+    // `extraDwellMs` (measured banner-scroll time) is additive AFTER the
+    // dwell clamp so the scroll always gets its full window.
+    const extraDwellMs = Math.max(0, options.extraDwellMs ?? 0);
     return {
       ...state,
       phase: 'dwelling',
-      phaseEndsAtMs: state.active?.isViewer ? null : anchor + takeoverDwellMs(state.active),
+      phaseEndsAtMs: state.active?.isViewer
+        ? null
+        : anchor + takeoverDwellMs(state.active) + extraDwellMs,
     };
   }
   if (state.phase === 'dwelling') {

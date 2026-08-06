@@ -43,7 +43,6 @@ const DAEMON_SETTING_PATHS: Record<string, string> = {
   worktreesLocation: "workspace.worktreesLocation",
   sshKeyPath: "workspace.sshKeyPath",
   defaultShell: "workspace.defaultShell",
-  autoFetch: "workspace.autoFetch",
   autoCommit: "git.autoCommit",
   enableUserMcpServers: "mcp.enableUserServers",
   disabledMcpServers: "mcp.disabledServers",

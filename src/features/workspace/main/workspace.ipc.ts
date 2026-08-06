@@ -40,6 +40,7 @@ import {
   getBranchNameValidationError,
 } from '../../../main/utils/workspace-validation';
 import { WORKSPACE_CHANNELS, EDITOR_CHANNELS } from '$shared/ipc/channels';
+import { isDaemonManagedCheckoutPath } from '$shared/utils/daemon-managed-checkout';
 import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   createSafeValidatedHandler,
@@ -1117,8 +1118,10 @@ export function setupWorkspaceIPC(): void {
     createSafeValidatedHandler(
       WorkspaceGetRecentRepositoriesSchema,
       async () => {
-        // Return known repos immediately — don't block on the sync
-        const repos = getAllRepos();
+        // Return known repos immediately — don't block on the sync.
+        // Daemon-managed cache/clone checkouts are internal paths, never
+        // user-pickable repos — keep them out of the recents list.
+        const repos = getAllRepos().filter((repo) => !isDaemonManagedCheckoutPath(repo.path));
 
         // One-time background sync: register repos from existing workspaces into the persistent registry
         // This ensures pre-existing workspaces (created before this feature) get registered
@@ -1162,6 +1165,7 @@ export function setupWorkspaceIPC(): void {
           path: validated.repository,
           name: validated.name || validated.repository.split('/').pop() || 'Unknown',
           owner: validated.owner,
+          githubUrl: validated.githubUrl,
         });
         return { success: true };
       },

@@ -266,6 +266,46 @@ export function scrollToBottom(element: HTMLElement, smooth = false): void {
 }
 
 /**
+ * Animate `scrollTop` toward `targetScrollTop` with an easeOutCubic curve.
+ *
+ * `getContainer` is re-read on every frame; the animation stops cleanly (no
+ * write, no further frame scheduled) as soon as it returns null/undefined —
+ * e.g. when the container is unmounted mid-animation.
+ */
+export function animateScrollTo(
+  getContainer: () => HTMLElement | null | undefined,
+  targetScrollTop: number,
+  duration = 150,
+): void {
+  const container = getContainer();
+  if (!container) return;
+
+  const startScrollTop = container.scrollTop;
+  const distance = targetScrollTop - startScrollTop;
+  const startTime = performance.now();
+
+  function easeOutCubic(t: number): number {
+    return 1 - Math.pow(1 - t, 3);
+  }
+
+  function animate(currentTime: number) {
+    const current = getContainer();
+    if (!current) return;
+
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+
+    current.scrollTop = startScrollTop + distance * easeOutCubic(progress);
+
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+/**
  * Scroll anchor - preserves scroll position relative to a visible element.
  * This prevents "scroll jump to top" when content changes above the viewport.
  *

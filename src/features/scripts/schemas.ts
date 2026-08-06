@@ -70,6 +70,7 @@ export const ScriptRuntimeStateSchema = z
     restartCount: z.number().default(0),
     error: z.string().optional(),
     detectedUrl: z.string().optional(),
+    previouslyRunning: z.boolean().optional(),
   })
   .passthrough();
 

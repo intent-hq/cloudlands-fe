@@ -36,3 +36,7 @@ export const selectWorkspaceInitializerRemoteSetups = store.createSelector(
 export const selectWorkspaceInitializerLastSubmittedAgent = store.createSelector(
   (state) => state.workspaceInitializer.lastSubmittedAgent,
 );
+
+export const selectWorkspaceInitializerPendingGitHubPrefill = store.createSelector(
+  (state) => state.workspaceInitializer.pendingGitHubPrefill,
+);

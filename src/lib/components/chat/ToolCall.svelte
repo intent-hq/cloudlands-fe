@@ -121,7 +121,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 <!-- Special rendering for Augment Context Engine tools -->
 {#if isContextEngine}
   <ContextEngineToolCall {toolUse} {toolState} {result} />
-{:else}
+{:else if !toolDisplay.hidden}
   <div
     class="tool-call-container group relative w-full text-base rounded-md transition-all duration-150 ease-out overflow-hidden block font-family-child"
   >

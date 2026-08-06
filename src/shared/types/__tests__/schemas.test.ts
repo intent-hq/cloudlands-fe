@@ -324,14 +324,13 @@ describe('Zod Schemas', () => {
     });
 
     it('accepts the wire checkoutMode values and rejects non-wire ones', () => {
-      // PROTOCOL §5.1: checkoutMode is "cow" | "worktree"; omitted (never
-      // "direct") for rows without a daemon-provisioned checkout.
-      for (const mode of ['cow', 'worktree']) {
+      // PROTOCOL §5.1: checkoutMode is "cow" | "worktree" | "direct";
+      // omitted for rows without a daemon-provisioned checkout.
+      for (const mode of ['cow', 'worktree', 'direct']) {
         expect(WorkspaceSchema.parse({ ...baseWorkspace, checkoutMode: mode }).checkoutMode).toBe(
           mode,
         );
       }
-      expect(() => WorkspaceSchema.parse({ ...baseWorkspace, checkoutMode: 'direct' })).toThrow();
       expect(() => WorkspaceSchema.parse({ ...baseWorkspace, checkoutMode: 'bogus' })).toThrow();
     });
 

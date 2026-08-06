@@ -16,6 +16,7 @@ import {
   waitFor,
 } from '@testing-library/svelte';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import { m } from '$shared/paraglide/messages.js';
 
 const {
   actionMocks,
@@ -563,6 +564,204 @@ describe('FileTabType Redux integration', () => {
       expect(headerState.getAttribute('data-dirty')).toBe('true');
       expect(headerState.getAttribute('data-saving')).toBe('true');
     });
+  });
+
+  // Out-of-workspace handling: absolute paths outside the workspace root
+  // (worktreePath || repositoryPath = '/repo') render a dedicated warning
+  // instead of dispatching loadFileContentRequested (the file.read trigger).
+  it.each([
+    ['/Users/dev/.claude/projects/memory/MEMORY.md'],
+    // Sibling directory sharing the root as a name prefix must NOT count as inside.
+    ['/repository/src/main.ts'],
+  ])(
+    'renders the warning and requests no read for out-of-workspace absolute path %s',
+    async (filePath) => {
+      renderFileTab({ ...fileTab, id: `tab-${filePath}`, title: 'outside', filePath });
+
+      expect(await screen.findByText(m.layout_fileTab_outsideWorkspace_label())).toBeTruthy();
+      expect(screen.getByText(filePath)).toBeTruthy();
+      expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+      expect(dispatchMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'files/loadFileContentRequested' }),
+      );
+      expect(screen.queryByTestId('code-editor')).toBeNull();
+      expect(screen.queryByTestId('markdown-file-editor')).toBeNull();
+      expect(screen.queryByTestId('save-indicator')).toBeNull();
+    },
+  );
+
+  it('loads absolute paths under the workspace root normally', async () => {
+    mockReduxState.files['/repo/src/inside.ts'] = {
+      localContent: 'export const inside = true;',
+      originalContent: 'export const inside = true;',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+      lastUpdated: 0,
+    };
+
+    renderFileTab({
+      ...fileTab,
+      id: 'tab-inside-abs',
+      title: 'inside.ts',
+      filePath: '/repo/src/inside.ts',
+    });
+
+    const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
+    await waitFor(() => expect(editor.value).toBe('export const inside = true;'));
+    expect(actionMocks.loadFileContentRequested).toHaveBeenCalledWith(
+      'ws-1',
+      '/repo/src/inside.ts',
+      '/repo/src/inside.ts',
+    );
+    expect(screen.queryByText(m.layout_fileTab_outsideWorkspace_label())).toBeNull();
+  });
+
+  it('loads slash-form UNC paths under a UNC root normally despite casing differences', async () => {
+    mockReduxState.workspace = {
+      id: 'ws-1',
+      worktreePath: '//Server/Share/repo',
+      repositoryPath: '//Server/Share/repo',
+    };
+    mockReduxState.files['//server/share/repo/src/main.ts'] = {
+      localContent: 'export const unc = true;',
+      originalContent: 'export const unc = true;',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+      lastUpdated: 0,
+    };
+
+    renderFileTab({
+      ...fileTab,
+      id: 'tab-unc',
+      title: 'main.ts',
+      filePath: '//server/share/repo/src/main.ts',
+    });
+
+    const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
+    await waitFor(() => expect(editor.value).toBe('export const unc = true;'));
+    expect(actionMocks.loadFileContentRequested).toHaveBeenCalledWith(
+      'ws-1',
+      '//server/share/repo/src/main.ts',
+      '//server/share/repo/src/main.ts',
+    );
+    expect(screen.queryByText(m.layout_fileTab_outsideWorkspace_label())).toBeNull();
+  });
+
+  it('loads Windows-absolute in-root paths at their exact path without double-joining', async () => {
+    mockReduxState.workspace = {
+      id: 'ws-1',
+      worktreePath: 'C:/repo',
+      repositoryPath: 'C:/repo',
+    };
+    mockReduxState.files['C:/repo/src/x.ts'] = {
+      localContent: 'export const win = true;',
+      originalContent: 'export const win = true;',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+      lastUpdated: 0,
+    };
+
+    renderFileTab({
+      ...fileTab,
+      id: 'tab-win-abs',
+      title: 'x.ts',
+      filePath: 'C:/repo/src/x.ts',
+    });
+
+    const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
+    await waitFor(() => expect(editor.value).toBe('export const win = true;'));
+    expect(actionMocks.loadFileContentRequested).toHaveBeenCalledWith(
+      'ws-1',
+      'C:/repo/src/x.ts',
+      'C:/repo/src/x.ts',
+    );
+    expect(screen.queryByText(m.layout_fileTab_outsideWorkspace_label())).toBeNull();
+  });
+
+  it.each([
+    // Different drive, and a drive-letter sibling sharing the root name prefix.
+    ['D:/other/x.ts'],
+    ['C:/repository/src/x.ts'],
+  ])(
+    'renders the warning and requests no read for out-of-root Windows-absolute path %s',
+    async (filePath) => {
+      mockReduxState.workspace = {
+        id: 'ws-1',
+        worktreePath: 'C:/repo',
+        repositoryPath: 'C:/repo',
+      };
+
+      renderFileTab({ ...fileTab, id: `tab-${filePath}`, title: 'outside', filePath });
+
+      expect(await screen.findByText(m.layout_fileTab_outsideWorkspace_label())).toBeTruthy();
+      expect(screen.getByText(filePath)).toBeTruthy();
+      expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('code-editor')).toBeNull();
+    },
+  );
+
+  it('loads a tilde-prefixed filename in the workspace root as an ordinary file', async () => {
+    mockReduxState.files['~$report.docx'] = {
+      localContent: 'lock',
+      originalContent: 'lock',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+      lastUpdated: 0,
+    };
+
+    renderFileTab({
+      ...fileTab,
+      id: 'tab-lockfile',
+      title: '~$report.docx',
+      filePath: '~$report.docx',
+    });
+
+    await screen.findByTestId('code-editor');
+    expect(actionMocks.loadFileContentRequested).toHaveBeenCalledWith(
+      'ws-1',
+      '~$report.docx',
+      '/repo/~$report.docx',
+    );
+    expect(screen.queryByText(m.layout_fileTab_outsideWorkspace_label())).toBeNull();
+  });
+
+  // Tilde paths cannot be expanded in the renderer (no Node APIs), so they are
+  // classified as out-of-workspace and never dispatched as a doomed file.read.
+  it.each([['~/.claude/projects/memory/MEMORY.md'], ['~\\notes\\scratch.md'], ['~']])(
+    'renders the warning and requests no read for tilde path %s',
+    async (filePath) => {
+      renderFileTab({ ...fileTab, id: `tab-${filePath}`, title: 'tilde', filePath });
+
+      expect(await screen.findByText(m.layout_fileTab_outsideWorkspace_label())).toBeTruthy();
+      expect(screen.getByText(filePath)).toBeTruthy();
+      expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+      expect(dispatchMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'files/loadFileContentRequested' }),
+      );
+      expect(screen.queryByTestId('code-editor')).toBeNull();
+      expect(screen.queryByTestId('markdown-file-editor')).toBeNull();
+      expect(screen.queryByTestId('save-indicator')).toBeNull();
+    },
+  );
+
+  it('loads relative paths normally with no out-of-workspace warning', async () => {
+    renderFileTab();
+
+    await screen.findByTestId('code-editor');
+    expect(actionMocks.loadFileContentRequested).toHaveBeenCalledWith(
+      'ws-1',
+      'src/main.ts',
+      '/repo/src/main.ts',
+    );
+    expect(screen.queryByText(m.layout_fileTab_outsideWorkspace_label())).toBeNull();
   });
 });
 

@@ -8,6 +8,10 @@
  * in a terminal state: per-provider statuses set as each probe settles,
  * `hasCheckedOnce` flipped once every probe settles — even when every
  * per-provider envelope reports failure.
+ *
+ * Also asserts the fan-out is NOT serialized behind the slow aggregated
+ * `providers:get-availability` sweep: probes are issued immediately and npx
+ * status rides the light `providers:get-paths` discovery call in parallel.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -54,7 +58,12 @@ const flush = async () => {
 // `$lib/electron-bridge` is globally mocked in test-setup.ts; route the
 // provider channels through a per-provider dispatcher.
 const checkSingleSpy = vi.fn();
+const getPathsSpy = vi.fn();
+const getAvailabilitySpy = vi.fn();
 const mockedInvoke = vi.mocked(invoke);
+
+/** PROTOCOL §5.14 `host.providerDiscovery` npx block, as GET_PATHS relays it. */
+const NPX_STATUS = { resolvedPath: "/usr/local/bin/npx", version: "10.2.0", versionOk: true };
 
 type CheckSingleResponse = {
   success: boolean;
@@ -63,11 +72,19 @@ type CheckSingleResponse = {
   error?: string;
 };
 
+/** The CHECK_SINGLE wire request is either a bare provider id (forced
+ *  recheck) or `{ providerId, force: false }` (passive bulk load). */
+type CheckSingleRequest = string | { providerId: string; force?: boolean };
+
+const requestProviderId = (request: CheckSingleRequest): string =>
+  typeof request === "string" ? request : request.providerId;
+
 /** Route every CHECK_SINGLE call through the provided per-provider map. */
 function routeCheckSingle(
   responses: Partial<Record<string, () => Promise<CheckSingleResponse>>>,
 ): void {
-  checkSingleSpy.mockImplementation(async (providerId: string) => {
+  checkSingleSpy.mockImplementation(async (request: CheckSingleRequest) => {
+    const providerId = requestProviderId(request);
     const responder = responses[providerId];
     if (responder) return responder();
     return {
@@ -93,8 +110,17 @@ describe("provider-availability-check-service", () => {
     }
     clearProviderAvailabilityCache();
     checkSingleSpy.mockReset();
+    getPathsSpy.mockReset();
+    getAvailabilitySpy.mockReset();
+    getPathsSpy.mockResolvedValue({
+      success: true,
+      data: { paths: {}, secondaryPaths: {}, npx: NPX_STATUS },
+    });
+    getAvailabilitySpy.mockResolvedValue({ success: true, data: null });
     mockedInvoke.mockImplementation(async (channel: string, data?: unknown) => {
       if (channel === PROVIDERS_CHANNELS.CHECK_SINGLE) return checkSingleSpy(data);
+      if (channel === PROVIDERS_CHANNELS.GET_PATHS) return getPathsSpy();
+      if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) return getAvailabilitySpy();
       return { success: true, data: null };
     });
   });
@@ -114,8 +140,13 @@ describe("provider-availability-check-service", () => {
     const state = appStore.state.agentAvailability;
     expect(checkSingleSpy).toHaveBeenCalledTimes(ALL_PROVIDER_IDS.length);
     for (const providerId of ALL_PROVIDER_IDS) {
-      expect(checkSingleSpy).toHaveBeenCalledWith(providerId);
+      // The first-mount bulk load rides the daemon's auth cache.
+      expect(checkSingleSpy).toHaveBeenCalledWith({ providerId, force: false });
     }
+    // npx status came from the LIGHT discovery path, not the aggregated sweep.
+    expect(getPathsSpy).toHaveBeenCalledTimes(1);
+    expect(getAvailabilitySpy).not.toHaveBeenCalled();
+    expect(state.npxStatus).toEqual(NPX_STATUS);
     expect(state.hasCheckedOnce).toBe(true);
     expect(state.providerStatusMap.auggie).toEqual({ available: true, authenticated: true });
     expect(state.providerStatusMap["claude-code"]).toEqual({ available: false });
@@ -189,6 +220,57 @@ describe("provider-availability-check-service", () => {
     expect(finalState.hasCheckedOnce).toBe(true);
     for (const providerId of ALL_PROVIDER_IDS) {
       expect(finalState.providerLoadingMap[providerId]).toBe(false);
+    }
+  });
+
+  it("issues the per-provider fan-out without waiting on the discovery call", async () => {
+    // Hold the light discovery call open. The per-provider probes must still
+    // be issued and settle — nothing may be awaited in front of the fan-out.
+    let releaseDiscovery: () => void = () => {};
+    const discoveryGate = new Promise<void>((resolve) => {
+      releaseDiscovery = resolve;
+    });
+    getPathsSpy.mockImplementation(async () => {
+      await discoveryGate;
+      return { success: true, data: { paths: {}, secondaryPaths: {}, npx: NPX_STATUS } };
+    });
+    routeCheckSingle({
+      auggie: async () => ({
+        success: true,
+        providerId: "auggie",
+        data: { available: true, authenticated: true },
+      }),
+    });
+
+    appStore.dispatch(checkAllProvidersRequested());
+    await flush();
+
+    // Every probe was issued and settled while discovery is still pending.
+    expect(checkSingleSpy).toHaveBeenCalledTimes(ALL_PROVIDER_IDS.length);
+    const midState = appStore.state.agentAvailability;
+    expect(midState.providerStatusMap.auggie).toEqual({ available: true, authenticated: true });
+    for (const providerId of ALL_PROVIDER_IDS) {
+      expect(midState.providerLoadingMap[providerId]).toBe(false);
+    }
+    // The aggregated sweep is never on this path.
+    expect(getAvailabilitySpy).not.toHaveBeenCalled();
+
+    releaseDiscovery();
+    await flush();
+
+    expect(appStore.state.agentAvailability.npxStatus).toEqual(NPX_STATUS);
+    expect(appStore.state.agentAvailability.hasCheckedOnce).toBe(true);
+  });
+
+  it("checkAllProvidersRequested forces a fresh auth verdict per provider", async () => {
+    routeCheckSingle({});
+
+    appStore.dispatch(checkAllProvidersRequested());
+    await flush();
+
+    // Explicit recheck → bare provider id, i.e. the daemon's forced path.
+    for (const providerId of ALL_PROVIDER_IDS) {
+      expect(checkSingleSpy).toHaveBeenCalledWith(providerId);
     }
   });
 

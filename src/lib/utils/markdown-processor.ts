@@ -614,7 +614,8 @@ export async function processMarkdownForDisplay(content: string): Promise<string
     return sanitizeMarkdownHTML(result);
   } catch (error) {
     logger.error('[markdown-processor] Failed to parse markdown for display:', error as Error);
-    return content;
+    // Callers inject the result with {@html}, so the fallback must be sanitized too.
+    return sanitizeMarkdownHTML(content);
   }
 }
 
