@@ -219,6 +219,42 @@ describe('AgentCard live tool preview (tool-only stretches)', () => {
     const preview = await screen.findByTestId('agent-card-preview');
     expect(preview.textContent).toContain('stale persisted text from last turn');
   });
+
+  it('outranks the newest-user-message line while the tool call is in flight', async () => {
+    // In-turn tool call with the user's message still newest in the
+    // transcript: the tool is the newer signal, so it wins the preview.
+    seedSession({
+      isStreaming: true,
+      messages: [],
+      lastUserMessage: 'just sent this',
+      lastMessageRole: 'user',
+    });
+    appStore.dispatch(updateSession(agentId, { lastToolUse: { name: 'read_file' } }));
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent?.toLowerCase()).toContain('read');
+    expect(preview.textContent).not.toContain('just sent this');
+  });
+
+  it('falls back to the user line when the tool name has no renderable label', async () => {
+    // `workspace_api` without a streamed summary classifies as hidden, so
+    // AgentPreviewToolLabel renders nothing — it must not suppress the user
+    // line and leave the row blank.
+    seedSession({
+      isStreaming: true,
+      messages: [],
+      lastUserMessage: 'just sent this',
+      lastMessageRole: 'user',
+    });
+    appStore.dispatch(updateSession(agentId, { lastToolUse: { name: 'workspace_api' } }));
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('just sent this');
+  });
 });
 
 describe('AgentCard user-message-newest preview (freshness wins)', () => {

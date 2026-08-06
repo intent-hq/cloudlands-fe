@@ -298,17 +298,6 @@ function workspaceIdOf(event: WorkspaceEvent | undefined): string | null {
   return null;
 }
 
-/**
- * The event envelope's own `timestamp` (PROTOCOL §7, ISO-8601). Used to keep a
- * session's `updatedAt` — and therefore the AgentCard relative-time label —
- * ticking with the throttled activity pings. Absent/malformed timestamps yield
- * `undefined` so the stored value is left untouched rather than guessed.
- */
-function eventTimestampOf(event: WorkspaceEvent | undefined): string | undefined {
-  const timestamp = (event as { timestamp?: unknown } | undefined)?.timestamp;
-  return typeof timestamp === 'string' && timestamp.length > 0 ? timestamp : undefined;
-}
-
 function extractEvent(params: unknown): WorkspaceEvent | null {
   if (!params || typeof params !== 'object') return null;
   // The daemon wraps each domain event in `{ event, subscriptionId? }` per the
@@ -330,17 +319,19 @@ function extractSubscriptionId(params: unknown): string | undefined {
 }
 
 /**
- * Read the optional `lastToolUse` object carried on `agent:stream:activity` /
- * terminal `agent:stream:end` (PROTOCOL §7): the most recent tool call of the
+ * Read the optional `lastToolUse` object carried on the tool-call arm of
+ * `agent:stream:activity` (PROTOCOL §7): the tool call just recorded for the
  * in-flight turn. Older daemons omit it entirely — `undefined` then, which
- * degrades to the pre-existing text-only preview behaviour. A payload without
- * a usable `name` is rejected rather than absorbed.
+ * degrades to the pre-existing text-only preview behaviour. A payload that
+ * diverges from the documented `{ name, status }` shape is rejected whole
+ * rather than partially absorbed.
  */
 function readLastToolUse(value: unknown): { name: string; status?: string } | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const { name, status } = value as { name?: unknown; status?: unknown };
   if (typeof name !== 'string' || name.trim().length === 0) return undefined;
-  return typeof status === 'string' ? { name, status } : { name };
+  if (status !== undefined && typeof status !== 'string') return undefined;
+  return status === undefined ? { name } : { name, status };
 }
 
 /**
@@ -354,8 +345,8 @@ function readLastToolUse(value: unknown): { name: string; status?: string } | un
  * Empty/whitespace values are dropped (the daemon omits fields until
  * derivable; an empty string would only arise from a contract regression).
  * `lastToolUse` rides the same path so a tool-only stretch (no streamed text)
- * still advances the preview. `updatedAt` is refreshed alongside so the row's
- * relative time ticks with the pings instead of freezing at the last write.
+ * still advances the preview; the caller clears it at each turn boundary so a
+ * previous turn's tool can never masquerade as this turn's activity.
  * The viewed agent's standing `chat.subscribe` buffer stays the authoritative
  * character-level preview — AgentCard prefers it over these fields when live.
  */
@@ -364,13 +355,11 @@ function applyStreamPreviewFields(
   lastAgentResponse: string | undefined,
   digest: string | undefined,
   lastToolUse?: { name: string; status?: string },
-  updatedAt?: string,
 ): void {
   const updates: {
     lastAgentResponse?: string;
     digest?: string;
     lastToolUse?: { name: string; status?: string };
-    updatedAt?: string;
   } = {};
   if (typeof lastAgentResponse === 'string' && lastAgentResponse.trim()) {
     updates.lastAgentResponse = lastAgentResponse;
@@ -382,7 +371,6 @@ function applyStreamPreviewFields(
     updates.lastToolUse = lastToolUse;
   }
   if (Object.keys(updates).length === 0) return;
-  if (updatedAt) updates.updatedAt = updatedAt;
   appStore.dispatch(updateSession(agentId, updates));
 }
 
@@ -414,10 +402,10 @@ function hydrateSessionIfUnknown(agentId: string): void {
  * live-preview fields (`lastAgentResponse`/`digest`, intentd#792, plus
  * `lastToolUse` for tool-only stretches) so a non-viewed watched agent's
  * footer preview advances mid-turn without a fetch. The preview fields are
- * omitted until derivable (pre-first-token) — an omission means "nothing to
- * preview yet this turn", so the ping only refreshes timestamps. The wire
- * guard mirrors the §7 payload (`agentId`/`messageId`) so malformed events
- * stay inert.
+ * omitted until derivable (pre-first-token / pre-first-tool) — an omission
+ * means "nothing to preview yet this turn", so the ping only refreshes
+ * timestamps. The wire guard mirrors the §7 payload (`agentId`/`messageId`)
+ * so malformed events stay inert.
  */
 function handleStreamActivityEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -439,23 +427,21 @@ function handleStreamActivityEvent(event: WorkspaceEvent): void {
   const hasResponseText = lastAgentResponse !== undefined && lastAgentResponse.trim().length > 0;
   appStore.dispatch(streamActivityReceived(agentId, hasResponseText));
   // First ping of a new turn (fresh messageId): drop the previous turn's
-  // digest so it can't masquerade as this turn's summary (monorepo#1327). A
-  // digest carried on this very ping is re-applied right below; idle agents
-  // keep their last digest as the preview fallback because no ping arrives
-  // until the next turn starts.
+  // digest so it can't masquerade as this turn's summary (monorepo#1327), and
+  // the previous turn's `lastToolUse` for the same reason — the wire omits it
+  // before this turn's first tool call, so an omission cannot be distinguished
+  // from "older daemon" and a carried-over tool would render as live. Values
+  // carried on this very ping are re-applied right below; idle agents keep
+  // their last digest as the preview fallback because no ping arrives until
+  // the next turn starts.
   if (previewTurnMessageIdByAgent.get(agentId) !== messageId) {
     previewTurnMessageIdByAgent.set(agentId, messageId);
     // The updateAgentDigest reducer keys on agentId and ignores the wsId
     // element, so '' here is a placeholder, not a guess a consumer relies on.
     appStore.dispatch(updateAgentDigest(workspaceIdOf(event) ?? '', agentId, null));
+    appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));
   }
-  applyStreamPreviewFields(
-    agentId,
-    lastAgentResponse,
-    digest,
-    readLastToolUse(data.lastToolUse),
-    eventTimestampOf(event),
-  );
+  applyStreamPreviewFields(agentId, lastAgentResponse, digest, readLastToolUse(data.lastToolUse));
 }
 
 /**
@@ -654,9 +640,11 @@ function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): voi
  * the agent-session busy-flag clears, and the per-agent dedup maps are
  * dropped so the next turn starts fresh. Transcript-bearing terminal emits
  * also carry the final `lastAgentResponse`/`digest` preview values
- * (intentd#792, plus `lastToolUse` when the turn ended on a tool call) —
- * pushed into the session so a preview tracked via the throttled activity
- * signal lands on the turn's true final state.
+ * (intentd#792) — pushed into the session so a preview tracked via the
+ * throttled activity signal lands on the turn's true final state. The live
+ * tool preview is the inverse: it belongs to the in-flight turn only, so the
+ * terminal frame clears it rather than freezing the turn's last tool into the
+ * session.
  */
 function handleStreamEndEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -669,12 +657,11 @@ function handleStreamEndEvent(event: WorkspaceEvent): void {
   toolStatusByAgent.delete(agentId);
   wakeTurnMessageIdByAgent.delete(agentId);
   appStore.dispatch(streamEnded(agentId, stopReason));
+  appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));
   applyStreamPreviewFields(
     agentId,
     typeof data?.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined,
     typeof data?.digest === 'string' ? data.digest : undefined,
-    readLastToolUse(data?.lastToolUse),
-    eventTimestampOf(event),
   );
 }
 

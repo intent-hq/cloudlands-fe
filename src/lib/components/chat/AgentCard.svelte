@@ -19,7 +19,10 @@
   selectAgentSessionStreamingContent,
   selectAgentIsWaiting,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import { selectChatReceivedFirstChunk } from '$store/renderer/slices/chat-state/chat-state-selectors';
+  import {
+  selectChatLastChunkReceivedAt,
+  selectChatReceivedFirstChunk,
+} from '$store/renderer/slices/chat-state/chat-state-selectors';
   import {
   deleteAgentWithUndoRequested,
   ensureAgentSessionLoaded,
@@ -31,6 +34,7 @@
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import { getLastMeaningfulLine, stripUserMessagePrefixes } from '$lib/utils/text-utils';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
+  import { classifyTool } from './tool-classifier';
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
@@ -460,10 +464,17 @@
   // tool-only stretch of a turn advancing instead of freezing on the previous
   // turn's transcript text — live streamed text still outranks it, and it only
   // exists while the agent is responding, so idle rows keep their peek data.
+  // The wire payload carries only the tool name, so the synthesized block has
+  // an empty `input`. Names that classify as `hidden` (workspace_api without a
+  // streamed summary, raw MCP identifiers) render nothing at all in
+  // AgentPreviewToolLabel, so they must not count as a live tool either —
+  // otherwise they would suppress the text/user fallbacks and leave the row
+  // blank for the length of the call.
   const liveToolUse = $derived.by<ToolUseBlock | undefined>(() => {
     if (!$agentIsResponding$ || liveResponseLine) return undefined;
     const toolUse = $agent$?.lastToolUse;
     if (!toolUse?.name) return undefined;
+    if (classifyTool(toolUse.name, {}).hidden) return undefined;
     return { type: 'tool_use', id: `${agentId}:live-tool`, name: toolUse.name, input: {} };
   });
 
@@ -482,8 +493,9 @@
       .split('\n')[0]
       ?.trim() ?? '',
   );
-  // A live tool call is newer than the newest transcript message, so it also
-  // outranks the user line during the tool-only window.
+  // A live tool call belongs to the in-flight turn (the bridge clears the
+  // field at each turn boundary and on stream end), so it is newer than the
+  // newest transcript message and also outranks the user line.
   const showUserMessagePreview = $derived(
     agentData?.lastMessageRole === 'user' && !!userFirstLine && !liveResponseLine && !liveToolUse,
   );
@@ -496,7 +508,16 @@
   const previewToolUse = $derived(liveToolUse ?? lastToolUse);
   const previewResponse = $derived(liveToolUse ? '' : lastResponse);
 
-  const updatedAt = $derived($agent$?.updatedAt);
+  // Relative-time label. The session's `updatedAt` is BE-owned and only moves
+  // when the daemon writes the row, so during a long turn it freezes. While
+  // the agent is responding the transient chat-state activity timestamp (bumped
+  // by every `agent:stream:activity` ping, tool-only ones included) is the
+  // fresher signal — it is FE-only bookkeeping, so nothing overwrites the
+  // canonical field.
+  const lastChunkReceivedAt$ = selectChatLastChunkReceivedAt(agentIdStore);
+  const updatedAt = $derived(
+    $agentIsResponding$ && $lastChunkReceivedAt$ > 0 ? $lastChunkReceivedAt$ : $agent$?.updatedAt,
+  );
 
   // Border color based on state - only show colored border if showStateBorder is true
   const isRunning = $derived(avatarState === 'running' || avatarState === 'responding');

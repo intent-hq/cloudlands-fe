@@ -219,11 +219,14 @@ export interface AgentSession {
   lastAgentResponse?: string;
 
   /**
-   * Most recent tool call of the in-flight turn (PROTOCOL §7, additive on
-   * `agent:stream:activity` / terminal `agent:stream:end`). Push-applied by
-   * the daemon-events bridge so a non-viewed agent's preview advances during
-   * tool-only stretches. Omitted by older daemons and before the turn's first
-   * tool call. Rendered verbatim.
+   * Most recent tool call of the in-flight turn (PROTOCOL §7, additive on the
+   * tool-call arm of `agent:stream:activity`). Push-applied by the
+   * daemon-events bridge so a non-viewed agent's preview advances during
+   * tool-only stretches, and cleared by it at each turn boundary and on the
+   * terminal `agent:stream:end` — the field describes a running turn only.
+   * Omitted by older daemons and before the turn's first tool call. Stored
+   * verbatim; only `name` is rendered today (`status` mirrors the wire shape
+   * for the queued footer status indicator).
    */
   lastToolUse?: {
     name: string;

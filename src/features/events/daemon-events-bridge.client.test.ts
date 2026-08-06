@@ -728,10 +728,9 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     expect(readStatusEvents()).toEqual([]);
   });
 
-  // Tool-only stretches: the daemon now pings with `lastToolUse` and no text,
-  // so a non-viewed agent's preview keeps advancing instead of freezing.
-  it('agent:stream:activity applies the lastToolUse tool preview and refreshes updatedAt', async () => {
-    appStore.dispatch(updateSession(AGENT, { updatedAt: '2026-01-01T00:00:00.000Z' }));
+  // Tool-only stretches: the daemon pings with `lastToolUse` and no text, so a
+  // non-viewed agent's preview keeps advancing instead of freezing.
+  it('agent:stream:activity applies the lastToolUse tool preview', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
     backendRequestSpy.mockClear();
@@ -748,19 +747,23 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
       name: 'str-replace-editor',
       status: 'started',
     });
-    // The event's own timestamp keeps the row's relative time ticking.
-    expect(readSession()?.updatedAt).toBe('2026-01-02T00:00:00.000Z');
     // Still content-free bookkeeping: no text this ping, no RPC, no transcript.
     expect(readStatusEvents()).toEqual([]);
     expect(readAssistantMessages()).toHaveLength(0);
     expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.get', expect.anything());
   });
 
-  it('an older daemon ping without lastToolUse leaves the field untouched', async () => {
-    appStore.dispatch(updateSession(AGENT, { lastToolUse: { name: 'previous-tool' } }));
+  it('a later ping of the SAME turn without lastToolUse leaves the field untouched', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastToolUse: { name: 'launch-process' },
+      }),
+    );
     handler(
       notification('agent:stream:activity', {
         agentId: AGENT,
@@ -769,11 +772,11 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
       }),
     );
 
-    expect(readSession()?.lastToolUse).toEqual({ name: 'previous-tool' });
+    expect(readSession()?.lastToolUse).toEqual({ name: 'launch-process' });
     expect(readSession()?.lastAgentResponse).toBe('Now writing the fix');
   });
 
-  it('a malformed lastToolUse (no usable name) is rejected rather than absorbed', async () => {
+  it('a malformed lastToolUse is rejected whole rather than partially absorbed', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -784,8 +787,66 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
         lastToolUse: { status: 'started' },
       }),
     );
+    expect(readSession()?.lastToolUse).toBeUndefined();
+
+    // A non-string `status` diverges from the §7 shape: the whole object is
+    // rejected rather than the `name` being kept with `status` dropped.
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastToolUse: { name: 'launch-process', status: 7 },
+      }),
+    );
+    expect(readSession()?.lastToolUse).toBeUndefined();
+  });
+
+  // The wire omits `lastToolUse` before a turn's first tool call, so an
+  // omission is indistinguishable from "older daemon" — without a boundary
+  // clear the previous turn's tool would render as this turn's live activity.
+  it("a new turn's first activity ping clears the previous turn's lastToolUse", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastToolUse: { name: 'launch-process' },
+      }),
+    );
+    expect(readSession()?.lastToolUse).toEqual({ name: 'launch-process' });
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: 'msg-next-turn',
+      }),
+    );
 
     expect(readSession()?.lastToolUse).toBeUndefined();
+  });
+
+  it("a new turn's first ping still applies a lastToolUse carried on that same ping", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastToolUse: { name: 'launch-process' },
+      }),
+    );
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: 'msg-next-turn',
+        lastToolUse: { name: 'read_file' },
+      }),
+    );
+
+    expect(readSession()?.lastToolUse).toEqual({ name: 'read_file' });
   });
 
   it('terminal agent:stream:end applies the final lastAgentResponse/digest so the preview lands on the turn end-state', async () => {
@@ -797,6 +858,7 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
         agentId: AGENT,
         messageId: MESSAGE_ID,
         lastAgentResponse: 'partial mid-turn text',
+        lastToolUse: { name: 'launch-process' },
       }),
     );
     expect(readSession()?.lastAgentResponse).toBe('partial mid-turn text');
@@ -807,16 +869,14 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
         messageId: MESSAGE_ID,
         lastAgentResponse: 'The full final response tail.',
         digest: 'Turn complete',
-        lastToolUse: { name: 'launch-process', status: 'completed' },
       }),
     );
 
     expect(readSession()?.lastAgentResponse).toBe('The full final response tail.');
     expect(readSession()?.digest).toBe('Turn complete');
-    expect(readSession()?.lastToolUse).toEqual({
-      name: 'launch-process',
-      status: 'completed',
-    });
+    // The live tool preview describes a running turn only — the terminal
+    // frame clears it instead of freezing the turn's last tool in the session.
+    expect(readSession()?.lastToolUse).toBeUndefined();
     // Terminal bookkeeping still ran: busy flags cleared, no transcript writes.
     expect(readSession()?.isStreaming).toBe(false);
     expect(readAssistantMessages()).toHaveLength(0);

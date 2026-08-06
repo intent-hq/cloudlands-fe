@@ -29,6 +29,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatReceivedFirstChunk: () => makeReadable(false),
+  selectChatLastChunkReceivedAt: () => makeReadable(0),
 }));
 
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
