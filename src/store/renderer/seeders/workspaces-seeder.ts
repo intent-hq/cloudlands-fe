@@ -27,6 +27,7 @@ import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
 import { appClient } from "$lib/client";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import type { KnownRepo } from "$shared/types/known-repo";
+import { isDaemonManagedCheckoutPath } from "$shared/utils/daemon-managed-checkout";
 import type { Workspace } from "$shared/types";
 import { WorkspaceStatus } from "$shared/types";
 import { registerMockSeeder } from "../mock-bootstrap";
@@ -128,8 +129,7 @@ async function readReposKnownSetting(): Promise<KnownRepo[]> {
 registerMockIpcHandler(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, async () => {
   const result = await backendRequest<{ repos: KnownRepo[] }>("repo.list");
   const repos = (result.repos ?? []).filter(
-    (repo) =>
-      !repo.path.includes("/.clones/") && !repo.path.includes("/.repo-cache/"),
+    (repo) => !isDaemonManagedCheckoutPath(repo.path),
   );
   const githubPicks = (await readReposKnownSetting()).filter(
     (repo) => !!repo.githubUrl,
@@ -200,19 +200,21 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY, async (arg) 
     return { success: false, error: "repository is required" };
   }
   try {
-    // Path-less GitHub picks live in the `repos.known` setting, not the
-    // daemon's repo.list registry — drop a matching entry there too.
+    // `repo.remove` runs first so a daemon hiccup there fails the whole call
+    // before any state changed; only then is a matching path-less GitHub pick
+    // dropped from the `repos.known` setting (those entries live beside the
+    // daemon's repo.list registry, not in it).
+    const result = await backendRequest<{ removed: boolean }>("repo.remove", {
+      path: repository,
+    });
     const githubPicks = await readReposKnownSetting();
     const remaining = githubPicks.filter((repo) => repo.path !== repository);
-    if (remaining.length !== githubPicks.length) {
+    const removedFromSetting = remaining.length !== githubPicks.length;
+    if (removedFromSetting) {
       await backendRequest("settings.update", {
         changes: [{ path: REPOS_KNOWN_SETTING, value: remaining }],
       });
     }
-    const result = await backendRequest<{ removed: boolean }>("repo.remove", {
-      path: repository,
-    });
-    const removedFromSetting = remaining.length !== githubPicks.length;
     return {
       success: true,
       data: { removed: result.removed === true || removedFromSetting },

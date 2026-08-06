@@ -207,6 +207,47 @@ describe("workspaces-seeder legacy IPC bridges", () => {
       ]);
     });
 
+    it("filters backslash-separated cache/clone paths too (Windows-style)", async () => {
+      mockedRequest.mockImplementation(async (method) => {
+        if (method === "repo.list") {
+          return {
+            repos: [
+              {
+                path: "C:\\Users\\me\\src\\intent",
+                name: "intent",
+                addedAt: "2026-01-01T00:00:00Z",
+                lastUsedAt: "2026-01-02T00:00:00Z",
+              },
+              {
+                path: "C:\\ws-root\\.repo-cache\\acme\\widget",
+                name: "widget",
+                addedAt: "2026-01-01T00:00:00Z",
+                lastUsedAt: "2026-01-05T00:00:00Z",
+              },
+              {
+                path: "C:\\home\\.clones\\legacy",
+                name: "legacy",
+                addedAt: "2026-01-01T00:00:00Z",
+                lastUsedAt: "2026-01-04T00:00:00Z",
+              },
+            ],
+          };
+        }
+        if (method === "settings.get") return { value: [] };
+        return undefined;
+      });
+
+      const response = await mockInvoke<CommandResponse<Array<Record<string, unknown>>>>(
+        WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES,
+        {},
+      );
+
+      expect(response.success).toBe(true);
+      expect(response.data).toEqual([
+        expect.objectContaining({ path: "C:\\Users\\me\\src\\intent" }),
+      ]);
+    });
+
     it("rejects on daemon failure — LifecycleIpcReadService keeps the prior known repos", async () => {
       mockedRequest.mockRejectedValueOnce(new Error("daemon unreachable"));
 
@@ -373,6 +414,37 @@ describe("workspaces-seeder legacy IPC bridges", () => {
       );
 
       expect(response).toEqual({ success: false, error: "daemon unreachable" });
+    });
+
+    it("runs repo.remove before touching repos.known — a repo.remove failure leaves the setting intact", async () => {
+      mockedRequest.mockImplementation(async (method) => {
+        if (method === "repo.remove") throw new Error("daemon hiccup");
+        if (method === "settings.get") {
+          return {
+            value: [
+              {
+                path: "acme/widget",
+                name: "widget",
+                githubUrl: "https://github.com/acme/widget",
+                addedAt: "t",
+                lastUsedAt: "t",
+              },
+            ],
+          };
+        }
+        return undefined;
+      });
+
+      const response = await mockInvoke<CommandResponse<never>>(
+        WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
+        { repository: "acme/widget" },
+      );
+
+      expect(response).toEqual({ success: false, error: "daemon hiccup" });
+      // The reported failure matches reality: nothing was removed.
+      expect(
+        mockedRequest.mock.calls.find(([m]) => m === "settings.update"),
+      ).toBeUndefined();
     });
 
     it("rejects a missing repository param without touching the daemon", async () => {

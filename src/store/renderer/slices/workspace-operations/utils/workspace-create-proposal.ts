@@ -53,6 +53,13 @@ export function buildCreateWorkspaceRequestFromProposal(
   // Picked repo (githubUrl with no clone destination): the daemon hydrates the
   // checkout from its repo cache — the request carries githubUrl + branch
   // fields ONLY, never a clonePath or repositoryPath.
+  //
+  // INVARIANT: githubUrl-without-clonePath ⇒ cache-hydrated pick, always.
+  // Proposal producers that pair a githubUrl with a real local checkout must
+  // set clonePath — the daemon's proposal builder already does (it falls back
+  // clonePath ← repoPath whenever githubUrl is set; see intent-acp
+  // mcp_server/bindings/app/workspaces.rs), and ProposalCard returns no
+  // repository fallback path when githubUrl is set.
   const isGithubPick = !!githubUrl && !clonePath;
 
   return {
