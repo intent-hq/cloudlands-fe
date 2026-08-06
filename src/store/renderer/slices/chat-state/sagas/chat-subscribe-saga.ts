@@ -61,7 +61,6 @@
  */
 import { END, buffers, eventChannel, type EventChannel, type Task } from "redux-saga";
 import { call, cancel, fork, put, take, type SagaGenerator } from "typed-redux-saga";
-import type { AgentMessage } from "$shared/types";
 import type {
   ChatLiveStreamPhase,
   ChatTranscript,
