@@ -128,6 +128,28 @@ describe('AutoUpdateService.installUpdate confirmation gating', () => {
     expect(quitAndInstallMock).toHaveBeenCalledWith(false, true);
   });
 
+  it('re-entrant install while the prompt is pending is ignored (no stacked dialogs)', async () => {
+    const { svc, confirmMock, quitAndInstallMock } = await setupDownloadedService();
+    let resolveConfirm: (value: boolean) => void = () => {};
+    confirmMock.mockImplementation(
+      () => new Promise<boolean>((resolve) => (resolveConfirm = resolve)),
+    );
+
+    const first = svc.autoUpdateService.installUpdate();
+    const second = svc.autoUpdateService.installUpdate();
+    await second;
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+
+    resolveConfirm(true);
+    await first;
+    expect(quitAndInstallMock).toHaveBeenCalledTimes(1);
+
+    // Guard releases after settling: a later install prompts again.
+    confirmMock.mockResolvedValue(false);
+    await svc.autoUpdateService.installUpdate();
+    expect(confirmMock).toHaveBeenCalledTimes(2);
+  });
+
   it('throws without prompting when no update is downloaded', async () => {
     const svc = await import('../auto-update.service');
     const { confirmQuitWithRunningAgents } = await import('../../../../main/quit-confirmation');
