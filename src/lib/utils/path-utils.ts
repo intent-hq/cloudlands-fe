@@ -99,6 +99,22 @@ export function isAbsolutePath(p: string): boolean {
 }
 
 /**
+ * Check if a path is home-relative (its first segment is a tilde reference).
+ * Matches a bare `~`, `~/...`, `~\...`, and the user-specific `~user/...`
+ * form — all require a home directory the renderer cannot resolve (see
+ * `expandPath`), so callers treat them alike.
+ * A separator is required after a user segment: bare `~name` is an ordinary
+ * filename (e.g. the Office lock file `~$report.docx`), not a home reference,
+ * and a tilde outside the first segment (`a~b`, `./~`) is a literal character.
+ * @param p The path to check
+ * @returns true if the path is home-relative
+ */
+export function isTildePath(p: string): boolean {
+  if (!p) return false;
+  return p === '~' || /^~[^/\\]*[/\\]/.test(p);
+}
+
+/**
  * Check if a path is absolute AND falls outside a root directory.
  * Relative paths are never outside (they resolve against the root).
  * Windows-style paths (drive letter or UNC) compare case-insensitively;
