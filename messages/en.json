@@ -2674,6 +2674,7 @@
   "layout_fileTab_showDiffIndicators_tooltip": "Show diff indicators",
   "layout_fileTab_deleteFile_tooltip": "Delete file",
   "layout_fileTab_errorLoading_label": "Error loading file",
+  "layout_fileTab_outsideWorkspace_label": "Opening a file outside of the workspace is not a supported operation",
   "layout_fileTab_preparing_label": "Preparing to load file...",
   "layout_fileTab_file_fallback": "file",
   "layout_noteTab_copyFullNote_tooltip": "Copy full note",

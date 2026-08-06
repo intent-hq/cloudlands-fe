@@ -2673,6 +2673,7 @@
   "layout_fileTab_showDiffIndicators_tooltip": "显示差异标记",
   "layout_fileTab_deleteFile_tooltip": "删除文件",
   "layout_fileTab_errorLoading_label": "加载文件出错",
+  "layout_fileTab_outsideWorkspace_label": "不支持打开工作区之外的文件",
   "layout_fileTab_preparing_label": "正在准备加载文件…",
   "layout_fileTab_file_fallback": "文件",
   "layout_noteTab_copyFullNote_tooltip": "复制整个笔记",

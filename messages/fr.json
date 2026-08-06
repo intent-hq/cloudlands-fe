@@ -2673,6 +2673,7 @@
   "layout_fileTab_showDiffIndicators_tooltip": "Afficher les indicateurs de diff",
   "layout_fileTab_deleteFile_tooltip": "Supprimer le fichier",
   "layout_fileTab_errorLoading_label": "Erreur lors du chargement du fichier",
+  "layout_fileTab_outsideWorkspace_label": "L'ouverture d'un fichier en dehors de l'espace de travail n'est pas une opération prise en charge",
   "layout_fileTab_preparing_label": "Préparation du chargement du fichier...",
   "layout_fileTab_file_fallback": "fichier",
   "layout_noteTab_copyFullNote_tooltip": "Copier toute la note",
