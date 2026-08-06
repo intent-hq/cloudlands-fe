@@ -37,6 +37,10 @@ export const selectVoiceLanguage = store.createSelector(
   (state) => state.voiceSettings.language,
 );
 
+export const selectVoiceWorkspaceVocabularyMaxTerms = store.createSelector(
+  (state) => state.voiceSettings.workspaceVocabularyMaxTerms,
+);
+
 export const selectVoiceInputDeviceId = store.createSelector(
   (state) => state.voiceSettings.inputDeviceId,
 );

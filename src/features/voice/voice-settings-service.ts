@@ -80,6 +80,30 @@ export const VOICE_VOCABULARY_SETTING_PATH = "voice.vocabulary";
 /** Maximum length of a single vocabulary term (providers skip longer keyterms, §5.41). */
 export const VOICE_VOCABULARY_TERM_MAX_LENGTH = 50;
 
+/**
+ * Non-secret daemon settings path capping the auto-derived workspace
+ * vocabulary injected into `voice.transcribe` calls carrying a `workspaceId`
+ * (number, default 50, min 0, max 100 — §5.12, v5.1). `0` disables workspace
+ * vocabulary entirely (no derivation, no injection).
+ */
+export const VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH =
+  "voice.workspaceVocabulary.maxTerms";
+
+/** Range + daemon-side default for `voice.workspaceVocabulary.maxTerms` (§5.12). */
+export const VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MIN = 0;
+export const VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MAX = 100;
+export const VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_DEFAULT = 50;
+
+/** An integer within the catalog's 0..=100 range (§5.12). */
+export function isVoiceWorkspaceVocabularyMaxTerms(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MIN &&
+    value <= VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MAX
+  );
+}
+
 export interface VoiceSettingsSnapshot {
   /** Whether the connected daemon exposes the voice settings catalog (v4.3+). */
   available: boolean;
@@ -97,6 +121,12 @@ export interface VoiceSettingsSnapshot {
    * selector, same availability pattern as `voice.openai.model`).
    */
   language: string | null;
+  /**
+   * Cap on the auto-derived workspace vocabulary (0..=100, `0` = off); `null`
+   * when the daemon's catalog lacks the setting (pre-5.1 daemon — hide the
+   * field, same availability pattern as `voice.openai.model`).
+   */
+  workspaceVocabularyMaxTerms: number | null;
 }
 
 function isVoiceProvider(value: unknown): value is VoiceProvider {
@@ -132,6 +162,7 @@ export async function loadVoiceSettings(): Promise<VoiceSettingsSnapshot> {
     vocabularyEntry,
     openaiModelEntry,
     languageEntry,
+    workspaceVocabularyMaxTermsEntry,
   ] = await Promise.all([
     appClient.settings.get(VOICE_PROVIDER_SETTING_PATH),
     appClient.settings.get(VOICE_API_KEY_SETTING_PATHS.elevenlabs),
@@ -139,6 +170,7 @@ export async function loadVoiceSettings(): Promise<VoiceSettingsSnapshot> {
     appClient.settings.get(VOICE_VOCABULARY_SETTING_PATH),
     appClient.settings.get(VOICE_OPENAI_MODEL_SETTING_PATH),
     appClient.settings.get(VOICE_LANGUAGE_SETTING_PATH),
+    appClient.settings.get(VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH),
   ]);
   return {
     available: providerEntry !== null,
@@ -168,6 +200,15 @@ export async function loadVoiceSettings(): Promise<VoiceSettingsSnapshot> {
         : typeof languageEntry.value === "string"
           ? languageEntry.value.trim().toLowerCase()
           : VOICE_LANGUAGE_AUTO,
+    // `null` entry ⇒ daemon predates the setting (pre-5.1) ⇒ hide the field.
+    // Unset/out-of-range values fold to the daemon-side default so the field
+    // reflects what will actually run.
+    workspaceVocabularyMaxTerms:
+      workspaceVocabularyMaxTermsEntry === null
+        ? null
+        : isVoiceWorkspaceVocabularyMaxTerms(workspaceVocabularyMaxTermsEntry.value)
+          ? workspaceVocabularyMaxTermsEntry.value
+          : VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_DEFAULT,
   };
 }
 
@@ -230,6 +271,27 @@ export async function setVoiceVocabulary(terms: string[]): Promise<void> {
   if (!applied.some((change) => change.path === VOICE_VOCABULARY_SETTING_PATH)) {
     // i18n-ignore (Error.message carries the wire path; the panel maps it to a localized message)
     throw new Error(`settings.update did not apply ${VOICE_VOCABULARY_SETTING_PATH}`);
+  }
+}
+
+/**
+ * Persist the workspace-vocabulary cap (0..=100, `0` = off). Throws when the
+ * daemon rejects the change or silently drops the path (older daemon without
+ * the setting) so the panel can roll back its optimistic value.
+ */
+export async function setVoiceWorkspaceVocabularyMaxTerms(maxTerms: number): Promise<void> {
+  const applied = await appClient.settings.update([
+    { path: VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH, value: maxTerms },
+  ]);
+  if (
+    !applied.some(
+      (change) => change.path === VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH,
+    )
+  ) {
+    // i18n-ignore (Error.message carries the wire path; the panel maps it to a localized message)
+    throw new Error(
+      `settings.update did not apply ${VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH}`,
+    );
   }
 }
 

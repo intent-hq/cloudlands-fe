@@ -30,6 +30,8 @@ export interface VoiceSettingsSliceState {
   openaiModel: VoiceOpenAiModel | null;
   /** Language hint (ISO-639-1; `""` = auto-detect); `null` when the daemon's catalog lacks the setting. */
   language: string | null;
+  /** Cap on the auto-derived workspace vocabulary (0..=100, `0` = off); `null` when the daemon's catalog lacks the setting. */
+  workspaceVocabularyMaxTerms: number | null;
   /** Selected microphone device id; `null` = system default. */
   inputDeviceId: string | null;
   /** Enumerated audio-input devices (refreshed on `devicechange`). */

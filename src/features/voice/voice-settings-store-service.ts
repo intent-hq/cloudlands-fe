@@ -20,6 +20,7 @@ import {
   changeVoiceLanguage,
   changeVoiceOpenAiModel,
   changeVoiceProvider,
+  changeVoiceWorkspaceVocabularyMaxTerms,
   clearVoiceKey,
   initializeVoiceSettings,
   removeVoiceVocabularyTerm,
@@ -36,16 +37,19 @@ import {
   setVoiceSettingsError,
   setVoiceSettingsSnapshot,
   setVoiceVocabularyValue,
+  setVoiceWorkspaceVocabularyMaxTermsValue,
 } from "$store/renderer/slices/voice-settings/voice-settings-slice";
 import {
   clearVoiceApiKey,
   isVoiceOpenAiModel,
+  isVoiceWorkspaceVocabularyMaxTerms,
   loadVoiceSettings,
   saveVoiceApiKey,
   setVoiceLanguage,
   setVoiceOpenAiModel,
   setVoiceProvider,
   setVoiceVocabulary,
+  setVoiceWorkspaceVocabularyMaxTerms,
   type VoiceOpenAiModel,
   type VoiceProvider,
 } from "$features/voice/voice-settings-service";
@@ -63,6 +67,7 @@ import {
   isOsTranscriptionAvailable,
   requestOsSpeechAuthorization,
 } from "$features/voice/os-transcription-service";
+import { resetWorkspaceVocabularyCache } from "$features/voice/workspace-vocabulary-service";
 import { createLogger } from "$lib/utils/client-logger";
 import { m } from "$shared/paraglide/messages.js";
 
@@ -89,13 +94,14 @@ export async function initializeVoiceSettingsFlow(): Promise<void> {
         snapshot.vocabulary,
         snapshot.openaiModel,
         snapshot.language,
+        snapshot.workspaceVocabularyMaxTerms,
       ),
     );
   } catch (error) {
     appStore.dispatch(setVoiceSettingsSnapshot(false, "elevenlabs", {
       elevenlabs: false,
       openai: false,
-    }, null, null, null));
+    }, null, null, null, null));
     appStore.dispatch(setVoiceSettingsError(m.settings_voice_loadFailed_error()));
     logger.error("initialize error", error);
   }
@@ -270,6 +276,46 @@ export async function changeVoiceLanguageFlow(language: string): Promise<void> {
   }
 }
 
+// Cap writes are serialized in dispatch order (out-of-order responses could
+// otherwise leave the daemon persisting an older cap) and tagged with a
+// sequence so a stale write's failure rollback never clobbers a newer
+// optimistic value.
+let maxTermsWriteSeq = 0;
+let maxTermsWriteQueue: Promise<void> = Promise.resolve();
+
+/**
+ * Persist the workspace-vocabulary cap (0..=100, `0` = off); roll back the
+ * optimistic value on failure — only while this write is still the latest.
+ * A `null` previous value means the daemon's catalog lacks the setting (the
+ * panel hides the field) — the write is skipped defensively. A successful
+ * write invalidates the OS-engine workspace-vocabulary cache so the new cap
+ * takes effect on the next dictation instead of after the cache TTL.
+ */
+export async function changeVoiceWorkspaceVocabularyMaxTermsFlow(
+  maxTerms: number,
+): Promise<void> {
+  const previous = appStore.state.voiceSettings.workspaceVocabularyMaxTerms;
+  if (previous === null || maxTerms === previous) return;
+  const seq = ++maxTermsWriteSeq;
+  appStore.dispatch(setVoiceSettingsError(null));
+  appStore.dispatch(setVoiceWorkspaceVocabularyMaxTermsValue(maxTerms));
+  maxTermsWriteQueue = maxTermsWriteQueue.then(async () => {
+    try {
+      await setVoiceWorkspaceVocabularyMaxTerms(maxTerms);
+      resetWorkspaceVocabularyCache();
+    } catch (error) {
+      if (seq === maxTermsWriteSeq) {
+        appStore.dispatch(setVoiceWorkspaceVocabularyMaxTermsValue(previous));
+        appStore.dispatch(
+          setVoiceSettingsError(m.settings_voice_workspaceVocabulary_saveFailed_error()),
+        );
+      }
+      logger.error("workspace vocabulary max terms change error", error);
+    }
+  });
+  return maxTermsWriteQueue;
+}
+
 /** Store a pasted API key through the daemon secrets-file path. */
 export async function saveVoiceKeyFlow(provider: VoiceProvider, apiKey: string): Promise<void> {
   appStore.dispatch(setVoiceSettingsError(null));
@@ -365,6 +411,13 @@ export function createVoiceSettingsMiddleware(): StoreMiddleware {
       case changeVoiceLanguage.type: {
         const payload = Array.isArray(action.payload) ? action.payload : [];
         if (typeof payload[0] === "string") void changeVoiceLanguageFlow(payload[0]);
+        break;
+      }
+      case changeVoiceWorkspaceVocabularyMaxTerms.type: {
+        const payload = Array.isArray(action.payload) ? action.payload : [];
+        if (isVoiceWorkspaceVocabularyMaxTerms(payload[0])) {
+          void changeVoiceWorkspaceVocabularyMaxTermsFlow(payload[0]);
+        }
         break;
       }
       case saveVoiceKey.type: {

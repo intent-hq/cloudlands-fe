@@ -18,6 +18,7 @@ export const initialState: VoiceSettingsSliceState = {
   vocabulary: null,
   openaiModel: null,
   language: null,
+  workspaceVocabularyMaxTerms: null,
   inputDeviceId: null,
   inputDevices: [],
   busyProvider: null,
@@ -88,7 +89,16 @@ export const setVoiceSettingsSnapshot = createAction(
     vocabulary: string[] | null,
     openaiModel: VoiceOpenAiModel | null,
     language: string | null,
-  ) => ({ available, provider, keyConfigured, vocabulary, openaiModel, language }),
+    workspaceVocabularyMaxTerms: number | null = null,
+  ) => ({
+    available,
+    provider,
+    keyConfigured,
+    vocabulary,
+    openaiModel,
+    language,
+    workspaceVocabularyMaxTerms,
+  }),
 );
 
 /** Trigger: persist the OpenAI transcription model through `settings.update` */
@@ -110,6 +120,16 @@ export const changeVoiceLanguage = createAction<[language: string]>(
 export const setVoiceLanguageValue = createAction<[language: string | null]>(
   "voiceSettings/setLanguageValue",
 );
+
+/** Trigger: persist the workspace-vocabulary cap through `settings.update` (0..=100, `0` = off) */
+export const changeVoiceWorkspaceVocabularyMaxTerms = createAction<[maxTerms: number]>(
+  "voiceSettings/changeWorkspaceVocabularyMaxTerms",
+);
+
+/** Set the workspace-vocabulary cap value directly (optimistic apply or rollback) */
+export const setVoiceWorkspaceVocabularyMaxTermsValue = createAction<
+  [maxTerms: number | null]
+>("voiceSettings/setWorkspaceVocabularyMaxTermsValue");
 
 /** Set the (already persisted) provider value */
 export const setVoiceProviderValue = createAction<[provider: VoiceProvider]>(
@@ -158,6 +178,7 @@ export const voiceSettingsReducer = createReducer<VoiceSettingsSliceState>(initi
     vocabulary: payload.vocabulary,
     openaiModel: payload.openaiModel,
     language: payload.language,
+    workspaceVocabularyMaxTerms: payload.workspaceVocabularyMaxTerms,
   }))
   .with(setVoiceOpenAiModelValue, (state, { payload: [model] }) => ({
     ...state,
@@ -166,6 +187,10 @@ export const voiceSettingsReducer = createReducer<VoiceSettingsSliceState>(initi
   .with(setVoiceLanguageValue, (state, { payload: [language] }) => ({
     ...state,
     language,
+  }))
+  .with(setVoiceWorkspaceVocabularyMaxTermsValue, (state, { payload: [maxTerms] }) => ({
+    ...state,
+    workspaceVocabularyMaxTerms: maxTerms,
   }))
   .with(setVoiceProviderValue, (state, { payload: [provider] }) => ({
     ...state,

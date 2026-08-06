@@ -1,12 +1,13 @@
 /**
- * Wire-contract tests for the live voice domain (`voice.transcribe`,
- * PROTOCOL §5.41).
+ * Wire-contract tests for the live voice domain (`voice.transcribe` /
+ * `voice.getWorkspaceVocabulary`, PROTOCOL §5.41).
  *
  * Asserts (a) the exact JSON-RPC request the client emits — base64-encoded
  * `audio` (standard alphabet, padded), the container `mimeType`, `context`
- * present only when the caller gathered hints — and (b) the daemon-shaped
- * result passes through untransformed. Errors are NOT folded: the
- * transcription flow surfaces them as toasts.
+ * present only when the caller gathered hints, `workspaceId` present only
+ * when the caller opted into workspace-vocabulary injection (v5.1) — and
+ * (b) the daemon-shaped result passes through untransformed. Errors are NOT
+ * folded: the transcription flow surfaces them as toasts.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -62,6 +63,33 @@ describe('LiveVoiceClient (fake transport)', () => {
     }
   });
 
+  it('transcribe forwards workspaceId when the caller opts in (§5.41 v5.1)', async () => {
+    mockedRequest.mockResolvedValueOnce(TRANSCRIBE_RESULT);
+    const client = new LiveVoiceClient();
+
+    await client.transcribe(AUDIO_BLOB, 'audio/webm', undefined, 'ws-abc');
+
+    expect(mockedRequest).toHaveBeenCalledWith(
+      'voice.transcribe',
+      { audio: 'AQID', mimeType: 'audio/webm', workspaceId: 'ws-abc' },
+      { timeoutMs: VOICE_TRANSCRIBE_TIMEOUT_MS },
+    );
+  });
+
+  it('transcribe omits workspaceId when absent or blank (§5.41 optional shape)', async () => {
+    mockedRequest.mockResolvedValueOnce(TRANSCRIBE_RESULT);
+    const client = new LiveVoiceClient();
+
+    await client.transcribe(AUDIO_BLOB, 'audio/webm');
+    await client.transcribe(AUDIO_BLOB, 'audio/webm', undefined, '');
+    await client.transcribe(AUDIO_BLOB, 'audio/webm', undefined, '   ');
+
+    for (const call of mockedRequest.mock.calls) {
+      const params = call[1] as Record<string, unknown>;
+      expect('workspaceId' in params).toBe(false);
+    }
+  });
+
   it('transcribe forwards context.keyterms and context.prompt when gathered', async () => {
     mockedRequest.mockResolvedValueOnce(TRANSCRIBE_RESULT);
     const client = new LiveVoiceClient();
@@ -102,6 +130,27 @@ describe('LiveVoiceClient (fake transport)', () => {
     const client = new LiveVoiceClient();
 
     await expect(client.transcribe(AUDIO_BLOB, 'audio/webm')).rejects.toThrow(/no API key/);
+  });
+
+  it('getWorkspaceVocabulary sends the exact §5.41 request and passes terms through', async () => {
+    mockedRequest.mockResolvedValueOnce({ terms: ['intentd', 'clippy', 'cloudlands-fe', 'TOON'] });
+    const client = new LiveVoiceClient();
+
+    const result = await client.getWorkspaceVocabulary('ws-abc');
+
+    expect(mockedRequest).toHaveBeenCalledWith('voice.getWorkspaceVocabulary', {
+      workspaceId: 'ws-abc',
+    });
+    expect(result).toEqual({ terms: ['intentd', 'clippy', 'cloudlands-fe', 'TOON'] });
+  });
+
+  it('getWorkspaceVocabulary propagates the not-found -32602 (unknown workspaceId)', async () => {
+    mockedRequest.mockRejectedValueOnce(
+      Object.assign(new Error('workspace not found'), { code: -32602, data: { code: 'not-found' } }),
+    );
+    const client = new LiveVoiceClient();
+
+    await expect(client.getWorkspaceVocabulary('ws-gone')).rejects.toThrow(/not found/);
   });
 
   it('blobToBase64 produces standard padded base64 across chunk boundaries', async () => {

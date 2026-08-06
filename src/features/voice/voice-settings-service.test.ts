@@ -16,18 +16,22 @@ vi.mock("$lib/client", () => ({
 import { appClient } from "$lib/client";
 import {
   clearVoiceApiKey,
+  isVoiceWorkspaceVocabularyMaxTerms,
   loadVoiceSettings,
   saveVoiceApiKey,
   setVoiceLanguage,
   setVoiceOpenAiModel,
   setVoiceProvider,
   setVoiceVocabulary,
+  setVoiceWorkspaceVocabularyMaxTerms,
   VOICE_API_KEY_SETTING_PATHS,
   VOICE_LANGUAGE_SETTING_PATH,
   VOICE_OPENAI_DEFAULT_MODEL,
   VOICE_OPENAI_MODEL_SETTING_PATH,
   VOICE_PROVIDER_SETTING_PATH,
   VOICE_VOCABULARY_SETTING_PATH,
+  VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_DEFAULT,
+  VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH,
 } from "./voice-settings-service";
 
 const settings = appClient.settings as unknown as Record<string, ReturnType<typeof vi.fn>>;
@@ -57,6 +61,8 @@ describe("voiceSettingsService (mocked settings seam)", () => {
       if (path === VOICE_OPENAI_MODEL_SETTING_PATH)
         return Promise.resolve(entry(path, "whisper-1"));
       if (path === VOICE_LANGUAGE_SETTING_PATH) return Promise.resolve(entry(path, "de"));
+      if (path === VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH)
+        return Promise.resolve(entry(path, 25));
       return Promise.resolve(entry(path, null));
     });
 
@@ -68,6 +74,7 @@ describe("voiceSettingsService (mocked settings seam)", () => {
     expect(settings.get).toHaveBeenCalledWith(VOICE_VOCABULARY_SETTING_PATH);
     expect(settings.get).toHaveBeenCalledWith(VOICE_OPENAI_MODEL_SETTING_PATH);
     expect(settings.get).toHaveBeenCalledWith(VOICE_LANGUAGE_SETTING_PATH);
+    expect(settings.get).toHaveBeenCalledWith(VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH);
     expect(snapshot).toEqual({
       available: true,
       provider: "openai",
@@ -75,6 +82,7 @@ describe("voiceSettingsService (mocked settings seam)", () => {
       vocabulary: ["intentd", "Cloudlands"],
       openaiModel: "whisper-1",
       language: "de",
+      workspaceVocabularyMaxTerms: 25,
     });
   });
 
@@ -89,6 +97,7 @@ describe("voiceSettingsService (mocked settings seam)", () => {
     expect(snapshot.vocabulary).toBeNull();
     expect(snapshot.openaiModel).toBeNull();
     expect(snapshot.language).toBeNull();
+    expect(snapshot.workspaceVocabularyMaxTerms).toBeNull();
   });
 
   it("surfaces a null language when the daemon's catalog lacks voice.language", async () => {
@@ -142,6 +151,61 @@ describe("voiceSettingsService (mocked settings seam)", () => {
     const snapshot = await loadVoiceSettings();
 
     expect(snapshot.openaiModel).toBe(VOICE_OPENAI_DEFAULT_MODEL);
+  });
+
+  it("surfaces a null workspace-vocabulary cap when the daemon's catalog lacks the setting", async () => {
+    settings.get.mockImplementation((path: string) =>
+      Promise.resolve(
+        path === VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH ? null : entry(path, null),
+      ),
+    );
+
+    const snapshot = await loadVoiceSettings();
+
+    expect(snapshot.workspaceVocabularyMaxTerms).toBeNull();
+  });
+
+  it("folds an unset or out-of-range workspace-vocabulary cap to the daemon default", async () => {
+    settings.get.mockImplementation((path: string) =>
+      Promise.resolve(
+        entry(path, path === VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH ? 250 : null),
+      ),
+    );
+
+    let snapshot = await loadVoiceSettings();
+    expect(snapshot.workspaceVocabularyMaxTerms).toBe(
+      VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_DEFAULT,
+    );
+
+    settings.get.mockImplementation((path: string) => Promise.resolve(entry(path, null)));
+    snapshot = await loadVoiceSettings();
+    expect(snapshot.workspaceVocabularyMaxTerms).toBe(
+      VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_DEFAULT,
+    );
+  });
+
+  it("keeps the 0 = off sentinel instead of folding it to the default", async () => {
+    settings.get.mockImplementation((path: string) =>
+      Promise.resolve(
+        entry(path, path === VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH ? 0 : null),
+      ),
+    );
+
+    const snapshot = await loadVoiceSettings();
+
+    expect(snapshot.workspaceVocabularyMaxTerms).toBe(0);
+  });
+
+  it("validates the workspace-vocabulary cap range (integer 0..=100)", () => {
+    expect(isVoiceWorkspaceVocabularyMaxTerms(0)).toBe(true);
+    expect(isVoiceWorkspaceVocabularyMaxTerms(50)).toBe(true);
+    expect(isVoiceWorkspaceVocabularyMaxTerms(100)).toBe(true);
+    expect(isVoiceWorkspaceVocabularyMaxTerms(-1)).toBe(false);
+    expect(isVoiceWorkspaceVocabularyMaxTerms(101)).toBe(false);
+    expect(isVoiceWorkspaceVocabularyMaxTerms(12.5)).toBe(false);
+    expect(isVoiceWorkspaceVocabularyMaxTerms(NaN)).toBe(false);
+    expect(isVoiceWorkspaceVocabularyMaxTerms("50")).toBe(false);
+    expect(isVoiceWorkspaceVocabularyMaxTerms(null)).toBe(false);
   });
 
   it("surfaces a null vocabulary on a daemon that predates the setting (non-array value)", async () => {
@@ -245,6 +309,26 @@ describe("voiceSettingsService (mocked settings seam)", () => {
 
     await expect(setVoiceVocabulary(["intentd"])).rejects.toThrow(
       VOICE_VOCABULARY_SETTING_PATH,
+    );
+  });
+
+  it("persists the workspace-vocabulary cap through settings.update", async () => {
+    settings.update.mockResolvedValue([
+      entry(VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH, 0),
+    ] as never);
+
+    await setVoiceWorkspaceVocabularyMaxTerms(0);
+
+    expect(settings.update).toHaveBeenCalledWith([
+      { path: VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH, value: 0 },
+    ]);
+  });
+
+  it("throws when the daemon does not apply the workspace-vocabulary cap change", async () => {
+    settings.update.mockResolvedValue([] as never);
+
+    await expect(setVoiceWorkspaceVocabularyMaxTerms(50)).rejects.toThrow(
+      VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH,
     );
   });
 

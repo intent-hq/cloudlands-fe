@@ -1595,11 +1595,19 @@ export interface VoiceTranscribeResult {
   durationMs: number | null;
 }
 
+/** `voice.getWorkspaceVocabulary` result (PROTOCOL §5.41, v5.1). */
+export interface VoiceWorkspaceVocabularyResult {
+  /** The auto-derived workspace terms only (user `voice.vocabulary` not merged in). */
+  terms: string[];
+}
+
 export interface VoiceClient {
   /**
    * Daemon-owned speech-to-text (`voice.transcribe`, PROTOCOL §5.41).
    * Base64-encodes the recorded audio and forwards it with the container
-   * MIME type and optional context hints. Daemon-global (no `workspaceId`).
+   * MIME type and optional context hints. Daemon-global — the optional
+   * `workspaceId` (v5.1) opts the call into workspace-vocabulary injection
+   * (tolerant server-side: a stale/unknown id is never an error).
    * THROWS on transport/daemon errors — including the descriptive
    * no-API-key `-32603` — so callers surface them explicitly.
    */
@@ -1607,7 +1615,15 @@ export interface VoiceClient {
     audio: Blob,
     mimeType: string,
     context?: VoiceTranscribeContext,
+    workspaceId?: string,
   ): Promise<VoiceTranscribeResult>;
+  /**
+   * A workspace's auto-derived vocabulary (`voice.getWorkspaceVocabulary`,
+   * PROTOCOL §5.41, v5.1) — derived terms only, for client-side (OS-engine)
+   * transcription biasing and Settings previews. `workspaceId` is required;
+   * an unknown id is the standard not-found `-32602`.
+   */
+  getWorkspaceVocabulary(workspaceId: string): Promise<VoiceWorkspaceVocabularyResult>;
 }
 
 export interface BrowserClient {

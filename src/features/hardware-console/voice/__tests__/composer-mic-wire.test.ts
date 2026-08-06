@@ -132,6 +132,7 @@ describe('composer mic latch → voice.transcribe wire contract', () => {
           keyterms: ['Feature add', 'feature-add', 'Coordinator'],
           prompt: 'Dictation in the "Feature add" workspace on branch feature-add.',
         },
+        workspaceId: 'ws-1',
       },
       timeoutMs: 120_000,
     });
