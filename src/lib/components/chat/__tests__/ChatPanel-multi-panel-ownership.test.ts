@@ -80,7 +80,7 @@ vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({ selectPermissionRequests: testState.selector([]) }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({ selectIsAgentMonospace: testState.selector(false) }));
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({ selectSpecialists: testState.selector([]), selectEffectiveBehaviorPrompt: testState.selector(''), selectEffectiveModel: testState.selector('') }));
-vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', () => ({ selectCatalogDefaultProviderId: testState.selector(null) }));
+vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', () => ({ selectEffectiveDefaultProviderId: testState.selector('') }));
 
 vi.mock('../input/SimpleRichInput.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
 vi.mock('../ChatMessage.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
