@@ -109,11 +109,12 @@ export function isAbsolutePath(p: string): boolean {
  */
 export function isAbsolutePathOutsideRoot(p: string, root: string): boolean {
   if (!p || !root || !isAbsolutePath(p)) return false;
+  // UNC prefixes count in both separator forms (`\\server\share`, `//server/share`).
   const windowsStyle =
     /^[A-Za-z]:[/\\]/.test(p) ||
     /^[A-Za-z]:[/\\]/.test(root) ||
-    p.startsWith('\\\\') ||
-    root.startsWith('\\\\');
+    /^[/\\]{2}/.test(p) ||
+    /^[/\\]{2}/.test(root);
   let candidate = normalizePath(p);
   let base = normalizePath(root);
   if (windowsStyle) {

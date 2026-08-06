@@ -618,6 +618,39 @@ describe('FileTabType Redux integration', () => {
     expect(screen.queryByText(m.layout_fileTab_outsideWorkspace_label())).toBeNull();
   });
 
+  it('loads slash-form UNC paths under a UNC root normally despite casing differences', async () => {
+    mockReduxState.workspace = {
+      id: 'ws-1',
+      worktreePath: '//Server/Share/repo',
+      repositoryPath: '//Server/Share/repo',
+    };
+    mockReduxState.files['//server/share/repo/src/main.ts'] = {
+      localContent: 'export const unc = true;',
+      originalContent: 'export const unc = true;',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+      lastUpdated: 0,
+    };
+
+    renderFileTab({
+      ...fileTab,
+      id: 'tab-unc',
+      title: 'main.ts',
+      filePath: '//server/share/repo/src/main.ts',
+    });
+
+    const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
+    await waitFor(() => expect(editor.value).toBe('export const unc = true;'));
+    expect(actionMocks.loadFileContentRequested).toHaveBeenCalledWith(
+      'ws-1',
+      '//server/share/repo/src/main.ts',
+      '//server/share/repo/src/main.ts',
+    );
+    expect(screen.queryByText(m.layout_fileTab_outsideWorkspace_label())).toBeNull();
+  });
+
   it('loads relative paths normally with no out-of-workspace warning', async () => {
     renderFileTab();
 
