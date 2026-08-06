@@ -54,3 +54,80 @@ export function resolveDevUserDataDirName(): string | null {
   }
   return 'cloudlands-dev';
 }
+
+// Parent directory (under the platform appData dir) holding per-dev-port intentd data
+// directories. Deliberately outside the intent-cloudlands/cloudlands-dev-* userData
+// namespace so dev-launcher.mjs stale-profile pruning never deletes daemon data, and
+// deliberately short: the socket inside it must fit macOS's ~104-byte sun_path limit.
+export const DEV_INTENTD_DIR_NAME = 'intentd-fe';
+
+// Data-dir segment used in dev when DEV_PORT is unset/unusable.
+const DEV_INTENTD_FALLBACK_SEGMENT = 'dev';
+
+// macOS caps `sockaddr_un.sun_path` at 104 bytes including the NUL terminator, so a
+// bindable socket path must be at most 103 bytes. Exported so the budget the layout below
+// is designed against is asserted in tests rather than assumed.
+export const MACOS_SUN_PATH_MAX_BYTES = 103;
+
+// Bytes this layout adds to the appData path to reach the daemon socket:
+// `/intentd-fe` + `/<segment>` + `/intentd.sock`. For a 4-digit DEV_PORT that is 29 bytes,
+// only 8 more than the pre-existing global default (`<appData>/intentd/intentd.sock`, 21),
+// leaving ~74 bytes for appData itself — comfortably more than the ~37 bytes a default
+// macOS `/Users/<user>/Library/Application Support` occupies even with a long username.
+export function devIntentdSocketPathByteLength(
+  appDataPath: string,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  return Buffer.byteLength(
+    path.join(resolveDevIntentdDataDir(appDataPath, env), 'intentd.sock'),
+    'utf8',
+  );
+}
+
+/**
+ * Compute the per-DEV_PORT intentd data directory for dev builds:
+ * `<appData>/intentd-fe/<DEV_PORT>` (e.g.
+ * `~/Library/Application Support/intentd-fe/5190` on macOS), falling back to
+ * `<appData>/intentd-fe/dev` when DEV_PORT is unset or not a positive number.
+ *
+ * Deterministic per port so daemon data persists across runs, and distinct per port so
+ * parallel dev instances cannot adopt each other's (or the installed app's) daemon.
+ * Pure so it is testable without Electron; callers pass the resolved appData path in.
+ */
+export function resolveDevIntentdDataDir(
+  appDataPath: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const rawPort = (env.DEV_PORT || '').trim();
+  const devPort = Number(rawPort);
+  const segment =
+    rawPort && Number.isFinite(devPort) && devPort > 0
+      ? String(devPort)
+      : DEV_INTENTD_FALLBACK_SEGMENT;
+  return path.join(appDataPath, DEV_INTENTD_DIR_NAME, segment);
+}
+
+/**
+ * Whether a dev build should default `INTENTD_DATA_DIR` to the per-port dir from
+ * [[resolveDevIntentdDataDir]].
+ *
+ * This only supplies a *default*: every explicit target in the environment wins. An
+ * inherited `INTENTD_DATA_DIR` is honoured — `make dev` deliberately pins the sidecar to
+ * the monorepo's `.dev/intentd` seat, and overriding it would abandon that catalog. So do
+ * the transport overrides (`INTENTD_SOCKET`, `INTENTD_WS_URL`, `INTENTD_TCP`): those name
+ * a connection target directly, so moving the data dir must not move it.
+ *
+ * `isDev` is required and must be the same signal the backend uses to pick a transport —
+ * `!app.isPackaged` (see `backend.ipc.ts`), not `NODE_ENV`. An unpackaged launch without
+ * `NODE_ENV` (e.g. `INTENTD_SIDECAR=1 pnpm start`) still resolves a dev UDS socket, so
+ * gating on `NODE_ENV` would skip the isolation and reuse the global daemon; conversely a
+ * packaged launch inheriting `NODE_ENV=development` must not be mutated.
+ */
+export function shouldIsolateDevIntentdDataDir(env: NodeJS.ProcessEnv, isDev: boolean): boolean {
+  if (!isDev) return false;
+  if (env.INTENTD_DATA_DIR?.trim()) return false;
+  if (env.INTENTD_SOCKET?.trim()) return false;
+  if (env.INTENTD_WS_URL?.trim()) return false;
+  if (env.INTENTD_TCP?.trim()) return false;
+  return true;
+}
