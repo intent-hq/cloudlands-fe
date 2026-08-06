@@ -25,6 +25,7 @@ import {
   closeHoverCards,
   openPanel,
   setChiefActiveAgentId,
+  setExpandedItem,
   setHoveredItem,
   togglePanel,
 } from "../slices/sidebar-nav/sidebar-nav-slice";
@@ -457,6 +458,63 @@ describe("divider-session-boundary-service", () => {
 
       expect((api as any)._dispatchedActions).toEqual([endDividerSession("chief1")]);
       expect(boundaries).toEqual([{ kind: "chief-card-close", agentIds: ["chief1"] }]);
+    });
+
+    it("ends a chief session when an expanded (pinned-open) chief card is dismissed", () => {
+      const boundaries: DividerSessionBoundary[] = [];
+      const state = createMockState(
+        "ws-1",
+        { "ws-1": [] },
+        { chief1: "m1" },
+        { sidebarNav: { panelItem: null, expandedItem: "chief" }, chiefAgentIds: ["chief1"] },
+      );
+      const api = createMockAPI(state);
+      const middleware = createDividerSessionBoundaryService({
+        onBoundary: (b) => boundaries.push(b),
+      })(api);
+
+      const next = vi.fn((action) => {
+        if (action.type === setExpandedItem.type) {
+          (api as any)._updateState(
+            createMockState(
+              "ws-1",
+              { "ws-1": [] },
+              { chief1: "m1" },
+              { sidebarNav: { panelItem: null, expandedItem: null }, chiefAgentIds: ["chief1"] },
+            ),
+          );
+        }
+        return action;
+      });
+
+      middleware(next)(setExpandedItem(null));
+
+      expect((api as any)._dispatchedActions).toEqual([endDividerSession("chief1")]);
+      expect(boundaries).toEqual([{ kind: "chief-card-close", agentIds: ["chief1"] }]);
+    });
+
+    it("treats expandedItem as taking precedence over hoveredItem, matching selectActiveCard", () => {
+      const boundaries: DividerSessionBoundary[] = [];
+      // expandedItem: "active" wins over hoveredItem: "chief" per selectActiveCard's
+      // `expandedItem ?? hoveredItem`, so the chief card is NOT visible here.
+      const state = createMockState(
+        "ws-1",
+        { "ws-1": [] },
+        { chief1: "m1" },
+        {
+          sidebarNav: { panelItem: null, expandedItem: "active", hoveredItem: "chief" },
+          chiefAgentIds: ["chief1"],
+        },
+      );
+      const api = createMockAPI(state);
+      const middleware = createDividerSessionBoundaryService({
+        onBoundary: (b) => boundaries.push(b),
+      })(api);
+
+      middleware(vi.fn((a) => a))(setHoveredItem(null));
+
+      expect((api as any)._dispatchedActions).toHaveLength(0);
+      expect(boundaries).toHaveLength(0);
     });
 
     it("does not end a chief session when hover ends but the panel still shows the chief card", () => {

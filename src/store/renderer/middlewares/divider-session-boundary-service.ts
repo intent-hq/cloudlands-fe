@@ -111,7 +111,7 @@ function collectOpenAgentTabIds(state: StoreState): Set<string> {
 /**
  * Whether the ChiefCard is currently rendered: either the sidebar panel shows
  * the chief item, or the chief item's hover card is up (an expanded item wins
- * over a merely hovered one, matching selectVisibleHoverCardItem).
+ * over a merely hovered one, matching selectActiveCard).
  */
 function isChiefCardVisible(state: StoreState): boolean {
   const nav = state.sidebarNav;
