@@ -185,7 +185,6 @@
   "settings_gitWorkspace_branchPrefix_description_before": "新工作区分支的前缀（例如",
   "settings_gitWorkspace_branchPrefix_placeholder": "feature/ 或 user/name/",
   "settings_gitWorkspace_branchPrefix_invalid": "无效的分支前缀",
-  "settings_gitWorkspace_autoFetch_label": "自动获取更新",
   "settings_gitWorkspace_autoCommit_label": "自动提交更改",
   "settings_gitWorkspace_cowIsolation_label": "使用写时复制（CoW）隔离",
   "settings_gitWorkspace_experimental_badge": "实验性",
