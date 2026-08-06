@@ -12,10 +12,8 @@ import type { ReleaseNotes, ReleaseNotesState } from "./release-notes-types";
 // Actions
 // ---------------------------------------------------------------------------
 
-/** Trigger initialization: check version change and fetch release notes */
-export const initializeReleaseNotes = createAction<[currentVersion: string, channel: string]>(
-  "releaseNotes/initialize",
-);
+/** Trigger initialization: subscribe to the main-process "show" push */
+export const initializeReleaseNotes = createAction("releaseNotes/initialize");
 
 /** Set the fetched release notes and show the modal */
 export const setReleaseNotes = createAction<[notes: ReleaseNotes]>(
@@ -34,14 +32,17 @@ export const setInitialized = createAction("releaseNotes/setInitialized");
 /** Close the release notes modal */
 export const closeReleaseNotesModal = createAction("releaseNotes/closeModal");
 
-/** Manually show release notes */
-export const showReleaseNotes = createAction<[channel: string]>(
-  "releaseNotes/showReleaseNotes",
-);
+/** Manually show release notes: opens the modal and fetches on demand */
+export const showReleaseNotes = createAction("releaseNotes/showReleaseNotes");
 
-/** Set release notes data and show modal (used by saga after fetch) */
+/** Set release notes data and show modal (used after an on-demand fetch) */
 export const showReleaseNotesSuccess = createAction<[notes: ReleaseNotes]>(
   "releaseNotes/showReleaseNotesSuccess",
+);
+
+/** On-demand fetch produced no notes — the modal renders its fallback */
+export const showReleaseNotesUnavailable = createAction(
+  "releaseNotes/showReleaseNotesUnavailable",
 );
 
 // ---------------------------------------------------------------------------
@@ -82,11 +83,24 @@ export const releaseNotesReducer = createReducer<ReleaseNotesState>(initialState
     ...state,
     showModal: false,
   }))
+  .with(showReleaseNotes, (state) => ({
+    ...state,
+    releaseNotes: null,
+    showModal: true,
+    loading: true,
+    error: null,
+  }))
   .with(showReleaseNotesSuccess, (state, { payload: [notes] }) => ({
     ...state,
     releaseNotes: notes,
     showModal: true,
     loading: false,
     error: null,
+  }))
+  .with(showReleaseNotesUnavailable, (state) => ({
+    ...state,
+    releaseNotes: null,
+    showModal: true,
+    loading: false,
   }));
 

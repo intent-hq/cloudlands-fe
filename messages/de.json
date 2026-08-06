@@ -47,6 +47,7 @@
   "menu_bring_all_to_front": "Alle nach vorne bringen",
   "menu_help": "Hilfe",
   "menu_export_debug_logs": "Debug-Protokolle exportieren",
+  "menu_show_release_notes": "Versionshinweise anzeigen",
   "dialog_about_version": "Version: {version}",
   "dialog_cli_install_title": "CLI-Installation",
   "dialog_cli_install_success": "CLI erfolgreich installiert",
@@ -4628,10 +4629,6 @@
   "lib_githubDeviceCode_enterCodeAt_before": "Geben Sie diesen Code ein auf",
   "lib_nodeVersionWarning_haveVersion_message": "Node.js {minimumVersion}+ ist erforderlich, um Auggie zu verwenden. Sie haben {nodeVersion} installiert.",
   "lib_nodeVersionWarning_notFound_message": "Node.js {minimumVersion}+ ist erforderlich, um Auggie zu verwenden. Node.js wurde auf Ihrem System nicht gefunden.",
-  "lib_releaseNotes_whatsNew_title": "Neuigkeiten",
-  "lib_releaseNotes_version_label": "Version {version}",
-  "lib_releaseNotes_fallback_message": "Fehlerbehebungen und Leistungsverbesserungen.",
-  "lib_releaseNotes_gotIt_label": "Verstanden",
   "lib_auggieSetup_tagline_message": "Ein experimenteller Arbeitsbereich für parallele Agenten.",
   "lib_auggieSetup_checkingProviders_label": "Verfügbare Anbieter werden geprüft...",
   "lib_auggieSetup_somethingWentWrong_title": "Etwas ist schiefgelaufen",
@@ -5369,5 +5366,11 @@
   "settings_voice_osEngineUnavailable_error": "OS-Diktat ist auf diesem Gerät nicht verfügbar.",
   "settings_voice_osEngine_helperMissing_description": "Sprach-Helfer nicht verfügbar",
   "settings_voice_osEngine_permissionNote": "macOS fragt beim ersten Aktivieren nach der Berechtigung zur Spracherkennung — das Diktat funktioniert erst, wenn sie erteilt wurde.",
-  "splash_gettingReady_label": "Wir bereiten alles zum Bauen vor"
+  "splash_gettingReady_label": "Wir bereiten alles zum Bauen vor",
+  "releaseNotes_modal_title": "Neuigkeiten in {version}",
+  "releaseNotes_modal_title_generic": "Neuigkeiten",
+  "releaseNotes_modal_loading_message": "Versionshinweise werden geladen …",
+  "releaseNotes_modal_unavailable_message": "Für diese Version sind keine Versionshinweise verfügbar.",
+  "releaseNotes_modal_viewOnGitHub_label": "Auf GitHub ansehen",
+  "releaseNotes_modal_dismiss_label": "Verstanden"
 }

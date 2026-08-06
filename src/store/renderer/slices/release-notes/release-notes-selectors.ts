@@ -16,3 +16,7 @@ export const selectReleaseNotesInitialized = store.createSelector(
   (state) => state.releaseNotes.initialized,
 );
 
+export const selectReleaseNotesLoading = store.createSelector(
+  (state) => state.releaseNotes.loading,
+);
+

@@ -256,6 +256,7 @@ import { getNotificationService } from '../features/notifications/main/notificat
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
 import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
+import { setupReleaseNotesIPC } from '../features/release-notes/main/release-notes.ipc';
 import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
 import {
   registerBackendHandlers,
@@ -1011,6 +1012,18 @@ app.whenReady().then(async () => {
       helpMenuItems.push({ type: 'separator' });
     }
 
+    // Add Show Release Notes (cross-platform, works in dev too — the renderer
+    // fetches on demand and falls back to "not available" when there are none)
+    helpMenuItems.push({
+      label: m.menu_show_release_notes(),
+      click: async () => {
+        const { sendShowReleaseNotes } = await import(
+          '../features/release-notes/main/release-notes.ipc'
+        );
+        sendShowReleaseNotes(getMainWindow(), { notes: null });
+      },
+    });
+
     // Add Export Debug Logs (cross-platform)
     helpMenuItems.push({
       label: m.menu_export_debug_logs(),
@@ -1359,6 +1372,7 @@ app.whenReady().then(async () => {
   await setupWorkspaceRulesIPC(configManager || undefined); // Needed for initial agent system prompt
   setupSpecialistsIPC(); // Needed for specialist selection on startup
   setupAutoUpdateIPC(); // Needed for auto-update IPC on startup
+  setupReleaseNotesIPC(); // Needed for the Help ▸ Show Release Notes fetch
 
   // Start the intentd sidecar daemon (if spawn policy allows). This MUST run
   // before registerBackendHandlers() so the daemon is ready before the first
@@ -1432,6 +1446,15 @@ app.whenReady().then(async () => {
     const mainWindow = getMainWindow();
     if (process.env.NODE_ENV !== 'development' && mainWindow) {
       initializeAutoUpdater(mainWindow);
+    }
+
+    // Show this version's release notes on the first launch after an update.
+    // Packaged builds only — a dev build's version is never a published tag.
+    if (app.isPackaged && mainWindow) {
+      const { initializeReleaseNotesOnStartup } = await import(
+        '../features/release-notes/main/release-notes.ipc'
+      );
+      void initializeReleaseNotesOnStartup(mainWindow);
     }
 
     // Setup development-only IPC handlers

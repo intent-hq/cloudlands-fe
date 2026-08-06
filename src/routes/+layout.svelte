@@ -26,6 +26,7 @@
   import {
     selectShowReleaseNotesModal,
     selectReleaseNotes,
+    selectReleaseNotesLoading,
   } from '$store/renderer/slices/release-notes/release-notes-selectors';
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { globalCleanupService } from '$features/memory/browser/global-cleanup.service';
@@ -55,7 +56,7 @@
   import KeyboardShortcutsCheatSheet from '$lib/components/layout/KeyboardShortcutsCheatSheet.svelte';
   import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
-  import ReleaseNotesModal from '$lib/components/ReleaseNotesModal.svelte';
+  import ReleaseNotesModal from '$lib/components/modals/ReleaseNotesModal.svelte';
   import Toast from '$lib/components/ui/toast/Toast.svelte';
   import { TooltipProvider } from '$lib/components/ui/tooltip';
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
@@ -113,7 +114,6 @@
   } from '$lib/utils/history-navigation';
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
-  import { hasCapability } from '$lib/utils/platform-capabilities';
   import { onDestroy, onMount, untrack } from 'svelte';
 
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
@@ -175,6 +175,7 @@
   const workspaceTabOrder = selectWorkspaceTabOrder();
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
   const releaseNotes$ = selectReleaseNotes();
+  const releaseNotesLoading$ = selectReleaseNotesLoading();
   const showCreateModal$ = selectShowCreateModal();
 
   // Register all tab types early
@@ -361,30 +362,10 @@
       showInterruptedAgentsModal = agents.length > 0;
     });
 
-    // Initialize release notes store to detect version changes and show release notes
-    // We need to fetch the channel directly from main process since the auto-update
-    // Redux state hasn't loaded the user's preference yet at this point
-    if (hasCapability('autoUpdate')) {
-      (async () => {
-        try {
-          // Import dynamically to avoid the formatter removing unused imports
-          const { autoUpdateClient } = await import('$features/auto-update/auto-update.client');
-
-          const updateState = await autoUpdateClient.getState().catch(() => null);
-
-          // Build-time constant — the app version is FE-only, not a daemon surface.
-          const currentVersion = __APP_VERSION__;
-          const channel = updateState?.channel || 'stable';
-
-          logger.info(
-            `[+layout] Initializing release notes: version=${currentVersion}, channel=${channel}`,
-          );
-          appStore.dispatch(initializeReleaseNotes(currentVersion, channel));
-        } catch (e) {
-          logger.warn('[+layout] Failed to initialize release notes store', e);
-        }
-      })();
-    }
+    // Subscribe to the main-process "show release notes" push. The main process
+    // owns the version-change detection (packaged builds only) and the Help ▸
+    // Show Release Notes menu item; the renderer only renders the modal.
+    appStore.dispatch(initializeReleaseNotes());
 
     // Recovery mechanism for router corruption after HMR reloads
     // When Vite triggers a page reload (e.g., after .svelte-kit/generated files change),
@@ -1128,6 +1109,7 @@
   <ReleaseNotesModal
     open={$showReleaseNotesModal$}
     releaseNotes={$releaseNotes$}
+    loading={$releaseNotesLoading$}
     onClose={() => appStore.dispatch(closeReleaseNotesModal())}
   />
 
