@@ -36,10 +36,14 @@
   import {
     bannerDelay,
     bannerOutDelay,
+    bannerScrollDurationS,
     cellLeft,
     cellNeedsPan,
     cellTop,
     emptyCellCoords,
+    HUD_TAKEOVER_BANNER_IN_S,
+    HUD_TAKEOVER_BANNER_SCROLL_HOLD_S,
+    HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S,
     spiralCoords,
     takeoverPanBounds,
   } from './hud-takeover-layout';
@@ -145,6 +149,38 @@
   $effect(() => {
     const workspaceId = queue.active?.workspaceId ?? '';
     drag.syncAutoPan(workspaceId, needsPan ? changedCoord : null, motion ? 2000 : 0);
+  });
+
+  // ── Banner overflow marquee: measure once per display during 'opening' ──
+  // `.ov-banner-big` is nowrap + hidden overflow, so `scrollWidth −
+  // clientWidth` is the marquee travel. Measured per rendered banner (wrap
+  // headlines excluded — they clamp, never scroll); the MAX scroll duration
+  // is reported to the controller BEFORE the opening→dwelling tick so the
+  // queue dwell covers the whole scroll (`extraDwellMs`). Keyed per display
+  // like the controller's zoom measurement; reduced motion reports 0.
+  let bannersEl = $state<HTMLElement | null>(null);
+  let bannerOverflows = $state<number[]>([]);
+  let scrollMeasureKey = '';
+  $effect(() => {
+    if (queue.phase !== 'opening' || !queue.active || isViewer) {
+      scrollMeasureKey = '';
+      if (queue.phase === 'idle' && bannerOverflows.length > 0) bannerOverflows = [];
+      return;
+    }
+    if (queue.active.workspaceId === scrollMeasureKey || !bannersEl) return;
+    scrollMeasureKey = queue.active.workspaceId;
+    if (!motion) {
+      bannerOverflows = [];
+      return;
+    }
+    const next = Array.from(bannersEl.querySelectorAll('.ov-banner')).map((banner) => {
+      const big = banner.querySelector('.ov-banner-big:not(.ov-banner-big-wrap)');
+      return big ? Math.max(0, big.scrollWidth - big.clientWidth) : 0;
+    });
+    bannerOverflows = next;
+    controller.reportBannerScrollMs(
+      Math.round(Math.max(0, ...next.map((px) => bannerScrollDurationS(px))) * 1000),
+    );
   });
 
   /** Spec-progress segments (mock `taskSegs`): done → inProgress → rest. */
@@ -343,18 +379,22 @@
 
               <!-- Banners: one per trigger, typewriter wipe; VIEWER renders none.
                    The fade-out delay is dwell-proportional so the unfolded
-                   banner holds ~half the entry's dwell (see bannerOutDelay). -->
+                   banner holds ~half the entry's dwell (see bannerOutDelay),
+                   shifted by the banner's own overflow marquee so the fade
+                   never cuts a scroll short. -->
               {#if queue.active && !isViewer}
                 {@const dwellMs = takeoverDwellMs(queue.active)}
-                <div class="ov-banners">
+                <div class="ov-banners" bind:this={bannersEl}>
                   {#each queue.active.triggers as banner, i (`${banner.kind}-${banner.raisedAtMs}-${i}`)}
                     {@const color = takeoverKindColor(banner.kind)}
                     {@const bv = bannerView(banner, view.title, view.repoRef)}
+                    {@const scrollPx = motion && !bv.wrap ? (bannerOverflows[i] ?? 0) : 0}
+                    {@const scrollS = bannerScrollDurationS(scrollPx)}
                     <div
                       class="ov-banner"
                       style:--banner-in-delay={motion ? `${bannerDelay(needsPan, i)}s` : '0s'}
                       style:--banner-out-delay={motion
-                        ? `${bannerOutDelay(needsPan, i, dwellMs)}s`
+                        ? `${bannerOutDelay(needsPan, i, dwellMs, scrollS)}s`
                         : '0s'}
                       data-testid="hud-takeover-banner"
                     >
@@ -370,7 +410,27 @@
                       </span>
                       {#if bv.big}
                         <div class="ov-banner-big" class:ov-banner-big-wrap={bv.wrap} style:color>
-                          {bv.big}
+                          {#if scrollPx > 0}
+                            <!-- Overflow marquee: constant-speed left travel
+                                 after the wipe-in + head hold; the tail then
+                                 holds (fill: both). Driven by the measured
+                                 overflow (see the measurement $effect). -->
+                            <span
+                              class="ov-banner-marquee"
+                              style:--banner-scroll-px={`${scrollPx}px`}
+                              style:--banner-scroll-s={`${(scrollPx / HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S).toFixed(2)}s`}
+                              style:--banner-scroll-delay={`${(
+                                Number(bannerDelay(needsPan, i)) +
+                                HUD_TAKEOVER_BANNER_IN_S +
+                                HUD_TAKEOVER_BANNER_SCROLL_HOLD_S
+                              ).toFixed(2)}s`}
+                              data-testid="hud-takeover-banner-marquee"
+                            >
+                              {bv.big}
+                            </span>
+                          {:else}
+                            {bv.big}
+                          {/if}
                         </div>
                       {/if}
                       {#if bv.status}
@@ -543,6 +603,17 @@
     }
     to {
       clip-path: inset(0 0 0 0);
+    }
+  }
+  /* Overflow marquee: read position travels left→right across the text —
+     the text itself translates left by the measured overflow, then holds
+     (fill: both keeps the head pinned before, the tail visible after). */
+  @keyframes bannerscroll {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(calc(-1 * var(--banner-scroll-px, 0px)));
     }
   }
   @keyframes ovringblink {
@@ -1020,6 +1091,13 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
   }
+  /* Marquee inner span: starts pinned left (head visible), then travels by
+     the measured overflow at the constant HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S
+     speed after the wipe-in + head hold; fill both holds the tail. */
+  .ov-banner-marquee {
+    display: inline-block;
+    animation: bannerscroll var(--banner-scroll-s, 0s) linear var(--banner-scroll-delay, 0s) both;
+  }
   .ov-banner-sub {
     margin-top: 6px;
     font: 500 11.5px 'JetBrains Mono', monospace;
@@ -1162,6 +1240,7 @@
   .ov-no-motion .ov-content,
   .ov-no-motion .ov-cell,
   .ov-no-motion .ov-banner,
+  .ov-no-motion .ov-banner-marquee,
   .ov-no-motion .ov-status-hint {
     animation: none;
   }
@@ -1178,6 +1257,7 @@
     .ov-content,
     .ov-cell,
     .ov-banner,
+    .ov-banner-marquee,
     .ov-status-hint,
     .ov-anim-pulse,
     .ov-anim-blink {

@@ -5,7 +5,11 @@
  * straight to the open), and the FLIP zoom state (measure the source card on
  * open, pin the frame to it, release to center 50ms later — mock
  * `ovFrom`/`ovZoom`). Reduced motion (`reduced()`) disables blink + zoom.
- * Must be created during component init ($effect attaches to the component).
+ * The overlay reports the measured banner overflow-scroll duration during
+ * 'opening' (`reportBannerScrollMs`); it feeds `extraDwellMs` at the
+ * opening → dwelling tick so the dwell covers the whole marquee, and resets
+ * per display. Must be created during component init ($effect attaches to
+ * the component).
  */
 import { setTakeoverBlinkTarget } from './hud-takeover-bus';
 import {
@@ -33,6 +37,12 @@ export interface HudTakeoverController {
   enqueue(trigger: HudTakeoverTrigger): void;
   openViewer(trigger: HudTakeoverTrigger): void;
   dismiss(): void;
+  /**
+   * Report the measured MAX banner overflow-scroll duration (ms) for the
+   * CURRENT display (call during 'opening', before the dwell tick). Passed
+   * as `extraDwellMs` to the queue; reset to 0 when the next display opens.
+   */
+  reportBannerScrollMs(ms: number): void;
   destroy(): void;
 }
 
@@ -43,8 +53,9 @@ export function createTakeoverController(reduced: () => boolean): HudTakeoverCon
   let phaseTimer: ReturnType<typeof setTimeout> | undefined;
   let zoomTimer: ReturnType<typeof setTimeout> | undefined;
   let zoomKey = '';
+  let bannerScrollMs = 0;
 
-  const options = () => ({ blink: !reduced() });
+  const options = () => ({ blink: !reduced(), extraDwellMs: bannerScrollMs });
 
   function apply(next: HudTakeoverQueueState) {
     queue = next;
@@ -85,6 +96,9 @@ export function createTakeoverController(reduced: () => boolean): HudTakeoverCon
     const workspaceId = queue.active.workspaceId;
     if (workspaceId === zoomKey) return;
     zoomKey = workspaceId;
+    // New display: drop the previous entry's marquee measurement (the
+    // overlay re-reports during this 'opening' if a headline overflows).
+    bannerScrollMs = 0;
     frameFrom = reduced() ? null : measureTakeoverFrameFrom(workspaceId);
     zoom = 'from';
     clearTimeout(zoomTimer);
@@ -120,6 +134,9 @@ export function createTakeoverController(reduced: () => boolean): HudTakeoverCon
     },
     dismiss() {
       apply(dismissTakeover(queue, Date.now()));
+    },
+    reportBannerScrollMs(ms) {
+      bannerScrollMs = Math.max(0, ms);
     },
     destroy() {
       clearTimeout(phaseTimer);

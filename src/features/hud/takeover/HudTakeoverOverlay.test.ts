@@ -648,3 +648,162 @@ describe('HudTakeoverOverlay map drag-to-pan', () => {
     expect(panTransform()).toBe(`translate(0px, ${2 * HUD_TAKEOVER_PITCH_PX}px)`);
   });
 });
+
+describe('HudTakeoverOverlay headline overflow marquee', () => {
+  // jsdom has no layout: mock scrollWidth/clientWidth so `.ov-banner-big`
+  // reports `overflowPx` of horizontal overflow (0 for everything else,
+  // jsdom's default). Mutable so per-entry-reset can change it mid-test.
+  let overflowPx = 0;
+  const originalScrollWidth = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollWidth')!;
+  const originalClientWidth = Object.getOwnPropertyDescriptor(Element.prototype, 'clientWidth')!;
+
+  beforeEach(() => {
+    overflowPx = 0;
+    Object.defineProperty(Element.prototype, 'scrollWidth', {
+      configurable: true,
+      get(this: Element) {
+        return this.classList.contains('ov-banner-big') ? 600 + overflowPx : 0;
+      },
+    });
+    Object.defineProperty(Element.prototype, 'clientWidth', {
+      configurable: true,
+      get(this: Element) {
+        return this.classList.contains('ov-banner-big') ? 600 : 0;
+      },
+    });
+    appStore.init();
+    appStore.dispatch(setWorkspaceEntity(workspace()));
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW_MS);
+  });
+  afterEach(() => {
+    Object.defineProperty(Element.prototype, 'scrollWidth', originalScrollWidth);
+    Object.defineProperty(Element.prototype, 'clientWidth', originalClientWidth);
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    cleanup();
+    appStore.dispose();
+  });
+
+  function returnLabel(): string {
+    return screen.getByTestId('hud-takeover-return').textContent?.trim() ?? '';
+  }
+
+  it('overflowing headline: marquee vars + shifted fade-out + extended dwell', () => {
+    // 300px overflow → scroll 300/75 = 4.0s travel + 2×0.6s holds = 5.2s.
+    overflowPx = 300;
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover(); // No source card → instant open at NOW_MS.
+
+    const banner = screen.getByTestId('hud-takeover-banner');
+    const marquee = screen.getByTestId('hud-takeover-banner-marquee');
+    expect(marquee.classList.contains('ov-banner-marquee')).toBe(true);
+    expect(marquee.style.getPropertyValue('--banner-scroll-px')).toBe('300px');
+    expect(marquee.style.getPropertyValue('--banner-scroll-s')).toBe('4.00s');
+    // Scroll starts after in-delay 1.0s + 1.1s wipe + 0.6s head hold.
+    expect(marquee.style.getPropertyValue('--banner-scroll-delay')).toBe('2.70s');
+    // Fade-out shifted by the 5.2s scroll: 1.0 + 1.1 + 5.2 + dwell/2 (1.5).
+    expect(banner.style.getPropertyValue('--banner-out-delay')).toBe('8.80s');
+
+    // Opening→dwelling tick at +1.2s: dwell = 3000 (routine floor) + 5200
+    // extra → phase ends NOW+9400; the RETURN countdown reads it directly.
+    vi.advanceTimersByTime(1250);
+    flushSync();
+    expect(returnLabel()).toBe('RETURN 00:10');
+  });
+
+  it('fitting headline: no marquee, timings byte-identical to today', () => {
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const banner = screen.getByTestId('hud-takeover-banner');
+    expect(screen.queryByTestId('hud-takeover-banner-marquee')).toBeNull();
+    expect(banner.style.getPropertyValue('--banner-out-delay')).toBe('3.60s');
+
+    // Un-extended dwell: 1200 + 3000 → phase ends NOW+4200.
+    vi.advanceTimersByTime(1250);
+    flushSync();
+    expect(returnLabel()).toBe('RETURN 00:05');
+  });
+
+  it('wrapping headline never gets a marquee even when it overflows', () => {
+    overflowPx = 300;
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'question_asked',
+      detail: 'A long non-signal question sentence that wraps instead of clipping.',
+      raisedAtMs: NOW_MS,
+      changedTaskId: null,
+    });
+    flushSync();
+
+    const banner = screen.getByTestId('hud-takeover-banner');
+    expect(banner.querySelector('.ov-banner-big-wrap')).not.toBeNull();
+    expect(screen.queryByTestId('hud-takeover-banner-marquee')).toBeNull();
+  });
+
+  it('reduced motion: no marquee, no dwell extension, animation-free banners', () => {
+    overflowPx = 300;
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover(); // blink:false → instant open.
+
+    expect(screen.getByTestId('hud-takeover-overlay').classList.contains('ov-no-motion')).toBe(
+      true,
+    );
+    expect(screen.queryByTestId('hud-takeover-banner-marquee')).toBeNull();
+
+    vi.advanceTimersByTime(1250);
+    flushSync();
+    expect(returnLabel()).toBe('RETURN 00:05');
+  });
+
+  it('measurement resets per entry: the next takeover never inherits the scroll', () => {
+    appStore.dispatch(
+      setWorkspaceEntity({
+        ...workspace(),
+        id: 'ws-2' as WorkspaceId,
+        title: 'Other workspace',
+      } as Workspace),
+    );
+    overflowPx = 300;
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover(); // ws-1: measured 300px → 5200ms extra dwell.
+    expect(screen.getByTestId('hud-takeover-banner-marquee')).toBeTruthy();
+
+    vi.advanceTimersByTime(1250); // dwelling, ends NOW+9400.
+    flushSync();
+    expect(returnLabel()).toBe('RETURN 00:10');
+
+    // Queue ws-2 (fits: no overflow), dismiss ws-1 → close 950ms → ws-2 opens.
+    overflowPx = 0;
+    emitTakeoverTrigger({
+      workspaceId: 'ws-2',
+      kind: 'task_complete',
+      detail: 'Other task done',
+      raisedAtMs: NOW_MS + 1250,
+      changedTaskId: null,
+    });
+    flushSync();
+    screen.getByTestId('hud-takeover-dismiss').click();
+    flushSync();
+    vi.advanceTimersByTime(960); // Close ends NOW+2200 → ws-2 instant open.
+    flushSync();
+    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe('Other workspace');
+    expect(screen.queryByTestId('hud-takeover-banner-marquee')).toBeNull();
+
+    // ws-2 dwell = un-extended 3000: opening ends NOW+3400, dwell NOW+6400 —
+    // a leaked 5200ms measurement would read RETURN 00:12 here.
+    vi.advanceTimersByTime(1250);
+    flushSync();
+    expect(returnLabel()).toBe('RETURN 00:07');
+  });
+});
