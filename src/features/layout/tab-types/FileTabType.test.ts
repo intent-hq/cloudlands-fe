@@ -739,6 +739,6 @@ describe('FileTabType content-save wiring', () => {
     expect(source).toContain(
       'appStore.dispatch(updateFileContent(workspaceId, tab.filePath, content))',
     );
-    expect(source).toContain('saveFileContentRequested(wsId, filePath, fileAbsolutePath, content)');
+    expect(source).toContain('saveFileContentRequested(wsId, filePath, absolutePath, content)');
   });
 });
