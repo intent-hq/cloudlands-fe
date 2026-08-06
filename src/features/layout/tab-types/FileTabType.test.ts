@@ -684,6 +684,55 @@ describe('FileTabType Redux integration', () => {
     expect(screen.queryByText(m.layout_fileTab_outsideWorkspace_label())).toBeNull();
   });
 
+  it.each([
+    // Different drive, and a drive-letter sibling sharing the root name prefix.
+    ['D:/other/x.ts'],
+    ['C:/repository/src/x.ts'],
+  ])(
+    'renders the warning and requests no read for out-of-root Windows-absolute path %s',
+    async (filePath) => {
+      mockReduxState.workspace = {
+        id: 'ws-1',
+        worktreePath: 'C:/repo',
+        repositoryPath: 'C:/repo',
+      };
+
+      renderFileTab({ ...fileTab, id: `tab-${filePath}`, title: 'outside', filePath });
+
+      expect(await screen.findByText(m.layout_fileTab_outsideWorkspace_label())).toBeTruthy();
+      expect(screen.getByText(filePath)).toBeTruthy();
+      expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('code-editor')).toBeNull();
+    },
+  );
+
+  it('loads a tilde-prefixed filename in the workspace root as an ordinary file', async () => {
+    mockReduxState.files['~$report.docx'] = {
+      localContent: 'lock',
+      originalContent: 'lock',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+      lastUpdated: 0,
+    };
+
+    renderFileTab({
+      ...fileTab,
+      id: 'tab-lockfile',
+      title: '~$report.docx',
+      filePath: '~$report.docx',
+    });
+
+    await screen.findByTestId('code-editor');
+    expect(actionMocks.loadFileContentRequested).toHaveBeenCalledWith(
+      'ws-1',
+      '~$report.docx',
+      '/repo/~$report.docx',
+    );
+    expect(screen.queryByText(m.layout_fileTab_outsideWorkspace_label())).toBeNull();
+  });
+
   // Tilde paths cannot be expanded in the renderer (no Node APIs), so they are
   // classified as out-of-workspace and never dispatched as a doomed file.read.
   it.each([['~/.claude/projects/memory/MEMORY.md'], ['~\\notes\\scratch.md'], ['~']])(

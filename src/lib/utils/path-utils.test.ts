@@ -66,9 +66,17 @@ describe('isTildePath', () => {
     expect(isTildePath('~\\notes\\x.md')).toBe(true);
   });
 
-  it('detects user-specific home forms', () => {
+  it('detects user-specific home forms only with a trailing separator', () => {
     expect(isTildePath('~user/notes.md')).toBe(true);
-    expect(isTildePath('~user')).toBe(true);
+    expect(isTildePath('~user\\notes.md')).toBe(true);
+    expect(isTildePath('~user/')).toBe(true);
+  });
+
+  it('treats a bare tilde-prefixed name as an ordinary filename', () => {
+    // Office lock files and editor backups live in the workspace and must load.
+    expect(isTildePath('~$report.docx')).toBe(false);
+    expect(isTildePath('~backup.ts')).toBe(false);
+    expect(isTildePath('~user')).toBe(false);
   });
 
   it('returns false for paths that merely contain a tilde', () => {
