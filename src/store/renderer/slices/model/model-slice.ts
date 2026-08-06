@@ -73,6 +73,7 @@ function buildLoadingState(
 
 export const initialState: ModelState = {
   availableModels: createCollection<AuggieModel, 'value'>('value'),
+  availableModelsProviderId: '',
   loadingState: {},
   providerModels: {},
   modelPickerCollapsedGroups: [],
@@ -88,7 +89,9 @@ export const initialState: ModelState = {
 export const setSelectedModel =
   createAction<[payload: { providerId: string; model: string }]>('model/setSelectedModel');
 
-export const setAvailableModels = createAction<[models: AuggieModel[]]>('model/setAvailableModels');
+export const setAvailableModels = createAction<[models: AuggieModel[], providerId: string]>(
+  'model/setAvailableModels',
+);
 
 export const setLoadingStateForProvider = createAction<
   [
@@ -223,9 +226,13 @@ export const modelReducer = createReducer<ModelState>(initialState)
       [providerId]: normalizeModelForProvider(providerId, model, state.defaultProviderId),
     },
   }))
-  .with(setAvailableModels, (state, { payload: [models] }) => ({
+  .with(setAvailableModels, (state, { payload: [models, providerId] }) => ({
     ...state,
     availableModels: createCollection<AuggieModel, 'value'>('value', models),
+    // Explicit provenance is required: silently attributing to the current
+    // default provider would stamp the wrong provenance whenever the active
+    // provider changed between trigger and dispatch.
+    availableModelsProviderId: providerId,
   }))
   .with(
     setLoadingStateForProvider,
