@@ -915,6 +915,41 @@ Valid prompt
     expect(result.cleanedContent).toBe(content);
   });
 
+  it('should keep fence state across an unclosed opener that precedes a fenced example', () => {
+    const content = [
+      'Use this format:',
+      '<!-- suggested-prompts',
+      '```markdown',
+      '<!-- suggested-prompts',
+      'Example prompt',
+      '-->',
+      '```',
+      'Done.',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+  });
+
+  it('should not let a --> inside a fenced region close an open block', () => {
+    const content = [
+      'Intro',
+      '<!-- suggested-prompts',
+      'Some text the agent wrote',
+      '```diff',
+      '-->',
+      '```',
+      'Outro',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+  });
+
   it('should not close a block on a --> inside a fenced example', () => {
     const content = [
       '<!-- suggested-prompts',
