@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   bannerDelay,
   bannerOutDelay,
+  bannerScrollDurationS,
   canvasBounds,
   cellNeedsPan,
   clampTakeoverPan,
   emptyCellCoords,
   HUD_TAKEOVER_BANNER_IN_S,
+  HUD_TAKEOVER_BANNER_SCROLL_HOLD_S,
+  HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S,
   HUD_TAKEOVER_PITCH_PX,
   spiralCoords,
   takeoverFrameFrom,
@@ -168,6 +171,44 @@ describe('hud-takeover-layout', () => {
       expect(holdS(false, 1, 8000)).toBeCloseTo(4);
       expect(bannerOutDelay(true, 0, 8000)).toBe('8.60'); // 3.5 + 1.1 + 4.0
       expect(bannerOutDelay(false, 1, 8000)).toBe('6.40'); // 1.3 + 1.1 + 4.0
+    });
+
+    it('a scroll duration shifts the fade-out by exactly the scroll', () => {
+      // out = in 1.0 + wipe 1.1 + scroll 2.5 + dwell/2 4.0 = 8.60s.
+      expect(bannerOutDelay(false, 0, 8000, 2.5)).toBe('8.60');
+      expect(bannerOutDelay(true, 1, 8000, 2.5)).toBe('11.40'); // 3.8 + 1.1 + 2.5 + 4.0
+    });
+
+    it('scroll = 0 keeps the no-scroll fade-out byte-identical', () => {
+      expect(bannerOutDelay(false, 0, 8000, 0)).toBe(bannerOutDelay(false, 0, 8000));
+      expect(bannerOutDelay(true, 1, HUD_TAKEOVER_DWELL_MIN_MS, 0)).toBe(
+        bannerOutDelay(true, 1, HUD_TAKEOVER_DWELL_MIN_MS),
+      );
+    });
+  });
+
+  describe('bannerScrollDurationS (overflow auto-scroll duration)', () => {
+    it('is 0 without overflow (0 or negative px)', () => {
+      expect(bannerScrollDurationS(0)).toBe(0);
+      expect(bannerScrollDurationS(-40)).toBe(0);
+    });
+
+    it('scales linearly with overflow at the readable speed plus end holds', () => {
+      expect(bannerScrollDurationS(150)).toBeCloseTo(
+        150 / HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S + 2 * HUD_TAKEOVER_BANNER_SCROLL_HOLD_S,
+      );
+    });
+
+    it('a large overflow keeps the same deterministic curve (never capped)', () => {
+      expect(bannerScrollDurationS(3000)).toBeCloseTo(
+        3000 / HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S + 2 * HUD_TAKEOVER_BANNER_SCROLL_HOLD_S,
+      );
+      expect(bannerScrollDurationS(3000)).toBeGreaterThan(bannerScrollDurationS(150));
+    });
+
+    it('the speed sits in the readable 60–90 px/s band', () => {
+      expect(HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S).toBeGreaterThanOrEqual(60);
+      expect(HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S).toBeLessThanOrEqual(90);
     });
   });
 });
