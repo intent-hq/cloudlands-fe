@@ -406,10 +406,15 @@ describe('cycle-unread-agents HUD remaining count', () => {
       .map((action) => action.payload);
   }
 
-  it('shows "(X more to go)" with remaining = N - 1 for N > 2 candidates', () => {
+  it('shows "(X more to go)" counting other unread workspaces, not their agents', () => {
     const state = makeState({
-      agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'a-2', 'a-3'], activeAgentId: null } },
-      unreadWorkspaceIds: ['ws-1'],
+      workspaces: ['ws-1', 'ws-2', 'ws-3'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'], activeAgentId: null },
+        'ws-2': { ids: ['b-1'], activeAgentId: null },
+        'ws-3': { ids: ['c-1'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-1', 'ws-2', 'ws-3'],
     });
     const { context, dispatch } = makeContext(state);
     getActionKeyDefinition('cycle-unread-agents').execute(context);
@@ -418,10 +423,60 @@ describe('cycle-unread-agents HUD remaining count', () => {
     ]);
   });
 
-  it('shows the singular "(1 more to go)" form with two candidates', () => {
+  it('shows the singular "(1 more to go)" form with two unread workspaces', () => {
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'], activeAgentId: null },
+        'ws-2': { ids: ['b-1'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-1', 'ws-2'],
+    });
+    const { context, dispatch } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(hudDispatches(dispatch)).toEqual([
+      [m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one({ count: 1 })],
+    ]);
+  });
+
+  it('counts 0 remaining when one unread workspace holds several agents', () => {
+    // Visiting one agent of the workspace clears its whole unread flag, so
+    // its sibling agents are not further stops.
+    const state = makeState({
+      agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'a-2', 'a-3'], activeAgentId: null } },
+      unreadWorkspaceIds: ['ws-1'],
+    });
+    const { context, dispatch } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(hudDispatches(dispatch)).toEqual([
+      [m.hardwareConsole_actionKey_cycleUnreadAgents_label()],
+    ]);
+  });
+
+  it('counts attention agents individually even alongside an unread workspace', () => {
+    // Attention persists per-agent until handled, so a separate attention
+    // agent stays one more stop after the unread workspace is visited.
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1', 'a-2'], activeAgentId: null },
+        'ws-2': { ids: ['b-1'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-1'],
+      sessionOverrides: { 'b-1': { attentionRequestKind: 'blocker' } },
+    });
+    const { context, dispatch } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(hudDispatches(dispatch)).toEqual([
+      [m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one({ count: 1 })],
+    ]);
+  });
+
+  it('counts an attention agent in the visited unread workspace as its own stop', () => {
     const state = makeState({
       agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'a-2'], activeAgentId: null } },
       unreadWorkspaceIds: ['ws-1'],
+      sessionOverrides: { 'a-2': { attentionRequestKind: 'discussion' } },
     });
     const { context, dispatch } = makeContext(state);
     getActionKeyDefinition('cycle-unread-agents').execute(context);
