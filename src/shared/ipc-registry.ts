@@ -789,6 +789,14 @@ export const IPC_CHANNELS = {
     SHOW_TOAST: 'auto-update:show-toast',
   },
 
+  // Release Notes
+  RELEASE_NOTES: {
+    GET: 'release-notes:get',
+    GET_PENDING: 'release-notes:get-pending',
+    // Event channel (main → renderer)
+    SHOW: 'release-notes:show',
+  },
+
   // Picture-in-Picture Windows
   PIP: {
     OPEN: 'pip:open',
@@ -979,6 +987,8 @@ export const EVENT_CHANNELS = [
   'auto-update:error',
   'auto-update:show-toast',
   'auto-update:up-to-date',
+  // Release-notes modal push (startup after an update, or Help menu)
+  'release-notes:show',
   // Picture-in-Picture events
   'pip:opened',
   'pip:closed',

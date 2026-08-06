@@ -1,45 +1,55 @@
 /**
- * Fire-and-forget `agent.markSeen` trigger (PROTOCOL §5.5).
+ * Fire-and-forget `agent.markSeen` triggers (PROTOCOL §5.5).
  *
- * Advances the per-conversation seen marker while the user is actually
- * looking at the end of the transcript. The ONLY trigger is the viewport
- * being at the very bottom with the agent currently viewed and the window
- * focused — scrolling mid-conversation NEVER produces a backend call. The
- * daemon persists `lastSeenMessageId` (served on AgentLite, converging via
- * `agent:updated`), so callers never await the mutation: failures are
- * tolerated silently and the next trigger retries naturally.
+ * The seen marker advances at three DISCRETE moments — never continuously
+ * from scroll position:
  *
- * Requests are debounced per agent so message bursts while sitting at the
- * bottom collapse into one call carrying the newest persisted message id.
- * All gates are re-evaluated at fire time from a live snapshot — scrolling
- * away, blurring the window, or switching agents during the debounce window
- * silently drops the pending request.
+ *   1. Turn finish — `streamEnded` (terminal `agent:stream:end`) while the
+ *      conversation is the currently viewed tab AND the window is focused.
+ *   2. User send — the user sends a message in the conversation
+ *      (`sendMessage`): composing there is proof they saw the transcript.
+ *   3. Stop-looking boundary — the divider-session boundary seam (chat tab
+ *      close / active-workspace switch) fires for the affected agents.
+ *
+ * Triggers 1–2 are observed by `createMarkAgentSeenTriggerMiddleware`;
+ * trigger 3 is wired through `createDividerSessionBoundaryService`'s
+ * `onBoundary` seam (see middleware.ts). Each trigger targets the newest
+ * PERSISTED message id at fire time — streaming/partial rows are never
+ * eligible. The daemon persists `lastSeenMessageId` (served on AgentLite,
+ * converging via `agent:updated`), so callers never await the mutation:
+ * failures roll back the dedupe record and the next trigger retries.
+ *
+ * Turn-finish and user-send are debounced per agent so bursts coalesce into
+ * one call (and the canonical persisted user-message echo from
+ * `chat.subscribe` can replace the optimistic local row before the target id
+ * is read); gates are re-evaluated from live store state when the timer
+ * fires. Boundary triggers fire immediately — a debounce would outlive the
+ * viewing session.
  *
  * Dependency-light per src/store/renderer/AGENTS.md: the appClient seam and
- * store are dynamically imported at fire time so this module can be imported
- * from component code without eagerly pulling in the client graph.
+ * store are dynamically imported at fire time; the only module-scope store
+ * imports are slice action types (no selector modules).
  */
 import type { AgentMessage } from '$shared/types';
+import type { StoreMiddleware } from '$lib/store-shim/types';
+import { sendMessage, streamEnded } from '$store/renderer/slices/chat-state/chat-state-slice';
 
-/** Debounce window for coalescing bursts while sitting at the bottom. */
+/** Debounce window for coalescing turn-finish / user-send bursts. */
 export const MARK_AGENT_SEEN_DEBOUNCE_MS = 1000;
 
-/**
- * Live view of the trigger gates, re-read at fire time. `null` when the
- * caller can no longer produce a meaningful snapshot (e.g. unmounted).
- */
-export interface MarkAgentSeenSnapshot {
-  workspaceId: string;
-  agentId: string;
-  /** Newest persisted (never streaming) message id, or null when none. */
-  messageId: string | null;
-  /** Viewport is at the very end of the transcript. */
-  atBottom: boolean;
+/** Gates re-evaluated from live store state when a trigger fires. */
+interface FireGates {
+  /**
+   * Turn-finish only: the conversation must still be the currently viewed
+   * one and the window focused. User-send and boundary triggers carry their
+   * own proof of looking, so they skip both gates.
+   */
+  requireViewedAndFocused: boolean;
 }
 
 interface PendingTrigger {
   timer: ReturnType<typeof setTimeout>;
-  getSnapshot: () => MarkAgentSeenSnapshot | null;
+  gates: FireGates;
 }
 
 const pendingByAgent = new Map<string, PendingTrigger>();
@@ -77,25 +87,39 @@ export function newestPersistedMessageId(messages: readonly AgentMessage[]): str
 }
 
 /**
- * Request a debounced fire-and-forget `agent.markSeen`. Re-requesting within
- * the debounce window restarts the timer (trailing edge) and the snapshot is
- * taken fresh when the timer fires, so a burst of messages produces one call
- * with the newest id. Never throws and never blocks the caller.
+ * Turn-finish trigger: debounced, and gated at fire time on the conversation
+ * still being the currently viewed one AND the window being focused — a tab
+ * switch or blur during the debounce window silently drops the request.
  */
-export function requestMarkAgentSeen(
-  agentId: string,
-  getSnapshot: () => MarkAgentSeenSnapshot | null,
-): void {
-  const existing = pendingByAgent.get(agentId);
-  if (existing) clearTimeout(existing.timer);
-  const timer = setTimeout(() => {
-    pendingByAgent.delete(agentId);
-    void fire(agentId, getSnapshot);
-  }, MARK_AGENT_SEEN_DEBOUNCE_MS);
-  pendingByAgent.set(agentId, { timer, getSnapshot });
+export function markAgentSeenOnTurnFinish(agentId: string): void {
+  scheduleDebounced(agentId, { requireViewedAndFocused: true });
 }
 
-/** Drop any pending trigger for the agent (component teardown). */
+/**
+ * User-send trigger: the user just composed a message in this conversation,
+ * which is itself proof they were looking — no viewed/focus gate. Debounced
+ * so the canonical persisted user-message echo (chat.subscribe) can replace
+ * the optimistic local row before the target id is read.
+ */
+export function markAgentSeenOnUserSend(agentId: string): void {
+  scheduleDebounced(agentId, { requireViewedAndFocused: false });
+}
+
+/**
+ * Stop-looking boundary trigger (divider-session boundary seam: chat tab
+ * close / active-workspace switch). Fires IMMEDIATELY for each affected
+ * agent — the user was looking right up to the boundary, and a debounce
+ * would outlive the viewing session. Supersedes any pending debounce.
+ */
+export function markAgentSeenAtBoundary(agentIds: readonly string[]): void {
+  for (const agentId of agentIds) {
+    if (typeof agentId !== 'string' || agentId.length === 0) continue;
+    cancelPendingMarkAgentSeen(agentId);
+    void fire(agentId, { requireViewedAndFocused: false });
+  }
+}
+
+/** Drop any pending debounced trigger for the agent. */
 export function cancelPendingMarkAgentSeen(agentId: string): void {
   const pending = pendingByAgent.get(agentId);
   if (!pending) return;
@@ -103,62 +127,118 @@ export function cancelPendingMarkAgentSeen(agentId: string): void {
   pendingByAgent.delete(agentId);
 }
 
-/** Evaluate all gates from a live snapshot, then send at most one request. */
-async function fire(
-  _requestAgentId: string,
-  getSnapshot: () => MarkAgentSeenSnapshot | null,
-): Promise<void> {
-  // Dedupe bookkeeping is keyed by the fire-time snapshot's agentId — the
-  // same identity the viewed gate and the mutation use — never by the
-  // request-time key, so the two can never diverge.
-  let dedupeKey: string | null = null;
+/**
+ * Debounce per agent (trailing edge): re-triggering restarts the timer, and
+ * the target id + gates are read fresh from the store when it fires, so a
+ * burst produces one call carrying the newest persisted id. The LAST
+ * trigger's gates win — a user send during a pending turn-finish window
+ * drops the viewed/focus gate, since the send is itself proof of looking.
+ */
+function scheduleDebounced(agentId: string, gates: FireGates): void {
+  cancelPendingMarkAgentSeen(agentId);
+  const timer = setTimeout(() => {
+    pendingByAgent.delete(agentId);
+    void fire(agentId, gates);
+  }, MARK_AGENT_SEEN_DEBOUNCE_MS);
+  pendingByAgent.set(agentId, { timer, gates });
+}
+
+/**
+ * Fire-time seams, dynamically imported once and shared by every fire —
+ * concurrent triggers (e.g. a multi-agent boundary) await the same in-flight
+ * import instead of racing duplicate loads.
+ */
+let seamsPromise: Promise<{
+  appStore: (typeof import('$store/renderer/store'))['store'];
+  appClient: (typeof import('$lib/client'))['appClient'];
+}> | null = null;
+
+function loadSeams(): NonNullable<typeof seamsPromise> {
+  seamsPromise ??= Promise.all([import('$store/renderer/store'), import('$lib/client')]).then(
+    ([storeModule, clientModule]) => ({
+      appStore: storeModule.store,
+      appClient: clientModule.appClient,
+    }),
+  );
+  return seamsPromise;
+}
+
+/**
+ * Resolve the gates and the target message id from live store state, then
+ * send at most one request. Never throws and never blocks the caller.
+ */
+async function fire(agentId: string, gates: FireGates): Promise<void> {
   let recordedId: string | null = null;
   try {
-    const snapshot = getSnapshot();
-    if (!snapshot) return;
-    if (!snapshot.atBottom) return;
-    if (!snapshot.messageId) return;
-    if (!snapshot.workspaceId || !snapshot.agentId) return;
-    // Window focus gate: never advance the marker while the app is in the
-    // background — the user is not actually seeing the messages.
-    if (typeof document !== 'undefined' && !document.hasFocus()) return;
+    const { appStore, appClient } = await loadSeams();
 
-    const [{ store: appStore }, { appClient }] = await Promise.all([
-      import('$store/renderer/store'),
-      import('$lib/client'),
-    ]);
-
-    // Viewed gate (one-time dependency-light read, no selector import): the
-    // conversation must still be the one on screen.
+    // Dependency-light one-time state read (no selector imports).
     const state = appStore.state as {
       unreadTracking?: { currentlyViewedAgentId: string | null };
+      agentSessions?: {
+        byAgentId: Record<
+          string,
+          { workspaceId?: unknown; messages?: readonly AgentMessage[] } | undefined
+        >;
+      };
     };
-    if (state.unreadTracking?.currentlyViewedAgentId !== snapshot.agentId) return;
+
+    if (gates.requireViewedAndFocused) {
+      // Viewed gate: the conversation must still be the one on screen.
+      if (state.unreadTracking?.currentlyViewedAgentId !== agentId) return;
+      // Window focus gate: never advance the marker while the app is in the
+      // background — the user is not actually seeing the messages.
+      if (typeof document !== 'undefined' && !document.hasFocus()) return;
+    }
+
+    const session = state.agentSessions?.byAgentId[agentId];
+    if (!session) return;
+    const workspaceId = typeof session.workspaceId === 'string' ? session.workspaceId : '';
+    if (workspaceId.length === 0) return;
+    const messageId = newestPersistedMessageId(session.messages ?? []);
+    if (!messageId) return;
 
     // Dedupe: the daemon call is idempotent but there is no point re-sending
-    // the same marker while the user sits at the bottom.
-    dedupeKey = snapshot.agentId;
-    if (lastSentByAgent.get(dedupeKey) === snapshot.messageId) return;
-    recordLastSent(dedupeKey, snapshot.messageId);
-    recordedId = snapshot.messageId;
+    // the same marker id.
+    if (lastSentByAgent.get(agentId) === messageId) return;
+    recordLastSent(agentId, messageId);
+    recordedId = messageId;
 
-    const result = await appClient.agents.markSeen({
-      workspaceId: snapshot.workspaceId,
-      agentId: snapshot.agentId,
-      messageId: snapshot.messageId,
-    });
-    if (!result.success && lastSentByAgent.get(dedupeKey) === recordedId) {
+    const result = await appClient.agents.markSeen({ workspaceId, agentId, messageId });
+    if (!result.success && lastSentByAgent.get(agentId) === recordedId) {
       // Roll back the dedupe record so the next trigger retries naturally.
-      lastSentByAgent.delete(dedupeKey);
+      lastSentByAgent.delete(agentId);
     }
   } catch {
     // Fire-and-forget: the marker stays behind and the next trigger retries.
-    if (
-      dedupeKey !== null &&
-      recordedId !== null &&
-      lastSentByAgent.get(dedupeKey) === recordedId
-    ) {
-      lastSentByAgent.delete(dedupeKey);
+    if (recordedId !== null && lastSentByAgent.get(agentId) === recordedId) {
+      lastSentByAgent.delete(agentId);
     }
   }
+}
+
+/**
+ * Middleware observing the two action-driven triggers: `streamEnded` (turn
+ * finish, PROTOCOL §7 terminal `agent:stream:end`) and `sendMessage` (user
+ * send). Runs after the reducer so the fire-time state read sees the
+ * post-action world. The boundary trigger is wired separately through
+ * `createDividerSessionBoundaryService({ onBoundary })` in middleware.ts.
+ */
+export function createMarkAgentSeenTriggerMiddleware(): StoreMiddleware {
+  return () => (next) => (action) => {
+    const result = next(action);
+    const type = (action as { type?: unknown }).type;
+    if (type === streamEnded.type) {
+      const [agentId] = (action as { payload?: [string?] }).payload ?? [];
+      if (typeof agentId === 'string' && agentId.length > 0) {
+        markAgentSeenOnTurnFinish(agentId);
+      }
+    } else if (type === sendMessage.type) {
+      const agentId = (action as { payload?: { agentId?: unknown } }).payload?.agentId;
+      if (typeof agentId === 'string' && agentId.length > 0) {
+        markAgentSeenOnUserSend(agentId);
+      }
+    }
+    return result;
+  };
 }

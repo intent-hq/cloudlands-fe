@@ -47,6 +47,7 @@
   "menu_bring_all_to_front": "前置全部視窗",
   "menu_help": "幫助",
   "menu_export_debug_logs": "匯出除錯日誌",
+  "menu_show_release_notes": "顯示版本資訊",
   "dialog_about_version": "版本：{version}",
   "dialog_cli_install_title": "CLI 安裝",
   "dialog_cli_install_success": "CLI 安裝成功",
@@ -4628,10 +4629,6 @@
   "lib_githubDeviceCode_enterCodeAt_before": "輸入此程式碼，位置：",
   "lib_nodeVersionWarning_haveVersion_message": "使用 Auggie 需要 Node.js {minimumVersion} 及以上版本。你安裝的是 {nodeVersion}。",
   "lib_nodeVersionWarning_notFound_message": "使用 Auggie 需要 Node.js {minimumVersion} 及以上版本。在你的系統上未找到 Node.js。",
-  "lib_releaseNotes_whatsNew_title": "新變化",
-  "lib_releaseNotes_version_label": "版本 {version}",
-  "lib_releaseNotes_fallback_message": "缺陷修復和效能改進。",
-  "lib_releaseNotes_gotIt_label": "知道了",
   "lib_auggieSetup_tagline_message": "面向並行智慧體的實驗性工作區。",
   "lib_auggieSetup_checkingProviders_label": "正在檢查可用的提供者…",
   "lib_auggieSetup_somethingWentWrong_title": "出錯了",
@@ -5369,5 +5366,11 @@
   "settings_voice_osEngineUnavailable_error": "此裝置不支援系統聽寫。",
   "settings_voice_osEngine_helperMissing_description": "語音輔助程式無法使用",
   "settings_voice_osEngine_permissionNote": "首次啟用時 macOS 會要求語音辨識權限 — 在允許之前聽寫無法運作。",
-  "splash_gettingReady_label": "正在準備建置"
+  "splash_gettingReady_label": "正在準備建置",
+  "releaseNotes_modal_title": "{version} 的新功能",
+  "releaseNotes_modal_title_generic": "新功能",
+  "releaseNotes_modal_loading_message": "正在載入版本資訊…",
+  "releaseNotes_modal_unavailable_message": "此版本沒有版本資訊。",
+  "releaseNotes_modal_viewOnGitHub_label": "在 GitHub 上檢視",
+  "releaseNotes_modal_dismiss_label": "知道了"
 }

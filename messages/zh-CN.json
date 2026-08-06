@@ -47,6 +47,7 @@
   "menu_bring_all_to_front": "前置全部窗口",
   "menu_help": "帮助",
   "menu_export_debug_logs": "导出调试日志",
+  "menu_show_release_notes": "显示发行说明",
   "dialog_about_version": "版本：{version}",
   "dialog_cli_install_title": "CLI 安装",
   "dialog_cli_install_success": "CLI 安装成功",
@@ -4628,10 +4629,6 @@
   "lib_githubDeviceCode_enterCodeAt_before": "输入此代码，位置：",
   "lib_nodeVersionWarning_haveVersion_message": "使用 Auggie 需要 Node.js {minimumVersion} 及以上版本。你安装的是 {nodeVersion}。",
   "lib_nodeVersionWarning_notFound_message": "使用 Auggie 需要 Node.js {minimumVersion} 及以上版本。在你的系统上未找到 Node.js。",
-  "lib_releaseNotes_whatsNew_title": "新变化",
-  "lib_releaseNotes_version_label": "版本 {version}",
-  "lib_releaseNotes_fallback_message": "缺陷修复和性能改进。",
-  "lib_releaseNotes_gotIt_label": "知道了",
   "lib_auggieSetup_tagline_message": "面向并行智能体的实验性工作区。",
   "lib_auggieSetup_checkingProviders_label": "正在检查可用的提供商…",
   "lib_auggieSetup_somethingWentWrong_title": "出错了",
@@ -5369,5 +5366,11 @@
   "settings_voice_osEngineUnavailable_error": "此设备不支持系统听写。",
   "settings_voice_osEngine_helperMissing_description": "语音助手不可用",
   "settings_voice_osEngine_permissionNote": "首次启用时 macOS 会请求语音识别权限 — 在允许之前听写无法工作。",
-  "splash_gettingReady_label": "正在准备构建"
+  "splash_gettingReady_label": "正在准备构建",
+  "releaseNotes_modal_title": "{version} 的新增功能",
+  "releaseNotes_modal_title_generic": "新增功能",
+  "releaseNotes_modal_loading_message": "正在加载发行说明…",
+  "releaseNotes_modal_unavailable_message": "此版本暂无发行说明。",
+  "releaseNotes_modal_viewOnGitHub_label": "在 GitHub 上查看",
+  "releaseNotes_modal_dismiss_label": "知道了"
 }

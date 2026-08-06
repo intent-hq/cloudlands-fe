@@ -47,6 +47,7 @@
   "menu_bring_all_to_front": "すべてを手前に移動",
   "menu_help": "ヘルプ",
   "menu_export_debug_logs": "デバッグログを書き出す",
+  "menu_show_release_notes": "リリースノートを表示",
   "dialog_about_version": "バージョン: {version}",
   "dialog_cli_install_title": "CLI のインストール",
   "dialog_cli_install_success": "CLI が正常にインストールされました",
@@ -4628,10 +4629,6 @@
   "lib_githubDeviceCode_enterCodeAt_before": "次の場所でこのコードを入力:",
   "lib_nodeVersionWarning_haveVersion_message": "Auggie を使用するには Node.js {minimumVersion} 以降が必要です。現在 {nodeVersion} がインストールされています。",
   "lib_nodeVersionWarning_notFound_message": "Auggie を使用するには Node.js {minimumVersion} 以降が必要です。システムに Node.js が見つかりませんでした。",
-  "lib_releaseNotes_whatsNew_title": "新機能",
-  "lib_releaseNotes_version_label": "バージョン {version}",
-  "lib_releaseNotes_fallback_message": "バグ修正とパフォーマンス改善。",
-  "lib_releaseNotes_gotIt_label": "了解",
   "lib_auggieSetup_tagline_message": "並列エージェントのための実験的なワークスペース。",
   "lib_auggieSetup_checkingProviders_label": "利用可能なプロバイダーを確認中...",
   "lib_auggieSetup_somethingWentWrong_title": "問題が発生しました",
@@ -5369,5 +5366,11 @@
   "settings_voice_osEngineUnavailable_error": "OS音声入力はこのデバイスでは利用できません。",
   "settings_voice_osEngine_helperMissing_description": "音声ヘルパーが利用できません",
   "settings_voice_osEngine_permissionNote": "初回有効化時に macOS が音声認識の許可を求めます — 許可されるまで音声入力は機能しません。",
-  "splash_gettingReady_label": "ビルドの準備をしています"
+  "splash_gettingReady_label": "ビルドの準備をしています",
+  "releaseNotes_modal_title": "{version} の新機能",
+  "releaseNotes_modal_title_generic": "新機能",
+  "releaseNotes_modal_loading_message": "リリースノートを読み込んでいます…",
+  "releaseNotes_modal_unavailable_message": "このバージョンのリリースノートはありません。",
+  "releaseNotes_modal_viewOnGitHub_label": "GitHub で表示",
+  "releaseNotes_modal_dismiss_label": "了解"
 }

@@ -47,6 +47,7 @@
   "menu_bring_all_to_front": "Bring All to Front",
   "menu_help": "Help",
   "menu_export_debug_logs": "Export Debug Logs",
+  "menu_show_release_notes": "Show Release Notes",
   "dialog_about_version": "Version: {version}",
   "dialog_cli_install_title": "CLI Installation",
   "dialog_cli_install_success": "CLI installed successfully",
@@ -4629,10 +4630,6 @@
   "lib_githubDeviceCode_enterCodeAt_before": "Enter this code at",
   "lib_nodeVersionWarning_haveVersion_message": "Node.js {minimumVersion}+ is required to use Auggie. You have {nodeVersion} installed.",
   "lib_nodeVersionWarning_notFound_message": "Node.js {minimumVersion}+ is required to use Auggie. Node.js was not found on your system.",
-  "lib_releaseNotes_whatsNew_title": "What's New",
-  "lib_releaseNotes_version_label": "Version {version}",
-  "lib_releaseNotes_fallback_message": "Bug fixes and performance improvements.",
-  "lib_releaseNotes_gotIt_label": "Got it",
   "lib_auggieSetup_tagline_message": "An experimental workspace for parallel agents.",
   "lib_auggieSetup_checkingProviders_label": "Checking available providers...",
   "lib_auggieSetup_somethingWentWrong_title": "Something went wrong",
@@ -5369,5 +5366,11 @@
   "settings_voice_osEngineUnavailable_error": "OS dictation is not available on this device.",
   "settings_voice_osEngine_helperMissing_description": "Speech helper unavailable",
   "settings_voice_osEngine_permissionNote": "macOS will ask for speech recognition permission the first time you enable this — dictation won't work until it's allowed.",
-  "splash_gettingReady_label": "Getting ready to build"
+  "splash_gettingReady_label": "Getting ready to build",
+  "releaseNotes_modal_title": "What's New in {version}",
+  "releaseNotes_modal_title_generic": "What's New",
+  "releaseNotes_modal_loading_message": "Loading release notes…",
+  "releaseNotes_modal_unavailable_message": "Release notes are not available for this version.",
+  "releaseNotes_modal_viewOnGitHub_label": "View on GitHub",
+  "releaseNotes_modal_dismiss_label": "Got it"
 }

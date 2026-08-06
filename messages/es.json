@@ -47,6 +47,7 @@
   "menu_bring_all_to_front": "Traer todo al frente",
   "menu_help": "Ayuda",
   "menu_export_debug_logs": "Exportar registros de depuración",
+  "menu_show_release_notes": "Mostrar notas de la versión",
   "dialog_about_version": "Versión: {version}",
   "dialog_cli_install_title": "Instalación de la CLI",
   "dialog_cli_install_success": "CLI instalada correctamente",
@@ -4628,10 +4629,6 @@
   "lib_githubDeviceCode_enterCodeAt_before": "Introduzca este código en",
   "lib_nodeVersionWarning_haveVersion_message": "Se requiere Node.js {minimumVersion}+ para usar Auggie. Tiene instalada la versión {nodeVersion}.",
   "lib_nodeVersionWarning_notFound_message": "Se requiere Node.js {minimumVersion}+ para usar Auggie. No se encontró Node.js en su sistema.",
-  "lib_releaseNotes_whatsNew_title": "Novedades",
-  "lib_releaseNotes_version_label": "Versión {version}",
-  "lib_releaseNotes_fallback_message": "Correcciones de errores y mejoras de rendimiento.",
-  "lib_releaseNotes_gotIt_label": "Entendido",
   "lib_auggieSetup_tagline_message": "Un espacio de trabajo experimental para agentes en paralelo.",
   "lib_auggieSetup_checkingProviders_label": "Comprobando proveedores disponibles...",
   "lib_auggieSetup_somethingWentWrong_title": "Algo salió mal",
@@ -5369,5 +5366,11 @@
   "settings_voice_osEngineUnavailable_error": "El dictado del SO no está disponible en este dispositivo.",
   "settings_voice_osEngine_helperMissing_description": "Asistente de voz no disponible",
   "settings_voice_osEngine_permissionNote": "macOS pedirá permiso de reconocimiento de voz la primera vez que lo actives — el dictado no funcionará hasta que se permita.",
-  "splash_gettingReady_label": "Preparando todo para construir"
+  "splash_gettingReady_label": "Preparando todo para construir",
+  "releaseNotes_modal_title": "Novedades de {version}",
+  "releaseNotes_modal_title_generic": "Novedades",
+  "releaseNotes_modal_loading_message": "Cargando notas de la versión…",
+  "releaseNotes_modal_unavailable_message": "No hay notas de la versión disponibles para esta versión.",
+  "releaseNotes_modal_viewOnGitHub_label": "Ver en GitHub",
+  "releaseNotes_modal_dismiss_label": "Entendido"
 }

@@ -47,6 +47,7 @@
   "menu_bring_all_to_front": "모두 앞으로 가져오기",
   "menu_help": "도움말",
   "menu_export_debug_logs": "디버그 로그 내보내기",
+  "menu_show_release_notes": "릴리스 노트 표시",
   "dialog_about_version": "버전: {version}",
   "dialog_cli_install_title": "CLI 설치",
   "dialog_cli_install_success": "CLI가 성공적으로 설치되었습니다",
@@ -4628,10 +4629,6 @@
   "lib_githubDeviceCode_enterCodeAt_before": "다음 위치에서 이 코드 입력:",
   "lib_nodeVersionWarning_haveVersion_message": "Auggie를 사용하려면 Node.js {minimumVersion} 이상이 필요합니다. {nodeVersion}이(가) 설치되어 있습니다.",
   "lib_nodeVersionWarning_notFound_message": "Auggie를 사용하려면 Node.js {minimumVersion} 이상이 필요합니다. 시스템에서 Node.js를 찾을 수 없습니다.",
-  "lib_releaseNotes_whatsNew_title": "새로운 기능",
-  "lib_releaseNotes_version_label": "버전 {version}",
-  "lib_releaseNotes_fallback_message": "버그 수정 및 성능 개선.",
-  "lib_releaseNotes_gotIt_label": "확인",
   "lib_auggieSetup_tagline_message": "병렬 에이전트를 위한 실험적 작업 공간.",
   "lib_auggieSetup_checkingProviders_label": "사용 가능한 공급자 확인 중...",
   "lib_auggieSetup_somethingWentWrong_title": "문제가 발생했습니다",
@@ -5369,5 +5366,11 @@
   "settings_voice_osEngineUnavailable_error": "이 기기에서는 OS 받아쓰기를 사용할 수 없습니다.",
   "settings_voice_osEngine_helperMissing_description": "음성 도우미를 사용할 수 없음",
   "settings_voice_osEngine_permissionNote": "처음 활성화하면 macOS가 음성 인식 권한을 요청합니다 — 허용될 때까지 받아쓰기가 작동하지 않습니다.",
-  "splash_gettingReady_label": "빌드를 준비하는 중입니다"
+  "splash_gettingReady_label": "빌드를 준비하는 중입니다",
+  "releaseNotes_modal_title": "{version}의 새로운 기능",
+  "releaseNotes_modal_title_generic": "새로운 기능",
+  "releaseNotes_modal_loading_message": "릴리스 노트를 불러오는 중…",
+  "releaseNotes_modal_unavailable_message": "이 버전의 릴리스 노트를 사용할 수 없습니다.",
+  "releaseNotes_modal_viewOnGitHub_label": "GitHub에서 보기",
+  "releaseNotes_modal_dismiss_label": "확인"
 }
