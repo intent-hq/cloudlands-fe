@@ -20,6 +20,7 @@ import {
 } from 'vitest';
 import { parseSuggestedPrompts } from '$lib/utils/messageParser';
 import { derivePendingQuestions } from '../questions/pending-questions';
+import { buildAnswerMessageMetadata } from '../questions/answer-message';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import type { SuggestedPrompt } from '$shared/types';
@@ -220,11 +221,36 @@ Test prompt
       expect(prompts).toEqual([]);
     });
 
-    it('returns prompts again once a later user message supersedes the questions', () => {
-      const userMsg: AgentMessage = {
+    it('returns prompts again once the tagged answer message resolves the questions', () => {
+      // Pendingness is persistent: only the wizard's answer message —
+      // tagged with `question_answers` metadata naming the question-bearing
+      // message — resolves the set and brings the prompts back.
+      const answerMsg: AgentMessage = {
         id: 'msg_user_answers',
         role: 'user',
         contentBlocks: [{ type: 'text', text: 'Q: …\nA: OAuth' }],
+        timestamp: new Date().toISOString(),
+        metadata: buildAnswerMessageMetadata(messageWithPromptsAndQuestions.id),
+      } as unknown as AgentMessage;
+      const followUp = createAssistantMessage(`Thanks!
+
+<!-- suggested-prompts
+Continue
+-->
+`);
+      const prompts = computeSuggestedPrompts(false, [
+        messageWithPromptsAndQuestions,
+        answerMsg,
+        followUp,
+      ]);
+      expect(prompts).toEqual(['Continue']);
+    });
+
+    it('keeps prompts hidden while a PLAIN user message leaves the questions pending', () => {
+      const userMsg: AgentMessage = {
+        id: 'msg_user_plain',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'unrelated aside' }],
         timestamp: new Date().toISOString(),
       };
       const followUp = createAssistantMessage(`Thanks!
@@ -238,7 +264,7 @@ Continue
         userMsg,
         followUp,
       ]);
-      expect(prompts).toEqual(['Continue']);
+      expect(prompts).toEqual([]);
     });
   });
 

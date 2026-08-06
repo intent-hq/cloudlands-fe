@@ -150,7 +150,10 @@
   type QuestionAnswer,
 } from './questions/QuestionWizard.svelte';
   import { deriveWizardPendingQuestions } from './questions/wizard-gate';
-  import { flattenAnswersToMessage } from './questions/answer-message';
+  import {
+    buildAnswerMessageMetadata,
+    flattenAnswersToMessage,
+  } from './questions/answer-message';
   import { groupMessagesByDate } from '$lib/utils/timeFormatting';
   import {
   animateScrollTo,
@@ -503,7 +506,7 @@
     }
     // Suggested prompts stay hidden whenever the turn has pending Agent Q&A
     // questions — including while the wizard is Ignore-collapsed. Only
-    // answering (or any superseding user message) brings them back.
+    // answering, dismissing, or a newer question set brings them back.
     if (pendingQuestions) {
       return [];
     }
@@ -512,9 +515,11 @@
     return prompts;
   });
 
-  // Agent Q&A: question blocks on the LAST assistant message with NO later
-  // user message (and not streaming) replace the composer with the sequential
-  // wizard. Derivation is purely transcript-based (wire contract), so
+  // Agent Q&A: question blocks on the newest question-bearing assistant
+  // message (not streaming) replace the composer with the sequential wizard,
+  // and stay pending across later plain user messages and agent replies until
+  // answered (answer-tagged user row), dismissed, or superseded by a newer
+  // question set. Derivation is purely transcript-based (wire contract), so
   // restored sessions re-surface unanswered questions automatically.
   // The gate (own active turn, NOT the broad running gate — an agent paused
   // on delegated agents has ended its turn and its questions must surface)
@@ -580,12 +585,13 @@
   }
 
   // Completing the wizard flattens all answers into ONE plain-text user
-  // message of `Q:`/`A:` pairs (wire contract — no messageMetadata) sent
-  // through the ordinary send path. The resulting user message supersedes
-  // the questions, so the wizard unmounts, the composer restores, and the
-  // in-transcript cards render resolved.
+  // message of `Q:`/`A:` pairs sent through the ordinary send path, tagged
+  // with `messageMetadata { type: "question_answers",
+  // answeredQuestionsMessageId }` (wire contract). That structured tag — not
+  // the text — resolves the pending set, so the wizard unmounts and the
+  // composer restores; an untagged user message leaves the Q&A pending.
   function handleQuestionWizardComplete(answers: QuestionAnswer[]) {
-    if (!workspace || !isActive) return;
+    if (!workspace || !isActive || !pendingQuestions) return;
     const text = flattenAnswersToMessage(answers);
     logger.info('Question wizard completed', { answerCount: answers.length });
     appStore.dispatch(
@@ -595,6 +601,7 @@
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
+        messageMetadata: buildAnswerMessageMetadata(pendingQuestions.messageId),
       }),
     );
     void performLocalSendCleanup({ followBottom: true });

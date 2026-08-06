@@ -162,6 +162,12 @@ export interface SendMessagePayload {
   agentModel?: string;
   /** Whether this is the initial workspace agent */
   isInitialWorkspaceAgent?: boolean;
+  /**
+   * Opaque per-message payload forwarded verbatim as `agent.sendMessage`'s
+   * `messageMetadata` (PROTOCOL §5.5) — the Q&A wizard tags its flattened
+   * answer message with `{ type: "question_answers", answeredQuestionsMessageId }`.
+   */
+  messageMetadata?: Record<string, unknown>;
 }
 
 /**

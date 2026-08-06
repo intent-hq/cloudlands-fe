@@ -112,6 +112,12 @@ export async function sendMessage(
      * immediately instead of queueing). Used by force-send (⌘Enter).
      */
     priority?: 'interrupt';
+    /**
+     * Opaque per-message payload persisted on the user message row
+     * (PROTOCOL.md §5.5 `messageMetadata`). Used by the Q&A wizard to tag its
+     * answer message `{ type: "question_answers", answeredQuestionsMessageId }`.
+     */
+    messageMetadata?: Record<string, unknown>;
   } = {},
 ): Promise<void> {
   // Wrap entire sendMessage operation with performance tracking
@@ -235,9 +241,15 @@ export async function sendMessage(
           role: 'user',
           contentBlocks: userContentBlocks,
           timestamp: new Date().toISOString(),
-          metadata: options.contextReferences?.length
-            ? { contextReferences: options.contextReferences }
-            : {},
+          metadata: {
+            ...(options.contextReferences?.length
+              ? { contextReferences: options.contextReferences }
+              : {}),
+            // Mirror the wire tag on the optimistic row so transcript-driven
+            // derivations (the Q&A wizard's answer resolution) settle without
+            // waiting for the daemon echo.
+            ...(options.messageMetadata ?? {}),
+          },
         };
 
         dispatchRedux(addAgentSessionMessage(session.id, userMessage));
@@ -328,6 +340,12 @@ export async function sendMessage(
                       assistantAppMessageId,
                       // Message priority for force-send interrupt (PROTOCOL.md §5.5)
                       priority: options.priority,
+                      // Opaque per-message tag persisted on the user row
+                      // (PROTOCOL.md §5.5) — omitted entirely when absent so
+                      // ordinary sends keep their exact request shape.
+                      ...(options.messageMetadata
+                        ? { messageMetadata: options.messageMetadata }
+                        : {}),
                     },
                   );
 

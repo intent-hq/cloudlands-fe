@@ -3,13 +3,15 @@
  *
  * 1. Exact `agent.sendMessage` request shape — completing the wizard sends
  *    ONE plain-text user message of flattened `Q:`/`A:` pairs (multi-select
- *    comma-joined, free-form `(Other) `-prefixed, skips as `(skipped)`) with
- *    NO messageMetadata, driven through the REAL store + chat-send
+ *    comma-joined, free-form `(Other) `-prefixed, skips as `(skipped)`)
+ *    tagged with `messageMetadata { type: "question_answers",
+ *    answeredQuestionsMessageId }`, driven through the REAL store + chat-send
  *    middleware + agent-send with only the BackendTransport seam
  *    mocked (PROTOCOL.md §5.5 payloads).
  * 2. PROTOCOL-shaped transcripts drive the wizard transitions: pending
- *    before the answer message exists, superseded (wizard closed, composer
- *    restored) once it does — including session-restore rehydration in both
+ *    before the tagged answer message exists, resolved (wizard closed,
+ *    composer restored) once it does — while a plain untagged user message
+ *    leaves the set pending — including session-restore rehydration in both
  *    states. Questions are wizard-only: they never render in the transcript.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,7 +39,11 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
 import QuestionWizard from '../QuestionWizard.svelte';
-import { flattenAnswersToMessage, type QuestionAnswer } from '../answer-message';
+import {
+  buildAnswerMessageMetadata,
+  flattenAnswersToMessage,
+  type QuestionAnswer,
+} from '../answer-message';
 import { derivePendingQuestions } from '../pending-questions';
 import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/question-resource';
 import { AgentStatus } from '$shared/types';
@@ -105,6 +111,18 @@ function userMessage(text: string, id = 'msg-u1'): AgentMessage {
     role: 'user',
     contentBlocks: [{ type: 'text', text }],
     timestamp: new Date().toISOString(),
+  } as AgentMessage;
+}
+
+/** The wizard's answer message as it lands in the transcript: text + tag. */
+function answerMessage(
+  text: string,
+  answeredQuestionsMessageId: string,
+  id = 'msg-u1',
+): AgentMessage {
+  return {
+    ...userMessage(text, id),
+    metadata: buildAnswerMessageMetadata(answeredQuestionsMessageId),
   } as AgentMessage;
 }
 
@@ -225,7 +243,7 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
     appStore.dispatch(clearAllSessions());
   });
 
-  it('sends ONE flattened plain-text user message with no messageMetadata', async () => {
+  it('sends ONE flattened plain-text user message tagged with the answer metadata', async () => {
     // Questions come off a PROTOCOL-shaped transcript, exactly as ChatPanel
     // derives them for the wizard.
     const pending = derivePendingQuestions(
@@ -241,7 +259,11 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
         questions: pending!.questions,
         onComplete: (answers: QuestionAnswer[]) => {
           appStore.dispatch(
-            sendMessage(AGENT, { wsId: WS, text: flattenAnswersToMessage(answers) }),
+            sendMessage(AGENT, {
+              wsId: WS,
+              text: flattenAnswersToMessage(answers),
+              messageMetadata: buildAnswerMessageMetadata(pending!.messageId),
+            }),
           );
         },
       },
@@ -278,8 +300,12 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
         `Q: ${LAST.question}\n` +
         'A: (skipped)',
     );
-    // A completely ordinary user message: no metadata of any kind.
-    expect(params).not.toHaveProperty('messageMetadata');
+    // The structured answer tag naming the question set being resolved —
+    // exactly and only these two fields (PROTOCOL §5.5 `messageMetadata`).
+    expect(params.messageMetadata).toEqual({
+      type: 'question_answers',
+      answeredQuestionsMessageId: 'msg-a1',
+    });
     expect(params).not.toHaveProperty('metadata');
     // Exactly ONE send for the whole question set.
     expect(
@@ -295,11 +321,17 @@ describe('transcript-driven wizard transitions', () => {
     answer(MULTI, { skipped: true }),
   ]);
 
-  it('pends before the answer message exists; superseded once it lands', () => {
+  it('pends before the answer message exists; resolved once the TAGGED one lands', () => {
     expect(derivePendingQuestions([questionMsg], false)).not.toBeNull();
-    // The flattened answer message arrives as an ordinary user message —
-    // wizard closes and the composer restores (derivation goes null).
-    expect(derivePendingQuestions([questionMsg, userMessage(answerText)], false)).toBeNull();
+    // A plain (untagged) user message leaves the Q&A pending — the wizard
+    // stays up and the composer stays usable underneath.
+    expect(
+      derivePendingQuestions([questionMsg, userMessage('unrelated', 'msg-u1')], false),
+    ).not.toBeNull();
+    // The wizard's tagged answer message closes it (composer restores).
+    expect(
+      derivePendingQuestions([questionMsg, answerMessage(answerText, 'msg-a1')], false),
+    ).toBeNull();
   });
 
   it('session restore re-presents unanswered questions but not answered ones', () => {
@@ -310,11 +342,11 @@ describe('transcript-driven wizard transitions', () => {
     expect(pending).not.toBeNull();
     expect(pending!.questions.map((q) => q.header)).toEqual(['Token storage', 'Scope']);
 
-    // Restored transcript WITH the flattened answer message: superseded.
+    // Restored transcript WITH the tagged answer message: resolved.
     const answered: AgentMessage[] = [
       userMessage('kick off', 'msg-u0'),
       questionMsg,
-      userMessage(answerText, 'msg-u2'),
+      answerMessage(answerText, 'msg-a1', 'msg-u2'),
     ];
     expect(derivePendingQuestions(answered, false)).toBeNull();
   });

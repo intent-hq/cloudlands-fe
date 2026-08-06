@@ -89,6 +89,7 @@ type LifecycleSendOptions = {
   noteIds?: string[];
   model?: string;
   priority?: 'interrupt';
+  messageMetadata?: Record<string, unknown>;
 };
 
 /**
@@ -318,6 +319,12 @@ async function dispatchToLifecycle(
       // Pass priority: "interrupt" when force-send is active (STAB-38 fix).
       // The daemon will preempt the in-flight turn instead of queueing.
       priority: options.priority,
+      // Opaque per-message tag (PROTOCOL §5.5) — the Q&A wizard's
+      // `question_answers` answer tag rides here. NOTE: it cannot ride the
+      // queue-on-send path above (`agent.queueMessage` has no
+      // messageMetadata param), but the wizard only renders while the
+      // agent's own turn is idle, so answers take this direct path.
+      messageMetadata: options.messageMetadata,
     });
     if (wsId === CHIEF_WORKSPACE_ID) {
       await renameChiefThreadIfPlaceholder(agentId);
@@ -748,6 +755,7 @@ export function createChatSendMiddleware(): StoreMiddleware {
           const workspaceContextStr = inner.workspaceContextStr;
           const imageBlocks = inner.imageBlocks;
           const noteIds = inner.noteIds;
+          const messageMetadata = inner.messageMetadata;
 
           void dispatchToLifecycle(
             agentIdStr,
@@ -760,6 +768,7 @@ export function createChatSendMiddleware(): StoreMiddleware {
               // STAB-38 fix: set priority: "interrupt" when force-send is active.
               // The daemon will preempt the in-flight turn per PROTOCOL.md §5.5.
               priority: forceSubmit ? 'interrupt' : undefined,
+              messageMetadata,
             },
             forceSubmit,
           );
