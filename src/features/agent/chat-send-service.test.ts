@@ -1102,6 +1102,77 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     });
   });
 
+  it("records the Q&A answer tag on lastAttemptedMessage so a failed wizard answer retries TAGGED", async () => {
+    const ANSWER_TAG = {
+      type: "question_answers",
+      answeredQuestionsMessageId: "msg-a1",
+    };
+
+    appStore.dispatch(
+      sendMessage(AGENT, { wsId: WS, text: "Q: ?\nA: yes", messageMetadata: ANSWER_TAG }),
+    );
+    await flush();
+    await flush();
+
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "Q: ?\nA: yes",
+      options: { messageMetadata: ANSWER_TAG },
+    });
+  });
+
+  it("Try again resends the recorded Q&A answer tag", async () => {
+    const ANSWER_TAG = {
+      type: "question_answers",
+      answeredQuestionsMessageId: "msg-a1",
+    };
+    appStore.dispatch(
+      chatLastAttemptedMessageSet(AGENT, {
+        text: "Q: ?\nA: yes",
+        options: { messageMetadata: ANSWER_TAG },
+      }),
+    );
+
+    const action = agentSessionRetryLastMessageRequested(AGENT, WS);
+    appStore.dispatch(action);
+    await action.promise;
+
+    const [, , , optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { messageMetadata?: Record<string, unknown> },
+    ];
+    // An untagged resend would leave the daemon's question hold pending and
+    // re-surface the answered wizard.
+    expect(optionsArg.messageMetadata).toEqual(ANSWER_TAG);
+  });
+
+  it("retry-with-model keeps the recorded Q&A answer tag on the resend", async () => {
+    const ANSWER_TAG = {
+      type: "question_answers",
+      answeredQuestionsMessageId: "msg-a1",
+    };
+    appStore.dispatch(
+      chatLastAttemptedMessageSet(AGENT, {
+        text: "Q: ?\nA: yes",
+        options: { messageMetadata: ANSWER_TAG },
+      }),
+    );
+
+    const action = agentSessionRetryWithModelRequested(AGENT, WS, "fast-model");
+    appStore.dispatch(action);
+    await action.promise;
+
+    const [, , , optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { model?: string; messageMetadata?: Record<string, unknown> },
+    ];
+    expect(optionsArg.model).toBe("fast-model");
+    expect(optionsArg.messageMetadata).toEqual(ANSWER_TAG);
+  });
+
   it("#964: retry-with-model with no recorded lastAttemptedMessage resolves as a no-op with user feedback", async () => {
     const { toast } = await import("svelte-sonner");
     appStore.dispatch(chatLastAttemptedMessageSet(AGENT, null));

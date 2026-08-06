@@ -263,6 +263,14 @@ function handleEvent(event: WorkspaceEvent): void {
       // captured question, so the ONLY release signal the HUD sees is the
       // daemon's rollup. A pending question always holds `needs_attention`
       // up, so leaving it means the questions were answered or dismissed.
+      //
+      // Residual: the rollup is workspace-scoped, so an answered question
+      // whose workspace still holds `needs_attention` for an unrelated reason
+      // (another agent's blocker/discussion request) stays captured until the
+      // workspace clears. Per-agent release arrives with the daemon's
+      // persisted pending-questions marker (the intentd counterpart of this
+      // change), which the HUD will read off session metadata exactly like it
+      // already reads `dismissedQuestionsMessageId`.
       if (displayStatus !== 'needs_attention') {
         appStore.dispatch(hudQuestionsResolvedForWorkspace(workspaceId));
       }

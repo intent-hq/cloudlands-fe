@@ -588,6 +588,9 @@ async function dispatchRetryLastMessage(
         imageBlocks: lastAttempted.options?.imageBlocks,
         noteIds: lastAttempted.options?.noteIds,
         model: lastAttempted.options?.model,
+        // The recorded tag must ride the retry: an untagged resend of a wizard
+        // answer would leave the question hold pending (PROTOCOL §5.5).
+        messageMetadata: lastAttempted.options?.messageMetadata,
       },
       false,
     );
@@ -650,6 +653,7 @@ async function dispatchRetryWithModel(
         imageBlocks: lastAttempted.options?.imageBlocks,
         noteIds: lastAttempted.options?.noteIds,
         model,
+        messageMetadata: lastAttempted.options?.messageMetadata,
       },
       false,
     );

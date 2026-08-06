@@ -59,6 +59,12 @@ export interface SendMessageOptions {
    * them with the message (#965). Plain base64 data — serializable/redux-safe.
    */
   imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  /**
+   * Opaque per-message tag the original send carried (PROTOCOL §5.5), recorded
+   * so "Try again" resends it: an untagged retry of a wizard answer would leave
+   * the daemon's question hold pending and re-surface the answered wizard.
+   */
+  messageMetadata?: Record<string, unknown>;
 }
 
 /**

@@ -343,6 +343,42 @@ describe("agent-send wire contract (pending agent, first message)", () => {
     expect(session?.isStreaming).toBe(false);
   }, 30000);
 
+  it("mirrors the Q&A answer tag on the optimistic user row for a successful send", async () => {
+    await sendMessage(AGENT, "Q: ?\nA: yes", workspace(), {
+      messageMetadata: { type: "question_answers", answeredQuestionsMessageId: "msg-a1" },
+    });
+
+    const userRow = (appStore.state.agentSessions?.byAgentId[AGENT]?.messages ?? []).find(
+      (m) => m.role === "user",
+    );
+    expect(userRow?.metadata).toMatchObject({
+      type: "question_answers",
+      answeredQuestionsMessageId: "msg-a1",
+    });
+  }, 30000);
+
+  it("strips the mirrored answer tag off the optimistic row when the send fails", async () => {
+    // The failed row is RETAINED, so a lingering tag would resolve the
+    // wizard's pending set even though the daemon never got the answer.
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === "agent.get") return { agent: daemonPendingAgent };
+      if (method === "agent.sendMessage") return { success: false, error: "Agent not found" };
+      return {};
+    });
+
+    await expect(
+      sendMessage(AGENT, "Q: ?\nA: yes", workspace(), {
+        messageMetadata: { type: "question_answers", answeredQuestionsMessageId: "msg-a1" },
+      }),
+    ).rejects.toThrow();
+
+    const userRow = (appStore.state.agentSessions?.byAgentId[AGENT]?.messages ?? []).find(
+      (m) => m.role === "user",
+    );
+    expect(userRow).toBeDefined();
+    expect(userRow?.metadata).toEqual({});
+  }, 30000);
+
   it("throws when the transport rejects (BackendError-style JSON-RPC failure)", async () => {
     backendRequestMock.mockImplementation(async (method: string) => {
       if (method === "agent.get") return { agent: daemonPendingAgent };
