@@ -7,12 +7,22 @@
  * this shape.
  */
 
+/**
+ * Provider-reported cost in an ISO 4217 currency. Absent whenever no provider
+ * reported a cost for the entry — never estimated by the daemon or the FE.
+ */
+export interface TokenUsageCost {
+  amount: number;
+  currency: string;
+}
+
 /** Aggregated token consumption counters (the 4 consumption fields). */
 export interface TokenUsageTotals {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
+  cost?: TokenUsageCost | null;
 }
 
 /**
@@ -32,4 +42,3 @@ export interface TokenUsage {
   byModel: TokenUsageByModel;
   lastScanAt: string | null;
 }
-

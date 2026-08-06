@@ -493,6 +493,28 @@ describe("LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)",
 
     expect(await client.getTokenUsage("ws-abc")).toBeNull();
   });
+
+  it("passes provider cost through unchanged when the daemon reports it", async () => {
+    // PROTOCOL §5.23 `cost` is optional and provider-reported (never estimated).
+    const cost = { amount: 0.42, currency: "USD" };
+    const entry = {
+      inputTokens: 12000,
+      outputTokens: 3400,
+      cacheReadTokens: 8000,
+      cacheCreationTokens: 1200,
+      cost,
+    };
+    const tokenUsage = {
+      byAgentId: { "agent-123": entry },
+      byModel: { "opus-4.8": entry },
+      totals: entry,
+      lastScanAt: "2026-06-17T12:00:00Z",
+    };
+    mockedRequest.mockResolvedValueOnce({ tokenUsage });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.getTokenUsage("ws-abc")).toEqual(tokenUsage);
+  });
 });
 
 describe("LiveWorkspacesClient.diskUsage (PROTOCOL §5.1, fake transport)", () => {
