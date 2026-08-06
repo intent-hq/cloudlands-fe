@@ -11,6 +11,7 @@
 
   // Store.init() must run during component initialization (it reads Svelte context).
   appStore.init();
+  // svelte-ignore state_referenced_locally -- one-shot init-time read is intended
   setup?.();
 </script>
 

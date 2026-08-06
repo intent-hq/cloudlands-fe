@@ -50,11 +50,15 @@ async function renderCard(setup: () => void): Promise<HTMLElement> {
 }
 
 describe('sidebar nav hover card dismissal', () => {
-  // The renderer store is a shared singleton, so reset hover/pin state between tests.
+  // The renderer store is a shared singleton, so reset hover/pin/menu state
+  // between tests (even when an assertion fails mid-test).
   afterEach(() => {
     appStore.dispatch(setHoveredItem(null));
     appStore.dispatch(setExpandedItem(null));
     appStore.dispatch(setCardPinned(false));
+    while (appStore.state.sidebarNav.contextMenuOpenCount > 0) {
+      appStore.dispatch(decrementContextMenuOpen());
+    }
   });
 
   it('closes on pointerdown outside the card and nav rail', async () => {
@@ -135,7 +139,6 @@ describe('sidebar nav hover card dismissal', () => {
     await fireEvent.pointerDown(screen.getByTestId('outside-button'));
 
     expect(activeCard()).toBe('active');
-    appStore.dispatch(decrementContextMenuOpen());
   });
 
   it('non-expanded hover card closes on mouse-leave even when isCardPinned is true', async () => {
