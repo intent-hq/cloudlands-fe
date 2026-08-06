@@ -165,10 +165,34 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     expect(agentTabs(WS, AGENT)).toHaveLength(1);
   });
 
-  it("ignores the trigger when the workspace is missing (no factory call)", async () => {
-    appStore.dispatch(createAgentRequested("ws-missing"));
-    await flush();
-    await flush();
+  // The workspace-null precondition is a fire-and-forget early return with no
+  // caller promise, so it must toast instead of silently doing nothing.
+  it.each([
+    ["createAgentRequested", () => createAgentRequested("ws-absent-create")],
+    [
+      "createAgentWithSpecialistRequested",
+      () => createAgentWithSpecialistRequested("ws-absent-spec", "implementor"),
+    ],
+    [
+      "runAgentForNoteRequested",
+      () => runAgentForNoteRequested("ws-absent-run", "note-absent", "My Task"),
+    ],
+  ])("%s toasts when the workspace is unavailable", async (_name, makeAction) => {
+    appStore.dispatch(makeAction());
+    await waitFor(() => toastError.mock.calls.length > 0);
+
+    expect(toastError).toHaveBeenCalledWith("Workspace is not available for agent creation");
+    expect(createAgent).not.toHaveBeenCalled();
+  });
+
+  it("runAgentForNoteRequested toasts when the note is not found", async () => {
+    const WS = "ws-note-missing";
+    seedWorkspace(WS);
+
+    appStore.dispatch(runAgentForNoteRequested(WS, "note-does-not-exist", "My Task"));
+    await waitFor(() => toastError.mock.calls.length > 0);
+
+    expect(toastError).toHaveBeenCalledWith("Note not found — cannot run an agent for it");
     expect(createAgent).not.toHaveBeenCalled();
   });
 

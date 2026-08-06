@@ -4498,6 +4498,7 @@
   "agent_creation_createFailed_error": "创建智能体失败",
   "agent_creation_taskAgent_name": "任务智能体",
   "agent_creation_workspaceUnavailable_error": "工作区不可用，无法创建智能体",
+  "agent_creation_noteNotFound_error": "未找到笔记，无法为其运行智能体",
   "agent_creation_launchFailed_error": "启动智能体失败",
   "agent_chatSend_loadDepsFailed_error": "加载聊天依赖失败：{error}",
   "agent_chatSend_workspaceNotFound_error": "未找到工作区：{id}",

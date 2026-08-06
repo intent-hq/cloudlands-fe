@@ -4498,6 +4498,7 @@
   "agent_creation_createFailed_error": "建立智慧體失敗",
   "agent_creation_taskAgent_name": "任務智慧體",
   "agent_creation_workspaceUnavailable_error": "工作區不可用，無法建立智慧體",
+  "agent_creation_noteNotFound_error": "找不到筆記，無法為其執行智慧體",
   "agent_creation_launchFailed_error": "啟動智慧體失敗",
   "agent_chatSend_loadDepsFailed_error": "載入聊天依賴失敗：{error}",
   "agent_chatSend_workspaceNotFound_error": "未找到工作區：{id}",
