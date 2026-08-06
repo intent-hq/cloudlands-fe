@@ -54,6 +54,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import Button from '../../ui/button/button.svelte';
   import TipTapEditor from './TipTapEditor.svelte';
   import ModelPicker from './ModelPicker.svelte';
+  import EffortPicker from './EffortPicker.svelte';
   import ModelSwitchConfirmDialog from '../ModelSwitchConfirmDialog.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import AttachmentPreview from '../AttachmentPreview.svelte';
@@ -1269,6 +1270,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           }
         }}
       />
+
+      <!-- Reasoning effort indicator + slider popover; renders only when the
+           session's model advertises effort levels. -->
+      <EffortPicker {agentId} workspaceId={workspace?.id} {disabled} />
 
       <!-- Context Picker Button (@ icon with popover) - includes panels and selections -->
       <ContextPickerButton

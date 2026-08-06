@@ -1278,7 +1278,7 @@
               </div>
             {/if}
             {#if effortLevels && effortLevels.length > 0}
-              <div class="text-xs text-subtle/60 truncate hidden">
+              <div class="text-xs text-subtle/60 truncate">
                 {m.chat_modelPicker_effort_label({ levels: effortLevels.join(' · ') })}
               </div>
             {/if}
