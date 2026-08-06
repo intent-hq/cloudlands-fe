@@ -1017,10 +1017,11 @@ app.whenReady().then(async () => {
     helpMenuItems.push({
       label: m.menu_show_release_notes(),
       click: async () => {
+        const targetWindow = BrowserWindow.getFocusedWindow() ?? getMainWindow();
         const { sendShowReleaseNotes } = await import(
           '../features/release-notes/main/release-notes.ipc'
         );
-        sendShowReleaseNotes(getMainWindow(), { notes: null });
+        sendShowReleaseNotes(targetWindow, { notes: null });
       },
     });
 

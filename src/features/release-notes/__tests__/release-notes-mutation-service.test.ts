@@ -5,6 +5,8 @@
  * Asserts that:
  * - `initializeReleaseNotes` subscribes to the main → renderer show push once
  * - the startup push (notes attached) opens the modal with those notes
+ * - startup notes parked before the listener existed are claimed over
+ *   `release-notes:get-pending`, and a duplicate push does not re-open
  * - the Help-menu push (`notes: null`) opens the modal loading, fetches over
  *   `release-notes:get`, and resolves into content
  * - an unavailable fetch still opens the modal (fallback state)
@@ -68,6 +70,11 @@ describe("release-notes-mutation-service", () => {
     await flush();
     __resetReleaseNotesMiddlewareForTests();
     resetMockIpcRouter();
+    // Nothing parked by default; individual tests override this.
+    registerMockIpcHandler(RELEASE_NOTES_CHANNELS.GET_PENDING, async () => ({
+      success: true,
+      data: null,
+    }));
     appStore.dispatch(closeReleaseNotesModal());
   });
 
@@ -90,6 +97,35 @@ describe("release-notes-mutation-service", () => {
     expect(appStore.state.releaseNotes.showModal).toBe(true);
     expect(appStore.state.releaseNotes.releaseNotes).toEqual(NOTES);
     expect(appStore.state.releaseNotes.loading).toBe(false);
+  });
+
+  it("claims startup notes parked before the listener existed", async () => {
+    registerMockIpcHandler(RELEASE_NOTES_CHANNELS.GET_PENDING, async () => ({
+      success: true,
+      data: NOTES,
+    }));
+
+    appStore.dispatch(initializeReleaseNotes());
+    await flush();
+
+    expect(appStore.state.releaseNotes.showModal).toBe(true);
+    expect(appStore.state.releaseNotes.releaseNotes).toEqual(NOTES);
+  });
+
+  it("does not re-open the modal when the push and the pending claim overlap", async () => {
+    registerMockIpcHandler(RELEASE_NOTES_CHANNELS.GET_PENDING, async () => ({
+      success: true,
+      data: NOTES,
+    }));
+
+    appStore.dispatch(initializeReleaseNotes());
+    await flush();
+    appStore.dispatch(closeReleaseNotesModal());
+
+    emitMockIpcEvent(RELEASE_NOTES_CHANNELS.SHOW, { notes: NOTES });
+    await flush();
+
+    expect(appStore.state.releaseNotes.showModal).toBe(false);
   });
 
   it("fetches over release-notes:get when the menu push carries no notes", async () => {

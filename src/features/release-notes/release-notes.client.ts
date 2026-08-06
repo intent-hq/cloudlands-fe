@@ -33,6 +33,17 @@ export const releaseNotesClient = {
   },
 
   /**
+   * Claim the startup notes the main process parked before the renderer had a
+   * `release-notes:show` listener. Resolves `null` when there is nothing
+   * pending; claiming clears the slot so the modal opens at most once.
+   */
+  async claimPendingReleaseNotes(): Promise<ReleaseNotesContent | null> {
+    const response = await invokeIpc<ReleaseNotesResponse>(RELEASE_NOTES_CHANNELS.GET_PENDING);
+    if (!response?.success) return null;
+    return response.data ?? null;
+  },
+
+  /**
    * Subscribe to the main → renderer "show release notes" push.
    * @returns Unsubscribe function
    */

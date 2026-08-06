@@ -502,6 +502,7 @@ const ALLOWED_CHANNELS = [
   "auto-update:up-to-date",
   "auto-update:show-toast",
   "release-notes:get",
+  "release-notes:get-pending",
   "release-notes:show",
   "pip:open",
   "pip:close",

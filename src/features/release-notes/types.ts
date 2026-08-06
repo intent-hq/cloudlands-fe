@@ -36,8 +36,9 @@ export const RELEASE_NOTES_REPO = 'intent-hq/cloudlands-releases';
  * IPC channels for release notes.
  */
 export const RELEASE_NOTES_CHANNELS = {
-  // Invoke channel (renderer → main)
+  // Invoke channels (renderer → main)
   GET: 'release-notes:get',
+  GET_PENDING: 'release-notes:get-pending',
   // Event channel (main → renderer)
   SHOW: 'release-notes:show',
 } as const;

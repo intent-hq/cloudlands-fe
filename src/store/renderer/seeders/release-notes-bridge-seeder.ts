@@ -1,6 +1,7 @@
 /**
- * Release-notes invoke bridge — forwards `release-notes:get` to the real
- * Electron preload bridge (`window.electronAPI.invoke`) when present.
+ * Release-notes invoke bridge — forwards `release-notes:get` and
+ * `release-notes:get-pending` to the real Electron preload bridge
+ * (`window.electronAPI.invoke`) when present.
  *
  * Same pattern as auto-update-bridge-seeder: the generated `invoke()` routes
  * ALL legacy renderer invokes through the mock router in every build, so
@@ -17,15 +18,20 @@ const NOT_AVAILABLE = {
   error: { message: "Release notes are not available in this build" },
 } as const;
 
-/** Register the release-notes invoke bridge handler. Idempotent. */
-export function registerReleaseNotesBridge(): void {
-  registerMockIpcHandler(RELEASE_NOTES_CHANNELS.GET, async (payload?: unknown) => {
+function bridgeChannel(channel: string): void {
+  registerMockIpcHandler(channel, async (payload?: unknown) => {
     const bridge = typeof window !== "undefined" ? window.electronAPI : undefined;
     if (bridge && typeof bridge.invoke === "function") {
-      return bridge.invoke(RELEASE_NOTES_CHANNELS.GET, payload);
+      return bridge.invoke(channel, payload);
     }
     return NOT_AVAILABLE;
   });
+}
+
+/** Register the release-notes invoke bridge handlers. Idempotent. */
+export function registerReleaseNotesBridge(): void {
+  bridgeChannel(RELEASE_NOTES_CHANNELS.GET);
+  bridgeChannel(RELEASE_NOTES_CHANNELS.GET_PENDING);
 }
 
 registerReleaseNotesBridge();

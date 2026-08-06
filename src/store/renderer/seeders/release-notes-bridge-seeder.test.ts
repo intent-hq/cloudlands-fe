@@ -44,15 +44,28 @@ describe('release-notes-bridge-seeder', () => {
     expect(result.data).toEqual(data);
   });
 
+  it('forwards release-notes:get-pending to window.electronAPI.invoke when bridged', async () => {
+    const invokeSpy = vi.fn(async () => ({ success: true, data: null }));
+    (window as any).electronAPI = { ...(originalElectronAPI || {}), invoke: invokeSpy };
+    registerReleaseNotesBridge();
+
+    const result = await mockInvoke<{ success: boolean; data: unknown }>(
+      RELEASE_NOTES_CHANNELS.GET_PENDING,
+    );
+
+    expect(invokeSpy).toHaveBeenCalledWith(RELEASE_NOTES_CHANNELS.GET_PENDING, undefined);
+    expect(result.success).toBe(true);
+    expect(result.data).toBeNull();
+  });
+
   it('folds to the shaped not-available failure when no preload bridge exists', async () => {
     (window as any).electronAPI = undefined;
     registerReleaseNotesBridge();
 
-    const result = await mockInvoke<{ success: boolean; error?: { message?: string } }>(
-      RELEASE_NOTES_CHANNELS.GET,
-    );
-
-    expect(result.success).toBe(false);
-    expect(result.error?.message).toBe('Release notes are not available in this build');
+    for (const channel of [RELEASE_NOTES_CHANNELS.GET, RELEASE_NOTES_CHANNELS.GET_PENDING]) {
+      const result = await mockInvoke<{ success: boolean; error?: { message?: string } }>(channel);
+      expect(result.success).toBe(false);
+      expect(result.error?.message).toBe('Release notes are not available in this build');
+    }
   });
 });

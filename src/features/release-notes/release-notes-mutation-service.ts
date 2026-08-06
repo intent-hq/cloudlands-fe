@@ -12,6 +12,7 @@
  */
 import type { StoreMiddleware } from '$lib/store-shim/types';
 import { releaseNotesClient } from './release-notes.client';
+import type { ReleaseNotesContent } from './types';
 import { store as appStore } from '$store/renderer/store';
 import {
   initializeReleaseNotes,
@@ -27,6 +28,18 @@ const logger = createLogger('ReleaseNotesMutationService');
 /** Guard so the IPC listener registers exactly once. */
 let listenerRegistered = false;
 
+/**
+ * Version already surfaced by the startup flow. The push and the pending-claim
+ * are two routes to the same showing, so whichever lands second is ignored.
+ */
+let surfacedStartupVersion: string | null = null;
+
+function surfaceStartupNotes(notes: ReleaseNotesContent): void {
+  if (surfacedStartupVersion === notes.version) return;
+  surfacedStartupVersion = notes.version;
+  appStore.dispatch(showReleaseNotesSuccess(notes));
+}
+
 function handleInitialize(): void {
   if (listenerRegistered) return;
   listenerRegistered = true;
@@ -34,15 +47,32 @@ function handleInitialize(): void {
   try {
     releaseNotesClient.onShow((payload) => {
       if (payload?.notes) {
-        appStore.dispatch(showReleaseNotesSuccess(payload.notes));
+        surfaceStartupNotes(payload.notes);
       } else {
         // Menu-triggered push — open the modal and fetch on demand.
         appStore.dispatch(showReleaseNotes());
       }
     });
     appStore.dispatch(setInitialized());
+    void claimPendingReleaseNotes();
   } catch (error) {
     logger.error('Failed to register release-notes listener', error);
+  }
+}
+
+/**
+ * Claim any startup notes the main process pushed before this listener
+ * existed. `webContents.send` does not queue for future listeners, so without
+ * this the notes would be dropped while the pref had already advanced.
+ */
+async function claimPendingReleaseNotes(): Promise<void> {
+  try {
+    const pending = await releaseNotesClient.claimPendingReleaseNotes();
+    if (pending) {
+      surfaceStartupNotes(pending);
+    }
+  } catch (error) {
+    logger.warn('Failed to claim pending release notes', error);
   }
 }
 
@@ -81,9 +111,10 @@ export function createReleaseNotesMutationMiddleware(): StoreMiddleware {
 }
 
 /**
- * Test-only reset of the listener guard between tests.
+ * Test-only reset of the listener guard and startup dedup between tests.
  * @internal
  */
 export function __resetReleaseNotesMiddlewareForTests(): void {
   listenerRegistered = false;
+  surfacedStartupVersion = null;
 }
