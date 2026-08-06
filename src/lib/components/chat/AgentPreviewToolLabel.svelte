@@ -45,6 +45,8 @@
   });
 </script>
 
+<!-- No usable label yet (e.g. workspace_api summary still streaming): render nothing -->
+{#if !toolDisplay.hidden}
 <span class="inline-flex items-center gap-1.5 min-w-0 {className}">
   {#if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
     <span
@@ -67,3 +69,4 @@
     <span class="text-subtle truncate min-w-0">{toolDisplay.path}</span>
   {/if}
 </span>
+{/if}

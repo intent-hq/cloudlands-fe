@@ -56,6 +56,12 @@ export interface ToolDisplay {
   isDirectory?: boolean;
   /** MCP server source name, e.g. "figma", "sentry", "playwright" (optional) */
   mcpSource?: string;
+  /**
+   * No usable human-readable label exists yet (e.g. a workspace_api call whose
+   * summary has not streamed in). Consumers must render no tool row at all —
+   * never a raw identifier and never an icon-only/generic placeholder.
+   */
+  hidden?: boolean;
 }
 
 /**
@@ -115,7 +121,7 @@ const CLEAN_SUFFIXES_TO_STRIP = [
 ];
 
 // Helper functions
-function cleanToolName(name: string | undefined | null): string {
+export function cleanToolName(name: string | undefined | null): string {
   // Handle undefined or null values gracefully
   if (!name) return '';
 
@@ -794,13 +800,20 @@ function classifyToolInner(
       typeof input._acpTitle === 'string' ? input._acpTitle.trim() : '';
     const summary =
       typeof input.summary === 'string' ? input.summary.trim() : '';
-    // Skip _acpTitle if it resolves to a raw tool name after cleaning
+    // Skip _acpTitle if it is a raw tool identifier: an mcp__/mcp./URL-prefixed
+    // name, or anything that resolves to a raw tool name after cleaning
     // (catches all variants: mcp__*__workspace_api, //local/mcp/workspace_api, etc.)
-    const isRawName = !acpTitle || cleanToolName(acpTitle).toLowerCase() === 'workspace_api';
-    const label = isRawName ? summary || acpTitle : acpTitle || summary;
+    const isRawName =
+      !acpTitle ||
+      /^(mcp__|mcp\.)/i.test(acpTitle) ||
+      acpTitle.includes('//local/mcp/') ||
+      cleanToolName(acpTitle).toLowerCase() === 'workspace_api';
+    // A raw identifier is never usable as the label — only the summary (or a
+    // prose title) qualifies.
+    const label = isRawName ? summary : acpTitle || summary;
+    // Detect specific operation type from the code field for richer display
+    const wsCategory = classifyWorkspaceApiCode(typeof input.code === 'string' ? input.code : '');
     if (label) {
-      // Detect specific operation type from the code field for richer display
-      const wsCategory = classifyWorkspaceApiCode(typeof input.code === 'string' ? input.code : '');
       return {
         category: wsCategory,
         icon: CATEGORY_ICONS[wsCategory],
@@ -809,6 +822,16 @@ function classifyToolInner(
         path: null,
       };
     }
+    // No proper label yet (summary still streaming in): hide the row entirely
+    // instead of surfacing the raw identifier or a generic name.
+    return {
+      category: wsCategory,
+      icon: CATEGORY_ICONS[wsCategory],
+      verb: '',
+      subject: null,
+      path: null,
+      hidden: true,
+    };
   }
 
   // First check if this is a pre-formatted display name
@@ -2106,6 +2129,22 @@ function genericDisplay(toolName: string, input: Record<string, any>): ToolDispl
   }
 
   const cleanName = cleanToolName(toolName);
+
+  // Defense in depth: if the name still looks like a raw MCP identifier after
+  // cleaning (e.g. an mcp__<server>__ form whose server segment contains
+  // underscores, which the strip regex does not match), never render it —
+  // hide the row until a proper label exists.
+  if (/^(mcp__|mcp\.)/i.test(cleanName)) {
+    return {
+      category: 'generic',
+      icon: CATEGORY_ICONS.generic,
+      verb: '',
+      subject: null,
+      path: null,
+      hidden: true,
+    };
+  }
+
   const formattedName = cleanName
     .replace(/-/g, ' ')
     .replace(/_/g, ' ')

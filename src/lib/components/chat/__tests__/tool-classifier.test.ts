@@ -11,7 +11,7 @@ import {
   it,
   expect,
 } from 'vitest';
-import { classifyTool, extractMcpSource } from '../tool-classifier';
+import { classifyTool, cleanToolName, extractMcpSource } from '../tool-classifier';
 
 describe('tool-classifier', () => {
   describe('file operations', () => {
@@ -865,6 +865,124 @@ describe('tool-classifier', () => {
 
       expect(result.category).toBe('workspace');
       expect(result.verb).toBe('Return hello world');
+    });
+
+    it('should not be hidden when a summary label exists', () => {
+      const result = classifyTool('mcp__workspace-mcp__workspace_api', {
+        code: 'return await ws.note.read("spec")',
+        summary: 'Reading spec note',
+        _acpTitle: 'mcp__workspace-mcp__workspace_api',
+      });
+
+      expect(result.hidden).toBeFalsy();
+      expect(result.verb).toBe('Reading spec note');
+    });
+  });
+
+  describe('workspace_api with no usable label (hidden rows)', () => {
+    it('hides the row for a raw mcp__ tool name with empty input', () => {
+      const result = classifyTool('mcp__workspace-mcp__workspace_api', {});
+
+      expect(result.hidden).toBe(true);
+      expect(result.verb).toBe('');
+      expect(result.subject).toBeNull();
+    });
+
+    it('hides the row when _acpTitle is raw and summary has not streamed in', () => {
+      const result = classifyTool('mcp__workspace-mcp__workspace_api', {
+        code: 'return await ws.note.read("spec")',
+        summary: '',
+        _acpTitle: 'mcp__workspace-mcp__workspace_api',
+      });
+
+      expect(result.hidden).toBe(true);
+      expect(result.verb).toBe('');
+      expect(result.subject).toBeNull();
+    });
+
+    it('hides the row for bare workspace_api with no summary', () => {
+      const result = classifyTool('workspace_api', {});
+
+      expect(result.hidden).toBe(true);
+      expect(result.verb).toBe('');
+    });
+
+    it('never uses an mcp__-prefixed _acpTitle from another server as the label', () => {
+      const result = classifyTool('workspace_api', {
+        code: 'return await ws.note.read("spec")',
+        summary: '',
+        _acpTitle: 'mcp__other_server__do_thing',
+      });
+
+      expect(result.hidden).toBe(true);
+      expect(result.verb).toBe('');
+    });
+
+    it('never uses a dot-separated mcp. _acpTitle as the label', () => {
+      const result = classifyTool('workspace_api', {
+        code: 'return await ws.note.read("spec")',
+        summary: '',
+        _acpTitle: 'mcp.workspace-mcp.workspace_api',
+      });
+
+      expect(result.hidden).toBe(true);
+    });
+
+    it('shows the summary once it streams in for the same call shape', () => {
+      const result = classifyTool('mcp__workspace-mcp__workspace_api', {
+        code: 'return await ws.note.read("spec")',
+        summary: 'Reading spec note',
+      });
+
+      expect(result.hidden).toBeFalsy();
+      expect(result.verb).toBe('Reading spec note');
+    });
+
+    it('still shows a prose _acpTitle verbatim (not hidden)', () => {
+      const result = classifyTool('mcp__workspace-mcp__workspace_api', {
+        code: 'return await ws.note.read("spec")',
+        summary: '',
+        _acpTitle: 'Read spec note',
+      });
+
+      expect(result.hidden).toBeFalsy();
+      expect(result.verb).toBe('Read spec note');
+    });
+  });
+
+  describe('raw MCP identifiers never render as labels', () => {
+    it('hides an mcp__ name whose server segment defeats the strip regex', () => {
+      // Server segment contains underscores, so cleanToolName's
+      // /^mcp__[^_]+__/ cannot strip it — the guard must hide it instead.
+      const result = classifyTool('mcp__my_server__tool', {});
+
+      expect(result.hidden).toBe(true);
+      expect(result.verb).toBe('');
+      expect(result.subject).toBeNull();
+    });
+
+    it('classifies a strippable mcp__ name via its cleaned tool name', () => {
+      const result = classifyTool('mcp__some-server__read_note', { noteId: 'spec' });
+
+      expect(result.hidden).toBeFalsy();
+      expect(result.verb).not.toContain('mcp__');
+    });
+  });
+
+  describe('cleanToolName', () => {
+    it('strips the mcp__<server>__ prefix', () => {
+      expect(cleanToolName('mcp__workspace-mcp__workspace_api')).toBe('workspace_api');
+      expect(cleanToolName('mcp__some-server__read_note')).toBe('read_note');
+    });
+
+    it('strips the mcp.<server>. prefix', () => {
+      expect(cleanToolName('mcp.workspace-mcp.workspace_api')).toBe('workspace_api');
+    });
+
+    it('handles empty and nullish names', () => {
+      expect(cleanToolName('')).toBe('');
+      expect(cleanToolName(null)).toBe('');
+      expect(cleanToolName(undefined)).toBe('');
     });
   });
 

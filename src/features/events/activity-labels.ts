@@ -6,6 +6,7 @@
  * Supports structured labels with styling for rich text rendering.
  */
 
+import { cleanToolName } from '$lib/components/chat/tool-classifier';
 import { m } from '$shared/paraglide/messages.js';
 
 import type { WorkspaceEvent } from './types';
@@ -292,7 +293,9 @@ const labelGenerators: Record<string, LabelGenerator> = {
 
   'agent:tool:call': (event) => {
     const data = event.data as any;
-    const toolName = truncate(data?.toolName || data?.name || '', 25);
+    // Clean the tool name so raw MCP identifiers (mcp__<server>__<tool>, from
+    // older daemons) never display in the activity feed
+    const toolName = truncate(cleanToolName(data?.toolName || data?.name || ''), 25);
     const actor = truncate(getActorName(event, ''), 25);
     if (toolName && actor) {
       return m.events_activity_actorUsedTool_label({ actor, toolName });
@@ -718,7 +721,7 @@ export function getActivitySubject(event: WorkspaceEvent): string | null {
   }
 
   if (event.type === 'agent:tool:call' && data?.toolName) {
-    return data.toolName;
+    return cleanToolName(data.toolName) || null;
   }
 
   if (event.type === 'terminal:command' && data?.command) {
