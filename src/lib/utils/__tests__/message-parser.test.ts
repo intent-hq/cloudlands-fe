@@ -915,6 +915,26 @@ Valid prompt
     expect(result.cleanedContent).toBe(content);
   });
 
+  it('should handle CRLF line endings', () => {
+    const content = ['Here is the response.', '', '<!-- suggested-prompts', 'Run tests', '-->'].join(
+      '\r\n',
+    );
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual(['Run tests']);
+    expect(result.cleanedContent).toBe('Here is the response.');
+  });
+
+  it('should reject a CRLF block whose lines look like body text', () => {
+    const content = ['<!-- suggested-prompts', 'A --> B', '-->'].join('\r\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+  });
+
   it('should keep fence state across an unclosed opener that precedes a fenced example', () => {
     const content = [
       'Use this format:',
