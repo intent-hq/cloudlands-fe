@@ -282,15 +282,18 @@ describe('dev intentd data-dir isolation × resolveBackendConfig', () => {
     });
   });
 
-  it('replaces an inherited INTENTD_DATA_DIR so dev never adopts the legacy daemon', () => {
-    const legacy = path.join(APP_DATA, 'intentd');
+  it('honours an inherited INTENTD_DATA_DIR (the monorepo `make dev` seat)', () => {
+    // `make dev` pins INTENTD_DATA_DIR=<repo>/.dev/intentd; the per-port default must not
+    // move the sidecar off that seat and abandon its catalog.
+    const devSeat = '/repo/.dev/intentd';
     const env = applyDevIsolation(
-      { INTENTD_SIDECAR: '1', DEV_PORT: '5190', INTENTD_DATA_DIR: legacy },
+      { INTENTD_SIDECAR: '1', DEV_PORT: '5190', INTENTD_DATA_DIR: devSeat },
       true,
     );
-    const config = resolveBackendConfig(env, { isDev: true });
-    expect(config.socketPath).toBe(path.join(PER_PORT_DIR, 'intentd.sock'));
-    expect(config.socketPath).not.toBe(path.join(legacy, 'intentd.sock'));
+    expect(env.INTENTD_DATA_DIR).toBe(devSeat);
+    expect(resolveBackendConfig(env, { isDev: true }).socketPath).toBe(
+      path.join(devSeat, 'intentd.sock'),
+    );
   });
 
   it('yields a distinct socket per DEV_PORT', () => {

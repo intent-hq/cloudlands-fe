@@ -44,16 +44,20 @@ if (devUserDataSegment) {
   app.setPath('userData', uniqueUserData);
 }
 
-// EARLY: Isolate the dev daemon's data directory per DEV_PORT so a dev instance never
-// adopts the installed app's intentd (and its workspace catalog) on the global socket.
-// Any inherited INTENTD_DATA_DIR is replaced; explicit INTENTD_SOCKET/INTENTD_WS_URL/
-// INTENTD_TCP transports still win and suppress this. Packaged builds are untouched.
+// EARLY: Default the dev daemon's data directory to a per-DEV_PORT dir so a dev instance
+// never adopts the installed app's intentd (and its workspace catalog) on the global
+// socket. This only supplies a default: an inherited INTENTD_DATA_DIR (e.g. the monorepo
+// `make dev` seat) and explicit INTENTD_SOCKET/INTENTD_WS_URL/INTENTD_TCP transports all
+// win and suppress it. Packaged builds are untouched.
 // Gated on !app.isPackaged — the same signal backend.ipc.ts uses to pick a transport, so
 // isolation and socket resolution cannot disagree (NODE_ENV would: an unpackaged launch
 // without it still resolves a dev UDS socket). Must run before the sidecar spawn and the
 // first backend client connection, both of which read INTENTD_DATA_DIR off process.env.
 if (shouldIsolateDevIntentdDataDir(process.env, !app.isPackaged)) {
   process.env.INTENTD_DATA_DIR = resolveDevIntentdDataDir(app.getPath('appData'));
+  // Logged directly: this runs before setupConsoleLogCapture(), so it is stdout-only.
+  // i18n-ignore (log line)
+  console.log(`[main] dev intentd data dir defaulted to ${process.env.INTENTD_DATA_DIR}`);
 }
 
 // EARLY: Capture all main-process console output to {userData}/logs/console-output.log

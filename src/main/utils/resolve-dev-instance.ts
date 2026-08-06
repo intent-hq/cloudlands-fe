@@ -108,14 +108,14 @@ export function resolveDevIntentdDataDir(
 }
 
 /**
- * Whether a dev build should replace `INTENTD_DATA_DIR` with the per-port dir from
+ * Whether a dev build should default `INTENTD_DATA_DIR` to the per-port dir from
  * [[resolveDevIntentdDataDir]].
  *
- * Any inherited `INTENTD_DATA_DIR` is replaced unconditionally — a host-injected value
- * (e.g. from the installed app's environment) otherwise makes the dev instance adopt the
- * legacy workspace catalog. An explicit transport override (`INTENTD_SOCKET`,
- * `INTENTD_WS_URL`, `INTENTD_TCP`) still wins: those name a connection target directly,
- * so replacing the data dir must not move it.
+ * This only supplies a *default*: every explicit target in the environment wins. An
+ * inherited `INTENTD_DATA_DIR` is honoured — `make dev` deliberately pins the sidecar to
+ * the monorepo's `.dev/intentd` seat, and overriding it would abandon that catalog. So do
+ * the transport overrides (`INTENTD_SOCKET`, `INTENTD_WS_URL`, `INTENTD_TCP`): those name
+ * a connection target directly, so moving the data dir must not move it.
  *
  * `isDev` is required and must be the same signal the backend uses to pick a transport —
  * `!app.isPackaged` (see `backend.ipc.ts`), not `NODE_ENV`. An unpackaged launch without
@@ -125,6 +125,7 @@ export function resolveDevIntentdDataDir(
  */
 export function shouldIsolateDevIntentdDataDir(env: NodeJS.ProcessEnv, isDev: boolean): boolean {
   if (!isDev) return false;
+  if (env.INTENTD_DATA_DIR?.trim()) return false;
   if (env.INTENTD_SOCKET?.trim()) return false;
   if (env.INTENTD_WS_URL?.trim()) return false;
   if (env.INTENTD_TCP?.trim()) return false;

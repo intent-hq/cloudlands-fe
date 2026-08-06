@@ -175,8 +175,14 @@ describe('shouldIsolateDevIntentdDataDir', () => {
     expect(shouldIsolateDevIntentdDataDir({}, true)).toBe(true);
   });
 
-  it('replaces an inherited INTENTD_DATA_DIR in dev (no escape hatch)', () => {
-    expect(shouldIsolateDevIntentdDataDir({ INTENTD_DATA_DIR: '/legacy/data' }, true)).toBe(true);
+  it('honours an inherited INTENTD_DATA_DIR (e.g. the monorepo `make dev` seat)', () => {
+    expect(shouldIsolateDevIntentdDataDir({ INTENTD_DATA_DIR: '/repo/.dev/intentd' }, true)).toBe(
+      false,
+    );
+  });
+
+  it('ignores a whitespace-only INTENTD_DATA_DIR', () => {
+    expect(shouldIsolateDevIntentdDataDir({ INTENTD_DATA_DIR: '  ' }, true)).toBe(true);
   });
 
   it('never isolates a packaged build', () => {
