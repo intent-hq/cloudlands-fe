@@ -1,51 +1,38 @@
 /**
  * LED status wiring: store → snapshot → engine → device.
  *
- * Subscribes to the app store, derives the lighting snapshot on every state
- * change (the engine dedupes by content and coalesces sends to ≤ ~10 fps),
- * and attaches/detaches the engine to the shared manager's RPC client on
- * connect/disconnect so lighting replays after a reconnect.
+ * Attaches/detaches the engine to the shared manager's RPC client on
+ * connect/disconnect so lighting replays after a reconnect. The app-owned
+ * device saga feeds snapshots to the engine through a selector channel.
  *
- * Dependency-light middleware module per src/store/renderer/AGENTS.md: no
+ * Dependency-light device service per src/store/renderer/AGENTS.md: no
  * selector imports — state is read via the pure snapshot derivation.
  */
 
-import type { StoreMiddleware } from '@augmentcode/themis/types';
-import { store as appStore } from '$store/renderer/store';
 import type { HardwareConsoleManager } from '../device/device-manager';
-import { getHardwareConsoleManager } from '../instance';
-import { installHardwareConsoleClearLightingListener } from './clear-lighting';
 import { HardwareLedEngine } from './engine';
 import { buildHardwareLedSnapshot, type LedSnapshotState } from './snapshot';
 
 export interface LedStatusDeps {
   engine?: HardwareLedEngine;
-  /** One-time state read. Defaults to `appStore.state`. */
+  /** Optional one-time state read for isolated service consumers/tests. */
   getState?: () => LedSnapshotState;
-  /** Change notifications; the callback re-reads via `getState`. Defaults to
-   *  the app store subscription. Returns the unsubscribe function. */
+  /** Optional change notifications for isolated service consumers/tests. */
   subscribe?: (listener: () => void) => () => void;
 }
 
 /**
  * Wire the LED engine to a manager and the app store. Returns the teardown
- * function. Exported for tests; production installs via the middleware below.
+ * function. Exported for tests; production installation is owned by the device saga.
  */
 export function installHardwareConsoleLedStatus(
   manager: HardwareConsoleManager,
   deps: LedStatusDeps = {},
 ): () => void {
   const engine = deps.engine ?? new HardwareLedEngine();
-  const getState = deps.getState ?? ((): LedSnapshotState => appStore.state);
-  const subscribe =
-    deps.subscribe ??
-		((listener: () => void) => {
-			const state$ = appStore.createSelector((state) => state)();
-			return state$.subscribe(() => listener());
-		});
 
   const refresh = (): void => {
-    engine.update(buildHardwareLedSnapshot(getState()));
+    if (deps.getState) engine.update(buildHardwareLedSnapshot(deps.getState()));
   };
 
   const offStatus = manager.onStatusChange((status) => {
@@ -57,9 +44,7 @@ export function installHardwareConsoleLedStatus(
     }
   });
 
-  const unsubscribeStore = subscribe(() => {
-    refresh();
-  });
+  const unsubscribeStore = deps.subscribe ? deps.subscribe(refresh) : () => {};
 
   if (manager.status === 'connected' && manager.client) {
     refresh();
@@ -70,27 +55,5 @@ export function installHardwareConsoleLedStatus(
     offStatus();
     unsubscribeStore();
     engine.dispose();
-  };
-}
-
-let installed = false;
-
-/**
- * Lazily install on the first dispatched action (same pattern as the
- * connection-toast / key-switch middlewares): wires LED status updates plus
- * the shutdown clear-lighting IPC listener (which tears the LED wiring down
- * before sending the off-frame; see clear-lighting.ts). The shared manager
- * is started by the integration-toggle middleware once the persisted
- * enabled flag hydrates on.
- */
-export function createHardwareConsoleLedStatusMiddleware(): StoreMiddleware {
-  return () => (next) => (action) => {
-    if (!installed) {
-      installed = true;
-      const manager = getHardwareConsoleManager();
-      const disposeLedWiring = installHardwareConsoleLedStatus(manager);
-      installHardwareConsoleClearLightingListener(manager, { disposeLedWiring });
-    }
-    return next(action);
   };
 }
