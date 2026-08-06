@@ -107,6 +107,10 @@
   import { createAgentWithSpecialistRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
+  import {
+    attachMouseHistoryNavigation,
+    handleHistoryNavigateIpc,
+  } from '$lib/utils/history-navigation';
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
   import { hasCapability } from '$lib/utils/platform-capabilities';
@@ -794,6 +798,20 @@
     };
     window.addEventListener('keydown', handleBrowserNavigation);
 
+    // Mouse X buttons (back/forward) navigate app history, same as Cmd+Left/Right
+    const cleanupMouseHistoryNavigation = attachMouseHistoryNavigation(window);
+
+    // Windows: X-button presses arrive as an `app-command` on the BrowserWindow
+    // and never reach the renderer as mouse events; main forwards them over IPC
+    // ('back' | 'forward') so behavior matches the mouse path above.
+    let historyNavigateListenerId: string | null = null;
+    if (window.electronAPI?.on) {
+      historyNavigateListenerId = window.electronAPI.on(
+        IPC_CHANNELS.APP.HISTORY_NAVIGATE,
+        handleHistoryNavigateIpc,
+      );
+    }
+
     return () => {
       paletteShortcuts?.detach();
       paletteShortcuts?.destroy();
@@ -809,6 +827,10 @@
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       cleanupLinkTooltip();
       window.removeEventListener('keydown', handleBrowserNavigation);
+      cleanupMouseHistoryNavigation();
+      if (historyNavigateListenerId) {
+        window.electronAPI.offById(IPC_CHANNELS.APP.HISTORY_NAVIGATE, historyNavigateListenerId);
+      }
       disposeInterruptedAgents();
     };
   });

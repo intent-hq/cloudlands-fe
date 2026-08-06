@@ -110,6 +110,7 @@ import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapp
 import { initializeWarningSuppression } from './utils/suppress-warnings';
 import { runWithHardExitTimeout } from './utils/hard-exit-timeout';
 import { setupWebviewSecurity } from './webview-security';
+import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
 import { requestHardwareConsoleLightingClear } from '../features/hardware-console/main/clear-lighting-shutdown';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
@@ -534,6 +535,9 @@ app.whenReady().then(async () => {
     // after BrowserWindow.getAllWindows() has already emptied and an async
     // saveWindowSessions() call would otherwise serialize nothing.
     window.on('close', captureWindowSessionsSnapshot);
+    // Windows: forward mouse X-button app-commands to the renderer as
+    // app:history-navigate IPC events (see src/main/app-command-navigation.ts).
+    attachAppCommandHistoryNavigation(window);
   });
 
   // Set application menu with correct app name on macOS
