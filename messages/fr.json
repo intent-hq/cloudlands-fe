@@ -5228,6 +5228,8 @@
   "hardwareConsole_actionKey_cycleAttentionAgents_label": "Parcourir les agents nécessitant une attention",
   "hardwareConsole_actionKey_cycleIdleAgents_label": "Parcourir les agents inactifs",
   "hardwareConsole_actionKey_cycleUnreadAgents_label": "Parcourir les agents non lus",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one": "Parcourir les agents non lus ({count} restant)",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many": "Parcourir les agents non lus ({count} restants)",
   "hardwareConsole_actionKey_cycleFailedAgents_label": "Parcourir les agents en échec",
   "hardwareConsole_actionKey_stopAgent_label": "Arrêter l'agent",
   "hardwareConsole_actionKey_seeSpec_label": "Voir la spécification",

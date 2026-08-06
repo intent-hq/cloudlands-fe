@@ -212,6 +212,12 @@ interface GlobalCycleSpec {
   getEmptyHint(): string;
   /** Toast shown when the only candidate is already the focused agent. */
   getSingleCandidateHint(): string;
+  /**
+   * Optional HUD label for a successful step, given how many candidates
+   * remain to visit after this one (`entries.length - 1`). Families
+   * without it show the plain label.
+   */
+  getHudLabel?(remaining: number): string;
   collect(state: ActionKeyState): CycleAgentEntry[];
 }
 
@@ -259,7 +265,8 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
       lastCycledAgentByAction.set(spec.id, next.agentId);
       // Successful step: surface what the button did in the bottom-center
       // HUD (the middleware hides it after inactivity).
-      context.dispatch(actionHudShown(spec.getLabel()));
+      const remaining = entries.length - 1;
+      context.dispatch(actionHudShown(spec.getHudLabel?.(remaining) ?? spec.getLabel()));
       if (next.wsId !== activeWorkspaceId(state)) {
         void context.navigate(`/workspace/${next.wsId}`);
       }
@@ -315,6 +322,12 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
     getLabel: () => m.hardwareConsole_actionKey_cycleUnreadAgents_label(),
     getEmptyHint: () => m.hardwareConsole_actionKey_noUnreadAgents_message(),
     getSingleCandidateHint: () => m.hardwareConsole_actionKey_noOtherUnreadAgents_message(),
+    getHudLabel: (remaining) =>
+      remaining === 0
+        ? m.hardwareConsole_actionKey_cycleUnreadAgents_label()
+        : remaining === 1
+          ? m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one({ count: remaining })
+          : m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many({ count: remaining }),
     collect: (state) => {
       // Union of two walks, deduped by agent id — each walk is in workspace
       // order, and unread-workspace entries precede attention-only entries:

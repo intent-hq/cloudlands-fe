@@ -397,6 +397,68 @@ describe('global cycle family', () => {
   });
 });
 
+describe('cycle-unread-agents HUD remaining count', () => {
+  /** The actionHudShown payloads dispatched, in order. */
+  function hudDispatches(dispatch: ReturnType<typeof vi.fn>): unknown[] {
+    return dispatch.mock.calls
+      .map(([action]) => action as { type: string; payload: unknown })
+      .filter((action) => action.type === 'hardwareConsole/actionHudShown')
+      .map((action) => action.payload);
+  }
+
+  it('shows "(X more to go)" with remaining = N - 1 for N > 2 candidates', () => {
+    const state = makeState({
+      agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'a-2', 'a-3'], activeAgentId: null } },
+      unreadWorkspaceIds: ['ws-1'],
+    });
+    const { context, dispatch } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(hudDispatches(dispatch)).toEqual([
+      [m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many({ count: 2 })],
+    ]);
+  });
+
+  it('shows the singular "(1 more to go)" form with two candidates', () => {
+    const state = makeState({
+      agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'a-2'], activeAgentId: null } },
+      unreadWorkspaceIds: ['ws-1'],
+    });
+    const { context, dispatch } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(hudDispatches(dispatch)).toEqual([
+      [m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one({ count: 1 })],
+    ]);
+  });
+
+  it('shows the plain label (no suffix) when the single candidate is not focused', () => {
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'], activeAgentId: 'a-1' },
+        'ws-2': { ids: ['b-1'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-2'],
+    });
+    const { context, dispatch, showHint } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(showHint).not.toHaveBeenCalled();
+    expect(hudDispatches(dispatch)).toEqual([
+      [m.hardwareConsole_actionKey_cycleUnreadAgents_label()],
+    ]);
+  });
+
+  it('other cycle families keep their plain label regardless of remaining count', () => {
+    const state = makeState({
+      agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'a-2', 'a-3'], activeAgentId: null } },
+    });
+    const { context, dispatch } = makeContext(state);
+    getActionKeyDefinition('cycle-idle-agents').execute(context);
+    expect(hudDispatches(dispatch)).toEqual([
+      [m.hardwareConsole_actionKey_cycleIdleAgents_label()],
+    ]);
+  });
+});
+
 describe('cycle-unread-agents union (unread workspaces + attention requests)', () => {
   it('includes an attention-requesting agent whose workspace is not unread', () => {
     const state = makeState({
