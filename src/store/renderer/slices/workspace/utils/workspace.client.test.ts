@@ -60,6 +60,30 @@ describe("WorkspaceClient.create (AppClient seam, PROTOCOL §5.1)", () => {
     expect(workspaces.create).toHaveBeenCalledWith(request);
   });
 
+  it("forwards a picked-repo request (githubUrl + baseRef, no clonePath/repositoryPath) unchanged", async () => {
+    // Pick-a-repo flow: the daemon hydrates the checkout from its repo cache
+    // when githubUrl is set with no clonePath (PROTOCOL §5.1) — the wrapper
+    // must not inject a clonePath or repositoryPath.
+    workspaces.create.mockResolvedValueOnce({
+      success: true,
+      workspace: { id: "ws-pick", title: "P", branch: "b" } as never,
+    });
+    const client = new WorkspaceClient();
+    const request: CreateWorkspaceRequest = {
+      title: "P",
+      githubUrl: "https://github.com/example/picked",
+      baseRef: "main",
+      initialAgent: { prompt: "Go" },
+    };
+
+    await client.create(request);
+
+    expect(workspaces.create).toHaveBeenCalledWith(request);
+    const sent = workspaces.create.mock.calls[0][0];
+    expect(sent.clonePath).toBeUndefined();
+    expect(sent.repositoryPath).toBeUndefined();
+  });
+
   it("maps a successful WorkspaceCreateResult into an ok Result with the normalized workspace", async () => {
     // Path normalization: main-process/daemon may return Windows-style
     // backslashes; the wrapper folds them to forward slashes for consistency.

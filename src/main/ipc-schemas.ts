@@ -354,6 +354,7 @@ export const WorkspaceAddRecentRepositorySchema = z.object({
   repository: z.string().min(1, 'Repository is required'),
   name: z.string().optional(),
   owner: z.string().optional(),
+  githubUrl: z.string().optional(),
 });
 
 export const WorkspaceClearRecentRepositoriesSchema = z.object({});

@@ -62,6 +62,52 @@ describe('repo-registry ↔ daemon settings.* (PROTOCOL.md §5.12)', () => {
     expect(body.changes[0].value).toHaveLength(1);
   });
 
+  it('addRepo persists a path-less GitHub pick (githubUrl + owner/repo shorthand key)', async () => {
+    const { initRepoRegistry, addRepo, getAllRepos } = await import('../repo-registry');
+    await initRepoRegistry();
+    requestMock.mockClear();
+    addRepo({
+      path: 'acme/widget',
+      name: 'widget',
+      owner: 'acme',
+      githubUrl: 'https://github.com/acme/widget',
+    });
+    await flush();
+    const repos = getAllRepos();
+    expect(repos).toHaveLength(1);
+    expect(repos[0]).toMatchObject({
+      path: 'acme/widget',
+      name: 'widget',
+      owner: 'acme',
+      githubUrl: 'https://github.com/acme/widget',
+    });
+    const [method, params] = requestMock.mock.calls[0];
+    expect(method).toBe('settings.update');
+    const body = params as { changes: { path: string; value: unknown[] }[] };
+    expect(body.changes[0].value[0]).toMatchObject({
+      githubUrl: 'https://github.com/acme/widget',
+    });
+  });
+
+  it('addRepo keeps an existing githubUrl when re-adding without one', async () => {
+    requestMock.mockResolvedValueOnce({
+      path: 'repos.known',
+      value: [
+        {
+          path: 'acme/widget',
+          name: 'widget',
+          githubUrl: 'https://github.com/acme/widget',
+          addedAt: 't',
+          lastUsedAt: 't',
+        },
+      ],
+    });
+    const { initRepoRegistry, addRepo, getAllRepos } = await import('../repo-registry');
+    await initRepoRegistry();
+    addRepo({ path: 'acme/widget', name: 'widget' });
+    expect(getAllRepos()[0].githubUrl).toBe('https://github.com/acme/widget');
+  });
+
   it('removeRepo pushes the updated list when a repo is removed', async () => {
     requestMock.mockResolvedValueOnce({
       path: 'repos.known',
