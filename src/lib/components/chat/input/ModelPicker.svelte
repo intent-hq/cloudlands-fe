@@ -593,13 +593,31 @@
 
   // Get the label for a model ID from available models list; undefined when
   // the id resolves to no loaded model (callers pick the fallback).
+  // Legacy codex compound ids (`{model}/{effort}`) no longer exist as catalog
+  // rows (the daemon collapses them to one base row + effortLevels), so on an
+  // exact-id miss the base model's label is rendered with the effort suffix
+  // appended — existing sessions with a stored compound id keep a sensible
+  // label instead of the raw id.
   function getModelLabel(modelId: string | undefined): string | undefined {
     if (!modelId) return undefined;
-    for (const models of Object.values(allProviderModels)) {
-      const found = models.find((m) => m.value === modelId);
-      if (found) return found.label;
+    const lookup = (id: string): string | undefined => {
+      for (const models of Object.values(allProviderModels)) {
+        const found = models.find((m) => m.value === id);
+        if (found) return found.label;
+      }
+      return availableModels.find((m) => m.value === id)?.label;
+    };
+    const exact = lookup(modelId);
+    if (exact) return exact;
+    const slashIndex = modelId.indexOf('/');
+    if (slashIndex > 0 && slashIndex < modelId.length - 1) {
+      const baseLabel = lookup(modelId.slice(0, slashIndex));
+      if (baseLabel) {
+        const effort = modelId.slice(slashIndex + 1);
+        return `${baseLabel} (${effort.charAt(0).toUpperCase()}${effort.slice(1)})`;
+      }
     }
-    return availableModels.find((m) => m.value === modelId)?.label;
+    return undefined;
   }
 
   const currentModelLabel = $derived.by(() => {

@@ -243,6 +243,35 @@ export const selectAgentSessionWorkspaceId = store.createSelector(
     state.agentSessions?.byAgentId[agentId]?.workspaceId,
 );
 
+/**
+ * Current reasoning effort for an agent session (Option B first-class session
+ * field, PROTOCOL §5.5). Rendered verbatim from the stored session:
+ * `undefined` when unset (provider default) or when the session is unknown.
+ *
+ * Compatibility: sessions whose stored model is still the legacy codex
+ * compound form (`{model}/{effort}`) surface the suffix as the effective
+ * effort when no first-class field is set, so pre-migration sessions render
+ * sensibly (the daemon splits the compound id at the session-read seam).
+ */
+export const selectAgentReasoningEffort = store.createSelector(
+  (state, agentId: string): string | undefined => {
+    const stored = state.agentSessions?.byAgentId[agentId];
+    if (!stored) return undefined;
+    if (typeof stored.reasoningEffort === 'string' && stored.reasoningEffort.length > 0) {
+      return stored.reasoningEffort;
+    }
+    if (stored.reasoningEffort === null) return undefined;
+    const model = stored.model;
+    if (typeof model === 'string') {
+      const slashIndex = model.indexOf('/');
+      if (slashIndex > 0 && slashIndex < model.length - 1) {
+        return model.slice(slashIndex + 1);
+      }
+    }
+    return undefined;
+  },
+);
+
 /** Select whether a session exists for a given agent. */
 export const selectAgentSessionExists = store.createSelector(
   (state, agentId: string): boolean =>

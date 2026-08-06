@@ -48,6 +48,7 @@ import {
   selectAgentSessionIsStreaming,
   selectAgentSessionStreamingContent,
   selectAgentSessionWorkspaceId,
+  selectAgentReasoningEffort,
   selectAgentActivationWaitComplete,
   selectAgentQueuedMessages,
   selectAgentIsResponding,
@@ -686,6 +687,15 @@ describe('agent-session-slice reducer', () => {
       );
       expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['msg_backend']);
     });
+
+    it('sets and clears the session reasoningEffort (Option B, §5.5)', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(state, updateSession('a1', { reasoningEffort: 'high' }));
+      expect(state.byAgentId['a1'].reasoningEffort).toBe('high');
+      // Explicit null clears back to the provider default.
+      state = agentSessionReducer(state, updateSession('a1', { reasoningEffort: null }));
+      expect(state.byAgentId['a1'].reasoningEffort).toBeNull();
+    });
   });
 
   describe('canonical status reconciliation', () => {
@@ -778,6 +788,53 @@ describe('agent-session-slice reducer', () => {
 
       expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(true);
       expect(state.byAgentId['a1'].waitingForAgentIds).toEqual(['child-1']);
+    });
+
+    it('folds reasoningEffort from an agent:session-updated payload (set and clear)', () => {
+      // Option B (§5.5): the daemon echoes the session-level reasoningEffort
+      // on `agent:updated`/`agent:session-updated` convergence payloads — a
+      // string sets it, an explicit null clears it, an absent key leaves the
+      // stored value untouched.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { reasoningEffort: 'medium' } as any)),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-effort-absent',
+          type: 'agent:session-updated',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'idle' },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].reasoningEffort).toBe('medium');
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-effort-set',
+          type: 'agent:session-updated',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'idle', reasoningEffort: 'xhigh' },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].reasoningEffort).toBe('xhigh');
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-effort-clear',
+          type: 'agent:session-updated',
+          timestamp: '2024-01-01T00:00:02.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'idle', reasoningEffort: null },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].reasoningEffort).toBeNull();
     });
 
     it('a between-turns active overshoot (isActive false) does not clear the wait', () => {
@@ -2332,6 +2389,40 @@ describe('agent-session selectors', () => {
     const state = storeWith({ byAgentId: { a1: session } });
     expect(selectAgentSessionWorkspaceId.select(state, 'a1')).toBe('ws-1');
     expect(selectAgentSessionWorkspaceId.select(state, 'unknown')).toBeUndefined();
+  });
+
+  describe('selectAgentReasoningEffort', () => {
+    it('returns the first-class session field verbatim', () => {
+      const session = makeSession('a1', 'ws-1', { reasoningEffort: 'high' } as any);
+      const state = storeWith({ byAgentId: { a1: session } });
+      expect(selectAgentReasoningEffort.select(state, 'a1')).toBe('high');
+      expect(selectAgentReasoningEffort.select(state, 'unknown')).toBeUndefined();
+    });
+
+    it('falls back to the legacy codex compound-id suffix when the field is unset', () => {
+      // Pre-migration sessions may still store `{model}/{effort}` — the
+      // suffix is the effective effort until the daemon splits the id.
+      const session = makeSession('a1', 'ws-1', { model: 'gpt-5.3-codex/xhigh' } as any);
+      const state = storeWith({ byAgentId: { a1: session } });
+      expect(selectAgentReasoningEffort.select(state, 'a1')).toBe('xhigh');
+    });
+
+    it('treats an explicit null as unset (no compound fallback)', () => {
+      // null = user cleared back to provider default; the stale compound
+      // suffix must not resurrect it.
+      const session = makeSession('a1', 'ws-1', {
+        model: 'gpt-5.3-codex/high',
+        reasoningEffort: null,
+      } as any);
+      const state = storeWith({ byAgentId: { a1: session } });
+      expect(selectAgentReasoningEffort.select(state, 'a1')).toBeUndefined();
+    });
+
+    it('returns undefined for a bare model with no effort', () => {
+      const session = makeSession('a1', 'ws-1', { model: 'sonnet4.6' } as any);
+      const state = storeWith({ byAgentId: { a1: session } });
+      expect(selectAgentReasoningEffort.select(state, 'a1')).toBeUndefined();
+    });
   });
 
   describe('selectAgentSessionIsProcessing', () => {

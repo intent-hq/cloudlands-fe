@@ -1,13 +1,15 @@
 /**
- * Static list of OpenAI Codex models with reasoning effort variants.
+ * Static list of OpenAI Codex models.
  *
  * The Codex CLI/MCP server does not expose a model listing endpoint,
  * so we maintain this list manually. Update when new models are released.
  *
  * Models that support reasoning effort (gpt-5.3-codex, gpt-5.2-codex,
- * gpt-5.1-codex-max) are expanded into low/medium/high/xhigh reasoning
- * effort variants using the "{model}/{effort}" ID format expected by
- * codex-acp. All other models appear as bare entries.
+ * gpt-5.1-codex-max) appear ONCE with `effortLevels` metadata — matching the
+ * daemon's collapsed catalog (one base row per model, PROTOCOL §5.30/§6.7)
+ * instead of the former 4-row "{model}/{effort}" expansion. Reasoning effort
+ * is a first-class session field (`reasoningEffort`); selection no longer
+ * composes compound ids.
  */
 
 /** Supported reasoning effort levels */
@@ -94,29 +96,26 @@ const CODEX_BASE_MODELS = {
   },
 } as const;
 
-/** Base models that get expanded into reasoning-effort variants */
-const EFFORT_VARIANT_MODELS = new Set(['gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.1-codex-max']);
+/** Models that support reasoning effort (surfaced as `effortLevels` metadata) */
+const EFFORT_CAPABLE_MODELS = new Set(['gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.1-codex-max']);
 
-/** Build the expanded model map: effort-variant models get low/medium/high/xhigh; others are bare */
+/** Build the model map: one row per base model; effort-capable rows carry effortLevels */
 function buildCodexModels() {
-  const models: Record<string, { label: string; description: string }> = {};
+  const models: Record<
+    string,
+    { label: string; description: string; effortLevels?: string[] }
+  > = {};
   for (const [id, config] of Object.entries(CODEX_BASE_MODELS)) {
-    if (EFFORT_VARIANT_MODELS.has(id)) {
-      for (const effort of supportedReasoningEfforts) {
-        const effortMeta = CODEX_REASONING_EFFORTS[effort];
-        const variantId = `${id}/${effort}`;
-        const effortLabel = effort.charAt(0).toUpperCase() + effort.slice(1);
-        models[variantId] = {
-          label: `${config.label} (${effortLabel})`,
-          description: `${config.description} — ${effortMeta.description.toLowerCase()}`,
+    models[id] = EFFORT_CAPABLE_MODELS.has(id)
+      ? {
+          label: config.label,
+          description: config.description,
+          effortLevels: [...supportedReasoningEfforts],
+        }
+      : {
+          label: config.label,
+          description: config.description,
         };
-      }
-    } else {
-      models[id] = {
-        label: config.label,
-        description: config.description,
-      };
-    }
   }
   return models;
 }
@@ -154,10 +153,12 @@ export function getCodexModelList(): Array<{
   value: string;
   label: string;
   description?: string;
+  effortLevels?: string[];
 }> {
   return Object.entries(CODEX_MODELS).map(([id, config]) => ({
     value: id,
     label: config.label,
     description: config.description,
+    ...(config.effortLevels ? { effortLevels: config.effortLevels } : {}),
   }));
 }

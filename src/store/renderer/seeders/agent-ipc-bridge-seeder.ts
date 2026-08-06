@@ -83,6 +83,7 @@ registerMockIpcHandler(AGENT_CHANNELS.CREATE, async (arg) => {
     workspaceId,
     name: readString(request, "name"),
     model: readString(request, "model"),
+    reasoningEffort: readString(request, "reasoningEffort"),
     specialistId: readString(metadata, "specialist"),
     idempotencyKey: newIdempotencyKey(),
   };

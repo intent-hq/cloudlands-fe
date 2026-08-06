@@ -140,6 +140,16 @@ export interface AgentSession {
   /** Model identifier (e.g., "sonnet-3.5", "gpt-4"). Null when using provider/settings default (persisted from backend). Undefined when omitted. */
   model?: string | null;
 
+  /**
+   * Reasoning effort level for the session's model (Option B, first-class
+   * session field). Provider-interpreted string (e.g. "low"/"medium"/"high",
+   * plus provider-specific levels like "xhigh"/"max"); valid levels come from
+   * the model's `effortLevels` catalog metadata. Null when explicitly cleared
+   * (provider default); undefined when omitted. Applies on the next prompt
+   * send.
+   */
+  reasoningEffort?: string | null;
+
   /** ACP provider ID (e.g., "auggie", "claude-code", "opencode"). Mutable only until first real session use, then locked. */
   provider?: string;
 
