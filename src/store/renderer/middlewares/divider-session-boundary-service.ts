@@ -7,8 +7,10 @@
  *   1. Chat tab close — after any action that can remove agent tabs from the
  *      panel layout, every agent with a divider session whose chat tab is no
  *      longer open anywhere gets endDividerSession.
- *   2. Active-workspace switch — setActiveWorkspaceId to a DIFFERENT workspace
- *      ends every divider session (endAllDividerSessions).
+ *   2. Active-workspace switch — setActiveWorkspaceId to a DIFFERENT workspace,
+ *      or clearActiveWorkspace (active workspace goes to null, e.g. navigating
+ *      to a no-workspace view), ends every divider session
+ *      (endAllDividerSessions).
  *
  * Deliberately NOT boundaries: same-workspace tab deactivation (setActiveTab,
  * selectNext/PreviousTab), cached panel destroy, panel focus changes, or
@@ -28,7 +30,7 @@ import {
   endDividerSession,
   endAllDividerSessions,
 } from "../slices/unread-tracking/unread-tracking-slice";
-import { setActiveWorkspaceId } from "../slices/workspace/workspace-slice";
+import { setActiveWorkspaceId, clearActiveWorkspace } from "../slices/workspace/workspace-slice";
 import {
   initializeLayout,
   applyPreset,
@@ -130,7 +132,7 @@ export function createDividerSessionBoundaryService(
     return (next) => (action) => {
       const result = next(action);
 
-      if (action.type === setActiveWorkspaceId.type) {
+      if (action.type === setActiveWorkspaceId.type || action.type === clearActiveWorkspace.type) {
         const state = api.getState() as StoreState;
         const nextWorkspaceId = state.workspace?.activeWorkspaceId ?? null;
         if (nextWorkspaceId === previousActiveWorkspaceId) return result;

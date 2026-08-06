@@ -20,7 +20,7 @@ import {
   closeTabsByAgentId,
   setActiveTab,
 } from "../slices/panel-layout/panel-layout-slice";
-import { setActiveWorkspaceId } from "../slices/workspace/workspace-slice";
+import { setActiveWorkspaceId, clearActiveWorkspace } from "../slices/workspace/workspace-slice";
 import type { StoreState } from "../types";
 import type { StoreMiddlewareAPI } from "$lib/store-shim/types";
 
@@ -148,6 +148,25 @@ describe("divider-session-boundary-service", () => {
     });
 
     middleware(next)(setActiveWorkspaceId("ws-2"));
+
+    expect((api as any)._dispatchedActions).toEqual([endAllDividerSessions()]);
+  });
+
+  it("ends all sessions when the active workspace is cleared (e.g. navigating to no-workspace view)", () => {
+    const state = createMockState("ws-1", { "ws-1": ["a1"] }, { a1: "m1", a2: null });
+    const api = createMockAPI(state);
+    const middleware = createDividerSessionBoundaryService()(api);
+
+    const next = vi.fn((action) => {
+      if (action.type === clearActiveWorkspace.type) {
+        (api as any)._updateState(
+          createMockState(null, { "ws-1": ["a1"] }, { a1: "m1", a2: null }),
+        );
+      }
+      return action;
+    });
+
+    middleware(next)(clearActiveWorkspace());
 
     expect((api as any)._dispatchedActions).toEqual([endAllDividerSessions()]);
   });
@@ -365,7 +384,10 @@ describe("divider session lifecycle (cross-cutting regression)", () => {
 
     const next = (action: any) => {
       unreadTracking = unreadTrackingReducer(unreadTracking, action);
-      if (action.type === setActiveWorkspaceId.type && pendingActiveWs !== undefined) {
+      if (
+        (action.type === setActiveWorkspaceId.type || action.type === clearActiveWorkspace.type) &&
+        pendingActiveWs !== undefined
+      ) {
         activeWorkspaceId = pendingActiveWs;
         pendingActiveWs = undefined;
       }
@@ -508,5 +530,37 @@ describe("divider session lifecycle (cross-cutting regression)", () => {
         nextWorkspaceId: "ws-2",
       },
     ]);
+  });
+
+  it("clearing the active workspace ends sessions, preventing a stale divider on return to the same workspace", () => {
+    const harness = createIntegratedHarness({
+      activeWorkspaceId: "ws-1",
+      openAgentIdsByWs: { "ws-1": ["a1"] },
+    });
+    harness.dispatch(startDividerSession("a1", "m2"));
+
+    // Navigate away to a no-workspace view (e.g. /workspace/new): activeWorkspaceId -> null.
+    harness.queueActiveWorkspace(null);
+    harness.dispatch(clearActiveWorkspace());
+
+    expect(harness.sessions).toEqual({});
+    expect(harness.boundaries).toEqual([
+      {
+        kind: "workspace-switch",
+        agentIds: ["a1"],
+        previousWorkspaceId: "ws-1",
+        nextWorkspaceId: null,
+      },
+    ]);
+
+    // Returning to the SAME workspace re-selects it; since the session was
+    // already cleared on the null transition, no stale divider survives —
+    // a fresh startDividerSession re-derives from the current marker.
+    harness.queueActiveWorkspace("ws-1");
+    harness.dispatch(setActiveWorkspaceId("ws-1"));
+    expect(harness.boundaries).toHaveLength(1); // no extra boundary fired
+
+    harness.dispatch(startDividerSession("a1", "m9"));
+    expect(harness.sessions.a1).toEqual({ anchorId: "m9" });
   });
 });
