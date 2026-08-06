@@ -34,28 +34,22 @@
   import { createTakeoverController } from './hud-takeover-controller.svelte';
   import { takeoverFrameStyle } from './hud-takeover-frame';
   import {
-    bannerDelay,
-    bannerOutDelay,
     bannerScrollDurationS,
     cellLeft,
     cellNeedsPan,
     cellTop,
     emptyCellCoords,
-    HUD_TAKEOVER_BANNER_IN_S,
-    HUD_TAKEOVER_BANNER_SCROLL_HOLD_S,
-    HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S,
     spiralCoords,
     takeoverPanBounds,
   } from './hud-takeover-layout';
   import { createTakeoverMapDrag } from './hud-takeover-drag.svelte';
   import {
     agentBucketLabel,
-    bannerView,
-    takeoverAttentionChipLabel,
     takeoverKindColor,
     takeoverKindLabel,
     taskCellMeta,
   } from './hud-takeover-meta';
+  import HudTakeoverBanner from './HudTakeoverBanner.svelte';
   import { agentBucketColor } from '../grid/hud-card-meta';
 
   let { nowMs }: { nowMs: number } = $props();
@@ -378,70 +372,24 @@
               </div>
 
               <!-- Banners: one per trigger, typewriter wipe; VIEWER renders none.
-                   The fade-out delay is dwell-proportional so the unfolded
-                   banner holds ~half the entry's dwell (see bannerOutDelay),
-                   shifted by the banner's own overflow marquee so the fade
-                   never cuts a scroll short. -->
+                   Rendering (chip/headline/marquee + styles) lives in
+                   HudTakeoverBanner.svelte; this overlay measures the
+                   headline overflow (see the measurement $effect) and feeds
+                   each banner its overflowPx. -->
               {#if queue.active && !isViewer}
                 {@const dwellMs = takeoverDwellMs(queue.active)}
                 <div class="ov-banners" bind:this={bannersEl}>
                   {#each queue.active.triggers as banner, i (`${banner.kind}-${banner.raisedAtMs}-${i}`)}
-                    {@const color = takeoverKindColor(banner.kind)}
-                    {@const bv = bannerView(banner, view.title, view.repoRef)}
-                    {@const scrollPx = motion && !bv.wrap ? (bannerOverflows[i] ?? 0) : 0}
-                    {@const scrollS = bannerScrollDurationS(scrollPx)}
-                    <div
-                      class="ov-banner"
-                      style:--banner-in-delay={motion ? `${bannerDelay(needsPan, i)}s` : '0s'}
-                      style:--banner-out-delay={motion
-                        ? `${bannerOutDelay(needsPan, i, dwellMs, scrollS)}s`
-                        : '0s'}
-                      data-testid="hud-takeover-banner"
-                    >
-                      <span
-                        class="ov-banner-chip"
-                        class:ov-anim-blink={motion}
-                        style:border-color={color}
-                        style:color
-                      >
-                        {banner.signal
-                          ? takeoverAttentionChipLabel(banner.signal)
-                          : takeoverKindLabel(banner.kind)}
-                      </span>
-                      {#if bv.big}
-                        <div class="ov-banner-big" class:ov-banner-big-wrap={bv.wrap} style:color>
-                          {#if scrollPx > 0}
-                            <!-- Overflow marquee: constant-speed left travel
-                                 after the wipe-in + head hold; the tail then
-                                 holds (fill: both). Driven by the measured
-                                 overflow (see the measurement $effect). -->
-                            <span
-                              class="ov-banner-marquee"
-                              style:--banner-scroll-px={`${scrollPx}px`}
-                              style:--banner-scroll-s={`${(scrollPx / HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S).toFixed(2)}s`}
-                              style:--banner-scroll-delay={`${(
-                                Number(bannerDelay(needsPan, i)) +
-                                HUD_TAKEOVER_BANNER_IN_S +
-                                HUD_TAKEOVER_BANNER_SCROLL_HOLD_S
-                              ).toFixed(2)}s`}
-                              data-testid="hud-takeover-banner-marquee"
-                            >
-                              {bv.big}
-                            </span>
-                          {:else}
-                            {bv.big}
-                          {/if}
-                        </div>
-                      {/if}
-                      {#if bv.status}
-                        <div class="ov-banner-status" data-testid={bv.statusTestId}>
-                          {bv.status}
-                        </div>
-                      {/if}
-                      {#if bv.sub}
-                        <div class="ov-banner-sub">{bv.sub}</div>
-                      {/if}
-                    </div>
+                    <HudTakeoverBanner
+                      {banner}
+                      index={i}
+                      title={view.title}
+                      repoRef={view.repoRef}
+                      {motion}
+                      {needsPan}
+                      {dwellMs}
+                      overflowPx={bannerOverflows[i] ?? 0}
+                    />
                   {/each}
                 </div>
               {/if}
@@ -595,25 +543,6 @@
     to {
       opacity: 1;
       transform: none;
-    }
-  }
-  @keyframes bannerin {
-    from {
-      clip-path: inset(0 100% 0 0);
-    }
-    to {
-      clip-path: inset(0 0 0 0);
-    }
-  }
-  /* Overflow marquee: read position travels left→right across the text —
-     the text itself translates left by the measured overflow, then holds
-     (fill: both keeps the head pinned before, the tail visible after). */
-  @keyframes bannerscroll {
-    from {
-      transform: translateX(0);
-    }
-    to {
-      transform: translateX(calc(-1 * var(--banner-scroll-px, 0px)));
     }
   }
   @keyframes ovringblink {
@@ -1040,7 +969,7 @@
     flex: none;
   }
 
-  /* ── Banners ── */
+  /* ── Banners (rows render in HudTakeoverBanner.svelte) ── */
   .ov-banners {
     position: absolute;
     left: 0;
@@ -1051,69 +980,6 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
-  }
-  .ov-banner {
-    border-top: 1px solid hsl(var(--border) / 0.8);
-    border-bottom: 1px solid hsl(var(--border) / 0.8);
-    background: hsl(var(--app-background) / 0.88);
-    padding: 14px 22px;
-    /* Typewriter wipe in, then auto fade-out while the map stays up. The
-       out-delay is dwell-proportional (bannerOutDelay: unfolded hold ≈ half
-       the entry's dwell); the wipe duration mirrors
-       HUD_TAKEOVER_BANNER_IN_S. */
-    animation:
-      bannerin 1.1s steps(22) var(--banner-in-delay, 0s) both,
-      ovfO 0.45s ease var(--banner-out-delay, 5.2s) both;
-  }
-  .ov-banner-chip {
-    display: inline-block;
-    border: 1px solid;
-    padding: 4px 11px;
-    margin-bottom: 10px;
-    font: 600 10px 'JetBrains Mono', monospace;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-  }
-  .ov-banner-big {
-    font: 700 42px 'Doto', 'JetBrains Mono', monospace;
-    letter-spacing: 0.08em;
-    line-height: 1.05;
-    white-space: nowrap;
-    overflow: hidden;
-    text-transform: uppercase;
-  }
-  .ov-banner-big-wrap {
-    font-size: 24px;
-    white-space: normal;
-    text-transform: none;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-  }
-  /* Marquee inner span: starts pinned left (head visible), then travels by
-     the measured overflow at the constant HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S
-     speed after the wipe-in + head hold; fill both holds the tail. */
-  .ov-banner-marquee {
-    display: inline-block;
-    animation: bannerscroll var(--banner-scroll-s, 0s) linear var(--banner-scroll-delay, 0s) both;
-  }
-  .ov-banner-sub {
-    margin-top: 6px;
-    font: 500 11.5px 'JetBrains Mono', monospace;
-    letter-spacing: 0.18em;
-    color: hsl(var(--text-subtle));
-    text-transform: uppercase;
-  }
-  .ov-banner-status {
-    margin-top: 8px;
-    font: 500 14px 'JetBrains Mono', monospace;
-    line-height: 1.4;
-    color: hsl(var(--text-subtle));
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
   }
 
   /* ── Side column ── */
@@ -1239,8 +1105,6 @@
   .ov-no-motion .ov-ruler,
   .ov-no-motion .ov-content,
   .ov-no-motion .ov-cell,
-  .ov-no-motion .ov-banner,
-  .ov-no-motion .ov-banner-marquee,
   .ov-no-motion .ov-status-hint {
     animation: none;
   }
@@ -1256,8 +1120,6 @@
     .ov-ruler,
     .ov-content,
     .ov-cell,
-    .ov-banner,
-    .ov-banner-marquee,
     .ov-status-hint,
     .ov-anim-pulse,
     .ov-anim-blink {
