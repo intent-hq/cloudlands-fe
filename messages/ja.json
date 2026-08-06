@@ -185,7 +185,6 @@
   "settings_gitWorkspace_branchPrefix_description_before": "新しいワークスペースブランチの接頭辞（例:",
   "settings_gitWorkspace_branchPrefix_placeholder": "feature/ または user/name/",
   "settings_gitWorkspace_branchPrefix_invalid": "無効なブランチ接頭辞です",
-  "settings_gitWorkspace_autoFetch_label": "更新を自動フェッチ",
   "settings_gitWorkspace_autoCommit_label": "変更を自動コミット",
   "settings_gitWorkspace_cowIsolation_label": "コピーオンライト（CoW）分離を使用",
   "settings_gitWorkspace_experimental_badge": "実験的",
