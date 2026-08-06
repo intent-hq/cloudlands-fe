@@ -1208,8 +1208,9 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     await primeBridge();
     const handler = capturedHandlers[0]!;
     // primeBridge's install dispatch clears the streaming flag; restore the
-    // in-flight turn state the interrupt is going to land on.
-    appStore.dispatch(setAgentStreaming(AGENT, true));
+    // in-flight turn state the interrupt is going to land on, with both busy
+    // flags explicitly set so their clear is observable rather than vacuous.
+    seedSession({ isStreaming: true, isProcessing: true, status: AgentStatus.Active });
 
     handler(
       notification('agent:stream:activity', {
@@ -1238,6 +1239,7 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
       'Calling tool',
     ]);
     expect(readSession()?.isStreaming).toBe(true);
+    expect(readSession()?.isProcessing).toBe(true);
 
     handler(
       notification('agent:stream:end', {
@@ -1245,6 +1247,7 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
         streamId: STREAM_ID,
         messageId: MESSAGE_ID,
         stopReason: 'interrupted',
+        interruptReason: 'user_stop',
       }),
     );
 
@@ -5313,6 +5316,7 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     );
     appStore.dispatch(openSwitcher([WS_UPD, 'ws-updated-2'], WS_UPD));
     expect(selectSwitcherWorkspaceIds.select(appStore.state)).toContain(WS_UPD);
+    expect(selectSwitcherWorkspaceIds.select(appStore.state)).toContain('ws-updated-2');
 
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -5327,8 +5331,11 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     );
 
     // Synchronous, push-only: the archived workspace is gone from the active
-    // list the moment the event lands.
-    expect(selectSwitcherWorkspaceIds.select(appStore.state)).not.toContain(WS_UPD);
+    // list the moment the event lands, while the still-Active sibling remains
+    // listed — so an emptied-out selector cannot make this pass vacuously.
+    const idsAfter = selectSwitcherWorkspaceIds.select(appStore.state);
+    expect(idsAfter).not.toContain(WS_UPD);
+    expect(idsAfter).toContain('ws-updated-2');
     await flush();
     const refetches = backendRequestSpy.mock.calls.filter(
       ([method]) => method === 'workspace.list' || method === 'workspace.get',
