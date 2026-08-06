@@ -152,8 +152,8 @@ export const WorkspaceSchema = z.object({
   gitSummary: z.any().optional(), // Deprecated aggregate; fetch on demand
   /** CoW filesystem capability of the workspaces root (PROTOCOL §5.1); gates the cowIsolation toggle. */
   cowSupported: z.boolean().optional(),
-  /** How the checkout was provisioned (PROTOCOL §5.1); omitted for rows without a daemon-provisioned checkout (skip-isolation/direct, remote, …). */
-  checkoutMode: z.enum(['cow', 'worktree']).optional(),
+  /** How the checkout was provisioned (PROTOCOL §5.1); omitted for rows without a daemon-provisioned checkout (skip-isolation, remote, …). `direct` = standalone local clone (cache-hydrated picked repos, isNewRepo). */
+  checkoutMode: z.enum(['cow', 'worktree', 'direct']).optional(),
   /** Cached physical disk usage of the workspace directory (PROTOCOL §5.1); omitted until first computation completes. */
   diskUsage: z
     .object({

@@ -106,20 +106,26 @@ describe("workspaces-seeder legacy IPC bridges", () => {
     });
   });
 
-  describe("workspace:get-recent-repositories → daemon repo.list", () => {
+  describe("workspace:get-recent-repositories → daemon repo.list + repos.known", () => {
     it("forwards to repo.list and wraps the KnownRepo[] in {success, data}", async () => {
       // PROTOCOL §5.6: repo.list → { repos: KnownRepo[] } (MRU-first, camelCase).
       // This handler uses backendRequest directly, not appClient
-      mockedRequest.mockResolvedValueOnce({
-        repos: [
-          {
-            path: "/Users/me/src/intent",
-            name: "intent",
-            owner: "intent-hq",
-            addedAt: "2026-01-01T00:00:00Z",
-            lastUsedAt: "2026-01-02T00:00:00Z",
-          },
-        ],
+      mockedRequest.mockImplementation(async (method) => {
+        if (method === "repo.list") {
+          return {
+            repos: [
+              {
+                path: "/Users/me/src/intent",
+                name: "intent",
+                owner: "intent-hq",
+                addedAt: "2026-01-01T00:00:00Z",
+                lastUsedAt: "2026-01-02T00:00:00Z",
+              },
+            ],
+          };
+        }
+        if (method === "settings.get") return { value: [] };
+        return undefined;
       });
 
       const response = await mockInvoke<CommandResponse<Array<Record<string, unknown>>>>(
@@ -140,6 +146,108 @@ describe("workspaces-seeder legacy IPC bridges", () => {
       ]);
     });
 
+    it("merges path-less GitHub picks from repos.known and filters cache/clone paths", async () => {
+      mockedRequest.mockImplementation(async (method) => {
+        if (method === "repo.list") {
+          return {
+            repos: [
+              {
+                path: "/Users/me/src/intent",
+                name: "intent",
+                addedAt: "2026-01-01T00:00:00Z",
+                lastUsedAt: "2026-01-02T00:00:00Z",
+              },
+              // Daemon-managed cache/clone checkouts: internal, never pickable.
+              {
+                path: "/ws-root/.repo-cache/acme/widget",
+                name: "widget",
+                addedAt: "2026-01-01T00:00:00Z",
+                lastUsedAt: "2026-01-05T00:00:00Z",
+              },
+              {
+                path: "/home/.clones/legacy",
+                name: "legacy",
+                addedAt: "2026-01-01T00:00:00Z",
+                lastUsedAt: "2026-01-04T00:00:00Z",
+              },
+            ],
+          };
+        }
+        if (method === "settings.get") {
+          return {
+            value: [
+              {
+                path: "acme/widget",
+                name: "widget",
+                owner: "acme",
+                githubUrl: "https://github.com/acme/widget",
+                addedAt: "2026-01-03T00:00:00Z",
+                lastUsedAt: "2026-01-06T00:00:00Z",
+              },
+            ],
+          };
+        }
+        return undefined;
+      });
+
+      const response = await mockInvoke<CommandResponse<Array<Record<string, unknown>>>>(
+        WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES,
+        {},
+      );
+
+      expect(response.success).toBe(true);
+      // MRU-first: the fresher GitHub pick sorts ahead of the local repo;
+      // cache/clone paths are gone.
+      expect(response.data).toEqual([
+        expect.objectContaining({
+          path: "acme/widget",
+          githubUrl: "https://github.com/acme/widget",
+        }),
+        expect.objectContaining({ path: "/Users/me/src/intent" }),
+      ]);
+    });
+
+    it("filters backslash-separated cache/clone paths too (Windows-style)", async () => {
+      mockedRequest.mockImplementation(async (method) => {
+        if (method === "repo.list") {
+          return {
+            repos: [
+              {
+                path: "C:\\Users\\me\\src\\intent",
+                name: "intent",
+                addedAt: "2026-01-01T00:00:00Z",
+                lastUsedAt: "2026-01-02T00:00:00Z",
+              },
+              {
+                path: "C:\\ws-root\\.repo-cache\\acme\\widget",
+                name: "widget",
+                addedAt: "2026-01-01T00:00:00Z",
+                lastUsedAt: "2026-01-05T00:00:00Z",
+              },
+              {
+                path: "C:\\home\\.clones\\legacy",
+                name: "legacy",
+                addedAt: "2026-01-01T00:00:00Z",
+                lastUsedAt: "2026-01-04T00:00:00Z",
+              },
+            ],
+          };
+        }
+        if (method === "settings.get") return { value: [] };
+        return undefined;
+      });
+
+      const response = await mockInvoke<CommandResponse<Array<Record<string, unknown>>>>(
+        WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES,
+        {},
+      );
+
+      expect(response.success).toBe(true);
+      expect(response.data).toEqual([
+        expect.objectContaining({ path: "C:\\Users\\me\\src\\intent" }),
+      ]);
+    });
+
     it("rejects on daemon failure — LifecycleIpcReadService keeps the prior known repos", async () => {
       mockedRequest.mockRejectedValueOnce(new Error("daemon unreachable"));
 
@@ -149,10 +257,93 @@ describe("workspaces-seeder legacy IPC bridges", () => {
     });
   });
 
+  describe("workspace:add-recent-repository → repos.known setting", () => {
+    it("upserts a path-less GitHub pick into repos.known via settings.update", async () => {
+      mockedRequest.mockImplementation(async (method) => {
+        if (method === "settings.get") return { value: [] };
+        return undefined;
+      });
+
+      const response = await mockInvoke<CommandResponse<never>>(
+        WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY,
+        {
+          repository: "acme/widget",
+          name: "widget",
+          owner: "acme",
+          githubUrl: "https://github.com/acme/widget",
+        },
+      );
+
+      expect(response).toEqual({ success: true });
+      const updateCall = mockedRequest.mock.calls.find(([m]) => m === "settings.update");
+      expect(updateCall).toBeTruthy();
+      const params = updateCall![1] as {
+        changes: { path: string; value: Array<Record<string, unknown>> }[];
+      };
+      expect(params.changes[0].path).toBe("repos.known");
+      expect(params.changes[0].value[0]).toMatchObject({
+        path: "acme/widget",
+        name: "widget",
+        owner: "acme",
+        githubUrl: "https://github.com/acme/widget",
+      });
+    });
+
+    it("bumps lastUsedAt on re-add instead of duplicating the entry", async () => {
+      mockedRequest.mockImplementation(async (method) => {
+        if (method === "settings.get") {
+          return {
+            value: [
+              {
+                path: "acme/widget",
+                name: "widget",
+                owner: "acme",
+                githubUrl: "https://github.com/acme/widget",
+                addedAt: "2026-01-01T00:00:00Z",
+                lastUsedAt: "2026-01-01T00:00:00Z",
+              },
+            ],
+          };
+        }
+        return undefined;
+      });
+
+      const response = await mockInvoke<CommandResponse<never>>(
+        WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY,
+        { repository: "acme/widget", name: "widget", owner: "acme" },
+      );
+
+      expect(response).toEqual({ success: true });
+      const updateCall = mockedRequest.mock.calls.find(([m]) => m === "settings.update");
+      const params = updateCall![1] as {
+        changes: { path: string; value: Array<Record<string, unknown>> }[];
+      };
+      expect(params.changes[0].value).toHaveLength(1);
+      // githubUrl is preserved from the existing entry.
+      expect(params.changes[0].value[0]).toMatchObject({
+        githubUrl: "https://github.com/acme/widget",
+      });
+      expect(params.changes[0].value[0].lastUsedAt).not.toBe("2026-01-01T00:00:00Z");
+    });
+
+    it("rejects a missing repository param without touching the daemon", async () => {
+      const response = await mockInvoke<CommandResponse<never>>(
+        WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY,
+        {},
+      );
+      expect(response).toEqual({ success: false, error: "repository is required" });
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+  });
+
   describe("workspace:remove-recent-repository → daemon repo.remove", () => {
     it("forwards the path and wraps { removed } in {success, data}", async () => {
       // PROTOCOL §5.11: repo.remove { path } → { removed: bool }.
-      mockedRequest.mockResolvedValueOnce({ removed: true });
+      mockedRequest.mockImplementation(async (method) => {
+        if (method === "settings.get") return { value: [] };
+        if (method === "repo.remove") return { removed: true };
+        return undefined;
+      });
 
       const response = await mockInvoke<CommandResponse<{ removed: boolean }>>(
         WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
@@ -165,8 +356,43 @@ describe("workspaces-seeder legacy IPC bridges", () => {
       expect(response).toEqual({ success: true, data: { removed: true } });
     });
 
+    it("removes a path-less GitHub pick from repos.known (registry no-op)", async () => {
+      mockedRequest.mockImplementation(async (method) => {
+        if (method === "settings.get") {
+          return {
+            value: [
+              {
+                path: "acme/widget",
+                name: "widget",
+                githubUrl: "https://github.com/acme/widget",
+                addedAt: "t",
+                lastUsedAt: "t",
+              },
+            ],
+          };
+        }
+        if (method === "repo.remove") return { removed: false };
+        return undefined;
+      });
+
+      const response = await mockInvoke<CommandResponse<{ removed: boolean }>>(
+        WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
+        { repository: "acme/widget" },
+      );
+
+      const updateCall = mockedRequest.mock.calls.find(([m]) => m === "settings.update");
+      expect(updateCall![1]).toEqual({
+        changes: [{ path: "repos.known", value: [] }],
+      });
+      expect(response).toEqual({ success: true, data: { removed: true } });
+    });
+
     it("passes through removed:false for an unregistered path (daemon no-op)", async () => {
-      mockedRequest.mockResolvedValueOnce({ removed: false });
+      mockedRequest.mockImplementation(async (method) => {
+        if (method === "settings.get") return { value: [] };
+        if (method === "repo.remove") return { removed: false };
+        return undefined;
+      });
 
       const response = await mockInvoke<CommandResponse<{ removed: boolean }>>(
         WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
@@ -177,7 +403,10 @@ describe("workspaces-seeder legacy IPC bridges", () => {
     });
 
     it("folds a daemon failure into {success:false, error} for the loud toast", async () => {
-      mockedRequest.mockRejectedValueOnce(new Error("daemon unreachable"));
+      mockedRequest.mockImplementation(async (method) => {
+        if (method === "settings.get") return { value: [] };
+        throw new Error("daemon unreachable");
+      });
 
       const response = await mockInvoke<CommandResponse<never>>(
         WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
@@ -185,6 +414,37 @@ describe("workspaces-seeder legacy IPC bridges", () => {
       );
 
       expect(response).toEqual({ success: false, error: "daemon unreachable" });
+    });
+
+    it("runs repo.remove before touching repos.known — a repo.remove failure leaves the setting intact", async () => {
+      mockedRequest.mockImplementation(async (method) => {
+        if (method === "repo.remove") throw new Error("daemon hiccup");
+        if (method === "settings.get") {
+          return {
+            value: [
+              {
+                path: "acme/widget",
+                name: "widget",
+                githubUrl: "https://github.com/acme/widget",
+                addedAt: "t",
+                lastUsedAt: "t",
+              },
+            ],
+          };
+        }
+        return undefined;
+      });
+
+      const response = await mockInvoke<CommandResponse<never>>(
+        WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
+        { repository: "acme/widget" },
+      );
+
+      expect(response).toEqual({ success: false, error: "daemon hiccup" });
+      // The reported failure matches reality: nothing was removed.
+      expect(
+        mockedRequest.mock.calls.find(([m]) => m === "settings.update"),
+      ).toBeUndefined();
     });
 
     it("rejects a missing repository param without touching the daemon", async () => {

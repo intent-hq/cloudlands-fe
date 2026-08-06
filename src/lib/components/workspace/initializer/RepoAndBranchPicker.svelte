@@ -39,7 +39,6 @@
     path: string;
     type: 'local' | 'github' | 'remote';
     githubUrl?: string;
-    clonePath?: string;
     isNewRepo?: boolean;
     isValidPath?: boolean;
     scope?: string;

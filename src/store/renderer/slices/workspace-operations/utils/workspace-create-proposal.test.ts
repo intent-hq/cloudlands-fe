@@ -87,6 +87,52 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
     expect(request.initialAgent?.agentId).toBeUndefined();
   });
 
+  it('sends githubUrl + branch only (no clonePath/repositoryPath) for a picked repo', () => {
+    // Pick-a-repo flow: githubUrl with no clone destination — the daemon
+    // hydrates the checkout from its repo cache (PROTOCOL §5.1).
+    const request = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({
+        repositoryPath: 'acme/picked',
+        githubUrl: 'https://github.com/acme/picked',
+        baseRef: 'main',
+        initialAgent: { prompt: 'Go' },
+      }),
+      { branch: 'develop' },
+    );
+
+    expect(request.githubUrl).toBe('https://github.com/acme/picked');
+    expect(request.baseRef).toBe('develop');
+    expect(request.clonePath).toBeUndefined();
+    expect(request.repositoryPath).toBeUndefined();
+  });
+
+  it('keeps clonePath/repositoryPath for the explicit-clone GitHub flow', () => {
+    const request = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({
+        repositoryPath: '/clones/acme',
+        githubUrl: 'https://github.com/acme/repo',
+        clonePath: '/clones/acme',
+        baseRef: 'main',
+      }),
+      undefined,
+    );
+
+    expect(request.githubUrl).toBe('https://github.com/acme/repo');
+    expect(request.clonePath).toBe('/clones/acme');
+    expect(request.repositoryPath).toBe('/clones/acme');
+  });
+
+  it('keeps repositoryPath for local repos with no githubUrl', () => {
+    const request = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ repositoryPath: '/repo/local', baseRef: 'main' }),
+      undefined,
+    );
+
+    expect(request.repositoryPath).toBe('/repo/local');
+    expect(request.githubUrl).toBeUndefined();
+    expect(request.clonePath).toBeUndefined();
+  });
+
   it('clears specialist metadata when specialist edit is null', () => {
     const request = buildCreateWorkspaceRequestFromProposal(
       makeProposal({
