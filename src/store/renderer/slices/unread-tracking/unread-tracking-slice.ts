@@ -1,11 +1,13 @@
 /**
  * Unread-tracking Redux slice.
  *
- * Tracks only which agent conversation is currently open (`currentlyViewedAgentId`),
- * which gates the chat stream lifecycle (chat-subscribe-service). Unread state
- * itself is backend-owned: `workspace.attention === 'unread'` on the workspace
- * entity, cleared via `workspace.markSeen` (PROTOCOL §5.1) — the FE-local
- * unread feed this slice used to keep has been retired.
+ * Tracks which agent conversation is currently open (`currentlyViewedAgentId`),
+ * which gates the chat stream lifecycle (chat-subscribe-service), and the
+ * latched "New messages" divider viewing sessions
+ * (`dividerSessionByAgentId`, see divider-session-boundary-service.ts). Unread
+ * state itself is backend-owned: `workspace.attention === 'unread'` on the
+ * workspace entity, cleared via `workspace.markSeen` (PROTOCOL §5.1) — the
+ * FE-local unread feed this slice used to keep has been retired.
  */
 
 import { createAction } from "$lib/store-shim/utils/store/create-action";

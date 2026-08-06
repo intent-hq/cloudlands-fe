@@ -5,8 +5,12 @@
  * (unreadTracking.dividerSessionByAgentId) at the two stop-looking boundaries:
  *
  *   1. Chat tab close — after any action that can remove agent tabs from the
- *      panel layout, every agent with a divider session whose chat tab is no
- *      longer open anywhere gets endDividerSession.
+ *      panel layout, every agent with a divider session whose chat tab was
+ *      open before the action and is no longer open anywhere after it gets
+ *      endDividerSession. The open-tab set is diffed pre/post-action (not just
+ *      checked post-action) so agents never hosted in a panel-layout tab at
+ *      all — e.g. ChiefCard sidebar conversations — never cross this
+ *      boundary just because an unrelated tab closed elsewhere.
  *   2. Active-workspace switch — setActiveWorkspaceId to a DIFFERENT workspace,
  *      or clearActiveWorkspace (active workspace goes to null, e.g. navigating
  *      to a no-workspace view), ends every divider session
@@ -130,6 +134,11 @@ export function createDividerSessionBoundaryService(
       (api.getState() as StoreState).workspace?.activeWorkspaceId ?? null;
 
     return (next) => (action) => {
+      const isTabRemovalTrigger = TAB_REMOVAL_TRIGGER_ACTIONS.has(action.type);
+      const preOpenAgentIds = isTabRemovalTrigger
+        ? collectOpenAgentTabIds(api.getState() as StoreState)
+        : null;
+
       const result = next(action);
 
       if (action.type === setActiveWorkspaceId.type || action.type === clearActiveWorkspace.type) {
@@ -151,14 +160,19 @@ export function createDividerSessionBoundaryService(
         return result;
       }
 
-      if (!TAB_REMOVAL_TRIGGER_ACTIONS.has(action.type)) return result;
+      if (!isTabRemovalTrigger || preOpenAgentIds === null) return result;
 
       const state = api.getState() as StoreState;
       const sessionAgentIds = Object.keys(state.unreadTracking?.dividerSessionByAgentId ?? {});
       if (sessionAgentIds.length === 0) return result;
 
-      const openAgentIds = collectOpenAgentTabIds(state);
-      const closedAgentIds = sessionAgentIds.filter((agentId) => !openAgentIds.has(agentId));
+      const postOpenAgentIds = collectOpenAgentTabIds(state);
+      // Only agents whose tab was open before this action AND is gone after it
+      // crossed the boundary — agents never hosted in a panel-layout tab (e.g.
+      // ChiefCard) were never in preOpenAgentIds, so they're excluded here.
+      const closedAgentIds = sessionAgentIds.filter(
+        (agentId) => preOpenAgentIds.has(agentId) && !postOpenAgentIds.has(agentId),
+      );
       if (closedAgentIds.length === 0) return result;
 
       for (const agentId of closedAgentIds) {

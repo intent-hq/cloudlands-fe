@@ -123,6 +123,52 @@ describe("divider-session-boundary-service", () => {
     expect((api as any)._dispatchedActions).toHaveLength(0);
   });
 
+  it("does not end a session for an agent never hosted in a panel-layout tab (e.g. ChiefCard) when an unrelated tab closes", () => {
+    // "chief1" has a latched divider session but is never present in any
+    // workspace's panelLayout tabs (it's rendered from ChiefCard, not a tab).
+    // An unrelated tab-removal action (closing "a1"'s tab) must not treat
+    // "chief1" as closed just because it was never in the open-tab set.
+    const boundaries: DividerSessionBoundary[] = [];
+    const state = createMockState("ws-1", { "ws-1": ["a1"] }, { a1: "m1", chief1: "m1" });
+    const api = createMockAPI(state);
+    const middleware = createDividerSessionBoundaryService({
+      onBoundary: (b) => boundaries.push(b),
+    })(api);
+
+    const next = vi.fn((action) => {
+      if (action.type === closeTab.type) {
+        (api as any)._updateState(
+          createMockState("ws-1", { "ws-1": [] }, { a1: "m1", chief1: "m1" }),
+        );
+      }
+      return action;
+    });
+
+    middleware(next)(closeTab("ws-1", "tab-a1-0"));
+
+    const dispatched = (api as any)._dispatchedActions;
+    // Only a1 (whose tab actually closed) ends; chief1 was never in the
+    // pre-action open-tab set, so the pre/post diff excludes it — no
+    // endDividerSession and no markSeen boundary for chief1.
+    expect(dispatched).toEqual([endDividerSession("a1")]);
+    expect(boundaries).toEqual([{ kind: "tab-close", agentIds: ["a1"] }]);
+  });
+
+  it("does not end a chief-style session when a tab-removal action removes no agent tabs at all", () => {
+    const boundaries: DividerSessionBoundary[] = [];
+    const state = createMockState("ws-1", { "ws-1": ["a1"] }, { chief1: "m1" });
+    const api = createMockAPI(state);
+    const middleware = createDividerSessionBoundaryService({
+      onBoundary: (b) => boundaries.push(b),
+    })(api);
+
+    // Closing an unrelated (non-agent) tab leaves the open-agent-tab set unchanged.
+    middleware(vi.fn((a) => a))(closeTab("ws-1", "tab-file-1"));
+
+    expect((api as any)._dispatchedActions).toHaveLength(0);
+    expect(boundaries).toHaveLength(0);
+  });
+
   it("does not end sessions on same-workspace tab deactivation (setActiveTab)", () => {
     const state = createMockState("ws-1", { "ws-1": [] }, { a1: "m1" });
     const api = createMockAPI(state);
