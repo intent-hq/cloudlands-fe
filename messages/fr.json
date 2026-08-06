@@ -714,6 +714,7 @@
   "ui_updateToast_speedBps_label": "{speed} o/s",
   "ui_linkTooltip_copyHint_tooltip": "Cliquer pour ouvrir · Maintenir {key} pour copier",
   "ui_linkTooltip_inAppHint_tooltip": "Cliquer pour ouvrir · Maintenir {key} pour ouvrir dans l'application",
+  "ui_linkTooltip_gitHubActionsHint_tooltip": "Cliquer pour les actions · Maintenir {key} pour ouvrir dans l'application",
   "ui_linkTooltip_copied_label": "Copié !",
   "navigation_linkActionMenu_menu_ariaLabel": "Actions du lien",
   "navigation_linkActionMenu_startWorkspaceIssue_label": "Démarrer un nouvel espace de travail depuis l'issue #{number}",

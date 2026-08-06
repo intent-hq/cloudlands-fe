@@ -902,7 +902,10 @@
   // recent repos first (stored metadata, then git-remote probes), GitHub clone
   // flow when nothing matches, and 'keep' (no change) on errors so the
   // last-used repo stays selected (non-fatal).
-  async function preselectGitHubPrefillRepo(target: { owner: string; repo: string }) {
+  async function preselectGitHubPrefillRepo(
+    target: { owner: string; repo: string },
+    isStale?: () => boolean,
+  ) {
     const candidates: GitHubPrefillRepoCandidate[] = [];
     if (repoPath && repoType !== 'remote') {
       candidates.push({ path: repoPath, type: repoType, githubUrl: githubUrl || undefined });
@@ -932,6 +935,7 @@
           : null;
       },
     });
+    if (isStale?.()) return;
     if (selection.kind === 'keep') return;
     if (selection.kind === 'local') {
       // Already selected — leave the form (incl. branch) untouched
@@ -956,15 +960,25 @@
   // branch info via git-tracking:get-pull-request (fetch failures degrade to a
   // minimal mention), then insert the context mention pill through the same
   // path as the Add-context issue picker.
+  //
+  // The pending value is cleared before the awaited work, so a rapid second
+  // prefill can start while an earlier one is still resolving. A generation
+  // counter drops stale runs after each await: only the latest prefill may
+  // change the repo selection or insert its mention.
+  let gitHubPrefillGeneration = 0;
   $effect(() => {
     const prefill = $pendingGitHubPrefill$;
     if (prefill && richTextarea) {
       appStore.dispatch(clearWorkspaceInitializerPendingGitHubPrefill());
+      const generation = ++gitHubPrefillGeneration;
+      const isStale = () => generation !== gitHubPrefillGeneration;
       void (async () => {
         try {
           const snapshot = $state.snapshot(prefill);
-          await preselectGitHubPrefillRepo(snapshot);
+          await preselectGitHubPrefillRepo(snapshot, isStale);
+          if (isStale()) return;
           const selection = await resolveGitHubPrefillSelection(snapshot);
+          if (isStale()) return;
           handleIssueSelect(`#${prefill.number}`, selection);
           richTextarea?.focus();
         } catch (err) {

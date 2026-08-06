@@ -483,9 +483,27 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
       x: 100,
       y: 200,
       workspaceId: TEST_WORKSPACE_ID,
+      anchorElement: null,
     });
     expect(invokeIpcMock).not.toHaveBeenCalled();
     expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('keyboard activation (0,0 click) anchors the menu to the link element rect', async () => {
+    const url = 'https://github.com/acme/widgets/issues/42';
+    const { container, anchor } = buildContainerWithLink(url);
+    anchor.getBoundingClientRect = () =>
+      ({ left: 40, bottom: 90, top: 70, right: 120, width: 80, height: 20 }) as DOMRect;
+    const event = new MouseEvent('click', { clientX: 0, clientY: 0 });
+    Object.defineProperty(event, 'target', { value: anchor });
+
+    const result = await handleLink(url, { workspaceId: TEST_WORKSPACE_ID, event });
+
+    expect(result).toBe(true);
+    expect(showLinkActionMenuMock).toHaveBeenCalledWith(
+      expect.objectContaining({ x: 40, y: 90, anchorElement: anchor }),
+    );
+    container.remove();
   });
 
   it('plain click on a GitHub PR link shows the menu with kind pr', async () => {

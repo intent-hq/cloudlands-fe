@@ -271,7 +271,9 @@ async function openFilePathLink(
 
 /**
  * Show the anchored link action menu for a GitHub issue/PR link at the click
- * position. Falls back to the external browser if the menu cannot be shown.
+ * position. Keyboard activation (Enter on a focused link) fires a click with
+ * zero coordinates — anchor to the link element's bounding rect instead.
+ * Falls back to the external browser if the menu cannot be shown.
  */
 async function openLinkActionMenu(
   url: string,
@@ -281,12 +283,20 @@ async function openLinkActionMenu(
 ): Promise<boolean> {
   try {
     const { showLinkActionMenu } = await import('./link-action-menu-state.svelte');
+    const anchorElement = event.target instanceof HTMLElement ? event.target : null;
+    let { clientX: x, clientY: y } = event;
+    if (x === 0 && y === 0 && anchorElement) {
+      const rect = anchorElement.getBoundingClientRect();
+      x = rect.left;
+      y = rect.bottom;
+    }
     showLinkActionMenu({
       url,
       gitHubRef,
-      x: event.clientX,
-      y: event.clientY,
+      x,
+      y,
       workspaceId,
+      anchorElement,
     });
     logger.debug('Opened link action menu', { url, workspaceId });
     return true;

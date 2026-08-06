@@ -713,7 +713,8 @@
   "ui_updateToast_speedKbps_label": "{speed} KB/秒",
   "ui_updateToast_speedBps_label": "{speed} B/秒",
   "ui_linkTooltip_copyHint_tooltip": "クリックで開く · {key} を押しながらクリックでコピー",
-  "ui_linkTooltip_inAppHint_tooltip": "クリックで開く · {key} を押しながらクリックでアプリ内で開く",
+  "ui_linkTooltip_inAppHint_tooltip": "ã¯ãªãã¯ã§éã Â· {key} ãæ¼ããªããã¯ãªãã¯ã§ã¢ããªåã§éã",
+  "ui_linkTooltip_gitHubActionsHint_tooltip": "クリックでアクションを表示 · {key} を押しながらクリックでアプリ内で開く",
   "ui_linkTooltip_copied_label": "コピーしました！",
   "navigation_linkActionMenu_menu_ariaLabel": "リンク操作",
   "navigation_linkActionMenu_startWorkspaceIssue_label": "Issue #{number} から新規ワークスペースを開始",

@@ -714,6 +714,7 @@
   "ui_updateToast_speedBps_label": "{speed} B/s",
   "ui_linkTooltip_copyHint_tooltip": "Click to open · Hold {key} to copy",
   "ui_linkTooltip_inAppHint_tooltip": "Click to open · Hold {key} to open in app",
+  "ui_linkTooltip_gitHubActionsHint_tooltip": "Click for actions · Hold {key} to open in app",
   "ui_linkTooltip_copied_label": "Copied!",
   "navigation_linkActionMenu_menu_ariaLabel": "Link actions",
   "navigation_linkActionMenu_startWorkspaceIssue_label": "Start new workspace from issue #{number}",

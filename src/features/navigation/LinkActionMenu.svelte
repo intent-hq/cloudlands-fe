@@ -26,12 +26,43 @@
     }
   }
 
+  function menuItems(): HTMLButtonElement[] {
+    return menuElement ? Array.from(menuElement.querySelectorAll('button[role="menuitem"]')) : [];
+  }
+
+  // ARIA menu keyboard pattern: Arrow cycling, Home/End; Enter/Space activate
+  // the focused button natively.
+  function handleMenuKeyDown(event: KeyboardEvent) {
+    const items = menuItems();
+    if (items.length === 0) return;
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowDown') {
+      nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % items.length;
+    } else if (event.key === 'ArrowUp') {
+      nextIndex = currentIndex < 0 ? items.length - 1 : (currentIndex - 1 + items.length) % items.length;
+    } else if (event.key === 'Home') {
+      nextIndex = 0;
+    } else if (event.key === 'End') {
+      nextIndex = items.length - 1;
+    }
+    if (nextIndex !== null) {
+      event.preventDefault();
+      items[nextIndex]?.focus();
+    }
+  }
+
   $effect(() => {
     if (!linkActionMenuState.visible) return;
     adjustedX = linkActionMenuState.x;
     adjustedY = linkActionMenuState.y;
-    // Measure after render to keep the menu on-screen
-    requestAnimationFrame(() => adjustPosition());
+    const anchorElement = linkActionMenuState.anchorElement;
+    // Measure after render to keep the menu on-screen, then move focus into
+    // the menu so keyboard users can operate it.
+    requestAnimationFrame(() => {
+      adjustPosition();
+      menuItems()[0]?.focus();
+    });
 
     // Use mousedown so the menu closes before any other click handler fires
     const handleMouseDown = (event: MouseEvent) => {
@@ -39,14 +70,36 @@
         hideLinkActionMenu();
       }
     };
+    // The menu is position:fixed at the click point — dismiss on scroll
+    // (capture phase: chat scrolls in nested containers) and resize so it
+    // never floats at stale coordinates.
+    const handleScroll = (event: Event) => {
+      if (menuElement && event.target instanceof Node && menuElement.contains(event.target)) {
+        return;
+      }
+      hideLinkActionMenu();
+    };
+    const handleResize = () => hideLinkActionMenu();
     document.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', handleResize);
     const releaseEscapeLayer = pushEscapeLayer(() => {
       hideLinkActionMenu();
     });
 
     return () => {
       document.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', handleResize);
       releaseEscapeLayer();
+      // Restore focus to the triggering element if focus is still inside the menu
+      if (
+        anchorElement?.isConnected &&
+        (document.activeElement === document.body ||
+          (document.activeElement && menuElement?.contains(document.activeElement)))
+      ) {
+        anchorElement.focus();
+      }
     };
   });
 
@@ -105,7 +158,9 @@
       class="fixed z-[100] bg-popover border border-border shadow-lg py-0.5 min-w-40"
       style="left: {adjustedX}px; top: {adjustedY}px;"
       role="menu"
+      tabindex="-1"
       aria-label={m.navigation_linkActionMenu_menu_ariaLabel()}
+      onkeydown={handleMenuKeyDown}
     >
       <button
         type="button"

@@ -713,7 +713,8 @@
   "ui_updateToast_speedKbps_label": "{speed} KB/s",
   "ui_updateToast_speedBps_label": "{speed} B/s",
   "ui_linkTooltip_copyHint_tooltip": "点击打开 · 按住 {key} 复制",
-  "ui_linkTooltip_inAppHint_tooltip": "点击打开 · 按住 {key} 在应用内打开",
+  "ui_linkTooltip_inAppHint_tooltip": "ç¹å»æå¼ Â· æä½ {key} å¨åºç¨åæå¼",
+  "ui_linkTooltip_gitHubActionsHint_tooltip": "点击查看操作 · 按住 {key} 在应用内打开",
   "ui_linkTooltip_copied_label": "已复制！",
   "navigation_linkActionMenu_menu_ariaLabel": "链接操作",
   "navigation_linkActionMenu_startWorkspaceIssue_label": "从 Issue #{number} 新建工作区",

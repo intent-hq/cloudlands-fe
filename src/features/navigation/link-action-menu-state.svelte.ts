@@ -21,6 +21,8 @@ export interface LinkActionMenuState {
   y: number;
   /** Workspace the click originated from; enables the in-app browser action. */
   workspaceId?: WorkspaceId;
+  /** Element that triggered the menu; focus is restored to it on close. */
+  anchorElement?: HTMLElement | null;
 }
 
 export const linkActionMenuState = $state<LinkActionMenuState>({
@@ -30,6 +32,7 @@ export const linkActionMenuState = $state<LinkActionMenuState>({
   x: 0,
   y: 0,
   workspaceId: undefined,
+  anchorElement: null,
 });
 
 /** Show the link action menu at the given position. */
@@ -39,12 +42,14 @@ export function showLinkActionMenu(params: {
   x: number;
   y: number;
   workspaceId?: WorkspaceId;
+  anchorElement?: HTMLElement | null;
 }): void {
   linkActionMenuState.url = params.url;
   linkActionMenuState.gitHubRef = params.gitHubRef;
   linkActionMenuState.x = params.x;
   linkActionMenuState.y = params.y;
   linkActionMenuState.workspaceId = params.workspaceId;
+  linkActionMenuState.anchorElement = params.anchorElement ?? null;
   linkActionMenuState.visible = true;
 }
 
@@ -54,4 +59,5 @@ export function hideLinkActionMenu(): void {
   linkActionMenuState.url = '';
   linkActionMenuState.gitHubRef = null;
   linkActionMenuState.workspaceId = undefined;
+  linkActionMenuState.anchorElement = null;
 }

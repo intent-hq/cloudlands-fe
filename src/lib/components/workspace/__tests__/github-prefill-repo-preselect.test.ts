@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => {
     goto: vi.fn(),
     getRemoteUrl: vi.fn<(repoPath: string) => Promise<unknown>>(),
     pendingPrefill: null as unknown,
+    prefillSubscribers: new Set<(value: unknown) => void>(),
     recentRepos: [] as unknown[],
   };
 });
@@ -46,7 +47,14 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
   selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => mocks.recentRepos),
-  selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => mocks.pendingPrefill),
+  // Live readable: tracks subscribers so tests can push a second prefill
+  selectWorkspaceInitializerPendingGitHubPrefill: () => ({
+    subscribe(run: (value: unknown) => void) {
+      run(mocks.pendingPrefill);
+      mocks.prefillSubscribers.add(run);
+      return () => mocks.prefillSubscribers.delete(run);
+    },
+  }),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
 }));
 
@@ -141,13 +149,23 @@ vi.mock('$lib/electron-bridge', () => ({
   emit: vi.fn(async () => {}),
 }));
 
+// Mirror the real resolver's IssueSelectionData-shaped return (see
+// github-prefill.ts / github-prefill.test.ts) so contract breaks between the
+// resolver and handleIssueSelect aren't masked by a drifting mock shape.
 vi.mock('$lib/components/workspace/initializer/github-prefill', () => ({
   resolveGitHubPrefillSelection: vi.fn(
-    async (prefill: { owner: string; repo: string; number: number; kind: string }) => ({
-      type: prefill.kind,
-      number: prefill.number,
-      title: `${prefill.kind} #${prefill.number}`,
-      repository: { owner: prefill.owner, name: prefill.repo },
+    async (prefill: {
+      owner: string;
+      repo: string;
+      number: number;
+      kind: string;
+      url: string;
+    }) => ({
+      type: 'github' as const,
+      identifier: `${prefill.owner}/${prefill.repo}#${prefill.number}`,
+      title: `#${prefill.number}`,
+      url: prefill.url,
+      metadata: { project: `${prefill.owner}/${prefill.repo}` },
     }),
   ),
 }));
@@ -190,10 +208,31 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
+import { resolveGitHubPrefillSelection } from '$lib/components/workspace/initializer/github-prefill';
 import { warmImport } from '../../../../test/warm-import';
 
 function remoteUrlResponse(owner: string, repo: string) {
   return { success: true, data: { owner, repo } };
+}
+
+/** Set the pending prefill and notify live subscribers (simulates a new dispatch). */
+function pushPrefill(value: unknown) {
+  mocks.pendingPrefill = value;
+  for (const run of mocks.prefillSubscribers) run(value);
+}
+
+/**
+ * Mirror the real reducer for the clear action: the component clears the
+ * pending prefill before consuming it, and the live selector must reflect
+ * that (otherwise a later effect re-run would re-consume a stale prefill,
+ * which cannot happen against the real store).
+ */
+function emulateClearPrefillReducer() {
+  mocks.dispatch.mockImplementation((action: { type?: string }) => {
+    if (action?.type === 'workspaceInitializer/clearPendingGitHubPrefill') {
+      pushPrefill(null);
+    }
+  });
 }
 
 function renderInitializer() {
@@ -214,8 +253,10 @@ describe('CompactWorkspaceInitializer GitHub-prefill repo preselection', () => {
     vi.clearAllMocks();
     sessionStorage.clear();
     mocks.pendingPrefill = null;
+    mocks.prefillSubscribers.clear();
     mocks.recentRepos = [];
     mocks.getRemoteUrl.mockResolvedValue({ success: false });
+    emulateClearPrefillReducer();
   });
 
   afterEach(() => {
@@ -279,6 +320,56 @@ describe('CompactWorkspaceInitializer GitHub-prefill repo preselection', () => {
       expect(textOf(result, 'picker-repo-type')).toBe('github');
       expect(textOf(result, 'picker-github-url')).toBe('https://github.com/intent-hq/monorepo');
       expect(textOf(result, 'picker-repo-path')).toBe('~/Developer/monorepo');
+    });
+  });
+
+  it('drops a stale in-flight prefill when a second one arrives (second wins)', async () => {
+    // First prefill's repo match hangs on a remote probe; the second resolves
+    // instantly via stored metadata. Releasing the first probe afterwards must
+    // not flip the repo selection back or insert the first mention.
+    let releaseFirstProbe!: (value: unknown) => void;
+    const firstProbe = new Promise((resolve) => {
+      releaseFirstProbe = resolve;
+    });
+    mocks.recentRepos = [
+      { path: '/repos/one', type: 'local', name: 'one' },
+      { path: '/repos/two', type: 'local', name: 'two', owner: 'intent-hq' },
+    ];
+    mocks.getRemoteUrl.mockImplementation((repoPath: string) =>
+      repoPath === '/repos/one' ? (firstProbe as Promise<never>) : Promise.resolve({ success: false }),
+    );
+    mocks.pendingPrefill = {
+      owner: 'acme',
+      repo: 'one',
+      number: 1,
+      kind: 'issue',
+      url: 'https://github.com/acme/one/issues/1',
+    };
+
+    const result = renderInitializer();
+    // First prefill is now blocked probing /repos/one
+    await waitFor(() => expect(mocks.getRemoteUrl).toHaveBeenCalledWith('/repos/one'));
+
+    pushPrefill({
+      owner: 'intent-hq',
+      repo: 'two',
+      number: 2,
+      kind: 'issue',
+      url: 'https://github.com/intent-hq/two/issues/2',
+    });
+    await waitFor(() => expect(textOf(result, 'picker-repo-path')).toBe('/repos/two'));
+
+    // Release the stale first probe with a match for /repos/one
+    releaseFirstProbe(remoteUrlResponse('acme', 'one'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // The stale run must not override the newer selection or insert its mention
+    expect(textOf(result, 'picker-repo-path')).toBe('/repos/two');
+    expect(resolveGitHubPrefillSelection).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(resolveGitHubPrefillSelection).mock.calls[0][0]).toMatchObject({
+      owner: 'intent-hq',
+      repo: 'two',
+      number: 2,
     });
   });
 
