@@ -24,7 +24,7 @@
   const hintText = $derived(
     isMailto
       ? m.ui_linkTooltip_copyHint_tooltip({ key: modifierKey })
-      : m.ui_linkTooltip_externalHint_tooltip({ key: modifierKey }),
+      : m.ui_linkTooltip_inAppHint_tooltip({ key: modifierKey }),
   );
 </script>
 

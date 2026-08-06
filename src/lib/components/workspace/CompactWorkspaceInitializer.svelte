@@ -24,14 +24,17 @@
   import { selectLastUsedScriptForRepo } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
   import {
   setCompactWorkspaceInitializerFormState,
+  clearWorkspaceInitializerPendingGitHubPrefill,
   setWorkspaceInitializerBranchForRepo,
   setWorkspaceInitializerLastSubmittedAgent,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import {
   selectCompactWorkspaceInitializerFormState,
+  selectWorkspaceInitializerDefaultParentPath,
   selectWorkspaceInitializerHydrated,
   selectWorkspaceInitializerLastSelectedRepo,
   selectWorkspaceInitializerLastSubmittedAgent,
+  selectWorkspaceInitializerPendingGitHubPrefill,
   selectWorkspaceInitializerRecentRepos,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type {
@@ -127,6 +130,11 @@
   createNewWorkspaceDraftSaver,
   restoreNewWorkspaceDraft,
 } from './initializer/new-workspace-draft';
+  import { resolveGitHubPrefillSelection } from './initializer/github-prefill';
+  import {
+  matchGitHubPrefillRepo,
+  type GitHubPrefillRepoCandidate,
+} from './initializer/github-prefill-repo-match';
 
   const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
@@ -403,6 +411,8 @@
   const lastSelectedRepo$ = selectWorkspaceInitializerLastSelectedRepo();
   const lastSubmittedAgent$ = selectWorkspaceInitializerLastSubmittedAgent();
   const recentRepos$ = selectWorkspaceInitializerRecentRepos();
+  const pendingGitHubPrefill$ = selectWorkspaceInitializerPendingGitHubPrefill();
+  const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
 
   const savedState = $compactFormState$;
   const lastSubmittedAgent = $lastSubmittedAgent$;
@@ -885,6 +895,82 @@
           richTextarea.insertText(m.workspace_compactInitializer_nextIWantTo_text());
         }
       }, 200);
+    }
+  });
+
+  // Preselect the repo matching a pending prefill's owner/repo: current +
+  // recent repos first (stored metadata, then git-remote probes), GitHub clone
+  // flow when nothing matches, and 'keep' (no change) on errors so the
+  // last-used repo stays selected (non-fatal).
+  async function preselectGitHubPrefillRepo(target: { owner: string; repo: string }) {
+    const candidates: GitHubPrefillRepoCandidate[] = [];
+    if (repoPath && repoType !== 'remote') {
+      candidates.push({ path: repoPath, type: repoType, githubUrl: githubUrl || undefined });
+    }
+    for (const recent of $recentRepos$) {
+      candidates.push({
+        path: recent.path,
+        type: recent.type,
+        name: recent.name,
+        owner: recent.owner,
+        githubUrl: recent.githubUrl,
+      });
+    }
+    const selection = await matchGitHubPrefillRepo({
+      owner: target.owner,
+      repo: target.repo,
+      candidates,
+      defaultParentPath: $defaultParentPath$,
+      probeRemote: async (path) => {
+        if (typeof window === 'undefined' || !window.electronAPI) return null;
+        const response = await invoke<{
+          success?: boolean;
+          data?: { owner?: string; repo?: string };
+        }>('git-tracking:get-remote-url', { repoPath: path });
+        return response?.success && response.data?.owner && response.data?.repo
+          ? { owner: response.data.owner, repo: response.data.repo }
+          : null;
+      },
+    });
+    if (selection.kind === 'keep') return;
+    if (selection.kind === 'local') {
+      // Already selected — leave the form (incl. branch) untouched
+      if (repoType === 'local' && repoPath === selection.path) return;
+      const detail = { path: selection.path, type: 'local' as const, isValidPath: true };
+      handleRepoChange({ detail } as CustomEvent<typeof detail>);
+    } else {
+      const detail = {
+        path: selection.clonePath,
+        type: 'github' as const,
+        githubUrl: selection.githubUrl,
+        clonePath: selection.clonePath,
+        isValidPath: true,
+      };
+      handleRepoChange({ detail } as CustomEvent<typeof detail>);
+    }
+  }
+
+  // Consume a pending GitHub issue/PR prefill (set by the chat link action menu's
+  // "Start new workspace…"): clear it from the store immediately so it never
+  // re-applies, preselect the repo matching the link's owner/repo, resolve PR
+  // branch info via git-tracking:get-pull-request (fetch failures degrade to a
+  // minimal mention), then insert the context mention pill through the same
+  // path as the Add-context issue picker.
+  $effect(() => {
+    const prefill = $pendingGitHubPrefill$;
+    if (prefill && richTextarea) {
+      appStore.dispatch(clearWorkspaceInitializerPendingGitHubPrefill());
+      void (async () => {
+        try {
+          const snapshot = $state.snapshot(prefill);
+          await preselectGitHubPrefillRepo(snapshot);
+          const selection = await resolveGitHubPrefillSelection(snapshot);
+          handleIssueSelect(`#${prefill.number}`, selection);
+          richTextarea?.focus();
+        } catch (err) {
+          logger.error('Failed to apply GitHub prefill', err);
+        }
+      })();
     }
   });
 

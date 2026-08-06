@@ -12,11 +12,17 @@
     onBranchChange,
     detectedGitHubOwner = null,
     detectedGitHubRepo = null,
+    repoPath = '',
+    repoType = 'local',
+    githubUrl = '',
   }: {
     onRepoChange?: (event: { detail: Record<string, unknown> }) => void;
     onBranchChange?: (event: { detail: { branch: string } }) => void;
     detectedGitHubOwner?: string | null;
     detectedGitHubRepo?: string | null;
+    repoPath?: string;
+    repoType?: string;
+    githubUrl?: string;
     [key: string]: unknown;
   } = $props();
 
@@ -34,3 +40,6 @@
 
 <div data-testid="detected-github-owner">{detectedGitHubOwner ?? ''}</div>
 <div data-testid="detected-github-repo">{detectedGitHubRepo ?? ''}</div>
+<div data-testid="picker-repo-path">{repoPath}</div>
+<div data-testid="picker-repo-type">{repoType}</div>
+<div data-testid="picker-github-url">{githubUrl}</div>

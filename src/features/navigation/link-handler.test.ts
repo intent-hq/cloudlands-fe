@@ -36,6 +36,12 @@ vi.mock('../../shared/generated/ipc-client', () => ({
   invoke: invokeIpcMock,
 }));
 
+const showLinkActionMenuMock = vi.hoisted(() => vi.fn());
+vi.mock('./link-action-menu-state.svelte', () => ({
+  showLinkActionMenu: showLinkActionMenuMock,
+  hideLinkActionMenu: vi.fn(),
+}));
+
 // Workspace entity lookup used to relativize absolute paths
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: {
@@ -359,13 +365,16 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
       rawHref: '#heading',
     });
 
-    // Current behavior preserved: self-origin http URL goes to the browser panel
+    // Current behavior preserved: self-origin http URL is treated as a plain
+    // http(s) link (flipped default → external browser)
     expect(result).toBe(true);
     expect(reduxDispatchMock).not.toHaveBeenCalled();
-    expect(openBrowserPanelMock).toHaveBeenCalled();
+    expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', {
+      url: `${window.location.href}#heading`,
+    });
   });
 
-  it('should keep external https links routed to the browser panel', async () => {
+  it('should route plain-clicked external https links to the external browser', async () => {
     const url = 'https://example.com/docs';
     const result = await handleLink(url, {
       workspaceId: TEST_WORKSPACE_ID,
@@ -373,7 +382,8 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     });
 
     expect(result).toBe(true);
-    expect(openBrowserPanelMock).toHaveBeenCalledWith(url);
+    expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', { url });
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
     expect(reduxDispatchMock).not.toHaveBeenCalled();
   });
 
@@ -400,5 +410,124 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
 
     cleanup();
     document.body.innerHTML = '';
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Flipped http(s) routing + GitHub issue/PR link action menu
+// ---------------------------------------------------------------------------
+
+describe('handleLink – flipped http(s) routing and link action menu', () => {
+  beforeEach(() => {
+    reduxDispatchMock.mockClear();
+    openBrowserPanelMock.mockClear();
+    invokeIpcMock.mockClear();
+    showLinkActionMenuMock.mockClear();
+  });
+
+  it('Cmd+Click routes http(s) links to the embedded browser panel', async () => {
+    const url = 'https://example.com/docs';
+    const result = await handleLink(url, {
+      workspaceId: TEST_WORKSPACE_ID,
+      modifiers: { metaKey: true, ctrlKey: true },
+    });
+
+    expect(result).toBe(true);
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url);
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+  });
+
+  it('Cmd+Click without a workspaceId falls back to the external browser', async () => {
+    const url = 'https://example.com/docs';
+    const result = await handleLink(url, { modifiers: { metaKey: true, ctrlKey: true } });
+
+    expect(result).toBe(true);
+    expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', { url });
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('forceExternal routes to the external browser even with Cmd held', async () => {
+    const url = 'https://example.com/docs';
+    const result = await handleLink(url, {
+      workspaceId: TEST_WORKSPACE_ID,
+      forceExternal: true,
+      modifiers: { metaKey: true, ctrlKey: true },
+    });
+
+    expect(result).toBe(true);
+    expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', { url });
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('auth URLs always open in the external browser, even Cmd+Clicked', async () => {
+    const url = 'https://example.com/oauth/authorize';
+    const result = await handleLink(url, {
+      workspaceId: TEST_WORKSPACE_ID,
+      modifiers: { metaKey: true, ctrlKey: true },
+    });
+
+    expect(result).toBe(true);
+    expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', { url });
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('plain click on a GitHub issue link with an event shows the action menu', async () => {
+    const url = 'https://github.com/acme/widgets/issues/42';
+    const event = new MouseEvent('click', { clientX: 100, clientY: 200 });
+    const result = await handleLink(url, { workspaceId: TEST_WORKSPACE_ID, event });
+
+    expect(result).toBe(true);
+    expect(showLinkActionMenuMock).toHaveBeenCalledWith({
+      url,
+      gitHubRef: { owner: 'acme', repo: 'widgets', number: 42, kind: 'issue' },
+      x: 100,
+      y: 200,
+      workspaceId: TEST_WORKSPACE_ID,
+    });
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('plain click on a GitHub PR link shows the menu with kind pr', async () => {
+    const url = 'https://github.com/acme/widgets/pull/7';
+    const event = new MouseEvent('click', { clientX: 10, clientY: 20 });
+    const result = await handleLink(url, { event });
+
+    expect(result).toBe(true);
+    expect(showLinkActionMenuMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gitHubRef: { owner: 'acme', repo: 'widgets', number: 7, kind: 'pr' },
+        workspaceId: undefined,
+      }),
+    );
+  });
+
+  it('GitHub issue link without a MouseEvent falls back to the external browser', async () => {
+    const url = 'https://github.com/acme/widgets/issues/42';
+    const result = await handleLink(url, { workspaceId: TEST_WORKSPACE_ID });
+
+    expect(result).toBe(true);
+    expect(showLinkActionMenuMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', { url });
+  });
+
+  it('Cmd+Click on a GitHub issue link bypasses the menu → browser panel', async () => {
+    const url = 'https://github.com/acme/widgets/issues/42';
+    const event = new MouseEvent('click', { clientX: 5, clientY: 5, metaKey: true, ctrlKey: true });
+    const result = await handleLink(url, { workspaceId: TEST_WORKSPACE_ID, event });
+
+    expect(result).toBe(true);
+    expect(showLinkActionMenuMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url);
+  });
+
+  it('non-issue/PR GitHub links plain-click to the external browser (no menu)', async () => {
+    const url = 'https://github.com/acme/widgets';
+    const event = new MouseEvent('click', { clientX: 1, clientY: 1 });
+    const result = await handleLink(url, { workspaceId: TEST_WORKSPACE_ID, event });
+
+    expect(result).toBe(true);
+    expect(showLinkActionMenuMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', { url });
   });
 });

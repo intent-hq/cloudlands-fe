@@ -1,12 +1,12 @@
 /**
  * @vitest-environment jsdom
  *
- * Regression tests for the `git-tracking:get-remote-url` probe race in
- * CompactWorkspaceInitializer (reviewer finding on cloudlands-fe#443):
- * switching repos must clear the detected GitHub owner/repo synchronously
- * (no stale `(owner/repo)` suffix on the repo pill), and a late-arriving
- * probe response for a previous repoPath must never overwrite the current
- * repo's result.
+ * Integration tests for GitHub-prefill repo preselection through
+ * CompactWorkspaceInitializer with mock IPC: consuming a pending issue/PR
+ * prefill preselects the recent repo whose git remote (probed via
+ * `git-tracking:get-remote-url`) matches the link's owner/repo, falls back to
+ * the GitHub clone flow when nothing matches, and keeps the current repo when
+ * probing errors.
  */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => {
     dispatch: vi.fn(),
     goto: vi.fn(),
     getRemoteUrl: vi.fn<(repoPath: string) => Promise<unknown>>(),
+    pendingPrefill: null as unknown,
+    recentRepos: [] as unknown[],
   };
 });
 
@@ -43,8 +45,8 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => null),
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
   selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
-  selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
-  selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
+  selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => mocks.recentRepos),
+  selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => mocks.pendingPrefill),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
 }));
 
@@ -121,9 +123,8 @@ vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
   clearNewWorkspaceDraft: vi.fn(),
 }));
 
-// The component gates the remote-URL probe on `window.electronAPI` (provided
-// by test-setup) and calls `invoke('git-tracking:get-remote-url')` through
-// the electron bridge — route that channel to a per-test mock.
+// Route the electron-bridge `git-tracking:get-remote-url` probe (used both by
+// the detected-suffix effect and the prefill repo matcher) to a per-test mock.
 vi.mock('$lib/electron-bridge', () => ({
   isElectron: vi.fn(() => true),
   invoke: vi.fn(async (channel: string, args?: { repoPath?: string }) => {
@@ -138,6 +139,17 @@ vi.mock('$lib/electron-bridge', () => ({
   listen: vi.fn(async () => () => {}),
   listenSync: vi.fn(() => () => {}),
   emit: vi.fn(async () => {}),
+}));
+
+vi.mock('$lib/components/workspace/initializer/github-prefill', () => ({
+  resolveGitHubPrefillSelection: vi.fn(
+    async (prefill: { owner: string; repo: string; number: number; kind: string }) => ({
+      type: prefill.kind,
+      number: prefill.number,
+      title: `${prefill.kind} #${prefill.number}`,
+      repository: { owner: prefill.owner, name: prefill.repo },
+    }),
+  ),
 }));
 
 vi.mock('$lib/components/ui/RichTextarea.svelte', async () => ({
@@ -180,14 +192,6 @@ vi.mock('svelte-fa', async () => ({
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
 import { warmImport } from '../../../../test/warm-import';
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
-}
-
 function remoteUrlResponse(owner: string, repo: string) {
   return { success: true, data: { owner, repo } };
 }
@@ -196,32 +200,8 @@ function renderInitializer() {
   return render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
 }
 
-/** Callbacks the initializer passed to the (mocked) RepoAndBranchPicker. */
-function pickerCallbacks() {
-  return (
-    window as unknown as {
-      __mockRepoAndBranchPicker: {
-        onRepoChange: (event: { detail: Record<string, unknown> }) => void;
-      };
-    }
-  ).__mockRepoAndBranchPicker;
-}
-
-/** Drive a local repo selection through the picker's onRepoChange. */
-function selectLocalRepo(path: string) {
-  pickerCallbacks().onRepoChange({
-    detail: { path, type: 'local', isValidPath: true },
-  });
-}
-
 const textOf = (result: ReturnType<typeof renderInitializer>, testId: string) =>
   result.getByTestId(testId).textContent;
-
-/** Flush pending microtasks and a macrotask so late promise chains settle. */
-async function flush() {
-  await Promise.resolve();
-  await new Promise((r) => setTimeout(r, 0));
-}
 
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
@@ -229,10 +209,12 @@ warmImport(() => import('./mocks/MockRichTextarea.svelte'));
 warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
 warmImport(() => import('./mocks/MockRepoAndBranchPicker.svelte'));
 
-describe('CompactWorkspaceInitializer remote-URL probe race', () => {
+describe('CompactWorkspaceInitializer GitHub-prefill repo preselection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    mocks.pendingPrefill = null;
+    mocks.recentRepos = [];
     mocks.getRemoteUrl.mockResolvedValue({ success: false });
   });
 
@@ -241,63 +223,79 @@ describe('CompactWorkspaceInitializer remote-URL probe race', () => {
     sessionStorage.clear();
   });
 
-  it('shows the detected owner/repo for a local repo with a GitHub remote (happy path)', async () => {
-    mocks.getRemoteUrl.mockResolvedValue(remoteUrlResponse('owner-a', 'repo-a'));
+  it('preselects the recent repo whose probed remote matches the prefill owner/repo', async () => {
+    mocks.pendingPrefill = {
+      owner: 'intent-hq',
+      repo: 'monorepo',
+      number: 42,
+      kind: 'issue',
+      url: 'https://github.com/intent-hq/monorepo/issues/42',
+    };
+    mocks.recentRepos = [
+      { path: '/repos/other', type: 'local', name: 'other' },
+      { path: '/repos/monorepo', type: 'local', name: 'monorepo' },
+    ];
+    mocks.getRemoteUrl.mockImplementation(async (repoPath: string) =>
+      repoPath === '/repos/monorepo'
+        ? remoteUrlResponse('intent-hq', 'monorepo')
+        : { success: false },
+    );
 
     const result = renderInitializer();
-    await waitFor(() => expect(pickerCallbacks()).toBeTruthy());
-    selectLocalRepo('/repo/a');
-
-    await waitFor(() => expect(mocks.getRemoteUrl).toHaveBeenCalledWith('/repo/a'));
     await waitFor(() => {
-      expect(textOf(result, 'detected-github-owner')).toBe('owner-a');
-      expect(textOf(result, 'detected-github-repo')).toBe('repo-a');
+      expect(textOf(result, 'picker-repo-path')).toBe('/repos/monorepo');
+      expect(textOf(result, 'picker-repo-type')).toBe('local');
     });
   });
 
-  it('clears the detected owner/repo as soon as the repo switches (no stale suffix)', async () => {
-    const probeB = deferred<unknown>();
-    mocks.getRemoteUrl.mockImplementation(async (repoPath: string) =>
-      repoPath === '/repo/a' ? remoteUrlResponse('owner-a', 'repo-a') : probeB.promise,
-    );
+  it('preselects via stored recent-repo owner metadata without probing that repo', async () => {
+    mocks.pendingPrefill = {
+      owner: 'intent-hq',
+      repo: 'monorepo',
+      number: 7,
+      kind: 'pr',
+      url: 'https://github.com/intent-hq/monorepo/pull/7',
+    };
+    mocks.recentRepos = [
+      { path: '/repos/monorepo', type: 'local', name: 'monorepo', owner: 'intent-hq' },
+    ];
 
     const result = renderInitializer();
-    await waitFor(() => expect(pickerCallbacks()).toBeTruthy());
-    selectLocalRepo('/repo/a');
-    await waitFor(() => expect(textOf(result, 'detected-github-owner')).toBe('owner-a'));
-
-    // Switch repos while B's probe is still in flight: the previous repo's
-    // suffix must disappear immediately, not linger until B resolves.
-    selectLocalRepo('/repo/b');
-    await waitFor(() => expect(textOf(result, 'detected-github-owner')).toBe(''));
-    expect(textOf(result, 'detected-github-repo')).toBe('');
+    await waitFor(() => expect(textOf(result, 'picker-repo-path')).toBe('/repos/monorepo'));
   });
 
-  it('ignores an out-of-order probe response for a superseded repo path', async () => {
-    const probeA = deferred<unknown>();
-    const probeB = deferred<unknown>();
-    mocks.getRemoteUrl.mockImplementation((repoPath: string) =>
-      repoPath === '/repo/a' ? probeA.promise : probeB.promise,
-    );
+  it('falls back to the GitHub clone flow when no local repo matches', async () => {
+    mocks.pendingPrefill = {
+      owner: 'intent-hq',
+      repo: 'monorepo',
+      number: 3,
+      kind: 'issue',
+      url: 'https://github.com/intent-hq/monorepo/issues/3',
+    };
+    mocks.recentRepos = [{ path: '/repos/other', type: 'local', name: 'other' }];
 
     const result = renderInitializer();
-    await waitFor(() => expect(pickerCallbacks()).toBeTruthy());
-    selectLocalRepo('/repo/a');
-    await waitFor(() => expect(mocks.getRemoteUrl).toHaveBeenCalledWith('/repo/a'));
+    await waitFor(() => {
+      expect(textOf(result, 'picker-repo-type')).toBe('github');
+      expect(textOf(result, 'picker-github-url')).toBe('https://github.com/intent-hq/monorepo');
+      expect(textOf(result, 'picker-repo-path')).toBe('~/Developer/monorepo');
+    });
+  });
 
-    // Switch repos while A's probe is in flight, then resolve A late.
-    selectLocalRepo('/repo/b');
-    await waitFor(() => expect(mocks.getRemoteUrl).toHaveBeenCalledWith('/repo/b'));
-    probeA.resolve(remoteUrlResponse('owner-a', 'repo-a'));
-    await flush();
+  it('keeps the current selection when probing errors (non-fatal)', async () => {
+    mocks.pendingPrefill = {
+      owner: 'intent-hq',
+      repo: 'monorepo',
+      number: 9,
+      kind: 'issue',
+      url: 'https://github.com/intent-hq/monorepo/issues/9',
+    };
+    mocks.recentRepos = [{ path: '/repos/other', type: 'local', name: 'other' }];
+    mocks.getRemoteUrl.mockRejectedValue(new Error('ipc down'));
 
-    // A's late result must be dropped, not shown for repo B.
-    expect(textOf(result, 'detected-github-owner')).toBe('');
-    expect(textOf(result, 'detected-github-repo')).toBe('');
-
-    // B's own probe still applies normally.
-    probeB.resolve(remoteUrlResponse('owner-b', 'repo-b'));
-    await waitFor(() => expect(textOf(result, 'detected-github-owner')).toBe('owner-b'));
-    expect(textOf(result, 'detected-github-repo')).toBe('repo-b');
+    const result = renderInitializer();
+    // The prefill mention is still applied; repo selection is left unchanged.
+    await waitFor(() => expect(textOf(result, 'picker-repo-path')).toBe(''));
+    expect(textOf(result, 'picker-repo-type')).toBe('local');
   });
 });
