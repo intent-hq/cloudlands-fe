@@ -168,7 +168,8 @@
         </div>
       {:else if $agentIsResponding$ || $agentIsThinking$}
         <!-- Active: always show spinner + descriptive label -->
-        {@const toolDisplay = agent.activeToolName ? classifyTool(agent.activeToolName, agent.activeToolInput || {}) : null}
+        {@const classified = agent.activeToolName ? classifyTool(agent.activeToolName, agent.activeToolInput || {}) : null}
+        {@const toolDisplay = classified && !classified.hidden ? classified : null}
         <div class="flex flex-col items-center gap-1">
           <div class="flex items-center justify-center gap-1.5">
             <Spinner seed={agent.agentId} size={4} />
