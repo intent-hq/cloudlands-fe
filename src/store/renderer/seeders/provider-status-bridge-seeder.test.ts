@@ -487,6 +487,30 @@ describe("provider-status-bridge-seeder", () => {
       });
     });
 
+    it("rides the daemon auth cache when the request carries force:false", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
+        "host.providerAuthStatus": authOne("auggie", true),
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, {
+        providerId: "auggie",
+        force: false,
+      });
+
+      // Passive bulk loads (onboarding first mount) read the daemon's cached
+      // verdict instead of re-probing every CLI.
+      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {
+        providerId: "auggie",
+        force: false,
+      });
+      expect(response).toEqual({
+        success: true,
+        providerId: "auggie",
+        data: { available: true, authenticated: true },
+      });
+    });
+
     it("rechecks claude-code with an npx probe — warning set when npx is missing", async () => {
       routeDaemon({
         "host.findBinary": (params) => {
@@ -578,6 +602,7 @@ describe("provider-status-bridge-seeder", () => {
         data: {
           available: true,
           authenticated: true,
+          hasNpxFallback: true,
           warning: CODEX_ADAPTER_MISSING_WARNING,
         },
       });
@@ -599,7 +624,7 @@ describe("provider-status-bridge-seeder", () => {
       expect(response).toEqual({
         success: true,
         providerId: "codex",
-        data: { available: true, authenticated: true },
+        data: { available: true, authenticated: true, hasNpxFallback: true },
       });
     });
 
@@ -620,7 +645,7 @@ describe("provider-status-bridge-seeder", () => {
       expect(response).toEqual({
         success: true,
         providerId: "codex",
-        data: { available: true, authenticated: true },
+        data: { available: true, authenticated: true, hasNpxFallback: true },
       });
     });
 
@@ -639,7 +664,7 @@ describe("provider-status-bridge-seeder", () => {
       expect(response).toEqual({
         success: true,
         providerId: "codex",
-        data: { available: true, authenticated: true },
+        data: { available: true, authenticated: true, hasNpxFallback: true },
       });
     });
 
@@ -659,7 +684,7 @@ describe("provider-status-bridge-seeder", () => {
       expect(response).toEqual({
         success: true,
         providerId: "codex",
-        data: { available: false },
+        data: { available: false, hasNpxFallback: true },
       });
       // No auth verdict is fetched for an uninstalled CLI.
       expect(mockedRequest).not.toHaveBeenCalledWith(
@@ -874,6 +899,7 @@ describe("provider-status-bridge-seeder", () => {
         Envelope<{
           paths: Record<string, string | null>;
           secondaryPaths: Record<string, string | null>;
+          npx?: { resolvedPath: string | null; version: string | null; versionOk: boolean };
         }>
       >(PROVIDERS_CHANNELS.GET_PATHS);
 
@@ -889,6 +915,9 @@ describe("provider-status-bridge-seeder", () => {
             codex: null,
           },
           secondaryPaths: { unsloth: "/usr/local/bin/unsloth" },
+          // npx rides the same discovery round-trip so the onboarding bulk
+          // check can read it without the aggregated auth sweep.
+          npx: { resolvedPath: "/usr/local/bin/npx", version: "10.2.4", versionOk: true },
         },
       });
     });
@@ -917,6 +946,7 @@ describe("provider-status-bridge-seeder", () => {
         Envelope<{
           paths: Record<string, string | null>;
           secondaryPaths: Record<string, string | null>;
+          npx?: { resolvedPath: string | null; version: string | null; versionOk: boolean };
         }>
       >(PROVIDERS_CHANNELS.GET_PATHS);
 
@@ -925,6 +955,7 @@ describe("provider-status-bridge-seeder", () => {
         data: {
           paths: { unsloth: "/home/user/.opencode/bin/opencode" },
           secondaryPaths: { unsloth: null },
+          npx: { resolvedPath: null, version: null, versionOk: false },
         },
       });
     });
