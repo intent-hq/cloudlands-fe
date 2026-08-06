@@ -88,6 +88,19 @@ export interface WorkspaceInitializerOnboardingFormState {
   step?: OnboardingStep;
 }
 
+/**
+ * GitHub issue/PR selected from a chat link action, pending insertion into the
+ * new-workspace initializer prompt as a context mention. Transient (not persisted);
+ * cleared as soon as the initializer consumes it.
+ */
+export interface WorkspaceInitializerPendingGitHubPrefill {
+  owner: string;
+  repo: string;
+  number: number;
+  kind: 'issue' | 'pr';
+  url: string;
+}
+
 export interface WorkspaceInitializerHydrationState {
   compactFormState?: CompactWorkspaceInitializerFormState | null;
   onboardingFormState?: WorkspaceInitializerOnboardingFormState | null;
@@ -109,4 +122,6 @@ export interface WorkspaceInitializerState {
   recentRepos: Collection<WorkspaceInitializerRecentRepo, 'path'>;
   remoteSetups: Collection<WorkspaceInitializerRemoteSetup, 'id'>;
   lastSubmittedAgent: WorkspaceInitializerAgentSettings | null;
+  /** Transient GitHub issue/PR prefill pending consumption by the initializer (not persisted). */
+  pendingGitHubPrefill: WorkspaceInitializerPendingGitHubPrefill | null;
 }

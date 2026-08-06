@@ -6,6 +6,7 @@
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import { parseGitHubIssueOrPrUrl } from '$shared/utils/link-helpers';
 
   const isMac = isMacPlatform();
   const modifierKey = isMac ? '⌘' : 'Ctrl';
@@ -21,10 +22,14 @@
 
   const displayUrl = $derived(formatUrlForDisplay(state.url));
   const isMailto = $derived(state.url.startsWith('mailto:'));
+  // GitHub issue/PR links open the action menu on plain click, not the browser
+  const isGitHubIssueOrPr = $derived(parseGitHubIssueOrPrUrl(state.url) !== null);
   const hintText = $derived(
     isMailto
       ? m.ui_linkTooltip_copyHint_tooltip({ key: modifierKey })
-      : m.ui_linkTooltip_externalHint_tooltip({ key: modifierKey }),
+      : isGitHubIssueOrPr
+        ? m.ui_linkTooltip_gitHubActionsHint_tooltip({ key: modifierKey })
+        : m.ui_linkTooltip_inAppHint_tooltip({ key: modifierKey }),
   );
 </script>
 
