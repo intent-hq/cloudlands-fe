@@ -2673,6 +2673,7 @@
   "layout_fileTab_showDiffIndicators_tooltip": "差分インジケーターを表示",
   "layout_fileTab_deleteFile_tooltip": "ファイルを削除",
   "layout_fileTab_errorLoading_label": "ファイルの読み込みエラー",
+  "layout_fileTab_outsideWorkspace_label": "ワークスペース外のファイルを開く操作はサポートされていません",
   "layout_fileTab_preparing_label": "ファイルの読み込みを準備中...",
   "layout_fileTab_file_fallback": "ファイル",
   "layout_noteTab_copyFullNote_tooltip": "ノート全体をコピー",

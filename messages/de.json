@@ -2673,6 +2673,7 @@
   "layout_fileTab_showDiffIndicators_tooltip": "Diff-Indikatoren anzeigen",
   "layout_fileTab_deleteFile_tooltip": "Datei löschen",
   "layout_fileTab_errorLoading_label": "Fehler beim Laden der Datei",
+  "layout_fileTab_outsideWorkspace_label": "Das Öffnen einer Datei außerhalb des Arbeitsbereichs wird nicht unterstützt",
   "layout_fileTab_preparing_label": "Laden der Datei wird vorbereitet...",
   "layout_fileTab_file_fallback": "Datei",
   "layout_noteTab_copyFullNote_tooltip": "Gesamte Notiz kopieren",

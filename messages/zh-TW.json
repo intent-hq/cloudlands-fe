@@ -2673,6 +2673,7 @@
   "layout_fileTab_showDiffIndicators_tooltip": "顯示差異標記",
   "layout_fileTab_deleteFile_tooltip": "刪除檔案",
   "layout_fileTab_errorLoading_label": "載入檔案出錯",
+  "layout_fileTab_outsideWorkspace_label": "不支援開啟工作區之外的檔案",
   "layout_fileTab_preparing_label": "正在準備載入檔案…",
   "layout_fileTab_file_fallback": "檔案",
   "layout_noteTab_copyFullNote_tooltip": "複製整個筆記",
