@@ -47,6 +47,7 @@
   "menu_bring_all_to_front": "Tout ramener au premier plan",
   "menu_help": "Aide",
   "menu_export_debug_logs": "Exporter les journaux de débogage",
+  "menu_show_release_notes": "Afficher les notes de version",
   "dialog_about_version": "Version : {version}",
   "dialog_cli_install_title": "Installation de la CLI",
   "dialog_cli_install_success": "CLI installée avec succès",
@@ -4628,10 +4629,6 @@
   "lib_githubDeviceCode_enterCodeAt_before": "Saisissez ce code sur",
   "lib_nodeVersionWarning_haveVersion_message": "Node.js {minimumVersion}+ est requis pour utiliser Auggie. Vous avez {nodeVersion} d'installé.",
   "lib_nodeVersionWarning_notFound_message": "Node.js {minimumVersion}+ est requis pour utiliser Auggie. Node.js est introuvable sur votre système.",
-  "lib_releaseNotes_whatsNew_title": "Nouveautés",
-  "lib_releaseNotes_version_label": "Version {version}",
-  "lib_releaseNotes_fallback_message": "Corrections de bugs et améliorations des performances.",
-  "lib_releaseNotes_gotIt_label": "Compris",
   "lib_auggieSetup_tagline_message": "Un espace de travail expérimental pour agents parallèles.",
   "lib_auggieSetup_checkingProviders_label": "Vérification des fournisseurs disponibles...",
   "lib_auggieSetup_somethingWentWrong_title": "Une erreur s'est produite",
@@ -5369,5 +5366,11 @@
   "settings_voice_osEngineUnavailable_error": "La dictée du système n'est pas disponible sur cet appareil.",
   "settings_voice_osEngine_helperMissing_description": "Assistant vocal indisponible",
   "settings_voice_osEngine_permissionNote": "macOS demandera l'autorisation de reconnaissance vocale à la première activation — la dictée ne fonctionnera pas tant qu'elle n'est pas accordée.",
-  "splash_gettingReady_label": "Nous préparons tout pour construire"
+  "splash_gettingReady_label": "Nous préparons tout pour construire",
+  "releaseNotes_modal_title": "Nouveautés de {version}",
+  "releaseNotes_modal_title_generic": "Nouveautés",
+  "releaseNotes_modal_loading_message": "Chargement des notes de version…",
+  "releaseNotes_modal_unavailable_message": "Aucune note de version n'est disponible pour cette version.",
+  "releaseNotes_modal_viewOnGitHub_label": "Voir sur GitHub",
+  "releaseNotes_modal_dismiss_label": "Compris"
 }
