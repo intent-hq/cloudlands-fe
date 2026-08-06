@@ -20,6 +20,10 @@ import { createAgentSubscriptionReadMiddleware } from "$features/agent/agent-sub
 import { createChatReadMiddleware } from "$features/agent/chat-read-service";
 import { createChatSubscribeMiddleware } from "$features/agent/chat-subscribe-service";
 import { createChatSendMiddleware } from "$features/agent/chat-send-service";
+import {
+  createMarkAgentSeenTriggerMiddleware,
+  markAgentSeenAtBoundary,
+} from "$features/agent/mark-agent-seen";
 import { createPermissionResponseMiddleware } from "$features/permission/permission-response-service";
 import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge.client";
 import { createAgentFailureToastMiddleware } from "$features/agent/agent-failure-toast-service";
@@ -71,6 +75,7 @@ import { createSidebarNavPersistenceMiddleware } from "./middlewares/sidebar-nav
 import { createBrowserPersistenceMiddleware } from "./middlewares/browser-persistence-service";
 import { createPanelLayoutPersistenceMiddleware } from "./middlewares/panel-layout-persistence-service";
 import { createFileContentPruneService } from "./middlewares/file-content-prune-service";
+import { createDividerSessionBoundaryService } from "./middlewares/divider-session-boundary-service";
 import { createTerminalPersistenceMiddleware } from "./middlewares/terminal-persistence-service";
 import { createExternalEditorsPersistenceMiddleware } from "./middlewares/external-editors-persistence-service";
 import { createZoomSyncMiddleware } from "./middlewares/zoom-sync-service";
@@ -221,6 +226,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // a user message and a live-streaming assistant response — instead of
     // being a no-op.
     createChatSendMiddleware(),
+    // Advance the per-conversation seen marker (agent.markSeen, PROTOCOL §5.5)
+    // at the two action-driven discrete triggers: turn finish (`streamEnded`,
+    // gated on viewed tab + window focus at fire time) and user send
+    // (`sendMessage`). The third trigger — stop-looking boundaries — is wired
+    // through createDividerSessionBoundaryService's onBoundary seam below.
+    createMarkAgentSeenTriggerMiddleware(),
     // Give the (post-saga) permission triggers (`approvePermission` /
     // `denyPermission` / `cancelPermission` / `selectPermissionOption`) a real
     // consumer so `InlinePermissionRequest` clicks route to `agent.respondPermission`
@@ -435,6 +446,15 @@ function buildMiddleware(): StoreMiddleware[] {
     // saga behavior. Guards against empty payloads, invalid workspace IDs, and
     // self-retrigger loops.
     createFileContentPruneService(),
+    // End latched "New messages" divider viewing sessions at stop-looking
+    // boundaries: agent chat tab close (per-agent endDividerSession) and
+    // active-workspace switch (endAllDividerSessions). Same-workspace tab
+    // deactivation and cached panel destroy intentionally do NOT end sessions.
+    // The onBoundary seam fires the third discrete agent.markSeen trigger for
+    // the affected agents — the user was looking right up to the boundary.
+    createDividerSessionBoundaryService({
+      onBoundary: (boundary) => markAgentSeenAtBoundary(boundary.agentIds),
+    }),
     // Give the (post-saga) terminal persistence triggers real handlers so terminal
     // overlay height, custom terminal names, terminal metadata, and per-workspace
     // overlay state (isOpen, activeTerminalId) hydrate on boot and persist on
