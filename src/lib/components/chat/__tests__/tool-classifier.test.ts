@@ -11,7 +11,7 @@ import {
   it,
   expect,
 } from 'vitest';
-import { classifyTool, cleanToolName, extractMcpSource } from '../tool-classifier';
+import { classifyTool, cleanToolName, extractMcpSource, isRawMcpName } from '../tool-classifier';
 
 describe('tool-classifier', () => {
   describe('file operations', () => {
@@ -983,6 +983,25 @@ describe('tool-classifier', () => {
       expect(cleanToolName('')).toBe('');
       expect(cleanToolName(null)).toBe('');
       expect(cleanToolName(undefined)).toBe('');
+    });
+  });
+
+  describe('isRawMcpName', () => {
+    it('detects unstrippable mcp__ names (server segment with underscores)', () => {
+      expect(isRawMcpName('mcp__my_server__tool')).toBe(true);
+      expect(isRawMcpName(cleanToolName('mcp__my_server__tool'))).toBe(true);
+    });
+
+    it('detects mcp. prefixed names', () => {
+      expect(isRawMcpName('mcp.workspace-mcp.workspace_api')).toBe(true);
+    });
+
+    it('is false for cleaned names and nullish values', () => {
+      expect(isRawMcpName(cleanToolName('mcp__workspace-mcp__workspace_api'))).toBe(false);
+      expect(isRawMcpName('read_note')).toBe(false);
+      expect(isRawMcpName('')).toBe(false);
+      expect(isRawMcpName(null)).toBe(false);
+      expect(isRawMcpName(undefined)).toBe(false);
     });
   });
 

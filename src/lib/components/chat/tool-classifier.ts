@@ -121,6 +121,17 @@ const CLEAN_SUFFIXES_TO_STRIP = [
 ];
 
 // Helper functions
+
+/**
+ * True when a name still looks like a raw MCP identifier (mcp__<server>__<tool>
+ * or mcp.<server>.<tool>). Raw identifiers must never render as labels; use this
+ * after cleanToolName to catch unstrippable forms (e.g. server segments with
+ * underscores that defeat the strip regex).
+ */
+export function isRawMcpName(name: string | undefined | null): boolean {
+  return !!name && /^(mcp__|mcp\.)/i.test(name);
+}
+
 export function cleanToolName(name: string | undefined | null): string {
   // Handle undefined or null values gracefully
   if (!name) return '';
@@ -805,7 +816,7 @@ function classifyToolInner(
     // (catches all variants: mcp__*__workspace_api, //local/mcp/workspace_api, etc.)
     const isRawName =
       !acpTitle ||
-      /^(mcp__|mcp\.)/i.test(acpTitle) ||
+      isRawMcpName(acpTitle) ||
       acpTitle.includes('//local/mcp/') ||
       cleanToolName(acpTitle).toLowerCase() === 'workspace_api';
     // A raw identifier is never usable as the label — only the summary (or a
@@ -2134,7 +2145,7 @@ function genericDisplay(toolName: string, input: Record<string, any>): ToolDispl
   // cleaning (e.g. an mcp__<server>__ form whose server segment contains
   // underscores, which the strip regex does not match), never render it —
   // hide the row until a proper label exists.
-  if (/^(mcp__|mcp\.)/i.test(cleanName)) {
+  if (isRawMcpName(cleanName)) {
     return {
       category: 'generic',
       icon: CATEGORY_ICONS.generic,
