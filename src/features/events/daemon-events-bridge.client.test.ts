@@ -1198,6 +1198,64 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     expect(readStatusEvents()).toEqual([]);
   });
 
+  // An externally killed turn (agent-initiated `agent.stop`, workspace
+  // archive teardown) emits the terminal `agent:stream:end` with
+  // `stopReason: "interrupted"` and — per agent_manager.rs interrupt_inner
+  // (STAB-28) — MAY suppress the synthetic `agent:idle`. The stream:end alone
+  // must therefore clear the "Calling tool" hint and the busy flags, or the
+  // spinner is orphaned until a reload.
+  it('terminal agent:stream:end with stopReason=interrupted clears the "Calling tool" hint and busy flags with no follow-up agent:idle', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    // primeBridge's install dispatch clears the streaming flag; restore the
+    // in-flight turn state the interrupt is going to land on.
+    appStore.dispatch(setAgentStreaming(AGENT, true));
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'Looking',
+      }),
+    );
+    handler(
+      notification('agent:tool:call', {
+        agentId: AGENT,
+        toolName: 'Read',
+        toolKind: 'file',
+        toolCallId: 't1',
+        input: { path: 'src/lib.rs' },
+        status: 'started',
+        messageId: MESSAGE_ID,
+        blockIndex: 1,
+        blockId: `${MESSAGE_ID}:1`,
+      }),
+    );
+
+    // Pre-condition: the tool spinner hint is armed and the session reads busy.
+    expect(readStatusEvents().map((e) => e.message)).toEqual([
+      'Streaming response…',
+      'Calling tool',
+    ]);
+    expect(readSession()?.isStreaming).toBe(true);
+
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        messageId: MESSAGE_ID,
+        stopReason: 'interrupted',
+      }),
+    );
+
+    // The stream:end alone clears the hint and the session busy flags — the
+    // spinner cannot outlive the killed turn while waiting for an idle event
+    // that may never arrive.
+    expect(readStatusEvents()).toEqual([]);
+    expect(readSession()?.isStreaming).toBe(false);
+    expect(readSession()?.isProcessing).toBe(false);
+  });
+
   it('maps agent:stream:status (STAT-1 turn-startup family) to chatState/streamStatusReceived with a localized message keyed off phase (wire message ignored for known phases); first text-bearing activity still clears it via the chunk reducer', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -5220,6 +5278,62 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     expect(ws.status).toBe('Active');
     // The wire null must drop the stale timestamp rather than retain it.
     expect(ws.archivedAt).toBeUndefined();
+  });
+
+  // An agent-initiated `workspace.archive` (PROTOCOL §5.1) pushes a single
+  // `workspace:updated` carrying the full archive delta. The push alone must
+  // move the workspace out of the active-workspace selectors — no
+  // `workspace.list` / `workspace.get` refetch is allowed to be the thing that
+  // makes the UI correct.
+  it('archive delta pushed via workspace:updated drops the workspace from active lists with no refetch', async () => {
+    await seedWorkspace();
+    const { setWorkspaceEntity, setActiveWorkspaceId } = await import(
+      '$store/renderer/slices/workspace/workspace-slice'
+    );
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: 'ws-updated-2',
+        title: 'Sibling',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+    appStore.dispatch(setActiveWorkspaceId(WS_UPD));
+    const { openSwitcher } = await import(
+      '$store/renderer/slices/workspace-switcher/workspace-switcher-slice'
+    );
+    const { selectSwitcherWorkspaceIds } = await import(
+      '$store/renderer/slices/workspace-switcher/workspace-switcher-selectors'
+    );
+    appStore.dispatch(openSwitcher([WS_UPD, 'ws-updated-2'], WS_UPD));
+    expect(selectSwitcherWorkspaceIds.select(appStore.state)).toContain(WS_UPD);
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(
+      updatedNotification({
+        archived: true,
+        status: 'Archived',
+        archivedAt: '2026-07-25T12:00:00.000Z',
+      }),
+    );
+
+    // Synchronous, push-only: the archived workspace is gone from the active
+    // list the moment the event lands.
+    expect(selectSwitcherWorkspaceIds.select(appStore.state)).not.toContain(WS_UPD);
+    await flush();
+    const refetches = backendRequestSpy.mock.calls.filter(
+      ([method]) => method === 'workspace.list' || method === 'workspace.get',
+    );
+    expect(refetches).toEqual([]);
   });
 
   it('merges a statusImageAssetId delta onto the entity (agent setStatusImage parity)', async () => {
