@@ -9,9 +9,14 @@
  */
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
+import path from 'node:path';
 import type { Duplex } from 'node:stream';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import {
+  resolveDevIntentdDataDir,
+  shouldIsolateDevIntentdDataDir,
+} from '../../../main/utils/resolve-dev-instance';
 import {
   DEFAULT_DEV_WS_URL,
   defaultSocketPath,
@@ -19,6 +24,7 @@ import {
   resolveBackendConfig,
   WebSocketDuplex,
 } from './backend-connection';
+import { resolveSocketPath } from './intentd-sidecar';
 import { shouldSpawnSidecar } from './intentd-spawn-policy';
 import { isWindowsPipePath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
 import { JsonRpcClient } from './json-rpc-client';
@@ -249,6 +255,96 @@ describe('resolveBackendConfig × shouldSpawnSidecar pinning', () => {
       expect(resolveBackendConfig(env, { isDev: true }).transport).toBe(expectTransport);
     });
   }
+});
+
+describe('dev intentd data-dir isolation × resolveBackendConfig', () => {
+  // The main process applies `shouldIsolateDevIntentdDataDir` + `resolveDevIntentdDataDir`
+  // to `process.env` before any backend startup (see src/main/index.ts). These tests pin
+  // the resulting connection targets so the isolation cannot silently move the packaged
+  // default or an explicit transport override.
+  const APP_DATA = '/Users/me/Library/Application Support';
+  const PER_PORT_DIR = path.join(APP_DATA, 'intentd-fe', '5190');
+
+  /** Mirror of the main-process early-startup block, on a copy of `env`. */
+  function applyDevIsolation(env: NodeJS.ProcessEnv, isDev: boolean): NodeJS.ProcessEnv {
+    const next = { ...env };
+    if (shouldIsolateDevIntentdDataDir(next, isDev)) {
+      next.INTENTD_DATA_DIR = resolveDevIntentdDataDir(APP_DATA, next);
+    }
+    return next;
+  }
+
+  it('dev+sidecar with no INTENTD_* env resolves the per-port UDS socket', () => {
+    const env = applyDevIsolation({ INTENTD_SIDECAR: '1', DEV_PORT: '5190' }, true);
+    expect(resolveBackendConfig(env, { isDev: true })).toEqual({
+      transport: 'uds',
+      socketPath: path.join(PER_PORT_DIR, 'intentd.sock'),
+    });
+  });
+
+  it('replaces an inherited INTENTD_DATA_DIR so dev never adopts the legacy daemon', () => {
+    const legacy = path.join(APP_DATA, 'intentd');
+    const env = applyDevIsolation(
+      { INTENTD_SIDECAR: '1', DEV_PORT: '5190', INTENTD_DATA_DIR: legacy },
+      true,
+    );
+    const config = resolveBackendConfig(env, { isDev: true });
+    expect(config.socketPath).toBe(path.join(PER_PORT_DIR, 'intentd.sock'));
+    expect(config.socketPath).not.toBe(path.join(legacy, 'intentd.sock'));
+  });
+
+  it('yields a distinct socket per DEV_PORT', () => {
+    const first = applyDevIsolation({ INTENTD_SIDECAR: '1', DEV_PORT: '5190' }, true);
+    const second = applyDevIsolation({ INTENTD_SIDECAR: '1', DEV_PORT: '5191' }, true);
+    expect(resolveBackendConfig(first, { isDev: true }).socketPath).not.toBe(
+      resolveBackendConfig(second, { isDev: true }).socketPath,
+    );
+  });
+
+  it('leaves explicit transport overrides pointing at their own targets', () => {
+    const socketEnv = applyDevIsolation(
+      { DEV_PORT: '5190', INTENTD_SOCKET: '/tmp/forced.sock', INTENTD_DATA_DIR: '/legacy' },
+      true,
+    );
+    expect(socketEnv.INTENTD_DATA_DIR).toBe('/legacy');
+    expect(resolveBackendConfig(socketEnv, { isDev: true })).toEqual({
+      transport: 'uds',
+      socketPath: '/tmp/forced.sock',
+    });
+
+    const wsEnv = applyDevIsolation({ DEV_PORT: '5190', INTENTD_WS_URL: 'ws://h:9/ws' }, true);
+    expect(wsEnv.INTENTD_DATA_DIR).toBeUndefined();
+    expect(resolveBackendConfig(wsEnv, { isDev: true })).toEqual({
+      transport: 'ws',
+      wsUrl: 'ws://h:9/ws',
+    });
+
+    const tcpEnv = applyDevIsolation({ DEV_PORT: '5190', INTENTD_TCP: '10.0.0.1:6000' }, true);
+    expect(tcpEnv.INTENTD_DATA_DIR).toBeUndefined();
+    expect(resolveBackendConfig(tcpEnv, { isDev: true }).transport).toBe('tcp');
+  });
+
+  it('leaves the packaged default untouched', () => {
+    const env = applyDevIsolation({ DEV_PORT: '5190' }, false);
+    expect(env.INTENTD_DATA_DIR).toBeUndefined();
+    expect(resolveBackendConfig(env, { isDev: false })).toEqual({
+      transport: 'uds',
+      socketPath: defaultSocketPath({}),
+    });
+  });
+
+  it('leaves a packaged build with an inherited INTENTD_DATA_DIR untouched', () => {
+    const env = applyDevIsolation({ INTENTD_DATA_DIR: '/custom/data' }, false);
+    expect(env.INTENTD_DATA_DIR).toBe('/custom/data');
+    expect(resolveBackendConfig(env, { isDev: false }).socketPath).toBe(
+      '/custom/data/intentd.sock',
+    );
+  });
+
+  it('keeps the sidecar socket resolution in lockstep with the resolver', () => {
+    const env = applyDevIsolation({ INTENTD_SIDECAR: '1', DEV_PORT: '5190' }, true);
+    expect(resolveSocketPath(env)).toBe(resolveBackendConfig(env, { isDev: true }).socketPath);
+  });
 });
 
 describe('describeBackendConfig', () => {

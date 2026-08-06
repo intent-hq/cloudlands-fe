@@ -54,3 +54,56 @@ export function resolveDevUserDataDirName(): string | null {
   }
   return 'cloudlands-dev';
 }
+
+// Parent directory (under the platform appData dir) holding per-dev-port intentd data
+// directories. Deliberately outside the intent-cloudlands/cloudlands-dev-* userData
+// namespace so dev-launcher.mjs stale-profile pruning never deletes daemon data, and
+// deliberately short: the socket inside it must fit macOS's ~104-byte sun_path limit.
+export const DEV_INTENTD_DIR_NAME = 'intentd-fe';
+
+// Data-dir segment used in dev when DEV_PORT is unset/unusable.
+const DEV_INTENTD_FALLBACK_SEGMENT = 'dev';
+
+/**
+ * Compute the per-DEV_PORT intentd data directory for dev builds:
+ * `<appData>/intentd-fe/<DEV_PORT>` (e.g.
+ * `~/Library/Application Support/intentd-fe/5190` on macOS), falling back to
+ * `<appData>/intentd-fe/dev` when DEV_PORT is unset or not a positive number.
+ *
+ * Deterministic per port so daemon data persists across runs, and distinct per port so
+ * parallel dev instances cannot adopt each other's (or the installed app's) daemon.
+ * Pure so it is testable without Electron; callers pass the resolved appData path in.
+ */
+export function resolveDevIntentdDataDir(
+  appDataPath: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const rawPort = (env.DEV_PORT || '').trim();
+  const devPort = Number(rawPort);
+  const segment =
+    rawPort && Number.isFinite(devPort) && devPort > 0
+      ? String(devPort)
+      : DEV_INTENTD_FALLBACK_SEGMENT;
+  return path.join(appDataPath, DEV_INTENTD_DIR_NAME, segment);
+}
+
+/**
+ * Whether a dev build should replace `INTENTD_DATA_DIR` with the per-port dir from
+ * [[resolveDevIntentdDataDir]].
+ *
+ * Any inherited `INTENTD_DATA_DIR` is replaced unconditionally — a host-injected value
+ * (e.g. from the installed app's environment) otherwise makes the dev instance adopt the
+ * legacy workspace catalog. An explicit transport override (`INTENTD_SOCKET`,
+ * `INTENTD_WS_URL`, `INTENTD_TCP`) still wins: those name a connection target directly,
+ * so replacing the data dir must not move it.
+ */
+export function shouldIsolateDevIntentdDataDir(
+  env: NodeJS.ProcessEnv = process.env,
+  isDev: boolean = env.NODE_ENV === 'development',
+): boolean {
+  if (!isDev) return false;
+  if (env.INTENTD_SOCKET?.trim()) return false;
+  if (env.INTENTD_WS_URL?.trim()) return false;
+  if (env.INTENTD_TCP?.trim()) return false;
+  return true;
+}

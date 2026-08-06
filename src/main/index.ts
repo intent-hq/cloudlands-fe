@@ -26,8 +26,10 @@ app.commandLine.appendSwitch('js-flags', '--expose-gc');
 // SingletonLock and logs land in the new directory.
 import * as path from 'path';
 import {
+  resolveDevIntentdDataDir,
   resolveDevUserDataDirName,
   resolveUserDataBasePath,
+  shouldIsolateDevIntentdDataDir,
 } from './utils/resolve-dev-instance.js';
 app.setPath('userData', resolveUserDataBasePath(app.getPath('appData')));
 
@@ -40,6 +42,16 @@ const devUserDataSegment = resolveDevUserDataDirName();
 if (devUserDataSegment) {
   const uniqueUserData = path.join(app.getPath('userData'), devUserDataSegment);
   app.setPath('userData', uniqueUserData);
+}
+
+// EARLY: Isolate the dev daemon's data directory per DEV_PORT so a dev instance never
+// adopts the installed app's intentd (and its workspace catalog) on the global socket.
+// Any inherited INTENTD_DATA_DIR is replaced; explicit INTENTD_SOCKET/INTENTD_WS_URL/
+// INTENTD_TCP transports still win and suppress this. Packaged builds are untouched.
+// Must run before the sidecar spawn and the first backend client connection, both of
+// which read INTENTD_DATA_DIR off process.env.
+if (shouldIsolateDevIntentdDataDir(process.env)) {
+  process.env.INTENTD_DATA_DIR = resolveDevIntentdDataDir(app.getPath('appData'));
 }
 
 // EARLY: Capture all main-process console output to {userData}/logs/console-output.log

@@ -1,9 +1,12 @@
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  DEV_INTENTD_DIR_NAME,
   resolveDevInstance,
+  resolveDevIntentdDataDir,
   resolveDevUserDataDirName,
   resolveUserDataBasePath,
+  shouldIsolateDevIntentdDataDir,
   USER_DATA_DIR_NAME,
 } from '../resolve-dev-instance';
 
@@ -102,6 +105,75 @@ describe('resolveUserDataBasePath', () => {
     const base = resolveUserDataBasePath('/appdata');
     expect(path.join(base, 'cloudlands-dev-5190')).toBe(
       path.join('/appdata', 'intent-cloudlands', 'cloudlands-dev-5190')
+    );
+  });
+});
+
+describe('resolveDevIntentdDataDir', () => {
+  const APP_DATA = '/Users/me/Library/Application Support';
+
+  it('namespaces by absolute DEV_PORT under intentd-fe', () => {
+    expect(resolveDevIntentdDataDir(APP_DATA, { DEV_PORT: '5190' })).toBe(
+      path.join(APP_DATA, 'intentd-fe', '5190')
+    );
+  });
+
+  it('is deterministic for the same port and distinct across ports', () => {
+    const a = resolveDevIntentdDataDir(APP_DATA, { DEV_PORT: '5190' });
+    expect(resolveDevIntentdDataDir(APP_DATA, { DEV_PORT: '5190' })).toBe(a);
+    expect(resolveDevIntentdDataDir(APP_DATA, { DEV_PORT: '5191' })).not.toBe(a);
+  });
+
+  it('falls back to the "dev" segment when DEV_PORT is unset or unusable', () => {
+    const fallback = path.join(APP_DATA, 'intentd-fe', 'dev');
+    expect(resolveDevIntentdDataDir(APP_DATA, {})).toBe(fallback);
+    expect(resolveDevIntentdDataDir(APP_DATA, { DEV_PORT: 'not-a-number' })).toBe(fallback);
+    expect(resolveDevIntentdDataDir(APP_DATA, { DEV_PORT: '0' })).toBe(fallback);
+  });
+
+  it('stays outside the pruned intent-cloudlands userData namespace', () => {
+    const dataDir = resolveDevIntentdDataDir(APP_DATA, { DEV_PORT: '5190' });
+    expect(dataDir.startsWith(path.join(APP_DATA, USER_DATA_DIR_NAME))).toBe(false);
+    expect(dataDir).not.toContain('cloudlands-dev');
+    expect(DEV_INTENTD_DIR_NAME).toBe('intentd-fe');
+  });
+
+  it('keeps the derived socket path within the macOS sun_path limit (~104 bytes)', () => {
+    const socketPath = path.join(
+      resolveDevIntentdDataDir(APP_DATA, { DEV_PORT: '5190' }),
+      'intentd.sock'
+    );
+    expect(Buffer.byteLength(socketPath, 'utf8')).toBeLessThan(104);
+  });
+});
+
+describe('shouldIsolateDevIntentdDataDir', () => {
+  it('isolates dev builds with no INTENTD_* env', () => {
+    expect(shouldIsolateDevIntentdDataDir({ NODE_ENV: 'development' })).toBe(true);
+  });
+
+  it('replaces an inherited INTENTD_DATA_DIR in dev (no escape hatch)', () => {
+    expect(
+      shouldIsolateDevIntentdDataDir({ NODE_ENV: 'development', INTENTD_DATA_DIR: '/legacy/data' })
+    ).toBe(true);
+  });
+
+  it('never isolates outside development', () => {
+    expect(shouldIsolateDevIntentdDataDir({ NODE_ENV: 'production', DEV_PORT: '5190' })).toBe(
+      false
+    );
+    expect(shouldIsolateDevIntentdDataDir({ NODE_ENV: 'development' }, false)).toBe(false);
+  });
+
+  it('defers to explicit transport overrides', () => {
+    for (const key of ['INTENTD_SOCKET', 'INTENTD_WS_URL', 'INTENTD_TCP'] as const) {
+      expect(shouldIsolateDevIntentdDataDir({ NODE_ENV: 'development', [key]: 'x' })).toBe(false);
+    }
+  });
+
+  it('ignores whitespace-only transport overrides', () => {
+    expect(shouldIsolateDevIntentdDataDir({ NODE_ENV: 'development', INTENTD_SOCKET: '  ' })).toBe(
+      true
     );
   });
 });
