@@ -1710,20 +1710,133 @@ function parseToolInput(lines: string[]): any {
 }
 
 /**
- * Regex to match suggested prompts block in HTML comment format.
+ * Matches the opening line of a suggested prompts block. The opener must be the
+ * last thing on its line — trailing content means it is prose, not a block.
  * Format:
  * <!-- suggested-prompts
  * Label text|Full prompt text to populate in input
  * Another label|Another full prompt
  * -->
  */
-const SUGGESTED_PROMPTS_REGEX = /<!--\s*suggested-prompts\s*\n([\s\S]*?)-->/;
+const SUGGESTED_PROMPTS_OPENER_REGEX = /<!--[ \t]*suggested-prompts[ \t]*$/;
+
+/**
+ * A block only closes on a `-->` that stands alone on its own line. An embedded
+ * `-->` (Mermaid edge, prose arrow) must never terminate a block.
+ */
+const SUGGESTED_PROMPTS_CLOSER_REGEX = /^[ \t]*-->[ \t]*$/;
+
+/** Opening/closing markdown fence (backtick or tilde), optionally indented. */
+const FENCE_LINE_REGEX = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+
+/** At most this many prompts are surfaced from a block. */
+const MAX_SUGGESTED_PROMPTS = 6;
+
+/** Prompts longer than this are treated as captured body text and dropped. */
+const MAX_SUGGESTED_PROMPT_LENGTH = 200;
+
+/**
+ * Shapes that indicate the captured line is response body text rather than a
+ * deliberate prompt: markdown headings, fence markers, table rows, and Mermaid
+ * edges (`A --> B`).
+ */
+const BODY_TEXT_LINE_PATTERNS = [/^#{1,6}(?:\s|$)/, /^(?:`{3,}|~{3,})/, /^\|/, /\S[ \t]*--+>/];
 
 /**
  * Regex to match the delay prefix in a prompt line.
  * Format: delay:N| where N is an integer (case-insensitive)
  */
 const DELAY_PREFIX_REGEX = /^delay:(\d+)\|(.*)$/i;
+
+interface SuggestedPromptsBlock {
+  /** Offset of the opener within the original content. */
+  start: number;
+  /** Offset just past the closing `-->` line. */
+  end: number;
+  /** Raw lines between the opener and the closer. */
+  body: string[];
+}
+
+/**
+ * Locate every accepted suggested-prompts block in the content, in order.
+ *
+ * A block is accepted only when all of the following hold:
+ * - its opener ends its own line and sits outside any fenced code region;
+ * - it is closed by a `-->` standing alone on its own line, also outside any
+ *   fenced code region (fence state is tracked across the whole scan, so a
+ *   `-->` inside a fenced example after an opener cannot close the block);
+ * - none of its captured lines looks like response body text.
+ *
+ * Blocks that fail any of these are not returned at all, so callers never
+ * strip them from the rendered content.
+ */
+function findSuggestedPromptsBlocks(content: string): SuggestedPromptsBlock[] {
+  const lines = content.split('\n');
+  const offsets: number[] = [];
+  let offset = 0;
+  for (const line of lines) {
+    offsets.push(offset);
+    offset += line.length + 1;
+  }
+
+  const blocks: SuggestedPromptsBlock[] = [];
+  let fence: { char: string; length: number } | null = null;
+  let openerIndex = -1;
+  let openerStart = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trimEnd();
+
+    const fenceMatch = line.match(FENCE_LINE_REGEX);
+    if (fenceMatch) {
+      const marker = fenceMatch[1];
+      if (!fence) {
+        fence = { char: marker[0], length: marker.length };
+      } else if (
+        marker[0] === fence.char &&
+        marker.length >= fence.length &&
+        fenceMatch[2].trim() === ''
+      ) {
+        fence = null;
+      }
+      continue;
+    }
+
+    if (fence) continue;
+
+    if (openerIndex === -1) {
+      const openerMatch = line.match(SUGGESTED_PROMPTS_OPENER_REGEX);
+      if (openerMatch) {
+        openerIndex = i;
+        openerStart = offsets[i] + (openerMatch.index ?? 0);
+      }
+      continue;
+    }
+
+    if (SUGGESTED_PROMPTS_CLOSER_REGEX.test(line)) {
+      const body = lines.slice(openerIndex + 1, i);
+      if (!body.some((bodyLine) => looksLikeBodyText(bodyLine.trim()))) {
+        blocks.push({ start: openerStart, end: offsets[i] + lines[i].length, body });
+      }
+      openerIndex = -1;
+      continue;
+    }
+
+    // A second opener means the first one was never closed.
+    const reopenMatch = line.match(SUGGESTED_PROMPTS_OPENER_REGEX);
+    if (reopenMatch) {
+      openerIndex = i;
+      openerStart = offsets[i] + (reopenMatch.index ?? 0);
+    }
+  }
+
+  return blocks;
+}
+
+/** True when a captured line looks like response body text rather than a prompt. */
+function looksLikeBodyText(line: string): boolean {
+  return line.length > 0 && BODY_TEXT_LINE_PATTERNS.some((pattern) => pattern.test(line));
+}
 
 /**
  * Parse suggested prompts from message content.
@@ -1746,6 +1859,13 @@ const DELAY_PREFIX_REGEX = /^delay:(\d+)\|(.*)$/i;
  * delay:60|Check deployment status
  * Label|delay:30|Check build results
  * -->
+ *
+ * Only accepted blocks count: the opener and the standalone `-->` closer must
+ * both sit outside any code fence, and no captured line may look like response
+ * body text. A block that fails any of these is left untouched in
+ * `cleanedContent` rather than stripped, so a Mermaid diagram or table can
+ * neither surface as prompt chips nor disappear from the rendered message. The
+ * last accepted block wins.
  */
 export function parseSuggestedPrompts(content: string): {
   prompts: SuggestedPrompt[];
@@ -1755,17 +1875,27 @@ export function parseSuggestedPrompts(content: string): {
     return { prompts: [], cleanedContent: content };
   }
 
-  const match = content.match(SUGGESTED_PROMPTS_REGEX);
-  if (!match) {
+  const blocks = findSuggestedPromptsBlocks(content);
+  if (blocks.length === 0) {
     return { prompts: [], cleanedContent: content };
   }
 
-  const promptsBlock = match[1];
-  const lines = promptsBlock.split('\n').filter((line) => line.trim());
+  // Remove every accepted block from the content (never body text).
+  let cleanedContent = '';
+  let cursor = 0;
+  for (const block of blocks) {
+    cleanedContent += content.slice(cursor, block.start);
+    cursor = block.end;
+  }
+  cleanedContent = (cleanedContent + content.slice(cursor)).trim();
+
+  // The last accepted block wins; body-text rejection already happened during
+  // the scan, so every block here is safe to surface.
+  const lines = blocks[blocks.length - 1].body
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 
   const prompts: SuggestedPrompt[] = lines
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
     .map((line): SuggestedPrompt | null => {
       // Strip delay:N| prefix on full line (case-insensitive), returning just the text
       // This handles "delay:60|Check deployment" format
@@ -1792,17 +1922,18 @@ export function parseSuggestedPrompts(content: string): {
       // Return as plain string
       return promptPart.length > 0 ? promptPart : null;
     })
-    .filter((prompt): prompt is SuggestedPrompt => prompt !== null);
-
-  // Remove the suggestions block from the content
-  const cleanedContent = content.replace(SUGGESTED_PROMPTS_REGEX, '').trim();
+    .filter((prompt): prompt is SuggestedPrompt => prompt !== null)
+    // Over-long entries are body text that slipped through, not prompts.
+    .filter((prompt) => prompt.length <= MAX_SUGGESTED_PROMPT_LENGTH)
+    .slice(0, MAX_SUGGESTED_PROMPTS);
 
   return { prompts, cleanedContent };
 }
 
 /**
- * Check if content contains suggested prompts
+ * Check if content contains an accepted suggested prompts block
  */
 export function hasSuggestedPrompts(content: string): boolean {
-  return SUGGESTED_PROMPTS_REGEX.test(content);
+  if (!content) return false;
+  return findSuggestedPromptsBlocks(content).length > 0;
 }
