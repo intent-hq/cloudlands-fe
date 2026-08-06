@@ -15,31 +15,6 @@
 /** Supported reasoning effort levels */
 export const supportedReasoningEfforts = ['low', 'medium', 'high', 'xhigh'] as const;
 
-export type CodexReasoningEffort = (typeof supportedReasoningEfforts)[number];
-
-/** Reasoning effort metadata for UI display */
-export const CODEX_REASONING_EFFORTS: Record<
-  CodexReasoningEffort,
-  { label: string; description: string }
-> = {
-  low: {
-    label: 'Low reasoning',
-    description: 'Faster responses with less deliberation',
-  },
-  medium: {
-    label: 'Medium reasoning',
-    description: 'Balanced speed and reasoning depth',
-  },
-  high: {
-    label: 'High reasoning',
-    description: 'Deeper reasoning for complex problems',
-  },
-  xhigh: {
-    label: 'Extra-high reasoning',
-    description: 'Maximum reasoning depth for the hardest problems',
-  },
-};
-
 /** Base Codex models before effort expansion */
 const CODEX_BASE_MODELS = {
   'gpt-5.3-codex': {
@@ -123,30 +98,6 @@ function buildCodexModels() {
 export const CODEX_MODELS = buildCodexModels();
 
 export type CodexModelId = keyof typeof CODEX_MODELS;
-
-/**
- * Parse a Codex model ID into its base model and optional reasoning effort.
- *
- * @example
- * parseCodexReasoningEffort('gpt-5.3-codex/high')
- * // => { baseModel: 'gpt-5.3-codex', effort: 'high' }
- *
- * parseCodexReasoningEffort('gpt-5.3-codex')
- * // => { baseModel: 'gpt-5.3-codex', effort: undefined }
- */
-export function parseCodexReasoningEffort(modelId: string): {
-  baseModel: string;
-  effort: string | undefined;
-} {
-  const slashIndex = modelId.indexOf('/');
-  if (slashIndex === -1) {
-    return { baseModel: modelId, effort: undefined };
-  }
-  return {
-    baseModel: modelId.slice(0, slashIndex),
-    effort: modelId.slice(slashIndex + 1),
-  };
-}
 
 /** Get Codex models as an array for UI consumption */
 export function getCodexModelList(): Array<{

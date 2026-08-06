@@ -2423,6 +2423,39 @@ describe('agent-session selectors', () => {
       const state = storeWith({ byAgentId: { a1: session } });
       expect(selectAgentReasoningEffort.select(state, 'a1')).toBeUndefined();
     });
+
+    it('never splits a slash-bearing non-codex model id', () => {
+      // HuggingFace-style `org/model` ids must survive intact — mirrors the
+      // daemon migration 0080 guard.
+      const hf = makeSession('a1', 'ws-1', { model: 'unsloth/gpt-oss-120b' } as any);
+      expect(
+        selectAgentReasoningEffort.select(storeWith({ byAgentId: { a1: hf } }), 'a1'),
+      ).toBeUndefined();
+
+      // Effort-looking suffix but no codex evidence: still not split.
+      const lookalike = makeSession('a1', 'ws-1', {
+        model: 'someorg/high',
+        provider: 'opencode',
+      } as any);
+      expect(
+        selectAgentReasoningEffort.select(storeWith({ byAgentId: { a1: lookalike } }), 'a1'),
+      ).toBeUndefined();
+    });
+
+    it('splits an unknown codex base model when the row shows codex evidence', () => {
+      const prefixed = makeSession('a1', 'ws-1', { model: 'codex:gpt-9-codex/high' } as any);
+      expect(
+        selectAgentReasoningEffort.select(storeWith({ byAgentId: { a1: prefixed } }), 'a1'),
+      ).toBe('high');
+
+      const byProvider = makeSession('a1', 'ws-1', {
+        model: 'gpt-9-codex/low',
+        provider: 'codex',
+      } as any);
+      expect(
+        selectAgentReasoningEffort.select(storeWith({ byAgentId: { a1: byProvider } }), 'a1'),
+      ).toBe('low');
+    });
   });
 
   describe('selectAgentSessionIsProcessing', () => {

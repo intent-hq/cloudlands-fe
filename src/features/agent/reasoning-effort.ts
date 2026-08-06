@@ -38,7 +38,12 @@ export async function applyReasoningEffort(
   if (result.success) return true;
 
   logger.error('Failed to set reasoning effort', { agentId, error: result.error });
-  appStore.dispatch(updateSession(agentId, { reasoningEffort: previousEffort }));
+  // Only roll back if nothing else moved the field meanwhile — a later change
+  // (or a daemon `agent:updated`) that landed during the call is authoritative.
+  const current = appStore.state?.agentSessions?.byAgentId?.[agentId]?.reasoningEffort ?? null;
+  if (current === effort) {
+    appStore.dispatch(updateSession(agentId, { reasoningEffort: previousEffort }));
+  }
   const { toast } = await import('svelte-sonner');
   toast.error(result.error ?? m.chat_effortPicker_updateFailed_error());
   return false;

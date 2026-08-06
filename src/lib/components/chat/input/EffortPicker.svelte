@@ -132,9 +132,13 @@
   async function commit(index: number) {
     const step = steps[index];
     if (!step || !agentId || !workspaceId) return;
-    if (step.value === currentValue) return;
 
+    // Compare against the persisted field, not `currentValue`: an effort the
+    // model no longer advertises also maps to the "Default" position, and
+    // picking Default must still clear that stale value on the daemon.
     const previous = $reasoningEffort$ ?? null;
+    if (step.value === previous) return;
+
     const applied = await applyReasoningEffort(agentId, workspaceId, step.value, previous);
     if (!applied) sliderIndex = currentIndex;
   }

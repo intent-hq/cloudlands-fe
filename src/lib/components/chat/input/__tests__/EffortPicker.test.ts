@@ -195,6 +195,26 @@ describe('EffortPicker', () => {
     });
   });
 
+  it('commits Default to clear a persisted effort the model no longer advertises', async () => {
+    // `gpt-5.1-codex-max` advertises only low/high, so the stale `xhigh`
+    // already renders at the Default position — picking Default must still
+    // clear it on the daemon rather than no-op.
+    mount({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      model: 'codex:gpt-5.1-codex-max',
+      reasoningEffort: 'xhigh',
+    });
+    await fireEvent.click(trigger());
+
+    const slider = await waitFor(() => screen.getByRole('slider'));
+    await fireEvent.change(slider, { target: { value: '0' } });
+
+    await waitFor(() => {
+      expect(applyReasoningEffort).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'xhigh');
+    });
+  });
+
   it('does not commit when the slider lands back on the current level', async () => {
     mount({
       id: 'agent-1',
