@@ -4,11 +4,13 @@ import {
   it,
 } from "vitest";
 import {
+  clearWorkspaceInitializerPendingGitHubPrefill,
   DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH,
   hydrateWorkspaceInitializer,
   initialState,
   removeWorkspaceInitializerRemoteSetup,
   setCompactWorkspaceInitializerFormState,
+  setWorkspaceInitializerPendingGitHubPrefill,
   setWorkspaceInitializerBranchForRepo,
   setWorkspaceInitializerDefaultParentPath,
   setWorkspaceInitializerLastSelectedRepo,
@@ -115,5 +117,48 @@ describe("workspaceInitializerReducer", () => {
 
     state = workspaceInitializerReducer(state, setWorkspaceInitializerBranchForRepo("", "main"));
     expect(state.branchByRepo).toEqual({});
+  });
+
+  it("sets and clears the pending GitHub prefill", () => {
+    expect(initialState.pendingGitHubPrefill).toBeNull();
+
+    const prefill = {
+      owner: "intent-hq",
+      repo: "monorepo",
+      number: 123,
+      kind: "pr" as const,
+      url: "https://github.com/intent-hq/monorepo/pull/123",
+    };
+    let state = workspaceInitializerReducer(initialState, setWorkspaceInitializerPendingGitHubPrefill(prefill));
+    expect(state.pendingGitHubPrefill).toEqual(prefill);
+
+    const issuePrefill = {
+      owner: "intent-hq",
+      repo: "intentd",
+      number: 7,
+      kind: "issue" as const,
+      url: "https://github.com/intent-hq/intentd/issues/7",
+    };
+    state = workspaceInitializerReducer(state, setWorkspaceInitializerPendingGitHubPrefill(issuePrefill));
+    expect(state.pendingGitHubPrefill).toEqual(issuePrefill);
+
+    state = workspaceInitializerReducer(state, clearWorkspaceInitializerPendingGitHubPrefill());
+    expect(state.pendingGitHubPrefill).toBeNull();
+  });
+
+  it("does not persist a pending GitHub prefill across hydration", () => {
+    const prefill = {
+      owner: "o",
+      repo: "r",
+      number: 1,
+      kind: "issue" as const,
+      url: "https://github.com/o/r/issues/1",
+    };
+    const state = workspaceInitializerReducer(
+      workspaceInitializerReducer(initialState, setWorkspaceInitializerPendingGitHubPrefill(prefill)),
+      hydrateWorkspaceInitializer({ compactFormState: null }),
+    );
+    // Hydration leaves the transient prefill untouched (it is never part of the persisted bag)
+    expect(state.pendingGitHubPrefill).toEqual(prefill);
   });
 });
