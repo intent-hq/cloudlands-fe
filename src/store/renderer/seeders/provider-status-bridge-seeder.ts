@@ -73,6 +73,7 @@ import {
   type ProviderAuthStatusResponse,
 } from "$shared/provider-auth-status";
 import type {
+  NpxStatus,
   ProviderAvailabilityResult,
   ProviderStatus,
 } from "$shared/types/provider-availability";
@@ -257,11 +258,12 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
 }
 
 /** Single-provider recheck (AgentGrid card refresh) — same verdicts as
- * above, but with `force: true` so a login that just completed bypasses the
- * daemon's auth cache. */
-async function checkSingleProvider(providerId: string): Promise<ProviderStatus> {
+ * above, defaulting to `force: true` so a login that just completed bypasses
+ * the daemon's auth cache. Passive bulk loads pass `force: false` and ride
+ * the daemon's cache instead. */
+async function checkSingleProvider(providerId: string, force = true): Promise<ProviderStatus> {
   const checkAuth = async (): Promise<boolean | undefined> =>
-    (await getAuthVerdicts({ providerId, force: true }))[providerId];
+    (await getAuthVerdicts({ providerId, force }))[providerId];
 
   if (providerId === "auggie") {
     const check = await checkAuggie();
@@ -293,6 +295,13 @@ async function checkSingleProvider(providerId: string): Promise<ProviderStatus> 
   const binary = PROVIDER_BINARIES[providerId];
   const found = await backendRequest<HostCheckResult>("host.findBinary", { name: binary });
   const status: ProviderStatus = { available: found?.available === true };
+  if (providerId === "codex") {
+    // Static registry fact (intent-providers' `fallback_npx_package` is set
+    // only for codex) — mirrors the aggregate path's `hasNpxFallback` so the
+    // npx-missing/too-old guidance still renders when codex is unavailable
+    // (the UI gates that guidance on `hasNpxFallback && !available`).
+    status.hasNpxFallback = true;
+  }
   if (!status.available) return status;
 
   if (providerId === "claude-code") {
@@ -352,14 +361,16 @@ interface ProviderDiscoveryEntry {
  * snapshot (PROTOCOL §5.14): `paths[id]` is the primary binary's
  * `resolvedPath` (null when unresolved) and `secondaryPaths[id]` carries the
  * dual-binary secondary's `secondaryResolvedPath` (unsloth's `unsloth` CLI).
+ * `npx` rides along from the same round-trip so the onboarding bulk check can
+ * fetch it without the aggregated auth sweep.
  * Mirrors main's getProviderPaths; degrades to empty maps on RPC failure.
  */
 registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, async () => {
   try {
-    const discovery = await backendRequest<{ providers?: ProviderDiscoveryEntry[] }>(
-      "host.providerDiscovery",
-      {},
-    ).catch(() => undefined);
+    const discovery = await backendRequest<{
+      providers?: ProviderDiscoveryEntry[];
+      npx?: NpxStatus;
+    }>("host.providerDiscovery", {}).catch(() => undefined);
     const paths: Record<string, string | null> = {};
     const secondaryPaths: Record<string, string | null> = {};
     for (const provider of discovery?.providers ?? []) {
@@ -368,22 +379,24 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, async () => {
         secondaryPaths[provider.id] = provider.secondaryResolvedPath ?? null;
       }
     }
-    return { success: true, data: { paths, secondaryPaths } };
+    return { success: true, data: { paths, secondaryPaths, npx: discovery?.npx } };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 });
 
 registerMockIpcHandler(PROVIDERS_CHANNELS.CHECK_SINGLE, async (arg) => {
+  const request = arg as { providerId?: unknown; force?: unknown } | undefined;
   const providerId =
-    typeof arg === "string"
-      ? arg
-      : ((arg as { providerId?: unknown } | undefined)?.providerId as string) || "";
+    typeof arg === "string" ? arg : ((request?.providerId as string) || "");
+  // Default force: true (explicit rechecks); passive bulk loads send
+  // `force: false` so the daemon's auth cache is used.
+  const force = typeof arg === "string" ? true : request?.force !== false;
   if (!providerId || !getItem(appStore.state.providerCatalog.providers, providerId)) {
     return { success: false, providerId, error: m.providers_bridge_unknownProvider_error({ providerId }) };
   }
   try {
-    return { success: true, providerId, data: await checkSingleProvider(providerId) };
+    return { success: true, providerId, data: await checkSingleProvider(providerId, force) };
   } catch (error) {
     return {
       success: false,

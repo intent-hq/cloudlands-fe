@@ -13,10 +13,13 @@
  * The middleware fans out one `providers:check-single` IPC per provider in
  * parallel (each probe → provider-status-bridge-seeder → daemon `host.*`
  * calls, PROTOCOL §5.14) so every card flips as ITS probe settles rather
- * than all cards updating together when the slowest probe finishes. Once
- * every per-provider probe settles the middleware ALWAYS dispatches
- * `checkAllProvidersComplete`, so the UI lands on installed / not-installed
- * / error and never hangs.
+ * than all cards updating together when the slowest probe finishes. The
+ * fan-out starts IMMEDIATELY: nothing is awaited in front of it. npx status
+ * rides the light `providers:get-paths` discovery call (binary resolution
+ * only, no daemon auth sweep) issued in parallel with the probes. Once every
+ * per-provider probe and the discovery call settle the middleware ALWAYS
+ * dispatches `checkAllProvidersComplete`, so the UI lands on installed /
+ * not-installed / error and never hangs.
  *
  * The aggregated `getProviderAvailability()` client stays available for
  * non-onboarding callers (ProviderSelector, InitialAgentPicker,
@@ -49,7 +52,7 @@ import {
   setNpxStatus,
 } from "$store/renderer/slices/agent-availability/agent-availability-slice";
 import type { ProviderStatus } from "$store/renderer/slices/agent-availability/agent-availability-types";
-import type { ProviderAvailabilityResult } from "$shared/types/provider-availability";
+import type { NpxStatus } from "$shared/types/provider-availability";
 
 const logger = createLogger("ProviderAvailabilityCheckService");
 
@@ -57,14 +60,27 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
   /** Coalesce overlapping bulk checks (focus + visibility can fire together). */
   let inFlight: Promise<void> | null = null;
 
-  const runSingleCheck = async (providerId: string): Promise<void> => {
+  /**
+   * Probe one provider. `force` controls the daemon's auth cache
+   * (`host.providerAuthStatus`): explicit rechecks — a card's "Check again"
+   * and the focus/visibility sweep — bypass it so a login just completed in
+   * the user's terminal is picked up, while the passive loads (first mount,
+   * backend connect) ride the daemon's 60s cache. The request stays a bare
+   * provider-id string for the forced default so that wire shape is
+   * unchanged; the object form carries the explicit `force: false`.
+   */
+  const runSingleCheck = async (
+    providerId: string,
+    options: { force?: boolean } = {},
+  ): Promise<void> => {
+    const request = options.force === false ? { providerId, force: false } : providerId;
     try {
       const result = await invoke<{
         success: boolean;
         providerId: string;
         data?: ProviderStatus;
         error?: string;
-      }>(PROVIDERS_CHANNELS.CHECK_SINGLE, providerId);
+      }>(PROVIDERS_CHANNELS.CHECK_SINGLE, request);
       if (result?.success && result.data) {
         appStore.dispatch(checkSingleProviderSuccess(providerId, result.data));
       } else {
@@ -76,7 +92,24 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
     }
   };
 
-  const runBulkCheck = (): Promise<void> => {
+  /** Fetch npx status from the light discovery path (`providers:get-paths` →
+   *  `host.providerDiscovery`): binary resolution only, no auth sweep. */
+  const runNpxDiscovery = async (): Promise<void> => {
+    try {
+      const result = await invoke<{
+        success: boolean;
+        data?: { npx?: NpxStatus };
+        error?: string;
+      }>(PROVIDERS_CHANNELS.GET_PATHS);
+      if (result?.success && result.data?.npx) {
+        appStore.dispatch(setNpxStatus(result.data.npx));
+      }
+    } catch (error) {
+      logger.warn("GET_PATHS call failed; npx status unavailable", { error });
+    }
+  };
+
+  const runBulkCheck = (options: { force?: boolean } = {}): Promise<void> => {
     if (inFlight) return inFlight;
 
     const providerIds = Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID);
@@ -88,27 +121,18 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
 
     inFlight = (async () => {
       try {
-        // First, call GET_AVAILABILITY to get npx status (plus aggregated
-        // provider availability from the daemon's host.providerDiscovery).
-        try {
-          const aggResult = await invoke<{
-            success: boolean;
-            data?: ProviderAvailabilityResult;
-            error?: string;
-          }>(PROVIDERS_CHANNELS.GET_AVAILABILITY);
-          if (aggResult?.success && aggResult.data?.npx) {
-            appStore.dispatch(setNpxStatus(aggResult.data.npx));
-          }
-        } catch (error) {
-          logger.warn("GET_AVAILABILITY call failed; npx status unavailable", { error });
-        }
-
         // Fan out one probe per provider in parallel and let each dispatch
         // its own success/failure as soon as it settles — fast probes must
-        // not wait on slow ones. `allSettled` prevents a single rejection
-        // from short-circuiting the group; runSingleCheck already handles
-        // its own thrown errors and dispatches `checkSingleProviderFailure`.
-        await Promise.allSettled(providerIds.map((id) => runSingleCheck(id)));
+        // not wait on slow ones, and nothing (least of all the aggregated
+        // availability sweep) is awaited in front of the fan-out. The light
+        // npx discovery call rides alongside instead of gating it.
+        // `allSettled` prevents a single rejection from short-circuiting the
+        // group; runSingleCheck already handles its own thrown errors and
+        // dispatches `checkSingleProviderFailure`.
+        await Promise.allSettled([
+          ...providerIds.map((id) => runSingleCheck(id, options)),
+          runNpxDiscovery(),
+        ]);
       } finally {
         // The onboarding path just probed every provider fresh; drop the
         // aggregated client cache so the next non-onboarding caller
@@ -143,7 +167,8 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
           logger.info("Backend connected — re-running provider availability bulk check", {
             isReconnect: payload.reconnected === true,
           });
-          void runBulkCheck();
+          // Passive trigger — ride the daemon's auth cache.
+          void runBulkCheck({ force: false });
         }
       },
     );
@@ -154,15 +179,19 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
     if (action && typeof action.type === "string") {
       switch (action.type) {
         case ensureProvidersChecked.type:
-          // First-mount trigger: only fetch when nothing has been checked yet.
+          // First-mount trigger: only fetch when nothing has been checked
+          // yet, and ride the daemon's auth cache — this is the latency-
+          // sensitive onboarding path, not a post-login recheck.
           if (!appStore.state.agentAvailability.hasCheckedOnce) {
-            void runBulkCheck();
+            void runBulkCheck({ force: false });
           }
           break;
         case checkAllProvidersRequested.type:
-          // Focus/visibility recheck: per-provider CHECK_SINGLE bypasses the
-          // aggregated 30s client cache by construction, so a manual
-          // install/login in the user's terminal is picked up immediately.
+          // Focus/visibility recheck: forced (the default), so an
+          // install/login the user just completed in their terminal is
+          // picked up instead of a cached auth verdict. Per-provider
+          // CHECK_SINGLE also bypasses the aggregated 30s client cache by
+          // construction.
           void runBulkCheck();
           break;
         case checkSingleProviderRequested.type: {
