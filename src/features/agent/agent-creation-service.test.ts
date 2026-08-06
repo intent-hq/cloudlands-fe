@@ -258,6 +258,22 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     expect(toastError).not.toHaveBeenCalled();
   });
 
+  it("does NOT toast on the promise-settling agentSessionLaunchAgentRequested path", async () => {
+    const WS = "ws-no-toast-launch";
+    seedWorkspace(WS);
+    createAgent.mockResolvedValueOnce({ success: false, error: "boom" });
+
+    const action = agentSessionLaunchAgentRequested(
+      WS,
+      { name: "Launch", agentType: createAgentTypeId("chat"), source: "test" },
+    );
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow(/boom/);
+    await flush();
+
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
   it("createAgentFromConfigRequested resolves with the created session and opens a tab when openAgent is true", async () => {
     const WS = "ws-from-config";
     const AGENT = "agent-from-config";
