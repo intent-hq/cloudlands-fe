@@ -510,9 +510,17 @@
     if (pendingQuestions) {
       return [];
     }
-    const messageContent = extractAllContent(lastAssistantMessage);
-    const { prompts } = parseSuggestedPrompts(messageContent);
-    return prompts;
+    // Parse each text block on its own, mirroring MessageContent, which strips
+    // the block per text block when rendering the transcript. Parsing a joined
+    // string here would surface chips for a marker split across two blocks
+    // while MessageContent still rendered its raw lines. The last text block
+    // that yields prompts wins.
+    const textBlocks = (lastAssistantMessage.contentBlocks ?? []).filter((b) => b.type === 'text');
+    for (let i = textBlocks.length - 1; i >= 0; i--) {
+      const { prompts } = parseSuggestedPrompts(textBlocks[i].text ?? '');
+      if (prompts.length > 0) return prompts;
+    }
+    return [];
   });
 
   // Agent Q&A: question blocks on the newest question-bearing assistant

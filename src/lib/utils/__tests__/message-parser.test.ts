@@ -875,6 +875,217 @@ Valid prompt
     expect(result.cleanedContent).toBe(content);
   });
 
+  it('should ignore an opener inside a fenced code region', () => {
+    const content = [
+      'Here is how to author prompts:',
+      '',
+      '```markdown',
+      '<!-- suggested-prompts',
+      'Example prompt',
+      '-->',
+      '```',
+      '',
+      'That is the format.',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+  });
+
+  it('should not close an unclosed opener on a Mermaid edge arrow', () => {
+    const content = [
+      '# Overview',
+      '',
+      '<!-- suggested-prompts',
+      '',
+      '```mermaid',
+      'flowchart LR',
+      '  A --> B',
+      '```',
+      '',
+      '| Col | Col |',
+      '| --- | --- |',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+  });
+
+  it('should handle CRLF line endings', () => {
+    const content = ['Here is the response.', '', '<!-- suggested-prompts', 'Run tests', '-->'].join(
+      '\r\n',
+    );
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual(['Run tests']);
+    expect(result.cleanedContent).toBe('Here is the response.');
+  });
+
+  it('should reject a CRLF block whose lines look like body text', () => {
+    const content = ['<!-- suggested-prompts', 'A --> B', '-->'].join('\r\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+  });
+
+  it('should keep fence state across an unclosed opener that precedes a fenced example', () => {
+    const content = [
+      'Use this format:',
+      '<!-- suggested-prompts',
+      '```markdown',
+      '<!-- suggested-prompts',
+      'Example prompt',
+      '-->',
+      '```',
+      'Done.',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+  });
+
+  it('should not let a --> inside a fenced region close an open block', () => {
+    const content = [
+      'Intro',
+      '<!-- suggested-prompts',
+      'Some text the agent wrote',
+      '```diff',
+      '-->',
+      '```',
+      'Outro',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+  });
+
+  it('should not close a block on a --> inside a fenced example', () => {
+    const content = [
+      '<!-- suggested-prompts',
+      '',
+      '```markdown',
+      '-->',
+      '```',
+      '',
+      'Body text that must survive.',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+  });
+
+  it('should discard a block whose lines look like body text without dropping the text', () => {
+    const content = ['<!-- suggested-prompts', '## Heading', 'Run tests', '-->'].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    // A rejected block is body text, so it must stay in the rendered content
+    expect(result.cleanedContent).toBe(content);
+  });
+
+  it('should discard a block containing a Mermaid edge line without dropping the text', () => {
+    const content = ['<!-- suggested-prompts', 'A --> B', 'Run tests', '-->'].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+  });
+
+  it('should discard a block containing a table row without dropping the text', () => {
+    const content = ['<!-- suggested-prompts', '| a | b |', 'Run tests', '-->'].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+  });
+
+  it('should fall back to an earlier accepted block when the last one is rejected', () => {
+    const content = [
+      '<!-- suggested-prompts',
+      'Run tests',
+      '-->',
+      '',
+      'Body.',
+      '',
+      '<!-- suggested-prompts',
+      '## Heading',
+      '-->',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual(['Run tests']);
+    // Only the accepted block is stripped; the rejected one stays as body text
+    expect(result.cleanedContent).toContain('## Heading');
+    expect(result.cleanedContent).not.toContain('Run tests');
+  });
+
+  it('should use the last well-formed block when several are present', () => {
+    const content = [
+      '<!-- suggested-prompts',
+      'Old prompt',
+      '-->',
+      '',
+      'More text.',
+      '',
+      '<!-- suggested-prompts',
+      'New prompt',
+      '-->',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual(['New prompt']);
+    expect(result.cleanedContent).toBe('More text.');
+  });
+
+  it('should cap the number of prompts at 6', () => {
+    const content = [
+      '<!-- suggested-prompts',
+      ...Array.from({ length: 10 }, (_, i) => `Prompt ${i + 1}`),
+      '-->',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts.length).toBe(6);
+    expect(result.prompts[5]).toBe('Prompt 6');
+  });
+
+  it('should drop prompts longer than 200 characters', () => {
+    const long = 'x'.repeat(201);
+    const content = ['<!-- suggested-prompts', long, 'Run tests', '-->'].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual(['Run tests']);
+  });
+
+  it('should not treat an inline opener followed by prose as a block', () => {
+    const content = 'Write a <!-- suggested-prompts block --> at the end.';
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([]);
+    expect(result.cleanedContent).toBe(content);
+  });
+
   it('should strip the suggested-prompts block from cleanedContent', () => {
     const content = `Here is the main message.
 

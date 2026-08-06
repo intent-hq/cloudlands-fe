@@ -58,13 +58,16 @@ function computeSuggestedPrompts(
   if (derivePendingQuestions(messages, isRunning, showingPendingUserMessage)) {
     return [];
   }
-  // Extract text content from contentBlocks
-  const messageContent = (lastAssistantMessage.contentBlocks || [])
-    .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n');
-  const { prompts } = parseSuggestedPrompts(messageContent);
-  return prompts;
+  // Parse each text block on its own, mirroring MessageContent's per-block
+  // stripping; the last block that yields prompts wins.
+  const textBlocks = (lastAssistantMessage.contentBlocks || []).filter(
+    (b): b is { type: 'text'; text: string } => b.type === 'text',
+  );
+  for (let i = textBlocks.length - 1; i >= 0; i--) {
+    const { prompts } = parseSuggestedPrompts(textBlocks[i].text);
+    if (prompts.length > 0) return prompts;
+  }
+  return [];
 }
 
 function createAssistantMessage(content: string): AgentMessage {
@@ -282,6 +285,41 @@ Continue
         'Run the tests',
         'Check the build status',
       ]);
+    });
+  });
+
+  describe('per-text-block parsing', () => {
+    /**
+     * REGRESSION: MessageContent strips the prompts block per text block, so a
+     * marker split across two blocks must NOT yield chips here — otherwise the
+     * chips render while the raw marker lines stay in the transcript.
+     */
+    it('does not surface prompts for a marker split across two text blocks', () => {
+      const split: AgentMessage = {
+        id: 'msg_split',
+        role: 'assistant',
+        contentBlocks: [
+          { type: 'text', text: 'Here is the response.\n\n<!-- suggested-prompts\nRun the tests' },
+          { type: 'text', text: '-->\n' },
+        ],
+        timestamp: new Date().toISOString(),
+      };
+
+      expect(computeSuggestedPrompts(false, [split])).toEqual([]);
+    });
+
+    it('surfaces prompts from the last text block that contains a complete block', () => {
+      const multi: AgentMessage = {
+        id: 'msg_multi',
+        role: 'assistant',
+        contentBlocks: [
+          { type: 'text', text: 'Intro.\n\n<!-- suggested-prompts\nOld prompt\n-->\n' },
+          { type: 'text', text: 'More.\n\n<!-- suggested-prompts\nNew prompt\n-->\n' },
+        ],
+        timestamp: new Date().toISOString(),
+      };
+
+      expect(computeSuggestedPrompts(false, [multi])).toEqual(['New prompt']);
     });
   });
 });
