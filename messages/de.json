@@ -4498,6 +4498,7 @@
   "agent_creation_createFailed_error": "Agent konnte nicht erstellt werden",
   "agent_creation_taskAgent_name": "Aufgaben-Agent",
   "agent_creation_workspaceUnavailable_error": "Arbeitsbereich ist für die Agenten-Erstellung nicht verfügbar",
+  "agent_creation_noteNotFound_error": "Notiz nicht gefunden – dafür kann kein Agent gestartet werden",
   "agent_creation_launchFailed_error": "Agent konnte nicht gestartet werden",
   "agent_chatSend_loadDepsFailed_error": "Chat-Abhängigkeiten konnten nicht geladen werden: {error}",
   "agent_chatSend_workspaceNotFound_error": "Arbeitsbereich nicht gefunden: {id}",

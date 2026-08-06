@@ -4498,6 +4498,7 @@
   "agent_creation_createFailed_error": "エージェントを作成できませんでした",
   "agent_creation_taskAgent_name": "タスクエージェント",
   "agent_creation_workspaceUnavailable_error": "エージェント作成にワークスペースが利用できません",
+  "agent_creation_noteNotFound_error": "ノートが見つかりません — エージェントを実行できません",
   "agent_creation_launchFailed_error": "エージェントを起動できませんでした",
   "agent_chatSend_loadDepsFailed_error": "チャットの依存関係を読み込めませんでした: {error}",
   "agent_chatSend_workspaceNotFound_error": "ワークスペースが見つかりません: {id}",

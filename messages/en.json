@@ -4499,6 +4499,7 @@
   "agent_creation_createFailed_error": "Failed to create agent",
   "agent_creation_taskAgent_name": "Task Agent",
   "agent_creation_workspaceUnavailable_error": "Workspace is not available for agent creation",
+  "agent_creation_noteNotFound_error": "Note not found — cannot run an agent for it",
   "agent_creation_launchFailed_error": "Failed to launch agent",
   "agent_chatSend_loadDepsFailed_error": "Failed to load chat dependencies: {error}",
   "agent_chatSend_workspaceNotFound_error": "Workspace not found: {id}",
