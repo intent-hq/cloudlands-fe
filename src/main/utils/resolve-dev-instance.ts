@@ -64,6 +64,26 @@ export const DEV_INTENTD_DIR_NAME = 'intentd-fe';
 // Data-dir segment used in dev when DEV_PORT is unset/unusable.
 const DEV_INTENTD_FALLBACK_SEGMENT = 'dev';
 
+// macOS caps `sockaddr_un.sun_path` at 104 bytes including the NUL terminator, so a
+// bindable socket path must be at most 103 bytes. Exported so the budget the layout below
+// is designed against is asserted in tests rather than assumed.
+export const MACOS_SUN_PATH_MAX_BYTES = 103;
+
+// Bytes this layout adds to the appData path to reach the daemon socket:
+// `/intentd-fe` + `/<segment>` + `/intentd.sock`. For a 4-digit DEV_PORT that is 29 bytes,
+// only 8 more than the pre-existing global default (`<appData>/intentd/intentd.sock`, 21),
+// leaving ~74 bytes for appData itself — comfortably more than the ~37 bytes a default
+// macOS `/Users/<user>/Library/Application Support` occupies even with a long username.
+export function devIntentdSocketPathByteLength(
+  appDataPath: string,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  return Buffer.byteLength(
+    path.join(resolveDevIntentdDataDir(appDataPath, env), 'intentd.sock'),
+    'utf8',
+  );
+}
+
 /**
  * Compute the per-DEV_PORT intentd data directory for dev builds:
  * `<appData>/intentd-fe/<DEV_PORT>` (e.g.
@@ -96,11 +116,14 @@ export function resolveDevIntentdDataDir(
  * legacy workspace catalog. An explicit transport override (`INTENTD_SOCKET`,
  * `INTENTD_WS_URL`, `INTENTD_TCP`) still wins: those name a connection target directly,
  * so replacing the data dir must not move it.
+ *
+ * `isDev` is required and must be the same signal the backend uses to pick a transport —
+ * `!app.isPackaged` (see `backend.ipc.ts`), not `NODE_ENV`. An unpackaged launch without
+ * `NODE_ENV` (e.g. `INTENTD_SIDECAR=1 pnpm start`) still resolves a dev UDS socket, so
+ * gating on `NODE_ENV` would skip the isolation and reuse the global daemon; conversely a
+ * packaged launch inheriting `NODE_ENV=development` must not be mutated.
  */
-export function shouldIsolateDevIntentdDataDir(
-  env: NodeJS.ProcessEnv = process.env,
-  isDev: boolean = env.NODE_ENV === 'development',
-): boolean {
+export function shouldIsolateDevIntentdDataDir(env: NodeJS.ProcessEnv, isDev: boolean): boolean {
   if (!isDev) return false;
   if (env.INTENTD_SOCKET?.trim()) return false;
   if (env.INTENTD_WS_URL?.trim()) return false;

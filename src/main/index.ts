@@ -48,9 +48,11 @@ if (devUserDataSegment) {
 // adopts the installed app's intentd (and its workspace catalog) on the global socket.
 // Any inherited INTENTD_DATA_DIR is replaced; explicit INTENTD_SOCKET/INTENTD_WS_URL/
 // INTENTD_TCP transports still win and suppress this. Packaged builds are untouched.
-// Must run before the sidecar spawn and the first backend client connection, both of
-// which read INTENTD_DATA_DIR off process.env.
-if (shouldIsolateDevIntentdDataDir(process.env)) {
+// Gated on !app.isPackaged — the same signal backend.ipc.ts uses to pick a transport, so
+// isolation and socket resolution cannot disagree (NODE_ENV would: an unpackaged launch
+// without it still resolves a dev UDS socket). Must run before the sidecar spawn and the
+// first backend client connection, both of which read INTENTD_DATA_DIR off process.env.
+if (shouldIsolateDevIntentdDataDir(process.env, !app.isPackaged)) {
   process.env.INTENTD_DATA_DIR = resolveDevIntentdDataDir(app.getPath('appData'));
 }
 
@@ -1030,9 +1032,8 @@ app.whenReady().then(async () => {
       label: m.menu_show_release_notes(),
       click: async () => {
         const targetWindow = BrowserWindow.getFocusedWindow() ?? getMainWindow();
-        const { sendShowReleaseNotes } = await import(
-          '../features/release-notes/main/release-notes.ipc'
-        );
+        const { sendShowReleaseNotes } =
+          await import('../features/release-notes/main/release-notes.ipc');
         sendShowReleaseNotes(targetWindow, { notes: null });
       },
     });
@@ -1464,9 +1465,8 @@ app.whenReady().then(async () => {
     // Show this version's release notes on the first launch after an update.
     // Packaged builds only — a dev build's version is never a published tag.
     if (app.isPackaged && mainWindow) {
-      const { initializeReleaseNotesOnStartup } = await import(
-        '../features/release-notes/main/release-notes.ipc'
-      );
+      const { initializeReleaseNotesOnStartup } =
+        await import('../features/release-notes/main/release-notes.ipc');
       void initializeReleaseNotesOnStartup(mainWindow);
     }
 
