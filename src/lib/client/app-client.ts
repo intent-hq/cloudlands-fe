@@ -1470,7 +1470,13 @@ export interface SpecialistDef {
    * `list`/`get` when the resolved list is non-empty, omitted otherwise
    * (never `null`/`[]` on the wire); accepted in `create`/`edit` spec bodies.
    */
-  modelOptions?: { model: string; hint: string }[];
+  modelOptions?: { model: string; hint: string; reasoningEffort?: string }[];
+  /**
+   * Reasoning-effort level for the specialist's model (additive, PROTOCOL
+   * §5.11): one of the model's catalog `effortLevels`. Omitted when the
+   * specialist inherits the model default (never `null`/`""` on the wire).
+   */
+  reasoningEffort?: string;
   prompt?: string;
   behaviorPrompt?: string;
   source: "project" | "user" | "bundled";

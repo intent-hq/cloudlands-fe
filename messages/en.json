@@ -454,6 +454,8 @@
   "settings_aiBehavior_inheritModel_label": "Default",
   "settings_aiBehavior_inheritModel_description": "Use the global default model",
   "settings_aiBehavior_inheritModelPreview_label": "Default ({model})",
+  "settings_aiBehavior_effort_label": "Effort",
+  "settings_aiBehavior_effort_default_label": "Default",
   "settings_aiBehavior_modelOptions_label": "Model options",
   "settings_aiBehavior_modelOptions_description": "Suggested models for delegation, with hints on when to pick each one.",
   "settings_aiBehavior_modelOptions_selectModel_label": "Select model",

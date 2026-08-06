@@ -454,6 +454,8 @@
   "settings_aiBehavior_inheritModel_label": "기본값",
   "settings_aiBehavior_inheritModel_description": "전역 기본 모델 사용",
   "settings_aiBehavior_inheritModelPreview_label": "기본값 ({model})",
+  "settings_aiBehavior_effort_label": "노력 수준",
+  "settings_aiBehavior_effort_default_label": "기본값",
   "settings_aiBehavior_modelOptions_label": "모델 옵션",
   "settings_aiBehavior_modelOptions_description": "위임에 추천하는 모델과 각 모델을 선택할 시점에 대한 힌트입니다.",
   "settings_aiBehavior_modelOptions_selectModel_label": "모델 선택",

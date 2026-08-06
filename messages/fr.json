@@ -454,6 +454,8 @@
   "settings_aiBehavior_inheritModel_label": "Par défaut",
   "settings_aiBehavior_inheritModel_description": "Utiliser le modèle par défaut global",
   "settings_aiBehavior_inheritModelPreview_label": "Par défaut ({model})",
+  "settings_aiBehavior_effort_label": "Effort",
+  "settings_aiBehavior_effort_default_label": "Par défaut",
   "settings_aiBehavior_modelOptions_label": "Options de modèle",
   "settings_aiBehavior_modelOptions_description": "Modèles suggérés pour la délégation, avec des indications sur le choix de chacun.",
   "settings_aiBehavior_modelOptions_selectModel_label": "Sélectionner un modèle",

@@ -454,6 +454,8 @@
   "settings_aiBehavior_inheritModel_label": "Standard",
   "settings_aiBehavior_inheritModel_description": "Globales Standardmodell verwenden",
   "settings_aiBehavior_inheritModelPreview_label": "Standard ({model})",
+  "settings_aiBehavior_effort_label": "Aufwand",
+  "settings_aiBehavior_effort_default_label": "Standard",
   "settings_aiBehavior_modelOptions_label": "Modelloptionen",
   "settings_aiBehavior_modelOptions_description": "Vorgeschlagene Modelle für die Delegation, mit Hinweisen zur Auswahl.",
   "settings_aiBehavior_modelOptions_selectModel_label": "Modell auswählen",

@@ -454,6 +454,8 @@
   "settings_aiBehavior_inheritModel_label": "默认",
   "settings_aiBehavior_inheritModel_description": "使用全局默认模型",
   "settings_aiBehavior_inheritModelPreview_label": "默认（{model}）",
+  "settings_aiBehavior_effort_label": "推理力度",
+  "settings_aiBehavior_effort_default_label": "默认",
   "settings_aiBehavior_modelOptions_label": "模型选项",
   "settings_aiBehavior_modelOptions_description": "委派时建议使用的模型，以及选择各模型的提示。",
   "settings_aiBehavior_modelOptions_selectModel_label": "选择模型",
