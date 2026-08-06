@@ -5228,6 +5228,8 @@
   "hardwareConsole_actionKey_cycleAttentionAgents_label": "循环切换需要关注的智能体",
   "hardwareConsole_actionKey_cycleIdleAgents_label": "循环切换空闲的智能体",
   "hardwareConsole_actionKey_cycleUnreadAgents_label": "循环切换未读的智能体",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one": "循环切换未读的智能体（还剩 {count} 个）",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many": "循环切换未读的智能体（还剩 {count} 个）",
   "hardwareConsole_actionKey_cycleFailedAgents_label": "循环切换失败的智能体",
   "hardwareConsole_actionKey_stopAgent_label": "停止智能体",
   "hardwareConsole_actionKey_seeSpec_label": "查看规格说明",

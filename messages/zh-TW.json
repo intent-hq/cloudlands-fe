@@ -5228,6 +5228,8 @@
   "hardwareConsole_actionKey_cycleAttentionAgents_label": "循環切換需要關注的智慧體",
   "hardwareConsole_actionKey_cycleIdleAgents_label": "循環切換閒置的智慧體",
   "hardwareConsole_actionKey_cycleUnreadAgents_label": "循環切換未讀的智慧體",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one": "循環切換未讀的智慧體（還剩 {count} 個）",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many": "循環切換未讀的智慧體（還剩 {count} 個）",
   "hardwareConsole_actionKey_cycleFailedAgents_label": "循環切換失敗的智慧體",
   "hardwareConsole_actionKey_stopAgent_label": "停止智慧體",
   "hardwareConsole_actionKey_seeSpec_label": "檢視規格說明",
