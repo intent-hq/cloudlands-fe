@@ -103,6 +103,9 @@ export function isAbsolutePath(p: string): boolean {
  * Relative paths are never outside (they resolve against the root).
  * Windows-style paths (drive letter or UNC) compare case-insensitively;
  * `..` segments are resolved before comparison.
+ * Unix paths compare case-sensitively by design: both sides normally come
+ * from the daemon with consistent casing, so we do not assume a
+ * case-insensitive filesystem.
  * @param p The path to check
  * @param root The root directory the path must fall under
  * @returns true if `p` is absolute and not under `root`
