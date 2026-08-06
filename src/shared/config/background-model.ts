@@ -1,17 +1,21 @@
 /**
- * Background Model Configuration
+ * Background Request Configuration
  *
- * Central configuration for cheap/fast models used for background operations.
- * These models are used for lightweight tasks that don't need to be shown in the UI:
+ * Central configuration for background operations — lightweight tasks that
+ * don't need to be shown in the UI:
  * - Note status checks (did the agent complete the task?)
  * - Quick validations
  * - Metadata extraction
  * - Other low-latency, low-cost operations
  *
+ * There is intentionally NO hardcoded background model id: when the caller
+ * does not supply one, `model` is omitted on the wire and the daemon/CLI
+ * default applies (PROTOCOL §5.32).
+ *
  * HOW TO USE:
  * Import `makeBackgroundRequest` from `./background-request.service` to make
- * one-off requests. Each request creates a fresh ACP provider, so there's no
- * shared state or conversation history between requests.
+ * one-off requests. Each request is a stateless daemon-side completion, so
+ * there's no shared state or conversation history between requests.
  *
  * Example:
  *   import { makeBackgroundRequest } from '$features/agent/main/background-request.service';
@@ -25,15 +29,6 @@
  *     // Handle completion
  *   }
  */
-
-import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
-
-/**
- * The model ID to use for background requests.
- * Uses MODEL_DEFAULTS.BACKGROUND_REQUEST_MODEL as the single source of truth.
- * Currently set to Haiku for fast, cheap, reliable background operations.
- */
-export const BACKGROUND_MODEL_ID = MODEL_DEFAULTS.BACKGROUND_REQUEST_MODEL;
 
 /**
  * Timeout for background requests in milliseconds.

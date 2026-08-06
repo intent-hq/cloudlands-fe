@@ -170,6 +170,7 @@
   "settings_backgroundAgent_overrides_title": "按操作覆盖",
   "settings_backgroundAgent_useDefaultOption": "使用默认快捷操作模型",
   "settings_backgroundAgent_customBadge": "自定义",
+  "settings_backgroundAgent_providerDefault_description": "使用提供商 CLI 的默认模型",
   "settings_gitWorkspace_loadError": "从后端加载设置失败。",
   "settings_gitWorkspace_saveError": "保存设置失败，请重试。",
   "settings_gitWorkspace_shell_autoDetect": "自动检测（系统默认）",
