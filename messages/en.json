@@ -185,7 +185,6 @@
   "settings_gitWorkspace_branchPrefix_description_before": "Prefix for new workspace branches (e.g.,",
   "settings_gitWorkspace_branchPrefix_placeholder": "feature/ or user/name/",
   "settings_gitWorkspace_branchPrefix_invalid": "Invalid branch prefix",
-  "settings_gitWorkspace_autoFetch_label": "Auto-fetch updates",
   "settings_gitWorkspace_autoCommit_label": "Auto-commit changes",
   "settings_gitWorkspace_cowIsolation_label": "Use Copy-on-Write isolation",
   "settings_gitWorkspace_experimental_badge": "Experimental",

@@ -185,7 +185,6 @@
   "settings_gitWorkspace_branchPrefix_description_before": "Prefijo para las ramas de nuevos espacios de trabajo (p. ej.,",
   "settings_gitWorkspace_branchPrefix_placeholder": "feature/ o usuario/nombre/",
   "settings_gitWorkspace_branchPrefix_invalid": "Prefijo de rama no válido",
-  "settings_gitWorkspace_autoFetch_label": "Obtener actualizaciones automáticamente",
   "settings_gitWorkspace_autoCommit_label": "Confirmar cambios automáticamente",
   "settings_gitWorkspace_cowIsolation_label": "Usar aislamiento de copia en escritura",
   "settings_gitWorkspace_experimental_badge": "Experimental",
