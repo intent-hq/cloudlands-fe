@@ -498,8 +498,8 @@ describe('Watchdog startup readiness budget', () => {
     vi.useRealTimers();
   });
 
-  it('documents a startup budget of at least 15s with sub-budget probe intervals', () => {
-    expect(budgetMs).toBeGreaterThanOrEqual(15_000);
+  it('documents a startup budget of at least 60s with sub-budget probe intervals', () => {
+    expect(budgetMs).toBeGreaterThanOrEqual(60_000);
     expect(probeIntervalMs).toBeGreaterThan(0);
     expect(probeIntervalMs).toBeLessThan(budgetMs);
     expect(probeTimeoutMs).toBeLessThan(budgetMs);
@@ -566,6 +566,32 @@ describe('Watchdog startup readiness budget', () => {
 
     expect(probes.count()).toBe(probesBeforeCrash);
     expect(mockProcess.kill).not.toHaveBeenCalled();
+  });
+
+  it('never signals a replacement child with a stale probe result after crash + restart', async () => {
+    vi.useFakeTimers();
+    mockProbesFailingUntil(Number.POSITIVE_INFINITY);
+    const crashedProcess = mockAliveProcess();
+    __setSidecarProcessForTesting(crashedProcess);
+
+    __startWatchdogForTesting('/test.sock', 100);
+
+    // Run out the readiness budget and stop mid-probe, so a probe armed against
+    // the old child is still in flight when it crashes.
+    await vi.advanceTimersByTimeAsync(budgetMs + probeIntervalMs);
+    expect(crashedProcess.kill).not.toHaveBeenCalled();
+
+    // Crash + restart backoff installs a fresh child with its own readiness
+    // window while that probe is in flight.
+    const replacementProcess = mockAliveProcess();
+    __setSidecarProcessForTesting(replacementProcess);
+
+    // The stale probe now times out: its result belongs to the dead child and
+    // must not kill the replacement.
+    await vi.advanceTimersByTimeAsync(probeTimeoutMs + 500);
+
+    expect(replacementProcess.kill).not.toHaveBeenCalled();
+    expect(crashedProcess.kill).not.toHaveBeenCalled();
   });
 
   it('switches to the 3-strikes steady-state regime after the first response', async () => {

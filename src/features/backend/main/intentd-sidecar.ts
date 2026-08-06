@@ -54,13 +54,26 @@ let consecutiveFailures = 0;
  * immediately: the process `exit` handler clears the watchdog timer, and a
  * readiness probe that finds the process handle gone stops waiting at once.
  */
-const SIDECAR_READY_BUDGET_MS = 30_000;
+const SIDECAR_READY_BUDGET_MS = 60_000;
 /** Delay between readiness probes while waiting for the daemon's first response. */
 const SIDECAR_READY_PROBE_INTERVAL_MS = 1000;
 /** Per-probe socket timeout (startup and steady-state alike). */
 const SIDECAR_PROBE_TIMEOUT_MS = 3000;
 /** Probe interval once the daemon has answered at least once. */
 const SIDECAR_STEADY_PROBE_INTERVAL_MS = 10_000;
+
+/**
+ * Per-spawn identity token, bumped whenever the process we supervise changes
+ * (spawn, exit, stop, test reset).
+ *
+ * A readiness probe can still be in flight (up to 3s) when the daemon crashes
+ * and the restart backoff spawns a replacement. Without an identity check, that
+ * stale probe's callback would see "a sidecar exists", conclude the readiness
+ * budget was exhausted, and SIGTERM the *fresh* child whose own readiness
+ * window had just been armed — a self-inflicted restart loop. Each probe
+ * captures the token it was armed with and gives up if it changed.
+ */
+let sidecarGeneration = 0;
 
 /** True once the current sidecar process has answered a probe at least once. */
 let daemonEverResponded = false;
@@ -71,8 +84,12 @@ let readyProbeAttempts = 0;
 /** Start of the readiness wait, for elapsed-time logging. */
 let readyStartedAt = 0;
 
-/** Arm a fresh startup readiness window (called per spawn). */
+/**
+ * Arm a fresh startup readiness window and invalidate in-flight probes from the
+ * previous process (called per spawn, and on exit/stop/test reset).
+ */
 function resetReadinessState(): void {
+  sidecarGeneration++;
   daemonEverResponded = false;
   readyDeadlineAt = null;
   readyProbeAttempts = 0;
@@ -635,6 +652,10 @@ function killSidecarWithEscalation(): void {
  *     consecutive failures before triggering a restart (a successful probe
  *     resets the counter).
  *
+ * A probe result is discarded when the supervised child changed while the probe
+ * was in flight (see [[sidecarGeneration]]), so a stale result never counts a
+ * strike against — or signals — a replacement process.
+ *
  * Kill escalation: SIGTERM first, then SIGKILL after 5s if the process hasn't
  * exited.
  *
@@ -651,6 +672,11 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
   watchdogTimer = setTimeout(async () => {
     if (isShuttingDown || !sidecarProcess) return;
 
+    // Identity of the child this probe is about, so its result can never be
+    // applied to a replacement spawned while the probe was in flight.
+    const armedGeneration = sidecarGeneration;
+    const armedProcess = sidecarProcess;
+
     // Arm the readiness deadline on the first probe of this spawn.
     if (!daemonEverResponded && readyDeadlineAt === null) {
       readyStartedAt = Date.now();
@@ -662,6 +688,18 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
     // The process may have exited (crashed) while the probe was in flight: its
     // exit handler already cleared this timer and consulted the restart policy.
     if (isShuttingDown || !sidecarProcess) return;
+
+    // A crash plus restart backoff can put a *different* child in place while
+    // this probe was in flight. Its result says nothing about the replacement
+    // (which owns a fresh readiness window and its own watchdog timer), so drop
+    // it rather than counting a strike or killing the wrong process.
+    if (sidecarGeneration !== armedGeneration || sidecarProcess !== armedProcess) {
+      logger.info('Discarding stale health probe result from a previous sidecar', {
+        armedGeneration,
+        currentGeneration: sidecarGeneration,
+      });
+      return;
+    }
 
     if (!isHealthy) {
       // Startup readiness regime: the daemon has never answered, so a failure
