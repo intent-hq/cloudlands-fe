@@ -91,6 +91,7 @@ const mocks = vi.hoisted(() => {
   const workspaceInitializerPersistenceMiddleware = createPassthroughMiddleware();
   const themeMutationMiddleware = createPassthroughMiddleware();
   const autoUpdateMutationMiddleware = createPassthroughMiddleware();
+  const releaseNotesMutationMiddleware = createPassthroughMiddleware();
   const specialistsMutationMiddleware = createPassthroughMiddleware();
   const loggerMiddleware = createPassthroughMiddleware();
   const refCheckMiddleware = createPassthroughMiddleware();
@@ -192,6 +193,7 @@ const mocks = vi.hoisted(() => {
     createWorkspaceInitializerPersistenceMiddleware: vi.fn(() => workspaceInitializerPersistenceMiddleware),
     createThemeMutationMiddleware: vi.fn(() => themeMutationMiddleware),
     createAutoUpdateMutationMiddleware: vi.fn(() => autoUpdateMutationMiddleware),
+    createReleaseNotesMutationMiddleware: vi.fn(() => releaseNotesMutationMiddleware),
     createSpecialistsMutationMiddleware: vi.fn(() => specialistsMutationMiddleware),
     createLoggerMiddleware: vi.fn(() => loggerMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
@@ -274,6 +276,7 @@ const mocks = vi.hoisted(() => {
     workspaceInitializerPersistenceMiddleware,
     themeMutationMiddleware,
     autoUpdateMutationMiddleware,
+    releaseNotesMutationMiddleware,
     specialistsMutationMiddleware,
     loggerMiddleware,
     structuredCloneMiddleware,
@@ -507,6 +510,9 @@ vi.mock("$features/theme/theme-service", () => ({
 vi.mock("$features/auto-update/auto-update-mutation-service", () => ({
   createAutoUpdateMutationMiddleware: mocks.createAutoUpdateMutationMiddleware,
 }));
+vi.mock("$features/release-notes/release-notes-mutation-service", () => ({
+  createReleaseNotesMutationMiddleware: mocks.createReleaseNotesMutationMiddleware,
+}));
 vi.mock("$features/specialists/specialists-mutation-service", () => ({
   createSpecialistsMutationMiddleware: mocks.createSpecialistsMutationMiddleware,
 }));
@@ -639,6 +645,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.workspaceInitializerPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
+      mocks.releaseNotesMutationMiddleware,
       mocks.specialistsMutationMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -730,6 +737,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.workspaceInitializerPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
+      mocks.releaseNotesMutationMiddleware,
       mocks.specialistsMutationMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -821,6 +829,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.workspaceInitializerPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
+      mocks.releaseNotesMutationMiddleware,
       mocks.specialistsMutationMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -913,6 +922,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.workspaceInitializerPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
+      mocks.releaseNotesMutationMiddleware,
       mocks.specialistsMutationMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
@@ -1022,6 +1032,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.workspaceInitializerPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
+      mocks.releaseNotesMutationMiddleware,
       mocks.specialistsMutationMiddleware,
       mocks.structuredCloneMiddleware,
     ]);

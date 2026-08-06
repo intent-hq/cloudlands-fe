@@ -92,6 +92,7 @@ import { createUserPreferencesPersistenceMiddleware } from "./middlewares/user-p
 import { createWorkspaceInitializerPersistenceMiddleware } from "./middlewares/workspace-initializer-persistence-service";
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-update-mutation-service";
+import { createReleaseNotesMutationMiddleware } from "$features/release-notes/release-notes-mutation-service";
 import { createSpecialistsMutationMiddleware } from "$features/specialists/specialists-mutation-service";
 import { createDaemonHealthMiddleware } from "./middlewares/daemon-health-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
@@ -549,6 +550,11 @@ function buildMiddleware(): StoreMiddleware[] {
     // (checking toast → up-to-date / available / error) instead of silently
     // running the check in main with zero renderer-side events.
     createAutoUpdateMutationMiddleware(),
+    // Give the release-notes triggers real handlers: `initializeReleaseNotes`
+    // registers the main → renderer "show release notes" push listener once
+    // (startup-after-update and Help ▸ Show Release Notes), and
+    // `showReleaseNotes` fetches the running version's notes on demand.
+    createReleaseNotesMutationMiddleware(),
     // Give the (post-saga) specialist mutation triggers (`saveFileSpecialist` /
     // `deleteFileSpecialist` / `exportBuiltinToFile` / `loadFileSpecialists`)
     // real handlers so Settings specialist writes (model override for all
