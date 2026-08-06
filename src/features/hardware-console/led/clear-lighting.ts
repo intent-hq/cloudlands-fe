@@ -71,6 +71,7 @@ export async function clearHardwareConsoleLighting(
 /** Minimal preload-bridge surface used by the listener (window.electronAPI). */
 export interface ClearLightingIpcLike {
   on(channel: string, handler: (...args: unknown[]) => void): string;
+  offById(channel: string, listenerId: string): void;
   send(channel: string, ...args: unknown[]): void;
 }
 
@@ -92,19 +93,20 @@ export interface ClearLightingListenerDeps {
  * Listen for main's `hardware-console:clear-lighting` broadcast, run the
  * clear helper, and always send the `clear-lighting-done` ack — even on
  * error or with no device connected. No-op outside Electron (no preload
- * bridge). Listeners persist for the renderer's lifetime (menu-ipc pattern).
+ * bridge). Returns an unsubscribe function for saga cancellation.
  */
 export function installHardwareConsoleClearLightingListener(
   manager: HardwareConsoleManager,
   deps: ClearLightingListenerDeps = {},
-): void {
+): () => void {
   const ipc =
     deps.ipc !== undefined
       ? deps.ipc
       : ((globalThis as { electronAPI?: ClearLightingIpcLike }).electronAPI ?? null);
-  if (!ipc) return;
-  const clear = deps.clear ?? ((target: HardwareConsoleManager) => clearHardwareConsoleLighting(target));
-  ipc.on(IPC_CHANNELS.HARDWARE_CONSOLE.CLEAR_LIGHTING, () => {
+  if (!ipc) return () => {};
+  const clear =
+    deps.clear ?? ((target: HardwareConsoleManager) => clearHardwareConsoleLighting(target));
+  const listenerId = ipc.on(IPC_CHANNELS.HARDWARE_CONSOLE.CLEAR_LIGHTING, () => {
     void (async () => {
       try {
         deps.disposeLedWiring?.();
@@ -116,4 +118,5 @@ export function installHardwareConsoleClearLightingListener(
       }
     })();
   });
+  return () => ipc.offById(IPC_CHANNELS.HARDWARE_CONSOLE.CLEAR_LIGHTING, listenerId);
 }

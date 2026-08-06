@@ -9,12 +9,11 @@
  * cannot work. On disconnect shows a brief, non-sticky toast. All probing is
  * read-only vendor RPC — nothing here can trigger a macOS permission prompt.
  *
- * Dependency-light per AGENTS.md middleware conventions: no selector
+ * Dependency-light per AGENTS.md service conventions: no selector
  * imports; the toast lib is imported lazily and settings navigation goes
  * through the main-safe navigation.client seam.
  */
 
-import type { StoreMiddleware } from '@augmentcode/themis/types';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { m } from '$shared/paraglide/messages.js';
@@ -25,7 +24,6 @@ import {
   type HardwareConsoleTransport,
 } from './device/transport-heuristic';
 import { probeConnectedDevice, type DeviceConnectionSnapshot } from './codex-probe';
-import { getHardwareConsoleManager } from './instance';
 
 const logger = createLogger('HardwareConsoleConnectionToasts');
 
@@ -36,7 +34,7 @@ const CONNECT_TOAST_DURATION_MS = 6000;
 const DISCONNECT_TOAST_DURATION_MS = 3000;
 const CODEX_WARNING_DURATION_MS = 10000;
 
-/** Lazily pull the toast lib so this middleware-reachable module stays light.
+/** Lazily pull the toast lib so this device-service module stays light.
  *  The import promise is cached — concurrent events must not race two
  *  first-time dynamic imports of the same module. */
 let toastPromise: Promise<(typeof import('svelte-sonner'))['toast']> | null = null;
@@ -46,7 +44,7 @@ function getToast() {
 }
 
 /** Mirrors SETTINGS_PREV_PATH_KEY in $lib/utils/workspace-navigation — that
- *  module is renderer-only ($app/* imports) and this middleware-reachable
+ *  module is renderer-only ($app/* imports) and this saga-reachable
  *  file is part of the main-process type-check, so it cannot be imported
  *  here (even dynamically). */
 const SETTINGS_PREV_PATH_KEY = 'settings-previous-path';
@@ -64,7 +62,8 @@ function openHardwareSettings(): void {
 
 function transportLabel(transport: HardwareConsoleTransport): string | null {
   if (transport === 'usb') return m.hardwareConsole_connectionToast_transportUsb_label();
-  if (transport === 'bluetooth') return m.hardwareConsole_connectionToast_transportBluetooth_label();
+  if (transport === 'bluetooth')
+    return m.hardwareConsole_connectionToast_transportBluetooth_label();
   return null;
 }
 
@@ -89,7 +88,10 @@ function describeSnapshot(snapshot: DeviceConnectionSnapshot): string | undefine
   return parts.length > 0 ? parts.join(' · ') : undefined;
 }
 
-async function showCodexWarning(name: string, codexMode: 'unsupported-firmware' | 'no-codex-layer') {
+async function showCodexWarning(
+  name: string,
+  codexMode: 'unsupported-firmware' | 'no-codex-layer',
+) {
   const toast = await getToast();
   const title =
     codexMode === 'unsupported-firmware'
@@ -150,7 +152,9 @@ async function showDisconnectToast(name: string): Promise<void> {
  * Subscribe connection toasts to a manager. Returns the unsubscribe
  * function. Survives reconnects (the status listener outlives connections).
  */
-export function installHardwareConsoleConnectionToasts(manager: HardwareConsoleManager): () => void {
+export function installHardwareConsoleConnectionToasts(
+  manager: HardwareConsoleManager,
+): () => void {
   let lastConnectedName: string | null = null;
   return manager.onStatusChange((status) => {
     if (status === 'connected') {
@@ -166,22 +170,4 @@ export function installHardwareConsoleConnectionToasts(manager: HardwareConsoleM
       });
     }
   });
-}
-
-let installed = false;
-
-/**
- * Lazily install on the first dispatched action (same pattern as
- * `createAgentFailureToastMiddleware`): subscribes the toasts to the shared
- * manager. The manager itself is started by the integration-toggle
- * middleware once the persisted enabled flag hydrates on.
- */
-export function createHardwareConsoleConnectionToastMiddleware(): StoreMiddleware {
-  return () => (next) => (action) => {
-    if (!installed) {
-      installed = true;
-      installHardwareConsoleConnectionToasts(getHardwareConsoleManager());
-    }
-    return next(action);
-  };
 }

@@ -10,13 +10,12 @@
  * - click (`ENC_CLK` keydown): brings up the All-workspaces sidebar panel;
  *   clicks while it is open cycle its view mode Recent → Repo → Status.
  *
- * The HUD timer is action-driven in the middleware: `encoderHudShown` arms
+ * The HUD timer is action-driven in the device saga: `encoderHudShown` arms
  * it regardless of who dispatched it.
  *
- * Dependency-light middleware module: AppClient-free, no selector imports —
+ * Dependency-light device service: AppClient-free, no selector imports —
  * workspace ordering reads `appStore.state` via the pure helpers.
  */
-import type { StoreMiddleware } from '@augmentcode/themis/types';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
@@ -27,7 +26,6 @@ import {
   encoderHudShown,
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import type { HardwareConsoleManager } from '../device/device-manager';
-import { getHardwareConsoleManager } from '../instance';
 import { HardwareInputDecoder } from '../input/input-decoder';
 import type { EncoderDirection } from '../input/types';
 import { isKeyAssignableWorkspace } from '../assignment/key-assignment';
@@ -118,7 +116,7 @@ export function handleEncoderClick(deps: EncoderDeps = {}): void {
 
 /**
  * Wire the encoder to a manager. Returns the teardown function.
- * Exported for tests; production installs via the middleware below.
+ * Exported for tests; production installation is owned by the device saga.
  */
 export function installHardwareConsoleEncoder(
   manager: HardwareConsoleManager,
@@ -161,45 +159,5 @@ export function installHardwareConsoleEncoder(
   return () => {
     offStatus();
     teardownDecoder();
-  };
-}
-
-/**
- * Lazily installs the encoder wiring on the first dispatched action
- * (key-switch precedent) and drives the HUD inactivity timer from the
- * `encoderHudShown` action itself — the timer behaves identically whoever
- * dispatched it.
- */
-export function createHardwareConsoleEncoderMiddleware(deps: EncoderDeps = {}): StoreMiddleware {
-  const { dispatch } = resolveDeps(deps);
-  let installed = false;
-  let hudTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const clearHudTimer = (): void => {
-    if (hudTimer !== null) clearTimeout(hudTimer);
-    hudTimer = null;
-  };
-
-  const armHudTimer = (): void => {
-    clearHudTimer();
-    hudTimer = setTimeout(() => {
-      hudTimer = null;
-      dispatch(encoderHudHidden());
-    }, ENCODER_HUD_HIDE_MS);
-  };
-
-  return () => (next) => (action) => {
-    if (!installed) {
-      installed = true;
-      installHardwareConsoleEncoder(getHardwareConsoleManager(), deps);
-    }
-
-    const result = next(action);
-
-    const type = (action as { type?: string } | null | undefined)?.type;
-    if (type === encoderHudShown.type) armHudTimer();
-    else if (type === encoderHudHidden.type) clearHudTimer();
-
-    return result;
   };
 }

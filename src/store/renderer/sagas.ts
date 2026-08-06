@@ -35,6 +35,7 @@ import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
 import { gitReadSaga } from './slices/git/sagas/git-read-saga';
 import { githubAuthSaga } from './slices/github-auth/sagas/github-auth-saga';
+import { hardwareConsoleDeviceSaga } from './slices/hardware-console/sagas/hardware-console-device-saga';
 import { hostRequirementsSaga } from './slices/host-requirements/sagas/host-requirements-saga';
 import { legacyImportSaga } from './slices/legacy-import/sagas/legacy-import-saga';
 import { linearAuthSaga } from './slices/linear-auth/sagas/linear-auth-saga';
@@ -116,6 +117,7 @@ export const sagas = [
   modelReloadSaga,
   providerAvailabilitySaga,
   hostRequirementsSaga,
+  hardwareConsoleDeviceSaga,
   themeSaga,
   autoUpdateSaga,
   specialistsSaga,

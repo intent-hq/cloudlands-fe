@@ -41,6 +41,7 @@ describe('renderer app saga registry', () => {
       'modelReloadSaga',
       'providerAvailabilitySaga',
       'hostRequirementsSaga',
+      'hardwareConsoleDeviceSaga',
       'themeSaga',
       'autoUpdateSaga',
       'specialistsSaga',
@@ -74,7 +75,7 @@ describe('renderer app saga registry', () => {
       'agentEventsIpcSaga',
       'gitEventsIpcSaga',
     ]);
-    expect(new Set(sagas).size).toBe(66);
+    expect(new Set(sagas).size).toBe(67);
   });
 
   it('returns one cancellation handler per registered saga', () => {
@@ -83,8 +84,8 @@ describe('renderer app saga registry', () => {
 
     const handlers = startAllAppSagas(store as never);
 
-    expect(store.runSaga).toHaveBeenCalledTimes(66);
+    expect(store.runSaga).toHaveBeenCalledTimes(67);
     expect(store.runSaga.mock.calls.map(([saga]) => saga)).toEqual(sagas);
-    expect(handlers).toEqual(Array(66).fill(cancel));
+    expect(handlers).toEqual(Array(67).fill(cancel));
   });
 });
