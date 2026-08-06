@@ -131,7 +131,11 @@ describe('provider availability service', () => {
 
     const result = await handler({}, 'codex');
 
-    expect(result).toEqual({ success: true, providerId: 'codex', data: { available: false } });
+    expect(result).toEqual({
+      success: true,
+      providerId: 'codex',
+      data: { available: false, hasNpxFallback: true },
+    });
     expect(mocks.findBinary).toHaveBeenCalledWith('codex', expect.any(Object));
     expect(mocks.ensureManagedCodexAcp).not.toHaveBeenCalled();
   });
@@ -367,7 +371,35 @@ describe('provider availability service', () => {
     expect(result).toEqual({
       success: true,
       providerId: 'codex',
-      data: { available: true, authenticated: true },
+      data: { available: true, authenticated: true, hasNpxFallback: true },
+    });
+  });
+
+  it('rides the daemon auth cache when the request carries force:false', async () => {
+    routeBackend({
+      'host.providerAuthStatus': { providers: [{ id: 'codex', authenticated: true }] },
+    });
+    mocks.findBinary.mockImplementation(async (name: string) =>
+      name === 'codex' ? '/usr/local/bin/codex' : null,
+    );
+
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE);
+    if (!handler) throw new Error('provider check handler was not registered');
+
+    const result = await handler({}, { providerId: 'codex', force: false });
+
+    // Passive bulk loads (onboarding first mount) must not re-probe every
+    // CLI — they read the daemon's cached verdict.
+    expect(mocks.backendRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
+      providerId: 'codex',
+      force: false,
+    });
+    expect(result).toEqual({
+      success: true,
+      providerId: 'codex',
+      data: { available: true, authenticated: true, hasNpxFallback: true },
     });
   });
 
