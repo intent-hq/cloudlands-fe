@@ -411,6 +411,36 @@ describe('WorkspaceTokenUsage', () => {
     expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
   });
 
+  it('keeps the four-column layout when a reported amount is not finite', async () => {
+    mocks.state.usage = makeUsage({
+      totals: {
+        inputTokens: 10,
+        outputTokens: 20,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        cost: { amount: Number.NaN, currency: 'USD' },
+      },
+      byModel: {
+        'model-live': {
+          inputTokens: 10,
+          outputTokens: 20,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          cost: { amount: Number.POSITIVE_INFINITY, currency: 'USD' },
+        },
+      },
+      lastScanAt: 5000,
+      isStale: false,
+    });
+
+    await renderTokenUsage();
+
+    const modelSection = screen.getByTestId('token-usage-by-model');
+    expect(modelSection.className).not.toContain('grid-cols-[1fr_auto_auto_auto_auto]');
+    expect(modelSection.textContent).not.toContain('Cost');
+    expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
+  });
+
   it('shows a subtle updating hint when the data is stale', async () => {
     mocks.state.usage = makeUsage({
       totals: {

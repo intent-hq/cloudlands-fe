@@ -48,7 +48,8 @@
   /** Formatted cost, or null when the daemon reported none for the entry. */
   function costLabel(cost: TokenUsageCost | null | undefined): string | null {
     if (!cost) return null;
-    return formatCurrency(cost.amount, cost.currency);
+    const label = formatCurrency(cost.amount, cost.currency);
+    return label === '' ? null : label;
   }
 
   const modelRows = $derived(

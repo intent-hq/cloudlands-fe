@@ -36,6 +36,11 @@ describe('formatCurrency', () => {
     expect(de.formatCurrency(1234.5, 'EUR')).toContain('1.234,50');
   });
 
+  it('honours zero-decimal currency conventions for whole amounts', () => {
+    expect(en.formatCurrency(100, 'JPY')).toBe('¥100');
+    expect(en.formatCurrency(0, 'JPY')).toBe('¥0');
+  });
+
   it('falls back to a number plus the code for an unknown currency', () => {
     expect(en.formatCurrency(2, 'CREDITS')).toBe('2.00 CREDITS');
   });

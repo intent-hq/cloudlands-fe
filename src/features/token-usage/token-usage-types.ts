@@ -8,8 +8,9 @@
  */
 
 /**
- * Provider-reported cost in an ISO 4217 currency. Absent whenever no provider
- * reported a cost for the entry — never estimated by the daemon or the FE.
+ * Provider-reported cost in an ISO 4217 currency. Omitted (never `null`, per
+ * PROTOCOL §5.23) whenever no provider reported a cost for the entry — never
+ * estimated by the daemon or the FE.
  */
 export interface TokenUsageCost {
   amount: number;
@@ -22,7 +23,7 @@ export interface TokenUsageTotals {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
-  cost?: TokenUsageCost | null;
+  cost?: TokenUsageCost;
 }
 
 /**
