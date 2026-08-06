@@ -17,6 +17,14 @@ export type ModelFallbackInfo = {
 
 export type ModelState = {
   availableModels: Collection<AuggieModel, 'value'>;
+  /**
+   * Provider the current `availableModels` catalog was loaded for ('' before
+   * the first load). Bare model ids re-attribute to whatever the default
+   * provider currently is, so consumers need this explicit provenance to know
+   * whether the global catalog belongs to a given provider (e.g. the model
+   * picker's disabled-provider fallback group).
+   */
+  availableModelsProviderId: string;
   loadingState: Record<string, ModelLoadingState>;
   providerModels: Record<string, string>;
   modelPickerCollapsedGroups: string[];

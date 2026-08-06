@@ -109,7 +109,7 @@ registerMockSeeder("misc-ui-events", async ({ store, client }) => {
   const activeProviderId = providerSettings?.activeProviderId ?? "auggie";
   const models = await client.models.list();
   if (models.length > 0) {
-    store.dispatch(setAvailableModels(models));
+    store.dispatch(setAvailableModels(models, activeProviderId));
     store.dispatch(
       setLoadingStateForProvider({
         providerId: activeProviderId,

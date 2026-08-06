@@ -20,6 +20,13 @@ interface BuildGroupedModelOptionsParams {
   useDefaultOption: DropdownOption;
   effectiveProviderId: string;
   availableModels: ModelPickerOptions;
+  /**
+   * Provider `availableModels` was actually loaded for ('' when unknown).
+   * The disabled-effective-provider fallback group only renders those models
+   * when this matches the effective provider — otherwise a stale catalog from
+   * a previously active provider would show up under the wrong group label.
+   */
+  availableModelsProviderId: string;
   enabledProviderIds: string[];
   allProviderModels: Record<string, DropdownOption[]>;
   allProviderLoading: Record<string, boolean>;
@@ -32,6 +39,7 @@ export function buildGroupedModelOptions({
   useDefaultOption,
   effectiveProviderId,
   availableModels,
+  availableModelsProviderId,
   enabledProviderIds,
   allProviderModels,
   allProviderLoading,
@@ -58,6 +66,12 @@ export function buildGroupedModelOptions({
     state,
     effectiveProviderId,
   );
+  // Only use the shared catalog for the fallback group when it was actually
+  // loaded for the effective provider (see availableModelsProviderId doc).
+  const fallbackModelsMatchEffectiveProvider =
+    availableModelsProviderId !== '' &&
+    selectNormalizedProviderId.select(state, availableModelsProviderId) ===
+      normalizedEffectiveProviderId;
 
   for (const pid of selectAllCatalogProviderIds.select(state)) {
     const isDisabledEffectiveProvider =
@@ -65,7 +79,9 @@ export function buildGroupedModelOptions({
     if (!normalizedEnabledProviderIds.has(pid) && !isDisabledEffectiveProvider) continue;
     const models =
       allProviderModels[pid] ??
-      (isDisabledEffectiveProvider ? toDropdownOptions(availableModels) : undefined);
+      (isDisabledEffectiveProvider && fallbackModelsMatchEffectiveProvider
+        ? toDropdownOptions(availableModels)
+        : undefined);
     if (models && models.length > 0) {
       groups.push({
         key: pid,
