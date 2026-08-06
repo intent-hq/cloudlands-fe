@@ -133,7 +133,9 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
 
     // Wait for load to settle (a sibling toggle is rendered), then assert absence.
     await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: /Auto-commit changes/ })).toBeTruthy();
+      expect(
+        screen.getByRole('checkbox', { name: /Enable auto-commit for new workspaces/ }),
+      ).toBeTruthy();
     });
     expect(screen.queryByRole('checkbox', { name: GIT_CRED_LABEL })).toBeNull();
   });
@@ -509,7 +511,7 @@ describe('GitWorkspaceSettings — path picker fields (PathSettingField)', () =>
     render(GitWorkspaceSettings);
 
     const autoCommit = await waitFor(() =>
-      screen.getByRole('checkbox', { name: /Auto-commit changes/ }),
+      screen.getByRole('checkbox', { name: /Enable auto-commit for new workspaces/ }),
     );
     await fireEvent.click(autoCommit);
 

@@ -186,7 +186,7 @@
   "settings_gitWorkspace_branchPrefix_description_before": "新工作區分支的字首（例如",
   "settings_gitWorkspace_branchPrefix_placeholder": "feature/ 或 user/name/",
   "settings_gitWorkspace_branchPrefix_invalid": "無效的分支字首",
-  "settings_gitWorkspace_autoCommit_label": "自動提交更改",
+  "settings_gitWorkspace_autoCommit_label": "為新工作區啟用自動提交",
   "settings_gitWorkspace_cowIsolation_label": "使用寫時複製（CoW）隔離",
   "settings_gitWorkspace_experimental_badge": "實驗性",
   "settings_gitWorkspace_cowIsolation_description": "新工作區將以儲存庫的寫時複製（CoW）副本方式建立，每個被委派的智慧體都在自己的 CoW 沙箱中執行，完成後自動合併回來。需要工作區根目錄所在的檔案系統支援 CoW（macOS 的 APFS、Linux 的 btrfs/XFS-reflink、Windows 的 ReFS/Dev Drive）。",
