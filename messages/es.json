@@ -4498,6 +4498,7 @@
   "agent_creation_createFailed_error": "Error al crear el agente",
   "agent_creation_taskAgent_name": "Agente de tareas",
   "agent_creation_workspaceUnavailable_error": "El espacio de trabajo no está disponible para crear agentes",
+  "agent_creation_noteNotFound_error": "Nota no encontrada: no se puede ejecutar un agente para ella",
   "agent_creation_launchFailed_error": "Error al iniciar el agente",
   "agent_chatSend_loadDepsFailed_error": "Error al cargar las dependencias del chat: {error}",
   "agent_chatSend_workspaceNotFound_error": "Espacio de trabajo no encontrado: {id}",
