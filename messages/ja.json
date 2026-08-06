@@ -170,6 +170,7 @@
   "settings_backgroundAgent_overrides_title": "アクションごとの上書き",
   "settings_backgroundAgent_useDefaultOption": "デフォルトのクイックアクションモデルを使用",
   "settings_backgroundAgent_customBadge": "カスタム",
+  "settings_backgroundAgent_providerDefault_description": "プロバイダーCLIのデフォルトモデルを使用",
   "settings_gitWorkspace_loadError": "バックエンドから設定を読み込めませんでした。",
   "settings_gitWorkspace_saveError": "設定を保存できませんでした。もう一度お試しください。",
   "settings_gitWorkspace_shell_autoDetect": "自動検出（システムデフォルト）",
