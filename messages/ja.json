@@ -2023,6 +2023,7 @@
   "chat_toolClassifier_searchCommits_label": "コミットを検索",
   "chat_toolClassifier_searchWeb_label": "ウェブを検索",
   "chat_toolClassifier_search_label": "検索",
+  "chat_toolClassifier_loadingTools_label": "ツールを読み込み中",
   "chat_toolClassifier_read_label": "読み取り",
   "chat_toolClassifier_edit_label": "編集",
   "chat_toolClassifier_listContents_label": "内容を一覧表示",
