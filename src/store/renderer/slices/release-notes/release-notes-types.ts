@@ -3,11 +3,9 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
-export type ReleaseNotes = {
-  version: string;
-  date: string;
-  highlights: string[];
-};
+import type { ReleaseNotesContent } from "$features/release-notes/types";
+
+export type ReleaseNotes = ReleaseNotesContent;
 
 export type ReleaseNotesState = {
   releaseNotes: ReleaseNotes | null;

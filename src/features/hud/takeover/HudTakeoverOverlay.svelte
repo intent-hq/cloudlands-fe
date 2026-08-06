@@ -34,8 +34,7 @@
   import { createTakeoverController } from './hud-takeover-controller.svelte';
   import { takeoverFrameStyle } from './hud-takeover-frame';
   import {
-    bannerDelay,
-    bannerOutDelay,
+    bannerScrollDurationS,
     cellLeft,
     cellNeedsPan,
     cellTop,
@@ -46,12 +45,11 @@
   import { createTakeoverMapDrag } from './hud-takeover-drag.svelte';
   import {
     agentBucketLabel,
-    bannerView,
-    takeoverAttentionChipLabel,
     takeoverKindColor,
     takeoverKindLabel,
     taskCellMeta,
   } from './hud-takeover-meta';
+  import HudTakeoverBanner from './HudTakeoverBanner.svelte';
   import { agentBucketColor } from '../grid/hud-card-meta';
 
   let { nowMs }: { nowMs: number } = $props();
@@ -145,6 +143,44 @@
   $effect(() => {
     const workspaceId = queue.active?.workspaceId ?? '';
     drag.syncAutoPan(workspaceId, needsPan ? changedCoord : null, motion ? 2000 : 0);
+  });
+
+  // ── Banner overflow marquee: measure once per display during 'opening' ──
+  // `.ov-banner-big` is nowrap + hidden overflow, so `scrollWidth −
+  // clientWidth` is the marquee travel. Measured per rendered banner (wrap
+  // headlines excluded — they clamp, never scroll); the MAX scroll duration
+  // is reported to the controller BEFORE the opening→dwelling tick so the
+  // queue dwell covers the whole scroll (`extraDwellMs`). Keyed per display
+  // like the controller's zoom measurement; reduced motion reports 0. The
+  // measurement carries its display key so a chained next display can never
+  // index the previous entry's overflows (it reads 0 until re-measured);
+  // values persist through 'dwelling'/'closing' where the marquee still
+  // renders.
+  let bannersEl = $state<HTMLElement | null>(null);
+  let bannerOverflows = $state<{ key: string; values: number[] }>({ key: '', values: [] });
+  let scrollMeasureKey = '';
+  $effect(() => {
+    if (queue.phase !== 'opening' || !queue.active || isViewer) {
+      scrollMeasureKey = '';
+      if (queue.phase === 'idle' && bannerOverflows.key !== '') {
+        bannerOverflows = { key: '', values: [] };
+      }
+      return;
+    }
+    if (queue.active.workspaceId === scrollMeasureKey || !bannersEl) return;
+    scrollMeasureKey = queue.active.workspaceId;
+    if (!motion) {
+      bannerOverflows = { key: '', values: [] };
+      return;
+    }
+    const next = Array.from(bannersEl.querySelectorAll('.ov-banner')).map((banner) => {
+      const big = banner.querySelector('.ov-banner-big:not(.ov-banner-big-wrap)');
+      return big ? Math.max(0, big.scrollWidth - big.clientWidth) : 0;
+    });
+    bannerOverflows = { key: scrollMeasureKey, values: next };
+    controller.reportBannerScrollMs(
+      Math.round(Math.max(0, ...next.map((px) => bannerScrollDurationS(px))) * 1000),
+    );
   });
 
   /** Spec-progress segments (mock `taskSegs`): done → inProgress → rest. */
@@ -342,46 +378,26 @@
               </div>
 
               <!-- Banners: one per trigger, typewriter wipe; VIEWER renders none.
-                   The fade-out delay is dwell-proportional so the unfolded
-                   banner holds ~half the entry's dwell (see bannerOutDelay). -->
+                   Rendering (chip/headline/marquee + styles) lives in
+                   HudTakeoverBanner.svelte; this overlay measures the
+                   headline overflow (see the measurement $effect) and feeds
+                   each banner its overflowPx. -->
               {#if queue.active && !isViewer}
                 {@const dwellMs = takeoverDwellMs(queue.active)}
-                <div class="ov-banners">
+                <div class="ov-banners" bind:this={bannersEl}>
                   {#each queue.active.triggers as banner, i (`${banner.kind}-${banner.raisedAtMs}-${i}`)}
-                    {@const color = takeoverKindColor(banner.kind)}
-                    {@const bv = bannerView(banner, view.title, view.repoRef)}
-                    <div
-                      class="ov-banner"
-                      style:--banner-in-delay={motion ? `${bannerDelay(needsPan, i)}s` : '0s'}
-                      style:--banner-out-delay={motion
-                        ? `${bannerOutDelay(needsPan, i, dwellMs)}s`
-                        : '0s'}
-                      data-testid="hud-takeover-banner"
-                    >
-                      <span
-                        class="ov-banner-chip"
-                        class:ov-anim-blink={motion}
-                        style:border-color={color}
-                        style:color
-                      >
-                        {banner.signal
-                          ? takeoverAttentionChipLabel(banner.signal)
-                          : takeoverKindLabel(banner.kind)}
-                      </span>
-                      {#if bv.big}
-                        <div class="ov-banner-big" class:ov-banner-big-wrap={bv.wrap} style:color>
-                          {bv.big}
-                        </div>
-                      {/if}
-                      {#if bv.status}
-                        <div class="ov-banner-status" data-testid={bv.statusTestId}>
-                          {bv.status}
-                        </div>
-                      {/if}
-                      {#if bv.sub}
-                        <div class="ov-banner-sub">{bv.sub}</div>
-                      {/if}
-                    </div>
+                    <HudTakeoverBanner
+                      {banner}
+                      index={i}
+                      title={view.title}
+                      repoRef={view.repoRef}
+                      {motion}
+                      {needsPan}
+                      {dwellMs}
+                      overflowPx={bannerOverflows.key === queue.active.workspaceId
+                        ? (bannerOverflows.values[i] ?? 0)
+                        : 0}
+                    />
                   {/each}
                 </div>
               {/if}
@@ -535,14 +551,6 @@
     to {
       opacity: 1;
       transform: none;
-    }
-  }
-  @keyframes bannerin {
-    from {
-      clip-path: inset(0 100% 0 0);
-    }
-    to {
-      clip-path: inset(0 0 0 0);
     }
   }
   @keyframes ovringblink {
@@ -969,7 +977,7 @@
     flex: none;
   }
 
-  /* ── Banners ── */
+  /* ── Banners (rows render in HudTakeoverBanner.svelte) ── */
   .ov-banners {
     position: absolute;
     left: 0;
@@ -980,62 +988,6 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
-  }
-  .ov-banner {
-    border-top: 1px solid hsl(var(--border) / 0.8);
-    border-bottom: 1px solid hsl(var(--border) / 0.8);
-    background: hsl(var(--app-background) / 0.88);
-    padding: 14px 22px;
-    /* Typewriter wipe in, then auto fade-out while the map stays up. The
-       out-delay is dwell-proportional (bannerOutDelay: unfolded hold ≈ half
-       the entry's dwell); the wipe duration mirrors
-       HUD_TAKEOVER_BANNER_IN_S. */
-    animation:
-      bannerin 1.1s steps(22) var(--banner-in-delay, 0s) both,
-      ovfO 0.45s ease var(--banner-out-delay, 5.2s) both;
-  }
-  .ov-banner-chip {
-    display: inline-block;
-    border: 1px solid;
-    padding: 4px 11px;
-    margin-bottom: 10px;
-    font: 600 10px 'JetBrains Mono', monospace;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-  }
-  .ov-banner-big {
-    font: 700 42px 'Doto', 'JetBrains Mono', monospace;
-    letter-spacing: 0.08em;
-    line-height: 1.05;
-    white-space: nowrap;
-    overflow: hidden;
-    text-transform: uppercase;
-  }
-  .ov-banner-big-wrap {
-    font-size: 24px;
-    white-space: normal;
-    text-transform: none;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-  }
-  .ov-banner-sub {
-    margin-top: 6px;
-    font: 500 11.5px 'JetBrains Mono', monospace;
-    letter-spacing: 0.18em;
-    color: hsl(var(--text-subtle));
-    text-transform: uppercase;
-  }
-  .ov-banner-status {
-    margin-top: 8px;
-    font: 500 14px 'JetBrains Mono', monospace;
-    line-height: 1.4;
-    color: hsl(var(--text-subtle));
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
   }
 
   /* ── Side column ── */
@@ -1161,7 +1113,6 @@
   .ov-no-motion .ov-ruler,
   .ov-no-motion .ov-content,
   .ov-no-motion .ov-cell,
-  .ov-no-motion .ov-banner,
   .ov-no-motion .ov-status-hint {
     animation: none;
   }
@@ -1177,7 +1128,6 @@
     .ov-ruler,
     .ov-content,
     .ov-cell,
-    .ov-banner,
     .ov-status-hint,
     .ov-anim-pulse,
     .ov-anim-blink {

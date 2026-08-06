@@ -1521,6 +1521,10 @@ function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): voi
   if (typeof scriptId !== 'string') return;
   // PTY stream ended — drop the streaming decoder so a later run starts fresh.
   if (rest.status !== 'running') scriptOutputDecoders.delete(`${workspaceId}:${scriptId}`);
+  // The event is a full ScriptRuntimeState snapshot, but the reducer shallow-merges:
+  // make the presence-detected marker explicit so an absent key clears a stale
+  // `previouslyRunning` from an earlier `script.list` hydration.
+  rest.previouslyRunning = rest.previouslyRunning === true;
   appStore.dispatch(updateRuntimeState(workspaceId, scriptId, rest as Partial<ScriptRuntimeState>));
 }
 

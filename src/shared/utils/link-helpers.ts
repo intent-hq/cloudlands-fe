@@ -46,6 +46,42 @@ export function isGitHubUrl(url: string): boolean {
   }
 }
 
+/** Kind of a parsed GitHub issue/PR reference. */
+export type GitHubIssueOrPrKind = 'issue' | 'pr';
+
+/** A GitHub issue or pull-request reference parsed from a github.com URL. */
+export interface GitHubIssueOrPrRef {
+  owner: string;
+  repo: string;
+  number: number;
+  kind: GitHubIssueOrPrKind;
+}
+
+/**
+ * Parse a GitHub issue or pull-request URL.
+ *
+ * Matches `github.com/{owner}/{repo}/issues/{n}` and
+ * `github.com/{owner}/{repo}/pull/{n}` (plus `www.github.com`), tolerating
+ * trailing path segments (e.g. `/pull/1/files`), query strings, and anchors.
+ * Returns null for any other GitHub or non-GitHub URL.
+ */
+export function parseGitHubIssueOrPrUrl(url: string): GitHubIssueOrPrRef | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname !== 'github.com' && parsed.hostname !== 'www.github.com') return null;
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    if (segments.length < 4) return null;
+    const [owner, repo, kindSegment, numberSegment] = segments;
+    const kind =
+      kindSegment === 'issues' ? 'issue' : kindSegment === 'pull' ? 'pr' : null;
+    if (!kind) return null;
+    if (!/^\d+$/.test(numberSegment)) return null;
+    return { owner, repo, number: Number.parseInt(numberSegment, 10), kind };
+  } catch {
+    return null;
+  }
+}
+
 /** Detect whether the platform-appropriate "Cmd" modifier is held. */
 export function isCmdClickModifier(
   options: Pick<LinkHandlerOptions, 'event' | 'modifiers'>,

@@ -344,17 +344,6 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'daemon-settings-update', path: 'workspace.defaultShell' },
   },
   {
-    path: 'workspace.autoFetch',
-    label: 'Auto fetch',
-    description: 'Whether workspace Git operations should fetch automatically.',
-    category: 'workspace',
-    type: 'boolean',
-    source: 'daemon-settings',
-    storageKey: 'workspace.autoFetch',
-    defaultValue: true,
-    apply: { kind: 'daemon-settings-update', path: 'workspace.autoFetch' },
-  },
-  {
     path: 'workspace.autoCommit',
     label: 'Auto-commit',
     description: 'Global default for workspace auto-commit behavior.',

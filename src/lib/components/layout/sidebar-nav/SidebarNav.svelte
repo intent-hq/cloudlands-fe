@@ -140,7 +140,9 @@
       const deferredLeave = state.sidebarNav.deferredLeave;
       appStore.dispatch(clearDeferredLeave());
 
-      if (deferredLeave && !selectIsCardPinned.select(state)) {
+      const pinnedExpanded =
+        selectIsCardPinned.select(state) && selectExpandedItem.select(state) !== null;
+      if (deferredLeave && !pinnedExpanded) {
         leaveTimeout = setTimeout(() => {
           appStore.dispatch(setHoveredItem(null));
           if (deferredLeave === 'card') {
@@ -184,8 +186,10 @@
       hoverTimeout = null;
     }
 
-    // Pinned cards never auto-close
-    if ($isCardPinned$) return;
+    // Pinned expanded cards never auto-close. The pin only gates expanded cards —
+    // the pin affordance doesn't render on transient (non-expanded) cards, so they
+    // must never be pin-wedged open.
+    if ($isCardPinned$ && $expandedItem$ !== null) return;
 
     // Context menu open — defer the leave so we can process it when the menu closes
     if ($contextMenuOpen$) {
