@@ -907,7 +907,7 @@
                 {/if}
                 <button
                   type="button"
-                  class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+                  class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
                   onclick={() => openDocs(provider.docsUrl)}
                 >
                   {m.settings_providers_install()}
