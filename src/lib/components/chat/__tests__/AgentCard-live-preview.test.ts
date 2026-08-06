@@ -134,6 +134,93 @@ describe('AgentCard live preview precedence', () => {
   });
 });
 
+describe('AgentCard live tool preview (tool-only stretches)', () => {
+  beforeEach(() => {
+    appStore.init();
+    agentId = `agent-preview-${++testAgentSeq}`;
+  });
+
+  afterEach(() => {
+    appStore.dispatch(removeSession(agentId));
+  });
+
+  it('shows the push-applied lastToolUse instead of freezing on the previous turn text', async () => {
+    // Tool-only window: the turn produced no text yet, so the transcript still
+    // holds the last turn's answer — the live tool call is the fresher signal.
+    seedSession({
+      isStreaming: true,
+      messages: [assistantMessage('stale persisted text from last turn')],
+    });
+    appStore.dispatch(updateSession(agentId, { lastToolUse: { name: 'read_file' } }));
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).not.toContain('stale persisted text');
+    expect(preview.textContent?.toLowerCase()).toContain('read');
+  });
+
+  it('lets live streamed text outrank the live tool label', async () => {
+    seedSession({
+      isStreaming: true,
+      messages: [assistantMessage('character-level buffer text', { isStreaming: true })],
+    });
+    appStore.dispatch(updateSession(agentId, { lastToolUse: { name: 'read_file' } }));
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('character-level buffer text');
+  });
+
+  it('outranks the previous-turn digest while responding', async () => {
+    seedSession({
+      isStreaming: true,
+      messages: [assistantMessage('stale persisted text')],
+    });
+    appStore.dispatch(
+      updateSession(agentId, {
+        digest: 'Parser rewrite in progress',
+        lastToolUse: { name: 'read_file' },
+      }),
+    );
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent?.toLowerCase()).toContain('read');
+    expect(screen.queryByText('Parser rewrite in progress')).toBeNull();
+  });
+
+  it('keeps the transcript preview once the agent is no longer responding', async () => {
+    // Idle agent: a leftover lastToolUse from the finished turn must not
+    // override the turn's persisted final text.
+    seedSession({
+      isStreaming: false,
+      status: AgentStatus.Idle,
+      messages: [assistantMessage('final persisted answer')],
+    });
+    appStore.dispatch(updateSession(agentId, { lastToolUse: { name: 'read_file' } }));
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('final persisted answer');
+  });
+
+  it('degrades to the existing preview when the daemon sends no lastToolUse', async () => {
+    seedSession({
+      isStreaming: true,
+      messages: [assistantMessage('stale persisted text from last turn')],
+    });
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('stale persisted text from last turn');
+  });
+});
+
 describe('AgentCard user-message-newest preview (freshness wins)', () => {
   beforeEach(() => {
     appStore.init();

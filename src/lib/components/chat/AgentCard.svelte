@@ -43,7 +43,7 @@
   getPanelLayoutManager,
   hasPanelLayoutManager,
 } from '$features/layout/panel-layout-adapter';
-  import type { Workspace } from '$shared/types';
+  import type { ToolUseBlock, Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
 
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
@@ -454,6 +454,19 @@
       (agentData?.lastResponse ? getLastMeaningfulLine(agentData.lastResponse) : ''),
   );
 
+  // Live tool preview: the session's push-applied `lastToolUse` (refreshed by
+  // the throttled `agent:stream:activity` pings, PROTOCOL §7) synthesized into
+  // the block shape AgentPreviewToolLabel renders. This is what keeps a
+  // tool-only stretch of a turn advancing instead of freezing on the previous
+  // turn's transcript text — live streamed text still outranks it, and it only
+  // exists while the agent is responding, so idle rows keep their peek data.
+  const liveToolUse = $derived.by<ToolUseBlock | undefined>(() => {
+    if (!$agentIsResponding$ || liveResponseLine) return undefined;
+    const toolUse = $agent$?.lastToolUse;
+    if (!toolUse?.name) return undefined;
+    return { type: 'tool_use', id: `${agentId}:live-tool`, name: toolUse.name, input: {} };
+  });
+
   // Freshness-wins preview: when the newest transcript message is the user's
   // (wire `lastMessageRole`, transcript-derived fallback in agent-peek-utils)
   // and no streamed text exists yet for an in-flight turn, the user's first
@@ -469,13 +482,19 @@
       .split('\n')[0]
       ?.trim() ?? '',
   );
+  // A live tool call is newer than the newest transcript message, so it also
+  // outranks the user line during the tool-only window.
   const showUserMessagePreview = $derived(
-    agentData?.lastMessageRole === 'user' && !!userFirstLine && !liveResponseLine,
+    agentData?.lastMessageRole === 'user' && !!userFirstLine && !liveResponseLine && !liveToolUse,
   );
 
   // Tool-use block to preview when the latest thing the agent did was a tool
   // call (see agent-peek-utils). Only used when there's no text to display.
   const lastToolUse = $derived(agentData?.lastToolUse);
+  // The live tool call outranks the stale transcript-derived response line and
+  // the peek tool block; without one the existing precedence is unchanged.
+  const previewToolUse = $derived(liveToolUse ?? lastToolUse);
+  const previewResponse = $derived(liveToolUse ? '' : lastResponse);
 
   const updatedAt = $derived($agent$?.updatedAt);
 
@@ -508,8 +527,12 @@
   // the derivation yields undefined and the render chain falls through to
   // live text / newest user message / tool preview. They remain the fallback
   // for idle agents between turns.
+  // A live tool call (push-applied `lastToolUse`) is fresher than this turn's
+  // digest, so during a tool-only stretch it takes over and the row advances
+  // instead of resting on the digest for the rest of the turn.
   const effectiveCompletionReport = $derived.by(() => {
     if ($agentIsResponding$) {
+      if (liveToolUse) return undefined;
       return $agent$?.digest || undefined;
     }
     return (
@@ -668,23 +691,23 @@
                 {effectiveCompletionReport}
               </p>
             </div>
-          {:else if lastUserMsg || lastResponse || lastToolUse}
+          {:else if lastUserMsg || previewResponse || previewToolUse}
             <div class="space-y-0.5">
-              {#if lastResponse}
+              {#if previewResponse}
                 <p
                   class="text-sm text-subtle truncate"
                   data-testid="agent-card-preview"
                   transition:slide={{ axis: 'y', duration: 150 }}
                 >
-                  {lastResponse}
+                  {previewResponse}
                 </p>
-              {:else if lastToolUse}
+              {:else if previewToolUse}
                 <div
                   class="text-sm text-subtle truncate"
                   data-testid="agent-card-preview"
                   transition:slide={{ axis: 'y', duration: 150 }}
                 >
-                  <AgentPreviewToolLabel toolUse={lastToolUse} animate={isRunning} />
+                  <AgentPreviewToolLabel toolUse={previewToolUse} animate={isRunning} />
                 </div>
               {:else if lastUserMsg}
                 <p class="text-sm text-subtle truncate" data-testid="agent-card-preview">

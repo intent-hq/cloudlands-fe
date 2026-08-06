@@ -595,6 +595,7 @@ type SessionComparisonSnapshot = Pick<
   sandboxPath: string | undefined;
   sandboxBranch: string | undefined;
   waitingForAgentIdsKey: string | undefined;
+  lastToolUseKey: string | undefined;
   turnInFlight: boolean | undefined;
   liveTurnOpen: boolean | undefined;
 };
@@ -667,6 +668,13 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     // the shallow comparison.
     waitingForAgentIdsKey: Array.isArray(session.waitingForAgentIds)
       ? session.waitingForAgentIds.join(',')
+      : undefined,
+    // Live tool preview (§7 `lastToolUse`, push-applied from
+    // `agent:stream:activity`) — an update whose only change is the tool name
+    // or its status must not be swallowed as a no-op. Joined to a scalar for
+    // the shallow comparison.
+    lastToolUseKey: session.lastToolUse
+      ? `${session.lastToolUse.name}|${session.lastToolUse.status ?? ''}`
       : undefined,
     // STAB-125 turn-liveness (§5.5, additive — not declared on AgentSession):
     // the HUD bucket gate reads it to defeat the waiting check mid-turn, so a
