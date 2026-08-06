@@ -66,9 +66,9 @@ export class LiveVoiceClient implements VoiceClient {
     if (context && (context.prompt !== undefined || context.keyterms !== undefined)) {
       params.context = context;
     }
-    // Omit `workspaceId` when absent/blank — §5.41: workspaceId? is optional
-    // opt-in workspace-vocabulary injection (v5.1).
-    if (typeof workspaceId === 'string' && workspaceId.length > 0) {
+    // Omit `workspaceId` when absent/blank (incl. whitespace-only) — §5.41:
+    // workspaceId? is optional opt-in workspace-vocabulary injection (v5.1).
+    if (typeof workspaceId === 'string' && workspaceId.trim().length > 0) {
       params.workspaceId = workspaceId;
     }
     return backendRequest<VoiceTranscribeResult>('voice.transcribe', params, {

@@ -67,6 +67,7 @@ import {
   isOsTranscriptionAvailable,
   requestOsSpeechAuthorization,
 } from "$features/voice/os-transcription-service";
+import { resetWorkspaceVocabularyCache } from "$features/voice/workspace-vocabulary-service";
 import { createLogger } from "$lib/utils/client-logger";
 import { m } from "$shared/paraglide/messages.js";
 
@@ -275,28 +276,44 @@ export async function changeVoiceLanguageFlow(language: string): Promise<void> {
   }
 }
 
+// Cap writes are serialized in dispatch order (out-of-order responses could
+// otherwise leave the daemon persisting an older cap) and tagged with a
+// sequence so a stale write's failure rollback never clobbers a newer
+// optimistic value.
+let maxTermsWriteSeq = 0;
+let maxTermsWriteQueue: Promise<void> = Promise.resolve();
+
 /**
  * Persist the workspace-vocabulary cap (0..=100, `0` = off); roll back the
- * optimistic value on failure. A `null` previous value means the daemon's
- * catalog lacks the setting (the panel hides the field) — the write is
- * skipped defensively.
+ * optimistic value on failure — only while this write is still the latest.
+ * A `null` previous value means the daemon's catalog lacks the setting (the
+ * panel hides the field) — the write is skipped defensively. A successful
+ * write invalidates the OS-engine workspace-vocabulary cache so the new cap
+ * takes effect on the next dictation instead of after the cache TTL.
  */
 export async function changeVoiceWorkspaceVocabularyMaxTermsFlow(
   maxTerms: number,
 ): Promise<void> {
   const previous = appStore.state.voiceSettings.workspaceVocabularyMaxTerms;
   if (previous === null || maxTerms === previous) return;
+  const seq = ++maxTermsWriteSeq;
   appStore.dispatch(setVoiceSettingsError(null));
   appStore.dispatch(setVoiceWorkspaceVocabularyMaxTermsValue(maxTerms));
-  try {
-    await setVoiceWorkspaceVocabularyMaxTerms(maxTerms);
-  } catch (error) {
-    appStore.dispatch(setVoiceWorkspaceVocabularyMaxTermsValue(previous));
-    appStore.dispatch(
-      setVoiceSettingsError(m.settings_voice_workspaceVocabulary_saveFailed_error()),
-    );
-    logger.error("workspace vocabulary max terms change error", error);
-  }
+  maxTermsWriteQueue = maxTermsWriteQueue.then(async () => {
+    try {
+      await setVoiceWorkspaceVocabularyMaxTerms(maxTerms);
+      resetWorkspaceVocabularyCache();
+    } catch (error) {
+      if (seq === maxTermsWriteSeq) {
+        appStore.dispatch(setVoiceWorkspaceVocabularyMaxTermsValue(previous));
+        appStore.dispatch(
+          setVoiceSettingsError(m.settings_voice_workspaceVocabulary_saveFailed_error()),
+        );
+      }
+      logger.error("workspace vocabulary max terms change error", error);
+    }
+  });
+  return maxTermsWriteQueue;
 }
 
 /** Store a pasted API key through the daemon secrets-file path. */

@@ -82,6 +82,7 @@ describe('LiveVoiceClient (fake transport)', () => {
 
     await client.transcribe(AUDIO_BLOB, 'audio/webm');
     await client.transcribe(AUDIO_BLOB, 'audio/webm', undefined, '');
+    await client.transcribe(AUDIO_BLOB, 'audio/webm', undefined, '   ');
 
     for (const call of mockedRequest.mock.calls) {
       const params = call[1] as Record<string, unknown>;

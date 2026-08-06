@@ -27,6 +27,12 @@ vi.mock("$features/voice/voice-settings-service", async (importOriginal) => ({
   setVoiceWorkspaceVocabularyMaxTerms: vi.fn(),
 }));
 
+// FAKE seam: the OS-engine vocabulary cache (its real module pulls in the
+// AppClient); the cap flow must invalidate it after a successful write.
+vi.mock("$features/voice/workspace-vocabulary-service", () => ({
+  resetWorkspaceVocabularyCache: vi.fn(),
+}));
+
 import {
   isOsTranscriptionAvailable,
   requestOsSpeechAuthorization,
@@ -53,6 +59,7 @@ import {
   setVoiceOpenAiModel,
   setVoiceWorkspaceVocabularyMaxTerms,
 } from "$features/voice/voice-settings-service";
+import { resetWorkspaceVocabularyCache } from "$features/voice/workspace-vocabulary-service";
 import {
   __resetVoiceSettingsBootHydrationForTests,
   changeVoiceEngineFlow,
@@ -73,6 +80,7 @@ const loadSettingsMock = vi.mocked(loadVoiceSettings);
 const setModelMock = vi.mocked(setVoiceOpenAiModel);
 const setLanguageMock = vi.mocked(setVoiceLanguage);
 const setMaxTermsMock = vi.mocked(setVoiceWorkspaceVocabularyMaxTerms);
+const resetVocabCacheMock = vi.mocked(resetWorkspaceVocabularyCache);
 // The global test setup replaces window.localStorage with vi.fn stubs.
 const getItemMock = vi.mocked(window.localStorage.getItem);
 const setItemMock = vi.mocked(window.localStorage.setItem);
@@ -331,6 +339,20 @@ describe("voiceSettingsStoreService workspace-vocabulary cap flow (fake seam, re
     expect(state().error).toBeNull();
   });
 
+  it("invalidates the OS-engine vocabulary cache after a successful write", async () => {
+    await changeVoiceWorkspaceVocabularyMaxTermsFlow(75);
+
+    expect(resetVocabCacheMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not invalidate the cache when the write fails", async () => {
+    setMaxTermsMock.mockRejectedValue(new Error("boom"));
+
+    await changeVoiceWorkspaceVocabularyMaxTermsFlow(75);
+
+    expect(resetVocabCacheMock).not.toHaveBeenCalled();
+  });
+
   it("persists the 0 = off sentinel", async () => {
     await changeVoiceWorkspaceVocabularyMaxTermsFlow(0);
 
@@ -362,6 +384,64 @@ describe("voiceSettingsStoreService workspace-vocabulary cap flow (fake seam, re
 
     expect(setMaxTermsMock).not.toHaveBeenCalled();
     expect(state().workspaceVocabularyMaxTerms).toBeNull();
+  });
+
+  it("serializes overlapping writes in dispatch order", async () => {
+    const resolvers: Array<() => void> = [];
+    setMaxTermsMock.mockImplementation(
+      () => new Promise<void>((resolve) => resolvers.push(resolve)),
+    );
+
+    const first = changeVoiceWorkspaceVocabularyMaxTermsFlow(75);
+    const second = changeVoiceWorkspaceVocabularyMaxTermsFlow(25);
+    await flush();
+
+    // The second write must not start until the first settles.
+    expect(setMaxTermsMock).toHaveBeenCalledTimes(1);
+    expect(setMaxTermsMock).toHaveBeenNthCalledWith(1, 75);
+    resolvers[0]();
+    await flush();
+    expect(setMaxTermsMock).toHaveBeenCalledTimes(2);
+    expect(setMaxTermsMock).toHaveBeenNthCalledWith(2, 25);
+    resolvers[1]();
+    await Promise.all([first, second]);
+
+    expect(state().workspaceVocabularyMaxTerms).toBe(25);
+  });
+
+  it("a stale write's failure rollback never clobbers a newer optimistic value", async () => {
+    const resolvers: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
+    setMaxTermsMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve, reject) => resolvers.push({ resolve, reject })),
+    );
+
+    const first = changeVoiceWorkspaceVocabularyMaxTermsFlow(75);
+    const second = changeVoiceWorkspaceVocabularyMaxTermsFlow(25);
+    await flush();
+
+    // The first (stale) write fails after the second was dispatched — the
+    // newer optimistic value (25) must survive, no error surfaced for it.
+    resolvers[0].reject(new Error("boom"));
+    await flush();
+    expect(state().workspaceVocabularyMaxTerms).toBe(25);
+    expect(state().error).toBeNull();
+
+    resolvers[1].resolve();
+    await Promise.all([first, second]);
+    expect(state().workspaceVocabularyMaxTerms).toBe(25);
+  });
+
+  it("the latest write's failure still rolls back and surfaces the error", async () => {
+    setMaxTermsMock
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("boom"));
+
+    await changeVoiceWorkspaceVocabularyMaxTermsFlow(75);
+    await changeVoiceWorkspaceVocabularyMaxTermsFlow(25);
+
+    expect(state().workspaceVocabularyMaxTerms).toBe(75);
+    expect(state().error).not.toBeNull();
   });
 });
 
