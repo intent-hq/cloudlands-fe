@@ -76,6 +76,14 @@ vi.mock('$features/voice/os-transcription-service', async (importOriginal) => {
   };
 });
 
+const getWorkspaceVocabularyTermsMock = vi.fn<(workspaceId: string) => Promise<string[]>>(() =>
+  Promise.resolve([]),
+);
+vi.mock('$features/voice/workspace-vocabulary-service', () => ({
+  getWorkspaceVocabularyTerms: (workspaceId: string) =>
+    getWorkspaceVocabularyTermsMock(workspaceId),
+}));
+
 import {
   actionHudHidden,
   actionHudShown,
@@ -123,6 +131,7 @@ const TRANSCRIBE_RESULT = {
 beforeEach(() => {
   mockState = baseState();
   dispatched.length = 0;
+  getWorkspaceVocabularyTermsMock.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -170,24 +179,27 @@ describe('gatherTranscriptionContext', () => {
 });
 
 describe('mergeOsContextualStrings', () => {
-  it('puts vocabulary terms first and appends dynamic keyterms', () => {
-    expect(mergeOsContextualStrings(['intentd', 'clippy'], ['Feature add'])).toEqual([
-      'intentd',
-      'clippy',
-      'Feature add',
-    ]);
-  });
-
-  it('dedupes case-insensitively and drops blank terms', () => {
+  it('merges in the §5.41 parity order: vocabulary → workspace terms → keyterms', () => {
     expect(
-      mergeOsContextualStrings(['Cloudlands', '  ', 'intentd'], ['CLOUDLANDS', ' intentd ', 'x']),
-    ).toEqual(['Cloudlands', 'intentd', 'x']);
+      mergeOsContextualStrings(['intentd', 'clippy'], ['TOON', 'cloudlands-fe'], ['Feature add']),
+    ).toEqual(['intentd', 'clippy', 'TOON', 'cloudlands-fe', 'Feature add']);
   });
 
-  it('handles a null vocabulary (daemon predates the setting) and missing keyterms', () => {
-    expect(mergeOsContextualStrings(null, ['a'])).toEqual(['a']);
-    expect(mergeOsContextualStrings(['b'], undefined)).toEqual(['b']);
-    expect(mergeOsContextualStrings(null, undefined)).toEqual([]);
+  it('dedupes case-insensitively (first spelling wins) and drops blank terms', () => {
+    expect(
+      mergeOsContextualStrings(
+        ['Cloudlands', '  ', 'intentd'],
+        ['INTENTD', 'toon'],
+        ['CLOUDLANDS', ' intentd ', 'TOON', 'x'],
+      ),
+    ).toEqual(['Cloudlands', 'intentd', 'toon', 'x']);
+  });
+
+  it('handles a null vocabulary, null workspace terms, and missing keyterms', () => {
+    expect(mergeOsContextualStrings(null, null, ['a'])).toEqual(['a']);
+    expect(mergeOsContextualStrings(['b'], undefined, undefined)).toEqual(['b']);
+    expect(mergeOsContextualStrings(null, ['ws'], undefined)).toEqual(['ws']);
+    expect(mergeOsContextualStrings(null, null, undefined)).toEqual([]);
   });
 });
 
@@ -224,6 +236,7 @@ describe('handleFinishedRecording', () => {
           keyterms: ['Feature add', 'feature-add', 'Coordinator', 'PTT hold action'],
           prompt: 'Dictation in the "Feature add" workspace on branch feature-add.',
         },
+        workspaceId: 'ws-1',
       },
       timeoutMs: 120_000,
     });
@@ -317,6 +330,69 @@ describe('handleFinishedRecording', () => {
       ['intentd', 'Cloudlands', 'feature-add', 'Feature add', 'Coordinator', 'PTT hold action'],
       undefined,
     );
+  });
+
+  it('merges the workspace vocabulary between user vocabulary and keyterms on the OS path (§5.41 parity)', async () => {
+    mockState.voiceSettings = { engine: 'os', vocabulary: ['intentd'] };
+    getWorkspaceVocabularyTermsMock.mockResolvedValue(['TOON', 'clippy', 'intentd']);
+    transcribeWithOsMock.mockResolvedValue({ text: 'local transcript', durationMs: 900 });
+    vi.stubGlobal('window', { electronAPI: { invoke: vi.fn(), on: vi.fn(), offById: vi.fn() } });
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, {
+      focusComposer: vi.fn(),
+      insertText: vi.fn().mockReturnValue(true),
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(getWorkspaceVocabularyTermsMock).toHaveBeenCalledWith('ws-1');
+    expect(transcribeWithOsMock).toHaveBeenCalledWith(
+      RECORDING.blob,
+      // user vocabulary → workspace terms (deduped) → dynamic keyterms
+      ['intentd', 'TOON', 'clippy', 'Feature add', 'feature-add', 'Coordinator', 'PTT hold action'],
+      undefined,
+    );
+  });
+
+  it('proceeds without workspace terms when the vocabulary fetch degrades to [] (resilient fallback)', async () => {
+    mockState.voiceSettings = { engine: 'os', vocabulary: ['intentd'] };
+    // The service seam folds fetch failures to [] — the flow never rejects.
+    getWorkspaceVocabularyTermsMock.mockResolvedValue([]);
+    transcribeWithOsMock.mockResolvedValue({ text: 'local transcript', durationMs: 900 });
+    vi.stubGlobal('window', { electronAPI: { invoke: vi.fn(), on: vi.fn(), offById: vi.fn() } });
+
+    const insertText = vi.fn().mockReturnValue(true);
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, { focusComposer: vi.fn(), insertText });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(transcribeWithOsMock).toHaveBeenCalledWith(
+      RECORDING.blob,
+      ['intentd', 'Feature add', 'feature-add', 'Coordinator', 'PTT hold action'],
+      undefined,
+    );
+    expect(insertText).toHaveBeenCalledWith('local transcript');
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('skips the workspace vocabulary fetch without an active workspace', async () => {
+    mockState.workspace.activeWorkspaceId = null;
+    mockState.voiceSettings = { engine: 'os', vocabulary: ['intentd'] };
+    transcribeWithOsMock.mockResolvedValue({ text: 'local transcript', durationMs: 900 });
+    vi.stubGlobal('window', { electronAPI: { invoke: vi.fn(), on: vi.fn(), offById: vi.fn() } });
+
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, {
+      focusComposer: vi.fn(),
+      insertText: vi.fn().mockReturnValue(true),
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flow;
+
+    expect(getWorkspaceVocabularyTermsMock).not.toHaveBeenCalled();
+    expect(transcribeWithOsMock).toHaveBeenCalledWith(RECORDING.blob, ['intentd'], undefined);
   });
 
   it('falls back to the OS engine when the daemon provider key is missing and OS is available', async () => {
@@ -1071,6 +1147,7 @@ describe('createVoiceTranscriptionMiddleware', () => {
       RECORDING.blob,
       RECORDING.mimeType,
       expect.objectContaining({ keyterms: expect.arrayContaining(['Feature add']) }),
+      'ws-1',
     ));
   });
 

@@ -16,6 +16,7 @@
     changeVoiceLanguage,
     changeVoiceOpenAiModel,
     changeVoiceProvider,
+    changeVoiceWorkspaceVocabularyMaxTerms,
     clearVoiceKey,
     initializeVoiceSettings,
     removeVoiceVocabularyTerm,
@@ -36,6 +37,7 @@
     selectVoiceSettingsError,
     selectVoiceSettingsIsLoading,
     selectVoiceVocabulary,
+    selectVoiceWorkspaceVocabularyMaxTerms,
   } from '$store/renderer/slices/voice-settings/voice-settings-selectors';
   import type { VoiceInputDevice } from '$store/renderer/slices/voice-settings/voice-settings-types';
   import {
@@ -44,6 +46,8 @@
     VOICE_OPENAI_MODELS,
     VOICE_PROVIDERS,
     VOICE_VOCABULARY_TERM_MAX_LENGTH,
+    VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MAX,
+    VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MIN,
     type VoiceOpenAiModel,
     type VoiceProvider,
   } from '$features/voice/voice-settings-service';
@@ -80,6 +84,7 @@
   const error$ = selectVoiceSettingsError();
   const vocabulary$ = selectVoiceVocabulary();
   const language$ = selectVoiceLanguage();
+  const workspaceVocabularyMaxTerms$ = selectVoiceWorkspaceVocabularyMaxTerms();
   const inputDeviceId$ = selectVoiceInputDeviceId();
   const inputDevices$ = selectVoiceInputDevices();
 
@@ -139,6 +144,16 @@
   // Vocabulary editor drafts — ephemeral component-local UI state.
   let vocabularyDraft = $state('');
   let vocabularyDraftError = $state<string | null>(null);
+
+  // Workspace-vocabulary cap draft — mirrors the store value (hydration,
+  // optimistic apply, rollback) and holds the user's in-progress input.
+  // Svelte's number-input binding coerces to `number | null` (empty ⇒ null).
+  let maxTermsDraft = $state<number | string | null>(null);
+  let maxTermsDraftError = $state<string | null>(null);
+  $effect(() => {
+    maxTermsDraft = $workspaceVocabularyMaxTerms$;
+    maxTermsDraftError = null;
+  });
 
   onMount(() => {
     appStore.dispatch(initializeVoiceSettings());
@@ -204,6 +219,24 @@
 
   function handleRemoveVocabularyTerm(term: string) {
     appStore.dispatch(removeVoiceVocabularyTerm(term));
+  }
+
+  function handleCommitMaxTerms() {
+    const raw = typeof maxTermsDraft === 'string' ? maxTermsDraft.trim() : maxTermsDraft;
+    const parsed = raw === '' || raw === null ? NaN : Number(raw);
+    const inRange =
+      Number.isInteger(parsed) &&
+      parsed >= VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MIN &&
+      parsed <= VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MAX;
+    if (!inRange) {
+      maxTermsDraftError = m.settings_voice_workspaceVocabulary_range_error();
+      return;
+    }
+    maxTermsDraftError = null;
+    appStore.dispatch(changeVoiceWorkspaceVocabularyMaxTerms(parsed));
+    // Re-committing the current value is a store no-op — normalize the draft
+    // ourselves since no store change will re-run the sync effect.
+    maxTermsDraft = parsed;
   }
 
   function handleInputDeviceChange(next: string) {
@@ -494,6 +527,33 @@
                 </span>
               {/each}
             </div>
+          {/if}
+        </div>
+      {/if}
+
+      {#if $workspaceVocabularyMaxTerms$ !== null}
+        <div class="space-y-2 pt-1">
+          <div class="space-y-1">
+            <span class="text-xs text-foreground">{m.settings_voice_workspaceVocabulary_label()}</span>
+            <p class="text-xs text-subtle">{m.settings_voice_workspaceVocabulary_description()}</p>
+          </div>
+          <Input
+            type="number"
+            bind:value={maxTermsDraft}
+            min={VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MIN}
+            max={VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MAX}
+            step={1}
+            class="h-7 text-xs w-[100px]"
+            aria-label={m.settings_voice_workspaceVocabulary_input_ariaLabel()}
+            aria-invalid={maxTermsDraftError !== null}
+            oninput={() => (maxTermsDraftError = null)}
+            onchange={handleCommitMaxTerms}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') handleCommitMaxTerms();
+            }}
+          />
+          {#if maxTermsDraftError}
+            <p class="text-xs text-destructive-foreground">{maxTermsDraftError}</p>
           {/if}
         </div>
       {/if}

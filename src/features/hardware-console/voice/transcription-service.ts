@@ -22,9 +22,12 @@
  *
  * The request carries lightweight dynamic context (workspace title, branch,
  * visible agent names) as `context.keyterms` + `context.prompt`, gathered
- * off `appStore.state` only — no extra RPCs. Dependency-light middleware
- * module per src/store/renderer/AGENTS.md: no selector imports; the toast
- * lib is imported lazily.
+ * off `appStore.state` only — no extra RPCs — plus the active workspace id
+ * (`workspaceId`, §5.41 v5.1) so the daemon injects the workspace's
+ * auto-derived vocabulary server-side; the OS-engine route fetches the same
+ * terms via the cached workspace-vocabulary-service for parity.
+ * Dependency-light middleware module per src/store/renderer/AGENTS.md: no
+ * selector imports; the toast lib is imported lazily.
  */
 import type { StoreMiddleware } from '$lib/store-shim/types';
 import { appClient } from '$lib/client';
@@ -33,6 +36,7 @@ import {
   OsTranscriptionError,
   transcribeWithOs,
 } from '$features/voice/os-transcription-service';
+import { getWorkspaceVocabularyTerms } from '$features/voice/workspace-vocabulary-service';
 import {
   resolveEffectiveVoiceEngine,
   type EffectiveVoiceEngineInputs,
@@ -167,6 +171,7 @@ export interface TranscriptionDeps {
     audio: Blob,
     mimeType: string,
     context?: VoiceTranscribeContext,
+    workspaceId?: string,
   ) => Promise<{ text: string }>;
   /** Focus an agent tab's chat composer. Defaults to `focusAgentComposer`. */
   focusComposer?: (agentId: string) => void;
@@ -185,18 +190,21 @@ export interface TranscriptionFlowOptions {
 }
 
 /**
- * Merge the daemon-persisted `voice.vocabulary` terms with the dynamic
- * context keyterms (vocabulary first), deduplicated case-insensitively —
- * the OS engine's counterpart of the daemon's server-side vocabulary
- * biasing on the cloud path (§5.41).
+ * Merge the daemon-persisted `voice.vocabulary` terms, the auto-derived
+ * workspace vocabulary, and the dynamic context keyterms — in that fixed
+ * order (user vocabulary → workspace terms → keyterms, mirroring the
+ * daemon's §5.41 injection order) — deduplicated case-insensitively (first
+ * spelling wins): the OS engine's counterpart of the daemon's server-side
+ * vocabulary biasing on the cloud path.
  */
 export function mergeOsContextualStrings(
   vocabulary: readonly string[] | null | undefined,
+  workspaceTerms: readonly string[] | null | undefined,
   keyterms: readonly string[] | undefined,
 ): string[] {
   const merged: string[] = [];
   const seen = new Set<string>();
-  for (const term of [...(vocabulary ?? []), ...(keyterms ?? [])]) {
+  for (const term of [...(vocabulary ?? []), ...(workspaceTerms ?? []), ...(keyterms ?? [])]) {
     const trimmed = term?.trim();
     if (!trimmed) continue;
     const key = trimmed.toLowerCase();
@@ -213,17 +221,22 @@ export function mergeOsContextualStrings(
  * $features/voice/effective-voice-engine), so a daemon selection with a
  * missing provider key gracefully falls back to the local OS engine when it
  * is available. `os` runs the local macOS Speech.framework helper over IPC
- * with the hydrated `voice.vocabulary` terms plus the context keyterms as
- * contextual strings; `daemon` calls the cloud `voice.transcribe` (which
- * biases the vocabulary server-side). `unavailable` still goes to the
- * daemon — the triggers gate that case up front, and the daemon's no-key
- * error toast covers any race. State is read at call time so a settings
- * change applies to the next dictation without re-wiring the middleware.
+ * with the hydrated `voice.vocabulary` terms, the workspace's auto-derived
+ * vocabulary (`voice.getWorkspaceVocabulary`, cached/coalesced by
+ * workspace-vocabulary-service; a failed fetch degrades to no terms), and
+ * the context keyterms as contextual strings; `daemon` calls the cloud
+ * `voice.transcribe` with the `workspaceId` so the daemon injects the same
+ * workspace vocabulary server-side (§5.41 v5.1). `unavailable` still goes
+ * to the daemon — the triggers gate that case up front, and the daemon's
+ * no-key error toast covers any race. State is read at call time so a
+ * settings change applies to the next dictation without re-wiring the
+ * middleware.
  */
-function transcribeWithSelectedEngine(
+async function transcribeWithSelectedEngine(
   audio: Blob,
   mimeType: string,
   context?: VoiceTranscribeContext,
+  workspaceId?: string,
 ): Promise<{ text: string }> {
   const voiceSettings = (
     appStore.state as {
@@ -238,13 +251,16 @@ function transcribeWithSelectedEngine(
     // the daemon's server-side language resolution (§5.41): non-blank ⇒ the
     // recognizer locale; blank/null ⇒ system locale.
     const language = voiceSettings.language;
+    // OS-engine parity with the daemon's workspace-vocabulary injection:
+    // resilient by construction (the service resolves [] on failure).
+    const workspaceTerms = workspaceId ? await getWorkspaceVocabularyTerms(workspaceId) : [];
     return transcribeWithOs(
       audio,
-      mergeOsContextualStrings(voiceSettings.vocabulary, context?.keyterms),
+      mergeOsContextualStrings(voiceSettings.vocabulary, workspaceTerms, context?.keyterms),
       typeof language === 'string' && language.trim().length > 0 ? language.trim() : undefined,
     );
   }
-  return appClient.voice.transcribe(audio, mimeType, context);
+  return appClient.voice.transcribe(audio, mimeType, context, workspaceId);
 }
 
 /**
@@ -424,6 +440,9 @@ export async function handleFinishedRecording(
   // caret path, never `focusAgentComposer` stealing focus from the modal.
   const targetAgentId = dialogFocused ? null : resolveTargetAgentId(state);
   const context = gatherTranscriptionContext(state);
+  // The active workspace (chief excluded, same rule as the context) opts the
+  // call into workspace-vocabulary biasing on both engines (§5.41 v5.1).
+  const workspaceId = activeWorkspaceId(state) ?? undefined;
 
   const hudLabel = m.hardwareConsole_voice_transcribing_label();
   dispatch(voiceTranscriptionStarted());
@@ -449,7 +468,7 @@ export async function handleFinishedRecording(
   const sessionToken = beginTranscriptionSession(settle);
 
   try {
-    const result = await transcribe(recording.blob, recording.mimeType, context);
+    const result = await transcribe(recording.blob, recording.mimeType, context, workspaceId);
     if (!isTranscriptionSessionCurrent(sessionToken)) {
       logger.info('Transcription session was cancelled; discarding the late result');
       return;

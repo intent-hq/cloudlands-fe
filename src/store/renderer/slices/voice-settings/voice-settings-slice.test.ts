@@ -15,6 +15,7 @@ import {
   setVoiceSettingsError,
   setVoiceSettingsSnapshot,
   setVoiceVocabularyValue,
+  setVoiceWorkspaceVocabularyMaxTermsValue,
   voiceSettingsReducer,
 } from "./voice-settings-slice";
 
@@ -30,6 +31,7 @@ describe("voiceSettingsReducer", () => {
       vocabulary: null,
       openaiModel: null,
       language: null,
+      workspaceVocabularyMaxTerms: null,
       inputDeviceId: null,
       inputDevices: [],
       busyProvider: null,
@@ -47,6 +49,7 @@ describe("voiceSettingsReducer", () => {
         ["intentd"],
         "gpt-4o-transcribe",
         "de",
+        25,
       ),
     );
     expect(state.isLoading).toBe(false);
@@ -56,6 +59,7 @@ describe("voiceSettingsReducer", () => {
     expect(state.vocabulary).toEqual(["intentd"]);
     expect(state.openaiModel).toBe("gpt-4o-transcribe");
     expect(state.language).toBe("de");
+    expect(state.workspaceVocabularyMaxTerms).toBe(25);
   });
 
   it("marks unavailable (pre-voice daemon) while still clearing loading", () => {
@@ -68,6 +72,7 @@ describe("voiceSettingsReducer", () => {
         null,
         null,
         null,
+        null,
       ),
     );
     expect(state.isLoading).toBe(false);
@@ -75,6 +80,7 @@ describe("voiceSettingsReducer", () => {
     expect(state.vocabulary).toBeNull();
     expect(state.openaiModel).toBeNull();
     expect(state.language).toBeNull();
+    expect(state.workspaceVocabularyMaxTerms).toBeNull();
   });
 
   it("sets the OpenAI model value (optimistic apply and rollback)", () => {
@@ -91,6 +97,21 @@ describe("voiceSettingsReducer", () => {
     expect(auto.language).toBe("");
     const rolledBack = voiceSettingsReducer(auto, setVoiceLanguageValue(null));
     expect(rolledBack.language).toBeNull();
+  });
+
+  it("sets the workspace-vocabulary cap value (optimistic apply, 0 = off, and rollback)", () => {
+    const applied = voiceSettingsReducer(
+      initialState,
+      setVoiceWorkspaceVocabularyMaxTermsValue(75),
+    );
+    expect(applied.workspaceVocabularyMaxTerms).toBe(75);
+    const off = voiceSettingsReducer(applied, setVoiceWorkspaceVocabularyMaxTermsValue(0));
+    expect(off.workspaceVocabularyMaxTerms).toBe(0);
+    const rolledBack = voiceSettingsReducer(
+      off,
+      setVoiceWorkspaceVocabularyMaxTermsValue(null),
+    );
+    expect(rolledBack.workspaceVocabularyMaxTerms).toBeNull();
   });
 
   it("sets the provider value", () => {

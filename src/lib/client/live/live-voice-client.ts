@@ -5,11 +5,18 @@
  * Daemon-owned speech-to-text: the recorded audio Blob is base64-encoded
  * (standard alphabet, padded — the daemon decodes it verbatim) and shipped
  * with its container MIME type plus optional domain-vocabulary context
- * (`prompt` / `keyterms`). Daemon-global — no `workspaceId`. Errors are NOT
+ * (`prompt` / `keyterms`) and, since v5.1, an optional `workspaceId` that
+ * opts the call into workspace-vocabulary injection. Errors are NOT
  * folded: the transcription flow surfaces them as toasts (no-key hint,
  * provider failure).
  */
-import type { AppClient, VoiceClient, VoiceTranscribeContext, VoiceTranscribeResult } from '../app-client';
+import type {
+  AppClient,
+  VoiceClient,
+  VoiceTranscribeContext,
+  VoiceTranscribeResult,
+  VoiceWorkspaceVocabularyResult,
+} from '../app-client';
 import { backendRequest } from './backend-transport';
 
 /**
@@ -48,6 +55,7 @@ export class LiveVoiceClient implements VoiceClient {
     audio: Blob,
     mimeType: string,
     context?: VoiceTranscribeContext,
+    workspaceId?: string,
   ): Promise<VoiceTranscribeResult> {
     const params: Record<string, unknown> = {
       audio: await blobToBase64(audio),
@@ -58,8 +66,19 @@ export class LiveVoiceClient implements VoiceClient {
     if (context && (context.prompt !== undefined || context.keyterms !== undefined)) {
       params.context = context;
     }
+    // Omit `workspaceId` when absent/blank (incl. whitespace-only) — §5.41:
+    // workspaceId? is optional opt-in workspace-vocabulary injection (v5.1).
+    if (typeof workspaceId === 'string' && workspaceId.trim().length > 0) {
+      params.workspaceId = workspaceId;
+    }
     return backendRequest<VoiceTranscribeResult>('voice.transcribe', params, {
       timeoutMs: VOICE_TRANSCRIBE_TIMEOUT_MS,
+    });
+  }
+
+  async getWorkspaceVocabulary(workspaceId: string): Promise<VoiceWorkspaceVocabularyResult> {
+    return backendRequest<VoiceWorkspaceVocabularyResult>('voice.getWorkspaceVocabulary', {
+      workspaceId,
     });
   }
 }
