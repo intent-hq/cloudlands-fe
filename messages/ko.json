@@ -5228,6 +5228,8 @@
   "hardwareConsole_actionKey_cycleAttentionAgents_label": "주의가 필요한 에이전트 전환",
   "hardwareConsole_actionKey_cycleIdleAgents_label": "유휴 에이전트 전환",
   "hardwareConsole_actionKey_cycleUnreadAgents_label": "읽지 않은 에이전트 전환",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one": "읽지 않은 에이전트 전환 (남은 에이전트 {count}개)",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many": "읽지 않은 에이전트 전환 (남은 에이전트 {count}개)",
   "hardwareConsole_actionKey_cycleFailedAgents_label": "실패한 에이전트 전환",
   "hardwareConsole_actionKey_stopAgent_label": "에이전트 중지",
   "hardwareConsole_actionKey_seeSpec_label": "사양 보기",

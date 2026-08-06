@@ -5228,6 +5228,8 @@
   "hardwareConsole_actionKey_cycleAttentionAgents_label": "対応が必要なエージェントを切り替え",
   "hardwareConsole_actionKey_cycleIdleAgents_label": "アイドル状態のエージェントを切り替え",
   "hardwareConsole_actionKey_cycleUnreadAgents_label": "未読のエージェントを切り替え",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one": "未読のエージェントを切り替え（残り{count}件）",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many": "未読のエージェントを切り替え（残り{count}件）",
   "hardwareConsole_actionKey_cycleFailedAgents_label": "失敗したエージェントを切り替え",
   "hardwareConsole_actionKey_stopAgent_label": "エージェントを停止",
   "hardwareConsole_actionKey_seeSpec_label": "仕様を表示",
