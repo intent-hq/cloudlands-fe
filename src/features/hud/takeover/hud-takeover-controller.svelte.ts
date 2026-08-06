@@ -58,6 +58,12 @@ export function createTakeoverController(reduced: () => boolean): HudTakeoverCon
   const options = () => ({ blink: !reduced(), extraDwellMs: bannerScrollMs });
 
   function apply(next: HudTakeoverQueueState) {
+    // Entering 'opening' starts a fresh display: drop the previous entry's
+    // marquee measurement HERE, as part of the state transition itself, so
+    // the reset can never race the overlay's measurement effect (which only
+    // re-reports after it observes the applied 'opening' state). Re-applied
+    // 'opening' states (e.g. an enqueue while opening) keep the fresh report.
+    if (next.phase === 'opening' && queue.phase !== 'opening') bannerScrollMs = 0;
     queue = next;
     clearTimeout(phaseTimer);
     const deadline = nextTakeoverDeadline(next);
@@ -96,9 +102,6 @@ export function createTakeoverController(reduced: () => boolean): HudTakeoverCon
     const workspaceId = queue.active.workspaceId;
     if (workspaceId === zoomKey) return;
     zoomKey = workspaceId;
-    // New display: drop the previous entry's marquee measurement (the
-    // overlay re-reports during this 'opening' if a headline overflows).
-    bannerScrollMs = 0;
     frameFrom = reduced() ? null : measureTakeoverFrameFrom(workspaceId);
     zoom = 'from';
     clearTimeout(zoomTimer);

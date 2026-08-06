@@ -163,13 +163,13 @@ export function cellTop(y: number): string {
 export const HUD_TAKEOVER_BANNER_IN_S = 1.1;
 
 /**
- * Overflow auto-scroll speed (px/s) for a banner whose sub-title text is
- * taller than its box: slow and constant, tuned to a comfortable read-along
- * pace (60–90 px/s band).
+ * Overflow auto-scroll speed (px/s) for a banner whose headline is wider
+ * than its box: slow and constant, tuned to a comfortable read-along pace
+ * (60–90 px/s band).
  */
 export const HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S = 75;
 
-/** Hold (s) at EACH end of the overflow scroll so the first and last lines read. */
+/** Hold (s) at EACH end of the overflow scroll so the head and tail of the line read. */
 export const HUD_TAKEOVER_BANNER_SCROLL_HOLD_S = 0.6;
 
 /**
@@ -196,9 +196,10 @@ export function bannerScrollDurationS(overflowPx: number): number {
  *     pan to a far changed cell; +0.3s per stacked banner) and takes the
  *     1.1s typewriter wipe — fully unfolded at ~2.1s in the common no-pan
  *     case.
- *   - overflow scroll: when the sub-title overflows its box, the unfolded
- *     banner auto-scrolls for `bannerScrollDurationS` (constant speed plus
- *     an end hold each side); 0s when nothing overflows.
+ *   - overflow scroll: when the headline is wider than its box, the
+ *     unfolded headline marquees horizontally for `bannerScrollDurationS`
+ *     (constant speed plus an end hold each side); 0s when nothing
+ *     overflows.
  *   - unfolded hold: ~50% OF THE ENTRY'S DWELL — `bannerOutDelay` is
  *     dwell-proportional (in-delay + wipe + scroll + dwell/2), not the
  *     mock's fixed 5.2s/7.2s, so longer attention dwells hold the readable

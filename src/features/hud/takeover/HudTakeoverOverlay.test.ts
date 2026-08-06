@@ -652,17 +652,26 @@ describe('HudTakeoverOverlay map drag-to-pan', () => {
 describe('HudTakeoverOverlay headline overflow marquee', () => {
   // jsdom has no layout: mock scrollWidth/clientWidth so `.ov-banner-big`
   // reports `overflowPx` of horizontal overflow (0 for everything else,
-  // jsdom's default). Mutable so per-entry-reset can change it mid-test.
+  // jsdom's default). Mutable so per-entry-reset can change it mid-test;
+  // `overflowPxPerBanner` overrides per headline (document order) for
+  // stacked-banner tests.
   let overflowPx = 0;
+  let overflowPxPerBanner: number[] | null = null;
   const originalScrollWidth = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollWidth')!;
   const originalClientWidth = Object.getOwnPropertyDescriptor(Element.prototype, 'clientWidth')!;
 
   beforeEach(() => {
     overflowPx = 0;
+    overflowPxPerBanner = null;
     Object.defineProperty(Element.prototype, 'scrollWidth', {
       configurable: true,
       get(this: Element) {
-        return this.classList.contains('ov-banner-big') ? 600 + overflowPx : 0;
+        if (!this.classList.contains('ov-banner-big')) return 0;
+        if (overflowPxPerBanner) {
+          const bigs = Array.from(document.querySelectorAll('.ov-banner-big'));
+          return 600 + (overflowPxPerBanner[bigs.indexOf(this)] ?? 0);
+        }
+        return 600 + overflowPx;
       },
     });
     Object.defineProperty(Element.prototype, 'clientWidth', {
@@ -683,6 +692,7 @@ describe('HudTakeoverOverlay headline overflow marquee', () => {
     vi.useRealTimers();
     cleanup();
     appStore.dispose();
+    document.querySelector('[data-testid="hud-shell"]')?.remove();
   });
 
   function returnLabel(): string {
@@ -805,5 +815,52 @@ describe('HudTakeoverOverlay headline overflow marquee', () => {
     vi.advanceTimersByTime(1250);
     flushSync();
     expect(returnLabel()).toBe('RETURN 00:07');
+  });
+
+  it('stacked banners: the LONGEST scroll wins the dwell extension (Math.max)', () => {
+    // Stacking needs the pre-roll: same-workspace triggers coalesce only
+    // while 'blinking', which needs a measurable source card.
+    const shell = document.createElement('div');
+    shell.setAttribute('data-testid', 'hud-shell');
+    shell.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 1600, height: 900, right: 1600, bottom: 900 }) as DOMRect;
+    const card = document.createElement('button');
+    card.setAttribute('data-testid', 'hud-ws-card');
+    card.setAttribute('data-workspace-id', WS);
+    card.getBoundingClientRect = () =>
+      ({ left: 100, top: 200, width: 296, height: 296, right: 396, bottom: 496 }) as DOMRect;
+    shell.appendChild(card);
+    document.body.appendChild(shell);
+
+    // Banner 0 scrolls 300px (300/75 + 1.2 = 5.2s), banner 1 only 150px
+    // (150/75 + 1.2 = 3.2s): the LAST measured is the shorter one, so a
+    // last-report-wins bug would extend by 3.2s instead of max 5.2s.
+    overflowPxPerBanner = [300, 150];
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover(); // Trigger 1 → 'blinking' (card found).
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'task_complete',
+      detail: 'Ship it',
+      raisedAtMs: NOW_MS + 10,
+      changedTaskId: null,
+    });
+    flushSync(); // Coalesces into the blinking entry → 2 stacked banners.
+
+    vi.advanceTimersByTime(HUD_TAKEOVER_BLINK_MS + 10); // → 'opening' @ +630.
+    flushSync();
+    const marquees = screen.getAllByTestId('hud-takeover-banner-marquee');
+    expect(marquees).toHaveLength(2);
+    expect(marquees[0].style.getPropertyValue('--banner-scroll-px')).toBe('300px');
+    expect(marquees[0].style.getPropertyValue('--banner-scroll-s')).toBe('4.00s');
+    expect(marquees[1].style.getPropertyValue('--banner-scroll-px')).toBe('150px');
+    expect(marquees[1].style.getPropertyValue('--banner-scroll-s')).toBe('2.00s');
+
+    // Opening ends 630+1200=1830; dwell = 3300 (26 chars) + max(5200, 3200)
+    // extra → ends NOW+10330 → RETURN 00:11. A last-report-wins bug (extra
+    // 3200) would read 00:09; no extension at all would read 00:06.
+    vi.advanceTimersByTime(1250);
+    flushSync();
+    expect(returnLabel()).toBe('RETURN 00:11');
   });
 });

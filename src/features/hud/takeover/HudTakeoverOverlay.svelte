@@ -151,27 +151,33 @@
   // headlines excluded — they clamp, never scroll); the MAX scroll duration
   // is reported to the controller BEFORE the opening→dwelling tick so the
   // queue dwell covers the whole scroll (`extraDwellMs`). Keyed per display
-  // like the controller's zoom measurement; reduced motion reports 0.
+  // like the controller's zoom measurement; reduced motion reports 0. The
+  // measurement carries its display key so a chained next display can never
+  // index the previous entry's overflows (it reads 0 until re-measured);
+  // values persist through 'dwelling'/'closing' where the marquee still
+  // renders.
   let bannersEl = $state<HTMLElement | null>(null);
-  let bannerOverflows = $state<number[]>([]);
+  let bannerOverflows = $state<{ key: string; values: number[] }>({ key: '', values: [] });
   let scrollMeasureKey = '';
   $effect(() => {
     if (queue.phase !== 'opening' || !queue.active || isViewer) {
       scrollMeasureKey = '';
-      if (queue.phase === 'idle' && bannerOverflows.length > 0) bannerOverflows = [];
+      if (queue.phase === 'idle' && bannerOverflows.key !== '') {
+        bannerOverflows = { key: '', values: [] };
+      }
       return;
     }
     if (queue.active.workspaceId === scrollMeasureKey || !bannersEl) return;
     scrollMeasureKey = queue.active.workspaceId;
     if (!motion) {
-      bannerOverflows = [];
+      bannerOverflows = { key: '', values: [] };
       return;
     }
     const next = Array.from(bannersEl.querySelectorAll('.ov-banner')).map((banner) => {
       const big = banner.querySelector('.ov-banner-big:not(.ov-banner-big-wrap)');
       return big ? Math.max(0, big.scrollWidth - big.clientWidth) : 0;
     });
-    bannerOverflows = next;
+    bannerOverflows = { key: scrollMeasureKey, values: next };
     controller.reportBannerScrollMs(
       Math.round(Math.max(0, ...next.map((px) => bannerScrollDurationS(px))) * 1000),
     );
@@ -388,7 +394,9 @@
                       {motion}
                       {needsPan}
                       {dwellMs}
-                      overflowPx={bannerOverflows[i] ?? 0}
+                      overflowPx={bannerOverflows.key === queue.active.workspaceId
+                        ? (bannerOverflows.values[i] ?? 0)
+                        : 0}
                     />
                   {/each}
                 </div>
