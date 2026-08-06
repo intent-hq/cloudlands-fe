@@ -206,14 +206,6 @@ export const hudQuestionCaptured = createAction<[question: HudCapturedQuestion]>
   'hud/questionCaptured',
 );
 /**
- * The captured question of one agent stopped pending (answered or dismissed).
- * Pendingness is PERSISTENT (spec §Decisions): a plain user message — and the
- * turn it starts — no longer resolves it, so this is NOT dispatched on a
- * running transition. The daemon's `needs_attention` rollup is the
- * authoritative release signal (see `hudQuestionsResolvedForWorkspace`).
- */
-export const hudQuestionSuperseded = createAction<[agentId: string]>('hud/questionSuperseded');
-/**
  * The workspace left the daemon's `needs_attention` displayStatus rollup: a
  * pending question always holds that rollup up, so leaving it means every
  * captured question in the workspace was answered or dismissed daemon-side.
@@ -301,12 +293,6 @@ export const hudReducer = createReducer<HudState>(initialState)
       ...state,
       questionsByAgentId: { ...state.questionsByAgentId, [question.agentId]: question },
     };
-  })
-  .with(hudQuestionSuperseded, (state, { payload: [agentId] }) => {
-    if (!(agentId in state.questionsByAgentId)) return state;
-    const next = { ...state.questionsByAgentId };
-    delete next[agentId];
-    return { ...state, questionsByAgentId: next };
   })
   .with(hudQuestionsResolvedForWorkspace, (state, { payload: [workspaceId] }) => {
     const entries = Object.entries(state.questionsByAgentId);

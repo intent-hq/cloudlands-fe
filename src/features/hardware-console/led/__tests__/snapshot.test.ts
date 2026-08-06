@@ -190,6 +190,47 @@ describe('buildHardwareLedSnapshot', () => {
     expect(buildHardwareLedSnapshot(state).keys[0]).toBe('idle');
   });
 
+  it('a question keeps the key on attention across a later plain user message', () => {
+    // Persistent pendingness: only the id-keyed answer tag (or the dismissal
+    // marker) resolves a question, so an unrelated user reply — and the
+    // agent's reply to it — must NOT drop the LED out of attention.
+    const state = makeState({
+      workspaces: [makeWorkspace('ws-1')],
+      agentsByWorkspace: { 'ws-1': ['agent-1'] },
+      sessions: [
+        makeSession('agent-1', {
+          messages: [
+            questionMessage('msg-1'),
+            { id: 'msg-2', role: 'user', contentBlocks: [] },
+            { id: 'msg-3', role: 'assistant', contentBlocks: [] },
+          ] as never,
+        }),
+      ],
+    });
+    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('attention');
+  });
+
+  it('a tagged answer message releases the attention key', () => {
+    const state = makeState({
+      workspaces: [makeWorkspace('ws-1')],
+      agentsByWorkspace: { 'ws-1': ['agent-1'] },
+      sessions: [
+        makeSession('agent-1', {
+          messages: [
+            questionMessage('msg-1'),
+            {
+              id: 'msg-2',
+              role: 'user',
+              contentBlocks: [],
+              metadata: { type: 'question_answers', answeredQuestionsMessageId: 'msg-1' },
+            },
+          ] as never,
+        }),
+      ],
+    });
+    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('idle');
+  });
+
   it('question does not pend while the agent turn is still active', () => {
     const state = makeState({
       workspaces: [makeWorkspace('ws-1')],

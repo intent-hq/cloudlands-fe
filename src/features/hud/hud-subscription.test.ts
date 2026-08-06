@@ -873,6 +873,118 @@ describe('HUD subscription (mock backend, real store)', () => {
     expect(backend.requests.filter((r) => r.method === 'system.status')).toEqual([]);
   });
 
+  it('releases a captured question whose displayStatus transition was MISSED during an outage', async () => {
+    // The live `workspace:displayStatus-changed` event is the only release
+    // trigger, so a question answered while the connection was down would stay
+    // captured forever. RESUB-1 refetches the workspace list; the reconnect
+    // sweep replays the same allowlist decision against its `displayStatus`.
+    scriptHappyBackend(backend);
+    appStore.dispatch(setWorkspaceEntity(makeHudWorkspace(WS_ID)));
+    try {
+      stop = startHudSubscription();
+      await flush();
+
+      backend.pushEvent({
+        type: 'agent:stream:end',
+        workspaceId: WS_ID,
+        id: 'evt-rs1',
+        subscriptionId: SUB_ID,
+        timestamp: '2026-07-30T12:00:00.000Z',
+        data: {
+          agentId: 'agent-1',
+          messageId: 'msg-1',
+          trailingBlocks: [
+            {
+              type: 'resource',
+              resource: {
+                uri: 'intent-question://tar-1',
+                name: 'Auth method',
+                mimeType: 'application/vnd.intent.question+json',
+                text: JSON.stringify({
+                  attachmentId: 'tar-1',
+                  header: 'Auth method',
+                  question: 'Which auth flow?',
+                  multiSelect: false,
+                }),
+              },
+            },
+          ],
+        },
+      });
+      await flush();
+      expect(appStore.state.hud.questionsByAgentId['agent-1']?.question).toBe('Which auth flow?');
+
+      // Outage: no displayStatus event arrives. On reconnect the refetched
+      // workspace lands with a releasing status.
+      backend.triggerReconnect();
+      appStore.dispatch(
+        setWorkspaceEntity({ ...makeHudWorkspace(WS_ID), displayStatus: 'idle' } as Workspace),
+      );
+      await flush();
+      await flush();
+      expect(appStore.state.hud.questionsByAgentId['agent-1']).toBeUndefined();
+    } finally {
+      appStore.dispatch(removeWorkspaceEntity(WS_ID));
+    }
+  });
+
+  it('the reconnect sweep never clears a workspace still holding attention', async () => {
+    scriptHappyBackend(backend);
+    appStore.dispatch(
+      setWorkspaceEntity({
+        ...makeHudWorkspace(WS_ID),
+        displayStatus: 'needs_attention',
+      } as Workspace),
+    );
+    try {
+      stop = startHudSubscription();
+      await flush();
+
+      backend.pushEvent({
+        type: 'agent:stream:end',
+        workspaceId: WS_ID,
+        id: 'evt-rs2',
+        subscriptionId: SUB_ID,
+        timestamp: '2026-07-30T12:00:00.000Z',
+        data: {
+          agentId: 'agent-1',
+          messageId: 'msg-1',
+          trailingBlocks: [
+            {
+              type: 'resource',
+              resource: {
+                uri: 'intent-question://tar-1',
+                name: 'Auth method',
+                mimeType: 'application/vnd.intent.question+json',
+                text: JSON.stringify({
+                  attachmentId: 'tar-1',
+                  header: 'Auth method',
+                  question: 'Which auth flow?',
+                  multiSelect: false,
+                }),
+              },
+            },
+          ],
+        },
+      });
+      await flush();
+
+      backend.triggerReconnect();
+      appStore.dispatch(
+        setWorkspaceEntity({
+          ...makeHudWorkspace(WS_ID),
+          displayStatus: 'needs_attention',
+          updatedAt: '2026-07-30T12:05:00Z',
+        } as Workspace),
+      );
+      await flush();
+      await flush();
+      expect(appStore.state.hud.questionsByAgentId['agent-1']?.question).toBe('Which auth flow?');
+    } finally {
+      appStore.dispatch(removeWorkspaceEntity(WS_ID));
+    }
+  });
+
   it('stop() unsubscribes, removes listeners, and clears the slice (no leaks)', async () => {
     scriptHappyBackend(backend);
     stop = startHudSubscription();

@@ -11,7 +11,6 @@ import {
   hudGridFilterStateToggled,
   hudQuestionCaptured,
   hudQuestionsResolvedForWorkspace,
-  hudQuestionSuperseded,
   hudRateHistoryFailed,
   hudRateHistoryLoaded,
   hudReducer,
@@ -244,17 +243,6 @@ describe('hud-slice question capture (§7.1 trailingBlocks)', () => {
     let state = hudReducer(activeState(), hudQuestionCaptured(QUESTION));
     state = hudReducer(state, hudDeactivated());
     expect(state.questionsByAgentId).toEqual({});
-  });
-
-  it('supersession drops the agent question (no-op when none pends)', () => {
-    let state = hudReducer(activeState(), hudQuestionCaptured(QUESTION));
-    const other = { ...QUESTION, agentId: 'agent-2' };
-    state = hudReducer(state, hudQuestionCaptured(other));
-    state = hudReducer(state, hudQuestionSuperseded('agent-1'));
-    expect(state.questionsByAgentId).toEqual({ 'agent-2': other });
-    // Unknown agent: no state churn.
-    const repeat = hudReducer(state, hudQuestionSuperseded('agent-1'));
-    expect(repeat).toBe(state);
   });
 
   it('workspace resolution clears only that workspace\u2019s captured questions', () => {
