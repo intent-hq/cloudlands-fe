@@ -136,6 +136,10 @@ export function isRawMcpName(name: string | undefined | null): boolean {
 // (e.g. "Search select:mcp__workspace-mcp__workspace_api").
 const DEFERRED_TOOL_LOAD_SELECTOR = /select:\s*mcp(__|\.)/i;
 
+// The same selector as a whole query (e.g. "select:mcp__workspace-mcp__workspace_api"),
+// anchored so a genuine search for text starting with "select:" is not swallowed.
+const DEFERRED_TOOL_LOAD_QUERY = /^select:\s*mcp(__|\.)/i;
+
 /**
  * True when a tool call is the harness' deferred tool-loading call rather than a
  * user-facing search: the Claude Code harness loads deferred MCP tool schemas via
@@ -147,7 +151,7 @@ export function isDeferredToolLoad(
   input: Record<string, any> = {},
 ): boolean {
   if (cleanToolName(toolName).toLowerCase() === 'toolsearch') return true;
-  if (typeof input.query === 'string' && input.query.startsWith('select:')) return true;
+  if (typeof input.query === 'string' && DEFERRED_TOOL_LOAD_QUERY.test(input.query)) return true;
   const acpTitle = typeof input._acpTitle === 'string' ? input._acpTitle : '';
   return (
     DEFERRED_TOOL_LOAD_SELECTOR.test(toolName || '') || DEFERRED_TOOL_LOAD_SELECTOR.test(acpTitle)

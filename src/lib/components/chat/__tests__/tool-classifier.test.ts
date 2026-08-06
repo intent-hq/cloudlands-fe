@@ -144,6 +144,16 @@ describe('tool-classifier', () => {
       expect(result.verb).toBe('Search web');
       expect(result.subject).toBe('how to use TypeScript generics');
     });
+
+    it('should not swallow a genuine search whose query merely starts with "select:"', () => {
+      const result = classifyTool('web-search', {
+        query: 'select:focus css',
+      });
+
+      expect(result.category).toBe('search');
+      expect(result.verb).toBe('Search web');
+      expect(result.subject).toBe('select:focus css');
+    });
   });
 
   describe('terminal operations', () => {
