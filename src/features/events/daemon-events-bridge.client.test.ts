@@ -2812,7 +2812,17 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
   }
 
   function readScriptsState(): {
-    scripts: Record<string, { runtime: { status: string; pid?: number; detectedUrl?: string } }>;
+    scripts: Record<
+      string,
+      {
+        runtime: {
+          status: string;
+          pid?: number;
+          detectedUrl?: string;
+          previouslyRunning?: boolean;
+        };
+      }
+    >;
     outputBuffers: Record<string, ScriptOutputBuffer>;
   } {
     const state = appStore.state as {
@@ -2822,7 +2832,14 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
           {
             scripts: Record<
               string,
-              { runtime: { status: string; pid?: number; detectedUrl?: string } }
+              {
+                runtime: {
+                  status: string;
+                  pid?: number;
+                  detectedUrl?: string;
+                  previouslyRunning?: boolean;
+                };
+              }
             >;
             outputBuffers: Record<string, ScriptOutputBuffer>;
           }
@@ -2989,6 +3006,51 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
     );
 
     expect(readScriptsState().scripts[SCRIPT_ID].runtime.detectedUrl).toBe('http://localhost:5173');
+  });
+
+  it('mirrors previouslyRunning from script:state into the runtime state', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('script:state', {
+        scriptId: SCRIPT_ID,
+        status: 'idle',
+        restartCount: 0,
+        previouslyRunning: true,
+      }),
+    );
+
+    expect(readScriptsState().scripts[SCRIPT_ID].runtime.previouslyRunning).toBe(true);
+  });
+
+  it('clears a stale previouslyRunning marker when a script:state snapshot omits it', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('script:state', {
+        scriptId: SCRIPT_ID,
+        status: 'idle',
+        restartCount: 0,
+        previouslyRunning: true,
+      }),
+    );
+    expect(readScriptsState().scripts[SCRIPT_ID].runtime.previouslyRunning).toBe(true);
+
+    // The daemon cleared the marker (e.g. the script was started): the full
+    // snapshot no longer carries the key, so the mirrored runtime drops it.
+    handler(
+      notification('script:state', {
+        scriptId: SCRIPT_ID,
+        status: 'running',
+        pid: 4242,
+        restartCount: 0,
+      }),
+    );
+
+    expect(readScriptsState().scripts[SCRIPT_ID].runtime.previouslyRunning).toBe(false);
+    expect(readScriptsState().scripts[SCRIPT_ID].runtime.status).toBe('running');
   });
 });
 

@@ -3376,6 +3376,7 @@
   "terminal_quakeOverlay_clear_ariaLabel": "Terminal leeren",
   "terminal_quakeOverlay_name_placeholder": "Name",
   "terminal_quakeOverlay_closeTerminal_ariaLabel": "Terminal schließen",
+  "terminal_quakeOverlay_dismissScriptTab_ariaLabel": "Skript-Tab schließen",
   "terminal_quakeOverlay_openUrl_tooltip": "URL im Browser öffnen",
   "terminal_quakeOverlay_newTerminal_tooltip": "Neues Terminal",
   "terminal_quakeOverlay_newTerminal_ariaLabel": "Neues Terminal",

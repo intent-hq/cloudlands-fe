@@ -3376,6 +3376,7 @@
   "terminal_quakeOverlay_clear_ariaLabel": "清空終端",
   "terminal_quakeOverlay_name_placeholder": "名稱",
   "terminal_quakeOverlay_closeTerminal_ariaLabel": "關閉終端",
+  "terminal_quakeOverlay_dismissScriptTab_ariaLabel": "關閉腳本分頁",
   "terminal_quakeOverlay_openUrl_tooltip": "在瀏覽器中開啟 URL",
   "terminal_quakeOverlay_newTerminal_tooltip": "新建終端",
   "terminal_quakeOverlay_newTerminal_ariaLabel": "新建終端",

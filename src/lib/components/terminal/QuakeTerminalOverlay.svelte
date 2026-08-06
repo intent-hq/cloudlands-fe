@@ -424,10 +424,23 @@
       });
   }
 
-  // Live scripts (running/restarting) shown as tabs in the bottom bar
+  // Scripts shown as tabs in the bottom bar: live (running/restarting) plus
+  // services the daemon reports as previously running (before its last
+  // shutdown) so they stay visible — unopened — after an app relaunch.
   const runningScripts = $derived(
-    $scriptEntries$.filter((s) => isLiveScriptStatus(s.runtime.status)),
+    $scriptEntries$.filter(
+      (s) => isLiveScriptStatus(s.runtime.status) || s.runtime.previouslyRunning === true,
+    ),
   );
+
+  // Dismiss a previously-running tab: `script.stop` clears the daemon-side
+  // marker even when the script is not live; refresh re-reads the list.
+  async function dismissPreviouslyRunningTab(scriptId: string, e: MouseEvent) {
+    e.stopPropagation();
+    if (!workspaceId) return;
+    await scriptsClient.stop(workspaceId, scriptId);
+    appStore.dispatch(refreshScripts(workspaceId));
+  }
 
   // Constants
   const TAB_BAR_HEIGHT = 36; // h-9 = 2.25rem = 36px
@@ -1192,6 +1205,8 @@
         <!-- Running Script Tabs -->
         {#each runningScripts as script (script.id)}
           {@const isScriptActive = selectedScriptId === script.id && $isOpen}
+          {@const isPreviouslyRunningOnly =
+            script.runtime.previouslyRunning === true && !isLiveScriptStatus(script.runtime.status)}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class={cn(
@@ -1219,7 +1234,7 @@
             tabindex="0"
             aria-selected={isScriptActive}
           >
-            <div class="w-2 h-2 rounded-full bg-green-500 shrink-0"></div>
+            <div class={cn('w-2 h-2 rounded-full shrink-0', getStatusColor(script))}></div>
             {#if editingScriptTabId === script.id}
               <input
                 type="text"
@@ -1255,6 +1270,17 @@
                   aria-label={m.terminal_quakeOverlay_openUrl_tooltip()}
                 >
                   <Fa icon={faArrowUpRightFromSquare} size="xs" />
+                </button>
+              {/if}
+              {#if isPreviouslyRunningOnly}
+                <button
+                  type="button"
+                  class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
+                  data-dismiss-script-tab={script.id}
+                  onclick={(e) => dismissPreviouslyRunningTab(script.id, e)}
+                  aria-label={m.terminal_quakeOverlay_dismissScriptTab_ariaLabel()}
+                >
+                  <Fa icon={faXmark} size="xs" />
                 </button>
               {/if}
             {/if}
