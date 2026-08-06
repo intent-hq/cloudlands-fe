@@ -53,6 +53,21 @@ describe("LiveScriptsClient (fake transport)", () => {
     expect(scripts).toEqual([DEV_SCRIPT]);
   });
 
+  it("list passes runtime.previouslyRunning through verbatim (§5.8)", async () => {
+    const previouslyRunning: ScriptWithState = {
+      ...DEV_SCRIPT,
+      runtime: { status: "idle", restartCount: 0, previouslyRunning: true },
+    };
+    mockedRequest.mockResolvedValueOnce({ scripts: [previouslyRunning] });
+    const client = new LiveScriptsClient();
+
+    const scripts = await client.list("ws-1");
+
+    expect(mockedRequest).toHaveBeenCalledWith("script.list", { workspaceId: "ws-1" });
+    expect(scripts).toEqual([previouslyRunning]);
+    expect(scripts[0].runtime.previouslyRunning).toBe(true);
+  });
+
   it("list folds malformed results and transport failures to an empty list", async () => {
     const client = new LiveScriptsClient();
     mockedRequest.mockResolvedValueOnce({});

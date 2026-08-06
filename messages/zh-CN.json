@@ -3376,6 +3376,7 @@
   "terminal_quakeOverlay_clear_ariaLabel": "清空终端",
   "terminal_quakeOverlay_name_placeholder": "名称",
   "terminal_quakeOverlay_closeTerminal_ariaLabel": "关闭终端",
+  "terminal_quakeOverlay_dismissScriptTab_ariaLabel": "关闭脚本标签页",
   "terminal_quakeOverlay_openUrl_tooltip": "在浏览器中打开 URL",
   "terminal_quakeOverlay_newTerminal_tooltip": "新建终端",
   "terminal_quakeOverlay_newTerminal_ariaLabel": "新建终端",
