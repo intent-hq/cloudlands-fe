@@ -24,6 +24,11 @@ describe("backgroundAgentSettingsReducer", () => {
     expect(state).toEqual(initialState);
   });
 
+  it("defaults to no explicit model (empty string = provider default)", () => {
+    expect(DEFAULT_BACKGROUND_MODEL).toBe("");
+    expect(initialState.defaultModel).toBe("");
+  });
+
   describe("setDefaultModel", () => {
     it("should update defaultModel", () => {
       const state = backgroundAgentSettingsReducer(
@@ -118,7 +123,7 @@ describe("backgroundAgentSettingsReducer", () => {
       expect(state.typeOverrides.commit).toBe("haiku4.5");
     });
 
-    it("should use defaults for missing values", () => {
+    it("should keep an empty defaultModel (provider default) and default missing overrides", () => {
       const state = backgroundAgentSettingsReducer(
         initialState,
         hydrateSettings({
@@ -126,7 +131,7 @@ describe("backgroundAgentSettingsReducer", () => {
           typeOverrides: {} as any,
         })
       );
-      expect(state.defaultModel).toBe(DEFAULT_BACKGROUND_MODEL);
+      expect(state.defaultModel).toBe("");
       expect(state.typeOverrides.commit).toBe("");
     });
   });

@@ -217,26 +217,15 @@ export const MODEL_IDS = {
  * MODEL DEFAULTS
  * ============================================================================
  *
- * There is intentionally NO hardcoded INTERACTIVE default model id: the
- * default model is always derived from the provider CLI's catalog (the row
- * it marks `isDefault`, else the first available row) via
+ * There is intentionally NO hardcoded default model id — interactive or
+ * background: the default model is always derived from the provider CLI's
+ * catalog (the row it marks `isDefault`, else the first available row) via
  * `resolveDefaultModel` in
- * `$store/renderer/slices/model/model-selection-utils`. The background
- * model-id defaults below are pending removal in a follow-up.
+ * `$store/renderer/slices/model/model-selection-utils`, and background /
+ * one-off requests omit `model` on the wire so the daemon/CLI default
+ * applies (PROTOCOL §5.31/§5.32).
  */
 export const MODEL_DEFAULTS = {
-  /**
-   * Default model for background agents (commit, PR, review).
-   * Uses Haiku for fast, cheap, reliable automated background operations.
-   */
-  BACKGROUND_AGENT_MODEL: MODEL_IDS.CLAUDE_HAIKU_4_5,
-
-  /**
-   * Default model for lightweight background requests (status checks, validations).
-   * Uses Haiku for fast, cheap, reliable one-off requests.
-   */
-  BACKGROUND_REQUEST_MODEL: MODEL_IDS.CLAUDE_HAIKU_4_5,
-
   /** Default temperature */
   DEFAULT_TEMPERATURE: 0.7,
 

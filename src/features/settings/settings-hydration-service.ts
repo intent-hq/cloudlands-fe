@@ -110,7 +110,7 @@ function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
     currentState.typeOverrides;
 
   // Always dispatch when defaultModel is a string (even if empty) so typeOverrides can hydrate.
-  // The reducer normalizes empty defaultModel to DEFAULT_BACKGROUND_MODEL.
+  // An empty defaultModel means "provider default" (no explicit model configured).
   if (typeof defaultModel === "string") {
     const fallback: Record<BackgroundAgentType, string> = {
       commit: "",

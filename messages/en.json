@@ -170,6 +170,7 @@
   "settings_backgroundAgent_overrides_title": "Per-action overrides",
   "settings_backgroundAgent_useDefaultOption": "Use default quick action model",
   "settings_backgroundAgent_customBadge": "Custom",
+  "settings_backgroundAgent_providerDefault_description": "Use the provider CLI's default model",
   "settings_gitWorkspace_loadError": "Failed to load settings from the backend.",
   "settings_gitWorkspace_saveError": "Failed to save settings. Please try again.",
   "settings_gitWorkspace_shell_autoDetect": "Auto-detect (System Default)",

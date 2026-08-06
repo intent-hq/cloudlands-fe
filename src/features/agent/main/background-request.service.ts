@@ -13,10 +13,7 @@
  */
 
 import { Logger } from '$shared/logger';
-import {
-  BACKGROUND_MODEL_ID,
-  BACKGROUND_REQUEST_TIMEOUT_MS,
-} from '$shared/config/background-model';
+import { BACKGROUND_REQUEST_TIMEOUT_MS } from '$shared/config/background-model';
 import { getBackendClient } from '$features/backend/main/backend.ipc';
 import { JsonRpcError } from '$features/backend/main/json-rpc-errors';
 
@@ -38,7 +35,10 @@ export interface BackgroundRequestOptions {
    * interface for source-compatibility with the previous ACPProvider seam.
    */
   workingDirectory?: string;
-  /** Override the default model — forwarded to the CLI as `--model`. */
+  /**
+   * Optional model — forwarded to the CLI as `--model`. Omitted when unset,
+   * so the daemon/CLI default applies (PROTOCOL §5.32).
+   */
   model?: string;
   /** Override the default timeout (ms). Daemon clamps at 120000. */
   timeoutMs?: number;
@@ -76,13 +76,14 @@ export async function makeBackgroundRequest(
     Number.isFinite(requestedTimeout) && requestedTimeout > 0
       ? Math.min(requestedTimeout, DAEMON_TIMEOUT_CAP_MS)
       : BACKGROUND_REQUEST_TIMEOUT_MS;
-  const model = options.model || BACKGROUND_MODEL_ID;
+  const model = options.model || undefined;
 
-  const params: Record<string, unknown> = { prompt, model, timeoutMs };
+  const params: Record<string, unknown> = { prompt, timeoutMs };
+  if (model) params.model = model;
   if (options.systemPrompt) params.systemPrompt = options.systemPrompt;
 
   logger.info('Making background request', {
-    model,
+    model: model ?? '(provider default)',
     timeoutMs,
     promptLength: prompt.length,
     hasSystemPrompt: !!options.systemPrompt,

@@ -1,6 +1,5 @@
 import { createAction } from '$lib/store-shim/utils/store/create-action';
 import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
-import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ModelFallbackResult } from '$lib/utils/model-fallback';
 import { findBestAvailableModel } from '$lib/utils/model-fallback';
@@ -10,7 +9,12 @@ import { m } from '$shared/paraglide/messages.js';
 // Types & Constants (re-exported from old store)
 // ============================================================================
 
-export const DEFAULT_BACKGROUND_MODEL = MODEL_DEFAULTS.BACKGROUND_AGENT_MODEL;
+/**
+ * Empty string means "no explicit background model configured": consumers
+ * omit `model` on the wire so the provider CLI/daemon default applies
+ * (PROTOCOL §5.31/§5.32). There is intentionally no hardcoded model id here.
+ */
+export const DEFAULT_BACKGROUND_MODEL = '';
 
 export type BackgroundAgentType = 'commit' | 'pr' | 'review' | 'fast';
 

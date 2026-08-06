@@ -170,6 +170,7 @@
   "settings_backgroundAgent_overrides_title": "Anulaciones por acción",
   "settings_backgroundAgent_useDefaultOption": "Usar el modelo predeterminado de acciones rápidas",
   "settings_backgroundAgent_customBadge": "Personalizado",
+  "settings_backgroundAgent_providerDefault_description": "Usar el modelo predeterminado de la CLI del proveedor",
   "settings_gitWorkspace_loadError": "No se pudo cargar la configuración desde el backend.",
   "settings_gitWorkspace_saveError": "No se pudo guardar la configuración. Inténtelo de nuevo.",
   "settings_gitWorkspace_shell_autoDetect": "Detección automática (predeterminado del sistema)",

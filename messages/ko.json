@@ -170,6 +170,7 @@
   "settings_backgroundAgent_overrides_title": "작업별 재정의",
   "settings_backgroundAgent_useDefaultOption": "기본 빠른 작업 모델 사용",
   "settings_backgroundAgent_customBadge": "사용자 지정",
+  "settings_backgroundAgent_providerDefault_description": "프로바이더 CLI의 기본 모델 사용",
   "settings_gitWorkspace_loadError": "백엔드에서 설정을 불러오지 못했습니다.",
   "settings_gitWorkspace_saveError": "설정을 저장하지 못했습니다. 다시 시도해 주세요.",
   "settings_gitWorkspace_shell_autoDetect": "자동 감지(시스템 기본값)",
