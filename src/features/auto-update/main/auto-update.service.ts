@@ -11,6 +11,7 @@ import electronUpdater from 'electron-updater';
 import { DEFAULTS } from '../../../shared/constants';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
+import { confirmQuitWithRunningAgents } from '../../../main/quit-confirmation';
 import { saveWindowSessions } from '../../../main/window';
 import type { UpdateChannel, UpdateState, UpdateStatus } from '../types';
 
@@ -52,6 +53,7 @@ class AutoUpdateService {
   private mainWindow: BrowserWindow | null = null;
   private initialized = false;
   private isManualCheck = false;
+  private isConfirmingInstall = false;
   private updateCheckInterval: NodeJS.Timeout | null = null;
   private checkTimeoutId: NodeJS.Timeout | null = null;
   private lastCheckAt: number | null = null;
@@ -330,12 +332,36 @@ class AutoUpdateService {
       throw new Error('No update downloaded to install');
     }
 
-    logger.info('Saving window sessions before installing update...');
-    await saveWindowSessions();
-    isInstallingUpdate = true;
+    // Re-entrancy guard: the confirmation below opens a long async window
+    // (daemon RPC + user-facing dialog), so a second Install click while the
+    // prompt is pending would stack a second dialog.
+    if (this.isConfirmingInstall) {
+      logger.info('Install confirmation already pending; ignoring repeat install request');
+      return;
+    }
 
-    logger.info('Installing update and restarting...');
-    autoUpdater.quitAndInstall(false, true);
+    // Confirm running agents BEFORE any install side effect: on macOS,
+    // quitAndInstall() closes all windows before `before-quit` fires, so the
+    // prompt there appears after the window is gone and cancelling strands a
+    // windowless app mid-install. Prompting here keeps the window open; the
+    // before-quit handler skips its prompt while isInstallingUpdate is true.
+    this.isConfirmingInstall = true;
+    try {
+      const proceed = await confirmQuitWithRunningAgents();
+      if (!proceed) {
+        logger.info('Update install cancelled by user due to running agents');
+        return;
+      }
+
+      logger.info('Saving window sessions before installing update...');
+      await saveWindowSessions();
+      isInstallingUpdate = true;
+
+      logger.info('Installing update and restarting...');
+      autoUpdater.quitAndInstall(false, true);
+    } finally {
+      this.isConfirmingInstall = false;
+    }
   }
 
   getState(): UpdateState {
