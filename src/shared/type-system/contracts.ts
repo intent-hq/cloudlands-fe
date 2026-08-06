@@ -46,8 +46,8 @@ export const WorkspaceSchema = z.object({
   prStatus: z.enum(['open', 'closed', 'merged', 'draft']).optional(),
   /** CoW filesystem capability of the workspaces root (PROTOCOL §5.1). */
   cowSupported: z.boolean().optional(),
-  /** How the checkout was provisioned (PROTOCOL §5.1); omitted for rows without a daemon-provisioned checkout. */
-  checkoutMode: z.enum(['cow', 'worktree']).optional(),
+  /** How the checkout was provisioned (PROTOCOL §5.1); omitted for rows without a daemon-provisioned checkout. `direct` = standalone local clone. */
+  checkoutMode: z.enum(['cow', 'worktree', 'direct']).optional(),
 });
 
 export type Workspace = z.infer<typeof WorkspaceSchema>;
@@ -120,6 +120,7 @@ export const KnownRepoSchema = z.object({
   path: z.string(),
   name: z.string(),
   owner: z.string().optional(),
+  githubUrl: z.string().optional(),
   addedAt: z.string(),
   lastUsedAt: z.string(),
 });
@@ -333,6 +334,9 @@ export const IpcContracts = {
   'workspace:add-recent-repository': {
     request: z.object({
       repository: z.string(),
+      name: z.string().optional(),
+      owner: z.string().optional(),
+      githubUrl: z.string().optional(),
     }),
     response: z.object({
       success: z.boolean(),

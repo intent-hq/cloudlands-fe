@@ -89,6 +89,7 @@
   import type { PttContext } from '$features/hardware-console/voice/ptt-controller';
   import { showVoiceSetupToast } from '$features/hardware-console/voice/voice-setup-toast';
   import { invoke } from '$lib/electron-bridge';
+  import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import { appClient } from '$lib/client';
   import {
     enhancePrompt,
@@ -1444,9 +1445,10 @@
       const promptValidation = validateInitialPrompt(initialPrompt);
       if (!promptValidation.valid) throw new Error(promptValidation.error);
 
-      // For GitHub repos with a clone path, validate the GitHub URL instead of the local clone path
-      // since the clone path won't exist until after cloning
-      if (repoType === 'github' && githubUrl && clonePath) {
+      // For GitHub repos, validate the GitHub URL instead of a local path —
+      // picked repos have no local path at all, and with an explicit clone
+      // path the destination won't exist until after cloning
+      if (repoType === 'github' && githubUrl) {
         const repoValidation = await validateRepoPath(githubUrl, false);
         if (!repoValidation.valid) throw new Error(repoValidation.error);
         // Note: We don't validate the parent directory here because:
@@ -1806,12 +1808,19 @@
         logger.debug('Saved branch per repo', { repoPath, branch: baseBranch });
       }
 
+      // Picked repo (GitHub selection with no explicit clone destination):
+      // the daemon hydrates the checkout from its repo cache — send
+      // githubUrl + branch fields ONLY, no clonePath/repositoryPath
+      // (repoPath holds the owner/repo shorthand, not a local path).
+      const isGithubPick = repoType === 'github' && !!githubUrl && !clonePath;
+
       const result = await workspaceClient.create({
         title: prefillTitle || '', // Use deep-link title if provided, otherwise agent will set it
-        repositoryPath: String(remoteSetupSnapshot?.workspacePath || repoPath),
+        repositoryPath: isGithubPick
+          ? undefined
+          : String(remoteSetupSnapshot?.workspacePath || repoPath),
         githubUrl: repoType === 'github' && githubUrl ? githubUrl : undefined, // GitHub URL to clone
-        clonePath:
-          repoType === 'github' && (clonePath || repoPath) ? clonePath || repoPath : undefined, // User-selected clone destination (falls back to repoPath since they're the same for GitHub repos)
+        clonePath: repoType === 'github' && clonePath ? clonePath : undefined, // User-selected clone destination (legacy explicit-clone flow)
         baseRef: String(baseBranch),
         setupScript: setupScript.trim() || undefined,
         environmentConfig,
@@ -1827,6 +1836,22 @@
       // The daemon assigns the initial agent's id and returns it on the
       // create result; the FE no longer pre-mints one.
       const initialAgentId = result.data.initialAgent?.id;
+
+      // Register a picked repo as a path-less GitHub recent so re-picking it
+      // prefills the tab (keyed by the owner/repo shorthand, no local path).
+      if (isGithubPick) {
+        const ghInfo = parseGitHubUrl(githubUrl);
+        if (ghInfo) {
+          void invoke(WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, {
+            repository: `${ghInfo.owner}/${ghInfo.repo}`,
+            name: ghInfo.repo,
+            owner: ghInfo.owner,
+            githubUrl: `https://github.com/${ghInfo.owner}/${ghInfo.repo}`,
+          }).catch((err) => {
+            logger.warn('Failed to register picked repo as recent', { error: err });
+          });
+        }
+      }
 
       // If a PR context mention was used, store the PR number on the workspace
       // so PR discovery can find the right PR later. Daemon-backed

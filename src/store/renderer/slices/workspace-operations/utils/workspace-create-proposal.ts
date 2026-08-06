@@ -47,11 +47,19 @@ export function buildCreateWorkspaceRequestFromProposal(
   // proposal payload so it never reaches the wire.
   const { agentId: _droppedAgentId, ...initialAgentFields } = initialAgent ?? {};
 
+  const githubUrl = stringOverride(editedFields?.githubUrl, params.githubUrl);
+  const clonePath = stringOverride(editedFields?.clonePath, params.clonePath);
+  const repositoryPath = stringOverride(editedFields?.repoPath, params.repositoryPath);
+  // Picked repo (githubUrl with no clone destination): the daemon hydrates the
+  // checkout from its repo cache — the request carries githubUrl + branch
+  // fields ONLY, never a clonePath or repositoryPath.
+  const isGithubPick = !!githubUrl && !clonePath;
+
   return {
     ...params,
-    repositoryPath: stringOverride(editedFields?.repoPath, params.repositoryPath),
-    githubUrl: stringOverride(editedFields?.githubUrl, params.githubUrl),
-    clonePath: stringOverride(editedFields?.clonePath, params.clonePath),
+    repositoryPath: isGithubPick ? undefined : repositoryPath,
+    githubUrl,
+    clonePath: isGithubPick ? undefined : clonePath,
     baseRef: stringOverride(editedFields?.branch, params.baseRef),
     isNewRepo: booleanOverride(editedFields?.isNewRepo, params.isNewRepo),
     scope: stringOverride(editedFields?.scope, params.scope),

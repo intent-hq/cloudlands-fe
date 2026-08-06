@@ -524,17 +524,26 @@
       // Build a map of repos by path (persistent registry first, then workspace-derived)
       const repoMap = new Map<
         string,
-        { path: string; type: 'local' | 'github'; name: string; owner?: string }
+        { path: string; type: 'local' | 'github'; githubUrl?: string; name: string; owner?: string }
       >();
 
       for (const repo of $workspaceInitializerRecentRepos$) {
         repoMap.set(repo.path, repo);
       }
 
-      // Add persistent registry repos
+      // Add persistent registry repos. Path-less GitHub picks carry a
+      // githubUrl and use the owner/repo shorthand as their key.
       if (registryResult?.success && Array.isArray(registryResult.data)) {
         for (const repo of registryResult.data) {
-          if (repo.path && !repo.path.includes('/.clones/')) {
+          if (repo.githubUrl) {
+            repoMap.set(repo.path, {
+              path: repo.path,
+              type: 'github' as const,
+              githubUrl: repo.githubUrl,
+              name: repo.name,
+              owner: repo.owner,
+            });
+          } else if (repo.path && !repo.path.includes('/.clones/')) {
             repoMap.set(repo.path, {
               path: repo.path,
               type: 'local' as const,

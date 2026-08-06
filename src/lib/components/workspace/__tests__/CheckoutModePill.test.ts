@@ -2,8 +2,8 @@
  * @vitest-environment jsdom
  *
  * CheckoutModePill tests. The pill renders "CoW" for `checkoutMode === 'cow'`,
- * "Worktree" for `'worktree'`, and nothing at all when the field is absent
- * (direct / non-daemon-provisioned checkouts).
+ * "Worktree" for `'worktree'`, "Direct" for `'direct'`, and nothing at all
+ * when the field is absent (non-daemon-provisioned checkouts).
  *
  * When a workspace is provided, opening the tooltip fetches the footprint
  * on demand via `appClient.workspaces.diskUsage` (`workspace.diskUsage`,
@@ -100,7 +100,12 @@ describe('CheckoutModePill', () => {
     expect(screen.getByText('Worktree')).toBeTruthy();
   });
 
-  it('renders nothing when checkoutMode is undefined (direct)', async () => {
+  it('renders "Direct" when checkoutMode is direct (cache-hydrated local clone)', async () => {
+    await renderPill({ checkoutMode: 'direct' });
+    expect(screen.getByText('Direct')).toBeTruthy();
+  });
+
+  it('renders nothing when checkoutMode is undefined (non-daemon-provisioned)', async () => {
     const { container } = await renderPill({});
     expect(container.textContent?.trim()).toBe('');
     expect(container.querySelector('span')).toBeNull();
