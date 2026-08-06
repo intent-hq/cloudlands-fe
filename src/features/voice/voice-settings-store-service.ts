@@ -20,6 +20,7 @@ import {
   changeVoiceLanguage,
   changeVoiceOpenAiModel,
   changeVoiceProvider,
+  changeVoiceWorkspaceVocabularyMaxTerms,
   clearVoiceKey,
   initializeVoiceSettings,
   removeVoiceVocabularyTerm,
@@ -36,16 +37,19 @@ import {
   setVoiceSettingsError,
   setVoiceSettingsSnapshot,
   setVoiceVocabularyValue,
+  setVoiceWorkspaceVocabularyMaxTermsValue,
 } from "$store/renderer/slices/voice-settings/voice-settings-slice";
 import {
   clearVoiceApiKey,
   isVoiceOpenAiModel,
+  isVoiceWorkspaceVocabularyMaxTerms,
   loadVoiceSettings,
   saveVoiceApiKey,
   setVoiceLanguage,
   setVoiceOpenAiModel,
   setVoiceProvider,
   setVoiceVocabulary,
+  setVoiceWorkspaceVocabularyMaxTerms,
   type VoiceOpenAiModel,
   type VoiceProvider,
 } from "$features/voice/voice-settings-service";
@@ -89,13 +93,14 @@ export async function initializeVoiceSettingsFlow(): Promise<void> {
         snapshot.vocabulary,
         snapshot.openaiModel,
         snapshot.language,
+        snapshot.workspaceVocabularyMaxTerms,
       ),
     );
   } catch (error) {
     appStore.dispatch(setVoiceSettingsSnapshot(false, "elevenlabs", {
       elevenlabs: false,
       openai: false,
-    }, null, null, null));
+    }, null, null, null, null));
     appStore.dispatch(setVoiceSettingsError(m.settings_voice_loadFailed_error()));
     logger.error("initialize error", error);
   }
@@ -270,6 +275,30 @@ export async function changeVoiceLanguageFlow(language: string): Promise<void> {
   }
 }
 
+/**
+ * Persist the workspace-vocabulary cap (0..=100, `0` = off); roll back the
+ * optimistic value on failure. A `null` previous value means the daemon's
+ * catalog lacks the setting (the panel hides the field) — the write is
+ * skipped defensively.
+ */
+export async function changeVoiceWorkspaceVocabularyMaxTermsFlow(
+  maxTerms: number,
+): Promise<void> {
+  const previous = appStore.state.voiceSettings.workspaceVocabularyMaxTerms;
+  if (previous === null || maxTerms === previous) return;
+  appStore.dispatch(setVoiceSettingsError(null));
+  appStore.dispatch(setVoiceWorkspaceVocabularyMaxTermsValue(maxTerms));
+  try {
+    await setVoiceWorkspaceVocabularyMaxTerms(maxTerms);
+  } catch (error) {
+    appStore.dispatch(setVoiceWorkspaceVocabularyMaxTermsValue(previous));
+    appStore.dispatch(
+      setVoiceSettingsError(m.settings_voice_workspaceVocabulary_saveFailed_error()),
+    );
+    logger.error("workspace vocabulary max terms change error", error);
+  }
+}
+
 /** Store a pasted API key through the daemon secrets-file path. */
 export async function saveVoiceKeyFlow(provider: VoiceProvider, apiKey: string): Promise<void> {
   appStore.dispatch(setVoiceSettingsError(null));
@@ -365,6 +394,13 @@ export function createVoiceSettingsMiddleware(): StoreMiddleware {
       case changeVoiceLanguage.type: {
         const payload = Array.isArray(action.payload) ? action.payload : [];
         if (typeof payload[0] === "string") void changeVoiceLanguageFlow(payload[0]);
+        break;
+      }
+      case changeVoiceWorkspaceVocabularyMaxTerms.type: {
+        const payload = Array.isArray(action.payload) ? action.payload : [];
+        if (isVoiceWorkspaceVocabularyMaxTerms(payload[0])) {
+          void changeVoiceWorkspaceVocabularyMaxTermsFlow(payload[0]);
+        }
         break;
       }
       case saveVoiceKey.type: {

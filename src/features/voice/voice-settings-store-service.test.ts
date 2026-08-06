@@ -24,6 +24,7 @@ vi.mock("$features/voice/voice-settings-service", async (importOriginal) => ({
   loadVoiceSettings: vi.fn(),
   setVoiceOpenAiModel: vi.fn(),
   setVoiceLanguage: vi.fn(),
+  setVoiceWorkspaceVocabularyMaxTerms: vi.fn(),
 }));
 
 import {
@@ -39,6 +40,7 @@ import {
   setVoiceOpenAiModelValue,
   setVoiceOsEngineAvailable,
   setVoiceSettingsError,
+  setVoiceWorkspaceVocabularyMaxTermsValue,
 } from "$store/renderer/slices/voice-settings/voice-settings-slice";
 import { VOICE_ENGINE_STORAGE_KEY } from "$features/voice/voice-engine-preference";
 import {
@@ -49,6 +51,7 @@ import {
   loadVoiceSettings,
   setVoiceLanguage,
   setVoiceOpenAiModel,
+  setVoiceWorkspaceVocabularyMaxTerms,
 } from "$features/voice/voice-settings-service";
 import {
   __resetVoiceSettingsBootHydrationForTests,
@@ -56,6 +59,7 @@ import {
   changeVoiceInputDeviceFlow,
   changeVoiceLanguageFlow,
   changeVoiceOpenAiModelFlow,
+  changeVoiceWorkspaceVocabularyMaxTermsFlow,
   createVoiceSettingsMiddleware,
   hydrateVoiceEngineFlow,
   hydrateVoiceInputDeviceFlow,
@@ -68,6 +72,7 @@ const requestAuthMock = vi.mocked(requestOsSpeechAuthorization);
 const loadSettingsMock = vi.mocked(loadVoiceSettings);
 const setModelMock = vi.mocked(setVoiceOpenAiModel);
 const setLanguageMock = vi.mocked(setVoiceLanguage);
+const setMaxTermsMock = vi.mocked(setVoiceWorkspaceVocabularyMaxTerms);
 // The global test setup replaces window.localStorage with vi.fn stubs.
 const getItemMock = vi.mocked(window.localStorage.getItem);
 const setItemMock = vi.mocked(window.localStorage.setItem);
@@ -305,6 +310,61 @@ describe("voiceSettingsStoreService language flow (fake seam, real store)", () =
   });
 });
 
+describe("voiceSettingsStoreService workspace-vocabulary cap flow (fake seam, real store)", () => {
+  beforeAll(() => appStore.init());
+  beforeEach(() => {
+    setMaxTermsMock.mockResolvedValue(undefined);
+    appStore.dispatch(setVoiceWorkspaceVocabularyMaxTermsValue(50));
+    appStore.dispatch(setVoiceSettingsError(null));
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+    appStore.dispatch(setVoiceWorkspaceVocabularyMaxTermsValue(null));
+    appStore.dispatch(setVoiceSettingsError(null));
+  });
+
+  it("applies the cap optimistically and persists through the seam", async () => {
+    await changeVoiceWorkspaceVocabularyMaxTermsFlow(75);
+
+    expect(state().workspaceVocabularyMaxTerms).toBe(75);
+    expect(setMaxTermsMock).toHaveBeenCalledWith(75);
+    expect(state().error).toBeNull();
+  });
+
+  it("persists the 0 = off sentinel", async () => {
+    await changeVoiceWorkspaceVocabularyMaxTermsFlow(0);
+
+    expect(state().workspaceVocabularyMaxTerms).toBe(0);
+    expect(setMaxTermsMock).toHaveBeenCalledWith(0);
+  });
+
+  it("rolls back to the previous cap and surfaces an error when the write fails", async () => {
+    setMaxTermsMock.mockRejectedValue(
+      new Error("settings.update did not apply voice.workspaceVocabulary.maxTerms"),
+    );
+
+    await changeVoiceWorkspaceVocabularyMaxTermsFlow(75);
+
+    expect(state().workspaceVocabularyMaxTerms).toBe(50);
+    expect(state().error).not.toBeNull();
+  });
+
+  it("re-committing the current cap is a no-op — no daemon write", async () => {
+    await changeVoiceWorkspaceVocabularyMaxTermsFlow(50);
+
+    expect(setMaxTermsMock).not.toHaveBeenCalled();
+  });
+
+  it("skips the write when the daemon's catalog lacks the setting (null state)", async () => {
+    appStore.dispatch(setVoiceWorkspaceVocabularyMaxTermsValue(null));
+
+    await changeVoiceWorkspaceVocabularyMaxTermsFlow(75);
+
+    expect(setMaxTermsMock).not.toHaveBeenCalled();
+    expect(state().workspaceVocabularyMaxTerms).toBeNull();
+  });
+});
+
 describe("voiceSettingsStoreService input-device flows (fake MediaDevices, real store)", () => {
   const enumerateDevices = vi.fn();
   const addEventListener = vi.fn();
@@ -410,6 +470,7 @@ describe("createVoiceSettingsMiddleware boot hydration (fake seams, real store)"
       vocabulary: [],
       openaiModel: null,
       language: "de",
+      workspaceVocabularyMaxTerms: 50,
     });
   });
   afterEach(() => {
@@ -431,5 +492,6 @@ describe("createVoiceSettingsMiddleware boot hydration (fake seams, real store)"
 
     expect(loadSettingsMock).toHaveBeenCalledTimes(1);
     expect(state().language).toBe("de");
+    expect(state().workspaceVocabularyMaxTerms).toBe(50);
   });
 });
