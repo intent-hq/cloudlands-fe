@@ -2039,6 +2039,7 @@
   "chat_toolClassifier_searchCommits_label": "Rechercher des commits",
   "chat_toolClassifier_searchWeb_label": "Rechercher sur le web",
   "chat_toolClassifier_search_label": "Rechercher",
+  "chat_toolClassifier_loadingTools_label": "Chargement des outils",
   "chat_toolClassifier_read_label": "Lire",
   "chat_toolClassifier_edit_label": "Modifier",
   "chat_toolClassifier_listContents_label": "Lister le contenu",
