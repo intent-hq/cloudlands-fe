@@ -105,6 +105,27 @@ describe('sidebar nav hover card dismissal', () => {
     expect(activeCard()).toBe('active');
   });
 
+  it('does not close when the pointerdown lands in portaled overlay UI (.portal-container)', async () => {
+    // Card-owned controls can portal their content to document.body (e.g. the
+    // expanded ChiefCard thread Dropdown with portal={true} renders options in
+    // a Portal, which tags its container with .portal-container). Those clicks
+    // must not dismiss the card before the control's own handler runs.
+    await renderCard(() => appStore.dispatch(setHoveredItem('active')));
+
+    const portal = document.createElement('div');
+    portal.className = 'portal-container';
+    const option = document.createElement('button');
+    portal.appendChild(option);
+    document.body.appendChild(portal);
+    try {
+      await fireEvent.pointerDown(option);
+
+      expect(activeCard()).toBe('active');
+    } finally {
+      portal.remove();
+    }
+  });
+
   it('does not close on outside pointerdown while a sidebar context menu is open', async () => {
     await renderCard(() => {
       appStore.dispatch(setHoveredItem('active'));
@@ -140,5 +161,45 @@ describe('sidebar nav hover card dismissal', () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
 
     expect(activeCard()).toBe('active');
+  });
+
+  it('outside-pointerdown close does not steal focus from the clicked control', async () => {
+    const nav = document.createElement('button');
+    document.body.appendChild(nav);
+    try {
+      // Focus an element before the card opens so it is captured as previouslyFocused
+      nav.focus();
+
+      await renderCard(() => appStore.dispatch(setHoveredItem('active')));
+
+      const outside = screen.getByTestId('outside-button');
+      await fireEvent.pointerDown(outside);
+      // Browser default action focuses the pointer target after pointerdown handlers
+      outside.focus();
+      // Let the focus-management effect for the close run
+      await waitFor(() => expect(activeCard()).toBeNull());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(document.activeElement).toBe(outside);
+    } finally {
+      nav.remove();
+    }
+  });
+
+  it('Escape close still restores focus to the previously focused element', async () => {
+    const previous = document.createElement('button');
+    document.body.appendChild(previous);
+    try {
+      previous.focus();
+
+      const card = await renderCard(() => appStore.dispatch(setHoveredItem('active')));
+
+      await fireEvent.keyDown(card, { key: 'Escape' });
+      await waitFor(() => expect(activeCard()).toBeNull());
+
+      await waitFor(() => expect(document.activeElement).toBe(previous));
+    } finally {
+      previous.remove();
+    }
   });
 });

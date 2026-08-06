@@ -59,14 +59,19 @@
 
   // Focus management: save/restore focus when card opens/closes
   let previouslyFocused: HTMLElement | null = null;
+  // Set when the close was caused by an outside pointerdown: the browser is
+  // focusing the clicked control, so the close path must not steal focus back.
+  let suppressFocusRestore = false;
   let contentEl: HTMLDivElement | null = $state(null);
   let cardEl: HTMLDivElement | null = $state(null);
 
   // Outside-click dismissal: while a card is showing, a pointerdown outside both
   // the card and the nav rail closes it — unpinned expanded cards included (the
   // "stays until clicked elsewhere" contract). Clicks inside the card or the nav,
-  // or while a sidebar context menu is open, do not dismiss; a pinned+expanded
-  // card stays open (pin means pin).
+  // inside portaled overlay UI (`.portal-container`, e.g. the card's own portaled
+  // Dropdown content — same convention as CommentsSidebar's outside-click), or
+  // while a sidebar context menu is open, do not dismiss; a pinned+expanded card
+  // stays open (pin means pin).
   $effect(() => {
     if (!$activeCard$) return;
     const handlePointerDown = (e: PointerEvent) => {
@@ -75,9 +80,11 @@
       if (cardEl?.contains(node)) return;
       const el = node instanceof Element ? node : node.parentElement;
       if (el?.closest('.sidebar-nav')) return;
+      if (el?.closest('.portal-container')) return;
       const state = appStore.state;
       if (selectContextMenuOpen.select(state)) return;
       if (selectIsCardPinned.select(state) && selectExpandedItem.select(state) !== null) return;
+      suppressFocusRestore = true;
       appStore.dispatch(closeHoverCards());
     };
     document.addEventListener('pointerdown', handlePointerDown, true);
@@ -94,10 +101,12 @@
         focusable?.focus();
       });
     } else {
-      // Card is closing — restore focus
-      if (previouslyFocused && previouslyFocused.isConnected) {
+      // Card is closing — restore focus, unless the close came from an outside
+      // pointerdown (don't steal focus from the newly clicked control)
+      if (!suppressFocusRestore && previouslyFocused && previouslyFocused.isConnected) {
         previouslyFocused.focus();
       }
+      suppressFocusRestore = false;
       previouslyFocused = null;
     }
   });
