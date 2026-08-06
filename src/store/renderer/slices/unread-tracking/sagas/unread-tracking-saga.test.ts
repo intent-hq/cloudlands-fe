@@ -1,168 +1,154 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const storage = vi.hoisted(() => ({
-  getItem: vi.fn(() => null),
-  getItemWithStatus: vi.fn(() => ({ value: null, hadError: false })),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-  keysWithPrefix: vi.fn(() => []),
-  getJSON: vi.fn(),
-  setJSON: vi.fn(),
+const marks = vi.hoisted(() => ({ boundary: vi.fn(), finish: vi.fn(), send: vi.fn() }));
+vi.mock('$features/agent/mark-agent-seen', () => ({
+  markAgentSeenAtBoundary: marks.boundary,
+  markAgentSeenOnTurnFinish: marks.finish,
+  markAgentSeenOnUserSend: marks.send,
 }));
-vi.mock('$lib/utils/safe-storage', () => ({ safeLocalStorage: storage }));
 
+import { sendMessage } from '../../chat-state/chat-state-slice';
+import { closeTab } from '../../panel-layout/panel-layout-slice';
+import { setActiveWorkspaceId } from '../../workspace/workspace-slice';
+import { agentStreamUpdateReceived } from '../../workspace-agents/workspace-agents-stream-slice';
 import type { StoreState } from '../../../types';
-import {
-  clearAgentUnread,
-  clearAgentsUnread,
-  clearAllUnread,
-  clearWorkspaceUnread,
-  markAgentAsViewed,
-  newAssistantMessage,
-} from '../unread-tracking-slice';
-import {
-  clearWorkspaceUnreadWorker,
-  hydrateUnreadTrackingWorker,
-  unreadTrackingSaga,
-} from './unread-tracking-saga';
+import type { DividerBoundarySnapshot } from '../unread-tracking-selectors';
+import { detectDividerSessionBoundary, unreadTrackingSaga } from './unread-tracking-saga';
 
-const settle = async () => {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-};
+const snapshot = (overrides: Partial<DividerBoundarySnapshot> = {}): DividerBoundarySnapshot => ({
+  activeWorkspaceId: 'ws-1',
+  chiefCardVisible: false,
+  chiefSessionAgentIds: [],
+  dividerSessionAgentIds: [],
+  openAgentTabIds: [],
+  ...overrides,
+});
 
-function state(unreadAgentIds: string[] = ['agent-2', 'agent-1', 'agent-3']): StoreState {
+function state(current: DividerBoundarySnapshot): StoreState {
   return {
-    unreadTracking: { unreadAgentIds, currentlyViewedAgentId: null },
-    workspaceAgents: {
+    workspace: { activeWorkspaceId: current.activeWorkspaceId },
+    sidebarNav: {
+      panelItem: current.chiefCardVisible ? 'chief' : null,
+      expandedItem: null,
+      hoveredItem: null,
+    },
+    unreadTracking: {
+      currentlyViewedAgentId: null,
+      dividerSessionByAgentId: Object.fromEntries(
+        current.dividerSessionAgentIds.map((id) => [id, { anchorId: null }]),
+      ),
+    },
+    agentSessions: {
+      byAgentId: {},
+      agentIdsByWorkspace: { chief: current.chiefSessionAgentIds },
+    },
+    panelLayout: {
       byWorkspaceId: {
-        'ws-1': { agentIds: ['agent-1', 'agent-2'] },
-        'ws-empty': { agentIds: [] },
+        'ws-1': {
+          panels: {
+            main: {
+              id: 'main',
+              activeTabId: null,
+              tabs: current.openAgentTabIds.map((agentId) => ({
+                id: `tab-${agentId}`,
+                type: 'agent',
+                agentId,
+                title: agentId,
+                closable: true,
+              })),
+            },
+          },
+        },
       },
     },
   } as unknown as StoreState;
 }
 
+const settle = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+};
+
+describe('detectDividerSessionBoundary', () => {
+  it('detects only sessions whose previously open tab closed', () => {
+    const previous = snapshot({
+      dividerSessionAgentIds: ['a1', 'chief-1'],
+      openAgentTabIds: ['a1'],
+    });
+    const current = snapshot({ dividerSessionAgentIds: ['a1', 'chief-1'] });
+    expect(detectDividerSessionBoundary(previous, current, closeTab.type)).toEqual({
+      kind: 'tab-close',
+      agentIds: ['a1'],
+    });
+  });
+
+  it('exempts chief sessions from workspace switches', () => {
+    const previous = snapshot({ dividerSessionAgentIds: ['a1', 'chief-1'] });
+    const current = snapshot({
+      activeWorkspaceId: 'ws-2',
+      dividerSessionAgentIds: ['a1', 'chief-1'],
+      chiefSessionAgentIds: ['chief-1'],
+    });
+    expect(detectDividerSessionBoundary(previous, current, setActiveWorkspaceId.type)).toEqual({
+      kind: 'workspace-switch',
+      agentIds: ['a1'],
+      previousWorkspaceId: 'ws-1',
+      nextWorkspaceId: 'ws-2',
+    });
+  });
+
+  it('detects a visible-to-hidden chief card transition', () => {
+    const previous = snapshot({ chiefCardVisible: true, chiefSessionAgentIds: ['chief-1'] });
+    const current = snapshot({ chiefSessionAgentIds: ['chief-1'] });
+    expect(detectDividerSessionBoundary(previous, current, 'sidebarNav/closePanel')).toEqual({
+      kind: 'chief-card-close',
+      agentIds: ['chief-1'],
+    });
+  });
+});
+
 describe('unreadTrackingSaga', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    storage.getJSON.mockReturnValue(undefined);
-  });
+  beforeEach(() => vi.clearAllMocks());
 
-  it('hydrates once before watching and filters malformed stored IDs', async () => {
-    storage.getJSON.mockReturnValue(['agent-1', 7, null, 'agent-2']);
-    const dispatch = vi.fn();
-    await runSaga({ dispatch, getState: state }, hydrateUnreadTrackingWorker).toPromise();
-
-    expect(storage.getJSON.mock.calls).toEqual([['augment:unread-agents']]);
-    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      {
-        type: 'unreadTracking/hydrate',
-        payload: [{ unreadAgentIds: ['agent-1', 'agent-2'] }],
-      },
-    ]);
-  });
-
-  it('does not hydrate malformed or empty storage', async () => {
-    const dispatch = vi.fn();
-    storage.getJSON.mockReturnValueOnce({ unreadAgentIds: ['agent-1'] }).mockReturnValueOnce([]);
-    await runSaga({ dispatch, getState: state }, hydrateUnreadTrackingWorker).toPromise();
-    await runSaga({ dispatch, getState: state }, hydrateUnreadTrackingWorker).toPromise();
-
-    expect(dispatch.mock.calls).toEqual([]);
-  });
-
-  it('fans a workspace clear out to only its unread agents in workspace order', async () => {
-    const dispatch = vi.fn();
-    await runSaga(
-      { dispatch, getState: state },
-      clearWorkspaceUnreadWorker,
-      clearWorkspaceUnread('ws-1'),
-    ).toPromise();
-
-    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      { type: 'unreadTracking/clearAgentsUnread', payload: [['agent-1', 'agent-2']] },
-    ]);
-  });
-
-  it('does not fan out empty, unknown, or already-read workspace clears', async () => {
-    const dispatch = vi.fn();
-    await runSaga(
-      { dispatch, getState: () => state(['agent-3']) },
-      clearWorkspaceUnreadWorker,
-      clearWorkspaceUnread('ws-1'),
-    ).toPromise();
-    await runSaga(
-      { dispatch, getState: state },
-      clearWorkspaceUnreadWorker,
-      clearWorkspaceUnread(''),
-    ).toPromise();
-    await runSaga(
-      { dispatch, getState: state },
-      clearWorkspaceUnreadWorker,
-      clearWorkspaceUnread('ws-missing'),
-    ).toPromise();
-
-    expect(dispatch.mock.calls).toEqual([]);
-  });
-
-  it('persists the exact post-reducer unread snapshot for every middleware trigger', async () => {
+  it('owns user-send and terminal-stream mark-seen triggers', async () => {
     const channel = stdChannel();
-    const task = runSaga({ channel, dispatch: vi.fn(), getState: state }, unreadTrackingSaga);
-    channel.put(markAgentAsViewed('agent-1'));
-    channel.put(newAssistantMessage('agent-4', 'ws-1', false));
-    channel.put(clearAgentUnread('agent-2'));
-    channel.put(clearAgentsUnread(['agent-1', 'agent-2']));
-    channel.put(clearAllUnread());
+    const current = snapshot();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => state(current) },
+      unreadTrackingSaga,
+    );
+    channel.put(sendMessage('a1', { wsId: 'ws-1', text: 'hello' }));
+    channel.put(
+      agentStreamUpdateReceived({
+        agentId: 'a1',
+        handlerSessionId: 'handler-1',
+        source: 'sendMessage',
+        eventType: 'complete',
+      }),
+    );
     await settle();
-
-    expect(storage.setJSON.mock.calls).toEqual([
-      ['augment:unread-agents', ['agent-2', 'agent-1', 'agent-3']],
-      ['augment:unread-agents', ['agent-2', 'agent-1', 'agent-3']],
-      ['augment:unread-agents', ['agent-2', 'agent-1', 'agent-3']],
-      ['augment:unread-agents', ['agent-2', 'agent-1', 'agent-3']],
-      ['augment:unread-agents', ['agent-2', 'agent-1', 'agent-3']],
-    ]);
+    expect(marks.send).toHaveBeenCalledWith('a1');
+    expect(marks.finish).toHaveBeenCalledWith('a1');
     task.cancel();
     await task.toPromise();
   });
 
-  it('swallows storage failures and keeps later persistence active', async () => {
-    storage.getJSON.mockImplementation(() => {
-      throw new Error('storage unavailable');
+  it('marks and ends a divider session when its tab closes', async () => {
+    const channel = stdChannel();
+    let current = snapshot({ dividerSessionAgentIds: ['a1'], openAgentTabIds: ['a1'] });
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => state(current) }, unreadTrackingSaga);
+    await settle();
+    current = snapshot({ dividerSessionAgentIds: ['a1'] });
+    channel.put(closeTab('ws-1', 'tab-a1'));
+    await settle();
+    expect(marks.boundary).toHaveBeenCalledWith(['a1']);
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'unreadTracking/endDividerSession',
+      payload: ['a1'],
     });
-    storage.setJSON.mockImplementation(() => {
-      throw new Error('quota');
-    });
-    const channel = stdChannel();
-    const task = runSaga({ channel, dispatch: vi.fn(), getState: state }, unreadTrackingSaga);
-    channel.put(clearAllUnread());
-    channel.put(clearAllUnread());
-    await settle();
-
-    expect(storage.setJSON.mock.calls).toEqual([
-      ['augment:unread-agents', ['agent-2', 'agent-1', 'agent-3']],
-      ['augment:unread-agents', ['agent-2', 'agent-1', 'agent-3']],
-    ]);
     task.cancel();
     await task.toPromise();
-  });
-
-  it('cancels pending hydration without dispatching or installing persistence watchers', async () => {
-    let resolve!: (value: unknown) => void;
-    storage.getJSON.mockReturnValue(new Promise((done) => (resolve = done)));
-    const channel = stdChannel();
-    const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: state }, unreadTrackingSaga);
-    task.cancel();
-    resolve(['late-agent']);
-    await task.toPromise();
-    channel.put(clearAllUnread());
-    await settle();
-
-    expect(dispatch.mock.calls).toEqual([]);
-    expect(storage.setJSON.mock.calls).toEqual([]);
   });
 });
