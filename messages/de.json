@@ -170,6 +170,7 @@
   "settings_backgroundAgent_overrides_title": "Überschreibungen pro Aktion",
   "settings_backgroundAgent_useDefaultOption": "Standardmodell für Schnellaktionen verwenden",
   "settings_backgroundAgent_customBadge": "Benutzerdefiniert",
+  "settings_backgroundAgent_providerDefault_description": "Standardmodell der Anbieter-CLI verwenden",
   "settings_gitWorkspace_loadError": "Einstellungen konnten nicht vom Backend geladen werden.",
   "settings_gitWorkspace_saveError": "Einstellungen konnten nicht gespeichert werden. Bitte versuchen Sie es erneut.",
   "settings_gitWorkspace_shell_autoDetect": "Automatisch erkennen (Systemstandard)",

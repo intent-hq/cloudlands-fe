@@ -2,11 +2,12 @@
  * Wire-contract tests for `makeBackgroundRequest`.
  *
  * Asserts the service issues a single `agent.completeOnce` JSON-RPC call
- * (PROTOCOL §5.32) with the params the daemon expects — `{ prompt, model,
- * timeoutMs, systemPrompt? }` — feeds it a PROTOCOL-shaped `{ text }` reply,
- * and asserts the caller-facing `{ success, content, error? }` shape survives
- * unchanged so the two existing consumers (intent slug generator, note-status
- * checker) continue to work.
+ * (PROTOCOL §5.32) with the params the daemon expects — `{ prompt, model?,
+ * timeoutMs, systemPrompt? }` (`model` omitted when the caller supplies
+ * none, so the daemon/CLI default applies) — feeds it a PROTOCOL-shaped
+ * `{ text }` reply, and asserts the caller-facing `{ success, content,
+ * error? }` shape survives unchanged so the two existing consumers (intent
+ * slug generator, note-status checker) continue to work.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,10 +16,7 @@ vi.mock('$features/backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: requestSpy }),
 }));
 
-import {
-  BACKGROUND_MODEL_ID,
-  BACKGROUND_REQUEST_TIMEOUT_MS,
-} from '$shared/config/background-model';
+import { BACKGROUND_REQUEST_TIMEOUT_MS } from '$shared/config/background-model';
 import { makeBackgroundRequest } from '../background-request.service';
 
 describe('makeBackgroundRequest (PROTOCOL §5.32 agent.completeOnce)', () => {
@@ -27,7 +25,7 @@ describe('makeBackgroundRequest (PROTOCOL §5.32 agent.completeOnce)', () => {
   });
   afterEach(() => vi.clearAllMocks());
 
-  it('forwards { prompt, model, timeoutMs } (defaults) to agent.completeOnce and unwraps { text }', async () => {
+  it('omits `model` when the caller supplies none (daemon/CLI default applies) and unwraps { text }', async () => {
     requestSpy.mockResolvedValue({ text: '  dark-mode  ' });
 
     const result = await makeBackgroundRequest({ prompt: 'name this task' });
@@ -35,11 +33,21 @@ describe('makeBackgroundRequest (PROTOCOL §5.32 agent.completeOnce)', () => {
     expect(requestSpy).toHaveBeenCalledTimes(1);
     expect(requestSpy).toHaveBeenCalledWith('agent.completeOnce', {
       prompt: 'name this task',
-      model: BACKGROUND_MODEL_ID,
       timeoutMs: BACKGROUND_REQUEST_TIMEOUT_MS,
     });
     // Trimmed text becomes the caller-facing `content`.
     expect(result).toEqual({ success: true, content: 'dark-mode' });
+  });
+
+  it('omits `model` when the caller passes an empty string', async () => {
+    requestSpy.mockResolvedValue({ text: 'ok' });
+
+    await makeBackgroundRequest({ prompt: 'p', model: '' });
+
+    expect(requestSpy).toHaveBeenCalledWith('agent.completeOnce', {
+      prompt: 'p',
+      timeoutMs: BACKGROUND_REQUEST_TIMEOUT_MS,
+    });
   });
 
   it('adds `systemPrompt` when supplied and honours caller `model` / `timeoutMs`', async () => {
@@ -67,7 +75,6 @@ describe('makeBackgroundRequest (PROTOCOL §5.32 agent.completeOnce)', () => {
 
     expect(requestSpy).toHaveBeenCalledWith('agent.completeOnce', {
       prompt: 'p',
-      model: BACKGROUND_MODEL_ID,
       timeoutMs: 120_000,
     });
   });
@@ -79,7 +86,6 @@ describe('makeBackgroundRequest (PROTOCOL §5.32 agent.completeOnce)', () => {
 
     expect(requestSpy).toHaveBeenCalledWith('agent.completeOnce', {
       prompt: 'p',
-      model: BACKGROUND_MODEL_ID,
       timeoutMs: BACKGROUND_REQUEST_TIMEOUT_MS,
     });
   });

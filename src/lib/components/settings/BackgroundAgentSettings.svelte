@@ -88,11 +88,16 @@
     <p class="text-sm font-semibold text-foreground">{m.settings_backgroundAgent_defaultModel_label()}</p>
   </div>
   <div class="shrink-0 w-72">
+    <!-- Empty defaultModel means "provider default": the daemon/CLI default is
+         used because background requests omit `model` on the wire. -->
     <ModelPicker
-      selectedModel={$defaultModel}
+      selectedModel={$defaultModel || undefined}
       onModelChange={(model) => appStore.dispatch(setDefaultModel(model))}
       showManageLink={false}
-      showDefaultOption={false}
+      showDefaultOption={true}
+      defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
+      defaultOptionLabel={m.chat_modelPicker_providerDefault_label()}
+      defaultOptionDescription={m.settings_backgroundAgent_providerDefault_description()}
       variant="default"
     />
   </div>
