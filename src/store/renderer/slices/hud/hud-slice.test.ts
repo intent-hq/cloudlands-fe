@@ -10,6 +10,7 @@ import {
   hudGridFilterStatesCleared,
   hudGridFilterStateToggled,
   hudQuestionCaptured,
+  hudQuestionsResolvedForWorkspace,
   hudQuestionSuperseded,
   hudRateHistoryFailed,
   hudRateHistoryLoaded,
@@ -246,8 +247,6 @@ describe('hud-slice question capture (§7.1 trailingBlocks)', () => {
   });
 
   it('supersession drops the agent question (no-op when none pends)', () => {
-    // §7.1: a question hold only breaks on a user-origin delivery, so the
-    // answered agent's next running transition supersedes the question.
     let state = hudReducer(activeState(), hudQuestionCaptured(QUESTION));
     const other = { ...QUESTION, agentId: 'agent-2' };
     state = hudReducer(state, hudQuestionCaptured(other));
@@ -255,6 +254,19 @@ describe('hud-slice question capture (§7.1 trailingBlocks)', () => {
     expect(state.questionsByAgentId).toEqual({ 'agent-2': other });
     // Unknown agent: no state churn.
     const repeat = hudReducer(state, hudQuestionSuperseded('agent-1'));
+    expect(repeat).toBe(state);
+  });
+
+  it('workspace resolution clears only that workspace\u2019s captured questions', () => {
+    // Pendingness is persistent: the daemon's needs_attention rollup dropping
+    // is the release signal, and it is workspace-scoped.
+    const elsewhere = { ...QUESTION, agentId: 'agent-9', workspaceId: 'ws-2' };
+    let state = hudReducer(activeState(), hudQuestionCaptured(QUESTION));
+    state = hudReducer(state, hudQuestionCaptured(elsewhere));
+    state = hudReducer(state, hudQuestionsResolvedForWorkspace(QUESTION.workspaceId));
+    expect(state.questionsByAgentId).toEqual({ 'agent-9': elsewhere });
+    // Nothing left for that workspace: no state churn.
+    const repeat = hudReducer(state, hudQuestionsResolvedForWorkspace(QUESTION.workspaceId));
     expect(repeat).toBe(state);
   });
 });

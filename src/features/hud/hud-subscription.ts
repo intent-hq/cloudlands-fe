@@ -50,7 +50,7 @@ import {
   hudDisplayStatusChanged,
   hudFeedEntryReceived,
   hudQuestionCaptured,
-  hudQuestionSuperseded,
+  hudQuestionsResolvedForWorkspace,
   hudRateHistoryFailed,
   hudRateHistoryLoaded,
   hudUsageFailed,
@@ -243,21 +243,6 @@ function handleEvent(event: WorkspaceEvent): void {
       appStore.dispatch(hudQuestionCaptured(question));
     }
   }
-  if (type === 'agent:status-changed') {
-    // Question supersession (§7.1): a question hold breaks only on a
-    // user-origin delivery, and that delivery starts a turn — so a running
-    // transition means the captured question was answered (or explicitly
-    // released) and must stop pending on every HUD surface.
-    const agentId = data.agentId;
-    const status = data.status;
-    if (
-      typeof agentId === 'string' &&
-      typeof status === 'string' &&
-      toHudAgentStateBucket(status) === 'running'
-    ) {
-      appStore.dispatch(hudQuestionSuperseded(agentId));
-    }
-  }
   if (type === 'workspace:attention-changed') {
     const attention = data.attention;
     if (workspaceId && typeof attention === 'string') {
@@ -273,6 +258,14 @@ function handleEvent(event: WorkspaceEvent): void {
     const displayStatus = data.displayStatus;
     if (workspaceId && isWorkspaceDisplayStatus(displayStatus)) {
       appStore.dispatch(hudDisplayStatusChanged(workspaceId, displayStatus));
+      // Question release (spec §Decisions): pendingness is persistent — a
+      // plain user message and the turn it starts no longer supersede a
+      // captured question, so the ONLY release signal the HUD sees is the
+      // daemon's rollup. A pending question always holds `needs_attention`
+      // up, so leaving it means the questions were answered or dismissed.
+      if (displayStatus !== 'needs_attention') {
+        appStore.dispatch(hudQuestionsResolvedForWorkspace(workspaceId));
+      }
     }
   }
   const entry = mapEventToFeedEntry(event);

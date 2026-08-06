@@ -300,9 +300,9 @@ describe('HUD subscription (mock backend, real store)', () => {
       ts: '2026-07-30T12:00:00.000Z',
     });
 
-    // Supersession (§7.1): a question hold breaks only on a user-origin
-    // delivery, which starts a turn — the running agent:status-changed drops
-    // the captured question so nothing keeps blinking after the answer.
+    // Persistent pendingness: a plain user message — and the turn it starts
+    // — no longer supersede the question, so a running transition leaves the
+    // capture in place.
     backend.pushEvent({
       type: 'agent:status-changed',
       workspaceId: WS_ID,
@@ -312,9 +312,22 @@ describe('HUD subscription (mock backend, real store)', () => {
       data: { agentId: 'agent-1', status: 'active', isActive: true },
     });
     await flush();
+    expect(appStore.state.hud.questionsByAgentId['agent-1']?.question).toBe('Which auth flow?');
+
+    // The daemon's rollup is the release signal: a pending question holds
+    // `needs_attention` up, so leaving it means answered or dismissed.
+    backend.pushEvent({
+      type: 'workspace:displayStatus-changed',
+      workspaceId: WS_ID,
+      id: 'evt-qc2b',
+      subscriptionId: SUB_ID,
+      timestamp: '2026-07-30T12:01:30.000Z',
+      data: { displayStatus: 'in_progress' },
+    });
+    await flush();
     expect(appStore.state.hud.questionsByAgentId['agent-1']).toBeUndefined();
 
-    // A non-running transition (idle turn end) never supersedes.
+    // A fresh capture pends again.
     backend.pushEvent({
       type: 'agent:stream:end',
       workspaceId: WS_ID,

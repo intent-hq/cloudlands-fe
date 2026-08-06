@@ -2297,6 +2297,31 @@ describe('selectHudWorkspaceCards', () => {
     expect(selectHudAttnCount.select(reraised)).toBe(1);
   });
 
+  it('a captured question keeps pending while the agent runs again (persistent contract)', () => {
+    // Spec §Decisions: a plain user message — and the turn it starts — no
+    // longer supersede the pending Q&A, so a RUNNING agent still owes an
+    // answer. Release comes from the slice (`hudQuestionsResolvedForWorkspace`
+    // on the daemon's needs_attention rollup drop) or the dismissal marker.
+    const question: HudCapturedQuestion = {
+      workspaceId: 'ws-1',
+      agentId: 'root',
+      messageId: 'msg-42',
+      header: 'Auth method',
+      question: 'Which authentication method should the endpoint use?',
+      ts: '2026-07-30T12:00:00Z',
+    };
+    const running = gatedState({ root: { status: 'active', isResponding: true, messages: [] } }, [
+      question,
+    ]);
+    expect(selectHudWorkspaceCards.select(running)[0].agents[0].hasQuestion).toBe(true);
+    expect(selectHudAttnCount.select(running)).toBe(1);
+
+    // Cleared from the slice (answered/dismissed daemon-side): nothing pends.
+    const released = gatedState({ root: { status: 'active', isResponding: true, messages: [] } });
+    expect(selectHudWorkspaceCards.select(released)[0].agents[0].hasQuestion).toBe(false);
+    expect(selectHudAttnCount.select(released)).toBe(0);
+  });
+
   it('live agent-session state wins over a stale summary status (running shows rows)', () => {
     // Summary says completed/idle (stale — refreshed only on workspace refetch),
     // but the live session slice tracks the agents as responding: the card must
