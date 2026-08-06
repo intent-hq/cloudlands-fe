@@ -1,8 +1,5 @@
 import { createAction } from '$lib/store-shim/utils/store/create-action';
 import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
-import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import type { ModelFallbackResult } from '$lib/utils/model-fallback';
-import { findBestAvailableModel } from '$lib/utils/model-fallback';
 import { m } from '$shared/paraglide/messages.js';
 
 // ============================================================================
@@ -135,21 +132,6 @@ export const restoreProviderSettings = createAction<
 export const switchProvider = createAction<
   [payload: { newProviderId: string; previousProviderId: string }]
 >('backgroundAgentSettings/switchProvider');
-
-// ============================================================================
-// Utility function (not a selector — takes runtime params)
-// ============================================================================
-
-export function getValidatedModelForType(
-  type: BackgroundAgentType,
-  defaultModel: string,
-  typeOverrides: Record<BackgroundAgentType, string>,
-  availableModels: AuggieModel[],
-): ModelFallbackResult {
-  const override = typeOverrides[type];
-  const requestedModel = override && override.length > 0 ? override : defaultModel;
-  return findBestAvailableModel(requestedModel, availableModels);
-}
 
 // ============================================================================
 // Reducer

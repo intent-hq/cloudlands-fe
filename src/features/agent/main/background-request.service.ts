@@ -76,14 +76,12 @@ export async function makeBackgroundRequest(
     Number.isFinite(requestedTimeout) && requestedTimeout > 0
       ? Math.min(requestedTimeout, DAEMON_TIMEOUT_CAP_MS)
       : BACKGROUND_REQUEST_TIMEOUT_MS;
-  const model = options.model || undefined;
-
   const params: Record<string, unknown> = { prompt, timeoutMs };
-  if (model) params.model = model;
+  if (options.model) params.model = options.model;
   if (options.systemPrompt) params.systemPrompt = options.systemPrompt;
 
   logger.info('Making background request', {
-    model: model ?? '(provider default)',
+    model: options.model || '(provider default)',
     timeoutMs,
     promptLength: prompt.length,
     hasSystemPrompt: !!options.systemPrompt,

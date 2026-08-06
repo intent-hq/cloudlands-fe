@@ -11,11 +11,14 @@
  * action and routes every entry through `applySettingsChanges` — the same
  * function `daemon-events-bridge` calls on `settings:changed`.
  *
- * READ-ONLY: this module never invokes `settings.update`. Dependency-light per
- * `src/store/renderer/AGENTS.md` — imports only the AppClient seam, the
- * configured store, slice actions, the typed `settingsChanged` trigger, and
- * the logger (NOT selectors — importing them would evaluate
- * `store.createSelector` while the store module is still mid-init).
+ * READ-ONLY (one exception): this module never invokes `settings.update`,
+ * except for the one-time legacy background-model migration below, which
+ * writes the normalized values back so the daemon's stored settings are
+ * actually migrated. Dependency-light per `src/store/renderer/AGENTS.md` —
+ * imports only the AppClient seam, the configured store, slice actions, the
+ * typed `settingsChanged` trigger, and the logger (NOT selectors — importing
+ * them would evaluate `store.createSelector` while the store module is still
+ * mid-init).
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
 import type { AppliedSettingChange } from "$lib/client/app-client";
@@ -96,6 +99,73 @@ function applyOne(change: AppliedSettingChange): void {
 }
 
 /**
+ * One-time migration of legacy persisted `haiku4.5` background-model values.
+ *
+ * The pre-provider-default persistence middleware wrote
+ * `backgroundAgents.defaultModel: "haiku4.5"` on ANY background-settings
+ * action (with '' → haiku4.5 hydration normalization), so for existing
+ * installs a persisted haiku4.5 is an artifact of the removed hardcode, not a
+ * deliberate pick. On the first hydration per install, strip haiku4.5 (default
+ * and per-type overrides) to '' (provider default) and persist the normalized
+ * values back so the daemon's stored settings are migrated too; then set a
+ * local marker so the migration never re-runs — a deliberate post-migration
+ * re-pick of haiku4.5 hydrates verbatim. The stored value alone cannot
+ * distinguish legacy artifact from genuine pick, so a cleared localStorage
+ * re-runs the migration (accepted edge; users re-pick via the explicit
+ * "Provider default"-aware picker).
+ */
+const LEGACY_BACKGROUND_MODEL = "haiku4.5";
+export const BG_MODEL_MIGRATION_MARKER_KEY = "bg-model-haiku45-migrated";
+
+function migrateLegacyBackgroundModel(
+  defaultModel: string,
+  typeOverrides: Record<BackgroundAgentType, string>,
+): { defaultModel: string; typeOverrides: Record<BackgroundAgentType, string> } {
+  try {
+    if (localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY) === "1") {
+      return { defaultModel, typeOverrides };
+    }
+  } catch {
+    // Storage unavailable: skip the migration rather than risk re-running it
+    // (and clobbering a deliberate re-pick) on every boot.
+    return { defaultModel, typeOverrides };
+  }
+  const strip = (value: string): string => (value === LEGACY_BACKGROUND_MODEL ? "" : value);
+  const migrated = {
+    defaultModel: strip(defaultModel),
+    typeOverrides: {
+      commit: strip(typeOverrides.commit),
+      pr: strip(typeOverrides.pr),
+      review: strip(typeOverrides.review),
+      fast: strip(typeOverrides.fast),
+    },
+  };
+  const changed =
+    migrated.defaultModel !== defaultModel ||
+    (Object.keys(migrated.typeOverrides) as BackgroundAgentType[]).some(
+      (type) => migrated.typeOverrides[type] !== typeOverrides[type],
+    );
+  if (changed) {
+    logger.info("migrating legacy haiku4.5 background-model settings to provider default");
+    void appClient.settings
+      .update([
+        { path: "backgroundAgents.defaultModel", value: migrated.defaultModel },
+        { path: "backgroundAgents.typeOverrides", value: migrated.typeOverrides },
+      ])
+      .catch((error) =>
+        logger.error("failed to persist legacy background-model migration", error),
+      );
+  }
+  try {
+    localStorage.setItem(BG_MODEL_MIGRATION_MARKER_KEY, "1");
+  } catch {
+    // Marker write failed; the migration may re-run next boot (harmless for
+    // legacy values, same accepted edge as a cleared localStorage).
+  }
+  return migrated;
+}
+
+/**
  * Background-agent settings reconcile two dotted paths in one dispatch.
  * Only called when the delta actually includes at least one backgroundAgents.* key.
  */
@@ -122,12 +192,11 @@ function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
       typeOverrides && typeof typeOverrides === "object" && !Array.isArray(typeOverrides)
         ? { ...fallback, ...(typeOverrides as Record<string, string>) }
         : fallback;
-    appStore.dispatch(
-      hydrateBackgroundAgentSettings({
-        defaultModel,
-        typeOverrides: overrides as Record<BackgroundAgentType, string>,
-      }),
+    const migrated = migrateLegacyBackgroundModel(
+      defaultModel,
+      overrides as Record<BackgroundAgentType, string>,
     );
+    appStore.dispatch(hydrateBackgroundAgentSettings(migrated));
   }
 }
 
