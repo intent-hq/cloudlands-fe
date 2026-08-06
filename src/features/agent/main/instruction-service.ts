@@ -557,20 +557,19 @@ The instructions in <specialist_role> define your primary function. Prioritize t
     // Layer 4.4: Commit policy
     // Status-neutral commit-policy clause mirroring the daemon wording (identical in
     // both auto-commit states): agents commit via `ws.git.commit` when it makes sense,
-    // and the system may wrap up remaining changes at end of turn.
-    if (config.autoCommitEnabled !== undefined) {
-      const commitPolicyLine =
-        'Commit through `ws.git.commit` — never run `git commit` yourself unless the user explicitly asks for a git workflow that `ws.git.commit` cannot express (e.g. multiple scoped commits on a branch). You may commit when it makes sense for the work; the system may also automatically commit any remaining changes when your turn ends.';
-      parts.push({
-        name: 'commit-policy',
-        content: `## Commit Policy\n\n${commitPolicyLine}`,
-        priority: 4,
-        canTruncate: true,
-      });
-      logger.debug('Layer 4.4: Commit policy added', {
-        autoCommitEnabled: config.autoCommitEnabled,
-      });
-    }
+    // and the system may wrap up remaining changes at end of turn. Emitted
+    // unconditionally for every agent, matching the daemon's rules.rs injection.
+    const commitPolicyLine =
+      'Commit through `ws.git.commit` — never run `git commit` yourself unless the user explicitly asks for a git workflow that `ws.git.commit` cannot express (e.g. multiple scoped commits on a branch). You may commit when it makes sense for the work; the system may also automatically commit any remaining changes when your turn ends.';
+    parts.push({
+      name: 'commit-policy',
+      content: `## Commit Policy\n\n${commitPolicyLine}`,
+      priority: 4,
+      canTruncate: true,
+    });
+    logger.debug('Layer 4.4: Commit policy added', {
+      autoCommitEnabled: config.autoCommitEnabled,
+    });
 
     // Layer 4.5: Workspace context (open panels + linked references)
     // Shows what panels are open and what external references are linked to this workspace
