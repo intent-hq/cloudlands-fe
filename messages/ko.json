@@ -2673,6 +2673,7 @@
   "layout_fileTab_showDiffIndicators_tooltip": "diff 표시기 표시",
   "layout_fileTab_deleteFile_tooltip": "파일 삭제",
   "layout_fileTab_errorLoading_label": "파일 로드 오류",
+  "layout_fileTab_outsideWorkspace_label": "작업 공간 외부의 파일 열기는 지원되지 않는 작업입니다",
   "layout_fileTab_preparing_label": "파일 로드 준비 중...",
   "layout_fileTab_file_fallback": "파일",
   "layout_noteTab_copyFullNote_tooltip": "전체 노트 복사",
