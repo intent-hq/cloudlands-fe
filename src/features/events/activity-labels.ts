@@ -304,7 +304,9 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const rawName = data?.toolName || data?.name || '';
     const cleaned = cleanToolName(rawName);
     const toolName =
-      isRawMcpName(cleaned) || isDeferredToolLoad(rawName) ? '' : truncate(cleaned, 25);
+      isRawMcpName(cleaned) || isDeferredToolLoad(rawName, data?.input ?? {})
+        ? ''
+        : truncate(cleaned, 25);
     const actor = truncate(getActorName(event, ''), 25);
     if (toolName && actor) {
       return m.events_activity_actorUsedTool_label({ actor, toolName });
@@ -733,7 +735,9 @@ export function getActivitySubject(event: WorkspaceEvent): string | null {
     const cleaned = cleanToolName(data.toolName);
     // Unstrippable raw MCP identifiers and deferred tool-loading selectors must
     // never surface as the subject
-    return !cleaned || isRawMcpName(cleaned) || isDeferredToolLoad(data.toolName) ? null : cleaned;
+    return !cleaned || isRawMcpName(cleaned) || isDeferredToolLoad(data.toolName, data.input ?? {})
+      ? null
+      : cleaned;
   }
 
   if (event.type === 'terminal:command' && data?.command) {
