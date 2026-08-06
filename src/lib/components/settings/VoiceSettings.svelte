@@ -482,7 +482,7 @@
 
       {#if $vocabulary$ !== null || $workspaceVocabularyMaxTerms$ !== null}
         <div class="space-y-3 pt-1">
-          <span class="text-xs text-foreground font-medium">
+          <span class="text-sm text-foreground font-medium">
             {m.settings_voice_workspaceVocabulary_label()}
           </span>
 
