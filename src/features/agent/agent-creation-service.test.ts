@@ -165,13 +165,6 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     expect(agentTabs(WS, AGENT)).toHaveLength(1);
   });
 
-  it("ignores the trigger when the workspace is missing (no factory call)", async () => {
-    appStore.dispatch(createAgentRequested("ws-missing"));
-    await flush();
-    await flush();
-    expect(createAgent).not.toHaveBeenCalled();
-  });
-
   // The workspace-null precondition is a fire-and-forget early return with no
   // caller promise, so it must toast instead of silently doing nothing.
   it.each([

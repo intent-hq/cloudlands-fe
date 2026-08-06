@@ -329,7 +329,11 @@ async function handleRunAgentForNote(
   const note = deps.selectNoteById.select(appStore.state, wsId, noteId);
   if (!note) {
     const errorMessage = m.agent_creation_noteNotFound_error();
-    logger.error('Cannot run agent: note not found', { workspaceId: wsId, noteId });
+    logger.error('Cannot run agent: note not found', {
+      workspaceId: wsId,
+      noteId,
+      error: errorMessage,
+    });
     showCreationMessage(errorMessage);
     return;
   }
