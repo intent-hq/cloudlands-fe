@@ -32,15 +32,12 @@ vi.mock('svelte-sonner', () => ({
 }));
 
 vi.mock('./ProviderPathConfig.svelte', async () => ({
-  default: (
-    await import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte')
-  ).default,
+  default: (await import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => mocks.state.current,
     dispatch: mocks.dispatch,
@@ -48,23 +45,18 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 async function buildState(fileSpecialists: object[]) {
-  const { initialState: specialistsInitialState } = await import(
-    '$store/renderer/slices/specialists/specialists-slice'
-  );
-  const { initialState: modelInitialState } = await import(
-    '$store/renderer/slices/model/model-slice'
-  );
-  const { createCollection } = await import(
-    '@augmentcode/themis/utils/collections/collection-utils'
-  );
+  const { initialState: specialistsInitialState } =
+    await import('$store/renderer/slices/specialists/specialists-slice');
+  const { initialState: modelInitialState } =
+    await import('$store/renderer/slices/model/model-slice');
+  const { createCollection } =
+    await import('@augmentcode/themis/utils/collections/collection-utils');
   const {
     initialState: providerCatalogInitialState,
     providerCatalogLoaded,
     providerCatalogReducer,
   } = await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
-  const { MOCK_PROVIDER_CATALOG } = await import(
-    '../../../test/fixtures/provider-catalog.fixture'
-  );
+  const { MOCK_PROVIDER_CATALOG } = await import('../../../test/fixtures/provider-catalog.fixture');
   return {
     providerCatalog: providerCatalogReducer(
       providerCatalogInitialState,
@@ -83,6 +75,17 @@ async function buildState(fileSpecialists: object[]) {
     },
     featureCodes: { activeFeatures: [], initialized: true },
     githubAuth: { isAuthenticated: false },
+    agentAvailability: {
+      providerStatusMap: {
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true, authenticated: true },
+      },
+      providerLoadingMap: { 'claude-code': false, codex: false },
+      providerUserInfoLoadingMap: {},
+      hasCheckedOnce: true,
+      watchedTerminalIds: [],
+      npxStatus: null,
+    },
   };
 }
 
@@ -207,11 +210,19 @@ describe('ProviderSelector default-unavailable honesty', () => {
   });
 
   it('shows "Default (unavailable)" for a generic active provider that is not installed', async () => {
+    const base = await buildState([]);
     mocks.state.current = {
-      ...(await buildState([])),
+      ...base,
       providerSettings: {
         activeProviderId: 'codex',
         enabledProviders: { 'claude-code': true, codex: true },
+      },
+      agentAvailability: {
+        ...base.agentAvailability,
+        providerStatusMap: {
+          ...base.agentAvailability.providerStatusMap,
+          codex: { available: false },
+        },
       },
     };
     mocks.invoke.mockImplementation(async (channel: string) => {
@@ -237,7 +248,13 @@ describe('ProviderSelector default-unavailable honesty', () => {
         };
       }
       if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
-        return { success: true, data: { auggie: null, 'claude-code': null, codex: null } };
+        return {
+          success: true,
+          data: {
+            paths: { auggie: null, 'claude-code': null, codex: null },
+            secondaryPaths: {},
+          },
+        };
       }
       return { success: true, data: {} };
     });
@@ -275,7 +292,13 @@ describe('ProviderSelector default-unavailable honesty', () => {
         return { success: true, data: availability };
       }
       if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
-        return { success: true, data: { auggie: null, 'claude-code': null, codex: null } };
+        return {
+          success: true,
+          data: {
+            paths: { auggie: null, 'claude-code': null, codex: null },
+            secondaryPaths: {},
+          },
+        };
       }
       return { success: true, data: {} };
     });
