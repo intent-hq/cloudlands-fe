@@ -554,19 +554,20 @@ The instructions in <specialist_role> define your primary function. Prioritize t
     addBehaviorSection('Layer 4.8', 'shared-prefix boundary');
     await addParentOnlyLayers();
 
-    // Layer 4.4: Auto-commit setting
-    // Tells agents whether auto-commit is enabled so they don't suggest manual commits
+    // Layer 4.4: Commit policy
+    // Status-neutral commit-policy clause mirroring the daemon wording (identical in
+    // both auto-commit states): agents commit via `ws.git.commit` when it makes sense,
+    // and the system may wrap up remaining changes at end of turn.
     if (config.autoCommitEnabled !== undefined) {
-      const autoCommitLine = config.autoCommitEnabled
-        ? 'Auto-commit is enabled for this workspace. Changes are committed automatically when tasks complete. Do not suggest committing changes.'
-        : 'Auto-commit is disabled for this workspace. The user must commit changes manually or ask you to commit.';
+      const commitPolicyLine =
+        'Commit through `ws.git.commit` — never run `git commit` yourself unless the user explicitly asks for a git workflow that `ws.git.commit` cannot express (e.g. multiple scoped commits on a branch). You may commit when it makes sense for the work; the system may also automatically commit any remaining changes when your turn ends.';
       parts.push({
-        name: 'auto-commit-setting',
-        content: `## Workspace Settings\n\n${autoCommitLine}`,
+        name: 'commit-policy',
+        content: `## Commit Policy\n\n${commitPolicyLine}`,
         priority: 4,
         canTruncate: true,
       });
-      logger.debug('Layer 4.4: Auto-commit setting added', {
+      logger.debug('Layer 4.4: Commit policy added', {
         autoCommitEnabled: config.autoCommitEnabled,
       });
     }

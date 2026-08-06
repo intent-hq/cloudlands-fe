@@ -185,7 +185,7 @@
   "settings_gitWorkspace_branchPrefix_description_before": "Prefijo para las ramas de nuevos espacios de trabajo (p. ej.,",
   "settings_gitWorkspace_branchPrefix_placeholder": "feature/ o usuario/nombre/",
   "settings_gitWorkspace_branchPrefix_invalid": "Prefijo de rama no válido",
-  "settings_gitWorkspace_autoCommit_label": "Confirmar cambios automáticamente",
+  "settings_gitWorkspace_autoCommit_label": "Activar la confirmación automática para nuevos espacios de trabajo",
   "settings_gitWorkspace_cowIsolation_label": "Usar aislamiento de copia en escritura",
   "settings_gitWorkspace_experimental_badge": "Experimental",
   "settings_gitWorkspace_cowIsolation_description": "Los nuevos espacios de trabajo se aprovisionan como clones de copia en escritura del repositorio, y cada agente delegado se ejecuta en su propio entorno aislado CoW que se fusiona automáticamente al terminar. Requiere compatibilidad CoW del sistema de archivos en la raíz de los espacios de trabajo (APFS en macOS, btrfs/XFS-reflink en Linux, ReFS/Dev Drive en Windows).",

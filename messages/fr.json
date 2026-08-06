@@ -185,7 +185,7 @@
   "settings_gitWorkspace_branchPrefix_description_before": "Préfixe des nouvelles branches d'espace de travail (p. ex.",
   "settings_gitWorkspace_branchPrefix_placeholder": "feature/ ou utilisateur/nom/",
   "settings_gitWorkspace_branchPrefix_invalid": "Préfixe de branche non valide",
-  "settings_gitWorkspace_autoCommit_label": "Commit automatique des modifications",
+  "settings_gitWorkspace_autoCommit_label": "Activer le commit automatique pour les nouveaux espaces de travail",
   "settings_gitWorkspace_cowIsolation_label": "Utiliser l'isolation par copie sur écriture",
   "settings_gitWorkspace_experimental_badge": "Expérimental",
   "settings_gitWorkspace_cowIsolation_description": "Les nouveaux espaces de travail sont provisionnés comme des clones en copie sur écriture du dépôt, et chaque agent délégué s'exécute dans son propre bac à sable CoW, fusionné automatiquement à la fin. Nécessite la prise en charge CoW du système de fichiers à la racine des espaces de travail (APFS sur macOS, btrfs/XFS-reflink sur Linux, ReFS/Dev Drive sur Windows).",

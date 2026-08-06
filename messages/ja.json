@@ -185,7 +185,7 @@
   "settings_gitWorkspace_branchPrefix_description_before": "新しいワークスペースブランチの接頭辞（例:",
   "settings_gitWorkspace_branchPrefix_placeholder": "feature/ または user/name/",
   "settings_gitWorkspace_branchPrefix_invalid": "無効なブランチ接頭辞です",
-  "settings_gitWorkspace_autoCommit_label": "変更を自動コミット",
+  "settings_gitWorkspace_autoCommit_label": "新しいワークスペースで自動コミットを有効にする",
   "settings_gitWorkspace_cowIsolation_label": "コピーオンライト（CoW）分離を使用",
   "settings_gitWorkspace_experimental_badge": "実験的",
   "settings_gitWorkspace_cowIsolation_description": "新しいワークスペースはリポジトリのコピーオンライトクローンとしてプロビジョニングされ、委任された各エージェントは独自の CoW サンドボックスで実行され、完了時に自動的にマージバックされます。ワークスペースのルートでファイルシステムの CoW サポートが必要です（macOS は APFS、Linux は btrfs/XFS-reflink、Windows は ReFS/Dev Drive）。",

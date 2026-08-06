@@ -185,7 +185,7 @@
   "settings_gitWorkspace_branchPrefix_description_before": "Präfix für neue Arbeitsbereich-Branches (z. B.",
   "settings_gitWorkspace_branchPrefix_placeholder": "feature/ oder benutzer/name/",
   "settings_gitWorkspace_branchPrefix_invalid": "Ungültiges Branch-Präfix",
-  "settings_gitWorkspace_autoCommit_label": "Änderungen automatisch committen",
+  "settings_gitWorkspace_autoCommit_label": "Auto-Commit für neue Arbeitsbereiche aktivieren",
   "settings_gitWorkspace_cowIsolation_label": "Copy-on-Write-Isolation verwenden",
   "settings_gitWorkspace_experimental_badge": "Experimentell",
   "settings_gitWorkspace_cowIsolation_description": "Neue Arbeitsbereiche werden als Copy-on-Write-Klone des Repositorys bereitgestellt, und jeder delegierte Agent läuft in einer eigenen CoW-Sandbox, die nach Abschluss automatisch zurückgeführt wird. Erfordert CoW-Unterstützung des Dateisystems im Worktree-Stammverzeichnis (APFS unter macOS, btrfs/XFS-Reflink unter Linux, ReFS/Dev Drive unter Windows).",
