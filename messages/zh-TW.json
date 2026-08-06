@@ -2023,6 +2023,7 @@
   "chat_toolClassifier_searchCommits_label": "搜尋提交",
   "chat_toolClassifier_searchWeb_label": "搜尋網頁",
   "chat_toolClassifier_search_label": "搜尋",
+  "chat_toolClassifier_loadingTools_label": "正在載入工具",
   "chat_toolClassifier_read_label": "讀取",
   "chat_toolClassifier_edit_label": "編輯",
   "chat_toolClassifier_listContents_label": "列出內容",
