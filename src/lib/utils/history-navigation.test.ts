@@ -100,6 +100,55 @@ describe('history-navigation', () => {
     });
   });
 
+  describe('webview guest events are ignored', () => {
+    let webview: HTMLElement;
+    let child: HTMLElement;
+    let cleanup: () => void;
+
+    beforeEach(() => {
+      webview = document.createElement('webview');
+      child = document.createElement('div');
+      webview.appendChild(child);
+      document.body.appendChild(webview);
+      cleanup = attachMouseHistoryNavigation(window);
+    });
+
+    afterEach(() => {
+      cleanup();
+      webview.remove();
+    });
+
+    it('back button (3) mouseup from inside a webview does not navigate', () => {
+      const e = new MouseEvent('mouseup', { button: 3, bubbles: true, cancelable: true });
+      child.dispatchEvent(e);
+      expect(backSpy).not.toHaveBeenCalled();
+      expect(forwardSpy).not.toHaveBeenCalled();
+      expect(e.defaultPrevented).toBe(false);
+    });
+
+    it('forward button (4) mouseup from inside a webview does not navigate', () => {
+      const e = new MouseEvent('mouseup', { button: 4, bubbles: true, cancelable: true });
+      child.dispatchEvent(e);
+      expect(backSpy).not.toHaveBeenCalled();
+      expect(forwardSpy).not.toHaveBeenCalled();
+      expect(e.defaultPrevented).toBe(false);
+    });
+
+    it.each([3, 4])('mouseup with button %i targeting the webview itself does not navigate', (button) => {
+      const e = new MouseEvent('mouseup', { button, bubbles: true, cancelable: true });
+      webview.dispatchEvent(e);
+      expect(backSpy).not.toHaveBeenCalled();
+      expect(forwardSpy).not.toHaveBeenCalled();
+      expect(e.defaultPrevented).toBe(false);
+    });
+
+    it.each([3, 4])('mousedown with button %i from inside a webview keeps default', (button) => {
+      const e = new MouseEvent('mousedown', { button, bubbles: true, cancelable: true });
+      child.dispatchEvent(e);
+      expect(e.defaultPrevented).toBe(false);
+    });
+  });
+
   describe('attachMouseHistoryNavigation', () => {
     it('registers window listeners that navigate on X-button mouseup', () => {
       const cleanup = attachMouseHistoryNavigation(window);

@@ -39,10 +39,21 @@ export function handleHistoryNavigateIpc(direction: unknown): void {
 }
 
 /**
+ * Electron does not isolate mouse X buttons to the `<webview>` guest — the
+ * host webContents can receive them while the pointer is inside the embedded
+ * browser. Skip those events entirely so EmbeddedBrowser keeps navigating its
+ * own webview history instead of the app history.
+ */
+function isWebviewEvent(e: MouseEvent): boolean {
+  return e.target instanceof Element && e.target.closest('webview') !== null;
+}
+
+/**
  * `mouseup` handler: X back/forward buttons navigate history; other buttons
- * (left/middle/right) are untouched.
+ * (left/middle/right) and events originating from a `<webview>` are untouched.
  */
 export function handleHistoryMouseUp(e: MouseEvent): void {
+  if (isWebviewEvent(e)) return;
   if (e.button === MOUSE_BUTTON_BACK) {
     e.preventDefault();
     navigateHistory('back');
@@ -55,8 +66,10 @@ export function handleHistoryMouseUp(e: MouseEvent): void {
 /**
  * `mousedown` handler: suppress default actions (text selection, focus side
  * effects) for the X buttons only, so the buttons act purely as navigation.
+ * Events originating from a `<webview>` are left untouched.
  */
 export function handleHistoryMouseDown(e: MouseEvent): void {
+  if (isWebviewEvent(e)) return;
   if (e.button === MOUSE_BUTTON_BACK || e.button === MOUSE_BUTTON_FORWARD) {
     e.preventDefault();
   }
