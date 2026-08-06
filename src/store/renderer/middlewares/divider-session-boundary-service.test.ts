@@ -5,7 +5,6 @@ import {
 } from "./divider-session-boundary-service";
 import {
   endDividerSession,
-  endAllDividerSessions,
   startDividerSession,
   unreadTrackingReducer,
 } from "../slices/unread-tracking/unread-tracking-slice";
@@ -21,6 +20,16 @@ import {
   setActiveTab,
 } from "../slices/panel-layout/panel-layout-slice";
 import { setActiveWorkspaceId, clearActiveWorkspace } from "../slices/workspace/workspace-slice";
+import {
+  closePanel as closeSidebarPanel,
+  closeHoverCards,
+  openPanel,
+  setChiefActiveAgentId,
+  setHoveredItem,
+  togglePanel,
+} from "../slices/sidebar-nav/sidebar-nav-slice";
+import type { SidebarNavState } from "../slices/sidebar-nav/sidebar-nav-types";
+import { CHIEF_WORKSPACE_ID } from "$shared/types/branded-ids";
 import type { StoreState } from "../types";
 import type { StoreMiddlewareAPI } from "$lib/store-shim/types";
 
@@ -28,8 +37,24 @@ function createMockState(
   activeWsId: string | null,
   openAgentIdsByWs: Record<string, string[]>,
   sessionAgentIds: Record<string, string | null>,
+  extras: {
+    sidebarNav?: Partial<SidebarNavState>;
+    chiefAgentIds?: string[];
+  } = {},
 ): Partial<StoreState> {
   return {
+    sidebarNav: {
+      hoveredItem: null,
+      expandedItem: null,
+      panelItem: null,
+      ...extras.sidebarNav,
+    } as any,
+    agentSessions: {
+      byAgentId: {},
+      agentIdsByWorkspace: extras.chiefAgentIds
+        ? { [CHIEF_WORKSPACE_ID]: extras.chiefAgentIds }
+        : {},
+    } as any,
     workspace: {
       activeWorkspaceId: activeWsId,
     } as any,
@@ -179,7 +204,7 @@ describe("divider-session-boundary-service", () => {
     expect((api as any)._dispatchedActions).toHaveLength(0);
   });
 
-  it("ends all sessions on active-workspace switch", () => {
+  it("ends non-chief sessions on active-workspace switch", () => {
     const state = createMockState("ws-1", { "ws-1": ["a1"] }, { a1: "m1", a2: null });
     const api = createMockAPI(state);
     const middleware = createDividerSessionBoundaryService()(api);
@@ -195,10 +220,13 @@ describe("divider-session-boundary-service", () => {
 
     middleware(next)(setActiveWorkspaceId("ws-2"));
 
-    expect((api as any)._dispatchedActions).toEqual([endAllDividerSessions()]);
+    expect((api as any)._dispatchedActions).toEqual([
+      endDividerSession("a1"),
+      endDividerSession("a2"),
+    ]);
   });
 
-  it("ends all sessions when the active workspace is cleared (e.g. navigating to no-workspace view)", () => {
+  it("ends non-chief sessions when the active workspace is cleared (e.g. navigating to no-workspace view)", () => {
     const state = createMockState("ws-1", { "ws-1": ["a1"] }, { a1: "m1", a2: null });
     const api = createMockAPI(state);
     const middleware = createDividerSessionBoundaryService()(api);
@@ -214,7 +242,10 @@ describe("divider-session-boundary-service", () => {
 
     middleware(next)(clearActiveWorkspace());
 
-    expect((api as any)._dispatchedActions).toEqual([endAllDividerSessions()]);
+    expect((api as any)._dispatchedActions).toEqual([
+      endDividerSession("a1"),
+      endDividerSession("a2"),
+    ]);
   });
 
   it("does not end sessions when re-selecting the already-active workspace", () => {
@@ -263,7 +294,7 @@ describe("divider-session-boundary-service", () => {
     expect((api as any)._dispatchedActions).toHaveLength(0);
 
     chain(setActiveWorkspaceId("ws-3"));
-    expect((api as any)._dispatchedActions).toEqual([endAllDividerSessions()]);
+    expect((api as any)._dispatchedActions).toEqual([endDividerSession("a1")]);
   });
 
   it("ends sessions and fires onBoundary when applyPreset replaces panels with empty ones", () => {
@@ -326,6 +357,333 @@ describe("divider-session-boundary-service", () => {
     middleware(next)(closeTabsByAgentId("ws-1", "a2"));
 
     expect((api as any)._dispatchedActions).toEqual([endDividerSession("a2")]);
+  });
+
+  describe("chief-card-close boundary", () => {
+    it("ends a chief session when the sidebar panel showing the chief card closes", () => {
+      const boundaries: DividerSessionBoundary[] = [];
+      const state = createMockState(
+        "ws-1",
+        { "ws-1": [] },
+        { chief1: "m1" },
+        { sidebarNav: { panelItem: "chief" }, chiefAgentIds: ["chief1"] },
+      );
+      const api = createMockAPI(state);
+      const middleware = createDividerSessionBoundaryService({
+        onBoundary: (b) => boundaries.push(b),
+      })(api);
+
+      const next = vi.fn((action) => {
+        if (action.type === closeSidebarPanel.type) {
+          (api as any)._updateState(
+            createMockState(
+              "ws-1",
+              { "ws-1": [] },
+              { chief1: "m1" },
+              { sidebarNav: { panelItem: null }, chiefAgentIds: ["chief1"] },
+            ),
+          );
+        }
+        return action;
+      });
+
+      middleware(next)(closeSidebarPanel());
+
+      expect((api as any)._dispatchedActions).toEqual([endDividerSession("chief1")]);
+      expect(boundaries).toEqual([{ kind: "chief-card-close", agentIds: ["chief1"] }]);
+    });
+
+    it("ends a chief session when the panel switches from chief to another item", () => {
+      const boundaries: DividerSessionBoundary[] = [];
+      const state = createMockState(
+        "ws-1",
+        { "ws-1": [] },
+        { chief1: "m1" },
+        { sidebarNav: { panelItem: "chief" }, chiefAgentIds: ["chief1"] },
+      );
+      const api = createMockAPI(state);
+      const middleware = createDividerSessionBoundaryService({
+        onBoundary: (b) => boundaries.push(b),
+      })(api);
+
+      const next = vi.fn((action) => {
+        if (action.type === togglePanel.type) {
+          (api as any)._updateState(
+            createMockState(
+              "ws-1",
+              { "ws-1": [] },
+              { chief1: "m1" },
+              { sidebarNav: { panelItem: "all-workspaces" }, chiefAgentIds: ["chief1"] },
+            ),
+          );
+        }
+        return action;
+      });
+
+      middleware(next)(togglePanel("all-workspaces"));
+
+      expect((api as any)._dispatchedActions).toEqual([endDividerSession("chief1")]);
+      expect(boundaries).toEqual([{ kind: "chief-card-close", agentIds: ["chief1"] }]);
+    });
+
+    it("ends a chief session when a hover-card-only chief view is dismissed", () => {
+      const boundaries: DividerSessionBoundary[] = [];
+      const state = createMockState(
+        "ws-1",
+        { "ws-1": [] },
+        { chief1: "m1" },
+        { sidebarNav: { panelItem: null, hoveredItem: "chief" }, chiefAgentIds: ["chief1"] },
+      );
+      const api = createMockAPI(state);
+      const middleware = createDividerSessionBoundaryService({
+        onBoundary: (b) => boundaries.push(b),
+      })(api);
+
+      const next = vi.fn((action) => {
+        if (action.type === setHoveredItem.type) {
+          (api as any)._updateState(
+            createMockState(
+              "ws-1",
+              { "ws-1": [] },
+              { chief1: "m1" },
+              { sidebarNav: { panelItem: null, hoveredItem: null }, chiefAgentIds: ["chief1"] },
+            ),
+          );
+        }
+        return action;
+      });
+
+      middleware(next)(setHoveredItem(null));
+
+      expect((api as any)._dispatchedActions).toEqual([endDividerSession("chief1")]);
+      expect(boundaries).toEqual([{ kind: "chief-card-close", agentIds: ["chief1"] }]);
+    });
+
+    it("does not end a chief session when hover ends but the panel still shows the chief card", () => {
+      const boundaries: DividerSessionBoundary[] = [];
+      const state = createMockState(
+        "ws-1",
+        { "ws-1": [] },
+        { chief1: "m1" },
+        { sidebarNav: { panelItem: "chief", hoveredItem: "chief" }, chiefAgentIds: ["chief1"] },
+      );
+      const api = createMockAPI(state);
+      const middleware = createDividerSessionBoundaryService({
+        onBoundary: (b) => boundaries.push(b),
+      })(api);
+
+      const next = vi.fn((action) => {
+        if (action.type === closeHoverCards.type) {
+          (api as any)._updateState(
+            createMockState(
+              "ws-1",
+              { "ws-1": [] },
+              { chief1: "m1" },
+              { sidebarNav: { panelItem: "chief", hoveredItem: null }, chiefAgentIds: ["chief1"] },
+            ),
+          );
+        }
+        return action;
+      });
+
+      middleware(next)(closeHoverCards());
+
+      expect((api as any)._dispatchedActions).toHaveLength(0);
+      expect(boundaries).toHaveLength(0);
+    });
+
+    it("does not dispatch when the chief card closes with no chief divider sessions", () => {
+      const boundaries: DividerSessionBoundary[] = [];
+      const state = createMockState(
+        "ws-1",
+        { "ws-1": ["a1"] },
+        { a1: "m1" },
+        { sidebarNav: { panelItem: "chief" }, chiefAgentIds: [] },
+      );
+      const api = createMockAPI(state);
+      const middleware = createDividerSessionBoundaryService({
+        onBoundary: (b) => boundaries.push(b),
+      })(api);
+
+      const next = vi.fn((action) => {
+        if (action.type === closeSidebarPanel.type) {
+          (api as any)._updateState(
+            createMockState(
+              "ws-1",
+              { "ws-1": ["a1"] },
+              { a1: "m1" },
+              { sidebarNav: { panelItem: null }, chiefAgentIds: [] },
+            ),
+          );
+        }
+        return action;
+      });
+
+      middleware(next)(closeSidebarPanel());
+
+      expect((api as any)._dispatchedActions).toHaveLength(0);
+      expect(boundaries).toHaveLength(0);
+    });
+
+    it("leaves non-chief sessions untouched when the chief card closes", () => {
+      const boundaries: DividerSessionBoundary[] = [];
+      const state = createMockState(
+        "ws-1",
+        { "ws-1": ["a1"] },
+        { a1: "m1", chief1: "m1" },
+        { sidebarNav: { panelItem: "chief" }, chiefAgentIds: ["chief1"] },
+      );
+      const api = createMockAPI(state);
+      const middleware = createDividerSessionBoundaryService({
+        onBoundary: (b) => boundaries.push(b),
+      })(api);
+
+      const next = vi.fn((action) => {
+        if (action.type === closeSidebarPanel.type) {
+          (api as any)._updateState(
+            createMockState(
+              "ws-1",
+              { "ws-1": ["a1"] },
+              { a1: "m1", chief1: "m1" },
+              { sidebarNav: { panelItem: null }, chiefAgentIds: ["chief1"] },
+            ),
+          );
+        }
+        return action;
+      });
+
+      middleware(next)(closeSidebarPanel());
+
+      expect((api as any)._dispatchedActions).toEqual([endDividerSession("chief1")]);
+      expect(boundaries).toEqual([{ kind: "chief-card-close", agentIds: ["chief1"] }]);
+    });
+
+    it("does not treat a chief thread switch (setChiefActiveAgentId) as a boundary", () => {
+      const boundaries: DividerSessionBoundary[] = [];
+      const state = createMockState(
+        "ws-1",
+        { "ws-1": [] },
+        { chief1: "m1" },
+        { sidebarNav: { panelItem: "chief" }, chiefAgentIds: ["chief1", "chief2"] },
+      );
+      const api = createMockAPI(state);
+      const middleware = createDividerSessionBoundaryService({
+        onBoundary: (b) => boundaries.push(b),
+      })(api);
+
+      middleware(vi.fn((a) => a))(setChiefActiveAgentId("chief2"));
+
+      expect((api as any)._dispatchedActions).toHaveLength(0);
+      expect(boundaries).toHaveLength(0);
+    });
+
+    it("does not treat opening the chief card (hidden → visible) as a boundary", () => {
+      const boundaries: DividerSessionBoundary[] = [];
+      const state = createMockState(
+        "ws-1",
+        { "ws-1": [] },
+        { chief1: "m1" },
+        { sidebarNav: { panelItem: null }, chiefAgentIds: ["chief1"] },
+      );
+      const api = createMockAPI(state);
+      const middleware = createDividerSessionBoundaryService({
+        onBoundary: (b) => boundaries.push(b),
+      })(api);
+
+      const next = vi.fn((action) => {
+        if (action.type === openPanel.type) {
+          (api as any)._updateState(
+            createMockState(
+              "ws-1",
+              { "ws-1": [] },
+              { chief1: "m1" },
+              { sidebarNav: { panelItem: "chief" }, chiefAgentIds: ["chief1"] },
+            ),
+          );
+        }
+        return action;
+      });
+
+      middleware(next)(openPanel("chief"));
+
+      expect((api as any)._dispatchedActions).toHaveLength(0);
+      expect(boundaries).toHaveLength(0);
+    });
+  });
+
+  describe("workspace-switch chief exemption", () => {
+    it("ends only non-chief sessions on a workspace switch with mixed sessions", () => {
+      const boundaries: DividerSessionBoundary[] = [];
+      const state = createMockState(
+        "ws-1",
+        { "ws-1": ["a1"] },
+        { a1: "m1", chief1: "m1" },
+        { sidebarNav: { panelItem: "chief" }, chiefAgentIds: ["chief1"] },
+      );
+      const api = createMockAPI(state);
+      const middleware = createDividerSessionBoundaryService({
+        onBoundary: (b) => boundaries.push(b),
+      })(api);
+
+      const next = vi.fn((action) => {
+        if (action.type === setActiveWorkspaceId.type) {
+          (api as any)._updateState(
+            createMockState(
+              "ws-2",
+              { "ws-1": ["a1"] },
+              { a1: "m1", chief1: "m1" },
+              { sidebarNav: { panelItem: "chief" }, chiefAgentIds: ["chief1"] },
+            ),
+          );
+        }
+        return action;
+      });
+
+      middleware(next)(setActiveWorkspaceId("ws-2"));
+
+      expect((api as any)._dispatchedActions).toEqual([endDividerSession("a1")]);
+      expect(boundaries).toEqual([
+        {
+          kind: "workspace-switch",
+          agentIds: ["a1"],
+          previousWorkspaceId: "ws-1",
+          nextWorkspaceId: "ws-2",
+        },
+      ]);
+    });
+
+    it("dispatches nothing on a workspace switch when every session is chief-hosted", () => {
+      const boundaries: DividerSessionBoundary[] = [];
+      const state = createMockState(
+        "ws-1",
+        { "ws-1": [] },
+        { chief1: "m1", chief2: null },
+        { sidebarNav: { panelItem: "chief" }, chiefAgentIds: ["chief1", "chief2"] },
+      );
+      const api = createMockAPI(state);
+      const middleware = createDividerSessionBoundaryService({
+        onBoundary: (b) => boundaries.push(b),
+      })(api);
+
+      const next = vi.fn((action) => {
+        if (action.type === setActiveWorkspaceId.type) {
+          (api as any)._updateState(
+            createMockState(
+              "ws-2",
+              { "ws-1": [] },
+              { chief1: "m1", chief2: null },
+              { sidebarNav: { panelItem: "chief" }, chiefAgentIds: ["chief1", "chief2"] },
+            ),
+          );
+        }
+        return action;
+      });
+
+      middleware(next)(setActiveWorkspaceId("ws-2"));
+
+      expect((api as any)._dispatchedActions).toHaveLength(0);
+      expect(boundaries).toHaveLength(0);
+    });
   });
 
   describe("onBoundary seam", () => {

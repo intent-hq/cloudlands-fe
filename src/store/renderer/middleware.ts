@@ -448,9 +448,10 @@ function buildMiddleware(): StoreMiddleware[] {
     // self-retrigger loops.
     createFileContentPruneService(),
     // End latched "New messages" divider viewing sessions at stop-looking
-    // boundaries: agent chat tab close (per-agent endDividerSession) and
-    // active-workspace switch (endAllDividerSessions). Same-workspace tab
-    // deactivation and cached panel destroy intentionally do NOT end sessions.
+    // boundaries: agent chat tab close, chief-card visibility loss (the
+    // ChiefCard's equivalent of a tab close), and active-workspace switch for
+    // non-chief sessions only. Same-workspace tab deactivation, cached panel
+    // destroy, and chief-thread switching intentionally do NOT end sessions.
     // The onBoundary seam fires the third discrete agent.markSeen trigger for
     // the affected agents — the user was looking right up to the boundary.
     createDividerSessionBoundaryService({
