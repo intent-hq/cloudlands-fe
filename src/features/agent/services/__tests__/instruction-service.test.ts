@@ -727,6 +727,36 @@ describe('InstructionService', () => {
         expect(autoCommitOn).toContain('Auto-commit is enabled');
       });
     });
+
+    describe('commit-policy clause', () => {
+      it('includes the commit-policy clause when autoCommitEnabled is undefined', async () => {
+        const prompt = await service.buildSystemPrompt({
+          agentType: 'workspace',
+          workspacePath,
+        });
+
+        expect(prompt).toContain('## Commit Policy');
+        expect(prompt).toContain('Commit through `ws.git.commit`');
+      });
+
+      it('includes the identical commit-policy clause in both auto-commit states', async () => {
+        const promptOff = await service.buildSystemPrompt({
+          agentType: 'workspace',
+          workspacePath,
+          autoCommitEnabled: false,
+        });
+        const promptOn = await service.buildSystemPrompt({
+          agentType: 'workspace',
+          workspacePath,
+          autoCommitEnabled: true,
+        });
+
+        const clause =
+          'Commit through `ws.git.commit` — never run `git commit` yourself unless the user explicitly asks for a git workflow that `ws.git.commit` cannot express (e.g. multiple scoped commits on a branch). You may commit when it makes sense for the work; the system may also automatically commit any remaining changes when your turn ends.';
+        expect(promptOff).toContain(`## Commit Policy\n\n${clause}`);
+        expect(promptOn).toContain(`## Commit Policy\n\n${clause}`);
+      });
+    });
   });
 
   describe('Caching', () => {

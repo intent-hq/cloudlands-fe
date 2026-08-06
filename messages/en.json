@@ -186,7 +186,7 @@
   "settings_gitWorkspace_branchPrefix_description_before": "Prefix for new workspace branches (e.g.,",
   "settings_gitWorkspace_branchPrefix_placeholder": "feature/ or user/name/",
   "settings_gitWorkspace_branchPrefix_invalid": "Invalid branch prefix",
-  "settings_gitWorkspace_autoCommit_label": "Auto-commit changes",
+  "settings_gitWorkspace_autoCommit_label": "Enable auto-commit for new workspaces",
   "settings_gitWorkspace_cowIsolation_label": "Use Copy-on-Write isolation",
   "settings_gitWorkspace_experimental_badge": "Experimental",
   "settings_gitWorkspace_cowIsolation_description": "New workspaces are provisioned as copy-on-write clones of the repository, and each delegated agent runs in its own CoW sandbox that is merged back automatically when it finishes. Requires filesystem CoW support on the workspaces root (APFS on macOS, btrfs/XFS-reflink on Linux, ReFS/Dev Drive on Windows).",
