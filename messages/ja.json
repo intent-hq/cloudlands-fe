@@ -3370,6 +3370,7 @@
   "terminal_quakeOverlay_clear_ariaLabel": "ターミナルをクリア",
   "terminal_quakeOverlay_name_placeholder": "名前",
   "terminal_quakeOverlay_closeTerminal_ariaLabel": "ターミナルを閉じる",
+  "terminal_quakeOverlay_dismissScriptTab_ariaLabel": "スクリプトタブを閉じる",
   "terminal_quakeOverlay_openUrl_tooltip": "URL をブラウザーで開く",
   "terminal_quakeOverlay_newTerminal_tooltip": "新しいターミナル",
   "terminal_quakeOverlay_newTerminal_ariaLabel": "新しいターミナル",

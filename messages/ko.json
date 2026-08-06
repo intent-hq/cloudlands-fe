@@ -3370,6 +3370,7 @@
   "terminal_quakeOverlay_clear_ariaLabel": "터미널 지우기",
   "terminal_quakeOverlay_name_placeholder": "이름",
   "terminal_quakeOverlay_closeTerminal_ariaLabel": "터미널 닫기",
+  "terminal_quakeOverlay_dismissScriptTab_ariaLabel": "스크립트 탭 닫기",
   "terminal_quakeOverlay_openUrl_tooltip": "브라우저에서 URL 열기",
   "terminal_quakeOverlay_newTerminal_tooltip": "새 터미널",
   "terminal_quakeOverlay_newTerminal_ariaLabel": "새 터미널",

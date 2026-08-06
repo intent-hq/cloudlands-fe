@@ -70,6 +70,7 @@ export interface ScriptRuntimeState {
   restartCount: number;
   error?: string;
   detectedUrl?: string; // URL detected from stdout (for services)
+  previouslyRunning?: boolean; // Service was running before the daemon shut down (PROTOCOL §5.8)
 }
 
 /**
