@@ -15,11 +15,6 @@ import type { ReleaseNotes, ReleaseNotesState } from "./release-notes-types";
 /** Trigger initialization: subscribe to the main-process "show" push */
 export const initializeReleaseNotes = createAction("releaseNotes/initialize");
 
-/** Set the fetched release notes and show the modal */
-export const setReleaseNotes = createAction<[notes: ReleaseNotes]>(
-  "releaseNotes/setReleaseNotes",
-);
-
 /** Set loading state */
 export const setLoading = createAction<[loading: boolean]>("releaseNotes/setLoading");
 
@@ -62,11 +57,6 @@ export const initialState: ReleaseNotesState = {
 // ---------------------------------------------------------------------------
 
 export const releaseNotesReducer = createReducer<ReleaseNotesState>(initialState)
-  .with(setReleaseNotes, (state, { payload: [notes] }) => ({
-    ...state,
-    releaseNotes: notes,
-    showModal: true,
-  }))
   .with(setLoading, (state, { payload: [loading] }) => ({
     ...state,
     loading,
