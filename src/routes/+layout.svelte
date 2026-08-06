@@ -59,6 +59,7 @@
   import Toast from '$lib/components/ui/toast/Toast.svelte';
   import { TooltipProvider } from '$lib/components/ui/tooltip';
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
+  import LinkActionMenu from '$features/navigation/LinkActionMenu.svelte';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import UpdateDownloadIndicator from '$lib/components/UpdateDownloadIndicator.svelte';
@@ -1055,6 +1056,9 @@
 
   <!-- Link Hover Tooltip (singleton — shows URL + Cmd+Click hint on link hover) -->
   <LinkTooltip />
+
+  <!-- Link Action Menu (singleton — anchored menu for GitHub issue/PR links) -->
+  <LinkActionMenu />
 
   <!-- Auto-Update Notification -->
   {#await import('$lib/components/UpdateNotification.svelte') then { default: UpdateNotification }}

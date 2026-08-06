@@ -149,6 +149,7 @@
   import { flattenAnswersToMessage } from './questions/answer-message';
   import { groupMessagesByDate } from '$lib/utils/timeFormatting';
   import {
+  animateScrollTo,
   followBottom,
   scrollToBottom as scrollToBottomUtil,
 } from '$lib/utils/smartScroll';
@@ -1900,54 +1901,14 @@
       targetScrollTop = scrollContainer.scrollTop + (elementRect.bottom - containerRect.bottom) + 1;
     }
 
-    const startScrollTop = scrollContainer.scrollTop;
-    const distance = targetScrollTop - startScrollTop;
-    const startTime = performance.now();
-
-    function easeOutCubic(t: number): number {
-      return 1 - Math.pow(1 - t, 3);
-    }
-
-    function animate(currentTime: number) {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-
-      scrollContainer!.scrollTop = startScrollTop + distance * easeOutCubic(progress);
-
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      }
-    }
-
-    requestAnimationFrame(animate);
+    animateScrollTo(() => scrollContainer, targetScrollTop, duration);
   }
 
   /**
    * Smoothly scroll to a specific position with 150ms animation.
    */
   function smoothScrollToPosition(top: number, duration: number = 150) {
-    if (!scrollContainer) return;
-
-    const startScrollTop = scrollContainer.scrollTop;
-    const distance = top - startScrollTop;
-    const startTime = performance.now();
-
-    function easeOutCubic(t: number): number {
-      return 1 - Math.pow(1 - t, 3);
-    }
-
-    function animate(currentTime: number) {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-
-      scrollContainer!.scrollTop = startScrollTop + distance * easeOutCubic(progress);
-
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      }
-    }
-
-    requestAnimationFrame(animate);
+    animateScrollTo(() => scrollContainer, top, duration);
   }
 
   // Navigate to a specific message by index
