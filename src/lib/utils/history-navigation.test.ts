@@ -5,19 +5,27 @@ import {
   handleHistoryMouseDown,
   handleHistoryMouseUp,
   handleHistoryNavigateIpc,
+  NAVIGATION_DEDUPE_WINDOW_MS,
   navigateHistory,
 } from './history-navigation';
 
 describe('history-navigation', () => {
   let backSpy: ReturnType<typeof vi.spyOn>;
   let forwardSpy: ReturnType<typeof vi.spyOn>;
+  // Advanced past the dedupe window before every test so navigateHistory's
+  // module-level same-direction suppression state never leaks across tests.
+  let now = 1_000_000;
 
   beforeEach(() => {
+    vi.useFakeTimers();
+    now += 10_000;
+    vi.setSystemTime(now);
     backSpy = vi.spyOn(history, 'back').mockImplementation(() => {});
     forwardSpy = vi.spyOn(history, 'forward').mockImplementation(() => {});
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -32,6 +40,42 @@ describe('history-navigation', () => {
       navigateHistory('forward');
       expect(forwardSpy).toHaveBeenCalledTimes(1);
       expect(backSpy).not.toHaveBeenCalled();
+    });
+
+    describe('double-fire dedupe', () => {
+      it.each(['back', 'forward'] as const)(
+        'suppresses a same-direction %s dispatch within the dedupe window',
+        (direction) => {
+          const spy = direction === 'back' ? backSpy : forwardSpy;
+          navigateHistory(direction);
+          vi.setSystemTime(now + NAVIGATION_DEDUPE_WINDOW_MS - 1);
+          navigateHistory(direction);
+          expect(spy).toHaveBeenCalledTimes(1);
+        },
+      );
+
+      it('allows a same-direction dispatch beyond the dedupe window', () => {
+        navigateHistory('back');
+        vi.setSystemTime(now + NAVIGATION_DEDUPE_WINDOW_MS);
+        navigateHistory('back');
+        expect(backSpy).toHaveBeenCalledTimes(2);
+      });
+
+      it('allows an opposite-direction dispatch within the dedupe window', () => {
+        navigateHistory('back');
+        vi.setSystemTime(now + 1);
+        navigateHistory('forward');
+        expect(backSpy).toHaveBeenCalledTimes(1);
+        expect(forwardSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it('dedupes across dispatch paths (mouse event then IPC)', () => {
+        const e = new MouseEvent('mouseup', { button: 3, cancelable: true });
+        handleHistoryMouseUp(e);
+        vi.setSystemTime(now + 1);
+        handleHistoryNavigateIpc('back');
+        expect(backSpy).toHaveBeenCalledTimes(1);
+      });
     });
   });
 
@@ -159,6 +203,20 @@ describe('history-navigation', () => {
         expect(forwardSpy).toHaveBeenCalledTimes(1);
       } finally {
         cleanup();
+      }
+    });
+
+    it('capture-phase listener navigates even when a component stops propagation', () => {
+      const cleanup = attachMouseHistoryNavigation(window);
+      const el = document.createElement('div');
+      document.body.appendChild(el);
+      el.addEventListener('mouseup', (e) => e.stopPropagation());
+      try {
+        el.dispatchEvent(new MouseEvent('mouseup', { button: 3, bubbles: true, cancelable: true }));
+        expect(backSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        cleanup();
+        el.remove();
       }
     });
 

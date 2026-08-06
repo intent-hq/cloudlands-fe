@@ -17,8 +17,32 @@ export const MOUSE_BUTTON_FORWARD = 4;
 
 export type HistoryDirection = 'back' | 'forward';
 
-/** Navigate the app history in the given direction. */
+/**
+ * Same-direction suppression window for `navigateHistory`. On Windows the X
+ * buttons can reach us twice per press — as renderer mouse events (buttons
+ * 3/4, see electron#17134) AND as an `app-command` forwarded over IPC — so
+ * the shared dispatch point dedupes same-direction calls landing within this
+ * window to a single history step.
+ */
+export const NAVIGATION_DEDUPE_WINDOW_MS = 100;
+
+let lastNavigation: { direction: HistoryDirection; at: number } | null = null;
+
+/**
+ * Navigate the app history in the given direction. Same-direction calls
+ * within NAVIGATION_DEDUPE_WINDOW_MS of the last accepted call are ignored
+ * (double-fire dedupe across the mouse-event and app-command → IPC paths).
+ */
 export function navigateHistory(direction: HistoryDirection): void {
+  const now = Date.now();
+  if (
+    lastNavigation !== null &&
+    lastNavigation.direction === direction &&
+    now - lastNavigation.at < NAVIGATION_DEDUPE_WINDOW_MS
+  ) {
+    return;
+  }
+  lastNavigation = { direction, at: now };
   if (direction === 'back') {
     history.back();
   } else {
@@ -77,13 +101,15 @@ export function handleHistoryMouseDown(e: MouseEvent): void {
 
 /**
  * Register window-level mouse X-button history navigation.
+ * Listens in the capture phase so component-level `stopPropagation` cannot
+ * swallow X-button events before they reach the window.
  * Returns a cleanup function that removes the listeners.
  */
 export function attachMouseHistoryNavigation(target: Window = window): () => void {
-  target.addEventListener('mouseup', handleHistoryMouseUp);
-  target.addEventListener('mousedown', handleHistoryMouseDown);
+  target.addEventListener('mouseup', handleHistoryMouseUp, { capture: true });
+  target.addEventListener('mousedown', handleHistoryMouseDown, { capture: true });
   return () => {
-    target.removeEventListener('mouseup', handleHistoryMouseUp);
-    target.removeEventListener('mousedown', handleHistoryMouseDown);
+    target.removeEventListener('mouseup', handleHistoryMouseUp, { capture: true });
+    target.removeEventListener('mousedown', handleHistoryMouseDown, { capture: true });
   };
 }
