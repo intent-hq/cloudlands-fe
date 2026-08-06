@@ -1,6 +1,7 @@
 <script lang="ts">
   /* eslint-disable max-lines */
   import {
+  onMount,
   tick,
   untrack,
 } from 'svelte';
@@ -30,6 +31,7 @@
   import {
   selectSelectedModel,
   selectAvailableModels,
+  selectAvailableModelsProviderId,
   selectModelFallbackInfo,
   selectModelPickerCollapsedGroups,
   selectIsLoadingModels,
@@ -49,6 +51,8 @@
   selectHasCheckedOnce,
   selectManagedInstallStatusByProvider,
 } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+  import { selectDaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { ensureProvidersChecked } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import {
   selectActiveProviderId,
   selectAvailableEnabledProviderIds,
@@ -114,12 +118,23 @@
   const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
+  const availableModelsProviderId$ = selectAvailableModelsProviderId();
   const collapsedGroupKeys$ = selectModelPickerCollapsedGroups();
   const isLoadingModels$ = selectIsLoadingModels();
   const loadError$ = selectLoadError();
   const allProviderWarnings$ = selectAllProviderWarnings();
   const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
   const hasCheckedOnce$ = selectHasCheckedOnce();
+  const daemonHealth$ = selectDaemonHealth();
+
+  // The availability status map gates which providers the picker offers, but
+  // outside onboarding nothing else triggers the bulk check — a fresh session
+  // that never mounted AgentGrid would sit on an empty map forever. The
+  // trigger is ensure-once and the middleware coalesces overlapping bulk
+  // checks, so multiple pickers mounting concurrently cause no duplicate probes.
+  onMount(() => {
+    appStore.dispatch(ensureProvidersChecked());
+  });
 
   interface Props {
     selectedModel?: string | null;
@@ -377,6 +392,14 @@
     agentProviderLoading
       ? []
       : (agentProviderModels ?? (agentProviderError ? [] : $availableModels$)),
+  );
+  // Which provider `availableModels` was loaded for: the per-agent fetch is
+  // for the effective provider by construction; the global catalog carries
+  // explicit provenance ('' before the first load).
+  const availableModelsProviderId = $derived(
+    !agentProviderLoading && agentProviderModels
+      ? effectiveProviderId
+      : $availableModelsProviderId$,
   );
   const isLoadingModels = $derived(
     agentProviderLoading ||
@@ -644,12 +667,21 @@
     },
   };
 
+  // Same provenance gate as the grouped fallback: only offer the shared
+  // catalog for a disabled effective provider when it was loaded for it.
+  const fallbackModelsMatchEffectiveProvider = $derived(
+    availableModelsProviderId !== '' &&
+      normalizeProviderId(availableModelsProviderId) === normalizeProviderId(effectiveProviderId),
+  );
+
   const flatModelOptions = $derived<DropdownOption[]>([
     ...(showDefaultOption ? [useDefaultOption] : []),
     ...$availableEnabledProviderIds$.flatMap((pid) => allProviderModels[normalizeProviderId(pid)] ?? []),
     // Keep the agent's current provider selectable even if it was since
     // disabled, so the selected model isn't treated as unavailable.
-    ...(isEffectiveProviderAvailable ? [] : toDropdownOptions(availableModels)),
+    ...(isEffectiveProviderAvailable || !fallbackModelsMatchEffectiveProvider
+      ? []
+      : toDropdownOptions(availableModels)),
   ]);
 
   const hasLoadedModelOptions = $derived(
@@ -700,8 +732,17 @@
   // Gated on hasCheckedOnce: before the first availability check resolves,
   // availableEnabledProviderIds is empty by default, which is "unknown" —
   // not "confirmed unavailable" — so this must not trip during initial load.
+  // Also gated on backend-connected (daemon health): the mount-time
+  // ensureProvidersChecked can run its bulk probe before the daemon socket is
+  // up — every probe fails and hasCheckedOnce still flips, which would
+  // transiently satisfy this condition (and fire the toast in every mounted
+  // picker) until the connect listener re-runs the check and heals the map.
+  // A daemon-down failure is surfaced by the daemon-loss UI, not this notice.
   const hasNoAvailableProvider = $derived(
-    !providerId && $hasCheckedOnce$ && $availableEnabledProviderIds$.length === 0,
+    !providerId &&
+      $hasCheckedOnce$ &&
+      $daemonHealth$ !== 'down' &&
+      $availableEnabledProviderIds$.length === 0,
   );
 
   let noProviderToastShown = false;
@@ -746,6 +787,7 @@
       useDefaultOption,
       effectiveProviderId,
       availableModels,
+      availableModelsProviderId,
       enabledProviderIds: $availableEnabledProviderIds$,
       allProviderModels,
       allProviderLoading,

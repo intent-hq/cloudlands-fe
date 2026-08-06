@@ -192,6 +192,13 @@ describe('ProviderSelector disable guard', () => {
       expect.objectContaining({ type: 'providerSettings/setProviderEnabled' }),
     );
   });
+
+  it('dispatches ensureProvidersChecked on mount so availability is populated outside onboarding', async () => {
+    await renderSelector();
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'agentAvailability/ensureProvidersChecked' }),
+    );
+  });
 });
 
 describe('ProviderSelector default-unavailable honesty', () => {

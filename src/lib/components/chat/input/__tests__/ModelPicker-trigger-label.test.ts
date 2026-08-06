@@ -177,6 +177,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectSelectedModel: () => selectedModel$,
   selectAvailableModels: () => availableModels$,
+  selectAvailableModelsProviderId: () => writable('auggie'),
   selectModelFallbackInfo: () => writable(null),
   selectModelPickerCollapsedGroups: () => writable([]),
   selectIsLoadingModels: () => isLoadingModels$,
@@ -187,6 +188,10 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
   selectManagedInstallStatusByProvider: () => writable(null),
   selectHasCheckedOnce: () => writable(true),
+}));
+
+vi.mock('$store/renderer/slices/daemon-health/daemon-health-selectors', () => ({
+  selectDaemonHealth: () => writable('healthy'),
 }));
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({

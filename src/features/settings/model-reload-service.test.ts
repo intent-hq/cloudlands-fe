@@ -51,7 +51,7 @@ describe("model-reload-service (PROTOCOL §5.30 models.list wire)", () => {
     listSpy.mockReset();
     // Reset the picker to a known non-empty state so the reload's clearing
     // step is observable.
-    appStore.dispatch(setAvailableModels([{ value: "stale", label: "Stale" }]));
+    appStore.dispatch(setAvailableModels([{ value: "stale", label: "Stale" }], "auggie"));
   });
 
   it("fetches models.list, clears the stale catalog, and drives loading → success", async () => {
@@ -104,5 +104,58 @@ describe("model-reload-service (PROTOCOL §5.30 models.list wire)", () => {
         error: expect.stringContaining("No models available"),
       }),
     );
+  });
+
+  it("discards a stale overlapping reload so a slow first fetch cannot overwrite the newer catalog", async () => {
+    // Regression (generation guard): reload for auggie is in flight when the
+    // user switches to codex and a second reload fires. The codex fetch
+    // resolves first; when auggie's slow fetch finally resolves it must be
+    // discarded — otherwise the store would end with auggie's models (and
+    // auggie provenance) while codex is active.
+    const CODEX_ROW = {
+      id: "gpt-5-codex",
+      name: "GPT-5 Codex",
+      provider: "codex",
+      description: "Codex model",
+    };
+    let resolveSlowAuggie:
+      | ((value: { models: (typeof SONNET_ROW)[]; source: string }) => void)
+      | undefined;
+    listSpy
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSlowAuggie = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ models: [CODEX_ROW], source: "codex" });
+
+    appStore.dispatch(reloadModelsForProvider());
+    await flush();
+
+    appStore.dispatch(setActiveProvider("codex"));
+    appStore.dispatch(reloadModelsForProvider());
+    await flush();
+
+    expect(appStore.state.model.availableModelsProviderId).toBe("codex");
+    expect(getItems(appStore.state.model.availableModels)).toEqual([
+      expect.objectContaining({ value: "gpt-5-codex" }),
+    ]);
+
+    // The stale auggie response lands late — it must be ignored entirely
+    // (catalog, provenance, and loading state all keep the codex result).
+    resolveSlowAuggie?.({ models: [SONNET_ROW], source: "auggie" });
+    await flush();
+
+    expect(appStore.state.model.availableModelsProviderId).toBe("codex");
+    expect(getItems(appStore.state.model.availableModels)).toEqual([
+      expect.objectContaining({ value: "gpt-5-codex" }),
+    ]);
+    expect(appStore.state.model.loadingState.codex).toEqual(
+      expect.objectContaining({ status: "success" }),
+    );
+
+    // Restore the suite-wide active provider.
+    appStore.dispatch(setActiveProvider("auggie"));
   });
 });

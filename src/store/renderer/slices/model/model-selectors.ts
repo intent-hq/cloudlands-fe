@@ -59,6 +59,16 @@ export const selectAvailableModels = store.createSelector((state): AuggieModel[]
   return getItems(selectAvailableModelsCollection.select(state));
 });
 
+/**
+ * Provider the global `availableModels` catalog was loaded for ('' before
+ * the first load). Consumers rendering the catalog under a provider label
+ * (e.g. the picker's disabled-provider fallback group) must check this
+ * matches, or stale rows from a previous provider get mislabeled.
+ */
+export const selectAvailableModelsProviderId = store.createSelector((state): string => {
+  return state.model.availableModelsProviderId;
+});
+
 const selectProviderLoadingState = store.createSelector(
   (state, providerId?: string): ModelLoadingState | null => {
     const effectiveProviderId = getEffectiveProviderId(state, providerId);
