@@ -286,8 +286,7 @@ import { setupWorkspaceSummaryIPC } from '../features/workspace/main/workspace-s
 import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
 import { setMainLanguagePreference, getMainLanguagePreference } from './main-locale';
-import { buildQuitDialogOptions } from './quit-dialog';
-import { listRespondingAgents } from './running-agents';
+import { confirmQuitWithRunningAgents } from './quit-confirmation';
 import { m } from '../shared/paraglide/messages.js';
 
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
@@ -1580,51 +1579,12 @@ app.whenReady().then(async () => {
 // This window-all-closed handler was duplicated and has been removed.
 // The proper handler is defined below at line 448.
 
-/**
- * Show the running-agent confirmation prompt if any agents are active.
- *
- * Returns true if the caller should proceed with quit/teardown (no agents
- * running, or user confirmed), false if the user cancelled.
- *
- * Shared between `before-quit` (Cmd+Q path) and `window-all-closed` (non-macOS
- * last-window-close path) so both paths honor the prompt. Historically only
- * `before-quit` checked, but `window-all-closed` tears down providers before
- * `app.quit()` fires, so by the time `before-quit` runs the active-stream
- * check sees zero and silently skips the prompt.
- */
-async function confirmQuitWithRunningAgents(): Promise<boolean> {
-  // Live agent turns run inside the intentd daemon (agent.sendMessage, PROTOCOL
-  // §5.5), so the daemon's per-agent `isResponding` flag is the source of truth
-  // for "still running". The old check read main-process stream/accumulator
-  // state that no longer exists post-port (the main Redux store was removed),
-  // which crashed with an unhandled rejection on every quit.
-  const respondingAgents = await listRespondingAgents(getBackendClient());
-  if (respondingAgents.length === 0) {
-    return true;
-  }
-
-  logger.info('Active agents detected during quit attempt', {
-    count: respondingAgents.length,
-    agentIds: respondingAgents.map((s) => s.agentId),
-  });
-
-  // The dialog copy branches on the connection mode (see quit-dialog.ts):
-  // in sidecar mode quitting shuts down the daemon and its running agents
-  // (destructive framing, resume on next launch); in external mode the daemon
-  // outlives the app, so closing is non-destructive and the copy lists the
-  // agents that keep running in the background.
-  const result = await dialog.showMessageBox(
-    buildQuitDialogOptions(getConnectionMode(), respondingAgents),
-  );
-
-  if (result.response === 1) {
-    logger.info('User cancelled quit due to running agents');
-    return false;
-  }
-
-  logger.info('User confirmed quit despite running agents');
-  return true;
-}
+// The running-agent confirmation prompt lives in quit-confirmation.ts so the
+// auto-update service can run it BEFORE quitAndInstall() without importing
+// this module (index.ts imports auto-update.service.ts — importing back would
+// be circular). Shared between `before-quit` (Cmd+Q path) and
+// `window-all-closed` (non-macOS last-window-close path) so both paths honor
+// the prompt.
 
 app.on('before-quit', async (event: Electron.Event) => {
   logger.info('App before-quit event triggered');
@@ -1638,9 +1598,14 @@ app.on('before-quit', async (event: Electron.Event) => {
     // and preventDefault must be called synchronously within the event handler.
     await saveWindowSessions();
 
-    const proceed = await confirmQuitWithRunningAgents();
-    if (!proceed) {
-      return;
+    // Skip the prompt when quitting to install an update: installUpdate()
+    // already ran the confirmation while the windows were still open, so
+    // re-prompting here would double-prompt the confirmed install path.
+    if (!isInstallingUpdate) {
+      const proceed = await confirmQuitWithRunningAgents();
+      if (!proceed) {
+        return;
+      }
     }
 
     await gracefulShutdown();
