@@ -262,6 +262,33 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(agentsQueue).toHaveBeenCalledWith(AGENT, "queue me");
   });
 
+  it("queue-on-send: a tagged send bypasses the queue so the Q&A answer tag is never dropped", async () => {
+    // `agent.queueMessage` has no messageMetadata param (PROTOCOL §5.5), so
+    // queuing a wizard answer would strip its `question_answers` tag and the
+    // answer would resolve nothing — the wizard re-surfaces and the daemon's
+    // question hold keeps parking deliveries. Tagged sends take the direct
+    // front door, which is never held for user-origin sends.
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    const messageMetadata = {
+      type: "question_answers",
+      answeredQuestionsMessageId: "msg-a1",
+    };
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "Q: ?\nA: yes", messageMetadata }));
+    await flush();
+    await flush();
+
+    expect(agentsQueue).not.toHaveBeenCalled();
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    const [, , , optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { messageMetadata?: Record<string, unknown> },
+    ];
+    expect(optionsArg.messageMetadata).toEqual(messageMetadata);
+  });
+
   it("queue-on-send: forwards imageBlocks to agents.queue so attachments survive queuing (§5.5)", async () => {
     // PROTOCOL §5.5: agent.queueMessage accepts optional imageBlocks. The
     // queue-on-send branch must pass the composer's attachments through the

@@ -367,6 +367,70 @@ describe('HUD subscription (mock backend, real store)', () => {
     expect(appStore.state.hud.questionsByAgentId['agent-1']?.question).toBe('Which target?');
   });
 
+  it('keeps a captured question when the workspace transitions to a status OUTRANKING needs_attention', async () => {
+    scriptHappyBackend(backend);
+    stop = startHudSubscription();
+    await flush();
+
+    backend.pushEvent({
+      type: 'agent:stream:end',
+      workspaceId: WS_ID,
+      id: 'evt-hq1',
+      subscriptionId: SUB_ID,
+      timestamp: '2026-07-30T12:00:00.000Z',
+      data: {
+        agentId: 'agent-1',
+        messageId: 'msg-1',
+        trailingBlocks: [
+          {
+            type: 'resource',
+            resource: {
+              uri: 'intent-question://tar-1',
+              name: 'Auth method',
+              mimeType: 'application/vnd.intent.question+json',
+              text: JSON.stringify({
+                attachmentId: 'tar-1',
+                header: 'Auth method',
+                question: 'Which auth flow?',
+                multiSelect: false,
+              }),
+            },
+          },
+        ],
+      },
+    });
+    await flush();
+    expect(appStore.state.hud.questionsByAgentId['agent-1']?.question).toBe('Which auth flow?');
+
+    // `failed`/`blocked` outrank `needs_attention` in the rollup, so they MASK
+    // a still-pending question rather than resolving it — releasing here would
+    // drop a question the user still owes an answer to.
+    for (const displayStatus of ['failed', 'blocked'] as const) {
+      backend.pushEvent({
+        type: 'workspace:displayStatus-changed',
+        workspaceId: WS_ID,
+        id: `evt-hq-${displayStatus}`,
+        subscriptionId: SUB_ID,
+        timestamp: '2026-07-30T12:01:00.000Z',
+        data: { displayStatus },
+      });
+      await flush();
+      expect(appStore.state.hud.questionsByAgentId['agent-1']?.question).toBe('Which auth flow?');
+    }
+
+    // A status ranking below it still releases.
+    backend.pushEvent({
+      type: 'workspace:displayStatus-changed',
+      workspaceId: WS_ID,
+      id: 'evt-hq-idle',
+      subscriptionId: SUB_ID,
+      timestamp: '2026-07-30T12:02:00.000Z',
+      data: { displayStatus: 'idle' },
+    });
+    await flush();
+    expect(appStore.state.hud.questionsByAgentId['agent-1']).toBeUndefined();
+  });
+
   it('maps a PROTOCOL-shaped agent:failed event into an err feed row, newest first', async () => {
     scriptHappyBackend(backend);
     stop = startHudSubscription();

@@ -227,7 +227,25 @@ async function dispatchToLifecycle(
   // re-SENDS them (not re-applies: daemon-side per-turn model extraction is
   // deferred, PROTOCOL §5.5); the session model is never mutated (one-shot
   // semantics, #483).
-  if (!forceSubmit && deps.selectAgentIsResponding.select(appStore.state, agentId)) {
+  //
+  // EXCEPTION 2: a tagged send (`messageMetadata` — the Q&A wizard's
+  // `question_answers` answer tag) bypasses queue-on-send too, because
+  // `agent.queueMessage` has no `messageMetadata` param either and an
+  // untagged answer now resolves NOTHING: the wizard would re-surface
+  // questions the user already answered and the daemon's question hold
+  // would keep parking automatic deliveries. The wizard only renders while
+  // the agent's own turn is idle, but the flag can flip between render and
+  // this dispatch, so the guard is what makes that reasoning safe. The
+  // direct front door is the correct destination regardless — PROTOCOL §5.5
+  // documents `agent.sendMessage` as a user-origin send that is never held,
+  // and a genuinely busy agent auto-queues daemon-side WITH the tag intact
+  // (the enqueue captures `messageMetadata` and the drain-time persist
+  // writes it).
+  if (
+    !forceSubmit &&
+    options.messageMetadata === undefined &&
+    deps.selectAgentIsResponding.select(appStore.state, agentId)
+  ) {
     appStore.dispatch(clearChatDraft(wsId, agentId));
     try {
       // Image attachments must survive queue-on-send: forward them on the
@@ -320,10 +338,10 @@ async function dispatchToLifecycle(
       // The daemon will preempt the in-flight turn instead of queueing.
       priority: options.priority,
       // Opaque per-message tag (PROTOCOL §5.5) — the Q&A wizard's
-      // `question_answers` answer tag rides here. NOTE: it cannot ride the
-      // queue-on-send path above (`agent.queueMessage` has no
-      // messageMetadata param), but the wizard only renders while the
-      // agent's own turn is idle, so answers take this direct path.
+      // `question_answers` answer tag rides here. A tagged send always
+      // reaches this direct path: `agent.queueMessage` has no
+      // messageMetadata param, so the queue-on-send branch above skips
+      // tagged sends outright rather than dropping the tag.
       messageMetadata: options.messageMetadata,
     });
     if (wsId === CHIEF_WORKSPACE_ID) {

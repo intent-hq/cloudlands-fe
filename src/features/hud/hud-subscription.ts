@@ -41,7 +41,11 @@ import {
 } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
 import { getItems } from '$lib/store-shim/utils/collections/collection-utils';
-import { isWorkspaceDisplayStatus, WorkspaceStatus } from '$shared/types';
+import {
+  isWorkspaceDisplayStatus,
+  WorkspaceStatus,
+  type WorkspaceDisplayStatus,
+} from '$shared/types';
 import { hydrateAgentsRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   hudActivated,
@@ -223,6 +227,35 @@ function withFirstStartRewrite(entry: HudFeedEntry): HudFeedEntry {
   return { ...entry, kind: HUD_AGENT_DELEGATED_FEED_KIND };
 }
 
+/**
+ * displayStatus values whose arrival releases a workspace's captured questions
+ * (see the dispatch site below). An ALLOWLIST, not `!== 'needs_attention'`,
+ * because the rollup is precedence-ordered and a HIGHER-ranked signal masks a
+ * still-pending question rather than resolving it: intentd#945 extends the
+ * rollup with `failed`/`blocked`, which outrank `needs_attention`, so another
+ * agent failing or raising a blocker mid-question would transition the
+ * workspace and wrongly clear the capture. Only statuses that rank BELOW
+ * `needs_attention` imply the hold is genuinely gone. Unknown/future wire
+ * values never reach here (`isWorkspaceDisplayStatus` rejects them) and, being
+ * absent from this set, would not release either.
+ *
+ * Residual (either way): the rollup is workspace-scoped, so an answered
+ * question whose workspace still holds attention for an unrelated agent stays
+ * captured until the workspace clears. Per-agent release arrives with the
+ * daemon's persisted pending-questions marker (the intentd counterpart of this
+ * change), which the HUD will read off session metadata exactly like it
+ * already reads `dismissedQuestionsMessageId`.
+ */
+const QUESTION_RELEASING_DISPLAY_STATUSES: ReadonlySet<WorkspaceDisplayStatus> = new Set([
+  'not_started',
+  'in_progress',
+  'idle',
+  'complete',
+  'pr_ready',
+  'pr_open',
+  'pr_merged',
+]);
+
 /** Whether a status_update trigger repeats the workspace's last shown text. */
 function isDuplicateStatusUpdate(trigger: HudTakeoverTrigger): boolean {
   if (trigger.kind !== 'status_update') return false;
@@ -262,16 +295,9 @@ function handleEvent(event: WorkspaceEvent): void {
       // plain user message and the turn it starts no longer supersede a
       // captured question, so the ONLY release signal the HUD sees is the
       // daemon's rollup. A pending question always holds `needs_attention`
-      // up, so leaving it means the questions were answered or dismissed.
-      //
-      // Residual: the rollup is workspace-scoped, so an answered question
-      // whose workspace still holds `needs_attention` for an unrelated reason
-      // (another agent's blocker/discussion request) stays captured until the
-      // workspace clears. Per-agent release arrives with the daemon's
-      // persisted pending-questions marker (the intentd counterpart of this
-      // change), which the HUD will read off session metadata exactly like it
-      // already reads `dismissedQuestionsMessageId`.
-      if (displayStatus !== 'needs_attention') {
+      // up, so landing on a status that ranks BELOW it means the questions
+      // were answered or dismissed.
+      if (QUESTION_RELEASING_DISPLAY_STATUSES.has(displayStatus)) {
         appStore.dispatch(hudQuestionsResolvedForWorkspace(workspaceId));
       }
     }
