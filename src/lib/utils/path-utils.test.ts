@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isAbsolutePathOutsideRoot } from './path-utils';
+import { isAbsolutePathOutsideRoot, isTildePath } from './path-utils';
 
 describe('isAbsolutePathOutsideRoot', () => {
   it('returns false for relative paths (they resolve against the root)', () => {
@@ -55,5 +55,31 @@ describe('isAbsolutePathOutsideRoot', () => {
 
   it('keeps Unix path comparison case-sensitive (intended)', () => {
     expect(isAbsolutePathOutsideRoot('/Users/x/Repo/src/a.ts', '/Users/x/repo')).toBe(true);
+  });
+});
+
+describe('isTildePath', () => {
+  it('detects home-relative tilde paths', () => {
+    expect(isTildePath('~')).toBe(true);
+    expect(isTildePath('~/')).toBe(true);
+    expect(isTildePath('~/.claude/projects/x.jsonl')).toBe(true);
+    expect(isTildePath('~\\notes\\x.md')).toBe(true);
+  });
+
+  it('detects user-specific home forms', () => {
+    expect(isTildePath('~user/notes.md')).toBe(true);
+    expect(isTildePath('~user')).toBe(true);
+  });
+
+  it('returns false for paths that merely contain a tilde', () => {
+    expect(isTildePath('a~b')).toBe(false);
+    expect(isTildePath('./~')).toBe(false);
+    expect(isTildePath('./~/x.md')).toBe(false);
+    expect(isTildePath('src/~backup.ts')).toBe(false);
+    expect(isTildePath('/home/dev/~x')).toBe(false);
+  });
+
+  it('returns false for empty input', () => {
+    expect(isTildePath('')).toBe(false);
   });
 });

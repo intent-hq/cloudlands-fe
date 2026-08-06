@@ -30,7 +30,7 @@
   import { appClient } from '$lib/client';
   import { LineType } from '$shared/types';
   import { getLanguageFromPath } from '$lib/utils/file-utils';
-  import { isAbsolutePathOutsideRoot } from '$lib/utils/path-utils';
+  import { isAbsolutePath, isAbsolutePathOutsideRoot, isTildePath } from '$lib/utils/path-utils';
   import {
   parseHunksToLineChanges,
   type LineChange,
@@ -134,14 +134,20 @@
 
   // Computed values
   // Absolute paths outside the workspace root (e.g. a chat chip pointing at
-  // ~/.claude/...) are not readable through the daemon's contained file.*
-  // surface — render a dedicated warning instead of attempting the read.
+  // /Users/dev/.claude/...) are not readable through the daemon's contained
+  // file.* surface — render a dedicated warning instead of attempting the read.
+  // Tilde paths join the same bucket: the renderer cannot expand `~` (no Node
+  // APIs, see `expandPath`), so a read would be doomed regardless of location.
   const isOutsideWorkspace = $derived(
-    !!(tab.filePath && repoPath && isAbsolutePathOutsideRoot(tab.filePath, repoPath)),
+    !!(
+      tab.filePath &&
+      (isTildePath(tab.filePath) ||
+        (repoPath && isAbsolutePathOutsideRoot(tab.filePath, repoPath)))
+    ),
   );
   const fileAbsolutePath = $derived(
     tab.filePath && repoPath
-      ? tab.filePath.startsWith('/')
+      ? isAbsolutePath(tab.filePath)
         ? tab.filePath
         : `${repoPath}/${tab.filePath}`
       : null,
