@@ -167,6 +167,25 @@ function getCreationError(error: unknown, fallback?: string): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Lazily pull the toast lib so this middleware-reachable module stays light. */
+async function getToast() {
+  const { toast } = await import('svelte-sonner');
+  return toast;
+}
+
+/**
+ * Surface a creation failure raised on a fire-and-forget path, which has no
+ * caller promise to settle. Best-effort: never throws.
+ */
+async function showCreationError(error: unknown): Promise<void> {
+  try {
+    const toast = await getToast();
+    toast.error(cleanErrorMessage(getCreationError(error)));
+  } catch (toastError) {
+    logger.error('Failed to surface agent-creation error', toastError);
+  }
+}
+
 /** Cmd/Ctrl+T and the New-agent button: create a chat agent and open its tab. */
 async function handleCreateAgentRequested(wsId: string, agentType?: string): Promise<void> {
   const deps = await loadCreationDeps();
@@ -193,12 +212,14 @@ async function handleCreateAgentRequested(wsId: string, agentType?: string): Pro
     });
     if (!result.success || !result.agent) {
       logger.error('Failed to create agent', { workspaceId: wsId, error: result.error });
+      void showCreationError(result.error);
       return;
     }
     registerCreatedAgent(wsId, result.agent, agents);
     openCreatedAgentTab(wsId, result.agent.id);
   } catch (error) {
     logger.error('Failed to create agent', { workspaceId: wsId, error: getCreationError(error) });
+    void showCreationError(error);
   }
 }
 
@@ -254,6 +275,7 @@ async function handleCreateAgentWithSpecialist(
     });
     if (!result.success || !result.agent) {
       logger.error('Failed to create specialist agent', { workspaceId: wsId, error: result.error });
+      void showCreationError(result.error);
       return;
     }
     registerCreatedAgent(wsId, result.agent, agents);
@@ -263,6 +285,7 @@ async function handleCreateAgentWithSpecialist(
       workspaceId: wsId,
       error: getCreationError(error),
     });
+    void showCreationError(error);
   }
 }
 
@@ -324,6 +347,7 @@ async function handleRunAgentForNote(
         noteId,
         error: result.error,
       });
+      void showCreationError(result.error);
       return;
     }
     openCreatedAgentTab(wsId, result.agentId);
@@ -333,6 +357,7 @@ async function handleRunAgentForNote(
       noteId,
       error: getCreationError(error),
     });
+    void showCreationError(error);
   }
 }
 
