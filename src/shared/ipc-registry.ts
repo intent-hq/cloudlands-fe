@@ -309,6 +309,9 @@ export const IPC_CHANNELS = {
     ROOT: 'app:root',
     UI_NAVIGATE: 'app:ui:navigate',
     UI_HIGHLIGHT: 'app:ui:highlight',
+    // Main → renderer: app history navigation ('back' | 'forward'), forwarded
+    // from Windows `app-command` (browser-backward/browser-forward) mouse X buttons.
+    HISTORY_NAVIGATE: 'app:history-navigate',
   },
 
   // Window Management
@@ -937,6 +940,7 @@ export const EVENT_CHANNELS = [
   'app:ready',
   'app:ui:navigate',
   'app:ui:highlight',
+  'app:history-navigate', // Windows app-command X buttons → renderer history back/forward
   'window:ready',
   'window:focus',
   'window:blur',
