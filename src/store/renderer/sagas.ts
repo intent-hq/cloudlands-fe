@@ -48,6 +48,7 @@ import {
 import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
+import { releaseNotesSaga } from './slices/release-notes/sagas/release-notes-saga';
 import { sentryAuthSaga } from './slices/sentry-auth/sagas/sentry-auth-saga';
 import { settingsHydrationSaga } from './slices/settings-events/sagas/settings-hydration-saga';
 import { sidebarNavSaga } from './slices/sidebar-nav/sagas/sidebar-nav-saga';
@@ -130,6 +131,7 @@ export const sagas = [
   sidebarNavSaga,
   panelLayoutSaga,
   unreadTrackingSaga,
+  releaseNotesSaga,
   browserPersistenceSaga,
   fileContentPruneSaga,
   terminalPersistenceSaga,
