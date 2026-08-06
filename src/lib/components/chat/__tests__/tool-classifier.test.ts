@@ -6,11 +6,7 @@
  * in the UI when displaying tool calls.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { classifyTool, cleanToolName, extractMcpSource, isRawMcpName } from '../tool-classifier';
 
 describe('tool-classifier', () => {
@@ -99,6 +95,57 @@ describe('tool-classifier', () => {
     });
   });
 
+  describe('deferred tool-loading (ToolSearch)', () => {
+    it('should relabel a ToolSearch select: query as "Loading tools" without the raw query', () => {
+      const result = classifyTool('ToolSearch', {
+        query: 'select:mcp__workspace_api,mcp__workspace-mcp__workspace_api',
+      });
+
+      expect(result.category).toBe('search');
+      expect(result.verb).toBe('Loading tools');
+      // No raw select:/mcp__ text leaks into the label.
+      expect(result.subject).toBeNull();
+      expect(result.verb).not.toContain('select:');
+    });
+
+    it('should relabel a select: query even when the tool name is an ACP title override', () => {
+      const result = classifyTool('Search tools', {
+        query: 'select:mcp__workspace-mcp__workspace_api',
+      });
+
+      expect(result.category).toBe('search');
+      expect(result.verb).toBe('Loading tools');
+      expect(result.subject).toBeNull();
+    });
+
+    it('should relabel an ACP title that embeds the select: selector', () => {
+      const result = classifyTool('Search select:mcp__workspace-mcp__workspace_api', {});
+
+      expect(result.verb).toBe('Loading tools');
+      expect(result.subject).toBeNull();
+      expect(result.verb).not.toContain('mcp__');
+    });
+
+    it('should relabel when the select: selector arrives via _acpTitle', () => {
+      const result = classifyTool('ToolSearchTool', {
+        _acpTitle: 'Search select:mcp__workspace-mcp__workspace_api',
+      });
+
+      expect(result.verb).toBe('Loading tools');
+      expect(result.subject).toBeNull();
+    });
+
+    it('should still show the query for a genuine search tool', () => {
+      const result = classifyTool('web-search', {
+        query: 'how to use TypeScript generics',
+      });
+
+      expect(result.category).toBe('search');
+      expect(result.verb).toBe('Search web');
+      expect(result.subject).toBe('how to use TypeScript generics');
+    });
+  });
+
   describe('terminal operations', () => {
     it('should classify "launch-process" as terminal', () => {
       const result = classifyTool('launch-process', {
@@ -111,31 +158,35 @@ describe('tool-classifier', () => {
       expect(result.verb).toBe('Run');
     });
 
-    it('should use description as subject when available (for terminal tools)', () => {
+    it('should use description as subject and drop the "Run" verb when available (for terminal tools)', () => {
       const result = classifyTool('bash', {
         command: 'npm test',
         description: 'Install dependencies',
       });
 
       expect(result.category).toBe('terminal');
+      // Claude-style description carries its own verb, so "Run" is dropped.
+      expect(result.verb).toBe('');
       expect(result.subject).toBe('Install dependencies');
     });
 
-    it('should fallback to command when description is not available', () => {
+    it('should keep the "Run" verb for a bare command with no description', () => {
       const result = classifyTool('bash', {
         command: 'npm test',
       });
 
       expect(result.category).toBe('terminal');
+      expect(result.verb).toBe('Run');
       expect(result.subject).toBe('npm test');
     });
 
-    it('should handle missing command by using description', () => {
+    it('should handle missing command by using description and dropping "Run"', () => {
       const result = classifyTool('bash', {
         description: 'Install dependencies',
       });
 
       expect(result.category).toBe('terminal');
+      expect(result.verb).toBe('');
       expect(result.subject).toBe('Install dependencies');
     });
 
@@ -274,13 +325,15 @@ describe('tool-classifier', () => {
 
     it('should correctly classify actual tool names', () => {
       // str-replace-editor should always be Edit
-      expect(classifyTool('str-replace-editor', { path: 'f.ts', command: 'str_replace' }).verb).toBe(
-        'Edit',
-      );
+      expect(
+        classifyTool('str-replace-editor', { path: 'f.ts', command: 'str_replace' }).verb,
+      ).toBe('Edit');
 
       // view file should be Read, view directory should be List Contents
       expect(classifyTool('view', { path: 'f.ts', type: 'file' }).verb).toBe('Read');
-      expect(classifyTool('view', { path: 'src/lib', type: 'directory' }).verb).toBe('List Contents');
+      expect(classifyTool('view', { path: 'src/lib', type: 'directory' }).verb).toBe(
+        'List Contents',
+      );
 
       // save-file should always be Save
       expect(classifyTool('save-file', { path: 'f.ts', file_content: 'x' }).verb).toBe('Save');
@@ -530,7 +583,8 @@ describe('tool-classifier', () => {
 
   describe('result-based metadata extraction', () => {
     it('should extract filename from cat -n result text for bare read', () => {
-      const resultText = "Here's the result of running `cat -n` on src/lib/App.svelte:\n   1\t<script>\n   2\t  let count = 0;\n";
+      const resultText =
+        "Here's the result of running `cat -n` on src/lib/App.svelte:\n   1\t<script>\n   2\t  let count = 0;\n";
       const result = classifyTool('read', {}, resultText);
 
       expect(result.category).toBe('file-read');
@@ -568,7 +622,12 @@ describe('tool-classifier', () => {
     });
 
     it('should extract metadata from MCP ContentItem array result', () => {
-      const mcpResult = [{ type: 'text', text: "Here's the result of running `cat -n` on src/utils.ts:\n   1\texport function foo() {}" }];
+      const mcpResult = [
+        {
+          type: 'text',
+          text: "Here's the result of running `cat -n` on src/utils.ts:\n   1\texport function foo() {}",
+        },
+      ];
       const result = classifyTool('read', {}, mcpResult);
 
       expect(result.category).toBe('file-read');
@@ -597,7 +656,9 @@ describe('tool-classifier', () => {
     });
 
     it('should extract command from _acpTitle with backticks for terminal', () => {
-      const result = classifyTool('run', { _acpTitle: 'Run `cd experimental/amelia && npx vitest run`' });
+      const result = classifyTool('run', {
+        _acpTitle: 'Run `cd experimental/amelia && npx vitest run`',
+      });
 
       expect(result.category).toBe('terminal');
       expect(result.verb).toBe('Run');
