@@ -5231,6 +5231,8 @@
   "hardwareConsole_actionKey_cycleAttentionAgents_label": "Agenten mit Handlungsbedarf durchschalten",
   "hardwareConsole_actionKey_cycleIdleAgents_label": "Inaktive Agenten durchschalten",
   "hardwareConsole_actionKey_cycleUnreadAgents_label": "Ungelesene Agenten durchschalten",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one": "Ungelesene Agenten durchschalten (noch {count} weiterer)",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many": "Ungelesene Agenten durchschalten (noch {count} weitere)",
   "hardwareConsole_actionKey_cycleFailedAgents_label": "Fehlgeschlagene Agenten durchschalten",
   "hardwareConsole_actionKey_stopAgent_label": "Agent stoppen",
   "hardwareConsole_actionKey_seeSpec_label": "Spezifikation anzeigen",

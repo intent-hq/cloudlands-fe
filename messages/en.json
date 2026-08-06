@@ -5231,6 +5231,8 @@
   "hardwareConsole_actionKey_cycleAttentionAgents_label": "Cycle attention agents",
   "hardwareConsole_actionKey_cycleIdleAgents_label": "Cycle idle agents",
   "hardwareConsole_actionKey_cycleUnreadAgents_label": "Cycle unread agents",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one": "Cycle unread agents ({count} more to go)",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many": "Cycle unread agents ({count} more to go)",
   "hardwareConsole_actionKey_cycleFailedAgents_label": "Cycle failed agents",
   "hardwareConsole_actionKey_stopAgent_label": "Stop agent",
   "hardwareConsole_actionKey_seeSpec_label": "See spec",

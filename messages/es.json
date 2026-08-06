@@ -5229,6 +5229,8 @@
   "hardwareConsole_actionKey_cycleAttentionAgents_label": "Alternar agentes que requieren atención",
   "hardwareConsole_actionKey_cycleIdleAgents_label": "Alternar agentes inactivos",
   "hardwareConsole_actionKey_cycleUnreadAgents_label": "Alternar agentes no leídos",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one": "Alternar agentes no leídos (queda {count} más)",
+  "hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many": "Alternar agentes no leídos (quedan {count} más)",
   "hardwareConsole_actionKey_cycleFailedAgents_label": "Alternar agentes fallidos",
   "hardwareConsole_actionKey_stopAgent_label": "Detener agente",
   "hardwareConsole_actionKey_seeSpec_label": "Ver especificación",
