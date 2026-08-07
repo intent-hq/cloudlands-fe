@@ -18,7 +18,6 @@
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { registerMockSeeder } from "../mock-bootstrap";
 import {
-  loadBetaUpdatesSettings,
   setAgentFontStyle,
   setCodeFontFamily,
   setGroupByRepo,
@@ -57,25 +56,16 @@ import {
   setSentryConnected,
   setSentryIssues,
 } from "../slices/sentry-auth/sentry-auth-slice";
-import { autoUpdateClient } from "$features/auto-update/auto-update.client";
 
 registerMockSeeder("settings-integrations", async ({ store, client }) => {
   // ── User preferences ──
   const prefs = await client.settings.getUserPreferences();
   if (prefs) {
-    // Sync beta updates preference with main-process local-prefs (the source of truth)
-    // This ensures Redux state matches the actual updater channel after restart.
-    // Hydrate via loadBetaUpdatesSettings — NOT setBetaUpdatesEnabled — so the
-    // beta-persistence middleware never echoes the hydration back into
-    // setChannel/local-prefs.json (intent-hq/monorepo#1672).
-    try {
-      const autoUpdateState = await autoUpdateClient.getState();
-      const mainProcessBetaEnabled = autoUpdateState.channel === 'beta';
-      store.dispatch(loadBetaUpdatesSettings(mainProcessBetaEnabled));
-    } catch {
-      // Fall back to client preference if auto-update state is unavailable
-      store.dispatch(loadBetaUpdatesSettings(prefs.betaUpdatesEnabled));
-    }
+    // betaUpdatesEnabled is intentionally NOT seeded here: the beta-persistence
+    // middleware hydrates it unconditionally at store init from the
+    // main-process channel (local-prefs.json, the source of truth) in both
+    // real and mock modes, so seeding it again from mock prefs would fight
+    // that hydration (intent-hq/monorepo#1672).
     store.dispatch(setSpellcheckEnabled(prefs.spellcheckEnabled));
     store.dispatch(setZoomFactor(prefs.zoomFactor));
     store.dispatch(setShowArchived(prefs.showArchived));

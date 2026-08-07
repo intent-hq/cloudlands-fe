@@ -42,20 +42,20 @@ describe("userPreferencesBetaPersistenceMiddleware", () => {
   });
 
   describe("boot-time hydration", () => {
-    it("hydrates betaUpdatesEnabled from main process on first action", async () => {
+    it("hydrates betaUpdatesEnabled from main process at store init, without any action", async () => {
       vi.mocked(autoUpdateClient.getState).mockResolvedValue({
         channel: "beta",
         status: "idle",
       });
 
-      const action = { type: "any/action" };
-      middleware(mockApi)(mockNext)(action);
+      // Chain construction alone (as Store.init() does) must trigger hydration
+      middleware(mockApi);
 
-      // Wait for async hydration
       await vi.waitFor(() => {
         expect(autoUpdateClient.getState).toHaveBeenCalled();
         expect(mockApi.dispatch).toHaveBeenCalledWith(loadBetaUpdatesSettings(true));
       });
+      expect(mockNext).not.toHaveBeenCalled();
     });
 
     it("hydrates false when main process channel is stable", async () => {
@@ -64,8 +64,7 @@ describe("userPreferencesBetaPersistenceMiddleware", () => {
         status: "idle",
       });
 
-      const action = { type: "any/action" };
-      middleware(mockApi)(mockNext)(action);
+      middleware(mockApi);
 
       await vi.waitFor(() => {
         expect(mockApi.dispatch).toHaveBeenCalledWith(loadBetaUpdatesSettings(false));
@@ -98,22 +97,22 @@ describe("userPreferencesBetaPersistenceMiddleware", () => {
     it("logs warning and continues if getState fails", async () => {
       vi.mocked(autoUpdateClient.getState).mockRejectedValue(new Error("IPC failed"));
 
-      const action = { type: "any/action" };
-      middleware(mockApi)(mockNext)(action);
+      middleware(mockApi);
 
       // Hydration should not throw or crash the middleware
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(mockApi.dispatch).not.toHaveBeenCalled();
     });
 
-    it("only hydrates once on first action", async () => {
+    it("hydrates once per store init regardless of dispatched actions", async () => {
       vi.mocked(autoUpdateClient.getState).mockResolvedValue({
         channel: "beta",
         status: "idle",
       });
 
-      middleware(mockApi)(mockNext)({ type: "first/action" });
-      middleware(mockApi)(mockNext)({ type: "second/action" });
+      const chain = middleware(mockApi)(mockNext);
+      chain({ type: "first/action" });
+      chain({ type: "second/action" });
 
       await vi.waitFor(() => {
         expect(autoUpdateClient.getState).toHaveBeenCalledTimes(1);
@@ -128,15 +127,20 @@ describe("userPreferencesBetaPersistenceMiddleware", () => {
       },
     } as StoreState;
 
+    let chain: (action: unknown) => unknown;
+
     beforeEach(() => {
       mockApi.getState.mockReturnValue(mockState);
-      // Ensure hydration already ran
-      middleware(mockApi)(mockNext)({ type: "init" });
+      // Init-time hydration fires at chain construction; give it a benign state
+      vi.mocked(autoUpdateClient.getState).mockResolvedValue({
+        channel: "stable",
+        status: "idle",
+      });
+      chain = middleware(mockApi)(mockNext);
     });
 
     it("calls setChannel(beta) when setBetaUpdatesEnabled(true)", async () => {
-      const action = setBetaUpdatesEnabled(true);
-      middleware(mockApi)(mockNext)(action);
+      chain(setBetaUpdatesEnabled(true));
 
       await vi.waitFor(() => {
         expect(autoUpdateClient.setChannel).toHaveBeenCalledWith("beta");
@@ -148,8 +152,7 @@ describe("userPreferencesBetaPersistenceMiddleware", () => {
         userPreferences: { betaUpdatesEnabled: false },
       } as StoreState);
 
-      const action = setBetaUpdatesEnabled(false);
-      middleware(mockApi)(mockNext)(action);
+      chain(setBetaUpdatesEnabled(false));
 
       await vi.waitFor(() => {
         expect(autoUpdateClient.setChannel).toHaveBeenCalledWith("stable");
@@ -157,8 +160,7 @@ describe("userPreferencesBetaPersistenceMiddleware", () => {
     });
 
     it("calls setChannel on toggleBetaUpdates", async () => {
-      const action = toggleBetaUpdates();
-      middleware(mockApi)(mockNext)(action);
+      chain(toggleBetaUpdates());
 
       await vi.waitFor(() => {
         expect(autoUpdateClient.setChannel).toHaveBeenCalled();
@@ -166,8 +168,7 @@ describe("userPreferencesBetaPersistenceMiddleware", () => {
     });
 
     it("does not call setChannel for unrelated actions", () => {
-      const action = { type: "some/otherAction" };
-      middleware(mockApi)(mockNext)(action);
+      chain({ type: "some/otherAction" });
 
       expect(autoUpdateClient.setChannel).not.toHaveBeenCalled();
     });

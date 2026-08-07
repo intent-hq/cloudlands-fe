@@ -21,6 +21,12 @@ const logger = new Logger('AutoUpdateIPC');
 // Validation schemas
 const EmptySchema = z.object({}).optional();
 
+// Pending initialize() from initializeAutoUpdater(). GET_STATE awaits it so a
+// boot-time renderer read reflects the channel loaded from local-prefs.json
+// instead of the pre-init default. Null when the updater is never initialized
+// (dev mode) — the default state is answered immediately in that case.
+let initializePromise: Promise<void> | null = null;
+
 /**
  * Setup auto-update IPC handlers
  */
@@ -71,7 +77,15 @@ export function setupAutoUpdateIPC(): void {
     AUTO_UPDATE_CHANNELS.GET_STATE,
     createSafeValidatedHandler(
       EmptySchema,
-      async () => ({ success: true, data: autoUpdateService.getState() }),
+      async () => {
+        // Answer after service init so the read reflects the loaded channel
+        // (initialize() loads it async from local-prefs). Errors are already
+        // logged by initializeAutoUpdater; fall through to current state.
+        if (initializePromise) {
+          await initializePromise.catch(() => {});
+        }
+        return { success: true, data: autoUpdateService.getState() };
+      },
       AUTO_UPDATE_CHANNELS.GET_STATE,
     ),
   );
@@ -97,7 +111,10 @@ export function setupAutoUpdateIPC(): void {
  * Call this after the main window is created
  */
 export function initializeAutoUpdater(mainWindow: BrowserWindow): void {
-  autoUpdateService.initialize(mainWindow);
+  initializePromise = autoUpdateService.initialize(mainWindow);
+  initializePromise.catch((error) => {
+    logger.error('AutoUpdateService initialization failed', error as Error);
+  });
 }
 
 /**
