@@ -849,14 +849,46 @@
     })),
   );
 
-  const isSelectedModelUnavailable = $derived.by(() => {
-    if (isLoadingModels) return false;
-    if (!allProvidersLoaded) return false;
+  // Provider the explicitly selected model belongs to ('' when inheriting).
+  const selectedModelProviderId = $derived(
+    hasExplicitModel && localModel
+      ? normalizeProviderId(parseCompoundModelId(localModel).providerId)
+      : '',
+  );
+
+  // True while a settled fetch result for the selected model's own provider is
+  // still outstanding but expected. `allProvidersLoaded` is not enough: on boot
+  // the availability list is empty, so fetchAllProviderModels([]) marks
+  // "loaded" with an empty catalog and the model looks unavailable before its
+  // provider was ever queried.
+  const isSelectedModelProviderPending = $derived.by(() => {
+    const modelProvider = selectedModelProviderId;
+    if (!modelProvider) return false;
+    if (hasProviderResult(modelProvider)) return false;
+    if (allProviderLoading[modelProvider]) return true;
+    // Availability hasn't been probed yet — an empty enabled list is "unknown".
+    if (!$hasCheckedOnce$) return true;
+    if (isProviderEnabled($availableEnabledProviderIds$, modelProvider)) return true;
+    // Not enabled: the per-agent fetch is the only source of a result.
+    if (usesAgentProviderFetch && normalizeProviderId(effectiveProviderId) === modelProvider) {
+      return agentProviderLoading || (agentProviderModels === null && agentProviderError === null);
+    }
+    return false;
+  });
+
+  const isSelectedModelMissingFromCatalog = $derived.by(() => {
     if (!hasExplicitModel) return false;
     if (!localModel) return false;
 
     const values = new Set(flatModelOptions.map((opt) => normalizeModelIdForMatch(opt.value)));
     return !values.has(normalizeModelIdForMatch(localModel));
+  });
+
+  const isSelectedModelUnavailable = $derived.by(() => {
+    if (isLoadingModels) return false;
+    if (!allProvidersLoaded) return false;
+    if (isSelectedModelProviderPending) return false;
+    return isSelectedModelMissingFromCatalog;
   });
 
   // --- Per-agent fallback tracking (persisted through Redux sagas so it survives page refresh) ---
@@ -890,6 +922,22 @@
   // initializer creates new agents and shouldn't display fallback warnings.
   const showModelWarning = $derived(
     !!agentId && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
+  );
+
+  // The selected model isn't in the catalog yet, but its provider hasn't
+  // settled — show a spinner in the trigger rather than a warning that would
+  // flip back to normal a moment later (transient warning on refresh).
+  const showModelLoading = $derived(
+    !!agentId &&
+      $fallbackInfo$ === null &&
+      isSelectedModelMissingFromCatalog &&
+      (isLoadingModels || !allProvidersLoaded || isSelectedModelProviderPending),
+  );
+
+  const modelLoadingTitle = $derived(
+    m.chat_modelPicker_loadingProviderModels_label({
+      provider: providerDisplayName(selectedModelProviderId || effectiveProviderId),
+    }),
   );
 
   // Warning message to display
@@ -1214,7 +1262,14 @@
         {#if isCompact}
           <Fa icon={faSettings} class="h-4 w-4" />
         {:else if isTriggerLabelResolved}
-          {#if showModelWarning}
+          {#if showModelLoading}
+            <span
+              class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin shrink-0"
+              role="status"
+              aria-label={modelLoadingTitle}
+              title={modelLoadingTitle}
+            ></span>
+          {:else if showModelWarning}
             <Fa icon={faTriangleExclamation} class="h-3 w-3 text-amber-600 shrink-0" />
           {/if}
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
