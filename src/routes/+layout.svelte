@@ -131,6 +131,7 @@
   // Side-effect import: runs every per-domain seeder's registration at startup.
   import '$store/renderer/seeders';
   import { startGitStatusSubscription } from '$features/git/git-status-subscription';
+  import { startSplashGate } from '$features/backend/splash-gate';
   import { startWorkspaceListSubscription } from '$features/workspace/workspace-list-subscription';
   import { startSpecialistsListSubscription } from '$features/specialists/specialists-list-subscription';
   import {
@@ -317,13 +318,20 @@
   let paletteShortcuts: KeyboardShortcutManager | null = null;
 
   onMount(() => {
-    // Hide the splash screen from app.html now that Svelte has mounted
+    // Gate the splash screen's dismissal on backend connectivity (see
+    // splash-gate.ts): it stays visible past Svelte mount until
+    // backend:get-status resolves 'connected' (or a BACKEND.STATUS push
+    // reports it), with a bounded fallback/startup-failure dismiss so a
+    // dead/never-connecting daemon can't strand it. Non-Electron (browser/
+    // mock) environments dismiss immediately, same as before.
     const splash = document.getElementById('splash');
-    if (splash) {
-      splash.classList.add('mounted');
-      // Remove from DOM after fade-out transition completes
-      splash.addEventListener('transitionend', () => splash.remove(), { once: true });
-    }
+    const stopSplashGate = splash
+      ? startSplashGate(() => {
+          splash.classList.add('mounted');
+          // Remove from DOM after fade-out transition completes
+          splash.addEventListener('transitionend', () => splash.remove(), { once: true });
+        })
+      : () => {};
 
     // Remove the static drag region from app.html now that Svelte's own drag region is active
     document.getElementById('app-drag-region')?.remove();
@@ -794,6 +802,7 @@
     }
 
     return () => {
+      stopSplashGate();
       paletteShortcuts?.detach();
       paletteShortcuts?.destroy();
       paletteShortcuts = null;
