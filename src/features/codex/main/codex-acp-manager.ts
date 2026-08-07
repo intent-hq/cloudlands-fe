@@ -8,7 +8,7 @@ import * as path from 'path';
 import { pipeline } from 'stream/promises';
 import { hostExec } from '../../../shared/main/host-exec';
 
-export const MANAGED_CODEX_ACP_VERSION = '1.1.7';
+export const MANAGED_CODEX_ACP_VERSION = '1.1.14';
 
 /**
  * Env overrides for every managed codex-acp spawn (#544). The published
@@ -52,8 +52,8 @@ const CODEX_VENDOR_TARGET_TRIPLES: Record<SupportedPlatformKey, string> = {
 };
 
 /**
- * Pinned flat dependency closure of `@agentclientprotocol/codex-acp@1.1.7`
- * (resolved from the npm registry on 2026-07-23). The successor package is
+ * Pinned flat dependency closure of `@agentclientprotocol/codex-acp@1.1.14`
+ * (resolved from the npm registry on 2026-08-07). The successor package is
  * pure Node but has runtime npm dependencies, so the whole closure is staged
  * into a flat `node_modules` — unpacking the top-level tarball alone would
  * not be runnable. `packages` are platform-independent; `platforms` holds the
@@ -69,7 +69,7 @@ export const MANAGED_CODEX_ACP_INTEGRITY: {
       packageName: '@agentclientprotocol/codex-acp',
       tarballUrl: `https://registry.npmjs.org/@agentclientprotocol/codex-acp/-/codex-acp-${MANAGED_CODEX_ACP_VERSION}.tgz`,
       integrity:
-        'sha512-bhFLbGtOMEw6+PAp33vNERb6dXlULOfV3mWbRdps4v7sY7PHha/C2T1dnlG0yVcvBu9W+NYPzL0CAupnVoFTiQ==',
+        'sha512-6JKLbGYH0/Gcz788U6KnljwSdNvUnXOyjJDOgsWsbwmXbxn/BXH+urF5AciACdgq13+KgAP9O96Kp6h33BgyKg==',
     },
     {
       packageName: '@agentclientprotocol/sdk',
@@ -79,9 +79,9 @@ export const MANAGED_CODEX_ACP_INTEGRITY: {
     },
     {
       packageName: '@openai/codex',
-      tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.145.0.tgz',
+      tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.147.0.tgz',
       integrity:
-        'sha512-/PSPSFujjjmiyVFvG2yu/grOFhsWdokTH8t2KGWhXSo/M5n/dIDsnbsnO82/7bLtIoDuzQf7ATBUMWqPWQINlQ==',
+        'sha512-EQLEXecAG2ptxI7UpBMo2TR/ga5596/c/OsYF/0LoUDh5JANZ7IoGqlzBEWbuEVQ76JePIbtTW/ihCkp1a7Z3w==',
     },
     {
       packageName: 'bundle-name',
@@ -177,27 +177,27 @@ export const MANAGED_CODEX_ACP_INTEGRITY: {
   platforms: {
     'darwin-arm64': {
       packageName: '@openai/codex-darwin-arm64',
-      tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-darwin-arm64.tgz',
+      tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.147.0-darwin-arm64.tgz',
       integrity:
-        'sha512-h6aQ0UxnaP8mIM/9/qPAH9MNkRliJo88toq1T36IxNM2L5JSU0TFamu+MZn7YkFgDsrp0RfiI+97Tm8AVVxqtA==',
+        'sha512-BEUVkiOW7kLcRyrMLfAr/h9wF8sRVJyZDy6OHtVn6QGDXiv3BvAZVTY1Pu9xF7KdIdkYXbp4uayN0aDQQaAUJw==',
     },
     'darwin-x64': {
       packageName: '@openai/codex-darwin-x64',
-      tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-darwin-x64.tgz',
+      tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.147.0-darwin-x64.tgz',
       integrity:
-        'sha512-FCYzVKCa9VoLtg9gVyzKpqylonfgZrfcWZN6HsXAZPeuo8CukdMqdgTUOhDn2V6h3MbqS0z6VqQVKUllN/yKhA==',
+        'sha512-Tb8McE5SvJIH0Vs5R6sq7u+quiC931yan2KOOl6km1OdZ82+Wi7eF5XrSFPs5CF7xCgoIK4Vs+byMbT5hN+ZUw==',
     },
     'linux-x64': {
       packageName: '@openai/codex-linux-x64',
-      tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-linux-x64.tgz',
+      tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.147.0-linux-x64.tgz',
       integrity:
-        'sha512-u8w8LLv3DvsfrDCoswLIemZ0SoNEXyi511WsfFsSiYUazk9qMsB/NtU8N9vhAfN7mZAxLFoMex4v66JjHuZWwA==',
+        'sha512-0W9MBxPpWW0cSkNqrTDN2jR7rzzT7oNMhQY5446lT2Lw5cz5yhDTck4Va9rjkQEm+HlFzP/dmEMSZbXfJsINmw==',
     },
     'win32-x64': {
       packageName: '@openai/codex-win32-x64',
-      tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-win32-x64.tgz',
+      tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.147.0-win32-x64.tgz',
       integrity:
-        'sha512-u0h9lk094CaXRSqE34SBW2dRaQTPa6fASXqehczWH9QdsU62mBsiAgAdp6tCG4i+YzPmmhjD8FdXNnYGNmwuMg==',
+        'sha512-oT7Ss5fAPf2fiWE9QNURqZcQGAAawSVxmIUdgPzckq4KFZAM+pRz9JbM4Rr498CjtbNgTOjWvDJ+DXvIBSfOPA==',
     },
   },
 };

@@ -56,7 +56,7 @@ describe('pi-mcp-bridge-seeder', () => {
     it('resolves true when `pi list` output includes pi-mcp-adapter', async () => {
       routeDaemon({
         'host.findBinary': PI_FOUND,
-        'host.exec': { stdout: 'pi-acp 0.0.31\npi-mcp-adapter 1.2.0\n', stderr: '', exitCode: 0 },
+        'host.exec': { stdout: 'pi-acp 0.0.33\npi-mcp-adapter 1.2.0\n', stderr: '', exitCode: 0 },
       });
 
       await expect(mockInvoke<boolean>(PI_CHANNELS.CHECK_MCP_ADAPTER)).resolves.toBe(true);
@@ -79,7 +79,7 @@ describe('pi-mcp-bridge-seeder', () => {
     it('resolves false when `pi list` output lacks the adapter', async () => {
       routeDaemon({
         'host.findBinary': PI_FOUND,
-        'host.exec': { stdout: 'pi-acp 0.0.31\n', stderr: '', exitCode: 0 },
+        'host.exec': { stdout: 'pi-acp 0.0.33\n', stderr: '', exitCode: 0 },
       });
 
       await expect(mockInvoke<boolean>(PI_CHANNELS.CHECK_MCP_ADAPTER)).resolves.toBe(false);

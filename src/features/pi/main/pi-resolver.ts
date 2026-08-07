@@ -48,7 +48,7 @@ const PI_MCP_ADAPTER_INSTALL_SOURCE = `npm:${PI_MCP_ADAPTER_PACKAGE}`;
  * run via npx, so this pin controls the adapter release cadence — bumping it
  * is a deliberate code change.
  */
-const PI_ACP_VERSION = '0.0.31';
+const PI_ACP_VERSION = '0.0.33';
 export const PI_ACP_NPX_PACKAGE = `pi-acp@${PI_ACP_VERSION}`;
 
 type PiSettings = {

@@ -76,13 +76,13 @@ describe('codex-acp-manager', () => {
   it('pins the real dependency closure and supported native package integrities', async () => {
     const manager = await import('../codex-acp-manager');
 
-    expect(manager.MANAGED_CODEX_ACP_VERSION).toBe('1.1.7');
+    expect(manager.MANAGED_CODEX_ACP_VERSION).toBe('1.1.14');
     const entry = manager.MANAGED_CODEX_ACP_INTEGRITY.packages.find(
       (pkg) => pkg.packageName === entryPackageName,
     );
     expect(entry).toMatchObject({
       packageName: entryPackageName,
-      integrity: 'sha512-bhFLbGtOMEw6+PAp33vNERb6dXlULOfV3mWbRdps4v7sY7PHha/C2T1dnlG0yVcvBu9W+NYPzL0CAupnVoFTiQ==',
+      integrity: 'sha512-6JKLbGYH0/Gcz788U6KnljwSdNvUnXOyjJDOgsWsbwmXbxn/BXH+urF5AciACdgq13+KgAP9O96Kp6h33BgyKg==',
     });
     // Runtime deps of the pure-Node adapter must be part of the staged closure.
     const packageNames = manager.MANAGED_CODEX_ACP_INTEGRITY.packages.map((pkg) => pkg.packageName);
@@ -109,13 +109,13 @@ describe('codex-acp-manager', () => {
     ]);
     const expectedPlatformIntegrities: Record<PlatformKey, string> = {
       'darwin-arm64':
-        'sha512-h6aQ0UxnaP8mIM/9/qPAH9MNkRliJo88toq1T36IxNM2L5JSU0TFamu+MZn7YkFgDsrp0RfiI+97Tm8AVVxqtA==',
+        'sha512-BEUVkiOW7kLcRyrMLfAr/h9wF8sRVJyZDy6OHtVn6QGDXiv3BvAZVTY1Pu9xF7KdIdkYXbp4uayN0aDQQaAUJw==',
       'darwin-x64':
-        'sha512-FCYzVKCa9VoLtg9gVyzKpqylonfgZrfcWZN6HsXAZPeuo8CukdMqdgTUOhDn2V6h3MbqS0z6VqQVKUllN/yKhA==',
+        'sha512-Tb8McE5SvJIH0Vs5R6sq7u+quiC931yan2KOOl6km1OdZ82+Wi7eF5XrSFPs5CF7xCgoIK4Vs+byMbT5hN+ZUw==',
       'linux-x64':
-        'sha512-u8w8LLv3DvsfrDCoswLIemZ0SoNEXyi511WsfFsSiYUazk9qMsB/NtU8N9vhAfN7mZAxLFoMex4v66JjHuZWwA==',
+        'sha512-0W9MBxPpWW0cSkNqrTDN2jR7rzzT7oNMhQY5446lT2Lw5cz5yhDTck4Va9rjkQEm+HlFzP/dmEMSZbXfJsINmw==',
       'win32-x64':
-        'sha512-u0h9lk094CaXRSqE34SBW2dRaQTPa6fASXqehczWH9QdsU62mBsiAgAdp6tCG4i+YzPmmhjD8FdXNnYGNmwuMg==',
+        'sha512-oT7Ss5fAPf2fiWE9QNURqZcQGAAawSVxmIUdgPzckq4KFZAM+pRz9JbM4Rr498CjtbNgTOjWvDJ+DXvIBSfOPA==',
     };
     for (const key of Object.keys(nativePackageNames) as PlatformKey[]) {
       expect(manager.MANAGED_CODEX_ACP_INTEGRITY.platforms[key].packageName).toBe(
@@ -145,7 +145,7 @@ describe('codex-acp-manager', () => {
     expect(first).toEqual(second);
     expect(mocks.httpsGet).toHaveBeenCalledTimes(3);
     expect(first.wrapperPath).toContain(
-      path.join('runtimes', 'codex-acp', '1.1.7', 'node_modules', '@agentclientprotocol', 'codex-acp'),
+      path.join('runtimes', 'codex-acp', '1.1.14', 'node_modules', '@agentclientprotocol', 'codex-acp'),
     );
     await expect(fs.access(first.wrapperPath)).resolves.toBeUndefined();
     expect(mocks.backendRequest).toHaveBeenCalledWith(
@@ -184,7 +184,7 @@ describe('codex-acp-manager', () => {
     const baseDir = path.join(mocks.userData, 'runtimes', 'codex-acp');
     const entries = await fs.readdir(baseDir).catch(() => []);
     expect(entries.filter((entry) => entry.startsWith('.tmp-'))).toEqual([]);
-    expect(entries).not.toContain('1.1.7');
+    expect(entries).not.toContain('1.1.14');
   });
 
   it('cleans stale temp directories before installing', async () => {
@@ -223,7 +223,7 @@ describe('codex-acp-manager', () => {
     await manager.ensureManagedCodexAcp();
 
     const entries = (await fs.readdir(baseDir)).sort();
-    expect(entries).toEqual(['0.12.0', '1.1.7']);
+    expect(entries).toEqual(['0.12.0', '1.1.14']);
   });
 
   it('rejects unsupported platform and arch combinations without downloading', async () => {
@@ -290,7 +290,7 @@ describe('codex-acp-manager', () => {
 function createFixtures(platform: PlatformKey) {
   const nativeBinaryName = platform === 'win32-x64' ? 'codex.exe' : 'codex';
   const entryTarball = createTarGz({
-    'package/dist/index.js': '#!/usr/bin/env node\nconsole.log("codex-acp 1.1.7")\n',
+    'package/dist/index.js': '#!/usr/bin/env node\nconsole.log("codex-acp 1.1.14")\n',
     'package/package.json': JSON.stringify({ name: entryPackageName }),
   });
   const depTarball = createTarGz({

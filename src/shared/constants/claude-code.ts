@@ -11,7 +11,7 @@ export const CLAUDE_AGENT_ACP_PACKAGE = '@agentclientprotocol/claude-agent-acp';
  * (`claude-code` npx spawn) so both stacks run the same adapter release.
  * Bumping this is a deliberate code change.
  */
-export const CLAUDE_AGENT_ACP_VERSION = '0.60.0';
+export const CLAUDE_AGENT_ACP_VERSION = '0.66.0';
 
 /** Full `package@version` spec passed to `npx -y`. */
 export const CLAUDE_AGENT_ACP_NPX_SPEC = `${CLAUDE_AGENT_ACP_PACKAGE}@${CLAUDE_AGENT_ACP_VERSION}`;
