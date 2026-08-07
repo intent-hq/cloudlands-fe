@@ -291,6 +291,8 @@
   "settings_agentFeatures_structuredQuestions_description": "Agenten können strukturierte Rückfragen mit vorgegebenen Optionen stellen",
   "settings_agentFeatures_attentionRequests_label": "Aufmerksamkeitsanfragen",
   "settings_agentFeatures_attentionRequests_description": "Agenten können Blocker melden und Diskussionen anfordern",
+  "settings_agentFeatures_stateSnapshot_label": "Statusübersicht",
+  "settings_agentFeatures_stateSnapshot_description": "Jedem Agentenzug eine kompakte ws.agent.snapshot()-Statusübersicht voranstellen (gilt auch für bestehende Sitzungen)",
   "settings_workspaceApi_toonOutput_rollbackError": "Änderung der TOON-Ausgabe fehlgeschlagen; Einstellung zurückgesetzt",
   "settings_mcp_import_title": "MCP-Server-JSON einfügen",
   "settings_mcp_import_emptyError": "Bitte fügen Sie Ihre MCP-Server-JSON-Konfiguration ein",

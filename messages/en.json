@@ -292,6 +292,8 @@
   "settings_agentFeatures_structuredQuestions_description": "Let agents ask structured clarifying questions with predefined options",
   "settings_agentFeatures_attentionRequests_label": "Attention requests",
   "settings_agentFeatures_attentionRequests_description": "Let agents raise blockers and request discussions",
+  "settings_agentFeatures_stateSnapshot_label": "State snapshot",
+  "settings_agentFeatures_stateSnapshot_description": "Prepend a compact ws.agent.snapshot() state digest to each agent turn (applies to existing sessions too)",
   "settings_mcp_import_title": "Paste MCP Server JSON",
   "settings_mcp_import_emptyError": "Please paste your MCP server JSON configuration",
   "settings_mcp_import_structureError": "Expected an object with server configurations (e.g., \"server-name\" mapped to its config)",

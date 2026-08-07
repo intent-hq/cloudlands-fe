@@ -291,6 +291,8 @@
   "settings_agentFeatures_structuredQuestions_description": "에이전트가 사전 정의된 옵션이 있는 구조화된 확인 질문을 할 수 있도록 허용합니다",
   "settings_agentFeatures_attentionRequests_label": "주의 요청",
   "settings_agentFeatures_attentionRequests_description": "에이전트가 차단 요소를 보고하고 논의를 요청할 수 있도록 허용합니다",
+  "settings_agentFeatures_stateSnapshot_label": "상태 스냅샷",
+  "settings_agentFeatures_stateSnapshot_description": "각 에이전트 턴 앞에 간결한 ws.agent.snapshot() 상태 요약을 추가합니다(기존 세션에도 적용됩니다)",
   "settings_workspaceApi_toonOutput_rollbackError": "TOON 출력 변경에 실패했습니다. 설정이 롤백되었습니다",
   "settings_mcp_import_title": "MCP 서버 JSON 붙여넣기",
   "settings_mcp_import_emptyError": "MCP 서버 JSON 구성을 붙여넣어 주세요",

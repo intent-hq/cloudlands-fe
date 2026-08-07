@@ -291,6 +291,8 @@
   "settings_agentFeatures_structuredQuestions_description": "允许智能体提出带预定义选项的结构化澄清问题",
   "settings_agentFeatures_attentionRequests_label": "关注请求",
   "settings_agentFeatures_attentionRequests_description": "允许智能体报告阻碍并请求讨论",
+  "settings_agentFeatures_stateSnapshot_label": "状态快照",
+  "settings_agentFeatures_stateSnapshot_description": "在每个智能体回合开头附加简洁的 ws.agent.snapshot() 状态摘要（同样适用于现有会话）",
   "settings_workspaceApi_toonOutput_rollbackError": "更改 TOON 输出失败；设置已回滚",
   "settings_mcp_import_title": "粘贴 MCP 服务器 JSON",
   "settings_mcp_import_emptyError": "请粘贴你的 MCP 服务器 JSON 配置",

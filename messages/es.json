@@ -291,6 +291,8 @@
   "settings_agentFeatures_structuredQuestions_description": "Permite a los agentes hacer preguntas aclaratorias estructuradas con opciones predefinidas",
   "settings_agentFeatures_attentionRequests_label": "Solicitudes de atención",
   "settings_agentFeatures_attentionRequests_description": "Permite a los agentes señalar bloqueos y solicitar discusiones",
+  "settings_agentFeatures_stateSnapshot_label": "Instantánea de estado",
+  "settings_agentFeatures_stateSnapshot_description": "Añade al inicio de cada turno del agente un resumen compacto de estado de ws.agent.snapshot() (también se aplica a las sesiones existentes)",
   "settings_workspaceApi_toonOutput_rollbackError": "Error al cambiar la salida TOON; configuración revertida",
   "settings_mcp_import_title": "Pegar JSON del servidor MCP",
   "settings_mcp_import_emptyError": "Pegue su configuración JSON del servidor MCP",

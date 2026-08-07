@@ -292,6 +292,8 @@
   "settings_agentFeatures_structuredQuestions_description": "エージェントが定義済みの選択肢を持つ構造化された確認質問をできるようにします",
   "settings_agentFeatures_attentionRequests_label": "アテンションリクエスト",
   "settings_agentFeatures_attentionRequests_description": "エージェントがブロッカーを報告し、ディスカッションを要求できるようにします",
+  "settings_agentFeatures_stateSnapshot_label": "状態スナップショット",
+  "settings_agentFeatures_stateSnapshot_description": "各エージェントのターンの先頭に ws.agent.snapshot() のコンパクトな状態ダイジェストを付加します（既存のセッションにも適用されます）",
   "settings_mcp_import_title": "MCP サーバー JSON を貼り付け",
   "settings_mcp_import_emptyError": "MCP サーバーの JSON 設定を貼り付けてください",
   "settings_mcp_import_structureError": "サーバー設定を含むオブジェクトが必要です（例: \"server-name\" をその設定にマッピング）",
