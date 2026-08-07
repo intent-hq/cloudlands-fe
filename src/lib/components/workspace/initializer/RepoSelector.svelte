@@ -683,6 +683,9 @@
         appStore.dispatch(replaceWorkspaceList(workspaces));
       }
 
+      // GitHub-pick standalone checkouts are workspace-owned, not repos to copy from
+      const workspaceOwnedCheckouts = getWorkspaceOwnedCheckoutPaths(workspaces ?? []);
+
       // Build a map of repos by path (persistent registry first, then workspace-derived)
       const repoMap = new Map<
         string,
@@ -691,7 +694,7 @@
 
       // Persisted recents may predate the daemon-managed exclusions below.
       for (const repo of $workspaceInitializerRecentRepos$) {
-        if (isDaemonManagedRepoPath(repo.path)) continue;
+        if (isDaemonManagedRepoPath(repo.path) || workspaceOwnedCheckouts.has(repo.path)) continue;
         repoMap.set(repo.path, repo);
       }
 
@@ -707,7 +710,11 @@
               name: repo.name,
               owner: repo.owner,
             });
-          } else if (repo.path && !isDaemonManagedRepoPath(repo.path)) {
+          } else if (
+            repo.path &&
+            !isDaemonManagedRepoPath(repo.path) &&
+            !workspaceOwnedCheckouts.has(repo.path)
+          ) {
             repoMap.set(repo.path, {
               path: repo.path,
               type: 'local' as const,
@@ -720,8 +727,6 @@
 
       // Merge workspace-derived repos (overrides registry entries with fresher data)
       if (workspaces && workspaces.length > 0) {
-        // GitHub-pick standalone checkouts are workspace-owned, not repos to copy from
-        const workspaceOwnedCheckouts = getWorkspaceOwnedCheckoutPaths(workspaces);
         const allRecentRepos = getRecentRepos(workspaces, 10);
         for (const repo of allRecentRepos) {
           const isLocalPath =

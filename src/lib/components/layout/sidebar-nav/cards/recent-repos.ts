@@ -7,6 +7,8 @@
  * distinct from `worktreePath`. Both fields are BE-provided (PROTOCOL §5.1).
  */
 
+import { isDaemonManagedRepoPath } from '$lib/components/workspace/initializer/recent-repo-display';
+
 export type RecentRepoSource = 'github' | 'local';
 
 /** The BE-provided workspace fields this module reads. */
@@ -31,7 +33,7 @@ export interface RecentRepoEntry {
 }
 
 function basename(path: string): string | undefined {
-  return path.split('/').filter(Boolean).pop();
+  return path.split(/[\\/]/).filter(Boolean).pop();
 }
 
 /**
@@ -60,7 +62,7 @@ export function deriveRecentRepoEntries(
 
   for (const workspace of workspaces) {
     const path = workspace.repositoryPath;
-    if (!path || entries.has(path)) continue;
+    if (!path || entries.has(path) || isDaemonManagedRepoPath(path)) continue;
 
     const source = detectRecentRepoSource(workspace);
     entries.set(path, {

@@ -75,6 +75,30 @@ describe('deriveRecentRepoEntries', () => {
     expect(entry).toMatchObject({ source: 'github', name: 'scratch', branch: 'main' });
   });
 
+  it('derives the folder name from Windows paths', () => {
+    const [entry] = deriveRecentRepoEntries([
+      {
+        repositoryPath: 'C:\\Users\\me\\code\\intent',
+        worktreePath: 'C:\\ws\\fix-login',
+        repositoryName: 'monorepo',
+      },
+    ]);
+    expect(entry).toMatchObject({ source: 'local', folderName: 'intent' });
+  });
+
+  it('excludes daemon-managed repo paths', () => {
+    const entries = deriveRecentRepoEntries([
+      {
+        repositoryPath: '/Users/me/Workspaces/.repo-cache/intent-hq/monorepo',
+        worktreePath: '/Users/me/Workspaces/fix-login',
+        repositoryName: 'monorepo',
+      },
+      localCopy,
+    ]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].path).toBe(localCopy.repositoryPath);
+  });
+
   it('deduplicates by repository path, keeping the first occurrence', () => {
     const entries = deriveRecentRepoEntries([
       localCopy,

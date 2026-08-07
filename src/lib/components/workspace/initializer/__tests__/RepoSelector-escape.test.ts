@@ -17,6 +17,11 @@ const mockRepos = vi.hoisted(() => ({
     name: string;
     owner?: string;
   }>,
+  workspaces: [] as Array<{
+    repositoryPath?: string;
+    repositoryName?: string;
+    worktreePath?: string;
+  }>,
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -65,7 +70,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
-  workspaceClient: { list: vi.fn(async () => ({ ok: true, data: [] })) },
+  workspaceClient: { list: vi.fn(async () => ({ ok: true, data: mockRepos.workspaces })) },
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', async () => {
@@ -266,6 +271,42 @@ describe('RepoSelector Recent list owner rendering', () => {
 
     // Local entries no longer use the GitHub "owner /" prefix.
     expect(screen.queryByText('acme /')).toBeNull();
+  });
+});
+
+describe('RepoSelector Recent list daemon-owned exclusions', () => {
+  afterEach(() => {
+    mockRepos.recentRepos = [];
+    mockRepos.workspaces = [];
+    cleanup();
+  });
+
+  it('excludes persisted recents whose path is a workspace-owned standalone checkout', async () => {
+    // A GitHub-pick workspace: the checkout is its own worktree, so its path
+    // is not a copyable local repo even when a stale persisted recent has it.
+    mockRepos.workspaces = [
+      {
+        repositoryPath: '/ws/standalone',
+        worktreePath: '/ws/standalone',
+        repositoryName: 'standalone',
+      },
+    ];
+    mockRepos.recentRepos = [
+      { path: '/ws/standalone', type: 'local', name: 'standalone' },
+      { path: '/Users/dev/app', type: 'local', name: 'app' },
+    ];
+    const { container } = render(RepoSelector, { props: {} });
+    await openDropdown(container);
+    await waitFor(() => {
+      expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy();
+    });
+
+    await fireEvent.click(screen.getByText('Copy local repo'));
+
+    await waitFor(() => {
+      expect(screen.getByText('app')).toBeTruthy();
+    });
+    expect(screen.queryByText('standalone')).toBeNull();
   });
 });
 

@@ -121,7 +121,15 @@
         {#each recentRepos as repo}
           <button
             class="flex items-center gap-2 px-1 py-1 rounded-md text-left hover:bg-sidebar cursor-pointer w-full focus:outline-0"
-            onclick={(e) => openModal({ repoPath: repo.path, owner: repo.owner, name: repo.name }, e)}
+            onclick={(e) =>
+              openModal(
+                // Workspace-owned standalone checkouts (source 'github') are not
+                // copyable local sources, so their path is never prefilled.
+                repo.source === 'local'
+                  ? { repoPath: repo.path, owner: repo.owner, name: repo.name }
+                  : { owner: repo.owner, name: repo.name },
+                e,
+              )}
           >
             {#if repo.owner}
               <img
