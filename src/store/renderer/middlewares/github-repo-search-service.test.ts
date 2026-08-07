@@ -7,7 +7,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 vi.mock("$features/github-auth/renderer/github-auth.client", () => ({
   githubAuthClient: {
     listRepos: vi.fn(() => Promise.resolve([])),
-    searchRepos: vi.fn(() => Promise.resolve([])),
+    searchRepos: vi.fn(() => Promise.resolve({ success: true, data: [] })),
   },
 }));
 
@@ -35,6 +35,9 @@ const item = (owner: string, name: string) => ({
   name,
   defaultBranch: "main",
 });
+
+/** Successful seam envelope, matching `githubAuthClient.searchRepos`'s contract. */
+const ok = (...repos: ReturnType<typeof wireRepo>[]) => ({ success: true, data: repos });
 
 /** Resolve the microtask queue so fire-and-forget dispatches land. */
 const flush = () => vi.advanceTimersByTimeAsync(0);
@@ -64,10 +67,9 @@ describe("githubRepoSearchService (fake seam, real store)", () => {
   });
 
   it("stores the mapped results for the searched query", async () => {
-    searchApi.searchRepos.mockResolvedValueOnce([
-      wireRepo("sveltejs", "svelte"),
-      wireRepo("sveltejs", "kit"),
-    ] as never);
+    searchApi.searchRepos.mockResolvedValueOnce(
+      ok(wireRepo("sveltejs", "svelte"), wireRepo("sveltejs", "kit")) as never,
+    );
 
     appStore.dispatch(searchGithubRepos("  svelte  "));
     await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
@@ -84,8 +86,14 @@ describe("githubRepoSearchService (fake seam, real store)", () => {
     ]);
   });
 
-  it("surfaces a search failure via setGithubRepoSearchError", async () => {
-    searchApi.searchRepos.mockRejectedValueOnce(new Error("rate limited") as never);
+  // The seam converts a daemon/IPC failure into `{ success: false, error }` rather
+  // than throwing, so the unsuccessful envelope — not a rejection — is the real
+  // failure path the middleware must surface.
+  it("surfaces an unsuccessful search envelope via setGithubRepoSearchError", async () => {
+    searchApi.searchRepos.mockResolvedValueOnce({
+      success: false,
+      error: "rate limited",
+    } as never);
 
     appStore.dispatch(searchGithubRepos("svelte"));
     await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
@@ -96,8 +104,19 @@ describe("githubRepoSearchService (fake seam, real store)", () => {
     expect(getItems(appStore.state.githubRepoSearch.results)).toEqual([]);
   });
 
+  it("falls back to a generic message when the failed envelope carries none", async () => {
+    searchApi.searchRepos.mockResolvedValueOnce({ success: false } as never);
+
+    appStore.dispatch(searchGithubRepos("svelte"));
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+    await flush();
+
+    expect(appStore.state.githubRepoSearch.error).toBe("Unknown error");
+    expect(appStore.state.githubRepoSearch.loading).toBe(false);
+  });
+
   it("clears the slice on an empty query without hitting the wire", async () => {
-    searchApi.searchRepos.mockResolvedValueOnce([wireRepo("sveltejs", "svelte")] as never);
+    searchApi.searchRepos.mockResolvedValueOnce(ok(wireRepo("sveltejs", "svelte")) as never);
     appStore.dispatch(searchGithubRepos("svelte"));
     await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
     await flush();
@@ -114,12 +133,12 @@ describe("githubRepoSearchService (fake seam, real store)", () => {
   });
 
   it("drops a stale response so it cannot clobber newer results", async () => {
-    let resolveSlow: (repos: unknown[]) => void = () => {};
+    let resolveSlow: (envelope: unknown) => void = () => {};
     searchApi.searchRepos
       .mockImplementationOnce(
-        () => new Promise((resolve) => (resolveSlow = resolve as (r: unknown[]) => void)),
+        () => new Promise((resolve) => (resolveSlow = resolve as (e: unknown) => void)),
       )
-      .mockResolvedValueOnce([wireRepo("rich-harris", "degit")] as never);
+      .mockResolvedValueOnce(ok(wireRepo("rich-harris", "degit")) as never);
 
     // First query goes in flight, then a second query supersedes it.
     appStore.dispatch(searchGithubRepos("svelte"));
@@ -134,12 +153,64 @@ describe("githubRepoSearchService (fake seam, real store)", () => {
     ]);
 
     // The slow first search now settles — its results must be ignored.
-    resolveSlow([wireRepo("sveltejs", "svelte")]);
+    resolveSlow(ok(wireRepo("sveltejs", "svelte")));
     await flush();
 
     expect(appStore.state.githubRepoSearch.lastQuery).toBe("degit");
     expect(getItems(appStore.state.githubRepoSearch.results)).toEqual([
       item("rich-harris", "degit"),
     ]);
+  });
+
+  // The guard is token-based, not query-based: two searches for the SAME string
+  // (e.g. type "svelte", clear to "sv", type "svelte" again) must still order by
+  // recency, so the older response cannot overwrite the newer one.
+  it("drops a stale response for a repeated identical query", async () => {
+    let resolveFirst: (envelope: unknown) => void = () => {};
+    searchApi.searchRepos
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (resolveFirst = resolve as (e: unknown) => void)),
+      )
+      .mockResolvedValueOnce(ok(wireRepo("sveltejs", "kit")) as never);
+
+    appStore.dispatch(searchGithubRepos("svelte"));
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+
+    // Same query dispatched again while the first request is still in flight.
+    appStore.dispatch(searchGithubRepos("svelte"));
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+    await flush();
+
+    expect(searchApi.searchRepos).toHaveBeenCalledTimes(2);
+    expect(getItems(appStore.state.githubRepoSearch.results)).toEqual([item("sveltejs", "kit")]);
+
+    resolveFirst(ok(wireRepo("sveltejs", "svelte")));
+    await flush();
+
+    expect(getItems(appStore.state.githubRepoSearch.results)).toEqual([item("sveltejs", "kit")]);
+  });
+
+  // Clearing must also invalidate an in-flight request, otherwise its response
+  // repopulates the slice after the user emptied the input.
+  it("drops an in-flight response that settles after the slice was cleared", async () => {
+    let resolveSlow: (envelope: unknown) => void = () => {};
+    searchApi.searchRepos.mockImplementationOnce(
+      () => new Promise((resolve) => (resolveSlow = resolve as (e: unknown) => void)),
+    );
+
+    appStore.dispatch(searchGithubRepos("svelte"));
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+    expect(appStore.state.githubRepoSearch.loading).toBe(true);
+
+    appStore.dispatch(searchGithubRepos(""));
+    await flush();
+    expect(appStore.state.githubRepoSearch.lastQuery).toBe("");
+
+    resolveSlow(ok(wireRepo("sveltejs", "svelte")));
+    await flush();
+
+    expect(appStore.state.githubRepoSearch.lastQuery).toBe("");
+    expect(appStore.state.githubRepoSearch.loading).toBe(false);
+    expect(getItems(appStore.state.githubRepoSearch.results)).toEqual([]);
   });
 });

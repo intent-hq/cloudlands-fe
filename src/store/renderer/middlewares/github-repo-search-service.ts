@@ -14,9 +14,11 @@
  *   3. Otherwise a 300ms debounce coalesces rapid keystrokes into a single
  *      round-trip — each new action resets the timer, so the latest query wins.
  *   4. The fetch flips the slice into `loading` for that query, calls
- *      `githubAuthClient.searchRepos`, and stores the mapped results or error.
- *   5. Responses for a query that is no longer the current one are dropped so
- *      a slow in-flight search can never clobber newer results.
+ *      `githubAuthClient.searchRepos`, and stores the mapped results, or the
+ *      envelope's error when the daemon/IPC call did not succeed.
+ *   5. Every started request takes a monotonic token; only the newest token may
+ *      write to the slice, so a slow in-flight search can never clobber newer
+ *      results — including when both searches use the same query string.
  *
  * Dependency-light per src/store/renderer AGENTS.md: imports only the
  * github-auth IPC client, slice actions, and the configured store — no
@@ -42,14 +44,19 @@ export const SEARCH_DEBOUNCE_MS = 300;
 /** Minimum query length before we hit the API. One-letter searches are noise. */
 export const MIN_QUERY_LENGTH = 2;
 
+/** Fallback when the seam reports failure without a message. */
+const UNKNOWN_SEARCH_ERROR = "Unknown error"; // i18n-ignore (wire-error normalization)
+
 /** Pending debounce timer; a newer dispatch always replaces the older one. */
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
- * The most recent query the middleware committed to searching. Responses whose
- * query no longer matches this are stale and must not reach the slice.
+ * Monotonic token of the most recently started request. A response may only
+ * write to the slice while its token is still the latest one — comparing the
+ * query string instead would let an older response for the *same* query
+ * overwrite a newer one.
  */
-let currentQuery: string | null = null;
+let latestRequestToken = 0;
 
 function cancelPending(): void {
   if (debounceTimer !== null) {
@@ -68,19 +75,17 @@ function normalizeRepo(repo: GithubRepo): GithubRepoItem {
   };
 }
 
-/** Run the search for `query`, dropping the response if a newer query superseded it. */
+/** Run the search for `query`, dropping the response if a newer request superseded it. */
 async function runSearch(query: string): Promise<void> {
+  const token = ++latestRequestToken;
   appStore.dispatch(setGithubRepoSearchLoading(query));
-  try {
-    const repos = await githubAuthClient.searchRepos(query);
-    if (currentQuery !== query) return;
-    appStore.dispatch(setGithubRepoSearchResults(query, repos.map(normalizeRepo)));
-  } catch (error) {
-    if (currentQuery !== query) return;
-    appStore.dispatch(
-      setGithubRepoSearchError(query, error instanceof Error ? error.message : String(error)),
-    );
+  const result = await githubAuthClient.searchRepos(query);
+  if (token !== latestRequestToken) return;
+  if (!result.success) {
+    appStore.dispatch(setGithubRepoSearchError(query, result.error ?? UNKNOWN_SEARCH_ERROR));
+    return;
   }
+  appStore.dispatch(setGithubRepoSearchResults(query, (result.data ?? []).map(normalizeRepo)));
 }
 
 /** First array-payload element coerced to a query string. */
@@ -95,7 +100,8 @@ function handleSearch(query: string): void {
   cancelPending();
 
   if (trimmed.length < MIN_QUERY_LENGTH) {
-    currentQuery = null;
+    // Invalidate any in-flight request so its response cannot land after the clear.
+    latestRequestToken++;
     // Only clear when there is something to clear, so an empty input does not
     // churn the slice on every keystroke.
     const search = appStore.state.githubRepoSearch;
@@ -105,7 +111,6 @@ function handleSearch(query: string): void {
     return;
   }
 
-  currentQuery = trimmed;
   debounceTimer = setTimeout(() => {
     debounceTimer = null;
     void runSearch(trimmed);
