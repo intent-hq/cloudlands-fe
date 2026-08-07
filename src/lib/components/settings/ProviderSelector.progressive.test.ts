@@ -10,7 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/svelte';
-import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
@@ -102,7 +102,6 @@ describe('ProviderSelector progressive rendering', () => {
     vi.clearAllMocks();
     // The aggregated GET_AVAILABILITY never settles: rows must not wait on it.
     mocks.invoke.mockImplementation(async (channel: string) => {
-      if (channel === AUGGIE_CHANNELS.STATUS) return new Promise(() => {});
       if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) return new Promise(() => {});
       if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
         return { success: true, data: { paths: {}, secondaryPaths: {} } };

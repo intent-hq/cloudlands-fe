@@ -171,7 +171,6 @@ const ALLOWED_CHANNELS = [
   "events:get-agent-subscriptions",
   "events:unsubscribe-agent",
   "auggie:check-availability",
-  "auggie:status",
   "auggie:install",
   "auggie:authenticate",
   "auggie:get-models",
