@@ -1000,6 +1000,119 @@ describe('ModelPicker availability gating', () => {
   });
 });
 
+describe('ModelPicker selected-model loading state', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'auggie:sonnet4.6';
+    mockModelState.loadError = null;
+    mockModelState.availableModels = [];
+    mockModelState.availableModelsProviderId = '';
+    providerWarnings$.set({});
+    codexManagedInstallStatus$.set(null);
+    mockSvelteDispatch.mockClear();
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models: [] });
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+    availableProviderOverride$.set(null);
+    hasCheckedOnce$.set(true);
+    daemonHealth$.set('healthy');
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+    availableProviderOverride$.set(null);
+    hasCheckedOnce$.set(true);
+    mockModelState.availableModelsProviderId = 'auggie';
+  });
+
+  it('shows a spinner instead of the warning while availability has not hydrated yet, then clears once the model arrives', async () => {
+    // Regression (transient warning on refresh): with the availability list not
+    // hydrated, fetchAllProviderModels([]) marks the catalog "loaded" while
+    // empty — the selected model must read as still-loading, not unavailable.
+    hasCheckedOnce$.set(false);
+    availableProviderOverride$.set([]);
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'auggie:sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' }],
+    });
+
+    render(ModelPicker, {
+      props: { selectedModel: 'auggie:sonnet4.6', agentId: 'test-agent', portal: false },
+    });
+
+    const trigger = await screen.findByRole('button');
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(screen.getByRole('status')).toBeTruthy();
+
+    // Availability hydrates and the provider's catalog resolves with the model.
+    hasCheckedOnce$.set(true);
+    availableProviderOverride$.set(['auggie']);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('status')).toBeNull();
+    });
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(trigger.textContent).toContain('Sonnet 4.6');
+  });
+
+  it('shows the warning once the selected model provider has settled without the model', async () => {
+    hasCheckedOnce$.set(false);
+    availableProviderOverride$.set([]);
+    // Empty catalog so the auto-fallback has no candidate and the warning stays.
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models: [] });
+
+    render(ModelPicker, {
+      props: { selectedModel: 'auggie:sonnet4.6', agentId: 'test-agent', portal: false },
+    });
+
+    const trigger = await screen.findByRole('button');
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(screen.getByRole('status')).toBeTruthy();
+
+    hasCheckedOnce$.set(true);
+    availableProviderOverride$.set(['auggie']);
+
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('never shows the warning while the selected model provider fetch is still in flight', async () => {
+    let resolveFetch:
+      | ((result: { models: { value: string; label: string; description: string }[] }) => void)
+      | undefined;
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    render(ModelPicker, {
+      props: { selectedModel: 'auggie:sonnet4.6', agentId: 'test-agent', portal: false },
+    });
+
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+    });
+
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+
+    resolveFetch?.({ models: [] });
+
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
 describe('ModelPicker unlocked agent provider handling', () => {
   beforeEach(() => {
     vi.clearAllMocks();
