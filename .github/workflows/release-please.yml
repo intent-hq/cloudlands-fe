@@ -36,6 +36,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Run release-please
+        id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           # RELEASE_PAT (not GITHUB_TOKEN) MUST be the action's token: the
@@ -46,3 +47,29 @@ jobs:
           token: ${{ secrets.RELEASE_PAT }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # Anchor releases are betas: they carry the Pre-release badge until
+      # release-stable.yml promotes the version (which clears the flag and
+      # marks the version Latest). This cannot be done with the
+      # `"prerelease": true` config option — release-please only honours it
+      # for versions with a prerelease suffix or major 0 (manifest.ts:
+      # `config.prerelease && (!!version.preRelease || version.major === 0)`),
+      # and this repo releases plain 2.x versions. Fail-soft: a release that
+      # stays non-prerelease is cosmetic and must never fail the workflow.
+      - name: Mark anchor release as Pre-release
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: |
+          REPO=intent-hq/cloudlands-fe
+          if ! RELEASE_ID=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.id'); then
+            echo "::warning::Could not read release ${TAG} on ${REPO}; leaving its Pre-release flag untouched"
+            exit 0
+          fi
+          if ! gh api -X PATCH "repos/${REPO}/releases/${RELEASE_ID}" -F prerelease=true >/dev/null; then
+            echo "::warning::Could not mark ${TAG} on ${REPO} as Pre-release"
+            exit 0
+          fi
+          echo "✓ ${TAG} marked as Pre-release on ${REPO}"

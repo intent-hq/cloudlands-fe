@@ -51,6 +51,7 @@ import { registerBrowserExecReverseHandler } from '../../browser/main/browser-ex
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import type {
   AddConnectionResult,
+  ConnectionBootFallbackEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
   ConnectionsChangedEvent,
@@ -190,6 +191,25 @@ let protocolMismatchNotified = false;
 let activeProtocolMismatch: ConnectionProtocolMismatchEvent | null = null;
 
 /**
+ * Sticky boot-time backend-restore fallback notice (T19), or `null`. Set by
+ * {@link reconcileActiveConnectionOnBoot} when a persisted remote `activeId` was
+ * unreachable at boot and the FE fell back to local. Replayed on
+ * {@link listConnections} (the initial `connections:list` fetch) so the renderer
+ * surfaces the non-blocking notice — the fallback happens before any window
+ * exists, so a live broadcast alone would be lost. Cleared once consumed by
+ * that first list fetch so it never re-pops on a later refresh.
+ */
+let bootFallbackNotice: ConnectionBootFallbackEvent | null = null;
+
+/**
+ * Bounded timeout for the boot reconnect attempt against a persisted remote
+ * (T19). Long enough to ride out a slow-but-reachable LAN handshake, short
+ * enough that an unreachable remote never stalls startup — on timeout the FE
+ * falls back to the always-available local sidecar.
+ */
+let bootReconnectTimeoutMs = 4_000;
+
+/**
  * Window-teardown seam for a backend switch (T4). Two split hooks, called
  * around the client swap so the outgoing backend's layout is captured while its
  * windows are still live and the incoming backend's windows only open once the
@@ -253,6 +273,15 @@ export function __resetBackendProtocolStateForTesting(): void {
   protocolMismatchNotified = false;
   activeProtocolMismatch = null;
   activeConnectionMeta = null;
+  bootFallbackNotice = null;
+}
+/** @internal Test seam: shorten the T19 boot-reconnect timeout. */
+export function __setBootReconnectTimeoutForTesting(ms: number): void {
+  bootReconnectTimeoutMs = ms;
+}
+/** @internal Test seam: read the latched T19 boot-fallback notice. */
+export function __getBootFallbackNoticeForTesting(): ConnectionBootFallbackEvent | null {
+  return bootFallbackNotice;
 }
 
 /** Liveness heartbeat interval; reconnect-on-close cannot detect half-open sockets. */
@@ -519,35 +548,166 @@ function toErrorPayload(error: unknown): {
 // ============================================================================
 
 /**
- * Reconcile the persisted active connection with the live transport at boot
- * (T8). On startup the shared client is always constructed from the local/env
- * default (`currentConfig` is `null`) — but the connections store may still
- * persist `activeId = <remote>` from a prior session. Left unreconciled,
- * `connections:list` would report a remote as active while the socket is
- * actually local, and the status menu / switch UI would show a lie.
+ * Restore the last-used backend at boot, with a graceful fallback to local
+ * (T19). The persisted `activeId` records whichever backend was active when the
+ * app last closed. On launch:
+ *   - **Local (or no remote):** nothing to do — the shared client builds from
+ *     the local/env default lazily, which already matches the persisted id.
+ *   - **A remote:** pin the live client to that remote and attempt to connect
+ *     with a **bounded timeout** ({@link bootReconnectTimeoutMs}). The connect
+ *     goes through the normal pinned-cert/token contract, so a changed cert
+ *     still routes to the existing mismatch failure modal (via the client's
+ *     `error` handler) rather than silently re-trusting.
+ *       - **Reachable:** stay on it — the persisted `activeId` already agrees
+ *         with the live transport, so `connections:list` reports the remote.
+ *       - **Unreachable / timed out:** dispose the remote client, fall back to
+ *         the always-running local sidecar (reset `activeId = local`), and latch
+ *         a non-blocking {@link bootFallbackNotice} ("Couldn't reach <label>;
+ *         using this machine") for the renderer to surface on its first
+ *         `connections:list` fetch. No hang — the timeout bounds the wait.
  *
- * MVP decision: reset `activeId` to {@link LOCAL_CONNECTION_ID} at boot so the
- * persisted active id agrees with the live (local) transport. We deliberately
- * do NOT auto-reconnect a stored remote at boot: the local sidecar always
- * runs, whereas a remote may be unreachable, so defaulting to local is the safe
- * choice. (Alternative considered: auto-reconnect the stored remote at boot —
- * deferred; a user can re-select the remote from the switch UI.)
+ * This reverses the earlier T8 "always reset to local at boot" behavior. The
+ * local sidecar is started before this runs (see main/index.ts) so local is
+ * always available to fall back to.
  *
- * Idempotent and fail-soft: a no-op when already local, and a store write
- * failure must never block app startup.
+ * Fail-soft: any unexpected error (store read/write, config build) falls back to
+ * local and must never block app startup.
+ *
+ * Post-condition / boot seam (T21): once this promise resolves,
+ * `connectionsStore.getActiveId()` reflects the ACTUALLY-connected backend — the
+ * restored remote when it was reachable, otherwise `local`. Every path that
+ * flips the active id (all fallbacks `await setActiveId(local)`) is awaited
+ * before returning, and the reachable-remote path leaves the already-correct
+ * persisted id untouched. Boot code in main/index.ts must run this to
+ * completion BEFORE window-session restore so restore keys off the real backend.
  */
 export async function reconcileActiveConnectionOnBoot(): Promise<void> {
+  let activeId: string;
   try {
-    const activeId = await connectionsStore.getActiveId();
-    if (activeId !== LOCAL_CONNECTION_ID) {
-      logger.info('Resetting persisted active backend to local at boot', { was: activeId });
-      await connectionsStore.setActiveId(LOCAL_CONNECTION_ID);
-    }
+    activeId = await connectionsStore.getActiveId();
   } catch (error) {
-    logger.warn('Failed to reconcile active backend at boot', {
+    logger.warn('Failed to read persisted active backend at boot', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return; // Nothing built yet; the lazy local client is the safe default.
+  }
+  if (activeId === LOCAL_CONNECTION_ID) return; // Already local — no-op.
+
+  // Resolve the remote's config + label BEFORE building anything, so a bad
+  // record (forgotten remote, missing token) falls back cleanly to local.
+  let config: BackendConnectionConfig;
+  let meta: { id: string; host: string; port: number } | null;
+  let label: string;
+  try {
+    ({ config, meta } = await buildConfigForConnection(activeId));
+    label = await resolveConnectionLabel(activeId);
+  } catch (error) {
+    logger.warn('Cannot restore persisted remote backend at boot; falling back to local', {
+      id: activeId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    await fallBackToLocalOnBoot(activeId, activeId);
+    return;
+  }
+
+  // Pin the live client to the remote and attempt a bounded connect. The
+  // handshake-labeled `host.status` probe (the same call the heartbeat uses,
+  // answered on both transports) resolves once the pinned socket is connected.
+  //
+  // Dispose any client an EARLIER consumer already lazily built from the
+  // local/env default before we got here (the About-panel provider-catalog task
+  // races reconciliation and calls `getBackendClient()`). `currentConfig` only
+  // steers the NEXT construction — it does not re-target a live client — so
+  // without this dispose `getBackendClient()` below would return that stale LOCAL
+  // client, the probe would hit local (reporting the remote "reachable" while the
+  // live transport is actually local), and `activeId` would stay remote: a split
+  // between `getActiveId()` and the real transport. Disposing first forces a
+  // fresh client pinned to the remote, making this reconciliation authoritative —
+  // it truly swaps the live transport onto the resolved backend.
+  disposeBackendClient();
+  currentConfig = meta ? config : null;
+  activeConnectionMeta = meta;
+  logger.info('Restoring last-used remote backend at boot', { id: activeId });
+  const reachable = await probeBackendReachable(getBackendClient(), bootReconnectTimeoutMs);
+  if (reachable) {
+    logger.info('Restored last-used remote backend at boot', { id: activeId });
+    return;
+  }
+
+  // Unreachable/timed out: tear the remote client down and fall back to local.
+  // A pinned-cert mismatch already surfaced its own blocking modal via the
+  // client `error` handler (certMismatchNotified) — skip the redundant notice.
+  const certMismatch = certMismatchNotified;
+  logger.warn('Last-used remote backend unreachable at boot; falling back to local', {
+    id: activeId,
+    certMismatch,
+  });
+  disposeBackendClient();
+  currentConfig = null;
+  activeConnectionMeta = null;
+  await fallBackToLocalOnBoot(activeId, label, certMismatch);
+}
+
+/**
+ * Fall back to the local sidecar during boot reconciliation: persist
+ * `activeId = local` and, unless a cert-mismatch modal already fired, latch the
+ * non-blocking boot-fallback notice for the renderer's first list fetch. The
+ * store write is fail-soft — a failure must never block startup.
+ */
+async function fallBackToLocalOnBoot(
+  id: string,
+  label: string,
+  certMismatch = false,
+): Promise<void> {
+  try {
+    await connectionsStore.setActiveId(LOCAL_CONNECTION_ID);
+  } catch (error) {
+    logger.warn('Failed to persist local active backend at boot fallback', {
       error: error instanceof Error ? error.message : String(error),
     });
   }
+  if (!certMismatch) {
+    bootFallbackNotice = { id, label };
+  }
+}
+
+/**
+ * Human label for a connection id, for the boot-fallback notice copy. Prefers
+ * the stored hostname, then the label, then `host:port`, then the raw id.
+ * Fail-soft: any store error yields the id.
+ */
+async function resolveConnectionLabel(id: string): Promise<string> {
+  try {
+    const record = (await connectionsStore.list()).find((c) => c.id === id);
+    if (!record) return id;
+    return record.hostname || record.label || (record.host ? `${record.host}:${record.port}` : id);
+  } catch {
+    return id;
+  }
+}
+
+/**
+ * Resolve whether a freshly-pinned client can reach its backend within a bounded
+ * timeout (T19 boot restore). Issues `host.status` — the transport-agnostic
+ * capability probe answered on both UDS and WSS — and races it against the
+ * timeout so an unreachable/black-hole remote can never hang boot. Resolves
+ * `true` only on a successful response; `false` on rejection or timeout.
+ */
+function probeBackendReachable(client: JsonRpcClient, timeoutMs: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const done = (value: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => done(false), timeoutMs);
+    client.request('host.status', undefined, { timeoutMs }).then(
+      () => done(true),
+      () => done(false),
+    );
+  });
 }
 
 /**
@@ -712,6 +872,94 @@ export async function switchBackend(id: string): Promise<SwitchConnectionResult>
   return { activeId: id };
 }
 
+/**
+ * Spawn the app-managed sidecar on demand (#439 fallback). Probes the live
+ * client's transport first — the on-demand sidecar always binds the local UDS
+ * socket, so a WS/TCP client would keep reconnecting to its original target and
+ * never reach the daemon we spawned, stranding the renderer on a pending spawn.
+ * On a successful spawn, re-broadcast the current status so the reconnect UI
+ * updates while the JsonRpcClient's ≤5s reconnect loop picks up the new socket.
+ *
+ * Extracted from the `backend:spawn-sidecar` handler so {@link switchToLocalAndSpawn}
+ * can reuse the exact same spawn semantics after flipping the active backend to
+ * local (the switch makes the transport `uds`, so the guard then passes).
+ */
+async function performSpawnSidecar(): Promise<{
+  ok: boolean;
+  spawned: boolean;
+  reason?: string;
+  error?: unknown;
+}> {
+  try {
+    const transport = getBackendClient().getConfig().transport;
+    if (transport !== 'uds') {
+      return {
+        ok: false,
+        spawned: false,
+        reason: `connection target is not a local socket (transport: ${transport})`,
+      };
+    }
+    const result = await spawnSidecarOnDemand(
+      process.env,
+      app.isPackaged,
+      process.resourcesPath,
+      process.cwd(),
+    );
+    if (result.ok) {
+      // The daemon-loss modal resolves as soon as the spawn kicked off; the
+      // JsonRpcClient's ≤5s reconnect loop picks up the socket once the
+      // daemon is serving and broadcasts `backend:status` as usual.
+      const client = getBackendClient();
+      broadcast(BACKEND.STATUS, {
+        status: client.getStatus(),
+        transport: formatTransportInfo(client.getConfig()),
+      });
+    }
+    return result;
+  } catch (error) {
+    return { ok: false, spawned: false, error: toErrorPayload(error) };
+  }
+}
+
+/**
+ * Atomic "Start local intentd" recovery from external/remote mode (T22 review):
+ * switch the active backend to local AND spawn the app-managed sidecar in a
+ * SINGLE main-process action.
+ *
+ * Why this must live wholly in main: {@link switchBackend} captures-and-closes
+ * every window (destroying the renderer that initiated recovery) BEFORE the
+ * switch IPC resolves, so a renderer that switched-to-local and then separately
+ * dispatched the spawn could be torn down before the second step ran — leaving
+ * the user on a fresh local window with intentd never started. Keeping both steps
+ * here makes recovery independent of the initiating renderer's survival.
+ *
+ * Order matters: switch to local FIRST so the live transport becomes the local
+ * UDS socket, THEN spawn — {@link performSpawnSidecar}'s uds guard only passes
+ * once the switch has re-targeted the client. Already-local is a no-op switch
+ * (just spawn), mirroring the renderer's prior guard.
+ */
+export async function switchToLocalAndSpawn(): Promise<{
+  ok: boolean;
+  spawned: boolean;
+  reason?: string;
+  error?: unknown;
+}> {
+  try {
+    const activeId = await connectionsStore.getActiveId();
+    if (activeId !== LOCAL_CONNECTION_ID) {
+      await switchBackend(LOCAL_CONNECTION_ID);
+    }
+  } catch (error) {
+    // A switch failure still lets us attempt the spawn (main may already be
+    // targeting local); surface nothing here — performSpawnSidecar reports its
+    // own outcome and the connections slice carries any switch error.
+    logger.warn('Switch to local before sidecar spawn failed; attempting spawn anyway', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return performSpawnSidecar();
+}
+
 /** Register the backend bridge IPC handlers (idempotent). */
 export function registerBackendHandlers(): void {
   if (handlersRegistered) return;
@@ -776,41 +1024,11 @@ export function registerBackendHandlers(): void {
     return { status: client.getStatus(), transport };
   });
 
-  ipcMain.handle(BACKEND.SPAWN_SIDECAR, async () => {
-    try {
-      // The on-demand sidecar always binds the local UDS socket. A WS/TCP
-      // client keeps reconnecting to its original target and would never
-      // reach the daemon we spawned, stranding the renderer on a pending
-      // spawn — refuse instead.
-      const transport = getBackendClient().getConfig().transport;
-      if (transport !== 'uds') {
-        return {
-          ok: false,
-          spawned: false,
-          reason: `connection target is not a local socket (transport: ${transport})`,
-        };
-      }
-      const result = await spawnSidecarOnDemand(
-        process.env,
-        app.isPackaged,
-        process.resourcesPath,
-        process.cwd(),
-      );
-      if (result.ok) {
-        // The daemon-loss modal resolves as soon as the spawn kicked off; the
-        // JsonRpcClient's ≤5s reconnect loop picks up the socket once the
-        // daemon is serving and broadcasts `backend:status` as usual.
-        const client = getBackendClient();
-        broadcast(BACKEND.STATUS, {
-          status: client.getStatus(),
-          transport: formatTransportInfo(client.getConfig()),
-        });
-      }
-      return result;
-    } catch (error) {
-      return { ok: false, spawned: false, error: toErrorPayload(error) };
-    }
-  });
+  ipcMain.handle(BACKEND.SPAWN_SIDECAR, async () => performSpawnSidecar());
+
+  // Atomic recovery: switch active → local AND spawn the sidecar in one main-side
+  // action so it survives the initiating window's teardown during the switch.
+  ipcMain.handle(BACKEND.SWITCH_LOCAL_AND_SPAWN, async () => switchToLocalAndSpawn());
 
   // Per-run sidecar log capture: the renderer's daemon-loss dialog offers to
   // show the captured stdout/stderr tail from the last sidecar run. The
@@ -932,6 +1150,16 @@ function registerConnectionsHandlers(): void {
       CONNECTIONS.SWITCH,
     ),
   );
+
+  // Pull the one-shot boot-restore fallback notice (T19), consume-once. The
+  // renderer fetches this once on mount and surfaces a non-blocking toast; the
+  // fallback happens before any window exists, so the notice is latched at boot
+  // and delivered here on demand rather than pushed live. No params.
+  ipcMain.handle(CONNECTIONS.GET_BOOT_FALLBACK, async () => {
+    const bootFallback = bootFallbackNotice;
+    bootFallbackNotice = null;
+    return { bootFallback };
+  });
 }
 
 /** Dispose the shared client (used on shutdown). */

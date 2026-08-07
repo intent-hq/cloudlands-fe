@@ -107,6 +107,18 @@ export const spawnSidecarRequested = createAction(
 );
 
 /**
+ * User asked to "Start local intentd" while a REMOTE/external backend is active
+ * (T22 review). The daemon-health middleware invokes backend:switch-local-and-spawn,
+ * a single main-process action that switches active → local AND spawns the
+ * sidecar atomically — the switch tears down this window before the IPC returns,
+ * so a renderer-side continuation could not reliably request the spawn. Sets the
+ * same pending flag as {@link spawnSidecarRequested}.
+ */
+export const switchLocalAndSpawnRequested = createAction(
+  'daemonHealth/switchLocalAndSpawnRequested',
+);
+
+/**
  * backend:spawn-sidecar failed (binary not found, spawn error). A successful
  * spawn has no dedicated action — the pending flag clears when the reconnect
  * lands as a 'connected' backend:status event.
@@ -279,6 +291,9 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
     return { ...state, polling: false };
   })
   .with(spawnSidecarRequested, (state) => {
+    return { ...state, sidecarSpawnPending: true, sidecarSpawnError: null };
+  })
+  .with(switchLocalAndSpawnRequested, (state) => {
     return { ...state, sidecarSpawnPending: true, sidecarSpawnError: null };
   })
   .with(spawnSidecarFailed, (state, { payload: [error] }) => {

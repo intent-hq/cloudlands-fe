@@ -4427,6 +4427,170 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
     expect(taskListCalls(BURST_WS)).toHaveLength(1);
   });
 
+  it('task:created on an initialized workspace triggers the same debounced task.list refetch', async () => {
+    const CREATED_WS = 'ws-bridge-tasks-created';
+    const { loadWorkspaceTasksSucceeded } =
+      await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(CREATED_WS, [], { total: 0, completed: 0, inProgress: 0 }),
+    );
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    backendRequestSpy.mockImplementation((method: string) =>
+      method === 'task.list'
+        ? Promise.resolve({
+            tasks: [{ id: 'task-new', title: 'Ship HUD', status: 'not_started' }],
+            stats: { total: 1, completed: 0, inProgress: 0 },
+          })
+        : undefined,
+    );
+
+    vi.useFakeTimers();
+    // PROTOCOL §6.5 task:created payload.
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-task-created-1',
+          workspaceId: CREATED_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'task:created',
+          actor: { type: 'agent', id: AGENT },
+          data: {
+            noteId: 'task-new',
+            noteTitle: 'Ship HUD',
+            status: 'not_started',
+            createdAt: '2026-01-02T00:00:00.000Z',
+            agentId: AGENT,
+          },
+        },
+      },
+    });
+
+    // Debounced: no wire call before the ~1s window elapses.
+    expect(taskListCalls(CREATED_WS)).toHaveLength(0);
+    vi.advanceTimersByTime(1000);
+
+    expect(taskListCalls(CREATED_WS)).toHaveLength(1);
+    expect(backendRequestSpy).toHaveBeenCalledWith('task.list', { workspaceId: CREATED_WS });
+
+    vi.useRealTimers();
+    await flush();
+    const wsState = (
+      appStore.state as { workspaceTasks: { byWorkspaceId: Record<string, { stats: unknown }> } }
+    ).workspaceTasks.byWorkspaceId[CREATED_WS];
+    expect(wsState.stats).toEqual({ total: 1, completed: 0, inProgress: 0 });
+  });
+
+  it('task:created on a workspace whose tasks slice is not initialized does NOT fetch', async () => {
+    const UNINIT_CREATED_WS = 'ws-bridge-tasks-created-uninit';
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-task-created-2',
+          workspaceId: UNINIT_CREATED_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'task:created',
+          actor: { type: 'system' },
+          data: {
+            noteId: 'task-x',
+            noteTitle: 'Unviewed',
+            status: 'not_started',
+            createdAt: '2026-01-02T00:00:00.000Z',
+          },
+        },
+      },
+    });
+    vi.advanceTimersByTime(2000);
+
+    expect(taskListCalls(UNINIT_CREATED_WS)).toHaveLength(0);
+  });
+
+  // AGENTS.md event-driven refetch rule: single-flight WITH trailing coalesce.
+  // A task:created landing while task.list is still in flight must not be
+  // dropped — it queues exactly one trailing refetch once the first settles.
+  it('task:created during an in-flight task.list queues exactly one trailing refetch', async () => {
+    const TRAILING_WS = 'ws-bridge-tasks-created-trailing';
+    const { loadWorkspaceTasksSucceeded } = await import(
+      '$store/renderer/slices/workspace-tasks/workspace-tasks-slice'
+    );
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(TRAILING_WS, [], { total: 0, completed: 0, inProgress: 0 }),
+    );
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    let releaseFirst: (() => void) | undefined;
+    const staleResult = {
+      tasks: [],
+      stats: { total: 0, completed: 0, inProgress: 0 },
+    };
+    const freshResult = {
+      tasks: [{ id: 'task-trailing', title: 'Late task', status: 'not_started' }],
+      stats: { total: 1, completed: 0, inProgress: 0 },
+    };
+    let taskListSeen = 0;
+    backendRequestSpy.mockImplementation((method: string) => {
+      if (method !== 'task.list') return undefined;
+      taskListSeen += 1;
+      if (taskListSeen === 1) {
+        return new Promise((resolve) => {
+          releaseFirst = () => resolve(staleResult);
+        });
+      }
+      return Promise.resolve(freshResult);
+    });
+
+    const createdEvent = (id: string, noteId: string) => ({
+      method: 'events.event',
+      params: {
+        event: {
+          id,
+          workspaceId: TRAILING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'task:created',
+          actor: { type: 'agent', id: AGENT },
+          data: {
+            noteId,
+            noteTitle: 'Late task',
+            status: 'not_started',
+            createdAt: '2026-01-02T00:00:00.000Z',
+            agentId: AGENT,
+          },
+        },
+      },
+    });
+
+    vi.useFakeTimers();
+    handler(createdEvent('evt-task-created-trailing-1', 'task-first'));
+    vi.advanceTimersByTime(1000);
+    expect(taskListCalls(TRAILING_WS)).toHaveLength(1);
+
+    // Second creation lands while the first task.list is still unresolved.
+    handler(createdEvent('evt-task-created-trailing-2', 'task-trailing'));
+    vi.advanceTimersByTime(1000);
+    expect(taskListCalls(TRAILING_WS)).toHaveLength(1);
+
+    vi.useRealTimers();
+    releaseFirst?.();
+    await flush();
+
+    // Exactly one trailing refetch, and its fresh response wins.
+    expect(taskListCalls(TRAILING_WS)).toHaveLength(2);
+    await flush();
+    expect(taskListCalls(TRAILING_WS)).toHaveLength(2);
+    const wsState = (
+      appStore.state as { workspaceTasks: { byWorkspaceId: Record<string, { stats: unknown }> } }
+    ).workspaceTasks.byWorkspaceId[TRAILING_WS];
+    expect(wsState.stats).toEqual({ total: 1, completed: 0, inProgress: 0 });
+  });
+
   it('a pending refetch is dropped if the tasks slice is cleared during the debounce window', async () => {
     const CLEARED_WS = 'ws-bridge-tasks-cleared';
     const { loadWorkspaceTasksSucceeded, clearWorkspaceTasks } =

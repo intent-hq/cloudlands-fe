@@ -451,7 +451,7 @@
             {#if $unslothStatus$.repoId}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">{m.layout_daemonStatus_model_label()}</span>
-                <Tooltip side="left">
+                <Tooltip side="left" contentClass="z-[10001]">
                   {#snippet content()}
                     <span>{$unslothStatus$.repoId}</span>
                   {/snippet}
@@ -583,7 +583,7 @@
                   </span>
                   <span class="flex items-center gap-1.5 shrink-0">
                     {#if $activeProtocolMismatch$?.id === conn.id}
-                      <Tooltip side="left">
+                      <Tooltip side="left" contentClass="z-[10001]">
                         {#snippet content()}
                           <span>{m.layout_daemonStatus_protocolMismatch_tooltip()}</span>
                         {/snippet}

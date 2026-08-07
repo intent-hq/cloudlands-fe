@@ -177,7 +177,6 @@ export const IPC_CHANNELS = {
 
   // Auggie Integration
   AUGGIE: {
-    CHECK_AVAILABILITY: 'auggie:check-availability',
     INSTALL: 'auggie:install',
     AUTHENTICATE: 'auggie:authenticate',
     GET_MODELS: 'auggie:get-models',
@@ -836,6 +835,13 @@ export const IPC_CHANNELS = {
     NOTIFICATION: 'backend:notification',
     STATUS: 'backend:status',
     SPAWN_SIDECAR: 'backend:spawn-sidecar',
+    // Atomic recovery from external/remote mode: switch the active backend to
+    // local AND spawn the app-managed sidecar in ONE main-process action. The
+    // switch destroys every window (captureAndClose) before the switch IPC
+    // returns, so a renderer that switched then dispatched the spawn separately
+    // could be torn down before the second step runs — this single handler keeps
+    // both steps in main so recovery survives the window teardown.
+    SWITCH_LOCAL_AND_SPAWN: 'backend:switch-local-and-spawn',
     GET_SIDECAR_RUN_LOG: 'backend:get-sidecar-run-log',
   },
 
@@ -853,6 +859,10 @@ export const IPC_CHANNELS = {
     CHANGED: 'connections:changed',
     CERT_MISMATCH: 'connections:cert-mismatch',
     PROTOCOL_MISMATCH: 'connections:protocol-mismatch',
+    // Pull the one-shot boot-restore fallback notice latched in main (T19),
+    // consume-once. The renderer fetches this once on mount and surfaces a
+    // non-blocking toast; the notice never becomes connections-slice state.
+    GET_BOOT_FALLBACK: 'connections:get-boot-fallback',
   },
 
   // Hardware console (Codex Micro / Creator Micro 2)

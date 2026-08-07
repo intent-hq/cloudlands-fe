@@ -127,6 +127,11 @@
     class?: string;
     disabled?: boolean;
     editableWhileDisabled?: boolean;
+    /**
+     * Transient lock (e.g. an in-flight draft restore): rejects focus/typing
+     * without the `disabled` styling path, so the placeholder stays visible.
+     */
+    inputLocked?: boolean;
     workspace?: Workspace;
     repoPath?: string;
     editorClassName?: string;
@@ -150,6 +155,7 @@
     placeholder = m.chat_richInput_askAnything_placeholder(),
     disabled = false,
     editableWhileDisabled = false,
+    inputLocked = false,
     class: className = '',
     editorClassName = '',
     workspace,
@@ -169,6 +175,14 @@
     minHeight = 80,
     maxHeight = 300,
   }: Props = $props();
+
+  // `inputLocked` is an editability-only lock — it never routes through the
+  // `disabled` styling, so the placeholder keeps rendering while it is on.
+  const isEditable = $derived((!disabled || editableWhileDisabled) && !inputLocked);
+  // Placeholder is configured with `showOnlyWhenEditable: false` for the lock,
+  // which would otherwise also surface it in the plain-disabled state. The
+  // extension options are fixed at editor creation, so suppression is CSS-side.
+  const placeholderSuppressed = $derived(!isEditable && !inputLocked);
 
   let element: HTMLDivElement;
   let editor: Editor | null = $state(null);
@@ -194,6 +208,7 @@
 
   // Export focus method for parent components
   export function focus(): boolean {
+    if (inputLocked) return false;
     if (editor && editor.view) {
       try {
         editor.chain().focus().run();
@@ -211,6 +226,7 @@
 
   // Focus at the end of the content
   export function focusEnd(): boolean {
+    if (inputLocked) return false;
     if (editor && editor.view) {
       try {
         editor.chain().focus('end').run();
@@ -224,6 +240,7 @@
 
   // Focus and select all content
   export function focusAndSelectAll(): boolean {
+    if (inputLocked) return false;
     if (editor && editor.view) {
       try {
         editor.chain().focus().selectAll().run();
@@ -607,6 +624,9 @@
           Placeholder.configure({
             placeholder,
             emptyEditorClass: 'is-editor-empty text-subtle',
+            // `inputLocked` turns editability off; the placeholder must survive
+            // it, otherwise a gated draft restore blanks the composer.
+            showOnlyWhenEditable: false,
           }),
           Image.configure({
             inline: false,
@@ -680,7 +700,7 @@
           PasteChip,
         ],
         content: initialHTML,
-        editable: !disabled || editableWhileDisabled,
+        editable: isEditable,
         // Disable the buggy 'delete' core extension that emits delete events.
         // It has a bug where it calls nodeAt(newStart - 1) without checking if newStart is 0,
         // causing "Position -1 outside of fragment" errors.
@@ -1335,7 +1355,7 @@
   // Update editable state
   $effect(() => {
     if (editor) {
-      editor.setEditable(!disabled || editableWhileDisabled);
+      editor.setEditable(isEditable);
     }
   });
 </script>
@@ -1343,6 +1363,7 @@
 <div
   bind:this={element}
   class="tiptap-container {className}"
+  class:placeholder-suppressed={placeholderSuppressed}
   style={`--tt-min-height:${minHeight}px;--tt-max-height:${maxHeight}px`}
 ></div>
 
@@ -1382,6 +1403,15 @@
     pointer-events: none;
     float: left;
     height: 0;
+  }
+
+  /* `showOnlyWhenEditable: false` keeps the placeholder alive for `inputLocked`;
+     the plain-disabled state must stay placeholder-free as before. */
+  .tiptap-container.placeholder-suppressed
+    :global(.tiptap-editor p.is-editor-empty:first-child::before),
+  .tiptap-container.placeholder-suppressed
+    :global(.tiptap-editor p.is-empty:first-child::before) {
+    content: none;
   }
 
   /* Mention chip styles are defined in tiptap-editor.css */

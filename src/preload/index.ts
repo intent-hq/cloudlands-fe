@@ -170,7 +170,6 @@ const ALLOWED_CHANNELS = [
   "events:getStatistics",
   "events:get-agent-subscriptions",
   "events:unsubscribe-agent",
-  "auggie:check-availability",
   "auggie:install",
   "auggie:authenticate",
   "auggie:get-models",
@@ -528,6 +527,7 @@ const ALLOWED_CHANNELS = [
   "backend:notification",
   "backend:status",
   "backend:spawn-sidecar",
+  "backend:switch-local-and-spawn",
   "backend:get-sidecar-run-log",
   "connections:list",
   "connections:capture-fingerprint",
@@ -536,6 +536,8 @@ const ALLOWED_CHANNELS = [
   "connections:switch",
   "connections:changed",
   "connections:cert-mismatch",
+  "connections:protocol-mismatch",
+  "connections:get-boot-fallback",
   "hardware-console:clear-lighting",
   "hardware-console:clear-lighting-done",
   "event:workspace:created",
@@ -689,7 +691,8 @@ const ALLOWED_CHANNELS = [
   "backend:status",
   "hardware-console:clear-lighting",
   "connections:changed",
-  "connections:cert-mismatch"
+  "connections:cert-mismatch",
+  "connections:protocol-mismatch"
 ];
 
 // Dynamic channel patterns that are matched with startsWith()
@@ -864,7 +867,8 @@ const EVENT_CHANNELS = [
   "backend:status",
   "hardware-console:clear-lighting",
   "connections:changed",
-  "connections:cert-mismatch"
+  "connections:cert-mismatch",
+  "connections:protocol-mismatch"
 ];
 
 /**

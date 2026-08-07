@@ -74,6 +74,7 @@ const mocks = vi.hoisted(() => {
   const browserIpcMiddleware = createPassthroughMiddleware();
   const notificationIpcMiddleware = createPassthroughMiddleware();
   const agentEventsIpcMiddleware = createPassthroughMiddleware();
+  const bootFallbackToastMiddleware = createPassthroughMiddleware();
   const gitEventsIpcMiddleware = createPassthroughMiddleware();
   const webNotificationMiddleware = createPassthroughMiddleware();
   const workspaceSettingsPersistenceMiddleware = createPassthroughMiddleware();
@@ -172,6 +173,7 @@ const mocks = vi.hoisted(() => {
     createBrowserIpcMiddleware: vi.fn(() => browserIpcMiddleware),
     createNotificationIpcMiddleware: vi.fn(() => notificationIpcMiddleware),
     createAgentEventsIpcMiddleware: vi.fn(() => agentEventsIpcMiddleware),
+    createBootFallbackToastMiddleware: vi.fn(() => bootFallbackToastMiddleware),
     createGitEventsIpcMiddleware: vi.fn(() => gitEventsIpcMiddleware),
     createWebNotificationMiddleware: vi.fn(() => webNotificationMiddleware),
     createWorkspaceSettingsPersistenceMiddleware: vi.fn(
@@ -265,6 +267,7 @@ const mocks = vi.hoisted(() => {
     browserIpcMiddleware,
     notificationIpcMiddleware,
     agentEventsIpcMiddleware,
+    bootFallbackToastMiddleware,
     gitEventsIpcMiddleware,
     webNotificationMiddleware,
     workspaceSettingsPersistenceMiddleware,
@@ -492,6 +495,9 @@ vi.mock('./middlewares/notification-ipc-service', () => ({
 vi.mock('./middlewares/agent-events-ipc-service', () => ({
   createAgentEventsIpcMiddleware: mocks.createAgentEventsIpcMiddleware,
 }));
+vi.mock('./middlewares/boot-fallback-toast-service', () => ({
+  createBootFallbackToastMiddleware: mocks.createBootFallbackToastMiddleware,
+}));
 vi.mock('./middlewares/git-events-ipc-service', () => ({
   createGitEventsIpcMiddleware: mocks.createGitEventsIpcMiddleware,
 }));
@@ -658,6 +664,7 @@ describe('store middleware Redux logging gating', () => {
       mocks.browserIpcMiddleware,
       mocks.notificationIpcMiddleware,
       mocks.agentEventsIpcMiddleware,
+      mocks.bootFallbackToastMiddleware,
       mocks.gitEventsIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
@@ -752,6 +759,7 @@ describe('store middleware Redux logging gating', () => {
       mocks.browserIpcMiddleware,
       mocks.notificationIpcMiddleware,
       mocks.agentEventsIpcMiddleware,
+      mocks.bootFallbackToastMiddleware,
       mocks.gitEventsIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
@@ -846,6 +854,7 @@ describe('store middleware Redux logging gating', () => {
       mocks.browserIpcMiddleware,
       mocks.notificationIpcMiddleware,
       mocks.agentEventsIpcMiddleware,
+      mocks.bootFallbackToastMiddleware,
       mocks.gitEventsIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
@@ -941,6 +950,7 @@ describe('store middleware Redux logging gating', () => {
       mocks.browserIpcMiddleware,
       mocks.notificationIpcMiddleware,
       mocks.agentEventsIpcMiddleware,
+      mocks.bootFallbackToastMiddleware,
       mocks.gitEventsIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
@@ -1055,6 +1065,7 @@ describe('store middleware Redux logging gating', () => {
       mocks.browserIpcMiddleware,
       mocks.notificationIpcMiddleware,
       mocks.agentEventsIpcMiddleware,
+      mocks.bootFallbackToastMiddleware,
       mocks.gitEventsIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,

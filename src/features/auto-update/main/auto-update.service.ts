@@ -13,6 +13,7 @@ import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { confirmQuitWithRunningAgents } from '../../../main/quit-confirmation';
 import { saveWindowSessions } from '../../../main/window';
+import { getActiveId } from '../../backend/main/connections-store';
 import type { UpdateChannel, UpdateState, UpdateStatus } from '../types';
 
 const { autoUpdater } = electronUpdater;
@@ -354,7 +355,9 @@ class AutoUpdateService {
       }
 
       logger.info('Saving window sessions before installing update...');
-      await saveWindowSessions();
+      // Persist under the currently-active backend (T21) so the update-restart
+      // restores the same backend's windows rather than clobbering local's slot.
+      await saveWindowSessions(await getActiveId());
       isInstallingUpdate = true;
 
       logger.info('Installing update and restarting...');

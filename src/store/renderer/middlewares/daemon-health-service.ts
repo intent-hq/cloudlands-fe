@@ -22,6 +22,7 @@ import {
   systemStatusFailure,
   heartbeatFailed,
   spawnSidecarRequested,
+  switchLocalAndSpawnRequested,
   spawnSidecarFailed,
   fetchSidecarRunLogRequested,
   fetchSidecarRunLogSucceeded,
@@ -244,6 +245,37 @@ async function spawnSidecar(): Promise<void> {
 }
 
 /**
+ * Invoke backend:switch-local-and-spawn (#439 / T22 recovery race): a single
+ * main-process action that switches the active backend to local AND spawns the
+ * sidecar atomically. Used when recovering from a REMOTE/external backend, where
+ * switching to local tears down this window before a renderer continuation could
+ * request the spawn — doing both in main keeps recovery alive across that
+ * teardown. On failure, dispatch spawnSidecarFailed; on success the pending flag
+ * clears when the reconnect lands as a 'connected' status event.
+ */
+async function switchLocalAndSpawn(): Promise<void> {
+  const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
+  if (!api) {
+    appStore.dispatch(spawnSidecarFailed('electronAPI is not available'));
+    return;
+  }
+  try {
+    const result = (await api.invoke(BACKEND.SWITCH_LOCAL_AND_SPAWN)) as
+      | { ok: boolean; spawned: boolean; reason?: string; error?: { message?: string } }
+      | undefined;
+    if (!result?.ok) {
+      appStore.dispatch(
+        spawnSidecarFailed(
+          result?.error?.message ?? result?.reason ?? m.daemonStatus_spawnSidecarFailed_error(),
+        ),
+      );
+    }
+  } catch (error) {
+    appStore.dispatch(spawnSidecarFailed(error instanceof Error ? error.message : String(error)));
+  }
+}
+
+/**
  * Invoke backend:get-sidecar-run-log (main-process in-memory per-run capture)
  * and dispatch the contract-shaped payload or the failure into the slice.
  */
@@ -339,6 +371,11 @@ export function createDaemonHealthMiddleware(): StoreMiddleware {
     // User asked for the sidecar fallback from the daemon-loss UI (#439).
     if (action.type === spawnSidecarRequested.type) {
       void spawnSidecar();
+    }
+    // User asked to "Start local intentd" while a remote backend is active —
+    // switch to local + spawn atomically in main so it survives window teardown.
+    if (action.type === switchLocalAndSpawnRequested.type) {
+      void switchLocalAndSpawn();
     }
     // User asked for the last-run sidecar log from the daemon-loss dialog.
     if (action.type === fetchSidecarRunLogRequested.type) {
