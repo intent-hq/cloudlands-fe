@@ -86,6 +86,7 @@ const CHAT_WORK_TYPES = new Set([
 type LifecycleSendOptions = {
   imageBlocks?: SendMessagePayload['imageBlocks'];
   noteIds?: string[];
+  messageMetadata?: SendMessagePayload['messageMetadata'];
   model?: string;
   priority?: 'interrupt';
 };
@@ -97,8 +98,13 @@ function getAgentId(action: ChatWork): string {
 }
 
 function isChatWork(action: unknown): action is ChatWork {
-  return !!action && typeof action === 'object' && 'type' in action &&
-    typeof action.type === 'string' && CHAT_WORK_TYPES.has(action.type);
+  return (
+    !!action &&
+    typeof action === 'object' &&
+    'type' in action &&
+    typeof action.type === 'string' &&
+    CHAT_WORK_TYPES.has(action.type)
+  );
 }
 
 function* waitForTranscriptRefresh(agentId: string, wsId: string): SagaGenerator<void> {
@@ -140,7 +146,8 @@ function* renameChiefThreadIfPlaceholder(
       undefined,
       { skipIfExplicitlySet: true },
     );
-    if (!result.success) logger.warn('Chief thread rename was not applied', { agentId, error: result.error });
+    if (!result.success)
+      logger.warn('Chief thread rename was not applied', { agentId, error: result.error });
   } catch (error) {
     logger.warn('Chief thread rename failed', { agentId, error });
   }
@@ -280,6 +287,7 @@ function* handleSend(action: SendAction): SagaGenerator<void> {
     {
       imageBlocks: payload.imageBlocks,
       noteIds: payload.noteIds,
+      messageMetadata: payload.messageMetadata,
       priority: forceSubmit ? 'interrupt' : undefined,
     },
     forceSubmit,
@@ -291,8 +299,17 @@ function* handleRemove(action: RemoveAction): SagaGenerator<void> {
   if (!agentId || !messageId) return;
   yield* put(removeQueuedMessageFromAgentQueue(agentId, messageId));
   try {
-    const result = yield* call([appClient.agents, appClient.agents.removeQueued], agentId, messageId);
-    if (!result.success) logger.warn('Queue removal failed; keeping optimistic removal', { agentId, messageId, error: result.error });
+    const result = yield* call(
+      [appClient.agents, appClient.agents.removeQueued],
+      agentId,
+      messageId,
+    );
+    if (!result.success)
+      logger.warn('Queue removal failed; keeping optimistic removal', {
+        agentId,
+        messageId,
+        error: result.error,
+      });
   } catch (error) {
     logger.error('Queue removal threw; keeping optimistic removal', { agentId, messageId, error });
   }
@@ -311,7 +328,8 @@ function* handleStop(action: StopAction): SagaGenerator<void> {
     yield* put(chatStopInitiated(agentId));
     try {
       const result = yield* call([appClient.agents, appClient.agents.stop], agentId);
-      if (!result.success) logger.warn('Agent stop was not acknowledged', { agentId, error: result.error });
+      if (!result.success)
+        logger.warn('Agent stop was not acknowledged', { agentId, error: result.error });
       yield* put(chatStopCompleted(agentId));
       yield* put(action.success(undefined as void));
       settled = true;
@@ -339,9 +357,10 @@ async function showNothingToRetry(): Promise<void> {
 
 function* handleRetry(action: RetryAction | RetryModelAction): SagaGenerator<void> {
   const [agentId, wsId] = action.payload;
-  const model = action.type === agentSessionRetryWithModelRequested.type
-    ? (action as RetryModelAction).payload[2]
-    : undefined;
+  const model =
+    action.type === agentSessionRetryWithModelRequested.type
+      ? (action as RetryModelAction).payload[2]
+      : undefined;
   let settled = false;
   try {
     const lastAttempted = yield* selectChatLastAttemptedMessage.effect(agentId);
@@ -360,6 +379,7 @@ function* handleRetry(action: RetryAction | RetryModelAction): SagaGenerator<voi
       {
         imageBlocks: lastAttempted.options?.imageBlocks,
         noteIds: lastAttempted.options?.noteIds,
+        messageMetadata: lastAttempted.options?.messageMetadata,
         model: model ?? lastAttempted.options?.model,
       },
       false,
@@ -378,8 +398,10 @@ function* handleRetry(action: RetryAction | RetryModelAction): SagaGenerator<voi
 
 function* handleWork(action: ChatWork): SagaGenerator<void> {
   if (action.type === sendMessage.type) return yield* call(handleSend, action as SendAction);
-  if (action.type === removeQueuedMessageRequested.type) return yield* call(handleRemove, action as RemoveAction);
-  if (action.type === agentSessionStopChatRequested.type) return yield* call(handleStop, action as StopAction);
+  if (action.type === removeQueuedMessageRequested.type)
+    return yield* call(handleRemove, action as RemoveAction);
+  if (action.type === agentSessionStopChatRequested.type)
+    return yield* call(handleStop, action as StopAction);
   return yield* call(handleRetry, action as RetryAction | RetryModelAction);
 }
 
@@ -416,10 +438,7 @@ function* runAgentQueue(
 }
 
 export function* chatSendSaga(): SagaGenerator<void> {
-  const channel = yield* actionChannel(
-    isChatWork,
-    buffers.expanding<ChatWork>(),
-  );
+  const channel = yield* actionChannel(isChatWork, buffers.expanding<ChatWork>());
   const queues = new Map<string, ChatWork[]>();
   const workers = new Map<string, Task | symbol>();
   try {

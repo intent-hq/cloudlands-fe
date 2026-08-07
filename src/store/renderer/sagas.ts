@@ -36,6 +36,7 @@ import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
 import { gitReadSaga } from './slices/git/sagas/git-read-saga';
 import { githubAuthSaga } from './slices/github-auth/sagas/github-auth-saga';
+import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
 import { actionKeySaga } from './slices/hardware-console/sagas/action-key-saga';
 import { hardwareConsoleDeviceSaga } from './slices/hardware-console/sagas/hardware-console-device-saga';
 import { keyPinPersistenceSaga } from './slices/hardware-console/sagas/key-pin-persistence-saga';
@@ -138,6 +139,7 @@ export const sagas = [
   autoUpdateSaga,
   specialistsSaga,
   githubAuthSaga,
+  githubRepoSearchSaga,
   sentryAuthSaga,
   linearAuthSaga,
   mcpSettingsSaga,

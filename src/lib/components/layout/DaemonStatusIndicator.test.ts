@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 
 // Create state holder
@@ -24,7 +25,7 @@ let mockDispatch = vi.fn();
 // `mockStoreState` so the component's connections selectors always resolve
 // (a test that only sets `daemonHealth` still gets a valid `connections` slice).
 const DEFAULT_CONNECTIONS = {
-  connections: [],
+  connections: createCollection('id'),
   activeId: 'local',
   status: 'idle',
   error: null,
@@ -601,7 +602,7 @@ describe('DaemonStatusIndicator', () => {
 
     function withConnections(activeId: string) {
       return {
-        connections: [localRecord, remoteRecord],
+        connections: createCollection('id', [localRecord, remoteRecord]),
         activeId,
         status: 'idle',
         error: null,
@@ -768,7 +769,7 @@ describe('DaemonStatusIndicator', () => {
           polling: false,
         },
         connections: {
-          connections: [remoteWithHostname],
+          connections: createCollection('id', [remoteWithHostname]),
           activeId: 'local',
           status: 'idle',
           error: null,
@@ -795,7 +796,7 @@ describe('DaemonStatusIndicator', () => {
 
     function withMismatch() {
       return {
-        connections: [],
+        connections: createCollection('id'),
         activeId: 'local',
         status: 'idle',
         error: null,

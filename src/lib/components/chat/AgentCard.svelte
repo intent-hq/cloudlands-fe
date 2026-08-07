@@ -30,6 +30,7 @@
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import { getLastMeaningfulLine, stripUserMessagePrefixes } from '$lib/utils/text-utils';
+  import { classifyTool } from './tool-classifier';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
@@ -473,13 +474,25 @@
       .split('\n')[0]
       ?.trim() ?? '',
   );
-  const showUserMessagePreview = $derived(
-    agentData?.lastMessageRole === 'user' && !!userFirstLine && !liveResponseLine,
-  );
 
   // Tool-use block to preview when the latest thing the agent did was a tool
   // call (see agent-peek-utils). Only used when there's no text to display.
   const lastToolUse = $derived(agentData?.lastToolUse);
+  const liveToolUse = $derived(
+    $agent$?.isStreaming && $agent$?.lastToolUse ? lastToolUse : undefined,
+  );
+  const liveToolDisplay = $derived(
+    liveToolUse
+      ? classifyTool(liveToolUse.name, (liveToolUse.input as Record<string, any>) || {})
+      : null,
+  );
+  const hasRenderableLiveTool = $derived(!!liveToolUse && !liveToolDisplay?.hidden);
+  const showUserMessagePreview = $derived(
+    agentData?.lastMessageRole === 'user' &&
+      !!userFirstLine &&
+      !liveResponseLine &&
+      !hasRenderableLiveTool,
+  );
 
   const updatedAt = $derived($agent$?.updatedAt);
 
@@ -638,10 +651,9 @@
           </div>
         </div>
 
-        <!-- Message preview - attention request takes precedence, then the newest
-             user message (freshness wins), then completion report (suppressed in
-             favor of this-turn live text while a turn streams, monorepo#1327),
-             then last response -->
+        <!-- Message preview precedence: attention request, live streamed text,
+             renderable in-flight tool, newest user line, digest/report, then
+             persisted transcript fallback. Hidden tool labels fall through. -->
         {#if !hidePreview}
           {#if attentionRequest}
             <div class="mt-0.5" transition:slide={{ axis: 'y', duration: 150 }}>
@@ -659,6 +671,24 @@
                     · {attentionRequest.reason}</span
                   >{/if}
               </p>
+            </div>
+          {:else if liveResponseLine}
+            <div class="space-y-0.5">
+              <p
+                class="text-sm text-subtle truncate"
+                data-testid="agent-card-preview"
+                transition:slide={{ axis: 'y', duration: 150 }}
+              >
+                {liveResponseLine}
+              </p>
+            </div>
+          {:else if hasRenderableLiveTool}
+            <div
+              class="text-sm text-subtle truncate"
+              data-testid="agent-card-preview"
+              transition:slide={{ axis: 'y', duration: 150 }}
+            >
+              <AgentPreviewToolLabel toolUse={liveToolUse} animate={isRunning} />
             </div>
           {:else if showUserMessagePreview}
             <div class="mt-0.5">
