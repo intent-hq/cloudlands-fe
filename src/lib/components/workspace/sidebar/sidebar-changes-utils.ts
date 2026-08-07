@@ -5,6 +5,7 @@
 
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import type { PullRequestInfo } from '$shared/types';
+import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type {
   AgentChangeGroup,
   PRInfo,
@@ -325,6 +326,80 @@ export function mapWorkspacePRs(
     }];
   }
   return [];
+}
+
+/** Display status for a monitored PR row (PROTOCOL §6.9): active monitors
+ * read the live snapshot state; completed ones ended merged or closed. */
+function monitorDisplayStatus(monitor: PrMonitorRow): 'open' | 'merged' | 'closed' | 'draft' {
+  const snapshotState = monitor.lastSnapshot?.state?.toLowerCase();
+  if (snapshotState === 'merged') return 'merged';
+  if (snapshotState === 'closed') return 'closed';
+  if (monitor.lastSnapshot?.isDraft) return 'draft';
+  // Completed without a snapshot verdict (rare — the terminal sweep persists
+  // the final snapshot first): completion covers both merged and closed, so
+  // default to the non-celebratory 'closed' rather than falsely claim merged.
+  return monitor.state === 'completed' ? 'closed' : 'open';
+}
+
+/**
+ * Merge agent-monitored PRs (PROTOCOL §6.9) into the workspace PR list.
+ * Same-repo monitors that duplicate an existing row (by PR number) only
+ * annotate it with the owning agent; cross-repo and unmatched monitors
+ * append as new rows carrying agent attribution (and the `<owner>/<name>`
+ * repo context when it differs from the workspace repo).
+ */
+export function mergeMonitoredPRs(
+  basePRs: PRInfo[],
+  monitors: PrMonitorRow[],
+  workspaceRepo: string | undefined,
+): PRInfo[] {
+  if (monitors.length === 0) return basePRs;
+
+  const merged = basePRs.map((pr) => ({ ...pr }));
+  for (const monitor of monitors) {
+    const sameRepo = !workspaceRepo || monitor.repo === workspaceRepo;
+    const existing = sameRepo ? merged.find((pr) => pr.number === monitor.prNumber) : undefined;
+    if (existing) {
+      existing.monitorAgentId = monitor.agentId;
+      continue;
+    }
+    const url = monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`;
+    merged.push({
+      number: monitor.prNumber,
+      title: monitor.title ?? `${monitor.repo}#${monitor.prNumber}`,
+      url,
+      htmlUrl: url,
+      status: monitorDisplayStatus(monitor),
+      monitorAgentId: monitor.agentId,
+      crossRepo: sameRepo ? undefined : monitor.repo,
+      monitorOnly: true,
+    });
+  }
+  return merged;
+}
+
+/**
+ * Count active monitored PRs beyond the primary PR pill/badge (PROTOCOL
+ * §6.9) — the "+N" indicator on the workspace card surfaces. A monitor is
+ * excluded only when it matches the primary PR by number in the workspace
+ * repo (an unknown workspace repo treats all monitors as same-repo).
+ */
+export function countOtherActiveMonitors(
+  monitors: PrMonitorRow[],
+  primaryPrNumber: number | undefined,
+  repositoryOwner: string | undefined,
+  repositoryName: string | undefined,
+): number {
+  const workspaceRepo =
+    repositoryOwner && repositoryName ? `${repositoryOwner}/${repositoryName}` : undefined;
+  return monitors.filter(
+    (mon) =>
+      !(
+        primaryPrNumber !== undefined &&
+        mon.prNumber === primaryPrNumber &&
+        (!workspaceRepo || mon.repo === workspaceRepo)
+      ),
+  ).length;
 }
 
 /** Check if an agent group is collapsed. */

@@ -122,6 +122,13 @@ export interface PRInfo {
   commits?: LocalCommitInfo[];
   createdAt?: string;
   updatedAt?: string;
+  /** Set on rows sourced from an agent PR monitor (PROTOCOL §6.9). */
+  monitorAgentId?: string;
+  /** `<owner>/<name>` when the monitored PR's repo differs from the workspace repo. */
+  crossRepo?: string;
+  /** Row exists only as a monitor (no matching workspace PR) — local
+   * commit/file data does not apply to it. */
+  monitorOnly?: boolean;
 }
 
 /** Bucket visibility state */

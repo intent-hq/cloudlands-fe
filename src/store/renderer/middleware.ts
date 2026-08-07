@@ -67,6 +67,7 @@ import { createDirectoryPickerReadMiddleware } from '$features/onboarding/direct
 import { createLegacyImportMiddleware } from '$features/settings/legacy-import-service';
 import { createStatsReadMiddleware } from '$features/stats/stats-read-service';
 import { createBackgroundHooksMiddleware } from '$features/hooks/background-hooks-read-service';
+import { createPrMonitorMiddleware } from '$features/pr-monitor/pr-monitor-read-service';
 import { createLifecycleReadMiddleware } from './middlewares/lifecycle-read-service';
 import { createLifecycleIpcReadMiddleware } from './middlewares/lifecycle-ipc-read-service';
 import { createGithubRepoSearchMiddleware } from './middlewares/github-repo-search-service';
@@ -433,6 +434,13 @@ function buildMiddleware(): StoreMiddleware[] {
     // out of the Svelte component (per the `intent/no-component-async-data-fetch`
     // rule).
     createBackgroundHooksMiddleware(),
+    // Give the MonitoredPrsRow chip row and the PR-list/card surfaces a real
+    // live-read handler so `prMonitorsSubscribeRequested` opens the
+    // workspace's `prMonitor:*` events.subscribe + `prMonitor.list` seed and
+    // flush/cancel triggers forward to `prMonitor.flush` / `prMonitor.cancel`
+    // (PROTOCOL §6.9) — keeping the wire calls out of the Svelte components
+    // (per the `intent/no-component-async-data-fetch` rule).
+    createPrMonitorMiddleware(),
     // Give the (post-saga) ui-layout persistence triggers real handlers so panel
     // sizes / group layouts / collapsed state read on mount and persist on change
     // across sessions via localStorage again.
