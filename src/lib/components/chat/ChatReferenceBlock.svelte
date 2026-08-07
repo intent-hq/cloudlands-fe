@@ -26,9 +26,18 @@
   let { reference, onOpenFile }: Props = $props();
 
   const parsedId = $derived(reference.semanticId ? parseSemanticId(reference.semanticId) : null);
-  // The filePath field may itself carry a "#L<n>" / "#L<n>-<m>" anchor, so parse
-  // it the same way as semanticId to strip the anchor and recover the line.
-  const parsedFilePath = $derived(reference.filePath ? parseSemanticId(reference.filePath) : null);
+  // The filePath field may itself carry a trailing "#L<n>" / "#L<n>-<m>" line
+  // anchor. Unlike semanticId, filePath is an unrestricted path, so interpret
+  // ONLY the line anchor (same regex as parseSemanticId's line branch) — other
+  // fragments like "#symbol:" or a literal "#" must pass through untouched so
+  // real paths are not truncated.
+  const parsedFilePath = $derived.by(() => {
+    if (!reference.filePath) return null;
+    const lineMatch = reference.filePath.match(/^(.+)#L(\d+)(?:-(\d+))?$/);
+    if (!lineMatch) return null;
+    const [, path, startLine] = lineMatch;
+    return { filePath: path, startLine: parseInt(startLine, 10) };
+  });
   const filePath = $derived(
     parsedFilePath?.filePath || reference.filePath || parsedId?.filePath || '',
   );

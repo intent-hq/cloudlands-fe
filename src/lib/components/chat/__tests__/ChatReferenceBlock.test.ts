@@ -102,6 +102,44 @@ describe('ChatReferenceBlock', () => {
     });
   });
 
+  it('uses a filePath containing "#symbol:" verbatim (only "#L" anchors are stripped)', async () => {
+    const onOpenFile = vi.fn();
+    render(ChatReferenceBlock, {
+      props: {
+        reference: { filePath: 'docs/spec#symbol:notes' },
+        onOpenFile,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(onOpenFile).toHaveBeenCalledWith({
+      path: 'docs/spec#symbol:notes',
+      line: undefined,
+      openInAdjacentPanel: false,
+      sourcePanelId: undefined,
+    });
+  });
+
+  it('uses a filePath containing a literal "#" verbatim', async () => {
+    const onOpenFile = vi.fn();
+    render(ChatReferenceBlock, {
+      props: {
+        reference: { filePath: 'docs/notes#section-one' },
+        onOpenFile,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(onOpenFile).toHaveBeenCalledWith({
+      path: 'docs/notes#section-one',
+      line: undefined,
+      openInAdjacentPanel: false,
+      sourcePanelId: undefined,
+    });
+  });
+
   it('derives the file path from a symbol semanticId', async () => {
     const onOpenFile = vi.fn();
     render(ChatReferenceBlock, {
