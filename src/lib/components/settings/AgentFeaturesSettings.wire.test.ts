@@ -37,16 +37,25 @@ const FEATURE_PATHS = [
   'agentFeatures.structuredQuestions',
   'agentFeatures.attentionRequests',
   'agentFeatures.stateSnapshot',
+  'agentFeatures.prMonitor',
 ];
 
-// PROTOCOL §5.12 settings.list response with all nine agentFeatures.* entries
+// PROTOCOL §5.12 settings.list response with all ten agentFeatures.* entries
+// plus the prMonitor.debounceSeconds number (§6.9)
 function listResponse() {
   return {
-    settings: FEATURE_PATHS.map((path) => ({
-      path,
-      value: true,
-      definition: { path, type: 'boolean', scope: 'user' },
-    })),
+    settings: [
+      ...FEATURE_PATHS.map((path) => ({
+        path,
+        value: true,
+        definition: { path, type: 'boolean', scope: 'user' },
+      })),
+      {
+        path: 'prMonitor.debounceSeconds',
+        value: 60,
+        definition: { path: 'prMonitor.debounceSeconds', type: 'number', scope: 'user' },
+      },
+    ],
   };
 }
 
@@ -123,6 +132,38 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
       expect(updateCall).toBeDefined();
       expect(updateCall![1]).toEqual({
         changes: [{ path: 'agentFeatures.stateSnapshot', value: false }],
+      });
+    });
+  });
+
+  it('issues settings.update for prMonitor.debounceSeconds when the debounce is saved (§6.9)', async () => {
+    mocks.mockBackendRequest.mockImplementation(async (method: string) => {
+      if (method === 'settings.list') return listResponse();
+      if (method === 'settings.update') {
+        return { applied: [{ path: 'prMonitor.debounceSeconds', value: 90 }] };
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    render(AgentFeaturesSettings);
+
+    const input = await screen.findByRole('spinbutton', {
+      name: 'PR monitor change debounce in seconds',
+    });
+    await waitFor(() => {
+      expect((input as HTMLInputElement).value).toBe('60');
+    });
+    await fireEvent.input(input, { target: { value: '90' } });
+    const save = await screen.findByRole('button', { name: 'Save' });
+    await fireEvent.click(save);
+
+    await waitFor(() => {
+      const updateCall = vi
+        .mocked(mocks.mockBackendRequest)
+        .mock.calls.find((call) => call[0] === 'settings.update');
+      expect(updateCall).toBeDefined();
+      expect(updateCall![1]).toEqual({
+        changes: [{ path: 'prMonitor.debounceSeconds', value: 90 }],
       });
     });
   });
