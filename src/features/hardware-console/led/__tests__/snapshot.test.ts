@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { AgentStatus, WorkspaceStatus, type Workspace } from '$shared/types';
-import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import { WorkspaceStatus, type Workspace, type WorkspaceDisplayStatus } from '$shared/types';
 import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
-import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { buildHardwareLedSnapshot, type LedSnapshotState } from '../snapshot';
 
 let nextTime = 1_000_000;
@@ -25,56 +23,20 @@ function makeWorkspace(id: string, overrides: Partial<Workspace> = {}): Workspac
   } as Workspace;
 }
 
-function makeSession(id: string, overrides: Partial<StoredAgentSession> = {}): StoredAgentSession {
-  return { id, status: AgentStatus.RuntimeIdle, messages: [], ...overrides } as StoredAgentSession;
-}
-
-function questionMessage(messageId: string) {
-  return {
-    id: messageId,
-    role: 'assistant',
-    contentBlocks: [
-      {
-        type: 'resource',
-        resource: {
-          mimeType: QUESTION_RESOURCE_MIME_TYPE,
-          uri: 'intent-question:1',
-          text: JSON.stringify({
-            attachmentId: 'tar-1',
-            header: 'Choice',
-            question: 'Which one?',
-            options: [{ label: 'A' }, { label: 'B' }],
-          }),
-        },
-      },
-    ],
-  } as never;
-}
-
 interface StateInput {
   workspaces?: Workspace[];
   keyPins?: (string | null)[];
-  agentsByWorkspace?: Record<string, string[]>;
-  sessions?: StoredAgentSession[];
   pttRecording?: boolean;
   health?: 'healthy' | 'degraded' | 'down';
 }
 
 function makeState(input: StateInput = {}): LedSnapshotState {
-  const byWorkspaceId: LedSnapshotState['workspaceAgents']['byWorkspaceId'] = {};
-  for (const [wsId, agentIds] of Object.entries(input.agentsByWorkspace ?? {})) {
-    byWorkspaceId[wsId] = { foregroundAgentIds: agentIds };
-  }
-  const byAgentId: Record<string, StoredAgentSession> = {};
-  for (const session of input.sessions ?? []) byAgentId[String(session.id)] = session;
   return {
     workspace: { workspaces: createCollection('id', input.workspaces ?? []) },
     hardwareConsole: {
       keyPins: input.keyPins ?? [null, null, null, null, null, null],
       pttRecording: input.pttRecording,
     },
-    workspaceAgents: { byWorkspaceId },
-    agentSessions: { byAgentId },
     daemonHealth: { health: input.health ?? 'healthy' },
   };
 }
@@ -86,11 +48,11 @@ describe('buildHardwareLedSnapshot', () => {
     expect(snapshot.ambient).toEqual({ kind: 'dark' });
   });
 
-  it('assigns workspaces to slots and maps idle/running/complete', () => {
+  it('assigns workspaces to slots and maps the wire displayStatus verbatim', () => {
     const state = makeState({
       workspaces: [
-        makeWorkspace('ws-run', { activity: 'agent_running' }),
-        makeWorkspace('ws-idle'),
+        makeWorkspace('ws-run', { displayStatus: 'in_progress' }),
+        makeWorkspace('ws-idle', { displayStatus: 'idle' }),
         makeWorkspace('ws-done', { displayStatus: 'pr_ready' }),
       ],
     });
@@ -106,182 +68,61 @@ describe('buildHardwareLedSnapshot', () => {
     expect(snapshot.ambient).toEqual({ kind: 'running', runningCount: 1 });
   });
 
-  it('hook-active workspace (displayStatus in_progress, agents idle) lights running + breath', () => {
-    const state = makeState({
-      workspaces: [makeWorkspace('ws-hooks', { displayStatus: 'in_progress', activity: 'idle' })],
-    });
-    const snapshot = buildHardwareLedSnapshot(state);
-    expect(snapshot.keys[0]).toBe('running');
-    expect(snapshot.ambient).toEqual({ kind: 'running', runningCount: 1 });
+  it.each<[WorkspaceDisplayStatus, string]>([
+    ['failed', 'failed'],
+    ['blocked', 'blocked'],
+    ['needs_attention', 'attention'],
+    ['in_progress', 'running'],
+    ['unread', 'unread'],
+    ['complete', 'complete'],
+    ['pr_ready', 'complete'],
+    ['pr_open', 'complete'],
+    ['pr_merged', 'complete'],
+    ['idle', 'idle'],
+    ['not_started', 'idle'],
+  ])('displayStatus %s lights the key %s', (displayStatus, keyState) => {
+    const state = makeState({ workspaces: [makeWorkspace('ws-1', { displayStatus })] });
+    expect(buildHardwareLedSnapshot(state).keys[0]).toBe(keyState);
   });
 
-  it('displayStatus idle with no activity stays idle and ambient dark', () => {
+  it('an absent displayStatus renders idle (treat-as-absent, no local synthesis)', () => {
+    const state = makeState({ workspaces: [makeWorkspace('ws-1')] });
+    const snapshot = buildHardwareLedSnapshot(state);
+    expect(snapshot.keys[0]).toBe('idle');
+    expect(snapshot.ambient).toEqual({ kind: 'dark' });
+  });
+
+  it('an unknown wire displayStatus renders idle', () => {
     const state = makeState({
-      workspaces: [makeWorkspace('ws-quiet', { displayStatus: 'idle', activity: 'idle' })],
+      workspaces: [makeWorkspace('ws-1', { displayStatus: 'future_value' as never })],
+    });
+    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('idle');
+  });
+
+  it('live agent activity alone never lights running — only the BE displayStatus does', () => {
+    const state = makeState({
+      workspaces: [makeWorkspace('ws-1', { activity: 'agent_running', displayStatus: 'idle' })],
     });
     const snapshot = buildHardwareLedSnapshot(state);
     expect(snapshot.keys[0]).toBe('idle');
     expect(snapshot.ambient).toEqual({ kind: 'dark' });
   });
 
-  it('attention outranks hook-driven running (displayStatus in_progress)', () => {
+  it('the dismissible attention flag alone never lights unread — only displayStatus does', () => {
     const state = makeState({
-      workspaces: [makeWorkspace('ws-1', { displayStatus: 'in_progress', activity: 'idle' })],
-      agentsByWorkspace: { 'ws-1': ['agent-1'] },
-      sessions: [makeSession('agent-1', { attentionRequestKind: 'discussion' })],
+      workspaces: [makeWorkspace('ws-1', { displayStatus: 'pr_merged', attention: 'unread' })],
     });
-    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('attention');
-  });
-
-  it('failed outranks hook-driven running (displayStatus in_progress)', () => {
-    const state = makeState({
-      workspaces: [makeWorkspace('ws-1', { displayStatus: 'in_progress', activity: 'idle' })],
-      agentsByWorkspace: { 'ws-1': ['agent-1'] },
-      sessions: [makeSession('agent-1', { status: AgentStatus.Error })],
-    });
-    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('failed');
-  });
-
-  it('discussion request turns the key yellow and outranks running', () => {
-    const state = makeState({
-      workspaces: [makeWorkspace('ws-1', { activity: 'agent_running' })],
-      agentsByWorkspace: { 'ws-1': ['agent-1'] },
-      sessions: [makeSession('agent-1', { attentionRequestKind: 'discussion' })],
-    });
-    const snapshot = buildHardwareLedSnapshot(state);
-    expect(snapshot.keys[0]).toBe('attention');
-    expect(snapshot.ambient).toEqual({ kind: 'question' });
-  });
-
-  it('blocker request turns the key orange (blocked) and outranks attention', () => {
-    const state = makeState({
-      workspaces: [makeWorkspace('ws-1', { activity: 'agent_running' })],
-      agentsByWorkspace: { 'ws-1': ['agent-1', 'agent-2'] },
-      sessions: [
-        makeSession('agent-1', { attentionRequestKind: 'blocker' }),
-        makeSession('agent-2', { attentionRequestKind: 'discussion' }),
-      ],
-    });
-    const snapshot = buildHardwareLedSnapshot(state);
-    expect(snapshot.keys[0]).toBe('blocked');
-    expect(snapshot.ambient).toEqual({ kind: 'blocked' });
-  });
-
-  it('pending wizard question counts as attention', () => {
-    const state = makeState({
-      workspaces: [makeWorkspace('ws-1')],
-      agentsByWorkspace: { 'ws-1': ['agent-1'] },
-      sessions: [makeSession('agent-1', { messages: [questionMessage('msg-1')] })],
-    });
-    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('attention');
-  });
-
-  it('a dismissed question does not pend', () => {
-    const state = makeState({
-      workspaces: [makeWorkspace('ws-1')],
-      agentsByWorkspace: { 'ws-1': ['agent-1'] },
-      sessions: [
-        makeSession('agent-1', {
-          messages: [questionMessage('msg-1')],
-          metadata: { dismissedQuestionsMessageId: 'msg-1' },
-        }),
-      ],
-    });
-    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('idle');
-  });
-
-  it('a question keeps the key on attention across a later plain user message', () => {
-    // Persistent pendingness: only the id-keyed answer tag (or the dismissal
-    // marker) resolves a question, so an unrelated user reply — and the
-    // agent's reply to it — must NOT drop the LED out of attention.
-    const state = makeState({
-      workspaces: [makeWorkspace('ws-1')],
-      agentsByWorkspace: { 'ws-1': ['agent-1'] },
-      sessions: [
-        makeSession('agent-1', {
-          messages: [
-            questionMessage('msg-1'),
-            { id: 'msg-2', role: 'user', contentBlocks: [] },
-            { id: 'msg-3', role: 'assistant', contentBlocks: [] },
-          ] as never,
-        }),
-      ],
-    });
-    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('attention');
-  });
-
-  it('a tagged answer message releases the attention key', () => {
-    const state = makeState({
-      workspaces: [makeWorkspace('ws-1')],
-      agentsByWorkspace: { 'ws-1': ['agent-1'] },
-      sessions: [
-        makeSession('agent-1', {
-          messages: [
-            questionMessage('msg-1'),
-            {
-              id: 'msg-2',
-              role: 'user',
-              contentBlocks: [],
-              metadata: { type: 'question_answers', answeredQuestionsMessageId: 'msg-1' },
-            },
-          ] as never,
-        }),
-      ],
-    });
-    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('idle');
-  });
-
-  it('question does not pend while the agent turn is still active', () => {
-    const state = makeState({
-      workspaces: [makeWorkspace('ws-1')],
-      agentsByWorkspace: { 'ws-1': ['agent-1'] },
-      sessions: [
-        makeSession('agent-1', { messages: [questionMessage('msg-1')], isResponding: true }),
-      ],
-    });
-    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('idle');
-  });
-
-  it('failed agent turns the key red and outranks blocked', () => {
-    const state = makeState({
-      workspaces: [makeWorkspace('ws-1')],
-      agentsByWorkspace: { 'ws-1': ['agent-1', 'agent-2'] },
-      sessions: [
-        makeSession('agent-1', { status: AgentStatus.Error }),
-        makeSession('agent-2', { attentionRequestKind: 'blocker' }),
-      ],
-    });
-    const snapshot = buildHardwareLedSnapshot(state);
-    expect(snapshot.keys[0]).toBe('failed');
-    expect(snapshot.ambient).toEqual({ kind: 'failed' });
-  });
-
-  it('unread workspace lights the key cyan and outranks complete', () => {
-    const state = makeState({
-      workspaces: [makeWorkspace('ws-1', { displayStatus: 'pr_ready', attention: 'unread' })],
-    });
-    const snapshot = buildHardwareLedSnapshot(state);
-    expect(snapshot.keys[0]).toBe('unread');
-    expect(snapshot.ambient).toEqual({ kind: 'unread' });
-  });
-
-  it('running outranks unread on the key, but ambient prefers unread', () => {
-    const state = makeState({
-      workspaces: [makeWorkspace('ws-1', { activity: 'agent_running', attention: 'unread' })],
-    });
-    const snapshot = buildHardwareLedSnapshot(state);
-    expect(snapshot.keys[0]).toBe('running');
-    expect(snapshot.ambient).toEqual({ kind: 'unread' });
+    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('complete');
   });
 
   it('ambient running carries the fleet-wide running-workspace count', () => {
     const state = makeState({
       workspaces: [
-        makeWorkspace('ws-1', { activity: 'agent_running' }),
-        makeWorkspace('ws-2', { activity: 'agent_running' }),
+        makeWorkspace('ws-1', { displayStatus: 'in_progress' }),
+        makeWorkspace('ws-2', { displayStatus: 'in_progress' }),
         makeWorkspace('ws-3', { displayStatus: 'in_progress' }),
-        makeWorkspace('ws-4', { activity: 'agent_running' }),
-        makeWorkspace('ws-5'),
+        makeWorkspace('ws-4', { displayStatus: 'in_progress' }),
+        makeWorkspace('ws-5', { displayStatus: 'idle' }),
       ],
     });
     expect(buildHardwareLedSnapshot(state).ambient).toEqual({ kind: 'running', runningCount: 4 });
@@ -291,7 +132,7 @@ describe('buildHardwareLedSnapshot', () => {
     const state = makeState({
       workspaces: [
         makeWorkspace('ws-done', { displayStatus: 'pr_merged' }),
-        makeWorkspace('ws-idle'),
+        makeWorkspace('ws-idle', { displayStatus: 'idle' }),
       ],
     });
     const snapshot = buildHardwareLedSnapshot(state);
@@ -303,7 +144,7 @@ describe('buildHardwareLedSnapshot', () => {
     const state = makeState({
       workspaces: [
         makeWorkspace('ws-done', { displayStatus: 'pr_merged' }),
-        makeWorkspace('ws-new', { attention: 'unread' }),
+        makeWorkspace('ws-new', { displayStatus: 'unread' }),
       ],
     });
     expect(buildHardwareLedSnapshot(state).ambient).toEqual({ kind: 'unread' });
@@ -312,8 +153,8 @@ describe('buildHardwareLedSnapshot', () => {
   it('ambient unread outranks running across workspaces', () => {
     const state = makeState({
       workspaces: [
-        makeWorkspace('ws-run', { activity: 'agent_running' }),
-        makeWorkspace('ws-new', { attention: 'unread' }),
+        makeWorkspace('ws-run', { displayStatus: 'in_progress' }),
+        makeWorkspace('ws-new', { displayStatus: 'unread' }),
       ],
     });
     expect(buildHardwareLedSnapshot(state).ambient).toEqual({ kind: 'unread' });
@@ -322,28 +163,35 @@ describe('buildHardwareLedSnapshot', () => {
   it('ambient running outranks complete across workspaces', () => {
     const state = makeState({
       workspaces: [
-        makeWorkspace('ws-run', { activity: 'agent_running' }),
+        makeWorkspace('ws-run', { displayStatus: 'in_progress' }),
         makeWorkspace('ws-done', { displayStatus: 'pr_merged' }),
       ],
     });
     expect(buildHardwareLedSnapshot(state).ambient).toEqual({ kind: 'running', runningCount: 1 });
   });
 
-  it('ambient question outranks running; blocked outranks question (across workspaces)', () => {
-    const base = {
-      workspaces: [makeWorkspace('ws-run', { activity: 'agent_running' }), makeWorkspace('ws-ask')],
-      agentsByWorkspace: { 'ws-ask': ['agent-q'] },
-    };
+  it('ambient question outranks running; blocked outranks question; failed outranks blocked', () => {
+    const run = makeWorkspace('ws-run', { displayStatus: 'in_progress' });
     const question = makeState({
-      ...base,
-      sessions: [makeSession('agent-q', { attentionRequestKind: 'discussion' })],
+      workspaces: [run, makeWorkspace('ws-ask', { displayStatus: 'needs_attention' })],
     });
     expect(buildHardwareLedSnapshot(question).ambient).toEqual({ kind: 'question' });
     const blocked = makeState({
-      ...base,
-      sessions: [makeSession('agent-q', { attentionRequestKind: 'blocker' })],
+      workspaces: [
+        run,
+        makeWorkspace('ws-ask', { displayStatus: 'needs_attention' }),
+        makeWorkspace('ws-blk', { displayStatus: 'blocked' }),
+      ],
     });
     expect(buildHardwareLedSnapshot(blocked).ambient).toEqual({ kind: 'blocked' });
+    const failed = makeState({
+      workspaces: [
+        run,
+        makeWorkspace('ws-blk', { displayStatus: 'blocked' }),
+        makeWorkspace('ws-err', { displayStatus: 'failed' }),
+      ],
+    });
+    expect(buildHardwareLedSnapshot(failed).ambient).toEqual({ kind: 'failed' });
   });
 
   it('pinned slots keep their position; unpinned auto-fill by recency', () => {
@@ -367,34 +215,19 @@ describe('buildHardwareLedSnapshot', () => {
     expect(snapshot.ambient).toEqual({ kind: 'dark' });
   });
 
-  it('ambient blocked comes from a blocker in ANY assignable workspace, not just assigned keys', () => {
-    const workspaces = Array.from({ length: 7 }, (_, index) => makeWorkspace(`ws-${index}`));
-    const state = makeState({
-      workspaces,
-      // ws-6 is 7th by recency → off-key, but its blocker still drives ambient.
-      agentsByWorkspace: { 'ws-6': ['agent-x'] },
-      sessions: [makeSession('agent-x', { attentionRequestKind: 'blocker' })],
-    });
-    const snapshot = buildHardwareLedSnapshot(state);
+  it('ambient blocked comes from ANY assignable workspace, not just assigned keys', () => {
+    const workspaces = Array.from({ length: 7 }, (_, index) =>
+      // ws-6 is 7th by recency → off-key, but its blocked status still drives ambient.
+      makeWorkspace(`ws-${index}`, index === 6 ? { displayStatus: 'blocked' } : {}),
+    );
+    const snapshot = buildHardwareLedSnapshot(makeState({ workspaces }));
     expect(snapshot.keys).toEqual(new Array(6).fill('idle'));
     expect(snapshot.ambient).toEqual({ kind: 'blocked' });
   });
 
-  it('background agents do not affect key state (foreground/top-level only)', () => {
-    const state = makeState({
-      workspaces: [makeWorkspace('ws-1')],
-      // agent-bg exists in sessions but is NOT in foregroundAgentIds.
-      agentsByWorkspace: { 'ws-1': [] },
-      sessions: [makeSession('agent-bg', { attentionRequestKind: 'blocker' })],
-    });
-    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('idle');
-  });
-
   it('an in-progress push-to-talk recording drives ambient recording, outranking blocked', () => {
     const state = makeState({
-      workspaces: [makeWorkspace('ws-1')],
-      agentsByWorkspace: { 'ws-1': ['agent-1'] },
-      sessions: [makeSession('agent-1', { attentionRequestKind: 'blocker' })],
+      workspaces: [makeWorkspace('ws-1', { displayStatus: 'blocked' })],
       pttRecording: true,
     });
     const snapshot = buildHardwareLedSnapshot(state);
@@ -406,11 +239,9 @@ describe('buildHardwareLedSnapshot', () => {
   describe('daemon disconnected', () => {
     const busyInput: StateInput = {
       workspaces: [
-        makeWorkspace('ws-run', { activity: 'agent_running' }),
-        makeWorkspace('ws-fail'),
+        makeWorkspace('ws-run', { displayStatus: 'in_progress' }),
+        makeWorkspace('ws-fail', { displayStatus: 'failed' }),
       ],
-      agentsByWorkspace: { 'ws-fail': ['agent-1'] },
-      sessions: [makeSession('agent-1', { status: AgentStatus.Error })],
     };
 
     it('health down → ambient disconnected and all keys blanked despite busy workspaces', () => {

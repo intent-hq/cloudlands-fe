@@ -140,6 +140,16 @@ export interface AgentSession {
   /** Model identifier (e.g., "sonnet-3.5", "gpt-4"). Null when using provider/settings default (persisted from backend). Undefined when omitted. */
   model?: string | null;
 
+  /**
+   * Reasoning effort level for the session's model (Option B, first-class
+   * session field). Provider-interpreted string (e.g. "low"/"medium"/"high",
+   * plus provider-specific levels like "xhigh"/"max"); valid levels come from
+   * the model's `effortLevels` catalog metadata. Null when explicitly cleared
+   * (provider default); undefined when omitted. Applies on the next prompt
+   * send.
+   */
+  reasoningEffort?: string | null;
+
   /** ACP provider ID (e.g., "auggie", "claude-code", "opencode"). Mutable only until first real session use, then locked. */
   provider?: string;
 
@@ -217,6 +227,21 @@ export interface AgentSession {
 
   /** Last agent response */
   lastAgentResponse?: string;
+
+  /**
+   * Most recent tool call of the in-flight turn (PROTOCOL §7, additive on the
+   * tool-call arm of `agent:stream:activity`). Push-applied by the
+   * daemon-events bridge so a non-viewed agent's preview advances during
+   * tool-only stretches, and cleared by it at each turn boundary and on the
+   * terminal `agent:stream:end` — the field describes a running turn only.
+   * Omitted by older daemons and before the turn's first tool call. Stored
+   * verbatim; only `name` is rendered today (`status` mirrors the wire shape
+   * for the queued footer status indicator).
+   */
+  lastToolUse?: {
+    name: string;
+    status?: string;
+  };
 
   /**
    * Role of the session's newest user/assistant transcript message

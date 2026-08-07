@@ -62,6 +62,13 @@ vi.mock('./ContextPickerButton.svelte', async () => {
   return { default: SlotOnly };
 });
 
+// The effort control has its own suite (EffortPicker.test.ts); stub it here so
+// this suite does not need the reasoning-effort selector surface.
+vi.mock('./EffortPicker.svelte', async () => {
+  const SlotOnly = (await import('../__tests__/mocks/SlotOnly.svelte')).default;
+  return { default: SlotOnly };
+});
+
 vi.mock('$lib/components/ui/tooltip', async () => {
   const SlotOnly = (await import('../__tests__/mocks/SlotOnly.svelte')).default;
   return { TooltipShortcut: SlotOnly };

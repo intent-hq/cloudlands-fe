@@ -118,7 +118,9 @@ describe('HudLeftColumn WORKSPACES-BY-STATE blink gating', () => {
     render(HudLeftColumn, { props: { nowMs: NOW_MS } });
 
     appStore.dispatch(
-      setWorkspaceEntity(workspaceWithAgents('ws-1', [{ id: 'a-0', status: 'error' }])),
+      setWorkspaceEntity(
+        workspaceWithAgents('ws-1', [{ id: 'a-0', status: 'error' }], 'failed'),
+      ),
     );
     flushSync();
 
