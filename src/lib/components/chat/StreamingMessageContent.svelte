@@ -16,6 +16,7 @@
   import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
   import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
+  import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import { resolveCard, type ResolvedCard } from './cards/card-registry';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
@@ -720,8 +721,10 @@
     <!-- Tool results are handled by associating them with their tool_use blocks -->
     <!-- We don't render them separately as they're shown within the ToolCall component -->
   {:else if block.type === 'thinking'}
+    <!-- Daemon-emitted thinking blocks carry `text` (PROTOCOL §7.1); the legacy
+         <think>-tag parser path in messageParser emits `content`. -->
     <ThinkingBlock
-      content={block.content || m.chat_shared_processing_fallback()}
+      content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
       isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
     />
   {/if}
