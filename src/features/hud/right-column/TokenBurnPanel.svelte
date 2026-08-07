@@ -1,7 +1,8 @@
 <script lang="ts">
   /**
    * TOKEN BURN panel (mock lines 224-233) — the 24h token total from the
-   * `stats.getUsage` rollup on line 1, and on line 2 the "TOK · 24H" label
+   * `stats.getUsage` rollup on line 1 (every counter summed, reasoning
+   * `thoughtTokens` included), and on line 2 the "TOK · 24H" label
    * with the last-5-minute averaged per-minute burn and an up/down trend
    * arrow (PROTOCOL §5.39). The average + trend are derived in the hud slice
    * on each `stats.getRateHistory` poll; this panel only renders them.
@@ -11,20 +12,15 @@
   import {
     selectHudBurnRatePerMin,
     selectHudBurnTrend,
-    selectHudUsage,
+    selectHudUsageTotalTokens,
   } from '$store/renderer/slices/hud/hud-selectors';
 
-  const usage$ = selectHudUsage();
+  const tokenTotal$ = selectHudUsageTotalTokens();
   const burnRate$ = selectHudBurnRatePerMin();
   const burnTrend$ = selectHudBurnTrend();
 
-  const tokenTotal = $derived.by(() => {
-    const totals = $usage$?.totals;
-    if (!totals) return 0;
-    return (
-      totals.inputTokens + totals.outputTokens + totals.cacheReadTokens + totals.cacheCreationTokens
-    );
-  });
+  /** Every §5.36 counter summed — reasoning `thoughtTokens` included. */
+  const tokenTotal = $derived($tokenTotal$);
 
   /** Last-5-minute averaged per-minute burn (rounded in the slice). */
   const perMinute = $derived($burnRate$);
