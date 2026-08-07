@@ -15,6 +15,7 @@ import {
 } from '@testing-library/svelte';
 import {
   derived,
+  get,
   readable,
   writable,
 } from 'svelte/store';
@@ -82,6 +83,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 const providerWarnings$ = writable<Record<string, string>>({});
+const providerStaleFlags$ = writable<Record<string, boolean>>({});
 const codexManagedInstallStatus$ = writable<{
   managedInstallState: string;
   version?: string;
@@ -90,12 +92,22 @@ const codexManagedInstallStatus$ = writable<{
 const mockSvelteDispatch = vi.hoisted(() => vi.fn((action: { type?: string; payload?: unknown }) => {
   if (action.type === 'model/setLoadingStateForProvider' && Array.isArray(action.payload)) {
     const [payload] = action.payload as [
-      { providerId: string; status: string; warning?: string } & Record<string, unknown>,
+      { providerId: string; status: string; warning?: string; stale?: boolean } & Record<
+        string,
+        unknown
+      >,
     ];
     providerWarnings$.update((warnings) => {
       const { [payload.providerId]: _cleared, ...remaining } = warnings;
       if (payload.status === 'success' && payload.warning) {
         return { ...remaining, [payload.providerId]: payload.warning };
+      }
+      return remaining;
+    });
+    providerStaleFlags$.update((flags) => {
+      const { [payload.providerId]: _cleared, ...remaining } = flags;
+      if (payload.status === 'success' && payload.stale) {
+        return { ...remaining, [payload.providerId]: true };
       }
       return remaining;
     });
@@ -139,6 +151,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectIsLoadingModels: () => readable(false),
   selectLoadError: () => readable(mockModelState.loadError),
   selectAllProviderWarnings: () => providerWarnings$,
+  selectAllProviderStaleFlags: () => providerStaleFlags$,
 }));
 
 const hasCheckedOnce$ = writable(true);
@@ -209,6 +222,7 @@ afterEach(() => {
   availableProviderOverride$.set(null);
   mockModelState.availableModelsProviderId = 'auggie';
   daemonHealth$.set('healthy');
+  providerStaleFlags$.set({});
 });
 
 describe('ModelPicker locked state', () => {
@@ -562,6 +576,60 @@ describe('ModelPicker multi-provider mode', () => {
     expect(screen.getByRole('link', { name: /Setup docs/ }).getAttribute('href')).toBe(
       'https://developers.openai.com/codex/cli#cli-setup',
     );
+  });
+
+  it('suppresses the Codex install notice when a stale warning accompanies real models', async () => {
+    // PROTOCOL §5.30/§6.7 degraded-but-cached response: the daemon serves the
+    // last-known-good list with `stale: true` after a transient probe failure,
+    // so the models on screen are real and the install prompt would be wrong.
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return {
+          models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
+          warning: 'probe timed out; serving last known model list',
+          stale: true,
+        };
+      }
+
+      return { models: [] };
+    });
+    enabledProviderIds$.set(['codex']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        variant: 'default',
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(get(providerStaleFlags$)).toEqual({ codex: true });
+    });
+    expect(screen.queryByText('Showing default model list.')).toBeNull();
+    expect(screen.queryByText(/Install Codex CLI to see all your available models/)).toBeNull();
+  });
+
+  it('keeps the Codex install notice when the warning arrives with no codex models', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return { models: [], warning: 'codex: CLI not found' };
+      }
+
+      return { models: [] };
+    });
+    enabledProviderIds$.set(['codex']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        variant: 'default',
+        portal: false,
+      },
+    });
+
+    expect(await screen.findByText('Showing default model list.')).toBeTruthy();
+    expect(screen.getByText(/Install Codex CLI to see all your available models/)).toBeTruthy();
   });
 
   it('does not show the Codex stale-list notice when no fallback warning is present', async () => {

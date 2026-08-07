@@ -106,6 +106,24 @@ export const selectAllProviderWarnings = store.createSelector((state): Record<st
   return warnings;
 });
 
+/**
+ * Provider ids whose current `warning` accompanies a last-known-good (stale)
+ * model list rather than a degraded static fallback.
+ */
+export const selectAllProviderStaleFlags = store.createSelector(
+  (state): Record<string, boolean> => {
+    const stale: Record<string, boolean> = {};
+
+    for (const [providerId, loadingState] of Object.entries(state.model.loadingState)) {
+      if (loadingState.stale) {
+        stale[providerId] = true;
+      }
+    }
+
+    return stale;
+  },
+);
+
 export const selectRetryAttempt = store.createSelector((state, providerId?: string): number => {
   return selectProviderLoadingState.select(state, providerId)?.retryAttempt ?? 0;
 });
