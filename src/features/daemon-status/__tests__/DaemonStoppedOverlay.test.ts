@@ -19,6 +19,9 @@ import { mockInvoke, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { disposeDaemonHealthService } from '$store/renderer/middlewares/daemon-health-service';
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import type { ConnectionRecord } from '$shared/types/connections';
 
 const route = vi.hoisted(() => ({ pathname: '/' }));
 
@@ -34,9 +37,38 @@ vi.mock('$app/stores', () => ({
 import DaemonStoppedOverlay, { DAEMON_STOPPED_GRACE_MS } from '../DaemonStoppedOverlay.svelte';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
+const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 
 const sidecarTransport: BackendTransportInfo = { mode: 'sidecar-uds', target: '/tmp/i.sock' };
 const externalTransport: BackendTransportInfo = { mode: 'external-uds', target: '/tmp/i.sock' };
+
+// Connection-record fixtures for the T20 known-backend recovery affordances.
+const localConn: ConnectionRecord = {
+  id: LOCAL_CONNECTION_ID,
+  label: 'This machine (local)',
+  host: null,
+  port: null,
+  fingerprint: null,
+  isLocal: true,
+};
+const remoteConn: ConnectionRecord = {
+  id: 'remote-1',
+  label: '192.168.1.5:5180',
+  host: '192.168.1.5',
+  port: 5180,
+  fingerprint: 'AA:BB',
+  hostname: null,
+  isLocal: false,
+};
+const otherRemoteConn: ConnectionRecord = {
+  id: 'remote-2',
+  label: '10.0.0.9:5180',
+  host: '10.0.0.9',
+  port: 5180,
+  fingerprint: 'CC:DD',
+  hostname: 'Prod',
+  isLocal: false,
+};
 
 let invokeMock: ReturnType<typeof vi.fn>;
 // Transport the middleware's boot-time GET_STATUS fetch reports; kept in sync
@@ -191,10 +223,11 @@ describe('DaemonStoppedOverlay', () => {
     expect(overlay()!.textContent).toContain('may use a different data directory');
   });
 
-  it('hides the spawn button in external-ws mode (the UDS sidecar would never be reached)', async () => {
+  it('offers "Start local intentd" in external-ws mode (T20 — switch-to-local makes the UDS reachable)', async () => {
     render(DaemonStoppedOverlay);
     await showOverlay({ mode: 'external-ws', target: 'ws://127.0.0.1:5181/ws' });
-    expect(screen.queryByTestId('daemon-stopped-spawn-sidecar')).toBeNull();
+    const button = screen.getByTestId('daemon-stopped-spawn-sidecar');
+    expect(button.textContent).toContain('Start local intentd');
     expect(overlay()!.textContent).toContain('external intentd daemon was lost');
   });
 
@@ -315,7 +348,7 @@ describe('DaemonStoppedOverlay', () => {
     expect(overlay()!.textContent).not.toContain('was lost');
     // Buttons follow the same transport-mode rules as the lost-connection posture.
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar').textContent).toContain(
-      'Start app-managed sidecar',
+      'Start local intentd',
     );
   });
 
@@ -336,7 +369,7 @@ describe('DaemonStoppedOverlay', () => {
       );
     });
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar').textContent).toContain(
-      'Starting sidecar',
+      'Starting intentd',
     );
 
     // Reconnect (backend:status 'connected' via RESUB-1 main-side flow) dismisses.
@@ -361,7 +394,7 @@ describe('DaemonStoppedOverlay', () => {
     dispatchAndFlush(connectionStatusChanged('disconnected', sidecarTransport));
     const button = screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    expect(button.textContent).toContain('Starting sidecar');
+    expect(button.textContent).toContain('Starting intentd');
   });
 
   it('shows the spawn error and re-enables the button when the spawn fails', async () => {
@@ -416,5 +449,74 @@ describe('DaemonStoppedOverlay', () => {
         ([, payload]) => (payload as { method?: string } | undefined)?.method === 'events.subscribe',
       ),
     ).toHaveLength(0);
+  });
+
+  it('"Start local intentd" switches the active backend to local before spawning (T20)', async () => {
+    invokeMock.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === CONNECTIONS.SWITCH) return { activeId: (args[0] as { id: string }).id };
+      if (channel === BACKEND.SPAWN_SIDECAR) return { ok: true, spawned: true };
+      if (channel === BACKEND.GET_STATUS) return { status: 'connected', transport: bootTransport };
+      return mockInvoke(channel, ...args);
+    });
+
+    render(DaemonStoppedOverlay);
+    await showOverlay(externalTransport);
+    // Active backend is a remote connection, so the on-demand sidecar's local
+    // UDS is not the current target.
+    dispatchAndFlush(
+      connectionsListReceived({ connections: [localConn, remoteConn], activeId: remoteConn.id }),
+    );
+
+    const button = screen.getByTestId('daemon-stopped-spawn-sidecar');
+    expect(button.textContent).toContain('Start local intentd');
+    await fireEvent.click(button);
+
+    // Switch-to-local precedes the spawn so the sidecar's UDS becomes the target.
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(CONNECTIONS.SWITCH, { id: LOCAL_CONNECTION_ID });
+    });
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(BACKEND.SPAWN_SIDECAR);
+    });
+    const switchOrder = invokeMock.mock.calls.findIndex(([c]) => c === CONNECTIONS.SWITCH);
+    const spawnOrder = invokeMock.mock.calls.findIndex(([c]) => c === BACKEND.SPAWN_SIDECAR);
+    expect(switchOrder).toBeLessThan(spawnOrder);
+  });
+
+  it('lists the other known backends and switches to one on click (T20)', async () => {
+    invokeMock.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === CONNECTIONS.SWITCH) return { activeId: (args[0] as { id: string }).id };
+      if (channel === BACKEND.GET_STATUS) return { status: 'connected', transport: bootTransport };
+      return mockInvoke(channel, ...args);
+    });
+
+    render(DaemonStoppedOverlay);
+    await showOverlay(externalTransport);
+    // Active (failed) backend is remoteConn; local + the active remote are
+    // excluded from the fail-over list, leaving only otherRemoteConn.
+    dispatchAndFlush(
+      connectionsListReceived({
+        connections: [localConn, remoteConn, otherRemoteConn],
+        activeId: remoteConn.id,
+      }),
+    );
+
+    const buttons = screen.getAllByTestId('daemon-stopped-switch-backend');
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].textContent).toContain('Prod (10.0.0.9:5180)');
+
+    await fireEvent.click(buttons[0]);
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(CONNECTIONS.SWITCH, { id: otherRemoteConn.id });
+    });
+  });
+
+  it('offers no known-backend list when the only other saved connection is local', async () => {
+    render(DaemonStoppedOverlay);
+    await showOverlay(externalTransport);
+    dispatchAndFlush(
+      connectionsListReceived({ connections: [localConn, remoteConn], activeId: remoteConn.id }),
+    );
+    expect(screen.queryByTestId('daemon-stopped-known-backends')).toBeNull();
   });
 });

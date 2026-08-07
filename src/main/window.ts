@@ -280,7 +280,7 @@ export function captureWindowSessionsSnapshot(): void {
   }
 }
 
-export async function saveWindowSessions(backendId: string = LOCAL_CONNECTION_ID): Promise<void> {
+export async function saveWindowSessions(backendId: string): Promise<void> {
   try {
     let sessions = buildSessionsFromOpenWindows();
 
@@ -349,9 +349,7 @@ export function isValidWindowSession(s: unknown): s is WindowSession {
   );
 }
 
-export function loadWindowSessions(
-  backendId: string = LOCAL_CONNECTION_ID,
-): WindowSession[] | null {
+export function loadWindowSessions(backendId: string): WindowSession[] | null {
   try {
     const valid = readSessionsMap()[backendId];
     if (valid && valid.length > 0) {

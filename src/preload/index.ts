@@ -536,6 +536,8 @@ const ALLOWED_CHANNELS = [
   "connections:switch",
   "connections:changed",
   "connections:cert-mismatch",
+  "connections:protocol-mismatch",
+  "connections:get-boot-fallback",
   "hardware-console:clear-lighting",
   "hardware-console:clear-lighting-done",
   "event:workspace:created",
@@ -689,7 +691,8 @@ const ALLOWED_CHANNELS = [
   "backend:status",
   "hardware-console:clear-lighting",
   "connections:changed",
-  "connections:cert-mismatch"
+  "connections:cert-mismatch",
+  "connections:protocol-mismatch"
 ];
 
 // Dynamic channel patterns that are matched with startsWith()
@@ -864,7 +867,8 @@ const EVENT_CHANNELS = [
   "backend:status",
   "hardware-console:clear-lighting",
   "connections:changed",
-  "connections:cert-mismatch"
+  "connections:cert-mismatch",
+  "connections:protocol-mismatch"
 ];
 
 /**

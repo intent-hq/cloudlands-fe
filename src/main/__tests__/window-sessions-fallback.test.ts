@@ -93,12 +93,12 @@ describe('saveWindowSessions — empty getAllWindows() fallback', () => {
     // First save while a window still exists populates the in-memory cache.
     const bounds = { x: 10, y: 20, width: 1400, height: 900 };
     mockGetAllWindows.mockReturnValue([makeWindow('app://workspaces/work/abc', bounds)]);
-    await saveWindowSessions();
+    await saveWindowSessions('local');
 
     const sessionsPath = getWindowSessionsPath();
     expect(fs.existsSync(sessionsPath)).toBe(true);
     const firstSave = JSON.parse(fs.readFileSync(sessionsPath, 'utf-8'));
-    // Sessions are now persisted as a backend-keyed map; no-arg save → `local`.
+    // Sessions are persisted as a backend-keyed map, keyed by the passed id.
     expect(firstSave).toEqual({ local: [{ route: '/work/abc', bounds }] });
 
     // Delete the file to prove the fallback write actually happens.
@@ -106,7 +106,7 @@ describe('saveWindowSessions — empty getAllWindows() fallback', () => {
 
     // Simulate window-all-closed on non-macOS: no live windows remain.
     mockGetAllWindows.mockReturnValue([]);
-    await saveWindowSessions();
+    await saveWindowSessions('local');
 
     expect(fs.existsSync(sessionsPath)).toBe(true);
     const fallbackSave = JSON.parse(fs.readFileSync(sessionsPath, 'utf-8'));
@@ -121,7 +121,7 @@ describe('saveWindowSessions — empty getAllWindows() fallback', () => {
     // All windows are gone by the time saveWindowSessions() runs (non-macOS
     // window-all-closed); the pre-close snapshot must still be written.
     mockGetAllWindows.mockReturnValue([]);
-    await saveWindowSessions();
+    await saveWindowSessions('local');
 
     const saved = JSON.parse(fs.readFileSync(getWindowSessionsPath(), 'utf-8'));
     expect(saved).toEqual({ local: [{ route: '/work/snap', bounds }] });
@@ -129,7 +129,7 @@ describe('saveWindowSessions — empty getAllWindows() fallback', () => {
 
   it('does not write a sessions file when there is no snapshot and no live windows', async () => {
     mockGetAllWindows.mockReturnValue([]);
-    await saveWindowSessions();
+    await saveWindowSessions('local');
     expect(fs.existsSync(getWindowSessionsPath())).toBe(false);
   });
 
@@ -151,7 +151,7 @@ describe('saveWindowSessions — empty getAllWindows() fallback', () => {
     clearWindowSessionsSnapshot();
 
     mockGetAllWindows.mockReturnValue([]);
-    await saveWindowSessions();
+    await saveWindowSessions('local');
 
     expect(fs.existsSync(sessionsPath)).toBe(false);
   });

@@ -159,15 +159,18 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('reconcileActiveConnectionOnBoot', () => {
-  it('resets a stale remote active-id to local so connections:list reports local', async () => {
-    // Persisted state from a prior session: a remote is marked active, but the
-    // live client at boot is the local default.
-    store.getActiveId.mockResolvedValueOnce('remote-1'); // reconcile read
+  it('restores a reachable last-used remote at boot (does not reset to local)', async () => {
+    // Persisted state from a prior session: a remote was active on last close.
+    // The fake client's `host.status` probe resolves → the remote is reachable,
+    // so the FE stays on it and never rewrites the active id to local.
+    store.getActiveId.mockResolvedValue('remote-1');
     const mod = await loadModule();
 
     await mod.reconcileActiveConnectionOnBoot();
 
-    expect(store.setActiveId).toHaveBeenCalledWith('local');
+    expect(store.setActiveId).not.toHaveBeenCalledWith('local');
+    // A client was constructed for the restored remote target.
+    expect(lifecycle.events.some((e) => e.type === 'construct')).toBe(true);
   });
 
   it('is a no-op when the persisted active-id is already local', async () => {
@@ -179,7 +182,7 @@ describe('reconcileActiveConnectionOnBoot', () => {
     expect(store.setActiveId).not.toHaveBeenCalled();
   });
 
-  it('never throws when the store read/write fails (fail-soft at boot)', async () => {
+  it('never throws when the store read fails (fail-soft at boot)', async () => {
     store.getActiveId.mockRejectedValueOnce(new Error('disk gone'));
     const mod = await loadModule();
 

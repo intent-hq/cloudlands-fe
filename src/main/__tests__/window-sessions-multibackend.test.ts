@@ -180,12 +180,12 @@ describe('multi-backend window sessions', () => {
       expect(loadWindowSessions('remote-1')).toHaveLength(20);
     });
 
-    it('no-arg save/load default to the local backend', async () => {
+    it('explicit local save/load round-trips under the local bucket', async () => {
       const bounds = { x: 7, y: 8, width: 1280, height: 820 };
       seedLiveWindow('app://workspaces/work/default', bounds);
-      await saveWindowSessions();
+      await saveWindowSessions('local');
       expect(readMap()).toEqual({ local: [{ route: '/work/default', bounds }] });
-      expect(loadWindowSessions()).toEqual([{ route: '/work/default', bounds }]);
+      expect(loadWindowSessions('local')).toEqual([{ route: '/work/default', bounds }]);
     });
   });
 

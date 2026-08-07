@@ -853,6 +853,10 @@ export const IPC_CHANNELS = {
     CHANGED: 'connections:changed',
     CERT_MISMATCH: 'connections:cert-mismatch',
     PROTOCOL_MISMATCH: 'connections:protocol-mismatch',
+    // Pull the one-shot boot-restore fallback notice latched in main (T19),
+    // consume-once. The renderer fetches this once on mount and surfaces a
+    // non-blocking toast; the notice never becomes connections-slice state.
+    GET_BOOT_FALLBACK: 'connections:get-boot-fallback',
   },
 
   // Hardware console (Codex Micro / Creator Micro 2)
