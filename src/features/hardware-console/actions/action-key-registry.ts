@@ -158,6 +158,23 @@ function workspaceActiveAgentId(state: ActionKeyState, wsId: string): string | n
   return state.workspaceAgents.byWorkspaceId[wsId]?.activeAgentId ?? null;
 }
 
+/**
+ * Advance the per-workspace layout-preset cursor and return the preset to
+ * apply. `agents-row` is skipped when the workspace has no agents — the
+ * preset executor returns false there, which would make the press a silent
+ * no-op (intent-hq/monorepo#1612). The cursor lands on the preset actually
+ * applied so the next press continues from the right stop.
+ */
+function nextLayoutPreset(state: ActionKeyState, wsId: string): (typeof LAYOUT_PRESETS)[number] {
+  const hasAgents = (state.workspaceAgents.byWorkspaceId[wsId]?.agentIds.length ?? 0) > 0;
+  const applicable = LAYOUT_PRESETS.filter((presetId) => presetId !== 'agents-row' || hasAgents);
+  const previous = layoutPresetCursor.get(wsId) ?? -1;
+  const presetId =
+    applicable.find((candidate) => LAYOUT_PRESETS.indexOf(candidate) > previous) ?? applicable[0];
+  layoutPresetCursor.set(wsId, LAYOUT_PRESETS.indexOf(presetId));
+  return presetId;
+}
+
 /** The globally focused agent: the active workspace's active agent id. */
 function focusedAgentId(state: ActionKeyState): string | null {
   const wsId = activeWorkspaceId(state);
@@ -500,12 +517,10 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
     isAvailable({ state }) {
       return activeWorkspaceId(state) !== null;
     },
-    execute({ state }) {
+    execute({ state, showHint }) {
       const wsId = activeWorkspaceId(state);
       if (wsId === null) return;
-      const next = ((layoutPresetCursor.get(wsId) ?? -1) + 1) % LAYOUT_PRESETS.length;
-      layoutPresetCursor.set(wsId, next);
-      const presetId = LAYOUT_PRESETS[next];
+      const presetId = nextLayoutPreset(state, wsId);
       // Dynamic import: panel-layout-adapter/preset-executor transitively pull
       // in selectors that call `store.createSelector` at module scope, which
       // would crash if evaluated eagerly here — this registry is imported by
@@ -522,6 +537,13 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
             containerHeight: window.innerHeight,
           }),
         )
+        .then((applied) => {
+          // Race fallback: the preset became inapplicable between the
+          // synchronous skip check and the async application (e.g. the last
+          // agent disappeared), so tell the user instead of dead-pressing.
+          if (!applied)
+            showHint(m.hardwareConsole_actionKey_switchWindowLayouts_notApplicable_hint());
+        })
         .catch((error: unknown) => {
           logger.error('Failed to apply layout preset', { presetId, wsId, error });
         });

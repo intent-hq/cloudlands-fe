@@ -1000,7 +1000,7 @@ describe('execute dispatch', () => {
   it('switch-window-layouts cycles through the content presets per workspace', async () => {
     const applyContentPresetMock = applyContentPreset as ReturnType<typeof vi.fn>;
     applyContentPresetMock.mockClear();
-    const { context } = makeContext(makeState());
+    const { context } = makeContext(makeState({ agentsByWorkspace: { 'ws-1': { ids: ['a-1'] } } }));
     getActionKeyDefinition('switch-window-layouts').execute(context);
     await vi.waitFor(() => {
       expect(applyContentPresetMock).toHaveBeenCalledTimes(1);
@@ -1017,6 +1017,58 @@ describe('execute dispatch', () => {
     expect(applyContentPresetMock.mock.calls[0][2]).toEqual(
       expect.objectContaining({ workspaceId: 'ws-1' }),
     );
+  });
+
+  it('switch-window-layouts walks all four presets when the workspace has agents', async () => {
+    const applyContentPresetMock = applyContentPreset as ReturnType<typeof vi.fn>;
+    applyContentPresetMock.mockClear();
+    const { context } = makeContext(makeState({ agentsByWorkspace: { 'ws-1': { ids: ['a-1'] } } }));
+    for (let press = 1; press <= 5; press++) {
+      getActionKeyDefinition('switch-window-layouts').execute(context);
+      await vi.waitFor(() => {
+        expect(applyContentPresetMock).toHaveBeenCalledTimes(press);
+      });
+    }
+    expect(applyContentPresetMock.mock.calls.map(([presetId]) => presetId)).toEqual([
+      'planning',
+      'agents-row',
+      'changes',
+      'review',
+      'planning',
+    ]);
+  });
+
+  it('switch-window-layouts skips agents-row when the workspace has no agents', async () => {
+    const applyContentPresetMock = applyContentPreset as ReturnType<typeof vi.fn>;
+    applyContentPresetMock.mockClear();
+    const { context, showHint } = makeContext(makeState());
+    for (let press = 1; press <= 4; press++) {
+      getActionKeyDefinition('switch-window-layouts').execute(context);
+      await vi.waitFor(() => {
+        expect(applyContentPresetMock).toHaveBeenCalledTimes(press);
+      });
+    }
+    // No dead press: the cycle is planning → changes → review → planning.
+    expect(applyContentPresetMock.mock.calls.map(([presetId]) => presetId)).toEqual([
+      'planning',
+      'changes',
+      'review',
+      'planning',
+    ]);
+    expect(showHint).not.toHaveBeenCalled();
+  });
+
+  it('switch-window-layouts hints when the preset resolves false (race fallback)', async () => {
+    const applyContentPresetMock = applyContentPreset as ReturnType<typeof vi.fn>;
+    applyContentPresetMock.mockClear();
+    applyContentPresetMock.mockResolvedValueOnce(false);
+    const { context, showHint } = makeContext(makeState());
+    getActionKeyDefinition('switch-window-layouts').execute(context);
+    await vi.waitFor(() => {
+      expect(showHint).toHaveBeenCalledExactlyOnceWith(
+        m.hardwareConsole_actionKey_switchWindowLayouts_notApplicable_hint(),
+      );
+    });
   });
 
   it('switch-window-layouts catches and logs a rejected preset application', async () => {

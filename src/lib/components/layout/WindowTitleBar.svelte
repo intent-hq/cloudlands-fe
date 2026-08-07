@@ -222,11 +222,18 @@
 
   async function handleApplyPreset(presetId: LayoutPresetId) {
     if (!layoutManager || !workspaceId) return;
-    await applyContentPreset(presetId, layoutManager, {
+    const applied = await applyContentPreset(presetId, layoutManager, {
       workspaceId,
       containerWidth: window.innerWidth,
       containerHeight: window.innerHeight,
     });
+    // A preset with nothing to show (e.g. agents-row in a workspace with no
+    // agents) resolves false and leaves the layout untouched — surface that
+    // instead of appearing to do nothing.
+    if (!applied) {
+      const { toast } = await import('$lib/components/ui/toast');
+      toast.info(m.layout_presets_notApplicable_toast());
+    }
   }
 </script>
 
