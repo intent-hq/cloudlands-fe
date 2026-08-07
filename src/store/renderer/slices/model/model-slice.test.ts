@@ -28,7 +28,7 @@ import {
   setRetryAttempt,
   setSelectedModel,
 } from './model-slice';
-import { selectAllProviderWarnings } from './model-selectors';
+import { selectAllProviderStaleFlags, selectAllProviderWarnings } from './model-selectors';
 import type { ModelState } from './model-types';
 
 // With nothing user-configured, the first catalog row is the effective default.
@@ -288,6 +288,57 @@ describe('modelReducer', () => {
 
     const cleared = modelReducer(warningState, clearLoadingStateForProvider('codex'));
     expect(cleared.loadingState.codex).toBeUndefined();
+  });
+
+  it('tracks the stale flag alongside the warning', () => {
+    // PROTOCOL §5.30 degraded-but-cached response: models + stale + warning.
+    const staleState = modelReducer(
+      initialState,
+      setLoadingStateForProvider({
+        providerId: 'codex',
+        status: 'success',
+        warning: 'probe timed out; serving last known model list',
+        stale: true,
+      }),
+    );
+    expect(staleState.loadingState.codex.stale).toBe(true);
+    expect(selectAllProviderStaleFlags.select({ model: staleState })).toEqual({ codex: true });
+
+    const stillStale = modelReducer(
+      staleState,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'loading' }),
+    );
+    expect(stillStale.loadingState.codex.stale).toBe(true);
+
+    const freshSuccess = modelReducer(
+      staleState,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'success' }),
+    );
+    expect(freshSuccess.loadingState.codex.stale).toBeUndefined();
+
+    const errored = modelReducer(
+      staleState,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'error', error: 'boom' }),
+    );
+    expect(errored.loadingState.codex.stale).toBeUndefined();
+  });
+
+  it('omits providers without a stale flag from the stale selector', () => {
+    const state = {
+      model: {
+        ...initialState,
+        loadingState: {
+          codex: {
+            status: 'success' as const,
+            retryAttempt: 0,
+            warning: 'Codex not installed; using static model list',
+          },
+          auggie: { status: 'success' as const, retryAttempt: 0 },
+        },
+      },
+    };
+
+    expect(selectAllProviderStaleFlags.select(state)).toEqual({});
   });
 
   it('selects provider warnings', () => {

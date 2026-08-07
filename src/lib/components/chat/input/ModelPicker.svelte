@@ -37,6 +37,7 @@
   selectIsLoadingModels,
   selectLoadError,
   selectAllProviderWarnings,
+  selectAllProviderStaleFlags,
 } from '$store/renderer/slices/model/model-selectors';
   import {
   clearModelFallbackInfo,
@@ -124,6 +125,7 @@
   const isLoadingModels$ = selectIsLoadingModels();
   const loadError$ = selectLoadError();
   const allProviderWarnings$ = selectAllProviderWarnings();
+  const allProviderStaleFlags$ = selectAllProviderStaleFlags();
   const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
   const hasCheckedOnce$ = selectHasCheckedOnce();
   const daemonHealth$ = selectDaemonHealth();
@@ -222,6 +224,12 @@
     noticeClass,
   }: Props = $props();
 
+  // `default`-variant pickers stack the notice directly under a full-width
+  // trigger, so give it a default top margin; callers can still override it.
+  const resolvedNoticeClass = $derived(
+    variant === 'default' ? cn('mt-2', noticeClass) : noticeClass,
+  );
+
   const agentSession$ = useAgentSession(() => agentId);
 
   let pendingModelUpdate = $state<string | null>(null);
@@ -250,9 +258,15 @@
   let agentProviderLoading = $state(false);
   let agentProviderError = $state<string | null>(null);
 
-  function setProviderWarningState(providerId: string, warning: string | undefined) {
+  function setProviderWarningState(
+    providerId: string,
+    warning: string | undefined,
+    stale: boolean | undefined,
+  ) {
     const normalizedId = normalizeProviderId(providerId);
-    appStore.dispatch(setLoadingStateForProvider({ providerId: normalizedId, status: 'success', warning }));
+    appStore.dispatch(
+      setLoadingStateForProvider({ providerId: normalizedId, status: 'success', warning, stale }),
+    );
   }
 
   function setProviderErrorState(providerId: string, error: string) {
@@ -322,7 +336,7 @@
             ...allProviderModels,
             [providerId]: toDropdownOptions(result.models),
           };
-          setProviderWarningState(providerId, result.warning);
+          setProviderWarningState(providerId, result.warning, result.stale);
         } catch (err) {
           if (fetchGeneration !== currentGen) return;
           const providerError = formatProviderLoadError(providerId, err);
@@ -362,7 +376,7 @@
       const result = await getModelsForProviderForLoadingState(providerId);
       if (agentFetchGeneration !== currentGen) return;
       agentProviderModels = result.models;
-      setProviderWarningState(providerId, result.warning);
+      setProviderWarningState(providerId, result.warning, result.stale);
     } catch (err) {
       if (agentFetchGeneration !== currentGen) return;
       const providerError = formatProviderLoadError(providerId, err);
@@ -438,7 +452,7 @@
       // duration and the returned list replaces the group immediately.
       const result = await getModelsForProviderForLoadingState(providerId, { forceRefresh: true });
       if (fetchGeneration !== gen) return;
-      setProviderWarningState(providerId, result.warning);
+      setProviderWarningState(providerId, result.warning, result.stale);
       if (providerId === effectiveProviderId && usesAgentProviderFetch) {
         agentProviderModels = result.models;
       }
@@ -736,8 +750,20 @@
       .filter((warning): warning is ProviderWarningNotice => Boolean(warning));
   });
 
+  const hasCodexModels = $derived(
+    (allProviderModels['codex']?.length ?? 0) > 0 ||
+      (normalizeProviderId(effectiveProviderId) === 'codex' &&
+        (agentProviderModels?.length ?? 0) > 0),
+  );
+
+  // A stale warning (PROTOCOL §5.30 `stale: true`) accompanies the daemon's
+  // last-known-good list after a transient probe failure: the models on screen
+  // are real and usable, so the "install Codex CLI" notice would be wrong.
+  // The notice stays for the degraded case (warning with no codex models).
   const codexFallbackWarning = $derived(
-    providerFallbackWarnings.find((warning) => warning.providerId === 'codex') ?? null,
+    $allProviderStaleFlags$['codex'] && hasCodexModels
+      ? null
+      : (providerFallbackWarnings.find((warning) => warning.providerId === 'codex') ?? null),
   );
 
   const isCodexManagedInstallInstalling = $derived(
@@ -1398,7 +1424,7 @@
     title={m.chat_modelPicker_noProviderAvailable_title()}
     description={m.chat_modelPicker_noProviderAvailable_description()}
     variant="warning"
-    class={noticeClass}
+    class={resolvedNoticeClass}
   />
 
   <ModelPickerProviderNotice
@@ -1411,6 +1437,6 @@
     title={isCodexManagedInstallInstalling ? m.chat_modelPicker_settingUpCodex_title() : undefined}
     description={isCodexManagedInstallInstalling ? codexManagedInstallProgressText : undefined}
     variant={isCodexManagedInstallInstalling ? 'progress' : 'warning'}
-    class={noticeClass}
+    class={resolvedNoticeClass}
   />
 {/if}
