@@ -9,6 +9,13 @@
  * Dependency-light per src/store/renderer/AGENTS.md middleware conventions:
  * no selector imports — reads plain state through a narrow structural type
  * (`LedSnapshotState`, satisfied by the app `StoreState`).
+ *
+ * Deliberately reads the ENTITY's `displayStatus` only, not the HUD's live
+ * `hud.displayStatusByWorkspaceId` bridge: that slice is populated only while
+ * the HUD is mounted, so consuming it would make the hardware LEDs behave
+ * differently depending on whether a UI surface happens to be open. The cost
+ * is a bounded lag — `workspace.subscribe` deltas carry `displayStatus`
+ * (PROTOCOL §5.1/§6.9), so the entity trails an event by at most one delta.
  */
 
 import { isWorkspaceDisplayStatus, type Workspace, type WorkspaceDisplayStatus } from '$shared/types';

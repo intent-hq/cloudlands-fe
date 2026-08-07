@@ -926,6 +926,14 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
  * question hold the FE never captured must still blink). Pending requests
  * clear only on user-origin deliveries (`attentionRequestCleared`, §5.5), so
  * a cleared request drops out live — no stale entries linger.
+ *
+ * The ungated `failed` bucket is a DELIBERATE per-agent axis, not a leftover
+ * of the removed card-state synthesis: the BE rollup deliberately ignores
+ * child/background sessions, so a failed delegated agent leaves every card
+ * `in_progress` while still being actionable. The counter and the ATTENTION
+ * panel share this rule (they stay mutually consistent), and the card keeps
+ * rendering the daemon value verbatim — the per-agent counter is a separate
+ * axis over the agent roster, not a second opinion on the workspace status.
  */
 export const selectHudAttnCount = store.createSelector((state): number => {
   const flags = state.hud.attentionByWorkspaceId;
