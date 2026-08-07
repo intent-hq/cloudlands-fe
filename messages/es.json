@@ -1360,7 +1360,7 @@
   "workspace_remoteSetupSelector_whereRun_description": "Ejecutar localmente de forma predeterminada, o conectar una máquina remota para que los agentes trabajen directamente en ella.",
   "workspace_remoteSetupSelector_whereRun_label": "¿Dónde deben ejecutarse los agentes?",
   "workspace_remoteSetupSelector_workIn_before": "Trabajar en",
-  "workspace_repoAndBranchPicker_cloneRepoAndCreateOffBranch_label": "Clonar {repo} y crear {isolationLabel} a partir de {branch}",
+  "workspace_repoAndBranchPicker_cloneRepoAndWorkOffBranch_label": "Clonar {repo} y trabajar a partir de {branch}",
   "workspace_repoAndBranchPicker_createNewRepo_label": "Crear repositorio nuevo",
   "workspace_repoAndBranchPicker_repoOffBranch_label": "{repo} a partir de {branch}",
   "workspace_repoAndBranchPicker_workDirectly_label": "Trabajar directamente en su carpeta",
