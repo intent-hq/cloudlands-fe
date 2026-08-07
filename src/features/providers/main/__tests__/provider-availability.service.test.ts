@@ -319,6 +319,38 @@ describe('provider availability service', () => {
     expect(result.providers.codex.authenticated).toBeUndefined();
   });
 
+  it('propagates a host.providerDiscovery RPC failure instead of fabricating an all-unavailable result', async () => {
+    routeBackend({
+      'host.providerAuthStatus': authSweep(),
+      // 'host.providerDiscovery' intentionally unrouted — routeBackend throws
+      // "unexpected daemon method" for it, simulating an RPC failure.
+    });
+
+    const { getProviderAvailability } = await import('../provider-availability.service');
+
+    await expect(getProviderAvailability()).rejects.toThrow(
+      'unexpected daemon method: host.providerDiscovery',
+    );
+  });
+
+  it('GET_AVAILABILITY handler returns an explicit failure envelope on RPC failure (never success:true with fabricated data)', async () => {
+    routeBackend({
+      'host.providerAuthStatus': authSweep(),
+    });
+
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.GET_AVAILABILITY);
+    if (!handler) throw new Error('provider availability handler was not registered');
+
+    const result = await handler();
+
+    expect(result).toEqual({
+      success: false,
+      error: 'unexpected daemon method: host.providerDiscovery',
+    });
+  });
+
   it('degrades auth to unknown when the providerAuthStatus RPC fails', async () => {
     routeBackend({
       'host.providerDiscovery': {

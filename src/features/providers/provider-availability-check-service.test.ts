@@ -42,7 +42,6 @@ import {
   checkSingleProviderRequested,
   ensureProvidersChecked,
 } from "$store/renderer/slices/agent-availability/agent-availability-slice";
-import { clearProviderAvailabilityCache } from "$features/providers/provider-availability.client";
 import type { ProviderStatus } from "$store/renderer/slices/agent-availability/agent-availability-types";
 
 const ALL_PROVIDER_IDS = Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID);
@@ -108,7 +107,6 @@ describe("provider-availability-check-service", () => {
     for (let i = 0; i < 30; i++) {
       await flush();
     }
-    clearProviderAvailabilityCache();
     checkSingleSpy.mockReset();
     getPathsSpy.mockReset();
     getAvailabilitySpy.mockReset();
