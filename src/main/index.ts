@@ -260,6 +260,7 @@ import {
   registerBackendHandlers,
   disposeBackendClient,
   getBackendClient,
+  reconcileActiveConnectionOnBoot,
 } from '../features/backend/main/backend.ipc';
 import { getConnectionMode } from '../features/backend/main/connection-mode';
 import { startIntentdSidecar, stopIntentdSidecar } from '../features/backend/main/intentd-sidecar';
@@ -1365,6 +1366,11 @@ app.whenReady().then(async () => {
   // The daemon owns PATH discovery. Seed only after starting/adopting it, and
   // retry briefly while a newly spawned sidecar creates its socket.
   await seedPathFromHostEnv();
+
+  // Boot reconciliation (T8): the live client is built from the local/env
+  // default, so make the persisted active connection agree with it before any
+  // window queries `connections:list`. Reset a stale remote active-id to local.
+  await reconcileActiveConnectionOnBoot();
 
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
 

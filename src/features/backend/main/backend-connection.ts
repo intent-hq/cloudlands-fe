@@ -33,6 +33,7 @@ import path from 'node:path';
 import tls from 'node:tls';
 import { Duplex } from 'node:stream';
 import { createRequire } from 'node:module';
+import type { IncomingMessage } from 'node:http';
 import type { RawData, WebSocket as WsWebSocket } from 'ws';
 
 import { shouldSpawnSidecar } from './intentd-spawn-policy';
@@ -47,17 +48,29 @@ const { WebSocket: NodeWebSocket } = nodeRequire('ws') as {
 
 /** Resolved connection target for the backend transport. */
 export interface BackendConnectionConfig {
-  transport: 'uds' | 'tcp' | 'ws';
+  transport: 'uds' | 'tcp' | 'ws' | 'wss';
   /** UDS socket path (when `transport === 'uds'`). */
   socketPath?: string;
-  /** Host (when `transport === 'tcp'`). */
+  /** Host (when `transport === 'tcp'` or `'wss'`). */
   host?: string;
-  /** Port (when `transport === 'tcp'`). */
+  /** Port (when `transport === 'tcp'` or `'wss'`). */
   port?: number;
   /** Use TLS for the TCP transport (remote). Defaults to true for TCP. */
   tls?: boolean;
   /** Full `ws://…` URL (when `transport === 'ws'`); `/ws` is added if missing. */
   wsUrl?: string;
+  /**
+   * Bearer token for the `wss` transport (PROTOCOL §2.1), presented on the
+   * WebSocket upgrade via the `Authorization` header (with a `?token=` query
+   * fallback).
+   */
+  token?: string;
+  /**
+   * Pinned self-signed certificate SHA-256 fingerprint for the `wss` transport
+   * (PROTOCOL §1.2), colon-separated uppercase hex. Every connect verifies the
+   * presented cert against this pin; a mismatch fails with {@link PinMismatchError}.
+   */
+  fingerprint?: string;
 }
 
 /** Options for [[resolveBackendConfig]]. */
@@ -162,10 +175,12 @@ function normalizeWsUrl(raw: string): string {
 /**
  * Create a connected stream for the given config.
  *
- * UDS and the loopback `ws://` transport are fully supported. The TCP/TLS
- * branch remains a remote-transport stub: it opens a (optionally TLS) socket
- * but does NOT implement the WSS `/ws` handshake, so remote framing beyond a
- * raw newline-delimited stream is out of scope.
+ * UDS, the loopback `ws://` transport, and the pinned `wss://` remote transport
+ * (self-signed-cert fingerprint pinning + bearer token, see
+ * {@link createWssSocket}) are fully supported. The legacy TCP/TLS branch
+ * remains a remote-transport stub: it opens a (optionally TLS) socket but does
+ * NOT implement the `/ws` handshake, so remote framing beyond a raw
+ * newline-delimited stream is out of scope.
  */
 export function createBackendSocket(config: BackendConnectionConfig): Duplex {
   if (config.transport === 'uds') {
@@ -175,6 +190,9 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
   if (config.transport === 'ws') {
     if (!config.wsUrl) throw new Error('WS transport requires a wsUrl');
     return new WebSocketDuplex(new NodeWebSocket(config.wsUrl));
+  }
+  if (config.transport === 'wss') {
+    return createWssSocket(config);
   }
   if (!config.host || !config.port) {
     throw new Error('TCP transport requires host and port');
@@ -194,7 +212,171 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
 export function describeBackendConfig(config: BackendConnectionConfig): string {
   if (config.transport === 'uds') return `uds:${config.socketPath}`;
   if (config.transport === 'ws') return `ws:${config.wsUrl}`;
+  // Deliberately omit the token and fingerprint — this string reaches logs.
+  if (config.transport === 'wss') return `wss:${config.host}:${config.port}`;
   return `tcp:${config.host}:${config.port}${config.tls ? ' (tls)' : ''}`;
+}
+
+/**
+ * Raised when a `wss` peer presents a certificate whose SHA-256 fingerprint
+ * does not match the pinned value (PROTOCOL §1.2). Distinct from a generic
+ * connect failure so the switch/UI layer can surface the "certificate changed"
+ * failure modal instead of a transient reconnect.
+ */
+export class PinMismatchError extends Error {
+  /** Pinned fingerprint (colon-hex uppercase). */
+  readonly expected: string;
+  /** Fingerprint the peer actually presented (colon-hex uppercase). */
+  readonly actual: string;
+  constructor(expected: string, actual: string) {
+    super(
+      `certificate fingerprint mismatch: expected ${expected || '(none)'}, got ${actual || '(none)'}`,
+    );
+    this.name = 'PinMismatchError';
+    this.expected = expected;
+    this.actual = actual;
+  }
+}
+
+/**
+ * Normalize a certificate SHA-256 fingerprint to the daemon's canonical form
+ * (PROTOCOL §1.2): colon-separated **uppercase** hex byte pairs. Accepts any
+ * mix of case and separators (Node's `fingerprint256` is already colon-hex
+ * uppercase, but a user-pasted or persisted pin may not be), so both sides of
+ * a pin comparison can be run through it before an exact string match.
+ */
+export function normalizeFingerprint(fingerprint: string): string {
+  const hex = fingerprint.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+  return hex.match(/.{2}/g)?.join(':') ?? '';
+}
+
+/**
+ * Build the daemon's `wss://<host>:<port>/ws` upgrade URL, bracketing a bare
+ * IPv6 host and optionally appending the `?token=` query fallback (PROTOCOL
+ * §2.1 checks the header first, then the query).
+ */
+function formatWssUrl(host: string, port: number, token?: string): string {
+  const authority = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+  const base = `wss://${authority}:${port}/ws`;
+  if (!token) return base;
+  const url = new URL(base);
+  url.searchParams.set('token', token);
+  return url.toString();
+}
+
+/** Read the peer cert fingerprint (normalized) from an upgrade/response socket. */
+function peerFingerprint(response: IncomingMessage): string {
+  const socket = response.socket as tls.TLSSocket;
+  const cert = socket.getPeerCertificate?.();
+  return normalizeFingerprint(cert?.fingerprint256 ?? '');
+}
+
+/**
+ * Connect the pinned `wss` transport: open the TLS WebSocket with
+ * `rejectUnauthorized: false` (the daemon's cert is self-signed, PROTOCOL
+ * §1.2) and **manually verify** the presented cert's fingerprint against the
+ * config pin on the upgrade handshake — before any application data flows. A
+ * mismatch destroys the stream with a {@link PinMismatchError}; a match hands
+ * the connection to the shared {@link WebSocketDuplex} newline framing adapter.
+ * The bearer token is sent via the `Authorization` header (PROTOCOL §2.1) with
+ * a `?token=` query fallback.
+ */
+function createWssSocket(config: BackendConnectionConfig): Duplex {
+  const { host, port, token, fingerprint } = config;
+  if (!host || !port) throw new Error('WSS transport requires host and port');
+  if (!token) throw new Error('WSS transport requires a token');
+  if (!fingerprint) throw new Error('WSS transport requires a pinned fingerprint');
+  const expected = normalizeFingerprint(fingerprint);
+
+  const ws = new NodeWebSocket(formatWssUrl(host, port, token), {
+    rejectUnauthorized: false,
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const duplex = new WebSocketDuplex(ws);
+  ws.on('upgrade', (response: IncomingMessage) => {
+    const actual = peerFingerprint(response);
+    if (actual !== expected) {
+      // Destroy through the duplex so the JSON-RPC client observes a single
+      // `error` (then `close`) — the same failure path every transport uses.
+      duplex.destroy(new PinMismatchError(expected, actual));
+    }
+  });
+  return duplex;
+}
+
+/** Successful trust-on-first-use capture: the presented cert's fingerprint. */
+export interface CaptureFingerprintOk {
+  ok: true;
+  /** Presented cert SHA-256 fingerprint, colon-hex uppercase (PROTOCOL §1.2). */
+  fingerprint: string;
+}
+
+/** Failed trust-on-first-use capture, with a machine-readable reason. */
+export interface CaptureFingerprintError {
+  ok: false;
+  code: 'no-certificate' | 'connect-failed' | 'timeout';
+  error: string;
+}
+
+export type CaptureFingerprintResult = CaptureFingerprintOk | CaptureFingerprintError;
+
+/**
+ * Trust-on-first-use helper: open a `wss` connection to `{host, port}` with
+ * `rejectUnauthorized: false`, read the presented self-signed cert's SHA-256
+ * fingerprint (PROTOCOL §1.2), then close. Returns the normalized fingerprint
+ * for the user to confirm, or a structured error. The bearer token is sent so
+ * the capture exercises the real upgrade path; the fingerprint is still read
+ * from the TLS layer even when the token is rejected (401 → unexpected
+ * response), so a bad token surfaces at pinned-connect time rather than hiding
+ * the cert here.
+ */
+export function captureFingerprint(
+  target: { host: string; port: number; token: string },
+  options: { timeoutMs?: number } = {},
+): Promise<CaptureFingerprintResult> {
+  const { host, port, token } = target;
+  const timeoutMs = options.timeoutMs ?? 10_000;
+  return new Promise<CaptureFingerprintResult>((resolve) => {
+    let settled = false;
+    const ws = new NodeWebSocket(formatWssUrl(host, port, token), {
+      rejectUnauthorized: false,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const finish = (result: CaptureFingerprintResult): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        ws.terminate();
+      } catch {
+        // ignore teardown errors
+      }
+      resolve(result);
+    };
+    const timer = setTimeout(
+      () =>
+        finish({
+          ok: false,
+          code: 'timeout',
+          error: `fingerprint capture timed out after ${timeoutMs}ms`,
+        }),
+      timeoutMs,
+    );
+    timer.unref?.();
+    const readCert = (response: IncomingMessage): void => {
+      const fingerprint = peerFingerprint(response);
+      if (!fingerprint) {
+        finish({ ok: false, code: 'no-certificate', error: 'server presented no certificate' });
+        return;
+      }
+      finish({ ok: true, fingerprint });
+    };
+    ws.on('upgrade', readCert);
+    ws.on('unexpected-response', (_req, response: IncomingMessage) => readCert(response));
+    ws.on('error', (err: Error) =>
+      finish({ ok: false, code: 'connect-failed', error: err.message }),
+    );
+  });
 }
 
 /**

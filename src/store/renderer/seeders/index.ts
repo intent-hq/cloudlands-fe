@@ -11,6 +11,7 @@ import './active-streams-bridge-seeder';
 import './agents-seeder';
 import './agent-ipc-bridge-seeder';
 import './backend-status-bridge-seeder';
+import './connections-bridge-seeder';
 import './host-bridge-seeder';
 import './git-bridge-seeder';
 import './file-bridge-seeder';

@@ -17,13 +17,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockGetAllWindows = vi.fn();
 const mockGetPath = vi.fn();
@@ -104,7 +98,8 @@ describe('saveWindowSessions — empty getAllWindows() fallback', () => {
     const sessionsPath = getWindowSessionsPath();
     expect(fs.existsSync(sessionsPath)).toBe(true);
     const firstSave = JSON.parse(fs.readFileSync(sessionsPath, 'utf-8'));
-    expect(firstSave).toEqual([{ route: '/work/abc', bounds }]);
+    // Sessions are now persisted as a backend-keyed map; no-arg save → `local`.
+    expect(firstSave).toEqual({ local: [{ route: '/work/abc', bounds }] });
 
     // Delete the file to prove the fallback write actually happens.
     fs.unlinkSync(sessionsPath);
@@ -129,7 +124,7 @@ describe('saveWindowSessions — empty getAllWindows() fallback', () => {
     await saveWindowSessions();
 
     const saved = JSON.parse(fs.readFileSync(getWindowSessionsPath(), 'utf-8'));
-    expect(saved).toEqual([{ route: '/work/snap', bounds }]);
+    expect(saved).toEqual({ local: [{ route: '/work/snap', bounds }] });
   });
 
   it('does not write a sessions file when there is no snapshot and no live windows', async () => {

@@ -21,6 +21,10 @@ const requestMock = vi.hoisted(() =>
 vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: requestMock, on: vi.fn(), off: vi.fn() }),
   onBackendReconnected: () => vi.fn(),
+  // T9: the service registers its listeners on the stable forwarders; these
+  // tests don't drive events, so no-op disposers suffice.
+  onBackendNotification: () => vi.fn(),
+  onBackendStatus: () => vi.fn(),
 }));
 
 vi.mock('../../../shared/logger', () => ({
@@ -93,9 +97,8 @@ describe('NotificationService ↔ daemon settings.notifications.enabled', () => 
 
   it('defaults to enabled when the daemon call rejects', async () => {
     requestMock.mockRejectedValueOnce(new Error('boom'));
-    const { NotificationService, __resetNotificationCacheForTesting } = await import(
-      './notification.service'
-    );
+    const { NotificationService, __resetNotificationCacheForTesting } =
+      await import('./notification.service');
     __resetNotificationCacheForTesting();
     const svc = new NotificationService();
     await flush();
@@ -126,9 +129,8 @@ describe('NotificationService ↔ daemon settings.notifications.enabled', () => 
       }
       return {};
     });
-    const { NotificationService, __resetNotificationCacheForTesting } = await import(
-      './notification.service'
-    );
+    const { NotificationService, __resetNotificationCacheForTesting } =
+      await import('./notification.service');
     __resetNotificationCacheForTesting();
     const svc = new NotificationService();
     await flush();

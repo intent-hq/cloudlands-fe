@@ -7,15 +7,20 @@
  * so the adapter's newline framing + event-push path exercise the same code
  * a live daemon would.
  */
+import crypto from 'node:crypto';
+import https from 'node:https';
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
+  captureFingerprint,
   DEFAULT_DEV_WS_URL,
   defaultSocketPath,
   describeBackendConfig,
+  normalizeFingerprint,
+  PinMismatchError,
   resolveBackendConfig,
   WebSocketDuplex,
 } from './backend-connection';
@@ -262,6 +267,18 @@ describe('describeBackendConfig', () => {
       'tcp:h:2',
     );
   });
+
+  it('renders wss without leaking the token or fingerprint into logs', () => {
+    expect(
+      describeBackendConfig({
+        transport: 'wss',
+        host: '10.0.0.9',
+        port: 5181,
+        token: 'super-secret',
+        fingerprint: 'AB:CD',
+      }),
+    ).toBe('wss:10.0.0.9:5181');
+  });
 });
 
 /**
@@ -433,5 +450,183 @@ describe('WebSocketDuplex framing adapter (loopback ws://)', () => {
     await vi.waitFor(() => expect(echoes).toHaveLength(1));
     expect(JSON.parse(echoes[0])).toMatchObject({ id: 1, method: 'system.status' });
     duplex.destroy();
+  });
+});
+
+// Self-signed EC (P-256) cert + key, generated once with openssl and pinned
+// here so the fake daemon presents a stable identity whose fingerprint the
+// pinning tests can derive (via `crypto.X509Certificate`) rather than hardcode.
+//   subject/issuer CN=localhost, SAN DNS:localhost + IP:127.0.0.1, 10y validity.
+const WSS_CERT_PEM = Buffer.from(
+  'LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJtVENDQVQrZ0F3SUJBZ0lVWVlzc05zWkxXdTZXZXdkb2p6UlpFY3k0LzRzd0NnWUlLb1pJemowRUF3SXcKRkRFU01CQUdBMVVFQXd3SmJHOWpZV3hvYjNOME1CNFhEVEkyTURnd056QXhOVGt6TkZvWERUTTJNRGd3TkRBeApOVGt6TkZvd0ZERVNNQkFHQTFVRUF3d0piRzlqWVd4b2IzTjBNRmt3RXdZSEtvWkl6ajBDQVFZSUtvWkl6ajBECkFRY0RRZ0FFSlkvM2I0RHdRQXAyVVdIay84SGljZEFxaVdXL0pBVnRtMkRFbmUrZ3RBa0daVmo1VGlYUDZBREkKeXltbEc0bWRWU25QVUtXS2NUYmFxT3NWZVVGd2Y2TnZNRzB3SFFZRFZSME9CQllFRk80WTZBc2c2NEJVV1RhQgo2SzBUeDgvczR2S21NQjhHQTFVZEl3UVlNQmFBRk80WTZBc2c2NEJVV1RhQjZLMFR4OC9zNHZLbU1BOEdBMVVkCkV3RUIvd1FGTUFNQkFmOHdHZ1lEVlIwUkJCTXdFWUlKYkc5allXeG9iM04waHdSL0FBQUJNQW9HQ0NxR1NNNDkKQkFNQ0EwZ0FNRVVDSVFET3hKTXBKcy9DcmQwOG95U2tGdVRueVo0c3VqVklvL3BDK1RVWUpRMEY5UUlnU2pvagppWG56RlZ0Q1U0Wll2VWFtRkc0bFNUYmlQano5QXlubWxpSkI1a289Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K',
+  'base64',
+).toString('utf8');
+
+const WSS_KEY_PEM = Buffer.from(
+  'LS0tLS1CRUdJTiBFQyBQQVJBTUVURVJTLS0tLS0KQmdncWhrak9QUU1CQnc9PQotLS0tLUVORCBFQyBQQVJBTUVURVJTLS0tLS0KLS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0tCk1IY0NBUUVFSVBLTnFYZll2aEdqbDErMmNpMmEyOFZDNC9BbTVWLzBOV1JvS0cxeWlLbWFvQW9HQ0NxR1NNNDkKQXdFSG9VUURRZ0FFSlkvM2I0RHdRQXAyVVdIay84SGljZEFxaVdXL0pBVnRtMkRFbmUrZ3RBa0daVmo1VGlYUAo2QURJeXltbEc0bWRWU25QVUtXS2NUYmFxT3NWZVVGd2Z3PT0KLS0tLS1FTkQgRUMgUFJJVkFURSBLRVktLS0tLQo=',
+  'base64',
+).toString('utf8');
+
+/**
+ * Fake WSS daemon: an HTTPS server presenting the pinned self-signed cert with
+ * a `ws` upgrade handler that mirrors `FakeWsDaemon` (one JSON envelope per text
+ * frame). Records the bearer token seen on the upgrade so the auth-header test
+ * can assert it.
+ */
+class FakeWssDaemon {
+  private server!: https.Server;
+  private wss!: import('ws').WebSocketServer;
+  host = '127.0.0.1';
+  port = 0;
+  fingerprint = '';
+  lastAuthHeader: string | undefined;
+  handler: (req: {
+    id?: number | string;
+    method: string;
+    params?: unknown;
+  }) => { result?: unknown; error?: { code: number; message: string } } | undefined = () => ({
+    result: null,
+  });
+  private clients: import('ws').WebSocket[] = [];
+
+  async start(): Promise<void> {
+    this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
+    this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
+    this.wss = new WebSocketServer({ server: this.server });
+    this.wss.on('connection', (socket, req) => {
+      this.lastAuthHeader = req.headers.authorization;
+      this.clients.push(socket);
+      socket.on('message', (data, isBinary) => {
+        if (isBinary) return;
+        const text = Buffer.isBuffer(data) ? data.toString('utf8') : String(data);
+        const req2 = JSON.parse(text) as { id?: number | string; method: string; params?: unknown };
+        const outcome = this.handler(req2);
+        if (!outcome) return;
+        socket.send(JSON.stringify({ jsonrpc: '2.0', id: req2.id, ...outcome }));
+      });
+    });
+    await new Promise<void>((res) => this.server.listen(0, '127.0.0.1', () => res()));
+    this.port = (this.server.address() as AddressInfo).port;
+  }
+
+  async stop(): Promise<void> {
+    for (const c of this.clients) c.terminate();
+    await new Promise<void>((res) => this.wss.close(() => res()));
+    await new Promise<void>((res) => this.server.close(() => res()));
+  }
+}
+
+describe('WSS pinned transport (fingerprint + bearer token)', () => {
+  let daemon: FakeWssDaemon;
+  const TOKEN = 'a'.repeat(64);
+
+  beforeAll(async () => {
+    daemon = new FakeWssDaemon();
+    await daemon.start();
+  });
+
+  afterAll(async () => {
+    await daemon.stop();
+  });
+
+  afterEach(() => {
+    daemon.handler = () => ({ result: null });
+  });
+
+  it('connects, pins the matching fingerprint, and speaks JSON-RPC framing', async () => {
+    daemon.handler = (req) => {
+      if (req.method === 'workspace.list') return { result: { workspaces: ['x'] } };
+      return { error: { code: -32601, message: 'no such method' } };
+    };
+    const client = new JsonRpcClient({
+      config: {
+        transport: 'wss',
+        host: daemon.host,
+        port: daemon.port,
+        token: TOKEN,
+        fingerprint: daemon.fingerprint,
+      },
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 2000,
+    });
+    client.on('error', () => {});
+    await expect(client.request('workspace.list')).resolves.toEqual({ workspaces: ['x'] });
+    // Bearer token presented on the upgrade (PROTOCOL §2.1).
+    expect(daemon.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
+    client.dispose();
+  });
+
+  it('pins a case/separator-variant fingerprint (normalization)', async () => {
+    daemon.handler = () => ({ result: 'ok' });
+    // Same fingerprint, lowercased with the colons stripped — must still match.
+    const messyPin = daemon.fingerprint.replace(/:/g, '').toLowerCase();
+    const client = new JsonRpcClient({
+      config: {
+        transport: 'wss',
+        host: daemon.host,
+        port: daemon.port,
+        token: TOKEN,
+        fingerprint: messyPin,
+      },
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 2000,
+    });
+    client.on('error', () => {});
+    await expect(client.request('system.status')).resolves.toBe('ok');
+    client.dispose();
+  });
+
+  it('rejects a fingerprint mismatch with a distinct PinMismatchError', async () => {
+    const wrong = Array.from({ length: 32 }, () => 'FF').join(':');
+    const client = new JsonRpcClient({
+      config: {
+        transport: 'wss',
+        host: daemon.host,
+        port: daemon.port,
+        token: TOKEN,
+        fingerprint: wrong,
+      },
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 2000,
+      // Keep the client from re-dialing mid-assertion.
+      reconnectDelayMs: 10_000,
+    });
+    const errors: Error[] = [];
+    client.on('error', (e) => errors.push(e));
+    await expect(client.request('system.status')).rejects.toBeInstanceOf(PinMismatchError);
+    expect(errors.some((e) => e instanceof PinMismatchError)).toBe(true);
+    const mismatch = errors.find((e): e is PinMismatchError => e instanceof PinMismatchError);
+    expect(mismatch?.actual).toBe(daemon.fingerprint);
+    expect(mismatch?.expected).toBe(wrong);
+    expect(client.getStatus()).toBe('disconnected');
+    client.dispose();
+  });
+
+  it('captureFingerprint returns the presented fingerprint for TOFU', async () => {
+    const result = await captureFingerprint({
+      host: daemon.host,
+      port: daemon.port,
+      token: TOKEN,
+    });
+    expect(result).toEqual({ ok: true, fingerprint: daemon.fingerprint });
+  });
+
+  it('captureFingerprint surfaces a structured error when the host is unreachable', async () => {
+    // 127.0.0.1:1 is guaranteed refused.
+    const result = await captureFingerprint(
+      { host: '127.0.0.1', port: 1, token: TOKEN },
+      { timeoutMs: 1000 },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('connect-failed');
+  });
+});
+
+describe('normalizeFingerprint', () => {
+  it('canonicalizes to colon-separated uppercase hex byte pairs', () => {
+    expect(normalizeFingerprint('ab:cd:ef:01')).toBe('AB:CD:EF:01');
+    expect(normalizeFingerprint('abcdef01')).toBe('AB:CD:EF:01');
+    expect(normalizeFingerprint('AB CD ef 01')).toBe('AB:CD:EF:01');
+    expect(normalizeFingerprint('')).toBe('');
   });
 });

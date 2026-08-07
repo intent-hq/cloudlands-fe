@@ -1354,7 +1354,6 @@ export const PanelLayoutSaveSchema = z.object({
   }),
 });
 
-
 // ============================================================================
 // Rules Schemas
 // ============================================================================
@@ -1499,4 +1498,39 @@ export const VoiceTranscribeLocalSchema = z.object({
   contextualStrings: z.array(z.string().max(100)).max(100).optional(),
   /** BCP-47 locale for the recognizer (e.g. "de"); absent = system locale. */
   locale: z.string().min(1).max(35).optional(),
+});
+
+// ============================================================================
+// Connections Schemas (multi-backend connect)
+//
+// Request-payload validation for the `connections:*` channels. Shapes only —
+// the handlers land in T3. The renderer-facing contract types live in
+// `shared/types/connections.ts`; these schemas mirror the `*Params` shapes
+// there. Note: `capture-fingerprint` and `add` carry the bearer token
+// renderer→main (the user just typed it); it is consumed by main and never
+// echoed back on any connection shape.
+// ============================================================================
+
+export const ConnectionsListSchema = EmptySchema;
+
+export const ConnectionsCaptureFingerprintSchema = z.object({
+  host: z.string().min(1, 'Host is required'),
+  port: z.number().int().positive('Port must be a positive integer'),
+  token: z.string().min(1, 'Token is required'),
+});
+
+export const ConnectionsAddSchema = z.object({
+  label: z.string().min(1, 'Label is required'),
+  host: z.string().min(1, 'Host is required'),
+  port: z.number().int().positive('Port must be a positive integer'),
+  fingerprint: z.string().min(1, 'Fingerprint is required'),
+  token: z.string().min(1, 'Token is required'),
+});
+
+export const ConnectionsForgetSchema = z.object({
+  id: z.string().min(1, 'Connection ID is required'),
+});
+
+export const ConnectionsSwitchSchema = z.object({
+  id: z.string().min(1, 'Connection ID is required'),
 });

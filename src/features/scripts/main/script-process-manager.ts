@@ -13,12 +13,13 @@
  */
 
 import { Logger } from '../../../shared/logger';
-import { getBackendClient, onBackendReconnected } from '../../backend/main/backend.ipc';
-import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
 import {
-  ScriptOutputBuffer,
-  OutputLine,
-} from './script-output-buffer';
+  getBackendClient,
+  onBackendNotification,
+  onBackendReconnected,
+} from '../../backend/main/backend.ipc';
+import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
+import { ScriptOutputBuffer, OutputLine } from './script-output-buffer';
 
 const logger = new Logger('ScriptProcessManager');
 
@@ -78,13 +79,15 @@ interface ManagedScript {
 const managersByScriptId = new Map<string, ScriptProcessManager>();
 
 let subscriptionId: string | undefined;
-let notificationListener: ((n: JsonRpcNotification) => void) | undefined;
+/** Disposer for the stable-forwarder notification listener, once attached. */
+let notificationDisposer: (() => void) | undefined;
 let subscribePromise: Promise<void> | undefined;
 /**
  * Sticky reconnect disposer, installed on first `ensureSubscription()`. On
- * daemon restart the in-memory subscription registry is dropped; we replay
- * `events.subscribe(['script:state', 'script:output'])` on the same client
- * (the notification listener persists across reconnects) so live state /
+ * daemon restart / backend switch the in-memory subscription registry is
+ * dropped; we replay `events.subscribe(['script:state', 'script:output'])`
+ * against the current client (the notification listener persists across
+ * reconnects AND client swaps via `onBackendNotification`) so live state /
  * output continues to flow (RESUB-1).
  */
 let reconnectDisposer: (() => void) | undefined;
@@ -116,8 +119,7 @@ function parseDaemonState(data: Record<string, unknown> | undefined): ScriptRunt
     stoppedAt: typeof data?.stoppedAt === 'string' ? (data.stoppedAt as string) : undefined,
     restartCount: typeof restartCount === 'number' ? (restartCount as number) : 0,
     error: typeof data?.error === 'string' ? (data.error as string) : undefined,
-    detectedUrl:
-      typeof data?.detectedUrl === 'string' ? (data.detectedUrl as string) : undefined,
+    detectedUrl: typeof data?.detectedUrl === 'string' ? (data.detectedUrl as string) : undefined,
   };
 }
 
@@ -132,9 +134,7 @@ async function ensureSubscription(): Promise<void> {
     const params = n.params as { subscriptionId?: unknown; event?: unknown } | undefined;
     const subId = typeof params?.subscriptionId === 'string' ? params.subscriptionId : undefined;
     if (subscriptionId !== undefined && subId !== subscriptionId) return;
-    const event = params?.event as
-      | { type?: unknown; data?: Record<string, unknown> }
-      | undefined;
+    const event = params?.event as { type?: unknown; data?: Record<string, unknown> } | undefined;
     if (!event) return;
     const type = typeof event.type === 'string' ? event.type : '';
     if (!type.startsWith('script:')) return;
@@ -149,12 +149,11 @@ async function ensureSubscription(): Promise<void> {
       manager.handleOutputEvent(scriptId, decodeBase64(event.data?.chunk));
     }
   };
-  notificationListener = listener;
-  client.on('notification', listener);
+  notificationDisposer = onBackendNotification(listener);
   if (!reconnectDisposer) {
     reconnectDisposer = onBackendReconnected(() => {
-      // The notification listener persists across reconnects (same singleton
-      // client). Drop the stale id and re-issue subscribe directly so
+      // The notification listener persists across reconnects AND client swaps
+      // (stable forwarder). Drop the stale id and re-issue subscribe directly so
       // `script:*` events keep reaching the buffers (RESUB-1). Do NOT call
       // `ensureSubscription()`; it would re-register a second notification
       // handler and double-process every subsequent event.
@@ -518,13 +517,13 @@ export async function disposeAllScriptProcessManagers(): Promise<void> {
     }
     subscriptionId = undefined;
   }
-  if (notificationListener) {
+  if (notificationDisposer) {
     try {
-      getBackendClient().off('notification', notificationListener);
+      notificationDisposer();
     } catch {
-      // Client may already be torn down.
+      // Forwarder may already be torn down.
     }
-    notificationListener = undefined;
+    notificationDisposer = undefined;
   }
   if (reconnectDisposer) {
     try {

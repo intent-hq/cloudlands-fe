@@ -30,11 +30,15 @@
 
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
+  import Fa from 'svelte-fa';
+  import { faPlus, faCheck } from '@fortawesome/free-solid-svg-icons';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import ConnectBackendModal from './ConnectBackendModal.svelte';
+  import CertMismatchModal from './CertMismatchModal.svelte';
   import {
     selectDaemonHealth,
     selectDaemonHealthStats,
@@ -47,6 +51,17 @@
     pollUnslothStatus,
     stopUnslothRequested,
   } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+  import {
+    selectConnections,
+    selectActiveConnectionId,
+    selectConnectionCertMismatch,
+  } from '$store/renderer/slices/connections/connections-selectors';
+  import { certMismatchCleared } from '$store/renderer/slices/connections/connections-slice';
+  import {
+    switchConnection,
+    forgetConnection,
+  } from '$store/renderer/middlewares/connections-service';
+  import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import { store as appStore } from '$store/renderer/store';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
@@ -55,10 +70,16 @@
   const lastUpdated$ = selectDaemonHealthLastUpdated();
   const unslothStatus$ = selectUnslothStatus();
   const unslothStopping$ = selectUnslothStopping();
+  const connections$ = selectConnections();
+  const activeConnectionId$ = selectActiveConnectionId();
+  const certMismatch$ = selectConnectionCertMismatch();
 
   let dropdownOpen = $state(false);
   let liveUptimeSeconds = $state<number | undefined>(undefined);
   let stopUnslothDialogOpen = $state(false);
+  let connectModalOpen = $state(false);
+  // id of the connection whose Switch/Forget submenu is expanded, or null.
+  let expandedConnectionId = $state<string | null>(null);
 
   // Color mapping for health states
   const healthColors: Record<DaemonHealth, string> = {
@@ -93,7 +114,7 @@
   // Compute live uptime: base uptime + elapsed time since lastUpdated
   function computeLiveUptime(
     uptimeSeconds: number | undefined,
-    lastUpdated: string | null
+    lastUpdated: string | null,
   ): number | undefined {
     if (uptimeSeconds === undefined) return undefined;
     if (!lastUpdated) return uptimeSeconds;
@@ -149,7 +170,9 @@
   // Short model label for the unsloth row: the repo name without the org
   // prefix (e.g. "unsloth/Qwen3-4B-GGUF" → "Qwen3-4B-GGUF").
   const unslothModelLabel = $derived(
-    $unslothStatus$?.repoId ? ($unslothStatus$.repoId.split('/').pop() ?? $unslothStatus$.repoId) : '',
+    $unslothStatus$?.repoId
+      ? ($unslothStatus$.repoId.split('/').pop() ?? $unslothStatus$.repoId)
+      : '',
   );
 
   const stopUnslothDescription = $derived.by(() => {
@@ -165,6 +188,61 @@
 
   function confirmStopUnsloth() {
     appStore.dispatch(stopUnslothRequested());
+  }
+
+  // --- Multi-backend connect: menu actions -------------------------------
+
+  function openConnectModal() {
+    dropdownOpen = false;
+    connectModalOpen = true;
+  }
+
+  function toggleConnectionMenu(id: string) {
+    expandedConnectionId = expandedConnectionId === id ? null : id;
+  }
+
+  async function handleSwitchConnection(id: string) {
+    dropdownOpen = false;
+    expandedConnectionId = null;
+    try {
+      await switchConnection(id);
+    } catch {
+      // The failure is surfaced via the slice's op-status/error; nothing more
+      // to do here (the list/active refresh arrives via connections:changed).
+    }
+  }
+
+  async function handleForgetConnection(id: string) {
+    expandedConnectionId = null;
+    try {
+      await forgetConnection(id);
+    } catch {
+      // Refresh + any error surface via the connections service; no-op here.
+    }
+  }
+
+  // --- Cert-mismatch modal actions ---------------------------------------
+
+  function dismissCertMismatch() {
+    appStore.dispatch(certMismatchCleared());
+  }
+
+  async function switchBackToLocal() {
+    dismissCertMismatch();
+    try {
+      await switchConnection(LOCAL_CONNECTION_ID);
+    } catch {
+      // no-op; op-status/error surface via the slice.
+    }
+  }
+
+  async function forgetMismatchedConnection(id: string) {
+    dismissCertMismatch();
+    try {
+      await forgetConnection(id);
+    } catch {
+      // no-op; refresh via connections:changed.
+    }
   }
 </script>
 
@@ -205,7 +283,12 @@
         <div class="px-3 py-2 space-y-1.5">
           <div class="flex justify-between text-xs">
             <span class="text-subtle">{m.layout_daemonStatus_status_label()}</span>
-            <span class={cn('font-medium', $health$ === 'healthy' ? 'text-green-500' : 'text-yellow-500')}>
+            <span
+              class={cn(
+                'font-medium',
+                $health$ === 'healthy' ? 'text-green-500' : 'text-yellow-500',
+              )}
+            >
               {$health$ === 'healthy'
                 ? m.layout_daemonStatus_healthyState_label()
                 : m.layout_daemonStatus_degradedState_label()}
@@ -257,7 +340,9 @@
             {#if liveUptimeSeconds !== undefined}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
-                <span class="font-mono text-xs" aria-live="off">{formatUptime(liveUptimeSeconds)}</span>
+                <span class="font-mono text-xs" aria-live="off"
+                  >{formatUptime(liveUptimeSeconds)}</span
+                >
               </div>
             {/if}
 
@@ -265,7 +350,9 @@
             {#if $stats$.cpuPercent !== undefined}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
-                <span class="font-mono text-xs" aria-live="off">{formatCpu($stats$.cpuPercent)}</span>
+                <span class="font-mono text-xs" aria-live="off"
+                  >{formatCpu($stats$.cpuPercent)}</span
+                >
               </div>
             {/if}
 
@@ -273,7 +360,9 @@
             {#if $stats$.memoryBytes !== undefined}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
-                <span class="font-mono text-xs" aria-live="off">{formatMemory($stats$.memoryBytes)}</span>
+                <span class="font-mono text-xs" aria-live="off"
+                  >{formatMemory($stats$.memoryBytes)}</span
+                >
               </div>
             {/if}
 
@@ -307,7 +396,6 @@
                 <span class="font-mono text-xs text-subtle">unknown</span>
               </div>
             {/if}
-
           {:else}
             <div class="h-px bg-border my-1"></div>
             <div class="text-xs text-subtle text-center py-2">
@@ -319,7 +407,9 @@
           {#if $unslothStatus$?.running}
             <div class="h-px bg-border my-1"></div>
 
-            <Header class="pt-1 pb-0.5" size={6}>{m.layout_daemonStatus_unslothServer_header()}</Header>
+            <Header class="pt-1 pb-0.5" size={6}
+              >{m.layout_daemonStatus_unslothServer_header()}</Header
+            >
 
             <!-- Model (HF repo id, shortened) -->
             {#if $unslothStatus$.repoId}
@@ -361,7 +451,9 @@
             {#if $unslothStatus$.uptimeSecs !== undefined}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
-                <span class="font-mono text-xs" aria-live="off">{formatUptime($unslothStatus$.uptimeSecs)}</span>
+                <span class="font-mono text-xs" aria-live="off"
+                  >{formatUptime($unslothStatus$.uptimeSecs)}</span
+                >
               </div>
             {/if}
 
@@ -369,7 +461,9 @@
             {#if $unslothStatus$.cpuPercent !== undefined}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
-                <span class="font-mono text-xs" aria-live="off">{formatCpu($unslothStatus$.cpuPercent)}</span>
+                <span class="font-mono text-xs" aria-live="off"
+                  >{formatCpu($unslothStatus$.cpuPercent)}</span
+                >
               </div>
             {/if}
 
@@ -377,7 +471,9 @@
             {#if $unslothStatus$.memoryBytes !== undefined}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
-                <span class="font-mono text-xs" aria-live="off">{formatMemory($unslothStatus$.memoryBytes)}</span>
+                <span class="font-mono text-xs" aria-live="off"
+                  >{formatMemory($unslothStatus$.memoryBytes)}</span
+                >
               </div>
             {/if}
 
@@ -405,6 +501,66 @@
           {/if}
         </div>
       {/if}
+
+      <!-- Multi-backend connect: add action + connections list (Switch/Forget) -->
+      <div class="h-px bg-border my-1"></div>
+      <div class="px-1 pb-1">
+        <button
+          class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1.5 transition-colors cursor-pointer flex items-center gap-2"
+          onclick={openConnectModal}
+        >
+          <span class="text-subtle"><Fa icon={faPlus} /></span>
+          {m.layout_daemonStatus_connectToAnother_action()}
+        </button>
+
+        {#if $connections$.length > 0}
+          <Header class="px-2 pt-1.5 pb-0.5" size={6}
+            >{m.layout_daemonStatus_connections_header()}</Header
+          >
+          {#each $connections$ as conn (conn.id)}
+            {@const isActive = conn.id === $activeConnectionId$}
+            <div>
+              <button
+                class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1.5 transition-colors cursor-pointer flex items-center justify-between gap-2"
+                aria-expanded={expandedConnectionId === conn.id}
+                onclick={() => toggleConnectionMenu(conn.id)}
+              >
+                <span class="truncate">
+                  {conn.isLocal ? m.layout_daemonStatus_localConnection_label() : conn.label}
+                </span>
+                {#if isActive}
+                  <span
+                    class="text-green-500 shrink-0"
+                    aria-label={m.layout_daemonStatus_connectionActive_label()}
+                  >
+                    <Fa icon={faCheck} />
+                  </span>
+                {/if}
+              </button>
+
+              {#if expandedConnectionId === conn.id}
+                <div class="pl-3 pb-0.5 flex flex-col">
+                  <button
+                    class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                    disabled={isActive}
+                    onclick={() => handleSwitchConnection(conn.id)}
+                  >
+                    {m.layout_daemonStatus_switch_action()}
+                  </button>
+                  {#if !conn.isLocal}
+                    <button
+                      class="w-full text-left text-xs text-red-500 hover:bg-muted/50 rounded px-2 py-1 transition-colors cursor-pointer"
+                      onclick={() => handleForgetConnection(conn.id)}
+                    >
+                      {m.layout_daemonStatus_forget_action()}
+                    </button>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/each}
+        {/if}
+      </div>
     </div>
   {/snippet}
 </DropdownMenu>
@@ -423,6 +579,25 @@
       confirmText={m.layout_daemonStatus_stopUnsloth_confirm_label()}
       variant="destructive"
       onConfirm={confirmStopUnsloth}
+    />
+  </Portal>
+{/if}
+
+<!-- Add-connection modal (portaled to body, same rationale as the stop dialog). -->
+{#if connectModalOpen}
+  <Portal target="body" zIndex={100}>
+    <ConnectBackendModal bind:open={connectModalOpen} />
+  </Portal>
+{/if}
+
+<!-- Cert-mismatch failure modal — driven by the connections:cert-mismatch push. -->
+{#if $certMismatch$}
+  <Portal target="body" zIndex={100}>
+    <CertMismatchModal
+      event={$certMismatch$}
+      onSwitchBack={switchBackToLocal}
+      onForget={forgetMismatchedConnection}
+      onDismiss={dismissCertMismatch}
     />
   </Portal>
 {/if}
