@@ -14,12 +14,17 @@
  *   - On first action, hydrates betaUpdatesEnabled from autoUpdateClient.getState()
  *     to ensure Redux reflects the actual channel in real mode
  *
+ * Hydration dispatches loadBetaUpdatesSettings (NOT setBetaUpdatesEnabled) so the
+ * middleware never re-persists the channel in response to its own hydration — a
+ * user toggle is distinguishable from a boot-time sync (intent-hq/monorepo#1672).
+ *
  * Dependency-light per src/store/renderer AGENTS.md: imports only slice actions,
  * auto-update client, and safe logger — no selectors.
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
 import type { StoreState } from "../types";
 import {
+  loadBetaUpdatesSettings,
   setBetaUpdatesEnabled,
   toggleBetaUpdates,
 } from "../slices/user-preferences/user-preferences-slice";
@@ -58,7 +63,9 @@ export function createUserPreferencesBetaPersistenceMiddleware(): StoreMiddlewar
         try {
           const autoUpdateState = await autoUpdateClient.getState();
           const mainProcessBetaEnabled = autoUpdateState.channel === "beta";
-          api.dispatch(setBetaUpdatesEnabled(mainProcessBetaEnabled));
+          // Hydrate via loadBetaUpdatesSettings so this middleware does not
+          // echo the hydration back into setChannel/local-prefs.json.
+          api.dispatch(loadBetaUpdatesSettings(mainProcessBetaEnabled));
         } catch (error) {
           logger.warn("Failed to hydrate betaUpdatesEnabled from main process", { error });
         }

@@ -18,8 +18,8 @@
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { registerMockSeeder } from "../mock-bootstrap";
 import {
+  loadBetaUpdatesSettings,
   setAgentFontStyle,
-  setBetaUpdatesEnabled,
   setCodeFontFamily,
   setGroupByRepo,
   setHasCompletedProviderSetup,
@@ -64,14 +64,17 @@ registerMockSeeder("settings-integrations", async ({ store, client }) => {
   const prefs = await client.settings.getUserPreferences();
   if (prefs) {
     // Sync beta updates preference with main-process local-prefs (the source of truth)
-    // This ensures Redux state matches the actual updater channel after restart
+    // This ensures Redux state matches the actual updater channel after restart.
+    // Hydrate via loadBetaUpdatesSettings — NOT setBetaUpdatesEnabled — so the
+    // beta-persistence middleware never echoes the hydration back into
+    // setChannel/local-prefs.json (intent-hq/monorepo#1672).
     try {
       const autoUpdateState = await autoUpdateClient.getState();
       const mainProcessBetaEnabled = autoUpdateState.channel === 'beta';
-      store.dispatch(setBetaUpdatesEnabled(mainProcessBetaEnabled));
+      store.dispatch(loadBetaUpdatesSettings(mainProcessBetaEnabled));
     } catch {
       // Fall back to client preference if auto-update state is unavailable
-      store.dispatch(setBetaUpdatesEnabled(prefs.betaUpdatesEnabled));
+      store.dispatch(loadBetaUpdatesSettings(prefs.betaUpdatesEnabled));
     }
     store.dispatch(setSpellcheckEnabled(prefs.spellcheckEnabled));
     store.dispatch(setZoomFactor(prefs.zoomFactor));

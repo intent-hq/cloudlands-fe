@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createUserPreferencesBetaPersistenceMiddleware } from "./user-preferences-beta-persistence-service";
 import {
+  loadBetaUpdatesSettings,
   setBetaUpdatesEnabled,
   toggleBetaUpdates,
 } from "../slices/user-preferences/user-preferences-slice";
@@ -53,7 +54,7 @@ describe("userPreferencesBetaPersistenceMiddleware", () => {
       // Wait for async hydration
       await vi.waitFor(() => {
         expect(autoUpdateClient.getState).toHaveBeenCalled();
-        expect(mockApi.dispatch).toHaveBeenCalledWith(setBetaUpdatesEnabled(true));
+        expect(mockApi.dispatch).toHaveBeenCalledWith(loadBetaUpdatesSettings(true));
       });
     });
 
@@ -67,8 +68,31 @@ describe("userPreferencesBetaPersistenceMiddleware", () => {
       middleware(mockApi)(mockNext)(action);
 
       await vi.waitFor(() => {
-        expect(mockApi.dispatch).toHaveBeenCalledWith(setBetaUpdatesEnabled(false));
+        expect(mockApi.dispatch).toHaveBeenCalledWith(loadBetaUpdatesSettings(false));
       });
+    });
+
+    it("does not echo hydration back into setChannel", async () => {
+      vi.mocked(autoUpdateClient.getState).mockResolvedValue({
+        channel: "beta",
+        status: "idle",
+      });
+      mockApi.getState.mockReturnValue({
+        userPreferences: { betaUpdatesEnabled: true },
+      } as StoreState);
+
+      const chain = middleware(mockApi)(mockNext);
+      chain({ type: "any/action" });
+
+      await vi.waitFor(() => {
+        expect(mockApi.dispatch).toHaveBeenCalledWith(loadBetaUpdatesSettings(true));
+      });
+
+      // Re-dispatch the hydration action through the middleware, as the real
+      // store would — it must NOT trigger a channel switch / persistence write
+      chain(loadBetaUpdatesSettings(true));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(autoUpdateClient.setChannel).not.toHaveBeenCalled();
     });
 
     it("logs warning and continues if getState fails", async () => {
