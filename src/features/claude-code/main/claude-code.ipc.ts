@@ -11,7 +11,7 @@ import { ipcMain } from 'electron';
 import { CLAUDE_CODE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { getProviderModelsEnvelope } from '../../../main/utils/daemon-model-catalog';
-import { findBinary } from '../../../shared/main/find-binary';
+import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '../../../shared/constants/claude-code';
 
 const logger = new Logger('ClaudeCodeIPC');
@@ -22,12 +22,18 @@ export function setupClaudeCodeIPC() {
   ipcMain.handle(CLAUDE_CODE_CHANNELS.CHECK_AVAILABILITY, async () => {
     try {
       logger.debug('Checking claude-agent-acp availability');
-      const claudePath = await findBinary('claude', { cache: false });
+      const claudePath = await findBinary('claude', {
+        cache: false,
+        commonPaths: getCommonNpmPaths('claude'),
+      });
       if (!claudePath) {
         logger.info('Claude Code availability check', { isAvailable: false });
         return { success: true, available: false };
       }
-      const npxPath = await findBinary('npx', { cache: false });
+      const npxPath = await findBinary('npx', {
+        cache: false,
+        commonPaths: getCommonNpmPaths('npx'),
+      });
       logger.info('Claude Code availability check', {
         isAvailable: npxPath !== null,
         command: claudePath,

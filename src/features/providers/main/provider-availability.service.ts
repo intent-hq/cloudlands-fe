@@ -20,7 +20,7 @@ import {
 } from '../../../shared/main/provider-auth-status';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 import { getBackendClient } from '../../backend/main/backend.ipc';
-import { findBinary } from '../../../shared/main/find-binary';
+import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
 import { findAuggiePathAsync } from '../../auggie/main/auggie.ipc';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '../../../shared/constants/claude-code';
 import { clearCodexCache, isCodexInstalled } from '../../codex/main/codex-resolver';
@@ -58,7 +58,12 @@ async function checkAuggieAvailability(): Promise<ProviderStatus> {
  * (`host.findBinary`) — the prerequisite for the claude-code provider.
  */
 async function isClaudeCliInstalled(): Promise<boolean> {
-  return (await findBinary('claude', { cache: false })) !== null;
+  return (
+    (await findBinary('claude', {
+      cache: false,
+      commonPaths: getCommonNpmPaths('claude'),
+    })) !== null
+  );
 }
 
 /**
@@ -71,7 +76,13 @@ async function checkClaudeCodeAvailability(): Promise<ProviderStatus> {
   try {
     const installed = await isClaudeCliInstalled();
     const status: ProviderStatus = { available: installed };
-    if (installed && (await findBinary('npx', { cache: false })) === null) {
+    const npxPath = installed
+      ? await findBinary('npx', {
+          cache: false,
+          commonPaths: getCommonNpmPaths('npx'),
+        })
+      : null;
+    if (installed && npxPath === null) {
       status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
     }
     return status;

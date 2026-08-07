@@ -448,8 +448,13 @@ export function setupAuggieIPC() {
     try {
       logger.info('Uninstalling MCP from Claude Code');
 
-      const { findBinary } = await import('../../../shared/main/find-binary');
-      const claudePath = await findBinary('claude', { cache: false });
+      const { findBinary, getCommonNpmPaths } = await import(
+        '../../../shared/main/find-binary'
+      );
+      const claudePath = await findBinary('claude', {
+        cache: false,
+        commonPaths: getCommonNpmPaths('claude'),
+      });
 
       if (!claudePath) {
         return {
