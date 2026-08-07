@@ -28,6 +28,7 @@ import type {
   ForgetConnectionResult,
   SwitchConnectionParams,
   SwitchConnectionResult,
+  ConnectionBootFallbackEvent,
 } from '$shared/types/connections';
 
 /** The always-present, non-forgettable local sidecar entry. */
@@ -89,3 +90,13 @@ registerMockIpcHandler(CONNECTION_CHANNELS.SWITCH, async (arg): Promise<SwitchCo
   if (connections.some((c) => c.id === id)) activeId = id;
   return { activeId };
 });
+
+// Boot-restore fallback notice (T19). The mock never falls back at boot, so
+// there is no notice to deliver — real fallbacks are latched in the main
+// process and pulled once via this channel (see backend.ipc.ts).
+registerMockIpcHandler(
+  CONNECTION_CHANNELS.GET_BOOT_FALLBACK,
+  async (): Promise<{ bootFallback: ConnectionBootFallbackEvent | null }> => {
+    return { bootFallback: null };
+  },
+);

@@ -283,6 +283,7 @@ import {
   reconcileActiveConnectionOnBoot,
 } from '../features/backend/main/backend.ipc';
 import { getConnectionMode } from '../features/backend/main/connection-mode';
+import { getActiveId } from '../features/backend/main/connections-store';
 import { startIntentdSidecar, stopIntentdSidecar } from '../features/backend/main/intentd-sidecar';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 
@@ -523,6 +524,21 @@ if (process.env.NODE_ENV === 'development' && process.env.ENABLE_CDP_DEBUG) {
   logger.info(`CDP debugging enabled on port ${cdpPort}`);
 }
 
+/**
+ * Persist window sessions under the CURRENTLY-active backend id (T21). Window
+ * sessions are keyed per-backend; saving under the wrong id (previously the
+ * hard-coded `local` default) leaked a remote's windows into local's slot. All
+ * save triggers — the debounced autosave, before-quit, and the non-macOS
+ * last-window-close flush — route through here so they always key off the live
+ * active backend. `getActiveId()` is fail-soft (falls back to `local` only when
+ * the connections store itself is unreadable), so this never defaults silently
+ * on the happy path.
+ */
+async function saveActiveWindowSessions(): Promise<void> {
+  const backendId = await getActiveId();
+  await saveWindowSessions(backendId);
+}
+
 app.whenReady().then(async () => {
   startupMetrics.start('total');
   logger.info('Setting up critical IPC handlers for fast startup');
@@ -541,7 +557,7 @@ app.whenReady().then(async () => {
   let sessionSaveTimeout: NodeJS.Timeout | null = null;
   const debouncedSaveWindowSessions = () => {
     if (sessionSaveTimeout) clearTimeout(sessionSaveTimeout);
-    sessionSaveTimeout = setTimeout(() => saveWindowSessions(), 1000);
+    sessionSaveTimeout = setTimeout(() => void saveActiveWindowSessions(), 1000);
   };
 
   app.on('browser-window-created', (_event: Electron.Event, window: BrowserWindowType) => {
@@ -1533,8 +1549,15 @@ app.whenReady().then(async () => {
     // Check for intent:// deep link in process.argv (cold start)
     const intentUrlArg = process.argv.find((arg: string) => arg.startsWith('intent://'));
 
-    // Try to restore saved window sessions (unless we have a deep link to process)
-    const savedSessions = intentUrlArg ? null : loadWindowSessions();
+    // Try to restore saved window sessions (unless we have a deep link to process).
+    // Key off the RESOLVED boot backend (T21): reconcileActiveConnectionOnBoot()
+    // above has already run to completion, so getActiveId() now reflects the
+    // actually-connected backend — the reconnected remote when it was reachable,
+    // otherwise local. Restoring under this id (never the hard-coded local
+    // default) ensures a remote's windows are only restored when we booted back
+    // onto that remote, and local's windows when we fell back to local.
+    const bootBackendId = await getActiveId();
+    const savedSessions = intentUrlArg ? null : loadWindowSessions(bootBackendId);
     if (savedSessions && savedSessions.length > 0) {
       logger.info('Restoring window sessions from previous run', { count: savedSessions.length });
       for (let i = 0; i < savedSessions.length; i++) {
@@ -1646,7 +1669,7 @@ app.on('before-quit', async (event: Electron.Event) => {
     // Save window sessions now that quit is prevented.
     // Must be called AFTER event.preventDefault() because saveWindowSessions is async
     // and preventDefault must be called synchronously within the event handler.
-    await saveWindowSessions();
+    await saveActiveWindowSessions();
 
     // Skip the prompt when quitting to install an update: installUpdate()
     // already ran the confirmation while the windows were still open, so
@@ -1715,7 +1738,7 @@ app.on('window-all-closed', async () => {
     // on next launch. The debounced background saver (1s) is best-effort and
     // may not have captured the final state; always flush synchronously here.
     try {
-      await saveWindowSessions();
+      await saveActiveWindowSessions();
     } catch (err) {
       logger.error(
         // i18n-ignore (developer log message)
@@ -1834,7 +1857,7 @@ if (!gotTheLock) {
   });
 }
 
-app.on('activate', () => {
+app.on('activate', async () => {
   if (isSecondInstance) return;
 
   const allWindows = BrowserWindow.getAllWindows().filter(
@@ -1848,8 +1871,11 @@ app.on('activate', () => {
     targetWindow.show();
     targetWindow.focus();
   } else {
-    // No windows at all — restore sessions or create a new one
-    const savedSessions = loadWindowSessions();
+    // No windows at all — restore sessions or create a new one. Key off the
+    // currently-active backend (T21) so a dock-click reopen restores the live
+    // backend's windows, never the hard-coded local default.
+    const backendId = await getActiveId();
+    const savedSessions = loadWindowSessions(backendId);
     if (savedSessions && savedSessions.length > 0) {
       logger.info('Restoring window sessions on activate', { count: savedSessions.length });
       for (let i = 0; i < savedSessions.length; i++) {
