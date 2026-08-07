@@ -27,6 +27,7 @@
   import { compareWorkspaceActivityDisplayTimeDesc } from '$shared/utils/workspace-activity-time';
   import Header from '$lib/components/ui/Header.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { deriveRecentRepoEntries } from './recent-repos';
 
   const draftPrompt$ = selectDraftPrompt();
   const workspaceItems = selectWorkspaceItems();
@@ -41,32 +42,18 @@
   const hasDraft = $derived($draftPrompt$.trim().length > 0);
 
   // Get recent repos from existing workspaces (deduplicated)
-  const recentRepos = $derived.by(() => {
-    const repoMap = new Map<
-      string,
-      { name: string; owner?: string; path: string; branch: string }
-    >();
-    const workspaces = $workspaceItems
-      .filter(
-        (w: Workspace) =>
-          w.status !== WorkspaceStatusEnum.Archived &&
-          // w.status !== WorkspaceStatusEnum.Deleted &&
-          w.repositoryName,
-      )
-      .sort(compareWorkspaceActivityDisplayTimeDesc);
-
-    for (const ws of workspaces) {
-      if (!ws.repositoryPath || repoMap.has(ws.repositoryPath)) continue;
-      repoMap.set(ws.repositoryPath, {
-        name: ws.repositoryName || ws.repositoryPath.split('/').pop() || m.layout_newWorkspaceCard_unknownRepo_label(),
-        owner: ws.repositoryOwner,
-        path: ws.repositoryPath,
-        branch: ws.branch || 'main',
-      });
-      if (repoMap.size >= 4) break;
-    }
-    return [...repoMap.values()];
-  });
+  const recentRepos = $derived.by(() =>
+    deriveRecentRepoEntries(
+      $workspaceItems
+        .filter(
+          (w: Workspace) =>
+            w.status !== WorkspaceStatusEnum.Archived &&
+            // w.status !== WorkspaceStatusEnum.Deleted &&
+            w.repositoryName,
+        )
+        .sort(compareWorkspaceActivityDisplayTimeDesc),
+    ),
+  );
 
   function openModal(initialRepo?: { repoPath?: string; owner?: string; name?: string }, event?: MouseEvent) {
     appStore.dispatch(closeAll(false));
@@ -149,10 +136,17 @@
               >
             {/if}
             <span class="text-sm text-muted-foreground truncate font-medium flex-1">
-              {#if repo.owner}
-                <span class="text-subtle mr-1">{repo.owner} /</span>
+              {#if repo.source === 'local'}
+                {repo.folderName ?? repo.name ?? m.layout_newWorkspaceCard_unknownRepo_label()}
+                {#if repo.owner && repo.name}
+                  <span class="text-subtle ml-1">({repo.owner}/{repo.name})</span>
+                {/if}
+              {:else}
+                {#if repo.owner}
+                  <span class="text-subtle mr-1">{repo.owner} /</span>
+                {/if}
+                {repo.name ?? m.layout_newWorkspaceCard_unknownRepo_label()}
               {/if}
-              {repo.name}
             </span>
           </button>
         {/each}

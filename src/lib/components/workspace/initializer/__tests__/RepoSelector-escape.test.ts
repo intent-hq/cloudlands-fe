@@ -233,9 +233,11 @@ describe('RepoSelector Recent list owner rendering', () => {
     cleanup();
   });
 
-  it('shows owner-qualified name when owner is set and plain name otherwise', async () => {
+  it('leads with the folder name and dims (owner/repo) for local repos', async () => {
     mockRepos.recentRepos = [
       { path: '/Users/dev/app', type: 'local', name: 'app', owner: 'acme' },
+      // Second clone of the same GitHub repo at a different path
+      { path: '/Users/dev/app-2', type: 'local', name: 'app', owner: 'acme' },
       { path: '/Users/dev/solo', type: 'local', name: 'solo' },
     ];
     const { container } = render(RepoSelector, { props: {} });
@@ -248,17 +250,22 @@ describe('RepoSelector Recent list owner rendering', () => {
     await fireEvent.click(screen.getByText('Copy local repo'));
 
     await waitFor(() => {
-      expect(screen.getByText('acme /')).toBeTruthy();
-      expect(screen.getByText('app')).toBeTruthy();
-      expect(screen.getByText('solo')).toBeTruthy();
+      expect(screen.getAllByText('(acme/app)').length).toBe(2);
     });
 
-    // The ownerless row must render the name only — no stray owner prefix.
-    const soloRow = screen
+    const rowTexts = screen
       .getAllByRole('button')
-      .find((button) => button.textContent?.includes('solo'));
-    expect(soloRow).toBeTruthy();
-    expect(soloRow!.textContent?.replace(/\s+/g, ' ').trim()).toBe('solo');
+      .map((button) => button.textContent?.replace(/\s+/g, ' ').trim());
+
+    // The two clones are visually distinct via their folder names.
+    expect(rowTexts).toContain('app (acme/app)');
+    expect(rowTexts).toContain('app-2 (acme/app)');
+
+    // The ownerless row must render the folder name only — no stray suffix.
+    expect(rowTexts).toContain('solo');
+
+    // Local entries no longer use the GitHub "owner /" prefix.
+    expect(screen.queryByText('acme /')).toBeNull();
   });
 });
 
