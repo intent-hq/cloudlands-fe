@@ -182,6 +182,7 @@
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
   import BackgroundHooksRow from './BackgroundHooksRow.svelte';
+  import MonitoredPrsRow from './MonitoredPrsRow.svelte';
   import Button from '../ui/button/button.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
@@ -4089,6 +4090,12 @@
       onsendnow={handleSendQueuedMessageNow}
       ondone={() => inputComponent?.focus?.()}
     />
+  {/if}
+
+  <!-- Monitored PRs (PROTOCOL §6.9): faint chip row above the hooks row,
+       visible only while the active agent has active PR monitors. -->
+  {#if workspace?.id && agentId}
+    <MonitoredPrsRow workspaceId={workspace.id} {agentId} />
   {/if}
 
   <!-- Background hooks (PROTOCOL §5.40): faint chip row above the input,

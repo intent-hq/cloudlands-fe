@@ -70,6 +70,11 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     withStore: (_store: any) => (wsId: string) => mocks.readable(() => mocks.workspaces[wsId]),
   },
 }));
+vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
+  selectActivePrMonitors: Object.assign(() => mocks.readable(() => []), {
+    select: () => [],
+  }),
+}));
 vi.mock('$lib/components/workspace/WorkspacePhaseIndicator.svelte', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));

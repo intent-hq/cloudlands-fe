@@ -52,6 +52,7 @@ import { sidebarNavReducer } from './slices/sidebar-nav/sidebar-nav-slice';
 import { scriptsReducer } from './slices/scripts/scripts-slice';
 import { statsReducer } from './slices/stats/stats-slice';
 import { backgroundHooksReducer } from './slices/background-hooks/background-hooks-slice';
+import { prMonitorReducer } from './slices/pr-monitor/pr-monitor-slice';
 import { agentFollowReducer } from './slices/agent-follow/agent-follow-slice';
 import { gitReducer } from './slices/git/git-slice';
 import { fileTrackingReducer } from './slices/changes/changes-slice';
@@ -141,6 +142,7 @@ export const reducers = {
   scripts: scriptsReducer,
   stats: statsReducer,
   backgroundHooks: backgroundHooksReducer,
+  prMonitor: prMonitorReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
   changes: fileTrackingReducer,

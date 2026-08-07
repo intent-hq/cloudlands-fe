@@ -11,6 +11,12 @@ import {
   selectWorkspaceProgressHeadline,
 } from "./workspace-selectors";
 import type { WorkspaceProgressInput } from "./workspace-types";
+import {
+  initialState as prMonitorInitialState,
+  prMonitorReducer,
+  prMonitorsUpdated,
+} from "../pr-monitor/pr-monitor-slice";
+import type { PrMonitorRow } from "$features/pr-monitor/pr-monitor-service";
 
 const WS_ID = "ws-1";
 
@@ -542,6 +548,83 @@ describe("selectWorkspaceProgressActions", () => {
   it("returns no actions for non-actionable stages", () => {
     const input = makeInput({ taskStats: makeTaskStats({ total: 3 }) });
     expect(selectWorkspaceProgressActions.select(mockState(), WS_ID, input)).toEqual([]);
+  });
+
+  // ─── Monitored-PR fallback (PROTOCOL §6.9) ───
+
+  function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
+    return {
+      monitorId: "mon-1",
+      workspaceId: WS_ID,
+      agentId: "agent-1",
+      repo: "acme/widgets",
+      prNumber: 77,
+      state: "active",
+      pendingChanges: [],
+      hasPendingChanges: false,
+      createdAt: "2026-08-07T10:00:00Z",
+      updatedAt: "2026-08-07T10:05:00Z",
+      url: "https://github.com/acme/widgets/pull/77",
+      ...overrides,
+    };
+  }
+
+  /** State with a workspace (repo acme/widgets) plus live pr-monitor rows. */
+  function mockStateWithMonitors(monitors: PrMonitorRow[]): StoreState {
+    const ws = makeWorkspace({
+      repositoryOwner: "acme",
+      repositoryName: "widgets",
+    } as Partial<Workspace>);
+    return {
+      workspace: workspaceReducer(initialState, setWorkspaceEntity(ws)),
+      prMonitor: prMonitorReducer(prMonitorInitialState, prMonitorsUpdated(WS_ID, monitors)),
+    } as StoreState;
+  }
+
+  it("falls back to the first ACTIVE monitored PR when no branch-linked PR exists", () => {
+    const state = mockStateWithMonitors([
+      makeMonitor({ monitorId: "mon-0", state: "completed", prNumber: 5 }),
+      makeMonitor(),
+    ]);
+    const input = makeInput({ taskStats: makeTaskStats({ total: 3 }) });
+    const [action] = selectWorkspaceProgressActions.select(state, WS_ID, input);
+    expect(action).toMatchObject({
+      id: "view-pr",
+      label: "View PR",
+      iconKey: "code-branch",
+      url: "https://github.com/acme/widgets/pull/77",
+    });
+  });
+
+  it("labels a cross-repo monitored-PR fallback with its org/repo context", () => {
+    const state = mockStateWithMonitors([
+      makeMonitor({ repo: "other/lib", url: "https://github.com/other/lib/pull/9", prNumber: 9 }),
+    ]);
+    const input = makeInput({ taskStats: makeTaskStats({ total: 3 }) });
+    const [action] = selectWorkspaceProgressActions.select(state, WS_ID, input);
+    expect(action.label).toBe("View PR (other/lib)");
+    expect(action.tooltip).toContain("other/lib#9");
+    expect(action.url).toBe("https://github.com/other/lib/pull/9");
+  });
+
+  it("prefers the branch-linked PR over monitored PRs", () => {
+    const ws = makeWorkspace({
+      activePullRequest: makePR({ url: "https://gh/pr/42" }),
+      repositoryOwner: "acme",
+      repositoryName: "widgets",
+    } as Partial<Workspace>);
+    const state = {
+      workspace: workspaceReducer(initialState, setWorkspaceEntity(ws)),
+      prMonitor: prMonitorReducer(
+        prMonitorInitialState,
+        prMonitorsUpdated(WS_ID, [makeMonitor()]),
+      ),
+    } as StoreState;
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "https://gh/pr/42", title: "t", state: "merged" },
+    });
+    const [action] = selectWorkspaceProgressActions.select(state, WS_ID, makeInput({ gitStatus }));
+    expect(action.url).toBe("https://gh/pr/42");
   });
 });
 
