@@ -27,6 +27,7 @@ import { EventEmitter } from 'node:events';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { cancelInflightHostExecStreamsForBackendSwitch } from '$shared/main/host-exec-stream';
 import {
   captureFingerprint,
   PinMismatchError,
@@ -480,6 +481,15 @@ export async function switchBackend(id: string): Promise<SwitchConnectionResult>
 
   // (2) Capture + close the outgoing backend's windows while they're still live.
   await windowHooks.captureAndClose(fromId);
+
+  // (2.5) Cancel + notify any in-flight `host.execStream` while the old client is
+  // still connected. Its per-call subscription is bound to the client we are
+  // about to dispose (it could not be migrated onto a stable forwarder like the
+  // T8/T9 long-lived listeners), so without this the consumer's `done` would
+  // hang on remaining output and an exit frame that can never arrive. This
+  // best-effort cancels on the old daemon, then hands each consumer a terminal
+  // cancelled-by-backend-switch frame — issue #1616. Runs BEFORE dispose.
+  await cancelInflightHostExecStreamsForBackendSwitch();
 
   // (3) Dispose the previous client + subscriptions before connecting the new one.
   disposeBackendClient();
