@@ -1392,6 +1392,7 @@
   "workspace_repoSelector_githubSuggestions_ariaLabel": "GitHub 仓库建议",
   "workspace_repoSelector_searchingGithub_label": "正在 GitHub 上搜索“{query}”…",
   "workspace_repoSelector_suggestionsUnavailable_label": "当前无法提供仓库建议。",
+  "workspace_repoSelector_retrySuggestions_label": "重试",
   "workspace_repoSelector_recent_label": "最近",
   "workspace_repoSelector_remoteServer_tab": "远程服务器",
   "workspace_repoSelector_removeSetup_tooltip": "移除配置",

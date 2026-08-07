@@ -449,6 +449,13 @@
     }
   });
 
+  /** User-initiated retry. The on-demand effect above skips loads while an
+   *  error is present, so this explicit dispatch is what clears it and
+   *  re-fetches (mirrors GitHubRepoTab's "Try again"). */
+  function retryGithubRepos() {
+    appStore.dispatch(loadGithubRepos());
+  }
+
   /** Confirm a suggestion as a path-less GitHub pick. */
   function handleSelectGithubSuggestion(repo: GithubRepoItem) {
     githubUrlInput = `${repo.owner}/${repo.name}`;
@@ -1451,8 +1458,15 @@
               message={m.workspace_repoSelector_githubSignIn_description()}
             />
           {:else if $githubReposError$}
-            <div class="mt-2 px-1 text-sm text-subtle">
-              {m.workspace_repoSelector_suggestionsUnavailable_label()}
+            <div class="mt-2 px-1 text-sm text-subtle flex items-center gap-2">
+              <span>{m.workspace_repoSelector_suggestionsUnavailable_label()}</span>
+              <button
+                type="button"
+                class="underline underline-offset-2 cursor-pointer hover:no-underline"
+                onclick={retryGithubRepos}
+              >
+                {m.workspace_repoSelector_retrySuggestions_label()}
+              </button>
             </div>
           {:else if githubSuggestions.length > 0}
             <div

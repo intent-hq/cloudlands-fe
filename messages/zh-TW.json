@@ -1392,6 +1392,7 @@
   "workspace_repoSelector_githubSuggestions_ariaLabel": "GitHub 儲存庫建議",
   "workspace_repoSelector_searchingGithub_label": "正在 GitHub 上搜尋「{query}」…",
   "workspace_repoSelector_suggestionsUnavailable_label": "目前無法提供儲存庫建議。",
+  "workspace_repoSelector_retrySuggestions_label": "重試",
   "workspace_repoSelector_recent_label": "最近",
   "workspace_repoSelector_remoteServer_tab": "遠端伺服器",
   "workspace_repoSelector_removeSetup_tooltip": "移除設定",

@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => {
     dispatch: vi.fn(),
     isAuthenticated: true,
     reposLoaded: true,
+    reposError: null as string | null,
     repos: [] as Array<{ id: string; owner: string; name: string }>,
     searchResults: [] as Array<{ id: string; owner: string; name: string }>,
     searchLastQuery: '',
@@ -63,7 +64,7 @@ vi.mock('$store/renderer/slices/github-repos/github-repos-slice', () => ({
 }));
 vi.mock('$store/renderer/slices/github-repos/github-repos-selectors', () => ({
   selectGithubRepos: mocks.selector(() => mocks.repos),
-  selectGithubReposError: mocks.selector(() => null),
+  selectGithubReposError: mocks.selector(() => mocks.reposError),
   selectGithubReposLoaded: mocks.selector(() => mocks.reposLoaded),
   selectGithubReposLoading: mocks.selector(() => false),
 }));
@@ -154,6 +155,7 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
   beforeEach(() => {
     mocks.isAuthenticated = true;
     mocks.reposLoaded = true;
+    mocks.reposError = null;
     mocks.repos = [
       { id: 'octo/alpha', owner: 'octo', name: 'alpha' },
       { id: 'octo/beta', owner: 'octo', name: 'beta' },
@@ -278,6 +280,22 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
 
     expect(onchange).not.toHaveBeenCalled();
     expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy();
+  });
+
+  it('errored repo load: shows a retry action that re-dispatches the load', async () => {
+    mocks.reposError = 'boom';
+    await openGithubTab();
+
+    expect(screen.getByText('Repository suggestions are unavailable right now.')).toBeTruthy();
+    expect(suggestions()).toHaveLength(0);
+    // The on-demand effect skips loads while an error is present.
+    expect(mocks.dispatch.mock.calls.map((call) => call[0]?.type)).not.toContain(
+      'githubRepos/load',
+    );
+
+    await fireEvent.click(screen.getByText('Try again'));
+
+    expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'githubRepos/load' });
   });
 
   it('signed out: shows the connect hint, dispatches no repo load or search, and still confirms typed input', async () => {

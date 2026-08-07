@@ -1394,6 +1394,7 @@
   "workspace_repoSelector_recent_label": "Recent",
   "workspace_repoSelector_searchingGithub_label": "Searching GitHub for \"{query}\"…",
   "workspace_repoSelector_suggestionsUnavailable_label": "Repository suggestions are unavailable right now.",
+  "workspace_repoSelector_retrySuggestions_label": "Try again",
   "workspace_repoSelector_remoteServer_tab": "Remote server",
   "workspace_repoSelector_removeSetup_tooltip": "Remove setup",
   "workspace_repoSelector_repoExists_label": "Repo exists — we'll create a {isolationLabel} off it",

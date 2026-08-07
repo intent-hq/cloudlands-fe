@@ -1392,6 +1392,7 @@
   "workspace_repoSelector_githubSuggestions_ariaLabel": "GitHub 저장소 추천",
   "workspace_repoSelector_searchingGithub_label": "GitHub에서 \"{query}\" 검색 중…",
   "workspace_repoSelector_suggestionsUnavailable_label": "지금은 저장소 추천을 사용할 수 없습니다.",
+  "workspace_repoSelector_retrySuggestions_label": "다시 시도",
   "workspace_repoSelector_recent_label": "최근",
   "workspace_repoSelector_remoteServer_tab": "원격 서버",
   "workspace_repoSelector_removeSetup_tooltip": "설정 제거",

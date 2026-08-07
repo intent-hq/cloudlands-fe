@@ -1392,6 +1392,7 @@
   "workspace_repoSelector_githubSuggestions_ariaLabel": "Sugerencias de repositorios de GitHub",
   "workspace_repoSelector_searchingGithub_label": "Buscando \"{query}\" en GitHub…",
   "workspace_repoSelector_suggestionsUnavailable_label": "Las sugerencias de repositorios no están disponibles en este momento.",
+  "workspace_repoSelector_retrySuggestions_label": "Reintentar",
   "workspace_repoSelector_recent_label": "Recientes",
   "workspace_repoSelector_remoteServer_tab": "Servidor remoto",
   "workspace_repoSelector_removeSetup_tooltip": "Quitar configuración",
