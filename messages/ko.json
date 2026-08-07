@@ -1360,7 +1360,7 @@
   "workspace_remoteSetupSelector_whereRun_description": "기본적으로 로컬에서 실행하거나, 에이전트가 직접 작업할 원격 컴퓨터를 연결하세요.",
   "workspace_remoteSetupSelector_whereRun_label": "에이전트를 어디에서 실행할까요?",
   "workspace_remoteSetupSelector_workIn_before": "작업 위치:",
-  "workspace_repoAndBranchPicker_cloneRepoAndWorkOffBranch_label": "{repo}을(를) 클론하고 {branch} 기준으로 작업",
+  "workspace_repoAndBranchPicker_cloneRepoAndWorkOffBranch_label": "{repo}을(를) 복제하고 {branch} 기준으로 작업",
   "workspace_repoAndBranchPicker_createNewRepo_label": "새 저장소 만들기",
   "workspace_repoAndBranchPicker_repoOffBranch_label": "{repo}({branch}에서)",
   "workspace_repoAndBranchPicker_workDirectly_label": "폴더에서 직접 작업",
