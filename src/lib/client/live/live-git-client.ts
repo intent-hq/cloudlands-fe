@@ -112,6 +112,8 @@ async function fetchStatus(workspaceId: string): Promise<GitStatus | null> {
 const statusHandlers = new Set<SubscriptionHandler<GitStatus | null>>();
 let statusFetchInFlight = false;
 let statusFetchDirty = false;
+/** Disposer for the shared event/reconnect triggers; set while subscribers exist. */
+let statusTriggersOff: (() => void) | undefined;
 
 /**
  * Run the shared status fetch with trailing coalesce: the leading edge fires
@@ -127,7 +129,14 @@ function refetchSharedStatus(): void {
   listWorkspaceIds()
     .then((ids) => (ids.length > 0 ? fetchStatus(ids[0]) : null))
     .then((status) => {
-      for (const handler of [...statusHandlers]) handler(status);
+      for (const handler of [...statusHandlers]) {
+        try {
+          handler(status);
+        } catch {
+          // One subscriber's throw must not starve the others (the shared
+          // fan-out replaced the per-subscription promise chains).
+        }
+      }
     })
     .catch(() => {
       // Snapshot refresh failures are non-fatal for the subscription.
@@ -141,6 +150,37 @@ function refetchSharedStatus(): void {
       // last subscriber is gone).
       if (statusHandlers.size > 0) refetchSharedStatus();
     });
+}
+
+/**
+ * Register the ONE shared refetch trigger for all subscribers: the transports
+ * fan every notification out to every registered listener, so a
+ * per-subscription listener would turn a single daemon event into M `emit()`s
+ * (leading fetch + a guaranteed trailing fetch) instead of one. Attached when
+ * the first handler joins `statusHandlers`, disposed when the last leaves.
+ * Reconnect refreshes share the same trigger; re-issuing each subscription's
+ * own `events.subscribe` stays per-subscription (each owns a subscriptionId).
+ */
+function attachStatusTriggers(): void {
+  if (statusTriggersOff) return;
+  const offNotify = onBackendNotification((n) => {
+    if (isEventInFamily(n.method, n.params, "git") || isEventInFamily(n.method, n.params, "changes"))
+      refetchSharedStatus();
+  });
+  const offReconnect = onBackendReconnected(() => {
+    refetchSharedStatus();
+  });
+  statusTriggersOff = () => {
+    offNotify();
+    offReconnect();
+  };
+}
+
+/** Drop the shared triggers once the last subscriber is gone. */
+function detachStatusTriggers(): void {
+  if (!statusTriggersOff) return;
+  statusTriggersOff();
+  statusTriggersOff = undefined;
 }
 
 /** Coerce a daemon `git.diffs` line into the renderer `DiffLine`. */
@@ -680,17 +720,9 @@ export class LiveGitClient implements GitClient {
       if (!disposed) handler(status);
     };
     statusHandlers.add(guardedHandler);
+    attachStatusTriggers();
 
-    const emit = () => {
-      if (!disposed) refetchSharedStatus();
-    };
-
-    emit();
-
-    const off = onBackendNotification((n) => {
-      if (isEventInFamily(n.method, n.params, "git") || isEventInFamily(n.method, n.params, "changes"))
-        emit();
-    });
+    refetchSharedStatus();
 
     const doSubscribe = () =>
       backendSubscribe<{ subscriptionId?: string }>({
@@ -715,19 +747,18 @@ export class LiveGitClient implements GitClient {
     doSubscribe();
 
     // On reconnect the daemon dropped its subscription registry (RESUB-1);
-    // the notification handler is still wired, so we only need to re-issue
-    // the subscribe and refresh the snapshot to converge on anything missed
-    // during the outage.
+    // this subscription must re-issue its own `events.subscribe` (it owns the
+    // subscriptionId). The snapshot refresh that converges on anything missed
+    // during the outage is driven once by the shared trigger.
     const offReconnect = onBackendReconnected(() => {
       subscriptionId = undefined;
       void doSubscribe();
-      emit();
     });
 
     return () => {
       disposed = true;
       statusHandlers.delete(guardedHandler);
-      off();
+      if (statusHandlers.size === 0) detachStatusTriggers();
       offReconnect();
       if (subscriptionId) void backendUnsubscribe(subscriptionId);
     };
