@@ -180,6 +180,12 @@ export function focusFirstUnreadAgent(
   // and the watch must bail rather than survive to mutate A's tab in the
   // background once A's agents hydrate.
   //
+  // Residual, accepted: when `departedFrom` is null (clicked from a route with
+  // no active workspace) and the user leaves to another null-active route,
+  // null → null is indistinguishable from still-pending, so that watch runs to
+  // the timeout. Telling those apart needs route awareness the store does not
+  // carry, and the cost is a background tab mutation capped by `timeoutMs`.
+  //
   // The selection guard only applies to a NON-NULL armed selection: hydration
   // itself picks a default agent when none is set (`hydrateWorkspaceAgents` /
   // `agents-seeder`), and that expected default must not read as a takeover.
