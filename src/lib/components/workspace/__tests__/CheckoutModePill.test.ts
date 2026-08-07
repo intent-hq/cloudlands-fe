@@ -305,7 +305,28 @@ describe('CheckoutModePill', () => {
     // The tooltip shell applies whitespace-pre-wrap; the body must reset it so
     // source-formatting newlines never render as literal indentation.
     expect(tooltip.querySelector('.whitespace-normal')).toBeTruthy();
+    // The shell also applies text-balance, which wraps the notes short; the
+    // note block overrides it so paragraphs fill the available width.
+    expect(paragraphs[0].closest('.text-pretty')).toBeTruthy();
   });
+
+  it.each(['worktree', 'direct'] as const)(
+    'omits the CoW over-counting clause for a %s workspace',
+    async (checkoutMode) => {
+      await renderPill({
+        workspace: { ...baseWorkspace, checkoutMode } as Workspace,
+      });
+      await flushFetch();
+
+      const tooltip = screen.getByTestId('tooltip-content');
+      const paragraphs = Array.from(tooltip.querySelectorAll('p'));
+      // Assert the exact paragraph text (not just a substring match) so a
+      // future rewording of either message can't quietly weaken this check.
+      expect(paragraphs[0].textContent).toBe('Counts allocated disk space.');
+      expect(tooltip.textContent).not.toContain('may be over-counted');
+      expect(tooltip.textContent).not.toContain('CoW clones');
+    },
+  );
 
   it('runs the shrink action for the workspace when the shrink link is clicked', async () => {
     const workspace = { ...baseWorkspace, checkoutMode: 'cow' } as Workspace;

@@ -1303,6 +1303,7 @@
   "workspace_diskUsagePill_fileCount_one": "1 fichier",
   "workspace_diskUsagePill_fileCount_many": "{count} fichiers",
   "workspace_diskUsagePill_physicalNote_label": "Compte l'espace disque alloué. Les données partagées par des clones CoW peuvent être comptées en trop.",
+  "workspace_diskUsagePill_physicalNotePlain_label": "Compte l'espace disque alloué.",
   "workspace_diskUsagePill_scopeNote_label": "Couvre tout le répertoire du workspace, y compris les sandboxes des sous-agents et les sorties d'outils.",
   "workspace_diskUsagePill_shrink_label": "Essayer de réduire ce workspace",
   "workspace_diskUsagePill_shrinkAgent_name": "Réduire le workspace",

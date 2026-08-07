@@ -197,8 +197,14 @@
                 ></span>
               {/if}
             </div>
-            <div class="flex flex-col gap-0.5 text-xs text-subtle">
-              <p class="m-0">{m.workspace_diskUsagePill_physicalNote_label()}</p>
+            <!-- text-pretty overrides the tooltip shell's text-balance so the
+                 notes fill the available width instead of wrapping short. -->
+            <div class="flex flex-col gap-0.5 text-xs text-subtle text-pretty">
+              <p class="m-0">
+                {mode === 'cow'
+                  ? m.workspace_diskUsagePill_physicalNote_label()
+                  : m.workspace_diskUsagePill_physicalNotePlain_label()}
+              </p>
               <p class="m-0">{m.workspace_diskUsagePill_scopeNote_label()}</p>
             </div>
             {#if diskUsage.breakdown.length > 0}

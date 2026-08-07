@@ -1304,6 +1304,7 @@
   "workspace_diskUsagePill_fileCount_one": "1 file",
   "workspace_diskUsagePill_fileCount_many": "{count} files",
   "workspace_diskUsagePill_physicalNote_label": "Counts allocated disk space; data shared by CoW clones may be over-counted.",
+  "workspace_diskUsagePill_physicalNotePlain_label": "Counts allocated disk space.",
   "workspace_diskUsagePill_scopeNote_label": "Covers the whole workspace directory, including sub-agent sandboxes and tool outputs.",
   "workspace_diskUsagePill_shrink_label": "Try to shrink this workspace",
   "workspace_diskUsagePill_shrinkAgent_name": "Shrink workspace",

@@ -1303,6 +1303,7 @@
   "workspace_diskUsagePill_fileCount_one": "파일 1개",
   "workspace_diskUsagePill_fileCount_many": "파일 {count}개",
   "workspace_diskUsagePill_physicalNote_label": "할당된 디스크 공간을 계산합니다. CoW 클론이 공유하는 데이터는 중복 계산될 수 있습니다.",
+  "workspace_diskUsagePill_physicalNotePlain_label": "할당된 디스크 공간을 계산합니다.",
   "workspace_diskUsagePill_scopeNote_label": "하위 에이전트 샌드박스와 도구 출력을 포함한 전체 워크스페이스 디렉터리를 포함합니다.",
   "workspace_diskUsagePill_shrink_label": "이 워크스페이스 축소 시도",
   "workspace_diskUsagePill_shrinkAgent_name": "워크스페이스 축소",
