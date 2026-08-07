@@ -81,7 +81,11 @@ function subscribeToStore(listener: () => void): () => void {
  * Tier 3 waits for {@link areAgentsLoaded}: mid-hydration the foreground list
  * lands before the sessions carrying the tier 1/2 signals, so falling back
  * early would settle for the first agent while the actually-unread one was
- * still in flight.
+ * still in flight. Tiers 1 and 2 are deliberately *not* gated — they only ever
+ * match on evidence, so acting on the first one to arrive is right. The
+ * asymmetry costs a bounded tie-break: if sessions land piecemeal (streaming
+ * upserts rather than hydration's single `bulkUpsertSessions`), tier 2 breaks
+ * ties by store-landing order instead of `foregroundAgentIds` order.
  */
 export function findFirstUnreadForegroundAgentId(workspaceId: string): string | null {
   const state = appStore.state;
