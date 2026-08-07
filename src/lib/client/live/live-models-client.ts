@@ -3,8 +3,10 @@
  *
  * `models.list` is global (no `workspaceId`) and returns the daemon-resolved
  * rich model catalog — `{ models: ModelInfo[], source: "auggie" | "static" }`.
- * The daemon does auggie CLI discovery (JSON → plain-text fallback), 5-minute
- * caching, legacy-model filtering, and priority sorting server-side and
+ * The daemon does auggie CLI discovery (JSON → plain-text fallback), catalog
+ * caching (served indefinitely; it re-probes only on a cache miss, an adapter
+ * version-key change, or `forceRefresh: true`), legacy-model filtering, and
+ * priority sorting server-side and
  * degrades to the static tier catalog when the CLI is unavailable, so the
  * result is never empty (§5.30).
  *
