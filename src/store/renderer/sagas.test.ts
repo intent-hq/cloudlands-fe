@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { sagas, startAllAppSagas } from './sagas';
+import { actionKeySaga } from './slices/hardware-console/sagas/action-key-saga';
+import { hardwareConsoleDeviceSaga } from './slices/hardware-console/sagas/hardware-console-device-saga';
+import { keyPinPersistenceSaga } from './slices/hardware-console/sagas/key-pin-persistence-saga';
+import { promptPickerSaga } from './slices/hardware-console/sagas/prompt-picker-saga';
+import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-transcription-saga';
+import { hardwareConsoleSaga, sagas, startAllAppSagas } from './sagas';
 
 describe('renderer app saga registry', () => {
   it('registers every audited root saga exactly once', () => {
@@ -41,7 +46,7 @@ describe('renderer app saga registry', () => {
       'modelReloadSaga',
       'providerAvailabilitySaga',
       'hostRequirementsSaga',
-      'hardwareConsoleDeviceSaga',
+      'hardwareConsoleSaga',
       'themeSaga',
       'autoUpdateSaga',
       'specialistsSaga',
@@ -87,5 +92,32 @@ describe('renderer app saga registry', () => {
     expect(store.runSaga).toHaveBeenCalledTimes(67);
     expect(store.runSaga.mock.calls.map(([saga]) => saga)).toEqual(sagas);
     expect(handlers).toEqual(Array(67).fill(cancel));
+  });
+
+  it('starts every hardware-console owner exactly once under one cancellable composition', () => {
+    const iterator = hardwareConsoleSaga();
+    const effect = iterator.next().value as {
+      type: string;
+      payload: Array<Generator>;
+    };
+    const childEffects = effect.payload.map(
+      (child) =>
+        child.next().value as {
+          type: string;
+          payload: { fn: unknown };
+        },
+    );
+
+    expect(effect.type).toBe('ALL');
+    expect(effect.payload).toHaveLength(5);
+    expect(childEffects.map((child) => child.type)).toEqual(Array(5).fill('CALL'));
+    expect(childEffects.map((child) => child.payload.fn)).toEqual([
+      hardwareConsoleDeviceSaga,
+      actionKeySaga,
+      keyPinPersistenceSaga,
+      promptPickerSaga,
+      voiceTranscriptionSaga,
+    ]);
+    expect(iterator.next().done).toBe(true);
   });
 });

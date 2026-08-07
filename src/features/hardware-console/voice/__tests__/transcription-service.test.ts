@@ -13,10 +13,7 @@ import { m } from '$shared/paraglide/messages.js';
 interface MockVoiceState {
   workspace: { activeWorkspaceId: string | null; workspaces: ReturnType<typeof createCollection> };
   workspaceAgents: {
-    byWorkspaceId: Record<
-      string,
-      { foregroundAgentIds: string[]; activeAgentId: string | null }
-    >;
+    byWorkspaceId: Record<string, { foregroundAgentIds: string[]; activeAgentId: string | null }>;
   };
   agentSessions: { byAgentId: Record<string, { name?: string }> };
   voiceSettings?: {
@@ -68,7 +65,8 @@ vi.mock('svelte-sonner', () => ({ toast: { error: toastError, info: vi.fn() } })
 
 const transcribeWithOsMock = vi.fn();
 vi.mock('$features/voice/os-transcription-service', async (importOriginal) => {
-  const original = await importOriginal<typeof import('$features/voice/os-transcription-service')>();
+  const original =
+    await importOriginal<typeof import('$features/voice/os-transcription-service')>();
   return {
     ...original,
     transcribeWithOs: (...args: unknown[]) =>
@@ -93,7 +91,6 @@ import {
   voiceTranscriptionStarted,
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import {
-  createVoiceTranscriptionMiddleware,
   gatherTranscriptionContext,
   handleFinishedRecording,
   mergeOsContextualStrings,
@@ -282,11 +279,7 @@ describe('handleFinishedRecording', () => {
     await vi.advanceTimersByTimeAsync(1000);
     await flow;
 
-    expect(transcribeWithOsMock).toHaveBeenCalledWith(
-      RECORDING.blob,
-      expect.any(Array),
-      'de',
-    );
+    expect(transcribeWithOsMock).toHaveBeenCalledWith(RECORDING.blob, expect.any(Array), 'de');
   });
 
   it('omits the OS engine locale when voice.language is blank or unset (system locale)', async () => {
@@ -302,11 +295,7 @@ describe('handleFinishedRecording', () => {
     await vi.advanceTimersByTimeAsync(1000);
     await flow;
 
-    expect(transcribeWithOsMock).toHaveBeenCalledWith(
-      RECORDING.blob,
-      expect.any(Array),
-      undefined,
-    );
+    expect(transcribeWithOsMock).toHaveBeenCalledWith(RECORDING.blob, expect.any(Array), undefined);
   });
 
   it('biases the hydrated voice.vocabulary into the OS engine contextual strings (vocabulary first, deduped)', async () => {
@@ -492,9 +481,7 @@ describe('handleFinishedRecording', () => {
     await vi.advanceTimersByTimeAsync(1000);
     await flow;
 
-    expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(
-      true,
-    );
+    expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(true);
     expect(dispatched.some((action) => action.type === actionHudHidden.type)).toBe(true);
     expect(toastError).toHaveBeenCalledWith(
       m.hardwareConsole_voice_transcribeFailed_error(),
@@ -517,9 +504,7 @@ describe('handleFinishedRecording', () => {
       insertText,
       focusComposer: vi.fn(),
     });
-    expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(
-      true,
-    );
+    expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(true);
     expect(dispatched.some((action) => action.type === actionHudHidden.type)).toBe(true);
     expect(toastError).toHaveBeenCalledWith(
       m.hardwareConsole_voice_transcribeFailed_error(),
@@ -531,7 +516,10 @@ describe('handleFinishedRecording', () => {
     mockState.voiceSettings = { engine: 'os' };
     const { OsTranscriptionError } = await import('$features/voice/os-transcription-service');
     transcribeWithOsMock.mockRejectedValue(
-      new OsTranscriptionError('authorization-denied', 'speech recognition authorization status: 1'),
+      new OsTranscriptionError(
+        'authorization-denied',
+        'speech recognition authorization status: 1',
+      ),
     );
     vi.stubGlobal('window', { electronAPI: { invoke: vi.fn(), on: vi.fn(), offById: vi.fn() } });
 
@@ -576,9 +564,7 @@ describe('handleFinishedRecording', () => {
     await vi.advanceTimersByTimeAsync(1000);
     await flow;
     expect(dispatched.some((action) => action.type === actionHudHidden.type)).toBe(true);
-    expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(
-      true,
-    );
+    expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(true);
   });
 
   it('surfaces the structured no-API-key error (data.code, PROTOCOL §5.41 v4.4+) as a Settings hint toast', async () => {
@@ -604,9 +590,7 @@ describe('handleFinishedRecording', () => {
       }),
     );
     expect(dispatched.some((action) => action.type === actionHudHidden.type)).toBe(true);
-    expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(
-      true,
-    );
+    expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(true);
   });
 
   it('surfaces the plain-string no-API-key error (older daemons) via the message sniff fallback', async () => {
@@ -625,9 +609,7 @@ describe('handleFinishedRecording', () => {
       expect.objectContaining({ description: expect.stringMatching(/no API key/) }),
     );
     expect(dispatched.some((action) => action.type === actionHudHidden.type)).toBe(true);
-    expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(
-      true,
-    );
+    expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(true);
   });
 
   it('does not show the no-key toast for a structured error with a different data.code', async () => {
@@ -731,7 +713,12 @@ describe('handleFinishedRecording', () => {
     vi.useFakeTimers();
     const flow = handleFinishedRecording(
       RECORDING,
-      { transcribe, insertText: vi.fn().mockReturnValue(false), sendComposer, focusComposer: vi.fn() },
+      {
+        transcribe,
+        insertText: vi.fn().mockReturnValue(false),
+        sendComposer,
+        focusComposer: vi.fn(),
+      },
       { autoSend: true },
     );
     await vi.advanceTimersByTimeAsync(1000);
@@ -958,7 +945,11 @@ describe('cancelActiveTranscription during an in-flight transcription', () => {
         reject = rej;
       }),
     );
-    return { transcribe, resolve: (value: { text: string }) => resolve(value), reject: (error: unknown) => reject(error) };
+    return {
+      transcribe,
+      resolve: (value: { text: string }) => resolve(value),
+      reject: (error: unknown) => reject(error),
+    };
   }
 
   it('clears the transcribing state immediately and discards the late result', async () => {
@@ -977,9 +968,7 @@ describe('cancelActiveTranscription during an in-flight transcription', () => {
     // (spinner returns to idle, a new recording can start) …
     expect(cancelActiveTranscription()).toBe(true);
     expect(hasActiveTranscriptionSession()).toBe(false);
-    expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(
-      true,
-    );
+    expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(true);
     expect(dispatched.some((action) => action.type === actionHudHidden.type)).toBe(true);
 
     // … and the eventually-arriving result is DISCARDED, never inserted.
@@ -1069,11 +1058,15 @@ describe('runTranscriptionFlow', () => {
     const sendComposer = vi.fn().mockReturnValue(true);
     const focusComposer = vi.fn();
     vi.useFakeTimers();
-    const flow = runTranscriptionFlow(null, { autoSend: true }, {
-      transcribe,
-      sendComposer,
-      focusComposer,
-    });
+    const flow = runTranscriptionFlow(
+      null,
+      { autoSend: true },
+      {
+        transcribe,
+        sendComposer,
+        focusComposer,
+      },
+    );
     await vi.advanceTimersByTimeAsync(1000);
     await flow;
     expect(transcribe).not.toHaveBeenCalled();
@@ -1089,10 +1082,14 @@ describe('runTranscriptionFlow', () => {
     const sendComposer = vi.fn().mockReturnValue(true);
     const focusComposer = vi.fn();
     vi.useFakeTimers();
-    const flow = runTranscriptionFlow(null, { autoSend: true }, {
-      sendComposer,
-      focusComposer,
-    });
+    const flow = runTranscriptionFlow(
+      null,
+      { autoSend: true },
+      {
+        sendComposer,
+        focusComposer,
+      },
+    );
     await vi.advanceTimersByTimeAsync(1000);
     await flow;
     expect(focusComposer).not.toHaveBeenCalled();
@@ -1112,80 +1109,19 @@ describe('runTranscriptionFlow', () => {
     const insertText = vi.fn().mockReturnValue(true);
     const sendComposer = vi.fn().mockReturnValue(true);
     vi.useFakeTimers();
-    const flow = runTranscriptionFlow(RECORDING, { autoSend: true }, {
-      transcribe,
-      insertText,
-      sendComposer,
-      focusComposer: vi.fn(),
-    });
+    const flow = runTranscriptionFlow(
+      RECORDING,
+      { autoSend: true },
+      {
+        transcribe,
+        insertText,
+        sendComposer,
+        focusComposer: vi.fn(),
+      },
+    );
     await vi.advanceTimersByTimeAsync(1000);
     await flow;
     expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
     expect(sendComposer).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('createVoiceTranscriptionMiddleware', () => {
-  it('runs the flow for voiceRecordingFinished and passes other actions through', async () => {
-    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
-    const insertText = vi.fn().mockReturnValue(true);
-    const middleware = createVoiceTranscriptionMiddleware({
-      transcribe,
-      insertText,
-      focusComposer: vi.fn(),
-    });
-    const next = vi.fn((action: unknown) => action);
-    const invoke = middleware(undefined as never)(next);
-
-    const unrelated = { type: 'other/action' };
-    expect(invoke(unrelated as never)).toBe(unrelated);
-    expect(transcribe).not.toHaveBeenCalled();
-
-    invoke(pttRecordingFinished(FINISHED_PAYLOAD) as never);
-    expect(next).toHaveBeenCalledTimes(2);
-    await vi.waitFor(() => expect(transcribe).toHaveBeenCalledWith(
-      RECORDING.blob,
-      RECORDING.mimeType,
-      expect.objectContaining({ keyterms: expect.arrayContaining(['Feature add']) }),
-      'ws-1',
-    ));
-  });
-
-  it('carries the payload autoSend flag through to the flow', async () => {
-    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
-    const sendComposer = vi.fn().mockReturnValue(true);
-    const middleware = createVoiceTranscriptionMiddleware({
-      transcribe,
-      insertText: vi.fn().mockReturnValue(true),
-      sendComposer,
-      focusComposer: vi.fn(),
-    });
-    const invoke = middleware(undefined as never)((action: unknown) => action);
-    invoke(
-      pttRecordingFinished({
-        ...RECORDING,
-        stopReason: 'double-hold-release',
-        autoSend: true,
-      }) as never,
-    );
-    await vi.waitFor(() => expect(sendComposer).toHaveBeenCalled());
-  });
-
-  it('sends the composer as-is on pttSendRequested (no transcription)', async () => {
-    const transcribe = vi.fn();
-    const sendComposer = vi.fn().mockReturnValue(true);
-    const focusComposer = vi.fn();
-    const middleware = createVoiceTranscriptionMiddleware({
-      transcribe,
-      sendComposer,
-      focusComposer,
-    });
-    vi.useFakeTimers();
-    const invoke = middleware(undefined as never)((action: unknown) => action);
-    invoke(pttSendRequested() as never);
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(transcribe).not.toHaveBeenCalled();
-    expect(focusComposer).toHaveBeenCalledWith('agent-a');
-    expect(sendComposer).toHaveBeenCalled();
   });
 });

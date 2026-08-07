@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { select } from 'typed-redux-saga';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import type { HardwareConsoleManager, HardwareConsoleStatus } from '../../device/device-manager';
@@ -43,6 +45,12 @@ const dispatched: { type: string; payload?: unknown }[] = [];
 
 vi.mock('$store/renderer/store', () => ({
   store: {
+    createSelector: (selector: (state: typeof mockState, ...args: never[]) => unknown) => {
+      const readable = (...args: never[]) => selector(mockState, ...args);
+      readable.select = (state: typeof mockState, ...args: never[]) => selector(state, ...args);
+      readable.effect = (...args: never[]) => select(selector, ...args);
+      return readable;
+    },
     get state() {
       return mockState;
     },
@@ -84,6 +92,7 @@ vi.mock('../../voice/ptt-controller', () => ({
 }));
 
 import { appClient } from '$lib/client';
+import { store as appStore } from '$store/renderer/store';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { isVoiceRecordingSupported } from '../../voice/voice-recorder';
 import {
@@ -97,6 +106,7 @@ import {
   handleActionKeyRelease,
   installHardwareConsoleActionKeys,
 } from '../action-key-service';
+import { actionKeySaga } from '$store/renderer/slices/hardware-console/sagas/action-key-saga';
 
 function makeFakeManager(initialStatus: HardwareConsoleStatus = 'disconnected') {
   const statusListeners = new Set<(status: HardwareConsoleStatus) => void>();
@@ -135,6 +145,33 @@ beforeEach(() => {
   resetActionKeyCycleCursors();
   vi.clearAllMocks();
 });
+
+const runningTasks: Task[] = [];
+
+afterEach(() => {
+  for (const task of runningTasks.splice(0)) task.cancel();
+});
+
+function invokeActionKeySaga() {
+  const channel = stdChannel();
+  const manager = makeFakeManager('unavailable');
+  runningTasks.push(
+    runSaga(
+      {
+        channel,
+        dispatch: (action) => appStore.dispatch(action as never),
+        getState: () => mockState,
+      },
+      actionKeySaga,
+      { manager: manager as unknown as HardwareConsoleManager },
+    ),
+  );
+  return (action: { type: string; payload?: unknown }) => {
+    appStore.dispatch(action as never);
+    channel.put(action);
+    return action;
+  };
+}
 
 describe('handleActionKeyPress', () => {
   it('executes the mapped action for an available action key', () => {
@@ -265,7 +302,10 @@ describe('handleActionKeyPress', () => {
     expect(result).toBe('cycle-unread-agents');
     expect(focusComposer).toHaveBeenCalledWith('a-1');
     expect(dispatched).toContainEqual(
-      expect.objectContaining({ type: 'workspaceAgents/setActiveAgentId', payload: ['ws-1', 'a-1'] }),
+      expect.objectContaining({
+        type: 'workspaceAgents/setActiveAgentId',
+        payload: ['ws-1', 'a-1'],
+      }),
     );
   });
 
@@ -373,9 +413,7 @@ describe('hold actions (push-to-talk)', () => {
     } finally {
       (isVoiceRecordingSupported as ReturnType<typeof vi.fn>).mockReturnValue(true);
     }
-    expect(showUnavailableHint).toHaveBeenCalledWith(
-      m.hardwareConsole_ptt_unavailable_message(),
-    );
+    expect(showUnavailableHint).toHaveBeenCalledWith(m.hardwareConsole_ptt_unavailable_message());
     expect(handleVoiceKeyDown).not.toHaveBeenCalled();
   });
 });
@@ -401,14 +439,11 @@ describe('composer focus', () => {
   it('new-agent press arms a one-shot composer focus fired on the next agent-tab open', async () => {
     vi.useFakeTimers();
     try {
-      const { createHardwareConsoleActionKeyMiddleware } = await import('../action-key-service');
       (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
         path: 'hardwareConsole.state',
         value: {},
       });
-      const middleware = createHardwareConsoleActionKeyMiddleware();
-      const next = vi.fn((action) => action);
-      const invoke = middleware({} as never)(next);
+      const invoke = invokeActionKeySaga();
 
       // Slot 1 (ACT07) = new-agent.
       expect(handleActionKeyPress('ACT07')).toBe('new-agent');
@@ -445,24 +480,27 @@ describe('action HUD inactivity timer', () => {
         path: 'hardwareConsole.state',
         value: {},
       });
-      const { ACTION_HUD_HIDE_MS, createHardwareConsoleActionKeyMiddleware } = await import(
-        '../action-key-service'
-      );
-      const middleware = createHardwareConsoleActionKeyMiddleware();
-      const invoke = middleware({} as never)(vi.fn((action) => action));
+      const { ACTION_HUD_HIDE_MS } = await import('../action-key-service');
+      const invoke = invokeActionKeySaga();
       const hudHiddenDispatches = () =>
         dispatched.filter((action) => action.type === 'hardwareConsole/actionHudHidden');
 
+      await vi.waitFor(() =>
+        expect(dispatched).toContainEqual(
+          expect.objectContaining({ type: 'hardwareConsole/hydrateActionMapping' }),
+        ),
+      );
+
       invoke({ type: 'hardwareConsole/actionHudShown', payload: ['Cycle idle agents'] });
-      vi.advanceTimersByTime(ACTION_HUD_HIDE_MS - 1);
+      await vi.advanceTimersByTimeAsync(ACTION_HUD_HIDE_MS - 1);
       expect(hudHiddenDispatches()).toHaveLength(0);
 
       // A rapid second press re-arms the timer.
       invoke({ type: 'hardwareConsole/actionHudShown', payload: ['Cycle idle agents'] });
-      vi.advanceTimersByTime(ACTION_HUD_HIDE_MS - 1);
+      await vi.advanceTimersByTimeAsync(ACTION_HUD_HIDE_MS - 1);
       expect(hudHiddenDispatches()).toHaveLength(0);
 
-      vi.advanceTimersByTime(1);
+      await vi.advanceTimersByTimeAsync(1);
       expect(hudHiddenDispatches()).toHaveLength(1);
     } finally {
       vi.useRealTimers();
@@ -473,9 +511,7 @@ describe('action HUD inactivity timer', () => {
 describe('installHardwareConsoleActionKeys', () => {
   it('wires a decoder on connect and dispatches on ACT key presses', () => {
     const manager = makeFakeManager('disconnected');
-    const teardown = installHardwareConsoleActionKeys(
-      manager as unknown as HardwareConsoleManager,
-    );
+    const teardown = installHardwareConsoleActionKeys(manager as unknown as HardwareConsoleManager);
     expect(manager.rawListenerCount()).toBe(0);
 
     manager.setStatus('connected');
@@ -492,9 +528,7 @@ describe('installHardwareConsoleActionKeys', () => {
 
   it('detaches the decoder on disconnect', () => {
     const manager = makeFakeManager('connected');
-    const teardown = installHardwareConsoleActionKeys(
-      manager as unknown as HardwareConsoleManager,
-    );
+    const teardown = installHardwareConsoleActionKeys(manager as unknown as HardwareConsoleManager);
     expect(manager.rawListenerCount()).toBe(1);
 
     manager.setStatus('disconnected');
@@ -504,9 +538,7 @@ describe('installHardwareConsoleActionKeys', () => {
 
   it('ignores agent-key presses and key releases', () => {
     const manager = makeFakeManager('connected');
-    const teardown = installHardwareConsoleActionKeys(
-      manager as unknown as HardwareConsoleManager,
-    );
+    const teardown = installHardwareConsoleActionKeys(manager as unknown as HardwareConsoleManager);
     manager.emitRaw({ m: 'v.oai.hid', p: { k: 'AG00', act: 1 } });
     manager.emitRaw({ m: 'v.oai.hid', p: { k: 'ACT12', act: 0 } });
     expect(dispatched).toHaveLength(0);
@@ -524,9 +556,7 @@ describe('installHardwareConsoleActionKeys', () => {
       'none',
     ]);
     const manager = makeFakeManager('connected');
-    const teardown = installHardwareConsoleActionKeys(
-      manager as unknown as HardwareConsoleManager,
-    );
+    const teardown = installHardwareConsoleActionKeys(manager as unknown as HardwareConsoleManager);
     manager.emitRaw({ m: 'v.oai.hid', p: { k: 'ACT06', act: 1 } });
     expect(handleVoiceKeyDown).toHaveBeenCalledTimes(1);
     manager.emitRaw({ m: 'v.oai.hid', p: { k: 'ACT06', act: 0 } });
@@ -536,9 +566,7 @@ describe('installHardwareConsoleActionKeys', () => {
 
   it('cancels an in-flight recording on disconnect and on teardown', () => {
     const manager = makeFakeManager('connected');
-    const teardown = installHardwareConsoleActionKeys(
-      manager as unknown as HardwareConsoleManager,
-    );
+    const teardown = installHardwareConsoleActionKeys(manager as unknown as HardwareConsoleManager);
     manager.setStatus('disconnected');
     expect(cancelPttRecording).toHaveBeenCalledTimes(1);
     teardown();
@@ -555,10 +583,7 @@ describe('persistence key on the daemon bag', () => {
         actionMappingByModel: { 'creator-micro-2': new Array(7).fill('none') },
       },
     });
-    const { createHardwareConsoleActionKeyMiddleware } = await import('../action-key-service');
-    const middleware = createHardwareConsoleActionKeyMiddleware();
-    const next = vi.fn((action) => action);
-    const invoke = middleware({} as never)(next);
+    const invoke = invokeActionKeySaga();
 
     invoke({ type: 'any/action' });
     await vi.waitFor(() => {
@@ -629,39 +654,40 @@ describe('persistence key on the daemon bag', () => {
         'cycle-unread-agents',
       ],
     ],
-  ])('migrates a persisted CM2 mapping equal to the %s and writes it back', async (_label, priorDefaults) => {
-    (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
-      path: 'hardwareConsole.state',
-      value: { actionMappingByModel: { 'creator-micro-2': priorDefaults } },
-    });
-    const { createHardwareConsoleActionKeyMiddleware } = await import('../action-key-service');
-    const middleware = createHardwareConsoleActionKeyMiddleware();
-    const invoke = middleware({} as never)(vi.fn((action) => action));
+  ])(
+    'migrates a persisted CM2 mapping equal to the %s and writes it back',
+    async (_label, priorDefaults) => {
+      (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+        path: 'hardwareConsole.state',
+        value: { actionMappingByModel: { 'creator-micro-2': priorDefaults } },
+      });
+      const invoke = invokeActionKeySaga();
 
-    invoke({ type: 'any/action' });
-    await vi.waitFor(() => {
-      expect(dispatched).toContainEqual(
-        expect.objectContaining({
-          type: 'hardwareConsole/hydrateActionMapping',
-          payload: [
-            expect.objectContaining({
-              'creator-micro-2': [...DEFAULT_ACTION_MAPPINGS['creator-micro-2']],
-            }),
-          ],
-        }),
-      );
-      expect(appClient.settings.update).toHaveBeenCalledWith([
-        {
-          path: 'hardwareConsole.state',
-          value: expect.objectContaining({
-            actionMappingByModel: expect.objectContaining({
-              'creator-micro-2': [...DEFAULT_ACTION_MAPPINGS['creator-micro-2']],
-            }),
+      invoke({ type: 'any/action' });
+      await vi.waitFor(() => {
+        expect(dispatched).toContainEqual(
+          expect.objectContaining({
+            type: 'hardwareConsole/hydrateActionMapping',
+            payload: [
+              expect.objectContaining({
+                'creator-micro-2': [...DEFAULT_ACTION_MAPPINGS['creator-micro-2']],
+              }),
+            ],
           }),
-        },
-      ]);
-    });
-  });
+        );
+        expect(appClient.settings.update).toHaveBeenCalledWith([
+          {
+            path: 'hardwareConsole.state',
+            value: expect.objectContaining({
+              actionMappingByModel: expect.objectContaining({
+                'creator-micro-2': [...DEFAULT_ACTION_MAPPINGS['creator-micro-2']],
+              }),
+            }),
+          },
+        ]);
+      });
+    },
+  );
 
   it('migrates a persisted Codex mapping equal to the pre-PTT defaults and writes it back', async () => {
     const priorDefaults = [
@@ -677,9 +703,7 @@ describe('persistence key on the daemon bag', () => {
       path: 'hardwareConsole.state',
       value: { actionMappingByModel: { 'codex-micro': priorDefaults } },
     });
-    const { createHardwareConsoleActionKeyMiddleware } = await import('../action-key-service');
-    const middleware = createHardwareConsoleActionKeyMiddleware();
-    const invoke = middleware({} as never)(vi.fn((action) => action));
+    const invoke = invokeActionKeySaga();
 
     invoke({ type: 'any/action' });
     await vi.waitFor(() => {
@@ -711,9 +735,7 @@ describe('persistence key on the daemon bag', () => {
       path: 'hardwareConsole.state',
       value: { actionMappingByModel: { 'codex-micro': new Array(7).fill('see-spec') } },
     });
-    const { createHardwareConsoleActionKeyMiddleware } = await import('../action-key-service');
-    const middleware = createHardwareConsoleActionKeyMiddleware();
-    const invoke = middleware({} as never)(vi.fn((action) => action));
+    const invoke = invokeActionKeySaga();
 
     invoke({ type: 'any/action' });
     await vi.waitFor(() => {
@@ -730,9 +752,7 @@ describe('persistence key on the daemon bag', () => {
       path: 'hardwareConsole.state',
       value: { actionMappingByModel: { 'creator-micro-2': customized } },
     });
-    const { createHardwareConsoleActionKeyMiddleware } = await import('../action-key-service');
-    const middleware = createHardwareConsoleActionKeyMiddleware();
-    const invoke = middleware({} as never)(vi.fn((action) => action));
+    const invoke = invokeActionKeySaga();
 
     invoke({ type: 'any/action' });
     await vi.waitFor(() => {
@@ -748,9 +768,7 @@ describe('persistence key on the daemon bag', () => {
       path: 'hardwareConsole.state',
       value: { actionMapping: new Array(7).fill('see-spec') },
     });
-    const { createHardwareConsoleActionKeyMiddleware } = await import('../action-key-service');
-    const middleware = createHardwareConsoleActionKeyMiddleware();
-    const invoke = middleware({} as never)(vi.fn((action) => action));
+    const invoke = invokeActionKeySaga();
 
     invoke({ type: 'any/action' });
     await vi.waitFor(() => {
@@ -773,9 +791,7 @@ describe('persistence key on the daemon bag', () => {
       path: 'hardwareConsole.state',
       value: { cycleScopeByFamily: { 'cycle-in-progress-agents': 'all' } },
     });
-    const { createHardwareConsoleActionKeyMiddleware } = await import('../action-key-service');
-    const middleware = createHardwareConsoleActionKeyMiddleware();
-    const invoke = middleware({} as never)(vi.fn((action) => action));
+    const invoke = invokeActionKeySaga();
 
     invoke({ type: 'any/action' });
     await vi.waitFor(() => {
@@ -800,9 +816,7 @@ describe('persistence key on the daemon bag', () => {
       path: 'hardwareConsole.state',
       value: { keyPins: ['ws-1'] },
     });
-    const { createHardwareConsoleActionKeyMiddleware } = await import('../action-key-service');
-    const middleware = createHardwareConsoleActionKeyMiddleware();
-    const invoke = middleware({} as never)(vi.fn((action) => action));
+    const invoke = invokeActionKeySaga();
 
     invoke({ type: 'any/action' });
     await vi.waitFor(() => {

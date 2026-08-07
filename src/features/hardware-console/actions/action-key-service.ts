@@ -12,35 +12,23 @@
  * that an assignment only works with the keys physically unlinked).
  *
  * The per-model mappings hydrate from the shared `hardwareConsole.state`
- * daemon settings bag on the first dispatched action (the legacy flat
+ * daemon settings bag when the app-owned saga starts (the legacy flat
  * `actionMapping` array is read as the CM2 entry when the per-model record
  * has none) and write back after each mapping mutation (read-modify-write
  * on the whole bag with only the `actionMappingByModel` field replaced —
  * sibling fields like `keyPins` and the legacy `actionMapping` survive),
  * mirroring the key-pin persistence service.
  *
- * Dependency-light middleware module per src/store/renderer/AGENTS.md: no
- * selector imports — state is read directly off `appStore.state`; the toast
- * lib is imported lazily.
+ * The app-owned saga orchestrates hydration, persistence, timers, and
+ * cancellation; this module retains the reusable input and settings helpers.
  */
-import type { StoreMiddleware } from '@augmentcode/themis/types';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { m } from '$shared/paraglide/messages.js';
-import {
-  actionHudHidden,
-  actionHudShown,
-  hydrateHardwareConsoleActionMapping,
-  hydrateHardwareConsoleCycleScopes,
-  setActionKeyMapping,
-  setCycleScope,
-} from '$store/renderer/slices/hardware-console/hardware-console-slice';
-import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import type { HardwareConsoleManager } from '../device/device-manager';
-import { getHardwareConsoleManager } from '../instance';
 import { HardwareInputDecoder } from '../input/input-decoder';
 import type { HardwareDeviceModel, LogicalKeyId } from '../input/types';
 import { HARDWARE_CONSOLE_SETTINGS_PATH } from '../assignment/key-pin-persistence-service';
@@ -76,7 +64,7 @@ export const COMPOSER_FOCUS_DELAYS_MS = [150, 600] as const;
 /** How long a pending new-agent composer focus stays armed (daemon round-trip). */
 const COMPOSER_FOCUS_ARM_TTL_MS = 15_000;
 
-/** Lazily pull the toast lib so this middleware-reachable module stays light. */
+/** Lazily pull the toast lib so this service stays light. */
 let toastPromise: Promise<(typeof import('svelte-sonner'))['toast']> | null = null;
 function getToast() {
   if (!toastPromise) toastPromise = import('svelte-sonner').then((module) => module.toast);
@@ -109,7 +97,7 @@ export function focusAgentComposer(agentId: string): void {
 /**
  * Pending composer focus for actions that create an agent asynchronously
  * (new-agent): the agent id only exists once creation completes and its tab
- * opens, so the press arms a one-shot and the middleware fires the focus on
+ * opens, so the press arms a one-shot and the saga fires the focus on
  * the next `openAgentTabRequested` dispatch.
  */
 let composerFocusArmedUntil = 0;
@@ -119,7 +107,7 @@ export function armComposerFocusOnNextAgentTab(now = Date.now()): void {
   composerFocusArmedUntil = now + COMPOSER_FOCUS_ARM_TTL_MS;
 }
 
-function consumeArmedComposerFocus(now = Date.now()): boolean {
+export function consumeArmedComposerFocus(now = Date.now()): boolean {
   if (composerFocusArmedUntil === 0 || now > composerFocusArmedUntil) {
     composerFocusArmedUntil = 0;
     return false;
@@ -178,7 +166,7 @@ export function handleActionKeyPress(
   }
   if (actionId === 'new-agent') {
     // The new agent's id only exists after async creation; arm a one-shot so
-    // the middleware focuses its composer when its tab opens.
+    // the saga focuses its composer when its tab opens.
     armComposerFocusOnNextAgentTab();
   }
   return actionId;
@@ -214,7 +202,7 @@ export function handleActionKeyRelease(
 
 /**
  * Wire action-key handling to a manager. Returns the teardown function.
- * Exported for tests; production installs via the middleware below.
+ * Exported for tests; production installs via the app-owned saga.
  */
 export function installHardwareConsoleActionKeys(
   manager: HardwareConsoleManager,
@@ -273,7 +261,7 @@ async function readBag(): Promise<Record<string, unknown> | null> {
 }
 
 /** Read-modify-write: replace only `actionMappingByModel`, preserving sibling fields. */
-async function persistActionMapping(
+export async function persistHardwareConsoleActionMapping(
   actionMappingByModel: Record<HardwareDeviceModel, ActionKeyActionId[]>,
 ): Promise<void> {
   const bag = (await readBag()) ?? {};
@@ -283,7 +271,7 @@ async function persistActionMapping(
 }
 
 /** Read-modify-write: replace only `cycleScopeByFamily`, preserving sibling fields. */
-async function persistCycleScopes(
+export async function persistHardwareConsoleCycleScopes(
   cycleScopeByFamily: Record<string, string>,
 ): Promise<void> {
   const bag = (await readBag()) ?? {};
@@ -292,150 +280,24 @@ async function persistCycleScopes(
   ]);
 }
 
-async function hydrateOnce(): Promise<boolean> {
-  try {
-    const bag = await readBag();
-    if (bag === null) {
-      throw new Error(
-        `settings.get(${HARDWARE_CONSOLE_SETTINGS_PATH}) returned null — daemon read failed`,
-      );
-    }
-    const legacy = Array.isArray(bag.actionMapping) ? bag.actionMapping : undefined;
-    const mappings = normalizeActionMappingsByModel(bag.actionMappingByModel, legacy);
-    // One-shot default migration: a persisted per-model mapping still exactly
-    // equal to a prior default generation (never customized) picks up the
-    // current defaults and is written back.
-    const migratedCm2 = migrateLegacyCm2DefaultActionMapping(mappings);
-    const migratedCodex = migrateLegacyCodexDefaultActionMapping(mappings);
-    appStore.dispatch(hydrateHardwareConsoleActionMapping(mappings));
-    appStore.dispatch(
-      hydrateHardwareConsoleCycleScopes(normalizeCycleScopeByFamily(bag.cycleScopeByFamily)),
+export async function loadHardwareConsoleActionKeySettings(): Promise<{
+  actionMappingByModel: Record<HardwareDeviceModel, ActionKeyActionId[]>;
+  cycleScopeByFamily: ReturnType<typeof normalizeCycleScopeByFamily>;
+  migratedDefaults: boolean;
+}> {
+  const bag = await readBag();
+  if (bag === null) {
+    throw new Error(
+      `settings.get(${HARDWARE_CONSOLE_SETTINGS_PATH}) returned null — daemon read failed`,
     );
-    if (migratedCm2 || migratedCodex) await persistActionMapping(mappings);
-    return true;
-  } catch (error) {
-    logger.error('Action-mapping hydration failed; dispatching defaults', { error });
-    appStore.dispatch(
-      hydrateHardwareConsoleActionMapping(normalizeActionMappingsByModel(undefined)),
-    );
-    appStore.dispatch(hydrateHardwareConsoleCycleScopes(normalizeCycleScopeByFamily(undefined)));
-    return false;
   }
-}
-
-let installed = false;
-
-/**
- * Lazily install on the first dispatched action (same pattern as the
- * key-switch middleware): wires action-key handling, hydrates the mapping
- * from the daemon bag, and persists mapping changes (deferred until
- * hydration settles, mirroring the key-pin persistence service). The shared
- * manager is started by the integration-toggle middleware once the
- * persisted enabled flag hydrates on. Also drives the action-HUD inactivity
- * timer from the `actionHudShown` action itself (mirrors the encoder-HUD
- * timer): rapid presses re-arm it.
- */
-export function createHardwareConsoleActionKeyMiddleware(): StoreMiddleware {
-  let hydrationStarted = false;
-  let hydrationSettled = false;
-  let persistQueued = false;
-  let persistScopesQueued = false;
-  let hudTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const clearHudTimer = (): void => {
-    if (hudTimer !== null) clearTimeout(hudTimer);
-    hudTimer = null;
-  };
-
-  const armHudTimer = (): void => {
-    clearHudTimer();
-    hudTimer = setTimeout(() => {
-      hudTimer = null;
-      appStore.dispatch(actionHudHidden());
-    }, ACTION_HUD_HIDE_MS);
-  };
-
-  const persist = (): void => {
-    void persistActionMapping(appStore.state.hardwareConsole.actionMappingByModel).catch(
-      (error) =>
-        logger.error(`Failed to persist ${HARDWARE_CONSOLE_SETTINGS_PATH} actionMappingByModel`, {
-          error,
-        }),
-    );
-  };
-
-  const persistScopes = (): void => {
-    void persistCycleScopes(appStore.state.hardwareConsole.cycleScopeByFamily).catch((error) =>
-      logger.error(`Failed to persist ${HARDWARE_CONSOLE_SETTINGS_PATH} cycleScopeByFamily`, {
-        error,
-      }),
-    );
-  };
-
-  const schedulePersist = (): void => {
-    if (!hydrationSettled) {
-      persistQueued = true;
-      return;
-    }
-    persist();
-  };
-
-  const schedulePersistScopes = (): void => {
-    if (!hydrationSettled) {
-      persistScopesQueued = true;
-      return;
-    }
-    persistScopes();
-  };
-
-  return () => (next) => (action) => {
-    if (!installed) {
-      installed = true;
-      installHardwareConsoleActionKeys(getHardwareConsoleManager());
-    }
-    if (!hydrationStarted) {
-      hydrationStarted = true;
-      void hydrateOnce()
-        .catch(() => false)
-        .then((hydrated) => {
-          hydrationSettled = true;
-          const shouldFlush = persistQueued && hydrated;
-          const shouldFlushScopes = persistScopesQueued && hydrated;
-          persistQueued = false;
-          persistScopesQueued = false;
-          if (shouldFlush) persist();
-          if (shouldFlushScopes) persistScopes();
-        });
-    }
-
-    const result = next(action);
-		const type = typeof (action as { type?: unknown })?.type === 'string'
-			? (action as { type: string }).type
-			: '';
-
-		if (type === setActionKeyMapping.type) {
-      schedulePersist();
-    }
-
-		if (type === setCycleScope.type) {
-      schedulePersistScopes();
-    }
-
-		if (type === actionHudShown.type) {
-      armHudTimer();
-		} else if (type === actionHudHidden.type) {
-      clearHudTimer();
-    }
-
-		if (type === openAgentTabRequested.type && consumeArmedComposerFocus()) {
-      // New-agent press armed a one-shot: this tab open is the created
-      // agent's — focus its composer.
-      const detail = (action as ReturnType<typeof openAgentTabRequested>).payload[1];
-      if (detail && typeof detail.agentId === 'string') {
-        focusAgentComposer(detail.agentId);
-      }
-    }
-
-    return result;
+  const legacy = Array.isArray(bag.actionMapping) ? bag.actionMapping : undefined;
+  const actionMappingByModel = normalizeActionMappingsByModel(bag.actionMappingByModel, legacy);
+  const migratedCm2 = migrateLegacyCm2DefaultActionMapping(actionMappingByModel);
+  const migratedCodex = migrateLegacyCodexDefaultActionMapping(actionMappingByModel);
+  return {
+    actionMappingByModel,
+    cycleScopeByFamily: normalizeCycleScopeByFamily(bag.cycleScopeByFamily),
+    migratedDefaults: migratedCm2 || migratedCodex,
   };
 }

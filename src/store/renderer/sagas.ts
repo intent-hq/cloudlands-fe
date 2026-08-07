@@ -7,6 +7,7 @@
  */
 
 import type { Store } from '@augmentcode/themis/svelte-store';
+import { all, call } from 'typed-redux-saga';
 
 import { providerAvailabilitySaga } from './slices/agent-availability/sagas/provider-availability-saga';
 import { agentEventsIpcSaga } from './slices/agent-events/sagas/agent-events-ipc-saga';
@@ -35,7 +36,11 @@ import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
 import { gitReadSaga } from './slices/git/sagas/git-read-saga';
 import { githubAuthSaga } from './slices/github-auth/sagas/github-auth-saga';
+import { actionKeySaga } from './slices/hardware-console/sagas/action-key-saga';
 import { hardwareConsoleDeviceSaga } from './slices/hardware-console/sagas/hardware-console-device-saga';
+import { keyPinPersistenceSaga } from './slices/hardware-console/sagas/key-pin-persistence-saga';
+import { promptPickerSaga } from './slices/hardware-console/sagas/prompt-picker-saga';
+import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-transcription-saga';
 import { hostRequirementsSaga } from './slices/host-requirements/sagas/host-requirements-saga';
 import { legacyImportSaga } from './slices/legacy-import/sagas/legacy-import-saga';
 import { linearAuthSaga } from './slices/linear-auth/sagas/linear-auth-saga';
@@ -81,6 +86,17 @@ import { workspaceSettingsSaga } from './slices/workspace-settings/sagas/workspa
 export type AppSaga = Parameters<Store<any, any>['runSaga']>[0];
 export type AppSagaCancel = ReturnType<Store<any, any>['runSaga']>;
 
+/** Owns all hardware-console listeners and side effects under one root lifetime. */
+export function* hardwareConsoleSaga() {
+  yield* all([
+    call(hardwareConsoleDeviceSaga),
+    call(actionKeySaga),
+    call(keyPinPersistenceSaga),
+    call(promptPickerSaga),
+    call(voiceTranscriptionSaga),
+  ]);
+}
+
 /** App-owned sagas in audited startup order. Each production owner appears once. */
 export const sagas = [
   daemonEventsSaga,
@@ -117,7 +133,7 @@ export const sagas = [
   modelReloadSaga,
   providerAvailabilitySaga,
   hostRequirementsSaga,
-  hardwareConsoleDeviceSaga,
+  hardwareConsoleSaga,
   themeSaga,
   autoUpdateSaga,
   specialistsSaga,
