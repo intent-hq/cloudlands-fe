@@ -59,6 +59,7 @@ const mocks = vi.hoisted(() => {
   const legacyImportMiddleware = createPassthroughMiddleware();
   const statsReadMiddleware = createPassthroughMiddleware();
   const backgroundHooksMiddleware = createPassthroughMiddleware();
+  const prMonitorMiddleware = createPassthroughMiddleware();
   const lifecycleReadMiddleware = createPassthroughMiddleware();
   const lifecycleIpcReadMiddleware = createPassthroughMiddleware();
   const githubRepoSearchMiddleware = createPassthroughMiddleware();
@@ -158,6 +159,7 @@ const mocks = vi.hoisted(() => {
     createLegacyImportMiddleware: vi.fn(() => legacyImportMiddleware),
     createStatsReadMiddleware: vi.fn(() => statsReadMiddleware),
     createBackgroundHooksMiddleware: vi.fn(() => backgroundHooksMiddleware),
+    createPrMonitorMiddleware: vi.fn(() => prMonitorMiddleware),
     createLifecycleReadMiddleware: vi.fn(() => lifecycleReadMiddleware),
     createLifecycleIpcReadMiddleware: vi.fn(() => lifecycleIpcReadMiddleware),
     createGithubRepoSearchMiddleware: vi.fn(() => githubRepoSearchMiddleware),
@@ -252,6 +254,7 @@ const mocks = vi.hoisted(() => {
     legacyImportMiddleware,
     statsReadMiddleware,
     backgroundHooksMiddleware,
+    prMonitorMiddleware,
     lifecycleReadMiddleware,
     lifecycleIpcReadMiddleware,
     githubRepoSearchMiddleware,
@@ -449,6 +452,9 @@ vi.mock('$features/stats/stats-read-service', () => ({
 }));
 vi.mock('$features/hooks/background-hooks-read-service', () => ({
   createBackgroundHooksMiddleware: mocks.createBackgroundHooksMiddleware,
+}));
+vi.mock('$features/pr-monitor/pr-monitor-read-service', () => ({
+  createPrMonitorMiddleware: mocks.createPrMonitorMiddleware,
 }));
 vi.mock('./middlewares/lifecycle-read-service', () => ({
   createLifecycleReadMiddleware: mocks.createLifecycleReadMiddleware,
@@ -650,6 +656,7 @@ describe('store middleware Redux logging gating', () => {
       mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
       mocks.backgroundHooksMiddleware,
+      mocks.prMonitorMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
       mocks.sidebarNavPersistenceMiddleware,
@@ -745,6 +752,7 @@ describe('store middleware Redux logging gating', () => {
       mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
       mocks.backgroundHooksMiddleware,
+      mocks.prMonitorMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
       mocks.sidebarNavPersistenceMiddleware,
@@ -840,6 +848,7 @@ describe('store middleware Redux logging gating', () => {
       mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
       mocks.backgroundHooksMiddleware,
+      mocks.prMonitorMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
       mocks.sidebarNavPersistenceMiddleware,
@@ -936,6 +945,7 @@ describe('store middleware Redux logging gating', () => {
       mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
       mocks.backgroundHooksMiddleware,
+      mocks.prMonitorMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
       mocks.sidebarNavPersistenceMiddleware,
@@ -1051,6 +1061,7 @@ describe('store middleware Redux logging gating', () => {
       mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
       mocks.backgroundHooksMiddleware,
+      mocks.prMonitorMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
       mocks.sidebarNavPersistenceMiddleware,
