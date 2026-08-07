@@ -543,7 +543,12 @@
   async function applyBackendModelUpdate(model: string) {
     if (agentId && workspaceId) {
       try {
-        const result = await agentClient.setModel(agentId, model, workspaceId);
+        // Send the picked model's provider explicitly: the parsed compound
+        // prefix, or the effective default provider for bare ids. Without it
+        // the daemon resolves a bare id against the session's current
+        // provider, rejecting cross-provider picks of default-provider models.
+        const pickedProviderId = parseCompoundModelId(model).providerId || undefined;
+        const result = await agentClient.setModel(agentId, model, workspaceId, pickedProviderId);
         if (result.ok && result.data.success) {
           logger.info('Updated agent model via IPC:', { agentId, model });
         } else {

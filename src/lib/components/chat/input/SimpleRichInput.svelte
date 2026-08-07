@@ -666,7 +666,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     }));
 
     try {
-      const result = await agentClient.setModel(agentId, newModel, workspace.id);
+      // Pass the target provider explicitly so the daemon resolves a bare
+      // modelId against it instead of the session's current provider.
+      const result = await agentClient.setModel(agentId, newModel, workspace.id, newProvider);
       if (!result.ok || !result.data.success) {
         throw new Error(result.ok ? result.data.error : result.error);
       }

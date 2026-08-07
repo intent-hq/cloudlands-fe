@@ -1492,10 +1492,80 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     await waitFor(() => {
       expect(dispatchedTypes()).toContain('agentSession/updateSession');
     });
-    expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith('agent-1', 'model-1', 'ws-1');
+    // Bare model id → the effective default provider ('auggie', first catalog
+    // row with no active-provider override) rides along as the explicit
+    // providerId on the wire call.
+    expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+      'agent-1',
+      'model-1',
+      'ws-1',
+      'auggie',
+    );
     // The global default (selectModel → model.providerDefaults /
     // providers.active persistence) must never fire from the chat input.
     expect(dispatchedTypes()).not.toContain(selectModel.type);
+  });
+
+  it('cross-provider pick (intent-hq/monorepo#1657): session on claude-code, bare default-provider model → explicit providerId on the wire', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    // Session provider differs from the default provider — the historical
+    // failure: the daemon validated the bare id against claude-code and
+    // rejected it. The FE must attribute the bare pick to the effective
+    // default provider explicitly.
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'claude-code' });
+
+    render(ModelPicker, {
+      props: {
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        updateGlobalStore: true,
+        portal: false,
+      },
+    });
+
+    await pickModelOne();
+
+    await waitFor(() => {
+      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+        'agent-1',
+        'model-1',
+        'ws-1',
+        'auggie',
+      );
+    });
+  });
+
+  it('compound model pick sends the compound prefix as the explicit providerId', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
+    mockModelState.availableModels = [
+      { value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' },
+    ];
+    vi.mocked(getModelsForProvider).mockResolvedValue([
+      { value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' },
+    ]);
+
+    render(ModelPicker, {
+      props: {
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        updateGlobalStore: true,
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /GPT-5 Codex/ }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    await waitFor(() => {
+      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+        'agent-1',
+        'codex:gpt-5-codex',
+        'ws-1',
+        'codex',
+      );
+    });
   });
 
   it('picking "Default model" drops a deferred update queued during streaming', async () => {
