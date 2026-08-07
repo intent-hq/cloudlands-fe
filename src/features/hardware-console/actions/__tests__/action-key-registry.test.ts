@@ -983,12 +983,18 @@ describe('execute dispatch', () => {
     );
   });
 
-  it('switch-window-layouts cycles through the content presets per workspace', () => {
+  it('switch-window-layouts cycles through the content presets per workspace', async () => {
     const applyContentPresetMock = applyContentPreset as ReturnType<typeof vi.fn>;
     applyContentPresetMock.mockClear();
     const { context } = makeContext(makeState());
     getActionKeyDefinition('switch-window-layouts').execute(context);
+    await vi.waitFor(() => {
+      expect(applyContentPresetMock).toHaveBeenCalledTimes(1);
+    });
     getActionKeyDefinition('switch-window-layouts').execute(context);
+    await vi.waitFor(() => {
+      expect(applyContentPresetMock).toHaveBeenCalledTimes(2);
+    });
     const presets = applyContentPresetMock.mock.calls.map(([presetId]) => presetId);
     expect(presets).toEqual(['planning', 'agents-row']);
     expect(applyContentPresetMock.mock.calls[0][2]).toEqual(

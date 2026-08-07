@@ -48,8 +48,6 @@ import {
   setActiveAgentId,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { openWorkspaceNote } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-import { applyContentPreset } from '$features/layout/preset-executor';
 import {
   resolveEffectiveVoiceEngine,
   type EffectiveVoiceEngineInputs,
@@ -506,13 +504,25 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       const next = ((layoutPresetCursor.get(wsId) ?? -1) + 1) % LAYOUT_PRESETS.length;
       layoutPresetCursor.set(wsId, next);
       const presetId = LAYOUT_PRESETS[next];
-      void applyContentPreset(presetId, getPanelLayoutManager(wsId), {
-        workspaceId: wsId,
-        containerWidth: window.innerWidth,
-        containerHeight: window.innerHeight,
-      }).catch((error: unknown) => {
-        logger.error('Failed to apply layout preset', { presetId, wsId, error });
-      });
+      // Dynamic import: panel-layout-adapter/preset-executor transitively pull
+      // in selectors that call `store.createSelector` at module scope, which
+      // would crash if evaluated eagerly here — this registry is imported by
+      // middleware.ts during store construction, before `store` exists. See
+      // panel-layout-persistence-service.ts for the same workaround.
+      void Promise.all([
+        import('$features/layout/panel-layout-adapter'),
+        import('$features/layout/preset-executor'),
+      ])
+        .then(([{ getPanelLayoutManager }, { applyContentPreset }]) =>
+          applyContentPreset(presetId, getPanelLayoutManager(wsId), {
+            workspaceId: wsId,
+            containerWidth: window.innerWidth,
+            containerHeight: window.innerHeight,
+          }),
+        )
+        .catch((error: unknown) => {
+          logger.error('Failed to apply layout preset', { presetId, wsId, error });
+        });
     },
   },
   {
