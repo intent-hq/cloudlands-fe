@@ -406,7 +406,7 @@
   const avatarState = $derived(
     getAvatarState(
       {
-        isStreaming: isStreamActive || ($agentIsResponding$ && !$agentIsWaiting$),
+        isStreaming: isStreamActive,
         status: $agentIsWaiting$ ? 'waiting' : agentData?.status,
       },
       {

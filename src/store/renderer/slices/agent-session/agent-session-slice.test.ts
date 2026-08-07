@@ -2909,21 +2909,40 @@ describe('agent-session selectors', () => {
       expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(true);
     });
 
-    it('returns true for explicit Waiting status even while responding', () => {
-      const session = makeSession('a1', 'ws-1', {
-        status: 'Waiting' as any,
-        isResponding: true,
-      });
+    it('returns true for explicit Waiting status with no live turn', () => {
+      const session = makeSession('a1', 'ws-1', { status: 'Waiting' as any });
       const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
 
       expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(true);
     });
 
-    it('returns true while paused on peer agents', () => {
-      const session = makeSession('a1', 'ws-1', { isWaitingForOtherAgents: true });
+    it('returns false for a stale Waiting status behind a live turn', () => {
+      // A queue drain opens the busy flags before the daemon revises the
+      // coarse status, so a lagging `Waiting` must not hold the hourglass.
+      const session = makeSession('a1', 'ws-1', {
+        status: 'Waiting' as any,
+        isStreaming: true,
+        isProcessing: true,
+      });
       const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
 
+      expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(false);
+    });
+
+    it('returns true while paused on peer agents, even mid-turn', () => {
+      // The dedicated peer-pause flag is daemon-owned with its own clear
+      // paths, so it outranks a live turn.
+      const session = makeSession('a1', 'ws-1', { isWaitingForOtherAgents: true });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      const midTurn = storeWith({
+        byAgentId: {
+          a1: makeSession('a1', 'ws-1', { isWaitingForOtherAgents: true, isResponding: true }),
+        },
+        agentIdsByWorkspace: {},
+      });
+
       expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(true);
+      expect(selectAgentIsBlockedWaiting.select(midTurn, 'a1')).toBe(true);
     });
 
     it('returns false for terminal or unknown agents', () => {

@@ -118,17 +118,27 @@ function isTurnInFlight(stored: StoredAgentSession): boolean {
 
 /**
  * Waiting state that genuinely blocks on someone else — the hourglass
- * indicator. It is the BE-owned waiting signals MINUS tool execution inside a
- * live turn: `isWaitingOnTool` on an in-flight responding turn is the agent
- * doing work (running), not a blocked wait, so only an explicit `Waiting`
- * status, a paused-on-peer-agents wait, or an `isWaitingOnTool` with no live
- * turn behind it counts here.
+ * indicator. It is the BE-owned waiting signals MINUS the ones a live turn
+ * contradicts:
+ *
+ * - `isWaitingForOtherAgents` is the daemon's explicit peer/child pause and
+ *   can legitimately hold mid-turn, so it counts unconditionally. A wake
+ *   clears the parked flag in the reducer (`chatQueueProcessingReceived`,
+ *   and the running-transition clear in `updateSessionFields`).
+ * - `isWaitingOnTool` on an in-flight turn is the agent executing a tool —
+ *   work, not a block.
+ * - A `Waiting` STATUS is a coarse between-turns marker with no dedicated
+ *   clear path of its own: the daemon revises it on the next
+ *   `agent:status-changed`, which is exactly the signal that can lag a
+ *   turn start (a queue drain opens the busy flags before it lands). So it
+ *   only counts when no turn is in flight; the dedicated flags above still
+ *   raise the hourglass for a genuine mid-turn block.
  */
 function isAgentBlockedWaiting(stored: StoredAgentSession): boolean {
   if (isTerminalAgentStatus(stored.status)) return false;
-  if (stored.status === AgentStatus.Waiting) return true;
   if (isAgentWaitingForOtherAgents(stored)) return true;
-  return stored.isWaitingOnTool === true && !isTurnInFlight(stored);
+  if (isTurnInFlight(stored)) return false;
+  return stored.status === AgentStatus.Waiting || stored.isWaitingOnTool === true;
 }
 
 /**
