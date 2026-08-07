@@ -2,8 +2,10 @@
  * Main-process accessor for the daemon's per-provider model catalog
  * (`models.list { providerId, forceRefresh }`, PROTOCOL §6.7).
  *
- * The daemon owns probing, parsing, TTL caching (version-keyed, persisted in
- * its data dir), and stale/fallback labeling for every provider — the FE no
+ * The daemon owns probing, parsing, caching (version-keyed, persisted in its
+ * data dir, served indefinitely — it re-probes only on a cache miss, a
+ * version-key change, or `forceRefresh`), and stale/fallback labeling for
+ * every provider — the FE no
  * longer keeps its own model caches or probe implementations. This helper is
  * the single wire seam the per-provider `GET_MODELS` IPC handlers and the
  * main-side model-override validator (`model-pool.ts`) call into.
