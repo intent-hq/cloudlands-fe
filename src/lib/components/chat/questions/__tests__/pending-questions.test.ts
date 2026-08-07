@@ -1,12 +1,16 @@
 /**
- * Pending Agent Q&A derivation (wire contract): questions on the LAST
- * assistant message with NO later user message are pending; ANY later user
- * message supersedes them; streaming/running turns never pend. Because the
- * derivation reads only the transcript, restored sessions re-surface
- * unanswered questions automatically — covered explicitly below.
+ * Pending Agent Q&A derivation (wire contract): the NEWEST question-bearing
+ * assistant message pends PERSISTENTLY — across later plain user messages and
+ * the agent's subsequent replies — until a later user row carries the
+ * matching `question_answers` metadata tag, the dismissal marker matches
+ * (wizard gate), or a newer question set supersedes it. Streaming/running
+ * turns never pend. Because the derivation reads only the transcript,
+ * restored sessions re-surface unanswered questions automatically — covered
+ * explicitly below.
  */
 import { describe, expect, it } from 'vitest';
 import { derivePendingQuestions } from '../pending-questions';
+import { buildAnswerMessageMetadata } from '../answer-message';
 import { deriveWizardPendingQuestions } from '../wizard-gate';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
@@ -59,6 +63,17 @@ function userMessage(id = 'msg-user-1'): AgentMessage {
   };
 }
 
+/** The wizard's answer message: tagged with the answered question set's id. */
+function answerMessage(answeredQuestionsMessageId: string, id = 'msg-answer-1'): AgentMessage {
+  return {
+    id,
+    role: 'user',
+    contentBlocks: [{ type: 'text', text: 'Q: Auth method\nA: OAuth' }],
+    timestamp: new Date().toISOString(),
+    metadata: buildAnswerMessageMetadata(answeredQuestionsMessageId),
+  } as unknown as AgentMessage;
+}
+
 describe('derivePendingQuestions', () => {
   it('derives questions from the last assistant message', () => {
     const msg = assistantMessage([
@@ -82,9 +97,38 @@ describe('derivePendingQuestions', () => {
     expect(derivePendingQuestions([msg], false)).toBeNull();
   });
 
-  it('returns null when ANY later user message supersedes the questions', () => {
+  it('keeps pending across a later PLAIN user message (persistent contract)', () => {
     const msg = assistantMessage([questionBlock()]);
-    expect(derivePendingQuestions([msg, userMessage()], false)).toBeNull();
+    const pending = derivePendingQuestions([msg, userMessage()], false);
+    expect(pending).not.toBeNull();
+    expect(pending!.messageId).toBe('msg-assistant-1');
+  });
+
+  it("keeps pending across the agent's later reply to a plain user message", () => {
+    const msg = assistantMessage([questionBlock()]);
+    const later = [
+      msg,
+      userMessage('msg-u1'),
+      assistantMessage([{ type: 'text', text: 'Sure, doing that.' }], { id: 'msg-a2' }),
+    ];
+    const pending = derivePendingQuestions(later, false);
+    expect(pending).not.toBeNull();
+    expect(pending!.messageId).toBe('msg-assistant-1');
+  });
+
+  it('resolves only on a later user row tagged with the matching answered id', () => {
+    const msg = assistantMessage([questionBlock()]);
+    expect(derivePendingQuestions([msg, answerMessage('msg-assistant-1')], false)).toBeNull();
+    // A tag naming a DIFFERENT question set leaves this one pending.
+    expect(derivePendingQuestions([msg, answerMessage('msg-other')], false)).not.toBeNull();
+  });
+
+  it('a newer question-bearing assistant message supersedes the older set', () => {
+    const older = assistantMessage([questionBlock()], { id: 'msg-a1' });
+    const newer = assistantMessage([questionBlock({ header: 'Second round' })], { id: 'msg-a2' });
+    const pending = derivePendingQuestions([older, userMessage('msg-u1'), newer], false);
+    expect(pending).not.toBeNull();
+    expect(pending!.messageId).toBe('msg-a2');
   });
 
   it('returns null when an optimistic pending user bubble is shown', () => {
@@ -98,10 +142,12 @@ describe('derivePendingQuestions', () => {
     expect(derivePendingQuestions([], false)).toBeNull();
   });
 
-  it('ignores questions on earlier assistant messages', () => {
+  it('a question-less later assistant message does not resolve the older set', () => {
     const earlier = assistantMessage([questionBlock()], { id: 'msg-a1' });
     const later = assistantMessage([{ type: 'text', text: 'Done.' }], { id: 'msg-a2' });
-    expect(derivePendingQuestions([earlier, userMessage(), later], false)).toBeNull();
+    const pending = derivePendingQuestions([earlier, userMessage(), later], false);
+    expect(pending).not.toBeNull();
+    expect(pending!.messageId).toBe('msg-a1');
   });
 
   it('collapses duplicate resource blocks to one question', () => {
@@ -192,10 +238,18 @@ describe('wizard gate while waiting on delegated agents', () => {
     expect(deriveWizardPendingQuestions(state, AGENT_ID, transcript)).toBeNull();
   });
 
-  it('a trailing user message (e.g. delegated-agent wake report) still supersedes', () => {
+  it('a trailing user message (e.g. delegated-agent wake report) no longer supersedes', () => {
     const state = stateWith(waitingSession);
-    const superseded = [...transcript, userMessage('msg-wake-report')];
-    expect(deriveWizardPendingQuestions(state, AGENT_ID, superseded)).toBeNull();
+    const withWake = [...transcript, userMessage('msg-wake-report')];
+    const pending = deriveWizardPendingQuestions(state, AGENT_ID, withWake);
+    expect(pending).not.toBeNull();
+    expect(pending!.messageId).toBe('msg-a1');
+  });
+
+  it('the wizard answer message (tagged) resolves the set', () => {
+    const state = stateWith(waitingSession);
+    const answered = [...transcript, answerMessage('msg-a1')];
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, answered)).toBeNull();
   });
 
   it('an optimistic pending user bubble still suppresses the wizard', () => {

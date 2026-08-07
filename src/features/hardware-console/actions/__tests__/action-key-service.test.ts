@@ -25,7 +25,11 @@ const mockState: {
   },
   workspaceAgents: { byWorkspaceId: {} },
   agentSessions: { byAgentId: {} },
-  sidebarNav: { multiSelectTabOrder: [], multiSelectSelectedTabIdsByWorkspaceId: {} },
+  sidebarNav: {
+    multiSelectTabOrder: [],
+    multiSelectSelectedTabIdsByWorkspaceId: {},
+    showCreateModal: false,
+  },
   voiceSettings: {
     isLoading: false,
     engine: 'daemon',

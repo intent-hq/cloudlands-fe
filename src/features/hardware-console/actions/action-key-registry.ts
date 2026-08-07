@@ -96,6 +96,7 @@ export interface ActionKeyState {
   sidebarNav: {
     multiSelectTabOrder: string[];
     multiSelectSelectedTabIdsByWorkspaceId: Record<string, string[]>;
+    showCreateModal: boolean;
   };
   /** Engine preference + configuration reality for the push-to-talk gate. */
   voiceSettings: EffectiveVoiceEngineInputs;
@@ -485,8 +486,8 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
     isAvailable() {
       return true;
     },
-    execute({ dispatch }) {
-      dispatch(setShowCreateModal(true));
+    execute({ state, dispatch }) {
+      dispatch(setShowCreateModal(!state.sidebarNav.showCreateModal));
     },
   },
   {
