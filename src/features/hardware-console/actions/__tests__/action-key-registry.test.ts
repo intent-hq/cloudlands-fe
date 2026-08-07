@@ -18,6 +18,14 @@ vi.mock('../../voice/voice-setup-toast', () => ({
   showVoiceSetupToast: vi.fn(),
 }));
 
+vi.mock('$features/layout/panel-layout-adapter', () => ({
+  getPanelLayoutManager: vi.fn((workspaceId: string) => ({ workspaceId })),
+}));
+
+vi.mock('$features/layout/preset-executor', () => ({
+  applyContentPreset: vi.fn(async () => true),
+}));
+
 import { isVoiceRecordingSupported } from '../../voice/voice-recorder';
 import {
   handleVoiceKeyDown,
@@ -25,6 +33,7 @@ import {
   isPttRecordingActive,
 } from '../../voice/ptt-controller';
 import { showVoiceSetupToast } from '../../voice/voice-setup-toast';
+import { applyContentPreset } from '$features/layout/preset-executor';
 import {
   ACTION_KEY_REGISTRY,
   actionSlotIcons,
@@ -988,15 +997,37 @@ describe('execute dispatch', () => {
     );
   });
 
-  it('switch-window-layouts cycles through the layout presets per workspace', () => {
-    const { context, dispatch } = makeContext(makeState());
+  it('switch-window-layouts cycles through the content presets per workspace', async () => {
+    const applyContentPresetMock = applyContentPreset as ReturnType<typeof vi.fn>;
+    applyContentPresetMock.mockClear();
+    const { context } = makeContext(makeState());
     getActionKeyDefinition('switch-window-layouts').execute(context);
+    await vi.waitFor(() => {
+      expect(applyContentPresetMock).toHaveBeenCalledTimes(1);
+    });
     getActionKeyDefinition('switch-window-layouts').execute(context);
-    const presets = dispatch.mock.calls
-      .map(([action]) => action as { type: string; payload: { preset?: string } })
-      .filter((action) => action.type === 'panelLayout/applyPreset')
-      .map((action) => action.payload.preset);
-    expect(presets).toEqual(['single', 'split-horizontal']);
+    await vi.waitFor(() => {
+      expect(applyContentPresetMock).toHaveBeenCalledTimes(2);
+    });
+    const presets = applyContentPresetMock.mock.calls.map(([presetId]) => presetId);
+    expect(presets).toEqual(['planning', 'agents-row']);
+    expect(applyContentPresetMock.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ workspaceId: 'ws-1' }),
+    );
+    expect(applyContentPresetMock.mock.calls[0][2]).toEqual(
+      expect.objectContaining({ workspaceId: 'ws-1' }),
+    );
+  });
+
+  it('switch-window-layouts catches and logs a rejected preset application', async () => {
+    const applyContentPresetMock = applyContentPreset as ReturnType<typeof vi.fn>;
+    applyContentPresetMock.mockClear();
+    applyContentPresetMock.mockRejectedValueOnce(new Error('boom'));
+    const { context } = makeContext(makeState());
+    expect(() => getActionKeyDefinition('switch-window-layouts').execute(context)).not.toThrow();
+    await vi.waitFor(() => {
+      expect(applyContentPresetMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('none executes as a no-op', () => {
