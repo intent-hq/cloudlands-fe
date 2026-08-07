@@ -383,6 +383,23 @@ export const hudReducer = createReducer<HudState>(initialState)
   .with(hudUsageLoaded, (state, { payload: [usage] }) => ({ ...state, usage, usageError: null }))
   .with(hudUsageFailed, (state, { payload: [error] }) => ({ ...state, usageError: error }))
   .with(hudRateHistoryLoaded, (state, { payload: [rateHistory] }) => {
+    // Drop stale/reordered responses: `loadRateHistory` fires independent 15s
+    // async requests, so a delayed EARLIER response can arrive after a newer
+    // one. Recency lives in the DATA, not arrival order (`fetchedAtMs` is
+    // stamped at response-processing time, so a reordered arrival still looks
+    // "new"). Compare the newest sample's `bucketUtc` (samples are
+    // chronological) against what is already stored; an incoming payload older
+    // than the stored one overwrites a more-current rate and would show a false
+    // down-trend, so ignore it entirely. Equal-or-newer proceeds as usual.
+    const incomingNewest = rateHistory.samples.at(-1)?.bucketUtc;
+    const storedNewest = state.rateHistory?.samples.at(-1)?.bucketUtc;
+    if (
+      incomingNewest !== undefined &&
+      storedNewest !== undefined &&
+      incomingNewest < storedNewest
+    ) {
+      return state;
+    }
     const burnRatePerMin = computeBurnRatePerMin(rateHistory.samples);
     // First load has no previous average to compare against (the slice resets
     // `rateHistory` to null on activation) → neutral 'none'. Otherwise the arrow

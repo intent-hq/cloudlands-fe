@@ -327,6 +327,36 @@ describe('hud-slice reducer', () => {
       expect(state.burnTrend).toBe('none');
     });
 
+    it('ignores a stale/out-of-order load older than the stored one (no false down-trend)', () => {
+      // Buckets 14:05..14:09 (newest 14:09) — the current, most-recent poll.
+      const newer = {
+        samples: [5, 6, 7, 8, 9].map((minute) => ({
+          bucketUtc: `2026-07-30T14:${String(minute).padStart(2, '0')}:00Z`,
+          tokens: 500,
+        })),
+        fetchedAtMs: 2,
+      };
+      // A delayed EARLIER poll (buckets 14:00..14:04, newest 14:04) with a
+      // much lower rate, arriving AFTER the newer response.
+      const olderDelayed = {
+        samples: [0, 1, 2, 3, 4].map((minute) => ({
+          bucketUtc: `2026-07-30T14:${String(minute).padStart(2, '0')}:00Z`,
+          tokens: 100,
+        })),
+        fetchedAtMs: 3,
+      };
+      let state = hudReducer(activeState(), hudRateHistoryLoaded(newer));
+      expect(state.burnRatePerMin).toBe(500);
+      const before = state;
+      state = hudReducer(state, hudRateHistoryLoaded(olderDelayed));
+      // The stale response is dropped wholesale — no samples/burn/trend change,
+      // and crucially no false 'down' trend from the reordered arrival.
+      expect(state).toBe(before);
+      expect(state.rateHistory).toEqual(newer);
+      expect(state.burnRatePerMin).toBe(500);
+      expect(state.burnTrend).toBe('none');
+    });
+
     it('resets to a neutral first-load trend after the HUD deactivates', () => {
       let state = hudReducer(activeState(), hudRateHistoryLoaded(history([100, 100, 100, 100, 100])));
       state = hudReducer(state, hudRateHistoryLoaded(history([600, 600, 600, 600, 600])));
