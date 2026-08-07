@@ -1109,8 +1109,9 @@
   });
 
   // Draft restore/save lifecycle (gated restore + debounced save); see
-  // chat-panel-draft.svelte.ts. While gateActive the composer blocks typing
-  // and shows the ChatDraftLoadingGate indicator.
+  // chat-panel-draft.svelte.ts. While gateActive the composer rejects focus
+  // and typing; the ChatDraftLoadingGate indicator only appears once the
+  // restore is slow enough for gateVisible to flip.
   const draftManager = createChatDraftManager({
     drafts: appClient.drafts,
     workspaceId: () => workspace?.id,
@@ -4131,7 +4132,7 @@
       {/key}
     {/if}
     {#if !pendingQuestions || questionWizardCollapsed}
-      {#if draftManager.gateActive}
+      {#if draftManager.gateVisible}
         <ChatDraftLoadingGate />
       {/if}
       <SimpleRichInput
@@ -4143,7 +4144,8 @@
         onstop={handleStop}
         onHistoryPrev={handleHistoryPrev}
         onHistoryNext={handleHistoryNext}
-        disabled={!workspace || !$agentSession$ || draftManager.gateActive}
+        disabled={!workspace || !$agentSession$}
+        inputLocked={draftManager.gateActive}
         isStreaming={$agentSessionIsStreaming$}
         isResponding={$agentIsResponding$}
         {workspace}
