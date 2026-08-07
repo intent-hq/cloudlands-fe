@@ -71,6 +71,12 @@
     resolveEffectiveIsolationMode,
     type IsolationMode,
   } from './isolation-mode';
+  import {
+    getRecentRepoLabel,
+    getWorkspaceOwnedCheckoutPaths,
+    isDaemonManagedRepoPath,
+    matchesRecentRepoSearch,
+  } from './recent-repo-display';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('RepoSelector');
@@ -185,7 +191,7 @@
   let isNewRepo = $state(false); // Track if this is a new repo creation
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let isValidPath = $state(false); // Track if the input is a valid path
-  let selectedRepoType = $state<'local' | 'github' | 'new'>('local'); // Track the type/tab of the selected repo
+  let selectedRepoType = $state<'local' | 'github' | 'new'>(repoTypeForValue(value)); // Track the type/tab of the selected repo
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let validationMessage = $state(''); // Message to show when path is invalid
   let directoryStatus = $state<{
@@ -373,15 +379,7 @@
     if (searchTerm === '') {
       return typeFiltered;
     }
-    return typeFiltered.filter((repo) => {
-      const search = searchTerm.toLowerCase();
-      return (
-        repo.name.toLowerCase().includes(search) ||
-        repo.path.toLowerCase().includes(search) ||
-        (repo.owner && repo.owner.toLowerCase().includes(search)) ||
-        (repo.owner && `${repo.owner}/${repo.name}`.toLowerCase().includes(search))
-      );
-    });
+    return typeFiltered.filter((repo) => matchesRecentRepoSearch(repo, searchTerm));
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -507,11 +505,19 @@
     highlightedIndex = -1;
   });
 
-  // Update internal state when value prop changes
+  /** Classify a value supplied via the `value` prop: an owner/repo shorthand
+   *  or GitHub URL is a GitHub pick; anything else is a local path. */
+  function repoTypeForValue(val: string): 'local' | 'github' {
+    return val && parseGitHubUrl(val) ? 'github' : 'local';
+  }
+
+  // Update internal state when value prop changes; re-derive the repo type so
+  // the dropdown opens on the tab matching the restored selection.
   $effect(() => {
     if (value && value !== selectedValue) {
       selectedValue = value;
       inputValue = value;
+      selectedRepoType = repoTypeForValue(value);
     }
   });
 
@@ -677,13 +683,18 @@
         appStore.dispatch(replaceWorkspaceList(workspaces));
       }
 
+      // GitHub-pick standalone checkouts are workspace-owned, not repos to copy from
+      const workspaceOwnedCheckouts = getWorkspaceOwnedCheckoutPaths(workspaces ?? []);
+
       // Build a map of repos by path (persistent registry first, then workspace-derived)
       const repoMap = new Map<
         string,
         { path: string; type: 'local' | 'github'; githubUrl?: string; name: string; owner?: string }
       >();
 
+      // Persisted recents may predate the daemon-managed exclusions below.
       for (const repo of $workspaceInitializerRecentRepos$) {
+        if (isDaemonManagedRepoPath(repo.path) || workspaceOwnedCheckouts.has(repo.path)) continue;
         repoMap.set(repo.path, repo);
       }
 
@@ -699,7 +710,11 @@
               name: repo.name,
               owner: repo.owner,
             });
-          } else if (repo.path && !repo.path.includes('/.clones/')) {
+          } else if (
+            repo.path &&
+            !isDaemonManagedRepoPath(repo.path) &&
+            !workspaceOwnedCheckouts.has(repo.path)
+          ) {
             repoMap.set(repo.path, {
               path: repo.path,
               type: 'local' as const,
@@ -719,8 +734,11 @@
             repo.path.startsWith('~') ||
             repo.path.startsWith('.') ||
             repo.path.includes(':\\');
-          const isLegacyClone = repo.path.includes('/.clones/');
-          if (isLocalPath && !isLegacyClone) {
+          if (
+            isLocalPath &&
+            !isDaemonManagedRepoPath(repo.path) &&
+            !workspaceOwnedCheckouts.has(repo.path)
+          ) {
             repoMap.set(repo.path, {
               path: repo.path,
               type: 'local' as const,
@@ -1692,6 +1710,7 @@
           {:else}
             <div class="">
               {#each filteredRepos() as repo, index (repo.path || repo.name)}
+                {@const label = getRecentRepoLabel(repo)}
                 <button
                   type="button"
                   class="w-full flex items-center gap-2 py-1.5 text-left hover:bg-muted/50 rounded-md px-2 pl-3 -mx-2 transition-colors cursor-pointer {index ===
@@ -1717,10 +1736,13 @@
                     />
                   {/if}
                   <span class="text-sm text-foreground truncate">
-                    {#if repo.owner}
-                      <span class="text-subtle mr-1">{repo.owner} /</span>
+                    {#if label.ownerPrefix}
+                      <span class="text-subtle mr-1">{label.ownerPrefix} /</span>
                     {/if}
-                    {repo.name}
+                    {label.primary}
+                    {#if label.suffix}
+                      <span class="text-subtle ml-1">({label.suffix})</span>
+                    {/if}
                   </span>
                 </button>
               {/each}
