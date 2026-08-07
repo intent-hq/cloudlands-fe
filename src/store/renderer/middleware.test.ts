@@ -61,6 +61,7 @@ const mocks = vi.hoisted(() => {
   const backgroundHooksMiddleware = createPassthroughMiddleware();
   const lifecycleReadMiddleware = createPassthroughMiddleware();
   const lifecycleIpcReadMiddleware = createPassthroughMiddleware();
+  const githubRepoSearchMiddleware = createPassthroughMiddleware();
   const uiLayoutPersistenceMiddleware = createPassthroughMiddleware();
   const tabStatePersistenceMiddleware = createPassthroughMiddleware();
   const panelLayoutPersistenceMiddleware = createPassthroughMiddleware();
@@ -158,6 +159,7 @@ const mocks = vi.hoisted(() => {
     createBackgroundHooksMiddleware: vi.fn(() => backgroundHooksMiddleware),
     createLifecycleReadMiddleware: vi.fn(() => lifecycleReadMiddleware),
     createLifecycleIpcReadMiddleware: vi.fn(() => lifecycleIpcReadMiddleware),
+    createGithubRepoSearchMiddleware: vi.fn(() => githubRepoSearchMiddleware),
     createUiLayoutPersistenceMiddleware: vi.fn(() => uiLayoutPersistenceMiddleware),
     createTabStatePersistenceMiddleware: vi.fn(() => tabStatePersistenceMiddleware),
     createPanelLayoutPersistenceMiddleware: vi.fn(() => panelLayoutPersistenceMiddleware),
@@ -250,6 +252,7 @@ const mocks = vi.hoisted(() => {
     backgroundHooksMiddleware,
     lifecycleReadMiddleware,
     lifecycleIpcReadMiddleware,
+    githubRepoSearchMiddleware,
     uiLayoutPersistenceMiddleware,
     tabStatePersistenceMiddleware,
     panelLayoutPersistenceMiddleware,
@@ -450,6 +453,9 @@ vi.mock('./middlewares/lifecycle-read-service', () => ({
 vi.mock('./middlewares/lifecycle-ipc-read-service', () => ({
   createLifecycleIpcReadMiddleware: mocks.createLifecycleIpcReadMiddleware,
 }));
+vi.mock('./middlewares/github-repo-search-service', () => ({
+  createGithubRepoSearchMiddleware: mocks.createGithubRepoSearchMiddleware,
+}));
 vi.mock('./middlewares/ui-layout-persistence-service', () => ({
   createUiLayoutPersistenceMiddleware: mocks.createUiLayoutPersistenceMiddleware,
 }));
@@ -633,6 +639,7 @@ describe('store middleware Redux logging gating', () => {
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
       mocks.lifecycleIpcReadMiddleware,
+      mocks.githubRepoSearchMiddleware,
       mocks.directoryPickerReadMiddleware,
       mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
@@ -726,6 +733,7 @@ describe('store middleware Redux logging gating', () => {
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
       mocks.lifecycleIpcReadMiddleware,
+      mocks.githubRepoSearchMiddleware,
       mocks.directoryPickerReadMiddleware,
       mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
@@ -819,6 +827,7 @@ describe('store middleware Redux logging gating', () => {
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
       mocks.lifecycleIpcReadMiddleware,
+      mocks.githubRepoSearchMiddleware,
       mocks.directoryPickerReadMiddleware,
       mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
@@ -913,6 +922,7 @@ describe('store middleware Redux logging gating', () => {
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
       mocks.lifecycleIpcReadMiddleware,
+      mocks.githubRepoSearchMiddleware,
       mocks.directoryPickerReadMiddleware,
       mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
@@ -1026,6 +1036,7 @@ describe('store middleware Redux logging gating', () => {
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
       mocks.lifecycleIpcReadMiddleware,
+      mocks.githubRepoSearchMiddleware,
       mocks.directoryPickerReadMiddleware,
       mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
