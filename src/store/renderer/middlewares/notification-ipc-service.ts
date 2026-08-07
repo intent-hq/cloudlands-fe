@@ -15,7 +15,20 @@
  *     carries a `navigateTarget` (main suppressed the OS banner because the
  *     app was frontmost — electron#51885: foreground banner clicks never
  *     fire), also show a clickable in-app toast that routes through the same
- *     `handleNotificationNavigate` as a native notification click.
+ *     `handleNotificationNavigate` as a native notification click. The toast
+ *     is suppressed only when THIS window is both focused
+ *     (`document.hasFocus()`) AND already viewing the target workspace's
+ *     route (`isViewingWorkspace`) — the user is looking at the workspace
+ *     the notification is about, so there is nothing to open. The focus
+ *     check matters because `notification:show` is broadcast to every
+ *     window/tab with the workspace open (main's `sendToWorkspaceWindows`):
+ *     without it, a backgrounded window merely parked on the workspace route
+ *     would wrongly swallow its own toast even while some other window is
+ *     frontmost and would otherwise show nothing (web-notification-service
+ *     parity: "Focused tab is viewing the workspace, suppressing banner").
+ *     Chief-of-staff payloads have no visible workspace route, so they are
+ *     never suppressed. The sound gate runs regardless — it stays the single
+ *     sound decision point.
  *   - `notification:navigate` → `goto(/workspace/{workspaceId})`, guarding
  *     null/missing payloads. Chief-of-staff payloads (`chief: true` or the
  *     chief virtual workspace id) open the sidebar Assistant panel and select
@@ -33,6 +46,8 @@ import {
   type NotificationNavigatePayload,
 } from "$features/notifications/notification-navigation";
 import { playNotificationSoundPerSettings } from "$features/notifications/notification-sound-gate";
+import { isViewingWorkspace } from "$features/workspace/mark-workspace-seen";
+import { CHIEF_WORKSPACE_ID } from "$shared/types/branded-ids";
 import { m } from "$shared/paraglide/messages.js";
 
 /**
@@ -70,9 +85,26 @@ interface NotificationShowEvent {
   structured?: NotificationStructuredContent;
 }
 
+/**
+ * True when the toast would only point at the page already on screen in THIS
+ * window: the window is focused AND its route is the target workspace (or a
+ * subroute of it). The focus check matters because `notification:show` is
+ * broadcast to every window/tab with the workspace open — an unfocused
+ * window parked on the workspace route must still show its toast, since no
+ * other (focused) window is guaranteed to be viewing that workspace.
+ * Chief-of-staff payloads are exempt — the chief workspace page is hidden, so
+ * its toast routes to the sidebar Assistant panel and always stays useful.
+ */
+function isToastRedundant(navigateTarget: NotificationNavigatePayload): boolean {
+  const { workspaceId } = navigateTarget;
+  if (!workspaceId) return false;
+  if (navigateTarget.chief === true || workspaceId === CHIEF_WORKSPACE_ID) return false;
+  return document.hasFocus() && isViewingWorkspace(workspaceId);
+}
+
 async function handleNotificationShow(data?: NotificationShowEvent): Promise<void> {
   await playNotificationSoundPerSettings();
-  if (data?.navigateTarget) {
+  if (data?.navigateTarget && !isToastRedundant(data.navigateTarget)) {
     await showNavigateToast(data, data.navigateTarget);
   }
 }

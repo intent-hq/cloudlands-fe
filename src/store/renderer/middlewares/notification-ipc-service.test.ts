@@ -289,6 +289,103 @@ describe('createNotificationIpcMiddleware', () => {
       expect(goto).not.toHaveBeenCalled();
     });
 
+    it('does not show a toast when this window is focused and already viewing the target workspace', async () => {
+      hasFocusSpy.mockReturnValue(true);
+      window.history.pushState({}, '', '/workspace/ws-123/tab');
+      try {
+        const { showHandler } = setupMiddleware();
+
+        await showHandler({
+          title: 'Agent',
+          body: 'Finished',
+          timestamp: 't',
+          navigateTarget: { workspaceId: 'ws-123' },
+        });
+
+        expect(mockToast).not.toHaveBeenCalled();
+        expect(mockToastCustom).not.toHaveBeenCalled();
+        expect(mockPlayNotificationSound).toHaveBeenCalledWith(0.5);
+      } finally {
+        window.history.pushState({}, '', '/');
+      }
+    });
+
+    it('shows the toast when this window is viewing the target workspace but is unfocused (another window may be foregrounded elsewhere)', async () => {
+      hasFocusSpy.mockReturnValue(false);
+      window.history.pushState({}, '', '/workspace/ws-123/tab');
+      try {
+        const { showHandler } = setupMiddleware();
+
+        await showHandler({
+          title: 'Agent',
+          body: 'Finished',
+          timestamp: 't',
+          navigateTarget: { workspaceId: 'ws-123' },
+        });
+
+        expect(mockToast).toHaveBeenCalledTimes(1);
+      } finally {
+        window.history.pushState({}, '', '/');
+      }
+    });
+
+    it('shows the toast when the window is viewing a different workspace', async () => {
+      hasFocusSpy.mockReturnValue(true);
+      window.history.pushState({}, '', '/workspace/ws-other');
+      try {
+        const { showHandler } = setupMiddleware();
+
+        await showHandler({
+          title: 'Agent',
+          body: 'Finished',
+          timestamp: 't',
+          navigateTarget: { workspaceId: 'ws-123' },
+        });
+
+        expect(mockToast).toHaveBeenCalledTimes(1);
+      } finally {
+        window.history.pushState({}, '', '/');
+      }
+    });
+
+    it('still shows a chief toast while focused and viewing the chief workspace route', async () => {
+      hasFocusSpy.mockReturnValue(true);
+      window.history.pushState({}, '', `/workspace/${CHIEF_WORKSPACE_ID}`);
+      try {
+        const { showHandler } = setupMiddleware();
+
+        await showHandler({
+          title: 'Assistant',
+          body: 'Finished',
+          timestamp: 't',
+          navigateTarget: { workspaceId: CHIEF_WORKSPACE_ID, chief: true },
+        });
+
+        expect(mockToast).toHaveBeenCalledTimes(1);
+      } finally {
+        window.history.pushState({}, '', '/');
+      }
+    });
+
+    it('treats the chief virtual workspace id as chief even without the flag, and still shows the toast', async () => {
+      hasFocusSpy.mockReturnValue(true);
+      window.history.pushState({}, '', `/workspace/${CHIEF_WORKSPACE_ID}`);
+      try {
+        const { showHandler } = setupMiddleware();
+
+        await showHandler({
+          title: 'Assistant',
+          body: 'Finished',
+          timestamp: 't',
+          navigateTarget: { workspaceId: CHIEF_WORKSPACE_ID },
+        });
+
+        expect(mockToast).toHaveBeenCalledTimes(1);
+      } finally {
+        window.history.pushState({}, '', '/');
+      }
+    });
+
     it('still shows the toast when the sound gate suppresses the sound', async () => {
       mockState.userPreferences.soundEnabled = false;
       const { showHandler } = setupMiddleware();
