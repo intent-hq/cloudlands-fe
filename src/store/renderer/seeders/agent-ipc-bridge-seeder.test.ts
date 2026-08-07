@@ -113,6 +113,23 @@ describe("agent-ipc-bridge-seeder", () => {
       });
     });
 
+    it("forwards reasoningEffort on the agent.create wire (Option B session field, §5.5)", async () => {
+      mockedRequest.mockResolvedValueOnce({ agent: { id: "agent-42", name: "Coordinator" } });
+      const request = {
+        workspaceId: WORKSPACE_ID,
+        workspacePath: "/tmp/ws",
+        model: "gpt-5.3-codex",
+        reasoningEffort: "xhigh",
+      };
+      expect(() => validateIpcRequest("agent:create", request)).not.toThrow();
+
+      await mockInvoke(AGENT_CHANNELS.CREATE, request);
+
+      const params = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(params.model).toBe("gpt-5.3-codex");
+      expect(params.reasoningEffort).toBe("xhigh");
+    });
+
     it("forwards nameExplicitlySet:false verbatim on the agent.create wire", async () => {
       // PROTOCOL §5.5: `nameExplicitlySet` is a strict boolean — `false`
       // marks a generated placeholder name and must survive the bridge

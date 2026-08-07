@@ -6,8 +6,10 @@ import {
 import { initialState as modelInitialState } from './model-slice';
 import { initialState as providerSettingsInitialState } from '../provider-settings/provider-settings-slice';
 import {
+  selectAgentModelEffortLevels,
   selectHasResolvableModel,
   selectModelDisplayName,
+  selectModelEffortLevels,
   selectSelectedModel,
 } from './model-selectors';
 import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
@@ -183,5 +185,78 @@ describe('selectModelDisplayName', () => {
     expect(
       selectModelDisplayName.select({} as unknown as StoreState, 'codex', 'gpt-5-codex'),
     ).toBeUndefined();
+  });
+});
+
+describe('selectModelEffortLevels', () => {
+  const efforts = ['low', 'medium', 'high', 'xhigh'];
+  const catalogState = () =>
+    mockState({
+      defaultProviderId,
+      availableModels: createCollection<AuggieModel, 'value'>('value', [
+        { value: 'sonnet4.6', label: 'Claude Sonnet 4.6' },
+        { value: 'codex:gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: efforts },
+        { value: 'opus4.7', label: 'Claude Opus 4.7', effortLevels: ['low', 'high'] },
+      ]),
+    });
+
+  it('returns effortLevels for a catalog row that carries them', () => {
+    expect(selectModelEffortLevels.select(catalogState(), 'codex:gpt-5.3-codex')).toEqual(efforts);
+    expect(selectModelEffortLevels.select(catalogState(), 'opus4.7')).toEqual(['low', 'high']);
+  });
+
+  it('returns undefined for models without effort support or unknown ids', () => {
+    expect(selectModelEffortLevels.select(catalogState(), 'sonnet4.6')).toBeUndefined();
+    expect(selectModelEffortLevels.select(catalogState(), 'unknown-model')).toBeUndefined();
+    expect(selectModelEffortLevels.select(catalogState(), undefined)).toBeUndefined();
+    expect(selectModelEffortLevels.select(catalogState(), null)).toBeUndefined();
+  });
+
+  it('strips a legacy codex compound {model}/{effort} suffix before the lookup', () => {
+    expect(selectModelEffortLevels.select(catalogState(), 'codex:gpt-5.3-codex/xhigh')).toEqual(
+      efforts,
+    );
+  });
+
+  it('falls back to the default-provider prefixed row for a bare session model id', () => {
+    const state = mockState({
+      defaultProviderId,
+      availableModels: createCollection<AuggieModel, 'value'>('value', [
+        { value: `${defaultProviderId}:sonnet4.6`, label: 'Claude Sonnet 4.6', effortLevels: efforts },
+      ]),
+    });
+    expect(selectModelEffortLevels.select(state, 'sonnet4.6')).toEqual(efforts);
+  });
+
+  it('returns undefined when the model slice is absent', () => {
+    expect(
+      selectModelEffortLevels.select({} as unknown as StoreState, 'sonnet4.6'),
+    ).toBeUndefined();
+  });
+});
+
+describe('selectAgentModelEffortLevels', () => {
+  it('resolves effort levels from the agent session model', () => {
+    const base = mockState({
+      defaultProviderId,
+      availableModels: createCollection<AuggieModel, 'value'>('value', [
+        { value: 'codex:gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: ['low', 'high'] },
+      ]),
+    });
+    const state = {
+      ...base,
+      agentSessions: {
+        byAgentId: {
+          a1: { id: 'a1', workspaceId: 'ws-1', model: 'codex:gpt-5.3-codex' },
+          a2: { id: 'a2', workspaceId: 'ws-1' },
+        },
+        agentIdsByWorkspace: {},
+      },
+    } as unknown as StoreState;
+
+    expect(selectAgentModelEffortLevels.select(state, 'a1')).toEqual(['low', 'high']);
+    // No model on the session (provider default) / unknown agent → undefined.
+    expect(selectAgentModelEffortLevels.select(state, 'a2')).toBeUndefined();
+    expect(selectAgentModelEffortLevels.select(state, 'unknown')).toBeUndefined();
   });
 });
