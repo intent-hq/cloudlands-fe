@@ -166,16 +166,51 @@ describe('hud-slice reducer', () => {
       return { id, displayStatus } as Workspace;
     }
 
-    it('setWorkspaceEntity retires the override for the refetched workspace', () => {
-      const state = hudReducer(withOverrides(), setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+    it('an entity that agrees with the override retires it immediately', () => {
+      const state = hudReducer(withOverrides(), setWorkspaceEntity(entity('ws-1', 'pr_open')));
       expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-2': 'in_progress' });
     });
 
-    it('replaceWorkspaceList retires overrides for every row carrying a value', () => {
-      const state = hudReducer(
+    it('the FIRST contradicting entity keeps the override (it may be an in-flight refetch)', () => {
+      const state = hudReducer(withOverrides(), setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      expect(state.displayStatusByWorkspaceId).toEqual({
+        'ws-1': 'pr_open',
+        'ws-2': 'in_progress',
+      });
+      expect(state.displayStatusOverridesContradicted).toEqual({ 'ws-1': true });
+    });
+
+    it('a SECOND contradicting entity retires the override', () => {
+      let state = hudReducer(withOverrides(), setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      state = hudReducer(state, setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-2': 'in_progress' });
+      expect(state.displayStatusOverridesContradicted).toEqual({});
+    });
+
+    it('a refetch that predates the event cannot clobber the override (reverse race)', () => {
+      // `workspace.list` starts, the event lands mid-flight, then the stale
+      // response resolves: the override must survive and keep rendering.
+      let state = hudReducer(activeState(), hudDisplayStatusChanged('ws-1', 'failed'));
+      state = hudReducer(state, replaceWorkspaceList([entity('ws-1', 'in_progress')]));
+      expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-1': 'failed' });
+    });
+
+    it('a newer event restarts the two-strike count', () => {
+      let state = hudReducer(withOverrides(), setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      state = hudReducer(state, hudDisplayStatusChanged('ws-1', 'complete'));
+      expect(state.displayStatusOverridesContradicted).toEqual({});
+      state = hudReducer(state, setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      expect(state.displayStatusByWorkspaceId['ws-1']).toBe('complete');
+    });
+
+    it('replaceWorkspaceList reconciles every row carrying a value', () => {
+      let state = hudReducer(
         withOverrides(),
-        replaceWorkspaceList([entity('ws-1', 'complete'), entity('ws-2', 'idle')]),
+        replaceWorkspaceList([entity('ws-1', 'complete'), entity('ws-2', 'in_progress')]),
       );
+      // ws-2 agreed (retired now); ws-1 contradicted once (survives).
+      expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-1': 'pr_open' });
+      state = hudReducer(state, replaceWorkspaceList([entity('ws-1', 'complete')]));
       expect(state.displayStatusByWorkspaceId).toEqual({});
     });
 

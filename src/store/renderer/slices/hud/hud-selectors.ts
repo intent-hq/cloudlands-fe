@@ -6,7 +6,8 @@
  * `agentSummary`, `taskStats` — PROTOCOL §5.1). The hud slice's live
  * `displayStatusByWorkspaceId` overrides win over the entity's enrichment
  * value so `workspace:displayStatus-changed` transitions render without a
- * refetch.
+ * refetch. An override is retired by the slice once an entity delivery shows
+ * the store has caught up (see `reconcileDisplayStatusOverride`).
  */
 
 import { store } from '../../store';

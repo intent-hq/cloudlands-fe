@@ -148,6 +148,12 @@ export interface HudState {
   attentionByWorkspaceId: Record<string, HudAttentionFlag>;
   /** Live overrides from `workspace:displayStatus-changed`. */
   displayStatusByWorkspaceId: Record<string, WorkspaceDisplayStatus>;
+  /**
+   * Ids whose live override one entity delivery has already contradicted.
+   * Second-delivery guard for the override retirement — see
+   * `reconcileDisplayStatusOverride`.
+   */
+  displayStatusOverridesContradicted: Record<string, true>;
   usage: HudUsageState | null;
   usageError: string | null;
   /** Per-minute TOK/MIN history from `stats.getRateHistory` (PROTOCOL §5.39). */
@@ -172,6 +178,7 @@ export const initialState: HudState = {
   feed: [],
   attentionByWorkspaceId: {},
   displayStatusByWorkspaceId: {},
+  displayStatusOverridesContradicted: {},
   usage: null,
   usageError: null,
   rateHistory: null,
@@ -227,26 +234,63 @@ export const hudGridFilterStatesCleared = createAction('hud/gridFilterStatesClea
 // ── Reducer ──
 
 /**
- * Retire live `displayStatus` overrides for workspaces whose entity just
- * carried a fresh BE value. The override exists only to bridge the gap
- * between a `workspace:displayStatus-changed` event and the entity catching
- * up; once the entity carries a value it is at least as fresh, so keeping the
- * override could let a stale value outlive newer BE data (e.g. after a
- * dropped event followed by a `workspace.list` refetch).
+ * Reconcile live `displayStatus` overrides against entities that just arrived
+ * carrying a BE value.
+ *
+ * The override bridges the gap between a `workspace:displayStatus-changed`
+ * event and the entity catching up, but nothing retired it, so a dropped
+ * event left a stale override winning forever. Retirement cannot simply be
+ * "an entity carries a value" though: neither delivery order nor entity
+ * freshness is guaranteed. The daemon derives `displayStatus` at serve time
+ * (PROTOCOL §5.1), so a `workspace.list` issued BEFORE the event can resolve
+ * after it and carry the older value — clearing on that response would
+ * reintroduce the very staleness the override exists to cover.
+ *
+ * Two-strike rule: the FIRST entity delivery that disagrees with an override
+ * is assumed to be that in-flight response and only marks the override
+ * contradicted; a SECOND disagreeing delivery retires it (an in-flight
+ * response cannot predate the event twice, so by then the entity is the
+ * fresher value). An entity that AGREES with the override retires it
+ * immediately — the entity has caught up and the override is redundant — and
+ * also clears the contradicted mark, since agreement proves the store is
+ * current as of the override.
  */
-function clearDisplayStatusOverrides(state: HudState, workspaceIds: string[]): HudState {
-  const stale = workspaceIds.filter((id) => id in state.displayStatusByWorkspaceId);
-  if (stale.length === 0) return state;
-  const next = { ...state.displayStatusByWorkspaceId };
-  for (const id of stale) delete next[id];
-  return { ...state, displayStatusByWorkspaceId: next };
-}
+function reconcileDisplayStatusOverride(state: HudState, workspaces: readonly Workspace[]) {
+  let overrides = state.displayStatusByWorkspaceId;
+  let contradicted = state.displayStatusOverridesContradicted;
+  let changed = false;
 
-/** Ids of entities that carry a `displayStatus` (absent = nothing fresher). */
-function entityIdsCarryingDisplayStatus(workspaces: readonly Workspace[]): string[] {
-  return workspaces
-    .filter((workspace) => workspace.displayStatus !== undefined)
-    .map((workspace) => String(workspace.id));
+  for (const workspace of workspaces) {
+    const id = String(workspace.id);
+    const override = overrides[id];
+    // An entity without a value carries nothing fresher — leave it alone.
+    if (override === undefined || workspace.displayStatus === undefined) continue;
+
+    const retire = workspace.displayStatus === override || contradicted[id] === true;
+    if (!retire) {
+      if (!changed) {
+        overrides = { ...overrides };
+        contradicted = { ...contradicted };
+        changed = true;
+      }
+      contradicted[id] = true;
+      continue;
+    }
+    if (!changed) {
+      overrides = { ...overrides };
+      contradicted = { ...contradicted };
+      changed = true;
+    }
+    delete overrides[id];
+    delete contradicted[id];
+  }
+
+  if (!changed) return state;
+  return {
+    ...state,
+    displayStatusByWorkspaceId: overrides,
+    displayStatusOverridesContradicted: contradicted,
+  };
 }
 
 export const hudReducer = createReducer<HudState>(initialState)
@@ -282,19 +326,26 @@ export const hudReducer = createReducer<HudState>(initialState)
       },
     };
   })
-  .with(hudDisplayStatusChanged, (state, { payload: [workspaceId, displayStatus] }) => ({
-    ...state,
-    displayStatusByWorkspaceId: {
-      ...state.displayStatusByWorkspaceId,
-      [workspaceId]: displayStatus,
-    },
-  }))
-  // Entity refetches retire the live override (see `clearDisplayStatusOverrides`).
+  .with(hudDisplayStatusChanged, (state, { payload: [workspaceId, displayStatus] }) => {
+    // A newer event restarts the two-strike count: entity deliveries that
+    // contradicted the PREVIOUS override say nothing about this one.
+    const contradicted = { ...state.displayStatusOverridesContradicted };
+    delete contradicted[workspaceId];
+    return {
+      ...state,
+      displayStatusByWorkspaceId: {
+        ...state.displayStatusByWorkspaceId,
+        [workspaceId]: displayStatus,
+      },
+      displayStatusOverridesContradicted: contradicted,
+    };
+  })
+  // Entity deliveries reconcile the override (see `reconcileDisplayStatusOverride`).
   .with(setWorkspaceEntity, (state, { payload: [workspace] }) =>
-    clearDisplayStatusOverrides(state, entityIdsCarryingDisplayStatus([workspace])),
+    reconcileDisplayStatusOverride(state, [workspace]),
   )
   .with(replaceWorkspaceList, (state, { payload: [workspaces] }) =>
-    clearDisplayStatusOverrides(state, entityIdsCarryingDisplayStatus(workspaces)),
+    reconcileDisplayStatusOverride(state, workspaces),
   )
   .with(hudUsageLoaded, (state, { payload: [usage] }) => ({ ...state, usage, usageError: null }))
   .with(hudUsageFailed, (state, { payload: [error] }) => ({ ...state, usageError: error }))
