@@ -2403,6 +2403,7 @@
   "hud_feedKind_agentDeleted_label": "에이전트 삭제",
   "hud_feedKind_agentRunning_label": "에이전트 실행 중",
   "hud_feedKind_agentWaiting_label": "에이전트 대기 중",
+  "hud_feedKind_taskCreated_label": "작업 생성",
   "hud_feedKind_taskStatusChanged_label": "작업 상태",
   "hud_feedKind_displayStatusChanged_label": "작업 공간 상태",
   "hud_feedKind_attentionChanged_label": "주의",

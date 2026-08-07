@@ -4427,6 +4427,91 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
     expect(taskListCalls(BURST_WS)).toHaveLength(1);
   });
 
+  it('task:created on an initialized workspace triggers the same debounced task.list refetch', async () => {
+    const CREATED_WS = 'ws-bridge-tasks-created';
+    const { loadWorkspaceTasksSucceeded } =
+      await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(CREATED_WS, [], { total: 0, completed: 0, inProgress: 0 }),
+    );
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    backendRequestSpy.mockImplementation((method: string) =>
+      method === 'task.list'
+        ? Promise.resolve({
+            tasks: [{ id: 'task-new', title: 'Ship HUD', status: 'not_started' }],
+            stats: { total: 1, completed: 0, inProgress: 0 },
+          })
+        : undefined,
+    );
+
+    vi.useFakeTimers();
+    // PROTOCOL §6.5 task:created payload.
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-task-created-1',
+          workspaceId: CREATED_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'task:created',
+          actor: { type: 'agent', id: AGENT },
+          data: {
+            noteId: 'task-new',
+            noteTitle: 'Ship HUD',
+            status: 'not_started',
+            createdAt: '2026-01-02T00:00:00.000Z',
+            agentId: AGENT,
+          },
+        },
+      },
+    });
+
+    // Debounced: no wire call before the ~1s window elapses.
+    expect(taskListCalls(CREATED_WS)).toHaveLength(0);
+    vi.advanceTimersByTime(1000);
+
+    expect(taskListCalls(CREATED_WS)).toHaveLength(1);
+    expect(backendRequestSpy).toHaveBeenCalledWith('task.list', { workspaceId: CREATED_WS });
+
+    vi.useRealTimers();
+    await flush();
+    const wsState = (
+      appStore.state as { workspaceTasks: { byWorkspaceId: Record<string, { stats: unknown }> } }
+    ).workspaceTasks.byWorkspaceId[CREATED_WS];
+    expect(wsState.stats).toEqual({ total: 1, completed: 0, inProgress: 0 });
+  });
+
+  it('task:created on a workspace whose tasks slice is not initialized does NOT fetch', async () => {
+    const UNINIT_CREATED_WS = 'ws-bridge-tasks-created-uninit';
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-task-created-2',
+          workspaceId: UNINIT_CREATED_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'task:created',
+          actor: { type: 'system' },
+          data: {
+            noteId: 'task-x',
+            noteTitle: 'Unviewed',
+            status: 'not_started',
+            createdAt: '2026-01-02T00:00:00.000Z',
+          },
+        },
+      },
+    });
+    vi.advanceTimersByTime(2000);
+
+    expect(taskListCalls(UNINIT_CREATED_WS)).toHaveLength(0);
+  });
+
   it('a pending refetch is dropped if the tasks slice is cleared during the debounce window', async () => {
     const CLEARED_WS = 'ws-bridge-tasks-cleared';
     const { loadWorkspaceTasksSucceeded, clearWorkspaceTasks } =
