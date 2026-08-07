@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.19.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.18.0...v2.19.0) (2026-08-07)
+
+
+### 🚀 Features
+
+* PR monitor settings toggle, per-agent monitored-PRs row, PR-list integration (ws.pr.monitor) ([#842](https://github.com/intent-hq/cloudlands-fe/issues/842)) ([67ee231](https://github.com/intent-hq/cloudlands-fe/commit/67ee2311e18d0fb916d0f078d5429abd5cf4e41d))
+
+
+### 🐛 Bug Fixes
+
+* override isbinaryfile to ^5.0.7 to fix macOS signing crash ([#843](https://github.com/intent-hq/cloudlands-fe/issues/843)) ([a5c5d9a](https://github.com/intent-hq/cloudlands-fe/commit/a5c5d9ac047c12810bba155e4c96cef76097f06d))
+
 ## [2.18.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.17.0...v2.18.0) (2026-08-07)
 
 
