@@ -29,6 +29,8 @@ import {
   MULTISELECT_SIDEBAR_TAB_ORDER_KEY,
   initialState as sidebarNavInitialState,
 } from "../slices/sidebar-nav/sidebar-nav-slice";
+import { connectionsListReceived } from "../slices/connections/connections-slice";
+import { LOCAL_CONNECTION_ID } from "$shared/types/connections";
 
 vi.mock("$lib/utils/safe-storage", () => ({
   safeLocalStorage: {
@@ -473,6 +475,120 @@ describe("sidebar-nav-persistence-service", () => {
 
       expect(safeLocalStorage.setJSON).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("sidebar-nav-persistence-service — backend namespacing", () => {
+  const REMOTE = "mock-10.0.0.9:5181";
+  const REMOTE_PINNED_KEY = `backend:${REMOTE}:${PINNED_WORKSPACES_KEY}`;
+  const REMOTE_TAB_ORDER_KEY = `backend:${REMOTE}:${MULTISELECT_SIDEBAR_TAB_ORDER_KEY}`;
+  const REMOTE_CHIEF_KEY = `backend:${REMOTE}:${CHIEF_ACTIVE_AGENT_ID_KEY}`;
+
+  let dispatchSpy: ReturnType<typeof vi.fn>;
+  let activeIdRef: { current: string };
+  let mockApi: StoreApi;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(safeLocalStorage.getItem).mockReturnValue(null);
+    vi.mocked(safeLocalStorage.getJSON).mockReturnValue(undefined);
+    dispatchSpy = vi.fn();
+    activeIdRef = { current: LOCAL_CONNECTION_ID };
+    mockApi = {
+      dispatch: dispatchSpy,
+      getState: () =>
+        ({
+          sidebarNav: sidebarNavInitialState,
+          connections: { activeId: activeIdRef.current },
+        }) as StoreState,
+    } as unknown as StoreApi;
+  });
+
+  it("local backend persists to the legacy un-namespaced key (migration)", () => {
+    const chain = createSidebarNavPersistenceMiddleware()(mockApi)(vi.fn((a) => a));
+    mockApi.getState = () =>
+      ({
+        sidebarNav: { ...sidebarNavInitialState, pinnedWorkspaceIds: ["ws-1"] },
+        connections: { activeId: LOCAL_CONNECTION_ID },
+      }) as StoreState;
+    chain(setPinnedWorkspaceIds(["ws-1"]));
+    expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(PINNED_WORKSPACES_KEY, ["ws-1"]);
+  });
+
+  it("remote backend persists pins/tab-order/chief to backend-prefixed keys", () => {
+    activeIdRef.current = REMOTE;
+    const chain = createSidebarNavPersistenceMiddleware()(mockApi)(vi.fn((a) => a));
+
+    mockApi.getState = () =>
+      ({
+        sidebarNav: { ...sidebarNavInitialState, pinnedWorkspaceIds: ["ws-r"] },
+        connections: { activeId: REMOTE },
+      }) as StoreState;
+    chain(setPinnedWorkspaceIds(["ws-r"]));
+    expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(REMOTE_PINNED_KEY, ["ws-r"]);
+    expect(safeLocalStorage.setJSON).not.toHaveBeenCalledWith(PINNED_WORKSPACES_KEY, ["ws-r"]);
+
+    mockApi.getState = () =>
+      ({
+        sidebarNav: { ...sidebarNavInitialState, multiSelectTabOrder: ["a", "b"] },
+        connections: { activeId: REMOTE },
+      }) as StoreState;
+    chain(setMultiSelectSidebarTabOrder(["a", "b"]));
+    expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(REMOTE_TAB_ORDER_KEY, ["a", "b"]);
+
+    mockApi.getState = () =>
+      ({
+        sidebarNav: { ...sidebarNavInitialState, chiefActiveAgentId: "agent-r" },
+        connections: { activeId: REMOTE },
+      }) as StoreState;
+    chain(setChiefActiveAgentId("agent-r"));
+    expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(REMOTE_CHIEF_KEY, "agent-r");
+  });
+
+  it("global UI prefs (view mode, panel width) stay un-namespaced for remote backends", () => {
+    activeIdRef.current = REMOTE;
+    const chain = createSidebarNavPersistenceMiddleware()(mockApi)(vi.fn((a) => a));
+    mockApi.getState = () =>
+      ({
+        sidebarNav: { ...sidebarNavInitialState, panelWidth: 400 },
+        connections: { activeId: REMOTE },
+      }) as StoreState;
+    chain(setPanelWidth(400));
+    expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(PANEL_WIDTH_KEY, 400);
+  });
+
+  it("hydrates from backend-prefixed keys when the active backend is remote", () => {
+    activeIdRef.current = REMOTE;
+    vi.mocked(safeLocalStorage.getJSON).mockImplementation((key) => {
+      if (key === REMOTE_PINNED_KEY) return ["ws-remote"];
+      if (key === REMOTE_TAB_ORDER_KEY) return ["ctx"];
+      return undefined;
+    });
+    createSidebarNavPersistenceMiddleware()(mockApi);
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      hydrateSidebarNav({ pinnedWorkspaceIds: ["ws-remote"], multiSelectTabOrder: ["ctx"] }),
+    );
+  });
+
+  it("re-hydrates per-backend keys on a backend switch, resetting absent ones", () => {
+    // Boot as local (nothing stored → no hydrate on boot).
+    const chain = createSidebarNavPersistenceMiddleware()(mockApi)(vi.fn((a) => a));
+
+    // Remote has its own pinned workspaces stored; no tab order / chief.
+    vi.mocked(safeLocalStorage.getJSON).mockImplementation((key) => {
+      if (key === REMOTE_PINNED_KEY) return ["ws-remote-a"];
+      return undefined;
+    });
+    activeIdRef.current = REMOTE;
+    chain(connectionsListReceived({ connections: [], activeId: REMOTE }));
+
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      hydrateSidebarNav({
+        pinnedWorkspaceIds: ["ws-remote-a"],
+        chiefActiveAgentId: null,
+        multiSelectTabOrder: [],
+      }),
+    );
   });
 });
 

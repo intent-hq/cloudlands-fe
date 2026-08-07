@@ -55,6 +55,18 @@ import {
   unmarkWorkspaceTabOptimistic,
   WORKSPACE_TABS_STORAGE_KEY,
 } from "../slices/tab-state/tab-state-slice";
+import { connectionsListReceived } from "../slices/connections/connections-slice";
+import { getActiveBackendId, namespaceBackendKey } from "./backend-storage-namespace";
+
+/** Empty persisted tab strip — used to reset when a backend has none stored. */
+const EMPTY_WORKSPACE_TABS: PersistedWorkspaceTabsState = {
+  openTabs: [],
+  currentTabId: null,
+  pinnedTabs: [],
+  unsavedTabs: [],
+  optimisticTabs: [],
+  tabOrder: [],
+};
 
 /** Actions whose reducer changes workspace-tab state and needs a write-back. */
 const TAB_PERSIST_ACTION_TYPES = new Set<string>([
@@ -106,26 +118,34 @@ function isScrollPositionsMap(value: unknown): value is Record<string, number> {
   );
 }
 
-function loadStoredWorkspaceTabs(): PersistedWorkspaceTabsState | undefined {
-  const stored = safeLocalStorage.getJSON<unknown>(WORKSPACE_TABS_STORAGE_KEY);
+function tabsKey(backendId: string): string {
+  return namespaceBackendKey(WORKSPACE_TABS_STORAGE_KEY, backendId);
+}
+
+function scrollKey(backendId: string): string {
+  return namespaceBackendKey(TAB_SCROLL_POSITIONS_STORAGE_KEY, backendId);
+}
+
+function loadStoredWorkspaceTabs(backendId: string): PersistedWorkspaceTabsState | undefined {
+  const stored = safeLocalStorage.getJSON<unknown>(tabsKey(backendId));
   return isPersistedWorkspaceTabsState(stored) ? stored : undefined;
 }
 
-function loadStoredScrollPositions(): Record<string, number> | undefined {
-  const stored = safeLocalStorage.getJSON<unknown>(TAB_SCROLL_POSITIONS_STORAGE_KEY);
+function loadStoredScrollPositions(backendId: string): Record<string, number> | undefined {
+  const stored = safeLocalStorage.getJSON<unknown>(scrollKey(backendId));
   return isScrollPositionsMap(stored) ? stored : undefined;
 }
 
 function persistWorkspaceTabsState(state: StoreState): void {
   safeLocalStorage.setJSON(
-    WORKSPACE_TABS_STORAGE_KEY,
+    tabsKey(getActiveBackendId(state)),
     serializeWorkspaceTabsState(state.tabState),
   );
 }
 
 function persistScrollPositions(state: StoreState): void {
   safeLocalStorage.setJSON(
-    TAB_SCROLL_POSITIONS_STORAGE_KEY,
+    scrollKey(getActiveBackendId(state)),
     state.tabState.scrollPositions,
   );
 }
@@ -138,12 +158,14 @@ function persistScrollPositions(state: StoreState): void {
  */
 export function createTabStatePersistenceMiddleware(): StoreMiddleware {
   return (api) => {
-    const scrollPositions = loadStoredScrollPositions();
+    let lastBackendId = getActiveBackendId(api.getState() as StoreState);
+
+    const scrollPositions = loadStoredScrollPositions(lastBackendId);
     if (scrollPositions) {
       api.dispatch(loadScrollPositions(scrollPositions));
     }
 
-    const workspaceTabs = loadStoredWorkspaceTabs();
+    const workspaceTabs = loadStoredWorkspaceTabs(lastBackendId);
     if (workspaceTabs) {
       api.dispatch(loadWorkspaceTabsState(workspaceTabs));
     }
@@ -151,6 +173,20 @@ export function createTabStatePersistenceMiddleware(): StoreMiddleware {
     return (next) => (action) => {
       const result = next(action);
       if (action) {
+        // Backend switched (activeId flipped via the boot connections:list
+        // refresh after a window reload): re-hydrate the incoming backend's
+        // tab strip + scroll positions, resetting to empty when it has none so
+        // the previous backend's tabs don't linger.
+        if (action.type === connectionsListReceived.type) {
+          const nextBackendId = getActiveBackendId(api.getState() as StoreState);
+          if (nextBackendId !== lastBackendId) {
+            lastBackendId = nextBackendId;
+            api.dispatch(loadScrollPositions(loadStoredScrollPositions(nextBackendId) ?? {}));
+            api.dispatch(
+              loadWorkspaceTabsState(loadStoredWorkspaceTabs(nextBackendId) ?? EMPTY_WORKSPACE_TABS),
+            );
+          }
+        }
         if (TAB_PERSIST_ACTION_TYPES.has(action.type)) {
           // Guard against boot-time clobber (STAB-26): if cleanupInvalidWorkspaceTabs
           // fires before the workspace list has loaded, skip persisting the cleanup result.
