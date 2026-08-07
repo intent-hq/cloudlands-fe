@@ -11,74 +11,36 @@
   BACKGROUND_AGENT_TYPE_INFO,
   setDefaultModel,
   setTypeOverride,
+  type BackgroundAgentType,
 } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
   import {
   selectBgDefaultModel,
   selectBgTypeOverrides,
   selectHasOverride,
 } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
-  import { selectAvailableModels } from '$store/renderer/slices/model/model-selectors';
+  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { isEnhancePromptAvailable } from '$lib/client/live/live-prompt-enhancement';
 
-  import {
-  Dropdown,
-  type DropdownOption,
-} from '$lib/components/ui/dropdown';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
-  import Fa from 'svelte-fa';
-  import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
-  const availableModels$ = selectAvailableModels();
   const defaultModel = selectBgDefaultModel();
   const typeOverrides$ = selectBgTypeOverrides();
   const hasCommitOverride$ = selectHasOverride('commit');
   const hasPrOverride$ = selectHasOverride('pr');
   const hasFastOverride$ = selectHasOverride('fast');
+  const effectiveProviderId$ = selectEffectiveDefaultProviderId();
 
-  const USE_DEFAULT_VALUE = '__default__';
+  // §5.31 gate mirror: `agent.enhancePrompt` (the `fast` consumer for prompt
+  // enhancement and layout suggestions) stays auggie-only even though
+  // `agent.completeOnce` (§5.32) is provider-neutral.
+  // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pure predicate (string equality), not a data fetch; rule misfires on the '/client/' import source
+  const fastEnhanceUnavailable = $derived(!isEnhancePromptAvailable($effectiveProviderId$));
 
-  // Local state for type overrides - use '__default__' for empty values
-  let commitOverride = $state($typeOverrides$.commit || USE_DEFAULT_VALUE);
-  let prOverride = $state($typeOverrides$.pr || USE_DEFAULT_VALUE);
-  let fastOverride = $state($typeOverrides$.fast || USE_DEFAULT_VALUE);
-
-  // Sync overrides from store
-  $effect(() => {
-    commitOverride = $typeOverrides$.commit || USE_DEFAULT_VALUE;
-  });
-  $effect(() => {
-    prOverride = $typeOverrides$.pr || USE_DEFAULT_VALUE;
-  });
-  $effect(() => {
-    fastOverride = $typeOverrides$.fast || USE_DEFAULT_VALUE;
-  });
-
-  // Handle override changes - update both local state and store
-  function handleOverrideChange(type: 'commit' | 'pr' | 'fast', value: string) {
-    // Update local state
-    if (type === 'commit') commitOverride = value;
-    else if (type === 'pr') prOverride = value;
-    else if (type === 'fast') fastOverride = value;
-
-    // Update store (convert sentinel value to empty string)
-    const storeValue = value === USE_DEFAULT_VALUE ? '' : value;
-    appStore.dispatch(setTypeOverride({ type, model: storeValue }));
-  }
-
-  // Model options for override dropdowns - includes "Use default" option
-  const overrideModelOptions = $derived<DropdownOption[]>([
-    { value: USE_DEFAULT_VALUE, label: m.settings_backgroundAgent_useDefaultOption() },
-    ...$availableModels$.map((model) => ({
-      value: model.value,
-      label: model.label,
-    })),
-  ]);
-
-  // Get display label for an override value
-  function getOverrideLabel(value: string): string {
-    if (value === USE_DEFAULT_VALUE) return m.settings_backgroundAgent_useDefaultOption();
-    return $availableModels$.find((model) => model.value === value)?.label || value;
+  // ModelPicker reports "use default" as '' — stored verbatim as a cleared override.
+  function handleOverrideChange(type: BackgroundAgentType, model: string) {
+    appStore.dispatch(setTypeOverride({ type, model }));
   }
 </script>
 
@@ -124,19 +86,16 @@
         <p class="text-xs text-subtle mt-0.5">{BACKGROUND_AGENT_TYPE_INFO.commit.description}</p>
       </div>
       <div class="shrink-0 w-72">
-        <Dropdown
-          value={commitOverride}
-          options={overrideModelOptions}
-          onchange={(value) => handleOverrideChange('commit', value as string)}
+        <ModelPicker
+          selectedModel={$typeOverrides$.commit || undefined}
+          onModelChange={(model) => handleOverrideChange('commit', model)}
+          showManageLink={false}
+          showDefaultOption={true}
+          defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
+          defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
+          defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
           variant="default"
-          size="sm"
-          contentClass="min-w-[280px]"
-        >
-          {#snippet trigger()}
-            <span class="truncate flex-1 text-left">{getOverrideLabel(commitOverride)}</span>
-            <Fa icon={faChevronDown} class="h-2! w-2! opacity-50 shrink-0" />
-          {/snippet}
-        </Dropdown>
+        />
       </div>
     </div>
 
@@ -156,19 +115,16 @@
         <p class="text-xs text-subtle mt-0.5">{BACKGROUND_AGENT_TYPE_INFO.pr.description}</p>
       </div>
       <div class="shrink-0 w-72">
-        <Dropdown
-          value={prOverride}
-          options={overrideModelOptions}
-          onchange={(value) => handleOverrideChange('pr', value as string)}
+        <ModelPicker
+          selectedModel={$typeOverrides$.pr || undefined}
+          onModelChange={(model) => handleOverrideChange('pr', model)}
+          showManageLink={false}
+          showDefaultOption={true}
+          defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
+          defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
+          defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
           variant="default"
-          size="sm"
-          contentClass="min-w-[280px]"
-        >
-          {#snippet trigger()}
-            <span class="truncate flex-1 text-left">{getOverrideLabel(prOverride)}</span>
-            <Fa icon={faChevronDown} class="h-2! w-2! opacity-50 shrink-0" />
-          {/snippet}
-        </Dropdown>
+        />
       </div>
     </div>
 
@@ -186,21 +142,23 @@
           {/if}
         </div>
         <p class="text-xs text-subtle mt-0.5">{BACKGROUND_AGENT_TYPE_INFO.fast.description}</p>
+        {#if fastEnhanceUnavailable}
+          <p class="text-xs text-subtle mt-1" data-testid="fast-auggie-only-note">
+            {m.settings_backgroundAgent_fastAuggieOnlyNote()}
+          </p>
+        {/if}
       </div>
       <div class="shrink-0 w-72">
-        <Dropdown
-          value={fastOverride}
-          options={overrideModelOptions}
-          onchange={(value) => handleOverrideChange('fast', value as string)}
+        <ModelPicker
+          selectedModel={$typeOverrides$.fast || undefined}
+          onModelChange={(model) => handleOverrideChange('fast', model)}
+          showManageLink={false}
+          showDefaultOption={true}
+          defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
+          defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
+          defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
           variant="default"
-          size="sm"
-          contentClass="min-w-[280px]"
-        >
-          {#snippet trigger()}
-            <span class="truncate flex-1 text-left">{getOverrideLabel(fastOverride)}</span>
-            <Fa icon={faChevronDown} class="h-2! w-2! opacity-50 shrink-0" />
-          {/snippet}
-        </Dropdown>
+        />
       </div>
     </div>
   </div>

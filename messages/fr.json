@@ -176,6 +176,8 @@
   "settings_backgroundAgent_useDefaultOption": "Utiliser le modèle par défaut des actions rapides",
   "settings_backgroundAgent_customBadge": "Personnalisé",
   "settings_backgroundAgent_providerDefault_description": "Utiliser le modèle par défaut de la CLI du fournisseur",
+  "settings_backgroundAgent_useDefault_description": "Revenir au modèle par défaut des actions rapides",
+  "settings_backgroundAgent_fastAuggieOnlyNote": "L'amélioration des prompts et les suggestions de mise en page nécessitent Auggie. Passez à Auggie comme fournisseur pour les utiliser.",
   "settings_gitWorkspace_loadError": "Impossible de charger les paramètres depuis le backend.",
   "settings_gitWorkspace_saveError": "Impossible d'enregistrer les paramètres. Veuillez réessayer.",
   "settings_gitWorkspace_shell_autoDetect": "Détection automatique (par défaut du système)",
