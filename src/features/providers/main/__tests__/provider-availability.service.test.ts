@@ -11,7 +11,6 @@ import { CLAUDE_CODE_NPX_MISSING_WARNING } from '../../../../shared/constants/cl
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Function>(),
   findBinary: vi.fn(),
-  ensureManagedCodexAcp: vi.fn(),
   backendRequest: vi.fn(),
   findAuggiePathAsync: vi.fn(),
   hostExec: vi.fn(),
@@ -28,11 +27,6 @@ vi.mock('electron', () => ({
 vi.mock('../../../../shared/main/find-binary', () => ({
   findBinary: mocks.findBinary,
   getCommonNpmPaths: vi.fn(() => []),
-}));
-
-vi.mock('../../../codex/main/codex-acp-manager', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../codex/main/codex-acp-manager')>()),
-  ensureManagedCodexAcp: mocks.ensureManagedCodexAcp,
 }));
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
@@ -123,7 +117,7 @@ describe('provider availability service', () => {
     mocks.backendRequest.mockRejectedValue(new Error('unrouted daemon method'));
   });
 
-  it('does not call managed codex-acp installation while checking Codex availability', async () => {
+  it('keys the Codex single check off the daemon-resolved codex CLI', async () => {
     const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
     setupProviderAvailabilityIPC();
     const handler = mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE);
@@ -137,7 +131,6 @@ describe('provider availability service', () => {
       data: { available: false, hasNpxFallback: true },
     });
     expect(mocks.findBinary).toHaveBeenCalledWith('codex', expect.any(Object));
-    expect(mocks.ensureManagedCodexAcp).not.toHaveBeenCalled();
   });
 
   it('surfaces the npx-missing warning on the discovery path when the claude CLI is installed', async () => {

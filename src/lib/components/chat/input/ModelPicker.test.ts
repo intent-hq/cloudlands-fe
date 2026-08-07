@@ -84,11 +84,6 @@ vi.mock('$store/renderer/store', async () => {
 
 const providerWarnings$ = writable<Record<string, string>>({});
 const providerStaleFlags$ = writable<Record<string, boolean>>({});
-const codexManagedInstallStatus$ = writable<{
-  managedInstallState: string;
-  version?: string;
-  downloadProgress?: number;
-} | null>(null);
 const mockSvelteDispatch = vi.hoisted(() => vi.fn((action: { type?: string; payload?: unknown }) => {
   if (action.type === 'model/setLoadingStateForProvider' && Array.isArray(action.payload)) {
     const [payload] = action.payload as [
@@ -156,7 +151,6 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 
 const hasCheckedOnce$ = writable(true);
 vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
-  selectManagedInstallStatusByProvider: () => codexManagedInstallStatus$,
   selectHasCheckedOnce: () => hasCheckedOnce$,
 }));
 
@@ -322,7 +316,6 @@ describe('ModelPicker multi-provider mode', () => {
       { value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' },
     ];
     providerWarnings$.set({});
-    codexManagedInstallStatus$.set(null);
     mockSvelteDispatch.mockClear();
     vi.mocked(getModelsForProvider).mockResolvedValue([
       { value: 'model-1', label: 'Model 1', description: 'A model' },
@@ -652,26 +645,6 @@ describe('ModelPicker multi-provider mode', () => {
     expect(screen.queryByText('Showing default model list.')).toBeNull();
   });
 
-  it('shows a transient Codex setup notice while managed install is running', async () => {
-    codexManagedInstallStatus$.set({
-      managedInstallState: 'installing',
-      version: '0.16.0',
-      downloadProgress: 0.42,
-    });
-    enabledProviderIds$.set(['codex']);
-
-    render(ModelPicker, {
-      props: {
-        selectedModel: 'codex:gpt-5-codex',
-        variant: 'default',
-        portal: false,
-      },
-    });
-
-    expect(await screen.findByText('Setting up Codex…')).toBeTruthy();
-    expect(screen.getByText('Download progress: 42%.')).toBeTruthy();
-  });
-
   it('shows the real provider error when the only enabled provider fails', async () => {
     vi.mocked(getModelsForProvider).mockRejectedValue(new Error('Auggie: CLI not found'));
     enabledProviderIds$.set(['auggie']);
@@ -847,7 +820,6 @@ describe('ModelPicker availability gating', () => {
     mockModelState.loadError = null;
     mockModelState.availableModels = [];
     providerWarnings$.set({});
-    codexManagedInstallStatus$.set(null);
     mockSvelteDispatch.mockClear();
     vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models: [] });
     enabledProviderIds$.set(['auggie']);
@@ -1076,7 +1048,6 @@ describe('ModelPicker selected-model loading state', () => {
     mockModelState.availableModels = [];
     mockModelState.availableModelsProviderId = '';
     providerWarnings$.set({});
-    codexManagedInstallStatus$.set(null);
     mockSvelteDispatch.mockClear();
     vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models: [] });
     enabledProviderIds$.set(['auggie']);
@@ -1190,7 +1161,6 @@ describe('ModelPicker unlocked agent provider handling', () => {
       { value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' },
     ];
     providerWarnings$.set({});
-    codexManagedInstallStatus$.set(null);
     mockAgentSession$.set(undefined);
     vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
       if (providerId === 'codex') {
@@ -1429,7 +1399,6 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
       { value: 'model-1', label: 'Model 1', description: 'A model' },
     ];
     providerWarnings$.set({});
-    codexManagedInstallStatus$.set(null);
     mockAgentSession$.set(undefined);
     mockSvelteDispatch.mockClear();
     vi.mocked(getModelsForProvider).mockResolvedValue([
@@ -1563,7 +1532,6 @@ describe('ModelPicker confirmModelChange gate', () => {
       { value: 'model-1', label: 'Model 1', description: 'A model' },
     ];
     providerWarnings$.set({});
-    codexManagedInstallStatus$.set(null);
     mockAgentSession$.set(undefined);
     vi.mocked(getModelsForProvider).mockResolvedValue([
       { value: 'model-1', label: 'Model 1', description: 'A model' },
@@ -1705,7 +1673,6 @@ describe('ModelPicker specialist inherit state (default-option plumbing)', () =>
       { value: 'model-1', label: 'Model 1', description: 'A model' },
     ];
     providerWarnings$.set({});
-    codexManagedInstallStatus$.set(null);
     mockAgentSession$.set(undefined);
     vi.mocked(getModelsForProvider).mockResolvedValue([
       { value: 'model-1', label: 'Model 1', description: 'A model' },

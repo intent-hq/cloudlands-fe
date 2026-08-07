@@ -48,10 +48,7 @@
   setModelPickerGroupCollapsed,
 } from '$store/renderer/slices/model/model-slice';
   import type { ModelFallbackInfo } from '$store/renderer/slices/model/model-types';
-  import {
-  selectHasCheckedOnce,
-  selectManagedInstallStatusByProvider,
-} from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+  import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import { selectDaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { ensureProvidersChecked } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import {
@@ -87,7 +84,6 @@
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
-  import { formatInteger } from '$lib/i18n/format';
   import {
   faCheck,
   faChevronDown,
@@ -126,7 +122,6 @@
   const loadError$ = selectLoadError();
   const allProviderWarnings$ = selectAllProviderWarnings();
   const allProviderStaleFlags$ = selectAllProviderStaleFlags();
-  const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
   const hasCheckedOnce$ = selectHasCheckedOnce();
   const daemonHealth$ = selectDaemonHealth();
 
@@ -765,18 +760,6 @@
       ? null
       : (providerFallbackWarnings.find((warning) => warning.providerId === 'codex') ?? null),
   );
-
-  const isCodexManagedInstallInstalling = $derived(
-    $codexManagedInstallStatus$?.managedInstallState === 'installing',
-  );
-
-  const codexManagedInstallProgressText = $derived.by(() => {
-    const progress = $codexManagedInstallStatus$?.downloadProgress;
-    if (typeof progress !== 'number') return m.chat_modelPicker_installMoment_label();
-    return m.chat_modelPicker_downloadProgress_label({
-      percent: formatInteger(Math.round(progress * 100)),
-    });
-  });
 
   // D1(B): when no provider is available at all, never fall back to a
   // default provider/model — surface an explicit failure instead.
@@ -1428,15 +1411,10 @@
   />
 
   <ModelPickerProviderNotice
-    warning={isCodexManagedInstallInstalling
-      ? m.chat_modelPicker_codexSetupInProgress_label()
-      : codexFallbackWarning?.message}
-    docsUrl={isCodexManagedInstallInstalling ? undefined : codexFallbackWarning?.docsUrl}
-    show={(showProviderWarningNotice ?? variant === 'default') &&
-      (isCodexManagedInstallInstalling || Boolean(codexFallbackWarning))}
-    title={isCodexManagedInstallInstalling ? m.chat_modelPicker_settingUpCodex_title() : undefined}
-    description={isCodexManagedInstallInstalling ? codexManagedInstallProgressText : undefined}
-    variant={isCodexManagedInstallInstalling ? 'progress' : 'warning'}
+    warning={codexFallbackWarning?.message}
+    docsUrl={codexFallbackWarning?.docsUrl}
+    show={(showProviderWarningNotice ?? variant === 'default') && Boolean(codexFallbackWarning)}
+    variant="warning"
     class={resolvedNoticeClass}
   />
 {/if}
