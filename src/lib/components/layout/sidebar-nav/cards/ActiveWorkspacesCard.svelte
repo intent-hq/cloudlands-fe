@@ -1,9 +1,11 @@
 <script lang="ts">
   /**
-   * ActiveWorkspacesCard - Shows workspaces split into Running, Unread, and Pinned sections
+   * ActiveWorkspacesCard - Shows workspaces split into Unread, Running, Waiting, and Pinned sections
    *
    * - Running: workspaces with active streaming agents
    * - Unread: workspaces with unread messages (edited within last 24h)
+   * - Waiting: workspaces the daemon reports as in_progress with no streaming
+   *   agents (agents waiting on background hooks or delegated work)
    * - Pinned: user-pinned workspaces
    *
    * Supports mark-as-read and pin/unpin actions.
@@ -29,6 +31,7 @@
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
   import { markWorkspaceSeen } from '$features/workspace/mark-workspace-seen';
+  import { focusFirstUnreadAgent } from '$features/agent/focus-first-unread-agent';
   import {
   compareWorkspaceActivityDisplayTimeDesc,
   isWorkspaceActivityWithin,
@@ -98,26 +101,50 @@
       .sort((a, b) => compareWorkspaceActivityDisplayTimeDesc(a.workspace, b.workspace));
   });
 
-  // Pinned workspaces (not already in running or unread)
+  // Waiting workspaces: the daemon promotes displayStatus to 'in_progress' when an
+  // agent runs, a background hook is ACTIVE, or an idle coordinator still awaits
+  // delegated agents (PROTOCOL §5.1). With no streaming agents, that leaves exactly
+  // the hook-waiting / delegation-waiting cases. Unread wins over Waiting.
+  const waitingWorkspaces = $derived.by(() => {
+    void activeStreamsVersion;
+    const unreadIds = new Set(unreadWorkspaces.map((u) => u.workspace.id));
+    return $workspaceItems
+      .filter((w) => {
+        if (w.status === WorkspaceStatusEnum.Archived || w.status === WorkspaceStatusEnum.Deleted)
+          return false;
+        if (w.displayStatus !== 'in_progress') return false;
+        if (activeStreamsTracker.getStreamingAgentIdsForWorkspace(w.id).length > 0) return false;
+        if (unreadIds.has(w.id)) return false;
+        return true;
+      })
+      .map((w) => ({ workspace: w }))
+      .sort((a, b) => compareWorkspaceActivityDisplayTimeDesc(a.workspace, b.workspace));
+  });
+
+  // Pinned workspaces (not already in running, unread, or waiting)
   const pinnedWorkspaces = $derived.by(() => {
     void activeStreamsVersion;
     const runningIds = new Set(runningWorkspaces.map((r) => r.workspace.id));
     const unreadIds = new Set(unreadWorkspaces.map((u) => u.workspace.id));
+    const waitingIds = new Set(waitingWorkspaces.map((w) => w.workspace.id));
     return $pinnedIds$
       .map((id) => $workspaceItems.find((w) => w.id === id))
       .filter((w) => {
         if (!w) return false;
         if (w.status === WorkspaceStatusEnum.Archived || w.status === WorkspaceStatusEnum.Deleted)
           return false;
-        // Don't duplicate if already in running or unread
-        if (runningIds.has(w.id) || unreadIds.has(w.id)) return false;
+        // Don't duplicate if already in running, unread, or waiting
+        if (runningIds.has(w.id) || unreadIds.has(w.id) || waitingIds.has(w.id)) return false;
         return true;
       })
       .map((w) => ({ workspace: w! }));
   });
 
   const totalCount = $derived(
-    runningWorkspaces.length + unreadWorkspaces.length + pinnedWorkspaces.length,
+    runningWorkspaces.length +
+      unreadWorkspaces.length +
+      waitingWorkspaces.length +
+      pinnedWorkspaces.length,
   );
 
   let searchQuery = $state('');
@@ -157,6 +184,16 @@
     );
   });
 
+  const filteredWaiting = $derived.by(() => {
+    if (!searchQuery.trim()) return waitingWorkspaces;
+    const q = searchQuery.toLowerCase().trim();
+    return waitingWorkspaces.filter(
+      ({ workspace: w }) =>
+        (w.title || '').toLowerCase().includes(q) ||
+        (w.repositoryName || '').toLowerCase().includes(q),
+    );
+  });
+
   const filteredPinned = $derived.by(() => {
     if (!searchQuery.trim()) return pinnedWorkspaces;
     const q = searchQuery.toLowerCase().trim();
@@ -182,6 +219,23 @@
     goto(route);
   }
 
+  /**
+   * Unread rows: navigate, then land on the agent the unread badge most likely
+   * refers to (the helper waits for the navigation-triggered agent load). Falls
+   * back to plain navigation when no foreground agent qualifies, and skips the
+   * focus entirely for Cmd/Ctrl-click (new window).
+   *
+   * Attention is workspace-level (§5.1) and viewing the workspace clears it via
+   * `workspace.markSeen`, so the flag is read *before* navigating and passed to
+   * the helper — a post-navigation read would race the clear.
+   */
+  async function handleUnreadClick(workspaceId: string, event?: MouseEvent | KeyboardEvent) {
+    const wasUnread = $workspaceItems.find((w) => w.id === workspaceId)?.attention === 'unread';
+    await handleClick(workspaceId, event);
+    if (event?.metaKey || event?.ctrlKey) return;
+    focusFirstUnreadAgent(workspaceId, wasUnread);
+  }
+
   function handleMarkAsRead(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
     // Daemon round-trip (`workspace.markSeen`, §5.1): the resulting
@@ -198,6 +252,7 @@
   const allVisibleIds = $derived([
     ...filteredUnread.map((u) => u.workspace.id),
     ...filteredRunning.map((r) => r.workspace.id),
+    ...filteredWaiting.map((w) => w.workspace.id),
     ...filteredPinned.map((p) => p.workspace.id),
   ]);
 
@@ -228,7 +283,14 @@
       highlightedIndex < allVisibleIds.length
     ) {
       e.preventDefault();
-      handleClick(allVisibleIds[highlightedIndex]);
+      const id = allVisibleIds[highlightedIndex];
+      // Keyboard activation must match the row's own click behavior, so Unread
+      // rows also land on their first unread agent.
+      if (filteredUnread.some(({ workspace }) => workspace.id === id)) {
+        handleUnreadClick(id);
+      } else {
+        handleClick(id);
+      }
     } else if (e.key === 'Home') {
       e.preventDefault();
       highlightedIndex = 0;
@@ -297,7 +359,7 @@
           unreadAgentIds={unreadIds}
           highlighted={keyboardNavActive && highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
           suppressHover={keyboardNavActive}
-          onClick={(e) => handleClick(workspace.id, e)}
+          onClick={(e) => handleUnreadClick(workspace.id, e)}
           onTogglePin={(e) => handleTogglePin(e, workspace.id)}
           onMarkAsRead={(e) => handleMarkAsRead(e, workspace.id)}
           onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
@@ -319,6 +381,27 @@
           isRunning={true}
           isPinned={$pinnedIds$.includes(workspace.id)}
           streamingAgentIds={streamingIds}
+          highlighted={keyboardNavActive && highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
+          suppressHover={keyboardNavActive}
+          onClick={(e) => handleClick(workspace.id, e)}
+          onTogglePin={(e) => handleTogglePin(e, workspace.id)}
+          onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
+          onHover={() => { hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1; }}
+        />
+      {/each}
+    {/if}
+
+    <!-- Waiting section -->
+    {#if filteredWaiting.length > 0}
+      <div class="section-header px-3 pt-2 pb-1 flex items-center gap-1.5 min-w-0">
+        <Header size={3} class="truncate">{m.layout_activeCard_waiting_header()}</Header>
+        <span class="text-ui text-subtle shrink-0">{waitingWorkspaces.length}</span>
+      </div>
+      {#each filteredWaiting as { workspace }, _i (workspace.id)}
+        <WorkspaceCard
+          {workspace}
+          variant="compact"
+          isPinned={$pinnedIds$.includes(workspace.id)}
           highlighted={keyboardNavActive && highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
           suppressHover={keyboardNavActive}
           onClick={(e) => handleClick(workspace.id, e)}

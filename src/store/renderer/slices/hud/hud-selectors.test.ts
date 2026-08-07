@@ -117,7 +117,7 @@ describe('selectHudWorkspaceStateBars', () => {
     });
   });
 
-  it('a raised live attention flag wins over the displayStatus bucket', () => {
+  it('a raised live attention flag does NOT move the bucket (the BE rollup owns it)', () => {
     const state = mockState(
       [withStatus('ws-1', 'in_progress'), withStatus('ws-2', 'pr_open')],
       [['ws-1', 'review_required']],
@@ -125,8 +125,8 @@ describe('selectHudWorkspaceStateBars', () => {
     expect(selectHudWorkspaceStateBars.select(state)).toEqual({
       idle: 0,
       unread: 0,
-      progress: 0,
-      attention: 1,
+      progress: 1,
+      attention: 0,
       prOpen: 1,
       prMerged: 0,
       failed: 0,
@@ -135,13 +135,13 @@ describe('selectHudWorkspaceStateBars', () => {
     });
   });
 
-  it("an 'unread' flag buckets as UNREAD on idle and terminal cards, never active ones", () => {
+  it("buckets the BE `unread` displayStatus as UNREAD; the flag alone never does", () => {
     const state = mockState(
       [
-        // Idle/absent + unread → UNREAD; in_progress + unread stays PROGRESS;
-        // the terminal complete / pr_merged + unread fold to UNREAD too
-        // (bar counts follow the card stateKey).
-        withStatus('ws-1', 'idle'),
+        // The daemon already applied the unread promotion (§5.1 step 6), so
+        // only its `unread` displayStatus buckets as UNREAD — the live flag
+        // on the other rows leaves their verbatim bucket alone.
+        withStatus('ws-1', 'unread'),
         withStatus('ws-2', 'in_progress'),
         withStatus('ws-3'),
         withStatus('ws-4', 'complete'),
@@ -156,14 +156,14 @@ describe('selectHudWorkspaceStateBars', () => {
       ],
     );
     expect(selectHudWorkspaceStateBars.select(state)).toEqual({
-      idle: 0,
-      unread: 4,
+      idle: 1,
+      unread: 1,
       progress: 1,
       attention: 0,
       prOpen: 0,
-      prMerged: 0,
+      prMerged: 1,
       failed: 0,
-      completed: 0,
+      completed: 1,
       total: 5,
     });
   });
@@ -186,11 +186,11 @@ describe('selectHudWorkspaceStateBars', () => {
     });
   });
 
-  it('buckets a failed live agent into FAILED (not attention)', () => {
+  it("buckets the BE `failed` displayStatus into FAILED (not attention)", () => {
     const state = {
       ...mockState([
         makeWorkspace('ws-1', {
-          displayStatus: 'in_progress',
+          displayStatus: 'failed',
           agentSummary: {
             count: 1,
             agentIds: ['a1'],
@@ -207,6 +207,32 @@ describe('selectHudWorkspaceStateBars', () => {
       prOpen: 0,
       prMerged: 0,
       failed: 1,
+      completed: 0,
+      total: 1,
+    });
+  });
+
+  it('a failed live agent alone never moves the bucket (no local synthesis)', () => {
+    const state = {
+      ...mockState([
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 1,
+            agentIds: ['a1'],
+            agents: [{ id: 'a1', name: 'Coordinator', status: 'error' }],
+          } as Workspace['agentSummary'],
+        }),
+      ]),
+    } as StoreState;
+    expect(selectHudWorkspaceStateBars.select(state)).toEqual({
+      idle: 0,
+      unread: 0,
+      progress: 1,
+      attention: 0,
+      prOpen: 0,
+      prMerged: 0,
+      failed: 0,
       completed: 0,
       total: 1,
     });
@@ -364,11 +390,21 @@ describe('selectHudAttnCount', () => {
       root: { status: 'active', attentionRequestKind: 'blocker', messages: [] },
     });
     expect(selectHudAttnCount.select(blocker)).toBe(1);
-    // A failed CHILD agent still counts — cardStateKey shows failed ungated.
+    // A failed CHILD agent still counts on the per-agent axis — but the card
+    // state stays whatever the BE rolled up (no local `failed` synthesis).
     const failedChild = attnState({ child: { status: 'error', messages: [] } });
-    expect(selectHudWorkspaceCards.select(failedChild)[0].stateKey).toBe('failed');
+    expect(selectHudWorkspaceCards.select(failedChild)[0].stateKey).toBe('in_progress');
     expect(selectHudAttnCount.select(failedChild)).toBe(1);
   });
+
+  it.each(['failed', 'blocked'] as const)(
+    'counts a wire %s rollup once when no per-agent signal covers it',
+    (displayStatus) => {
+      expect(selectHudAttnCount.select(mockState([makeWorkspace('ws-1', { displayStatus })]))).toBe(
+        1,
+      );
+    },
+  );
 
   it('counts an outstanding question on a waiting top-level agent, not a child', () => {
     const question: HudCapturedQuestion = {
@@ -1799,8 +1835,27 @@ describe('selectHudWorkspaceCards', () => {
     expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('not_started');
   });
 
-  it('state precedence: failed agent > attention/waiting agent > displayStatus', () => {
-    const failed = cardState([
+  it.each([
+    ['failed', 'failed'],
+    ['blocked', 'blocked'],
+    ['needs_attention', 'wait'],
+    ['in_progress', 'in_progress'],
+    ['unread', 'unread'],
+    ['complete', 'complete'],
+    ['pr_ready', 'pr_ready'],
+    ['pr_open', 'pr_open'],
+    ['pr_merged', 'pr_merged'],
+    ['idle', 'idle'],
+    ['not_started', 'not_started'],
+  ] as const)('renders the wire displayStatus %s as the card state %s', (displayStatus, stateKey) => {
+    const state = cardState([makeWorkspace('ws-1', { displayStatus })]);
+    expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe(stateKey);
+  });
+
+  it('live session signals never promote the card state (the BE rollup owns it)', () => {
+    // A failed agent + a waiting agent on a pr_open workspace: the daemon has
+    // not rolled up `failed`, so the card renders its wire value verbatim.
+    const state = cardState([
       makeWorkspace('ws-1', {
         displayStatus: 'pr_open',
         agentSummary: {
@@ -1813,83 +1868,38 @@ describe('selectHudWorkspaceCards', () => {
         } as Workspace['agentSummary'],
       }),
     ]);
-    expect(selectHudWorkspaceCards.select(failed)[0].stateKey).toBe('failed');
+    expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('pr_open');
+  });
 
-    const attention = cardState(
+  it('a raised live attention flag is exposed but never changes the card state', () => {
+    const state = cardState(
       [makeWorkspace('ws-1', { displayStatus: 'pr_open' })],
       [['ws-1', 'review_required']],
     );
-    const [attnCard] = selectHudWorkspaceCards.select(attention);
-    expect(attnCard.stateKey).toBe('wait');
-    expect(attnCard.attention).toBe('review_required');
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.stateKey).toBe('pr_open');
+    expect(card.attention).toBe('review_required');
   });
 
-  it("an 'unread' attention value renders the blue UNREAD state, never wait", () => {
-    // The daemon raises `unread` on every agent turn end (§9.9) and only
-    // `workspace.markSeen` clears it — an otherwise-idle workspace renders
-    // the non-urgent UNREAD state, not NEEDS ATTENTION.
+  it("an 'unread' attention flag is exposed but never changes the card state", () => {
+    // The daemon already applied the §5.1 step-6 unread promotion, so the
+    // flag is presentation metadata only — the card renders its wire value.
     const state = cardState([makeWorkspace('ws-1', { displayStatus: 'idle' })], [['ws-1', 'unread']]);
     const [card] = selectHudWorkspaceCards.select(state);
-    expect(card.stateKey).toBe('unread');
+    expect(card.stateKey).toBe('idle');
     expect(card.attention).toBe('unread');
   });
 
-  it("'unread' never masks urgent/active states", () => {
-    // failed / blocked / wait / in_progress / pr_open / pr_ready all outrank
-    // the blue-dot flag; only idle / not_started (and absent) plus the
-    // terminal complete / pr_merged fall to UNREAD.
-    for (const displayStatus of ['in_progress', 'pr_open', 'pr_ready', 'needs_attention'] as const) {
-      const state = cardState(
-        [makeWorkspace('ws-1', { displayStatus })],
-        [['ws-1', 'unread']],
-      );
-      expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe(
-        displayStatus === 'needs_attention' ? 'wait' : displayStatus,
-      );
-    }
-    const notStarted = cardState([makeWorkspace('ws-1')], [['ws-1', 'unread']]);
-    expect(selectHudWorkspaceCards.select(notStarted)[0].stateKey).toBe('unread');
-    // A failed live agent outranks the flag too.
-    const failed = cardState(
-      [
-        makeWorkspace('ws-1', {
-          displayStatus: 'idle',
-          agentSummary: {
-            count: 1,
-            agentIds: ['a1'],
-            agents: [{ id: 'a1', name: 'Coordinator', status: 'error' }],
-          } as Workspace['agentSummary'],
-        }),
-      ],
-      [['ws-1', 'unread']],
-    );
-    expect(selectHudWorkspaceCards.select(failed)[0].stateKey).toBe('failed');
-  });
-
-  it("an unread 'complete' / 'pr_merged' card renders UNREAD; without the flag they render verbatim", () => {
-    // The terminal states carry no pending action — the unseen-result signal
-    // wins; marking seen (no flag) falls back to COMPLETE / PR MERGED.
-    for (const displayStatus of ['complete', 'pr_merged'] as const) {
-      const unread = cardState(
-        [makeWorkspace('ws-1', { displayStatus })],
-        [['ws-1', 'unread']],
-      );
-      expect(selectHudWorkspaceCards.select(unread)[0].stateKey).toBe('unread');
-      const seen = cardState([makeWorkspace('ws-1', { displayStatus })]);
-      expect(selectHudWorkspaceCards.select(seen)[0].stateKey).toBe(displayStatus);
-    }
-  });
-
-  it("the entity's daemon-served attention renders UNREAD with no live event (app start)", () => {
+  it("the entity's daemon-served attention is exposed with no live event (app start)", () => {
     // `workspace.list`/`workspace.get` serve `attention` on the entity
-    // (§5.1); a workspace already unread at launch must render UNREAD
-    // without waiting for a live `workspace:attention-changed` event.
-    for (const displayStatus of ['idle', 'complete'] as const) {
-      const state = cardState([makeWorkspace('ws-1', { displayStatus, attention: 'unread' })]);
-      const [card] = selectHudWorkspaceCards.select(state);
-      expect(card.stateKey).toBe('unread');
-      expect(card.attention).toBe('unread');
-    }
+    // (§5.1); a workspace already unread at launch exposes the flag without
+    // waiting for a live `workspace:attention-changed` event.
+    const state = cardState([
+      makeWorkspace('ws-1', { displayStatus: 'unread', attention: 'unread' }),
+    ]);
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.stateKey).toBe('unread');
+    expect(card.attention).toBe('unread');
   });
 
   it('a live clear never falls back to a stale entity attention (bridge keeps both fresh)', () => {
@@ -1951,10 +1961,15 @@ describe('selectHudWorkspaceCards', () => {
     return { ...base, agentSessions: { byAgentId: sessions, agentIdsByWorkspace: {} } } as StoreState;
   }
 
-  it('top-level blocker attention request turns the card blocked', () => {
+  it('a top-level blocker request alone does not turn the card blocked (BE rollup owns it)', () => {
     const state = gatedState({
       root: { status: 'active', attentionRequestKind: 'blocker', messages: [] },
     });
+    expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('in_progress');
+  });
+
+  it('a wire blocked displayStatus renders the card as blocked (BE rollup)', () => {
+    const state = mockState([makeWorkspace('ws-1', { displayStatus: 'blocked' })]);
     expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('blocked');
   });
 
@@ -1995,14 +2010,18 @@ describe('selectHudWorkspaceCards', () => {
   });
 
   it('attention snippet carries the blocker reason on a blocked card', () => {
-    const state = gatedState({
-      root: {
-        status: 'active',
-        attentionRequestKind: 'blocker',
-        attentionRequestReason: 'Sandbox network is down',
-        messages: [],
+    const state = gatedState(
+      {
+        root: {
+          status: 'active',
+          attentionRequestKind: 'blocker',
+          attentionRequestReason: 'Sandbox network is down',
+          messages: [],
+        },
       },
-    });
+      [],
+      'blocked',
+    );
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.stateKey).toBe('blocked');
     expect(card.attentionSnippet).toEqual({ kind: 'blocker', text: 'Sandbox network is down' });
@@ -2038,26 +2057,23 @@ describe('selectHudWorkspaceCards', () => {
     });
   });
 
-  it('attention snippet ignores child/background reasons and is null without one', () => {
-    // Child blocker + workspace-level flag: attention raises via the flag,
-    // but no gated agent carries a reason → snippet null (status message
-    // remains the strip fallback in the component).
-    const base = mockState(
-      [
-        makeWorkspace('ws-1', {
-          displayStatus: 'in_progress',
-          agentSummary: {
-            count: 2,
-            agentIds: ['root', 'child'],
-            agents: [
-              { id: 'root', name: 'Coordinator', status: 'active' },
-              { id: 'child', name: 'Implementor', status: 'active', parentAgentId: 'root' },
-            ],
-          } as Workspace['agentSummary'],
-        }),
-      ],
-      [['ws-1', 'review_required']],
-    );
+  it('attention snippet ignores child/background reasons and falls back to pending', () => {
+    // The daemon rolled up needs_attention, but the only reason available is
+    // a CHILD agent's — the gated lookup finds nothing and the generic
+    // `pending` strip renders instead of the child's text.
+    const base = mockState([
+      makeWorkspace('ws-1', {
+        displayStatus: 'needs_attention',
+        agentSummary: {
+          count: 2,
+          agentIds: ['root', 'child'],
+          agents: [
+            { id: 'root', name: 'Coordinator', status: 'active' },
+            { id: 'child', name: 'Implementor', status: 'active', parentAgentId: 'root' },
+          ],
+        } as Workspace['agentSummary'],
+      }),
+    ]);
     const state = {
       ...base,
       agentSessions: {
@@ -2074,7 +2090,7 @@ describe('selectHudWorkspaceCards', () => {
     } as StoreState;
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.stateKey).toBe('wait');
-    expect(card.attentionSnippet).toBeNull();
+    expect(card.attentionSnippet).toEqual({ kind: 'pending', text: '' });
   });
 
   it('attention snippet is null outside attention states even with a pending reason', () => {
@@ -2214,13 +2230,17 @@ describe('selectHudWorkspaceCards', () => {
   });
 
   it('failed card snippet carries the failing agent stopReason', () => {
-    const state = gatedState({
-      root: {
-        status: 'error',
-        stopReason: 'Provider stream disconnected (upstream 529)',
-        messages: [],
+    const state = gatedState(
+      {
+        root: {
+          status: 'error',
+          stopReason: 'Provider stream disconnected (upstream 529)',
+          messages: [],
+        },
       },
-    });
+      [],
+      'failed',
+    );
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.stateKey).toBe('failed');
     expect(card.attentionSnippet).toEqual({
@@ -2235,7 +2255,7 @@ describe('selectHudWorkspaceCards', () => {
     // status message never masks the failure.
     const state = mockState([
       makeWorkspace('ws-1', {
-        displayStatus: 'in_progress',
+        displayStatus: 'failed',
         statusMessage: 'Wiring the release-channel fetch',
         agentSummary: {
           count: 1,
@@ -2295,6 +2315,31 @@ describe('selectHudWorkspaceCards', () => {
     );
     expect(selectHudWorkspaceCards.select(reraised)[0].agents[0].hasQuestion).toBe(true);
     expect(selectHudAttnCount.select(reraised)).toBe(1);
+  });
+
+  it('a captured question keeps pending while the agent runs again (persistent contract)', () => {
+    // Spec §Decisions: a plain user message — and the turn it starts — no
+    // longer supersede the pending Q&A, so a RUNNING agent still owes an
+    // answer. Release comes from the slice (`hudQuestionsResolvedForWorkspace`
+    // on the daemon's needs_attention rollup drop) or the dismissal marker.
+    const question: HudCapturedQuestion = {
+      workspaceId: 'ws-1',
+      agentId: 'root',
+      messageId: 'msg-42',
+      header: 'Auth method',
+      question: 'Which authentication method should the endpoint use?',
+      ts: '2026-07-30T12:00:00Z',
+    };
+    const running = gatedState({ root: { status: 'active', isResponding: true, messages: [] } }, [
+      question,
+    ]);
+    expect(selectHudWorkspaceCards.select(running)[0].agents[0].hasQuestion).toBe(true);
+    expect(selectHudAttnCount.select(running)).toBe(1);
+
+    // Cleared from the slice (answered/dismissed daemon-side): nothing pends.
+    const released = gatedState({ root: { status: 'active', isResponding: true, messages: [] } });
+    expect(selectHudWorkspaceCards.select(released)[0].agents[0].hasQuestion).toBe(false);
+    expect(selectHudAttnCount.select(released)).toBe(0);
   });
 
   it('live agent-session state wins over a stale summary status (running shows rows)', () => {

@@ -26,8 +26,10 @@ app.commandLine.appendSwitch('js-flags', '--expose-gc');
 // SingletonLock and logs land in the new directory.
 import * as path from 'path';
 import {
+  resolveDevIntentdDataDir,
   resolveDevUserDataDirName,
   resolveUserDataBasePath,
+  shouldIsolateDevIntentdDataDir,
 } from './utils/resolve-dev-instance.js';
 app.setPath('userData', resolveUserDataBasePath(app.getPath('appData')));
 
@@ -40,6 +42,22 @@ const devUserDataSegment = resolveDevUserDataDirName();
 if (devUserDataSegment) {
   const uniqueUserData = path.join(app.getPath('userData'), devUserDataSegment);
   app.setPath('userData', uniqueUserData);
+}
+
+// EARLY: Default the dev daemon's data directory to a per-DEV_PORT dir so a dev instance
+// never adopts the installed app's intentd (and its workspace catalog) on the global
+// socket. This only supplies a default: an inherited INTENTD_DATA_DIR (e.g. the monorepo
+// `make dev` seat) and explicit INTENTD_SOCKET/INTENTD_WS_URL/INTENTD_TCP transports all
+// win and suppress it. Packaged builds are untouched.
+// Gated on !app.isPackaged — the same signal backend.ipc.ts uses to pick a transport, so
+// isolation and socket resolution cannot disagree (NODE_ENV would: an unpackaged launch
+// without it still resolves a dev UDS socket). Must run before the sidecar spawn and the
+// first backend client connection, both of which read INTENTD_DATA_DIR off process.env.
+if (shouldIsolateDevIntentdDataDir(process.env, !app.isPackaged)) {
+  process.env.INTENTD_DATA_DIR = resolveDevIntentdDataDir(app.getPath('appData'));
+  // Logged directly: this runs before setupConsoleLogCapture(), so it is stdout-only.
+  // i18n-ignore (log line)
+  console.log(`[main] dev intentd data dir defaulted to ${process.env.INTENTD_DATA_DIR}`);
 }
 
 // EARLY: Capture all main-process console output to {userData}/logs/console-output.log
@@ -110,6 +128,7 @@ import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapp
 import { initializeWarningSuppression } from './utils/suppress-warnings';
 import { runWithHardExitTimeout } from './utils/hard-exit-timeout';
 import { setupWebviewSecurity } from './webview-security';
+import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
 import { requestHardwareConsoleLightingClear } from '../features/hardware-console/main/clear-lighting-shutdown';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
@@ -255,6 +274,7 @@ import { getNotificationService } from '../features/notifications/main/notificat
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
 import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
+import { setupReleaseNotesIPC } from '../features/release-notes/main/release-notes.ipc';
 import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
 import {
   registerBackendHandlers,
@@ -535,6 +555,9 @@ app.whenReady().then(async () => {
     // after BrowserWindow.getAllWindows() has already emptied and an async
     // saveWindowSessions() call would otherwise serialize nothing.
     window.on('close', captureWindowSessionsSnapshot);
+    // Windows: forward mouse X-button app-commands to the renderer as
+    // app:history-navigate IPC events (see src/main/app-command-navigation.ts).
+    attachAppCommandHistoryNavigation(window);
   });
 
   // Set application menu with correct app name on macOS
@@ -1008,6 +1031,18 @@ app.whenReady().then(async () => {
       helpMenuItems.push({ type: 'separator' });
     }
 
+    // Add Show Release Notes (cross-platform, works in dev too — the renderer
+    // fetches on demand and falls back to "not available" when there are none)
+    helpMenuItems.push({
+      label: m.menu_show_release_notes(),
+      click: async () => {
+        const targetWindow = BrowserWindow.getFocusedWindow() ?? getMainWindow();
+        const { sendShowReleaseNotes } =
+          await import('../features/release-notes/main/release-notes.ipc');
+        sendShowReleaseNotes(targetWindow, { notes: null });
+      },
+    });
+
     // Add Export Debug Logs (cross-platform)
     helpMenuItems.push({
       label: m.menu_export_debug_logs(),
@@ -1356,6 +1391,7 @@ app.whenReady().then(async () => {
   await setupWorkspaceRulesIPC(configManager || undefined); // Needed for initial agent system prompt
   setupSpecialistsIPC(); // Needed for specialist selection on startup
   setupAutoUpdateIPC(); // Needed for auto-update IPC on startup
+  setupReleaseNotesIPC(); // Needed for the Help ▸ Show Release Notes fetch
 
   // Start the intentd sidecar daemon (if spawn policy allows). This MUST run
   // before registerBackendHandlers() so the daemon is ready before the first
@@ -1434,6 +1470,14 @@ app.whenReady().then(async () => {
     const mainWindow = getMainWindow();
     if (process.env.NODE_ENV !== 'development' && mainWindow) {
       initializeAutoUpdater(mainWindow);
+    }
+
+    // Show this version's release notes on the first launch after an update.
+    // Packaged builds only — a dev build's version is never a published tag.
+    if (app.isPackaged && mainWindow) {
+      const { initializeReleaseNotesOnStartup } =
+        await import('../features/release-notes/main/release-notes.ipc');
+      void initializeReleaseNotesOnStartup(mainWindow);
     }
 
     // Setup development-only IPC handlers

@@ -35,8 +35,6 @@ function makeStateSource() {
   const state: LedSnapshotState = {
     workspace: { workspaces: createCollection('id', []) },
     hardwareConsole: { keyPins: [null, null, null, null, null, null] },
-    workspaceAgents: { byWorkspaceId: {} },
-    agentSessions: { byAgentId: {} },
   };
   const listeners = new Set<() => void>();
   return {

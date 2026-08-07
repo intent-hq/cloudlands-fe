@@ -32,6 +32,7 @@ import {
 import {
   addMessage as addAgentSessionMessage,
   setAgentStreaming,
+  updateMessage as updateAgentSessionMessage,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { errorRecovery, DEFAULT_STRATEGIES } from './browser/services/error-recovery.service';
@@ -112,6 +113,12 @@ export async function sendMessage(
      * immediately instead of queueing). Used by force-send (⌘Enter).
      */
     priority?: 'interrupt';
+    /**
+     * Opaque per-message payload persisted on the user message row
+     * (PROTOCOL.md §5.5 `messageMetadata`). Used by the Q&A wizard to tag its
+     * answer message `{ type: "question_answers", answeredQuestionsMessageId }`.
+     */
+    messageMetadata?: Record<string, unknown>;
   } = {},
 ): Promise<void> {
   // Wrap entire sendMessage operation with performance tracking
@@ -229,15 +236,24 @@ export async function sendMessage(
           }
         }
         const userAppMessageId = options.userAppMessageId ?? createAppMessageId();
+        // Kept separate from the wire tag below so a failed send can roll the
+        // optimistic row back to exactly this metadata.
+        const baseUserMetadata = options.contextReferences?.length
+          ? { contextReferences: options.contextReferences }
+          : {};
         const userMessage: AgentMessage = {
           id: createMessageId(uuidv4()),
           appMessageId: userAppMessageId,
           role: 'user',
           contentBlocks: userContentBlocks,
           timestamp: new Date().toISOString(),
-          metadata: options.contextReferences?.length
-            ? { contextReferences: options.contextReferences }
-            : {},
+          metadata: {
+            ...baseUserMetadata,
+            // Mirror the wire tag on the optimistic row so transcript-driven
+            // derivations (the Q&A wizard's answer resolution) settle without
+            // waiting for the daemon echo.
+            ...(options.messageMetadata ?? {}),
+          },
         };
 
         dispatchRedux(addAgentSessionMessage(session.id, userMessage));
@@ -328,6 +344,12 @@ export async function sendMessage(
                       assistantAppMessageId,
                       // Message priority for force-send interrupt (PROTOCOL.md §5.5)
                       priority: options.priority,
+                      // Opaque per-message tag persisted on the user row
+                      // (PROTOCOL.md §5.5) — omitted entirely when absent so
+                      // ordinary sends keep their exact request shape.
+                      ...(options.messageMetadata
+                        ? { messageMetadata: options.messageMetadata }
+                        : {}),
                     },
                   );
 
@@ -460,6 +482,17 @@ export async function sendMessage(
           // setAgentStreaming(true), reset the streaming flag so the UI
           // doesn't stay stuck on "Thinking…" until the safety detector fires.
           dispatchRedux(setAgentStreaming(session.id, false));
+          // The optimistic user row is retained on failure, so an answer tag
+          // mirrored onto it would resolve the wizard's pending set even though
+          // the daemon never accepted the answer. Strip it back to the
+          // pre-send metadata; "Try again" re-mirrors it on the next attempt.
+          if (options.messageMetadata) {
+            dispatchRedux(
+              updateAgentSessionMessage(session.id, userMessage.id, {
+                metadata: baseUserMetadata,
+              }),
+            );
+          }
           throw streamingError;
         }
       }

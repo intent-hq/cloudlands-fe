@@ -20,6 +20,7 @@ import {
 } from 'vitest';
 import { parseSuggestedPrompts } from '$lib/utils/messageParser';
 import { derivePendingQuestions } from '../questions/pending-questions';
+import { buildAnswerMessageMetadata } from '../questions/answer-message';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import type { SuggestedPrompt } from '$shared/types';
@@ -57,13 +58,16 @@ function computeSuggestedPrompts(
   if (derivePendingQuestions(messages, isRunning, showingPendingUserMessage)) {
     return [];
   }
-  // Extract text content from contentBlocks
-  const messageContent = (lastAssistantMessage.contentBlocks || [])
-    .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n');
-  const { prompts } = parseSuggestedPrompts(messageContent);
-  return prompts;
+  // Parse each text block on its own, mirroring MessageContent's per-block
+  // stripping; the last block that yields prompts wins.
+  const textBlocks = (lastAssistantMessage.contentBlocks || []).filter(
+    (b): b is { type: 'text'; text: string } => b.type === 'text',
+  );
+  for (let i = textBlocks.length - 1; i >= 0; i--) {
+    const { prompts } = parseSuggestedPrompts(textBlocks[i].text);
+    if (prompts.length > 0) return prompts;
+  }
+  return [];
 }
 
 function createAssistantMessage(content: string): AgentMessage {
@@ -220,11 +224,36 @@ Test prompt
       expect(prompts).toEqual([]);
     });
 
-    it('returns prompts again once a later user message supersedes the questions', () => {
-      const userMsg: AgentMessage = {
+    it('returns prompts again once the tagged answer message resolves the questions', () => {
+      // Pendingness is persistent: only the wizard's answer message —
+      // tagged with `question_answers` metadata naming the question-bearing
+      // message — resolves the set and brings the prompts back.
+      const answerMsg: AgentMessage = {
         id: 'msg_user_answers',
         role: 'user',
         contentBlocks: [{ type: 'text', text: 'Q: …\nA: OAuth' }],
+        timestamp: new Date().toISOString(),
+        metadata: buildAnswerMessageMetadata(messageWithPromptsAndQuestions.id),
+      } as unknown as AgentMessage;
+      const followUp = createAssistantMessage(`Thanks!
+
+<!-- suggested-prompts
+Continue
+-->
+`);
+      const prompts = computeSuggestedPrompts(false, [
+        messageWithPromptsAndQuestions,
+        answerMsg,
+        followUp,
+      ]);
+      expect(prompts).toEqual(['Continue']);
+    });
+
+    it('keeps prompts hidden while a PLAIN user message leaves the questions pending', () => {
+      const userMsg: AgentMessage = {
+        id: 'msg_user_plain',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'unrelated aside' }],
         timestamp: new Date().toISOString(),
       };
       const followUp = createAssistantMessage(`Thanks!
@@ -238,7 +267,7 @@ Continue
         userMsg,
         followUp,
       ]);
-      expect(prompts).toEqual(['Continue']);
+      expect(prompts).toEqual([]);
     });
   });
 
@@ -256,6 +285,41 @@ Continue
         'Run the tests',
         'Check the build status',
       ]);
+    });
+  });
+
+  describe('per-text-block parsing', () => {
+    /**
+     * REGRESSION: MessageContent strips the prompts block per text block, so a
+     * marker split across two blocks must NOT yield chips here — otherwise the
+     * chips render while the raw marker lines stay in the transcript.
+     */
+    it('does not surface prompts for a marker split across two text blocks', () => {
+      const split: AgentMessage = {
+        id: 'msg_split',
+        role: 'assistant',
+        contentBlocks: [
+          { type: 'text', text: 'Here is the response.\n\n<!-- suggested-prompts\nRun the tests' },
+          { type: 'text', text: '-->\n' },
+        ],
+        timestamp: new Date().toISOString(),
+      };
+
+      expect(computeSuggestedPrompts(false, [split])).toEqual([]);
+    });
+
+    it('surfaces prompts from the last text block that contains a complete block', () => {
+      const multi: AgentMessage = {
+        id: 'msg_multi',
+        role: 'assistant',
+        contentBlocks: [
+          { type: 'text', text: 'Intro.\n\n<!-- suggested-prompts\nOld prompt\n-->\n' },
+          { type: 'text', text: 'More.\n\n<!-- suggested-prompts\nNew prompt\n-->\n' },
+        ],
+        timestamp: new Date().toISOString(),
+      };
+
+      expect(computeSuggestedPrompts(false, [multi])).toEqual(['New prompt']);
     });
   });
 });

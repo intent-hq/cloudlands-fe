@@ -121,7 +121,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 <!-- Special rendering for Augment Context Engine tools -->
 {#if isContextEngine}
   <ContextEngineToolCall {toolUse} {toolState} {result} />
-{:else}
+{:else if !toolDisplay.hidden}
   <div
     class="tool-call-container group relative w-full text-base rounded-md transition-all duration-150 ease-out overflow-hidden block font-family-child"
   >
@@ -164,10 +164,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           {/if}
         {:else}
           <!-- Standard tool display -->
-          <!-- Verb (never truncates) -->
-          <span class="text-subtle whitespace-nowrap shrink-0">
-            {toolDisplay.verb}
-          </span>
+          <!-- Verb (never truncates) - omitted entirely when empty so it adds no flex gap -->
+          {#if toolDisplay.verb}
+            <span class="text-subtle whitespace-nowrap shrink-0">
+              {toolDisplay.verb}
+            </span>
+          {/if}
 
           <!-- Subject (truncates) - separate from button if it's a note link or file link -->
           {#if toolDisplay.subject && !toolDisplay.noteId && !toolDisplay.filePath}

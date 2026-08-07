@@ -57,9 +57,10 @@
       repoMap.set(p, { path: p, name: p.split('/').pop() || p });
     }
 
-    // Add known repos from registry
+    // Add known repos from registry (skip path-less GitHub picks — their
+    // `path` is an owner/repo shorthand, not a local checkout)
     for (const repo of $knownRepos$) {
-      if (repo.path && !repo.path.includes('/.clones/')) {
+      if (repo.path && !repo.githubUrl && !repo.path.includes('/.clones/')) {
         repoMap.set(repo.path, {
           path: repo.path,
           name: repo.name || repo.path.split('/').pop() || m.onboarding_localRepoTab_unknownProject_label(),

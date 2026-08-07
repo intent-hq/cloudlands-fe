@@ -34,6 +34,7 @@ import {
   chatSendFailed,
   chatSendStarted,
   chatInitialized,
+  chatQueueProcessingReceived,
   streamEnded,
 } from '../chat-state/chat-state-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
@@ -48,11 +49,13 @@ import {
   selectAgentSessionIsStreaming,
   selectAgentSessionStreamingContent,
   selectAgentSessionWorkspaceId,
+  selectAgentReasoningEffort,
   selectAgentActivationWaitComplete,
   selectAgentQueuedMessages,
   selectAgentIsResponding,
   selectAgentIsThinking,
   selectAgentIsWaiting,
+  selectAgentIsBlockedWaiting,
   selectAgentIsWaitingForOtherAgents,
   selectAgentIsRunning,
   selectAllRetainedAgentSessions,
@@ -665,6 +668,56 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].name).toBe('New Name');
     });
 
+    // Live tool preview (§7 `lastToolUse`): pushed by the daemon-events bridge
+    // during a turn, cleared by it at each turn boundary / on stream end.
+    it('applies and clears the pushed lastToolUse', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { lastToolUse: { name: 'launch-process', status: 'started' } }),
+      );
+      expect(state.byAgentId['a1'].lastToolUse).toEqual({
+        name: 'launch-process',
+        status: 'started',
+      });
+
+      state = agentSessionReducer(state, updateSession('a1', { lastToolUse: undefined }));
+      expect(state.byAgentId['a1'].lastToolUse).toBeUndefined();
+    });
+
+    // No hydration payload carries lastToolUse (AgentLite does not project it),
+    // so without a preservation guard any upsert that applies for another
+    // reason would erase the pushed value mid-turn.
+    it('keeps a pushed lastToolUse across a hydration upsert that omits the field', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { lastToolUse: { name: 'launch-process' } }),
+      );
+
+      // An upsert that applies for an unrelated reason (fresh lastAgentResponse)
+      // must not take the tool preview down with it.
+      state = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1', { lastAgentResponse: 'Working on it…' })),
+      );
+      expect(state.byAgentId['a1'].lastToolUse).toEqual({ name: 'launch-process' });
+
+      // A snapshot that explicitly carries the key still replaces it (no
+      // hydration path does today; the guard is key-existence, not blanket
+      // preservation).
+      state = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            lastAgentResponse: 'Done — tests pass.',
+            lastToolUse: { name: 'read_file' },
+          }),
+        ),
+      );
+      expect(state.byAgentId['a1'].lastToolUse).toEqual({ name: 'read_file' });
+    });
+
     it('handles messages in updates with normalization and logical dedup', () => {
       const msg = makeMessage('m1');
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
@@ -685,6 +738,15 @@ describe('agent-session-slice reducer', () => {
         }),
       );
       expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['msg_backend']);
+    });
+
+    it('sets and clears the session reasoningEffort (Option B, §5.5)', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(state, updateSession('a1', { reasoningEffort: 'high' }));
+      expect(state.byAgentId['a1'].reasoningEffort).toBe('high');
+      // Explicit null clears back to the provider default.
+      state = agentSessionReducer(state, updateSession('a1', { reasoningEffort: null }));
+      expect(state.byAgentId['a1'].reasoningEffort).toBeNull();
     });
   });
 
@@ -778,6 +840,53 @@ describe('agent-session-slice reducer', () => {
 
       expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(true);
       expect(state.byAgentId['a1'].waitingForAgentIds).toEqual(['child-1']);
+    });
+
+    it('folds reasoningEffort from an agent:session-updated payload (set and clear)', () => {
+      // Option B (§5.5): the daemon echoes the session-level reasoningEffort
+      // on `agent:updated`/`agent:session-updated` convergence payloads — a
+      // string sets it, an explicit null clears it, an absent key leaves the
+      // stored value untouched.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { reasoningEffort: 'medium' } as any)),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-effort-absent',
+          type: 'agent:session-updated',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'idle' },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].reasoningEffort).toBe('medium');
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-effort-set',
+          type: 'agent:session-updated',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'idle', reasoningEffort: 'xhigh' },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].reasoningEffort).toBe('xhigh');
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-effort-clear',
+          type: 'agent:session-updated',
+          timestamp: '2024-01-01T00:00:02.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'idle', reasoningEffort: null },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].reasoningEffort).toBeNull();
     });
 
     it('a between-turns active overshoot (isActive false) does not clear the wait', () => {
@@ -2334,6 +2443,73 @@ describe('agent-session selectors', () => {
     expect(selectAgentSessionWorkspaceId.select(state, 'unknown')).toBeUndefined();
   });
 
+  describe('selectAgentReasoningEffort', () => {
+    it('returns the first-class session field verbatim', () => {
+      const session = makeSession('a1', 'ws-1', { reasoningEffort: 'high' } as any);
+      const state = storeWith({ byAgentId: { a1: session } });
+      expect(selectAgentReasoningEffort.select(state, 'a1')).toBe('high');
+      expect(selectAgentReasoningEffort.select(state, 'unknown')).toBeUndefined();
+    });
+
+    it('falls back to the legacy codex compound-id suffix when the field is unset', () => {
+      // Pre-migration sessions may still store `{model}/{effort}` — the
+      // suffix is the effective effort until the daemon splits the id.
+      const session = makeSession('a1', 'ws-1', { model: 'gpt-5.3-codex/xhigh' } as any);
+      const state = storeWith({ byAgentId: { a1: session } });
+      expect(selectAgentReasoningEffort.select(state, 'a1')).toBe('xhigh');
+    });
+
+    it('treats an explicit null as unset (no compound fallback)', () => {
+      // null = user cleared back to provider default; the stale compound
+      // suffix must not resurrect it.
+      const session = makeSession('a1', 'ws-1', {
+        model: 'gpt-5.3-codex/high',
+        reasoningEffort: null,
+      } as any);
+      const state = storeWith({ byAgentId: { a1: session } });
+      expect(selectAgentReasoningEffort.select(state, 'a1')).toBeUndefined();
+    });
+
+    it('returns undefined for a bare model with no effort', () => {
+      const session = makeSession('a1', 'ws-1', { model: 'sonnet4.6' } as any);
+      const state = storeWith({ byAgentId: { a1: session } });
+      expect(selectAgentReasoningEffort.select(state, 'a1')).toBeUndefined();
+    });
+
+    it('never splits a slash-bearing non-codex model id', () => {
+      // HuggingFace-style `org/model` ids must survive intact — mirrors the
+      // daemon migration 0080 guard.
+      const hf = makeSession('a1', 'ws-1', { model: 'unsloth/gpt-oss-120b' } as any);
+      expect(
+        selectAgentReasoningEffort.select(storeWith({ byAgentId: { a1: hf } }), 'a1'),
+      ).toBeUndefined();
+
+      // Effort-looking suffix but no codex evidence: still not split.
+      const lookalike = makeSession('a1', 'ws-1', {
+        model: 'someorg/high',
+        provider: 'opencode',
+      } as any);
+      expect(
+        selectAgentReasoningEffort.select(storeWith({ byAgentId: { a1: lookalike } }), 'a1'),
+      ).toBeUndefined();
+    });
+
+    it('splits an unknown codex base model when the row shows codex evidence', () => {
+      const prefixed = makeSession('a1', 'ws-1', { model: 'codex:gpt-9-codex/high' } as any);
+      expect(
+        selectAgentReasoningEffort.select(storeWith({ byAgentId: { a1: prefixed } }), 'a1'),
+      ).toBe('high');
+
+      const byProvider = makeSession('a1', 'ws-1', {
+        model: 'gpt-9-codex/low',
+        provider: 'codex',
+      } as any);
+      expect(
+        selectAgentReasoningEffort.select(storeWith({ byAgentId: { a1: byProvider } }), 'a1'),
+      ).toBe('low');
+    });
+  });
+
   describe('selectAgentSessionIsProcessing', () => {
     it('returns the raw processing flag without conflating responding or waiting state', () => {
       const processing = makeSession('processing', 'ws-1', { isProcessing: true });
@@ -2822,6 +2998,89 @@ describe('agent-session selectors', () => {
     });
   });
 
+  describe('selectAgentIsBlockedWaiting', () => {
+    it('returns false for a tool wait inside an in-flight responding turn', () => {
+      const session = makeSession('a1', 'ws-1', {
+        status: 'active' as any,
+        isResponding: true,
+        isWaitingOnTool: true,
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsWaiting.select(state, 'a1')).toBe(true);
+      expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(false);
+    });
+
+    it('returns false for a tool wait behind the optimistic send flags', () => {
+      const session = makeSession('a1', 'ws-1', {
+        status: 'active' as any,
+        isStreaming: true,
+        isProcessing: true,
+        isWaitingOnTool: true,
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(false);
+    });
+
+    it('returns true for a tool wait with no live turn behind it', () => {
+      const session = makeSession('a1', 'ws-1', {
+        status: 'active' as any,
+        isWaitingOnTool: true,
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(true);
+    });
+
+    it('returns true for explicit Waiting status with no live turn', () => {
+      const session = makeSession('a1', 'ws-1', { status: 'Waiting' as any });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(true);
+    });
+
+    it('returns false for a stale Waiting status behind a live turn', () => {
+      // A queue drain opens the busy flags before the daemon revises the
+      // coarse status, so a lagging `Waiting` must not hold the hourglass.
+      const session = makeSession('a1', 'ws-1', {
+        status: 'Waiting' as any,
+        isStreaming: true,
+        isProcessing: true,
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(false);
+    });
+
+    it('returns true while paused on peer agents, even mid-turn', () => {
+      // The dedicated peer-pause flag is daemon-owned with its own clear
+      // paths, so it outranks a live turn.
+      const session = makeSession('a1', 'ws-1', { isWaitingForOtherAgents: true });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      const midTurn = storeWith({
+        byAgentId: {
+          a1: makeSession('a1', 'ws-1', { isWaitingForOtherAgents: true, isResponding: true }),
+        },
+        agentIdsByWorkspace: {},
+      });
+
+      expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(true);
+      expect(selectAgentIsBlockedWaiting.select(midTurn, 'a1')).toBe(true);
+    });
+
+    it('returns false for terminal or unknown agents', () => {
+      const session = makeSession('a1', 'ws-1', {
+        status: 'Completed' as any,
+        isWaitingOnTool: true,
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(false);
+      expect(selectAgentIsBlockedWaiting.select(state, 'unknown')).toBe(false);
+    });
+  });
+
   describe('selectAgentIsRunning', () => {
     it('returns true for active session lifecycle flags and statuses', () => {
       const activeSessions = [
@@ -3147,6 +3406,67 @@ describe('chatSendStarted — placeholder session (restored workspace regression
 
     expect(state).toBe(initialState);
     expect(state.byAgentId['agent-new']).toBeUndefined();
+  });
+});
+
+describe('chatQueueProcessingReceived — queue-delivery wake opens the turn', () => {
+  it('sets the busy flags on the queue drain start', () => {
+    const existing = makeSession('a1', 'ws-1', {
+      status: 'idle' as any,
+      isProcessing: false,
+      isStreaming: false,
+    });
+    let state = agentSessionReducer(initialState, upsertSession(existing));
+
+    state = agentSessionReducer(state, chatQueueProcessingReceived('a1', 'turn-1'));
+
+    expect(state.byAgentId['a1'].isStreaming).toBe(true);
+    expect(state.byAgentId['a1'].isProcessing).toBe(true);
+    expect(
+      selectAgentIsResponding.select(
+        storeWith({ byAgentId: state.byAgentId as any, agentIdsByWorkspace: {} }),
+        'a1',
+      ),
+    ).toBe(true);
+  });
+
+  it('is a no-op for an unknown agent', () => {
+    const state = agentSessionReducer(initialState, chatQueueProcessingReceived('unknown'));
+
+    expect(state).toBe(initialState);
+  });
+
+  it('is cleared again by the turn-end stream end', () => {
+    const existing = makeSession('a1', 'ws-1', { isProcessing: false, isStreaming: false });
+    let state = agentSessionReducer(initialState, upsertSession(existing));
+    state = agentSessionReducer(state, chatQueueProcessingReceived('a1', 'turn-1'));
+    state = agentSessionReducer(state, streamEnded('a1'));
+
+    expect(state.byAgentId['a1'].isStreaming).toBe(false);
+    expect(state.byAgentId['a1'].isProcessing).toBe(false);
+    expect(state.byAgentId['a1'].isResponding).toBe(false);
+  });
+
+  it('ends a completion-watch wait frozen by the preceding agent:idle', () => {
+    // The previous turn ended waiting on peers, so `agent:idle` froze
+    // isWaitingForOtherAgents: true. Without clearing it here the hourglass
+    // outranks the running dot for the whole re-woken turn.
+    const existing = makeSession('a1', 'ws-1', {
+      status: 'idle' as any,
+      isProcessing: false,
+      isStreaming: false,
+      isWaitingForOtherAgents: true,
+      waitingForAgentIds: ['a2'],
+    });
+    let state = agentSessionReducer(initialState, upsertSession(existing));
+
+    state = agentSessionReducer(state, chatQueueProcessingReceived('a1', 'turn-1'));
+
+    expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(false);
+    expect(state.byAgentId['a1'].waitingForAgentIds).toEqual([]);
+    const store = storeWith({ byAgentId: state.byAgentId as any, agentIdsByWorkspace: {} });
+    expect(selectAgentIsBlockedWaiting.select(store, 'a1')).toBe(false);
+    expect(selectAgentIsResponding.select(store, 'a1')).toBe(true);
   });
 });
 

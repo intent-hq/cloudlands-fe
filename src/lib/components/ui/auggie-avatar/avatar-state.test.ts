@@ -11,12 +11,12 @@ const {
   getStateMock,
   selectAgentSessionMock,
   selectAgentIsRespondingMock,
-  selectAgentIsWaitingMock,
+  selectAgentIsBlockedWaitingMock,
 } = vi.hoisted(() => ({
   getStateMock: vi.fn(() => ({ marker: 'state' })),
   selectAgentSessionMock: vi.fn(),
   selectAgentIsRespondingMock: vi.fn(),
-  selectAgentIsWaitingMock: vi.fn(),
+  selectAgentIsBlockedWaitingMock: vi.fn(),
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -40,8 +40,8 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: {
     select: selectAgentIsRespondingMock,
   },
-  selectAgentIsWaiting: {
-    select: selectAgentIsWaitingMock,
+  selectAgentIsBlockedWaiting: {
+    select: selectAgentIsBlockedWaitingMock,
   },
 }));
 
@@ -56,24 +56,25 @@ describe('avatar-state store-backed selectors', () => {
     getStateMock.mockClear();
     selectAgentSessionMock.mockReset();
     selectAgentIsRespondingMock.mockReset();
-    selectAgentIsWaitingMock.mockReset();
+    selectAgentIsBlockedWaitingMock.mockReset();
   });
 
   it('uses selectAgentIsResponding for running state', () => {
     selectAgentSessionMock.mockReturnValue({ id: 'agent-1', status: AgentStatus.Active });
     selectAgentIsRespondingMock.mockReturnValue(true);
-    selectAgentIsWaitingMock.mockReturnValue(false);
+    selectAgentIsBlockedWaitingMock.mockReturnValue(false);
 
     expect(getAvatarStateFromStore('ws-1', 'agent-1')).toBe('running');
     expect(selectAgentIsRespondingMock).toHaveBeenCalledWith({ marker: 'state' }, 'agent-1');
   });
 
-  it('lets selectAgentIsWaiting take precedence over responding for avatar state', () => {
+  it('lets a blocked wait take precedence over responding for avatar state', () => {
     selectAgentSessionMock.mockReturnValue({ id: 'agent-1', status: AgentStatus.Processing });
     selectAgentIsRespondingMock.mockReturnValue(true);
-    selectAgentIsWaitingMock.mockReturnValue(true);
+    selectAgentIsBlockedWaitingMock.mockReturnValue(true);
 
     expect(getAvatarStateFromStore('ws-1', 'agent-1')).toBe('waiting');
+    expect(selectAgentIsBlockedWaitingMock).toHaveBeenCalledWith({ marker: 'state' }, 'agent-1');
   });
 
   it('uses selectAgentIsResponding for store-backed streaming checks', () => {
@@ -126,5 +127,44 @@ describe('getAvatarState attention-request states', () => {
       'waiting',
     );
     expect(getAvatarState({ status: AgentStatus.Idle }, {})).toBe('idle');
+  });
+});
+
+describe('getAvatarState completed-vs-active precedence', () => {
+  it('keeps the check-mark for a completed agent with no live turn', () => {
+    expect(getAvatarState({ status: AgentStatus.Idle }, { isCompleted: true })).toBe('completed');
+  });
+
+  it('renders running instead of completed while the agent is responding', () => {
+    expect(
+      getAvatarState({ isResponding: true, status: AgentStatus.Active }, { isCompleted: true }),
+    ).toBe('running');
+  });
+
+  it('renders running instead of completed while the agent is streaming', () => {
+    expect(
+      getAvatarState({ isStreaming: true, status: AgentStatus.Active }, { isCompleted: true }),
+    ).toBe('running');
+  });
+
+  it('renders running instead of completed for a re-woken processing agent', () => {
+    expect(getAvatarState({ status: AgentStatus.Processing }, { isCompleted: true })).toBe(
+      'running',
+    );
+  });
+
+  it('returns to completed once the re-woken turn settles', () => {
+    expect(
+      getAvatarState(
+        { isResponding: false, isStreaming: false, status: AgentStatus.Idle },
+        { isCompleted: true },
+      ),
+    ).toBe('completed');
+  });
+
+  it('still prefers completed over a plain waiting status', () => {
+    expect(getAvatarState({ status: AgentStatus.Waiting }, { isCompleted: true })).toBe(
+      'completed',
+    );
   });
 });

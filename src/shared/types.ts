@@ -219,11 +219,17 @@ export const WORKSPACE_STATUS_MESSAGE_MAX_LENGTH = 500;
  *  guard, and every consumer set derive from this array. `idle` (intentd#793)
  *  folds live agent activity into the daemon-side derivation: a running agent
  *  promotes to `in_progress`, and without one the task-stage rollups
- *  (`in_progress`/`not_started`) demote to `idle`. */
+ *  (`in_progress`/`not_started`) demote to `idle`. `failed`, `blocked` and
+ *  `unread` (intentd#945) complete the BE-owned canonical precedence
+ *  `failed > blocked > needs_attention > in_progress > unread > PR/task rollup`,
+ *  so clients no longer synthesize those axes locally. */
 export const WORKSPACE_DISPLAY_STATUS_VALUES = [
+  'failed',
+  'blocked',
   'needs_attention',
   'not_started',
   'in_progress',
+  'unread',
   'idle',
   'complete',
   'pr_ready',
@@ -330,8 +336,8 @@ export interface Workspace {
   gitSummary?: WorkspaceGitSummary; // Git status for list views (commits ahead/behind)
   /** Copy-on-Write filesystem capability of the workspaces root (a machine capability, independent of the workspace or checkout mode). */
   cowSupported?: boolean;
-  /** How the daemon provisioned this workspace's checkout (PROTOCOL §5.1). Immutable; omitted for rows without a daemon-provisioned checkout (skip-isolation/direct, remote, …). */
-  checkoutMode?: 'cow' | 'worktree';
+  /** How the daemon provisioned this workspace's checkout (PROTOCOL §5.1). Immutable; omitted for rows without a daemon-provisioned checkout (skip-isolation, remote, …). `direct` = standalone local clone (cache-hydrated picked repos, isNewRepo). */
+  checkoutMode?: 'cow' | 'worktree' | 'direct';
   /** Cached physical disk usage of the workspace directory (PROTOCOL §5.1); omitted until the daemon's first computation completes. */
   diskUsage?: WorkspaceDiskUsage;
 }

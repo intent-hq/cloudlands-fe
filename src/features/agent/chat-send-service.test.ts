@@ -262,6 +262,33 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(agentsQueue).toHaveBeenCalledWith(AGENT, "queue me");
   });
 
+  it("queue-on-send: a tagged send bypasses the queue so the Q&A answer tag is never dropped", async () => {
+    // `agent.queueMessage` has no messageMetadata param (PROTOCOL §5.5), so
+    // queuing a wizard answer would strip its `question_answers` tag and the
+    // answer would resolve nothing — the wizard re-surfaces and the daemon's
+    // question hold keeps parking deliveries. Tagged sends take the direct
+    // front door, which is never held for user-origin sends.
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    const messageMetadata = {
+      type: "question_answers",
+      answeredQuestionsMessageId: "msg-a1",
+    };
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "Q: ?\nA: yes", messageMetadata }));
+    await flush();
+    await flush();
+
+    expect(agentsQueue).not.toHaveBeenCalled();
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    const [, , , optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { messageMetadata?: Record<string, unknown> },
+    ];
+    expect(optionsArg.messageMetadata).toEqual(messageMetadata);
+  });
+
   it("queue-on-send: forwards imageBlocks to agents.queue so attachments survive queuing (§5.5)", async () => {
     // PROTOCOL §5.5: agent.queueMessage accepts optional imageBlocks. The
     // queue-on-send branch must pass the composer's attachments through the
@@ -1100,6 +1127,77 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
       text: "edited text",
       options: { model: "fast-model" },
     });
+  });
+
+  it("records the Q&A answer tag on lastAttemptedMessage so a failed wizard answer retries TAGGED", async () => {
+    const ANSWER_TAG = {
+      type: "question_answers",
+      answeredQuestionsMessageId: "msg-a1",
+    };
+
+    appStore.dispatch(
+      sendMessage(AGENT, { wsId: WS, text: "Q: ?\nA: yes", messageMetadata: ANSWER_TAG }),
+    );
+    await flush();
+    await flush();
+
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "Q: ?\nA: yes",
+      options: { messageMetadata: ANSWER_TAG },
+    });
+  });
+
+  it("Try again resends the recorded Q&A answer tag", async () => {
+    const ANSWER_TAG = {
+      type: "question_answers",
+      answeredQuestionsMessageId: "msg-a1",
+    };
+    appStore.dispatch(
+      chatLastAttemptedMessageSet(AGENT, {
+        text: "Q: ?\nA: yes",
+        options: { messageMetadata: ANSWER_TAG },
+      }),
+    );
+
+    const action = agentSessionRetryLastMessageRequested(AGENT, WS);
+    appStore.dispatch(action);
+    await action.promise;
+
+    const [, , , optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { messageMetadata?: Record<string, unknown> },
+    ];
+    // An untagged resend would leave the daemon's question hold pending and
+    // re-surface the answered wizard.
+    expect(optionsArg.messageMetadata).toEqual(ANSWER_TAG);
+  });
+
+  it("retry-with-model keeps the recorded Q&A answer tag on the resend", async () => {
+    const ANSWER_TAG = {
+      type: "question_answers",
+      answeredQuestionsMessageId: "msg-a1",
+    };
+    appStore.dispatch(
+      chatLastAttemptedMessageSet(AGENT, {
+        text: "Q: ?\nA: yes",
+        options: { messageMetadata: ANSWER_TAG },
+      }),
+    );
+
+    const action = agentSessionRetryWithModelRequested(AGENT, WS, "fast-model");
+    appStore.dispatch(action);
+    await action.promise;
+
+    const [, , , optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { model?: string; messageMetadata?: Record<string, unknown> },
+    ];
+    expect(optionsArg.model).toBe("fast-model");
+    expect(optionsArg.messageMetadata).toEqual(ANSWER_TAG);
   });
 
   it("#964: retry-with-model with no recorded lastAttemptedMessage resolves as a no-op with user feedback", async () => {

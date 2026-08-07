@@ -82,8 +82,14 @@ export function getAllRepos(): KnownRepo[] {
 /**
  * Add or update a repo in the registry.
  * If a repo with the same path already exists, updates its lastUsedAt and metadata.
+ * Path-less GitHub picks use the `owner/repo` shorthand as `path` and carry `githubUrl`.
  */
-export function addRepo(repo: { path: string; name: string; owner?: string }): void {
+export function addRepo(repo: {
+  path: string;
+  name: string;
+  owner?: string;
+  githubUrl?: string;
+}): void {
   if (!warnIfUninitialized(`cannot add repo path=${repo.path}`)) return;
 
   const now = new Date().toISOString();
@@ -94,6 +100,7 @@ export function addRepo(repo: { path: string; name: string; owner?: string }): v
       ...cache[existingIndex],
       name: repo.name || cache[existingIndex].name,
       owner: repo.owner ?? cache[existingIndex].owner,
+      githubUrl: repo.githubUrl ?? cache[existingIndex].githubUrl,
       lastUsedAt: now,
     };
     logger.debug('Updated existing repo in registry', { path: repo.path });
@@ -102,6 +109,7 @@ export function addRepo(repo: { path: string; name: string; owner?: string }): v
       path: repo.path,
       name: repo.name,
       owner: repo.owner,
+      githubUrl: repo.githubUrl,
       addedAt: now,
       lastUsedAt: now,
     });

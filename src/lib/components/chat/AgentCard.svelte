@@ -17,9 +17,12 @@
   selectAgentIsResponding,
   selectAgentSessionHasStreamOwnedMessage,
   selectAgentSessionStreamingContent,
-  selectAgentIsWaiting,
+  selectAgentIsBlockedWaiting,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import { selectChatReceivedFirstChunk } from '$store/renderer/slices/chat-state/chat-state-selectors';
+  import {
+  selectChatLastChunkReceivedAt,
+  selectChatReceivedFirstChunk,
+} from '$store/renderer/slices/chat-state/chat-state-selectors';
   import {
   deleteAgentWithUndoRequested,
   ensureAgentSessionLoaded,
@@ -31,6 +34,7 @@
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import { getLastMeaningfulLine, stripUserMessagePrefixes } from '$lib/utils/text-utils';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
+  import { classifyTool } from './tool-classifier';
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
@@ -43,7 +47,7 @@
   getPanelLayoutManager,
   hasPanelLayoutManager,
 } from '$features/layout/panel-layout-adapter';
-  import type { Workspace } from '$shared/types';
+  import type { ToolUseBlock, Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
 
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
@@ -358,7 +362,9 @@
   // above handles the disk restore.
   const agent$ = selectAgentSession(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
-  const agentIsWaiting$ = selectAgentIsWaiting(agentIdStore);
+  // Hourglass-worthy waits only: a tool executing inside an in-flight turn is
+  // active work, so it must not suppress the running indicator.
+  const agentIsWaiting$ = selectAgentIsBlockedWaiting(agentIdStore);
   const agentData = $derived(getAgentPeekData($agent$));
 
   // Get parent agent ID from metadata (for delegation info)
@@ -400,7 +406,7 @@
   const avatarState = $derived(
     getAvatarState(
       {
-        isStreaming: isStreamActive || ($agentIsResponding$ && !$agentIsWaiting$),
+        isStreaming: isStreamActive,
         status: $agentIsWaiting$ ? 'waiting' : agentData?.status,
       },
       {
@@ -454,6 +460,26 @@
       (agentData?.lastResponse ? getLastMeaningfulLine(agentData.lastResponse) : ''),
   );
 
+  // Live tool preview: the session's push-applied `lastToolUse` (refreshed by
+  // the throttled `agent:stream:activity` pings, PROTOCOL §7) synthesized into
+  // the block shape AgentPreviewToolLabel renders. This is what keeps a
+  // tool-only stretch of a turn advancing instead of freezing on the previous
+  // turn's transcript text — live streamed text still outranks it, and it only
+  // exists while the agent is responding, so idle rows keep their peek data.
+  // The wire payload carries only the tool name, so the synthesized block has
+  // an empty `input`. Names that classify as `hidden` (workspace_api without a
+  // streamed summary, raw MCP identifiers) render nothing at all in
+  // AgentPreviewToolLabel, so they must not count as a live tool either —
+  // otherwise they would suppress the text/user fallbacks and leave the row
+  // blank for the length of the call.
+  const liveToolUse = $derived.by<ToolUseBlock | undefined>(() => {
+    if (!$agentIsResponding$ || liveResponseLine) return undefined;
+    const toolUse = $agent$?.lastToolUse;
+    if (!toolUse?.name) return undefined;
+    if (classifyTool(toolUse.name, {}).hidden) return undefined;
+    return { type: 'tool_use', id: `${agentId}:live-tool`, name: toolUse.name, input: {} };
+  });
+
   // Freshness-wins preview: when the newest transcript message is the user's
   // (wire `lastMessageRole`, transcript-derived fallback in agent-peek-utils)
   // and no streamed text exists yet for an in-flight turn, the user's first
@@ -469,15 +495,31 @@
       .split('\n')[0]
       ?.trim() ?? '',
   );
+  // A live tool call belongs to the in-flight turn (the bridge clears the
+  // field at each turn boundary and on stream end), so it is newer than the
+  // newest transcript message and also outranks the user line.
   const showUserMessagePreview = $derived(
-    agentData?.lastMessageRole === 'user' && !!userFirstLine && !liveResponseLine,
+    agentData?.lastMessageRole === 'user' && !!userFirstLine && !liveResponseLine && !liveToolUse,
   );
 
   // Tool-use block to preview when the latest thing the agent did was a tool
   // call (see agent-peek-utils). Only used when there's no text to display.
   const lastToolUse = $derived(agentData?.lastToolUse);
+  // The live tool call outranks the stale transcript-derived response line and
+  // the peek tool block; without one the existing precedence is unchanged.
+  const previewToolUse = $derived(liveToolUse ?? lastToolUse);
+  const previewResponse = $derived(liveToolUse ? '' : lastResponse);
 
-  const updatedAt = $derived($agent$?.updatedAt);
+  // Relative-time label. The session's `updatedAt` is BE-owned and only moves
+  // when the daemon writes the row, so during a long turn it freezes. While
+  // the agent is responding the transient chat-state activity timestamp (bumped
+  // by every `agent:stream:activity` ping, tool-only ones included) is the
+  // fresher signal — it is FE-only bookkeeping, so nothing overwrites the
+  // canonical field.
+  const lastChunkReceivedAt$ = selectChatLastChunkReceivedAt(agentIdStore);
+  const updatedAt = $derived(
+    $agentIsResponding$ && $lastChunkReceivedAt$ > 0 ? $lastChunkReceivedAt$ : $agent$?.updatedAt,
+  );
 
   // Border color based on state - only show colored border if showStateBorder is true
   const isRunning = $derived(avatarState === 'running' || avatarState === 'responding');
@@ -508,8 +550,12 @@
   // the derivation yields undefined and the render chain falls through to
   // live text / newest user message / tool preview. They remain the fallback
   // for idle agents between turns.
+  // A live tool call (push-applied `lastToolUse`) is fresher than this turn's
+  // digest, so during a tool-only stretch it takes over and the row advances
+  // instead of resting on the digest for the rest of the turn.
   const effectiveCompletionReport = $derived.by(() => {
     if ($agentIsResponding$) {
+      if (liveToolUse) return undefined;
       return $agent$?.digest || undefined;
     }
     return (
@@ -668,23 +714,23 @@
                 {effectiveCompletionReport}
               </p>
             </div>
-          {:else if lastUserMsg || lastResponse || lastToolUse}
+          {:else if lastUserMsg || previewResponse || previewToolUse}
             <div class="space-y-0.5">
-              {#if lastResponse}
+              {#if previewResponse}
                 <p
                   class="text-sm text-subtle truncate"
                   data-testid="agent-card-preview"
                   transition:slide={{ axis: 'y', duration: 150 }}
                 >
-                  {lastResponse}
+                  {previewResponse}
                 </p>
-              {:else if lastToolUse}
+              {:else if previewToolUse}
                 <div
                   class="text-sm text-subtle truncate"
                   data-testid="agent-card-preview"
                   transition:slide={{ axis: 'y', duration: 150 }}
                 >
-                  <AgentPreviewToolLabel toolUse={lastToolUse} animate={isRunning} />
+                  <AgentPreviewToolLabel toolUse={previewToolUse} animate={isRunning} />
                 </div>
               {:else if lastUserMsg}
                 <p class="text-sm text-subtle truncate" data-testid="agent-card-preview">

@@ -576,6 +576,35 @@ Prompt.`;
       expect(cleared?.frontmatter.modelOptions).toEqual([]);
     });
 
+    it('should round-trip reasoningEffort and omit the key when unset', async () => {
+      await writeSpecialistFile({
+        id: 'effort-round-trip',
+        name: 'Effort Round Trip',
+        description: 'Reasoning effort round-trip test specialist',
+        model: 'codex:gpt-5.3-codex',
+        reasoningEffort: 'high',
+        modelOptions: [{ model: 'codex:gpt-5.3-codex', hint: 'deep', reasoningEffort: 'xhigh' }],
+        behaviorPrompt: 'Effort prompt',
+      });
+
+      const loaded = await loadSpecialistFile('effort-round-trip');
+      expect(loaded?.rawContent).toContain('reasoningEffort: "high"');
+      expect(loaded?.frontmatter.reasoningEffort).toBe('high');
+      expect(loaded?.frontmatter.modelOptions).toEqual([
+        { model: 'codex:gpt-5.3-codex', hint: 'deep', reasoningEffort: 'xhigh' },
+      ]);
+
+      await writeSpecialistFile({
+        id: 'no-effort',
+        name: 'No Effort',
+        description: 'No reasoning effort',
+        behaviorPrompt: 'Prompt',
+      });
+      const noEffort = await loadSpecialistFile('no-effort');
+      expect(noEffort?.rawContent).not.toContain('reasoningEffort:');
+      expect(noEffort?.frontmatter.reasoningEffort).toBeUndefined();
+    });
+
     it('should write and load project-level specialists from the workspace path', async () => {
       const workspacePath = path.join(TEST_HOME, 'repo-a');
 

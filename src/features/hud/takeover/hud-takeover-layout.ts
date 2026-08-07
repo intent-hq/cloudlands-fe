@@ -163,20 +163,49 @@ export function cellTop(y: number): string {
 export const HUD_TAKEOVER_BANNER_IN_S = 1.1;
 
 /**
+ * Overflow auto-scroll speed (px/s) for a banner whose headline is wider
+ * than its box: slow and constant, tuned to a comfortable read-along pace
+ * (60–90 px/s band).
+ */
+export const HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S = 75;
+
+/** Hold (s) at EACH end of the overflow scroll so the head and tail of the line read. */
+export const HUD_TAKEOVER_BANNER_SCROLL_HOLD_S = 0.6;
+
+/**
+ * Scroll animation duration (s) for a banner overflowing its box by the
+ * measured `overflowPx`: constant readable speed plus the short hold at each
+ * end. 0 when nothing overflows (<= 0), so no-scroll banners keep the exact
+ * pre-scroll timeline. Pure and deterministic — the caller measures the DOM
+ * and feeds the result to `bannerOutDelay` (and, via `extraDwellMs`, to
+ * `tickTakeoverQueue`) so the dwell covers the whole scroll.
+ */
+export function bannerScrollDurationS(overflowPx: number): number {
+  if (overflowPx <= 0) return 0;
+  return overflowPx / HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S + 2 * HUD_TAKEOVER_BANNER_SCROLL_HOLD_S;
+}
+
+/**
  * Banner phase timeline, relative to overlay mount (the `opening` phase
  * start; delays feed the CSS `--banner-in/out-delay` vars):
  *   - intro/spotlight: wipe-in choreography ends ~1.2s (= OPEN_MS); the
- *     dwell window then runs [1.2s, 1.2s + dwell].
+ *     dwell window then runs [1.2s, 1.2s + dwell + scroll] — a measured
+ *     overflow scroll extends the queue dwell via `extraDwellMs`
+ *     (additive after the dwell clamp, see `tickTakeoverQueue`).
  *   - unfold: starts at `bannerDelay` (mock 1.0s, or 3.5s when the map must
  *     pan to a far changed cell; +0.3s per stacked banner) and takes the
  *     1.1s typewriter wipe — fully unfolded at ~2.1s in the common no-pan
  *     case.
+ *   - overflow scroll: when the headline is wider than its box, the
+ *     unfolded headline marquees horizontally for `bannerScrollDurationS`
+ *     (constant speed plus an end hold each side); 0s when nothing
+ *     overflows.
  *   - unfolded hold: ~50% OF THE ENTRY'S DWELL — `bannerOutDelay` is
- *     dwell-proportional (in-delay + wipe + dwell/2), not the mock's fixed
- *     5.2s/7.2s, so longer attention dwells hold the readable banner longer
- *     instead of only extending the map-only tail.
+ *     dwell-proportional (in-delay + wipe + scroll + dwell/2), not the
+ *     mock's fixed 5.2s/7.2s, so longer attention dwells hold the readable
+ *     banner longer instead of only extending the map-only tail.
  *   - exit: 0.45s fade, then the map stays alone for the remaining
- *     ~dwell/2 − 1.35s until the close wipe at 1.2s + dwell.
+ *     ~dwell/2 − 1.35s until the close wipe at 1.2s + dwell + scroll.
  * Reduced motion renders banners with no animation at all (no unfold, no
  * fade) — these delays are motion-only.
  */
@@ -188,12 +217,20 @@ export function bannerDelay(needsPan: boolean, index: number): string {
  * Fade-out delay allocating ~half the entry's dwell to the fully-unfolded
  * banner (see the timeline above). Derived from the SAME in-delay shape, so
  * stacked banners stagger out as they staggered in and each holds exactly
- * dwell/2. When the 3.5s pan pre-roll eats most of a short routine dwell the
- * close wipe may still cut the fade off — pre-existing behavior, unchanged.
+ * dwell/2 — after its overflow scroll (`scrollS`, from
+ * `bannerScrollDurationS`; 0 keeps the no-scroll delay byte-identical) has
+ * fully played. When the 3.5s pan pre-roll eats most of a short routine
+ * dwell the close wipe may still cut the fade off — pre-existing behavior,
+ * unchanged.
  */
-export function bannerOutDelay(needsPan: boolean, index: number, dwellMs: number): string {
+export function bannerOutDelay(
+  needsPan: boolean,
+  index: number,
+  dwellMs: number,
+  scrollS = 0,
+): string {
   const inDelayS = (needsPan ? 3.5 : 1.0) + index * 0.3;
-  return (inDelayS + HUD_TAKEOVER_BANNER_IN_S + dwellMs / 2000).toFixed(2);
+  return (inDelayS + HUD_TAKEOVER_BANNER_IN_S + scrollS + dwellMs / 2000).toFixed(2);
 }
 
 /**

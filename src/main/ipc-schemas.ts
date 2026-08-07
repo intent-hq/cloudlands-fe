@@ -354,6 +354,7 @@ export const WorkspaceAddRecentRepositorySchema = z.object({
   repository: z.string().min(1, 'Repository is required'),
   name: z.string().optional(),
   owner: z.string().optional(),
+  githubUrl: z.string().optional(),
 });
 
 export const WorkspaceClearRecentRepositoriesSchema = z.object({});
@@ -1440,9 +1441,11 @@ export const SpecialistWriteSchema = z
         z.object({
           model: z.string().min(1, 'Model is required'),
           hint: z.string(),
+          reasoningEffort: z.string().optional(),
         }),
       )
       .optional(),
+    reasoningEffort: z.string().optional(),
     behaviorPrompt: z.string().min(1, 'Behavior prompt is required'),
     scope: z.enum(['user', 'project']).optional(),
     workspacePath: z.string().optional(),

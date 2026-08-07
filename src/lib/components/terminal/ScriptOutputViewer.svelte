@@ -364,6 +364,16 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  /*
+   * xterm 6.0.0 regression: xterm.css ships a static background-color: #000 on
+   * .xterm-viewport, which shows through as a black frame around the padded
+   * canvas in light mode. Force it transparent so the theme-painted container
+   * shows through. Remove once xtermjs/xterm.js#5781 (fix: #5782) ships.
+   */
+  :global(.xterm-output .xterm-viewport) {
+    background-color: transparent !important;
+  }
+
   /* Scrollbar styles */
   :global(.xterm-output .xterm-viewport) {
     scrollbar-width: thin;

@@ -128,7 +128,11 @@
   import ChatMessage from './ChatMessage.svelte';
   import DateSeparator from './DateSeparator.svelte';
   import NewMessagesDivider from './NewMessagesDivider.svelte';
-  import { resolveNewMessagesDividerAnchor } from './new-messages-divider';
+  import {
+    resolveNewMessagesDividerAnchor,
+    resolveLatchedDividerAnchor,
+    dividerVisibleWhenScrolledToBottom,
+  } from './new-messages-divider';
   import EventWakeupBanner from './EventWakeupBanner.svelte';
   import { parseAgentEvents } from './event-wake-summary';
   import AgentCard from './AgentCard.svelte';
@@ -146,9 +150,13 @@
   type QuestionAnswer,
 } from './questions/QuestionWizard.svelte';
   import { deriveWizardPendingQuestions } from './questions/wizard-gate';
-  import { flattenAnswersToMessage } from './questions/answer-message';
+  import {
+    buildAnswerMessageMetadata,
+    flattenAnswersToMessage,
+  } from './questions/answer-message';
   import { groupMessagesByDate } from '$lib/utils/timeFormatting';
   import {
+  animateScrollTo,
   followBottom,
   scrollToBottom as scrollToBottomUtil,
 } from '$lib/utils/smartScroll';
@@ -192,13 +200,9 @@
   import {
   markAgentAsViewed,
   clearCurrentlyViewedAgent,
+  startDividerSession,
 } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
-  import {
-    requestMarkAgentSeen,
-    cancelPendingMarkAgentSeen,
-    newestPersistedMessageId,
-    type MarkAgentSeenSnapshot,
-  } from '$features/agent/mark-agent-seen';
+  import { selectDividerSession } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import AuroraBackground from './AuroraBackground.svelte';
   import {
   invoke,
@@ -359,6 +363,8 @@
   // Canonical "agent is running" gate for idle-only affordances (next-steps links).
   const agentIsRunning$ = selectAgentIsRunning(agentIdStore);
   const transcriptHydration$ = selectTranscriptHydration(agentIdStore);
+  // Latched "New messages" divider viewing session (entry-only, frozen).
+  const dividerSession$ = selectDividerSession(agentIdStore);
   const isDelegatedBackgroundTaskAgent = $derived(
     isDelegatedBackgroundTaskSession($agentSession$),
   );
@@ -500,18 +506,28 @@
     }
     // Suggested prompts stay hidden whenever the turn has pending Agent Q&A
     // questions — including while the wizard is Ignore-collapsed. Only
-    // answering (or any superseding user message) brings them back.
+    // answering, dismissing, or a newer question set brings them back.
     if (pendingQuestions) {
       return [];
     }
-    const messageContent = extractAllContent(lastAssistantMessage);
-    const { prompts } = parseSuggestedPrompts(messageContent);
-    return prompts;
+    // Parse each text block on its own, mirroring MessageContent, which strips
+    // the block per text block when rendering the transcript. Parsing a joined
+    // string here would surface chips for a marker split across two blocks
+    // while MessageContent still rendered its raw lines. The last text block
+    // that yields prompts wins.
+    const textBlocks = (lastAssistantMessage.contentBlocks ?? []).filter((b) => b.type === 'text');
+    for (let i = textBlocks.length - 1; i >= 0; i--) {
+      const { prompts } = parseSuggestedPrompts(textBlocks[i].text ?? '');
+      if (prompts.length > 0) return prompts;
+    }
+    return [];
   });
 
-  // Agent Q&A: question blocks on the LAST assistant message with NO later
-  // user message (and not streaming) replace the composer with the sequential
-  // wizard. Derivation is purely transcript-based (wire contract), so
+  // Agent Q&A: question blocks on the newest question-bearing assistant
+  // message (not streaming) replace the composer with the sequential wizard,
+  // and stay pending across later plain user messages and agent replies until
+  // answered (answer-tagged user row), dismissed, or superseded by a newer
+  // question set. Derivation is purely transcript-based (wire contract), so
   // restored sessions re-surface unanswered questions automatically.
   // The gate (own active turn, NOT the broad running gate — an agent paused
   // on delegated agents has ended its turn and its questions must surface)
@@ -577,12 +593,13 @@
   }
 
   // Completing the wizard flattens all answers into ONE plain-text user
-  // message of `Q:`/`A:` pairs (wire contract — no messageMetadata) sent
-  // through the ordinary send path. The resulting user message supersedes
-  // the questions, so the wizard unmounts, the composer restores, and the
-  // in-transcript cards render resolved.
+  // message of `Q:`/`A:` pairs sent through the ordinary send path, tagged
+  // with `messageMetadata { type: "question_answers",
+  // answeredQuestionsMessageId }` (wire contract). That structured tag — not
+  // the text — resolves the pending set, so the wizard unmounts and the
+  // composer restores; an untagged user message leaves the Q&A pending.
   function handleQuestionWizardComplete(answers: QuestionAnswer[]) {
-    if (!workspace || !isActive) return;
+    if (!workspace || !isActive || !pendingQuestions) return;
     const text = flattenAnswersToMessage(answers);
     logger.info('Question wizard completed', { answerCount: answers.length });
     appStore.dispatch(
@@ -592,6 +609,7 @@
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
+        messageMetadata: buildAnswerMessageMetadata(pendingQuestions.messageId),
       }),
     );
     void performLocalSendCleanup({ followBottom: true });
@@ -1403,16 +1421,38 @@
   let groupedMessages = $derived(groupMessagesByDate($agentMessages$));
 
   // ── "New messages" divider (unread marker, PROTOCOL §5.5 agent.markSeen) ──
-  // Id of the message the presentation-only divider renders after, or null
-  // when today's behavior applies (no marker / marker at newest / dangling
-  // marker). Marker updates from other clients converge via agent:updated →
-  // session metadata upserts, so the divider position is live-derived.
+  // The divider is entry-only and frozen per viewing session: on the first
+  // transcript hydration the anchor is derived ONCE from the seen marker and
+  // latched in Redux (unreadTracking.dividerSessionByAgentId) — `null` is
+  // latched too ("session started, no divider"). First-write-wins in the
+  // slice makes cached-panel remounts harmless; the latch clears only at
+  // stop-looking boundaries (tab close / active-workspace switch — see
+  // divider-session-boundary-service).
+  let latchedDividerSessionAgentId: string | null = null;
+  $effect(() => {
+    if (!agentId || latchedDividerSessionAgentId === agentId) return;
+    if ($transcriptHydration$ !== 'settled') return;
+    latchedDividerSessionAgentId = agentId;
+    appStore.dispatch(
+      startDividerSession(
+        agentId,
+        resolveNewMessagesDividerAnchor(
+          $agentMessages$.map((message) => message.id),
+          typeof $agentSession$?.metadata?.lastSeenMessageId === 'string'
+            ? $agentSession$.metadata.lastSeenMessageId
+            : undefined,
+        ),
+      ),
+    );
+  });
+  // Rendered position comes ONLY from the latched anchor — later
+  // lastSeenMessageId convergence never adds/moves/removes the divider. A
+  // latched anchor no longer in the transcript (e.g. edit-and-regenerate
+  // truncation) hides it without recomputing.
   const newMessagesDividerAnchorId = $derived(
-    resolveNewMessagesDividerAnchor(
+    resolveLatchedDividerAnchor(
       $agentMessages$.map((message) => message.id),
-      typeof $agentSession$?.metadata?.lastSeenMessageId === 'string'
-        ? $agentSession$.metadata.lastSeenMessageId
-        : undefined,
+      $dividerSession$?.anchorId ?? null,
     ),
   );
   // One-shot guard: the divider entry-positioning happens once per panel mount
@@ -1475,9 +1515,11 @@
       currentCount > previousMessageCount &&
       (isFirstMessage || (shouldFollowBottom && !isScrollUnlocked));
     if (shouldScroll) {
-      // Unread-marker entry: on the first transcript hydration with a valid
-      // seen marker, land at the "New messages" divider instead of the bottom
-      // and leave follow disabled — the arrow button still scrolls to the end.
+      // Unread-marker entry: on the first transcript hydration with a latched
+      // divider anchor, land at the "New messages" divider with follow
+      // disabled when the unseen tail is taller than the viewport; when it
+      // fits on screen, scroll to the bottom with follow enabled instead
+      // (decided inside scrollToNewMessagesDivider).
       if (isFirstMessage && !hasAppliedNewMessagesEntryScroll && newMessagesDividerAnchorId) {
         hasAppliedNewMessagesEntryScroll = true;
         void scrollToNewMessagesDivider(newMessagesDividerAnchorId);
@@ -1900,54 +1942,14 @@
       targetScrollTop = scrollContainer.scrollTop + (elementRect.bottom - containerRect.bottom) + 1;
     }
 
-    const startScrollTop = scrollContainer.scrollTop;
-    const distance = targetScrollTop - startScrollTop;
-    const startTime = performance.now();
-
-    function easeOutCubic(t: number): number {
-      return 1 - Math.pow(1 - t, 3);
-    }
-
-    function animate(currentTime: number) {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-
-      scrollContainer!.scrollTop = startScrollTop + distance * easeOutCubic(progress);
-
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      }
-    }
-
-    requestAnimationFrame(animate);
+    animateScrollTo(() => scrollContainer, targetScrollTop, duration);
   }
 
   /**
    * Smoothly scroll to a specific position with 150ms animation.
    */
   function smoothScrollToPosition(top: number, duration: number = 150) {
-    if (!scrollContainer) return;
-
-    const startScrollTop = scrollContainer.scrollTop;
-    const distance = top - startScrollTop;
-    const startTime = performance.now();
-
-    function easeOutCubic(t: number): number {
-      return 1 - Math.pow(1 - t, 3);
-    }
-
-    function animate(currentTime: number) {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-
-      scrollContainer!.scrollTop = startScrollTop + distance * easeOutCubic(progress);
-
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      }
-    }
-
-    requestAnimationFrame(animate);
+    animateScrollTo(() => scrollContainer, top, duration);
   }
 
   // Navigate to a specific message by index
@@ -2150,11 +2152,15 @@
   }
 
   // Entry positioning for the unread marker: force-render the anchor message's
-  // turn (it may be a virtualized LazyTurn placeholder), then land the viewport
-  // on the "New messages" divider rendered right after it. Follow stays
-  // disabled (forceRenderAndFindMessage drops it) so streaming growth doesn't
-  // yank the viewport down. Falls back to today's scroll-to-bottom if the
-  // anchor never renders.
+  // turn (it may be a virtualized LazyTurn placeholder), then decide where to
+  // land. If the divider would still be visible with the viewport scrolled
+  // fully to the bottom (the whole unseen tail fits on screen), enter like a
+  // normal conversation: scroll to the end with auto-follow enabled — the
+  // frozen divider stays rendered where it is. Otherwise land the viewport on
+  // the "New messages" divider with follow disabled
+  // (forceRenderAndFindMessage drops it) so streaming growth doesn't yank the
+  // viewport down. Falls back to today's scroll-to-bottom if the anchor never
+  // renders.
   async function scrollToNewMessagesDivider(anchorMessageId: string) {
     const anchorElement = await forceRenderAndFindMessage(anchorMessageId);
     if (isComponentDestroyed || !scrollContainer) return;
@@ -2164,6 +2170,21 @@
     const targetElement = dividerElement ?? anchorElement;
     if (!targetElement) {
       shouldFollowBottom = true;
+      scrollToBottomUtil(scrollContainer);
+      return;
+    }
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const targetRect = targetElement.getBoundingClientRect();
+    const targetOffsetTop = scrollContainer.scrollTop + (targetRect.top - containerRect.top);
+    if (
+      dividerVisibleWhenScrolledToBottom(
+        targetOffsetTop,
+        scrollContainer.scrollHeight,
+        scrollContainer.clientHeight,
+      )
+    ) {
+      shouldFollowBottom = true;
+      isScrollUnlocked = false;
       scrollToBottomUtil(scrollContainer);
       return;
     }
@@ -2539,45 +2560,12 @@
     }
   });
 
-  // Advance the per-conversation seen marker (agent.markSeen, PROTOCOL §5.5)
-  // while the user is viewing the end of the transcript. The ONLY trigger is
-  // the viewport being at the very bottom with this panel active — scrolling
-  // mid-conversation never produces a backend call. The request is debounced
-  // and fire-and-forget; all gates (at-bottom, viewed agent, window focus)
-  // are re-checked from this live snapshot when the debounce fires, so
-  // scrolling away or blurring during the window silently drops it. Streaming
-  // rows are never eligible — the marker only ever points at a persisted
-  // message the daemon can resolve.
-  function markSeenSnapshot(): MarkAgentSeenSnapshot | null {
-    if (isComponentDestroyed || !agentId || !workspace?.id) return null;
-    return {
-      workspaceId: workspace.id,
-      agentId,
-      messageId: newestPersistedMessageId($agentMessages$),
-      atBottom: distanceFromBottom <= SCROLL_BOTTOM_THRESHOLD,
-    };
-  }
-  $effect(() => {
-    if (!agentId || !isActive || !workspace?.id) return;
-    if (distanceFromBottom > SCROLL_BOTTOM_THRESHOLD) return;
-    const messageId = newestPersistedMessageId($agentMessages$);
-    if (!messageId) return;
-    requestMarkAgentSeen(agentId, markSeenSnapshot);
-  });
-
-  // Re-arm the trigger when the window regains focus while sitting at the
-  // bottom — the focus gate dropped any request that fired while blurred.
-  onMount(() => {
-    const handleWindowFocus = () => {
-      if (isComponentDestroyed || !agentId || !isActive) return;
-      if (distanceFromBottom > SCROLL_BOTTOM_THRESHOLD) return;
-      requestMarkAgentSeen(agentId, markSeenSnapshot);
-    };
-    window.addEventListener('focus', handleWindowFocus);
-    return () => {
-      window.removeEventListener('focus', handleWindowFocus);
-    };
-  });
+  // NOTE: the seen marker (agent.markSeen, PROTOCOL §5.5) is NOT advanced
+  // from this component. It advances at three discrete triggers handled in
+  // middleware — turn finish (streamEnded, gated on viewed tab + window
+  // focus), user send (sendMessage), and stop-looking boundaries (tab close /
+  // workspace switch via the divider-session boundary seam). See
+  // $features/agent/mark-agent-seen.
 
   onDestroy(() => {
     // CRITICAL: Set destruction flag FIRST, before any other cleanup.
@@ -2585,11 +2573,6 @@
     // late) from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
-
-    // Drop any pending markSeen debounce for this panel's agent.
-    if (agentId) {
-      cancelPendingMarkAgentSeen(agentId);
-    }
 
     // Clear currently viewed agent so other agents can properly be marked as
     // unread — scoped so a cached background tab's destroy cannot tear down

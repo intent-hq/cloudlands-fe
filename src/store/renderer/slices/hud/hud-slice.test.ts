@@ -10,7 +10,7 @@ import {
   hudGridFilterStatesCleared,
   hudGridFilterStateToggled,
   hudQuestionCaptured,
-  hudQuestionSuperseded,
+  hudQuestionsResolvedForWorkspace,
   hudRateHistoryFailed,
   hudRateHistoryLoaded,
   hudReducer,
@@ -22,6 +22,8 @@ import {
   type HudFeedEntry,
   type HudState,
 } from './hud-slice';
+import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
+import { replaceWorkspaceList, setWorkspaceEntity } from '../workspace/workspace-slice';
 
 function makeEntry(id: string, overrides: Partial<HudFeedEntry> = {}): HudFeedEntry {
   return {
@@ -153,6 +155,76 @@ describe('hud-slice reducer', () => {
     expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-1': 'pr_merged' });
   });
 
+  describe('displayStatus override reconciliation', () => {
+    function withOverrides(): HudState {
+      let state = activeState();
+      state = hudReducer(state, hudDisplayStatusChanged('ws-1', 'pr_open'));
+      return hudReducer(state, hudDisplayStatusChanged('ws-2', 'in_progress'));
+    }
+
+    function entity(id: string, displayStatus?: WorkspaceDisplayStatus): Workspace {
+      return { id, displayStatus } as Workspace;
+    }
+
+    it('an entity that agrees with the override retires it immediately', () => {
+      const state = hudReducer(withOverrides(), setWorkspaceEntity(entity('ws-1', 'pr_open')));
+      expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-2': 'in_progress' });
+    });
+
+    it('the FIRST contradicting entity keeps the override (it may be an in-flight refetch)', () => {
+      const state = hudReducer(withOverrides(), setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      expect(state.displayStatusByWorkspaceId).toEqual({
+        'ws-1': 'pr_open',
+        'ws-2': 'in_progress',
+      });
+      expect(state.displayStatusOverridesContradicted).toEqual({ 'ws-1': true });
+    });
+
+    it('a SECOND contradicting entity retires the override', () => {
+      let state = hudReducer(withOverrides(), setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      state = hudReducer(state, setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-2': 'in_progress' });
+      expect(state.displayStatusOverridesContradicted).toEqual({});
+    });
+
+    it('a refetch that predates the event cannot clobber the override (reverse race)', () => {
+      // `workspace.list` starts, the event lands mid-flight, then the stale
+      // response resolves: the override must survive and keep rendering.
+      let state = hudReducer(activeState(), hudDisplayStatusChanged('ws-1', 'failed'));
+      state = hudReducer(state, replaceWorkspaceList([entity('ws-1', 'in_progress')]));
+      expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-1': 'failed' });
+    });
+
+    it('a newer event restarts the two-strike count', () => {
+      let state = hudReducer(withOverrides(), setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      state = hudReducer(state, hudDisplayStatusChanged('ws-1', 'complete'));
+      expect(state.displayStatusOverridesContradicted).toEqual({});
+      state = hudReducer(state, setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      expect(state.displayStatusByWorkspaceId['ws-1']).toBe('complete');
+    });
+
+    it('replaceWorkspaceList reconciles every row carrying a value', () => {
+      let state = hudReducer(
+        withOverrides(),
+        replaceWorkspaceList([entity('ws-1', 'complete'), entity('ws-2', 'in_progress')]),
+      );
+      // ws-2 agreed (retired now); ws-1 contradicted once (survives).
+      expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-1': 'pr_open' });
+      state = hudReducer(state, replaceWorkspaceList([entity('ws-1', 'complete')]));
+      expect(state.displayStatusByWorkspaceId).toEqual({});
+    });
+
+    it('an entity without a displayStatus keeps the override (nothing fresher arrived)', () => {
+      const state = withOverrides();
+      expect(hudReducer(state, setWorkspaceEntity(entity('ws-1')))).toBe(state);
+    });
+
+    it('an unrelated workspace leaves the overrides untouched', () => {
+      const state = withOverrides();
+      expect(hudReducer(state, setWorkspaceEntity(entity('ws-9', 'complete')))).toBe(state);
+    });
+  });
+
   it('hudUsageLoaded stores the rollup and clears a prior error', () => {
     let state = hudReducer(activeState(), hudUsageFailed('boom'));
     const usage = {
@@ -245,16 +317,16 @@ describe('hud-slice question capture (§7.1 trailingBlocks)', () => {
     expect(state.questionsByAgentId).toEqual({});
   });
 
-  it('supersession drops the agent question (no-op when none pends)', () => {
-    // §7.1: a question hold only breaks on a user-origin delivery, so the
-    // answered agent's next running transition supersedes the question.
+  it('workspace resolution clears only that workspace\u2019s captured questions', () => {
+    // Pendingness is persistent: the daemon's needs_attention rollup dropping
+    // is the release signal, and it is workspace-scoped.
+    const elsewhere = { ...QUESTION, agentId: 'agent-9', workspaceId: 'ws-2' };
     let state = hudReducer(activeState(), hudQuestionCaptured(QUESTION));
-    const other = { ...QUESTION, agentId: 'agent-2' };
-    state = hudReducer(state, hudQuestionCaptured(other));
-    state = hudReducer(state, hudQuestionSuperseded('agent-1'));
-    expect(state.questionsByAgentId).toEqual({ 'agent-2': other });
-    // Unknown agent: no state churn.
-    const repeat = hudReducer(state, hudQuestionSuperseded('agent-1'));
+    state = hudReducer(state, hudQuestionCaptured(elsewhere));
+    state = hudReducer(state, hudQuestionsResolvedForWorkspace(QUESTION.workspaceId));
+    expect(state.questionsByAgentId).toEqual({ 'agent-9': elsewhere });
+    // Nothing left for that workspace: no state churn.
+    const repeat = hudReducer(state, hudQuestionsResolvedForWorkspace(QUESTION.workspaceId));
     expect(repeat).toBe(state);
   });
 });

@@ -55,6 +55,7 @@ export const AgentCreateRequestSchema = z.object({
   agentId: AgentIdSchema.optional(),
   nameExplicitlySet: z.boolean().optional(), // Strict boolean on the wire (PROTOCOL §5.5) — non-boolean values must fail validation
   model: z.string().optional(),
+  reasoningEffort: z.string().optional(), // Option B session field (PROTOCOL §5.5) — provider-interpreted level string
   provider: z.string().optional(), // Provider ID (e.g., 'auggie', 'claude-code', 'codex')
   agentType: z.string().optional(), // Agent type for specialization rules
   behaviorPrompt: z.string().optional(), // Custom behavior instructions for the agent (from specialist)

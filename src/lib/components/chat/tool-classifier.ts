@@ -56,6 +56,12 @@ export interface ToolDisplay {
   isDirectory?: boolean;
   /** MCP server source name, e.g. "figma", "sentry", "playwright" (optional) */
   mcpSource?: string;
+  /**
+   * No usable human-readable label exists yet (e.g. a workspace_api call whose
+   * summary has not streamed in). Consumers must render no tool row at all —
+   * never a raw identifier and never an icon-only/generic placeholder.
+   */
+  hidden?: boolean;
 }
 
 /**
@@ -115,7 +121,44 @@ const CLEAN_SUFFIXES_TO_STRIP = [
 ];
 
 // Helper functions
-function cleanToolName(name: string | undefined | null): string {
+
+/**
+ * True when a name still looks like a raw MCP identifier (mcp__<server>__<tool>
+ * or mcp.<server>.<tool>). Raw identifiers must never render as labels; use this
+ * after cleanToolName to catch unstrippable forms (e.g. server segments with
+ * underscores that defeat the strip regex).
+ */
+export function isRawMcpName(name: string | undefined | null): boolean {
+  return !!name && /^(mcp__|mcp\.)/i.test(name);
+}
+
+// A deferred-tool-loading selector, possibly embedded in an ACP title
+// (e.g. "Search select:mcp__workspace-mcp__workspace_api").
+const DEFERRED_TOOL_LOAD_SELECTOR = /select:\s*mcp(__|\.)/i;
+
+// The same selector as a whole query (e.g. "select:mcp__workspace-mcp__workspace_api"),
+// anchored so a genuine search for text starting with "select:" is not swallowed.
+const DEFERRED_TOOL_LOAD_QUERY = /^select:\s*mcp(__|\.)/i;
+
+/**
+ * True when a tool call is the harness' deferred tool-loading call rather than a
+ * user-facing search: the Claude Code harness loads deferred MCP tool schemas via
+ * a ToolSearch call whose query is a raw `select:mcp__...` selector. The raw
+ * selector must never render as a label.
+ */
+export function isDeferredToolLoad(
+  toolName: string | undefined | null,
+  input: Record<string, any> = {},
+): boolean {
+  if (cleanToolName(toolName).toLowerCase() === 'toolsearch') return true;
+  if (typeof input.query === 'string' && DEFERRED_TOOL_LOAD_QUERY.test(input.query)) return true;
+  const acpTitle = typeof input._acpTitle === 'string' ? input._acpTitle : '';
+  return (
+    DEFERRED_TOOL_LOAD_SELECTOR.test(toolName || '') || DEFERRED_TOOL_LOAD_SELECTOR.test(acpTitle)
+  );
+}
+
+export function cleanToolName(name: string | undefined | null): string {
   // Handle undefined or null values gracefully
   if (!name) return '';
 
@@ -782,6 +825,20 @@ function classifyToolInner(
   result: any,
   resultMetadata: ResultMetadata | null,
 ): ToolDisplay {
+  // Deferred tool-loading calls: the harness loads deferred MCP tool schemas via a
+  // ToolSearch call whose query is a raw `select:mcp__...` selector, not a
+  // user-facing search. Relabel before any other routing so the raw
+  // select:/mcp__ string never renders (including via an ACP title override).
+  if (isDeferredToolLoad(toolName, input)) {
+    return {
+      category: 'search',
+      icon: CATEGORY_ICONS.search,
+      verb: m.chat_toolClassifier_loadingTools_label(),
+      subject: null,
+      path: null,
+    };
+  }
+
   // workspace_api: prefer human-readable label over raw tool names
   // Also detect by input shape: if input has both `code` and `summary`, it's workspace_api
   // regardless of the tool name (which may be a human-readable title)
@@ -794,13 +851,20 @@ function classifyToolInner(
       typeof input._acpTitle === 'string' ? input._acpTitle.trim() : '';
     const summary =
       typeof input.summary === 'string' ? input.summary.trim() : '';
-    // Skip _acpTitle if it resolves to a raw tool name after cleaning
+    // Skip _acpTitle if it is a raw tool identifier: an mcp__/mcp./URL-prefixed
+    // name, or anything that resolves to a raw tool name after cleaning
     // (catches all variants: mcp__*__workspace_api, //local/mcp/workspace_api, etc.)
-    const isRawName = !acpTitle || cleanToolName(acpTitle).toLowerCase() === 'workspace_api';
-    const label = isRawName ? summary || acpTitle : acpTitle || summary;
+    const isRawName =
+      !acpTitle ||
+      isRawMcpName(acpTitle) ||
+      acpTitle.includes('//local/mcp/') ||
+      cleanToolName(acpTitle).toLowerCase() === 'workspace_api';
+    // A raw identifier is never usable as the label — only the summary (or a
+    // prose title) qualifies.
+    const label = isRawName ? summary : acpTitle || summary;
+    // Detect specific operation type from the code field for richer display
+    const wsCategory = classifyWorkspaceApiCode(typeof input.code === 'string' ? input.code : '');
     if (label) {
-      // Detect specific operation type from the code field for richer display
-      const wsCategory = classifyWorkspaceApiCode(typeof input.code === 'string' ? input.code : '');
       return {
         category: wsCategory,
         icon: CATEGORY_ICONS[wsCategory],
@@ -809,6 +873,16 @@ function classifyToolInner(
         path: null,
       };
     }
+    // No proper label yet (summary still streaming in): hide the row entirely
+    // instead of surfacing the raw identifier or a generic name.
+    return {
+      category: wsCategory,
+      icon: CATEGORY_ICONS[wsCategory],
+      verb: '',
+      subject: null,
+      path: null,
+      hidden: true,
+    };
   }
 
   // First check if this is a pre-formatted display name
@@ -1280,7 +1354,7 @@ function fileDeleteDisplay(name: string, input: Record<string, any>): ToolDispla
 }
 
 function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay {
-  let verb = m.chat_toolClassifier_run_label();
+  let verb: string = m.chat_toolClassifier_run_label();
   let subject: string | null = null;
 
   // Extract terminal ID from name like "read terminal 123", "kill terminal 5"
@@ -1323,7 +1397,14 @@ function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay 
   } else if (input.command) {
     // Prefer description as subject if available, otherwise use command (first line only)
     const cmd = safeStr(input.command);
-    subject = input.description ? truncate(input.description, 50) : truncate(cmd.split('\n')[0], 80);
+    if (input.description) {
+      // Claude-style: the description already begins with its own verb
+      // (e.g. "List open issues on intent-hq/monorepo"), so drop the duplicative "Run".
+      verb = '';
+      subject = truncate(input.description, 50);
+    } else {
+      subject = truncate(cmd.split('\n')[0], 80);
+    }
   } else if (input.terminal_id !== undefined && !input.command) {
     // Input-based detection: terminal_id without command is read/write/kill process
     if (input.input_text !== undefined) {
@@ -1334,7 +1415,9 @@ function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay 
       subject = `terminal ${input.terminal_id}`;
     }
   } else if (input.description) {
-    // Fallback: use description when command is missing
+    // Fallback: use description when command is missing. The description carries
+    // its own verb (Claude-style), so drop the duplicative "Run".
+    verb = '';
     subject = truncate(input.description, 50);
   } else if (typeof input._acpTitle === 'string') {
     // Fallback: extract info from the ACP human-readable title
@@ -2106,6 +2189,22 @@ function genericDisplay(toolName: string, input: Record<string, any>): ToolDispl
   }
 
   const cleanName = cleanToolName(toolName);
+
+  // Defense in depth: if the name still looks like a raw MCP identifier after
+  // cleaning (e.g. an mcp__<server>__ form whose server segment contains
+  // underscores, which the strip regex does not match), never render it —
+  // hide the row until a proper label exists.
+  if (isRawMcpName(cleanName)) {
+    return {
+      category: 'generic',
+      icon: CATEGORY_ICONS.generic,
+      verb: '',
+      subject: null,
+      path: null,
+      hidden: true,
+    };
+  }
+
   const formattedName = cleanName
     .replace(/-/g, ' ')
     .replace(/_/g, ' ')

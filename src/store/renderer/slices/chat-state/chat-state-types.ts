@@ -59,6 +59,12 @@ export interface SendMessageOptions {
    * them with the message (#965). Plain base64 data — serializable/redux-safe.
    */
   imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  /**
+   * Opaque per-message tag the original send carried (PROTOCOL §5.5), recorded
+   * so "Try again" resends it: an untagged retry of a wizard answer would leave
+   * the daemon's question hold pending and re-surface the answered wizard.
+   */
+  messageMetadata?: Record<string, unknown>;
 }
 
 /**
@@ -162,6 +168,12 @@ export interface SendMessagePayload {
   agentModel?: string;
   /** Whether this is the initial workspace agent */
   isInitialWorkspaceAgent?: boolean;
+  /**
+   * Opaque per-message payload forwarded verbatim as `agent.sendMessage`'s
+   * `messageMetadata` (PROTOCOL §5.5) — the Q&A wizard tags its flattened
+   * answer message with `{ type: "question_answers", answeredQuestionsMessageId }`.
+   */
+  messageMetadata?: Record<string, unknown>;
 }
 
 /**

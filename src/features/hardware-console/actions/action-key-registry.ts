@@ -94,6 +94,7 @@ export interface ActionKeyState {
   sidebarNav: {
     multiSelectTabOrder: string[];
     multiSelectSelectedTabIdsByWorkspaceId: Record<string, string[]>;
+    showCreateModal: boolean;
   };
   /** Engine preference + configuration reality for the push-to-talk gate. */
   voiceSettings: EffectiveVoiceEngineInputs;
@@ -178,6 +179,44 @@ function inProgressAgents(state: ActionKeyState): CycleAgentEntry[] {
 }
 
 /**
+ * The unread-cycle walk: union of two walks, deduped by agent id — each
+ * walk is in workspace order, and unread-workspace entries precede
+ * attention-only entries: (a) the top-level agents of each unread
+ * workspace (unread is workspace-level, BE-owned `workspace.attention`) —
+ * a fixed top-level walk; and (b) every attention-requesting agent (the
+ * LED attention definition), which follows the `cycle-attention-agents`
+ * configured scope so the settings toggle also governs this portion.
+ * `attentionAgentIds` records walk (b) membership independent of dedup
+ * position, for the remaining-stop count.
+ */
+function collectUnreadCycleEntries(state: ActionKeyState): {
+  entries: CycleAgentEntry[];
+  attentionAgentIds: Set<string>;
+} {
+  const unreadWorkspaceIds = new Set<string>(
+    getItems(state.workspace.workspaces)
+      .filter((workspace) => workspace.attention === 'unread')
+      .map((workspace) => workspace.id),
+  );
+  const unreadEntries = collectCycleAgents(state, isSessionCyclable).filter((entry) =>
+    unreadWorkspaceIds.has(entry.wsId),
+  );
+  const attentionEntries = collectCycleAgents(
+    state,
+    sessionNeedsAttention,
+    undefined,
+    familyScope(state, 'cycle-attention-agents'),
+  );
+  const seen = new Set<string>();
+  const entries = [...unreadEntries, ...attentionEntries].filter((entry) => {
+    if (seen.has(entry.agentId)) return false;
+    seen.add(entry.agentId);
+    return true;
+  });
+  return { entries, attentionAgentIds: new Set(attentionEntries.map((entry) => entry.agentId)) };
+}
+
+/**
  * Focus one agent: mark it active, open (or focus) its conversation tab, and
  * focus its chat composer so typing starts immediately.
  */
@@ -212,6 +251,18 @@ interface GlobalCycleSpec {
   getEmptyHint(): string;
   /** Toast shown when the only candidate is already the focused agent. */
   getSingleCandidateHint(): string;
+  /**
+   * Optional HUD label for a successful step, given how many stops remain
+   * to visit after this one. Families without it show the plain label.
+   */
+  getHudLabel?(remaining: number): string;
+  /**
+   * Optional override of the remaining-stop count fed to `getHudLabel`.
+   * The default, `entries.length - 1`, is right when every candidate
+   * needs its own visit; override it when one step clears several
+   * entries at once (e.g. workspace-level unread).
+   */
+  countRemaining?(state: ActionKeyState, entries: CycleAgentEntry[], next: CycleAgentEntry): number;
   collect(state: ActionKeyState): CycleAgentEntry[];
 }
 
@@ -259,7 +310,8 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
       lastCycledAgentByAction.set(spec.id, next.agentId);
       // Successful step: surface what the button did in the bottom-center
       // HUD (the middleware hides it after inactivity).
-      context.dispatch(actionHudShown(spec.getLabel()));
+      const remaining = spec.countRemaining?.(state, entries, next) ?? entries.length - 1;
+      context.dispatch(actionHudShown(spec.getHudLabel?.(remaining) ?? spec.getLabel()));
       if (next.wsId !== activeWorkspaceId(state)) {
         void context.navigate(`/workspace/${next.wsId}`);
       }
@@ -315,35 +367,25 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
     getLabel: () => m.hardwareConsole_actionKey_cycleUnreadAgents_label(),
     getEmptyHint: () => m.hardwareConsole_actionKey_noUnreadAgents_message(),
     getSingleCandidateHint: () => m.hardwareConsole_actionKey_noOtherUnreadAgents_message(),
-    collect: (state) => {
-      // Union of two walks, deduped by agent id — each walk is in workspace
-      // order, and unread-workspace entries precede attention-only entries:
-      // (a) the top-level agents of each unread workspace (unread is
-      // workspace-level, BE-owned `workspace.attention`) — a fixed top-level
-      // walk; and (b) every attention-requesting agent (the LED attention
-      // definition), which follows the `cycle-attention-agents` configured
-      // scope so the settings toggle also governs this portion.
-      const unreadWorkspaceIds = new Set<string>(
-        getItems(state.workspace.workspaces)
-          .filter((workspace) => workspace.attention === 'unread')
-          .map((workspace) => workspace.id),
-      );
-      const unreadEntries = collectCycleAgents(state, isSessionCyclable).filter((entry) =>
-        unreadWorkspaceIds.has(entry.wsId),
-      );
-      const attentionEntries = collectCycleAgents(
-        state,
-        sessionNeedsAttention,
-        undefined,
-        familyScope(state, 'cycle-attention-agents'),
-      );
-      const seen = new Set<string>();
-      return [...unreadEntries, ...attentionEntries].filter((entry) => {
-        if (seen.has(entry.agentId)) return false;
-        seen.add(entry.agentId);
-        return true;
-      });
+    getHudLabel: (remaining) =>
+      remaining === 0
+        ? m.hardwareConsole_actionKey_cycleUnreadAgents_label()
+        : remaining === 1
+          ? m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one({ count: remaining })
+          : m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many({ count: remaining }),
+    countRemaining: (state, entries, next) => {
+      // Stepping to `next` visits its workspace, which clears the whole
+      // workspace's unread flag — every unread-only entry of that workspace
+      // stops being a candidate along with it. Attention entries persist
+      // individually until handled, so they always count as their own stop.
+      const { attentionAgentIds } = collectUnreadCycleEntries(state);
+      return entries.filter(
+        (entry) =>
+          entry.agentId !== next.agentId &&
+          (attentionAgentIds.has(entry.agentId) || entry.wsId !== next.wsId),
+      ).length;
     },
+    collect: (state) => collectUnreadCycleEntries(state).entries,
   }),
   makeGlobalCycleAction({
     id: 'cycle-failed-agents',
@@ -442,8 +484,8 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
     isAvailable() {
       return true;
     },
-    execute({ dispatch }) {
-      dispatch(setShowCreateModal(true));
+    execute({ state, dispatch }) {
+      dispatch(setShowCreateModal(!state.sidebarNav.showCreateModal));
     },
   },
   {

@@ -162,6 +162,7 @@ export class LiveAgentsClient implements AgentsClient {
       idempotencyKey: newIdempotencyKey(),
     };
     if (request.model !== undefined) params.model = request.model;
+    if (request.reasoningEffort !== undefined) params.reasoningEffort = request.reasoningEffort;
     if (request.specialist !== undefined && request.specialist !== null) {
       params.specialistId = request.specialist;
     }
@@ -407,6 +408,23 @@ export class LiveAgentsClient implements AgentsClient {
       workspaceId: params.workspaceId,
       agentId: params.agentId,
       messageId: params.messageId,
+    });
+  }
+  async setReasoningEffort(params: {
+    agentId: string;
+    workspaceId: string;
+    reasoningEffort: string | null;
+  }): Promise<MutationResult> {
+    // `agent.update` (§5.5) is the partial-mutation writer; `reasoningEffort`
+    // rides the `changes` object (Option B session field). Optional-string
+    // fields accept an explicit JSON `null` to clear, so `null` is forwarded
+    // verbatim — it means "reset to provider default", not "omit". The daemon
+    // persists the field and emits `agent:updated`, which reconciles other
+    // windows; the effort applies on the next prompt send.
+    return runMutation("agent.update", {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      changes: { reasoningEffort: params.reasoningEffort },
     });
   }
   async rename(
