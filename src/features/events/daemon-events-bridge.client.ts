@@ -1116,7 +1116,9 @@ function handleNoteEvent(
  * agentId? }` — a new task changes the BE-owned `task.list` rollup, so refetch
  * through the same debounced, initialized-workspaces-only path `note:*` uses.
  * The new task itself arrives with that refetch; the HUD feed row is rendered
- * off the HUD's own feed subscription.
+ * off the HUD's own feed subscription. The dispatched refresh is single-flight
+ * with a trailing rerun in `lifecycle-read-service`, so an event landing while
+ * `task.list` is in flight still yields one follow-up fetch.
  */
 function handleTaskCreatedEvent(workspaceId: string): void {
   debouncedWorkspaceTasksRefresh(workspaceId);
