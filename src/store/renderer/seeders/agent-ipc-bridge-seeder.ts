@@ -137,25 +137,33 @@ registerMockIpcHandler(AGENT_CHANNELS.CREATE, async (arg) => {
 
 /**
  * `agent:set-model` → daemon `agent.setModel` (PROTOCOL §5.5:
- * `{ agentId, modelId, workspaceId }` → `{ success, modelId }`, emits
- * `agent:updated`). The caller is `agentClient.setModel` (ModelPicker), which
- * expects a `CommandResponse` envelope — `{ success: true, data: <daemonBody> }`
+ * `{ agentId, modelId, workspaceId, providerId? }` → `{ success, modelId }`,
+ * emits `agent:updated`). The caller is `agentClient.setModel` (ModelPicker),
+ * which expects a `CommandResponse` envelope — `{ success: true, data: <daemonBody> }`
  * on success, `{ success: false, error: <string> }` on failure. Without this
  * bridge the channel fell through the mock router's `undefined` default and
  * `commandResponseToResult` threw
  * "Cannot read properties of undefined (reading 'success')" on every model
- * change for daemon-created agents.
+ * change for daemon-created agents. `providerId` names the provider the
+ * picked model belongs to, so the daemon resolves a bare modelId against it
+ * instead of the session's current provider (cross-provider model pick).
  */
 registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, async (arg) => {
   const request = asRecord(arg);
   const agentId = readString(request, "agentId");
   const modelId = readString(request, "modelId");
   const workspaceId = readString(request, "workspaceId");
+  const providerId = readString(request, "providerId");
   if (!agentId || !modelId || !workspaceId) {
     return { success: false, error: "agentId, modelId and workspaceId are required" };
   }
   try {
-    const result = await backendRequest("agent.setModel", { agentId, modelId, workspaceId });
+    const result = await backendRequest("agent.setModel", {
+      agentId,
+      modelId,
+      workspaceId,
+      ...(providerId ? { providerId } : {}),
+    });
     return { success: true, data: result };
   } catch (error) {
     return {

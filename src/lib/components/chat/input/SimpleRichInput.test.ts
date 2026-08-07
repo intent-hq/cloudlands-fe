@@ -450,7 +450,7 @@ describe('SimpleRichInput provider switch sync', () => {
     await fireEvent.click(confirmButton!);
 
     await waitFor(() => {
-      expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1');
+      expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1', 'codex');
     });
     expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
   });
@@ -623,7 +623,9 @@ describe('SimpleRichInput provider switch sync', () => {
       expect(setModelMock).toHaveBeenCalledTimes(1);
     });
 
-    expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1');
+    // The explicit target provider rides along as the 4th wire arg so the
+    // daemon validates the model against it, not the session's provider.
+    expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1', 'codex');
     expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
   });
 

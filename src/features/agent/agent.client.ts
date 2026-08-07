@@ -38,16 +38,19 @@ class AgentClient {
   }
 
   /**
-   * Set the model for an agent session
+   * Set the model for an agent session. `providerId` names the provider the
+   * picked model belongs to — required to resolve a bare modelId when it
+   * targets a provider other than the session's current one.
    */
   async setModel(
     agentId: string,
     modelId: string,
     workspaceId: string,
+    providerId?: string,
   ): Promise<Result<{ success: boolean; modelId?: string; error?: string }, string>> {
     return this.invoke<{ success: boolean; modelId?: string; error?: string }>(
       AGENT_CHANNELS.SET_MODEL,
-      { agentId, modelId, workspaceId },
+      { agentId, modelId, workspaceId, ...(providerId ? { providerId } : {}) },
     );
   }
 }
