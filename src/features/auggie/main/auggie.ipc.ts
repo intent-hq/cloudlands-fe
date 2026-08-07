@@ -2,10 +2,9 @@ import { ipcMain } from 'electron';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { MINIMUM_AUGGIE_VERSION, MINIMUM_NODE_VERSION } from '../../../shared/constants/auggie';
+import { MINIMUM_NODE_VERSION } from '../../../shared/constants/auggie';
 import { AUGGIE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
-import { checkGitVersion } from './version-checks';
 import { executeAuggieCommand } from './execute-auggie-command';
 import { findAuggiePathAsync, getEnhancedPath } from './auggie-path';
 import { hostExec } from '../../../shared/main/host-exec';
@@ -21,7 +20,7 @@ export { findAuggiePathAsync, getEnhancedPath };
 const logger = new Logger('AuggieIPC');
 
 // ============================================================================
-// Auggie CLI Version Requirements
+// Node.js Version Requirements
 // ============================================================================
 
 /**
@@ -68,15 +67,11 @@ function compareVersions(version1: string, version2: string): number | null {
 /**
  * Check if a version meets the minimum required version.
  */
-function meetsMinimumVersion(version: string, minimum: string = MINIMUM_AUGGIE_VERSION): boolean {
+function meetsMinimumVersion(version: string, minimum: string): boolean {
   const comparison = compareVersions(version, minimum);
   // If comparison is null (invalid version), assume it doesn't meet requirements
   return comparison !== null && comparison >= 0;
 }
-
-// ============================================================================
-// Node.js Version Check
-// ============================================================================
 
 /**
  * Check the installed Node.js version via the daemon's `host.exec`
@@ -196,145 +191,6 @@ export function setupAuggieIPC() {
     }
   });
 
-  // Get installation/authentication status for Auggie CLI
-  ipcMain.handle(AUGGIE_CHANNELS.STATUS, async () => {
-    // Install/version detection is delegated to the daemon (`host.checkAuggie`,
-    // PROTOCOL §5.14 companion); the FE-local binary download flow is retired
-    // (Decision 3), so `binaryInstallAvailable`/`managedBinaryInstalled` remain
-    // in the payload for renderer compatibility but are always false — install
-    // is now a manual step surfaced by AUGGIE_CHANNELS.INSTALL instructions.
-    const status: {
-      installed: boolean;
-      authenticated: boolean;
-      version?: string;
-      versionOk: boolean;
-      minimumVersion: string;
-      authDetails?: string;
-      nodeVersion?: string;
-      nodeVersionOk: boolean;
-      gitInstalled: boolean;
-      gitVersion?: string;
-      binaryInstallAvailable: boolean;
-      managedBinaryInstalled: boolean;
-    } = {
-      installed: false,
-      authenticated: false,
-      versionOk: false,
-      minimumVersion: MINIMUM_AUGGIE_VERSION,
-      nodeVersionOk: false,
-      gitInstalled: false,
-      binaryInstallAvailable: false,
-      managedBinaryInstalled: false,
-    };
-
-    try {
-      // Node.js and Git checks stay FE-local — they describe the host that
-      // will run auggie (the daemon's host from the FE's PoV) and are used by
-      // the setup UI to render the platform-support instructions text.
-      const [nodeSettled, gitSettled] = await Promise.allSettled([
-        checkNodeVersion(),
-        checkGitVersion(),
-      ]);
-
-      if (nodeSettled.status === 'fulfilled') {
-        status.nodeVersion = nodeSettled.value.nodeVersion;
-        status.nodeVersionOk = nodeSettled.value.nodeVersionOk;
-        if (!status.nodeVersionOk) {
-          if (status.nodeVersion) {
-            logger.warn('Node.js version is below minimum required', {
-              current: status.nodeVersion,
-              minimum: MINIMUM_NODE_VERSION,
-            });
-          } else {
-            logger.warn('Node.js not found on system', {
-              minimum: MINIMUM_NODE_VERSION,
-            });
-          }
-        }
-      } else {
-        logger.debug('Failed to check Node.js version', { error: nodeSettled.reason });
-      }
-
-      if (gitSettled.status === 'fulfilled') {
-        status.gitInstalled = gitSettled.value.gitInstalled;
-        status.gitVersion = gitSettled.value.gitVersion;
-      } else {
-        logger.debug('Failed to check Git version', { error: gitSettled.reason });
-      }
-
-      // Install + version detection via the daemon. `host.checkAuggie` applies
-      // the settings precedence and canonical PATH scan; failures are logged
-      // and surfaced as "not installed" (honest degradation, no local probe).
-      let auggiePath: string | null = null;
-      try {
-        const check = await getBackendClient().request<{
-          available: boolean;
-          path?: string;
-          version?: string;
-        }>('host.checkAuggie');
-        status.installed = Boolean(check?.available);
-        if (typeof check?.version === 'string' && check.version.trim()) {
-          status.version = check.version.trim();
-        }
-        if (typeof check?.path === 'string' && check.path.trim()) {
-          auggiePath = check.path.trim();
-        }
-        if (status.installed && status.version) {
-          status.versionOk = meetsMinimumVersion(status.version);
-          if (!status.versionOk) {
-            logger.warn('Auggie CLI version is below minimum required', {
-              current: status.version,
-              minimum: MINIMUM_AUGGIE_VERSION,
-            });
-          }
-        }
-      } catch (error) {
-        logger.warn('host.checkAuggie failed during status', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return {
-          success: false,
-          error: m.auggie_ipc_checkFailed_error({
-            error: error instanceof Error ? error.message : String(error),
-          }),
-          data: status,
-        };
-      }
-
-      if (!status.installed || !status.versionOk || !auggiePath) {
-        return {
-          success: true,
-          data: status,
-        };
-      }
-
-      // Auth verdict via the daemon's `host.providerAuthStatus`
-      // (intent-hq/intentd#339): the daemon owns the probe and its caching.
-      // `force: true` so a login that just completed is picked up. RPC
-      // failure / unknown folds to unauthenticated (honest degradation, no
-      // local probe). `authDetails` is user-visible ("Connected as ...") and
-      // the daemon has no user-info surface, so it stays undefined when
-      // authenticated — consumers render their generic authenticated state.
-      const verdict = await getProviderAuthVerdict('auggie', { force: true });
-      if (verdict === true) {
-        status.authenticated = true;
-      } else if (verdict === false) {
-        status.authDetails = 'auggie reports not logged in';
-      }
-
-      return {
-        success: true,
-        data: status,
-      };
-    } catch (error) {
-      logger.error('Failed to get auggie status', { error: (error as Error).message });
-      return {
-        success: false,
-        error: (error as Error).message,
-      };
-    }
-  });
-
   // Install auggie. Local install (npm-install / binary download / codesign)
   // is retired per Decision 3: the FE returns platform-specific instructions
   // for the user to run in their own terminal. The envelope shape
@@ -360,7 +216,7 @@ export function setupAuggieIPC() {
     }
     instructions.push(
       m.auggie_ipc_runInstall_instruction({ command }),
-      m.auggie_ipc_verifyInstall_instruction({ version: MINIMUM_AUGGIE_VERSION }),
+      m.auggie_ipc_verifyInstall_instruction(),
     );
 
     const errorMessage = instructions.join(' ');
@@ -377,7 +233,6 @@ export function setupAuggieIPC() {
         instructions,
         command,
         platform,
-        minimumAuggieVersion: MINIMUM_AUGGIE_VERSION,
         minimumNodeVersion: MINIMUM_NODE_VERSION,
       },
     };

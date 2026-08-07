@@ -6,8 +6,8 @@
  * and chat panel render with mock agents and a static conversation — replacing
  * the work the agent-loading sagas used to do against the real backend.
  *
- * Agent-provider readiness (`providers:get-availability`, `providers:check-single`,
- * `auggie:status`) is bridged to real daemon probes in
+ * Agent-provider readiness (`providers:get-availability`,
+ * `providers:check-single`) is bridged to real daemon probes in
  * `provider-status-bridge-seeder.ts` — this module no longer seeds fake
  * provider status.
  *

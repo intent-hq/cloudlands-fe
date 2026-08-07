@@ -178,7 +178,6 @@ export const IPC_CHANNELS = {
   // Auggie Integration
   AUGGIE: {
     CHECK_AVAILABILITY: 'auggie:check-availability',
-    STATUS: 'auggie:status',
     INSTALL: 'auggie:install',
     AUTHENTICATE: 'auggie:authenticate',
     GET_MODELS: 'auggie:get-models',
