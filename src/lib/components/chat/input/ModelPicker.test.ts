@@ -29,6 +29,21 @@ const mockModelState = vi.hoisted(() => ({
   loadError: null as string | null,
 }));
 
+// Seedable session-lifetime provider-models cache (providerModels slice state)
+// exposed through the store mock, for the cache-hydration tests. Empty by
+// default so every existing test keeps the uncached first-boot path.
+const mockProviderModelsState = vi.hoisted(() => ({
+  byProviderId: {} as Record<
+    string,
+    {
+      models: { value: string; label: string; description?: string }[];
+      fetchedAt: string;
+      warning?: string;
+      stale?: boolean;
+    }
+  >,
+}));
+
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa };
@@ -77,7 +92,10 @@ vi.mock('$store/renderer/store', async () => {
   );
 
   return createAppStoreMockModule({
-    state: () => ({ providerCatalog }),
+    state: () => ({
+      providerCatalog,
+      providerModels: { byProviderId: mockProviderModelsState.byProviderId },
+    }),
     dispatch: mockSvelteDispatch,
   });
 });
@@ -217,6 +235,7 @@ afterEach(() => {
   mockModelState.availableModelsProviderId = 'auggie';
   daemonHealth$.set('healthy');
   providerStaleFlags$.set({});
+  mockProviderModelsState.byProviderId = {};
 });
 
 describe('ModelPicker locked state', () => {
@@ -1860,6 +1879,145 @@ describe('ModelPicker specialist inherit state (default-option plumbing)', () =>
 
     await waitFor(() => {
       expect(onModelChange).toHaveBeenCalledWith('model-2');
+    });
+  });
+});
+
+describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'sonnet4.6';
+    mockModelState.loadError = null;
+    // The global catalog does NOT contain the selected model — only the
+    // seeded providerModels cache (or a settled fetch) can resolve its label.
+    mockModelState.availableModels = [];
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  function seedCache() {
+    mockProviderModelsState.byProviderId = {
+      auggie: {
+        models: [{ value: 'sonnet4.6', label: 'Claude Sonnet 4.6', description: 'Smart model' }],
+        fetchedAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  it('renders the cached model label immediately with no skeleton while the fetch is pending', async () => {
+    seedCache();
+    // Revalidation fetch never settles — only the cache can resolve the label.
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () => new Promise(() => {}),
+    );
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    const button = screen.getByRole('button');
+    // Trigger label resolved on the very first render: pretty name, no
+    // skeleton placeholder, no loading spinner.
+    expect(button.textContent).toContain('Claude Sonnet 4.6');
+    expect(button.querySelector('.animate-pulse')).toBeNull();
+    expect(button.querySelector('[role="status"]')).toBeNull();
+
+    // Still resolved after the debounced background revalidation kicks off.
+    await new Promise((r) => setTimeout(r, 100));
+    expect(button.textContent).toContain('Claude Sonnet 4.6');
+    expect(button.querySelector('.animate-pulse')).toBeNull();
+    expect(button.querySelector('[role="status"]')).toBeNull();
+    // The background revalidation fetch did start (stale-while-revalidate).
+    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+  });
+
+  it('keeps the skeleton on the uncached first-boot path while the fetch is pending', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () => new Promise(() => {}),
+    );
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    await new Promise((r) => setTimeout(r, 100));
+    const button = screen.getByRole('button');
+    expect(button.textContent).not.toContain('Claude Sonnet 4.6');
+    expect(button.querySelector('.animate-pulse')).not.toBeNull();
+  });
+
+  it('writes successful fetch results through to the cache slice', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'sonnet4.6', label: 'Claude Sonnet 4.6', description: 'Smart model' }],
+    });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      const writeThrough = mockSvelteDispatch.mock.calls.find(
+        ([action]) => action?.type === 'providerModels/providerModelsLoaded',
+      );
+      expect(writeThrough).toBeTruthy();
+      const [providerId, entry] = writeThrough![0].payload as [
+        string,
+        { models: { value: string }[]; fetchedAt: string },
+      ];
+      expect(providerId).toBe('auggie');
+      expect(entry.models).toEqual([
+        { value: 'sonnet4.6', label: 'Claude Sonnet 4.6', description: 'Smart model' },
+      ]);
+      expect(Number.isNaN(Date.parse(entry.fetchedAt))).toBe(false);
+    });
+  });
+
+  it('writes force-refresh (↻) results through to the cache slice', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'sonnet4.6', label: 'Claude Sonnet 4.6', description: 'Smart model' }],
+    });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    const refreshButton = await screen.findByRole('button', { name: /Refresh .* models/ });
+
+    mockSvelteDispatch.mockClear();
+    vi.mocked(getModelsForProviderForLoadingState).mockClear();
+    await fireEvent.click(refreshButton);
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie', {
+        forceRefresh: true,
+      });
+      const writeThrough = mockSvelteDispatch.mock.calls.find(
+        ([action]) => action?.type === 'providerModels/providerModelsLoaded',
+      );
+      expect(writeThrough).toBeTruthy();
+      expect((writeThrough![0].payload as [string, unknown])[0]).toBe('auggie');
     });
   });
 });

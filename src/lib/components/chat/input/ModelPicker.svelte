@@ -59,6 +59,8 @@
   getModelsForProvider,
   getModelsForProviderForLoadingState,
 } from '$store/renderer/slices/model/model-utils';
+  import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
+  import { selectProviderModelsCacheMap } from '$store/renderer/slices/provider-models/provider-models-selectors';
 
   import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
   import {
@@ -277,11 +279,33 @@
     return createProviderWarningNotice(normalizedId, warnings[normalizedId]);
   }
 
-  let allProviderModels = $state<Record<string, DropdownOption[]>>({});
+  // Hydrate from the session-lifetime provider-models cache
+  // (stale-while-revalidate): cached providers render their catalogs — and a
+  // resolved trigger label — synchronously on mount, with no spinner/skeleton
+  // frame, while the debounced background fetch below still revalidates every
+  // provider and writes fresh results back through the cache. Uncached
+  // providers keep the normal loading path.
+  const cachedProviderCatalogs = selectProviderModelsCacheMap.select(appStore.state);
+  const seededProviderModels: Record<string, DropdownOption[]> = {};
+  const seededProviderLoading: Record<string, boolean> = {};
+  for (const [pid, entry] of Object.entries(cachedProviderCatalogs)) {
+    seededProviderModels[pid] = toDropdownOptions(entry.models);
+    seededProviderLoading[pid] = false;
+  }
+  // "All loaded" only when every currently-enabled provider is cache-covered;
+  // otherwise the first fetch pass settles it exactly as before.
+  const seededEnabledIds = $availableEnabledProviderIds$;
+  const seededAllProvidersLoaded =
+    seededEnabledIds.length > 0 &&
+    seededEnabledIds.every((pid) =>
+      Object.prototype.hasOwnProperty.call(seededProviderModels, normalizeProviderId(pid)),
+    );
+
+  let allProviderModels = $state<Record<string, DropdownOption[]>>(seededProviderModels);
   let allProviderErrors = $state<Record<string, ProviderLoadError>>({});
-  let allProviderLoading = $state<Record<string, boolean>>({});
+  let allProviderLoading = $state<Record<string, boolean>>(seededProviderLoading);
   let fetchGeneration = 0;
-  let allProvidersLoaded = $state(false);
+  let allProvidersLoaded = $state(seededAllProvidersLoaded);
   let lastFetchedProviderIds = '';
 
   function hasProviderResult(providerId: string): boolean {
@@ -331,6 +355,8 @@
             ...allProviderModels,
             [providerId]: toDropdownOptions(result.models),
           };
+          // Write through to the session cache (providerId is normalized here).
+          appStore.dispatch(providerModelsLoaded(providerId, result));
           setProviderWarningState(providerId, result.warning, result.stale);
         } catch (err) {
           if (fetchGeneration !== currentGen) return;
@@ -457,6 +483,8 @@
         ...allProviderModels,
         [providerId]: toDropdownOptions(result.models),
       };
+      // Write through to the session cache (group keys are normalized ids).
+      appStore.dispatch(providerModelsLoaded(providerId, result));
     } catch (err) {
       const providerError = formatProviderLoadError(providerId, err);
       allProviderErrors = {
