@@ -76,6 +76,7 @@ export const initialState: ModelState = {
   availableModelsProviderId: '',
   loadingState: {},
   providerModels: {},
+  defaultReasoningEffort: '',
   modelPickerCollapsedGroups: [],
   fallbackInfoByAgentId: {},
   defaultProviderId: '',
@@ -114,6 +115,22 @@ export const setRetryAttempt =
 
 export const loadProviderModelsFromStorage = createAction<[models: Record<string, string>]>(
   'model/loadProviderModelsFromStorage',
+);
+
+/**
+ * User pick of the default reasoning-effort level ('' clears it). Persisted to
+ * `model.defaultReasoningEffort` by the model-selection persistence middleware.
+ */
+export const setDefaultReasoningEffort = createAction<[effort: string]>(
+  'model/setDefaultReasoningEffort',
+);
+
+/**
+ * Hydration echo of `model.defaultReasoningEffort` from the daemon settings
+ * catalog — deliberately NOT persisted, so there is no write loop.
+ */
+export const loadDefaultReasoningEffortFromStorage = createAction<[effort: string]>(
+  'model/loadDefaultReasoningEffortFromStorage',
 );
 
 export const hydrateModelPickerCollapsedGroups = createAction<[groupKeys: string[]]>(
@@ -274,6 +291,14 @@ export const modelReducer = createReducer<ModelState>(initialState)
   .with(loadProviderModelsFromStorage, (state, { payload: [models] }) => ({
     ...state,
     providerModels: normalizeProviderModels(models, state.defaultProviderId),
+  }))
+  .with(setDefaultReasoningEffort, (state, { payload: [effort] }) => ({
+    ...state,
+    defaultReasoningEffort: effort,
+  }))
+  .with(loadDefaultReasoningEffortFromStorage, (state, { payload: [effort] }) => ({
+    ...state,
+    defaultReasoningEffort: effort,
   }))
   .with(hydrateModelPickerCollapsedGroups, (state, { payload: [groupKeys] }) => ({
     ...state,

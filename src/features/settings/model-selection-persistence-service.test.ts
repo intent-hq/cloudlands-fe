@@ -23,8 +23,10 @@ vi.mock("$lib/client/live/backend-transport", () => ({
 
 import { store as appStore } from "$store/renderer/store";
 import {
+  loadDefaultReasoningEffortFromStorage,
   loadProviderModelsFromStorage,
   selectModel,
+  setDefaultReasoningEffort,
   setSelectedModel,
 } from "$store/renderer/slices/model/model-slice";
 import { setActiveProvider } from "$store/renderer/slices/provider-settings/provider-settings-slice";
@@ -64,6 +66,7 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
     // actions are already asserted to not trigger persistence writes.
     appStore.dispatch(setActiveProvider(getDefaultProviderId()));
     appStore.dispatch(loadProviderModelsFromStorage({}));
+    appStore.dispatch(loadDefaultReasoningEffortFromStorage(""));
     await flush();
   });
 
@@ -235,6 +238,38 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
     appStore.dispatch(loadProviderModelsFromStorage({ auggie: "sonnet-test-1" }));
     await flush();
 
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  it("persists model.defaultReasoningEffort on a default-effort pick", async () => {
+    appStore.dispatch(setDefaultReasoningEffort("high"));
+    await flush();
+
+    expect(appStore.state.model.defaultReasoningEffort).toBe("high");
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [{ path: "model.defaultReasoningEffort", value: "high" }],
+    });
+  });
+
+  it("persists an empty model.defaultReasoningEffort when the level is cleared", async () => {
+    appStore.dispatch(setDefaultReasoningEffort("high"));
+    await flush();
+    updateSpy.mockClear();
+
+    appStore.dispatch(setDefaultReasoningEffort(""));
+    await flush();
+
+    expect(appStore.state.model.defaultReasoningEffort).toBe("");
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [{ path: "model.defaultReasoningEffort", value: "" }],
+    });
+  });
+
+  it("does NOT write back the default-effort hydration echo", async () => {
+    appStore.dispatch(loadDefaultReasoningEffortFromStorage("medium"));
+    await flush();
+
+    expect(appStore.state.model.defaultReasoningEffort).toBe("medium");
     expect(updateSpy).not.toHaveBeenCalled();
   });
 

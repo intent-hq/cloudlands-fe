@@ -8,6 +8,7 @@
 } from '@fortawesome/free-solid-svg-icons';
 
   import {
+    selectDefaultReasoningEffort,
     selectModelEffortLevels,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
@@ -36,7 +37,10 @@
   import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-  import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
+  import {
+    reloadModelsForProvider,
+    setDefaultReasoningEffort,
+  } from '$store/renderer/slices/model/model-slice';
   import Button from '$lib/components/ui/button/button.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
@@ -75,6 +79,7 @@
   const specialists = selectSpecialists();
   const fileSpecialists$ = selectFileSpecialists();
   const selectedModel = selectSelectedModel();
+  const defaultReasoningEffort$ = selectDefaultReasoningEffort();
   const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
 
@@ -220,6 +225,22 @@
       appStore.dispatch(setActiveProvider(providerId));
       appStore.dispatch(reloadModelsForProvider());
     }
+    // The default effort is paired with the default model — drop a level the
+    // newly picked model does not advertise instead of leaving an unsupported
+    // level persisted.
+    const current = $defaultReasoningEffort$;
+    if (current && !effortForModel(compoundModelId, current)) {
+      appStore.dispatch(setDefaultReasoningEffort(''));
+    }
+  }
+
+  /**
+   * Persist the default effort level paired with the default model
+   * (`model.defaultReasoningEffort`). Default (undefined) writes '' so the
+   * daemon reads it as unset.
+   */
+  function handleDefaultEffortChange(effort: string | undefined) {
+    appStore.dispatch(setDefaultReasoningEffort(effort ?? ''));
   }
 
   /**
@@ -709,6 +730,12 @@
           variant="default"
           size="sm"
           updateGlobalDefault
+        />
+        <EffortSelect
+          model={$selectedModel}
+          value={$defaultReasoningEffort$ || undefined}
+          onChange={handleDefaultEffortChange}
+          testId="default-effort"
         />
         {#if anySpecialistHasExplicitModel}
           <button

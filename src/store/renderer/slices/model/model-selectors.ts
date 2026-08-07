@@ -119,6 +119,14 @@ export const selectProviderModels = store.createSelector((state): Record<string,
   return state.model.providerModels;
 });
 
+/**
+ * Default reasoning-effort level paired with the default-model setting
+ * (`model.defaultReasoningEffort`), or '' when unset.
+ */
+export const selectDefaultReasoningEffort = store.createSelector((state): string => {
+  return state.model.defaultReasoningEffort;
+});
+
 export const selectModelPickerCollapsedGroups = store.createSelector((state): string[] => {
   return state.model.modelPickerCollapsedGroups;
 });
