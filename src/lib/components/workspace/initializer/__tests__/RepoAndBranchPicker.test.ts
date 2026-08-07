@@ -98,6 +98,23 @@ describe('RepoAndBranchPicker', () => {
     expect(text).not.toContain('worktree');
   });
 
+  it('spaces the GitHub clone sentence fragments like the local-repo flow', () => {
+    const { container } = render(RepoAndBranchPicker, {
+      props: {
+        repoType: 'github',
+        githubUrl: 'https://github.com/intent-hq/monorepo',
+        repoPath: 'intent-hq/monorepo',
+        branch: 'main',
+      },
+    });
+
+    const middle = Array.from(container.querySelectorAll('span')).find((span) =>
+      span.textContent?.trim().startsWith('and work off'),
+    );
+    expect(middle?.className).toContain('mx-1');
+    expect(middle?.className).toContain('ml-2');
+  });
+
   it('gives the default-presentation repo value the same explicit color as the branch trigger', () => {
     render(RepoAndBranchPicker, {
       props: {
