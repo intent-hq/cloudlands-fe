@@ -3,119 +3,122 @@
   defines order of execution
 */
 
-import type { StoreMiddleware } from "$lib/store-shim/types";
+import type { StoreMiddleware } from '$lib/store-shim/types';
 import {
   REDUX_DEBUG_LS_KEY,
   REDUX_DEBUG_LS_KEY_STATE_REFS_KEY,
   REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY,
-} from "./constants";
-import { createBatchingMiddleware } from "./middlewares/batch";
-import { createLoggerMiddleware } from "./middlewares/logger";
-import { createReferenceChangeDetectorMiddleware } from "./middlewares/state-reference-checks";
-import { createStructuredCloneCheckerMiddleware } from "./middlewares/structured-clone-checker";
-import { createStoreGuardMiddleware } from "../../store/utils/store-guard-middleware";
-import { createGitReadMiddleware } from "$features/git/git-read-service";
-import { createAgentReadMiddleware } from "$features/agent/agent-read-service";
-import { createAgentSubscriptionReadMiddleware } from "$features/agent/agent-subscription-read-service";
-import { createChatReadMiddleware } from "$features/agent/chat-read-service";
-import { createChatSubscribeMiddleware } from "$features/agent/chat-subscribe-service";
-import { createChatSendMiddleware } from "$features/agent/chat-send-service";
+} from './constants';
+import { createBatchingMiddleware } from './middlewares/batch';
+import { createLoggerMiddleware } from './middlewares/logger';
+import { createReferenceChangeDetectorMiddleware } from './middlewares/state-reference-checks';
+import { createStructuredCloneCheckerMiddleware } from './middlewares/structured-clone-checker';
+import { createStoreGuardMiddleware } from '../../store/utils/store-guard-middleware';
+import { createGitReadMiddleware } from '$features/git/git-read-service';
+import { createAgentReadMiddleware } from '$features/agent/agent-read-service';
+import { createAgentSubscriptionReadMiddleware } from '$features/agent/agent-subscription-read-service';
+import { createChatReadMiddleware } from '$features/agent/chat-read-service';
+import { createChatSubscribeMiddleware } from '$features/agent/chat-subscribe-service';
+import { createChatSendMiddleware } from '$features/agent/chat-send-service';
 import {
   createMarkAgentSeenTriggerMiddleware,
   markAgentSeenAtBoundary,
-} from "$features/agent/mark-agent-seen";
-import { createPermissionResponseMiddleware } from "$features/permission/permission-response-service";
-import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge.client";
-import { createAgentFailureToastMiddleware } from "$features/agent/agent-failure-toast-service";
-import { createHardwareConsoleConnectionToastMiddleware } from "$features/hardware-console/connection-toast-service";
-import { createHardwareConsoleIntegrationToggleMiddleware } from "$features/hardware-console/integration-toggle-service";
-import { createHardwareConsoleKeyPinPersistenceMiddleware } from "$features/hardware-console/assignment/key-pin-persistence-service";
-import { createHardwareConsoleKeySwitchMiddleware } from "$features/hardware-console/assignment/key-switch-service";
-import { createHardwareConsoleLedStatusMiddleware } from "$features/hardware-console/led/led-status-service";
-import { createHardwareConsolePromptPickerMiddleware } from "$features/hardware-console/prompt-picker/prompt-picker-service";
-import { createHardwareConsoleActionKeyMiddleware } from "$features/hardware-console/actions/action-key-service";
-import { createVoiceTranscriptionMiddleware } from "$features/hardware-console/voice/transcription-service";
-import { createHardwareConsoleEncoderMiddleware } from "$features/hardware-console/encoder/encoder-service";
-import { createSettingsHydrationMiddleware } from "$features/settings/settings-hydration-service";
-import { createModelSelectionPersistenceMiddleware } from "$features/settings/model-selection-persistence-service";
-import { createBackgroundAgentSettingsPersistenceMiddleware } from "$features/settings/background-agent-settings-persistence-service";
-import { createModelReloadMiddleware } from "$features/settings/model-reload-service";
-import { createProviderSettingsPersistenceMiddleware } from "$features/settings/provider-settings-persistence-service";
-import { createProviderAvailabilityCheckMiddleware } from "$features/providers/provider-availability-check-service";
-import { createHostRequirementsCheckMiddleware } from "$features/system/host-requirements-check-service";
-import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
-import { createAgentMutationMiddleware } from "$features/agent/agent-mutation-service";
-import { createEditRegenerateMiddleware } from "$features/agent/edit-regenerate-service";
-import { createContextMutationMiddleware } from "$features/context/context-mutation-service";
-import { createTaskAgentAssociationsMutationMiddleware } from "$features/tasks/task-agent-associations-mutation-service";
-import { createAppLayoutNavigationMiddleware } from "$features/layout/app-layout-navigation-service";
-import { createWorkspaceNavigationTabMiddleware } from "$features/layout/workspace-navigation-tab-service";
-import { createWorkspaceNavigationLayoutMiddleware } from "$features/layout/workspace-navigation-layout-service";
-import { createFileExplorerReadMiddleware } from "$features/file-explorer/file-explorer-read-service";
-import { createFilesReadMiddleware } from "$features/files/files-read-service";
-import { createFilesWriteMiddleware } from "$features/files/files-write-service";
-import { createNotesWriteMiddleware } from "$features/notes/notes-write-service";
-import { createNotesVersionsMiddleware } from "$features/notes/notes-versions-service";
-import { createNotesReadMiddleware } from "$features/notes/notes-read-service";
-import { createGitHubAuthMiddleware } from "$features/github-auth/github-auth-store-service";
-import { createSentryAuthMiddleware } from "$features/sentry-auth/sentry-auth-store-service";
-import { createLinearAuthMiddleware } from "$features/linear-auth/linear-auth-store-service";
-import { createVoiceSettingsMiddleware } from "$features/voice/voice-settings-store-service";
-import { createMcpManagementMiddleware } from "$features/mcp/mcp-management-service";
-import { createWorkspaceOperationsMiddleware } from "$features/workspace/workspace-operations-service";
-import { createDirectoryPickerReadMiddleware } from "$features/onboarding/directory-picker-read-service";
-import { createLegacyImportMiddleware } from "$features/settings/legacy-import-service";
-import { createStatsReadMiddleware } from "$features/stats/stats-read-service";
-import { createBackgroundHooksMiddleware } from "$features/hooks/background-hooks-read-service";
-import { createLifecycleReadMiddleware } from "./middlewares/lifecycle-read-service";
-import { createLifecycleIpcReadMiddleware } from "./middlewares/lifecycle-ipc-read-service";
-import { createUiLayoutPersistenceMiddleware } from "./middlewares/ui-layout-persistence-service";
-import { createTabStatePersistenceMiddleware } from "./middlewares/tab-state-persistence-service";
-import { createSidebarNavPersistenceMiddleware } from "./middlewares/sidebar-nav-persistence-service";
-import { createBrowserPersistenceMiddleware } from "./middlewares/browser-persistence-service";
-import { createPanelLayoutPersistenceMiddleware } from "./middlewares/panel-layout-persistence-service";
-import { createFileContentPruneService } from "./middlewares/file-content-prune-service";
-import { createDividerSessionBoundaryService } from "./middlewares/divider-session-boundary-service";
-import { createTerminalPersistenceMiddleware } from "./middlewares/terminal-persistence-service";
-import { createExternalEditorsPersistenceMiddleware } from "./middlewares/external-editors-persistence-service";
-import { createZoomSyncMiddleware } from "./middlewares/zoom-sync-service";
-import { createMenuIpcMiddleware } from "./middlewares/menu-ipc-service";
-import { createBrowserIpcMiddleware } from "./middlewares/browser-ipc-service";
-import { createNotificationIpcMiddleware } from "./middlewares/notification-ipc-service";
-import { createAgentEventsIpcMiddleware } from "./middlewares/agent-events-ipc-service";
-import { createGitEventsIpcMiddleware } from "./middlewares/git-events-ipc-service";
-import { createWebNotificationMiddleware } from "$features/notifications/web-notification-service";
-import { createWorkspaceSettingsPersistenceMiddleware } from "./middlewares/workspace-settings-persistence-service";
-import { createUserPreferencesBetaPersistenceMiddleware } from "./middlewares/user-preferences-beta-persistence-service";
-import { createUserPreferencesNotificationPersistenceMiddleware } from "./middlewares/user-preferences-notification-persistence-service";
-import { createUserPreferencesPersistenceMiddleware } from "./middlewares/user-preferences-persistence-service";
-import { createWorkspaceInitializerPersistenceMiddleware } from "./middlewares/workspace-initializer-persistence-service";
-import { createThemeMutationMiddleware } from "$features/theme/theme-service";
-import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-update-mutation-service";
-import { createReleaseNotesMutationMiddleware } from "$features/release-notes/release-notes-mutation-service";
-import { createSpecialistsMutationMiddleware } from "$features/specialists/specialists-mutation-service";
-import { createDaemonHealthMiddleware } from "./middlewares/daemon-health-service";
-import { safeLocalStorage } from "$lib/utils/safe-storage";
-import { isHudWindowRenderer } from "$lib/utils/navigation.client";
+} from '$features/agent/mark-agent-seen';
+import { createPermissionResponseMiddleware } from '$features/permission/permission-response-service';
+import { createDaemonEventsBridgeMiddleware } from '$features/events/daemon-events-bridge.client';
+import { createAgentFailureToastMiddleware } from '$features/agent/agent-failure-toast-service';
+import { createHardwareConsoleConnectionToastMiddleware } from '$features/hardware-console/connection-toast-service';
+import { createHardwareConsoleIntegrationToggleMiddleware } from '$features/hardware-console/integration-toggle-service';
+import { createHardwareConsoleKeyPinPersistenceMiddleware } from '$features/hardware-console/assignment/key-pin-persistence-service';
+import { createHardwareConsoleKeySwitchMiddleware } from '$features/hardware-console/assignment/key-switch-service';
+import { createHardwareConsoleLedStatusMiddleware } from '$features/hardware-console/led/led-status-service';
+import { createHardwareConsolePromptPickerMiddleware } from '$features/hardware-console/prompt-picker/prompt-picker-service';
+import { createHardwareConsoleActionKeyMiddleware } from '$features/hardware-console/actions/action-key-service';
+import { createVoiceTranscriptionMiddleware } from '$features/hardware-console/voice/transcription-service';
+import { createHardwareConsoleEncoderMiddleware } from '$features/hardware-console/encoder/encoder-service';
+import { createSettingsHydrationMiddleware } from '$features/settings/settings-hydration-service';
+import { createModelSelectionPersistenceMiddleware } from '$features/settings/model-selection-persistence-service';
+import { createBackgroundAgentSettingsPersistenceMiddleware } from '$features/settings/background-agent-settings-persistence-service';
+import { createModelReloadMiddleware } from '$features/settings/model-reload-service';
+import { createProviderSettingsPersistenceMiddleware } from '$features/settings/provider-settings-persistence-service';
+import { createProviderAvailabilityCheckMiddleware } from '$features/providers/provider-availability-check-service';
+import { createHostRequirementsCheckMiddleware } from '$features/system/host-requirements-check-service';
+import { createAgentCreationMiddleware } from '$features/agent/agent-creation-service';
+import { createAgentMutationMiddleware } from '$features/agent/agent-mutation-service';
+import { createEditRegenerateMiddleware } from '$features/agent/edit-regenerate-service';
+import { createContextMutationMiddleware } from '$features/context/context-mutation-service';
+import { createTaskAgentAssociationsMutationMiddleware } from '$features/tasks/task-agent-associations-mutation-service';
+import { createAppLayoutNavigationMiddleware } from '$features/layout/app-layout-navigation-service';
+import { createWorkspaceNavigationTabMiddleware } from '$features/layout/workspace-navigation-tab-service';
+import { createWorkspaceNavigationLayoutMiddleware } from '$features/layout/workspace-navigation-layout-service';
+import { createFileExplorerReadMiddleware } from '$features/file-explorer/file-explorer-read-service';
+import { createFilesReadMiddleware } from '$features/files/files-read-service';
+import { createFilesWriteMiddleware } from '$features/files/files-write-service';
+import { createNotesWriteMiddleware } from '$features/notes/notes-write-service';
+import { createNotesVersionsMiddleware } from '$features/notes/notes-versions-service';
+import { createNotesReadMiddleware } from '$features/notes/notes-read-service';
+import { createGitHubAuthMiddleware } from '$features/github-auth/github-auth-store-service';
+import { createSentryAuthMiddleware } from '$features/sentry-auth/sentry-auth-store-service';
+import { createLinearAuthMiddleware } from '$features/linear-auth/linear-auth-store-service';
+import { createVoiceSettingsMiddleware } from '$features/voice/voice-settings-store-service';
+import { createMcpManagementMiddleware } from '$features/mcp/mcp-management-service';
+import { createWorkspaceOperationsMiddleware } from '$features/workspace/workspace-operations-service';
+import { createDirectoryPickerReadMiddleware } from '$features/onboarding/directory-picker-read-service';
+import { createLegacyImportMiddleware } from '$features/settings/legacy-import-service';
+import { createStatsReadMiddleware } from '$features/stats/stats-read-service';
+import { createBackgroundHooksMiddleware } from '$features/hooks/background-hooks-read-service';
+import { createLifecycleReadMiddleware } from './middlewares/lifecycle-read-service';
+import { createLifecycleIpcReadMiddleware } from './middlewares/lifecycle-ipc-read-service';
+import { createUiLayoutPersistenceMiddleware } from './middlewares/ui-layout-persistence-service';
+import { createTabStatePersistenceMiddleware } from './middlewares/tab-state-persistence-service';
+import { createSidebarNavPersistenceMiddleware } from './middlewares/sidebar-nav-persistence-service';
+import { createBrowserPersistenceMiddleware } from './middlewares/browser-persistence-service';
+import { createPanelLayoutPersistenceMiddleware } from './middlewares/panel-layout-persistence-service';
+import { createFileContentPruneService } from './middlewares/file-content-prune-service';
+import { createDividerSessionBoundaryService } from './middlewares/divider-session-boundary-service';
+import { createTerminalPersistenceMiddleware } from './middlewares/terminal-persistence-service';
+import { createExternalEditorsPersistenceMiddleware } from './middlewares/external-editors-persistence-service';
+import { createZoomSyncMiddleware } from './middlewares/zoom-sync-service';
+import { createMenuIpcMiddleware } from './middlewares/menu-ipc-service';
+import { createBrowserIpcMiddleware } from './middlewares/browser-ipc-service';
+import { createNotificationIpcMiddleware } from './middlewares/notification-ipc-service';
+import { createAgentEventsIpcMiddleware } from './middlewares/agent-events-ipc-service';
+import { createGitEventsIpcMiddleware } from './middlewares/git-events-ipc-service';
+import { createWebNotificationMiddleware } from '$features/notifications/web-notification-service';
+import { createWorkspaceSettingsPersistenceMiddleware } from './middlewares/workspace-settings-persistence-service';
+import { createUserPreferencesBetaPersistenceMiddleware } from './middlewares/user-preferences-beta-persistence-service';
+import { createUserPreferencesNotificationPersistenceMiddleware } from './middlewares/user-preferences-notification-persistence-service';
+import { createUserPreferencesPersistenceMiddleware } from './middlewares/user-preferences-persistence-service';
+import { createWorkspaceInitializerPersistenceMiddleware } from './middlewares/workspace-initializer-persistence-service';
+import { createThemeMutationMiddleware } from '$features/theme/theme-service';
+import { createAutoUpdateMutationMiddleware } from '$features/auto-update/auto-update-mutation-service';
+import { createReleaseNotesMutationMiddleware } from '$features/release-notes/release-notes-mutation-service';
+import { createSpecialistsMutationMiddleware } from '$features/specialists/specialists-mutation-service';
+import { createDaemonHealthMiddleware } from './middlewares/daemon-health-service';
+import { createConnectionsMiddleware } from './middlewares/connections-service';
+import { safeLocalStorage } from '$lib/utils/safe-storage';
+import { isHudWindowRenderer } from '$lib/utils/navigation.client';
 
-const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
+const isDevBuild = (): boolean =>
+  Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
 
 /**
  * Get Redux logger configuration from localStorage for manual debugging.
  */
 function getReduxLoggerConfig(): { enabled: boolean; webviewName?: string } {
-  if (typeof window === "undefined") {
+  if (typeof window === 'undefined') {
     return { enabled: false };
   }
 
   const globallyEnabled = (window as any).intentFlags?.enableReduxLogger;
 
   let localStorageEnabled: boolean | undefined;
-  const { value: localStorageValue, hadError } = safeLocalStorage.getItemWithStatus(REDUX_DEBUG_LS_KEY);
+  const { value: localStorageValue, hadError } =
+    safeLocalStorage.getItemWithStatus(REDUX_DEBUG_LS_KEY);
 
   if (hadError) {
     localStorageEnabled = false;
-  } else if (localStorageValue != null && localStorageValue !== "undefined") {
+  } else if (localStorageValue != null && localStorageValue !== 'undefined') {
     try {
       localStorageEnabled = !!JSON.parse(localStorageValue);
     } catch (error) {
@@ -125,7 +128,7 @@ function getReduxLoggerConfig(): { enabled: boolean; webviewName?: string } {
   }
 
   const enableReduxLogger = globallyEnabled ?? localStorageEnabled ?? isDevBuild();
-  const webviewName = globallyEnabled ? (window as any).intentFlags?.webviewName : "";
+  const webviewName = globallyEnabled ? (window as any).intentFlags?.webviewName : '';
 
   return { enabled: enableReduxLogger, webviewName };
 }
@@ -194,7 +197,7 @@ function buildMiddleware(): StoreMiddleware[] {
 
   const baseMiddleware: StoreMiddleware[] = [
     // Guard must be first — reject actions tagged for the wrong store immediately
-    createStoreGuardMiddleware("renderer"),
+    createStoreGuardMiddleware('renderer'),
     // No action types to batch yet — add action types here as slices are added
     createBatchingMiddleware([]),
     // Give the (post-saga) `loadGitStatus` action a real read handler so the
@@ -256,6 +259,10 @@ function buildMiddleware(): StoreMiddleware[] {
     // connection events to derive tri-state daemon health (healthy/degraded/down)
     // plus stats payload for the health indicator UI.
     createDaemonHealthMiddleware(),
+    // Multi-backend connect: fetch the initial connections:list and subscribe
+    // to connections:changed / connections:cert-mismatch pushes on first
+    // dispatch, keeping the connections slice in sync with main.
+    createConnectionsMiddleware(),
     // Boot-hydrate the BE-owned settings slices (providers, background-agents,
     // MCP, model overrides) by calling `settings.list` once on first dispatched
     // action, then keep them in sync via the `settings:changed` routing the
@@ -570,7 +577,7 @@ function buildMiddleware(): StoreMiddleware[] {
   // so they see the actual state changes, not the batched actions
   const debugMiddlewares: StoreMiddleware[] = [];
 
-  if (typeof window !== "undefined") {
+  if (typeof window !== 'undefined') {
     if (safeLocalStorage.getItem(REDUX_DEBUG_LS_KEY_STATE_REFS_KEY)) {
       debugMiddlewares.push(createReferenceChangeDetectorMiddleware());
     }

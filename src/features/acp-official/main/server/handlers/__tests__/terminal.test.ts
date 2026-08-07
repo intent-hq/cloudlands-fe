@@ -12,6 +12,12 @@ vi.mock('../../../../../backend/main/backend.ipc', () => ({
   // RESUB-1: ensureSubscription installs a reconnect listener; these tests
   // do not exercise reconnect so the mock is a no-op disposer.
   onBackendReconnected: vi.fn(() => () => {}),
+  // T9: notification listeners now register on the stable forwarder. Pipe them
+  // onto the same emitter `emitEvent` drives so the tests still deliver events.
+  onBackendNotification: vi.fn((handler: (n: unknown) => void) => {
+    mockEmitter.on('notification', handler);
+    return () => mockEmitter.off('notification', handler);
+  }),
 }));
 
 vi.mock('../../../../../../shared/logger', () => ({
@@ -231,4 +237,3 @@ describe('isLikelyLongRunningCommand', () => {
     expect(isLikelyLongRunningCommand('git', ['status'])).toBeNull();
   });
 });
-

@@ -1,15 +1,5 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
-import {
-  app,
-  BrowserWindow,
-} from 'electron';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { app, BrowserWindow } from 'electron';
 import {
   NotificationService,
   __resetNotificationCacheForTesting,
@@ -27,7 +17,6 @@ import type { AgentIdleEvent } from '../../events/types';
 
 vi.mock('../../../shared/logger', () => ({
   Logger: class {
-
     constructor(_category?: string) {}
     debug = vi.fn();
     info = vi.fn();
@@ -119,13 +108,36 @@ vi.mock('../../backend/main/backend.ipc', () => ({
     reconnectHandlers.push(handler);
     return vi.fn();
   },
+  // T9: notification/status listeners register on the stable forwarders now.
+  // Capture them in the same arrays the tests drive so delivery still works,
+  // with disposers that detach on stop()/clearStatusRetry().
+  onBackendNotification: (handler: (n: { method: string; params?: unknown }) => void) => {
+    notificationListeners.push(handler);
+    return () => {
+      const idx = notificationListeners.indexOf(handler);
+      if (idx !== -1) notificationListeners.splice(idx, 1);
+    };
+  },
+  onBackendStatus: (handler: (status: string) => void) => {
+    statusListeners.push(handler);
+    return () => {
+      const idx = statusListeners.indexOf(handler);
+      if (idx !== -1) statusListeners.splice(idx, 1);
+    };
+  },
 }));
 
-const { mockNotificationIsSupported, mockNotificationInstances, mockShowShouldThrow } = vi.hoisted(() => ({
-  mockNotificationIsSupported: { value: false },
-  mockNotificationInstances: [] as Array<{ opts?: unknown; handlers: Record<string, Function>; show: ReturnType<typeof vi.fn> }>,
-  mockShowShouldThrow: { value: false },
-}));
+const { mockNotificationIsSupported, mockNotificationInstances, mockShowShouldThrow } = vi.hoisted(
+  () => ({
+    mockNotificationIsSupported: { value: false },
+    mockNotificationInstances: [] as Array<{
+      opts?: unknown;
+      handlers: Record<string, Function>;
+      show: ReturnType<typeof vi.fn>;
+    }>,
+    mockShowShouldThrow: { value: false },
+  }),
+);
 
 vi.mock('electron', () => ({
   app: {
@@ -161,7 +173,6 @@ vi.mock('electron', () => ({
         throw new Error('show failed');
       }
     });
-
 
     constructor(opts?: unknown) {
       this.opts = opts;
@@ -265,8 +276,8 @@ describe('NotificationService daemon agent:idle subscription', () => {
     expect(requestMock).toHaveBeenCalledWith('events.subscribe', {
       eventTypes: ['agent:idle'],
     });
-    // A `notification` listener was attached to the daemon client.
-    expect(clientOn).toHaveBeenCalledWith('notification', expect.any(Function));
+    // A `notification` listener was attached via the stable forwarder.
+    expect(notificationListeners.length).toBe(1);
     service.stop();
   });
 
@@ -288,9 +299,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
     service.start();
     await flush();
 
-    notificationListeners[0](
-      buildEventsEventNotification({ subscriptionId: 'renderer-sub-99' }),
-    );
+    notificationListeners[0](buildEventsEventNotification({ subscriptionId: 'renderer-sub-99' }));
     await flush();
 
     expect(mockNotificationInstances.length).toBe(0);
@@ -356,8 +365,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
     await flush();
 
     expect(reconnectHandlers.length).toBe(1);
-    const subscribeCalls = () =>
-      requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
+    const subscribeCalls = () => requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
     expect(subscribeCalls()).toHaveLength(1);
 
     reconnectHandlers[0]();
@@ -378,7 +386,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
     service.stop();
     await flush();
 
-    expect(clientOff).toHaveBeenCalledWith('notification', expect.any(Function));
+    expect(notificationListeners).toHaveLength(0);
     expect(requestMock).toHaveBeenCalledWith('events.unsubscribe', {
       subscriptionId: 'ws-sub-1',
     });
@@ -484,8 +492,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
     service.start();
     await flush();
 
-    const subscribeCalls = () =>
-      requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
+    const subscribeCalls = () => requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
     expect(subscribeCalls()).toHaveLength(1);
     expect(service['subscriptionId']).toBeUndefined();
     // A status listener was armed for the retry.
@@ -518,8 +525,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
     service.start();
     await flush();
 
-    const subscribeCalls = () =>
-      requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
+    const subscribeCalls = () => requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
     expect(subscribeCalls()).toHaveLength(1);
     // Successful subscribe → no retry listener armed.
     expect(statusListeners.length).toBe(0);
@@ -539,8 +545,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
     await flush();
     expect(statusListeners.length).toBe(1);
 
-    const subscribeCalls = () =>
-      requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
+    const subscribeCalls = () => requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
 
     // connecting / disconnected must not trigger a retry.
     statusListeners[0]('connecting');
@@ -627,8 +632,8 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
       viewingFocused ? 'workspace-1' : undefined,
     );
     vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(mockWindow as never);
-    vi.mocked(BrowserWindow.fromId).mockImplementation((id: number) =>
-      (id === mockWindow.id ? mockWindow : null) as never,
+    vi.mocked(BrowserWindow.fromId).mockImplementation(
+      (id: number) => (id === mockWindow.id ? mockWindow : null) as never,
     );
     return mockWindow;
   }
@@ -663,9 +668,7 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
       'notification:show',
       expect.objectContaining({ title: expect.any(String), body: expect.any(String) }),
     );
-    expect(vi.mocked(sendToWorkspaceWindows).mock.calls[0][2]).not.toHaveProperty(
-      'navigateTarget',
-    );
+    expect(vi.mocked(sendToWorkspaceWindows).mock.calls[0][2]).not.toHaveProperty('navigateTarget');
   });
 
   it('delivers an in-app toast (navigateTarget, no OS banner) when frontmost and viewing the workspace with soundOnlyWhenUnfocused=false (electron#51885)', async () => {
@@ -719,9 +722,7 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
       'notification:show',
       expect.objectContaining({ title: expect.any(String), body: expect.any(String) }),
     );
-    expect(vi.mocked(sendToWorkspaceWindows).mock.calls[0][2]).not.toHaveProperty(
-      'navigateTarget',
-    );
+    expect(vi.mocked(sendToWorkspaceWindows).mock.calls[0][2]).not.toHaveProperty('navigateTarget');
   });
 });
 
@@ -1170,7 +1171,7 @@ describe('NotificationService click-target selection excludes the HUD window', (
     const regularWindow = makeWindow(2, MAIN_URL);
     vi.mocked(getWindowIdsForWorkspace).mockReturnValue([hudWindow.id]);
     vi.mocked(BrowserWindow.fromId).mockImplementation(
-      (id: number) => ((id === 1 ? hudWindow : id === 2 ? regularWindow : null) as never),
+      (id: number) => (id === 1 ? hudWindow : id === 2 ? regularWindow : null) as never,
     );
     vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(hudWindow as never);
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([hudWindow, regularWindow] as never);
@@ -1197,7 +1198,7 @@ describe('NotificationService click-target selection excludes the HUD window', (
     const workspaceWindow = makeWindow(2, `http://127.0.0.1:5190/workspace/workspace-1`);
     vi.mocked(getWindowIdsForWorkspace).mockReturnValue([hudWindow.id, workspaceWindow.id]);
     vi.mocked(BrowserWindow.fromId).mockImplementation(
-      (id: number) => ((id === 1 ? hudWindow : id === 2 ? workspaceWindow : null) as never),
+      (id: number) => (id === 1 ? hudWindow : id === 2 ? workspaceWindow : null) as never,
     );
     vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(hudWindow as never);
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([hudWindow, workspaceWindow] as never);
@@ -1221,7 +1222,7 @@ describe('NotificationService click-target selection excludes the HUD window', (
     const hudWindow = makeWindow(1, HUD_URL);
     vi.mocked(getWindowIdsForWorkspace).mockReturnValue([hudWindow.id]);
     vi.mocked(BrowserWindow.fromId).mockImplementation(
-      (id: number) => ((id === 1 ? hudWindow : null) as never),
+      (id: number) => (id === 1 ? hudWindow : null) as never,
     );
     vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(hudWindow as never);
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([hudWindow] as never);
@@ -1274,13 +1275,13 @@ describe('NotificationService click-target selection excludes the HUD window', (
     ]);
     vi.mocked(BrowserWindow.fromId).mockImplementation(
       (id: number) =>
-        ((id === 1
+        (id === 1
           ? hudWindow
           : id === 2
             ? workspaceWindowA
             : id === 3
               ? workspaceWindowB
-              : null) as never),
+              : null) as never,
     );
     vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(hudWindow as never);
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
@@ -1296,7 +1297,9 @@ describe('NotificationService click-target selection excludes the HUD window', (
     mockNotificationInstances[0].handlers['click']();
 
     const navigated = [workspaceWindowA, workspaceWindowB].filter((w) =>
-      w.webContents.send.mock.calls.some(([channel]: [string]) => channel === 'notification:navigate'),
+      w.webContents.send.mock.calls.some(
+        ([channel]: [string]) => channel === 'notification:navigate',
+      ),
     );
     expect(navigated).toHaveLength(1);
     expect(hudWindow.focus).not.toHaveBeenCalled();
@@ -1324,7 +1327,7 @@ describe('NotificationService click-target selection excludes the HUD window', (
     const otherWindow = makeWindow(2, `http://127.0.0.1:5190/workspace/other`);
     vi.mocked(getWindowIdsForWorkspace).mockReturnValue([morphingWindow.id]);
     vi.mocked(BrowserWindow.fromId).mockImplementation(
-      (id: number) => ((id === 1 ? morphingWindow : id === 2 ? otherWindow : null) as never),
+      (id: number) => (id === 1 ? morphingWindow : id === 2 ? otherWindow : null) as never,
     );
     // App not frontmost at show time — otherwise the electron#51885 gate
     // delivers an in-app toast instead of the OS banner under test here.
@@ -1356,7 +1359,7 @@ describe('NotificationService click-target selection excludes the HUD window', (
     const regularWindow = makeWindow(2, MAIN_URL);
     vi.mocked(getWindowIdsForWorkspace).mockReturnValue([hudWindow.id]);
     vi.mocked(BrowserWindow.fromId).mockImplementation(
-      (id: number) => ((id === 1 ? hudWindow : id === 2 ? regularWindow : null) as never),
+      (id: number) => (id === 1 ? hudWindow : id === 2 ? regularWindow : null) as never,
     );
     vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(hudWindow as never);
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([hudWindow, regularWindow] as never);
@@ -1435,9 +1438,7 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
   });
 
   it('does not suppress when the only active agent in the list is the idling agent itself', async () => {
-    agentListResponse.agents = [
-      { id: 'agent-self', isStreaming: true, isResponding: false },
-    ];
+    agentListResponse.agents = [{ id: 'agent-self', isStreaming: true, isResponding: false }];
 
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
@@ -1569,9 +1570,7 @@ describe('NotificationService fallbacks for workspaces with no open window', () 
 });
 
 describe('NotificationService chief-of-staff special-case', () => {
-  function buildChiefIdleEvent(
-    overrides: Partial<AgentIdleEvent['data']> = {},
-  ): AgentIdleEvent {
+  function buildChiefIdleEvent(overrides: Partial<AgentIdleEvent['data']> = {}): AgentIdleEvent {
     return {
       type: 'agent:idle',
       workspaceId: CHIEF_WORKSPACE_ID,

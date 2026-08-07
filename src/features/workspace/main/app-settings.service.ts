@@ -38,7 +38,12 @@
  */
 
 import { Logger } from '../../../shared/logger';
-import { getBackendClient, onBackendReconnected } from '../../backend/main/backend.ipc';
+import {
+  getBackendClient,
+  onBackendNotification,
+  onBackendReconnected,
+  onBackendStatus,
+} from '../../backend/main/backend.ipc';
 import type { ConnectionStatus, JsonRpcNotification } from '../../backend/main/json-rpc-client';
 
 const logger = new Logger({ category: 'AppSettingsService' });
@@ -230,7 +235,6 @@ async function subscribeToSettingsChanges(): Promise<void> {
  */
 function armStatusRetry(): void {
   if (statusRetryDisposer) return;
-  const client = getBackendClient();
   const listener = (status: ConnectionStatus): void => {
     if (status !== 'connected') return;
     clearStatusRetry();
@@ -242,8 +246,9 @@ function armStatusRetry(): void {
       if (!allHydrated()) await initAppSettingsService();
     })();
   };
-  client.on('status', listener);
-  statusRetryDisposer = () => client.off('status', listener);
+  // Register on the stable status forwarder so the retry survives a backend
+  // switch instead of stranding on the disposed client.
+  statusRetryDisposer = onBackendStatus(listener);
 }
 
 function clearStatusRetry(): void {
@@ -285,9 +290,7 @@ function clearSubscribeRetry(): void {
 function attachSettingsListeners(): Promise<void> {
   if (listenersAttached) return Promise.resolve();
   listenersAttached = true;
-  const client = getBackendClient();
-  client.on('notification', handleBackendNotification);
-  notificationDisposer = () => client.off('notification', handleBackendNotification);
+  notificationDisposer = onBackendNotification(handleBackendNotification);
   reconnectDisposer = onBackendReconnected(() => {
     // The daemon dropped every in-memory subscription on reconnect; the
     // stale id belonged to the previous connection. Re-subscribe FIRST,

@@ -42,7 +42,11 @@ import {
   terminalDisposed,
   terminalCreated,
 } from '../../../store/main/slices/terminal-events/terminal-events-slice';
-import { getBackendClient, onBackendReconnected } from '../../backend/main/backend.ipc';
+import {
+  getBackendClient,
+  onBackendNotification,
+  onBackendReconnected,
+} from '../../backend/main/backend.ipc';
 import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
 
 const logger = new Logger('Terminal-IPC');
@@ -67,7 +71,6 @@ function decodeBase64(input: unknown): string {
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
 
 /** Minimal workspace lookup for cwd resolution; SSH branch is gone. */
 async function getWorkspaceInfo(
@@ -194,18 +197,19 @@ class DaemonTerminal {
   }
 }
 
-
 class DaemonTerminalRegistry {
   private terminals = new Map<string, DaemonTerminal>();
   private byDaemonId = new Map<string, string>();
   private subscriptionId: string | undefined;
-  private notificationListener: ((n: JsonRpcNotification) => void) | undefined;
+  /** Disposer for the stable-forwarder notification listener, once attached. */
+  private notificationDisposer: (() => void) | undefined;
   /**
    * Sticky reconnect listener, installed on first `ensureSubscription()` so we
-   * never register more than one hook against `getBackendClient()`. On daemon
-   * restart the in-memory subscription registry is dropped; we replay
-   * `events.subscribe(['terminal:data', 'terminal:exit'])` on the same client
-   * (the notification listener persists across reconnects) so live output /
+   * never register more than one hook against the reconnect forwarder. On
+   * daemon restart / backend switch the in-memory subscription registry is
+   * dropped; we replay `events.subscribe(['terminal:data', 'terminal:exit'])`
+   * against the current client (the notification listener persists across
+   * reconnects AND client swaps via `onBackendNotification`) so live output /
    * exit continues to flow (RESUB-1).
    */
   private reconnectDisposer: (() => void) | undefined;
@@ -269,13 +273,12 @@ class DaemonTerminalRegistry {
     this.byDaemonId.clear();
   }
   private async ensureSubscription(): Promise<void> {
-    if (this.subscriptionId || this.notificationListener) return;
+    if (this.subscriptionId || this.notificationDisposer) return;
     const client = getBackendClient();
     const listener = (n: JsonRpcNotification): void => {
       if (n.method !== 'events.event') return;
       const params = n.params as { subscriptionId?: unknown; event?: unknown } | undefined;
-      const subId =
-        typeof params?.subscriptionId === 'string' ? params.subscriptionId : undefined;
+      const subId = typeof params?.subscriptionId === 'string' ? params.subscriptionId : undefined;
       if (this.subscriptionId !== undefined && subId !== this.subscriptionId) return;
       const event = params?.event as
         | {
@@ -305,20 +308,18 @@ class DaemonTerminalRegistry {
           mainDispatch(terminalProfessionalData({ terminalId: localId, data: chunk }));
         }
       } else if (type === 'terminal:exit') {
-        const exitCode =
-          typeof event.data?.exitCode === 'number' ? event.data.exitCode : null;
+        const exitCode = typeof event.data?.exitCode === 'number' ? event.data.exitCode : null;
         const signal = typeof event.data?.signal === 'string' ? event.data.signal : null;
         terminal.markExit(exitCode, signal);
         mainDispatch(terminalProfessionalExit({ terminalId: localId, exitCode, signal }));
       }
     };
-    this.notificationListener = listener;
-    client.on('notification', listener);
+    this.notificationDisposer = onBackendNotification(listener);
     if (!this.reconnectDisposer) {
       this.reconnectDisposer = onBackendReconnected(() => {
-        // The notification listener persists across reconnects (same singleton
-        // client). Drop the stale id first — it belonged to the previous
-        // connection and would never match a fresh notification's
+        // The notification listener persists across reconnects AND client swaps
+        // (stable forwarder). Drop the stale id first — it belonged to the
+        // previous connection and would never match a fresh notification's
         // `subscriptionId` tag — then re-issue subscribe. Do NOT call
         // `ensureSubscription()` again; the notification-listener guard would
         // either skip it or double-register the listener depending on state.
@@ -395,9 +396,7 @@ async function spawnDaemonTerminal(params: {
   command?: string;
   env?: Record<string, string>;
   title?: string;
-}): Promise<
-  { ok: true; terminal: DaemonTerminal } | { ok: false; error: string }
-> {
+}): Promise<{ ok: true; terminal: DaemonTerminal } | { ok: false; error: string }> {
   try {
     const request: Record<string, unknown> = {
       workspaceId: params.workspaceId,
@@ -436,7 +435,6 @@ async function spawnDaemonTerminal(params: {
 function generateTerminalId(): string {
   return `terminal-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 }
-
 
 // ---------------------------------------------------------------------------
 // IPC handlers
@@ -714,8 +712,7 @@ export function registerTerminalHandlers() {
             workspaceId: workspaceId as WorkspaceId,
             cwd: validatedCwd,
             title:
-              title ||
-              m.terminal_ipc_commandTitle_label({ command: command.substring(0, 30) }),
+              title || m.terminal_ipc_commandTitle_label({ command: command.substring(0, 30) }),
             initialCommand: command,
             pasteOnly,
             env,
@@ -732,7 +729,6 @@ export function registerTerminalHandlers() {
 
   logger.info('[Terminal] IPC handlers registered (daemon-backed)');
 }
-
 
 // ---------------------------------------------------------------------------
 // Backend-facing spawn used by other main-process code

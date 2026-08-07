@@ -29,6 +29,10 @@ vi.mock('electron', () => ({
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mocks.backendRequest, on: mocks.clientOn }),
   onBackendReconnected: vi.fn(() => () => {}),
+  // T9: the registry attaches its notification listener via the stable
+  // forwarder now; these tests don't exercise event delivery, so a no-op
+  // disposer suffices.
+  onBackendNotification: vi.fn(() => () => {}),
 }));
 
 vi.mock('$features/workspace/main/workspace.service', () => ({
@@ -56,8 +60,7 @@ async function setup() {
 }
 
 function countCreateCalls(): number {
-  return mocks.backendRequest.mock.calls.filter(([method]) => method === 'terminal.create')
-    .length;
+  return mocks.backendRequest.mock.calls.filter(([method]) => method === 'terminal.create').length;
 }
 
 describe('terminal.ipc PROFESSIONAL_CREATE reconnect (monorepo#1330)', () => {
@@ -87,7 +90,11 @@ describe('terminal.ipc PROFESSIONAL_CREATE reconnect (monorepo#1330)', () => {
     expect(countCreateCalls()).toBe(1);
 
     const second = await create({}, { terminalId: 'terminal-local-1', workspaceId: WS, cwd: CWD });
-    expect(second).toMatchObject({ success: true, terminalId: 'terminal-local-1', reconnected: true });
+    expect(second).toMatchObject({
+      success: true,
+      terminalId: 'terminal-local-1',
+      reconnected: true,
+    });
     expect(countCreateCalls()).toBe(1);
   });
 
