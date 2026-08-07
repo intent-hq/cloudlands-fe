@@ -83,6 +83,7 @@
 } from './model-picker-utils';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
+  import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -181,6 +182,13 @@
     updateGlobalDefault?: boolean;
     silentFallback?: boolean;
     showProviderWarningNotice?: boolean;
+    /**
+     * Extra classes for the provider notice boxes. Callers that render the
+     * picker inside a flex row use this to let the notice break onto its own
+     * full-width line (e.g. `basis-full w-full max-w-full` + `flex-wrap` on
+     * the row) instead of sitting inline next to the trigger.
+     */
+    noticeClass?: string;
   }
 
   let {
@@ -211,6 +219,7 @@
     updateGlobalDefault = false,
     silentFallback = false,
     showProviderWarningNotice,
+    noticeClass,
   }: Props = $props();
 
   const agentSession$ = useAgentSession(() => agentId);
@@ -771,6 +780,16 @@
         noProviderToastShown = true;
         toast.error(m.chat_modelPicker_noProviderAvailable_toast(), {
           duration: 6000,
+          action: {
+            label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
+            onClick: () => {
+              void navigateToSettings({ tab: 'accounts', hash: 'providers' }).catch(
+                (error: unknown) => {
+                  logger.error('Failed to open provider settings from no-provider toast', error);
+                },
+              );
+            },
+          },
         });
       }
     } else {
@@ -1324,6 +1343,7 @@
     title={m.chat_modelPicker_noProviderAvailable_title()}
     description={m.chat_modelPicker_noProviderAvailable_description()}
     variant="warning"
+    class={noticeClass}
   />
 
   <ModelPickerProviderNotice
@@ -1336,5 +1356,6 @@
     title={isCodexManagedInstallInstalling ? m.chat_modelPicker_settingUpCodex_title() : undefined}
     description={isCodexManagedInstallInstalling ? codexManagedInstallProgressText : undefined}
     variant={isCodexManagedInstallInstalling ? 'progress' : 'warning'}
+    class={noticeClass}
   />
 {/if}

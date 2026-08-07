@@ -395,7 +395,7 @@
     <div class="min-h-[calc(100%-2rem)] flex flex-col max-w-5xl mx-auto mt-6 px-6 pb-8">
       <!-- Accounts Tab -->
       {#if activeTab === 'accounts'}
-        <div class="mb-12">
+        <div id="providers" class="mb-12 scroll-mt-20">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
             {m.settings_section_aiCodingClis()}
           </h2>

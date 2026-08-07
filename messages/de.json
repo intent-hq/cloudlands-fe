@@ -1848,6 +1848,7 @@
   "chat_modelPicker_noProviderAvailable_toast": "Kein KI-Anbieter ist verfügbar. Installieren oder aktivieren Sie einen Anbieter in den Einstellungen.",
   "chat_modelPicker_noProviderAvailable_title": "Kein Anbieter verfügbar",
   "chat_modelPicker_noProviderAvailable_description": "Installieren oder aktivieren Sie einen KI-Anbieter in den Einstellungen, um ein Modell auszuwählen.",
+  "chat_modelPicker_noProviderAvailable_openSettings_label": "Einstellungen öffnen",
   "chat_modelPicker_noModels_label": "Keine Modelle verfügbar",
   "chat_modelPicker_pickAnother_description": "Wählen Sie ein anderes Modell, um fortzufahren.",
   "chat_modelPicker_providerDefault_label": "Anbieterstandard",
