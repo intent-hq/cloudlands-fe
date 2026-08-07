@@ -296,6 +296,80 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     dispose();
   });
 
+  it('drops a locally-cancelled monitor from a list response that was in flight during the cancel', async () => {
+    let resolveSecondList: ((value: unknown) => void) | undefined;
+    mockedRequest
+      .mockResolvedValueOnce({ monitors: [makeMonitor()] })
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (resolveSecondList = resolve)),
+      );
+    const seen: PrMonitorRow[][] = [];
+    const { refetch, dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
+    await flush();
+    expect(seen.at(-1)).toEqual([makeMonitor()]);
+
+    // Start a second list, then cancel while it is in flight. The stale
+    // response still carries the row — it must not resurrect the monitor.
+    refetch();
+    notify?.({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'ws-sub-7',
+        event: {
+          type: 'prMonitor:cancelled',
+          workspaceId: 'ws-1',
+          data: { monitorId: 'mon-1' },
+        },
+      },
+    });
+    expect(seen.at(-1)).toEqual([]);
+
+    resolveSecondList?.({ monitors: [makeMonitor()] });
+    await flush();
+    expect(seen.at(-1)).toEqual([]);
+    dispose();
+  });
+
+  it('queues a trailing refetch when a fold lands while a list request is in flight', async () => {
+    let resolveSecondList: ((value: unknown) => void) | undefined;
+    mockedRequest
+      .mockResolvedValueOnce({ monitors: [makeMonitor()] })
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (resolveSecondList = resolve)),
+      )
+      .mockResolvedValueOnce({
+        monitors: [makeMonitor({ pendingChanges: [], hasPendingChanges: false })],
+      });
+    const seen: PrMonitorRow[][] = [];
+    const { refetch, dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
+    await flush();
+
+    refetch();
+    // Fold arriving mid-flight would be clobbered by the older list response
+    // — a trailing (coalesced) refetch converges.
+    notify?.({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'ws-sub-7',
+        event: {
+          type: 'prMonitor:emitted',
+          workspaceId: 'ws-1',
+          data: { monitorId: 'mon-1' },
+        },
+      },
+    });
+    resolveSecondList?.({
+      monitors: [makeMonitor({ pendingChanges: ['stale'], hasPendingChanges: true })],
+    });
+    await flush();
+    await flush();
+
+    // seed + in-flight list + trailing refetch = 3 list calls total.
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+    expect(seen.at(-1)?.[0].hasPendingChanges).toBe(false);
+    dispose();
+  });
+
   it('refetch() re-runs prMonitor.list and emits the fresh list (lastSnapshot arrives on list only)', async () => {
     const refreshed = makeMonitor({
       lastSnapshot: { ...makeMonitor().lastSnapshot!, state: 'merged' },

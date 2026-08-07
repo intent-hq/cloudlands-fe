@@ -9,7 +9,6 @@ import {
   initialState,
   prMonitorReducer,
   prMonitorsCleared,
-  prMonitorsRefetchRequested,
   prMonitorsUpdated,
 } from "./pr-monitor-slice";
 
@@ -70,11 +69,6 @@ describe("prMonitorReducer", () => {
     const row = state.byWorkspaceId["ws-1"].monitors.map["mon-1"];
     expect(row.lastSnapshot).toEqual(lastSnapshot);
     expect(row.title).toBe("Fix widget");
-  });
-
-  it("prMonitorsRefetchRequested is a pure trigger with no reducer case", () => {
-    const state = prMonitorReducer(initialState, prMonitorsUpdated("ws-1", [makeMonitor()]));
-    expect(prMonitorReducer(state, prMonitorsRefetchRequested("ws-1"))).toBe(state);
   });
 
   it("prMonitorsUpdated replaces the previous list for the same workspace", () => {

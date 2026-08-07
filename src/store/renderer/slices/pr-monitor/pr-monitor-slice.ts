@@ -56,15 +56,6 @@ export const prMonitorsUnsubscribeRequested = createAction<[workspaceId: string]
   "prMonitor/unsubscribeRequested",
 );
 
-/**
- * Trigger: on-demand `prMonitor.list` refetch — `prMonitor:*` events never
- * carry `lastSnapshot` (§6.9), so consumers dispatch this to refresh it.
- * The fresh list arrives via `prMonitorsUpdated`; no reducer case.
- */
-export const prMonitorsRefetchRequested = createAction<[workspaceId: string]>(
-  "prMonitor/refetchRequested",
-);
-
 /** Service → reducer: full monitor list after a seed or event fold. */
 export const prMonitorsUpdated = createAction<
   [workspaceId: string, monitors: PrMonitorRow[]]

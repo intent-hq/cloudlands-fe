@@ -5445,7 +5445,7 @@
   "settings_agentFeatures_prMonitorDebounce_ariaLabel": "PR 监控器变更防抖(秒)",
   "settings_agentFeatures_prMonitorDebounce_save": "保存",
   "settings_agentFeatures_prMonitorDebounce_saving": "保存中…",
-  "settings_agentFeatures_prMonitorDebounce_invalid": "请输入不小于 10 秒的整数。",
+  "settings_agentFeatures_prMonitorDebounce_invalid": "请输入 10 到 86400 秒之间的整数。",
   "chat_monitoredPrs_row_ariaLabel": "监控中的拉取请求",
   "chat_monitoredPrs_monitoredPrs_label": "监控中的 PR:",
   "chat_monitoredPrs_crossRepoChip_label": "{repo}: {number}",

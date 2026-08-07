@@ -300,7 +300,7 @@
   let prDescription = $state('');
   let isCreatingPR = $state(false);
   let forcePushDrawerOpen = $state(false);
-  let expandedPRs = $state<Set<number>>(new Set());
+  let expandedPRs = $state<Set<string>>(new Set());
   let connectRemote = $state({ drawerOpen: false, url: '', adding: false });
   let pendingActionAfterAuth = $state<'create-pr' | 'refresh-pr' | null>(null);
   let pendingPRWorkspaceId: string | null = null;
@@ -646,12 +646,19 @@
     }
   }
 
-  function togglePRExpanded(prNumber: number) {
+  // Expand-state key: cross-repo monitored rows can share a bare PR number
+  // with the workspace PR, so key by repo-qualified identity (mirrors the
+  // {#each} key).
+  function prKey(pr: PRInfo): string {
+    return pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number);
+  }
+
+  function togglePRExpanded(key: string) {
     const newSet = new Set(expandedPRs);
-    if (newSet.has(prNumber)) {
-      newSet.delete(prNumber);
+    if (newSet.has(key)) {
+      newSet.delete(key);
     } else {
-      newSet.add(prNumber);
+      newSet.add(key);
       fetchPRCommitFilesIfNeeded();
     }
     expandedPRs = newSet;
@@ -1039,7 +1046,7 @@
         {/if}
         {#if hasPRs}
           <div class="space-y-0.5">
-            {#each pullRequests as pr (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : pr.number)}
+            {#each pullRequests as pr (prKey(pr))}
               {@const statusColor =
                 pr.status === 'open'
                   ? 'text-emerald-500'
@@ -1050,8 +1057,10 @@
                       : 'text-subtle'}
               {@const statusIcon =
                 pr.status === 'merged' ? faCodeMerge : faCodePullRequest}
-              {@const isPRExpanded = expandedPRs.has(pr.number)}
-              {@const hasPRFiles = prFiles.length > 0 || prFilesUnknown}
+              {@const isPRExpanded = expandedPRs.has(prKey(pr))}
+              <!-- prFiles reflects the workspace branch PR only — monitor-only
+                   rows (incl. cross-repo) have no local file data to expand. -->
+              {@const hasPRFiles = !pr.monitorOnly && (prFiles.length > 0 || prFilesUnknown)}
               <div>
                 <!-- PR header -->
                 <div
@@ -1064,7 +1073,7 @@
                       class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
                       onclick={(e: MouseEvent) => {
                         e.stopPropagation();
-                        togglePRExpanded(pr.number);
+                        togglePRExpanded(prKey(pr));
                       }}
                       title={m.workspace_prSection_toggleFileList_tooltip()}
                     >

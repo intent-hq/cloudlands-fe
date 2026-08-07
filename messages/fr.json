@@ -5445,7 +5445,7 @@
   "settings_agentFeatures_prMonitorDebounce_ariaLabel": "Anti-rebond des changements du moniteur de PR en secondes",
   "settings_agentFeatures_prMonitorDebounce_save": "Enregistrer",
   "settings_agentFeatures_prMonitorDebounce_saving": "Enregistrement…",
-  "settings_agentFeatures_prMonitorDebounce_invalid": "Saisissez un nombre entier d'au moins 10 secondes.",
+  "settings_agentFeatures_prMonitorDebounce_invalid": "Saisissez un nombre entier entre 10 et 86 400 secondes.",
   "chat_monitoredPrs_row_ariaLabel": "Pull requests surveillées",
   "chat_monitoredPrs_monitoredPrs_label": "PR surveillées :",
   "chat_monitoredPrs_crossRepoChip_label": "{repo}: {number}",

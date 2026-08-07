@@ -28,9 +28,10 @@
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { selectActivePrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import {
-  prMonitorsSubscribeRequested,
-  prMonitorsUnsubscribeRequested,
-} from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
+    prMonitorsSubscribeRequested,
+    prMonitorsUnsubscribeRequested,
+  } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
+  import { countOtherActiveMonitors } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
   import { untrack } from 'svelte';
   import { formatInteger } from '$lib/i18n/format';
 
@@ -129,20 +130,14 @@
   );
 
   // "+N" indicator: other active monitored PRs beyond the primary pill.
-  const otherActivePrCount = $derived.by(() => {
-    const workspaceRepo =
-      ws.repositoryOwner && ws.repositoryName
-        ? `${ws.repositoryOwner}/${ws.repositoryName}`
-        : undefined;
-    return $activePrMonitors$.filter(
-      (mon) =>
-        !(
-          prDisplayNumber !== undefined &&
-          mon.prNumber === prDisplayNumber &&
-          (!workspaceRepo || mon.repo === workspaceRepo)
-        ),
-    ).length;
-  });
+  const otherActivePrCount = $derived(
+    countOtherActiveMonitors(
+      $activePrMonitors$,
+      prDisplayNumber,
+      ws.repositoryOwner,
+      ws.repositoryName,
+    ),
+  );
 
   const isPRMergeable = $derived.by(() => checkPRMergeable(ws.activePullRequest));
 

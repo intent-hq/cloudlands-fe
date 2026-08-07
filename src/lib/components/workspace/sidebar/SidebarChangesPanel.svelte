@@ -71,11 +71,11 @@
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import {
-  constructPrUrl as constructPrUrlUtil,
-  computeTotalStats,
-  mapWorkspacePRs,
-  mergeMonitoredPRs,
-} from './sidebar-changes-utils';
+    constructPrUrl as constructPrUrlUtil,
+    computeTotalStats,
+    mapWorkspacePRs,
+    mergeMonitoredPRs,
+  } from './sidebar-changes-utils';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { prMonitorsSubscribeRequested, prMonitorsUnsubscribeRequested } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
   import BranchDisplay from './BranchDisplay.svelte';

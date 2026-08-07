@@ -12,8 +12,7 @@
  * The `flushPrMonitorRequested` / `cancelPrMonitorRequested` triggers
  * forward to `prMonitor.flush` / `prMonitor.cancel` fire-and-forget — the
  * daemon's `prMonitor:*` events converge the list, so no success action is
- * needed. `prMonitorsRefetchRequested` routes to the live subscription's
- * `refetch` (an on-demand `prMonitor.list` re-seed).
+ * needed.
  *
  * Keeping the wire calls here — not in the Svelte components — satisfies the
  * `intent/no-component-async-data-fetch` ESLint rule and matches the
@@ -26,7 +25,6 @@ import {
   cancelPrMonitorRequested,
   flushPrMonitorRequested,
   prMonitorsCleared,
-  prMonitorsRefetchRequested,
   prMonitorsSubscribeRequested,
   prMonitorsUnsubscribeRequested,
   prMonitorsUpdated,
@@ -93,9 +91,6 @@ export function createPrMonitorMiddleware(): StoreMiddleware {
           }
         }
       }
-    } else if (action.type === prMonitorsRefetchRequested.type) {
-      const workspaceId = workspaceIdOf(action);
-      if (workspaceId) active.get(workspaceId)?.subscription.refetch();
     } else if (action.type === flushPrMonitorRequested.type) {
       const ref = monitorRefOf(action);
       if (ref) {

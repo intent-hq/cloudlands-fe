@@ -292,7 +292,18 @@ describe('AgentFeaturesSettings', () => {
 
       const save = await screen.findByRole('button', { name: 'Save' });
       expect((save as HTMLButtonElement).disabled).toBe(true);
-      expect(screen.getByText(/at least 10 seconds/i)).toBeTruthy();
+      expect(screen.getByText(/between 10 and 86,400 seconds/i)).toBeTruthy();
+      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('rejects an above-maximum debounce (daemon cap 86400) without calling settings.update', async () => {
+      render(AgentFeaturesSettings);
+
+      const input = await screen.findByRole('spinbutton', { name: debounceInputName });
+      await fireEvent.input(input, { target: { value: '100000' } });
+
+      const save = await screen.findByRole('button', { name: 'Save' });
+      expect((save as HTMLButtonElement).disabled).toBe(true);
       expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
     });
 

@@ -16,9 +16,9 @@
    * daemon reads it live per turn, so it also affects existing sessions.
    *
    * The PR-monitor toggle carries a companion numeric input directly
-   * beneath it for `prMonitor.debounceSeconds` (§6.9, min 10; disabled while
-   * the feature is off). `prMonitor.pollSeconds` deliberately gets NO UI —
-   * it is config-file only.
+   * beneath it for `prMonitor.debounceSeconds` (§6.9, min 10 / max 86400;
+   * disabled while the feature is off). `prMonitor.pollSeconds` deliberately
+   * gets NO UI — it is config-file only.
    */
   import { onMount } from 'svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
@@ -43,7 +43,9 @@
 
   // i18n-ignore (wire setting path, not user-facing text)
   const DEBOUNCE_PATH = 'prMonitor.debounceSeconds';
+  // Daemon-side registered bounds for prMonitor.debounceSeconds (§6.9).
   const MIN_DEBOUNCE_SECONDS = 10;
+  const MAX_DEBOUNCE_SECONDS = 86400;
 
   type FeaturePath = (typeof FEATURE_PATHS)[number];
 
@@ -166,7 +168,11 @@
 
   async function handleDebounceSave() {
     const newValue = Number(editedDebounce);
-    if (!Number.isInteger(newValue) || newValue < MIN_DEBOUNCE_SECONDS) {
+    if (
+      !Number.isInteger(newValue) ||
+      newValue < MIN_DEBOUNCE_SECONDS ||
+      newValue > MAX_DEBOUNCE_SECONDS
+    ) {
       return; // invalid input, do nothing
     }
 
@@ -229,8 +235,11 @@
       {#if feature.path === 'agentFeatures.prMonitor'}
         <!-- i18n-ignore (template expression, not user-facing text) -->
         {@const debounceNum = Number(editedDebounce)}
+        <!-- i18n-ignore (template expression, not user-facing text) -->
         {@const isDebounceValid =
-          Number.isInteger(debounceNum) && debounceNum >= MIN_DEBOUNCE_SECONDS}
+          Number.isInteger(debounceNum) &&
+          debounceNum >= MIN_DEBOUNCE_SECONDS &&
+          debounceNum <= MAX_DEBOUNCE_SECONDS}
         <div class="mt-3 flex items-center justify-between gap-3">
           <span class="text-sm text-muted-foreground"
             >{m.settings_agentFeatures_prMonitorDebounce_label()}</span
@@ -240,6 +249,7 @@
               <Input
                 type="number"
                 min={MIN_DEBOUNCE_SECONDS}
+                max={MAX_DEBOUNCE_SECONDS}
                 bind:value={editedDebounce}
                 disabled={loading || debounceSaving || !values['agentFeatures.prMonitor']}
                 aria-label={m.settings_agentFeatures_prMonitorDebounce_ariaLabel()}

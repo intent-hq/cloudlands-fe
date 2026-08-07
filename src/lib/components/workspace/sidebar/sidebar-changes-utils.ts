@@ -335,9 +335,10 @@ function monitorDisplayStatus(monitor: PrMonitorRow): 'open' | 'merged' | 'close
   if (snapshotState === 'merged') return 'merged';
   if (snapshotState === 'closed') return 'closed';
   if (monitor.lastSnapshot?.isDraft) return 'draft';
-  // Completed without a snapshot verdict: the PR reached a terminal
-  // lifecycle — render as merged (cancelled rows never reach this list).
-  return monitor.state === 'completed' ? 'merged' : 'open';
+  // Completed without a snapshot verdict (rare — the terminal sweep persists
+  // the final snapshot first): completion covers both merged and closed, so
+  // default to the non-celebratory 'closed' rather than falsely claim merged.
+  return monitor.state === 'completed' ? 'closed' : 'open';
 }
 
 /**
@@ -371,9 +372,34 @@ export function mergeMonitoredPRs(
       status: monitorDisplayStatus(monitor),
       monitorAgentId: monitor.agentId,
       crossRepo: sameRepo ? undefined : monitor.repo,
+      monitorOnly: true,
     });
   }
   return merged;
+}
+
+/**
+ * Count active monitored PRs beyond the primary PR pill/badge (PROTOCOL
+ * §6.9) — the "+N" indicator on the workspace card surfaces. A monitor is
+ * excluded only when it matches the primary PR by number in the workspace
+ * repo (an unknown workspace repo treats all monitors as same-repo).
+ */
+export function countOtherActiveMonitors(
+  monitors: PrMonitorRow[],
+  primaryPrNumber: number | undefined,
+  repositoryOwner: string | undefined,
+  repositoryName: string | undefined,
+): number {
+  const workspaceRepo =
+    repositoryOwner && repositoryName ? `${repositoryOwner}/${repositoryName}` : undefined;
+  return monitors.filter(
+    (mon) =>
+      !(
+        primaryPrNumber !== undefined &&
+        mon.prNumber === primaryPrNumber &&
+        (!workspaceRepo || mon.repo === workspaceRepo)
+      ),
+  ).length;
 }
 
 /** Check if an agent group is collapsed. */

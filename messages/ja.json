@@ -5445,7 +5445,7 @@
   "settings_agentFeatures_prMonitorDebounce_ariaLabel": "PRモニターの変更デバウンス(秒)",
   "settings_agentFeatures_prMonitorDebounce_save": "保存",
   "settings_agentFeatures_prMonitorDebounce_saving": "保存中…",
-  "settings_agentFeatures_prMonitorDebounce_invalid": "10秒以上の整数を入力してください。",
+  "settings_agentFeatures_prMonitorDebounce_invalid": "10〜86,400秒の整数を入力してください。",
   "chat_monitoredPrs_row_ariaLabel": "監視中のプルリクエスト",
   "chat_monitoredPrs_monitoredPrs_label": "監視中のPR:",
   "chat_monitoredPrs_crossRepoChip_label": "{repo}: {number}",

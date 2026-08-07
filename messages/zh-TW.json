@@ -5445,7 +5445,7 @@
   "settings_agentFeatures_prMonitorDebounce_ariaLabel": "PR 監控器變更防抖(秒)",
   "settings_agentFeatures_prMonitorDebounce_save": "儲存",
   "settings_agentFeatures_prMonitorDebounce_saving": "儲存中…",
-  "settings_agentFeatures_prMonitorDebounce_invalid": "請輸入不少於 10 秒的整數。",
+  "settings_agentFeatures_prMonitorDebounce_invalid": "請輸入 10 到 86400 秒之間的整數。",
   "chat_monitoredPrs_row_ariaLabel": "監控中的提取請求",
   "chat_monitoredPrs_monitoredPrs_label": "監控中的 PR:",
   "chat_monitoredPrs_crossRepoChip_label": "{repo}: {number}",

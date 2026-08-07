@@ -66,6 +66,7 @@
     prMonitorsSubscribeRequested,
     prMonitorsUnsubscribeRequested,
   } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
+  import { countOtherActiveMonitors } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
   import { cn } from '$lib/utils';
   import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
@@ -255,14 +256,12 @@
   // "+N" indicator: other active monitored PRs beyond the primary badge.
   const otherActivePrCount = $derived.by(() => {
     if (!workspace) return 0;
-    // Monitored PRs that are not the primary badge PR (by number, same repo).
-    const workspaceRepo =
-      workspace.repositoryOwner && workspace.repositoryName
-        ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
-        : undefined;
-    return $activePrMonitors$.filter(
-      (mon) => !(prNumber !== undefined && mon.prNumber === prNumber && (!workspaceRepo || mon.repo === workspaceRepo)),
-    ).length;
+    return countOtherActiveMonitors(
+      $activePrMonitors$,
+      prNumber,
+      workspace.repositoryOwner,
+      workspace.repositoryName,
+    );
   });
 
   const agentInfos = $derived.by(() => {

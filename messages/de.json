@@ -5445,7 +5445,7 @@
   "settings_agentFeatures_prMonitorDebounce_ariaLabel": "PR-Monitor-Änderungs-Debounce in Sekunden",
   "settings_agentFeatures_prMonitorDebounce_save": "Speichern",
   "settings_agentFeatures_prMonitorDebounce_saving": "Wird gespeichert…",
-  "settings_agentFeatures_prMonitorDebounce_invalid": "Geben Sie eine ganze Zahl von mindestens 10 Sekunden ein.",
+  "settings_agentFeatures_prMonitorDebounce_invalid": "Geben Sie eine ganze Zahl zwischen 10 und 86.400 Sekunden ein.",
   "chat_monitoredPrs_row_ariaLabel": "Überwachte Pull Requests",
   "chat_monitoredPrs_monitoredPrs_label": "Überwachte PRs:",
   "chat_monitoredPrs_crossRepoChip_label": "{repo}: {number}",

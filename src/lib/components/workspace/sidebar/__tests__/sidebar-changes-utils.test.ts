@@ -32,6 +32,7 @@ import {
   computeTotalStats,
   mapWorkspacePRs,
   mergeMonitoredPRs,
+  countOtherActiveMonitors,
 } from '../sidebar-changes-utils';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -753,7 +754,9 @@ describe('mergeMonitoredPRs', () => {
       status: 'open',
       monitorAgentId: 'agent-1',
       crossRepo: undefined,
+      monitorOnly: true,
     });
+    expect(result[0].monitorOnly).toBeUndefined();
   });
 
   it('appends a cross-repo monitor with repo context even when numbers collide', () => {
@@ -764,16 +767,17 @@ describe('mergeMonitoredPRs', () => {
     );
     expect(result).toHaveLength(2);
     expect(result[1].crossRepo).toBe('other/repo');
+    expect(result[1].monitorOnly).toBe(true);
   });
 
-  it('renders completed monitors as merged and keeps them listed', () => {
+  it('renders completed monitors without a snapshot verdict as closed (completion covers merged AND closed)', () => {
     const result = mergeMonitoredPRs(
       [],
       [makeMonitor({ state: 'completed' })],
       workspaceRepo,
     );
     expect(result).toHaveLength(1);
-    expect(result[0].status).toBe('merged');
+    expect(result[0].status).toBe('closed');
   });
 
   it('prefers the last-snapshot state for completed monitors (closed stays closed)', () => {
@@ -821,5 +825,49 @@ describe('mergeMonitoredPRs', () => {
     );
     expect(result).toHaveLength(1);
     expect(result[0].monitorAgentId).toBe('agent-1');
+  });
+});
+
+// ─── countOtherActiveMonitors (PROTOCOL §6.9 "+N" indicator) ───────────────────
+
+describe('countOtherActiveMonitors', () => {
+  function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
+    return {
+      monitorId: 'mon-1',
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      repo: 'acme/widgets',
+      prNumber: 42,
+      state: 'active',
+      pendingChanges: [],
+      hasPendingChanges: false,
+      createdAt: '2026-08-07T10:00:00Z',
+      updatedAt: '2026-08-07T10:05:00Z',
+      ...overrides,
+    };
+  }
+
+  it('excludes the monitor matching the primary PR in the workspace repo', () => {
+    const monitors = [makeMonitor(), makeMonitor({ monitorId: 'mon-2', prNumber: 7 })];
+    expect(countOtherActiveMonitors(monitors, 42, 'acme', 'widgets')).toBe(1);
+  });
+
+  it('counts a same-number cross-repo monitor as "other"', () => {
+    const monitors = [makeMonitor({ repo: 'other/repo' })];
+    expect(countOtherActiveMonitors(monitors, 42, 'acme', 'widgets')).toBe(1);
+  });
+
+  it('counts all monitors when there is no primary PR', () => {
+    const monitors = [makeMonitor(), makeMonitor({ monitorId: 'mon-2', prNumber: 7 })];
+    expect(countOtherActiveMonitors(monitors, undefined, 'acme', 'widgets')).toBe(2);
+  });
+
+  it('matches by number alone when the workspace repo is unknown', () => {
+    const monitors = [makeMonitor({ repo: 'other/repo' })];
+    expect(countOtherActiveMonitors(monitors, 42, undefined, undefined)).toBe(0);
+  });
+
+  it('returns 0 for no monitors', () => {
+    expect(countOtherActiveMonitors([], 42, 'acme', 'widgets')).toBe(0);
   });
 });

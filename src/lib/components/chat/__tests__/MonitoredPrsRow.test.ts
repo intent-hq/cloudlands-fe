@@ -3,8 +3,8 @@
  *
  * MonitoredPrsRow rendering (PROTOCOL §6.9): "Monitored PRs:" chip row for
  * the active agent's ACTIVE monitors, cross-repo label prefixing, hover-card
- * last-refresh details (incl. the requiredKnown caveat surface), and the
- * click action menu (flush / open / cancel) dispatch wiring.
+ * last-refresh details, and the click action menu (flush / open / cancel)
+ * dispatch wiring.
  */
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';

@@ -213,6 +213,10 @@ export function subscribePrMonitors(
   let monitors: PrMonitorRow[] = [];
   let refetchInFlight = false;
   let refetchQueued = false;
+  // Monitors cancelled by a fold: a `prMonitor.list` response that was already
+  // in flight when the `prMonitor:cancelled` event arrived can still carry the
+  // row, so list responses filter these until the server stops returning them.
+  const locallyCancelled = new Set<string>();
   // Guards against a late-resolving subscribe from a previous registration
   // (e.g. rapid reconnect flaps) overwriting the current subscriptionId.
   let registerEpoch = 0;
@@ -231,7 +235,12 @@ export function subscribePrMonitors(
     listPrMonitors(workspaceId)
       .then((fetched) => {
         if (disposed) return;
-        monitors = fetched;
+        // Prune ids the server no longer returns (converged), then drop rows
+        // cancelled locally while this list was in flight.
+        for (const id of [...locallyCancelled]) {
+          if (!fetched.some((m) => m.monitorId === id)) locallyCancelled.delete(id);
+        }
+        monitors = fetched.filter((m) => !locallyCancelled.has(m.monitorId));
         emit();
       })
       .catch((error) => {
@@ -282,8 +291,14 @@ export function subscribePrMonitors(
     }
     const result = foldPrMonitorEvent(monitors, event.type, event.data ?? {});
     monitors = result.monitors;
+    if (event.type === 'prMonitor:cancelled' && event.data?.monitorId) {
+      locallyCancelled.add(event.data.monitorId);
+    }
     emit();
-    if (result.needsRefetch) refetch();
+    // A fold landing while a list request is in flight would be clobbered by
+    // that older response — queue a trailing refetch (single-flight,
+    // coalesced) so the list converges.
+    if (result.needsRefetch || refetchInFlight) refetch();
   });
 
   // Subscriptions are per-connection (§6.1) — replay after a reconnect and
