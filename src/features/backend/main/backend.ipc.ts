@@ -284,6 +284,19 @@ export function __getBootFallbackNoticeForTesting(): ConnectionBootFallbackEvent
   return bootFallbackNotice;
 }
 
+/**
+ * Whether the live client is pinned to a REMOTE backend (a `wss` target
+ * selected by {@link switchBackend}) rather than the local sidecar/env default.
+ *
+ * `activeConnectionMeta` is the discriminator: `null` for local (UDS has no
+ * remote identity), set to the remote's identity after a switch. Read-only and
+ * dependency-light so the quit flow can ask "does a second, local daemon still
+ * need checking?" without pulling in connection state it does not own.
+ */
+export function isRemoteBackendActive(): boolean {
+  return activeConnectionMeta !== null;
+}
+
 /** Liveness heartbeat interval; reconnect-on-close cannot detect half-open sockets. */
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
