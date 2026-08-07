@@ -40,6 +40,7 @@
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import {
     spawnSidecarRequested,
+    switchLocalAndSpawnRequested,
     fetchSidecarRunLogRequested,
   } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import {
@@ -143,18 +144,22 @@
     return conn.label;
   }
 
-  async function handleSpawnSidecar() {
-    // In external/remote mode the active target is a remote backend; switch the
-    // active backend to local first so the on-demand sidecar's UDS becomes the
-    // reconnect target, then request the spawn.
+  function handleSpawnSidecar() {
+    // In external/remote mode the active target is a remote backend; the
+    // on-demand sidecar binds the local UDS socket, so we must switch active →
+    // local first (making that UDS the reconnect target) before spawning.
+    //
+    // The switch destroys THIS window (captureAndCloseWindowsForBackendSwitch)
+    // before the switch IPC returns, so a renderer continuation that dispatched
+    // the spawn afterwards could be torn down before it ran — leaving the user on
+    // a fresh local window with intentd never started. Route the whole recovery
+    // through a single main-side action that switches AND spawns atomically, so
+    // it survives the window teardown.
     if ($activeConnectionId$ !== LOCAL_CONNECTION_ID) {
-      try {
-        await switchConnection(LOCAL_CONNECTION_ID);
-      } catch {
-        // Switch failure surfaces via the connections slice op-status; still
-        // request the spawn (main may already be targeting local).
-      }
+      appStore.dispatch(switchLocalAndSpawnRequested());
+      return;
     }
+    // Already local: no switch, no window teardown — the plain spawn path is safe.
     appStore.dispatch(spawnSidecarRequested());
   }
 

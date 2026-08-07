@@ -2289,7 +2289,7 @@
   "layout_daemonStatus_healthy_label": "intentd: 正常",
   "layout_daemonStatus_degraded_label": "intentd: 低下",
   "layout_daemonStatus_down_label": "intentd: 停止中",
-  "layout_daemonStatus_bootFallback_notice": "Couldn't reach {label}; using this machine.",
+  "layout_daemonStatus_bootFallback_notice": "{label} に接続できませんでした。このマシンを使用します。",
   "layout_daemonStatus_header": "デーモンのステータス",
   "layout_daemonStatus_status_label": "ステータス",
   "layout_daemonStatus_notRunning_label": "停止中",

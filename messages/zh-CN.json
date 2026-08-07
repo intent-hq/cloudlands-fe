@@ -2289,7 +2289,7 @@
   "layout_daemonStatus_healthy_label": "intentd：健康",
   "layout_daemonStatus_degraded_label": "intentd：降级",
   "layout_daemonStatus_down_label": "intentd：未运行",
-  "layout_daemonStatus_bootFallback_notice": "Couldn't reach {label}; using this machine.",
+  "layout_daemonStatus_bootFallback_notice": "无法连接到 {label}；将使用本机。",
   "layout_daemonStatus_header": "守护进程状态",
   "layout_daemonStatus_status_label": "状态",
   "layout_daemonStatus_notRunning_label": "未运行",

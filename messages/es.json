@@ -2289,7 +2289,7 @@
   "layout_daemonStatus_healthy_label": "intentd: en buen estado",
   "layout_daemonStatus_degraded_label": "intentd: degradado",
   "layout_daemonStatus_down_label": "intentd: no está en ejecución",
-  "layout_daemonStatus_bootFallback_notice": "Couldn't reach {label}; using this machine.",
+  "layout_daemonStatus_bootFallback_notice": "No se pudo conectar con {label}; se usará este equipo.",
   "layout_daemonStatus_header": "Estado del daemon",
   "layout_daemonStatus_status_label": "Estado",
   "layout_daemonStatus_notRunning_label": "No está en ejecución",

@@ -451,10 +451,9 @@ describe('DaemonStoppedOverlay', () => {
     ).toHaveLength(0);
   });
 
-  it('"Start local intentd" switches the active backend to local before spawning (T20)', async () => {
+  it('"Start local intentd" switches-to-local-and-spawns atomically in main (T20/T22)', async () => {
     invokeMock.mockImplementation(async (channel: string, ...args: unknown[]) => {
-      if (channel === CONNECTIONS.SWITCH) return { activeId: (args[0] as { id: string }).id };
-      if (channel === BACKEND.SPAWN_SIDECAR) return { ok: true, spawned: true };
+      if (channel === BACKEND.SWITCH_LOCAL_AND_SPAWN) return { ok: true, spawned: true };
       if (channel === BACKEND.GET_STATUS) return { status: 'connected', transport: bootTransport };
       return mockInvoke(channel, ...args);
     });
@@ -471,16 +470,15 @@ describe('DaemonStoppedOverlay', () => {
     expect(button.textContent).toContain('Start local intentd');
     await fireEvent.click(button);
 
-    // Switch-to-local precedes the spawn so the sidecar's UDS becomes the target.
+    // Recovery is a SINGLE main-side action: switching to local tears this window
+    // down before the switch IPC returns, so a renderer continuation that then
+    // dispatched the spawn could never run. The switch AND spawn happen in main.
     await vi.waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith(CONNECTIONS.SWITCH, { id: LOCAL_CONNECTION_ID });
+      expect(invokeMock).toHaveBeenCalledWith(BACKEND.SWITCH_LOCAL_AND_SPAWN);
     });
-    await vi.waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith(BACKEND.SPAWN_SIDECAR);
-    });
-    const switchOrder = invokeMock.mock.calls.findIndex(([c]) => c === CONNECTIONS.SWITCH);
-    const spawnOrder = invokeMock.mock.calls.findIndex(([c]) => c === BACKEND.SPAWN_SIDECAR);
-    expect(switchOrder).toBeLessThan(spawnOrder);
+    // The renderer never issues a separate switch-then-spawn pair for this path.
+    expect(invokeMock).not.toHaveBeenCalledWith(CONNECTIONS.SWITCH, { id: LOCAL_CONNECTION_ID });
+    expect(invokeMock).not.toHaveBeenCalledWith(BACKEND.SPAWN_SIDECAR);
   });
 
   it('lists the other known backends and switches to one on click (T20)', async () => {

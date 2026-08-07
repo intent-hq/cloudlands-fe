@@ -613,6 +613,18 @@ export async function reconcileActiveConnectionOnBoot(): Promise<void> {
   // Pin the live client to the remote and attempt a bounded connect. The
   // handshake-labeled `host.status` probe (the same call the heartbeat uses,
   // answered on both transports) resolves once the pinned socket is connected.
+  //
+  // Dispose any client an EARLIER consumer already lazily built from the
+  // local/env default before we got here (the About-panel provider-catalog task
+  // races reconciliation and calls `getBackendClient()`). `currentConfig` only
+  // steers the NEXT construction — it does not re-target a live client — so
+  // without this dispose `getBackendClient()` below would return that stale LOCAL
+  // client, the probe would hit local (reporting the remote "reachable" while the
+  // live transport is actually local), and `activeId` would stay remote: a split
+  // between `getActiveId()` and the real transport. Disposing first forces a
+  // fresh client pinned to the remote, making this reconciliation authoritative —
+  // it truly swaps the live transport onto the resolved backend.
+  disposeBackendClient();
   currentConfig = meta ? config : null;
   activeConnectionMeta = meta;
   logger.info('Restoring last-used remote backend at boot', { id: activeId });
@@ -860,6 +872,94 @@ export async function switchBackend(id: string): Promise<SwitchConnectionResult>
   return { activeId: id };
 }
 
+/**
+ * Spawn the app-managed sidecar on demand (#439 fallback). Probes the live
+ * client's transport first — the on-demand sidecar always binds the local UDS
+ * socket, so a WS/TCP client would keep reconnecting to its original target and
+ * never reach the daemon we spawned, stranding the renderer on a pending spawn.
+ * On a successful spawn, re-broadcast the current status so the reconnect UI
+ * updates while the JsonRpcClient's ≤5s reconnect loop picks up the new socket.
+ *
+ * Extracted from the `backend:spawn-sidecar` handler so {@link switchToLocalAndSpawn}
+ * can reuse the exact same spawn semantics after flipping the active backend to
+ * local (the switch makes the transport `uds`, so the guard then passes).
+ */
+async function performSpawnSidecar(): Promise<{
+  ok: boolean;
+  spawned: boolean;
+  reason?: string;
+  error?: unknown;
+}> {
+  try {
+    const transport = getBackendClient().getConfig().transport;
+    if (transport !== 'uds') {
+      return {
+        ok: false,
+        spawned: false,
+        reason: `connection target is not a local socket (transport: ${transport})`,
+      };
+    }
+    const result = await spawnSidecarOnDemand(
+      process.env,
+      app.isPackaged,
+      process.resourcesPath,
+      process.cwd(),
+    );
+    if (result.ok) {
+      // The daemon-loss modal resolves as soon as the spawn kicked off; the
+      // JsonRpcClient's ≤5s reconnect loop picks up the socket once the
+      // daemon is serving and broadcasts `backend:status` as usual.
+      const client = getBackendClient();
+      broadcast(BACKEND.STATUS, {
+        status: client.getStatus(),
+        transport: formatTransportInfo(client.getConfig()),
+      });
+    }
+    return result;
+  } catch (error) {
+    return { ok: false, spawned: false, error: toErrorPayload(error) };
+  }
+}
+
+/**
+ * Atomic "Start local intentd" recovery from external/remote mode (T22 review):
+ * switch the active backend to local AND spawn the app-managed sidecar in a
+ * SINGLE main-process action.
+ *
+ * Why this must live wholly in main: {@link switchBackend} captures-and-closes
+ * every window (destroying the renderer that initiated recovery) BEFORE the
+ * switch IPC resolves, so a renderer that switched-to-local and then separately
+ * dispatched the spawn could be torn down before the second step ran — leaving
+ * the user on a fresh local window with intentd never started. Keeping both steps
+ * here makes recovery independent of the initiating renderer's survival.
+ *
+ * Order matters: switch to local FIRST so the live transport becomes the local
+ * UDS socket, THEN spawn — {@link performSpawnSidecar}'s uds guard only passes
+ * once the switch has re-targeted the client. Already-local is a no-op switch
+ * (just spawn), mirroring the renderer's prior guard.
+ */
+export async function switchToLocalAndSpawn(): Promise<{
+  ok: boolean;
+  spawned: boolean;
+  reason?: string;
+  error?: unknown;
+}> {
+  try {
+    const activeId = await connectionsStore.getActiveId();
+    if (activeId !== LOCAL_CONNECTION_ID) {
+      await switchBackend(LOCAL_CONNECTION_ID);
+    }
+  } catch (error) {
+    // A switch failure still lets us attempt the spawn (main may already be
+    // targeting local); surface nothing here — performSpawnSidecar reports its
+    // own outcome and the connections slice carries any switch error.
+    logger.warn('Switch to local before sidecar spawn failed; attempting spawn anyway', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return performSpawnSidecar();
+}
+
 /** Register the backend bridge IPC handlers (idempotent). */
 export function registerBackendHandlers(): void {
   if (handlersRegistered) return;
@@ -924,41 +1024,11 @@ export function registerBackendHandlers(): void {
     return { status: client.getStatus(), transport };
   });
 
-  ipcMain.handle(BACKEND.SPAWN_SIDECAR, async () => {
-    try {
-      // The on-demand sidecar always binds the local UDS socket. A WS/TCP
-      // client keeps reconnecting to its original target and would never
-      // reach the daemon we spawned, stranding the renderer on a pending
-      // spawn — refuse instead.
-      const transport = getBackendClient().getConfig().transport;
-      if (transport !== 'uds') {
-        return {
-          ok: false,
-          spawned: false,
-          reason: `connection target is not a local socket (transport: ${transport})`,
-        };
-      }
-      const result = await spawnSidecarOnDemand(
-        process.env,
-        app.isPackaged,
-        process.resourcesPath,
-        process.cwd(),
-      );
-      if (result.ok) {
-        // The daemon-loss modal resolves as soon as the spawn kicked off; the
-        // JsonRpcClient's ≤5s reconnect loop picks up the socket once the
-        // daemon is serving and broadcasts `backend:status` as usual.
-        const client = getBackendClient();
-        broadcast(BACKEND.STATUS, {
-          status: client.getStatus(),
-          transport: formatTransportInfo(client.getConfig()),
-        });
-      }
-      return result;
-    } catch (error) {
-      return { ok: false, spawned: false, error: toErrorPayload(error) };
-    }
-  });
+  ipcMain.handle(BACKEND.SPAWN_SIDECAR, async () => performSpawnSidecar());
+
+  // Atomic recovery: switch active → local AND spawn the sidecar in one main-side
+  // action so it survives the initiating window's teardown during the switch.
+  ipcMain.handle(BACKEND.SWITCH_LOCAL_AND_SPAWN, async () => switchToLocalAndSpawn());
 
   // Per-run sidecar log capture: the renderer's daemon-loss dialog offers to
   // show the captured stdout/stderr tail from the last sidecar run. The

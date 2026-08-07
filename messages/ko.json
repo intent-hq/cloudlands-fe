@@ -2289,7 +2289,7 @@
   "layout_daemonStatus_healthy_label": "intentd: 정상",
   "layout_daemonStatus_degraded_label": "intentd: 저하됨",
   "layout_daemonStatus_down_label": "intentd: 실행되지 않음",
-  "layout_daemonStatus_bootFallback_notice": "Couldn't reach {label}; using this machine.",
+  "layout_daemonStatus_bootFallback_notice": "{label}에 연결할 수 없습니다. 이 컴퓨터를 사용합니다.",
   "layout_daemonStatus_header": "데몬 상태",
   "layout_daemonStatus_status_label": "상태",
   "layout_daemonStatus_notRunning_label": "실행되지 않음",

@@ -2289,7 +2289,7 @@
   "layout_daemonStatus_healthy_label": "intentd : opérationnel",
   "layout_daemonStatus_degraded_label": "intentd : dégradé",
   "layout_daemonStatus_down_label": "intentd : arrêté",
-  "layout_daemonStatus_bootFallback_notice": "Couldn't reach {label}; using this machine.",
+  "layout_daemonStatus_bootFallback_notice": "Impossible de joindre {label} ; utilisation de cet ordinateur.",
   "layout_daemonStatus_header": "Statut du démon",
   "layout_daemonStatus_status_label": "Statut",
   "layout_daemonStatus_notRunning_label": "Arrêté",

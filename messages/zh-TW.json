@@ -2289,7 +2289,7 @@
   "layout_daemonStatus_healthy_label": "intentd：健康",
   "layout_daemonStatus_degraded_label": "intentd：降級",
   "layout_daemonStatus_down_label": "intentd：未執行",
-  "layout_daemonStatus_bootFallback_notice": "Couldn't reach {label}; using this machine.",
+  "layout_daemonStatus_bootFallback_notice": "無法連線至 {label}；將使用本機。",
   "layout_daemonStatus_header": "常駐程式狀態",
   "layout_daemonStatus_status_label": "狀態",
   "layout_daemonStatus_notRunning_label": "未執行",

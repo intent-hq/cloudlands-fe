@@ -269,3 +269,55 @@ describe('reconcileActiveConnectionOnBoot — T19 restore', () => {
     expect(lifecycle.events.some((e) => e.type === 'construct')).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// T22 review — after boot, getActiveId() and the live transport MUST agree, even
+// when an early consumer (the About-panel provider-catalog task) built a LOCAL
+// client BEFORE reconciliation ran. Reconciliation is authoritative: it disposes
+// the stale client and swaps the live transport onto the resolved backend.
+// ---------------------------------------------------------------------------
+
+describe('reconcileActiveConnectionOnBoot — activeId/transport agreement', () => {
+  /** Map a live client config back to the backend id it targets. */
+  function liveTargetId(cfg: { transport?: string; host?: string }): string {
+    return cfg.transport === 'wss' && cfg.host === REMOTE.host ? 'remote-1' : 'local';
+  }
+
+  it('reachable remote: an early LOCAL client is swapped, so activeId and transport both point at the remote', async () => {
+    boot.probe = 'resolve';
+    const mod = await loadModule();
+
+    // The About-panel catalog task races reconciliation and builds a client from
+    // the local/env default before reconcile pins the remote.
+    const early = mod.getBackendClient();
+
+    await mod.reconcileActiveConnectionOnBoot();
+
+    // Reconciliation authoritatively swapped the live client to the remote — a
+    // fresh instance, not the stale local one, and the stale one was disposed.
+    const live = mod.getBackendClient();
+    expect(live).not.toBe(early);
+    expect(lifecycle.events.some((e) => e.type === 'dispose')).toBe(true);
+
+    // activeId stays remote; the live transport targets the same remote → agree.
+    expect(store.setActiveId).not.toHaveBeenCalledWith('local');
+    expect(liveTargetId(live.getConfig() as { transport?: string; host?: string })).toBe(
+      'remote-1',
+    );
+  });
+
+  it('unreachable remote: falls back so activeId AND the live transport are both local', async () => {
+    boot.probe = 'reject';
+    const mod = await loadModule();
+
+    // Same early-consumer race, but the remote is unreachable this time.
+    mod.getBackendClient();
+
+    await mod.reconcileActiveConnectionOnBoot();
+
+    // Fell back to local: persisted activeId is local and so is the live transport.
+    expect(store.setActiveId).toHaveBeenCalledWith('local');
+    const live = mod.getBackendClient();
+    expect(liveTargetId(live.getConfig() as { transport?: string; host?: string })).toBe('local');
+  });
+});

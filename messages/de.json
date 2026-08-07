@@ -2289,7 +2289,7 @@
   "layout_daemonStatus_healthy_label": "intentd: funktionsfähig",
   "layout_daemonStatus_degraded_label": "intentd: beeinträchtigt",
   "layout_daemonStatus_down_label": "intentd: läuft nicht",
-  "layout_daemonStatus_bootFallback_notice": "Couldn't reach {label}; using this machine.",
+  "layout_daemonStatus_bootFallback_notice": "{label} konnte nicht erreicht werden; dieser Computer wird verwendet.",
   "layout_daemonStatus_header": "Daemon-Status",
   "layout_daemonStatus_status_label": "Status",
   "layout_daemonStatus_notRunning_label": "Läuft nicht",
