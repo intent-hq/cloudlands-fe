@@ -65,6 +65,7 @@ interface StateOptions {
   sessionOverrides?: Record<string, Record<string, unknown>>;
   unreadWorkspaceIds?: string[];
   selectedTabs?: Record<string, string[]>;
+  showCreateModal?: boolean;
   cycleScopes?: Partial<Record<CycleScopeFamilyId, CycleScope>>;
   voiceSettings?: Partial<ActionKeyState['voiceSettings']>;
 }
@@ -107,6 +108,7 @@ function makeState(options: StateOptions = {}): ActionKeyState {
     sidebarNav: {
       multiSelectTabOrder: [],
       multiSelectSelectedTabIdsByWorkspaceId: options.selectedTabs ?? {},
+      showCreateModal: options.showCreateModal ?? false,
     },
     voiceSettings: {
       isLoading: false,
@@ -966,11 +968,23 @@ describe('execute dispatch', () => {
     );
   });
 
-  it('new-workspace opens the create-workspace modal', () => {
-    const { context, dispatch } = makeContext(makeState({ activeWorkspaceId: null }));
+  it('new-workspace opens the create-workspace modal when it is closed', () => {
+    const state = makeState({ activeWorkspaceId: null });
+    const { context, dispatch } = makeContext(state);
+    expect(getActionKeyDefinition('new-workspace').isAvailable(context)).toBe(true);
     getActionKeyDefinition('new-workspace').execute(context);
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: [true] }),
+    );
+  });
+
+  it('new-workspace closes the create-workspace modal when it is already open', () => {
+    const state = makeState({ activeWorkspaceId: null, showCreateModal: true });
+    const { context, dispatch } = makeContext(state);
+    expect(getActionKeyDefinition('new-workspace').isAvailable(context)).toBe(true);
+    getActionKeyDefinition('new-workspace').execute(context);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: [false] }),
     );
   });
 
