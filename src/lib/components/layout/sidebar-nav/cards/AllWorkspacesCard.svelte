@@ -149,10 +149,13 @@
   });
 
   const statusLabels: Record<WorkspaceDisplayStatus, () => string> = {
+    failed: () => m.layout_allCard_statusFailed_label(),
+    blocked: () => m.layout_allCard_statusBlocked_label(),
     needs_attention: () => m.layout_allCard_statusNeedsAttention_label(),
     idle: () => m.layout_allCard_statusIdle_label(),
     not_started: () => m.layout_allCard_statusNoChanges_label(),
     in_progress: () => m.layout_allCard_statusInProgress_label(),
+    unread: () => m.layout_allCard_statusUnread_label(),
     complete: () => m.layout_allCard_statusComplete_label(),
     pr_ready: () => m.layout_allCard_statusPrReady_label(),
     pr_open: () => m.layout_allCard_statusPrOpen_label(),
@@ -160,9 +163,12 @@
   };
 
   const statusOrder: WorkspaceDisplayStatus[] = [
+    'failed',
+    'blocked',
     'needs_attention',
     'idle',
     'in_progress',
+    'unread',
     'pr_ready',
     'pr_open',
     'not_started',
