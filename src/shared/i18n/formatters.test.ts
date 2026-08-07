@@ -21,6 +21,35 @@ describe('formatNumber / formatInteger', () => {
   });
 });
 
+describe('formatCurrency', () => {
+  it('formats an ISO 4217 amount for the locale', () => {
+    expect(en.formatCurrency(1.5, 'USD')).toBe('$1.50');
+    expect(en.formatCurrency(1234.5, 'USD')).toBe('$1,234.50');
+  });
+
+  it('keeps up to 4 fraction digits for sub-unit amounts', () => {
+    expect(en.formatCurrency(0.0123, 'USD')).toBe('$0.0123');
+    expect(en.formatCurrency(0, 'USD')).toBe('$0.00');
+  });
+
+  it('follows the locale currency conventions', () => {
+    expect(de.formatCurrency(1234.5, 'EUR')).toContain('1.234,50');
+  });
+
+  it('honours zero-decimal currency conventions for whole amounts', () => {
+    expect(en.formatCurrency(100, 'JPY')).toBe('¥100');
+    expect(en.formatCurrency(0, 'JPY')).toBe('¥0');
+  });
+
+  it('falls back to a number plus the code for an unknown currency', () => {
+    expect(en.formatCurrency(2, 'CREDITS')).toBe('2.00 CREDITS');
+  });
+
+  it('returns empty string for invalid amounts', () => {
+    expect(en.formatCurrency(Number.NaN, 'USD')).toBe('');
+  });
+});
+
 describe('formatBytesBinary', () => {
   it('formats binary base-1024 sizes with 3 significant digits', () => {
     expect(en.formatBytesBinary(0)).toBe('0B');
@@ -98,12 +127,12 @@ describe('formatCompactRelativeTime', () => {
     expect(en.formatCompactRelativeTime(new Date(NOW.getTime() - 5 * 60_000), { now: NOW })).toBe(
       '5m',
     );
-    expect(en.formatCompactRelativeTime(new Date(NOW.getTime() - 3 * 3_600_000), { now: NOW })).toBe(
-      '3h',
-    );
-    expect(en.formatCompactRelativeTime(new Date(NOW.getTime() - 2 * 86_400_000), { now: NOW })).toBe(
-      '2d',
-    );
+    expect(
+      en.formatCompactRelativeTime(new Date(NOW.getTime() - 3 * 3_600_000), { now: NOW }),
+    ).toBe('3h');
+    expect(
+      en.formatCompactRelativeTime(new Date(NOW.getTime() - 2 * 86_400_000), { now: NOW }),
+    ).toBe('2d');
     expect(
       en.formatCompactRelativeTime(new Date(NOW.getTime() - 14 * 86_400_000), { now: NOW }),
     ).toBe('2w');

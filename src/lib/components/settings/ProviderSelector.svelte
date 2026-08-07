@@ -22,7 +22,15 @@
     retryLoadModels,
     reloadModelsForProvider,
   } from '$store/renderer/slices/model/model-slice';
-  import { ensureProvidersChecked } from '$store/renderer/slices/agent-availability/agent-availability-slice';
+  import {
+    checkAllProvidersRequested,
+    ensureProvidersChecked,
+  } from '$store/renderer/slices/agent-availability/agent-availability-slice';
+  import {
+    selectNpxStatus,
+    selectProviderLoadingMap,
+    selectProviderStatusMap,
+  } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
 
   import {
     selectProviderCatalogEntries,
@@ -58,12 +66,16 @@
   const enabledProviders$ = selectEnabledProviders();
   const providerInUseReasons$ = selectProviderInUseReasons();
   const catalogEntries$ = selectProviderCatalogEntries();
+  // Shared per-provider status pipeline (agent-availability slice), fed by
+  // the CHECK_SINGLE fan-out so each row settles on its own probe.
+  const providerStatusMap$ = selectProviderStatusMap();
+  const providerLoadingMap$ = selectProviderLoadingMap();
+  const npxStatus$ = selectNpxStatus();
 
-  // Provider availability state
+  // Aggregated availability — read only for the daemon's hidden-provider
+  // verdict; per-provider status comes from the slice above.
   let providerAvailability: ProviderAvailabilityResult | null = $state(null);
   let checkError: string | null = $state(null);
-  let loading = $state(true);
-  let hasLoadedOnce = $state(false);
 
   // Auggie-specific state (for auth flow)
   type AuggieStatus = {
@@ -132,32 +144,12 @@
     pi: { docsUrl: 'https://pi.dev/docs/latest/quickstart', requiresAuth: false },
   };
 
-  // Map provider IDs to keys used in ProviderAvailabilityResult
-  const providerKeyMap: Record<string, keyof ProviderAvailabilityResult['providers']> = {
-    auggie: 'auggie',
-    'claude-code': 'claudeCode',
-    codex: 'codex',
-    mock: 'mock',
-    opencode: 'opencode',
-    droid: 'droid',
-    grok: 'grok',
-    unsloth: 'unsloth',
-    cortex: 'cortex',
-    pi: 'pi',
-  };
-
-  // Helper to get provider availability from result (handles different key formats)
+  // Helper to get provider availability from the shared status map
   function getProviderAvailable(providerId: string): boolean {
     if (providerId === 'auggie') {
       return !!auggieStatus?.installed;
     }
-
-    if (!providerAvailability) return false;
-    const key = providerKeyMap[providerId];
-    if (key && providerAvailability.providers[key]) {
-      return providerAvailability.providers[key].available;
-    }
-    return false;
+    return $providerStatusMap$[providerId]?.available ?? false;
   }
 
   // Helper to get provider auth status
@@ -165,18 +157,25 @@
     if (providerId === 'auggie') {
       return auggieStatus?.authenticated;
     }
+    return $providerStatusMap$[providerId]?.authenticated;
+  }
 
-    if (!providerAvailability) return undefined;
-    const key = providerKeyMap[providerId];
-    if (key && providerAvailability.providers[key]) {
-      return providerAvailability.providers[key].authenticated;
-    }
-    return undefined;
+  /**
+   * A row is pending only until its OWN probe first settles: once a status
+   * exists the row keeps rendering it across rechecks (focus/visibility
+   * refreshes stay silent). A failed probe leaves no status but clears the
+   * loading flag, so the row falls through to the not-installed state.
+   */
+  function isProviderStatusPending(providerId: string): boolean {
+    if (providerId === 'auggie') return auggieLoading;
+    if ($providerStatusMap$[providerId] !== undefined) return false;
+    return $providerLoadingMap$[providerId] !== false;
   }
 
   // Catalog entries shown in this panel — hidden providers filtered out
   // (env var gated and not enabled), strictly alphabetical by display name.
-  // Shared ordering source for the loading skeleton and the loaded rows.
+  // Rendered immediately from the catalog; the daemon's hiddenProviders
+  // verdict refines the catalog's own `visible` flag once it arrives.
   const orderedCatalogEntries = $derived.by(() =>
     orderProviderEntries($catalogEntries$, providerAvailability?.hiddenProviders),
   );
@@ -184,14 +183,14 @@
   // Provider options for display - dynamically generated from the catalog
   const providerOptions = $derived.by(() =>
     orderedCatalogEntries.map((provider) => {
-      const statusKey = providerKeyMap[provider.id];
-      const status = statusKey ? providerAvailability?.providers[statusKey] : null;
+      const status = $providerStatusMap$[provider.id];
       return {
         id: provider.id,
         name: provider.displayName,
         command: provider.command,
         available: getProviderAvailable(provider.id),
         authenticated: getProviderAuthenticated(provider.id),
+        statusPending: isProviderStatusPending(provider.id),
         requiresAuth: PROVIDER_METADATA[provider.id]?.requiresAuth ?? false,
         docsUrl: PROVIDER_METADATA[provider.id]?.docsUrl ?? '',
         loginDocsUrl: provider.loginDocsUrl,
@@ -336,20 +335,28 @@
   function handlePathChange(providerId: string, newPath: string) {
     providerPaths = { ...providerPaths, [providerId]: newPath };
     // Refresh provider availability after path change
-    checkProviderAvailability(true);
+    checkProviderAvailability(true, true);
   }
 
   /**
-   * Kick off both loading tracks concurrently.
+   * Kick off the loading tracks concurrently.
    * Each track updates its own state slice and unblocks its own UI section.
+   * `rerunProbes` re-fans-out the per-provider checks (explicit refresh:
+   * path change, retry); on mount `ensureProvidersChecked` already covers it.
    */
-  async function checkProviderAvailability(refreshModels = false) {
+  async function checkProviderAvailability(refreshModels = false, rerunProbes = false) {
     checkError = null;
+    if (rerunProbes) {
+      appStore.dispatch(checkAllProvidersRequested());
+    }
     await Promise.all([loadAuggieStatus(), loadProviderAvailability(refreshModels)]);
   }
 
   /** Silent recheck — updates data without showing loading spinners */
   async function silentRefreshProviderAvailability() {
+    // Re-run the per-provider fan-out; rows keep their last status while the
+    // fresh probes land, so no per-row pending indicator reappears.
+    appStore.dispatch(checkAllProvidersRequested());
     try {
       const providerResult = await invoke<{
         success: boolean;
@@ -384,9 +391,12 @@
     }
   }
 
-  /** Track 2: Other provider availability -- unblocks the provider rows */
+  /**
+   * Track 2: the aggregated call, kept only for the daemon's hidden-provider
+   * verdict (and the model refresh). Rows no longer wait on it — they render
+   * from the catalog and fill in from the shared per-provider slice.
+   */
   async function loadProviderAvailability(refreshModels = false) {
-    loading = true;
     try {
       const providerResult = await invoke<{
         success: boolean;
@@ -406,9 +416,6 @@
     } catch (err) {
       logger.error('Failed to check provider availability', { error: err });
       checkError = err instanceof Error ? err.message : m.settings_providers_unknownError();
-    } finally {
-      loading = false;
-      hasLoadedOnce = true;
     }
   }
 
@@ -569,197 +576,194 @@
 </script>
 
 <div class="space-y-6">
-  {#if loading && !hasLoadedOnce}
-    {#each orderedCatalogEntries as provider (provider.id)}
-      {@render skeleton(provider.id)}
-    {/each}
-  {:else if checkError}
+  {#if checkError}
     <div class="flex items-center justify-between gap-4">
       <p class="text-sm text-destructive-foreground">{checkError}</p>
       <button
         type="button"
         class="text-primary hover:text-primary/80 cursor-pointer transition-colors text-xs font-medium"
-        onclick={() => checkProviderAvailability(true)}
+        onclick={() => checkProviderAvailability(true, true)}
       >
         {m.settings_providers_tryAgain()}
       </button>
     </div>
   {/if}
 
-  {#if !loading || hasLoadedOnce}
-    {#each providerOptions as provider (provider.id)}
-      <!-- Auggie provider row (special-cased: auth flow + install/update actions) -->
-      {#if provider.id === 'auggie'}
-        {#if auggieLoading}
-          {@render skeleton('auggie')}
-        {:else}
-          {@const isAuggieActive = $activeProviderId === 'auggie'}
-          {@const isAuggieEnabled = isProviderEnabled('auggie')}
-          {@const isAuggieReady = isProviderReadyForUse('auggie')}
-          {@const canManageAuggieEnablement = canManageProviderEnablement('auggie')}
-          {@const auggieInUseReason = $providerInUseReasons$['auggie'] ?? null}
-          <div class="flex items-start justify-between gap-4">
-            <div class="space-y-1">
-              <div class="flex items-center gap-2 h-7">
-                {@render providerIcon('auggie')}
-                <span class="text-sm text-foreground">{provider.name}</span>
-                <div class="-my-1">
-                  <!-- Path configuration -->
-                  <ProviderPathConfig
-                    providerId="auggie"
-                    providerName={provider.name}
-                    cliCommand={provider.command}
-                    configuredPath={providerPaths['auggie']}
-                    resolvedPath={resolvedPaths['auggie']}
-                    isInstalled={auggieStatus?.installed}
-                    onPathChange={(path) => handlePathChange('auggie', path)}
-                  />
-                </div>
+  <!-- Rows render immediately from the catalog; each row's status area fills
+       in independently as its own probe settles. -->
+  {#each providerOptions as provider (provider.id)}
+    <!-- Auggie provider row (special-cased: auth flow + install/update actions) -->
+    {#if provider.id === 'auggie'}
+      {#if auggieLoading}
+        {@render skeleton('auggie')}
+      {:else}
+        {@const isAuggieActive = $activeProviderId === 'auggie'}
+        {@const isAuggieEnabled = isProviderEnabled('auggie')}
+        {@const isAuggieReady = isProviderReadyForUse('auggie')}
+        {@const canManageAuggieEnablement = canManageProviderEnablement('auggie')}
+        {@const auggieInUseReason = $providerInUseReasons$['auggie'] ?? null}
+        <div class="flex items-start justify-between gap-4">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2 h-7">
+              {@render providerIcon('auggie')}
+              <span class="text-sm text-foreground">{provider.name}</span>
+              <div class="-my-1">
+                <!-- Path configuration -->
+                <ProviderPathConfig
+                  providerId="auggie"
+                  providerName={provider.name}
+                  cliCommand={provider.command}
+                  configuredPath={providerPaths['auggie']}
+                  resolvedPath={resolvedPaths['auggie']}
+                  isInstalled={auggieStatus?.installed}
+                  onPathChange={(path) => handlePathChange('auggie', path)}
+                />
               </div>
-              {#if needsUpdate}
-                <p class="text-xs text-amber-500">
-                  {m.settings_providers_needsUpdate({
-                    version: auggieStatus?.version ?? '',
-                    minimum: MINIMUM_AUGGIE_VERSION,
-                  })}
-                </p>
-              {/if}
             </div>
-
-            <div class="flex items-center gap-3 text-xs">
-              {#if !auggieStatus?.managedBinaryInstalled && (!auggieStatus?.installed || (!auggieStatus?.nodeVersionOk && auggieStatus?.binaryInstallAvailable))}
-                {#if actionInProgress}
-                  <span class="text-subtle">{m.settings_providers_installing()}</span>
-                {:else}
-                  <button
-                    type="button"
-                    class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-                    onclick={installAuggie}
-                  >
-                    {m.settings_providers_install()}
-                  </button>
-                {/if}
-              {:else if needsUpdate}
-                {#if actionInProgress}
-                  <span class="text-subtle">{m.settings_providers_updating()}</span>
-                {:else}
-                  <button
-                    type="button"
-                    class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-                    onclick={installAuggie}
-                  >
-                    {m.settings_providers_update()}
-                  </button>
-                {/if}
-              {:else if !auggieStatus?.authenticated}
-                {#if authInProgress}
-                  <span class="text-subtle">{m.settings_providers_loading()}</span>
-                {:else}
-                  <button
-                    type="button"
-                    class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-                    onclick={startAuth}
-                  >
-                    {m.settings_providers_login()}
-                  </button>
-                {/if}
-              {/if}
-
-              {#if canManageAuggieEnablement && !isAuggieActive && isAuggieEnabled}
-                <button
-                  type="button"
-                  class="font-medium transition-colors {auggieInUseReason
-                    ? 'text-muted-foreground/50 cursor-not-allowed'
-                    : 'text-muted-foreground hover:text-foreground cursor-pointer'}"
-                  disabled={!!auggieInUseReason}
-                  title={auggieInUseReason ?? undefined}
-                  onclick={() => handleToggleProvider('auggie', false)}
-                >
-                  {m.settings_providers_disable()}
-                </button>
-              {:else if canManageAuggieEnablement && !isAuggieActive && !isAuggieEnabled && isAuggieReady}
-                <button
-                  type="button"
-                  class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-                  onclick={() => handleToggleProvider('auggie', true)}
-                >
-                  {m.settings_providers_enable()}
-                </button>
-              {/if}
-
-              {#if !isAuggieActive && isAuggieReady}
-                <button
-                  type="button"
-                  class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-                  onclick={() => handleSelectProvider('auggie')}
-                  disabled={selectingProviderId !== null}
-                >
-                  {selectingProviderId === 'auggie'
-                    ? m.settings_providers_switching()
-                    : m.settings_providers_setAsDefault()}
-                </button>
-              {:else if isAuggieActive && isAuggieReady}
-                <span class="text-xs text-subtle flex items-center gap-1">
-                  {m.settings_providers_default()}
-                </span>
-              {:else if isAuggieActive}
-                <span class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1">
-                  <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
-                  {m.settings_providers_defaultUnavailable_label()}
-                </span>
-              {/if}
-            </div>
+            {#if needsUpdate}
+              <p class="text-xs text-amber-500">
+                {m.settings_providers_needsUpdate({
+                  version: auggieStatus?.version ?? '',
+                  minimum: MINIMUM_AUGGIE_VERSION,
+                })}
+              </p>
+            {/if}
           </div>
 
-          <!-- Node.js version warning (suppress when binary install is available as fallback) -->
-          {#if auggieStatus && auggieStatus.nodeVersionOk === false && !auggieStatus.binaryInstallAvailable && !auggieStatus.installed}
-            <NodeVersionWarning nodeVersion={auggieStatus.nodeVersion} class="mt-1" />
-          {/if}
+          <div class="flex items-center gap-3 text-xs">
+            {#if !auggieStatus?.managedBinaryInstalled && (!auggieStatus?.installed || (!auggieStatus?.nodeVersionOk && auggieStatus?.binaryInstallAvailable))}
+              {#if actionInProgress}
+                <span class="text-subtle">{m.settings_providers_installing()}</span>
+              {:else}
+                <button
+                  type="button"
+                  class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+                  onclick={installAuggie}
+                >
+                  {m.settings_providers_install()}
+                </button>
+              {/if}
+            {:else if needsUpdate}
+              {#if actionInProgress}
+                <span class="text-subtle">{m.settings_providers_updating()}</span>
+              {:else}
+                <button
+                  type="button"
+                  class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+                  onclick={installAuggie}
+                >
+                  {m.settings_providers_update()}
+                </button>
+              {/if}
+            {:else if !auggieStatus?.authenticated}
+              {#if authInProgress}
+                <span class="text-subtle">{m.settings_providers_loading()}</span>
+              {:else}
+                <button
+                  type="button"
+                  class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+                  onclick={startAuth}
+                >
+                  {m.settings_providers_login()}
+                </button>
+              {/if}
+            {/if}
 
-          <!-- Soft warning: Node version is incompatible, binary install available (but not yet installed) -->
-          {#if auggieStatus && !auggieStatus.nodeVersionOk && auggieStatus.binaryInstallAvailable && !auggieStatus.managedBinaryInstalled}
-            <div
-              class="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-md text-amber-600 dark:text-amber-400 mt-1"
-            >
-              <Fa icon={faTriangleExclamation} class="w-4 h-4 flex-shrink-0" />
-              <span class="text-xs">
-                {#if auggieStatus.installed}
-                  {m.settings_providers_nodeWarning_installed_before()}
-                  <strong>{m.settings_providers_install()}</strong>
-                  {m.settings_providers_nodeWarning_installed_after()}
-                {:else}
-                  {m.settings_providers_nodeWarning_notInstalled_before()}
-                  <strong>{m.settings_providers_install()}</strong>
-                  {m.settings_providers_nodeWarning_notInstalled_after()}
-                {/if}
+            {#if canManageAuggieEnablement && !isAuggieActive && isAuggieEnabled}
+              <button
+                type="button"
+                class="font-medium transition-colors {auggieInUseReason
+                  ? 'text-muted-foreground/50 cursor-not-allowed'
+                  : 'text-muted-foreground hover:text-foreground cursor-pointer'}"
+                disabled={!!auggieInUseReason}
+                title={auggieInUseReason ?? undefined}
+                onclick={() => handleToggleProvider('auggie', false)}
+              >
+                {m.settings_providers_disable()}
+              </button>
+            {:else if canManageAuggieEnablement && !isAuggieActive && !isAuggieEnabled && isAuggieReady}
+              <button
+                type="button"
+                class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+                onclick={() => handleToggleProvider('auggie', true)}
+              >
+                {m.settings_providers_enable()}
+              </button>
+            {/if}
+
+            {#if !isAuggieActive && isAuggieReady}
+              <button
+                type="button"
+                class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+                onclick={() => handleSelectProvider('auggie')}
+                disabled={selectingProviderId !== null}
+              >
+                {selectingProviderId === 'auggie'
+                  ? m.settings_providers_switching()
+                  : m.settings_providers_setAsDefault()}
+              </button>
+            {:else if isAuggieActive && isAuggieReady}
+              <span class="text-xs text-subtle flex items-center gap-1">
+                {m.settings_providers_default()}
               </span>
-            </div>
-          {/if}
+            {:else if isAuggieActive}
+              <span class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1">
+                <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
+                {m.settings_providers_defaultUnavailable_label()}
+              </span>
+            {/if}
+          </div>
+        </div>
 
-          <!-- Instructions panel from AUGGIE_CHANNELS.INSTALL / AUTHENTICATE -->
-          {#if auggieInstructions && auggieInstructions.length > 0}
-            <AuggieInstructionsPanel
-              instructions={auggieInstructions}
-              command={auggieCommand ?? undefined}
-              onRecheck={recheckAuggie}
-              onDismiss={dismissAuggieInstructions}
-              rechecking={actionInProgress || authInProgress}
-            />
-          {/if}
+        <!-- Node.js version warning (suppress when binary install is available as fallback) -->
+        {#if auggieStatus && auggieStatus.nodeVersionOk === false && !auggieStatus.binaryInstallAvailable && !auggieStatus.installed}
+          <NodeVersionWarning nodeVersion={auggieStatus.nodeVersion} class="mt-1" />
         {/if}
-      {:else}
-        {@const isActive = $activeProviderId === provider.id}
-        {@const isEnabled = isProviderEnabled(provider.id)}
-        {@const isReady = isProviderReadyForUse(provider.id)}
-        {@const canManageEnablement = canManageProviderEnablement(provider.id)}
-        {@const inUseReason = $providerInUseReasons$[provider.id] ?? null}
-        <div>
-          <div class="flex items-start justify-between gap-4">
-            <div class="space-y-1">
-              <div class="flex items-center gap-2 h-7">
-                {@render providerIcon(provider.id)}
-                <span class="text-sm text-foreground">{provider.name}</span>
-                <!-- Path configuration. Unsloth is dual-binary: the daemon
+
+        <!-- Soft warning: Node version is incompatible, binary install available (but not yet installed) -->
+        {#if auggieStatus && !auggieStatus.nodeVersionOk && auggieStatus.binaryInstallAvailable && !auggieStatus.managedBinaryInstalled}
+          <div
+            class="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-md text-amber-600 dark:text-amber-400 mt-1"
+          >
+            <Fa icon={faTriangleExclamation} class="w-4 h-4 flex-shrink-0" />
+            <span class="text-xs">
+              {#if auggieStatus.installed}
+                {m.settings_providers_nodeWarning_installed_before()}
+                <strong>{m.settings_providers_install()}</strong>
+                {m.settings_providers_nodeWarning_installed_after()}
+              {:else}
+                {m.settings_providers_nodeWarning_notInstalled_before()}
+                <strong>{m.settings_providers_install()}</strong>
+                {m.settings_providers_nodeWarning_notInstalled_after()}
+              {/if}
+            </span>
+          </div>
+        {/if}
+
+        <!-- Instructions panel from AUGGIE_CHANNELS.INSTALL / AUTHENTICATE -->
+        {#if auggieInstructions && auggieInstructions.length > 0}
+          <AuggieInstructionsPanel
+            instructions={auggieInstructions}
+            command={auggieCommand ?? undefined}
+            onRecheck={recheckAuggie}
+            onDismiss={dismissAuggieInstructions}
+            rechecking={actionInProgress || authInProgress}
+          />
+        {/if}
+      {/if}
+    {:else}
+      {@const isActive = $activeProviderId === provider.id}
+      {@const isEnabled = isProviderEnabled(provider.id)}
+      {@const isReady = isProviderReadyForUse(provider.id)}
+      {@const canManageEnablement = canManageProviderEnablement(provider.id)}
+      {@const inUseReason = $providerInUseReasons$[provider.id] ?? null}
+      <div>
+        <div class="flex items-start justify-between gap-4">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2 h-7">
+              {@render providerIcon(provider.id)}
+              <span class="text-sm text-foreground">{provider.name}</span>
+              <!-- Path configuration. Unsloth is dual-binary: the daemon
                    applies the providers.paths.unsloth override to the
                    `unsloth` CLI, while the `opencode` ACP runtime it spawns
                    follows the opencode provider's own configuration
@@ -767,158 +771,164 @@
                    cliCommand/resolvedPath pair therefore carries the
                    `unsloth` CLI (discovery's secondary path) and opencode is
                    shown as the read-only labeled runtime row. -->
-                <div class="-my-1">
-                  <ProviderPathConfig
-                    providerId={provider.id}
-                    providerName={provider.name}
-                    cliCommand={provider.id === 'unsloth' ? 'unsloth' : provider.command}
-                    configuredPath={providerPaths[provider.id]}
-                    resolvedPath={provider.id === 'unsloth'
-                      ? secondaryResolvedPaths[provider.id]
-                      : resolvedPaths[provider.id]}
-                    runtimeCliCommand={provider.id === 'unsloth' ? provider.command : undefined}
-                    runtimeResolvedPath={provider.id === 'unsloth'
-                      ? resolvedPaths[provider.id]
-                      : undefined}
-                    isInstalled={provider.available}
-                    onPathChange={(path) => handlePathChange(provider.id, path)}
-                  />
-                </div>
+              <div class="-my-1">
+                <ProviderPathConfig
+                  providerId={provider.id}
+                  providerName={provider.name}
+                  cliCommand={provider.id === 'unsloth' ? 'unsloth' : provider.command}
+                  configuredPath={providerPaths[provider.id]}
+                  resolvedPath={provider.id === 'unsloth'
+                    ? secondaryResolvedPaths[provider.id]
+                    : resolvedPaths[provider.id]}
+                  runtimeCliCommand={provider.id === 'unsloth' ? provider.command : undefined}
+                  runtimeResolvedPath={provider.id === 'unsloth'
+                    ? resolvedPaths[provider.id]
+                    : undefined}
+                  isInstalled={provider.available}
+                  onPathChange={(path) => handlePathChange(provider.id, path)}
+                />
               </div>
-              {#if provider.id === 'pi' && provider.available && piMcpAdapterInstalled === false}
-                <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
-                  <Fa icon={faTriangleExclamation} class="w-3 h-3" />
-                  <span>{m.settings_providers_piAdapterNeeded()}</span>
-                  <Button
-                    onclick={handleInstallPiMcpAdapter}
-                    disabled={setupInProgress.pi}
-                    size="xs"
-                    variant="outline"
-                    class="flex items-center gap-1"
+            </div>
+            {#if provider.id === 'pi' && provider.available && piMcpAdapterInstalled === false}
+              <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+                <Fa icon={faTriangleExclamation} class="w-3 h-3" />
+                <span>{m.settings_providers_piAdapterNeeded()}</span>
+                <Button
+                  onclick={handleInstallPiMcpAdapter}
+                  disabled={setupInProgress.pi}
+                  size="xs"
+                  variant="outline"
+                  class="flex items-center gap-1"
+                >
+                  {#if setupInProgress.pi}
+                    <Fa icon={faCircleNotch} class="w-3 h-3 text-ghost animate-spin" />
+                    <span>{m.settings_providers_installing()}</span>
+                  {:else}
+                    <span>{m.settings_providers_install()}</span>
+                  {/if}
+                </Button>
+              </div>
+            {/if}
+            {#if provider.hasNpxFallback && !provider.available && $npxStatus$?.resolvedPath === null}
+              <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+                <Fa icon={faTriangleExclamation} class="w-3 h-3" />
+                <span>
+                  {m.settings_providers_requiresNodejs()}
+                  <button
+                    type="button"
+                    class="underline hover:no-underline"
+                    onclick={() => shell.open('https://nodejs.org')}
+                    >{m.settings_providers_installFromNodejs()}</button
                   >
-                    {#if setupInProgress.pi}
-                      <Fa icon={faCircleNotch} class="w-3 h-3 text-ghost animate-spin" />
-                      <span>{m.settings_providers_installing()}</span>
-                    {:else}
-                      <span>{m.settings_providers_install()}</span>
-                    {/if}
-                  </Button>
-                </div>
-              {/if}
-              {#if provider.hasNpxFallback && !provider.available && providerAvailability?.npx?.resolvedPath === null}
-                <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
-                  <Fa icon={faTriangleExclamation} class="w-3 h-3" />
-                  <span>
-                    {m.settings_providers_requiresNodejs()}
-                    <button
+                </span>
+              </div>
+            {:else if provider.hasNpxFallback && !provider.available && $npxStatus$?.resolvedPath !== null && $npxStatus$?.versionOk === false}
+              <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+                <Fa icon={faTriangleExclamation} class="w-3 h-3" />
+                <span>{m.settings_providers_npmTooOld()}</span>
+              </div>
+            {/if}
+            <!-- Provider status warning (e.g. claude-code installed but npx missing) -->
+            {#if provider.warning}
+              <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+                <Fa icon={faTriangleExclamation} class="w-3 h-3" />
+                <span>
+                  {provider.warning}{#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
+                    — <button
                       type="button"
                       class="underline hover:no-underline"
-                      onclick={() => shell.open('https://nodejs.org')}
-                      >{m.settings_providers_installFromNodejs()}</button
+                      onclick={() => void shell.open('https://nodejs.org')}
+                      ><!-- i18n-ignore (URL) -->nodejs.org</button
                     >
-                  </span>
-                </div>
-              {:else if provider.hasNpxFallback && !provider.available && providerAvailability?.npx?.resolvedPath !== null && providerAvailability?.npx?.versionOk === false}
-                <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
-                  <Fa icon={faTriangleExclamation} class="w-3 h-3" />
-                  <span>{m.settings_providers_npmTooOld()}</span>
-                </div>
-              {/if}
-              <!-- Provider status warning (e.g. claude-code installed but npx missing) -->
-              {#if provider.warning}
-                <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
-                  <Fa icon={faTriangleExclamation} class="w-3 h-3" />
-                  <span>
-                    {provider.warning}{#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
-                      — <button
-                        type="button"
-                        class="underline hover:no-underline"
-                        onclick={() => void shell.open('https://nodejs.org')}
-                        ><!-- i18n-ignore (URL) -->nodejs.org</button
-                      >
-                    {/if}
-                  </span>
-                </div>
-              {/if}
-            </div>
+                  {/if}
+                </span>
+              </div>
+            {/if}
+          </div>
 
-            <div class="flex items-center gap-4 text-xs flex-wrap justify-end">
-              {#if provider.available}
-                <!-- Auth status -->
-                {#if provider.authenticated === true}
-                  <span class="text-xs text-subtle flex items-center gap-1">
-                    <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
-                    {m.settings_providers_loggedInStatus()}
-                  </span>
-                {:else if provider.authenticated === false && provider.loginDocsUrl}
-                  <button
-                    type="button"
-                    class="text-yellow-600 dark:text-yellow-500 hover:text-yellow-700 dark:hover:text-yellow-400 cursor-pointer transition-colors"
-                    onclick={() => openDocs(provider.loginDocsUrl!)}
-                  >
-                    {m.settings_providers_logIn()}
-                  </button>
-                {/if}
-
-                {#if canManageEnablement && !isActive && isEnabled}
-                  <button
-                    type="button"
-                    class="font-medium transition-colors {inUseReason
-                      ? 'text-muted-foreground/50 cursor-not-allowed'
-                      : 'text-muted-foreground hover:text-foreground cursor-pointer'}"
-                    disabled={!!inUseReason}
-                    title={inUseReason ?? undefined}
-                    onclick={() => handleToggleProvider(provider.id, false)}
-                  >
-                    {m.settings_providers_disable()}
-                  </button>
-                {:else if canManageEnablement && !isActive && !isEnabled && isReady}
-                  <button
-                    type="button"
-                    class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-                    onclick={() => handleToggleProvider(provider.id, true)}
-                  >
-                    {m.settings_providers_enable()}
-                  </button>
-                {/if}
-
-                {#if isActive}
-                  <span class="text-xs text-subtle flex items-center gap-1">
-                    {m.settings_providers_default()}
-                  </span>
-                {:else if isReady}
-                  <button
-                    type="button"
-                    class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-                    onclick={() => handleSelectProvider(provider.id)}
-                    disabled={selectingProviderId !== null}
-                  >
-                    {selectingProviderId === provider.id
-                      ? m.settings_providers_switching()
-                      : m.settings_providers_setAsDefault()}
-                  </button>
-                {/if}
-              {:else}
-                {#if isActive}
-                  <span class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1">
-                    <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
-                    {m.settings_providers_defaultUnavailable_label()}
-                  </span>
-                {/if}
+          <div class="flex items-center gap-4 text-xs flex-wrap justify-end">
+            {#if provider.statusPending}
+              <!-- This row's own probe has not settled yet; the rest of the
+                     row is already rendered from the catalog. -->
+              <div
+                class="h-4 w-20 bg-muted/50 rounded animate-pulse"
+                aria-label={m.settings_providers_loading()}
+              ></div>
+            {:else if provider.available}
+              <!-- Auth status -->
+              {#if provider.authenticated === true}
+                <span class="text-xs text-subtle flex items-center gap-1">
+                  <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
+                  {m.settings_providers_loggedInStatus()}
+                </span>
+              {:else if provider.authenticated === false && provider.loginDocsUrl}
                 <button
                   type="button"
-                  class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-                  onclick={() => openDocs(provider.docsUrl)}
+                  class="text-yellow-600 dark:text-yellow-500 hover:text-yellow-700 dark:hover:text-yellow-400 cursor-pointer transition-colors"
+                  onclick={() => openDocs(provider.loginDocsUrl!)}
                 >
-                  {m.settings_providers_install()}
+                  {m.settings_providers_logIn()}
                 </button>
               {/if}
-            </div>
+
+              {#if canManageEnablement && !isActive && isEnabled}
+                <button
+                  type="button"
+                  class="font-medium transition-colors {inUseReason
+                    ? 'text-muted-foreground/50 cursor-not-allowed'
+                    : 'text-muted-foreground hover:text-foreground cursor-pointer'}"
+                  disabled={!!inUseReason}
+                  title={inUseReason ?? undefined}
+                  onclick={() => handleToggleProvider(provider.id, false)}
+                >
+                  {m.settings_providers_disable()}
+                </button>
+              {:else if canManageEnablement && !isActive && !isEnabled && isReady}
+                <button
+                  type="button"
+                  class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+                  onclick={() => handleToggleProvider(provider.id, true)}
+                >
+                  {m.settings_providers_enable()}
+                </button>
+              {/if}
+
+              {#if isActive}
+                <span class="text-xs text-subtle flex items-center gap-1">
+                  {m.settings_providers_default()}
+                </span>
+              {:else if isReady}
+                <button
+                  type="button"
+                  class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+                  onclick={() => handleSelectProvider(provider.id)}
+                  disabled={selectingProviderId !== null}
+                >
+                  {selectingProviderId === provider.id
+                    ? m.settings_providers_switching()
+                    : m.settings_providers_setAsDefault()}
+                </button>
+              {/if}
+            {:else}
+              {#if isActive}
+                <span class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1">
+                  <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
+                  {m.settings_providers_defaultUnavailable_label()}
+                </span>
+              {/if}
+              <button
+                type="button"
+                class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+                onclick={() => openDocs(provider.docsUrl)}
+              >
+                {m.settings_providers_install()}
+              </button>
+            {/if}
           </div>
         </div>
-      {/if}
-    {/each}
-  {/if}
+      </div>
+    {/if}
+  {/each}
 </div>
 
 {#snippet providerIcon(providerId: string)}

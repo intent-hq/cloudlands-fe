@@ -416,6 +416,72 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
       expect(JSON.stringify(sentSpec)).not.toContain('"modelOptions"');
     });
 
+    it("keeps reasoningEffort on the spec and per-option entries verbatim (edit)", async () => {
+      const options = [
+        { model: "codex:gpt-5.3-codex", hint: "deep", reasoningEffort: "xhigh" },
+        { model: "claude-code:opus4.5", hint: "" },
+      ];
+      const existingFile: FileSpecialist = {
+        id: "reviewer",
+        name: "Reviewer",
+        description: "Reviews",
+        model: "codex:gpt-5.3-codex",
+        behaviorPrompt: "You review.",
+        filePath: "/home/u/.intent/specialists/reviewer.md",
+        source: "user",
+      };
+      // PROTOCOL-shaped response: reasoningEffort echoed on the resolved def.
+      const resolved = { ...USER_DEF, reasoningEffort: "high", modelOptions: options };
+      edit.mockResolvedValue(resolved);
+      list.mockResolvedValue([resolved]);
+      appStore.dispatch(setFileSpecialists([existingFile]));
+
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: "reviewer",
+          name: "Reviewer",
+          description: "Reviews",
+          model: "codex:gpt-5.3-codex",
+          reasoningEffort: "high",
+          modelOptions: options,
+          behaviorPrompt: "You review.",
+        }),
+      );
+      await flush();
+
+      const sentSpec = edit.mock.calls[0][1] as SpecialistDef;
+      expect(sentSpec.reasoningEffort).toBe("high");
+      expect(sentSpec.modelOptions).toEqual(options);
+
+      // The refetched PROTOCOL-shaped list lands in the store with both
+      // the spec-level and per-option effort carried through.
+      const stored = (appStore.state as any).specialists.fileSpecialists.map["reviewer"];
+      expect(stored.reasoningEffort).toBe("high");
+      expect(stored.modelOptions).toEqual(options);
+    });
+
+    it("omits reasoningEffort from the wire when unset (inherit-on-omit)", async () => {
+      create.mockResolvedValue(USER_DEF);
+      appStore.dispatch(setFileSpecialists([]));
+
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: "reviewer",
+          name: "Reviewer",
+          description: "Reviews",
+          reasoningEffort: undefined,
+          behaviorPrompt: "You review.",
+        }),
+      );
+      await flush();
+
+      const sentSpec = create.mock.calls[0][1] as SpecialistDef;
+      expect(sentSpec.reasoningEffort).toBeUndefined();
+      // The JSON-RPC serialization drops undefined keys — `reasoningEffort`
+      // must not appear on the wire (PROTOCOL §5.11: never null/"").
+      expect(JSON.stringify(sentSpec)).not.toContain('"reasoningEffort"');
+    });
+
     it("omits modelOptions from the wire when the payload leaves it undefined", async () => {
       create.mockResolvedValue(USER_DEF);
       appStore.dispatch(setFileSpecialists([]));
@@ -714,6 +780,45 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
       expect(
         isRedundantBuiltInOverride(
           { ...withOptions, modelOptions: [{ model: "opencode:kimi-k3", hint: "fast" }] },
+          bundledWithOptions,
+        ),
+      ).toBe(false);
+    });
+
+    it("is false when reasoningEffort differs from the bundled definition", () => {
+      const withEffort = { ...identicalOverride, reasoningEffort: "high" };
+      expect(isRedundantBuiltInOverride(withEffort, SPECIALISTS)).toBe(false);
+      // undefined and '' both mean "not set" and compare equal.
+      expect(
+        isRedundantBuiltInOverride({ ...identicalOverride, reasoningEffort: "" }, SPECIALISTS),
+      ).toBe(true);
+      // Identical levels on both sides are redundant.
+      const bundledWithEffort = [{ ...implementor, reasoningEffort: "high" }];
+      expect(isRedundantBuiltInOverride(withEffort, bundledWithEffort)).toBe(true);
+    });
+
+    it("is false when a per-option reasoningEffort differs", () => {
+      const bundledWithOptions = [
+        {
+          ...implementor,
+          modelOptions: [{ model: "codex:gpt-5.3-codex", hint: "deep", reasoningEffort: "high" }],
+        },
+      ];
+      expect(
+        isRedundantBuiltInOverride(
+          {
+            ...identicalOverride,
+            modelOptions: [{ model: "codex:gpt-5.3-codex", hint: "deep", reasoningEffort: "high" }],
+          },
+          bundledWithOptions,
+        ),
+      ).toBe(true);
+      expect(
+        isRedundantBuiltInOverride(
+          {
+            ...identicalOverride,
+            modelOptions: [{ model: "codex:gpt-5.3-codex", hint: "deep", reasoningEffort: "low" }],
+          },
           bundledWithOptions,
         ),
       ).toBe(false);

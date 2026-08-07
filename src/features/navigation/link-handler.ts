@@ -6,10 +6,10 @@
  *
  * Default behavior:
  * - Path-like targets (schemeless raw href or self-origin URL) → Workspace file viewer
- * - HTTP/HTTPS links → Open in embedded browser panel
- * - Cmd+Click (⌘ on Mac, Ctrl on Windows/Linux) → Open in external browser
+ * - HTTP/HTTPS links → Open in external default browser
+ * - Cmd+Click (⌘ on Mac, Ctrl on Windows/Linux) → Open in embedded browser panel
  * - Auth/OAuth URLs → Always open in external browser
- * - GitHub URLs (github.com) → Always open in external browser
+ * - GitHub issue/PR URLs (plain click) → Anchored link action menu
  * - Intent links (intent://) → Handle internally (navigate to notes/tasks)
  * - File links (file://) → Open in external editor
  * - Other links → External browser as fallback
@@ -18,10 +18,11 @@
 import { Logger } from '$shared/logger';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import {
+  type GitHubIssueOrPrRef,
   type LinkHandlerOptions,
   isAuthUrl,
   isCmdClickModifier,
-  isGitHubUrl,
+  parseGitHubIssueOrPrUrl,
 } from '$shared/utils/link-helpers';
 import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
@@ -44,11 +45,13 @@ const logger = new Logger('LinkHandler');
  * 4. Path-like targets (schemeless raw href, or resolved URL on the app's own
  *    origin) → workspace file viewer
  * 5. Auth/OAuth URLs → external browser (always)
- * 6. GitHub URLs (`github.com`) → external browser (always)
- * 7. `http(s)://` + Cmd+Click or forceExternal → external browser
- * 8. `http(s)://` (plain click) → embedded browser panel
- * 9. `file://` → external editor
- * 10. Anything else → external browser (fallback)
+ * 6. `http(s)://` + forceExternal → external browser
+ * 7. `http(s)://` + Cmd+Click → embedded browser panel (external browser
+ *    fallback without a workspaceId)
+ * 8. GitHub issue/PR URLs (plain click with coordinates) → link action menu
+ * 9. `http(s)://` (plain click) → external browser
+ * 10. `file://` → external editor
+ * 11. Anything else → external browser (fallback)
  *
  * @returns true if handled, false if not
  */
@@ -88,22 +91,28 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
         return await openInExternalBrowser(url);
       }
 
-      // GitHub URLs always go to external browser
-      if (isGitHubUrl(url)) {
-        logger.debug('GitHub URL detected, opening in external browser', { url });
+      // Explicit forceExternal → external browser
+      if (options.forceExternal) {
         return await openInExternalBrowser(url);
       }
 
-      // Cmd+Click or explicit forceExternal → external browser
-      if (options.forceExternal || isCmdClickModifier(options)) {
+      // Cmd+Click → embedded browser panel (requires a workspace), otherwise external browser
+      if (isCmdClickModifier(options)) {
+        if (options.workspaceId) {
+          return await openInBrowserPanel(url, options.workspaceId);
+        }
+        logger.debug('No workspaceId available, opening in external browser', { url });
         return await openInExternalBrowser(url);
       }
 
-      // Default: embedded browser panel (requires a workspace), otherwise external browser
-      if (options.workspaceId) {
-        return await openInBrowserPanel(url, options.workspaceId);
+      // GitHub issue/PR links (plain click) → anchored link action menu
+      const gitHubRef = parseGitHubIssueOrPrUrl(url);
+      const { event } = options;
+      if (gitHubRef && event) {
+        return await openLinkActionMenu(url, gitHubRef, event, options.workspaceId);
       }
-      logger.debug('No workspaceId available, opening in external browser', { url });
+
+      // Default: external default browser
       return await openInExternalBrowser(url);
     }
 
@@ -261,9 +270,50 @@ async function openFilePathLink(
 }
 
 /**
- * Open URL in browser panel
+ * Show the anchored link action menu for a GitHub issue/PR link at the click
+ * position. Keyboard activation (Enter on a focused link) fires a click with
+ * zero coordinates — anchor to the link element's bounding rect instead.
+ * Falls back to the external browser if the menu cannot be shown.
  */
-async function openInBrowserPanel(url: string, workspaceId: WorkspaceId): Promise<boolean> {
+async function openLinkActionMenu(
+  url: string,
+  gitHubRef: GitHubIssueOrPrRef,
+  event: MouseEvent,
+  workspaceId?: WorkspaceId,
+): Promise<boolean> {
+  try {
+    const { showLinkActionMenu } = await import('./link-action-menu-state.svelte');
+    const anchorElement = event.target instanceof HTMLElement ? event.target : null;
+    let { clientX: x, clientY: y } = event;
+    if (x === 0 && y === 0 && anchorElement) {
+      const rect = anchorElement.getBoundingClientRect();
+      x = rect.left;
+      y = rect.bottom;
+    }
+    showLinkActionMenu({
+      url,
+      gitHubRef,
+      x,
+      y,
+      workspaceId,
+      anchorElement,
+    });
+    logger.debug('Opened link action menu', { url, workspaceId });
+    return true;
+  } catch (error) {
+    logger.warn('Failed to open link action menu, falling back to external browser', {
+      url,
+      error,
+    });
+    return await openInExternalBrowser(url);
+  }
+}
+
+/**
+ * Open URL in browser panel (embedded, workspace-scoped).
+ * Falls back to the external browser when the panel cannot be opened.
+ */
+export async function openInBrowserPanel(url: string, workspaceId: WorkspaceId): Promise<boolean> {
   try {
     const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
     const layoutManager = getPanelLayoutManager(workspaceId);
@@ -282,7 +332,7 @@ async function openInBrowserPanel(url: string, workspaceId: WorkspaceId): Promis
 /**
  * Open URL in external browser
  */
-async function openInExternalBrowser(url: string): Promise<boolean> {
+export async function openInExternalBrowser(url: string): Promise<boolean> {
   try {
     // shell:openExternal converges on the shared openExternalUrl opener
     // (host-bridge-seeder), which handles preload-bridge/window.open fallback.
@@ -401,7 +451,7 @@ export function createLinkClickHandler(options: LinkHandlerOptions) {
  * Create event handlers that show a tooltip when hovering over `<a>` tags
  * inside a container element.
  *
- * The tooltip shows the URL and a hint about Cmd+Click for external browser.
+ * The tooltip shows the URL and a hint about Cmd+Click for the in-app browser.
  * It works alongside `createGlobalLinkClickHandler` — attach both to the
  * same container for full link behavior.
  *

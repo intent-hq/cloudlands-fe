@@ -474,6 +474,102 @@ describe('hud-takeover-queue', () => {
     });
   });
 
+  describe('extraDwellMs — scroll-extended dwell', () => {
+    it('extends the dwell deadline at the opening → dwelling transition', () => {
+      let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
+      state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS, {
+        blink: false,
+        extraDwellMs: 4000,
+      });
+      expect(state.phase).toBe('dwelling');
+      expect(state.phaseEndsAtMs).toBe(T0 + HUD_TAKEOVER_OPEN_MS + DEFAULT_DWELL_MS + 4000);
+    });
+
+    it('is additive AFTER the dwell clamp: a long scroll survives the ceiling', () => {
+      // 500 chars scale far past the routine ceiling, so the dwell clamps to
+      // MAX — the extension must land on top of the clamped value.
+      let state = enqueueTakeover(
+        createHudTakeoverQueue(),
+        trigger('ws-1', { detail: 'x'.repeat(500) }),
+        T0,
+        NO_BLINK,
+      );
+      state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS, {
+        blink: false,
+        extraDwellMs: 6000,
+      });
+      expect(state.phaseEndsAtMs).toBe(
+        T0 + HUD_TAKEOVER_OPEN_MS + HUD_TAKEOVER_DWELL_MAX_MS + 6000,
+      );
+    });
+
+    it('survives the attention cap too', () => {
+      let state = enqueueTakeover(
+        createHudTakeoverQueue(),
+        trigger('ws-1', {
+          kind: 'question_asked',
+          detail: 'q'.repeat(500),
+          signal: 'question',
+        }),
+        T0,
+        NO_BLINK,
+      );
+      state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS, {
+        blink: false,
+        extraDwellMs: 5000,
+      });
+      expect(state.phaseEndsAtMs).toBe(
+        T0 + HUD_TAKEOVER_OPEN_MS + HUD_TAKEOVER_ATTENTION_DWELL_MAX_MS + 5000,
+      );
+    });
+
+    it('applies at the opening → dwelling transition ONLY', () => {
+      const WITH_EXTRA = { blink: true, extraDwellMs: 4000 };
+      let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
+      state = enqueueTakeover(state, trigger('ws-2'), T0 + 1);
+      // blinking → opening: unaffected.
+      state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_BLINK_MS, WITH_EXTRA);
+      const openEnd = T0 + HUD_TAKEOVER_BLINK_MS + HUD_TAKEOVER_OPEN_MS;
+      expect(state.phaseEndsAtMs).toBe(openEnd);
+      state = tickTakeoverQueue(state, openEnd, WITH_EXTRA);
+      const dwellEnd = openEnd + DEFAULT_DWELL_MS + 4000;
+      expect(state.phaseEndsAtMs).toBe(dwellEnd);
+      // dwelling → closing: unaffected.
+      state = tickTakeoverQueue(state, dwellEnd, WITH_EXTRA);
+      expect(state.phaseEndsAtMs).toBe(dwellEnd + HUD_TAKEOVER_CLOSE_MS);
+      // closing → next entry's pre-roll: unaffected.
+      state = tickTakeoverQueue(state, dwellEnd + HUD_TAKEOVER_CLOSE_MS, WITH_EXTRA);
+      expect(state.phase).toBe('blinking');
+      expect(state.phaseEndsAtMs).toBe(dwellEnd + HUD_TAKEOVER_CLOSE_MS + HUD_TAKEOVER_BLINK_MS);
+    });
+
+    it('leaves a viewer deadline-free', () => {
+      let state = requestImmediateTakeover(
+        createHudTakeoverQueue(),
+        trigger('ws-1', { kind: 'manual' }),
+        T0,
+        NO_BLINK,
+      );
+      state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS, {
+        blink: false,
+        extraDwellMs: 4000,
+      });
+      expect(state.phase).toBe('dwelling');
+      expect(state.phaseEndsAtMs).toBeNull();
+    });
+
+    it('defaults to 0 and treats a negative value as 0', () => {
+      const enter = (options: Parameters<typeof tickTakeoverQueue>[2]) => {
+        const opened = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
+        return tickTakeoverQueue(opened, T0 + HUD_TAKEOVER_OPEN_MS, options);
+      };
+      const plain = enter(NO_BLINK);
+      expect(enter({ blink: false, extraDwellMs: 0 }).phaseEndsAtMs).toBe(plain.phaseEndsAtMs);
+      expect(enter({ blink: false, extraDwellMs: -500 }).phaseEndsAtMs).toBe(plain.phaseEndsAtMs);
+      expect(plain.phaseEndsAtMs).toBe(T0 + HUD_TAKEOVER_OPEN_MS + DEFAULT_DWELL_MS);
+    });
+  });
+
   it('does not tick past a deadline that has not elapsed', () => {
     const state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
     const same = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS - 1);

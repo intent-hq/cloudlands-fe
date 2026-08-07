@@ -98,6 +98,7 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
                 resolvedModel: file.resolvedModel,
                 resolvedProvider: file.resolvedProvider,
                 modelOptions: file.modelOptions,
+                reasoningEffort: file.reasoningEffort,
             });
         }
     }
@@ -192,6 +193,17 @@ export const selectExplicitModel = store.createSelector((state, specialistId: st
     const specialists = selectSpecialists.select(state);
     const specialist = specialists.find((s: Specialist) => s.id === specialistId);
     return specialist?.defaultModel || undefined;
+});
+
+/**
+ * Get the explicit reasoning-effort level for a specialist, or undefined when
+ * the specialist inherits the model default (no `reasoningEffort:` key in the
+ * winning tier, PROTOCOL §5.11).
+ */
+export const selectExplicitReasoningEffort = store.createSelector((state, specialistId: string): string | undefined => {
+    const specialists = selectSpecialists.select(state);
+    const specialist = specialists.find((s: Specialist) => s.id === specialistId);
+    return specialist?.reasoningEffort || undefined;
 });
 
 /** Get the effective behavior prompt for a specialist (file override → bundled default) */

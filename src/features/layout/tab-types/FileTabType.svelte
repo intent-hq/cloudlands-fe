@@ -30,6 +30,7 @@
   import { appClient } from '$lib/client';
   import { LineType } from '$shared/types';
   import { getLanguageFromPath } from '$lib/utils/file-utils';
+  import { isAbsolutePath, isAbsolutePathOutsideRoot, isTildePath } from '$lib/utils/path-utils';
   import {
   parseHunksToLineChanges,
   type LineChange,
@@ -132,9 +133,21 @@
   });
 
   // Computed values
+  // Absolute paths outside the workspace root (e.g. a chat chip pointing at
+  // /Users/dev/.claude/...) are not readable through the daemon's contained
+  // file.* surface — render a dedicated warning instead of attempting the read.
+  // Tilde paths join the same bucket: the renderer cannot expand `~` (no Node
+  // APIs, see `expandPath`), so a read would be doomed regardless of location.
+  const isOutsideWorkspace = $derived(
+    !!(
+      tab.filePath &&
+      (isTildePath(tab.filePath) ||
+        (repoPath && isAbsolutePathOutsideRoot(tab.filePath, repoPath)))
+    ),
+  );
   const fileAbsolutePath = $derived(
     tab.filePath && repoPath
-      ? tab.filePath.startsWith('/')
+      ? isAbsolutePath(tab.filePath)
         ? tab.filePath
         : `${repoPath}/${tab.filePath}`
       : null,
@@ -170,13 +183,14 @@
     };
   });
 
-  // Load file when path changes
+  // Load file when path changes (never for out-of-workspace paths — the
+  // daemon rejects them, so no file.read is dispatched for that state)
   $effect(() => {
     const filePath = tab.filePath;
     const absolutePath = fileAbsolutePath;
     const wsId = workspaceId;
 
-    if (filePath && absolutePath && wsId) {
+    if (filePath && absolutePath && wsId && !isOutsideWorkspace) {
       appStore.dispatch(loadFileContentRequested(wsId, filePath, absolutePath));
     }
   });
@@ -302,14 +316,17 @@
 <svelte:window onkeydown={handleKeyDown} />
 
 {#snippet fileActions()}
-  <SaveIndicator
-    isDirty={isFileDirty}
-    isSaving={fileSaving}
-    isAutoSaving={isFileDirty && !fileSaving}
-    onSave={saveFileContent}
-    size="sm"
-  />
-  {#if tab.filePath}
+  <!-- Save/edit affordances are hidden for out-of-workspace paths -->
+  {#if !isOutsideWorkspace}
+    <SaveIndicator
+      isDirty={isFileDirty}
+      isSaving={fileSaving}
+      isAutoSaving={isFileDirty && !fileSaving}
+      onSave={saveFileContent}
+      size="sm"
+    />
+  {/if}
+  {#if tab.filePath && !isOutsideWorkspace}
     <div class="w-px h-4 bg-border mx-1"></div>
     {#if isMarkdownFile}
       <Button
@@ -386,7 +403,12 @@
 
 {#if tab.filePath}
   {#key tab.filePath}
-    {#if fileLoading}
+    {#if isOutsideWorkspace}
+      <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
+        <p>{m.layout_fileTab_outsideWorkspace_label()}</p>
+        <p class="text-xs">{tab.filePath}</p>
+      </div>
+    {:else if fileLoading}
       <div class="flex flex-col h-full">
         <div class="flex-1 p-4 space-y-2">
           {#each [...Array(20).keys()] as i (i)}

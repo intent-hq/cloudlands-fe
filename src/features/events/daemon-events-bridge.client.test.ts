@@ -441,6 +441,34 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
+  it('agent:queue:processing flips an idle agent to responding, and agent:idle flips it back', async () => {
+    // Queue-delivery wake: nothing else opens the busy flags for this
+    // turn-start shape, so the status indicator must flip on the drain start
+    // rather than waiting for the first agent:status-changed.
+    seedSession({ status: AgentStatus.Idle, isStreaming: false, isProcessing: false });
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:queue:processing', {
+        agentId: AGENT,
+        messageId: 'q-wake',
+        content: 'wake up',
+        turnId: 'q-wake',
+      }),
+    );
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+
+    handler(
+      notification('agent:idle', { agentId: AGENT, status: 'idle', isActive: false }),
+    );
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
   it('routes agent:session-stats-changed (PROTOCOL §5.24) into agent-session.stats', async () => {
     seedSession();
     await primeBridge();
@@ -728,6 +756,127 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     expect(readStatusEvents()).toEqual([]);
   });
 
+  // Tool-only stretches: the daemon pings with `lastToolUse` and no text, so a
+  // non-viewed agent's preview keeps advancing instead of freezing.
+  it('agent:stream:activity applies the lastToolUse tool preview', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastToolUse: { name: 'str-replace-editor', status: 'started' },
+      }),
+    );
+
+    expect(readSession()?.lastToolUse).toEqual({
+      name: 'str-replace-editor',
+      status: 'started',
+    });
+    // Still content-free bookkeeping: no text this ping, no RPC, no transcript.
+    expect(readStatusEvents()).toEqual([]);
+    expect(readAssistantMessages()).toHaveLength(0);
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.get', expect.anything());
+  });
+
+  it('a later ping of the SAME turn without lastToolUse leaves the field untouched', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastToolUse: { name: 'launch-process' },
+      }),
+    );
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'Now writing the fix',
+      }),
+    );
+
+    expect(readSession()?.lastToolUse).toEqual({ name: 'launch-process' });
+    expect(readSession()?.lastAgentResponse).toBe('Now writing the fix');
+  });
+
+  it('a malformed lastToolUse is rejected whole rather than partially absorbed', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastToolUse: { status: 'started' },
+      }),
+    );
+    expect(readSession()?.lastToolUse).toBeUndefined();
+
+    // A non-string `status` diverges from the §7 shape: the whole object is
+    // rejected rather than the `name` being kept with `status` dropped.
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastToolUse: { name: 'launch-process', status: 7 },
+      }),
+    );
+    expect(readSession()?.lastToolUse).toBeUndefined();
+  });
+
+  // The wire omits `lastToolUse` before a turn's first tool call, so an
+  // omission is indistinguishable from "older daemon" — without a boundary
+  // clear the previous turn's tool would render as this turn's live activity.
+  it("a new turn's first activity ping clears the previous turn's lastToolUse", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastToolUse: { name: 'launch-process' },
+      }),
+    );
+    expect(readSession()?.lastToolUse).toEqual({ name: 'launch-process' });
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: 'msg-next-turn',
+      }),
+    );
+
+    expect(readSession()?.lastToolUse).toBeUndefined();
+  });
+
+  it("a new turn's first ping still applies a lastToolUse carried on that same ping", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastToolUse: { name: 'launch-process' },
+      }),
+    );
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: 'msg-next-turn',
+        lastToolUse: { name: 'read_file' },
+      }),
+    );
+
+    expect(readSession()?.lastToolUse).toEqual({ name: 'read_file' });
+  });
+
   it('terminal agent:stream:end applies the final lastAgentResponse/digest so the preview lands on the turn end-state', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -737,6 +886,7 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
         agentId: AGENT,
         messageId: MESSAGE_ID,
         lastAgentResponse: 'partial mid-turn text',
+        lastToolUse: { name: 'launch-process' },
       }),
     );
     expect(readSession()?.lastAgentResponse).toBe('partial mid-turn text');
@@ -752,6 +902,9 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
 
     expect(readSession()?.lastAgentResponse).toBe('The full final response tail.');
     expect(readSession()?.digest).toBe('Turn complete');
+    // The live tool preview describes a running turn only — the terminal
+    // frame clears it instead of freezing the turn's last tool in the session.
+    expect(readSession()?.lastToolUse).toBeUndefined();
     // Terminal bookkeeping still ran: busy flags cleared, no transcript writes.
     expect(readSession()?.isStreaming).toBe(false);
     expect(readAssistantMessages()).toHaveLength(0);
@@ -1043,6 +1196,67 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
       }),
     );
     expect(readStatusEvents()).toEqual([]);
+  });
+
+  // An externally killed turn (agent-initiated `agent.stop`, workspace
+  // archive teardown) emits the terminal `agent:stream:end` with
+  // `stopReason: "interrupted"` and — per agent_manager.rs interrupt_inner
+  // (STAB-28) — MAY suppress the synthetic `agent:idle`. The stream:end alone
+  // must therefore clear the "Calling tool" hint and the busy flags, or the
+  // spinner is orphaned until a reload.
+  it('terminal agent:stream:end with stopReason=interrupted clears the "Calling tool" hint and busy flags with no follow-up agent:idle', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    // primeBridge's install dispatch clears the streaming flag; restore the
+    // in-flight turn state the interrupt is going to land on, with both busy
+    // flags explicitly set so their clear is observable rather than vacuous.
+    seedSession({ isStreaming: true, isProcessing: true, status: AgentStatus.Active });
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'Looking',
+      }),
+    );
+    handler(
+      notification('agent:tool:call', {
+        agentId: AGENT,
+        toolName: 'Read',
+        toolKind: 'file',
+        toolCallId: 't1',
+        input: { path: 'src/lib.rs' },
+        status: 'started',
+        messageId: MESSAGE_ID,
+        blockIndex: 1,
+        blockId: `${MESSAGE_ID}:1`,
+      }),
+    );
+
+    // Pre-condition: the tool spinner hint is armed and the session reads busy.
+    expect(readStatusEvents().map((e) => e.message)).toEqual([
+      'Streaming response…',
+      'Calling tool',
+    ]);
+    expect(readSession()?.isStreaming).toBe(true);
+    expect(readSession()?.isProcessing).toBe(true);
+
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        messageId: MESSAGE_ID,
+        stopReason: 'interrupted',
+        interruptReason: 'user_stop',
+      }),
+    );
+
+    // The stream:end alone clears the hint and the session busy flags — the
+    // spinner cannot outlive the killed turn while waiting for an idle event
+    // that may never arrive.
+    expect(readStatusEvents()).toEqual([]);
+    expect(readSession()?.isStreaming).toBe(false);
+    expect(readSession()?.isProcessing).toBe(false);
   });
 
   it('maps agent:stream:status (STAT-1 turn-startup family) to chatState/streamStatusReceived with a localized message keyed off phase (wire message ignored for known phases); first text-bearing activity still clears it via the chunk reducer', async () => {
@@ -2812,7 +3026,17 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
   }
 
   function readScriptsState(): {
-    scripts: Record<string, { runtime: { status: string; pid?: number; detectedUrl?: string } }>;
+    scripts: Record<
+      string,
+      {
+        runtime: {
+          status: string;
+          pid?: number;
+          detectedUrl?: string;
+          previouslyRunning?: boolean;
+        };
+      }
+    >;
     outputBuffers: Record<string, ScriptOutputBuffer>;
   } {
     const state = appStore.state as {
@@ -2822,7 +3046,14 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
           {
             scripts: Record<
               string,
-              { runtime: { status: string; pid?: number; detectedUrl?: string } }
+              {
+                runtime: {
+                  status: string;
+                  pid?: number;
+                  detectedUrl?: string;
+                  previouslyRunning?: boolean;
+                };
+              }
             >;
             outputBuffers: Record<string, ScriptOutputBuffer>;
           }
@@ -2989,6 +3220,51 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
     );
 
     expect(readScriptsState().scripts[SCRIPT_ID].runtime.detectedUrl).toBe('http://localhost:5173');
+  });
+
+  it('mirrors previouslyRunning from script:state into the runtime state', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('script:state', {
+        scriptId: SCRIPT_ID,
+        status: 'idle',
+        restartCount: 0,
+        previouslyRunning: true,
+      }),
+    );
+
+    expect(readScriptsState().scripts[SCRIPT_ID].runtime.previouslyRunning).toBe(true);
+  });
+
+  it('clears a stale previouslyRunning marker when a script:state snapshot omits it', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('script:state', {
+        scriptId: SCRIPT_ID,
+        status: 'idle',
+        restartCount: 0,
+        previouslyRunning: true,
+      }),
+    );
+    expect(readScriptsState().scripts[SCRIPT_ID].runtime.previouslyRunning).toBe(true);
+
+    // The daemon cleared the marker (e.g. the script was started): the full
+    // snapshot no longer carries the key, so the mirrored runtime drops it.
+    handler(
+      notification('script:state', {
+        scriptId: SCRIPT_ID,
+        status: 'running',
+        pid: 4242,
+        restartCount: 0,
+      }),
+    );
+
+    expect(readScriptsState().scripts[SCRIPT_ID].runtime.previouslyRunning).toBe(false);
+    expect(readScriptsState().scripts[SCRIPT_ID].runtime.status).toBe('running');
   });
 });
 
@@ -5005,6 +5281,66 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     expect(ws.status).toBe('Active');
     // The wire null must drop the stale timestamp rather than retain it.
     expect(ws.archivedAt).toBeUndefined();
+  });
+
+  // An agent-initiated `workspace.archive` (PROTOCOL §5.1) pushes a single
+  // `workspace:updated` carrying the full archive delta. The push alone must
+  // move the workspace out of the active-workspace selectors — no
+  // `workspace.list` / `workspace.get` refetch is allowed to be the thing that
+  // makes the UI correct.
+  it('archive delta pushed via workspace:updated drops the workspace from active lists with no refetch', async () => {
+    await seedWorkspace();
+    const { setWorkspaceEntity, setActiveWorkspaceId } = await import(
+      '$store/renderer/slices/workspace/workspace-slice'
+    );
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: 'ws-updated-2',
+        title: 'Sibling',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+    appStore.dispatch(setActiveWorkspaceId(WS_UPD));
+    const { openSwitcher } = await import(
+      '$store/renderer/slices/workspace-switcher/workspace-switcher-slice'
+    );
+    const { selectSwitcherWorkspaceIds } = await import(
+      '$store/renderer/slices/workspace-switcher/workspace-switcher-selectors'
+    );
+    appStore.dispatch(openSwitcher([WS_UPD, 'ws-updated-2'], WS_UPD));
+    expect(selectSwitcherWorkspaceIds.select(appStore.state)).toContain(WS_UPD);
+    expect(selectSwitcherWorkspaceIds.select(appStore.state)).toContain('ws-updated-2');
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(
+      updatedNotification({
+        archived: true,
+        status: 'Archived',
+        archivedAt: '2026-07-25T12:00:00.000Z',
+      }),
+    );
+
+    // Synchronous, push-only: the archived workspace is gone from the active
+    // list the moment the event lands, while the still-Active sibling remains
+    // listed — so an emptied-out selector cannot make this pass vacuously.
+    const idsAfter = selectSwitcherWorkspaceIds.select(appStore.state);
+    expect(idsAfter).not.toContain(WS_UPD);
+    expect(idsAfter).toContain('ws-updated-2');
+    await flush();
+    const refetches = backendRequestSpy.mock.calls.filter(
+      ([method]) => method === 'workspace.list' || method === 'workspace.get',
+    );
+    expect(refetches).toEqual([]);
   });
 
   it('merges a statusImageAssetId delta onto the entity (agent setStatusImage parity)', async () => {

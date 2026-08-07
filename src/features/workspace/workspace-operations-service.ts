@@ -76,6 +76,7 @@ import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspac
 import { navigateAwayIfViewing } from './navigate-away-if-viewing';
 import { invoke } from '$lib/electron-bridge';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
+import { parseGitHubUrl } from '$lib/utils/workspace-validation';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -654,6 +655,24 @@ export async function applyWorkspaceCreateProposal(
         result: { workspaceId: result.data.workspace.id },
       }),
     );
+
+    // Register a picked repo (githubUrl, no clone destination) as a path-less
+    // GitHub recent so re-picking it prefills the tab — mirrors the
+    // CompactWorkspaceInitializer submit path. Fire-and-forget: recents are
+    // best-effort and never affect the apply outcome.
+    if (request.githubUrl && !request.clonePath) {
+      const ghInfo = parseGitHubUrl(request.githubUrl);
+      if (ghInfo) {
+        void invoke(WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, {
+          repository: `${ghInfo.owner}/${ghInfo.repo}`,
+          name: ghInfo.repo,
+          owner: ghInfo.owner,
+          githubUrl: `https://github.com/${ghInfo.owner}/${ghInfo.repo}`,
+        }).catch((err) => {
+          logger.warn('Failed to register picked repo as recent', { error: err });
+        });
+      }
+    }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error('Failed to apply workspace-create proposal', error);

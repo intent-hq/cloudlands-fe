@@ -27,6 +27,7 @@ import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
 import { appClient } from "$lib/client";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import type { KnownRepo } from "$shared/types/known-repo";
+import { isDaemonManagedCheckoutPath } from "$shared/utils/daemon-managed-checkout";
 import type { Workspace } from "$shared/types";
 import { WorkspaceStatus } from "$shared/types";
 import { registerMockSeeder } from "../mock-bootstrap";
@@ -97,15 +98,93 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.LIST, async () => {
   return { success: true, data: workspaces };
 });
 
+// Path-less GitHub picks (githubUrl, no local checkout) are persisted in the
+// daemon-owned `repos.known` setting (PROTOCOL §5.12) — the daemon's
+// `repo.list` registry is keyed on local paths, so these entries live beside
+// it and are merged into the recents read below. Mirrors the legacy
+// main-process repo-registry, which persists through the same setting.
+const REPOS_KNOWN_SETTING = "repos.known";
+
+async function readReposKnownSetting(): Promise<KnownRepo[]> {
+  try {
+    const setting = await backendRequest<{ value?: unknown }>("settings.get", {
+      path: REPOS_KNOWN_SETTING,
+    });
+    return Array.isArray(setting?.value) ? (setting.value as KnownRepo[]) : [];
+  } catch {
+    // Non-fatal: recents still serve the daemon repo.list registry.
+    return [];
+  }
+}
+
 // `workspace:get-recent-repositories` — LifecycleIpcReadService's known-repos
 // hydration, fired unconditionally on every app load. Bridges to the daemon's
 // `repo.list` (PROTOCOL §5.11): the persistent known-repo registry, MRU-first,
 // with the legacy handler's one-time workspace→registry sync performed
-// daemon-side. Failures propagate as rejections — the caller keeps the prior
+// daemon-side, merged with path-less GitHub picks from `repos.known`.
+// Daemon-managed cache/clone checkouts are internal paths, never
+// user-pickable repos — they are excluded from the list. Failures of the
+// `repo.list` read propagate as rejections — the caller keeps the prior
 // known-repos list on error (mirrors the legacy safe-handler contract).
 registerMockIpcHandler(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, async () => {
   const result = await backendRequest<{ repos: KnownRepo[] }>("repo.list");
-  return { success: true, data: result.repos ?? [] };
+  const repos = (result.repos ?? []).filter(
+    (repo) => !isDaemonManagedCheckoutPath(repo.path),
+  );
+  const githubPicks = (await readReposKnownSetting()).filter(
+    (repo) => !!repo.githubUrl,
+  );
+  const merged = [
+    ...githubPicks,
+    ...repos.filter((repo) => !githubPicks.some((pick) => pick.path === repo.path)),
+  ].sort((a, b) => (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? ""));
+  return { success: true, data: merged };
+});
+
+// `workspace:add-recent-repository` — registers a repo as recently used.
+// Path-less GitHub picks (the Pick-a-repo flow) carry a `githubUrl` and use
+// the owner/repo shorthand as their key; entries upsert into the `repos.known`
+// setting. Failures fold to `{ success:false, error }` (callers fire and
+// forget with a logged warning).
+registerMockIpcHandler(WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, async (arg) => {
+  const payload = arg as
+    | { repository?: unknown; name?: unknown; owner?: unknown; githubUrl?: unknown }
+    | undefined;
+  const repository = typeof payload?.repository === "string" ? payload.repository : "";
+  if (!repository) {
+    return { success: false, error: "repository is required" };
+  }
+  try {
+    const existing = await readReposKnownSetting();
+    const now = new Date().toISOString();
+    const name =
+      typeof payload?.name === "string" && payload.name
+        ? payload.name
+        : repository.split("/").pop() || "Unknown";
+    const owner = typeof payload?.owner === "string" ? payload.owner : undefined;
+    const githubUrl = typeof payload?.githubUrl === "string" ? payload.githubUrl : undefined;
+    const index = existing.findIndex((repo) => repo.path === repository);
+    if (index >= 0) {
+      existing[index] = {
+        ...existing[index],
+        name,
+        owner: owner ?? existing[index].owner,
+        githubUrl: githubUrl ?? existing[index].githubUrl,
+        lastUsedAt: now,
+      };
+    } else {
+      existing.push({ path: repository, name, owner, githubUrl, addedAt: now, lastUsedAt: now });
+    }
+    await backendRequest("settings.update", {
+      changes: [{ path: REPOS_KNOWN_SETTING, value: existing }],
+    });
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 });
 
 // `workspace:remove-recent-repository` — the repositories list's "Remove"
@@ -121,10 +200,25 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY, async (arg) 
     return { success: false, error: "repository is required" };
   }
   try {
+    // `repo.remove` runs first so a daemon hiccup there fails the whole call
+    // before any state changed; only then is a matching path-less GitHub pick
+    // dropped from the `repos.known` setting (those entries live beside the
+    // daemon's repo.list registry, not in it).
     const result = await backendRequest<{ removed: boolean }>("repo.remove", {
       path: repository,
     });
-    return { success: true, data: { removed: result.removed === true } };
+    const githubPicks = await readReposKnownSetting();
+    const remaining = githubPicks.filter((repo) => repo.path !== repository);
+    const removedFromSetting = remaining.length !== githubPicks.length;
+    if (removedFromSetting) {
+      await backendRequest("settings.update", {
+        changes: [{ path: REPOS_KNOWN_SETTING, value: remaining }],
+      });
+    }
+    return {
+      success: true,
+      data: { removed: result.removed === true || removedFromSetting },
+    };
   } catch (error) {
     return {
       success: false,

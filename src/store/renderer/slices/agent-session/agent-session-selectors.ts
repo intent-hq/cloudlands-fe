@@ -104,6 +104,44 @@ function isAgentWaiting(stored: StoredAgentSession): boolean {
 }
 
 /**
+ * Whether the turn is live in the daemon's sense — `isResponding` or the
+ * transient FE-owned send signals. `isWaitingOnTool` is deliberately excluded:
+ * it is the discriminator the blocked-waiting predicate below tests against.
+ */
+function isTurnInFlight(stored: StoredAgentSession): boolean {
+  return (
+    stored.isResponding === true ||
+    stored.isStreaming === true ||
+    stored.isProcessing === true
+  );
+}
+
+/**
+ * Waiting state that genuinely blocks on someone else — the hourglass
+ * indicator. It is the BE-owned waiting signals MINUS the ones a live turn
+ * contradicts:
+ *
+ * - `isWaitingForOtherAgents` is the daemon's explicit peer/child pause and
+ *   can legitimately hold mid-turn, so it counts unconditionally. A wake
+ *   clears the parked flag in the reducer (`chatQueueProcessingReceived`,
+ *   and the running-transition clear in `updateSessionFields`).
+ * - `isWaitingOnTool` on an in-flight turn is the agent executing a tool —
+ *   work, not a block.
+ * - A `Waiting` STATUS is a coarse between-turns marker with no dedicated
+ *   clear path of its own: the daemon revises it on the next
+ *   `agent:status-changed`, which is exactly the signal that can lag a
+ *   turn start (a queue drain opens the busy flags before it lands). So it
+ *   only counts when no turn is in flight; the dedicated flags above still
+ *   raise the hourglass for a genuine mid-turn block.
+ */
+function isAgentBlockedWaiting(stored: StoredAgentSession): boolean {
+  if (isTerminalAgentStatus(stored.status)) return false;
+  if (isAgentWaitingForOtherAgents(stored)) return true;
+  if (isTurnInFlight(stored)) return false;
+  return stored.status === AgentStatus.Waiting || stored.isWaitingOnTool === true;
+}
+
+/**
  * Active-thread state driven by BE-owned activity flags (PROTOCOL.md §5.5:
  * `isResponding`, `isWaitingOnTool`) plus transient FE-owned signals
  * (optimistic `isStreaming`/`isProcessing` set on send, `ACTIVATING`) and the
@@ -243,6 +281,49 @@ export const selectAgentSessionWorkspaceId = store.createSelector(
     state.agentSessions?.byAgentId[agentId]?.workspaceId,
 );
 
+/**
+ * Current reasoning effort for an agent session (Option B first-class session
+ * field, PROTOCOL §5.5). Rendered verbatim from the stored session:
+ * `undefined` when unset (provider default) or when the session is unknown.
+ *
+ * Compatibility: sessions whose stored model is still the legacy codex
+ * compound form (`{model}/{effort}`) surface the suffix as the effective
+ * effort when no first-class field is set, so pre-migration sessions render
+ * sensibly (the daemon splits the compound id at the session-read seam).
+ * Guarded the same way as the daemon's migration `0080`: the suffix must be a
+ * known codex effort level AND the session must show codex evidence, so
+ * slash-bearing non-codex ids (HuggingFace-style `org/model`) are never split.
+ */
+const LEGACY_CODEX_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh']);
+const LEGACY_CODEX_EFFORT_MODELS = new Set([
+  'gpt-5.3-codex',
+  'gpt-5.2-codex',
+  'gpt-5.1-codex-max',
+]);
+
+export const selectAgentReasoningEffort = store.createSelector(
+  (state, agentId: string): string | undefined => {
+    const stored = state.agentSessions?.byAgentId[agentId];
+    if (!stored) return undefined;
+    if (typeof stored.reasoningEffort === 'string' && stored.reasoningEffort.length > 0) {
+      return stored.reasoningEffort;
+    }
+    if (stored.reasoningEffort === null) return undefined;
+    const model = stored.model;
+    if (typeof model !== 'string') return undefined;
+    const slashIndex = model.indexOf('/');
+    if (slashIndex <= 0 || slashIndex >= model.length - 1) return undefined;
+    const suffix = model.slice(slashIndex + 1);
+    if (!LEGACY_CODEX_EFFORTS.has(suffix)) return undefined;
+    const base = model.slice(0, slashIndex);
+    const isCodex =
+      getAgentProvider(stored, selectEffectiveDefaultProviderId.select(state)) === 'codex' ||
+      base.startsWith('codex:') ||
+      LEGACY_CODEX_EFFORT_MODELS.has(base);
+    return isCodex ? suffix : undefined;
+  },
+);
+
 /** Select whether a session exists for a given agent. */
 export const selectAgentSessionExists = store.createSelector(
   (state, agentId: string): boolean =>
@@ -352,6 +433,22 @@ export const selectAgentIsWaiting = store.createSelector(
     const stored = state.agentSessions?.byAgentId[agentId];
     if (!stored) return false;
     return isAgentWaiting(stored) || selectAgentIsWaitingForOtherAgents.select(state, agentId);
+  },
+);
+
+/**
+ * Status-indicator variant of `selectAgentIsWaiting`: true only for waits that
+ * genuinely block on something outside the agent (explicit `Waiting` status,
+ * paused on peer/child agents, or a tool wait with no live turn behind it).
+ * A tool executing inside an in-flight responding turn is active work, so this
+ * returns false there and the surface renders "running" rather than the
+ * hourglass.
+ */
+export const selectAgentIsBlockedWaiting = store.createSelector(
+  (state, agentId: string): boolean => {
+    const stored = state.agentSessions?.byAgentId[agentId];
+    if (!stored) return false;
+    return isAgentBlockedWaiting(stored);
   },
 );
 

@@ -47,11 +47,26 @@ export function buildCreateWorkspaceRequestFromProposal(
   // proposal payload so it never reaches the wire.
   const { agentId: _droppedAgentId, ...initialAgentFields } = initialAgent ?? {};
 
+  const githubUrl = stringOverride(editedFields?.githubUrl, params.githubUrl);
+  const clonePath = stringOverride(editedFields?.clonePath, params.clonePath);
+  const repositoryPath = stringOverride(editedFields?.repoPath, params.repositoryPath);
+  // Picked repo (githubUrl with no clone destination): the daemon hydrates the
+  // checkout from its repo cache — the request carries githubUrl + branch
+  // fields ONLY, never a clonePath or repositoryPath.
+  //
+  // INVARIANT: githubUrl-without-clonePath ⇒ cache-hydrated pick, always.
+  // Proposal producers that pair a githubUrl with a real local checkout must
+  // set clonePath — the daemon's proposal builder already does (it falls back
+  // clonePath ← repoPath whenever githubUrl is set; see intent-acp
+  // mcp_server/bindings/app/workspaces.rs), and ProposalCard returns no
+  // repository fallback path when githubUrl is set.
+  const isGithubPick = !!githubUrl && !clonePath;
+
   return {
     ...params,
-    repositoryPath: stringOverride(editedFields?.repoPath, params.repositoryPath),
-    githubUrl: stringOverride(editedFields?.githubUrl, params.githubUrl),
-    clonePath: stringOverride(editedFields?.clonePath, params.clonePath),
+    repositoryPath: isGithubPick ? undefined : repositoryPath,
+    githubUrl,
+    clonePath: isGithubPick ? undefined : clonePath,
     baseRef: stringOverride(editedFields?.branch, params.baseRef),
     isNewRepo: booleanOverride(editedFields?.isNewRepo, params.isNewRepo),
     scope: stringOverride(editedFields?.scope, params.scope),

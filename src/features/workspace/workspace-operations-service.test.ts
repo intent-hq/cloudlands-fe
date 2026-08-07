@@ -750,6 +750,75 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
       });
     });
 
+    it("registers a picked repo (githubUrl, no clonePath) as a path-less GitHub recent after a successful apply", async () => {
+      bridgeInvoke.mockResolvedValue(undefined as never);
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal: makeProposal({
+            payload: {
+              operation: "workspace.create",
+              params: {
+                title: "New space",
+                githubUrl: "https://github.com/acme/app",
+                baseRef: "main",
+                initialAgent: { name: "Coordinator", prompt: "Do the thing" },
+              },
+            },
+          }),
+        }),
+      );
+      await flush();
+
+      expect(ws.create).toHaveBeenCalledTimes(1);
+      expect(bridgeInvoke).toHaveBeenCalledWith(WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, {
+        repository: "acme/app",
+        name: "app",
+        owner: "acme",
+        githubUrl: "https://github.com/acme/app",
+      });
+      expect(lifecycleEntry("tc-apply-1")).toMatchObject({
+        status: "applied",
+        result: { workspaceId: "ws-created" },
+      });
+    });
+
+    it("does not register a recent for a local-path proposal", async () => {
+      appStore.dispatch(applyWorkspaceProposal({ proposal: makeProposal() }));
+      await flush();
+
+      expect(lifecycleEntry("tc-apply-1")).toMatchObject({ status: "applied" });
+      expect(bridgeInvoke).not.toHaveBeenCalledWith(
+        WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY,
+        expect.anything(),
+      );
+    });
+
+    it("does not register a recent when the picked-repo create fails", async () => {
+      ws.create.mockResolvedValueOnce({ ok: false, error: "cache miss" } as never);
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal: makeProposal({
+            payload: {
+              operation: "workspace.create",
+              params: {
+                title: "New space",
+                githubUrl: "https://github.com/acme/app",
+                baseRef: "main",
+                initialAgent: { name: "Coordinator", prompt: "Do the thing" },
+              },
+            },
+          }),
+        }),
+      );
+      await flush();
+
+      expect(lifecycleEntry("tc-apply-1")).toMatchObject({ status: "failed" });
+      expect(bridgeInvoke).not.toHaveBeenCalledWith(
+        WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY,
+        expect.anything(),
+      );
+    });
+
     it("dedupes rapid double-applies via the lifecycle slice", async () => {
       appStore.dispatch(applyWorkspaceProposal({ proposal: makeProposal() }));
       appStore.dispatch(applyWorkspaceProposal({ proposal: makeProposal() }));

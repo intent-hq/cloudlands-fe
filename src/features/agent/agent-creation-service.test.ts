@@ -15,6 +15,10 @@ vi.mock("$features/agent/services/agent-factory", () => ({
 vi.mock("$lib/client", () => ({
   appClient: { agents: { get: vi.fn(() => Promise.resolve(null as AgentSession | null)) } },
 }));
+const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
+vi.mock("svelte-sonner", () => ({
+  toast: { error: toastError, warning: vi.fn(), success: vi.fn(), info: vi.fn(), dismiss: vi.fn() },
+}));
 
 import { store as appStore } from "$store/renderer/store";
 import { setWorkspaceEntity } from "$store/renderer/slices/workspace/workspace-slice";
@@ -93,6 +97,7 @@ describe("agentCreationService (fake factory + client, real store)", () => {
   });
   beforeEach(() => {
     createAgent.mockReset();
+    toastError.mockReset();
   });
   afterEach(() => vi.clearAllMocks());
 
@@ -160,11 +165,137 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     expect(agentTabs(WS, AGENT)).toHaveLength(1);
   });
 
-  it("ignores the trigger when the workspace is missing (no factory call)", async () => {
-    appStore.dispatch(createAgentRequested("ws-missing"));
-    await flush();
-    await flush();
+  // The workspace-null precondition is a fire-and-forget early return with no
+  // caller promise, so it must toast instead of silently doing nothing.
+  it.each([
+    ["createAgentRequested", () => createAgentRequested("ws-absent-create")],
+    [
+      "createAgentWithSpecialistRequested",
+      () => createAgentWithSpecialistRequested("ws-absent-spec", "implementor"),
+    ],
+    [
+      "runAgentForNoteRequested",
+      () => runAgentForNoteRequested("ws-absent-run", "note-absent", "My Task"),
+    ],
+  ])("%s toasts when the workspace is unavailable", async (_name, makeAction) => {
+    appStore.dispatch(makeAction());
+    await waitFor(() => toastError.mock.calls.length > 0);
+
+    expect(toastError).toHaveBeenCalledWith("Workspace is not available for agent creation");
     expect(createAgent).not.toHaveBeenCalled();
+  });
+
+  it("runAgentForNoteRequested toasts when the note is not found", async () => {
+    const WS = "ws-note-missing";
+    seedWorkspace(WS);
+
+    appStore.dispatch(runAgentForNoteRequested(WS, "note-does-not-exist", "My Task"));
+    await waitFor(() => toastError.mock.calls.length > 0);
+
+    expect(toastError).toHaveBeenCalledWith("Note not found — cannot run an agent for it");
+    expect(createAgent).not.toHaveBeenCalled();
+  });
+
+  // Fire-and-forget triggers have no caller promise to settle, so the factory's
+  // error message (e.g. the provider-unavailable message) is surfaced as a toast
+  // instead of failing silently.
+  it.each([
+    [
+      "createAgentRequested",
+      "ws-toast-create",
+      () => createAgentRequested("ws-toast-create"),
+    ],
+    [
+      "createAgentWithSpecialistRequested",
+      "ws-toast-spec",
+      () => createAgentWithSpecialistRequested("ws-toast-spec", "implementor"),
+    ],
+    [
+      "runAgentForNoteRequested",
+      "ws-toast-run",
+      () => runAgentForNoteRequested("ws-toast-run", "note-toast", "My Task"),
+    ],
+  ])("%s toasts the factory error when creation fails", async (_name, WS, makeAction) => {
+    seedWorkspace(WS);
+    appStore.dispatch(
+      loadWorkspaceNotesSucceeded(
+        [WS],
+        { [WS]: [{ id: "note-toast", workspaceId: WS, title: "My Task", content: "Do it" } as Note] },
+      ),
+    );
+    createAgent.mockResolvedValueOnce({
+      success: false,
+      error: "Auggie is not available",
+    });
+
+    appStore.dispatch(makeAction());
+    await waitFor(() => toastError.mock.calls.length > 0);
+
+    expect(toastError).toHaveBeenCalledWith("Auggie is not available");
+  });
+
+  it.each([
+    [
+      "createAgentRequested",
+      "ws-throw-create",
+      () => createAgentRequested("ws-throw-create"),
+    ],
+    [
+      "createAgentWithSpecialistRequested",
+      "ws-throw-spec",
+      () => createAgentWithSpecialistRequested("ws-throw-spec", "implementor"),
+    ],
+    [
+      "runAgentForNoteRequested",
+      "ws-throw-run",
+      () => runAgentForNoteRequested("ws-throw-run", "note-throw", "My Task"),
+    ],
+  ])("%s toasts the thrown error when the factory throws", async (_name, WS, makeAction) => {
+    seedWorkspace(WS);
+    appStore.dispatch(
+      loadWorkspaceNotesSucceeded(
+        [WS],
+        { [WS]: [{ id: "note-throw", workspaceId: WS, title: "My Task", content: "Do it" } as Note] },
+      ),
+    );
+    createAgent.mockRejectedValueOnce(new Error("daemon unreachable"));
+
+    appStore.dispatch(makeAction());
+    await waitFor(() => toastError.mock.calls.length > 0);
+
+    expect(toastError).toHaveBeenCalledWith("daemon unreachable");
+  });
+
+  it("does NOT toast on the promise-settling createAgentFromConfigRequested path", async () => {
+    const WS = "ws-no-toast";
+    seedWorkspace(WS);
+    createAgent.mockResolvedValueOnce({ success: false, error: "boom" });
+
+    const action = createAgentFromConfigRequested(
+      WS,
+      { name: "X", workspaceId: WorkspaceId(WS), agentType: createAgentTypeId("chat"), source: "test" },
+    );
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow(/boom/);
+    await flush();
+
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("does NOT toast on the promise-settling agentSessionLaunchAgentRequested path", async () => {
+    const WS = "ws-no-toast-launch";
+    seedWorkspace(WS);
+    createAgent.mockResolvedValueOnce({ success: false, error: "boom" });
+
+    const action = agentSessionLaunchAgentRequested(
+      WS,
+      { name: "Launch", agentType: createAgentTypeId("chat"), source: "test" },
+    );
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow(/boom/);
+    await flush();
+
+    expect(toastError).not.toHaveBeenCalled();
   });
 
   it("createAgentFromConfigRequested resolves with the created session and opens a tab when openAgent is true", async () => {

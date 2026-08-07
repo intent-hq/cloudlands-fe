@@ -1,0 +1,522 @@
+/**
+ * focus-first-unread-agent tests.
+ *
+ * The store is faked with a mutable state object (the key-switch-service
+ * pattern) and the store-subscription seam is injected via `deps.subscribe`
+ * so the async "agents load after navigation" path is deterministic.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+interface MockSession {
+  hasUnread?: boolean;
+  lastMessageRole?: 'user' | 'assistant';
+}
+
+const mockState = {
+  workspace: { activeWorkspaceId: null as string | null },
+  workspaceAgents: {
+    byWorkspaceId: {} as Record<
+      string,
+      { foregroundAgentIds: string[]; agentsLoaded: boolean; activeAgentId: string | null }
+    >,
+  },
+  agentSessions: { byAgentId: {} as Record<string, MockSession> },
+};
+
+const dispatched: { type: string; payload?: unknown }[] = [];
+
+vi.mock('$store/renderer/store', () => ({
+  store: {
+    get state() {
+      return mockState;
+    },
+    dispatch: vi.fn((action: { type: string }) => {
+      dispatched.push(action);
+      return action;
+    }),
+    getReadableState: () => ({ subscribe: () => () => {} }),
+  },
+}));
+
+import {
+  findFirstUnreadForegroundAgentId,
+  focusFirstUnreadAgent,
+} from '../focus-first-unread-agent';
+
+const WS = 'ws-1';
+
+function seedAgents(
+  foregroundAgentIds: string[],
+  agentsLoaded: boolean,
+  activeAgentId: string | null = null,
+): void {
+  mockState.workspaceAgents.byWorkspaceId[WS] = {
+    foregroundAgentIds,
+    agentsLoaded,
+    activeAgentId,
+  };
+}
+
+function seedSessions(sessions: Record<string, MockSession>): void {
+  mockState.agentSessions.byAgentId = sessions;
+}
+
+interface SubscribeSeam {
+  subscribe: (listener: () => void) => () => void;
+  notify: () => void;
+  unsubscribeCalls: () => number;
+}
+
+/** Controllable store-change seam: `notify()` replays the store listener. */
+function createSubscribeSeam(): SubscribeSeam {
+  let listener: (() => void) | null = null;
+  let unsubscribeCalls = 0;
+  return {
+    subscribe: (fn) => {
+      listener = fn;
+      return () => {
+        unsubscribeCalls++;
+        listener = null;
+      };
+    },
+    notify: () => listener?.(),
+    unsubscribeCalls: () => unsubscribeCalls,
+  };
+}
+
+function dispatchedTypes(): string[] {
+  return dispatched.map((action) => action.type);
+}
+
+beforeEach(() => {
+  dispatched.length = 0;
+  mockState.workspace.activeWorkspaceId = WS;
+  mockState.workspaceAgents.byWorkspaceId = {};
+  mockState.agentSessions.byAgentId = {};
+});
+
+describe('findFirstUnreadForegroundAgentId', () => {
+  it('prefers an exact hasUnread marker over the lastMessageRole heuristic', () => {
+    seedAgents(['agent-a', 'agent-b', 'agent-c'], true);
+    seedSessions({
+      'agent-a': { lastMessageRole: 'assistant' },
+      'agent-b': { hasUnread: true, lastMessageRole: 'user' },
+      'agent-c': { hasUnread: true },
+    });
+    expect(findFirstUnreadForegroundAgentId(WS)).toBe('agent-b');
+  });
+
+  it('falls back to the first foreground agent that spoke last, in foregroundAgentIds order', () => {
+    seedAgents(['agent-a', 'agent-b', 'agent-c'], true);
+    seedSessions({
+      'agent-a': { lastMessageRole: 'user' },
+      'agent-b': { lastMessageRole: 'assistant' },
+      'agent-c': { lastMessageRole: 'assistant' },
+    });
+    expect(findFirstUnreadForegroundAgentId(WS)).toBe('agent-b');
+  });
+
+  it('falls back to the first foreground agent when the user spoke last everywhere', () => {
+    seedAgents(['agent-a', 'agent-b'], true);
+    seedSessions({
+      'agent-a': { lastMessageRole: 'user' },
+      'agent-b': { lastMessageRole: 'user' },
+    });
+    expect(findFirstUnreadForegroundAgentId(WS)).toBe('agent-a');
+  });
+
+  it('falls back to the first foreground agent when the role is absent (older daemons)', () => {
+    seedAgents(['agent-a', 'agent-b'], true);
+    seedSessions({ 'agent-a': {}, 'agent-b': {} });
+    expect(findFirstUnreadForegroundAgentId(WS)).toBe('agent-a');
+  });
+
+  it('withholds the first-agent fallback until hydration lands', () => {
+    // Mid-hydration the foreground list is populated but the sessions carrying
+    // the tier 1/2 signals are not, so falling back now could miss the agent
+    // that is actually unread.
+    seedAgents(['agent-a', 'agent-b'], true);
+    seedSessions({ 'agent-a': { lastMessageRole: 'user' } });
+    expect(findFirstUnreadForegroundAgentId(WS)).toBeNull();
+  });
+
+  it('returns null when the workspace has no foreground agents', () => {
+    seedAgents([], true);
+    seedSessions({ 'agent-bg': { lastMessageRole: 'assistant' } });
+    expect(findFirstUnreadForegroundAgentId(WS)).toBeNull();
+  });
+
+  it('ignores background agents (not in foregroundAgentIds)', () => {
+    seedAgents(['agent-a'], true);
+    seedSessions({
+      'agent-a': { lastMessageRole: 'user' },
+      'agent-bg': { hasUnread: true, lastMessageRole: 'assistant' },
+    });
+    expect(findFirstUnreadForegroundAgentId(WS)).toBe('agent-a');
+  });
+});
+
+describe('focusFirstUnreadAgent', () => {
+  it('activates and opens the tab for the first candidate already in the store', () => {
+    seedAgents(['agent-a', 'agent-b'], true);
+    seedSessions({
+      'agent-a': { lastMessageRole: 'user' },
+      'agent-b': { lastMessageRole: 'assistant' },
+    });
+
+    focusFirstUnreadAgent(WS, true);
+
+    expect(dispatchedTypes()).toEqual([
+      'workspaceAgents/setActiveAgentId',
+      'appLayout/openAgentTabRequested',
+    ]);
+    expect(dispatched[0].payload).toEqual([WS, 'agent-b']);
+    expect(dispatched[1].payload).toEqual([WS, { agentId: 'agent-b' }]);
+  });
+
+  it('dispatches nothing and arms no watch when the workspace was not unread', () => {
+    seedAgents(['agent-a'], true);
+    seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
+    const seam = createSubscribeSeam();
+
+    focusFirstUnreadAgent(WS, false, seam);
+
+    expect(dispatched).toEqual([]);
+    seam.notify();
+    expect(dispatched).toEqual([]);
+  });
+
+  it('falls back to the first foreground agent when no session signals unread', () => {
+    seedAgents(['agent-a', 'agent-b'], true);
+    seedSessions({
+      'agent-a': { lastMessageRole: 'user' },
+      'agent-b': { lastMessageRole: 'user' },
+    });
+
+    focusFirstUnreadAgent(WS, true, { subscribe: () => () => {} });
+
+    expect(dispatchedTypes()).toEqual([
+      'workspaceAgents/setActiveAgentId',
+      'appLayout/openAgentTabRequested',
+    ]);
+    expect(dispatched[0].payload).toEqual([WS, 'agent-a']);
+  });
+
+  it('dispatches nothing when the workspace has no foreground agents', () => {
+    seedAgents([], true);
+
+    focusFirstUnreadAgent(WS, true, { subscribe: () => () => {} });
+
+    expect(dispatched).toEqual([]);
+  });
+
+  it('switches once the agent sessions land after navigation', () => {
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, seam);
+    expect(dispatched).toEqual([]);
+
+    // Load lands: foreground list plus a session whose agent spoke last.
+    seedAgents(['agent-a', 'agent-b'], true);
+    seedSessions({
+      'agent-a': { lastMessageRole: 'user' },
+      'agent-b': { lastMessageRole: 'assistant' },
+    });
+    seam.notify();
+
+    expect(dispatchedTypes()).toEqual([
+      'workspaceAgents/setActiveAgentId',
+      'appLayout/openAgentTabRequested',
+    ]);
+    expect(dispatched[0].payload).toEqual([WS, 'agent-b']);
+  });
+
+  it('keeps watching through the real multi-dispatch hydration order', () => {
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, seam);
+
+    // `setAgentsLoaded(wsId, true)` lands first, before setAgents /
+    // bulkUpsertSessions — the watch must not stop here.
+    seedAgents([], true);
+    seam.notify();
+    expect(dispatched).toEqual([]);
+
+    // `setAgents` populates the foreground list; sessions are still missing.
+    seedAgents(['agent-a', 'agent-b'], true);
+    seam.notify();
+    expect(dispatched).toEqual([]);
+
+    // `bulkUpsertSessions` lands the sessions carrying lastMessageRole.
+    seedSessions({
+      'agent-a': { lastMessageRole: 'user' },
+      'agent-b': { lastMessageRole: 'assistant' },
+    });
+    seam.notify();
+
+    expect(dispatchedTypes()).toEqual([
+      'workspaceAgents/setActiveAgentId',
+      'appLayout/openAgentTabRequested',
+    ]);
+    expect(dispatched[0].payload).toEqual([WS, 'agent-b']);
+  });
+
+  it('lands on the first agent and stops when hydration brings no unread signal', () => {
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, seam);
+
+    seedAgents(['agent-a', 'agent-b'], true);
+    seedSessions({
+      'agent-a': { lastMessageRole: 'user' },
+      'agent-b': { lastMessageRole: 'user' },
+    });
+    seam.notify();
+    expect(dispatched[0].payload).toEqual([WS, 'agent-a']);
+    expect(seam.unsubscribeCalls()).toBe(1);
+
+    // Watch torn down: a later assistant message must not switch tabs again.
+    dispatched.length = 0;
+    seedSessions({
+      'agent-a': { lastMessageRole: 'user' },
+      'agent-b': { lastMessageRole: 'assistant' },
+    });
+    seam.notify();
+    expect(dispatched).toEqual([]);
+  });
+
+  it('stops watching at the timeout when hydration never completes', () => {
+    vi.useFakeTimers();
+    try {
+      const seam = createSubscribeSeam();
+      focusFirstUnreadAgent(WS, true, { ...seam, timeoutMs: 100 });
+
+      // Only the loaded flag ever arrives (e.g. an agent-less workspace).
+      seedAgents([], true);
+      seam.notify();
+      expect(dispatched).toEqual([]);
+
+      vi.advanceTimersByTime(100);
+      expect(seam.unsubscribeCalls()).toBe(1);
+
+      // Watch torn down: a late candidate must not switch tabs.
+      seedAgents(['agent-a'], true);
+      seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
+      seam.notify();
+      expect(dispatched).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('supersedes the previous pending watch instead of stacking', () => {
+    const first = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, first);
+
+    const second = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, second);
+
+    // The first watch was torn down by the second call.
+    expect(first.unsubscribeCalls()).toBe(1);
+
+    seedAgents(['agent-a'], true);
+    seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
+
+    // A notification on the superseded seam must not dispatch.
+    first.notify();
+    expect(dispatched).toEqual([]);
+
+    // Only the surviving watch acts, and exactly once.
+    second.notify();
+    expect(dispatchedTypes()).toEqual([
+      'workspaceAgents/setActiveAgentId',
+      'appLayout/openAgentTabRequested',
+    ]);
+  });
+
+  it('supersedes a pending watch even on a not-unread call', () => {
+    const first = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, first);
+
+    focusFirstUnreadAgent(WS, false, createSubscribeSeam());
+    expect(first.unsubscribeCalls()).toBe(1);
+
+    seedAgents(['agent-a'], true);
+    seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
+    first.notify();
+    expect(dispatched).toEqual([]);
+  });
+
+  it('tolerates a store seam that emits synchronously during subscribe', () => {
+    // The real store readable notifies immediately on subscribe; that emission
+    // reflects the state already checked, so it must not dispatch or throw.
+    let listener: (() => void) | null = null;
+    const subscribe = (fn: () => void) => {
+      listener = fn;
+      fn();
+      return () => {
+        listener = null;
+      };
+    };
+
+    expect(() => focusFirstUnreadAgent(WS, true, { subscribe })).not.toThrow();
+    expect(dispatched).toEqual([]);
+
+    // The watch is still armed and works on the next real change.
+    seedAgents(['agent-a'], true);
+    seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
+    listener?.();
+    expect(dispatchedTypes()).toEqual([
+      'workspaceAgents/setActiveAgentId',
+      'appLayout/openAgentTabRequested',
+    ]);
+  });
+
+  it('abandons the watch when the user navigates to another workspace', () => {
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, seam);
+
+    mockState.workspace.activeWorkspaceId = 'ws-other';
+    seedAgents(['agent-a'], true);
+    seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
+    seam.notify();
+
+    expect(dispatched).toEqual([]);
+    expect(seam.unsubscribeCalls()).toBe(1);
+  });
+
+  it('tolerates arming before the navigation sets activeWorkspaceId', () => {
+    // The watch arms right after `goto()` is invoked, so the store still
+    // reports the previous workspace: emissions in that gap must not read as a
+    // navigation away.
+    mockState.workspace.activeWorkspaceId = 'ws-previous';
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, seam);
+
+    seedAgents(['agent-a'], true);
+    seam.notify();
+    expect(dispatched).toEqual([]);
+    expect(seam.unsubscribeCalls()).toBe(0);
+
+    // Navigation lands, then hydration completes.
+    mockState.workspace.activeWorkspaceId = WS;
+    seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
+    seam.notify();
+
+    expect(dispatchedTypes()).toEqual([
+      'workspaceAgents/setActiveAgentId',
+      'appLayout/openAgentTabRequested',
+    ]);
+  });
+
+  it('abandons the watch when the user leaves before the navigation ever landed', () => {
+    // Click unread A, then click B before A's navigation effect lands: `arrived`
+    // never latches, so the guard must key off "no longer on the workspace we
+    // departed from" or the watch would survive to mutate A's tab in the
+    // background once A's agents hydrate.
+    mockState.workspace.activeWorkspaceId = 'ws-previous';
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, seam);
+
+    mockState.workspace.activeWorkspaceId = 'ws-other';
+    seedAgents(['agent-a'], true);
+    seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
+    seam.notify();
+
+    expect(dispatched).toEqual([]);
+    expect(seam.unsubscribeCalls()).toBe(1);
+  });
+
+  it('abandons the watch when the user leaves after the navigation landed', () => {
+    mockState.workspace.activeWorkspaceId = 'ws-previous';
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, seam);
+
+    mockState.workspace.activeWorkspaceId = WS;
+    seedAgents(['agent-a'], true);
+    seam.notify();
+    expect(seam.unsubscribeCalls()).toBe(0);
+
+    // User navigates away before hydration finished.
+    mockState.workspace.activeWorkspaceId = 'ws-other';
+    seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
+    seam.notify();
+
+    expect(dispatched).toEqual([]);
+    expect(seam.unsubscribeCalls()).toBe(1);
+  });
+
+  it('abandons the watch when the user picks an agent tab themselves', () => {
+    seedAgents([], false, 'agent-user-picked');
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, seam);
+
+    // User opened a different agent tab before hydration landed.
+    seedAgents(['agent-a'], true, 'agent-other');
+    seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
+    seam.notify();
+
+    expect(dispatched).toEqual([]);
+    expect(seam.unsubscribeCalls()).toBe(1);
+  });
+
+  it('still switches when hydration sets the default agent from no selection', () => {
+    // No selection when the watch arms: hydration picking a default agent is
+    // expected, not a user takeover.
+    seedAgents([], false, null);
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, seam);
+
+    seedAgents(['agent-a', 'agent-b'], true, 'agent-a');
+    seedSessions({
+      'agent-a': { lastMessageRole: 'user' },
+      'agent-b': { lastMessageRole: 'assistant' },
+    });
+    seam.notify();
+
+    expect(dispatchedTypes()).toEqual([
+      'workspaceAgents/setActiveAgentId',
+      'appLayout/openAgentTabRequested',
+    ]);
+    expect(dispatched[0].payload).toEqual([WS, 'agent-b']);
+  });
+
+  it('overrides a selection made during the watch when none was armed', () => {
+    // Documented trade-off, pinned: with no armed selection the guard cannot
+    // tell a user's own pick apart from hydration's default, so a late
+    // candidate still wins. Exempting null is required for the default-pick
+    // case above; narrowing it needs a signal the store does not carry.
+    seedAgents([], false, null);
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, seam);
+
+    seedAgents(['agent-a', 'agent-b'], true, 'agent-a');
+    seedSessions({
+      'agent-a': { lastMessageRole: 'user' },
+      'agent-b': { lastMessageRole: 'assistant' },
+    });
+    seam.notify();
+
+    expect(dispatched[0].payload).toEqual([WS, 'agent-b']);
+  });
+
+  it('holds the watch to the timeout on an agent-less workspace, dispatching nothing', () => {
+    // `areAgentsLoaded` is unsatisfiable without foreground agents, so the only
+    // exit is the timeout. Harmless, but pinned so the held subscription is a
+    // known cost rather than a surprise.
+    vi.useFakeTimers();
+    try {
+      const seam = createSubscribeSeam();
+      focusFirstUnreadAgent(WS, true, { ...seam, timeoutMs: 100 });
+
+      seedAgents([], true);
+      seedSessions({});
+      seam.notify();
+      expect(dispatched).toEqual([]);
+      expect(seam.unsubscribeCalls()).toBe(0);
+
+      vi.advanceTimersByTime(100);
+      expect(seam.unsubscribeCalls()).toBe(1);
+      expect(dispatched).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

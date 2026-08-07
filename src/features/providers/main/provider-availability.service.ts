@@ -451,6 +451,8 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
 export interface ProviderPathsResult {
   paths: Record<string, string | null>;
   secondaryPaths: Record<string, string | null>;
+  /** npx status from the same discovery round-trip (PROTOCOL §5.14). */
+  npx?: NpxStatus;
 }
 
 /**
@@ -458,6 +460,10 @@ export interface ProviderPathsResult {
  * host.providerDiscovery snapshot (PROTOCOL §5.14) — the daemon spawns
  * providers, so its resolution is the truth the UI must mirror. No FE-local
  * binary resolution. Degrades to empty maps when the RPC fails.
+ *
+ * This is the LIGHT discovery path: binary resolution only, no
+ * `host.providerAuthStatus` sweep, so callers that only need npx status can
+ * avoid the aggregated GET_AVAILABILITY round-trip.
  */
 export async function getProviderPaths(): Promise<ProviderPathsResult> {
   const discovery = await callProviderDiscovery();
@@ -469,7 +475,7 @@ export async function getProviderPaths(): Promise<ProviderPathsResult> {
       secondaryPaths[provider.id] = provider.secondaryResolvedPath ?? null;
     }
   }
-  return { paths, secondaryPaths };
+  return { paths, secondaryPaths, npx: discovery?.npx };
 }
 
 /**
@@ -494,18 +500,23 @@ export function setupProviderAvailabilityIPC(): void {
 
   ipcMain.handle(
     PROVIDERS_CHANNELS.CHECK_SINGLE,
-    async (_event: Electron.IpcMainInvokeEvent, request: string | { providerId: string }) => {
+    async (
+      _event: Electron.IpcMainInvokeEvent,
+      request: string | { providerId: string; force?: boolean },
+    ) => {
       const providerId = typeof request === 'string' ? request : request.providerId;
+      // Default `force: true` — single rechecks follow "Login" / "Check
+      // again" clicks. Passive bulk loads pass `force: false` explicitly so
+      // they ride the daemon's auth cache instead of re-probing every CLI.
+      const force = typeof request === 'string' ? true : request.force !== false;
       try {
         let status: ProviderStatus;
         let authenticated: boolean | undefined;
 
         // Auth verdicts come from the daemon (`host.providerAuthStatus`,
-        // intent-hq/intentd#339). `force: true` bypasses the daemon's cache —
-        // single rechecks follow "Login" / "Check again" clicks, so a login
-        // that just completed must be picked up.
+        // intent-hq/intentd#339). `force: true` bypasses the daemon's cache.
         const checkAuth = (): Promise<boolean | undefined> =>
-          getProviderAuthVerdict(providerId, { force: true });
+          getProviderAuthVerdict(providerId, { force });
 
         switch (providerId) {
           case 'auggie':
@@ -524,6 +535,11 @@ export function setupProviderAvailabilityIPC(): void {
           case 'codex':
             clearCodexCache();
             status = await checkCodexAvailability();
+            // Static registry fact (intent-providers' `fallback_npx_package`
+            // is set only for codex) — mirrors the aggregate discovery
+            // path's `hasNpxFallback` so the npx-missing/too-old guidance
+            // still renders on the single-check path.
+            status.hasNpxFallback = true;
             if (status.available) {
               authenticated = await checkAuth();
             }
