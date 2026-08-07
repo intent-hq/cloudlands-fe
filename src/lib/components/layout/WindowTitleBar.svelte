@@ -24,6 +24,7 @@
   import { openPalette } from '$store/renderer/slices/palette/palette-slice';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { applyContentPreset } from '$features/layout/preset-executor';
+  import { toast } from '$lib/components/ui/toast';
   import {
   selectPanelLayoutRoot,
   selectCanGoBack,
@@ -222,11 +223,17 @@
 
   async function handleApplyPreset(presetId: LayoutPresetId) {
     if (!layoutManager || !workspaceId) return;
-    await applyContentPreset(presetId, layoutManager, {
+    const applied = await applyContentPreset(presetId, layoutManager, {
       workspaceId,
       containerWidth: window.innerWidth,
       containerHeight: window.innerHeight,
     });
+    // A preset with nothing to show (e.g. agents-row in a workspace with no
+    // agents) resolves false and leaves the layout untouched — surface that
+    // instead of appearing to do nothing.
+    if (!applied) {
+      toast.info(m.layout_presets_notApplicable_toast());
+    }
   }
 </script>
 
