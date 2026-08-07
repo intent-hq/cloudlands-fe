@@ -2487,6 +2487,7 @@
   "layout_activeCard_search_placeholder": "スペースを検索...",
   "layout_activeCard_unread_header": "未読",
   "layout_activeCard_running_header": "実行中",
+  "layout_activeCard_waiting_header": "待機中",
   "layout_activeCard_pinned_header": "固定済み",
   "layout_allCard_recent_label": "最近",
   "layout_allCard_repo_label": "リポジトリ",

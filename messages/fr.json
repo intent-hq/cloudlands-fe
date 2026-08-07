@@ -2487,6 +2487,7 @@
   "layout_activeCard_search_placeholder": "Rechercher des espaces...",
   "layout_activeCard_unread_header": "Non lus",
   "layout_activeCard_running_header": "En cours",
+  "layout_activeCard_waiting_header": "En attente",
   "layout_activeCard_pinned_header": "Épinglés",
   "layout_allCard_recent_label": "Récents",
   "layout_allCard_repo_label": "Dépôt",
