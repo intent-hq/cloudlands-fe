@@ -1848,6 +1848,7 @@
   "chat_modelPicker_noProviderAvailable_toast": "No hay ningún proveedor de IA disponible. Instale o habilite un proveedor en Configuración.",
   "chat_modelPicker_noProviderAvailable_title": "No hay proveedor disponible",
   "chat_modelPicker_noProviderAvailable_description": "Instale o habilite un proveedor de IA en Configuración para seleccionar un modelo.",
+  "chat_modelPicker_noProviderAvailable_openSettings_label": "Abrir Ajustes",
   "chat_modelPicker_noModels_label": "No hay modelos disponibles",
   "chat_modelPicker_pickAnother_description": "Elija otro modelo para continuar.",
   "chat_modelPicker_providerDefault_label": "Predeterminado del proveedor",

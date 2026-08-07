@@ -1848,6 +1848,7 @@
   "chat_modelPicker_noProviderAvailable_toast": "사용 가능한 AI 제공자가 없습니다. 설정에서 제공자를 설치하거나 활성화하세요.",
   "chat_modelPicker_noProviderAvailable_title": "사용 가능한 제공자가 없습니다",
   "chat_modelPicker_noProviderAvailable_description": "모델을 선택하려면 설정에서 AI 제공자를 설치하거나 활성화하세요.",
+  "chat_modelPicker_noProviderAvailable_openSettings_label": "설정 열기",
   "chat_modelPicker_noModels_label": "사용 가능한 모델 없음",
   "chat_modelPicker_pickAnother_description": "계속하려면 다른 모델을 선택하세요.",
   "chat_modelPicker_providerDefault_label": "제공자 기본값",

@@ -826,6 +826,33 @@ describe('ModelPicker availability gating', () => {
     expect(screen.getByText('No provider available')).toBeTruthy();
   });
 
+  it('gives the no-provider toast an action that opens provider settings', async () => {
+    const { toast } = await import('svelte-sonner');
+    const { navigateToSettings } = await import('$lib/utils/workspace-navigation');
+    vi.mocked(navigateToSettings).mockResolvedValue(undefined);
+    availableProviderOverride$.set([]);
+
+    render(ModelPicker, {
+      props: { portal: false },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalled();
+    });
+
+    const options = vi.mocked(toast.error).mock.calls[0][1] as
+      | { action?: { label: string; onClick: () => void } }
+      | undefined;
+    expect(options?.action?.label).toBe('Open Settings');
+
+    options?.action?.onClick();
+
+    expect(vi.mocked(navigateToSettings)).toHaveBeenCalledWith({
+      tab: 'accounts',
+      hash: 'providers',
+    });
+  });
+
   it('suppresses the no-provider notice and toast while the daemon is not yet connected (pre-connect probe failure)', async () => {
     // Regression (startup window): the mount-time ensureProvidersChecked can
     // run its bulk probe before the daemon socket is up — every probe fails,

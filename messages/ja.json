@@ -1848,6 +1848,7 @@
   "chat_modelPicker_noProviderAvailable_toast": "利用可能な AI プロバイダーがありません。設定でプロバイダーをインストールまたは有効化してください。",
   "chat_modelPicker_noProviderAvailable_title": "利用可能なプロバイダーがありません",
   "chat_modelPicker_noProviderAvailable_description": "モデルを選択するには、設定で AI プロバイダーをインストールまたは有効化してください。",
+  "chat_modelPicker_noProviderAvailable_openSettings_label": "設定を開く",
   "chat_modelPicker_noModels_label": "利用可能なモデルはありません",
   "chat_modelPicker_pickAnother_description": "続行するには別のモデルを選択してください。",
   "chat_modelPicker_providerDefault_label": "プロバイダーのデフォルト",

@@ -1848,6 +1848,7 @@
   "chat_modelPicker_noProviderAvailable_toast": "沒有可用的 AI 提供者。請在設定中安裝或啟用提供者。",
   "chat_modelPicker_noProviderAvailable_title": "沒有可用的提供者",
   "chat_modelPicker_noProviderAvailable_description": "請在設定中安裝或啟用 AI 提供者以選擇模型。",
+  "chat_modelPicker_noProviderAvailable_openSettings_label": "開啟設定",
   "chat_modelPicker_noModels_label": "沒有可用的模型",
   "chat_modelPicker_pickAnother_description": "選擇其他模型以繼續。",
   "chat_modelPicker_providerDefault_label": "提供者預設",

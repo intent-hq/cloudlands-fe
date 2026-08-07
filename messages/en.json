@@ -1849,6 +1849,7 @@
   "chat_modelPicker_noProviderAvailable_toast": "No AI provider is available. Install or enable a provider in Settings.",
   "chat_modelPicker_noProviderAvailable_title": "No provider available",
   "chat_modelPicker_noProviderAvailable_description": "Install or enable an AI provider in Settings to select a model.",
+  "chat_modelPicker_noProviderAvailable_openSettings_label": "Open Settings",
   "chat_modelPicker_noModels_label": "No models available",
   "chat_modelPicker_pickAnother_description": "Pick another model to continue.",
   "chat_modelPicker_providerDefault_label": "Provider default",

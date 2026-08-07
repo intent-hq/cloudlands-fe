@@ -476,6 +476,7 @@
           showManageLink={true}
           defaultModelId={teamModeModel}
           defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
+          noticeClass="basis-full w-full max-w-full mt-1.5"
           silentFallback
         />
       {/key}
@@ -614,6 +615,7 @@
           showManageLink={true}
           defaultModelId={singleAgentModel}
           defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
+          noticeClass="basis-full w-full max-w-full mt-1.5"
           silentFallback
         />
       {/key}
@@ -643,6 +645,9 @@
 
   .model-picker-row {
     display: flex;
+    /* Wrap so ModelPicker's provider notice lands on its own full-width line
+       below the "using <picker>" row instead of inline next to the trigger. */
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.25rem;
     margin-top: auto;
