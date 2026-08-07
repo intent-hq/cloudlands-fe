@@ -163,12 +163,18 @@ export function focusFirstUnreadAgent(
   // selection the user made in the meantime. Bail when they navigated away from
   // this workspace, or when an existing agent selection changed under us.
   //
-  // The workspace guard only engages once `activeWorkspaceId` has actually
-  // reached `workspaceId`. The watch arms right after `goto()` is *invoked*,
-  // and `setActiveWorkspaceId(workspaceId)` only lands with the navigation
-  // effect — so until then the store still reports the previous workspace, and
-  // an eager guard would read every emission in that gap as a navigation away
-  // and cancel the watch before hydration ever landed.
+  // The workspace guard tolerates the arming gap: the watch arms right after
+  // `goto()` is *invoked*, but `setActiveWorkspaceId(workspaceId)` only lands
+  // with the navigation effect, so until then the store still reports the
+  // workspace we departed from. An eager equality guard would read every
+  // emission in that gap as a navigation away and cancel the watch before
+  // hydration ever landed.
+  //
+  // So "still pending" is specifically *still on `departedFrom`* — not merely
+  // "not on the target". A third workspace id means the user navigated
+  // elsewhere before this navigation ever completed (click unread A, then B),
+  // and the watch must bail rather than survive to mutate A's tab in the
+  // background once A's agents hydrate.
   //
   // The selection guard only applies to a NON-NULL armed selection: hydration
   // itself picks a default agent when none is set (`hydrateWorkspaceAgents` /
@@ -176,11 +182,12 @@ export function focusFirstUnreadAgent(
   // With a selection already in place both hydration paths preserve it, so a
   // change then really is someone else moving the tab.
   const armedActiveAgentId = activeAgentIdOf(workspaceId);
-  let arrived = appStore.state.workspace?.activeWorkspaceId === workspaceId;
+  const departedFrom = appStore.state.workspace?.activeWorkspaceId ?? null;
+  let arrived = departedFrom === workspaceId;
   function userTookOver(): boolean {
-    const activeWorkspaceId = appStore.state.workspace?.activeWorkspaceId;
+    const activeWorkspaceId = appStore.state.workspace?.activeWorkspaceId ?? null;
     if (activeWorkspaceId === workspaceId) arrived = true;
-    else if (arrived) return true;
+    else if (arrived || activeWorkspaceId !== departedFrom) return true;
     if (armedActiveAgentId === null) return false;
     return activeAgentIdOf(workspaceId) !== armedActiveAgentId;
   }

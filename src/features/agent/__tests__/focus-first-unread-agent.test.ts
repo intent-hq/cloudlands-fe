@@ -406,6 +406,24 @@ describe('focusFirstUnreadAgent', () => {
     ]);
   });
 
+  it('abandons the watch when the user leaves before the navigation ever landed', () => {
+    // Click unread A, then click B before A's navigation effect lands: `arrived`
+    // never latches, so the guard must key off "no longer on the workspace we
+    // departed from" or the watch would survive to mutate A's tab in the
+    // background once A's agents hydrate.
+    mockState.workspace.activeWorkspaceId = 'ws-previous';
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, seam);
+
+    mockState.workspace.activeWorkspaceId = 'ws-other';
+    seedAgents(['agent-a'], true);
+    seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
+    seam.notify();
+
+    expect(dispatched).toEqual([]);
+    expect(seam.unsubscribeCalls()).toBe(1);
+  });
+
   it('abandons the watch when the user leaves after the navigation landed', () => {
     mockState.workspace.activeWorkspaceId = 'ws-previous';
     const seam = createSubscribeSeam();
@@ -458,5 +476,47 @@ describe('focusFirstUnreadAgent', () => {
       'appLayout/openAgentTabRequested',
     ]);
     expect(dispatched[0].payload).toEqual([WS, 'agent-b']);
+  });
+
+  it('overrides a selection made during the watch when none was armed', () => {
+    // Documented trade-off, pinned: with no armed selection the guard cannot
+    // tell a user's own pick apart from hydration's default, so a late
+    // candidate still wins. Exempting null is required for the default-pick
+    // case above; narrowing it needs a signal the store does not carry.
+    seedAgents([], false, null);
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, seam);
+
+    seedAgents(['agent-a', 'agent-b'], true, 'agent-a');
+    seedSessions({
+      'agent-a': { lastMessageRole: 'user' },
+      'agent-b': { lastMessageRole: 'assistant' },
+    });
+    seam.notify();
+
+    expect(dispatched[0].payload).toEqual([WS, 'agent-b']);
+  });
+
+  it('holds the watch to the timeout on an agent-less workspace, dispatching nothing', () => {
+    // `areAgentsLoaded` is unsatisfiable without foreground agents, so the only
+    // exit is the timeout. Harmless, but pinned so the held subscription is a
+    // known cost rather than a surprise.
+    vi.useFakeTimers();
+    try {
+      const seam = createSubscribeSeam();
+      focusFirstUnreadAgent(WS, true, { ...seam, timeoutMs: 100 });
+
+      seedAgents([], true);
+      seedSessions({});
+      seam.notify();
+      expect(dispatched).toEqual([]);
+      expect(seam.unsubscribeCalls()).toBe(0);
+
+      vi.advanceTimersByTime(100);
+      expect(seam.unsubscribeCalls()).toBe(1);
+      expect(dispatched).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
