@@ -107,6 +107,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     placeholder?: string;
     disabled?: boolean;
     editableWhileDisabled?: boolean;
+    /**
+     * Transient editor-only lock (e.g. an in-flight draft restore): the editor
+     * rejects focus/typing and submit is blocked, but the action bar keeps its
+     * normal enabled styling and the placeholder stays visible.
+     */
+    inputLocked?: boolean;
     workspace: Workspace | null;
     isStreaming?: boolean;
     /**
@@ -164,6 +170,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     placeholder = m.chat_richInput_askAnything_placeholder(),
     disabled = false,
     editableWhileDisabled = false,
+    inputLocked = false,
     workspace,
     isStreaming = false,
     isResponding = false,
@@ -207,6 +214,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   let modelPickerRef: { open: () => void; clearFallbackWarning: () => void; clearPendingUpdate: () => void } | null =
     $state(null);
   let previousDisabled = $state(disabled);
+  let previousInputLocked = $state(inputLocked);
   let hasInlineImages = $state(false);
 
   // Derived state: whether there's content to send (text, context items, or inline images)
@@ -296,8 +304,23 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     }
   });
 
+  // Mirror of the justEnabled effect for the transient editor lock: the
+  // composer takes focus again as soon as the lock releases.
+  $effect(() => {
+    const justUnlocked = previousInputLocked && !inputLocked;
+    previousInputLocked = inputLocked;
+
+    if (justUnlocked) {
+      void tick().then(() => focus());
+    }
+  });
+
   // Export focus method for parent components
   export async function focus(): Promise<boolean> {
+    if (inputLocked) {
+      return false;
+    }
+
     if (disabled && !editableWhileDisabled) {
       return false;
     }
@@ -685,7 +708,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   }
 
   function handleSubmit() {
-    if (!canSend || disabled || isEnhancing) {
+    if (!canSend || disabled || inputLocked || isEnhancing) {
       return;
     }
     // Clear any model fallback warning since user is sending a message with the new model
@@ -695,7 +718,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   }
 
   function handleForceSubmit() {
-    if (!canSend || disabled || isEnhancing) {
+    if (!canSend || disabled || inputLocked || isEnhancing) {
       return;
     }
     // Force submit interrupts streaming and sends immediately
@@ -1182,6 +1205,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         {placeholder}
         disabled={disabled || isEnhancing}
         editableWhileDisabled={editableWhileDisabled && !isEnhancing}
+        {inputLocked}
         workspace={workspace ?? undefined}
         onUpdate={(text) => {
           value = text;
@@ -1406,7 +1430,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             <button
               class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors text-primary not-disabled:hover:bg-background overflow-visible"
               onclick={handleSubmit}
-              disabled={isEnhancing}
+              disabled={inputLocked || isEnhancing}
               aria-label={m.chat_richInput_queueMessage_ariaLabel()}
             >
               <div class="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-full">
@@ -1427,7 +1451,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             <button
               class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors text-destructive-foreground not-disabled:hover:bg-background"
               onclick={handleForceSubmit}
-              disabled={isEnhancing}
+              disabled={inputLocked || isEnhancing}
               aria-label={m.chat_richInput_interruptAndSend_ariaLabel()}
               data-testid="interrupt-btn"
             >
@@ -1467,7 +1491,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               size="icon-sm"
               class="text-primary disabled:text-subtle"
               onclick={handleSubmit}
-              disabled={disabled || !canSend || isEnhancing}
+              disabled={disabled || inputLocked || !canSend || isEnhancing}
             >
               <Fa icon={faPaperPlane} class="mr-1" size="sm" />
             </Button>
@@ -1480,7 +1504,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             size="icon-sm"
             class="text-primary disabled:text-subtle"
             onclick={handleSubmit}
-            disabled={disabled || !canSend || isEnhancing}
+            disabled={disabled || inputLocked || !canSend || isEnhancing}
             aria-label={m.chat_richInput_sendMessage_ariaLabel()}
           >
             <Fa icon={faPaperPlane} size="sm" />

@@ -67,7 +67,7 @@ describe('ChatPanel draft restore/save (mounted)', () => {
     vi.restoreAllMocks();
   });
 
-  it('shows the loading gate and disables the composer while drafts.get is in flight', async () => {
+  it('locks the composer immediately but withholds the loading gate for 500ms', async () => {
     const pending = deferred<Draft | null>();
     const drafts = makeDrafts(() => pending.promise);
     render(ChatDraftHarness, { props: { drafts, workspaceId: WS, agentId: AGENT } });
@@ -76,8 +76,40 @@ describe('ChatPanel draft restore/save (mounted)', () => {
     flushSync();
 
     expect(drafts.get).toHaveBeenCalledExactlyOnceWith(WS, AGENT);
+    // Locked right away, but no spinner yet — and the placeholder survives
+    // because the lock never routes through `disabled`.
+    expect(composer().readOnly).toBe(true);
+    expect(composer().disabled).toBe(false);
+    expect(composer().placeholder).toBe('Type a message');
+    expect(screen.queryByRole('status')).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(500);
+    flushSync();
+
     expect(screen.getByRole('status').textContent).toContain('Loading draft message');
-    expect(composer().disabled).toBe(true);
+  });
+
+  it('never shows the loading gate when the restore settles under 500ms', async () => {
+    const pending = deferred<Draft | null>();
+    const drafts = makeDrafts(() => pending.promise);
+    render(ChatDraftHarness, { props: { drafts, workspaceId: WS, agentId: AGENT } });
+    flushSync();
+    await flushMicrotasks();
+    flushSync();
+
+    await vi.advanceTimersByTimeAsync(400);
+    flushSync();
+    expect(screen.queryByRole('status')).toBeNull();
+
+    pending.resolve({ text: 'saved draft', updatedAt: '2026-01-01T00:00:00.000Z' });
+    await flushMicrotasks();
+    flushSync();
+
+    // The delay timer must be cancelled on release, not merely ignored.
+    await vi.advanceTimersByTimeAsync(600);
+    flushSync();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(composer().readOnly).toBe(false);
   });
 
   it('restores draft text and attachments, then releases the gate', async () => {
@@ -102,7 +134,7 @@ describe('ChatPanel draft restore/save (mounted)', () => {
     expect(composer().value).toBe('saved draft');
     expect(screen.getByTestId('context-count').textContent).toBe('1');
     expect(screen.queryByRole('status')).toBeNull();
-    expect(composer().disabled).toBe(false);
+    expect(composer().readOnly).toBe(false);
   });
 
   it('releases the gate when drafts.get rejects', async () => {
@@ -112,6 +144,8 @@ describe('ChatPanel draft restore/save (mounted)', () => {
     flushSync();
     await flushMicrotasks();
     flushSync();
+    await vi.advanceTimersByTimeAsync(500);
+    flushSync();
     expect(screen.getByRole('status')).toBeTruthy();
 
     pending.reject(new Error('daemon unavailable'));
@@ -119,7 +153,7 @@ describe('ChatPanel draft restore/save (mounted)', () => {
     flushSync();
 
     expect(screen.queryByRole('status')).toBeNull();
-    expect(composer().disabled).toBe(false);
+    expect(composer().readOnly).toBe(false);
   });
 
   it('force-releases the gate after the 5s fallback if drafts.get hangs', async () => {
@@ -128,13 +162,15 @@ describe('ChatPanel draft restore/save (mounted)', () => {
     flushSync();
     await flushMicrotasks();
     flushSync();
+    await vi.advanceTimersByTimeAsync(500);
+    flushSync();
     expect(screen.getByRole('status')).toBeTruthy();
 
     await vi.advanceTimersByTimeAsync(5100);
     flushSync();
 
     expect(screen.queryByRole('status')).toBeNull();
-    expect(composer().disabled).toBe(false);
+    expect(composer().readOnly).toBe(false);
   });
 
   // REGRESSION (defect 1): the deferred editor-hydration callback fired ~50ms
@@ -170,7 +206,7 @@ describe('ChatPanel draft restore/save (mounted)', () => {
 
     await vi.advanceTimersByTimeAsync(5100);
     flushSync();
-    expect(composer().disabled).toBe(false);
+    expect(composer().readOnly).toBe(false);
 
     await typeInComposer('user typed this');
 
@@ -372,7 +408,7 @@ describe('ChatPanel draft restore/save (mounted)', () => {
     await vi.advanceTimersByTimeAsync(5100);
     flushSync();
     expect(screen.queryByRole('status')).toBeNull();
-    expect(composer().disabled).toBe(false);
+    expect(composer().readOnly).toBe(false);
 
     pending.resolve({ text: 'saved draft', updatedAt: '2026-01-01T00:00:00.000Z' });
     await flushMicrotasks();
@@ -392,7 +428,7 @@ describe('ChatPanel draft restore/save (mounted)', () => {
 
     expect(drafts.get).not.toHaveBeenCalled();
     expect(screen.queryByRole('status')).toBeNull();
-    expect(composer().disabled).toBe(false);
+    expect(composer().readOnly).toBe(false);
     await vi.advanceTimersByTimeAsync(600);
     expect(drafts.set).not.toHaveBeenCalled();
   });
