@@ -16,7 +16,8 @@
 
 import { createAction } from '$lib/store-shim/utils/store/create-action';
 import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
-import type { WorkspaceDisplayStatus } from '$shared/types';
+import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
+import { replaceWorkspaceList, setWorkspaceEntity } from '../workspace/workspace-slice';
 import {
   EMPTY_HUD_GRID_FILTER,
   isHudTrackedAttentionValue,
@@ -225,6 +226,29 @@ export const hudGridFilterStatesCleared = createAction('hud/gridFilterStatesClea
 
 // ── Reducer ──
 
+/**
+ * Retire live `displayStatus` overrides for workspaces whose entity just
+ * carried a fresh BE value. The override exists only to bridge the gap
+ * between a `workspace:displayStatus-changed` event and the entity catching
+ * up; once the entity carries a value it is at least as fresh, so keeping the
+ * override could let a stale value outlive newer BE data (e.g. after a
+ * dropped event followed by a `workspace.list` refetch).
+ */
+function clearDisplayStatusOverrides(state: HudState, workspaceIds: string[]): HudState {
+  const stale = workspaceIds.filter((id) => id in state.displayStatusByWorkspaceId);
+  if (stale.length === 0) return state;
+  const next = { ...state.displayStatusByWorkspaceId };
+  for (const id of stale) delete next[id];
+  return { ...state, displayStatusByWorkspaceId: next };
+}
+
+/** Ids of entities that carry a `displayStatus` (absent = nothing fresher). */
+function entityIdsCarryingDisplayStatus(workspaces: readonly Workspace[]): string[] {
+  return workspaces
+    .filter((workspace) => workspace.displayStatus !== undefined)
+    .map((workspace) => String(workspace.id));
+}
+
 export const hudReducer = createReducer<HudState>(initialState)
   // Activation resets to a clean slate — the feed is live-only (no backfill).
   .with(hudActivated, () => ({ ...initialState, active: true }))
@@ -265,6 +289,13 @@ export const hudReducer = createReducer<HudState>(initialState)
       [workspaceId]: displayStatus,
     },
   }))
+  // Entity refetches retire the live override (see `clearDisplayStatusOverrides`).
+  .with(setWorkspaceEntity, (state, { payload: [workspace] }) =>
+    clearDisplayStatusOverrides(state, entityIdsCarryingDisplayStatus([workspace])),
+  )
+  .with(replaceWorkspaceList, (state, { payload: [workspaces] }) =>
+    clearDisplayStatusOverrides(state, entityIdsCarryingDisplayStatus(workspaces)),
+  )
   .with(hudUsageLoaded, (state, { payload: [usage] }) => ({ ...state, usage, usageError: null }))
   .with(hudUsageFailed, (state, { payload: [error] }) => ({ ...state, usageError: error }))
   .with(hudRateHistoryLoaded, (state, { payload: [rateHistory] }) => ({

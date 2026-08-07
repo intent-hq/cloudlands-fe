@@ -22,6 +22,8 @@ import {
   type HudFeedEntry,
   type HudState,
 } from './hud-slice';
+import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
+import { replaceWorkspaceList, setWorkspaceEntity } from '../workspace/workspace-slice';
 
 function makeEntry(id: string, overrides: Partial<HudFeedEntry> = {}): HudFeedEntry {
   return {
@@ -151,6 +153,41 @@ describe('hud-slice reducer', () => {
     state = hudReducer(state, hudDisplayStatusChanged('ws-1', 'pr_open'));
     state = hudReducer(state, hudDisplayStatusChanged('ws-1', 'pr_merged'));
     expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-1': 'pr_merged' });
+  });
+
+  describe('displayStatus override reconciliation', () => {
+    function withOverrides(): HudState {
+      let state = activeState();
+      state = hudReducer(state, hudDisplayStatusChanged('ws-1', 'pr_open'));
+      return hudReducer(state, hudDisplayStatusChanged('ws-2', 'in_progress'));
+    }
+
+    function entity(id: string, displayStatus?: WorkspaceDisplayStatus): Workspace {
+      return { id, displayStatus } as Workspace;
+    }
+
+    it('setWorkspaceEntity retires the override for the refetched workspace', () => {
+      const state = hudReducer(withOverrides(), setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-2': 'in_progress' });
+    });
+
+    it('replaceWorkspaceList retires overrides for every row carrying a value', () => {
+      const state = hudReducer(
+        withOverrides(),
+        replaceWorkspaceList([entity('ws-1', 'complete'), entity('ws-2', 'idle')]),
+      );
+      expect(state.displayStatusByWorkspaceId).toEqual({});
+    });
+
+    it('an entity without a displayStatus keeps the override (nothing fresher arrived)', () => {
+      const state = withOverrides();
+      expect(hudReducer(state, setWorkspaceEntity(entity('ws-1')))).toBe(state);
+    });
+
+    it('an unrelated workspace leaves the overrides untouched', () => {
+      const state = withOverrides();
+      expect(hudReducer(state, setWorkspaceEntity(entity('ws-9', 'complete')))).toBe(state);
+    });
   });
 
   it('hudUsageLoaded stores the rollup and clears a prior error', () => {
