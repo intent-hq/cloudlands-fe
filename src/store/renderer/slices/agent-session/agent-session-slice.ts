@@ -1247,9 +1247,17 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
   // flags for this turn-start shape, so the card stays idle/completed until
   // the first status-changed lands. Treat it as the turn start it is — the
   // turn-end clears (streamEnded / agent:idle) close it through the existing
-  // paths.
+  // paths. The wake also ends any parked completion-watch wait the preceding
+  // `agent:idle` froze into the session, the same way a running
+  // `agent:status-changed` transition does above; otherwise the frozen
+  // `isWaitingForOtherAgents` keeps the hourglass up for the whole new turn.
   .with(chatQueueProcessingReceived, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true }),
+    updateSessionFields(state, agentId, {
+      isStreaming: true,
+      isProcessing: true,
+      isWaitingForOtherAgents: false,
+      waitingForAgentIds: [],
+    }),
   )
   .with(chatInitialized, (state, { payload: [agentId, data] }) => {
     const session = getSession(state, agentId);

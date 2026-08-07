@@ -3303,6 +3303,28 @@ describe('chatQueueProcessingReceived — queue-delivery wake opens the turn', (
     expect(state.byAgentId['a1'].isProcessing).toBe(false);
     expect(state.byAgentId['a1'].isResponding).toBe(false);
   });
+
+  it('ends a completion-watch wait frozen by the preceding agent:idle', () => {
+    // The previous turn ended waiting on peers, so `agent:idle` froze
+    // isWaitingForOtherAgents: true. Without clearing it here the hourglass
+    // outranks the running dot for the whole re-woken turn.
+    const existing = makeSession('a1', 'ws-1', {
+      status: 'idle' as any,
+      isProcessing: false,
+      isStreaming: false,
+      isWaitingForOtherAgents: true,
+      waitingForAgentIds: ['a2'],
+    });
+    let state = agentSessionReducer(initialState, upsertSession(existing));
+
+    state = agentSessionReducer(state, chatQueueProcessingReceived('a1', 'turn-1'));
+
+    expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(false);
+    expect(state.byAgentId['a1'].waitingForAgentIds).toEqual([]);
+    const store = storeWith({ byAgentId: state.byAgentId as any, agentIdsByWorkspace: {} });
+    expect(selectAgentIsBlockedWaiting.select(store, 'a1')).toBe(false);
+    expect(selectAgentIsResponding.select(store, 'a1')).toBe(true);
+  });
 });
 
 describe('stream completion clears stale responding flags', () => {
