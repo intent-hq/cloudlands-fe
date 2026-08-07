@@ -15,9 +15,12 @@
    * Driven by the daemon-health slice: shows after a grace period while
    * health === 'down', auto-dismisses when backend:status returns 'connected'
    * (resubscription on reconnect is handled by the existing RESUB-1 path — this
-   * component issues no wire requests itself). Offers the app-managed sidecar
-   * fallback when the connection mode is external or the sidecar supervisor
-   * gave up restarting.
+   * component issues no wire requests itself). Offers actionable recovery when
+   * the connection is down (T20): "Start local intentd" (offered in any
+   * external mode — it switches the active backend to local first, then spawns
+   * the app-managed sidecar) or the app-managed sidecar retry when the
+   * supervisor gave up restarting, plus a one-click switch to any other saved
+   * backend so the user can fail over without opening the daemon-status menu.
    */
   import { page } from '$app/stores';
   import { store as appStore } from '$store/renderer/store';
@@ -37,8 +40,17 @@
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import {
     spawnSidecarRequested,
+    switchLocalAndSpawnRequested,
     fetchSidecarRunLogRequested,
   } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+  import {
+    selectConnections,
+    selectActiveConnectionId,
+    selectIsConnecting,
+  } from '$store/renderer/slices/connections/connections-selectors';
+  import { switchConnection } from '$store/renderer/middlewares/connections-service';
+  import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+  import type { ConnectionRecord } from '$shared/types/connections';
   import { m } from '$shared/paraglide/messages.js';
 
   const health$ = selectDaemonHealth();
@@ -53,6 +65,9 @@
   const runLog$ = selectSidecarRunLog();
   const runLogPending$ = selectSidecarRunLogPending();
   const runLogError$ = selectSidecarRunLogError();
+  const connections$ = selectConnections();
+  const activeConnectionId$ = selectActiveConnectionId();
+  const isConnecting$ = selectIsConnecting();
 
   // Presentational grace-period latch: health 'down' arms a timer; a recovery
   // before it fires cancels the overlay entirely (no flash on quick blips).
@@ -101,21 +116,60 @@
   const isSidecarFailure = $derived(
     ($sidecarStartupFailed$ || $sidecarGaveUp$) && !isExternalMode,
   );
-  // The on-demand sidecar binds the local UDS socket, which a WS-connected
-  // client would never reconnect to — so the button is only offered when the
-  // connection target is the local socket (external-ws is excluded). Once a
-  // spawn is in flight (or failed), the section stays visible even if a
-  // status broadcast flips the transport to sidecar-uds mid-spawn — hiding it
-  // would drop the pending indicator / error and any way to retry.
+  // "Start local intentd" is offered in any external mode — external-uds AND
+  // external-ws (T20). The on-demand sidecar binds the local UDS socket, which a
+  // WS-connected client would never reconnect to on its own, so handleSpawnSidecar
+  // first switches the active backend to local (making the spawned sidecar's UDS
+  // the reconnect target) before requesting the spawn. Once a spawn is in flight
+  // (or failed), the section stays visible even if a status broadcast flips the
+  // transport to sidecar-uds mid-spawn — hiding it would drop the pending
+  // indicator / error and any way to retry.
   const showSpawnButton = $derived(
-    $transport$?.mode === 'external-uds' ||
-      $sidecarGaveUp$ ||
-      $spawnPending$ ||
-      $spawnError$ !== null,
+    isExternalMode || $sidecarGaveUp$ || $spawnPending$ || $spawnError$ !== null,
   );
 
+  // Other saved backends the user can fail over to without opening the menu
+  // (T20). Excludes the local entry — "Start local intentd" is its dedicated
+  // action — and the currently-active connection (switching to it is a no-op).
+  const otherConnections = $derived(
+    $connections$.filter((c) => !c.isLocal && c.id !== $activeConnectionId$),
+  );
+
+  /** Display label for a remote connection: `hostname (host:port)`, or its raw label. */
+  function connectionLabel(conn: ConnectionRecord): string {
+    const hostname = conn.hostname?.trim();
+    if (hostname && conn.host && conn.port != null) {
+      return `${hostname} (${conn.host}:${conn.port})`;
+    }
+    return conn.label;
+  }
+
   function handleSpawnSidecar() {
+    // In external/remote mode the active target is a remote backend; the
+    // on-demand sidecar binds the local UDS socket, so we must switch active →
+    // local first (making that UDS the reconnect target) before spawning.
+    //
+    // The switch destroys THIS window (captureAndCloseWindowsForBackendSwitch)
+    // before the switch IPC returns, so a renderer continuation that dispatched
+    // the spawn afterwards could be torn down before it ran — leaving the user on
+    // a fresh local window with intentd never started. Route the whole recovery
+    // through a single main-side action that switches AND spawns atomically, so
+    // it survives the window teardown.
+    if ($activeConnectionId$ !== LOCAL_CONNECTION_ID) {
+      appStore.dispatch(switchLocalAndSpawnRequested());
+      return;
+    }
+    // Already local: no switch, no window teardown — the plain spawn path is safe.
     appStore.dispatch(spawnSidecarRequested());
+  }
+
+  async function handleSwitchConnection(id: string) {
+    try {
+      await switchConnection(id);
+    } catch {
+      // Failure surfaces via the connections slice op-status; the list/active
+      // refresh arrives via the connections:changed push.
+    }
   }
 
   // "Show logs from last run" — the daemon-health middleware performs the
@@ -255,8 +309,8 @@
             data-testid="daemon-stopped-spawn-sidecar"
           >
             {$spawnPending$
-              ? m.daemonStatus_overlay_startingSidecar_label()
-              : m.daemonStatus_overlay_startSidecar_label()}
+              ? m.daemonStatus_overlay_startingIntentd_label()
+              : m.daemonStatus_overlay_startLocalIntentd_label()}
           </button>
 
           {#if $spawnError$}
@@ -268,6 +322,27 @@
           <p class="mt-2 text-xs text-muted-foreground">
             {m.daemonStatus_overlay_dataDirNote_label()}
           </p>
+        </div>
+      {/if}
+
+      {#if otherConnections.length > 0}
+        <div class="mt-4 border-t border-border pt-4" data-testid="daemon-stopped-known-backends">
+          <p class="text-xs text-muted-foreground">
+            {m.daemonStatus_overlay_knownBackends_label()}
+          </p>
+          <div class="mt-2 space-y-2">
+            {#each otherConnections as conn (conn.id)}
+              <button
+                type="button"
+                class="w-full truncate rounded-md border border-border px-4 py-2 text-left text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={$isConnecting$}
+                onclick={() => handleSwitchConnection(conn.id)}
+                data-testid="daemon-stopped-switch-backend"
+              >
+                {connectionLabel(conn)}
+              </button>
+            {/each}
+          </div>
         </div>
       {/if}
     </div>
