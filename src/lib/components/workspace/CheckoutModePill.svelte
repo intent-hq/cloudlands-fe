@@ -2,7 +2,11 @@
   /**
    * CheckoutModePill - Tiny, quiet metadata pill showing how the workspace
    * checkout was provisioned (PROTOCOL §5.1). Renders nothing when
-   * `checkoutMode` is absent (non-daemon-provisioned checkouts).
+   * `checkoutMode` is absent (non-daemon-provisioned checkouts). A `cow`
+   * checkout is labeled "CoW" only while effective CoW agent isolation is
+   * active (the `workspace.cowIsolation` setting is on and the machine
+   * supports CoW); otherwise agents work directly in the checkout, so the
+   * pill says "Direct".
    *
    * When a workspace is provided, hovering the pill opens the disk-usage
    * tooltip and fetches the footprint on demand via the `workspace.diskUsage`
@@ -22,6 +26,7 @@
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { runShrinkWorkspaceAction } from './shrink-workspace-action';
   import { pollWorkspaceDiskUsage } from './disk-usage-poll';
+  import { resolveEffectiveIsolationMode } from './initializer/isolation-mode';
 
   interface Props {
     checkoutMode?: 'cow' | 'worktree' | 'direct';
@@ -35,9 +40,39 @@
   // label always matches the workspace whose diskUsage the tooltip shows.
   const mode = $derived(workspace ? workspace.checkoutMode : checkoutMode);
 
+  // A `cow` checkoutMode records that the clone was provisioned with CoW
+  // primitives, not that agents are isolated from it: cache-hydrated
+  // GitHub-pick workspaces persist `cow` while agents work directly in the
+  // checkout (isolation follows the BE-owned `workspace.cowIsolation`
+  // setting, PROTOCOL §5.1/§5.12). Show "CoW" only when effective CoW agent
+  // isolation is active; default to "Direct" until the async settings read
+  // resolves so the label never flashes "CoW"→"Direct".
+  let cowIsolationActive = $state(false);
+  $effect(() => {
+    if (mode !== 'cow') return;
+    const ws = workspace;
+    let cancelled = false;
+    void resolveEffectiveIsolationMode(ws?.cowSupported === true ? [ws] : undefined).then(
+      (resolved) => {
+        if (!cancelled) cowIsolationActive = resolved === 'cow';
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  });
+
   // i18n-ignore (CoW / Worktree / Direct are technical terms)
   const label = $derived(
-    mode === 'cow' ? 'CoW' : mode === 'worktree' ? 'Worktree' : mode === 'direct' ? 'Direct' : null,
+    mode === 'cow'
+      ? cowIsolationActive
+        ? 'CoW'
+        : 'Direct'
+      : mode === 'worktree'
+        ? 'Worktree'
+        : mode === 'direct'
+          ? 'Direct'
+          : null,
   );
 
   /** Poll cadence while the tooltip is open and a daemon walk is in flight. */
