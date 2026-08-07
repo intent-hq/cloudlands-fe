@@ -18,9 +18,14 @@ import {
   CONNECTION_CHANNELS,
   CONNECTIONS_CHANGED_EVENT,
   CONNECTION_CERT_MISMATCH_EVENT,
+  CONNECTION_PROTOCOL_MISMATCH_EVENT,
   LOCAL_CONNECTION_ID,
 } from '$shared/types/connections';
-import type { ConnectionRecord, ConnectionCertMismatchEvent } from '$shared/types/connections';
+import type {
+  ConnectionRecord,
+  ConnectionCertMismatchEvent,
+  ConnectionProtocolMismatchEvent,
+} from '$shared/types/connections';
 import { store as appStore } from '$store/renderer/store';
 import {
   loadConnections,
@@ -165,11 +170,12 @@ describe('connections-service', () => {
   });
 
   describe('boot subscriptions', () => {
-    it('subscribes to the changed + cert-mismatch pushes on first dispatch', () => {
+    it('subscribes to the changed + cert-mismatch + protocol-mismatch pushes on first dispatch', () => {
       // A dispatch routes through the middleware, booting the service.
       appStore.dispatch(certMismatchCleared());
       expect(eventHandlers.has(CONNECTIONS_CHANGED_EVENT)).toBe(true);
       expect(eventHandlers.has(CONNECTION_CERT_MISMATCH_EVENT)).toBe(true);
+      expect(eventHandlers.has(CONNECTION_PROTOCOL_MISMATCH_EVENT)).toBe(true);
     });
 
     it('folds a connections:changed push into the list + active id', () => {
@@ -193,6 +199,20 @@ describe('connections-service', () => {
       };
       eventHandlers.get(CONNECTION_CERT_MISMATCH_EVENT)!(event);
       expect(appStore.state.connections.certMismatch).toEqual(event);
+    });
+
+    it('folds a connections:protocol-mismatch push into the slice (warn-but-allow)', () => {
+      appStore.dispatch(certMismatchCleared());
+      const event: ConnectionProtocolMismatchEvent = {
+        id: 'remote-1',
+        host: '10.0.0.5',
+        port: 8443,
+        localProtocolVersion: '1',
+        remoteProtocolVersion: '2',
+      };
+      eventHandlers.get(CONNECTION_PROTOCOL_MISMATCH_EVENT)!(event);
+      expect(appStore.state.connections.protocolMismatch).toEqual(event);
+      expect(appStore.state.connections.protocolMismatchModalDismissed).toBe(false);
     });
   });
 });

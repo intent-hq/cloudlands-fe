@@ -26,6 +26,8 @@ import {
 } from "$store/renderer/slices/panel-layout/panel-layout-types";
 import type { StoreState } from "$store/renderer/types";
 import { hydrateWorkspaceNavigation } from "$store/renderer/slices/workspace-navigation/workspace-navigation-slice";
+import { connectionsListReceived } from "$store/renderer/slices/connections/connections-slice";
+import { LOCAL_CONNECTION_ID } from "$shared/types/connections";
 import { store as appStore } from "$store/renderer/store";
 import { createPanelLayoutPersistenceMiddleware } from "./panel-layout-persistence-service";
 
@@ -58,7 +60,10 @@ type FakeApi = {
   dispatch: ReturnType<typeof vi.fn>;
 };
 
-function createFakeApi(activeWorkspaceId: string | null = null): FakeApi {
+function createFakeApi(
+  activeWorkspaceId: string | null = null,
+  activeIdRef?: { current: string },
+): FakeApi {
   let panelLayoutState = { byWorkspaceId: {} };
   const dispatch = vi.fn((action: unknown) => {
     if (action && typeof action === "object" && "type" in action) {
@@ -69,7 +74,12 @@ function createFakeApi(activeWorkspaceId: string | null = null): FakeApi {
     return action;
   });
   return {
-    getState: () => ({ panelLayout: panelLayoutState, workspace: { activeWorkspaceId } } as unknown as StoreState),
+    getState: () =>
+      ({
+        panelLayout: panelLayoutState,
+        workspace: { activeWorkspaceId },
+        connections: { activeId: activeIdRef?.current ?? LOCAL_CONNECTION_ID },
+      }) as unknown as StoreState,
     dispatch,
   };
 }
@@ -463,5 +473,73 @@ describe("panelLayoutPersistenceService — workspace creation flow (real middle
       (t) => t.type === "agent" && (t as { agentId?: string }).agentId === AGENT,
     );
     expect(restoredAgentTabs).toHaveLength(1);
+  });
+});
+
+describe("panelLayoutPersistenceService — backend namespacing", () => {
+  const REMOTE = "mock-10.0.0.9:5181";
+  const remoteKey = (wsId: string) => `backend:${REMOTE}:${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${wsId}`;
+
+  function build(activeIdRef: { current: string }, activeWorkspaceId: string | null = null): {
+    api: FakeApi;
+    dispatch: (action: unknown) => unknown;
+  } {
+    const api = createFakeApi(activeWorkspaceId, activeIdRef);
+    const chain = createPanelLayoutPersistenceMiddleware()(api);
+    const next = (action: unknown) => api.dispatch(action);
+    const dispatch = chain(next);
+    return { api, dispatch };
+  }
+
+  it("local backend persists to the legacy un-namespaced key (migration)", () => {
+    const { dispatch } = build({ current: LOCAL_CONNECTION_ID });
+    dispatch(initializeLayout("ns-local", validLayout));
+    dispatch(openTab("ns-local", { type: "note", title: "N", closable: true, noteId: "n1" }));
+    expect(mem.has(`${PANEL_LAYOUT_STORAGE_KEY_PREFIX}ns-local`)).toBe(true);
+    expect(mem.has(remoteKey("ns-local"))).toBe(false);
+  });
+
+  it("remote backend persists to a backend-prefixed key", () => {
+    const { dispatch } = build({ current: REMOTE });
+    dispatch(initializeLayout("ns-remote", validLayout));
+    dispatch(openTab("ns-remote", { type: "note", title: "N", closable: true, noteId: "n1" }));
+    expect(mem.has(remoteKey("ns-remote"))).toBe(true);
+    expect(mem.has(`${PANEL_LAYOUT_STORAGE_KEY_PREFIX}ns-remote`)).toBe(false);
+  });
+
+  it("restores a remote backend's layout from its namespaced key on mount", () => {
+    safeLocalStorage.setJSON(remoteKey("ns-mount"), validLayout);
+    const { dispatch, api } = build({ current: REMOTE });
+    dispatch(workspaceMounted("ns-mount"));
+    const dispatchedTypes = api.dispatch.mock.calls.map(
+      (call) => (call[0] as { type: string }).type,
+    );
+    expect(dispatchedTypes).toContain(initializeLayout.type);
+  });
+
+  it("removes the namespaced entry on clearPanelLayout for a remote backend", () => {
+    const { dispatch } = build({ current: REMOTE });
+    dispatch(initializeLayout("ns-clear", validLayout));
+    expect(mem.has(remoteKey("ns-clear"))).toBe(true);
+    dispatch(clearPanelLayout("ns-clear"));
+    expect(mem.has(remoteKey("ns-clear"))).toBe(false);
+  });
+
+  it("re-restores the active workspace's layout from the incoming backend on switch", () => {
+    // A distinct layout for `ns-switch` is stored under the remote namespace.
+    safeLocalStorage.setJSON(remoteKey("ns-switch"), agentTabLayout("ns-switch", "agent-remote"));
+    const activeIdRef = { current: LOCAL_CONNECTION_ID };
+    const { api, dispatch } = build(activeIdRef, "ns-switch");
+
+    // Simulate the post-switch reload learning it is now on REMOTE.
+    activeIdRef.current = REMOTE;
+    dispatch(connectionsListReceived({ connections: [], activeId: REMOTE }));
+
+    const wsState = api.getState().panelLayout.byWorkspaceId["ns-switch"];
+    expect(wsState).toBeDefined();
+    const agentTabs = tabsOf(wsState).filter(
+      (t) => t.type === "agent" && (t as { agentId?: string }).agentId === "agent-remote",
+    );
+    expect(agentTabs).toHaveLength(1);
   });
 });

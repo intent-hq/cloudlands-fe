@@ -80,13 +80,15 @@ import {
   loadPanelLayoutHistory,
   type PanelLayoutHistoryData,
 } from "$features/layout/panel-layout-history.client";
+import { connectionsListReceived } from "../slices/connections/connections-slice";
+import { getActiveBackendId, namespaceBackendKey } from "./backend-storage-namespace";
 
 // ============================================================================
 // Helpers
 // ============================================================================
 
-function getStorageKey(wsId: string): string {
-  return `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${wsId}`;
+function getStorageKey(wsId: string, backendId: string): string {
+  return namespaceBackendKey(`${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${wsId}`, backendId);
 }
 
 const restoredWorkspaceIds = new Set<string>();
@@ -224,8 +226,8 @@ function getWsId(action: { payload?: any }): string | undefined {
   return undefined;
 }
 
-function loadStoredLayout(wsId: string): WorkspacePanelLayout | "invalid" | null {
-  const stored = safeLocalStorage.getJSON<WorkspacePanelLayout>(getStorageKey(wsId));
+function loadStoredLayout(wsId: string, backendId: string): WorkspacePanelLayout | "invalid" | null {
+  const stored = safeLocalStorage.getJSON<WorkspacePanelLayout>(getStorageKey(wsId, backendId));
   if (!stored) return null;
   return isStoredLayoutValid(stored) ? stored : "invalid";
 }
@@ -237,6 +239,7 @@ function hasAnyTab(panels: WorkspacePanelLayout["panels"]): boolean {
 function persistToLocalStorage(state: StoreState, wsId: string): void {
   const ws = state.panelLayout.byWorkspaceId[wsId];
   if (!ws) return;
+  const backendId = getActiveBackendId(state);
   // Pre-restore clobber guard: any persist action dispatched for a workspace
   // before its once-per-session restore runs lazily creates an empty (tab-less)
   // workspace state in the reducer. Persisting that would overwrite a good
@@ -245,7 +248,7 @@ function persistToLocalStorage(state: StoreState, wsId: string): void {
   // workspace hasn't been restored this session, the state has no tabs, and a
   // valid non-empty layout is already stored.
   if (!restoredWorkspaceIds.has(wsId) && !hasAnyTab(ws.panels)) {
-    const stored = loadStoredLayout(wsId);
+    const stored = loadStoredLayout(wsId, backendId);
     if (stored !== null && stored !== "invalid" && hasAnyTab(stored.panels)) return;
   }
   const layout: WorkspacePanelLayout = {
@@ -253,7 +256,7 @@ function persistToLocalStorage(state: StoreState, wsId: string): void {
     panels: ws.panels,
     focusedPanelId: ws.focusedPanelId,
   };
-  safeLocalStorage.setJSON(getStorageKey(wsId), layout);
+  safeLocalStorage.setJSON(getStorageKey(wsId, backendId), layout);
 }
 
 // ============================================================================
@@ -289,33 +292,65 @@ function scheduleHistorySave(getState: () => StoreState, wsId: string): void {
   pendingHistorySaves.set(wsId, timer);
 }
 
+/** Restore (or mark empty/invalid) a workspace's saved layout for one backend. */
+function restoreLayoutForWorkspace(
+  dispatch: (action: unknown) => void,
+  wsId: string,
+  backendId: string,
+): void {
+  dispatch(setRestoreStatus(wsId, "pending"));
+
+  const storedLayout = loadStoredLayout(wsId, backendId);
+  if (storedLayout === null) {
+    dispatch(setRestoreStatus(wsId, "empty"));
+  } else if (storedLayout === "invalid") {
+    dispatch(setRestoreStatus(wsId, "invalid"));
+  } else {
+    dispatch(initializeLayout(wsId, storedLayout));
+    dispatch(setRestoreStatus(wsId, "restored"));
+  }
+}
+
 // ============================================================================
 // Middleware Factory
 // ============================================================================
 
 export function createPanelLayoutPersistenceMiddleware(): StoreMiddleware {
   return (api) => {
+    // Track the active backend so a switch (which flips activeId via a
+    // connections:list refresh after the window reloads) re-restores the
+    // incoming backend's layout from its own namespace.
+    let lastBackendId = getActiveBackendId(api.getState() as StoreState);
+
     // Retroactive mount check: if a workspace is already active, restore it
     const state = api.getState() as StoreState;
     const activeWsId = state.workspace.activeWorkspaceId;
     if (activeWsId && isValidMountedWorkspaceId(activeWsId) && !restoredWorkspaceIds.has(activeWsId)) {
       restoredWorkspaceIds.add(activeWsId);
-      api.dispatch(setRestoreStatus(activeWsId, "pending"));
-
-      const storedLayout = loadStoredLayout(activeWsId);
-      if (storedLayout === null) {
-        api.dispatch(setRestoreStatus(activeWsId, "empty"));
-      } else if (storedLayout === "invalid") {
-        api.dispatch(setRestoreStatus(activeWsId, "invalid"));
-      } else {
-        api.dispatch(initializeLayout(activeWsId, storedLayout));
-        api.dispatch(setRestoreStatus(activeWsId, "restored"));
-      }
+      restoreLayoutForWorkspace(api.dispatch, activeWsId, lastBackendId);
     }
 
     return (next) => (action) => {
       const result = next(action);
       if (!action || !action.type) return result;
+
+      // Backend switched: re-restore the active workspace's layout from the
+      // incoming backend's namespace. The switch reloads the window, so this
+      // fires once the boot connections:list refresh flips activeId to the
+      // remote backend.
+      if (action.type === connectionsListReceived.type) {
+        const nextBackendId = getActiveBackendId(api.getState() as StoreState);
+        if (nextBackendId !== lastBackendId) {
+          lastBackendId = nextBackendId;
+          const currentState = api.getState() as StoreState;
+          const currentWsId = currentState.workspace.activeWorkspaceId;
+          restoredWorkspaceIds.clear();
+          if (currentWsId && isValidMountedWorkspaceId(currentWsId)) {
+            restoredWorkspaceIds.add(currentWsId);
+            restoreLayoutForWorkspace(api.dispatch, currentWsId, nextBackendId);
+          }
+        }
+      }
 
       // Handle workspace mounted: restore layout
       if (action.type === workspaceMounted.type) {
@@ -324,17 +359,11 @@ export function createPanelLayoutPersistenceMiddleware(): StoreMiddleware {
         if (restoredWorkspaceIds.has(wsId)) return result;
 
         restoredWorkspaceIds.add(wsId);
-        api.dispatch(setRestoreStatus(wsId, "pending"));
-
-        const storedLayout = loadStoredLayout(wsId);
-        if (storedLayout === null) {
-          api.dispatch(setRestoreStatus(wsId, "empty"));
-        } else if (storedLayout === "invalid") {
-          api.dispatch(setRestoreStatus(wsId, "invalid"));
-        } else {
-          api.dispatch(initializeLayout(wsId, storedLayout));
-          api.dispatch(setRestoreStatus(wsId, "restored"));
-        }
+        restoreLayoutForWorkspace(
+          api.dispatch,
+          wsId,
+          getActiveBackendId(api.getState() as StoreState),
+        );
       }
 
       // Handle workspace unmounted: cleanup
@@ -358,7 +387,11 @@ export function createPanelLayoutPersistenceMiddleware(): StoreMiddleware {
       // Handle clearPanelLayout: remove localStorage entry
       if (action.type === clearPanelLayout.type) {
         const wsId = getWsId(action);
-        if (wsId) safeLocalStorage.removeItem(getStorageKey(wsId));
+        if (wsId) {
+          safeLocalStorage.removeItem(
+            getStorageKey(wsId, getActiveBackendId(api.getState() as StoreState)),
+          );
+        }
       }
 
       // Handle initializeLayout: load history from disk

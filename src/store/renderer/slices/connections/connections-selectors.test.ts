@@ -5,7 +5,11 @@
 import { describe, it, expect } from 'vitest';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { StoreState } from '../../types';
-import type { ConnectionsState, ConnectionRecord } from './connections-types';
+import type {
+  ConnectionsState,
+  ConnectionRecord,
+  ConnectionProtocolMismatchEvent,
+} from './connections-types';
 import { initialState } from './connections-slice';
 import {
   selectConnections,
@@ -15,6 +19,8 @@ import {
   selectIsConnecting,
   selectConnectionError,
   selectConnectionCertMismatch,
+  selectActiveProtocolMismatch,
+  selectProtocolMismatchModal,
 } from './connections-selectors';
 
 const LOCAL: ConnectionRecord = {
@@ -72,6 +78,46 @@ describe('connections selectors', () => {
       expect(selectIsConnecting.select(stateWith({ status: 'connecting' }))).toBe(true);
       expect(selectIsConnecting.select(stateWith({ status: 'idle' }))).toBe(false);
       expect(selectIsConnecting.select(stateWith({ status: 'error' }))).toBe(false);
+    });
+  });
+
+  describe('protocol-mismatch selectors', () => {
+    const PROTOCOL_MISMATCH: ConnectionProtocolMismatchEvent = {
+      id: 'remote-1',
+      host: '10.0.0.5',
+      port: 8443,
+      localProtocolVersion: '1',
+      remoteProtocolVersion: '2',
+    };
+
+    it('surfaces the mismatch only while the affected backend is active', () => {
+      const active = stateWith({ protocolMismatch: PROTOCOL_MISMATCH, activeId: 'remote-1' });
+      expect(selectActiveProtocolMismatch.select(active)).toEqual(PROTOCOL_MISMATCH);
+
+      // Switched back to local: same stored mismatch, but no longer active → hidden.
+      const inactive = stateWith({
+        protocolMismatch: PROTOCOL_MISMATCH,
+        activeId: LOCAL_CONNECTION_ID,
+      });
+      expect(selectActiveProtocolMismatch.select(inactive)).toBeNull();
+    });
+
+    it('shows the modal only when active and not yet dismissed', () => {
+      const shown = stateWith({
+        protocolMismatch: PROTOCOL_MISMATCH,
+        activeId: 'remote-1',
+        protocolMismatchModalDismissed: false,
+      });
+      expect(selectProtocolMismatchModal.select(shown)).toEqual(PROTOCOL_MISMATCH);
+
+      // Dismissed ("continue anyway"): modal hidden, but the menu warning stays.
+      const dismissed = stateWith({
+        protocolMismatch: PROTOCOL_MISMATCH,
+        activeId: 'remote-1',
+        protocolMismatchModalDismissed: true,
+      });
+      expect(selectProtocolMismatchModal.select(dismissed)).toBeNull();
+      expect(selectActiveProtocolMismatch.select(dismissed)).toEqual(PROTOCOL_MISMATCH);
     });
   });
 });

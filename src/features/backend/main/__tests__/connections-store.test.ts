@@ -197,6 +197,45 @@ describe('connections-store', () => {
     expect(labels).toEqual(['A', 'B', 'C']);
   });
 
+  it('records default to a null hostname until one is captured', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    expect(rec.hostname).toBeNull();
+    expect((await store.list())[1].hostname).toBeNull();
+  });
+
+  it('setHostname persists the captured hostname and it round-trips through disk', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.setHostname(rec.id, 'studio.local');
+    await store.__drainWriteChainForTesting();
+
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../connections-store');
+    const remote = (await reloaded.list()).find((c) => c.id === rec.id);
+    expect(remote?.hostname).toBe('studio.local');
+  });
+
+  it('setHostname trims whitespace and ignores an empty hostname (keeps host:port fallback)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+
+    await store.setHostname(rec.id, '  my-mac.local  ');
+    expect((await store.list())[1].hostname).toBe('my-mac.local');
+
+    // A blank capture must not blank out the label.
+    await store.setHostname(rec.id, '   ');
+    expect((await store.list())[1].hostname).toBe('my-mac.local');
+  });
+
+  it('setHostname is a no-op for an unknown id (fail-soft)', async () => {
+    const store = await import('../connections-store');
+    await store.add(sampleConn);
+    await expect(store.setHostname('does-not-exist', 'ghost.local')).resolves.toBeUndefined();
+    expect((await store.list()).some((c) => c.hostname === 'ghost.local')).toBe(false);
+  });
+
   it('malformed JSON on disk yields just the local entry (defensive)', async () => {
     await fs.writeFile(path.join(tmpDir, 'backend-connections.json'), 'not json', 'utf8');
     const store = await import('../connections-store');

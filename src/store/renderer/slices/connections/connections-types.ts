@@ -9,12 +9,17 @@
  * Safe to import from any process.
  */
 
-import type { ConnectionRecord, ConnectionCertMismatchEvent } from '$shared/types/connections';
+import type {
+  ConnectionRecord,
+  ConnectionCertMismatchEvent,
+  ConnectionProtocolMismatchEvent,
+} from '$shared/types/connections';
 
 export type {
   ConnectionRecord,
   ConnectionsListResult,
   ConnectionCertMismatchEvent,
+  ConnectionProtocolMismatchEvent,
 } from '$shared/types/connections';
 
 /**
@@ -43,4 +48,19 @@ export interface ConnectionsState {
    * (no silent re-trust). Cleared once the user dismisses it.
    */
   certMismatch: ConnectionCertMismatchEvent | null;
+  /**
+   * Last protocol-mismatch push (`connections:protocol-mismatch`), or null. A
+   * remote's `protocolVersion` differs in major version from the local
+   * intentd's — warn-but-allow (the connection still proceeds). Kept while the
+   * mismatched backend stays active so the daemon-status menu can show a
+   * persistent warning; selectors gate visibility on the active connection id.
+   */
+  protocolMismatch: ConnectionProtocolMismatchEvent | null;
+  /**
+   * Whether the user has dismissed the advisory protocol-mismatch modal for the
+   * current {@link protocolMismatch}. Reset to `false` on each new push so a
+   * later switch to a mismatched backend shows the modal again; the persistent
+   * menu warning ignores this flag.
+   */
+  protocolMismatchModalDismissed: boolean;
 }
