@@ -13,7 +13,6 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import { selectHudRateHistory } from '$store/renderer/slices/hud/hud-selectors';
-  import { sumHudUsageTotals } from '$store/renderer/slices/hud/hud-slice';
 
   const rateHistory$ = selectHudRateHistory();
 
@@ -58,7 +57,9 @@
       };
       return {
         bucketUtc: sample.bucketUtc,
-        total: sumHudUsageTotals(sample),
+        // Every counter counts toward the bar height — `counts` already covers
+        // all of them, so the stack total is just their sum.
+        total: SEGMENT_KINDS.reduce((sum, kind) => sum + counts[kind], 0),
         segments: SEGMENT_KINDS.filter((kind) => counts[kind] > 0).map((kind) => ({
           kind,
           tokens: counts[kind],
