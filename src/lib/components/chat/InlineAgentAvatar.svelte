@@ -8,7 +8,7 @@
 
   import {
   selectAgentIsResponding,
-  selectAgentIsWaiting,
+  selectAgentIsBlockedWaiting,
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -38,7 +38,8 @@
   // disk restore.
   const agent$ = selectAgentSession(agentId);
   const agentIsResponding$ = selectAgentIsResponding(agentId);
-  const agentIsWaiting$ = selectAgentIsWaiting(agentId);
+  // Hourglass-worthy waits only — tool execution inside a live turn stays running.
+  const agentIsWaiting$ = selectAgentIsBlockedWaiting(agentId);
   const agentData = $derived(getAgentPeekData($agent$));
 
   $effect(() => {

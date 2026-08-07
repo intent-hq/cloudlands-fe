@@ -1,5 +1,6 @@
 import {
   afterEach,
+  beforeEach,
   describe,
   expect,
   it,
@@ -18,10 +19,14 @@ const makeReadable = <T>(value: T) => ({
   },
 });
 
+/** Mutable BE-owned activity flags the avatar-state derivation reads. */
+const agentFlags = vi.hoisted(() => ({ isResponding: false, isBlockedWaiting: false }));
+
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: () => makeReadable(null),
-  selectAgentIsResponding: () => makeReadable(false),
-  selectAgentIsWaiting: () => makeReadable(false),
+  selectAgentIsResponding: () => makeReadable(agentFlags.isResponding),
+  selectAgentIsWaiting: () => makeReadable(agentFlags.isBlockedWaiting),
+  selectAgentIsBlockedWaiting: () => makeReadable(agentFlags.isBlockedWaiting),
   selectAgentSessionStreamingContent: () => makeReadable(''),
   selectAgentSessionHasStreamOwnedMessage: () => makeReadable(false),
   selectAgentProvider: () => makeReadable(undefined),
@@ -58,6 +63,10 @@ import AgentCard from '../AgentCard.svelte';
 import InlineAgentAvatar from '../InlineAgentAvatar.svelte';
 
 describe('isCompleted avatar state wiring', () => {
+  beforeEach(() => {
+    agentFlags.isResponding = false;
+    agentFlags.isBlockedWaiting = false;
+  });
   afterEach(() => cleanup());
 
   it('InlineAgentAvatar renders completed avatar state when isCompleted is true', () => {
@@ -82,5 +91,30 @@ describe('isCompleted avatar state wiring', () => {
     render(AgentCard, { props: { agentId: 'agent-1' } });
 
     expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('idle');
+  });
+
+  it('AgentCard renders running, not completed, for a re-woken completed agent', () => {
+    agentFlags.isResponding = true;
+
+    render(AgentCard, { props: { agentId: 'agent-1', isCompleted: true } });
+
+    expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('running');
+  });
+
+  it('InlineAgentAvatar renders running, not completed, for a re-woken completed agent', () => {
+    agentFlags.isResponding = true;
+
+    render(InlineAgentAvatar, { props: { agentId: 'agent-1', isCompleted: true } });
+
+    expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('running');
+  });
+
+  it('AgentCard renders waiting for a genuinely blocked agent', () => {
+    agentFlags.isResponding = true;
+    agentFlags.isBlockedWaiting = true;
+
+    render(AgentCard, { props: { agentId: 'agent-1' } });
+
+    expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('waiting');
   });
 });

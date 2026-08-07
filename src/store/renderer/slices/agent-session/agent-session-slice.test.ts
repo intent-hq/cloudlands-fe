@@ -34,6 +34,7 @@ import {
   chatSendFailed,
   chatSendStarted,
   chatInitialized,
+  chatQueueProcessingReceived,
   streamEnded,
 } from '../chat-state/chat-state-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
@@ -53,6 +54,7 @@ import {
   selectAgentIsResponding,
   selectAgentIsThinking,
   selectAgentIsWaiting,
+  selectAgentIsBlockedWaiting,
   selectAgentIsWaitingForOtherAgents,
   selectAgentIsRunning,
   selectAllRetainedAgentSessions,
@@ -2872,6 +2874,70 @@ describe('agent-session selectors', () => {
     });
   });
 
+  describe('selectAgentIsBlockedWaiting', () => {
+    it('returns false for a tool wait inside an in-flight responding turn', () => {
+      const session = makeSession('a1', 'ws-1', {
+        status: 'active' as any,
+        isResponding: true,
+        isWaitingOnTool: true,
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsWaiting.select(state, 'a1')).toBe(true);
+      expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(false);
+    });
+
+    it('returns false for a tool wait behind the optimistic send flags', () => {
+      const session = makeSession('a1', 'ws-1', {
+        status: 'active' as any,
+        isStreaming: true,
+        isProcessing: true,
+        isWaitingOnTool: true,
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(false);
+    });
+
+    it('returns true for a tool wait with no live turn behind it', () => {
+      const session = makeSession('a1', 'ws-1', {
+        status: 'active' as any,
+        isWaitingOnTool: true,
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(true);
+    });
+
+    it('returns true for explicit Waiting status even while responding', () => {
+      const session = makeSession('a1', 'ws-1', {
+        status: 'Waiting' as any,
+        isResponding: true,
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(true);
+    });
+
+    it('returns true while paused on peer agents', () => {
+      const session = makeSession('a1', 'ws-1', { isWaitingForOtherAgents: true });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(true);
+    });
+
+    it('returns false for terminal or unknown agents', () => {
+      const session = makeSession('a1', 'ws-1', {
+        status: 'Completed' as any,
+        isWaitingOnTool: true,
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsBlockedWaiting.select(state, 'a1')).toBe(false);
+      expect(selectAgentIsBlockedWaiting.select(state, 'unknown')).toBe(false);
+    });
+  });
+
   describe('selectAgentIsRunning', () => {
     it('returns true for active session lifecycle flags and statuses', () => {
       const activeSessions = [
@@ -3197,6 +3263,45 @@ describe('chatSendStarted — placeholder session (restored workspace regression
 
     expect(state).toBe(initialState);
     expect(state.byAgentId['agent-new']).toBeUndefined();
+  });
+});
+
+describe('chatQueueProcessingReceived — queue-delivery wake opens the turn', () => {
+  it('sets the busy flags on the queue drain start', () => {
+    const existing = makeSession('a1', 'ws-1', {
+      status: 'idle' as any,
+      isProcessing: false,
+      isStreaming: false,
+    });
+    let state = agentSessionReducer(initialState, upsertSession(existing));
+
+    state = agentSessionReducer(state, chatQueueProcessingReceived('a1', 'turn-1'));
+
+    expect(state.byAgentId['a1'].isStreaming).toBe(true);
+    expect(state.byAgentId['a1'].isProcessing).toBe(true);
+    expect(
+      selectAgentIsResponding.select(
+        storeWith({ byAgentId: state.byAgentId as any, agentIdsByWorkspace: {} }),
+        'a1',
+      ),
+    ).toBe(true);
+  });
+
+  it('is a no-op for an unknown agent', () => {
+    const state = agentSessionReducer(initialState, chatQueueProcessingReceived('unknown'));
+
+    expect(state).toBe(initialState);
+  });
+
+  it('is cleared again by the turn-end stream end', () => {
+    const existing = makeSession('a1', 'ws-1', { isProcessing: false, isStreaming: false });
+    let state = agentSessionReducer(initialState, upsertSession(existing));
+    state = agentSessionReducer(state, chatQueueProcessingReceived('a1', 'turn-1'));
+    state = agentSessionReducer(state, streamEnded('a1'));
+
+    expect(state.byAgentId['a1'].isStreaming).toBe(false);
+    expect(state.byAgentId['a1'].isProcessing).toBe(false);
+    expect(state.byAgentId['a1'].isResponding).toBe(false);
   });
 });
 

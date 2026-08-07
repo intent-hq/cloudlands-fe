@@ -104,6 +104,34 @@ function isAgentWaiting(stored: StoredAgentSession): boolean {
 }
 
 /**
+ * Whether the turn is live in the daemon's sense — `isResponding` or the
+ * transient FE-owned send signals. `isWaitingOnTool` is deliberately excluded:
+ * it is the discriminator the blocked-waiting predicate below tests against.
+ */
+function isTurnInFlight(stored: StoredAgentSession): boolean {
+  return (
+    stored.isResponding === true ||
+    stored.isStreaming === true ||
+    stored.isProcessing === true
+  );
+}
+
+/**
+ * Waiting state that genuinely blocks on someone else — the hourglass
+ * indicator. It is the BE-owned waiting signals MINUS tool execution inside a
+ * live turn: `isWaitingOnTool` on an in-flight responding turn is the agent
+ * doing work (running), not a blocked wait, so only an explicit `Waiting`
+ * status, a paused-on-peer-agents wait, or an `isWaitingOnTool` with no live
+ * turn behind it counts here.
+ */
+function isAgentBlockedWaiting(stored: StoredAgentSession): boolean {
+  if (isTerminalAgentStatus(stored.status)) return false;
+  if (stored.status === AgentStatus.Waiting) return true;
+  if (isAgentWaitingForOtherAgents(stored)) return true;
+  return stored.isWaitingOnTool === true && !isTurnInFlight(stored);
+}
+
+/**
  * Active-thread state driven by BE-owned activity flags (PROTOCOL.md §5.5:
  * `isResponding`, `isWaitingOnTool`) plus transient FE-owned signals
  * (optimistic `isStreaming`/`isProcessing` set on send, `ACTIVATING`) and the
@@ -352,6 +380,22 @@ export const selectAgentIsWaiting = store.createSelector(
     const stored = state.agentSessions?.byAgentId[agentId];
     if (!stored) return false;
     return isAgentWaiting(stored) || selectAgentIsWaitingForOtherAgents.select(state, agentId);
+  },
+);
+
+/**
+ * Status-indicator variant of `selectAgentIsWaiting`: true only for waits that
+ * genuinely block on something outside the agent (explicit `Waiting` status,
+ * paused on peer/child agents, or a tool wait with no live turn behind it).
+ * A tool executing inside an in-flight responding turn is active work, so this
+ * returns false there and the surface renders "running" rather than the
+ * hourglass.
+ */
+export const selectAgentIsBlockedWaiting = store.createSelector(
+  (state, agentId: string): boolean => {
+    const stored = state.agentSessions?.byAgentId[agentId];
+    if (!stored) return false;
+    return isAgentBlockedWaiting(stored);
   },
 );
 

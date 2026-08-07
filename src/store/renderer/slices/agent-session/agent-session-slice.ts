@@ -33,6 +33,7 @@ import {
   chatReset,
   chatStreamingReconciled,
   chatInitialized,
+  chatQueueProcessingReceived,
   streamEnded,
   streamFailed,
 } from '../chat-state/chat-state-slice';
@@ -1238,6 +1239,16 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     }),
   )
   .with(chatStreamingReconciled, (state, { payload: { agentId } }) =>
+    updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true }),
+  )
+  // Queue-delivery wake (`agent:queue:processing`, §6.5): the daemon dequeued
+  // an entry and is starting its turn. Unlike a user send (chatSendStarted)
+  // or a harness wake (`agent:stream:start`), nothing else opens the busy
+  // flags for this turn-start shape, so the card stays idle/completed until
+  // the first status-changed lands. Treat it as the turn start it is — the
+  // turn-end clears (streamEnded / agent:idle) close it through the existing
+  // paths.
+  .with(chatQueueProcessingReceived, (state, { payload: [agentId] }) =>
     updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true }),
   )
   .with(chatInitialized, (state, { payload: [agentId, data] }) => {
