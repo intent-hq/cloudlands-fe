@@ -1360,7 +1360,7 @@
   "workspace_remoteSetupSelector_whereRun_description": "既定ではローカルで実行します。エージェントが直接作業するリモートマシンを接続することもできます。",
   "workspace_remoteSetupSelector_whereRun_label": "エージェントをどこで実行しますか？",
   "workspace_remoteSetupSelector_workIn_before": "作業場所:",
-  "workspace_repoAndBranchPicker_cloneRepoAndCreateOffBranch_label": "{repo} をクローンし、{branch} から {isolationLabel} を作成",
+  "workspace_repoAndBranchPicker_cloneRepoAndWorkOffBranch_label": "{repo} をクローンし、{branch} から作業",
   "workspace_repoAndBranchPicker_createNewRepo_label": "新しいリポジトリを作成",
   "workspace_repoAndBranchPicker_repoOffBranch_label": "{repo}（{branch} から）",
   "workspace_repoAndBranchPicker_workDirectly_label": "フォルダーで直接作業",

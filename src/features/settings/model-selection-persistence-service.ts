@@ -29,6 +29,7 @@ import { createLogger } from "$lib/utils/client-logger";
 import {
   reloadModelsForProvider,
   selectModel,
+  setDefaultReasoningEffort,
   setSelectedModel,
 } from "$store/renderer/slices/model/model-slice";
 import { setActiveProvider } from "$store/renderer/slices/provider-settings/provider-settings-slice";
@@ -92,6 +93,12 @@ export function createModelSelectionPersistenceMiddleware(): StoreMiddleware {
         }
         case setSelectedModel.type:
           persist("model.providerDefaults", appStore.state.model.providerModels);
+          break;
+        case setDefaultReasoningEffort.type:
+          persist(
+            "model.defaultReasoningEffort",
+            appStore.state.model.defaultReasoningEffort,
+          );
           break;
       }
     }

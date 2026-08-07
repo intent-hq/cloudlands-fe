@@ -17,8 +17,10 @@ import {
   hydrateModelFallbackInfo,
   hydrateModelPickerCollapsedGroups,
   initialState as bareInitialState,
+  loadDefaultReasoningEffortFromStorage,
   loadProviderModelsFromStorage,
   modelReducer,
+  setDefaultReasoningEffort,
   setModelFallbackInfo,
   setModelPickerGroupCollapsed,
   setAvailableModels,
@@ -54,6 +56,24 @@ const mockModels: AuggieModel[] = [
 describe('modelReducer', () => {
   it('returns the initial state', () => {
     expect(modelReducer(undefined, { type: '@@INIT' })).toEqual(bareInitialState);
+  });
+
+  it('stores and clears the default reasoning effort', () => {
+    expect(bareInitialState.defaultReasoningEffort).toBe('');
+
+    const picked = modelReducer(bareInitialState, setDefaultReasoningEffort('high'));
+    expect(picked.defaultReasoningEffort).toBe('high');
+
+    const cleared = modelReducer(picked, setDefaultReasoningEffort(''));
+    expect(cleared.defaultReasoningEffort).toBe('');
+  });
+
+  it('hydrates the default reasoning effort from the settings catalog', () => {
+    const hydrated = modelReducer(
+      bareInitialState,
+      loadDefaultReasoningEffortFromStorage('medium'),
+    );
+    expect(hydrated.defaultReasoningEffort).toBe('medium');
   });
 
   it('falls back to the first catalog row at hydration when no active provider was mirrored', () => {

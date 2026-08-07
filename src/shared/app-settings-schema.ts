@@ -220,6 +220,18 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'read-only' },
   },
   {
+    path: 'model.defaultReasoningEffort',
+    label: 'Default reasoning effort',
+    description:
+      'Reasoning-effort level applied to new agents that resolve their model from the default-model setting. Empty means unset (the model default).',
+    category: 'agents',
+    type: 'string',
+    source: 'daemon-settings',
+    storageKey: 'model.defaultReasoningEffort',
+    defaultValue: '',
+    apply: { kind: 'daemon-settings-update', path: 'model.defaultReasoningEffort' },
+  },
+  {
     path: 'model.pickerCollapsedGroups',
     label: 'Collapsed model picker groups',
     description: 'Model picker groups the user has collapsed.',

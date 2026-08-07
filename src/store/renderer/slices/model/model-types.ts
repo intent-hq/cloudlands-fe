@@ -34,6 +34,13 @@ export type ModelState = {
   availableModelsProviderId: string;
   loadingState: Record<string, ModelLoadingState>;
   providerModels: Record<string, string>;
+  /**
+   * Reasoning-effort level paired with the default-model setting
+   * (`model.defaultReasoningEffort`, PROTOCOL §5.12). '' means unset — the
+   * daemon then leaves new agents on the model default. The level vocabulary
+   * is provider-owned, so the value is mirrored verbatim.
+   */
+  defaultReasoningEffort: string;
   modelPickerCollapsedGroups: string[];
   fallbackInfoByAgentId: Record<string, ModelFallbackInfo>;
   /**
