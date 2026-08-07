@@ -2,8 +2,11 @@
  * Test: Unread-row activation in ActiveWorkspacesCard.
  *
  * Clicking (or pressing Enter on) an Unread row must navigate AND land on the
- * workspace's first unread agent; rows in the other sections keep plain
- * navigation. `focusFirstUnreadAgent` and `goto` are the seams under assertion.
+ * workspace's unread agent; rows in the other sections keep plain navigation.
+ * `focusFirstUnreadAgent` and `goto` are the seams under assertion.
+ *
+ * The row also passes the workspace's pre-navigation `attention === 'unread'`
+ * state, since viewing the workspace clears the flag (§5.1).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
@@ -83,7 +86,7 @@ describe('ActiveWorkspacesCard unread-row activation', () => {
     focusFirstUnreadAgentMock.mockClear();
   });
 
-  it('focuses the first unread agent when an Unread row is clicked', async () => {
+  it('focuses the unread agent when an Unread row is clicked', async () => {
     renderWith([makeWorkspace('ws-unread', 'Unread WS', { attention: 'unread' })]);
 
     const row = await screen.findByText('Unread WS');
@@ -91,11 +94,11 @@ describe('ActiveWorkspacesCard unread-row activation', () => {
 
     await waitFor(() => {
       expect(gotoMock).toHaveBeenCalledWith('/workspace/ws-unread');
-      expect(focusFirstUnreadAgentMock).toHaveBeenCalledWith('ws-unread');
+      expect(focusFirstUnreadAgentMock).toHaveBeenCalledWith('ws-unread', true);
     });
   });
 
-  it('focuses the first unread agent when Enter activates a highlighted Unread row', async () => {
+  it('focuses the unread agent when Enter activates a highlighted Unread row', async () => {
     const { container } = renderWith([
       makeWorkspace('ws-unread', 'Unread WS', { attention: 'unread' }),
     ]);
@@ -105,7 +108,7 @@ describe('ActiveWorkspacesCard unread-row activation', () => {
 
     await waitFor(() => {
       expect(gotoMock).toHaveBeenCalledWith('/workspace/ws-unread');
-      expect(focusFirstUnreadAgentMock).toHaveBeenCalledWith('ws-unread');
+      expect(focusFirstUnreadAgentMock).toHaveBeenCalledWith('ws-unread', true);
     });
   });
 

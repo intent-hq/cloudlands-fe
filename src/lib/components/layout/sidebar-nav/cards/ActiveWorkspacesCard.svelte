@@ -220,15 +220,20 @@
   }
 
   /**
-   * Unread rows: navigate, then land on the first top-level agent with unread
-   * messages (the helper waits for the navigation-triggered agent load). Falls
-   * back to plain navigation when no foreground agent is unread, and skips the
+   * Unread rows: navigate, then land on the agent the unread badge most likely
+   * refers to (the helper waits for the navigation-triggered agent load). Falls
+   * back to plain navigation when no foreground agent qualifies, and skips the
    * focus entirely for Cmd/Ctrl-click (new window).
+   *
+   * Attention is workspace-level (§5.1) and viewing the workspace clears it via
+   * `workspace.markSeen`, so the flag is read *before* navigating and passed to
+   * the helper — a post-navigation read would race the clear.
    */
   async function handleUnreadClick(workspaceId: string, event?: MouseEvent | KeyboardEvent) {
+    const wasUnread = $workspaceItems.find((w) => w.id === workspaceId)?.attention === 'unread';
     await handleClick(workspaceId, event);
     if (event?.metaKey || event?.ctrlKey) return;
-    focusFirstUnreadAgent(workspaceId);
+    focusFirstUnreadAgent(workspaceId, wasUnread);
   }
 
   function handleMarkAsRead(e: MouseEvent, workspaceId: string) {

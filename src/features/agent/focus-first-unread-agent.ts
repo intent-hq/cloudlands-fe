@@ -1,19 +1,33 @@
 /**
- * Focus a workspace's first unread top-level agent.
+ * Focus the agent a workspace's unread badge most likely refers to.
  *
  * Used by the sidebar Active card's Unread rows: after navigating to
- * `/workspace/{id}`, land on the first foreground agent whose session carries
- * `hasUnread === true` rather than whatever tab the workspace last had active.
- * Ordering is `foregroundAgentIds` order, so the daemon's agent order decides
- * which unread agent wins.
+ * `/workspace/{id}`, land on the agent that plausibly holds the unread message
+ * rather than whatever tab the workspace last had active.
  *
- * NOTE: `AgentSession.hasUnread` is currently never populated — it is not on
- * AgentLite (PROTOCOL §5.5 carries the per-conversation seen marker
- * `metadata.lastSeenMessageId` instead) and nothing derives it client-side, so
- * the predicate is inert today and Unread rows fall back to plain navigation.
- * Tracked in intent-hq/monorepo#1597; once the field (or a projected
- * newest-message id to compare the marker against) exists, this helper's single
- * read is the only seam to re-point.
+ * ## Unread is workspace-level, not per-agent
+ *
+ * The unread signal the user sees is the BE-owned workspace `attention` flag
+ * (`attention === 'unread'`, PROTOCOL §5.1) — the same flag the Unread section
+ * itself filters on. There is no per-agent unread flag on the wire:
+ * `AgentSession.hasUnread` exists in the FE type but is never populated (it is
+ * absent from AgentLite, which carries the per-conversation seen marker
+ * `metadata.lastSeenMessageId` instead), and nothing derives it client-side.
+ *
+ * So this helper mirrors what every other FE surface already does — see
+ * `WorkspaceHoverCard.svelte`, `SpacesSwitcherOverlay.svelte`, and
+ * `WorkspaceTableView.svelte`, which all treat a workspace's member agents as
+ * unread when the workspace flag is raised — and then picks the most plausible
+ * member with a heuristic. It is a heuristic, not an exact answer; narrowing it
+ * to an exact per-agent signal is tracked in intent-hq/monorepo#1597.
+ *
+ * The caller must pass the workspace's `attention === 'unread'` state as
+ * `wasUnread`, captured **before** navigation: viewing a workspace fires
+ * `workspace.markSeen` (fire-and-forget, §5.1) and the resulting
+ * `workspace:attention-changed` clears the flag, so a post-navigation read
+ * would frequently see `none` and the feature would misfire as a race.
+ *
+ * ## Waiting for hydration
  *
  * The agent list is usually not in the store yet at click time — the
  * navigation itself triggers the workspace's agent hydration. Instead of
@@ -47,8 +61,16 @@ function subscribeToStore(listener: () => void): () => void {
 }
 
 /**
- * First foreground agent of `workspaceId` whose session has unread messages,
- * or null when the agents are not loaded yet or none is unread.
+ * The foreground agent most likely holding the workspace's unread message, or
+ * null when the agents are not loaded yet or no agent qualifies.
+ *
+ * Heuristic (see the module doc for why one is needed): the first foreground
+ * agent whose session's newest transcript message is the assistant's
+ * (`lastMessageRole === 'assistant'`, `AgentLite`, PROTOCOL §5.5) — i.e. the
+ * agent spoke last and there is something new for the user to read. Ordering is
+ * `foregroundAgentIds` order, so the daemon's agent order breaks ties. Older
+ * daemons omit the field, in which case nothing qualifies and the caller falls
+ * back to plain navigation.
  */
 export function findFirstUnreadForegroundAgentId(workspaceId: string): string | null {
   const state = appStore.state;
@@ -56,7 +78,7 @@ export function findFirstUnreadForegroundAgentId(workspaceId: string): string | 
     state.workspaceAgents?.byWorkspaceId[workspaceId]?.foregroundAgentIds ?? [];
   const sessions = state.agentSessions?.byAgentId ?? {};
   for (const agentId of foregroundAgentIds) {
-    if (sessions[agentId]?.hasUnread === true) return agentId;
+    if (sessions[agentId]?.lastMessageRole === 'assistant') return agentId;
   }
   return null;
 }
@@ -68,7 +90,7 @@ export function findFirstUnreadForegroundAgentId(workspaceId: string): string | 
  * `agents-seeder`) dispatch `setAgentsLoaded(wsId, true)` *before* `setAgents`
  * and `bulkUpsertSessions`, and the store notifies synchronously per dispatch —
  * so the flag flips while `foregroundAgentIds` and the sessions carrying
- * `hasUnread` are still absent. The watch must therefore also see the
+ * `lastMessageRole` are still absent. The watch must therefore also see the
  * foreground list populated and a session for every foreground agent; until
  * then the only exit is the timeout (which is also what a genuinely
  * agent-less workspace falls back to, dispatching nothing either way).
@@ -85,9 +107,7 @@ function areAgentsLoaded(workspaceId: string): boolean {
 
 /** The workspace's currently selected agent, or null when none is set. */
 function activeAgentIdOf(workspaceId: string): string | null {
-  const activeAgentId =
-    appStore.state.workspaceAgents?.byWorkspaceId[workspaceId]?.activeAgentId ?? null;
-  return activeAgentId === null ? null : String(activeAgentId);
+  return appStore.state.workspaceAgents?.byWorkspaceId[workspaceId]?.activeAgentId ?? null;
 }
 
 function activateAgent(workspaceId: string, agentId: string): void {
@@ -99,16 +119,24 @@ function activateAgent(workspaceId: string, agentId: string): void {
 let cancelPendingWatch: (() => void) | null = null;
 
 /**
- * Activate the workspace's first unread top-level agent, waiting (bounded) for
- * the agent list to hydrate when it is not in the store yet. No-op when the
- * workspace has no unread foreground agent, leaving the current tab in place.
+ * Activate the agent the workspace's unread badge most likely refers to,
+ * waiting (bounded) for the agent list to hydrate when it is not in the store
+ * yet. No-op when no foreground agent qualifies, leaving the current tab in
+ * place.
+ *
+ * `wasUnread` is the workspace's `attention === 'unread'` state read *before*
+ * navigation (see the module doc): `false` short-circuits, so a plain
+ * workspace click never moves the tab.
  */
 export function focusFirstUnreadAgent(
   workspaceId: string,
+  wasUnread: boolean,
   deps: FocusFirstUnreadAgentDeps = {},
 ): void {
   cancelPendingWatch?.();
   cancelPendingWatch = null;
+
+  if (!wasUnread) return;
 
   const immediate = findFirstUnreadForegroundAgentId(workspaceId);
   if (immediate !== null) {
@@ -122,14 +150,24 @@ export function focusFirstUnreadAgent(
   // selection the user made in the meantime. Bail when they navigated away from
   // this workspace, or when an existing agent selection changed under us.
   //
+  // The workspace guard only engages once `activeWorkspaceId` has actually
+  // reached `workspaceId`. The watch arms right after `goto()` is *invoked*,
+  // and `setActiveWorkspaceId(workspaceId)` only lands with the navigation
+  // effect — so until then the store still reports the previous workspace, and
+  // an eager guard would read every emission in that gap as a navigation away
+  // and cancel the watch before hydration ever landed.
+  //
   // The selection guard only applies to a NON-NULL armed selection: hydration
   // itself picks a default agent when none is set (`hydrateWorkspaceAgents` /
   // `agents-seeder`), and that expected default must not read as a takeover.
   // With a selection already in place both hydration paths preserve it, so a
   // change then really is someone else moving the tab.
   const armedActiveAgentId = activeAgentIdOf(workspaceId);
+  let arrived = appStore.state.workspace?.activeWorkspaceId === workspaceId;
   function userTookOver(): boolean {
-    if (appStore.state.workspace?.activeWorkspaceId !== workspaceId) return true;
+    const activeWorkspaceId = appStore.state.workspace?.activeWorkspaceId;
+    if (activeWorkspaceId === workspaceId) arrived = true;
+    else if (arrived) return true;
     if (armedActiveAgentId === null) return false;
     return activeAgentIdOf(workspaceId) !== armedActiveAgentId;
   }
