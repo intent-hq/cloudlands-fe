@@ -1303,6 +1303,7 @@
   "workspace_diskUsagePill_fileCount_one": "1 个文件",
   "workspace_diskUsagePill_fileCount_many": "{count} 个文件",
   "workspace_diskUsagePill_physicalNote_label": "统计已分配的磁盘空间；CoW 克隆共享的数据可能被重复计算。",
+  "workspace_diskUsagePill_physicalNotePlain_label": "统计已分配的磁盘空间。",
   "workspace_diskUsagePill_scopeNote_label": "涵盖整个工作区目录，包括子代理沙盒和工具输出。",
   "workspace_diskUsagePill_shrink_label": "尝试缩减此工作区",
   "workspace_diskUsagePill_shrinkAgent_name": "缩减工作区",
