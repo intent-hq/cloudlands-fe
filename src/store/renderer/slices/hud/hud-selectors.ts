@@ -13,7 +13,7 @@
 import { store } from '../../store';
 import { getItem, getItems } from '$lib/store-shim/utils/collections/collection-utils';
 import type { StoreState } from '../../types';
-import type { HudFeedEntry } from './hud-slice';
+import { sumHudUsageTotals, type HudFeedEntry } from './hud-slice';
 import {
   WORKSPACE_DISPLAY_STATUS_VALUES,
   WorkspaceStatus,
@@ -51,6 +51,16 @@ export const selectHudUsage = store.createSelector((state) => state.hud.usage);
 export const selectHudUsageError = store.createSelector((state) => state.hud.usageError);
 
 export const selectHudRateHistory = store.createSelector((state) => state.hud.rateHistory);
+
+/**
+ * 24h TOKEN BURN total — every `stats.getUsage` counter summed, `thoughtTokens`
+ * included when the daemon reported it (§5.23 omits it when zero). 0 before the
+ * first rollup lands.
+ */
+export const selectHudUsageTotalTokens = store.createSelector((state) => {
+  const totals = state.hud.usage?.totals;
+  return totals ? sumHudUsageTotals(totals) : 0;
+});
 
 /** Last-5-minute averaged per-minute burn (rounded) — the "…/min" readout. */
 export const selectHudBurnRatePerMin = store.createSelector((state) => state.hud.burnRatePerMin);

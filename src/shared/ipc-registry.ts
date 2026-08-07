@@ -178,7 +178,6 @@ export const IPC_CHANNELS = {
   // Auggie Integration
   AUGGIE: {
     CHECK_AVAILABILITY: 'auggie:check-availability',
-    STATUS: 'auggie:status',
     INSTALL: 'auggie:install',
     AUTHENTICATE: 'auggie:authenticate',
     GET_MODELS: 'auggie:get-models',
@@ -853,6 +852,7 @@ export const IPC_CHANNELS = {
     SWITCH: 'connections:switch',
     CHANGED: 'connections:changed',
     CERT_MISMATCH: 'connections:cert-mismatch',
+    PROTOCOL_MISMATCH: 'connections:protocol-mismatch',
   },
 
   // Hardware console (Codex Micro / Creator Micro 2)
@@ -1042,9 +1042,11 @@ export const EVENT_CHANNELS = [
   // Hardware console shutdown handshake (main → renderer)
   'hardware-console:clear-lighting',
   // Multi-backend connect (main → renderer): connections list/active changed,
-  // and a pinned-cert mismatch that must block with a failure modal.
+  // a pinned-cert mismatch that must block with a failure modal, and a
+  // protocol-version mismatch that warns non-blockingly (connect still proceeds).
   'connections:changed',
   'connections:cert-mismatch',
+  'connections:protocol-mismatch',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

@@ -237,10 +237,12 @@ describe('multi-backend connect — end-to-end journey', () => {
     const { mod, captureAndClose, restore } = await loadModule();
     mod.registerBackendHandlers();
 
-    // Boot: only the synthesized local entry exists and it is active.
+    // Boot: only the synthesized local entry exists and it is active. No remote
+    // is connected yet, so there is no sticky protocol mismatch to replay.
     await expect(invoke('connections:list')).resolves.toEqual({
       connections: [expect.objectContaining({ id: 'local', isLocal: true })],
       activeId: 'local',
+      protocolMismatch: null,
     });
 
     // Trust-on-first-use: capture the remote's presented fingerprint.

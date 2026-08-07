@@ -63,19 +63,35 @@ export interface HudFeedEntry {
   displayStatus?: string;
 }
 
-/** The four consumption counters (PROTOCOL §5.36 `UsageTotals`). */
+/** The consumption counters (PROTOCOL §5.36 `UsageTotals`). */
 export interface HudUsageTotals {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
+  /**
+   * Reasoning ("thought") tokens — **omitted when zero or unreported** (§5.23),
+   * so an absent field means no provider broke reasoning out of `outputTokens`.
+   */
+  thoughtTokens?: number;
+}
+
+/** Sum of every consumption counter, thoughts included when reported. */
+export function sumHudUsageTotals(totals: HudUsageTotals): number {
+  return (
+    totals.inputTokens +
+    totals.outputTokens +
+    totals.cacheReadTokens +
+    totals.cacheCreationTokens +
+    (totals.thoughtTokens ?? 0)
+  );
 }
 
 /** One TOK/MIN chart sample — a trailing 24h hourly bucket. */
 export interface HudRateSample {
   /** Local-time hour label (0–23) from `byHourOfDay`. */
   hour: number;
-  /** Sum of the four token counters in the bucket. */
+  /** Sum of the token counters in the bucket. */
   tokens: number;
 }
 
@@ -89,13 +105,16 @@ export interface HudUsageState {
   fetchedAtMs: number;
 }
 
-/** One TOK/MIN chart sample (PROTOCOL §5.39 `RateSample`, counters summed). */
-export interface HudRateHistorySample {
+/**
+ * One TOK/MIN chart sample — the PROTOCOL §5.39 `RateSample` counters kept
+ * per-kind so the chart can stack in/out/thoughts/cached segments. Use
+ * `sumHudUsageTotals` wherever the bucket's single total is needed (bar
+ * normalization, the ÷60 rate labels, the burn average).
+ */
+export type HudRateHistorySample = {
   /** UTC minute floor — wire ISO string, verbatim (`"2026-07-30T14:07:00Z"`). */
   bucketUtc: string;
-  /** Sum of the four token counters in the minute bucket. */
-  tokens: number;
-}
+} & HudUsageTotals;
 
 export interface HudRateHistoryState {
   /** Trailing minute samples, chronological (oldest first), gap-free. */
@@ -121,7 +140,7 @@ export const HUD_BURN_RATE_WINDOW = 5;
 export function computeBurnRatePerMin(samples: readonly HudRateHistorySample[]): number {
   if (samples.length === 0) return 0;
   const window = samples.slice(-HUD_BURN_RATE_WINDOW);
-  const sum = window.reduce((total, sample) => total + sample.tokens, 0);
+  const sum = window.reduce((total, sample) => total + sumHudUsageTotals(sample), 0);
   return Math.round(sum / Math.min(HUD_BURN_RATE_WINDOW, window.length));
 }
 

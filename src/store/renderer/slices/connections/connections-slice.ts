@@ -19,6 +19,7 @@ import type {
   ConnectionsState,
   ConnectionsListResult,
   ConnectionCertMismatchEvent,
+  ConnectionProtocolMismatchEvent,
 } from './connections-types';
 
 // ---------------------------------------------------------------------------
@@ -31,6 +32,8 @@ export const initialState: ConnectionsState = {
   status: 'idle',
   error: null,
   certMismatch: null,
+  protocolMismatch: null,
+  protocolMismatchModalDismissed: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -75,6 +78,24 @@ export const certMismatchReceived = createAction<[event: ConnectionCertMismatchE
 /** User dismissed the cert-mismatch modal. */
 export const certMismatchCleared = createAction('connections/certMismatchCleared');
 
+/**
+ * A `connections:protocol-mismatch` push arrived — a remote's protocolVersion
+ * differs in major version from the local intentd's. Stored so the UI can
+ * surface a non-blocking advisory modal (and a persistent menu warning). Resets
+ * the modal-dismissed flag so the advisory shows for this fresh mismatch.
+ */
+export const protocolMismatchReceived = createAction<[event: ConnectionProtocolMismatchEvent]>(
+  'connections/protocolMismatchReceived',
+);
+
+/**
+ * User dismissed the advisory protocol-mismatch modal ("continue anyway"). The
+ * mismatch state itself is retained for the persistent menu warning.
+ */
+export const protocolMismatchModalDismissed = createAction(
+  'connections/protocolMismatchModalDismissed',
+);
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -97,4 +118,10 @@ export const connectionsReducer = createReducer<ConnectionsState>(initialState)
   })
   .with(certMismatchCleared, (state) => {
     return { ...state, certMismatch: null };
+  })
+  .with(protocolMismatchReceived, (state, { payload: [event] }) => {
+    return { ...state, protocolMismatch: event, protocolMismatchModalDismissed: false };
+  })
+  .with(protocolMismatchModalDismissed, (state) => {
+    return { ...state, protocolMismatchModalDismissed: true };
   });

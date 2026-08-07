@@ -42,6 +42,8 @@ import {
   CHIEF_ACTIVE_AGENT_ID_KEY,
   MULTISELECT_SIDEBAR_TAB_ORDER_KEY,
 } from "../slices/sidebar-nav/sidebar-nav-slice";
+import { connectionsListReceived } from "../slices/connections/connections-slice";
+import { getActiveBackendId, namespaceBackendKey } from "./backend-storage-namespace";
 
 /** Actions whose reducer changes pinnedWorkspaceIds and needs a write-back. */
 const PINNED_WORKSPACES_ACTION_TYPES = new Set<string>([
@@ -90,8 +92,25 @@ const MULTISELECT_TAB_ORDER_ACTION_TYPES = new Set<string>([
   setMultiSelectSidebarTabOrder.type,
 ]);
 
-function loadStoredPinnedWorkspaceIds(): string[] | undefined {
-  const stored = safeLocalStorage.getJSON<unknown>(PINNED_WORKSPACES_KEY);
+// Pinned workspace IDs, the multi-select sidebar tab order, and the chief
+// active agent id all reference backend-specific workspace/agent IDs, so they
+// are namespaced per backend (local keeps the legacy un-prefixed key). The
+// remaining keys (view mode, panel width/item, card-pinned) are global UI
+// preferences shared across backends and stay un-namespaced.
+function pinnedWorkspacesKey(backendId: string): string {
+  return namespaceBackendKey(PINNED_WORKSPACES_KEY, backendId);
+}
+
+function chiefActiveAgentIdKey(backendId: string): string {
+  return namespaceBackendKey(CHIEF_ACTIVE_AGENT_ID_KEY, backendId);
+}
+
+function multiSelectTabOrderKey(backendId: string): string {
+  return namespaceBackendKey(MULTISELECT_SIDEBAR_TAB_ORDER_KEY, backendId);
+}
+
+function loadStoredPinnedWorkspaceIds(backendId: string): string[] | undefined {
+  const stored = safeLocalStorage.getJSON<unknown>(pinnedWorkspacesKey(backendId));
   if (!Array.isArray(stored)) return undefined;
   return stored.filter((id): id is string => typeof id === "string");
 }
@@ -147,20 +166,23 @@ function loadStoredCardPinned(): boolean | undefined {
   return stored;
 }
 
-function loadStoredChiefActiveAgentId(): string | null | undefined {
-  const stored = safeLocalStorage.getJSON<unknown>(CHIEF_ACTIVE_AGENT_ID_KEY);
+function loadStoredChiefActiveAgentId(backendId: string): string | null | undefined {
+  const stored = safeLocalStorage.getJSON<unknown>(chiefActiveAgentIdKey(backendId));
   if (stored !== null && typeof stored !== "string") return undefined;
   return stored;
 }
 
-function loadStoredMultiSelectTabOrder(): string[] | undefined {
-  const stored = safeLocalStorage.getJSON<unknown>(MULTISELECT_SIDEBAR_TAB_ORDER_KEY);
+function loadStoredMultiSelectTabOrder(backendId: string): string[] | undefined {
+  const stored = safeLocalStorage.getJSON<unknown>(multiSelectTabOrderKey(backendId));
   if (!Array.isArray(stored)) return undefined;
   return stored.filter((id): id is string => typeof id === "string");
 }
 
 function persistPinnedWorkspaceIds(state: StoreState): void {
-  safeLocalStorage.setJSON(PINNED_WORKSPACES_KEY, state.sidebarNav.pinnedWorkspaceIds);
+  safeLocalStorage.setJSON(
+    pinnedWorkspacesKey(getActiveBackendId(state)),
+    state.sidebarNav.pinnedWorkspaceIds,
+  );
 }
 
 function persistViewMode(state: StoreState): void {
@@ -180,11 +202,17 @@ function persistCardPinned(state: StoreState): void {
 }
 
 function persistChiefActiveAgentId(state: StoreState): void {
-  safeLocalStorage.setJSON(CHIEF_ACTIVE_AGENT_ID_KEY, state.sidebarNav.chiefActiveAgentId);
+  safeLocalStorage.setJSON(
+    chiefActiveAgentIdKey(getActiveBackendId(state)),
+    state.sidebarNav.chiefActiveAgentId,
+  );
 }
 
 function persistMultiSelectTabOrder(state: StoreState): void {
-  safeLocalStorage.setJSON(MULTISELECT_SIDEBAR_TAB_ORDER_KEY, state.sidebarNav.multiSelectTabOrder);
+  safeLocalStorage.setJSON(
+    multiSelectTabOrderKey(getActiveBackendId(state)),
+    state.sidebarNav.multiSelectTabOrder,
+  );
 }
 
 /**
@@ -195,9 +223,10 @@ function persistMultiSelectTabOrder(state: StoreState): void {
  */
 export function createSidebarNavPersistenceMiddleware(): StoreMiddleware {
   return (api) => {
+    let lastBackendId = getActiveBackendId(api.getState() as StoreState);
     const hydrateData: Parameters<typeof hydrateSidebarNav>[0] = {};
 
-    const pinnedWorkspaceIds = loadStoredPinnedWorkspaceIds();
+    const pinnedWorkspaceIds = loadStoredPinnedWorkspaceIds(lastBackendId);
     if (pinnedWorkspaceIds !== undefined) {
       hydrateData.pinnedWorkspaceIds = pinnedWorkspaceIds;
     }
@@ -222,12 +251,12 @@ export function createSidebarNavPersistenceMiddleware(): StoreMiddleware {
       hydrateData.isCardPinned = cardPinned;
     }
 
-    const chiefActiveAgentId = loadStoredChiefActiveAgentId();
+    const chiefActiveAgentId = loadStoredChiefActiveAgentId(lastBackendId);
     if (chiefActiveAgentId !== undefined) {
       hydrateData.chiefActiveAgentId = chiefActiveAgentId;
     }
 
-    const multiSelectTabOrder = loadStoredMultiSelectTabOrder();
+    const multiSelectTabOrder = loadStoredMultiSelectTabOrder(lastBackendId);
     if (multiSelectTabOrder !== undefined) {
       hydrateData.multiSelectTabOrder = multiSelectTabOrder;
     }
@@ -239,6 +268,23 @@ export function createSidebarNavPersistenceMiddleware(): StoreMiddleware {
     return (next) => (action) => {
       const result = next(action);
       if (action) {
+        // Backend switched: re-hydrate the per-backend keys (pinned
+        // workspaces, multi-select tab order, chief active agent) from the
+        // incoming backend's namespace, resetting to empty where it has none.
+        if (action.type === connectionsListReceived.type) {
+          const nextBackendId = getActiveBackendId(api.getState() as StoreState);
+          if (nextBackendId !== lastBackendId) {
+            lastBackendId = nextBackendId;
+            api.dispatch(
+              hydrateSidebarNav({
+                pinnedWorkspaceIds: loadStoredPinnedWorkspaceIds(nextBackendId) ?? [],
+                chiefActiveAgentId: loadStoredChiefActiveAgentId(nextBackendId) ?? null,
+                multiSelectTabOrder: loadStoredMultiSelectTabOrder(nextBackendId) ?? [],
+              }),
+            );
+          }
+        }
+
         const state = api.getState() as StoreState;
         if (PINNED_WORKSPACES_ACTION_TYPES.has(action.type)) {
           persistPinnedWorkspaceIds(state);

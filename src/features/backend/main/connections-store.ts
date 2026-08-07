@@ -59,6 +59,13 @@ export interface StoredConnection {
   host: string;
   port: number;
   fingerprint: string;
+  /**
+   * Remote machine hostname (from `host.status`), captured on first connect so
+   * the menu can show `hostname (host:port)`. Absent on records written before
+   * this field existed and until the first successful capture — treated as
+   * "unavailable" (the UI falls back to `host:port`).
+   */
+  hostname?: string | null;
   encToken: EncryptedToken;
 }
 
@@ -101,6 +108,7 @@ function toRecord(stored: StoredConnection): ConnectionRecord {
     host: stored.host,
     port: stored.port,
     fingerprint: stored.fingerprint,
+    hostname: stored.hostname ?? null,
     isLocal: false,
   };
 }
@@ -115,6 +123,9 @@ function isStoredConnection(value: unknown): value is StoredConnection {
     typeof c.host === 'string' &&
     typeof c.port === 'number' &&
     typeof c.fingerprint === 'string' &&
+    // `hostname` is an optional late addition: absent on older records, a string
+    // once captured. Accept missing/null/string; reject any other type.
+    (c.hostname === undefined || c.hostname === null || typeof c.hostname === 'string') &&
     !!tok &&
     typeof tok === 'object' &&
     typeof tok.encrypted === 'boolean' &&
@@ -210,6 +221,23 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
     return writeState(state);
   });
   return toRecord(stored);
+}
+
+/**
+ * Persist the captured hostname for a remote connection (from `host.status`).
+ * A no-op for an unknown id (fail-soft: hostname is a display nicety, never a
+ * hard requirement). Empty/whitespace hostnames are ignored so the UI keeps its
+ * `host:port` fallback rather than showing a blank label.
+ */
+export async function setHostname(id: string, hostname: string): Promise<void> {
+  const trimmed = hostname.trim();
+  if (!trimmed) return;
+  await mutate((state) => {
+    const conn = state.connections.find((c) => c.id === id);
+    if (!conn) return; // unknown id: nothing to label
+    conn.hostname = trimmed;
+    return writeState(state);
+  });
 }
 
 /**

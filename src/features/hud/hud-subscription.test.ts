@@ -78,7 +78,7 @@ function makeHudWorkspace(id: string): Workspace {
   } as Workspace;
 }
 
-/** Zeroed §5.36 UsageTotals with overrides. */
+/** Zeroed §5.36 UsageTotals with overrides (`thoughtTokens` omitted at zero). */
 function totals(overrides: Partial<Record<string, number>> = {}) {
   return {
     inputTokens: 0,
@@ -89,10 +89,18 @@ function totals(overrides: Partial<Record<string, number>> = {}) {
   };
 }
 
+/**
+ * Zeroed §5.39 RateSample counters — unlike §5.36 totals these are DENSE, so
+ * `thoughtTokens` is always present (`0` included).
+ */
+function sampleTotals(overrides: Partial<Record<string, number>> = {}) {
+  return { ...totals(), thoughtTokens: 0, ...overrides };
+}
+
 /** PROTOCOL §5.36-shaped stats.getUsage result (arrays elided to shape). */
 function usageResult() {
   return {
-    totals: totals({ inputTokens: 130, outputTokens: 45 }),
+    totals: totals({ inputTokens: 130, outputTokens: 45, thoughtTokens: 20 }),
     runs: 3,
     sessions: 1,
     longestRunMs: 9000,
@@ -104,7 +112,7 @@ function usageResult() {
     ],
     byHourOfDay: Array.from({ length: 24 }, (_, i) => ({
       hour: i,
-      ...totals(i === 23 ? { inputTokens: 130, outputTokens: 45 } : {}),
+      ...totals(i === 23 ? { inputTokens: 130, outputTokens: 45, thoughtTokens: 20 } : {}),
     })),
     byMonth: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, ...totals() })),
     availablePeriods: { months: ['2026-07'], years: ['2026'] },
@@ -116,7 +124,11 @@ function rateHistoryResult() {
   return {
     samples: Array.from({ length: HUD_RATE_HISTORY_LIMIT }, (_, i) => ({
       bucketUtc: `2026-07-30T14:${String(i).padStart(2, '0')}:00Z`,
-      ...totals(i === HUD_RATE_HISTORY_LIMIT - 1 ? { inputTokens: 100, outputTokens: 70 } : {}),
+      ...sampleTotals(
+        i === HUD_RATE_HISTORY_LIMIT - 1
+          ? { inputTokens: 100, outputTokens: 70, thoughtTokens: 15 }
+          : {},
+      ),
     })),
   };
 }
@@ -168,10 +180,11 @@ describe('HUD subscription (mock backend, real store)', () => {
       tzOffsetMinutes: -new Date().getTimezoneOffset(),
     });
     const usage = selectHudUsage.select(appStore.state);
-    expect(usage?.totals).toEqual(totals({ inputTokens: 130, outputTokens: 45 }));
+    expect(usage?.totals).toEqual(totals({ inputTokens: 130, outputTokens: 45, thoughtTokens: 20 }));
     expect(usage?.runs).toBe(3);
     expect(usage?.rateSamples).toHaveLength(24);
-    expect(usage?.rateSamples[23]).toEqual({ hour: 23, tokens: 175 });
+    // 130 + 45 + 20 thoughts — every counter counts toward the hourly bucket.
+    expect(usage?.rateSamples[23]).toEqual({ hour: 23, tokens: 195 });
 
     // The daemon ONLINE signal comes from the daemon-health slice (the
     // middleware's 10s poll) — the HUD adds no system.status fetch of its own.
@@ -242,7 +255,7 @@ describe('HUD subscription (mock backend, real store)', () => {
       expect(history?.samples).toHaveLength(HUD_RATE_HISTORY_LIMIT);
       expect(history?.samples[HUD_RATE_HISTORY_LIMIT - 1]).toEqual({
         bucketUtc: '2026-07-30T14:39:00Z',
-        tokens: 170,
+        ...sampleTotals({ inputTokens: 100, outputTokens: 70, thoughtTokens: 15 }),
       });
 
       await vi.advanceTimersByTimeAsync(HUD_RATE_HISTORY_POLL_MS);

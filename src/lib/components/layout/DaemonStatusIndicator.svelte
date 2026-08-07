@@ -18,6 +18,25 @@
     }
     return `${(bytes / MB).toFixed(1)} MB`;
   }
+
+  /**
+   * Display label for a remote connection (T14): prefer the captured hostname,
+   * rendered as `hostname (host:port)` so the address stays visible for
+   * reconnection, and fall back to the record's raw `label` (`host:port`) when
+   * the hostname is unavailable/empty. The local entry is labeled elsewhere.
+   */
+  export function formatConnectionLabel(conn: {
+    hostname?: string | null;
+    host: string | null;
+    port: number | null;
+    label: string;
+  }): string {
+    const hostname = conn.hostname?.trim();
+    if (hostname && conn.host && conn.port != null) {
+      return `${hostname} (${conn.host}:${conn.port})`;
+    }
+    return conn.label;
+  }
 </script>
 
 <script lang="ts">
@@ -31,7 +50,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
-  import { faPlus, faCheck } from '@fortawesome/free-solid-svg-icons';
+  import { faPlus, faCheck, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -39,6 +58,7 @@
   import Portal from '$lib/components/ui/Portal.svelte';
   import ConnectBackendModal from './ConnectBackendModal.svelte';
   import CertMismatchModal from './CertMismatchModal.svelte';
+  import ProtocolMismatchModal from './ProtocolMismatchModal.svelte';
   import {
     selectDaemonHealth,
     selectDaemonHealthStats,
@@ -55,8 +75,13 @@
     selectConnections,
     selectActiveConnectionId,
     selectConnectionCertMismatch,
+    selectActiveProtocolMismatch,
+    selectProtocolMismatchModal,
   } from '$store/renderer/slices/connections/connections-selectors';
-  import { certMismatchCleared } from '$store/renderer/slices/connections/connections-slice';
+  import {
+    certMismatchCleared,
+    protocolMismatchModalDismissed,
+  } from '$store/renderer/slices/connections/connections-slice';
   import {
     switchConnection,
     forgetConnection,
@@ -73,13 +98,13 @@
   const connections$ = selectConnections();
   const activeConnectionId$ = selectActiveConnectionId();
   const certMismatch$ = selectConnectionCertMismatch();
+  const activeProtocolMismatch$ = selectActiveProtocolMismatch();
+  const protocolMismatchModal$ = selectProtocolMismatchModal();
 
   let dropdownOpen = $state(false);
   let liveUptimeSeconds = $state<number | undefined>(undefined);
   let stopUnslothDialogOpen = $state(false);
   let connectModalOpen = $state(false);
-  // id of the connection whose Switch/Forget submenu is expanded, or null.
-  let expandedConnectionId = $state<string | null>(null);
 
   // Color mapping for health states
   const healthColors: Record<DaemonHealth, string> = {
@@ -197,13 +222,8 @@
     connectModalOpen = true;
   }
 
-  function toggleConnectionMenu(id: string) {
-    expandedConnectionId = expandedConnectionId === id ? null : id;
-  }
-
   async function handleSwitchConnection(id: string) {
     dropdownOpen = false;
-    expandedConnectionId = null;
     try {
       await switchConnection(id);
     } catch {
@@ -213,7 +233,6 @@
   }
 
   async function handleForgetConnection(id: string) {
-    expandedConnectionId = null;
     try {
       await forgetConnection(id);
     } catch {
@@ -242,6 +261,23 @@
       await forgetConnection(id);
     } catch {
       // no-op; refresh via connections:changed.
+    }
+  }
+
+  // --- Protocol-mismatch modal actions (advisory, non-blocking) ----------
+
+  /** "Continue anyway" — keep the connection; the menu warning persists. */
+  function continueWithProtocolMismatch() {
+    appStore.dispatch(protocolMismatchModalDismissed());
+  }
+
+  /** Switch back to the local sidecar from the advisory modal. */
+  async function switchBackFromProtocolMismatch() {
+    continueWithProtocolMismatch();
+    try {
+      await switchConnection(LOCAL_CONNECTION_ID);
+    } catch {
+      // no-op; op-status/error surface via the slice.
     }
   }
 </script>
@@ -519,45 +555,82 @@
           >
           {#each $connections$ as conn (conn.id)}
             {@const isActive = conn.id === $activeConnectionId$}
-            <div>
-              <button
-                class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1.5 transition-colors cursor-pointer flex items-center justify-between gap-2"
-                aria-expanded={expandedConnectionId === conn.id}
-                onclick={() => toggleConnectionMenu(conn.id)}
-              >
-                <span class="truncate">
-                  {conn.isLocal ? m.layout_daemonStatus_localConnection_label() : conn.label}
-                </span>
-                {#if isActive}
-                  <span
-                    class="text-green-500 shrink-0"
-                    aria-label={m.layout_daemonStatus_connectionActive_label()}
-                  >
-                    <Fa icon={faCheck} />
+            <!--
+              Each connection is its own nested dropdown so Switch/Forget pop out
+              as a side flyout (to the left, since this menu sits at the top-right
+              of the title bar) instead of indenting inline. portal={false} keeps
+              the flyout inside this menu's DOM subtree, so a click inside it does
+              not register as "outside" the parent menu and close it.
+            -->
+            <DropdownMenu
+              side="left"
+              align="start"
+              portal={false}
+              class="block w-full"
+              contentClass="min-w-28"
+            >
+              {#snippet trigger({ toggle, open }: { toggle: () => void; open: boolean })}
+                <button
+                  class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1.5 transition-colors cursor-pointer flex items-center justify-between gap-2"
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                  onclick={toggle}
+                >
+                  <span class="truncate">
+                    {conn.isLocal
+                      ? m.layout_daemonStatus_localConnection_label()
+                      : formatConnectionLabel(conn)}
                   </span>
-                {/if}
-              </button>
+                  <span class="flex items-center gap-1.5 shrink-0">
+                    {#if $activeProtocolMismatch$?.id === conn.id}
+                      <Tooltip side="left">
+                        {#snippet content()}
+                          <span>{m.layout_daemonStatus_protocolMismatch_tooltip()}</span>
+                        {/snippet}
+                        <span
+                          class="text-yellow-600 dark:text-yellow-500"
+                          aria-label={m.layout_daemonStatus_protocolMismatch_ariaLabel()}
+                        >
+                          <Fa icon={faTriangleExclamation} />
+                        </span>
+                      </Tooltip>
+                    {/if}
+                    {#if isActive}
+                      <span
+                        class="text-green-500"
+                        aria-label={m.layout_daemonStatus_connectionActive_label()}
+                      >
+                        <Fa icon={faCheck} />
+                      </span>
+                    {/if}
+                  </span>
+                </button>
+              {/snippet}
 
-              {#if expandedConnectionId === conn.id}
-                <div class="pl-3 pb-0.5 flex flex-col">
+              {#snippet content({ close }: { close: () => void })}
+                <button
+                  class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                  disabled={isActive}
+                  onclick={() => {
+                    close();
+                    handleSwitchConnection(conn.id);
+                  }}
+                >
+                  {m.layout_daemonStatus_switch_action()}
+                </button>
+                {#if !conn.isLocal}
                   <button
-                    class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
-                    disabled={isActive}
-                    onclick={() => handleSwitchConnection(conn.id)}
+                    class="w-full text-left text-xs text-red-500 hover:bg-muted/50 rounded px-2 py-1 transition-colors cursor-pointer"
+                    onclick={() => {
+                      close();
+                      handleForgetConnection(conn.id);
+                    }}
                   >
-                    {m.layout_daemonStatus_switch_action()}
+                    {m.layout_daemonStatus_forget_action()}
                   </button>
-                  {#if !conn.isLocal}
-                    <button
-                      class="w-full text-left text-xs text-red-500 hover:bg-muted/50 rounded px-2 py-1 transition-colors cursor-pointer"
-                      onclick={() => handleForgetConnection(conn.id)}
-                    >
-                      {m.layout_daemonStatus_forget_action()}
-                    </button>
-                  {/if}
-                </div>
-              {/if}
-            </div>
+                {/if}
+              {/snippet}
+            </DropdownMenu>
           {/each}
         {/if}
       </div>
@@ -598,6 +671,21 @@
       onSwitchBack={switchBackToLocal}
       onForget={forgetMismatchedConnection}
       onDismiss={dismissCertMismatch}
+    />
+  </Portal>
+{/if}
+
+<!--
+  Protocol-mismatch advisory modal — driven by connections:protocol-mismatch.
+  Non-blocking: the connection is already live; a persistent menu warning
+  remains after "continue anyway" dismisses this.
+-->
+{#if $protocolMismatchModal$}
+  <Portal target="body" zIndex={100}>
+    <ProtocolMismatchModal
+      event={$protocolMismatchModal$}
+      onSwitchBack={switchBackFromProtocolMismatch}
+      onContinue={continueWithProtocolMismatch}
     />
   </Portal>
 {/if}

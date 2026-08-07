@@ -42,6 +42,7 @@ function buildLoadingState(
     retryAttempt?: number;
     error?: string;
     warning?: string;
+    stale?: boolean;
   },
 ): ModelLoadingState {
   const nextState: ModelLoadingState = {
@@ -62,6 +63,17 @@ function buildLoadingState(
         : (updates.warning ?? previous?.warning);
   if (warning !== undefined) {
     nextState.warning = warning;
+  }
+
+  // `stale` qualifies `warning`, so it follows the same lifecycle.
+  const stale =
+    updates.status === 'success'
+      ? updates.stale
+      : updates.status === 'error'
+        ? undefined
+        : (updates.stale ?? previous?.stale);
+  if (stale !== undefined) {
+    nextState.stale = stale;
   }
 
   return nextState;
@@ -102,6 +114,7 @@ export const setLoadingStateForProvider = createAction<
       retryAttempt?: number;
       error?: string;
       warning?: string;
+      stale?: boolean;
     },
   ]
 >('model/setLoadingStateForProvider');
@@ -253,7 +266,7 @@ export const modelReducer = createReducer<ModelState>(initialState)
   }))
   .with(
     setLoadingStateForProvider,
-    (state, { payload: [{ providerId, status, retryAttempt, error, warning }] }) => ({
+    (state, { payload: [{ providerId, status, retryAttempt, error, warning, stale }] }) => ({
       ...state,
       loadingState: {
         ...state.loadingState,
@@ -262,6 +275,7 @@ export const modelReducer = createReducer<ModelState>(initialState)
           retryAttempt,
           error,
           warning,
+          stale,
         }),
       },
     }),

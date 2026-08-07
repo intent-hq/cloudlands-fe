@@ -628,6 +628,27 @@ describe('DaemonStatusIndicator', () => {
       expect(remoteIdx).toBeGreaterThan(localIdx);
     });
 
+    it('renders each connection as a submenu trigger (side flyout, not inline)', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      // The row is a submenu trigger: collapsed with menu-popup semantics, and no
+      // Switch/Forget rendered until it is opened (no inline expansion).
+      const remoteRow = screen.getByText('desk:4180').closest('button');
+      expect(remoteRow?.getAttribute('aria-haspopup')).toBe('menu');
+      expect(remoteRow?.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.queryByText('Switch')).toBeNull();
+
+      // Opening the row flips aria-expanded and reveals the flyout actions.
+      await fireEvent.click(remoteRow!);
+      expect(remoteRow?.getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByText('Switch')).toBeTruthy();
+      expect(screen.getByText('Forget')).toBeTruthy();
+    });
+
     it('expands local to Switch only (Forget hidden); remote to Switch + Forget', async () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
 
@@ -698,6 +719,68 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.getByRole('heading', { name: 'Connect to another intentd' })).toBeTruthy();
       expect(screen.getByLabelText('Host')).toBeTruthy();
       expect(screen.getByLabelText('Access token')).toBeTruthy();
+    });
+  });
+
+  describe('connection label (hostname)', () => {
+    it('formatConnectionLabel renders hostname (host:port) when a hostname is captured', async () => {
+      const { formatConnectionLabel } = await import('./DaemonStatusIndicator.svelte');
+      expect(
+        formatConnectionLabel({
+          hostname: 'studio.local',
+          host: '10.0.0.2',
+          port: 4180,
+          label: '10.0.0.2:4180',
+        }),
+      ).toBe('studio.local (10.0.0.2:4180)');
+    });
+
+    it('formatConnectionLabel falls back to host:port when hostname is missing/empty', async () => {
+      const { formatConnectionLabel } = await import('./DaemonStatusIndicator.svelte');
+      const base = { host: '10.0.0.2', port: 4180, label: '10.0.0.2:4180' };
+      expect(formatConnectionLabel({ ...base })).toBe('10.0.0.2:4180');
+      expect(formatConnectionLabel({ ...base, hostname: null })).toBe('10.0.0.2:4180');
+      expect(formatConnectionLabel({ ...base, hostname: '   ' })).toBe('10.0.0.2:4180');
+    });
+
+    it('renders a remote as "hostname (host:port)" in the menu once labeled', async () => {
+      const remoteWithHostname = {
+        id: 'r1',
+        label: '10.0.0.2:4180',
+        host: '10.0.0.2',
+        port: 4180,
+        fingerprint: 'AA:BB',
+        hostname: 'studio.local',
+        isLocal: false,
+      };
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: {
+            clients: 1,
+            agents: 0,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
+        connections: {
+          connections: [remoteWithHostname],
+          activeId: 'local',
+          status: 'idle',
+          error: null,
+          certMismatch: null,
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      expect(screen.getByText('studio.local (10.0.0.2:4180)')).toBeTruthy();
     });
   });
 
