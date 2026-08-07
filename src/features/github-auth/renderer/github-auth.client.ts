@@ -116,22 +116,21 @@ export const githubAuthClient = {
   },
 
   /**
-   * Global GitHub repository search. Returns `[]` on error so callers can
-   * render a safe empty state; the saga consumer wraps this with its own
-   * loading/error slice so the UI still surfaces failures.
+   * Global GitHub repository search. Returns the seam envelope so the caller
+   * can tell a genuinely empty result set apart from a daemon/IPC failure and
+   * surface the error in its own loading/error state; a thrown transport error
+   * is normalized into an unsuccessful envelope.
    */
-  async searchRepos(query: string): Promise<GithubRepo[]> {
+  async searchRepos(
+    query: string,
+  ): Promise<{ success: boolean; data?: GithubRepo[]; error?: string }> {
     try {
-      const result = await invoke<{ success: boolean; data?: GithubRepo[]; error?: string }>(
+      return await invoke<{ success: boolean; data?: GithubRepo[]; error?: string }>(
         GITHUB_AUTH_CHANNELS.SEARCH_REPOS,
         { query },
       );
-      if (result.success && result.data) {
-        return result.data;
-      }
-      return [];
-    } catch {
-      return [];
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   },
 };
