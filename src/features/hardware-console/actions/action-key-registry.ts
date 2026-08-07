@@ -242,6 +242,7 @@ const lastCycledAgentByAction = new Map<ActionKeyActionId, string>();
 /** Reset the cycle cursors (test isolation). */
 export function resetActionKeyCycleCursors(): void {
   lastCycledAgentByAction.clear();
+  layoutPresetCursor.clear();
 }
 
 /** One entry of the global cross-workspace cycle family. */

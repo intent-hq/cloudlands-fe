@@ -1011,9 +1011,23 @@ describe('execute dispatch', () => {
     });
     const presets = applyContentPresetMock.mock.calls.map(([presetId]) => presetId);
     expect(presets).toEqual(['planning', 'agents-row']);
+    expect(applyContentPresetMock.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ workspaceId: 'ws-1' }),
+    );
     expect(applyContentPresetMock.mock.calls[0][2]).toEqual(
       expect.objectContaining({ workspaceId: 'ws-1' }),
     );
+  });
+
+  it('switch-window-layouts catches and logs a rejected preset application', async () => {
+    const applyContentPresetMock = applyContentPreset as ReturnType<typeof vi.fn>;
+    applyContentPresetMock.mockClear();
+    applyContentPresetMock.mockRejectedValueOnce(new Error('boom'));
+    const { context } = makeContext(makeState());
+    expect(() => getActionKeyDefinition('switch-window-layouts').execute(context)).not.toThrow();
+    await vi.waitFor(() => {
+      expect(applyContentPresetMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('none executes as a no-op', () => {
