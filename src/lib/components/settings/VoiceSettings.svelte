@@ -334,6 +334,11 @@
               <div class="flex items-center gap-2">
                 <Input
                   type="password"
+                  autocomplete="off"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
+                  data-form-type="other"
                   bind:value={apiKeyDraft}
                   placeholder={KEY_PLACEHOLDERS[target]}
                   class="h-7 text-xs flex-1"

@@ -311,6 +311,11 @@ interface Props {
                     <div class="mt-1">
                       <Input
                         type="password"
+                        autocomplete="off"
+                        data-1p-ignore="true"
+                        data-lpignore="true"
+                        data-bwignore="true"
+                        data-form-type="other"
                         bind:value={password}
                         placeholder="••••••••"
                         class="h-8"

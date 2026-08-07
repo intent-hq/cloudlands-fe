@@ -2233,6 +2233,11 @@
                   />
                   <input
                     type="password"
+                    autocomplete="off"
+                    data-1p-ignore="true"
+                    data-lpignore="true"
+                    data-bwignore="true"
+                    data-form-type="other"
                     class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:opacity-40"
                     placeholder={m.workspace_issueSuggestions_apiToken_placeholder()}
                     bind:value={sentryToken}

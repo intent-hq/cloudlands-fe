@@ -171,6 +171,11 @@
       <Input
         id="sentry-token"
         type="password"
+        autocomplete="off"
+        data-1p-ignore="true"
+        data-lpignore="true"
+        data-bwignore="true"
+        data-form-type="other"
         bind:value={sentryToken}
         placeholder={'sntrys_...' /* i18n-ignore (token format) */}
         disabled={$storeIsConnecting$}

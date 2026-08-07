@@ -131,6 +131,11 @@
           bind:value={sentryToken}
           placeholder={m.workspace_sentryPicker_authToken_placeholder()}
           type="password"
+          autocomplete="off"
+          data-1p-ignore="true"
+          data-lpignore="true"
+          data-bwignore="true"
+          data-form-type="other"
           class="h-9"
         />
         <div class="flex gap-2">

@@ -154,6 +154,11 @@
           bind:this={inputRef}
           bind:value={inputValue}
           type="password"
+          autocomplete="off"
+          data-1p-ignore="true"
+          data-lpignore="true"
+          data-bwignore="true"
+          data-form-type="other"
           placeholder={m.modals_featureCode_code_placeholder()}
           onkeydown={handleKeydown}
           class="w-full px-3 py-2 bg-background border border-border rounded text-foreground focus:outline-none focus:border-primary"
