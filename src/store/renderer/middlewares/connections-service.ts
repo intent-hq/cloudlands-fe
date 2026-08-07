@@ -23,6 +23,7 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   CONNECTIONS_CHANGED_EVENT,
   CONNECTION_CERT_MISMATCH_EVENT,
+  CONNECTION_PROTOCOL_MISMATCH_EVENT,
 } from '$shared/types/connections';
 import type {
   ConnectionsListResult,
@@ -35,6 +36,7 @@ import type {
   SwitchConnectionParams,
   ConnectionsChangedEvent,
   ConnectionCertMismatchEvent,
+  ConnectionProtocolMismatchEvent,
 } from '$shared/types/connections';
 import {
   connectionsListReceived,
@@ -42,6 +44,7 @@ import {
   connectOperationSettled,
   connectOperationFailed,
   certMismatchReceived,
+  protocolMismatchReceived,
 } from '$store/renderer/slices/connections/connections-slice';
 
 // Group alias (`const CONNECTIONS = IPC_CHANNELS.CONNECTIONS`) — the same idiom
@@ -52,6 +55,7 @@ const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 let booted = false;
 let changedListener: ((payload: ConnectionsChangedEvent) => void) | null = null;
 let certMismatchListener: ((payload: ConnectionCertMismatchEvent) => void) | null = null;
+let protocolMismatchListener: ((payload: ConnectionProtocolMismatchEvent) => void) | null = null;
 
 /** Resolve the Electron preload bridge, or undefined outside Electron. */
 function getApi(): Window['electronAPI'] | undefined {
@@ -72,6 +76,16 @@ export async function loadConnections(): Promise<void> {
   if (!api) throw new Error('electronAPI is not available');
   const result = (await api.invoke(CONNECTIONS.LIST)) as ConnectionsListResult;
   appStore.dispatch(connectionsListReceived(result));
+  // Replay a sticky protocol mismatch latched in main (cloudlands-fe#823): a
+  // renderer created by a backend switch may register its
+  // `connections:protocol-mismatch` listener AFTER the one-shot broadcast fired,
+  // so the advisory arrives here on the initial list fetch instead. Only the
+  // boot-time fetch replays it — `connections:changed` pushes route through
+  // `changedListener` (list refresh only) so a benign mutation (e.g. a hostname
+  // label upgrade) never re-pops a modal the user already dismissed.
+  if (result.protocolMismatch) {
+    appStore.dispatch(protocolMismatchReceived(result.protocolMismatch));
+  }
 }
 
 /**
@@ -167,6 +181,13 @@ function boot(): void {
   };
   api.on(CONNECTION_CERT_MISMATCH_EVENT, certMismatchListener);
 
+  // A remote's protocol major differs from local — surface a non-blocking
+  // advisory (modal + persistent menu warning). The connection still proceeds.
+  protocolMismatchListener = (payload: ConnectionProtocolMismatchEvent) => {
+    appStore.dispatch(protocolMismatchReceived(payload));
+  };
+  api.on(CONNECTION_PROTOCOL_MISMATCH_EVENT, protocolMismatchListener);
+
   // Fetch the initial list. Push events + a later action converge the state if
   // the bridge is not ready yet.
   void loadConnections().catch(() => {
@@ -194,8 +215,11 @@ export function disposeConnectionsService(): void {
   if (api) {
     if (changedListener) api.off(CONNECTIONS_CHANGED_EVENT, changedListener);
     if (certMismatchListener) api.off(CONNECTION_CERT_MISMATCH_EVENT, certMismatchListener);
+    if (protocolMismatchListener)
+      api.off(CONNECTION_PROTOCOL_MISMATCH_EVENT, protocolMismatchListener);
   }
   changedListener = null;
   certMismatchListener = null;
+  protocolMismatchListener = null;
   booted = false;
 }

@@ -32,3 +32,26 @@ export const selectConnectionError = store.createSelector((state) => state.conne
 export const selectConnectionCertMismatch = store.createSelector(
   (state) => state.connections.certMismatch,
 );
+
+/**
+ * Protocol mismatch for the CURRENTLY-ACTIVE backend, or null. Gated on the
+ * active connection id so switching back to local (or to a compatible remote)
+ * hides the warning without an explicit clear. Drives the persistent
+ * daemon-status menu warning.
+ */
+export const selectActiveProtocolMismatch = store.createSelector((state) => {
+  const { protocolMismatch, activeId } = state.connections;
+  return protocolMismatch && protocolMismatch.id === activeId ? protocolMismatch : null;
+});
+
+/**
+ * Protocol mismatch that should surface the advisory modal, or null. Same
+ * active-id gating as {@link selectActiveProtocolMismatch}, plus the modal must
+ * not have been dismissed for this mismatch (warn-but-allow — dismissing keeps
+ * the connection and the persistent menu warning).
+ */
+export const selectProtocolMismatchModal = store.createSelector((state) => {
+  const { protocolMismatch, activeId, protocolMismatchModalDismissed } = state.connections;
+  if (!protocolMismatch || protocolMismatch.id !== activeId) return null;
+  return protocolMismatchModalDismissed ? null : protocolMismatch;
+});
