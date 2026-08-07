@@ -21,6 +21,12 @@ vi.mock('../../backend/main/backend.ipc', () => ({
   // RESUB-1: ensureSubscription installs a reconnect listener; these tests
   // do not exercise reconnect so the mock is a no-op disposer.
   onBackendReconnected: vi.fn(() => () => {}),
+  // T9: the notification listener registers on the stable forwarder now. Pipe
+  // it onto the same fake client `emitEvent` drives so delivery still works.
+  onBackendNotification: (handler: (n: unknown) => void) => {
+    fakeClient.on('notification', handler);
+    return () => fakeClient.off('notification', handler);
+  },
 }));
 
 vi.mock('../../../shared/logger', () => ({
@@ -124,12 +130,15 @@ describe('ScriptProcessManager daemon integration', () => {
       restartCount: 0,
     });
 
-    expect(stateCb).toHaveBeenLastCalledWith('script-1', expect.objectContaining({
-      status: 'running',
-      pid: 4242,
-      startedAt: '2026-01-01T00:00:01Z',
-      restartCount: 0,
-    }));
+    expect(stateCb).toHaveBeenLastCalledWith(
+      'script-1',
+      expect.objectContaining({
+        status: 'running',
+        pid: 4242,
+        startedAt: '2026-01-01T00:00:01Z',
+        restartCount: 0,
+      }),
+    );
     expect(manager.getState('script-1')?.status).toBe('running');
   });
 

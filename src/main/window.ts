@@ -1,21 +1,13 @@
 import path from 'path';
-import {
-  app,
-  screen,
-  nativeTheme,
-  nativeImage,
-  BrowserWindow,
-} from 'electron';
+import { app, screen, nativeTheme, nativeImage, BrowserWindow } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 import fs from 'fs';
 import fsAsync from 'fs/promises';
 import { Logger } from '../shared/logger';
 import { resolveAppTitle } from './utils/resolve-app-title';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
-import {
-  getMainWindow,
-  setMainWindow,
-} from './state';
+import { getMainWindow, setMainWindow } from './state';
+import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -176,17 +168,61 @@ function buildLoadUrl(route: string = '/'): string {
   return `app://workspaces${route}`;
 }
 
-
 // ---- Window Session Persistence ----
-// Saves and restores window sessions so the app reopens with the same workspaces/windows.
+// Saves and restores window sessions so the app reopens with the same
+// workspaces/windows. Sessions are keyed by the active backend id (T2's
+// connections store), so each backend restores its own window layout on switch.
 
 export interface WindowSession {
   route: string;
   bounds: { x: number; y: number; width: number; height: number };
 }
 
+/**
+ * On-disk shape of window-sessions.json: a map from backend id (see T2's
+ * connections store) to that backend's saved window layout. Legacy files hold
+ * a bare `WindowSession[]` — that shape is migrated into the `local` bucket on
+ * read (see `readSessionsMap`).
+ */
+export type WindowSessionsMap = Record<string, WindowSession[]>;
+
+/** Max windows restored per backend, guarding against a corrupted sessions file. */
+const MAX_SESSIONS_PER_BACKEND = 20;
+
 export function getWindowSessionsPath(): string {
   return path.join(app.getPath('userData'), 'window-sessions.json');
+}
+
+/**
+ * Read the raw sessions file and normalize it into a backend-keyed map.
+ *
+ * Migration: a legacy top-level array (the pre-multi-backend global sessions
+ * list) is folded into the `local` backend id so existing single-backend users
+ * keep their layout on first run after upgrade. A malformed/absent file yields
+ * an empty map.
+ */
+function readSessionsMap(): WindowSessionsMap {
+  try {
+    const sessionsPath = getWindowSessionsPath();
+    if (!fs.existsSync(sessionsPath)) return {};
+    const data = JSON.parse(fs.readFileSync(sessionsPath, 'utf-8'));
+    if (Array.isArray(data)) {
+      // Legacy global sessions → migrate under the local backend id.
+      return { [LOCAL_CONNECTION_ID]: data.filter(isValidWindowSession) };
+    }
+    if (data && typeof data === 'object') {
+      const map: WindowSessionsMap = {};
+      for (const [backendId, sessions] of Object.entries(data)) {
+        if (Array.isArray(sessions)) {
+          map[backendId] = sessions.filter(isValidWindowSession);
+        }
+      }
+      return map;
+    }
+  } catch (err) {
+    logger.warn('Failed to read window sessions map:', err);
+  }
+  return {};
 }
 
 // In-memory snapshot of the most recent non-empty sessions list. Used as a
@@ -244,7 +280,7 @@ export function captureWindowSessionsSnapshot(): void {
   }
 }
 
-export async function saveWindowSessions(): Promise<void> {
+export async function saveWindowSessions(backendId: string = LOCAL_CONNECTION_ID): Promise<void> {
   try {
     let sessions = buildSessionsFromOpenWindows();
 
@@ -260,10 +296,14 @@ export async function saveWindowSessions(): Promise<void> {
       });
     }
 
-    const sessionsPath = getWindowSessionsPath();
     if (sessions.length > 0) {
-      await fsAsync.writeFile(sessionsPath, JSON.stringify(sessions), 'utf-8');
+      // Read-modify-write the backend-keyed map so saving one backend's layout
+      // never clobbers another backend's saved sessions.
+      const map = readSessionsMap();
+      map[backendId] = sessions;
+      await fsAsync.writeFile(getWindowSessionsPath(), JSON.stringify(map), 'utf-8');
       logger.debug('Saved window sessions', {
+        backendId,
         count: sessions.length,
         routes: sessions.map((s) => s.route),
       });
@@ -309,20 +349,20 @@ export function isValidWindowSession(s: unknown): s is WindowSession {
   );
 }
 
-export function loadWindowSessions(): WindowSession[] | null {
+export function loadWindowSessions(
+  backendId: string = LOCAL_CONNECTION_ID,
+): WindowSession[] | null {
   try {
-    const sessionsPath = getWindowSessionsPath();
-    if (fs.existsSync(sessionsPath)) {
-      const data = JSON.parse(fs.readFileSync(sessionsPath, 'utf-8'));
-      if (Array.isArray(data) && data.length > 0) {
-        const valid = data.filter(isValidWindowSession);
-        if (valid.length > 0) {
-          // Cap at 20 windows to guard against corrupted sessions file
-          const capped = valid.slice(0, 20);
-          logger.info('Loaded window sessions', { count: capped.length, total: valid.length });
-          return capped;
-        }
-      }
+    const valid = readSessionsMap()[backendId];
+    if (valid && valid.length > 0) {
+      // Cap per backend to guard against a corrupted sessions file.
+      const capped = valid.slice(0, MAX_SESSIONS_PER_BACKEND);
+      logger.info('Loaded window sessions', {
+        backendId,
+        count: capped.length,
+        total: valid.length,
+      });
+      return capped;
     }
   } catch (err) {
     logger.warn('Failed to load window sessions:', err);
@@ -393,6 +433,61 @@ export function createWindowForSession(session: WindowSession, setAsMain: boolea
   logger.info('Restored session window', { route: session.route, isMain: setAsMain });
 }
 
+/**
+ * Backend-switch window hook — capture + teardown half (consumed by T3's
+ * switch orchestration).
+ *
+ * Persists the currently-open workspace/HUD windows under `fromBackendId` (so
+ * switching back restores them), then tears them all down. Split from
+ * `restoreWindowsForBackend` so the orchestrator can dispose the old client,
+ * connect the new one, and flip the active id in between — the windows it later
+ * restores then hit the NEW daemon.
+ *
+ * Windows are `destroy()`ed, not `close()`d, so the graceful close-snapshot /
+ * debounced-save handlers can't race a stale layout back into the wrong
+ * backend's bucket.
+ */
+export async function captureAndCloseWindowsForBackendSwitch(fromBackendId: string): Promise<void> {
+  // Persist the outgoing backend's layout while its windows are still live.
+  await saveWindowSessions(fromBackendId);
+  // That capture belongs to fromBackendId; wipe the id-agnostic snapshot cache
+  // so a later save for the incoming backend can't resurrect it.
+  clearWindowSessionsSnapshot();
+
+  // Tear down every workspace/HUD window.
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed()) w.destroy();
+  }
+  setMainWindow(null);
+}
+
+/**
+ * Backend-switch window hook — restore half (consumed by T3's switch
+ * orchestration).
+ *
+ * Restores `toBackendId`'s saved window layout, or opens one fresh default
+ * window when that backend has no saved sessions. Call AFTER the new client is
+ * connected and the active id has been flipped, so restored windows load
+ * against the incoming daemon.
+ */
+export function restoreWindowsForBackend(toBackendId: string): void {
+  const savedSessions = loadWindowSessions(toBackendId);
+  if (savedSessions && savedSessions.length > 0) {
+    logger.info('Restoring window sessions for backend switch', {
+      backendId: toBackendId,
+      count: savedSessions.length,
+    });
+    for (let i = 0; i < savedSessions.length; i++) {
+      createWindowForSession(savedSessions[i], i === 0);
+    }
+  } else {
+    logger.info('No saved sessions for backend; opening a fresh window', {
+      backendId: toBackendId,
+    });
+    createWindow();
+  }
+}
+
 export function createWindow() {
   const iconPath = resolveIcon(true);
   const { workArea } = screen.getPrimaryDisplay();
@@ -405,7 +500,12 @@ export function createWindow() {
     height?: number;
   }
 
-  let windowBounds = { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height };
+  let windowBounds = {
+    x: workArea.x,
+    y: workArea.y,
+    width: workArea.width,
+    height: workArea.height,
+  };
 
   const savedBoundsPath = path.join(app.getPath('userData'), 'window-bounds.json');
   try {
@@ -506,7 +606,10 @@ export function createWindow() {
  * Create deep links are sent to the existing window unless newWindow=true.
  * All other deep link types create a new window.
  */
-export async function createWindowForDeepLink(deepLinkUrl: string, deepLinkHandler: DeepLinkHandler) {
+export async function createWindowForDeepLink(
+  deepLinkUrl: string,
+  deepLinkHandler: DeepLinkHandler,
+) {
   logger.info('Creating window for deep link:', { url: deepLinkUrl });
 
   // Parse the deep link to extract action and params
@@ -543,9 +646,7 @@ export async function createWindowForDeepLink(deepLinkUrl: string, deepLinkHandl
   const { workArea } = screen.getPrimaryDisplay();
   const bounds = { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height };
 
-  const newWindow = new BrowserWindow(
-    buildWindowOptions({ bounds, title: resolveAppTitle() }),
-  );
+  const newWindow = new BrowserWindow(buildWindowOptions({ bounds, title: resolveAppTitle() }));
   forwardRendererConsoleToMainLog(newWindow);
 
   const encodedAction = encodeURIComponent(JSON.stringify(action));

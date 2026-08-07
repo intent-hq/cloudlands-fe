@@ -1,13 +1,5 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-  type Mock,
-} from "vitest";
-import { REDUX_DEBUG_LS_KEY } from "./constants";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { REDUX_DEBUG_LS_KEY } from './constants';
 
 const mocks = vi.hoisted(() => {
   const createPassthroughMiddleware = () => {
@@ -37,6 +29,7 @@ const mocks = vi.hoisted(() => {
   const voiceTranscriptionMiddleware = createPassthroughMiddleware();
   const voiceSettingsMiddleware = createPassthroughMiddleware();
   const daemonHealthMiddleware = createPassthroughMiddleware();
+  const connectionsMiddleware = createPassthroughMiddleware();
   const settingsHydrationMiddleware = createPassthroughMiddleware();
   const modelSelectionPersistenceMiddleware = createPassthroughMiddleware();
   const backgroundAgentSettingsPersistenceMiddleware = createPassthroughMiddleware();
@@ -123,17 +116,18 @@ const mocks = vi.hoisted(() => {
     ),
     createHardwareConsoleKeySwitchMiddleware: vi.fn(() => hardwareConsoleKeySwitchMiddleware),
     createHardwareConsoleLedStatusMiddleware: vi.fn(() => hardwareConsoleLedStatusMiddleware),
-    createHardwareConsolePromptPickerMiddleware: vi.fn(
-      () => hardwareConsolePromptPickerMiddleware,
-    ),
+    createHardwareConsolePromptPickerMiddleware: vi.fn(() => hardwareConsolePromptPickerMiddleware),
     createHardwareConsoleActionKeyMiddleware: vi.fn(() => hardwareConsoleActionKeyMiddleware),
     createHardwareConsoleEncoderMiddleware: vi.fn(() => hardwareConsoleEncoderMiddleware),
     createVoiceTranscriptionMiddleware: vi.fn(() => voiceTranscriptionMiddleware),
     createVoiceSettingsMiddleware: vi.fn(() => voiceSettingsMiddleware),
     createDaemonHealthMiddleware: vi.fn(() => daemonHealthMiddleware),
+    createConnectionsMiddleware: vi.fn(() => connectionsMiddleware),
     createSettingsHydrationMiddleware: vi.fn(() => settingsHydrationMiddleware),
     createModelSelectionPersistenceMiddleware: vi.fn(() => modelSelectionPersistenceMiddleware),
-    createBackgroundAgentSettingsPersistenceMiddleware: vi.fn(() => backgroundAgentSettingsPersistenceMiddleware),
+    createBackgroundAgentSettingsPersistenceMiddleware: vi.fn(
+      () => backgroundAgentSettingsPersistenceMiddleware,
+    ),
     createProviderSettingsPersistenceMiddleware: vi.fn(() => providerSettingsPersistenceMiddleware),
     createModelReloadMiddleware: vi.fn(() => modelReloadMiddleware),
     createProviderAvailabilityCheckMiddleware: vi.fn(() => providerAvailabilityCheckMiddleware),
@@ -190,7 +184,9 @@ const mocks = vi.hoisted(() => {
     createSidebarNavPersistenceMiddleware: vi.fn(() => sidebarNavPersistenceMiddleware),
     createBrowserPersistenceMiddleware: vi.fn(() => browserPersistenceMiddleware),
     createUserPreferencesPersistenceMiddleware: vi.fn(() => userPreferencesPersistenceMiddleware),
-    createWorkspaceInitializerPersistenceMiddleware: vi.fn(() => workspaceInitializerPersistenceMiddleware),
+    createWorkspaceInitializerPersistenceMiddleware: vi.fn(
+      () => workspaceInitializerPersistenceMiddleware,
+    ),
     createThemeMutationMiddleware: vi.fn(() => themeMutationMiddleware),
     createAutoUpdateMutationMiddleware: vi.fn(() => autoUpdateMutationMiddleware),
     createReleaseNotesMutationMiddleware: vi.fn(() => releaseNotesMutationMiddleware),
@@ -222,6 +218,7 @@ const mocks = vi.hoisted(() => {
     voiceTranscriptionMiddleware,
     voiceSettingsMiddleware,
     daemonHealthMiddleware,
+    connectionsMiddleware,
     settingsHydrationMiddleware,
     modelSelectionPersistenceMiddleware,
     backgroundAgentSettingsPersistenceMiddleware,
@@ -284,247 +281,264 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("$features/git/git-read-service", () => ({ createGitReadMiddleware: mocks.createGitReadMiddleware }));
-vi.mock("$features/agent/agent-read-service", () => ({ createAgentReadMiddleware: mocks.createAgentReadMiddleware }));
-vi.mock("$features/agent/agent-subscription-read-service", () => ({
+vi.mock('$features/git/git-read-service', () => ({
+  createGitReadMiddleware: mocks.createGitReadMiddleware,
+}));
+vi.mock('$features/agent/agent-read-service', () => ({
+  createAgentReadMiddleware: mocks.createAgentReadMiddleware,
+}));
+vi.mock('$features/agent/agent-subscription-read-service', () => ({
   createAgentSubscriptionReadMiddleware: mocks.createAgentSubscriptionReadMiddleware,
 }));
-vi.mock("$features/files/files-read-service", () => ({ createFilesReadMiddleware: mocks.createFilesReadMiddleware }));
-vi.mock("$features/agent/chat-read-service", () => ({ createChatReadMiddleware: mocks.createChatReadMiddleware }));
-vi.mock("$features/agent/chat-subscribe-service", () => ({
+vi.mock('$features/files/files-read-service', () => ({
+  createFilesReadMiddleware: mocks.createFilesReadMiddleware,
+}));
+vi.mock('$features/agent/chat-read-service', () => ({
+  createChatReadMiddleware: mocks.createChatReadMiddleware,
+}));
+vi.mock('$features/agent/chat-subscribe-service', () => ({
   createChatSubscribeMiddleware: mocks.createChatSubscribeMiddleware,
 }));
-vi.mock("$features/agent/chat-send-service", () => ({ createChatSendMiddleware: mocks.createChatSendMiddleware }));
-vi.mock("$features/agent/mark-agent-seen", () => ({
+vi.mock('$features/agent/chat-send-service', () => ({
+  createChatSendMiddleware: mocks.createChatSendMiddleware,
+}));
+vi.mock('$features/agent/mark-agent-seen', () => ({
   createMarkAgentSeenTriggerMiddleware: mocks.createMarkAgentSeenTriggerMiddleware,
   markAgentSeenAtBoundary: mocks.markAgentSeenAtBoundary,
 }));
-vi.mock("$features/permission/permission-response-service", () => ({
+vi.mock('$features/permission/permission-response-service', () => ({
   createPermissionResponseMiddleware: mocks.createPermissionResponseMiddleware,
 }));
-vi.mock("$features/events/daemon-events-bridge.client", () => ({
+vi.mock('$features/events/daemon-events-bridge.client', () => ({
   createDaemonEventsBridgeMiddleware: mocks.createDaemonEventsBridgeMiddleware,
 }));
-vi.mock("$features/agent/agent-failure-toast-service", () => ({
+vi.mock('$features/agent/agent-failure-toast-service', () => ({
   createAgentFailureToastMiddleware: mocks.createAgentFailureToastMiddleware,
 }));
-vi.mock("$features/hardware-console/connection-toast-service", () => ({
+vi.mock('$features/hardware-console/connection-toast-service', () => ({
   createHardwareConsoleConnectionToastMiddleware:
     mocks.createHardwareConsoleConnectionToastMiddleware,
 }));
-vi.mock("$features/hardware-console/integration-toggle-service", () => ({
+vi.mock('$features/hardware-console/integration-toggle-service', () => ({
   createHardwareConsoleIntegrationToggleMiddleware:
     mocks.createHardwareConsoleIntegrationToggleMiddleware,
 }));
-vi.mock("$features/hardware-console/assignment/key-pin-persistence-service", () => ({
+vi.mock('$features/hardware-console/assignment/key-pin-persistence-service', () => ({
   createHardwareConsoleKeyPinPersistenceMiddleware:
     mocks.createHardwareConsoleKeyPinPersistenceMiddleware,
 }));
-vi.mock("$features/hardware-console/assignment/key-switch-service", () => ({
+vi.mock('$features/hardware-console/assignment/key-switch-service', () => ({
   createHardwareConsoleKeySwitchMiddleware: mocks.createHardwareConsoleKeySwitchMiddleware,
 }));
-vi.mock("$features/hardware-console/led/led-status-service", () => ({
+vi.mock('$features/hardware-console/led/led-status-service', () => ({
   createHardwareConsoleLedStatusMiddleware: mocks.createHardwareConsoleLedStatusMiddleware,
 }));
-vi.mock("$features/hardware-console/prompt-picker/prompt-picker-service", () => ({
+vi.mock('$features/hardware-console/prompt-picker/prompt-picker-service', () => ({
   createHardwareConsolePromptPickerMiddleware: mocks.createHardwareConsolePromptPickerMiddleware,
 }));
-vi.mock("$features/hardware-console/actions/action-key-service", () => ({
+vi.mock('$features/hardware-console/actions/action-key-service', () => ({
   createHardwareConsoleActionKeyMiddleware: mocks.createHardwareConsoleActionKeyMiddleware,
 }));
-vi.mock("$features/hardware-console/encoder/encoder-service", () => ({
+vi.mock('$features/hardware-console/encoder/encoder-service', () => ({
   createHardwareConsoleEncoderMiddleware: mocks.createHardwareConsoleEncoderMiddleware,
 }));
-vi.mock("$features/hardware-console/voice/transcription-service", () => ({
+vi.mock('$features/hardware-console/voice/transcription-service', () => ({
   createVoiceTranscriptionMiddleware: mocks.createVoiceTranscriptionMiddleware,
 }));
-vi.mock("$features/voice/voice-settings-store-service", () => ({
+vi.mock('$features/voice/voice-settings-store-service', () => ({
   createVoiceSettingsMiddleware: mocks.createVoiceSettingsMiddleware,
 }));
-vi.mock("./middlewares/daemon-health-service", () => ({
+vi.mock('./middlewares/daemon-health-service', () => ({
   createDaemonHealthMiddleware: mocks.createDaemonHealthMiddleware,
 }));
-vi.mock("$features/settings/settings-hydration-service", () => ({
+vi.mock('./middlewares/connections-service', () => ({
+  createConnectionsMiddleware: mocks.createConnectionsMiddleware,
+}));
+vi.mock('$features/settings/settings-hydration-service', () => ({
   createSettingsHydrationMiddleware: mocks.createSettingsHydrationMiddleware,
 }));
-vi.mock("$features/settings/model-selection-persistence-service", () => ({
+vi.mock('$features/settings/model-selection-persistence-service', () => ({
   createModelSelectionPersistenceMiddleware: mocks.createModelSelectionPersistenceMiddleware,
 }));
-vi.mock("$features/settings/background-agent-settings-persistence-service", () => ({
-  createBackgroundAgentSettingsPersistenceMiddleware: mocks.createBackgroundAgentSettingsPersistenceMiddleware,
+vi.mock('$features/settings/background-agent-settings-persistence-service', () => ({
+  createBackgroundAgentSettingsPersistenceMiddleware:
+    mocks.createBackgroundAgentSettingsPersistenceMiddleware,
 }));
-vi.mock("$features/settings/provider-settings-persistence-service", () => ({
+vi.mock('$features/settings/provider-settings-persistence-service', () => ({
   createProviderSettingsPersistenceMiddleware: mocks.createProviderSettingsPersistenceMiddleware,
 }));
-vi.mock("$features/settings/model-reload-service", () => ({
+vi.mock('$features/settings/model-reload-service', () => ({
   createModelReloadMiddleware: mocks.createModelReloadMiddleware,
 }));
-vi.mock("$features/providers/provider-availability-check-service", () => ({
+vi.mock('$features/providers/provider-availability-check-service', () => ({
   createProviderAvailabilityCheckMiddleware: mocks.createProviderAvailabilityCheckMiddleware,
 }));
-vi.mock("$features/system/host-requirements-check-service", () => ({
+vi.mock('$features/system/host-requirements-check-service', () => ({
   createHostRequirementsCheckMiddleware: mocks.createHostRequirementsCheckMiddleware,
 }));
-vi.mock("$features/agent/agent-creation-service", () => ({
+vi.mock('$features/agent/agent-creation-service', () => ({
   createAgentCreationMiddleware: mocks.createAgentCreationMiddleware,
 }));
-vi.mock("$features/agent/agent-mutation-service", () => ({
+vi.mock('$features/agent/agent-mutation-service', () => ({
   createAgentMutationMiddleware: mocks.createAgentMutationMiddleware,
 }));
-vi.mock("$features/agent/edit-regenerate-service", () => ({
+vi.mock('$features/agent/edit-regenerate-service', () => ({
   createEditRegenerateMiddleware: mocks.createEditRegenerateMiddleware,
 }));
-vi.mock("$features/context/context-mutation-service", () => ({
+vi.mock('$features/context/context-mutation-service', () => ({
   createContextMutationMiddleware: mocks.createContextMutationMiddleware,
 }));
-vi.mock("$features/tasks/task-agent-associations-mutation-service", () => ({
+vi.mock('$features/tasks/task-agent-associations-mutation-service', () => ({
   createTaskAgentAssociationsMutationMiddleware:
     mocks.createTaskAgentAssociationsMutationMiddleware,
 }));
-vi.mock("$features/layout/app-layout-navigation-service", () => ({
+vi.mock('$features/layout/app-layout-navigation-service', () => ({
   createAppLayoutNavigationMiddleware: mocks.createAppLayoutNavigationMiddleware,
 }));
-vi.mock("$features/layout/workspace-navigation-tab-service", () => ({
+vi.mock('$features/layout/workspace-navigation-tab-service', () => ({
   createWorkspaceNavigationTabMiddleware: mocks.createWorkspaceNavigationTabMiddleware,
 }));
-vi.mock("$features/layout/workspace-navigation-layout-service", () => ({
+vi.mock('$features/layout/workspace-navigation-layout-service', () => ({
   createWorkspaceNavigationLayoutMiddleware: mocks.createWorkspaceNavigationLayoutMiddleware,
 }));
-vi.mock("$features/file-explorer/file-explorer-read-service", () => ({
+vi.mock('$features/file-explorer/file-explorer-read-service', () => ({
   createFileExplorerReadMiddleware: mocks.createFileExplorerReadMiddleware,
 }));
-vi.mock("$features/files/files-write-service", () => ({
+vi.mock('$features/files/files-write-service', () => ({
   createFilesWriteMiddleware: mocks.createFilesWriteMiddleware,
 }));
-vi.mock("$features/notes/notes-write-service", () => ({
+vi.mock('$features/notes/notes-write-service', () => ({
   createNotesWriteMiddleware: mocks.createNotesWriteMiddleware,
 }));
-vi.mock("$features/notes/notes-versions-service", () => ({
+vi.mock('$features/notes/notes-versions-service', () => ({
   createNotesVersionsMiddleware: mocks.createNotesVersionsMiddleware,
 }));
-vi.mock("$features/notes/notes-read-service", () => ({
+vi.mock('$features/notes/notes-read-service', () => ({
   createNotesReadMiddleware: mocks.createNotesReadMiddleware,
   applyNoteFromEvent: vi.fn(),
 }));
-vi.mock("$features/github-auth/github-auth-store-service", () => ({
+vi.mock('$features/github-auth/github-auth-store-service', () => ({
   createGitHubAuthMiddleware: mocks.createGitHubAuthMiddleware,
 }));
-vi.mock("$features/sentry-auth/sentry-auth-store-service", () => ({
+vi.mock('$features/sentry-auth/sentry-auth-store-service', () => ({
   createSentryAuthMiddleware: mocks.createSentryAuthMiddleware,
 }));
-vi.mock("$features/linear-auth/linear-auth-store-service", () => ({
+vi.mock('$features/linear-auth/linear-auth-store-service', () => ({
   createLinearAuthMiddleware: mocks.createLinearAuthMiddleware,
 }));
-vi.mock("$features/mcp/mcp-management-service", () => ({
+vi.mock('$features/mcp/mcp-management-service', () => ({
   createMcpManagementMiddleware: mocks.createMcpManagementMiddleware,
 }));
-vi.mock("$features/workspace/workspace-operations-service", () => ({
+vi.mock('$features/workspace/workspace-operations-service', () => ({
   createWorkspaceOperationsMiddleware: mocks.createWorkspaceOperationsMiddleware,
 }));
-vi.mock("$features/onboarding/directory-picker-read-service", () => ({
+vi.mock('$features/onboarding/directory-picker-read-service', () => ({
   createDirectoryPickerReadMiddleware: mocks.createDirectoryPickerReadMiddleware,
 }));
-vi.mock("$features/settings/legacy-import-service", () => ({
+vi.mock('$features/settings/legacy-import-service', () => ({
   createLegacyImportMiddleware: mocks.createLegacyImportMiddleware,
 }));
-vi.mock("$features/stats/stats-read-service", () => ({
+vi.mock('$features/stats/stats-read-service', () => ({
   createStatsReadMiddleware: mocks.createStatsReadMiddleware,
 }));
-vi.mock("$features/hooks/background-hooks-read-service", () => ({
+vi.mock('$features/hooks/background-hooks-read-service', () => ({
   createBackgroundHooksMiddleware: mocks.createBackgroundHooksMiddleware,
 }));
-vi.mock("./middlewares/lifecycle-read-service", () => ({
+vi.mock('./middlewares/lifecycle-read-service', () => ({
   createLifecycleReadMiddleware: mocks.createLifecycleReadMiddleware,
 }));
-vi.mock("./middlewares/lifecycle-ipc-read-service", () => ({
+vi.mock('./middlewares/lifecycle-ipc-read-service', () => ({
   createLifecycleIpcReadMiddleware: mocks.createLifecycleIpcReadMiddleware,
 }));
-vi.mock("./middlewares/ui-layout-persistence-service", () => ({
+vi.mock('./middlewares/ui-layout-persistence-service', () => ({
   createUiLayoutPersistenceMiddleware: mocks.createUiLayoutPersistenceMiddleware,
 }));
-vi.mock("./middlewares/tab-state-persistence-service", () => ({
+vi.mock('./middlewares/tab-state-persistence-service', () => ({
   createTabStatePersistenceMiddleware: mocks.createTabStatePersistenceMiddleware,
 }));
-vi.mock("./middlewares/panel-layout-persistence-service", () => ({
+vi.mock('./middlewares/panel-layout-persistence-service', () => ({
   createPanelLayoutPersistenceMiddleware: mocks.createPanelLayoutPersistenceMiddleware,
 }));
-vi.mock("./middlewares/file-content-prune-service", () => ({
+vi.mock('./middlewares/file-content-prune-service', () => ({
   createFileContentPruneService: mocks.createFileContentPruneService,
 }));
-vi.mock("./middlewares/divider-session-boundary-service", () => ({
+vi.mock('./middlewares/divider-session-boundary-service', () => ({
   createDividerSessionBoundaryService: mocks.createDividerSessionBoundaryService,
 }));
-vi.mock("./middlewares/terminal-persistence-service", () => ({
+vi.mock('./middlewares/terminal-persistence-service', () => ({
   createTerminalPersistenceMiddleware: mocks.createTerminalPersistenceMiddleware,
 }));
-vi.mock("./middlewares/external-editors-persistence-service", () => ({
+vi.mock('./middlewares/external-editors-persistence-service', () => ({
   createExternalEditorsPersistenceMiddleware: mocks.createExternalEditorsPersistenceMiddleware,
 }));
-vi.mock("./middlewares/zoom-sync-service", () => ({
+vi.mock('./middlewares/zoom-sync-service', () => ({
   createZoomSyncMiddleware: mocks.createZoomSyncMiddleware,
 }));
-vi.mock("./middlewares/menu-ipc-service", () => ({
+vi.mock('./middlewares/menu-ipc-service', () => ({
   createMenuIpcMiddleware: mocks.createMenuIpcMiddleware,
 }));
-vi.mock("./middlewares/browser-ipc-service", () => ({
+vi.mock('./middlewares/browser-ipc-service', () => ({
   createBrowserIpcMiddleware: mocks.createBrowserIpcMiddleware,
 }));
-vi.mock("./middlewares/notification-ipc-service", () => ({
+vi.mock('./middlewares/notification-ipc-service', () => ({
   createNotificationIpcMiddleware: mocks.createNotificationIpcMiddleware,
 }));
-vi.mock("./middlewares/agent-events-ipc-service", () => ({
+vi.mock('./middlewares/agent-events-ipc-service', () => ({
   createAgentEventsIpcMiddleware: mocks.createAgentEventsIpcMiddleware,
 }));
-vi.mock("./middlewares/git-events-ipc-service", () => ({
+vi.mock('./middlewares/git-events-ipc-service', () => ({
   createGitEventsIpcMiddleware: mocks.createGitEventsIpcMiddleware,
 }));
-vi.mock("$features/notifications/web-notification-service", () => ({
+vi.mock('$features/notifications/web-notification-service', () => ({
   createWebNotificationMiddleware: mocks.createWebNotificationMiddleware,
 }));
-vi.mock("./middlewares/workspace-settings-persistence-service", () => ({
+vi.mock('./middlewares/workspace-settings-persistence-service', () => ({
   createWorkspaceSettingsPersistenceMiddleware: mocks.createWorkspaceSettingsPersistenceMiddleware,
 }));
-vi.mock("./middlewares/user-preferences-beta-persistence-service", () => ({
+vi.mock('./middlewares/user-preferences-beta-persistence-service', () => ({
   createUserPreferencesBetaPersistenceMiddleware:
     mocks.createUserPreferencesBetaPersistenceMiddleware,
 }));
-vi.mock("./middlewares/user-preferences-notification-persistence-service", () => ({
+vi.mock('./middlewares/user-preferences-notification-persistence-service', () => ({
   createUserPreferencesNotificationPersistenceMiddleware:
     mocks.createUserPreferencesNotificationPersistenceMiddleware,
 }));
-vi.mock("./middlewares/sidebar-nav-persistence-service", () => ({
+vi.mock('./middlewares/sidebar-nav-persistence-service', () => ({
   createSidebarNavPersistenceMiddleware: mocks.createSidebarNavPersistenceMiddleware,
 }));
-vi.mock("./middlewares/browser-persistence-service", () => ({
+vi.mock('./middlewares/browser-persistence-service', () => ({
   createBrowserPersistenceMiddleware: mocks.createBrowserPersistenceMiddleware,
 }));
-vi.mock("./middlewares/user-preferences-persistence-service", () => ({
+vi.mock('./middlewares/user-preferences-persistence-service', () => ({
   createUserPreferencesPersistenceMiddleware: mocks.createUserPreferencesPersistenceMiddleware,
 }));
-vi.mock("./middlewares/workspace-initializer-persistence-service", () => ({
-  createWorkspaceInitializerPersistenceMiddleware: mocks.createWorkspaceInitializerPersistenceMiddleware,
+vi.mock('./middlewares/workspace-initializer-persistence-service', () => ({
+  createWorkspaceInitializerPersistenceMiddleware:
+    mocks.createWorkspaceInitializerPersistenceMiddleware,
 }));
-vi.mock("$features/theme/theme-service", () => ({
+vi.mock('$features/theme/theme-service', () => ({
   createThemeMutationMiddleware: mocks.createThemeMutationMiddleware,
 }));
-vi.mock("$features/auto-update/auto-update-mutation-service", () => ({
+vi.mock('$features/auto-update/auto-update-mutation-service', () => ({
   createAutoUpdateMutationMiddleware: mocks.createAutoUpdateMutationMiddleware,
 }));
-vi.mock("$features/release-notes/release-notes-mutation-service", () => ({
+vi.mock('$features/release-notes/release-notes-mutation-service', () => ({
   createReleaseNotesMutationMiddleware: mocks.createReleaseNotesMutationMiddleware,
 }));
-vi.mock("$features/specialists/specialists-mutation-service", () => ({
+vi.mock('$features/specialists/specialists-mutation-service', () => ({
   createSpecialistsMutationMiddleware: mocks.createSpecialistsMutationMiddleware,
 }));
-vi.mock("./middlewares/batch", () => ({ createBatchingMiddleware: mocks.createBatchingMiddleware }));
-vi.mock("./middlewares/logger", () => ({ createLoggerMiddleware: mocks.createLoggerMiddleware }));
-vi.mock("./middlewares/state-reference-checks", () => ({
+vi.mock('./middlewares/batch', () => ({
+  createBatchingMiddleware: mocks.createBatchingMiddleware,
+}));
+vi.mock('./middlewares/logger', () => ({ createLoggerMiddleware: mocks.createLoggerMiddleware }));
+vi.mock('./middlewares/state-reference-checks', () => ({
   createReferenceChangeDetectorMiddleware: mocks.createReferenceChangeDetectorMiddleware,
 }));
-vi.mock("./middlewares/structured-clone-checker", () => ({
+vi.mock('./middlewares/structured-clone-checker', () => ({
   createStructuredCloneCheckerMiddleware: mocks.createStructuredCloneCheckerMiddleware,
 }));
-vi.mock("../../store/utils/store-guard-middleware", () => ({
+vi.mock('../../store/utils/store-guard-middleware', () => ({
   createStoreGuardMiddleware: mocks.createStoreGuardMiddleware,
 }));
 
@@ -537,7 +551,7 @@ const setLocalStorageEntries = (entries: Record<string, string | null | undefine
 };
 
 async function initStoreForReduxLoggingTests() {
-  const { initAppStore } = await import("./store");
+  const { initAppStore } = await import('./store');
   const readableState = {
     subscribe: (run: (state: Record<string, never>) => void) => {
       run({});
@@ -552,20 +566,20 @@ async function initStoreForReduxLoggingTests() {
   } as any);
 }
 
-describe("store middleware Redux logging gating", () => {
+describe('store middleware Redux logging gating', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.unstubAllEnvs();
-    vi.stubEnv("DEV", false);
+    vi.stubEnv('DEV', false);
     vi.clearAllMocks();
     setLocalStorageEntries({});
     delete (window as Window & { intentFlags?: unknown }).intentFlags;
   });
 
-  it("adds the logger middleware automatically in the Vitest dev environment", async () => {
-    const { middleware } = await import("./middleware");
+  it('adds the logger middleware automatically in the Vitest dev environment', async () => {
+    const { middleware } = await import('./middleware');
 
-    expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith("");
+    expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith('');
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
@@ -590,6 +604,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.voiceTranscriptionMiddleware,
       mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
+      mocks.connectionsMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.backgroundAgentSettingsPersistenceMiddleware,
@@ -652,12 +667,12 @@ describe("store middleware Redux logging gating", () => {
     ]);
   });
 
-  it("adds the logger middleware when intent:redux-debug is enabled in localStorage", async () => {
-    setLocalStorageEntries({ [REDUX_DEBUG_LS_KEY]: "true" });
+  it('adds the logger middleware when intent:redux-debug is enabled in localStorage', async () => {
+    setLocalStorageEntries({ [REDUX_DEBUG_LS_KEY]: 'true' });
 
-    const { middleware } = await import("./middleware");
+    const { middleware } = await import('./middleware');
 
-    expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith("");
+    expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith('');
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
@@ -682,6 +697,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.voiceTranscriptionMiddleware,
       mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
+      mocks.connectionsMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.backgroundAgentSettingsPersistenceMiddleware,
@@ -744,12 +760,12 @@ describe("store middleware Redux logging gating", () => {
     ]);
   });
 
-  it("adds the logger middleware automatically in dev mode when no explicit override is set", async () => {
-    vi.stubEnv("DEV", true);
+  it('adds the logger middleware automatically in dev mode when no explicit override is set', async () => {
+    vi.stubEnv('DEV', true);
 
-    const { middleware } = await import("./middleware");
+    const { middleware } = await import('./middleware');
 
-    expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith("");
+    expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith('');
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
@@ -774,6 +790,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.voiceTranscriptionMiddleware,
       mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
+      mocks.connectionsMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.backgroundAgentSettingsPersistenceMiddleware,
@@ -836,11 +853,11 @@ describe("store middleware Redux logging gating", () => {
     ]);
   });
 
-  it("keeps an explicit localStorage disable higher priority than dev mode", async () => {
-    vi.stubEnv("DEV", true);
-    setLocalStorageEntries({ [REDUX_DEBUG_LS_KEY]: "false" });
+  it('keeps an explicit localStorage disable higher priority than dev mode', async () => {
+    vi.stubEnv('DEV', true);
+    setLocalStorageEntries({ [REDUX_DEBUG_LS_KEY]: 'false' });
 
-    const { middleware } = await import("./middleware");
+    const { middleware } = await import('./middleware');
 
     expect(mocks.createLoggerMiddleware).not.toHaveBeenCalled();
     expect(middleware).toEqual([
@@ -867,6 +884,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.voiceTranscriptionMiddleware,
       mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
+      mocks.connectionsMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.backgroundAgentSettingsPersistenceMiddleware,
@@ -928,29 +946,31 @@ describe("store middleware Redux logging gating", () => {
     ]);
   });
 
-  it("passes the intent flag webview name through to the logger middleware when globally enabled", async () => {
-    (window as Window & { intentFlags?: { enableReduxLogger: boolean; webviewName: string } }).intentFlags = {
+  it('passes the intent flag webview name through to the logger middleware when globally enabled', async () => {
+    (
+      window as Window & { intentFlags?: { enableReduxLogger: boolean; webviewName: string } }
+    ).intentFlags = {
       enableReduxLogger: true,
-      webviewName: "composer",
+      webviewName: 'composer',
     };
 
-    const { middleware } = await import("./middleware");
+    const { middleware } = await import('./middleware');
 
-    expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith("composer");
+    expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith('composer');
     expect(middleware.at(-1)).toBe(mocks.loggerMiddleware);
   });
 
-  it("does not crash store middleware initialization when reading the Redux logging flag throws", async () => {
-    vi.stubEnv("DEV", true);
+  it('does not crash store middleware initialization when reading the Redux logging flag throws', async () => {
+    vi.stubEnv('DEV', true);
     localStorageGetItem.mockImplementation((key: string) => {
       if (key === REDUX_DEBUG_LS_KEY) {
-        throw new Error("Storage unavailable");
+        throw new Error('Storage unavailable');
       }
 
       return null;
     });
 
-    const { middleware } = await import("./middleware");
+    const { middleware } = await import('./middleware');
 
     expect(mocks.createLoggerMiddleware).not.toHaveBeenCalled();
     expect(middleware).toEqual([
@@ -977,6 +997,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.voiceTranscriptionMiddleware,
       mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
+      mocks.connectionsMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.backgroundAgentSettingsPersistenceMiddleware,
@@ -1039,7 +1060,7 @@ describe("store middleware Redux logging gating", () => {
   });
 });
 
-describe("hardware-console middleware gating in the HUD window", () => {
+describe('hardware-console middleware gating in the HUD window', () => {
   const hardwareConsoleFactories = [
     mocks.createHardwareConsoleConnectionToastMiddleware,
     mocks.createHardwareConsoleIntegrationToggleMiddleware,
@@ -1067,20 +1088,20 @@ describe("hardware-console middleware gating in the HUD window", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.unstubAllEnvs();
-    vi.stubEnv("DEV", false);
+    vi.stubEnv('DEV', false);
     vi.clearAllMocks();
     setLocalStorageEntries({});
     delete (window as Window & { intentFlags?: unknown }).intentFlags;
   });
 
   afterEach(() => {
-    window.history.pushState({}, "", "/");
+    window.history.pushState({}, '', '/');
   });
 
-  it("skips all hardware-console middlewares in the HUD renderer (/hud)", async () => {
-    window.history.pushState({}, "", "/hud");
+  it('skips all hardware-console middlewares in the HUD renderer (/hud)', async () => {
+    window.history.pushState({}, '', '/hud');
 
-    const { middleware } = await import("./middleware");
+    const { middleware } = await import('./middleware');
 
     for (const factory of hardwareConsoleFactories) {
       expect(factory).not.toHaveBeenCalled();
@@ -1095,10 +1116,10 @@ describe("hardware-console middleware gating in the HUD window", () => {
     );
   });
 
-  it("includes all hardware-console middlewares outside the HUD renderer", async () => {
-    window.history.pushState({}, "", "/workspace/ws-123");
+  it('includes all hardware-console middlewares outside the HUD renderer', async () => {
+    window.history.pushState({}, '', '/workspace/ws-123');
 
-    const { middleware } = await import("./middleware");
+    const { middleware } = await import('./middleware');
 
     for (const factory of hardwareConsoleFactories) {
       expect(factory).toHaveBeenCalledTimes(1);
@@ -1116,39 +1137,38 @@ describe("hardware-console middleware gating in the HUD window", () => {
   });
 });
 
-describe("divider-session boundary → markSeen wiring", () => {
+describe('divider-session boundary → markSeen wiring', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.unstubAllEnvs();
-    vi.stubEnv("DEV", false);
+    vi.stubEnv('DEV', false);
     vi.clearAllMocks();
     setLocalStorageEntries({});
     delete (window as Window & { intentFlags?: unknown }).intentFlags;
   });
 
   it("wires the onBoundary seam to markAgentSeenAtBoundary with the boundary's agent ids", async () => {
-    await import("./middleware");
+    await import('./middleware');
 
     expect(mocks.createDividerSessionBoundaryService).toHaveBeenCalledTimes(1);
     const options = mocks.createDividerSessionBoundaryService.mock.calls[0]?.[0] as
-      | { onBoundary?: (boundary: { kind: string; agentIds: string[] }) => void }
-      | undefined;
-    expect(options?.onBoundary).toBeTypeOf("function");
+      { onBoundary?: (boundary: { kind: string; agentIds: string[] }) => void } | undefined;
+    expect(options?.onBoundary).toBeTypeOf('function');
 
     // Tab-close boundary: the third discrete markSeen trigger fires for the
     // affected agents (the user was looking right up to the boundary).
-    options!.onBoundary!({ kind: "tab-close", agentIds: ["a1", "a2"] });
+    options!.onBoundary!({ kind: 'tab-close', agentIds: ['a1', 'a2'] });
     expect(mocks.markAgentSeenAtBoundary).toHaveBeenCalledTimes(1);
-    expect(mocks.markAgentSeenAtBoundary).toHaveBeenCalledWith(["a1", "a2"]);
+    expect(mocks.markAgentSeenAtBoundary).toHaveBeenCalledWith(['a1', 'a2']);
 
     // Workspace-switch boundary routes through the same seam.
-    options!.onBoundary!({ kind: "workspace-switch", agentIds: ["a3"] });
+    options!.onBoundary!({ kind: 'workspace-switch', agentIds: ['a3'] });
     expect(mocks.markAgentSeenAtBoundary).toHaveBeenCalledTimes(2);
-    expect(mocks.markAgentSeenAtBoundary).toHaveBeenLastCalledWith(["a3"]);
+    expect(mocks.markAgentSeenAtBoundary).toHaveBeenLastCalledWith(['a3']);
   });
 });
 
-describe("window.intent Redux logging interface", () => {
+describe('window.intent Redux logging interface', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.unstubAllEnvs();
@@ -1158,30 +1178,34 @@ describe("window.intent Redux logging interface", () => {
     delete (window as Window & { intent?: unknown }).intent;
   });
 
-  it("registers enableReduxLogging and disableReduxLogging on window.intent", async () => {
+  it('registers enableReduxLogging and disableReduxLogging on window.intent', async () => {
     const storeContext = await initStoreForReduxLoggingTests();
 
-    expect(window.intent?.enableReduxLogging).toBeTypeOf("function");
-    expect(window.intent?.disableReduxLogging).toBeTypeOf("function");
+    expect(window.intent?.enableReduxLogging).toBeTypeOf('function');
+    expect(window.intent?.disableReduxLogging).toBeTypeOf('function');
 
     storeContext.dispose();
   });
 
-  it("persists Redux logging toggles and logs that reload is required", async () => {
-    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+  it('persists Redux logging toggles and logs that reload is required', async () => {
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     try {
       const storeContext = await initStoreForReduxLoggingTests();
 
       window.intent?.enableReduxLogging?.();
-      expect(localStorageSetItem).toHaveBeenCalledWith(REDUX_DEBUG_LS_KEY, "true");
-      expect(consoleLog).toHaveBeenCalledWith("Redux logging preference updated. Reload to take effect.");
+      expect(localStorageSetItem).toHaveBeenCalledWith(REDUX_DEBUG_LS_KEY, 'true');
+      expect(consoleLog).toHaveBeenCalledWith(
+        'Redux logging preference updated. Reload to take effect.',
+      );
 
       consoleLog.mockClear();
 
       window.intent?.disableReduxLogging?.();
-      expect(localStorageSetItem).toHaveBeenCalledWith(REDUX_DEBUG_LS_KEY, "false");
-      expect(consoleLog).toHaveBeenCalledWith("Redux logging preference updated. Reload to take effect.");
+      expect(localStorageSetItem).toHaveBeenCalledWith(REDUX_DEBUG_LS_KEY, 'false');
+      expect(consoleLog).toHaveBeenCalledWith(
+        'Redux logging preference updated. Reload to take effect.',
+      );
 
       storeContext.dispose();
     } finally {
@@ -1189,8 +1213,8 @@ describe("window.intent Redux logging interface", () => {
     }
   });
 
-  it("toggles Redux logging using stored boolean string values", async () => {
-    const entries: Record<string, string | null> = { [REDUX_DEBUG_LS_KEY]: "false" };
+  it('toggles Redux logging using stored boolean string values', async () => {
+    const entries: Record<string, string | null> = { [REDUX_DEBUG_LS_KEY]: 'false' };
     localStorageGetItem.mockImplementation((key: string) => entries[key] ?? null);
     localStorageSetItem.mockImplementation((key: string, value: string) => {
       entries[key] = value;
@@ -1202,12 +1226,12 @@ describe("window.intent Redux logging interface", () => {
     const storeContext = await initStoreForReduxLoggingTests();
 
     window.intent?.debug?.toggleReduxLogs?.();
-    expect(localStorageSetItem).toHaveBeenLastCalledWith(REDUX_DEBUG_LS_KEY, "true");
-    expect(entries[REDUX_DEBUG_LS_KEY]).toBe("true");
+    expect(localStorageSetItem).toHaveBeenLastCalledWith(REDUX_DEBUG_LS_KEY, 'true');
+    expect(entries[REDUX_DEBUG_LS_KEY]).toBe('true');
 
     window.intent?.debug?.toggleReduxLogs?.();
-    expect(localStorageSetItem).toHaveBeenLastCalledWith(REDUX_DEBUG_LS_KEY, "false");
-    expect(entries[REDUX_DEBUG_LS_KEY]).toBe("false");
+    expect(localStorageSetItem).toHaveBeenLastCalledWith(REDUX_DEBUG_LS_KEY, 'false');
+    expect(entries[REDUX_DEBUG_LS_KEY]).toBe('false');
 
     storeContext.dispose();
   });
@@ -1233,73 +1257,71 @@ function expectChangesPayloadClassInstance(payload: ChangesPayloadForTest) {
   const prototype = Object.getPrototypeOf(payload);
 
   expect(prototype).not.toBe(Object.prototype);
-  expect(prototype?.constructor?.name).toBe("ChangesPayload");
-  expect(Object.getOwnPropertyDescriptor(payload, "action")).toBeUndefined();
-  expect(Object.getOwnPropertyDescriptor(prototype, "action")).toBeUndefined();
-  expect(Object.getOwnPropertyDescriptor(payload, "prevState")).toBeUndefined();
-  expect(Object.getOwnPropertyDescriptor(payload, "nextState")).toBeUndefined();
-  expect(Object.getOwnPropertyDescriptor(payload, "changes")).toBeUndefined();
-  expectGetterDescriptor(prototype, "changes");
+  expect(prototype?.constructor?.name).toBe('ChangesPayload');
+  expect(Object.getOwnPropertyDescriptor(payload, 'action')).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(prototype, 'action')).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, 'prevState')).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, 'nextState')).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, 'changes')).toBeUndefined();
+  expectGetterDescriptor(prototype, 'changes');
 }
 
 function expectNoChangesPayloadClassInstance(payload: NoChangesPayloadForTest) {
   const prototype = Object.getPrototypeOf(payload);
 
   expect(prototype).toBe(Object.prototype);
-  expect(Object.getOwnPropertyDescriptor(payload, "action")).toBeUndefined();
-  expect(Object.getOwnPropertyDescriptor(payload, "prevState")).toBeUndefined();
-  expect(Object.getOwnPropertyDescriptor(payload, "nextState")).toBeUndefined();
-  expect(Object.getOwnPropertyDescriptor(payload, "changes")).toBeUndefined();
-  expect(Object.keys(payload)).toEqual(["state"]);
+  expect(Object.getOwnPropertyDescriptor(payload, 'action')).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, 'prevState')).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, 'nextState')).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, 'changes')).toBeUndefined();
+  expect(Object.keys(payload)).toEqual(['state']);
 }
 
-describe("createLoggerMiddleware", () => {
+describe('createLoggerMiddleware', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.restoreAllMocks();
     vi.clearAllMocks();
   });
 
-  it("logs the welcome message only once", async () => {
-    const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
-      "./middlewares/logger"
-    );
-    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+  it('logs the welcome message only once', async () => {
+    const { createLoggerMiddleware } =
+      await vi.importActual<typeof import('./middlewares/logger')>('./middlewares/logger');
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    createLoggerMiddleware("composer");
-    createLoggerMiddleware("composer");
+    createLoggerMiddleware('composer');
+    createLoggerMiddleware('composer');
 
     expect(consoleLog).toHaveBeenCalledTimes(1);
   });
 
-  it("logs changed state with raw action and a separate lazy state payload log", async () => {
-    const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
-      "./middlewares/logger"
-    );
+  it('logs changed state with raw action and a separate lazy state payload log', async () => {
+    const { createLoggerMiddleware } =
+      await vi.importActual<typeof import('./middlewares/logger')>('./middlewares/logger');
 
     const prevState = {
       count: 1,
-      todos: { byId: { "todo-1": { title: "Draft", tags: ["inbox", "soon"] } } },
+      todos: { byId: { 'todo-1': { title: 'Draft', tags: ['inbox', 'soon'] } } },
     };
     const nextState = {
       count: 2,
       todos: {
         byId: {
-          "todo-1": { title: "Done", tags: ["inbox", "shipped"] },
-          "todo-2": { title: "New", tags: ["later"] },
+          'todo-1': { title: 'Done', tags: ['inbox', 'shipped'] },
+          'todo-2': { title: 'New', tags: ['later'] },
         },
-        order: ["todo-1", "todo-2"],
+        order: ['todo-1', 'todo-2'],
       },
     };
     let currentState = prevState;
-    const action = { type: "TEST_ACTION" };
-    const group = vi.spyOn(console, "group").mockImplementation(() => {});
-    const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
-    const consoleDir = vi.spyOn(console, "dir").mockImplementation(() => {});
-    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
-    const groupEnd = vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+    const action = { type: 'TEST_ACTION' };
+    const group = vi.spyOn(console, 'group').mockImplementation(() => {});
+    const groupCollapsed = vi.spyOn(console, 'groupCollapsed').mockImplementation(() => {});
+    const consoleDir = vi.spyOn(console, 'dir').mockImplementation(() => {});
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const groupEnd = vi.spyOn(console, 'groupEnd').mockImplementation(() => {});
 
-    const middleware = createLoggerMiddleware("composer");
+    const middleware = createLoggerMiddleware('composer');
     consoleLog.mockClear();
     const storeApi = {
       dispatch: vi.fn(),
@@ -1311,7 +1333,10 @@ describe("createLoggerMiddleware", () => {
     });
 
     expect(middleware(storeApi as never)(next)(action)).toBe(action);
-    expect(groupCollapsed).toHaveBeenCalledWith("%cTEST_ACTION", "color: inherit; font-weight: 600");
+    expect(groupCollapsed).toHaveBeenCalledWith(
+      '%cTEST_ACTION',
+      'color: inherit; font-weight: 600',
+    );
     expect(consoleLog).toHaveBeenCalledTimes(2);
     expect(group).not.toHaveBeenCalled();
     expect(consoleDir).not.toHaveBeenCalled();
@@ -1319,8 +1344,14 @@ describe("createLoggerMiddleware", () => {
     const actionPayload = consoleLog.mock.calls[0]?.[2];
     const lazyPayload = consoleLog.mock.calls[1]?.[2] as ChangesPayloadForTest;
 
-    expect(consoleLog.mock.calls[0]?.slice(0, 2)).toEqual(["%c action    ", "color: #03A9F4; font-weight: bold"]);
-    expect(consoleLog.mock.calls[1]?.slice(0, 2)).toEqual(["%c state    ", "color: #4CAF50; font-weight: bold"]);
+    expect(consoleLog.mock.calls[0]?.slice(0, 2)).toEqual([
+      '%c action    ',
+      'color: #03A9F4; font-weight: bold',
+    ]);
+    expect(consoleLog.mock.calls[1]?.slice(0, 2)).toEqual([
+      '%c state    ',
+      'color: #4CAF50; font-weight: bold',
+    ]);
     expect(actionPayload).toBe(action);
     expect(lazyPayload).not.toBe(action);
     expect(lazyPayload).not.toBe(prevState);
@@ -1328,19 +1359,18 @@ describe("createLoggerMiddleware", () => {
     expectChangesPayloadClassInstance(lazyPayload);
     expect(lazyPayload.changes).toEqual({
       count: { prev: 1, next: 2 },
-      "todos.byId.todo-1.title": { prev: "Draft", next: "Done" },
-      "todos.byId.todo-1.tags[1]": { prev: "soon", next: "shipped" },
-      "todos.byId.todo-2": { prev: undefined, next: { title: "New", tags: ["later"] } },
-      "todos.order": { prev: undefined, next: ["todo-1", "todo-2"] },
+      'todos.byId.todo-1.title': { prev: 'Draft', next: 'Done' },
+      'todos.byId.todo-1.tags[1]': { prev: 'soon', next: 'shipped' },
+      'todos.byId.todo-2': { prev: undefined, next: { title: 'New', tags: ['later'] } },
+      'todos.order': { prev: undefined, next: ['todo-1', 'todo-2'] },
     });
 
     expect(groupEnd).toHaveBeenCalledTimes(1);
   });
 
-  it("computes changes only when the changes accessor is read", async () => {
-    const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
-      "./middlewares/logger"
-    );
+  it('computes changes only when the changes accessor is read', async () => {
+    const { createLoggerMiddleware } =
+      await vi.importActual<typeof import('./middlewares/logger')>('./middlewares/logger');
 
     let diffReadCount = 0;
     const prevState = { nested: { count: 1 } };
@@ -1351,11 +1381,11 @@ describe("createLoggerMiddleware", () => {
       },
     };
     let currentState: unknown = prevState;
-    vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
-    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+    vi.spyOn(console, 'groupCollapsed').mockImplementation(() => {});
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'groupEnd').mockImplementation(() => {});
 
-    const middleware = createLoggerMiddleware("composer");
+    const middleware = createLoggerMiddleware('composer');
     consoleLog.mockClear();
     const storeApi = {
       dispatch: vi.fn(),
@@ -1366,7 +1396,7 @@ describe("createLoggerMiddleware", () => {
       return receivedAction;
     });
 
-    expect(() => middleware(storeApi as never)(next)({ type: "TEST_ACTION" })).not.toThrow();
+    expect(() => middleware(storeApi as never)(next)({ type: 'TEST_ACTION' })).not.toThrow();
     expect(diffReadCount).toBe(0);
 
     const statePayload = consoleLog.mock.calls[1]?.[2] as ChangesPayloadForTest;
@@ -1377,30 +1407,29 @@ describe("createLoggerMiddleware", () => {
     const firstChanges = statePayload.changes;
 
     expect(diffReadCount).toBe(1);
-    expect(firstChanges).toEqual({ "nested.count": { prev: 1, next: 2 } });
+    expect(firstChanges).toEqual({ 'nested.count': { prev: 1, next: 2 } });
 
     const secondChanges = statePayload.changes;
 
     expect(diffReadCount).toBe(2);
     expect(secondChanges).toEqual(firstChanges);
     expect(secondChanges).not.toBe(firstChanges);
-    expectGetterDescriptor(Object.getPrototypeOf(statePayload), "changes");
+    expectGetterDescriptor(Object.getPrototypeOf(statePayload), 'changes');
   });
 
-  it("logs unchanged state without prev state and uses the no changes label", async () => {
-    const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
-      "./middlewares/logger"
-    );
+  it('logs unchanged state without prev state and uses the no changes label', async () => {
+    const { createLoggerMiddleware } =
+      await vi.importActual<typeof import('./middlewares/logger')>('./middlewares/logger');
 
     const state = { count: 1 };
-    const action = { type: "TEST_ACTION", payload: "payload text" };
-    const group = vi.spyOn(console, "group").mockImplementation(() => {});
-    const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
-    const consoleDir = vi.spyOn(console, "dir").mockImplementation(() => {});
-    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
-    const groupEnd = vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+    const action = { type: 'TEST_ACTION', payload: 'payload text' };
+    const group = vi.spyOn(console, 'group').mockImplementation(() => {});
+    const groupCollapsed = vi.spyOn(console, 'groupCollapsed').mockImplementation(() => {});
+    const consoleDir = vi.spyOn(console, 'dir').mockImplementation(() => {});
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const groupEnd = vi.spyOn(console, 'groupEnd').mockImplementation(() => {});
 
-    const middleware = createLoggerMiddleware("composer");
+    const middleware = createLoggerMiddleware('composer');
     consoleLog.mockClear();
     const storeApi = {
       dispatch: vi.fn(),
@@ -1409,16 +1438,19 @@ describe("createLoggerMiddleware", () => {
     const next = vi.fn((receivedAction: unknown) => receivedAction);
 
     expect(middleware(storeApi as never)(next)(action)).toBe(action);
-    expect(groupCollapsed).toHaveBeenCalledWith("%cTEST_ACTION payload text", "color: #9E9E9E; font-weight: 300");
+    expect(groupCollapsed).toHaveBeenCalledWith(
+      '%cTEST_ACTION payload text',
+      'color: #9E9E9E; font-weight: 300',
+    );
     expect(consoleLog.mock.calls.map((call) => call.slice(0, 2))).toEqual([
-      ["%c action    ", "color: #03A9F4; font-weight: bold"],
-      ["%c state (no changes)", "color: #9E9E9E; font-weight: lighter"],
+      ['%c action    ', 'color: #03A9F4; font-weight: bold'],
+      ['%c state (no changes)', 'color: #9E9E9E; font-weight: lighter'],
     ]);
     expect(group).not.toHaveBeenCalled();
     expect(consoleLog).toHaveBeenCalledWith(
-      "%c state (no changes)",
-      "color: #9E9E9E; font-weight: lighter",
-      expect.any(Object)
+      '%c state (no changes)',
+      'color: #9E9E9E; font-weight: lighter',
+      expect.any(Object),
     );
     expect(consoleDir).not.toHaveBeenCalled();
 
@@ -1434,25 +1466,24 @@ describe("createLoggerMiddleware", () => {
   });
 
   it.each([
-    [{ type: "TEST_ACTION" }, "TEST_ACTION"],
-    [{ type: "TEST_ACTION", payload: "payload text" }, "TEST_ACTION payload text"],
-    [{ type: "TEST_ACTION", payload: 42 }, "TEST_ACTION 42"],
-    [{ type: "TEST_ACTION", payload: ["payload text"] }, "TEST_ACTION payload text"],
-    [{ type: "TEST_ACTION", payload: [42, 7] }, "TEST_ACTION"],
-    [{ type: "TEST_ACTION", payload: { text: "payload text" } }, "TEST_ACTION"],
-    [{ type: "TEST_ACTION", payload: [{ text: "payload text" }] }, "TEST_ACTION"],
-  ])("preserves simplified action titles for %j", async (action, expectedTitle) => {
-    const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
-      "./middlewares/logger"
-    );
+    [{ type: 'TEST_ACTION' }, 'TEST_ACTION'],
+    [{ type: 'TEST_ACTION', payload: 'payload text' }, 'TEST_ACTION payload text'],
+    [{ type: 'TEST_ACTION', payload: 42 }, 'TEST_ACTION 42'],
+    [{ type: 'TEST_ACTION', payload: ['payload text'] }, 'TEST_ACTION payload text'],
+    [{ type: 'TEST_ACTION', payload: [42, 7] }, 'TEST_ACTION'],
+    [{ type: 'TEST_ACTION', payload: { text: 'payload text' } }, 'TEST_ACTION'],
+    [{ type: 'TEST_ACTION', payload: [{ text: 'payload text' }] }, 'TEST_ACTION'],
+  ])('preserves simplified action titles for %j', async (action, expectedTitle) => {
+    const { createLoggerMiddleware } =
+      await vi.importActual<typeof import('./middlewares/logger')>('./middlewares/logger');
 
     const state = { count: 1 };
-    vi.spyOn(console, "group").mockImplementation(() => {});
-    const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+    vi.spyOn(console, 'group').mockImplementation(() => {});
+    const groupCollapsed = vi.spyOn(console, 'groupCollapsed').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'groupEnd').mockImplementation(() => {});
 
-    const middleware = createLoggerMiddleware("composer");
+    const middleware = createLoggerMiddleware('composer');
     const storeApi = {
       dispatch: vi.fn(),
       getState: vi.fn(() => state),
@@ -1461,6 +1492,9 @@ describe("createLoggerMiddleware", () => {
 
     middleware(storeApi as never)(next)(action);
 
-    expect(groupCollapsed).toHaveBeenCalledWith(`%c${expectedTitle}`, "color: #9E9E9E; font-weight: 300");
+    expect(groupCollapsed).toHaveBeenCalledWith(
+      `%c${expectedTitle}`,
+      'color: #9E9E9E; font-weight: 300',
+    );
   });
 });

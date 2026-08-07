@@ -530,6 +530,13 @@ const ALLOWED_CHANNELS = [
   "backend:status",
   "backend:spawn-sidecar",
   "backend:get-sidecar-run-log",
+  "connections:list",
+  "connections:capture-fingerprint",
+  "connections:add",
+  "connections:forget",
+  "connections:switch",
+  "connections:changed",
+  "connections:cert-mismatch",
   "hardware-console:clear-lighting",
   "hardware-console:clear-lighting-done",
   "event:workspace:created",
@@ -681,7 +688,9 @@ const ALLOWED_CHANNELS = [
   "token-usage:changed",
   "backend:notification",
   "backend:status",
-  "hardware-console:clear-lighting"
+  "hardware-console:clear-lighting",
+  "connections:changed",
+  "connections:cert-mismatch"
 ];
 
 // Dynamic channel patterns that are matched with startsWith()
@@ -854,7 +863,9 @@ const EVENT_CHANNELS = [
   "token-usage:changed",
   "backend:notification",
   "backend:status",
-  "hardware-console:clear-lighting"
+  "hardware-console:clear-lighting",
+  "connections:changed",
+  "connections:cert-mismatch"
 ];
 
 /**

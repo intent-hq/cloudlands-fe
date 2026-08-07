@@ -529,8 +529,6 @@ export const IPC_CHANNELS = {
     PERSIST_RENDERER_LOGS: 'log:persist-renderer-logs',
   },
 
-
-
   // User Rules
   USER_RULES: {
     GET: 'user-rules:get',
@@ -611,8 +609,6 @@ export const IPC_CHANNELS = {
     GET_NOTE_READ_STATUS: 'user-activity:get-note-read-status',
     GET_UNREAD_NOTE_IDS: 'user-activity:get-unread-note-ids',
   },
-
-
 
   // Diffs
   DIFFS: {
@@ -772,8 +768,6 @@ export const IPC_CHANNELS = {
     DELETE: 'storage:delete',
   },
 
-
-
   // Auto-Update
   AUTO_UPDATE: {
     CHECK_MANUAL: 'auto-update:check-manual',
@@ -844,6 +838,21 @@ export const IPC_CHANNELS = {
     STATUS: 'backend:status',
     SPAWN_SIDECAR: 'backend:spawn-sidecar',
     GET_SIDECAR_RUN_LOG: 'backend:get-sidecar-run-log',
+  },
+
+  // Multi-backend connect: the "Connect to another intentd" registry.
+  // Request/response channels for the connections list + TOFU pairing +
+  // switch. Handlers land in T3; the renderer-facing contract types live in
+  // `shared/types/connections.ts`. CHANGED / CERT_MISMATCH are main→renderer
+  // push events (also listed in EVENT_CHANNELS for the preload allow-list).
+  CONNECTIONS: {
+    LIST: 'connections:list',
+    CAPTURE_FINGERPRINT: 'connections:capture-fingerprint',
+    ADD: 'connections:add',
+    FORGET: 'connections:forget',
+    SWITCH: 'connections:switch',
+    CHANGED: 'connections:changed',
+    CERT_MISMATCH: 'connections:cert-mismatch',
   },
 
   // Hardware console (Codex Micro / Creator Micro 2)
@@ -1032,6 +1041,10 @@ export const EVENT_CHANNELS = [
   'backend:status',
   // Hardware console shutdown handshake (main → renderer)
   'hardware-console:clear-lighting',
+  // Multi-backend connect (main → renderer): connections list/active changed,
+  // and a pinned-cert mismatch that must block with a failure modal.
+  'connections:changed',
+  'connections:cert-mismatch',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs
