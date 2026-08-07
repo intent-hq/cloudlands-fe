@@ -69,6 +69,7 @@ import { createStatsReadMiddleware } from '$features/stats/stats-read-service';
 import { createBackgroundHooksMiddleware } from '$features/hooks/background-hooks-read-service';
 import { createLifecycleReadMiddleware } from './middlewares/lifecycle-read-service';
 import { createLifecycleIpcReadMiddleware } from './middlewares/lifecycle-ipc-read-service';
+import { createGithubRepoSearchMiddleware } from './middlewares/github-repo-search-service';
 import { createUiLayoutPersistenceMiddleware } from './middlewares/ui-layout-persistence-service';
 import { createTabStatePersistenceMiddleware } from './middlewares/tab-state-persistence-service';
 import { createSidebarNavPersistenceMiddleware } from './middlewares/sidebar-nav-persistence-service';
@@ -404,6 +405,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // and `fetchEditors` re-detects installed editors via the external-editors
     // IPC client (honoring its cache guard) instead of staying stale until restart.
     createLifecycleIpcReadMiddleware(),
+    // Give the (post-saga) `searchGithubRepos` trigger a real handler so global
+    // GitHub repo search works again wherever it is dispatched (onboarding clone
+    // tab, workspace-creation repo selector): a 300ms debounce coalesces
+    // keystrokes into one `githubAuthClient.searchRepos` round-trip, the latest
+    // query wins, and stale responses never clobber newer results.
+    createGithubRepoSearchMiddleware(),
     // Give the BE-driven onboarding folder picker (`DirectoryPickerModal`) a real
     // read handler so `loadDirectoryRequested` fetches via
     // `backendRequest('host.listDirectory', ...)` and dispatches the result back
