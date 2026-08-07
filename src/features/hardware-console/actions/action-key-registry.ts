@@ -39,7 +39,6 @@ import type { StoredAgentSession } from '$store/renderer/slices/agent-session/ag
 import { agentSessionStopChatRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { actionHudShown } from '$store/renderer/slices/hardware-console/hardware-console-slice';
-import { applyPreset } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
   setMultiSelectSidebarSelectedTabs,
   setShowCreateModal,
@@ -49,10 +48,13 @@ import {
   setActiveAgentId,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { openWorkspaceNote } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
+import { applyContentPreset } from '$features/layout/preset-executor';
 import {
   resolveEffectiveVoiceEngine,
   type EffectiveVoiceEngineInputs,
 } from '$features/voice/effective-voice-engine';
+import { createLogger } from '$lib/utils/client-logger';
 import { isVoiceRecordingSupported } from '../voice/voice-recorder';
 import {
   handleVoiceKeyDown,
@@ -72,6 +74,8 @@ import {
   type CycleAgentEntry,
 } from './agent-cycle';
 import type { CycleScope, CycleScopeFamilyId } from './cycle-scope';
+
+const logger = createLogger('HardwareConsoleActionKeyRegistry');
 
 /** The narrow slice of the app store state the action registry reads. */
 export interface ActionKeyState {
@@ -140,7 +144,7 @@ export interface ActionKeyDefinition {
 /** Mirror of the sidebar TAB_DEFINITIONS ids (MultiSelectTabbedSidebar). */
 const SIDEBAR_TAB_IDS = ['overview', 'agents', 'context', 'changes', 'files'] as const;
 
-const LAYOUT_PRESETS = ['single', 'split-horizontal', 'split-vertical', 'three-column'] as const;
+const LAYOUT_PRESETS = ['planning', 'agents-row', 'changes', 'review'] as const;
 
 /** Transient per-workspace cursor for layout-preset cycling (UI-only). */
 const layoutPresetCursor = new Map<string, number>();
@@ -496,12 +500,19 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
     isAvailable({ state }) {
       return activeWorkspaceId(state) !== null;
     },
-    execute({ state, dispatch }) {
+    execute({ state }) {
       const wsId = activeWorkspaceId(state);
       if (wsId === null) return;
       const next = ((layoutPresetCursor.get(wsId) ?? -1) + 1) % LAYOUT_PRESETS.length;
       layoutPresetCursor.set(wsId, next);
-      dispatch(applyPreset(wsId, LAYOUT_PRESETS[next]));
+      const presetId = LAYOUT_PRESETS[next];
+      void applyContentPreset(presetId, getPanelLayoutManager(wsId), {
+        workspaceId: wsId,
+        containerWidth: window.innerWidth,
+        containerHeight: window.innerHeight,
+      }).catch((error: unknown) => {
+        logger.error('Failed to apply layout preset', { presetId, wsId, error });
+      });
     },
   },
   {
