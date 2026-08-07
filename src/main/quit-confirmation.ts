@@ -19,8 +19,8 @@
  * shuts down. Both are queried and their agents grouped by whether quitting
  * stops their daemon — remote agents and agents on an adopted external local
  * daemon keep running, agents on our spawned sidecar are interrupted (see
- * quit-dialog.ts). The local query is best effort: any failure yields no local
- * agents so a dead/absent local daemon never blocks quit.
+ * quit-dialog.ts). The second query is best effort: any failure yields no
+ * agents from it, so a dead/absent daemon never blocks quit.
  *
  * Kept out of `src/main/index.ts` (heavy top-level side effects) so it is
  * unit-testable and importable from the auto-update service without a
@@ -46,9 +46,10 @@ import { getMainWindow } from './state';
 const logger = new Logger('QuitConfirmation');
 
 /**
- * Connect budget for the short-lived local-daemon client opened while a remote
- * backend is active. The quit prompt must not stall behind an unreachable local
- * socket, so the whole probe is bounded and fails open.
+ * Overall budget for the short-lived startup-backend probe opened while a
+ * remote backend is active — connect plus every RPC it makes. The quit prompt
+ * must not stall behind an unreachable socket, so the probe is raced against
+ * this deadline and fails open.
  */
 const LOCAL_PROBE_TIMEOUT_MS = 2_000;
 
@@ -59,7 +60,7 @@ export interface QuitConfirmationDeps {
   /** True when the live client is pinned to a remote backend (not the local daemon). */
   isRemoteBackendActive(): boolean;
   listRespondingAgents(client: RunningAgentsRpc): Promise<RespondingAgent[]>;
-  /** Best-effort responding agents on the LOCAL daemon, via a throwaway client. */
+  /** Best-effort responding agents on the startup/default backend, via a throwaway client. */
   listLocalRespondingAgents(): Promise<RespondingAgent[]>;
   buildQuitDialogOptions(groups: QuitAgentGroups): MessageBoxOptions;
   /** Window to parent the dialog to (focused window, else main window). */
@@ -71,10 +72,11 @@ export interface QuitConfirmationDeps {
 }
 
 /**
- * Query the LOCAL daemon through a short-lived JSON-RPC client, bounded by
- * {@link LOCAL_PROBE_TIMEOUT_MS} and disposed on every exit path. Only used
- * while the live client is pinned to a remote, where the local daemon is a
- * second, separate source of running agents.
+ * Query the startup/default backend — the target `resolveBackendConfig` derives
+ * from the environment, normally the local daemon — through a short-lived
+ * JSON-RPC client, raced against {@link LOCAL_PROBE_TIMEOUT_MS} and disposed on
+ * every exit path. Only used while the live client is pinned to a remote, where
+ * that backend is a second, separate source of running agents.
  */
 async function defaultListLocalRespondingAgents(): Promise<RespondingAgent[]> {
   const [{ app }, { JsonRpcClient }, { resolveBackendConfig }] = await Promise.all([
@@ -88,26 +90,29 @@ async function defaultListLocalRespondingAgents(): Promise<RespondingAgent[]> {
     heartbeatIntervalMs: 0,
     requestTimeoutMs: LOCAL_PROBE_TIMEOUT_MS,
   });
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const connected = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error('local daemon connect timed out')),
+    // One deadline over connect + both RPCs; Promise.race handles the loser's
+    // rejection, so neither branch can surface as an unhandled rejection.
+    const deadline = new Promise<never>((_resolve, reject) => {
+      deadlineTimer = setTimeout(
+        () => reject(new Error('backend probe timed out')),
         LOCAL_PROBE_TIMEOUT_MS,
       );
-      client.on('status', (status: string) => {
-        if (status !== 'connected') return;
-        clearTimeout(timer);
-        resolve();
-      });
-      client.on('error', (error: Error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
     });
-    client.start();
-    await connected;
-    return await listRespondingAgents(client);
+    const probe = (async () => {
+      await new Promise<void>((resolve, reject) => {
+        client.on('status', (status: string) => {
+          if (status === 'connected') resolve();
+        });
+        client.on('error', reject);
+        client.start();
+      });
+      return await listRespondingAgents(client);
+    })();
+    return await Promise.race([probe, deadline]);
   } finally {
+    clearTimeout(deadlineTimer);
     client.dispose();
   }
 }
@@ -127,16 +132,26 @@ function defaultShowMessageBox(
   return parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options);
 }
 
-/** Local-daemon query wrapper: any failure means "no local agents", never a throw. */
+/** Probe wrapper: any failure means "no agents from that backend", never a throw. */
 async function listLocalAgentsFailOpen(deps: QuitConfirmationDeps): Promise<RespondingAgent[]> {
   try {
     return await deps.listLocalRespondingAgents();
   } catch (error) {
-    logger.warn('Local daemon query failed during quit check; assuming no local agents', {
+    logger.warn('Backend probe failed during quit check; assuming no agents there', {
       error: error instanceof Error ? error.message : String(error),
     });
     return [];
   }
+}
+
+/** First occurrence per `agentId` wins; the two sources can resolve to one daemon. */
+function dedupeByAgentId(agents: RespondingAgent[]): RespondingAgent[] {
+  const seen = new Set<string>();
+  return agents.filter((agent) => {
+    if (seen.has(agent.agentId)) return false;
+    seen.add(agent.agentId);
+    return true;
+  });
 }
 
 /**
@@ -169,25 +184,32 @@ export async function confirmQuitWithRunningAgents(
 
   // The active client is the remote one when a remote backend is pinned; a
   // spawned local sidecar is then a SECOND source of running agents that quit
-  // still shuts down, so it is queried separately (fail-open) before the
-  // zero-agent fast path.
+  // still shuts down, so it is queried too (fail-open) before the zero-agent
+  // fast path. The sources are independent, so they run concurrently.
   const remoteActive = deps.isRemoteBackendActive();
-  const activeAgents = await deps.listRespondingAgents(deps.getBackendClient());
-  const localAgents = remoteActive ? await listLocalAgentsFailOpen(deps) : [];
+  const [activeAgents, localAgents] = await Promise.all([
+    deps.listRespondingAgents(deps.getBackendClient()),
+    remoteActive ? listLocalAgentsFailOpen(deps) : Promise.resolve<RespondingAgent[]>([]),
+  ]);
 
   // Framing depends only on whether quitting stops an agent's daemon: a remote
   // backend and an adopted external local daemon both outlive the app, our
   // spawned sidecar does not.
   const localKeepsRunning = deps.getConnectionMode() === 'external';
-  const groups: QuitAgentGroups = remoteActive
-    ? {
-        keepRunning: localKeepsRunning ? [...activeAgents, ...localAgents] : activeAgents,
-        interrupted: localKeepsRunning ? [] : localAgents,
-      }
-    : {
-        keepRunning: localKeepsRunning ? activeAgents : [],
-        interrupted: localKeepsRunning ? [] : activeAgents,
-      };
+  const keepRunning = dedupeByAgentId(
+    remoteActive
+      ? localKeepsRunning
+        ? [...activeAgents, ...localAgents]
+        : activeAgents
+      : localKeepsRunning
+        ? activeAgents
+        : [],
+  );
+  const keepRunningIds = new Set(keepRunning.map((agent) => agent.agentId));
+  const interrupted = dedupeByAgentId(
+    remoteActive ? (localKeepsRunning ? [] : localAgents) : localKeepsRunning ? [] : activeAgents,
+  ).filter((agent) => !keepRunningIds.has(agent.agentId));
+  const groups: QuitAgentGroups = { keepRunning, interrupted };
 
   if (groups.keepRunning.length + groups.interrupted.length === 0) {
     return true;
