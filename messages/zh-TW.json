@@ -1360,7 +1360,7 @@
   "workspace_remoteSetupSelector_whereRun_description": "預設在本地執行，也可以連線遠端機器讓智慧體直接在其中工作。",
   "workspace_remoteSetupSelector_whereRun_label": "智慧體應在哪裡執行？",
   "workspace_remoteSetupSelector_workIn_before": "工作於",
-  "workspace_repoAndBranchPicker_cloneRepoAndCreateOffBranch_label": "複製 {repo} 並基於 {branch} 建立{isolationLabel}",
+  "workspace_repoAndBranchPicker_cloneRepoAndWorkOffBranch_label": "複製 {repo} 並基於 {branch} 工作",
   "workspace_repoAndBranchPicker_createNewRepo_label": "建立新儲存庫",
   "workspace_repoAndBranchPicker_repoOffBranch_label": "{repo}，基於 {branch}",
   "workspace_repoAndBranchPicker_workDirectly_label": "直接在你的資料夾中工作",
