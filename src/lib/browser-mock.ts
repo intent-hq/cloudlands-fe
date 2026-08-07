@@ -196,9 +196,6 @@ function mockInvoke(channel: string, data?: any): any {
   }
 
   // Provider / model channels
-  if (channel === 'auggie:check-availability') {
-    return { success: true, data: { available: false } };
-  }
   if (channel.endsWith(':get-models') || channel.endsWith(':check-availability')) {
     return { success: true, data: [] };
   }

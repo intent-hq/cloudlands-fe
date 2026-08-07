@@ -210,3 +210,24 @@ export interface ConnectionProtocolMismatchEvent {
   /** The remote daemon's reported protocolVersion. */
   remoteProtocolVersion: string;
 }
+
+/**
+ * Boot-time backend-restore fallback notice (T19). When the app relaunches with
+ * a persisted remote `activeId` that turns out to be unreachable at boot, the FE
+ * falls back to the always-available local sidecar and surfaces this
+ * non-blocking notice ("Couldn't reach <label>; using this machine") so the user
+ * understands why they are on local rather than the remote they last used.
+ *
+ * Latched in main and PULLED once by the renderer via the
+ * `connections:get-boot-fallback` invoke channel (consume-once), rather than
+ * pushed on a live channel: the fallback happens during boot reconciliation,
+ * before any renderer window exists to receive a broadcast, so a one-shot push
+ * would be lost. The renderer surfaces it as a non-blocking toast — it is never
+ * stored as connections-slice state.
+ */
+export interface ConnectionBootFallbackEvent {
+  /** id of the remote connection that could not be reached at boot. */
+  id: string;
+  /** Human label of that remote (hostname/`host:port`), for the notice copy. */
+  label: string;
+}

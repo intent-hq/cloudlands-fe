@@ -25,6 +25,7 @@
 
 import { BrowserWindow } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { spawnSidecarOnDemand } from '../intentd-sidecar';
 
 // ---------------------------------------------------------------------------
 // Mocks (mirror backend-ipc-connections.test.ts)
@@ -159,15 +160,18 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('reconcileActiveConnectionOnBoot', () => {
-  it('resets a stale remote active-id to local so connections:list reports local', async () => {
-    // Persisted state from a prior session: a remote is marked active, but the
-    // live client at boot is the local default.
-    store.getActiveId.mockResolvedValueOnce('remote-1'); // reconcile read
+  it('restores a reachable last-used remote at boot (does not reset to local)', async () => {
+    // Persisted state from a prior session: a remote was active on last close.
+    // The fake client's `host.status` probe resolves → the remote is reachable,
+    // so the FE stays on it and never rewrites the active id to local.
+    store.getActiveId.mockResolvedValue('remote-1');
     const mod = await loadModule();
 
     await mod.reconcileActiveConnectionOnBoot();
 
-    expect(store.setActiveId).toHaveBeenCalledWith('local');
+    expect(store.setActiveId).not.toHaveBeenCalledWith('local');
+    // A client was constructed for the restored remote target.
+    expect(lifecycle.events.some((e) => e.type === 'construct')).toBe(true);
   });
 
   it('is a no-op when the persisted active-id is already local', async () => {
@@ -179,7 +183,7 @@ describe('reconcileActiveConnectionOnBoot', () => {
     expect(store.setActiveId).not.toHaveBeenCalled();
   });
 
-  it('never throws when the store read/write fails (fail-soft at boot)', async () => {
+  it('never throws when the store read fails (fail-soft at boot)', async () => {
     store.getActiveId.mockRejectedValueOnce(new Error('disk gone'));
     const mod = await loadModule();
 
@@ -325,5 +329,77 @@ describe('status forwarder', () => {
     };
     newClient.emit('status', 'connected');
     expect(handler).toHaveBeenCalledWith('connected');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T22 review — "Start local intentd" recovery is atomic in main: switching to
+// local tears down every window (captureAndClose) before the switch resolves, so
+// the spawn MUST NOT depend on the initiating renderer surviving. switchToLocalAndSpawn
+// does the switch AND the spawn in one main-side action.
+// ---------------------------------------------------------------------------
+
+describe('switchToLocalAndSpawn — atomic recovery survives window teardown', () => {
+  it('initiates the sidecar spawn even though switchBackend destroys the window', async () => {
+    // Active backend is a remote → recovery must switch to local first.
+    store.getActiveId.mockResolvedValue('remote-1');
+    // Force the local build onto UDS so performSpawnSidecar's uds guard passes
+    // (a dev/test build otherwise resolves to the loopback ws transport).
+    const priorSocket = process.env.INTENTD_SOCKET;
+    process.env.INTENTD_SOCKET = '/tmp/intent-switch-spawn-test.sock';
+    vi.mocked(spawnSidecarOnDemand).mockResolvedValue({
+      ok: true,
+      spawned: true,
+    } as unknown as Awaited<ReturnType<typeof spawnSidecarOnDemand>>);
+
+    try {
+      const mod = await import('../backend.ipc');
+      // A window-teardown hook that destroys every window mid-switch — exactly
+      // the condition that broke the old renderer-continuation recovery.
+      const captureAndClose = vi.fn(async () => {
+        vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+      });
+      mod.__setBackendWindowHooksForTesting({ captureAndClose, restore: vi.fn(() => {}) });
+
+      const result = await mod.switchToLocalAndSpawn();
+
+      // The window WAS torn down during the switch...
+      expect(captureAndClose).toHaveBeenCalledTimes(1);
+      // ...yet the active backend flipped to local AND the sidecar spawn was
+      // still initiated in main — recovery did not depend on the renderer.
+      expect(store.setActiveId).toHaveBeenCalledWith('local');
+      expect(spawnSidecarOnDemand).toHaveBeenCalledTimes(1);
+      expect(result.ok).toBe(true);
+    } finally {
+      if (priorSocket === undefined) delete process.env.INTENTD_SOCKET;
+      else process.env.INTENTD_SOCKET = priorSocket;
+    }
+  });
+
+  it('spawns without switching when the active backend is already local', async () => {
+    store.getActiveId.mockResolvedValue('local');
+    const priorSocket = process.env.INTENTD_SOCKET;
+    process.env.INTENTD_SOCKET = '/tmp/intent-switch-spawn-test.sock';
+    vi.mocked(spawnSidecarOnDemand).mockResolvedValue({
+      ok: true,
+      spawned: true,
+    } as unknown as Awaited<ReturnType<typeof spawnSidecarOnDemand>>);
+
+    try {
+      const mod = await loadModule();
+      const captureAndClose = vi.fn(async () => {});
+      mod.__setBackendWindowHooksForTesting({ captureAndClose, restore: vi.fn(() => {}) });
+
+      const result = await mod.switchToLocalAndSpawn();
+
+      // Already local: no switch (no window teardown), just the spawn.
+      expect(captureAndClose).not.toHaveBeenCalled();
+      expect(store.setActiveId).not.toHaveBeenCalled();
+      expect(spawnSidecarOnDemand).toHaveBeenCalledTimes(1);
+      expect(result.ok).toBe(true);
+    } finally {
+      if (priorSocket === undefined) delete process.env.INTENTD_SOCKET;
+      else process.env.INTENTD_SOCKET = priorSocket;
+    }
   });
 });

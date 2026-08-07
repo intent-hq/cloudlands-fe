@@ -5,7 +5,6 @@ import * as path from 'path';
 import { MINIMUM_NODE_VERSION } from '../../../shared/constants/auggie';
 import { AUGGIE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
-import { executeAuggieCommand } from './execute-auggie-command';
 import { findAuggiePathAsync, getEnhancedPath } from './auggie-path';
 import { hostExec } from '../../../shared/main/host-exec';
 import { getProviderAuthVerdict } from '../../../shared/main/provider-auth-status';
@@ -123,57 +122,6 @@ async function checkNodeVersion(): Promise<{
 // ============================================================================
 
 export function setupAuggieIPC() {
-  // Check if auggie is available
-  ipcMain.handle(AUGGIE_CHANNELS.CHECK_AVAILABILITY, async () => {
-    try {
-      logger.debug('Checking auggie availability');
-
-      // Try to run auggie --version
-      try {
-        const { stdout, stderr } = await executeAuggieCommand('--version');
-
-        // Check if we got a version output
-        const isAvailable =
-          (stdout &&
-            (stdout.includes('auggie') ||
-              stdout.includes('version') ||
-              /\d+\.\d+\.\d+/.test(stdout))) ||
-          (stderr && (stderr.includes('auggie') || stderr.includes('version')));
-
-        logger.info('Auggie availability check', { isAvailable, stdout, stderr });
-
-        return {
-          success: true,
-          available: isAvailable,
-        };
-      } catch (error) {
-        const errnoError = error as NodeJS.ErrnoException;
-        const errorMessage = (error as Error).message;
-        // If command fails with ENOENT, auggie is not installed
-        if (errnoError.code === 'ENOENT' || errorMessage.includes('not found')) {
-          logger.info('Auggie not found in PATH');
-          return {
-            success: true,
-            available: false,
-          };
-        }
-
-        // For other errors, still try to determine if auggie exists
-        logger.warn('Error checking auggie, but may still be available', { error: errorMessage });
-        return {
-          success: true,
-          available: false,
-        };
-      }
-    } catch (error) {
-      logger.error('Failed to check auggie availability', { error: (error as Error).message });
-      return {
-        success: false,
-        error: (error as Error).message,
-      };
-    }
-  });
-
   // Get the resolved auggie path (for displaying in settings)
   ipcMain.handle(AUGGIE_CHANNELS.GET_PATH, async () => {
     try {
@@ -257,7 +205,6 @@ export function setupAuggieIPC() {
         const check = await getBackendClient().request<{
           available: boolean;
           path?: string;
-          version?: string;
         }>('host.checkAuggie');
         installed = Boolean(check?.available);
         if (typeof check?.path === 'string' && check.path.trim()) {
