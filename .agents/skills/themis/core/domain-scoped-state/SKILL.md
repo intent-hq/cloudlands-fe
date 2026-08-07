@@ -254,4 +254,3 @@ only when the domain id is part of the key.
 - `core/state-serialization` — why `emptyState` must be
   structured-cloneable.
 - `core/collections` — the usual shape of per-domain data.
-

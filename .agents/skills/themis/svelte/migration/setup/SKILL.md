@@ -191,4 +191,3 @@ store.runSaga(fakeInternalSagaManager);
 | Non-component lifecycle owner | Start and cancel a saga from non-component code after init |
 | Empty bootstrap evidence | Prove empty bootstrap has app reducers only |
 | Incorrect setup ordering/internal startup | Bad: start sagas before init or start internals manually |
-

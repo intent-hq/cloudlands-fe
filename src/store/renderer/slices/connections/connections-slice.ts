@@ -12,10 +12,12 @@
  * the `connections:cert-mismatch` push (see connections-service.ts).
  */
 
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type {
+  ConnectionRecord,
   ConnectionsState,
   ConnectionsListResult,
   ConnectionCertMismatchEvent,
@@ -27,7 +29,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 export const initialState: ConnectionsState = {
-  connections: [],
+  connections: createCollection<ConnectionRecord, 'id'>('id'),
   activeId: LOCAL_CONNECTION_ID,
   status: 'idle',
   error: null,
@@ -100,28 +102,32 @@ export const protocolMismatchModalDismissed = createAction(
 // Reducer
 // ---------------------------------------------------------------------------
 
-export const connectionsReducer = createReducer<ConnectionsState>(initialState)
-  .with(connectionsListReceived, (state, { payload: [result] }) => {
-    return { ...state, connections: result.connections, activeId: result.activeId };
-  })
-  .with(connectOperationStarted, (state) => {
+export const connectionsReducer = createReducer<ConnectionsState>(initialState);
+connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) => {
+    return {
+      ...state,
+      connections: createCollection<ConnectionRecord, 'id'>('id', result.connections),
+      activeId: result.activeId,
+    };
+  });
+connectionsReducer.with(connectOperationStarted, (state) => {
     return { ...state, status: 'connecting', error: null };
-  })
-  .with(connectOperationSettled, (state) => {
+  });
+connectionsReducer.with(connectOperationSettled, (state) => {
     return { ...state, status: 'idle', error: null };
-  })
-  .with(connectOperationFailed, (state, { payload: [error] }) => {
+  });
+connectionsReducer.with(connectOperationFailed, (state, { payload: [error] }) => {
     return { ...state, status: 'error', error };
-  })
-  .with(certMismatchReceived, (state, { payload: [event] }) => {
+  });
+connectionsReducer.with(certMismatchReceived, (state, { payload: [event] }) => {
     return { ...state, certMismatch: event };
-  })
-  .with(certMismatchCleared, (state) => {
+  });
+connectionsReducer.with(certMismatchCleared, (state) => {
     return { ...state, certMismatch: null };
-  })
-  .with(protocolMismatchReceived, (state, { payload: [event] }) => {
+  });
+connectionsReducer.with(protocolMismatchReceived, (state, { payload: [event] }) => {
     return { ...state, protocolMismatch: event, protocolMismatchModalDismissed: false };
-  })
-  .with(protocolMismatchModalDismissed, (state) => {
+  });
+connectionsReducer.with(protocolMismatchModalDismissed, (state) => {
     return { ...state, protocolMismatchModalDismissed: true };
   });

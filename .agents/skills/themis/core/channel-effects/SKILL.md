@@ -150,4 +150,3 @@ Source context: package-internal store-utility saga implementation. Public selec
 
 - `core/selector-channels` — for selector-derived channels (the right tool for state changes).
 - `core/sagas` — core saga patterns, `takeEvery` / `takeLatest` for actions.
-

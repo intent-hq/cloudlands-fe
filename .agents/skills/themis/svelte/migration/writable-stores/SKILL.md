@@ -251,4 +251,3 @@ Move the effect into a saga — see
 - `../../../core/actions/SKILL.md` — full `createAction` surface
 - `../../../core/reducers/SKILL.md` — full `createReducer` surface (no-op reference-equality)
 - `../../../core/state-serialization/SKILL.md` — serializable state rules
-

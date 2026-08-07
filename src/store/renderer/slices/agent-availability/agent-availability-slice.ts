@@ -8,7 +8,6 @@ import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   AgentAvailabilityState,
-  ManagedInstallStatus,
   ProviderStatus,
 } from './agent-availability-types';
 import type { NpxStatus } from '$shared/types/provider-availability';
@@ -85,11 +84,6 @@ export const ensureProvidersChecked = createAction(
   'agentAvailability/ensureProvidersChecked',
 );
 
-export const setManagedInstallStatus = createAction<[
-  providerId: string,
-  status: Partial<ManagedInstallStatus>,
-]>('agentAvailability/setManagedInstallStatus');
-
 /** Set npx availability status from host.providerDiscovery response. */
 export const setNpxStatus = createAction<[npxStatus: NpxStatus | null]>(
   'agentAvailability/setNpxStatus',
@@ -156,22 +150,6 @@ agentAvailabilityReducer.with(
     ...state,
     providerUserInfoLoadingMap: { ...state.providerUserInfoLoadingMap, [providerId]: false },
   }),
-);
-agentAvailabilityReducer.with(
-  setManagedInstallStatus,
-  (state, { payload: [providerId, managedStatus] }) => {
-    const existing = state.providerStatusMap[providerId] ?? { available: false };
-    return {
-      ...state,
-      providerStatusMap: {
-        ...state.providerStatusMap,
-        [providerId]: {
-          ...existing,
-          ...managedStatus,
-        },
-      },
-    };
-  },
 );
 agentAvailabilityReducer.with(trackInstallTerminal, (state, { payload: [terminalId] }) => {
   if (state.watchedTerminalIds.includes(terminalId)) return state;

@@ -163,4 +163,3 @@ export function goodSingleOwnerWrite() {
   Store dispatch, `$selectorResult$` template rules
 - `../../selector-lifecycle/SKILL.md` — three call modes
   and the init-time rule that causes the crash above
-

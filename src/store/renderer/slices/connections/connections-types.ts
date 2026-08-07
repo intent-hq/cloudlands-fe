@@ -14,6 +14,7 @@ import type {
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
 } from '$shared/types/connections';
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 export type {
   ConnectionRecord,
@@ -35,7 +36,7 @@ export type ConnectionOpStatus = 'idle' | 'connecting' | 'error';
  */
 export interface ConnectionsState {
   /** Full ordered list (local first, then remotes). Never carries a token. */
-  connections: ConnectionRecord[];
+  connections: Collection<ConnectionRecord, 'id'>;
   /** id of the active connection (`LOCAL_CONNECTION_ID` for the local sidecar). */
   activeId: string;
   /** Status of the in-flight add/switch operation. */
