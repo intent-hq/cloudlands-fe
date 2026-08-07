@@ -67,17 +67,17 @@
   import { syncWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { logger } from '$lib/utils/client-logger';
   import { faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
-  import {
-  onMount,
-  untrack,
-} from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import {
   constructPrUrl as constructPrUrlUtil,
   computeTotalStats,
   mapWorkspacePRs,
+  mergeMonitoredPRs,
 } from './sidebar-changes-utils';
+  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { prMonitorsSubscribeRequested, prMonitorsUnsubscribeRequested } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
   import BranchDisplay from './BranchDisplay.svelte';
   import CommitDrawer from './CommitDrawer.svelte';
   import CommitsTimeline from './CommitsTimeline.svelte';
@@ -171,12 +171,28 @@
 
   const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
 
+  // Agent PR monitors (PROTOCOL §6.9): live rows join the PR list below.
+  // Refcounted live subscription, shared with the chat chip row.
+  const prMonitors$ = selectPrMonitors(workspaceIdStore);
+  $effect(() => {
+    if (!workspaceId) return;
+    const currentWorkspaceId = workspaceId;
+    untrack(() => appStore.dispatch(prMonitorsSubscribeRequested(currentWorkspaceId)));
+    return () => {
+      appStore.dispatch(prMonitorsUnsubscribeRequested(currentWorkspaceId));
+    };
+  });
+
+  const workspaceRepo = $derived(
+    $workspace?.repositoryOwner && $workspace?.repositoryName
+      ? `${$workspace.repositoryOwner}/${$workspace.repositoryName}`
+      : undefined,
+  );
   const pullRequests = $derived(
-    mapWorkspacePRs(
-      $workspace?.pullRequests,
-      $activePullRequest$,
-      constructPrUrl,
-      getPRDisplayTitle,
+    mergeMonitoredPRs(
+      mapWorkspacePRs($workspace?.pullRequests, $activePullRequest$, constructPrUrl, getPRDisplayTitle),
+      $prMonitors$,
+      workspaceRepo,
     ),
   );
   const trunkBranch = $derived($workspace?.baseRef || 'main');

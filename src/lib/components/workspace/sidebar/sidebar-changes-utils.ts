@@ -5,6 +5,7 @@
 
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import type { PullRequestInfo } from '$shared/types';
+import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type {
   AgentChangeGroup,
   PRInfo,
@@ -325,6 +326,54 @@ export function mapWorkspacePRs(
     }];
   }
   return [];
+}
+
+/** Display status for a monitored PR row (PROTOCOL §6.9): active monitors
+ * read the live snapshot state; completed ones ended merged or closed. */
+function monitorDisplayStatus(monitor: PrMonitorRow): 'open' | 'merged' | 'closed' | 'draft' {
+  const snapshotState = monitor.lastSnapshot?.state?.toLowerCase();
+  if (snapshotState === 'merged') return 'merged';
+  if (snapshotState === 'closed') return 'closed';
+  if (monitor.lastSnapshot?.isDraft) return 'draft';
+  // Completed without a snapshot verdict: the PR reached a terminal
+  // lifecycle — render as merged (cancelled rows never reach this list).
+  return monitor.state === 'completed' ? 'merged' : 'open';
+}
+
+/**
+ * Merge agent-monitored PRs (PROTOCOL §6.9) into the workspace PR list.
+ * Same-repo monitors that duplicate an existing row (by PR number) only
+ * annotate it with the owning agent; cross-repo and unmatched monitors
+ * append as new rows carrying agent attribution (and the `<owner>/<name>`
+ * repo context when it differs from the workspace repo).
+ */
+export function mergeMonitoredPRs(
+  basePRs: PRInfo[],
+  monitors: PrMonitorRow[],
+  workspaceRepo: string | undefined,
+): PRInfo[] {
+  if (monitors.length === 0) return basePRs;
+
+  const merged = basePRs.map((pr) => ({ ...pr }));
+  for (const monitor of monitors) {
+    const sameRepo = !workspaceRepo || monitor.repo === workspaceRepo;
+    const existing = sameRepo ? merged.find((pr) => pr.number === monitor.prNumber) : undefined;
+    if (existing) {
+      existing.monitorAgentId = monitor.agentId;
+      continue;
+    }
+    const url = monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`;
+    merged.push({
+      number: monitor.prNumber,
+      title: monitor.title ?? `${monitor.repo}#${monitor.prNumber}`,
+      url,
+      htmlUrl: url,
+      status: monitorDisplayStatus(monitor),
+      monitorAgentId: monitor.agentId,
+      crossRepo: sameRepo ? undefined : monitor.repo,
+    });
+  }
+  return merged;
 }
 
 /** Check if an agent group is collapsed. */

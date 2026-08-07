@@ -8,8 +8,9 @@ import {
   type TrackedChange,
   type CommitInfo,
 } from '$features/file-tracking/types';
-import type { AgentChangeGroup } from '$lib/components/file-tracking/accept-changes/types';
+import type { AgentChangeGroup, PRInfo } from '$lib/components/file-tracking/accept-changes/types';
 import type { PullRequestInfo } from '$shared/types';
+import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import {
   getBranchNameValidationError,
   constructPrUrl,
@@ -30,6 +31,7 @@ import {
   aggregatePRFiles,
   computeTotalStats,
   mapWorkspacePRs,
+  mergeMonitoredPRs,
 } from '../sidebar-changes-utils';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -689,5 +691,135 @@ describe('mapWorkspacePRs', () => {
     const result = mapWorkspacePRs(prs, activePR, buildUrl, getTitle);
     expect(result).toHaveLength(1);
     expect(result[0].number).toBe(1);
+  });
+});
+
+// ─── mergeMonitoredPRs (PROTOCOL §6.9) ─────────────────────────────────────────
+
+describe('mergeMonitoredPRs', () => {
+  const workspaceRepo = 'acme/widgets';
+
+  function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
+    return {
+      monitorId: 'mon-1',
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      repo: 'acme/widgets',
+      prNumber: 42,
+      state: 'active',
+      pendingChanges: [],
+      hasPendingChanges: false,
+      createdAt: '2026-08-07T10:00:00Z',
+      updatedAt: '2026-08-07T10:05:00Z',
+      title: 'Monitored PR',
+      url: 'https://github.com/acme/widgets/pull/42',
+      ...overrides,
+    };
+  }
+
+  function makeBasePR(overrides: Partial<PRInfo> = {}): PRInfo {
+    return {
+      number: 42,
+      title: 'Branch PR',
+      url: 'https://github.com/acme/widgets/pull/42',
+      htmlUrl: 'https://github.com/acme/widgets/pull/42',
+      status: 'open',
+      ...overrides,
+    };
+  }
+
+  it('returns base list untouched when there are no monitors', () => {
+    const base = [makeBasePR()];
+    expect(mergeMonitoredPRs(base, [], workspaceRepo)).toBe(base);
+  });
+
+  it('annotates a same-repo duplicate with the owning agent instead of appending', () => {
+    const result = mergeMonitoredPRs([makeBasePR()], [makeMonitor()], workspaceRepo);
+    expect(result).toHaveLength(1);
+    expect(result[0].monitorAgentId).toBe('agent-1');
+    expect(result[0].title).toBe('Branch PR');
+  });
+
+  it('appends an unmatched same-repo monitor with agent attribution', () => {
+    const result = mergeMonitoredPRs(
+      [makeBasePR({ number: 7 })],
+      [makeMonitor()],
+      workspaceRepo,
+    );
+    expect(result).toHaveLength(2);
+    expect(result[1]).toMatchObject({
+      number: 42,
+      title: 'Monitored PR',
+      status: 'open',
+      monitorAgentId: 'agent-1',
+      crossRepo: undefined,
+    });
+  });
+
+  it('appends a cross-repo monitor with repo context even when numbers collide', () => {
+    const result = mergeMonitoredPRs(
+      [makeBasePR({ number: 42 })],
+      [makeMonitor({ repo: 'other/repo', url: 'https://github.com/other/repo/pull/42' })],
+      workspaceRepo,
+    );
+    expect(result).toHaveLength(2);
+    expect(result[1].crossRepo).toBe('other/repo');
+  });
+
+  it('renders completed monitors as merged and keeps them listed', () => {
+    const result = mergeMonitoredPRs(
+      [],
+      [makeMonitor({ state: 'completed' })],
+      workspaceRepo,
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].status).toBe('merged');
+  });
+
+  it('prefers the last-snapshot state for completed monitors (closed stays closed)', () => {
+    const snapshot = {
+      state: 'closed',
+      isDraft: false,
+      hasConflicts: false,
+      isBehind: false,
+      checks: {
+        total: 0,
+        passed: 0,
+        failed: 0,
+        pending: 0,
+        failingRequired: 0,
+        pendingRequired: 0,
+        requiredKnown: false,
+      },
+      approvals: { decision: '', have: 0, changesRequested: 0 },
+      threads: { unresolved: 0 },
+      rulesKnown: false,
+    };
+    const result = mergeMonitoredPRs(
+      [],
+      [makeMonitor({ state: 'completed', lastSnapshot: snapshot })],
+      workspaceRepo,
+    );
+    expect(result[0].status).toBe('closed');
+  });
+
+  it('falls back to repo#number title and a constructed URL before the first poll', () => {
+    const result = mergeMonitoredPRs(
+      [],
+      [makeMonitor({ title: undefined, url: undefined })],
+      workspaceRepo,
+    );
+    expect(result[0].title).toBe('acme/widgets#42');
+    expect(result[0].url).toBe('https://github.com/acme/widgets/pull/42');
+  });
+
+  it('treats all monitors as same-repo when the workspace repo is unknown', () => {
+    const result = mergeMonitoredPRs(
+      [makeBasePR({ number: 42 })],
+      [makeMonitor({ repo: 'other/repo' })],
+      undefined,
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].monitorAgentId).toBe('agent-1');
   });
 });

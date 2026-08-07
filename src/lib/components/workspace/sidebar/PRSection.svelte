@@ -48,6 +48,7 @@
 } from '$store/renderer/slices/changes/changes-selectors';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
@@ -179,6 +180,14 @@
 
   const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const workspace$ = selectWorkspaceById(workspaceIdStore);
+  // Agent attribution for monitored PR rows (PROTOCOL §6.9).
+  const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
+
+  /** Display name of the agent owning a monitored PR row, if resolvable. */
+  function monitorAgentName(agentId: string | undefined): string | undefined {
+    if (!agentId) return undefined;
+    return $workspaceAgents$.find((a) => String(a.id) === agentId)?.name;
+  }
   const gitOps$ = selectGitOperationFlags(workspaceIdStore);
   const createPRWhenReady$ = selectSidebarCreatePRWhenReady(workspaceIdStore);
   const acceptChangesState$ = selectAcceptChangesState(workspaceIdStore);
@@ -1030,7 +1039,7 @@
         {/if}
         {#if hasPRs}
           <div class="space-y-0.5">
-            {#each pullRequests as pr (pr.number)}
+            {#each pullRequests as pr (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : pr.number)}
               {@const statusColor =
                 pr.status === 'open'
                   ? 'text-emerald-500'
@@ -1080,7 +1089,20 @@
                     class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
                     onclick={onOpenFullPanel}
                   >
-                    <span class="text-ui text-subtle truncate flex-1">{pr.title}</span>
+                    <span class="text-ui text-subtle truncate flex-1">
+                      {#if pr.crossRepo}<span class="text-ghost">{pr.crossRepo}:</span>
+                      {/if}{pr.title}{#if monitorAgentName(pr.monitorAgentId)}
+                        <span
+                          class="text-ghost"
+                          title={m.workspace_prSection_monitoredBy_tooltip({
+                            agent: monitorAgentName(pr.monitorAgentId) ?? '',
+                          })}
+                          >{m.workspace_prSection_monitoredBy_label({
+                            agent: monitorAgentName(pr.monitorAgentId) ?? '',
+                          })}</span
+                        >
+                      {/if}
+                    </span>
                     <span class="text-ui text-subtle">#{pr.number}</span>
                     {#if pr.status === 'merged'}
                       <span class="text-ui text-purple-500 font-medium">{m.workspace_prSection_merged_label()}</span>

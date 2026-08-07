@@ -9,7 +9,9 @@ import type { PrMonitorRow } from "$features/pr-monitor/pr-monitor-service";
 /** All live-subscribed monitors for a workspace (active + completed), in seed order. */
 export const selectPrMonitors = store.createSelector(
   (state, workspaceId: string): PrMonitorRow[] => {
-    const ws = state.prMonitor.byWorkspaceId[workspaceId];
+    // Optional chain: cross-slice consumers (workspace-selectors) run
+    // against partial test states without this slice.
+    const ws = state.prMonitor?.byWorkspaceId?.[workspaceId];
     if (!ws) return [];
     return getItems(ws.monitors);
   },
