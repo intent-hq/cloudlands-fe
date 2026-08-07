@@ -77,7 +77,6 @@ describe('auggie-path — host-backed PATH and binary discovery', () => {
       mockHostRequest.mockResolvedValue({
         available: true,
         path: '/Users/test/.augment/bin/auggie',
-        version: '0.123.0',
       });
 
       const result = await findAuggiePathAsync();

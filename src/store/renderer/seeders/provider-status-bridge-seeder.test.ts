@@ -156,7 +156,7 @@ describe("provider-status-bridge-seeder", () => {
 
     it("derives auggie auth from the daemon's providerAuthStatus sweep when installed", async () => {
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
+        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie" },
         "host.toolAvailability": NO_TOOLS,
         "host.providerAuthStatus": authSweep({ auggie: true }),
       });
@@ -173,7 +173,7 @@ describe("provider-status-bridge-seeder", () => {
 
     it("surfaces a logged-out auggie as authenticated:false (actionable, not fake-positive)", async () => {
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
+        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie" },
         "host.toolAvailability": NO_TOOLS,
         "host.providerAuthStatus": authSweep({ auggie: false }),
       });
@@ -332,7 +332,7 @@ describe("provider-status-bridge-seeder", () => {
 
     it("degrades auth to unknown when only the providerAuthStatus RPC fails", async () => {
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
+        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie" },
         "host.toolAvailability": NO_TOOLS,
         "host.providerAuthStatus": () => {
           throw new Error("transport down");
@@ -467,7 +467,7 @@ describe("provider-status-bridge-seeder", () => {
   describe("providers:check-single → host.checkAuggie / host.findBinary + host.providerAuthStatus", () => {
     it("rechecks auggie (string arg) with a forced single-provider auth verdict", async () => {
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
+        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie" },
         "host.providerAuthStatus": authOne("auggie", true),
       });
 
@@ -488,7 +488,7 @@ describe("provider-status-bridge-seeder", () => {
 
     it("rides the daemon auth cache when the request carries force:false", async () => {
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
+        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie" },
         "host.providerAuthStatus": authOne("auggie", true),
       });
 
@@ -1024,7 +1024,7 @@ describe("provider-status-bridge-seeder", () => {
 
     it("resolves authenticated:true when the daemon verdict passes", async () => {
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
+        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie" },
         "host.providerAuthStatus": authOne("auggie", true),
       });
       const response = await mockInvoke<Envelope<{ authenticated?: boolean }>>(
@@ -1040,7 +1040,7 @@ describe("provider-status-bridge-seeder", () => {
 
     it("returns `auggie login` instructions when installed but logged out", async () => {
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
+        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie" },
         "host.providerAuthStatus": authOne("auggie", false),
       });
       const response = await mockInvoke<
