@@ -319,7 +319,10 @@ describe('CheckoutModePill', () => {
       await flushFetch();
 
       const tooltip = screen.getByTestId('tooltip-content');
-      expect(tooltip.textContent).toContain('Counts allocated disk space.');
+      const paragraphs = Array.from(tooltip.querySelectorAll('p'));
+      // Assert the exact paragraph text (not just a substring match) so a
+      // future rewording of either message can't quietly weaken this check.
+      expect(paragraphs[0].textContent).toBe('Counts allocated disk space.');
       expect(tooltip.textContent).not.toContain('may be over-counted');
       expect(tooltip.textContent).not.toContain('CoW clones');
     },
