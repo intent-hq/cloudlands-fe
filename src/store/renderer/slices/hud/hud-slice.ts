@@ -214,12 +214,13 @@ export const hudQuestionCaptured = createAction<[question: HudCapturedQuestion]>
   'hud/questionCaptured',
 );
 /**
- * The agent started a new turn (`agent:status-changed` → a running status):
- * a question hold only breaks on a user-origin delivery (PROTOCOL §7.1 — any
- * later user message supersedes the questions), so the captured question is
- * answered/moot and must stop pending everywhere.
+ * The workspace left the daemon's `needs_attention` displayStatus rollup: a
+ * pending question always holds that rollup up, so leaving it means every
+ * captured question in the workspace was answered or dismissed daemon-side.
  */
-export const hudQuestionSuperseded = createAction<[agentId: string]>('hud/questionSuperseded');
+export const hudQuestionsResolvedForWorkspace = createAction<[workspaceId: string]>(
+  'hud/questionsResolvedForWorkspace',
+);
 /** Header FLEET OPS repo pick (null = all workspaces). */
 export const hudGridFilterRepoPicked = createAction<[repo: string | null]>(
   'hud/gridFilterRepoPicked',
@@ -375,11 +376,11 @@ export const hudReducer = createReducer<HudState>(initialState)
       questionsByAgentId: { ...state.questionsByAgentId, [question.agentId]: question },
     };
   })
-  .with(hudQuestionSuperseded, (state, { payload: [agentId] }) => {
-    if (!(agentId in state.questionsByAgentId)) return state;
-    const next = { ...state.questionsByAgentId };
-    delete next[agentId];
-    return { ...state, questionsByAgentId: next };
+  .with(hudQuestionsResolvedForWorkspace, (state, { payload: [workspaceId] }) => {
+    const entries = Object.entries(state.questionsByAgentId);
+    const kept = entries.filter(([, question]) => question.workspaceId !== workspaceId);
+    if (kept.length === entries.length) return state;
+    return { ...state, questionsByAgentId: Object.fromEntries(kept) };
   })
   .with(hudGridFilterRepoPicked, (state, { payload: [repo] }) =>
     state.gridFilter.repo === repo
