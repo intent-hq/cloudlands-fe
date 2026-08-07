@@ -243,6 +243,49 @@ export const selectAgentSessionWorkspaceId = store.createSelector(
     state.agentSessions?.byAgentId[agentId]?.workspaceId,
 );
 
+/**
+ * Current reasoning effort for an agent session (Option B first-class session
+ * field, PROTOCOL §5.5). Rendered verbatim from the stored session:
+ * `undefined` when unset (provider default) or when the session is unknown.
+ *
+ * Compatibility: sessions whose stored model is still the legacy codex
+ * compound form (`{model}/{effort}`) surface the suffix as the effective
+ * effort when no first-class field is set, so pre-migration sessions render
+ * sensibly (the daemon splits the compound id at the session-read seam).
+ * Guarded the same way as the daemon's migration `0080`: the suffix must be a
+ * known codex effort level AND the session must show codex evidence, so
+ * slash-bearing non-codex ids (HuggingFace-style `org/model`) are never split.
+ */
+const LEGACY_CODEX_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh']);
+const LEGACY_CODEX_EFFORT_MODELS = new Set([
+  'gpt-5.3-codex',
+  'gpt-5.2-codex',
+  'gpt-5.1-codex-max',
+]);
+
+export const selectAgentReasoningEffort = store.createSelector(
+  (state, agentId: string): string | undefined => {
+    const stored = state.agentSessions?.byAgentId[agentId];
+    if (!stored) return undefined;
+    if (typeof stored.reasoningEffort === 'string' && stored.reasoningEffort.length > 0) {
+      return stored.reasoningEffort;
+    }
+    if (stored.reasoningEffort === null) return undefined;
+    const model = stored.model;
+    if (typeof model !== 'string') return undefined;
+    const slashIndex = model.indexOf('/');
+    if (slashIndex <= 0 || slashIndex >= model.length - 1) return undefined;
+    const suffix = model.slice(slashIndex + 1);
+    if (!LEGACY_CODEX_EFFORTS.has(suffix)) return undefined;
+    const base = model.slice(0, slashIndex);
+    const isCodex =
+      getAgentProvider(stored, selectEffectiveDefaultProviderId.select(state)) === 'codex' ||
+      base.startsWith('codex:') ||
+      LEGACY_CODEX_EFFORT_MODELS.has(base);
+    return isCodex ? suffix : undefined;
+  },
+);
+
 /** Select whether a session exists for a given agent. */
 export const selectAgentSessionExists = store.createSelector(
   (state, agentId: string): boolean =>

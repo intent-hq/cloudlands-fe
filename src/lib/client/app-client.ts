@@ -164,6 +164,8 @@ export interface AgentCreateRequest {
   workspaceId: string;
   prompt?: string;
   model?: string;
+  /** Reasoning effort for the session's model (Option B session field, §5.5). */
+  reasoningEffort?: string;
   specialist?: string | null;
   name?: string;
   nameExplicitlySet?: boolean;
@@ -573,6 +575,20 @@ export interface AgentsClient {
     agentId: string;
     workspaceId: string;
     messageId: string;
+  }): Promise<MutationResult>;
+  /**
+   * Set or clear the session-level reasoning effort (`agent.update`, §5.5 —
+   * the partial-mutation writer; `reasoningEffort` joins the `changes`
+   * whitelist with the Option B session field). A string sets the level, an
+   * explicit `null` clears it back to the provider default. The daemon
+   * persists the field (survives restarts), applies it on the next prompt
+   * send, and emits `agent:updated` so other windows converge. Transport /
+   * daemon errors fold into `{ success: false, error }`.
+   */
+  setReasoningEffort(params: {
+    agentId: string;
+    workspaceId: string;
+    reasoningEffort: string | null;
   }): Promise<MutationResult>;
   /**
    * Rename an agent session (`agent.rename`, §5.5). The daemon persists the
@@ -1454,7 +1470,13 @@ export interface SpecialistDef {
    * `list`/`get` when the resolved list is non-empty, omitted otherwise
    * (never `null`/`[]` on the wire); accepted in `create`/`edit` spec bodies.
    */
-  modelOptions?: { model: string; hint: string }[];
+  modelOptions?: { model: string; hint: string; reasoningEffort?: string }[];
+  /**
+   * Reasoning-effort level for the specialist's model (additive, PROTOCOL
+   * §5.11): one of the model's catalog `effortLevels`. Omitted when the
+   * specialist inherits the model default (never `null`/`""` on the wire).
+   */
+  reasoningEffort?: string;
   prompt?: string;
   behaviorPrompt?: string;
   source: "project" | "user" | "bundled";

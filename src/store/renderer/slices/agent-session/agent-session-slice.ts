@@ -264,6 +264,7 @@ type CanonicalAgentSessionUpdates = {
   isWaitingForOtherAgents?: boolean;
   waitingForAgentIds?: string[];
   liveTurnOpen?: boolean;
+  reasoningEffort?: string | null;
 };
 
 /** Wire statuses that mean a turn is running (lowercase IPC + PascalCase enum). */
@@ -294,6 +295,7 @@ type CanonicalAgentStatusWithSummary = CanonicalAgentStatusFields & {
   lastResponseSummary?: unknown;
   isWaitingForOtherAgents?: unknown;
   waitingForAgentIds?: unknown;
+  reasoningEffort?: unknown;
 };
 
 function canonicalSessionUpdates(
@@ -350,6 +352,13 @@ function canonicalSessionUpdates(
     updates.waitingForAgentIds = fields.waitingForAgentIds.filter(
       (id): id is string => typeof id === 'string',
     );
+  }
+  // Session-level reasoning effort (Option B, §5.5): fold the field from
+  // `agent:updated` / `agent:session-updated` convergence payloads when
+  // present — a string sets it, an explicit null clears it back to the
+  // provider default. Absent keys leave the stored value untouched.
+  if (typeof fields.reasoningEffort === 'string' || fields.reasoningEffort === null) {
+    updates.reasoningEffort = fields.reasoningEffort;
   }
 
   // A live running transition ends the parked completion-watch state. The
@@ -558,6 +567,7 @@ type SessionComparisonSnapshot = Pick<
   | 'status'
   | 'name'
   | 'model'
+  | 'reasoningEffort'
   | 'isStreaming'
   | 'isProcessing'
   | 'isResponding'
@@ -607,6 +617,10 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     status: session.status,
     name: session.name,
     model: session.model,
+    // Session-level reasoning effort (Option B) — an upsert whose only change
+    // is this field (e.g. the agent:updated convergence after an effort
+    // change in another window) must not be swallowed as a no-op.
+    reasoningEffort: session.reasoningEffort,
     isStreaming: session.isStreaming,
     isProcessing: session.isProcessing,
     isResponding: session.isResponding,
