@@ -137,7 +137,7 @@
     color: hsl(var(--destructive-foreground));
   }
   .hud-burn-arrow {
-    font-size: 10px;
+    /* Inherits the 12px rate size (above the a11y tiny-font threshold). */
     line-height: 1;
   }
 </style>
