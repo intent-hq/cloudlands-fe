@@ -6,12 +6,6 @@
   import Fa from 'svelte-fa';
   import BranchSelector, { type BranchListInfo, type BranchStatus } from './BranchSelector.svelte';
   import RepoSelector from './RepoSelector.svelte';
-  import {
-    isolationNoun,
-    resolveEffectiveIsolationMode,
-    type IsolationMode,
-  } from './isolation-mode';
-  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { m } from '$shared/paraglide/messages.js';
 
   type RepoSelectorHandle = {
@@ -108,17 +102,6 @@
 
   const isMetadataPresentation = $derived(presentation === 'metadata');
 
-  // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy.
-  // Re-resolves when workspace items hydrate (cowSupported is read off them).
-  const workspaceItemsForIsolation$ = selectWorkspaceItems();
-  let isolationMode = $state<IsolationMode>('worktree');
-  $effect(() => {
-    void resolveEffectiveIsolationMode($workspaceItemsForIsolation$).then(
-      (mode) => (isolationMode = mode),
-    );
-  });
-  const isolationLabel = $derived(isolationNoun(isolationMode));
-
   // Whole-sentence messages split around the widget slots ('\u0000') so
   // translators control word order; chunks render in the existing spans
   // (spacing comes from CSS, hence the trim).
@@ -137,9 +120,8 @@
   );
   const cloneRepoParts = $derived(
     sentenceParts(
-      m.workspace_repoAndBranchPicker_cloneRepoAndCreateOffBranch_label({
+      m.workspace_repoAndBranchPicker_cloneRepoAndWorkOffBranch_label({
         repo: SLOT,
-        isolationLabel,
         branch: SLOT,
       }),
     ),

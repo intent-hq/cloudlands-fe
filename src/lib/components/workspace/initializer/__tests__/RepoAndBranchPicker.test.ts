@@ -90,6 +90,22 @@ describe('RepoAndBranchPicker', () => {
     expect(repoSelector.getAttribute('data-trigger-suffix')).toBe('');
   });
 
+  it('summarises the GitHub clone flow without claiming a worktree is created', () => {
+    const { container } = render(RepoAndBranchPicker, {
+      props: {
+        repoType: 'github',
+        githubUrl: 'https://github.com/intent-hq/monorepo',
+        repoPath: 'intent-hq/monorepo',
+        branch: 'main',
+      },
+    });
+
+    const text = container.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(text).toContain('Clone');
+    expect(text).toContain('and work off');
+    expect(text).not.toContain('worktree');
+  });
+
   it('gives the default-presentation repo value the same explicit color as the branch trigger', () => {
     render(RepoAndBranchPicker, {
       props: {
