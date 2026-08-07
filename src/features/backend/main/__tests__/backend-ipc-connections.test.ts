@@ -297,6 +297,8 @@ describe('connections:* IPC handlers', () => {
     await expect(handler!({}, undefined)).resolves.toEqual({
       connections: [LOCAL, REMOTE],
       activeId: 'local',
+      // No remote handshake has mismatched, so there is no sticky mismatch (#823).
+      protocolMismatch: null,
     });
   });
 

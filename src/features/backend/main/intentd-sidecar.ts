@@ -44,6 +44,33 @@ let isShuttingDown = false;
 let consecutiveFailures = 0;
 
 /**
+ * The local daemon's `protocolVersion`, learned from the startup UDS version
+ * handshake probe (see [[probeDaemonVersion]] in {@link startIntentdSidecar}).
+ *
+ * Stored module-level here — on the sidecar manager, which outlives every
+ * renderer JsonRpcClient — so the multi-backend protocol-compat check has a
+ * STABLE local baseline that survives a client swap. Without it, the baseline
+ * lived only on the disposable local client's `client.hello`; a fast switch to
+ * a remote before that hello resolved disposed the client and left the baseline
+ * unrecorded, so a genuine protocol mismatch never warned (cloudlands-fe#823).
+ *
+ * Populated only when a live local daemon answers the startup probe (the
+ * adopt-external path). A freshly spawned daemon is not up yet at probe time, so
+ * this stays `null` there and backend.ipc.ts falls back to the local client's
+ * own `client.hello` value once it connects.
+ */
+let localDaemonProtocolVersion: string | null = null;
+
+/**
+ * The local daemon's `protocolVersion` from the startup handshake probe, or
+ * `null` if no live local daemon answered at startup. Consumed by backend.ipc.ts
+ * as the stable baseline for the multi-backend protocol-compatibility check.
+ */
+export function getLocalDaemonProtocolVersion(): string | null {
+  return localDaemonProtocolVersion;
+}
+
+/**
  * Startup readiness budget: total wall-clock time a freshly spawned daemon is
  * given to answer its first probe before the watchdog declares it failed.
  *
@@ -314,6 +341,16 @@ export function __resetIntentdSidecarForTesting(): void {
   currentRunRecord = null;
   sidecarStartupFailure = null;
   spawnOnDemandInFlight = null;
+  localDaemonProtocolVersion = null;
+}
+
+/**
+ * Test seam: set the local daemon protocolVersion baseline directly, standing
+ * in for a startup handshake probe against a live local daemon.
+ * @internal
+ */
+export function __setLocalDaemonProtocolVersionForTesting(version: string | null): void {
+  localDaemonProtocolVersion = version;
 }
 
 /**
@@ -915,6 +952,12 @@ export async function startIntentdSidecar(
 
   const socketPath = resolveSocketPath(env);
   const probe = await probeDaemonVersion(socketPath);
+  // Record the local daemon's protocolVersion as the stable baseline for the
+  // multi-backend protocol-compat check (survives renderer client disposal;
+  // see [[localDaemonProtocolVersion]]). Only a live daemon reports a version —
+  // a not-yet-spawned daemon leaves this null and the local client.hello fills
+  // the baseline once it connects.
+  if (probe.protocolVersion) localDaemonProtocolVersion = probe.protocolVersion;
   if (probe.alive) {
     // A live daemon owns the socket (and the data dir behind it): ALWAYS
     // adopt it — never spawn a second daemon alongside. Version mismatch is

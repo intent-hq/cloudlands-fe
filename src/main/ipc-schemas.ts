@@ -1342,10 +1342,15 @@ const LayoutSnapshotSchema = z.object({
 
 export const PanelLayoutLoadSchema = z.object({
   workspaceId: WorkspaceIdSchema,
+  // Active backend id (multi-backend connect, cloudlands-fe#823) — namespaces
+  // the on-disk history file so two backends sharing a workspace id keep
+  // separate undo/redo snapshots. Absent/local → the legacy un-namespaced file.
+  backendId: z.string().optional(),
 });
 
 export const PanelLayoutSaveSchema = z.object({
   workspaceId: WorkspaceIdSchema,
+  backendId: z.string().optional(),
   data: z.object({
     version: z.number(),
     workspaceId: z.string(),

@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { WorkspaceConfigConstants } from '../config-constants';
 import { CHIEF_WORKSPACE_ID } from '../types/branded-ids';
+import { LOCAL_CONNECTION_ID } from '../types/connections';
 import { getSafeHomeDir } from './utils';
 
 export class WorkspaceConfig extends WorkspaceConfigConstants {
@@ -93,6 +94,22 @@ export class WorkspaceConfig extends WorkspaceConfigConstants {
 
     // Default to canonical location for new workspaces
     return workspacesBase;
+  }
+
+  /**
+   * Filename for a workspace's panel-layout history, namespaced by active
+   * backend id (cloudlands-fe#823). The local sidecar (or an unspecified
+   * backend) keeps the legacy `panel-layout-history.json` for zero-migration
+   * carry-over; a remote backend gets its own isolated file. The backend id is
+   * sanitized to a filesystem-safe token so an id carrying host/port punctuation
+   * never yields an invalid filename.
+   */
+  static panelLayoutHistoryFileName(backendId?: string): string {
+    if (!backendId || backendId === LOCAL_CONNECTION_ID) {
+      return WorkspaceConfig.PANEL_LAYOUT_HISTORY_FILE;
+    }
+    const safe = backendId.replace(/[^A-Za-z0-9._-]/g, '_');
+    return `panel-layout-history.backend-${safe}.json`;
   }
 
   /**
@@ -199,11 +216,20 @@ export class WorkspaceConfig extends WorkspaceConfigConstants {
       path.join(WorkspaceConfig.paths.metadata(id), WorkspaceConfig.FIRST_VISIT_STATE_FILE),
 
     /**
-     * Panel layout history file
-     * Example: ~/intent/abc-123-def/.workspace/panel-layout-history.json
+     * Panel layout history file, namespaced by the active backend id so two
+     * backends surfacing a workspace with the SAME id never clobber each other's
+     * undo/redo snapshots (cloudlands-fe#823; mirrors T16's localStorage key
+     * namespacing). The local sidecar (or an unspecified backend) keeps the
+     * legacy filename for zero-migration carry-over; remote backends get an
+     * isolated `panel-layout-history.backend-<id>.json`.
+     * Example (local):  ~/intent/abc-123-def/.workspace/panel-layout-history.json
+     * Example (remote): ~/intent/abc-123-def/.workspace/panel-layout-history.backend-<id>.json
      */
-    panelLayoutHistory: (id: string): string =>
-      path.join(WorkspaceConfig.paths.metadata(id), WorkspaceConfig.PANEL_LAYOUT_HISTORY_FILE),
+    panelLayoutHistory: (id: string, backendId?: string): string =>
+      path.join(
+        WorkspaceConfig.paths.metadata(id),
+        WorkspaceConfig.panelLayoutHistoryFileName(backendId),
+      ),
 
     /**
      * Browser snapshots folder

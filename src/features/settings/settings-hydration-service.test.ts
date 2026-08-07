@@ -107,6 +107,15 @@ describe("settings-hydration-service (boot read + applySettingsChanges)", () => 
     expect(state.backgroundAgentSettings.typeOverrides.pr).toBe("");
   });
 
+  it("hydrates the model slice from model.defaultReasoningEffort", async () => {
+    applySettingsChanges([{ path: "model.defaultReasoningEffort", value: "high" }]);
+    expect((appStore.state as { model: { defaultReasoningEffort: string } }).model.defaultReasoningEffort).toBe("high");
+
+    // An empty value is the daemon's "unset" form and must clear the mirror.
+    applySettingsChanges([{ path: "model.defaultReasoningEffort", value: "" }]);
+    expect((appStore.state as { model: { defaultReasoningEffort: string } }).model.defaultReasoningEffort).toBe("");
+  });
+
   it("silently skips unknown paths so BE-side schema additions never crash the FE", () => {
     expect(() =>
       applySettingsChanges([{ path: "completely.unknown.path", value: 42 }]),

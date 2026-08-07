@@ -21,6 +21,8 @@ import {
   WORKSPACE_TABS_STORAGE_KEY,
 } from "$store/renderer/slices/tab-state/tab-state-slice";
 import { setWorkspaceHasLoaded } from "$store/renderer/slices/workspace/workspace-slice";
+import { connectionsListReceived } from "$store/renderer/slices/connections/connections-slice";
+import { LOCAL_CONNECTION_ID } from "$shared/types/connections";
 import type { StoreState } from "$store/renderer/types";
 import { createTabStatePersistenceMiddleware } from "./tab-state-persistence-service";
 
@@ -44,7 +46,7 @@ type FakeApi = {
   dispatch: ReturnType<typeof vi.fn>;
 };
 
-function createFakeApi(): FakeApi {
+function createFakeApi(activeIdRef?: { current: string }): FakeApi {
   let tabState = tabStateReducer(undefined, { type: "@@init" } as never);
   let workspaceState = { hasLoaded: false, loading: false, error: null };
   const dispatch = vi.fn((action: unknown) => {
@@ -59,7 +61,12 @@ function createFakeApi(): FakeApi {
     return action;
   });
   return {
-    getState: () => ({ tabState, workspace: workspaceState } as unknown as StoreState),
+    getState: () =>
+      ({
+        tabState,
+        workspace: workspaceState,
+        connections: { activeId: activeIdRef?.current ?? LOCAL_CONNECTION_ID },
+      }) as unknown as StoreState,
     dispatch,
   };
 }
@@ -270,5 +277,124 @@ describe("tabStatePersistenceService — per-action persistence", () => {
     // Should persist the empty cleanup result since hasLoaded is true
     expect(stored?.openTabs).toEqual([]);
     expect(stored?.tabOrder).toEqual([]);
+  });
+});
+
+describe("tabStatePersistenceService — backend namespacing", () => {
+  const REMOTE = "mock-10.0.0.9:5181";
+  const REMOTE_TABS_KEY = `backend:${REMOTE}:${WORKSPACE_TABS_STORAGE_KEY}`;
+  const REMOTE_SCROLL_KEY = `backend:${REMOTE}:${TAB_SCROLL_POSITIONS_STORAGE_KEY}`;
+
+  function build(activeIdRef: { current: string }): {
+    api: FakeApi;
+    dispatch: (action: unknown) => unknown;
+  } {
+    const api = createFakeApi(activeIdRef);
+    const chain = createTabStatePersistenceMiddleware()(api);
+    const next = (action: unknown) => api.dispatch(action);
+    const dispatch = chain(next);
+    return { api, dispatch };
+  }
+
+  it("local backend keeps the legacy un-namespaced keys (migration)", () => {
+    const activeIdRef = { current: LOCAL_CONNECTION_ID };
+    const { dispatch } = build(activeIdRef);
+    dispatch(openWorkspaceTab("ws-local"));
+    // Legacy key is written; no namespaced key exists.
+    expect(
+      safeLocalStorage.getJSON<PersistedWorkspaceTabsState>(WORKSPACE_TABS_STORAGE_KEY)?.openTabs,
+    ).toContain("ws-local");
+    expect(mem.has(REMOTE_TABS_KEY)).toBe(false);
+  });
+
+  it("remote backend writes to a backend-prefixed key, not the legacy one", () => {
+    const activeIdRef = { current: REMOTE };
+    const { dispatch } = build(activeIdRef);
+    dispatch(openWorkspaceTab("ws-remote"));
+    dispatch(saveScrollPosition("ws-remote-note", 88));
+    expect(
+      safeLocalStorage.getJSON<PersistedWorkspaceTabsState>(REMOTE_TABS_KEY)?.openTabs,
+    ).toContain("ws-remote");
+    expect(safeLocalStorage.getJSON<Record<string, number>>(REMOTE_SCROLL_KEY)).toEqual({
+      "ws-remote-note": 88,
+    });
+    // The legacy (local) key is untouched.
+    expect(mem.has(WORKSPACE_TABS_STORAGE_KEY)).toBe(false);
+  });
+
+  it("hydrates from the backend-prefixed key when the active backend is remote", () => {
+    safeLocalStorage.setJSON(REMOTE_TABS_KEY, seededTabs);
+    const activeIdRef = { current: REMOTE };
+    const api = createFakeApi(activeIdRef);
+    createTabStatePersistenceMiddleware()(api);
+    const s = api.getState().tabState;
+    expect(s.currentTabId).toBe("ws-b");
+    expect(s.openTabs).toEqual({ "ws-a": true, "ws-b": true });
+  });
+
+  it("no cross-backend clobber on a shared workspace ID", () => {
+    // Local persists tabs for workspace `shared`.
+    const localRef = { current: LOCAL_CONNECTION_ID };
+    build(localRef).dispatch(openWorkspaceTab("shared"));
+    // Remote persists different tabs for the SAME workspace ID.
+    const remoteRef = { current: REMOTE };
+    build(remoteRef).dispatch(openWorkspaceTab("shared-remote-only"));
+
+    const local = safeLocalStorage.getJSON<PersistedWorkspaceTabsState>(WORKSPACE_TABS_STORAGE_KEY);
+    const remote = safeLocalStorage.getJSON<PersistedWorkspaceTabsState>(REMOTE_TABS_KEY);
+    expect(local?.openTabs).toEqual(["shared"]);
+    expect(remote?.openTabs).toEqual(["shared-remote-only"]);
+  });
+
+  it("re-hydrates the incoming backend's tabs on a backend switch", () => {
+    // Local boots with its own tabs stored; remote has a distinct saved strip.
+    safeLocalStorage.setJSON(WORKSPACE_TABS_STORAGE_KEY, {
+      ...seededTabs,
+      openTabs: ["local-a"],
+      currentTabId: "local-a",
+      pinnedTabs: [],
+      tabOrder: ["local-a"],
+    } satisfies PersistedWorkspaceTabsState);
+    safeLocalStorage.setJSON(REMOTE_TABS_KEY, {
+      ...seededTabs,
+      openTabs: ["remote-x", "remote-y"],
+      currentTabId: "remote-y",
+      pinnedTabs: [],
+      tabOrder: ["remote-x", "remote-y"],
+    } satisfies PersistedWorkspaceTabsState);
+
+    const activeIdRef = { current: LOCAL_CONNECTION_ID };
+    const { api, dispatch } = build(activeIdRef);
+    // Booted as local.
+    expect(api.getState().tabState.currentTabId).toBe("local-a");
+
+    // Simulate the post-switch window reload learning it is now on `REMOTE`.
+    activeIdRef.current = REMOTE;
+    dispatch(connectionsListReceived({ connections: [], activeId: REMOTE }));
+
+    const s = api.getState().tabState;
+    expect(s.currentTabId).toBe("remote-y");
+    expect(s.openTabs).toEqual({ "remote-x": true, "remote-y": true });
+  });
+
+  it("resets to empty when the incoming backend has no saved tabs", () => {
+    safeLocalStorage.setJSON(WORKSPACE_TABS_STORAGE_KEY, {
+      ...seededTabs,
+      openTabs: ["local-a"],
+      currentTabId: "local-a",
+      pinnedTabs: [],
+      tabOrder: ["local-a"],
+    } satisfies PersistedWorkspaceTabsState);
+
+    const activeIdRef = { current: LOCAL_CONNECTION_ID };
+    const { api, dispatch } = build(activeIdRef);
+    expect(api.getState().tabState.openTabs).toEqual({ "local-a": true });
+
+    activeIdRef.current = REMOTE;
+    dispatch(connectionsListReceived({ connections: [], activeId: REMOTE }));
+
+    const s = api.getState().tabState;
+    expect(s.openTabs).toEqual({});
+    expect(s.currentTabId).toBeNull();
   });
 });

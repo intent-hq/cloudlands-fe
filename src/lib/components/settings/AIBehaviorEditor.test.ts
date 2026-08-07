@@ -37,9 +37,13 @@ const mocks = vi.hoisted(() => {
     writable,
     specialists$: writable<unknown[]>([]),
     fileSpecialists$: writable<unknown[]>([]),
+    defaultEffort$: writable<string>(''),
     effectivePrompt: { value: '' },
     explicitEffort: { value: undefined as string | undefined },
     effortLevels: { value: {} as Record<string, string[] | undefined> },
+    // Model ids the loaded `availableModels` catalog knows about — drives the
+    // selectModelDisplayName lookup that gates default-effort clearing.
+    catalogModels: { value: [] as string[] },
     dispatched: [] as { type: string; payload: unknown[] }[],
   };
 });
@@ -88,6 +92,10 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-slice', () =
 
 vi.mock('$store/renderer/slices/model/model-slice', () => ({
   reloadModelsForProvider: () => ({ type: 'model/reloadModelsForProvider', payload: [] }),
+  setDefaultReasoningEffort: (effort: string) => ({
+    type: 'model/setDefaultReasoningEffort',
+    payload: [effort],
+  }),
 }));
 
 vi.mock('$store/renderer/slices/specialists/specialists-slice', () => ({
@@ -119,10 +127,18 @@ const selectedModel$ = vi.hoisted(() => {
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectSelectedModel: () => selectedModel$,
+  selectDefaultReasoningEffort: () => mocks.defaultEffort$,
   selectAvailableModels: () => mocks.readable([]),
   selectModelEffortLevels: {
     select: (_state: unknown, modelId?: string) =>
       modelId ? mocks.effortLevels.value[modelId] : undefined,
+  },
+  selectModelDisplayName: {
+    select: (_state: unknown, providerId: string, modelId: string) =>
+      mocks.catalogModels.value.includes(`${providerId}:${modelId}`) ||
+      mocks.catalogModels.value.includes(modelId)
+        ? modelId
+        : undefined,
   },
 }));
 
@@ -161,6 +177,111 @@ describe('AIBehaviorEditor Default model picker', () => {
     render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
 
     expect(screen.getByTestId('picker-selected').textContent).toBe('claude-code:sonnet4.5');
+  });
+});
+
+describe('AIBehaviorEditor default reasoning-effort dropdown', () => {
+  const DEFAULT_MODEL = 'codex:gpt-5.3-codex';
+
+  afterEach(() => {
+    cleanup();
+    selectedModel$.set('');
+    mocks.defaultEffort$.set('');
+    mocks.effortLevels.value = {};
+    mocks.catalogModels.value = [];
+    mocks.dispatched.length = 0;
+  });
+
+  const lastEffortDispatch = () =>
+    mocks.dispatched.filter((a) => a.type === 'model/setDefaultReasoningEffort').at(-1);
+
+  it('renders no dropdown when the default model advertises no effort levels', () => {
+    selectedModel$.set('bare-model');
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    expect(screen.queryByTestId('default-effort')).toBeNull();
+  });
+
+  it('lists the default model effort levels plus Default', async () => {
+    mocks.effortLevels.value = { [DEFAULT_MODEL]: ['low', 'medium', 'high'] };
+    selectedModel$.set(DEFAULT_MODEL);
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    const wrapper = screen.getByTestId('default-effort');
+    expect(wrapper.textContent).toContain('Default');
+
+    await fireEvent.click(wrapper.querySelector('button')!);
+    for (const level of ['low', 'medium', 'high']) {
+      expect(screen.getByText(level)).toBeTruthy();
+    }
+  });
+
+  it('dispatches the picked level and clears it back to empty on Default', async () => {
+    mocks.effortLevels.value = { [DEFAULT_MODEL]: ['low', 'high'] };
+    selectedModel$.set(DEFAULT_MODEL);
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    await fireEvent.click(screen.getByTestId('default-effort').querySelector('button')!);
+    await fireEvent.click(screen.getByText('high'));
+    expect(lastEffortDispatch()).toEqual({
+      type: 'model/setDefaultReasoningEffort',
+      payload: ['high'],
+    });
+
+    mocks.defaultEffort$.set('high');
+    await fireEvent.click(screen.getByTestId('default-effort').querySelector('button')!);
+    await fireEvent.click(screen.getByText('Default'));
+    expect(lastEffortDispatch()).toEqual({
+      type: 'model/setDefaultReasoningEffort',
+      payload: [''],
+    });
+  });
+
+  it('clears the stored level when the default model changes to one lacking it', async () => {
+    mocks.effortLevels.value = { [DEFAULT_MODEL]: ['low', 'high'] };
+    mocks.catalogModels.value = [DEFAULT_MODEL, 'user-picked-model'];
+    selectedModel$.set(DEFAULT_MODEL);
+    mocks.defaultEffort$.set('high');
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    // MockModelPicker picks 'user-picked-model', which has no effortLevels.
+    await fireEvent.click(screen.getByTestId('pick-model'));
+
+    expect(lastEffortDispatch()).toEqual({
+      type: 'model/setDefaultReasoningEffort',
+      payload: [''],
+    });
+  });
+
+  it('keeps the stored level when the new default model still advertises it', async () => {
+    mocks.effortLevels.value = {
+      [DEFAULT_MODEL]: ['low', 'high'],
+      'user-picked-model': ['high'],
+    };
+    mocks.catalogModels.value = [DEFAULT_MODEL, 'user-picked-model'];
+    selectedModel$.set(DEFAULT_MODEL);
+    mocks.defaultEffort$.set('high');
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    await fireEvent.click(screen.getByTestId('pick-model'));
+
+    expect(lastEffortDispatch()).toBeUndefined();
+  });
+
+  it('keeps the stored level for a model the loaded catalog does not know', async () => {
+    // Cross-provider pick: the global catalog holds only the current
+    // provider's rows, so the newly picked model resolves no effortLevels.
+    // That is a lookup miss, not "no effort support" — clearing here would
+    // drop a level the new model may well advertise once its catalog loads.
+    mocks.effortLevels.value = { [DEFAULT_MODEL]: ['low', 'high'] };
+    mocks.catalogModels.value = [DEFAULT_MODEL];
+    selectedModel$.set(DEFAULT_MODEL);
+    mocks.defaultEffort$.set('high');
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    await fireEvent.click(screen.getByTestId('pick-model'));
+
+    expect(lastEffortDispatch()).toBeUndefined();
   });
 });
 

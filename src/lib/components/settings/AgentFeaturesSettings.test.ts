@@ -40,12 +40,13 @@ const FEATURE_PATHS = [
   'agentFeatures.richChatBlocks',
   'agentFeatures.structuredQuestions',
   'agentFeatures.attentionRequests',
+  'agentFeatures.stateSnapshot',
 ];
 
 describe('AgentFeaturesSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default daemon state (PROTOCOL §5.12 settings.list entries): all eight on
+    // Default daemon state (PROTOCOL §5.12 settings.list entries): all nine on
     mocks.mockSettingsList.mockResolvedValue(FEATURE_PATHS.map((path) => ({ path, value: true })));
   });
 
@@ -53,21 +54,23 @@ describe('AgentFeaturesSettings', () => {
     cleanup();
   });
 
-  it('renders eight toggles, all on by default', async () => {
+  it('renders nine toggles, all on by default', async () => {
     render(AgentFeaturesSettings);
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(8);
+      expect(screen.getAllByRole('switch')).toHaveLength(9);
     });
     for (const toggle of screen.getAllByRole('switch')) {
       expect(toggle.getAttribute('aria-checked')).toBe('true');
     }
   });
 
-  it('shows the new-sessions-only note', async () => {
+  it('shows the new-sessions-only note, qualified for the live-read exception', async () => {
     render(AgentFeaturesSettings);
 
-    expect(screen.getByText(/newly created agent sessions only/i)).toBeTruthy();
+    const note = screen.getByText(/newly created agent sessions only/i);
+    expect(note).toBeTruthy();
+    expect(note.textContent).toMatch(/unless noted otherwise/i);
   });
 
   it('defaults a feature to on when the daemon has no entry for its path', async () => {
@@ -77,7 +80,7 @@ describe('AgentFeaturesSettings', () => {
     render(AgentFeaturesSettings);
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(8);
+      expect(screen.getAllByRole('switch')).toHaveLength(9);
     });
     for (const toggle of screen.getAllByRole('switch')) {
       expect(toggle.getAttribute('aria-checked')).toBe('true');
@@ -139,6 +142,41 @@ describe('AgentFeaturesSettings', () => {
     });
     expect(mockToast.error).not.toHaveBeenCalled();
     expect(toggle.getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('toggling the state snapshot off sends the exact settings.update request', async () => {
+    mocks.mockSettingsUpdate.mockResolvedValueOnce([
+      { path: 'agentFeatures.stateSnapshot', value: false },
+    ]);
+
+    render(AgentFeaturesSettings);
+
+    const toggle = await screen.findByRole('switch', { name: 'State snapshot' });
+    await fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'agentFeatures.stateSnapshot', value: false },
+      ]);
+    });
+    expect(mockToast.error).not.toHaveBeenCalled();
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('renders the state snapshot off when the daemon reports value false', async () => {
+    mocks.mockSettingsList.mockResolvedValue(
+      FEATURE_PATHS.map((path) => ({
+        path,
+        value: path !== 'agentFeatures.stateSnapshot',
+      })),
+    );
+
+    render(AgentFeaturesSettings);
+
+    const toggle = await screen.findByRole('switch', { name: 'State snapshot' });
+    await waitFor(() => {
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
+    });
   });
 
   it('shows toast.error and reverts when the daemon returns a rolled-back value', async () => {

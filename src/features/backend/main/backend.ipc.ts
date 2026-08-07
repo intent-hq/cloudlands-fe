@@ -39,6 +39,7 @@ import { JsonRpcError } from './json-rpc-errors';
 import { getOrCreateClientId, persistClientId } from './client-identity';
 import { formatTransportInfo } from './transport-info';
 import {
+  getLocalDaemonProtocolVersion,
   getSidecarRunLog,
   getSidecarStartupFailure,
   onSidecarGaveUp,
@@ -51,11 +52,13 @@ import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import type {
   AddConnectionResult,
   ConnectionCertMismatchEvent,
+  ConnectionProtocolMismatchEvent,
   ConnectionsChangedEvent,
   ConnectionsListResult,
   ForgetConnectionResult,
   SwitchConnectionResult,
 } from '../../../shared/types/connections';
+import { compareProtocolMajor } from './protocol-compat';
 import {
   ConnectionsAddSchema,
   ConnectionsCaptureFingerprintSchema,
@@ -148,6 +151,45 @@ let activeConnectionMeta: { id: string; host: string; port: number } | null = nu
 let certMismatchNotified = false;
 
 /**
+ * The LOCAL intentd's `protocolVersion`, learned from the `client.hello`
+ * handshake against the local sidecar (`activeConnectionMeta === null`). Used
+ * as the baseline for the protocol-compatibility check when the FE later
+ * switches to a remote (T15). `null` until the first local handshake resolves.
+ *
+ * This is only ONE of two baseline sources: it is populated by the disposable
+ * local renderer client, so a fast switch to a remote before the local hello
+ * resolves would dispose that client and leave this `null`. The stable fallback
+ * is the sidecar manager's startup handshake probe
+ * ({@link getLocalDaemonProtocolVersion}), which survives client disposal — see
+ * {@link resolveLocalProtocolBaseline} (cloudlands-fe#823).
+ */
+let localProtocolVersion: string | null = null;
+
+/**
+ * One-shot guard so a remote's protocol mismatch surfaces a single non-blocking
+ * warning per client — the reconnect loop re-runs `client.hello` on every
+ * retry, but the renderer only needs one notice. Reset whenever a fresh client
+ * is constructed (parallels {@link certMismatchNotified}).
+ */
+let protocolMismatchNotified = false;
+
+/**
+ * Sticky protocol-mismatch for the CURRENTLY active backend, or `null` when the
+ * active backend matches local (or is local). Persisted here in main and
+ * replayed on {@link listConnections} so a renderer that registered its
+ * `connections:protocol-mismatch` listener AFTER the one-shot broadcast fired
+ * still surfaces the advisory modal + menu warning (cloudlands-fe#823).
+ *
+ * A backend switch destroys the initiating renderer and creates a new window;
+ * a fast remote can broadcast the mismatch before the new renderer subscribes,
+ * so the one-shot event alone is lossy. This latched copy closes that race.
+ * Cleared whenever a fresh client is constructed (see {@link getBackendClient})
+ * — the next `client.hello` re-detects a mismatch for a mismatching remote and
+ * leaves it null for a matching/local backend.
+ */
+let activeProtocolMismatch: ConnectionProtocolMismatchEvent | null = null;
+
+/**
  * Window-teardown seam for a backend switch (T4). Two split hooks, called
  * around the client swap so the outgoing backend's layout is captured while its
  * windows are still live and the incoming backend's windows only open once the
@@ -183,14 +225,49 @@ export function __setBackendWindowHooksForTesting(hooks: BackendWindowHooks | nu
   windowHooks = hooks ?? defaultWindowHooks;
 }
 
+/**
+ * @internal Test seams for the protocol-compat + sticky-mismatch flow (#823).
+ * These poke the module-level baseline/active-mismatch state directly so the
+ * early-switch and sticky-replay behaviors can be exercised without standing up
+ * a live JsonRpcClient/transport.
+ */
+export function __setActiveConnectionMetaForTesting(
+  meta: { id: string; host: string; port: number } | null,
+): void {
+  activeConnectionMeta = meta;
+}
+export function __setLocalProtocolVersionForTesting(version: string | null): void {
+  localProtocolVersion = version;
+}
+export function __handleHelloProtocolVersionForTesting(protocolVersion: string | null): void {
+  handleHelloProtocolVersion(protocolVersion);
+}
+export function __getActiveProtocolMismatchForTesting(): ConnectionProtocolMismatchEvent | null {
+  return activeProtocolMismatch;
+}
+export function __listConnectionsForTesting(): Promise<ConnectionsListResult> {
+  return listConnections();
+}
+export function __resetBackendProtocolStateForTesting(): void {
+  localProtocolVersion = null;
+  protocolMismatchNotified = false;
+  activeProtocolMismatch = null;
+  activeConnectionMeta = null;
+}
+
 /** Liveness heartbeat interval; reconnect-on-close cannot detect half-open sockets. */
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
 /** Lazily create, wire, and start the shared main-process JSON-RPC client. */
 export function getBackendClient(): JsonRpcClient {
   if (client) return client;
-  // A fresh client starts with a clean cert-mismatch guard.
+  // A fresh client starts with clean cert- and protocol-mismatch guards, and no
+  // known active-backend protocol mismatch — the incoming backend's own
+  // `client.hello` re-detects one for a mismatching remote (and leaves it null
+  // for a matching/local backend).
   certMismatchNotified = false;
+  protocolMismatchNotified = false;
+  activeProtocolMismatch = null;
   // Dev (unpackaged) builds default to the loopback WebSocket transport; the
   // packaged app stays on UDS. Env overrides (`INTENTD_SOCKET`, `INTENTD_WS_URL`)
   // win either way — see `resolveBackendConfig`. After a switch to a remote
@@ -214,13 +291,19 @@ export function getBackendClient(): JsonRpcClient {
     // survives app restarts and renderer reloads.
     helloParams: async () => ({ clientId: await getOrCreateClientId() }),
     onHelloResult: (result) => {
-      const clientId =
+      const obj =
         result && typeof result === 'object'
-          ? (result as { clientId?: unknown }).clientId
+          ? (result as { clientId?: unknown; protocolVersion?: unknown })
           : undefined;
+      const clientId = obj?.clientId;
       if (typeof clientId === 'string' && clientId.length > 0) {
         void persistClientId(clientId);
       }
+      // T15: `protocolVersion` from the handshake feeds the protocol-compat
+      // check — record it for local, compare it against local for a remote.
+      handleHelloProtocolVersion(
+        typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null,
+      );
     },
   });
   instance.on('notification', (notification: JsonRpcNotification) => {
@@ -362,6 +445,63 @@ function broadcast(channel: string, payload: unknown): void {
   }
 }
 
+/**
+ * Consume a `protocolVersion` from a `client.hello` handshake (T15).
+ *
+ * The live client's identity discriminates local vs remote: `activeConnectionMeta`
+ * is `null` for the local sidecar (UDS/env default) and set to the remote's
+ * identity after a {@link switchBackend} to a remote.
+ *   - Local handshake → record the value as the baseline `localProtocolVersion`.
+ *   - Remote handshake → compare its **major** against the local baseline (see
+ *     {@link resolveLocalProtocolBaseline}); on a mismatch latch it as the
+ *     sticky {@link activeProtocolMismatch} AND broadcast a single non-blocking
+ *     `connections:protocol-mismatch` notice (the connection still proceeds —
+ *     warn-but-allow). An unknown/absent version on either side surfaces
+ *     nothing.
+ */
+function handleHelloProtocolVersion(protocolVersion: string | null): void {
+  const meta = activeConnectionMeta;
+  if (!meta) {
+    // Local sidecar / env default: remember the baseline protocolVersion.
+    if (protocolVersion) localProtocolVersion = protocolVersion;
+    return;
+  }
+  if (protocolMismatchNotified) return;
+  const localBaseline = resolveLocalProtocolBaseline();
+  if (compareProtocolMajor(localBaseline, protocolVersion) !== 'mismatch') return;
+  protocolMismatchNotified = true;
+  const payload: ConnectionProtocolMismatchEvent = {
+    id: meta.id,
+    host: meta.host,
+    port: meta.port,
+    // Both are non-null: `compareProtocolMajor` only returns 'mismatch' when both parse.
+    localProtocolVersion: localBaseline as string,
+    remoteProtocolVersion: protocolVersion as string,
+  };
+  // Latch BEFORE broadcasting so a renderer that fetches `connections:list`
+  // between the broadcast and its own listener registration still replays it.
+  activeProtocolMismatch = payload;
+  logger.warn('Remote backend protocol version differs from local (warn-only)', {
+    id: meta.id,
+    localProtocolVersion: localBaseline,
+    remoteProtocolVersion: protocolVersion,
+  });
+  broadcast(CONNECTIONS.PROTOCOL_MISMATCH, payload);
+}
+
+/**
+ * Resolve the local intentd protocolVersion baseline for the compat check.
+ *
+ * Prefers the local renderer client's own `client.hello` value
+ * ({@link localProtocolVersion}) when available, and falls back to the sidecar
+ * manager's stable startup-probe value ({@link getLocalDaemonProtocolVersion})
+ * — which survives client disposal — so a switch to a remote before the local
+ * hello resolved still has a baseline to compare against (cloudlands-fe#823).
+ */
+function resolveLocalProtocolBaseline(): string | null {
+  return localProtocolVersion ?? getLocalDaemonProtocolVersion();
+}
+
 /** Normalize a thrown error into a serializable IPC error payload. */
 function toErrorPayload(error: unknown): {
   code: string;
@@ -410,13 +550,61 @@ export async function reconcileActiveConnectionOnBoot(): Promise<void> {
   }
 }
 
+/**
+ * Pull the hostname out of a `host.status` result (PROTOCOL §5.14 — returns
+ * `{ hostname, os, arch, ... }`). Returns a trimmed non-empty hostname, else
+ * `null` so callers keep the `host:port` fallback.
+ */
+function extractHostname(result: unknown): string | null {
+  if (result && typeof result === 'object') {
+    const value = (result as { hostname?: unknown }).hostname;
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * Label a freshly-connected remote by its hostname (T14). Reuses the live
+ * client's `host.status` capability probe — the same call the heartbeat issues —
+ * to read the remote machine's hostname, persists it on the connection record,
+ * and re-broadcasts the list so the menu upgrades `host:port` to
+ * `hostname (host:port)`.
+ *
+ * Fire-and-forget by design: it must never block or fail a switch. The
+ * `host.status` request queues until the fresh socket connects, so awaiting it
+ * inline would stall the switch on a slow/unreachable remote — instead the
+ * label upgrades asynchronously once the hostname arrives. Any failure
+ * (unreachable, malformed result, store write error) is swallowed with a warn;
+ * the connection keeps its `host:port` label.
+ */
+async function captureRemoteHostname(id: string): Promise<void> {
+  try {
+    const result = await getBackendClient().request('host.status');
+    const hostname = extractHostname(result);
+    if (hostname) {
+      await connectionsStore.setHostname(id, hostname);
+      await broadcastConnectionsChanged();
+    }
+  } catch (error) {
+    logger.warn('Failed to capture remote hostname for connection label', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /** The connections list + active selection, as surfaced to the renderer. */
 async function listConnections(): Promise<ConnectionsListResult> {
   const [connections, activeId] = await Promise.all([
     connectionsStore.list(),
     connectionsStore.getActiveId(),
   ]);
-  return { connections, activeId };
+  // Replay any sticky protocol mismatch for the active backend so a renderer
+  // that missed the one-shot `connections:protocol-mismatch` broadcast (e.g. a
+  // window created by a switch after the remote handshake already fired) still
+  // surfaces the advisory (cloudlands-fe#823).
+  return { connections, activeId, protocolMismatch: activeProtocolMismatch };
 }
 
 /** Broadcast the current list + active selection to every window. */
@@ -506,6 +694,15 @@ export async function switchBackend(id: string): Promise<SwitchConnectionResult>
   // onBackendReconnected) replay their `events.subscribe` calls against the new
   // client — their requests queue until the fresh socket connects (T8).
   backendReconnectForwarder.emit('reconnected');
+
+  // (4.5) Label the remote by its hostname once it connects (T14). Reuses the
+  // live client's `host.status`; fire-and-forget so a slow/unreachable remote
+  // never stalls the switch — the label upgrades from `host:port` to
+  // `hostname (host:port)` asynchronously. Skipped for the local sidecar (UDS
+  // has no remote hostname to show; its label is fixed).
+  if (meta) {
+    void captureRemoteHostname(id);
+  }
 
   // (5) Restore the incoming backend's windows (now targeting the new daemon).
   await windowHooks.restore(id);
