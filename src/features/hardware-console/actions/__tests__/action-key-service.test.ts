@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { select } from 'typed-redux-saga';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import type { HardwareConsoleManager, HardwareConsoleStatus } from '../../device/device-manager';
@@ -46,10 +45,12 @@ const dispatched: { type: string; payload?: unknown }[] = [];
 vi.mock('$store/renderer/store', () => ({
   store: {
     createSelector: (selector: (state: typeof mockState, ...args: never[]) => unknown) => {
-      const readable = (...args: never[]) => selector(mockState, ...args);
-      readable.select = (state: typeof mockState, ...args: never[]) => selector(state, ...args);
-      readable.effect = (...args: never[]) => select(selector, ...args);
-      return readable;
+      return Object.assign((...args: never[]) => selector(mockState, ...args), {
+        select: (state: typeof mockState, ...args: never[]) => selector(state, ...args),
+        effect: function* (...args: never[]) {
+          return selector(mockState, ...args);
+        },
+      });
     },
     get state() {
       return mockState;
@@ -58,7 +59,6 @@ vi.mock('$store/renderer/store', () => ({
       dispatched.push(action);
       return action;
     }),
-    createSelector: vi.fn((fn) => fn),
   },
 }));
 

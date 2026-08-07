@@ -26,6 +26,7 @@ import type {
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
 } from '$shared/types/connections';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { store as appStore } from '$store/renderer/store';
 import {
   loadConnections,
@@ -33,6 +34,7 @@ import {
   addConnection,
   forgetConnection,
   switchConnection,
+  createConnectionsMiddleware,
   disposeConnectionsService,
 } from './connections-service';
 import { certMismatchCleared } from '$store/renderer/slices/connections/connections-slice';
@@ -58,6 +60,11 @@ const REMOTE: ConnectionRecord = {
 /** Captured push-event listeners registered via electronAPI.on. */
 let eventHandlers: Map<string, (payload: unknown) => void>;
 let invoke: ReturnType<typeof vi.fn>;
+
+function bootConnectionsService() {
+  const dispatch = (createConnectionsMiddleware() as any)(appStore)(appStore.dispatch);
+  dispatch(certMismatchCleared());
+}
 
 describe('connections-service', () => {
   beforeEach(() => {
@@ -112,7 +119,7 @@ describe('connections-service', () => {
     }));
     await loadConnections();
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.LIST);
-    expect(appStore.state.connections.connections).toEqual([LOCAL, REMOTE]);
+    expect(getItems(appStore.state.connections.connections)).toEqual([LOCAL, REMOTE]);
     expect(appStore.state.connections.activeId).toBe('remote-1');
   });
 
@@ -200,24 +207,24 @@ describe('connections-service', () => {
   describe('boot subscriptions', () => {
     it('subscribes to the changed + cert-mismatch + protocol-mismatch pushes on first dispatch', () => {
       // A dispatch routes through the middleware, booting the service.
-      appStore.dispatch(certMismatchCleared());
+      bootConnectionsService();
       expect(eventHandlers.has(CONNECTIONS_CHANGED_EVENT)).toBe(true);
       expect(eventHandlers.has(CONNECTION_CERT_MISMATCH_EVENT)).toBe(true);
       expect(eventHandlers.has(CONNECTION_PROTOCOL_MISMATCH_EVENT)).toBe(true);
     });
 
     it('folds a connections:changed push into the list + active id', () => {
-      appStore.dispatch(certMismatchCleared());
+      bootConnectionsService();
       eventHandlers.get(CONNECTIONS_CHANGED_EVENT)!({
         connections: [LOCAL, REMOTE],
         activeId: 'remote-1',
       });
-      expect(appStore.state.connections.connections).toEqual([LOCAL, REMOTE]);
+      expect(getItems(appStore.state.connections.connections)).toEqual([LOCAL, REMOTE]);
       expect(appStore.state.connections.activeId).toBe('remote-1');
     });
 
     it('folds a connections:cert-mismatch push into the slice', () => {
-      appStore.dispatch(certMismatchCleared());
+      bootConnectionsService();
       const event: ConnectionCertMismatchEvent = {
         id: 'remote-1',
         host: '10.0.0.5',
@@ -230,7 +237,7 @@ describe('connections-service', () => {
     });
 
     it('folds a connections:protocol-mismatch push into the slice (warn-but-allow)', () => {
-      appStore.dispatch(certMismatchCleared());
+      bootConnectionsService();
       const event: ConnectionProtocolMismatchEvent = {
         id: 'remote-1',
         host: '10.0.0.5',
