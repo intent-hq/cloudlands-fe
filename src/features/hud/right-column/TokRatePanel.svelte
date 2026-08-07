@@ -17,12 +17,56 @@
   const bars = $derived($rateHistory$?.samples ?? []);
 
   const maxTokens = $derived(Math.max(1, ...bars.map((bar) => bar.tokens)));
-  /** Peak minute over the window, as a per-second rate (÷60); 0 when no data. */
-  const peakRate = $derived(
-    bars.length > 0 ? Math.round(Math.max(...bars.map((bar) => bar.tokens)) / 60) : 0,
-  );
   /** TOK/S NOW — the newest minute sample's tokens over its 60s span. */
   const tokRate = $derived(bars.length > 0 ? Math.round(bars[bars.length - 1].tokens / 60) : 0);
+
+  /** One x-axis time tick, positioned by the bar it sits under. */
+  interface AxisTick {
+    key: string;
+    label: string;
+    /** Horizontal position (percent of the plot width). */
+    leftPct: number;
+    /** True for the right-edge "now" label (anchored to its right edge). */
+    rightEdge: boolean;
+  }
+
+  function pad2(n: number): string {
+    return String(n).padStart(2, '0');
+  }
+
+  /**
+   * X-axis ticks: on-the-hour LOCAL-time labels ("HH:00") under any bar whose
+   * bucket falls on a minute-:00 boundary, plus the newest bucket's local
+   * "HH:MM" anchored at the right edge. The newest bar's own hour tick is
+   * dropped — the right-edge label already covers it. A 40-minute window holds
+   * at most one hour boundary, so this stays legible (mid tick + right label).
+   */
+  const ticks = $derived.by((): AxisTick[] => {
+    const n = bars.length;
+    if (n === 0) return [];
+    const out: AxisTick[] = [];
+    bars.forEach((bar, index) => {
+      if (index === n - 1) return; // covered by the right-edge label
+      const date = new Date(bar.bucketUtc);
+      if (Number.isNaN(date.getTime()) || date.getMinutes() !== 0) return;
+      out.push({
+        key: `hour-${bar.bucketUtc}`,
+        label: `${pad2(date.getHours())}:00`,
+        leftPct: ((index + 0.5) / n) * 100,
+        rightEdge: false,
+      });
+    });
+    const newest = new Date(bars[n - 1].bucketUtc);
+    if (!Number.isNaN(newest.getTime())) {
+      out.push({
+        key: 'now',
+        label: `${pad2(newest.getHours())}:${pad2(newest.getMinutes())}`,
+        leftPct: 100,
+        rightEdge: true,
+      });
+    }
+    return out;
+  });
 </script>
 
 <section class="hud-tokrate-panel" data-testid="hud-tokrate-panel">
@@ -32,9 +76,6 @@
     <span class="hud-tokrate-window">{m.hud_tokRate_window_label()}</span>
   </header>
   <div class="hud-tokrate-chart">
-    {#if bars.length > 0}
-      <span class="hud-tokrate-peak">{m.hud_tokRate_peak_label({ rate: formatInteger(peakRate) })}</span>
-    {/if}
     {#each bars as bar (bar.bucketUtc)}
       <div
         class="hud-tokrate-bar"
@@ -42,8 +83,16 @@
       ></div>
     {/each}
   </div>
+  <div class="hud-tokrate-axis" data-testid="hud-tokrate-axis">
+    {#each ticks as tick (tick.key)}
+      <span
+        class="hud-tokrate-tick"
+        class:right-edge={tick.rightEdge}
+        style:left={`${tick.leftPct}%`}>{tick.label}</span
+      >
+    {/each}
+  </div>
   <div class="hud-tokrate-footer">
-    <span>{m.hud_tokRate_windowStart_label()}</span>
     <span class="hud-tokrate-spacer"></span>
     <span class="hud-tokrate-value">{formatInteger(tokRate)}</span>
     <span>{m.hud_tokRate_now_label()}</span>
@@ -90,15 +139,24 @@
     height: 74px;
     padding: 10px 12px 6px;
   }
-  .hud-tokrate-peak {
+  .hud-tokrate-axis {
+    position: relative;
+    height: 12px;
+    margin: 0 12px;
+  }
+  .hud-tokrate-tick {
     position: absolute;
-    top: 4px;
-    right: 12px;
+    top: 0;
+    transform: translateX(-50%);
+    white-space: nowrap;
     font:
       500 9px 'JetBrains Mono',
       monospace;
     color: hsl(var(--text-ghost));
     pointer-events: none;
+  }
+  .hud-tokrate-tick.right-edge {
+    transform: translateX(-100%);
   }
   .hud-tokrate-bar {
     flex: 1;

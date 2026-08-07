@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  computeBurnRatePerMin,
   HUD_FEED_LIMIT,
   hudActivated,
   hudAttentionChanged,
@@ -271,6 +272,70 @@ describe('hud-slice reducer', () => {
     state = hudReducer(state, hudRateHistoryFailed('daemon offline'));
     expect(state.rateHistory).toEqual(rateHistory);
     expect(state.rateHistoryError).toBe('daemon offline');
+  });
+
+  describe('last-5-minute burn rate + trend', () => {
+    function history(tokens: number[]) {
+      return {
+        samples: tokens.map((value, index) => ({
+          bucketUtc: `2026-07-30T14:${String(index).padStart(2, '0')}:00Z`,
+          tokens: value,
+        })),
+        fetchedAtMs: 1,
+      };
+    }
+
+    it('computeBurnRatePerMin averages the last 5 buckets (÷5), rounded', () => {
+      // Only the last 5 of the 7 buckets count: (100+200+300+400+500)/5 = 300.
+      expect(
+        computeBurnRatePerMin(history([9999, 8888, 100, 200, 300, 400, 500]).samples),
+      ).toBe(300);
+    });
+
+    it('computeBurnRatePerMin is 0 for no samples and a true mean for a partial window', () => {
+      expect(computeBurnRatePerMin([])).toBe(0);
+      // Fewer than 5 buckets → divide by the count present, not by 5.
+      expect(computeBurnRatePerMin(history([300, 300, 300]).samples)).toBe(300);
+    });
+
+    it('first load derives the average with a neutral trend (no previous average)', () => {
+      const state = hudReducer(activeState(), hudRateHistoryLoaded(history([100, 200, 300, 400, 500])));
+      expect(state.burnRatePerMin).toBe(300);
+      expect(state.burnTrend).toBe('none');
+    });
+
+    it('a rising rounded average since the previous poll shows the up trend', () => {
+      let state = hudReducer(activeState(), hudRateHistoryLoaded(history([100, 100, 100, 100, 100])));
+      expect(state.burnRatePerMin).toBe(100);
+      state = hudReducer(state, hudRateHistoryLoaded(history([100, 100, 100, 100, 600])));
+      expect(state.burnRatePerMin).toBe(200);
+      expect(state.burnTrend).toBe('up');
+    });
+
+    it('a falling rounded average since the previous poll shows the down trend', () => {
+      let state = hudReducer(activeState(), hudRateHistoryLoaded(history([500, 500, 500, 500, 500])));
+      expect(state.burnRatePerMin).toBe(500);
+      state = hudReducer(state, hudRateHistoryLoaded(history([100, 100, 100, 100, 100])));
+      expect(state.burnTrend).toBe('down');
+    });
+
+    it('an equal rounded average is flat — sub-integer jitter never flips the arrow', () => {
+      // 1500/5 = 300 then 1502/5 = 300.4 → both round to 300 → still 'none'.
+      let state = hudReducer(activeState(), hudRateHistoryLoaded(history([300, 300, 300, 300, 300])));
+      state = hudReducer(state, hudRateHistoryLoaded(history([300, 300, 300, 300, 302])));
+      expect(state.burnRatePerMin).toBe(300);
+      expect(state.burnTrend).toBe('none');
+    });
+
+    it('resets to a neutral first-load trend after the HUD deactivates', () => {
+      let state = hudReducer(activeState(), hudRateHistoryLoaded(history([100, 100, 100, 100, 100])));
+      state = hudReducer(state, hudRateHistoryLoaded(history([600, 600, 600, 600, 600])));
+      expect(state.burnTrend).toBe('up');
+      state = hudReducer(state, hudDeactivated());
+      state = hudReducer(hudReducer(state, hudActivated()), hudRateHistoryLoaded(history([50, 50, 50, 50, 50])));
+      expect(state.burnRatePerMin).toBe(50);
+      expect(state.burnTrend).toBe('none');
+    });
   });
 
   it('hudTakeoverRequested records the workspace id (idempotent on repeats)', () => {
