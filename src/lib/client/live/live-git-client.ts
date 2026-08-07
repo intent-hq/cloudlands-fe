@@ -12,7 +12,9 @@
  * `DiffChunk[]` / `TrackedChange[]` / `CommitInfo[]` shapes; transport/daemon
  * errors fold to an empty list so a single failed read does not throw into the
  * store. `subscribe` refetches on `git:*` / `changes:tracked` /
- * `changes:git-status` events (§6.5). `stage`, `commit`, and `pull` are the supported
+ * `changes:git-status` events (§6.5), through a module-level single-flight +
+ * trailing-coalesce guard shared by all subscribers
+ * (intent-hq/monorepo#1648). `stage`, `commit`, and `pull` are the supported
  * write mutations: `stage` forwards to `git.stage`; `commit` forwards to
  * `git.agentCommit` (the wire-canonical commit method — `git.commit` is
  * deprecated per §5.6); `pull` forwards to the path-based `git.pull`
@@ -97,6 +99,48 @@ async function fetchStatus(workspaceId: string): Promise<GitStatus | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Shared single-flight state for the `subscribe` refetch path
+ * (intent-hq/monorepo#1648). Module-level — NOT per-subscription — so N
+ * subscribers plus a burst of daemon events cost at most one in-flight
+ * `workspace.list` + `git.status` pair plus one trailing pair, instead of one
+ * per (event × subscriber). Every subscriber's handler is registered here and
+ * fans out from the single shared fetch.
+ */
+const statusHandlers = new Set<SubscriptionHandler<GitStatus | null>>();
+let statusFetchInFlight = false;
+let statusFetchDirty = false;
+
+/**
+ * Run the shared status fetch with trailing coalesce: the leading edge fires
+ * immediately, triggers arriving while a fetch is in flight only set the dirty
+ * flag, and at most one trailing fetch runs once the in-flight one settles.
+ */
+function refetchSharedStatus(): void {
+  if (statusFetchInFlight) {
+    statusFetchDirty = true;
+    return;
+  }
+  statusFetchInFlight = true;
+  listWorkspaceIds()
+    .then((ids) => (ids.length > 0 ? fetchStatus(ids[0]) : null))
+    .then((status) => {
+      for (const handler of [...statusHandlers]) handler(status);
+    })
+    .catch(() => {
+      // Snapshot refresh failures are non-fatal for the subscription.
+    })
+    .finally(() => {
+      statusFetchInFlight = false;
+      if (!statusFetchDirty) return;
+      statusFetchDirty = false;
+      // Events landed mid-flight: their changes may postdate the fetch that
+      // just settled, so run exactly one trailing fetch (skipped once the
+      // last subscriber is gone).
+      if (statusHandlers.size > 0) refetchSharedStatus();
+    });
 }
 
 /** Coerce a daemon `git.diffs` line into the renderer `DiffLine`. */
@@ -629,15 +673,16 @@ export class LiveGitClient implements GitClient {
     let disposed = false;
     let subscriptionId: string | undefined;
 
+    // The handler joins the module-level fan-out set, so the initial snapshot,
+    // every event-driven refetch, and reconnect all share one guarded fetch
+    // across subscribers (intent-hq/monorepo#1648).
+    const guardedHandler: SubscriptionHandler<GitStatus | null> = (status) => {
+      if (!disposed) handler(status);
+    };
+    statusHandlers.add(guardedHandler);
+
     const emit = () => {
-      listWorkspaceIds()
-        .then((ids) => (ids.length > 0 ? fetchStatus(ids[0]) : null))
-        .then((status) => {
-          if (!disposed) handler(status);
-        })
-        .catch(() => {
-          // Snapshot refresh failures are non-fatal for the subscription.
-        });
+      if (!disposed) refetchSharedStatus();
     };
 
     emit();
@@ -681,6 +726,7 @@ export class LiveGitClient implements GitClient {
 
     return () => {
       disposed = true;
+      statusHandlers.delete(guardedHandler);
       off();
       offReconnect();
       if (subscriptionId) void backendUnsubscribe(subscriptionId);
