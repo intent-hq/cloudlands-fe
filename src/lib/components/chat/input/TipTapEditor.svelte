@@ -718,6 +718,11 @@
             spellcheck: 'false',
             autocorrect: 'off',
             autocapitalize: 'off',
+            autocomplete: 'off',
+            'data-1p-ignore': 'true',
+            'data-lpignore': 'true',
+            'data-bwignore': 'true',
+            'data-form-type': 'other',
           },
           handlePaste: (view, event) => {
             const text = event.clipboardData?.getData('text/plain');
