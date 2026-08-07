@@ -83,16 +83,13 @@ export function isHudTrackedAttentionValue(value: string): boolean {
 }
 
 /**
- * Mock-faithful workspace-card state keys: the BE-owned
- * `workspace.displayStatus` wire values (`idle` is a wire value since
- * intentd#793, and doubles as the fallback for rows without a displayStatus;
- * the step-0 `needs_attention` rollup, intentd#825, renders as `wait`) plus
- * the HUD attention refinements (`wait` also when the live attention flag is
- * raised, `blocked` when a top-level non-background agent's pending request
- * is specifically a blocker, `failed` when a card agent is in the failed
- * bucket, and the non-urgent `unread` blue-dot state that outranks only
- * `idle`/`not_started` and the terminal `complete`/`pr_merged` — it never
- * masks urgent/active states).
+ * Mock-faithful workspace-card state keys: one per BE-owned
+ * `workspace.displayStatus` wire value (`idle` since intentd#793 — it doubles
+ * as the fallback for rows without a displayStatus; `failed`, `blocked` and
+ * `unread` since intentd#945). The daemon owns the precedence between them
+ * (PROTOCOL §5.1), so the HUD adds no refinements of its own; the only
+ * divergence from the wire vocabulary is the presentational rename of
+ * `needs_attention` to `wait`.
  */
 export const HUD_CARD_STATE_KEYS = [
   'in_progress',

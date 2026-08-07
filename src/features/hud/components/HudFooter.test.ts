@@ -217,10 +217,10 @@ describe('HudFooter ATTENTION/FAILED counter blink gating', () => {
     expect(attnCounter().classList.contains('hud-stat-zero')).toBe(true);
   });
 
-  it('blinks FAILED (not ATTENTION) when a live agent fails', () => {
+  it('blinks FAILED (not ATTENTION) on the wire failed rollup', () => {
     render(HudFooter);
 
-    appStore.dispatch(setWorkspaceEntity(makeWorkspace('ws-1', 'in_progress', ['failed'])));
+    appStore.dispatch(setWorkspaceEntity(makeWorkspace('ws-1', 'failed', ['failed'])));
     flushSync();
 
     expect(failCounter().textContent).toBe('1');
@@ -231,10 +231,10 @@ describe('HudFooter ATTENTION/FAILED counter blink gating', () => {
     expect(attnCounter().classList.contains('hud-stat-zero')).toBe(true);
   });
 
-  it('blinks ATTENTION for a top-level blocker without counting FAILED', () => {
+  it('blinks ATTENTION on the wire blocked rollup without counting FAILED', () => {
     render(HudFooter);
 
-    appStore.dispatch(setWorkspaceEntity(makeWorkspace('ws-1', 'in_progress', ['active'])));
+    appStore.dispatch(setWorkspaceEntity(makeWorkspace('ws-1', 'blocked', ['active'])));
     trackSession('ws-1-a-0', { attentionRequestKind: 'blocker' });
     flushSync();
 
@@ -244,10 +244,20 @@ describe('HudFooter ATTENTION/FAILED counter blink gating', () => {
     expect(failCounter().classList.contains('hud-stat-zero')).toBe(true);
   });
 
-  it('stops blinking when the counts drop back to zero', () => {
+  it('a failed live agent alone never moves the counters (the BE rollup owns them)', () => {
     render(HudFooter);
 
     appStore.dispatch(setWorkspaceEntity(makeWorkspace('ws-1', 'in_progress', ['failed'])));
+    flushSync();
+
+    expect(attnCounter().textContent).toBe('0');
+    expect(failCounter().textContent).toBe('0');
+  });
+
+  it('stops blinking when the counts drop back to zero', () => {
+    render(HudFooter);
+
+    appStore.dispatch(setWorkspaceEntity(makeWorkspace('ws-1', 'failed', ['failed'])));
     flushSync();
     expect(failCounter().classList.contains('hud-stat-blink')).toBe(true);
 

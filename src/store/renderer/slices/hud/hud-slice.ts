@@ -16,7 +16,8 @@
 
 import { createAction } from '$lib/store-shim/utils/store/create-action';
 import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
-import type { WorkspaceDisplayStatus } from '$shared/types';
+import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
+import { replaceWorkspaceList, setWorkspaceEntity } from '../workspace/workspace-slice';
 import {
   EMPTY_HUD_GRID_FILTER,
   isHudTrackedAttentionValue,
@@ -147,6 +148,12 @@ export interface HudState {
   attentionByWorkspaceId: Record<string, HudAttentionFlag>;
   /** Live overrides from `workspace:displayStatus-changed`. */
   displayStatusByWorkspaceId: Record<string, WorkspaceDisplayStatus>;
+  /**
+   * Ids whose live override one entity delivery has already contradicted.
+   * Second-delivery guard for the override retirement — see
+   * `reconcileDisplayStatusOverride`.
+   */
+  displayStatusOverridesContradicted: Record<string, true>;
   usage: HudUsageState | null;
   usageError: string | null;
   /** Per-minute TOK/MIN history from `stats.getRateHistory` (PROTOCOL §5.39). */
@@ -171,6 +178,7 @@ export const initialState: HudState = {
   feed: [],
   attentionByWorkspaceId: {},
   displayStatusByWorkspaceId: {},
+  displayStatusOverridesContradicted: {},
   usage: null,
   usageError: null,
   rateHistory: null,
@@ -225,6 +233,66 @@ export const hudGridFilterStatesCleared = createAction('hud/gridFilterStatesClea
 
 // ── Reducer ──
 
+/**
+ * Reconcile live `displayStatus` overrides against entities that just arrived
+ * carrying a BE value.
+ *
+ * The override bridges the gap between a `workspace:displayStatus-changed`
+ * event and the entity catching up, but nothing retired it, so a dropped
+ * event left a stale override winning forever. Retirement cannot simply be
+ * "an entity carries a value" though: neither delivery order nor entity
+ * freshness is guaranteed. The daemon derives `displayStatus` at serve time
+ * (PROTOCOL §5.1), so a `workspace.list` issued BEFORE the event can resolve
+ * after it and carry the older value — clearing on that response would
+ * reintroduce the very staleness the override exists to cover.
+ *
+ * Two-strike rule: the FIRST entity delivery that disagrees with an override
+ * is assumed to be that in-flight response and only marks the override
+ * contradicted; a SECOND disagreeing delivery retires it (an in-flight
+ * response cannot predate the event twice, so by then the entity is the
+ * fresher value). An entity that AGREES with the override retires it
+ * immediately — the entity has caught up and the override is redundant — and
+ * also clears the contradicted mark, since agreement proves the store is
+ * current as of the override.
+ */
+function reconcileDisplayStatusOverride(state: HudState, workspaces: readonly Workspace[]) {
+  let overrides = state.displayStatusByWorkspaceId;
+  let contradicted = state.displayStatusOverridesContradicted;
+  let changed = false;
+
+  for (const workspace of workspaces) {
+    const id = String(workspace.id);
+    const override = overrides[id];
+    // An entity without a value carries nothing fresher — leave it alone.
+    if (override === undefined || workspace.displayStatus === undefined) continue;
+
+    const retire = workspace.displayStatus === override || contradicted[id] === true;
+    if (!retire) {
+      if (!changed) {
+        overrides = { ...overrides };
+        contradicted = { ...contradicted };
+        changed = true;
+      }
+      contradicted[id] = true;
+      continue;
+    }
+    if (!changed) {
+      overrides = { ...overrides };
+      contradicted = { ...contradicted };
+      changed = true;
+    }
+    delete overrides[id];
+    delete contradicted[id];
+  }
+
+  if (!changed) return state;
+  return {
+    ...state,
+    displayStatusByWorkspaceId: overrides,
+    displayStatusOverridesContradicted: contradicted,
+  };
+}
+
 export const hudReducer = createReducer<HudState>(initialState)
   // Activation resets to a clean slate — the feed is live-only (no backfill).
   .with(hudActivated, () => ({ ...initialState, active: true }))
@@ -258,13 +326,27 @@ export const hudReducer = createReducer<HudState>(initialState)
       },
     };
   })
-  .with(hudDisplayStatusChanged, (state, { payload: [workspaceId, displayStatus] }) => ({
-    ...state,
-    displayStatusByWorkspaceId: {
-      ...state.displayStatusByWorkspaceId,
-      [workspaceId]: displayStatus,
-    },
-  }))
+  .with(hudDisplayStatusChanged, (state, { payload: [workspaceId, displayStatus] }) => {
+    // A newer event restarts the two-strike count: entity deliveries that
+    // contradicted the PREVIOUS override say nothing about this one.
+    const contradicted = { ...state.displayStatusOverridesContradicted };
+    delete contradicted[workspaceId];
+    return {
+      ...state,
+      displayStatusByWorkspaceId: {
+        ...state.displayStatusByWorkspaceId,
+        [workspaceId]: displayStatus,
+      },
+      displayStatusOverridesContradicted: contradicted,
+    };
+  })
+  // Entity deliveries reconcile the override (see `reconcileDisplayStatusOverride`).
+  .with(setWorkspaceEntity, (state, { payload: [workspace] }) =>
+    reconcileDisplayStatusOverride(state, [workspace]),
+  )
+  .with(replaceWorkspaceList, (state, { payload: [workspaces] }) =>
+    reconcileDisplayStatusOverride(state, workspaces),
+  )
   .with(hudUsageLoaded, (state, { payload: [usage] }) => ({ ...state, usage, usageError: null }))
   .with(hudUsageFailed, (state, { payload: [error] }) => ({ ...state, usageError: error }))
   .with(hudRateHistoryLoaded, (state, { payload: [rateHistory] }) => ({
