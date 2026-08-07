@@ -64,6 +64,44 @@ describe('ChatReferenceBlock', () => {
     });
   });
 
+  it('strips a single-line "#L" anchor carried in filePath and derives the line', async () => {
+    const onOpenFile = vi.fn();
+    render(ChatReferenceBlock, {
+      props: {
+        reference: { filePath: 'src/lib/foo.ts#L42' },
+        onOpenFile,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(onOpenFile).toHaveBeenCalledWith({
+      path: 'src/lib/foo.ts',
+      line: 42,
+      openInAdjacentPanel: false,
+      sourcePanelId: undefined,
+    });
+  });
+
+  it('strips a range "#L<n>-<m>" anchor carried in filePath and uses the start line', async () => {
+    const onOpenFile = vi.fn();
+    render(ChatReferenceBlock, {
+      props: {
+        reference: { filePath: 'src/lib/foo.ts#L10-20' },
+        onOpenFile,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(onOpenFile).toHaveBeenCalledWith({
+      path: 'src/lib/foo.ts',
+      line: 10,
+      openInAdjacentPanel: false,
+      sourcePanelId: undefined,
+    });
+  });
+
   it('derives the file path from a symbol semanticId', async () => {
     const onOpenFile = vi.fn();
     render(ChatReferenceBlock, {

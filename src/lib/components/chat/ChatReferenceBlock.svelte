@@ -26,16 +26,21 @@
   let { reference, onOpenFile }: Props = $props();
 
   const parsedId = $derived(reference.semanticId ? parseSemanticId(reference.semanticId) : null);
-  const filePath = $derived(reference.filePath || parsedId?.filePath || '');
+  // The filePath field may itself carry a "#L<n>" / "#L<n>-<m>" anchor, so parse
+  // it the same way as semanticId to strip the anchor and recover the line.
+  const parsedFilePath = $derived(reference.filePath ? parseSemanticId(reference.filePath) : null);
+  const filePath = $derived(
+    parsedFilePath?.filePath || reference.filePath || parsedId?.filePath || '',
+  );
   const fileName = $derived(
     filePath.split('/').pop() || reference.semanticId || m.chat_messageContent_reference_fallback(),
   );
   // Line anchors are 1-based by convention, but ReferenceTargetSchema allows
   // 0-based ranges and getSemanticId() can derive "#L0" from them. Clamp to 1
   // so the jump target survives downstream truthy checks (e.g. FileTabType).
-  const line = $derived(
-    parsedId?.startLine !== undefined ? Math.max(1, parsedId.startLine) : undefined,
-  );
+  // filePath wins over semanticId for the path, so its anchor wins for the line too.
+  const startLine = $derived(parsedFilePath?.startLine ?? parsedId?.startLine);
+  const line = $derived(startLine !== undefined ? Math.max(1, startLine) : undefined);
   const clickable = $derived(Boolean(filePath && onOpenFile));
 
   function handleClick(event: MouseEvent) {
