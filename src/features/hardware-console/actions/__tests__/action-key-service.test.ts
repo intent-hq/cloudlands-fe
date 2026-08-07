@@ -50,6 +50,7 @@ vi.mock('$store/renderer/store', () => ({
       dispatched.push(action);
       return action;
     }),
+    createSelector: vi.fn((fn) => fn),
   },
 }));
 
