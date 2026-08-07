@@ -284,6 +284,36 @@ describe("agent-ipc-bridge-seeder", () => {
         modelId: "fable-5",
         workspaceId: WORKSPACE_ID,
       });
+      // No providerId supplied → the field is omitted from the wire body
+      // entirely (the daemon falls back to the session's provider).
+      const params = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect("providerId" in params).toBe(false);
+      expect(result).toEqual({ ok: true, data: { success: true, modelId: "fable-5" } });
+    });
+
+    it("forwards providerId on the agent.setModel wire (cross-provider pick, intent-hq/monorepo#1657)", async () => {
+      // A bare modelId belonging to the default provider, picked while the
+      // session is on another provider, must carry the explicit providerId so
+      // the daemon validates ownership against the picked provider instead of
+      // the session's current one.
+      mockedRequest.mockResolvedValueOnce({ success: true, modelId: "fable-5" });
+
+      const request = {
+        agentId: "agent-7",
+        modelId: "fable-5",
+        workspaceId: WORKSPACE_ID,
+        providerId: "auggie",
+      };
+      expect(() => validateIpcRequest("agent:set-model", request)).not.toThrow();
+
+      const result = await agentClient.setModel("agent-7", "fable-5", WORKSPACE_ID, "auggie");
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.setModel", {
+        agentId: "agent-7",
+        modelId: "fable-5",
+        workspaceId: WORKSPACE_ID,
+        providerId: "auggie",
+      });
       expect(result).toEqual({ ok: true, data: { success: true, modelId: "fable-5" } });
     });
 
