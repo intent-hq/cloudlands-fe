@@ -1303,6 +1303,7 @@
   "workspace_diskUsagePill_fileCount_one": "1 archivo",
   "workspace_diskUsagePill_fileCount_many": "{count} archivos",
   "workspace_diskUsagePill_physicalNote_label": "Cuenta el espacio en disco asignado; los datos compartidos por clones CoW pueden contarse de más.",
+  "workspace_diskUsagePill_physicalNotePlain_label": "Cuenta el espacio en disco asignado.",
   "workspace_diskUsagePill_scopeNote_label": "Cubre todo el directorio del workspace, incluidos los sandboxes de subagentes y las salidas de herramientas.",
   "workspace_diskUsagePill_shrink_label": "Intentar reducir este workspace",
   "workspace_diskUsagePill_shrinkAgent_name": "Reducir workspace",

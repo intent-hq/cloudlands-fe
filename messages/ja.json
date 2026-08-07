@@ -1303,6 +1303,7 @@
   "workspace_diskUsagePill_fileCount_one": "1 ファイル",
   "workspace_diskUsagePill_fileCount_many": "{count} ファイル",
   "workspace_diskUsagePill_physicalNote_label": "割り当て済みのディスク使用量をカウントします。CoW クローンで共有されるデータは過大にカウントされる場合があります。",
+  "workspace_diskUsagePill_physicalNotePlain_label": "割り当て済みのディスク使用量をカウントします。",
   "workspace_diskUsagePill_scopeNote_label": "サブエージェントのサンドボックスやツール出力を含む、ワークスペースディレクトリ全体が対象です。",
   "workspace_diskUsagePill_shrink_label": "このワークスペースの縮小を試す",
   "workspace_diskUsagePill_shrinkAgent_name": "ワークスペースを縮小",

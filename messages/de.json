@@ -1303,6 +1303,7 @@
   "workspace_diskUsagePill_fileCount_one": "1 Datei",
   "workspace_diskUsagePill_fileCount_many": "{count} Dateien",
   "workspace_diskUsagePill_physicalNote_label": "Zählt den belegten Speicherplatz; von CoW-Klonen geteilte Daten werden möglicherweise mehrfach gezählt.",
+  "workspace_diskUsagePill_physicalNotePlain_label": "Zählt den belegten Speicherplatz.",
   "workspace_diskUsagePill_scopeNote_label": "Umfasst das gesamte Workspace-Verzeichnis, einschließlich Sub-Agent-Sandboxes und Tool-Ausgaben.",
   "workspace_diskUsagePill_shrink_label": "Diesen Workspace verkleinern",
   "workspace_diskUsagePill_shrinkAgent_name": "Workspace verkleinern",
