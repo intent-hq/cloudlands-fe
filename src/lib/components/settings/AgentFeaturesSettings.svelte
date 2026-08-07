@@ -5,13 +5,14 @@
    *
    * Reads/writes the daemon-owned `agentFeatures.*` settings via
    * settings.list / settings.update (PROTOCOL §5.12), following the
-   * WorkspaceApiSettings pattern. Eight booleans, all default true:
+   * WorkspaceApiSettings pattern. Nine booleans, all default true:
    * backgroundHooks, hostExec, scripts, terminalAccess, browserAutomation,
-   * richChatBlocks, structuredQuestions, attentionRequests.
+   * richChatBlocks, structuredQuestions, attentionRequests, stateSnapshot.
    *
    * Toggles are captured at agent-session creation, so changes apply to
    * newly created sessions only — existing sessions keep the surface they
-   * were created with.
+   * were created with. `stateSnapshot` is the documented exception: the
+   * daemon reads it live per turn, so it also affects existing sessions.
    */
   import { onMount } from 'svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
@@ -29,6 +30,7 @@
     'agentFeatures.richChatBlocks',
     'agentFeatures.structuredQuestions',
     'agentFeatures.attentionRequests',
+    'agentFeatures.stateSnapshot',
   ] as const;
 
   type FeaturePath = (typeof FEATURE_PATHS)[number];
@@ -74,10 +76,15 @@
       label: () => m.settings_agentFeatures_attentionRequests_label(),
       description: () => m.settings_agentFeatures_attentionRequests_description(),
     },
+    {
+      path: 'agentFeatures.stateSnapshot',
+      label: () => m.settings_agentFeatures_stateSnapshot_label(),
+      description: () => m.settings_agentFeatures_stateSnapshot_description(),
+    },
   ];
 
   let loading = $state(true);
-  // All features default to on (PROTOCOL §5.12: eight booleans, default true)
+  // All features default to on (PROTOCOL §5.12: nine booleans, default true)
   let values = $state<Record<FeaturePath, boolean>>(
     Object.fromEntries(FEATURE_PATHS.map((path) => [path, true])) as Record<FeaturePath, boolean>,
   );
