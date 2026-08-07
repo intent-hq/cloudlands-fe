@@ -229,9 +229,15 @@ describe('hud-slice reducer', () => {
   it('hudUsageLoaded stores the rollup and clears a prior error', () => {
     let state = hudReducer(activeState(), hudUsageFailed('boom'));
     const usage = {
-      totals: { inputTokens: 100, outputTokens: 40, cacheReadTokens: 0, cacheCreationTokens: 0 },
+      totals: {
+        inputTokens: 100,
+        outputTokens: 40,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        thoughtTokens: 25,
+      },
       runs: 3,
-      rateSamples: [{ hour: 13, tokens: 140 }],
+      rateSamples: [{ hour: 13, tokens: 165 }],
       fetchedAtMs: 1_753_000_000_000,
     };
     state = hudReducer(state, hudUsageLoaded(usage));
@@ -254,7 +260,16 @@ describe('hud-slice reducer', () => {
 
   it('hudRateHistoryLoaded replaces the history and clears the error', () => {
     const rateHistory = {
-      samples: [{ bucketUtc: '2026-07-30T14:07:00Z', tokens: 170 }],
+      samples: [
+        {
+          bucketUtc: '2026-07-30T14:07:00Z',
+          inputTokens: 100,
+          outputTokens: 40,
+          cacheReadTokens: 20,
+          cacheCreationTokens: 10,
+          thoughtTokens: 5,
+        },
+      ],
       fetchedAtMs: 7,
     };
     let state = hudReducer(activeState(), hudRateHistoryFailed('daemon offline'));
@@ -265,7 +280,15 @@ describe('hud-slice reducer', () => {
 
   it('hudRateHistoryFailed keeps the last good history', () => {
     const rateHistory = {
-      samples: [{ bucketUtc: '2026-07-30T14:07:00Z', tokens: 170 }],
+      samples: [
+        {
+          bucketUtc: '2026-07-30T14:07:00Z',
+          inputTokens: 170,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        },
+      ],
       fetchedAtMs: 7,
     };
     let state = hudReducer(activeState(), hudRateHistoryLoaded(rateHistory));
@@ -275,15 +298,34 @@ describe('hud-slice reducer', () => {
   });
 
   describe('last-5-minute burn rate + trend', () => {
+    /** Minute buckets whose per-kind counters sum to each given total. */
     function history(tokens: number[]) {
       return {
         samples: tokens.map((value, index) => ({
           bucketUtc: `2026-07-30T14:${String(index).padStart(2, '0')}:00Z`,
-          tokens: value,
+          inputTokens: value,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
         })),
         fetchedAtMs: 1,
       };
     }
+
+    it('computeBurnRatePerMin sums every counter in the bucket, thoughts included', () => {
+      expect(
+        computeBurnRatePerMin([
+          {
+            bucketUtc: '2026-07-30T14:00:00Z',
+            inputTokens: 100,
+            outputTokens: 40,
+            cacheReadTokens: 20,
+            cacheCreationTokens: 10,
+            thoughtTokens: 30,
+          },
+        ]),
+      ).toBe(200);
+    });
 
     it('computeBurnRatePerMin averages the last 5 buckets (÷5), rounded', () => {
       // Only the last 5 of the 7 buckets count: (100+200+300+400+500)/5 = 300.
@@ -332,7 +374,10 @@ describe('hud-slice reducer', () => {
       const newer = {
         samples: [5, 6, 7, 8, 9].map((minute) => ({
           bucketUtc: `2026-07-30T14:${String(minute).padStart(2, '0')}:00Z`,
-          tokens: 500,
+          inputTokens: 500,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
         })),
         fetchedAtMs: 2,
       };
@@ -341,7 +386,10 @@ describe('hud-slice reducer', () => {
       const olderDelayed = {
         samples: [0, 1, 2, 3, 4].map((minute) => ({
           bucketUtc: `2026-07-30T14:${String(minute).padStart(2, '0')}:00Z`,
-          tokens: 100,
+          inputTokens: 100,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
         })),
         fetchedAtMs: 3,
       };

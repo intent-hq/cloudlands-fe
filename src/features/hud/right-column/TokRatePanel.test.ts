@@ -3,7 +3,9 @@
  * window-start footer, renders the "1 MIN BUCKETS" window label, and adds an
  * x-axis of on-the-hour LOCAL-time ticks plus a right-edge label at the newest
  * bucket's local time. Labels are computed from the same Date logic the
- * component uses, so the assertions are timezone-independent.
+ * component uses, so the assertions are timezone-independent. Each bar stacks
+ * the §5.39 per-kind counters (in / out / thoughts / cached = read + creation)
+ * with a legend, and zero-count kinds render no segment.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/svelte';
@@ -14,6 +16,7 @@ import {
   hudActivated,
   hudRateHistoryLoaded,
   type HudRateHistoryState,
+  type HudUsageTotals,
 } from '$store/renderer/slices/hud/hud-slice';
 
 import TokRatePanel from './TokRatePanel.svelte';
@@ -35,7 +38,13 @@ function nowLabel(bucketUtc: string): string {
 
 function history(buckets: string[]): HudRateHistoryState {
   return {
-    samples: buckets.map((bucketUtc) => ({ bucketUtc, tokens: 60 })),
+    samples: buckets.map((bucketUtc) => ({
+      bucketUtc,
+      inputTokens: 60,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    })),
     fetchedAtMs: 1,
   };
 }
@@ -121,5 +130,102 @@ describe('TokRatePanel', () => {
     render(TokRatePanel);
     flushSync();
     expect(panel().querySelectorAll('.hud-tokrate-tick')).toHaveLength(0);
+  });
+
+  describe('stacked per-kind segments', () => {
+    /** One bucket carrying the given §5.39 counters. */
+    function bucket(counters: Partial<HudUsageTotals>): HudRateHistoryState {
+      return {
+        samples: [
+          {
+            bucketUtc: '2026-07-30T14:59:00Z',
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            ...counters,
+          },
+        ],
+        fetchedAtMs: 1,
+      };
+    }
+
+    function segments(): Array<{ kind: string; grow: string }> {
+      return Array.from(panel().querySelectorAll('.hud-tokrate-segment')).map((el) => ({
+        kind: (el as HTMLElement).dataset.segment ?? '',
+        grow: (el as HTMLElement).style.flexGrow,
+      }));
+    }
+
+    it('stacks in / out / thoughts / cached sized by their token counts', () => {
+      render(TokRatePanel);
+      appStore.dispatch(
+        hudRateHistoryLoaded(
+          bucket({
+            inputTokens: 100,
+            outputTokens: 40,
+            thoughtTokens: 30,
+            cacheReadTokens: 20,
+            cacheCreationTokens: 5,
+          }),
+        ),
+      );
+      flushSync();
+      // cached folds cacheRead + cacheCreation into one segment (20 + 5).
+      expect(segments()).toEqual([
+        { kind: 'in', grow: '100' },
+        { kind: 'out', grow: '40' },
+        { kind: 'thoughts', grow: '30' },
+        { kind: 'cached', grow: '25' },
+      ]);
+    });
+
+    it('drops zero-count kinds — an absent thoughtTokens renders no segment', () => {
+      render(TokRatePanel);
+      appStore.dispatch(hudRateHistoryLoaded(bucket({ inputTokens: 100, outputTokens: 40 })));
+      flushSync();
+      expect(segments().map((segment) => segment.kind)).toEqual(['in', 'out']);
+    });
+
+    it('renders the four-kind legend once the panel mounts', () => {
+      render(TokRatePanel);
+      flushSync();
+      const labels = Array.from(
+        screen.getByTestId('hud-tokrate-legend').querySelectorAll('.hud-tokrate-legend-item'),
+      ).map((el) => el.textContent?.trim());
+      expect(labels).toEqual(['IN', 'OUT', 'THOUGHTS', 'CACHED']);
+    });
+
+    it('normalizes bar height on the summed bucket total, thoughts included', () => {
+      render(TokRatePanel);
+      appStore.dispatch(
+        hudRateHistoryLoaded({
+          samples: [
+            {
+              bucketUtc: '2026-07-30T14:58:00Z',
+              inputTokens: 50,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+            },
+            {
+              bucketUtc: '2026-07-30T14:59:00Z',
+              inputTokens: 50,
+              outputTokens: 25,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+              thoughtTokens: 25,
+            },
+          ],
+          fetchedAtMs: 1,
+        }),
+      );
+      flushSync();
+      const heights = Array.from(panel().querySelectorAll('.hud-tokrate-bar')).map(
+        (el) => (el as HTMLElement).style.height,
+      );
+      // Max total is 100 (50 + 25 + 25), so the 50-token bucket is half height.
+      expect(heights).toEqual(['50%', '100%']);
+    });
   });
 });
