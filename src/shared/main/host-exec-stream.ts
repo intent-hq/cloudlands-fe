@@ -93,37 +93,73 @@ const EXEC_EVENT_TYPES = ['host:exec:stdout', 'host:exec:stderr', 'host:exec:exi
 interface InflightExecStream {
   readonly requestId: string;
   /**
-   * Best-effort `host.execStream.cancel` to the still-connected old daemon, then
-   * settle the consumer's `done` with a cancelled-by-backend-switch terminal
-   * result. Idempotent (a stream that settled on its own between snapshot and
-   * sweep is a no-op) and never throws.
+   * Fire-and-forget best-effort `host.execStream.cancel` to the still-connected
+   * old daemon, then immediately settle the consumer's `done` with a
+   * cancelled-by-backend-switch terminal result. Does NOT await the cancel RPC —
+   * an unresponsive-but-connected old backend would otherwise stall the switch
+   * on the 30s request timeout. Idempotent (a stream that settled on its own
+   * between snapshot and sweep is a no-op) and never throws.
    */
-  terminate(): Promise<void>;
+  terminate(): void;
 }
 
 const inflightExecStreams = new Set<InflightExecStream>();
+
+/**
+ * True while {@link cancelInflightHostExecStreamsForBackendSwitch} is draining
+ * the registry. A `host.execStream` call whose response resolves during this
+ * window (after the sweep snapshotted the registry, while cancel RPCs are
+ * pending) must NOT attach itself to the about-to-be-disposed client — it is
+ * settled immediately with the same terminal frame instead. See the
+ * registration guard in {@link hostExecStream}.
+ */
+let backendSwitchDraining = false;
 
 /**
  * Cancel + notify every in-flight `host.execStream`, invoked by `switchBackend`
  * BEFORE the old client is disposed. Each stream's subscription and settle
  * callbacks are bound to the outgoing client; once it is disposed the remaining
  * output and terminal exit frame are unreachable and the consumer's `done`
- * would hang forever. For each in-flight stream this best-effort sends
- * `host.execStream.cancel` to the old daemon (still connected here; failure is
- * non-fatal) and settles `done` with a terminal cancelled-by-backend-switch
- * result. The registry is emptied and every per-call listener detached from the
- * outgoing client. A no-op when nothing is streaming.
+ * would hang forever. For each in-flight stream this best-effort fires (never
+ * awaits) `host.execStream.cancel` on the old daemon (still connected here;
+ * failure is non-fatal) and settles `done` with a terminal
+ * cancelled-by-backend-switch result. The registry is emptied and every
+ * per-call listener detached from the outgoing client. A no-op when nothing is
+ * streaming.
+ *
+ * Race-safe: the sweep loops until the registry is empty and holds
+ * `backendSwitchDraining` for its whole duration, so a stream that registers
+ * concurrently (its `host.execStream` response landing while cancel RPCs are
+ * pending) is either caught by the next loop iteration or settled inline by the
+ * registration guard — never left hanging on the disposed client.
  */
 export async function cancelInflightHostExecStreamsForBackendSwitch(): Promise<void> {
-  if (inflightExecStreams.size === 0) return;
-  const entries = [...inflightExecStreams];
-  // Clear up front so each terminate()'s own cleanup (which deletes its entry)
-  // is a harmless no-op and a re-entrant call finds nothing to do.
-  inflightExecStreams.clear();
-  logger.debug('Cancelling in-flight host.execStream on backend switch', {
-    count: entries.length,
-  });
-  await Promise.all(entries.map((entry) => entry.terminate()));
+  backendSwitchDraining = true;
+  try {
+    // Loop (not a single snapshot) so a stream whose `host.execStream` response
+    // resolves mid-drain is still handled instead of orphaned on the client
+    // about to be disposed. `backendSwitchDraining` stays true for the whole
+    // loop, so such a stream is settled inline by the registration guard in
+    // `hostExecStream` rather than joining the already-swept registry.
+    while (inflightExecStreams.size > 0) {
+      const entries = [...inflightExecStreams];
+      // Clear so each terminate()'s own cleanup (which deletes its entry) is a
+      // harmless no-op and a re-entrant call finds nothing to do.
+      inflightExecStreams.clear();
+      logger.debug('Cancelling in-flight host.execStream on backend switch', {
+        count: entries.length,
+      });
+      // terminate() is synchronous and non-blocking (fires cancel, settles).
+      for (const entry of entries) entry.terminate();
+      // Yield one microtask so a registration whose `host.execStream` response
+      // already resolved this tick runs (hitting the drain guard) before we
+      // re-check the registry. We deliberately do NOT await the fire-and-forget
+      // cancel RPCs — that is exactly the 30s-timeout stall this teardown avoids.
+      await Promise.resolve();
+    }
+  } finally {
+    backendSwitchDraining = false;
+  }
 }
 
 function decodeChunk(input: unknown): Buffer | null {
@@ -323,17 +359,30 @@ export async function hostExecStream(
   // Register in the in-flight set so a backend switch can enumerate and
   // terminate this stream before disposing the client it is bound to. Removed
   // again by `cleanup()` on any settle (normal exit, abort, or the switch sweep).
+  const settleBackendSwitch = (): void => {
+    // (a) Best-effort cancel on the still-connected old daemon — fire-and-forget.
+    // Do NOT await: `cancelRpc` runs against `JsonRpcClient`'s 30s default
+    // request timeout, so awaiting it would stall the switch on an
+    // unresponsive-but-connected old backend. `cancelRpc` swallows its own
+    // errors (never rejects), so `void` cannot leak an unhandled rejection.
+    void cancelRpc();
+    // (b) Hand the consumer a deterministic terminal frame so `done` resolves
+    // instead of hanging on a client that is about to be disposed.
+    settleOk({ ok: false, cancelled: true, cancelledByBackendSwitch: true });
+  };
   inflightEntry = {
     requestId,
-    terminate: async () => {
-      // (a) Best-effort cancel on the still-connected old daemon.
-      await cancelRpc();
-      // (b) Hand the consumer a deterministic terminal frame so `done` resolves
-      // instead of hanging on a client that is about to be disposed.
-      settleOk({ ok: false, cancelled: true, cancelledByBackendSwitch: true });
-    },
+    terminate: settleBackendSwitch,
   };
-  inflightExecStreams.add(inflightEntry);
+  if (backendSwitchDraining) {
+    // A backend switch snapshotted the registry before this stream's
+    // `host.execStream` response landed. Attaching to the now-doomed client
+    // would leave `done` hanging once it is disposed, so settle inline with the
+    // same terminal frame instead of joining the (already-swept) registry.
+    settleBackendSwitch();
+  } else {
+    inflightExecStreams.add(inflightEntry);
+  }
 
   const handle: HostExecStreamHandle = {
     requestId,
