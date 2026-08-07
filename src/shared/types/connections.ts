@@ -101,6 +101,14 @@ export type ConnectionsListParams = void;
 export interface ConnectionsListResult {
   connections: ConnectionRecord[];
   activeId: string;
+  /**
+   * Sticky protocol mismatch for the currently active backend, replayed here so
+   * a renderer that missed the one-shot `connections:protocol-mismatch`
+   * broadcast (e.g. a window created by a backend switch, after the remote
+   * handshake already fired) still surfaces the advisory. `null`/absent when the
+   * active backend matches local (or is local itself).
+   */
+  protocolMismatch?: ConnectionProtocolMismatchEvent | null;
 }
 
 /**

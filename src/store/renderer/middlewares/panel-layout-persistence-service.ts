@@ -284,7 +284,9 @@ function scheduleHistorySave(getState: () => StoreState, wsId: string): void {
       lastUpdated: new Date().toISOString(),
     };
 
-    savePanelLayoutHistory(wsId, data).catch(() => {
+    // Namespace the on-disk history by active backend (read at save time) so two
+    // backends sharing a workspace id keep separate undo/redo snapshots (T17).
+    savePanelLayoutHistory(wsId, data, getActiveBackendId(state)).catch(() => {
       // Non-critical — history can be rebuilt
     });
   }, HISTORY_PERSIST_DEBOUNCE_MS);
@@ -398,7 +400,8 @@ export function createPanelLayoutPersistenceMiddleware(): StoreMiddleware {
       if (action.type === initializeLayout.type) {
         const wsId = getWsId(action);
         if (wsId && isValidMountedWorkspaceId(wsId)) {
-          loadPanelLayoutHistory(wsId).then((data) => {
+          const backendId = getActiveBackendId(api.getState() as StoreState);
+          loadPanelLayoutHistory(wsId, backendId).then((data) => {
             if (data && data.history && Array.isArray(data.history) && typeof data.historyIndex === 'number') {
               // Check workspace still exists before dispatching (async load may finish after unmount)
               const currentState = api.getState() as StoreState;

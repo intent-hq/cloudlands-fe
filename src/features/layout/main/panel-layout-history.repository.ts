@@ -44,17 +44,17 @@ export interface PanelLayoutHistoryData {
  * Repository interface for panel layout history persistence
  */
 export interface PanelLayoutHistoryRepository {
-  load(workspaceId: WorkspaceId): Promise<PanelLayoutHistoryData | null>;
-  save(workspaceId: WorkspaceId, data: PanelLayoutHistoryData): Promise<void>;
+  load(workspaceId: WorkspaceId, backendId?: string): Promise<PanelLayoutHistoryData | null>;
+  save(workspaceId: WorkspaceId, data: PanelLayoutHistoryData, backendId?: string): Promise<void>;
 }
 
 /**
  * File system implementation
  */
 export class FileSystemPanelLayoutHistoryRepository implements PanelLayoutHistoryRepository {
-  async load(workspaceId: WorkspaceId): Promise<PanelLayoutHistoryData | null> {
+  async load(workspaceId: WorkspaceId, backendId?: string): Promise<PanelLayoutHistoryData | null> {
     try {
-      const filePath = WorkspaceConfig.paths.panelLayoutHistory(workspaceId);
+      const filePath = WorkspaceConfig.paths.panelLayoutHistory(workspaceId, backendId);
 
       try {
         await fs.access(filePath);
@@ -88,11 +88,18 @@ export class FileSystemPanelLayoutHistoryRepository implements PanelLayoutHistor
         return null;
       }
       logger.error(`Failed to load panel layout history for workspace: ${workspaceId}`, error as Error);
-      throw new FileReadError(WorkspaceConfig.paths.panelLayoutHistory(workspaceId), error as Error);
+      throw new FileReadError(
+        WorkspaceConfig.paths.panelLayoutHistory(workspaceId, backendId),
+        error as Error,
+      );
     }
   }
 
-  async save(workspaceId: WorkspaceId, data: PanelLayoutHistoryData): Promise<void> {
+  async save(
+    workspaceId: WorkspaceId,
+    data: PanelLayoutHistoryData,
+    backendId?: string,
+  ): Promise<void> {
     try {
       // Limit history size before saving
       const historyToSave = data.history.slice(-MAX_HISTORY_SNAPSHOTS);
@@ -110,7 +117,7 @@ export class FileSystemPanelLayoutHistoryRepository implements PanelLayoutHistor
       const metadataDir = WorkspaceConfig.paths.metadata(workspaceId);
       await fs.mkdir(metadataDir, { recursive: true });
 
-      const filePath = WorkspaceConfig.paths.panelLayoutHistory(workspaceId);
+      const filePath = WorkspaceConfig.paths.panelLayoutHistory(workspaceId, backendId);
       await fs.writeFile(filePath, JSON.stringify(toSave, null, 2), 'utf-8');
 
       // Sync to disk
@@ -123,7 +130,10 @@ export class FileSystemPanelLayoutHistoryRepository implements PanelLayoutHistor
     } catch (error) {
       logger.error(`Failed to save panel layout history for workspace: ${workspaceId}`, error as Error);
       if (error instanceof Error) {
-        throw new FileWriteError(WorkspaceConfig.paths.panelLayoutHistory(workspaceId), error);
+        throw new FileWriteError(
+          WorkspaceConfig.paths.panelLayoutHistory(workspaceId, backendId),
+          error,
+        );
       }
       throw error;
     }
@@ -134,14 +144,22 @@ export class FileSystemPanelLayoutHistoryRepository implements PanelLayoutHistor
  * In-memory implementation for testing
  */
 export class InMemoryPanelLayoutHistoryRepository implements PanelLayoutHistoryRepository {
-  private data = new Map<WorkspaceId, PanelLayoutHistoryData>();
+  private data = new Map<string, PanelLayoutHistoryData>();
 
-  async load(workspaceId: WorkspaceId): Promise<PanelLayoutHistoryData | null> {
-    return this.data.get(workspaceId) || null;
+  private key(workspaceId: WorkspaceId, backendId?: string): string {
+    return `${WorkspaceConfig.panelLayoutHistoryFileName(backendId)}:${workspaceId}`;
   }
 
-  async save(workspaceId: WorkspaceId, data: PanelLayoutHistoryData): Promise<void> {
-    this.data.set(workspaceId, data);
+  async load(workspaceId: WorkspaceId, backendId?: string): Promise<PanelLayoutHistoryData | null> {
+    return this.data.get(this.key(workspaceId, backendId)) || null;
+  }
+
+  async save(
+    workspaceId: WorkspaceId,
+    data: PanelLayoutHistoryData,
+    backendId?: string,
+  ): Promise<void> {
+    this.data.set(this.key(workspaceId, backendId), data);
   }
 
   clear(): void {

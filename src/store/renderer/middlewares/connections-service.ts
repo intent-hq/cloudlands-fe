@@ -76,6 +76,16 @@ export async function loadConnections(): Promise<void> {
   if (!api) throw new Error('electronAPI is not available');
   const result = (await api.invoke(CONNECTIONS.LIST)) as ConnectionsListResult;
   appStore.dispatch(connectionsListReceived(result));
+  // Replay a sticky protocol mismatch latched in main (cloudlands-fe#823): a
+  // renderer created by a backend switch may register its
+  // `connections:protocol-mismatch` listener AFTER the one-shot broadcast fired,
+  // so the advisory arrives here on the initial list fetch instead. Only the
+  // boot-time fetch replays it — `connections:changed` pushes route through
+  // `changedListener` (list refresh only) so a benign mutation (e.g. a hostname
+  // label upgrade) never re-pops a modal the user already dismissed.
+  if (result.protocolMismatch) {
+    appStore.dispatch(protocolMismatchReceived(result.protocolMismatch));
+  }
 }
 
 /**

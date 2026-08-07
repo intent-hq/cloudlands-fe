@@ -53,12 +53,16 @@ vi.mock('../client-identity', () => ({
   persistClientId: vi.fn(async () => {}),
 }));
 
+const sidecar = vi.hoisted(() => ({
+  getLocalDaemonProtocolVersion: vi.fn<[], string | null>(() => null),
+}));
 vi.mock('../intentd-sidecar', () => ({
   onSidecarGaveUp: vi.fn(),
   onSidecarStartupFailed: vi.fn(() => () => {}),
   getSidecarRunLog: vi.fn(() => ({ available: false })),
   getSidecarStartupFailure: vi.fn(() => null),
   spawnSidecarOnDemand: vi.fn(),
+  getLocalDaemonProtocolVersion: sidecar.getLocalDaemonProtocolVersion,
 }));
 
 vi.mock('../../../browser/main/browser-exec-reverse', () => ({
@@ -134,6 +138,7 @@ beforeEach(() => {
   store.setActiveId.mockResolvedValue(undefined);
   store.getDecryptedToken.mockResolvedValue('secret-token');
   store.setHostname.mockResolvedValue(undefined);
+  sidecar.getLocalDaemonProtocolVersion.mockReturnValue(null);
   send = vi.fn();
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
     { id: 1, isDestroyed: () => false, webContents: { send } } as never,
@@ -205,5 +210,96 @@ describe('protocol-compat check on remote connect', () => {
     fireHello(0, { protocolVersion: '1' });
 
     expect(protocolMismatchCalls()).toHaveLength(0);
+  });
+
+  // Finding 1 (#823): the local baseline must survive a fast switch that
+  // disposes the local client before its own `client.hello` resolves. The
+  // sidecar manager's startup handshake probe provides that stable fallback.
+  it('warns using the sidecar-probe baseline when the local client.hello never resolved (early switch)', async () => {
+    sidecar.getLocalDaemonProtocolVersion.mockReturnValue('1');
+    const mod = await loadModule();
+    mod.getBackendClient(); // client #0 (local) — its hello NEVER fires
+    await mod.switchBackend('remote-1'); // client #1 (remote)
+    fireHello(1, { protocolVersion: '2' });
+
+    const calls = protocolMismatchCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      id: 'remote-1',
+      host: '10.0.0.5',
+      port: 8443,
+      localProtocolVersion: '1',
+      remoteProtocolVersion: '2',
+    });
+  });
+
+  it('prefers the local client.hello baseline over the sidecar probe when both are known', async () => {
+    sidecar.getLocalDaemonProtocolVersion.mockReturnValue('1');
+    const mod = await loadModule();
+    mod.getBackendClient();
+    fireHello(0, { protocolVersion: '2' }); // live local hello reports major 2
+    await mod.switchBackend('remote-1');
+    fireHello(1, { protocolVersion: '2.5' }); // same major as the client-hello baseline
+
+    expect(protocolMismatchCalls()).toHaveLength(0);
+  });
+});
+
+// Finding 2 (#823): the one-shot broadcast races window recreation on a switch,
+// so the mismatch is also latched in main and replayed on `connections:list`.
+describe('sticky protocol mismatch replayed on connections:list', () => {
+  it('carries the active-backend mismatch so a late renderer can replay it', async () => {
+    const mod = await loadModule();
+    mod.getBackendClient();
+    fireHello(0, { protocolVersion: '1' });
+    await mod.switchBackend('remote-1');
+    fireHello(1, { protocolVersion: '2' });
+
+    const list = await mod.__listConnectionsForTesting();
+    expect(list.protocolMismatch).toEqual({
+      id: 'remote-1',
+      host: '10.0.0.5',
+      port: 8443,
+      localProtocolVersion: '1',
+      remoteProtocolVersion: '2',
+    });
+  });
+
+  it('reports no sticky mismatch before any remote handshake mismatches', async () => {
+    const mod = await loadModule();
+    mod.getBackendClient();
+    fireHello(0, { protocolVersion: '1' });
+
+    const list = await mod.__listConnectionsForTesting();
+    expect(list.protocolMismatch ?? null).toBeNull();
+  });
+
+  it('clears the sticky mismatch after switching back to local', async () => {
+    const mod = await loadModule();
+    mod.getBackendClient();
+    fireHello(0, { protocolVersion: '1' });
+    await mod.switchBackend('remote-1');
+    fireHello(1, { protocolVersion: '2' });
+    expect((await mod.__listConnectionsForTesting()).protocolMismatch).not.toBeNull();
+
+    store.getActiveId.mockResolvedValue('local');
+    await mod.switchBackend('local'); // fresh local client clears the sticky state
+    const list = await mod.__listConnectionsForTesting();
+    expect(list.protocolMismatch ?? null).toBeNull();
+  });
+
+  it('clears the sticky mismatch after switching to a version-matching remote', async () => {
+    const mod = await loadModule();
+    mod.getBackendClient();
+    fireHello(0, { protocolVersion: '1' });
+    await mod.switchBackend('remote-1');
+    fireHello(1, { protocolVersion: '2' });
+    expect((await mod.__listConnectionsForTesting()).protocolMismatch).not.toBeNull();
+
+    // Re-switch (fresh client clears the latch); the new handshake matches local.
+    await mod.switchBackend('remote-1');
+    fireHello(2, { protocolVersion: '1' });
+    const list = await mod.__listConnectionsForTesting();
+    expect(list.protocolMismatch ?? null).toBeNull();
   });
 });

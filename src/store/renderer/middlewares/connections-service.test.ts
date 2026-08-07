@@ -116,6 +116,34 @@ describe('connections-service', () => {
     expect(appStore.state.connections.activeId).toBe('remote-1');
   });
 
+  it('replays a sticky protocol mismatch from connections:list into the slice (#823)', async () => {
+    const mismatch = {
+      id: 'remote-1',
+      host: '10.0.0.5',
+      port: 8443,
+      localProtocolVersion: '1',
+      remoteProtocolVersion: '2',
+    };
+    registerMockIpcHandler(CONNECTION_CHANNELS.LIST, async () => ({
+      connections: [LOCAL, REMOTE],
+      activeId: 'remote-1',
+      protocolMismatch: mismatch,
+    }));
+    await loadConnections();
+    // A renderer that missed the one-shot broadcast still surfaces the advisory.
+    expect(appStore.state.connections.protocolMismatch).toEqual(mismatch);
+    expect(appStore.state.connections.protocolMismatchModalDismissed).toBe(false);
+  });
+
+  it('does not touch protocol-mismatch state when connections:list carries none', async () => {
+    registerMockIpcHandler(CONNECTION_CHANNELS.LIST, async () => ({
+      connections: [LOCAL, REMOTE],
+      activeId: 'local',
+    }));
+    await loadConnections();
+    expect(appStore.state.connections.protocolMismatch).toBeNull();
+  });
+
   it('captureFingerprint invokes the channel with host/port/token and returns the fingerprint', async () => {
     const params = { host: '10.0.0.5', port: 8443, token: 'secret' };
     const result = await captureFingerprint(params);

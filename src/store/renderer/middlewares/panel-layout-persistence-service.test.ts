@@ -343,7 +343,8 @@ describe("panelLayoutPersistenceService — history", () => {
     dispatch(initializeLayout("ws-history", validLayout));
 
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(loadPanelLayoutHistory).toHaveBeenCalledWith("ws-history");
+    // History load is namespaced by the active backend id (local by default).
+    expect(loadPanelLayoutHistory).toHaveBeenCalledWith("ws-history", LOCAL_CONNECTION_ID);
     const dispatchedTypes = api.dispatch.mock.calls.map(
       (call) => (call[0] as { type: string }).type,
     );
@@ -368,6 +369,48 @@ describe("panelLayoutPersistenceService — history", () => {
     await vi.runAllTimersAsync();
 
     expect(savePanelLayoutHistory).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+});
+
+describe("panelLayoutPersistenceService — history backend namespacing", () => {
+  const REMOTE = "mock-10.0.0.9:5181";
+
+  function build(activeId: string): (action: unknown) => unknown {
+    const api = createFakeApi(null, { current: activeId });
+    const chain = createPanelLayoutPersistenceMiddleware()(api);
+    return chain((action: unknown) => api.dispatch(action));
+  }
+
+  it("loads history namespaced by the remote backend id", async () => {
+    const { loadPanelLayoutHistory } = await import("$features/layout/panel-layout-history.client");
+    const dispatch = build(REMOTE);
+    dispatch(initializeLayout("ns-hist-load", validLayout));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(loadPanelLayoutHistory).toHaveBeenCalledWith("ns-hist-load", REMOTE);
+  });
+
+  it("loads history under the legacy local id for the local backend (migration)", async () => {
+    const { loadPanelLayoutHistory } = await import("$features/layout/panel-layout-history.client");
+    const dispatch = build(LOCAL_CONNECTION_ID);
+    dispatch(initializeLayout("ns-hist-local", validLayout));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(loadPanelLayoutHistory).toHaveBeenCalledWith("ns-hist-local", LOCAL_CONNECTION_ID);
+  });
+
+  it("saves history namespaced by the remote backend id", async () => {
+    vi.useFakeTimers();
+    const { savePanelLayoutHistory } = await import("$features/layout/panel-layout-history.client");
+    const dispatch = build(REMOTE);
+    dispatch(initializeLayout("ns-hist-save", validLayout));
+    dispatch(openTab("ns-hist-save", { type: "note", title: "N", closable: true, noteId: "n1" }));
+    vi.advanceTimersByTime(HISTORY_PERSIST_DEBOUNCE_MS);
+    await vi.runAllTimersAsync();
+    expect(savePanelLayoutHistory).toHaveBeenCalledWith(
+      "ns-hist-save",
+      expect.objectContaining({ workspaceId: "ns-hist-save" }),
+      REMOTE,
+    );
     vi.useRealTimers();
   });
 });
