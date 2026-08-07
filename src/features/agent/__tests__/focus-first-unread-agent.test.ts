@@ -140,6 +140,32 @@ describe('focusFirstUnreadAgent', () => {
     expect(dispatched[0].payload).toEqual([WS, 'agent-b']);
   });
 
+  it('keeps watching through the real multi-dispatch hydration order', () => {
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, seam);
+
+    // `setAgentsLoaded(wsId, true)` lands first, before setAgents /
+    // bulkUpsertSessions — the watch must not stop here.
+    seedAgents([], true);
+    seam.notify();
+    expect(dispatched).toEqual([]);
+
+    // `setAgents` populates the foreground list; sessions are still missing.
+    seedAgents(['agent-a', 'agent-b'], true);
+    seam.notify();
+    expect(dispatched).toEqual([]);
+
+    // `bulkUpsertSessions` lands the sessions carrying hasUnread.
+    seedSessions({ 'agent-a': { hasUnread: false }, 'agent-b': { hasUnread: true } });
+    seam.notify();
+
+    expect(dispatchedTypes()).toEqual([
+      'workspaceAgents/setActiveAgentId',
+      'appLayout/openAgentTabRequested',
+    ]);
+    expect(dispatched[0].payload).toEqual([WS, 'agent-b']);
+  });
+
   it('stops watching once agents load with no unread agent', () => {
     const seam = createSubscribeSeam();
     focusFirstUnreadAgent(WS, seam);
@@ -153,5 +179,28 @@ describe('focusFirstUnreadAgent', () => {
     seedSessions({ 'agent-a': { hasUnread: true } });
     seam.notify();
     expect(dispatched).toEqual([]);
+  });
+
+  it('stops watching at the timeout when hydration never completes', () => {
+    vi.useFakeTimers();
+    try {
+      const seam = createSubscribeSeam();
+      focusFirstUnreadAgent(WS, { ...seam, timeoutMs: 100 });
+
+      // Only the loaded flag ever arrives (e.g. an agent-less workspace).
+      seedAgents([], true);
+      seam.notify();
+      expect(dispatched).toEqual([]);
+
+      vi.advanceTimersByTime(100);
+
+      // Watch torn down: a late unread arrival must not switch tabs.
+      seedAgents(['agent-a'], true);
+      seedSessions({ 'agent-a': { hasUnread: true } });
+      seam.notify();
+      expect(dispatched).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

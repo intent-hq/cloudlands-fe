@@ -54,9 +54,26 @@ export function findFirstUnreadForegroundAgentId(workspaceId: string): string | 
   return null;
 }
 
-/** True once the workspace's agent list has been hydrated into the store. */
+/**
+ * True once the workspace's agent hydration has actually landed in the store.
+ *
+ * `agentsLoaded` alone is not enough: `hydrateWorkspaceAgents` (and the boot
+ * `agents-seeder`) dispatch `setAgentsLoaded(wsId, true)` *before* `setAgents`
+ * and `bulkUpsertSessions`, and the store notifies synchronously per dispatch —
+ * so the flag flips while `foregroundAgentIds` and the sessions carrying
+ * `hasUnread` are still absent. The watch must therefore also see the
+ * foreground list populated and a session for every foreground agent; until
+ * then the only exit is the timeout (which is also what a genuinely
+ * agent-less workspace falls back to, dispatching nothing either way).
+ */
 function areAgentsLoaded(workspaceId: string): boolean {
-  return appStore.state.workspaceAgents?.byWorkspaceId[workspaceId]?.agentsLoaded === true;
+  const state = appStore.state;
+  const workspaceState = state.workspaceAgents?.byWorkspaceId[workspaceId];
+  if (workspaceState?.agentsLoaded !== true) return false;
+  const foregroundAgentIds = workspaceState.foregroundAgentIds ?? [];
+  if (foregroundAgentIds.length === 0) return false;
+  const sessions = state.agentSessions?.byAgentId ?? {};
+  return foregroundAgentIds.every((id) => sessions[String(id)] !== undefined);
 }
 
 function activateAgent(workspaceId: string, agentId: string): void {
