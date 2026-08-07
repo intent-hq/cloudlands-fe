@@ -419,4 +419,3 @@ hudReducer.with(hudGridFilterStatesCleared, (state) =>
       ? state
       : { ...state, gridFilter: { ...state.gridFilter, states: [] } },
   );
-
