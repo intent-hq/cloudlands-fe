@@ -1,7 +1,7 @@
 /**
  * Joystick radial prompt picker service for the hardware console.
  *
- * Three responsibilities, one middleware:
+ * Three responsibilities, coordinated by the app-owned saga:
  * 1. Usage tracking — observes composer submissions (`sendMessage`) and
  *    records them in the prompt-usage tracker, persisting the tracker into
  *    the shared `hardwareConsole.state` daemon bag (read-modify-write so
@@ -23,30 +23,25 @@
  *    radius for {@link DEFAULT_CENTER_DWELL_MS} before release, so the
  *    spring snap-back through the hysteresis band still commits.
  *
- * Dependency-light middleware module: no selector imports — reads
- * `appStore.state` directly (resolveKeySlots precedent).
+ * This module retains the reusable joystick, parsing, and settings helpers;
+ * saga orchestration owns hydration, persistence, and cancellation.
  */
-import type { StoreMiddleware } from '@augmentcode/themis/types';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
-  hydrateHardwareConsolePrompts,
-  promptUsageRecorded,
   radialPromptPickerClosed,
   radialPromptPickerOpened,
   radialPromptPickerSectorChanged,
-  setPromptPickerLimit,
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import type { HardwareConsoleManager } from '../device/device-manager';
-import { getHardwareConsoleManager } from '../instance';
 import { HardwareInputDecoder, DEFAULT_JOYSTICK_ENGAGE_DISTANCE } from '../input/input-decoder';
 import { radialCancelSector, radialSectorForAngle } from './radial-layout';
 import { HARDWARE_CONSOLE_SETTINGS_PATH } from '../assignment/key-pin-persistence-service';
 import {
   clampPromptPickerLimit,
-  DEFAULT_PROMPT_PICKER_LIMIT,
+  type PromptUsageEntry,
   parsePromptUsage,
   topPromptTexts,
 } from './curation';
@@ -85,7 +80,7 @@ function defaultGetTopPrompts(): string[] {
 
 /**
  * Wire the joystick radial session to a manager. Returns the teardown.
- * Exported for tests; production installs via the middleware below.
+ * Exported for tests; production installs via the app-owned saga.
  */
 export function installHardwareConsolePromptPickerJoystick(
   manager: HardwareConsoleManager,
@@ -212,108 +207,37 @@ async function readBag(): Promise<Record<string, unknown> | null> {
 }
 
 /** Read-modify-write: replace only `promptUsage`, preserving sibling fields. */
-async function persistPromptUsage(): Promise<void> {
+export async function persistHardwareConsolePromptUsage(
+  promptUsage: PromptUsageEntry[],
+): Promise<void> {
   const bag = (await readBag()) ?? {};
-  const { promptUsage } = appStore.state.hardwareConsole;
   await appClient.settings.update([
     { path: HARDWARE_CONSOLE_SETTINGS_PATH, value: { ...bag, promptUsage } },
   ]);
 }
 
 /** Read-modify-write: replace only `promptPickerLimit`, preserving sibling fields. */
-async function persistPromptPickerLimit(): Promise<void> {
+export async function persistHardwareConsolePromptPickerLimit(
+  promptPickerLimit: number,
+): Promise<void> {
   const bag = (await readBag()) ?? {};
-  const { promptPickerLimit } = appStore.state.hardwareConsole;
   await appClient.settings.update([
     { path: HARDWARE_CONSOLE_SETTINGS_PATH, value: { ...bag, promptPickerLimit } },
   ]);
 }
 
-async function hydrateOnce(): Promise<boolean> {
-  try {
-    const bag = await readBag();
-    if (bag === null) {
-      throw new Error(
-        `settings.get(${HARDWARE_CONSOLE_SETTINGS_PATH}) returned null — daemon read failed`,
-      );
-    }
-    appStore.dispatch(
-      hydrateHardwareConsolePrompts(
-        parsePromptUsage(bag.promptUsage),
-        clampPromptPickerLimit(bag.promptPickerLimit),
-      ),
+export async function loadHardwareConsolePrompts(): Promise<{
+  promptUsage: ReturnType<typeof parsePromptUsage>;
+  promptPickerLimit: number;
+}> {
+  const bag = await readBag();
+  if (bag === null) {
+    throw new Error(
+      `settings.get(${HARDWARE_CONSOLE_SETTINGS_PATH}) returned null — daemon read failed`,
     );
-    return true;
-  } catch (error) {
-    logger.error('Prompt-tracker hydration failed; dispatching defaults', { error });
-    appStore.dispatch(hydrateHardwareConsolePrompts([], DEFAULT_PROMPT_PICKER_LIMIT));
-    return false;
   }
-}
-
-/**
- * Lazily hydrates the prompt tracker from the daemon bag and installs the
- * joystick session on the first dispatched action (LED-status precedent),
- * then records every composer submission and persists the tracker — and the
- * device-panel `promptPickerLimit` setting on change — (read-modify-write;
- * writes before hydration settles are deferred and flushed once, mirroring
- * the key-pin persistence service).
- */
-export function createHardwareConsolePromptPickerMiddleware(): StoreMiddleware {
-  let installed = false;
-  let hydrationSettled = false;
-  let usagePersistQueued = false;
-  let limitPersistQueued = false;
-
-  const schedulePersistUsage = (): void => {
-    if (!hydrationSettled) {
-      usagePersistQueued = true;
-      return;
-    }
-    void persistPromptUsage().catch((error) =>
-      logger.error(`Failed to persist ${HARDWARE_CONSOLE_SETTINGS_PATH} promptUsage`, { error }),
-    );
-  };
-
-  const schedulePersistLimit = (): void => {
-    if (!hydrationSettled) {
-      limitPersistQueued = true;
-      return;
-    }
-    void persistPromptPickerLimit().catch((error) =>
-      logger.error(`Failed to persist ${HARDWARE_CONSOLE_SETTINGS_PATH} promptPickerLimit`, {
-        error,
-      }),
-    );
-  };
-
-  return () => (next) => (action) => {
-    if (!installed) {
-      installed = true;
-      installHardwareConsolePromptPickerJoystick(getHardwareConsoleManager());
-      void hydrateOnce()
-        .catch(() => false)
-        .then((hydrated) => {
-          hydrationSettled = true;
-          const flushUsage = usagePersistQueued && hydrated;
-          const flushLimit = limitPersistQueued && hydrated;
-          usagePersistQueued = false;
-          limitPersistQueued = false;
-          if (flushUsage) schedulePersistUsage();
-          if (flushLimit) schedulePersistLimit();
-        });
-    }
-
-    const result = next(action);
-		const type = typeof (action as { type?: unknown })?.type === 'string'
-			? (action as { type: string }).type
-			: '';
-
-    const text = extractSubmittedPromptText(action);
-    if (text !== null) appStore.dispatch(promptUsageRecorded(text));
-		if (type === promptUsageRecorded.type) schedulePersistUsage();
-		if (type === setPromptPickerLimit.type) schedulePersistLimit();
-
-    return result;
+  return {
+    promptUsage: parsePromptUsage(bag.promptUsage),
+    promptPickerLimit: clampPromptPickerLimit(bag.promptPickerLimit),
   };
 }
