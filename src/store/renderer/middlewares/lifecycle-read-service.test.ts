@@ -46,7 +46,10 @@ import { appClient } from "$lib/client";
 import { getAgentLineStats } from "$features/line-changes/line-changes.client";
 import { store as appStore } from "$store/renderer/store";
 import { loadWorkspacesRequested } from "$store/renderer/slices/workspace/workspace-slice";
-import { ensureWorkspaceTasksLoaded } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
+import {
+  ensureWorkspaceTasksLoaded,
+  loadWorkspaceTasksRequested,
+} from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
 import { loadEventsRequested } from "$store/renderer/slices/workspace-events/workspace-events-slice";
 import { fetchWorkspaceTokenUsage } from "$store/renderer/slices/token-usage/token-usage-slice";
 import { initContextForWorkspace } from "$store/renderer/slices/context/context-slice";
@@ -351,6 +354,41 @@ describe("lifecycleReadService (fake seam, real store)", () => {
     await flush();
 
     expect(scriptsApi.list).toHaveBeenCalledTimes(1);
+  });
+
+  // AGENTS.md event-driven refetch rule: task refreshes are single-flight WITH
+  // trailing coalesce, so a burst arriving during an in-flight `task.list`
+  // still produces exactly one follow-up fetch (never zero, never N).
+  it("queues exactly one trailing task refetch for refreshes requested mid-flight", async () => {
+    const ws = "ws-tasks-trailing";
+    let releaseFirst: (() => void) | undefined;
+    tasksApi.list.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseFirst = () => resolve({ tasks: [], stats: undefined } as never);
+        }) as never,
+    );
+
+    appStore.dispatch(loadWorkspaceTasksRequested(ws));
+    await flush();
+    expect(tasksApi.list).toHaveBeenCalledTimes(1);
+
+    // Three events land while the first fetch is still in flight.
+    appStore.dispatch(loadWorkspaceTasksRequested(ws));
+    appStore.dispatch(loadWorkspaceTasksRequested(ws));
+    appStore.dispatch(loadWorkspaceTasksRequested(ws));
+    await flush();
+    expect(tasksApi.list).toHaveBeenCalledTimes(1);
+
+    releaseFirst?.();
+    await flush();
+
+    expect(tasksApi.list).toHaveBeenCalledTimes(2);
+    expect(tasksApi.list).toHaveBeenLastCalledWith(ws);
+
+    // The trailing run settles without arming another one.
+    await flush();
+    expect(tasksApi.list).toHaveBeenCalledTimes(2);
   });
 
   it("leaves prior state intact when a read fails", async () => {
