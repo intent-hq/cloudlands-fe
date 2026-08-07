@@ -203,4 +203,3 @@ Source: `../SKILL.md` §1, §9 · **Priority: MEDIUM**
 - `core/core-policy/SKILL.md` — why types live in `-types.ts`
 - `core/actions/SKILL.md` — action naming and namespacing
 - Selected Store family skill — Store initialization wiring
-

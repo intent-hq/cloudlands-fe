@@ -17,7 +17,7 @@
  * never returned, listed, or broadcast (see shared/types/connections.ts).
  */
 
-import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { StoreMiddleware } from '@augmentcode/themis/types';
 import { store as appStore } from '$store/renderer/store';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {

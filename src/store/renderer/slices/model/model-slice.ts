@@ -78,6 +78,7 @@ export const initialState: ModelState = {
   providerModels: {},
   modelPickerCollapsedGroups: [],
   fallbackInfoByAgentId: {},
+  defaultReasoningEffort: '',
   defaultProviderId: '',
   catalogProviderIds: [],
 };

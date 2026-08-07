@@ -177,4 +177,3 @@ window.svelteRedux.reduxContext.dispatch(action);
   reducers and tests should preserve.
 - `core/testing` — assertions that mirror reducer and
   serialization contracts in unit tests.
-

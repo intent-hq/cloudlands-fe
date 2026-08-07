@@ -46,6 +46,8 @@ export interface FileSpecialist {
    * Undefined when the wire omitted the key (resolved list empty/inherited).
    */
   modelOptions?: SpecialistModelOption[];
+  /** Explicit reasoning-effort level; omitted when inheriting the model default. */
+  reasoningEffort?: string;
   /**
    * Daemon-computed default-model preview (`specialist.list` resolvedModel/
    * resolvedProvider, PROTOCOL §5.11). Absent when resolution yields the
@@ -64,6 +66,8 @@ export interface FileSpecialistWritePayload {
   roleReminder?: string;
   /** Empty list is omitted on the wire (undefined) so inheritance is kept. */
   modelOptions?: SpecialistModelOption[];
+  /** Explicit reasoning-effort level; omitted when inheriting the model default. */
+  reasoningEffort?: string;
   behaviorPrompt: string;
   scope?: SpecialistFileScope;
   workspacePath?: string;

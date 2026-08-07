@@ -332,4 +332,3 @@ hardwareConsoleReducer.with(setCycleScope, (state, { payload: [familyId, scope] 
       cycleScopeByFamily: { ...state.cycleScopeByFamily, [familyId]: scope },
     };
   });
-

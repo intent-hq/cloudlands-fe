@@ -48,6 +48,7 @@ function toBundledSpecialist(def: SpecialistDef): Specialist {
     defaultAgentType: def.agentType,
     hidden: def.hidden,
     modelOptions: def.modelOptions,
+    reasoningEffort: def.reasoningEffort,
     resolvedModel: def.resolvedModel,
     resolvedProvider: def.resolvedProvider,
   };
@@ -150,6 +151,7 @@ function* handleSave(action: ReturnType<typeof saveFileSpecialist>, context: Lis
       model: payload.model,
       roleReminder: payload.roleReminder,
       modelOptions: payload.modelOptions?.length ? payload.modelOptions : undefined,
+      reasoningEffort: payload.reasoningEffort,
       behaviorPrompt: payload.behaviorPrompt,
       source: scope,
       hidden: existing?.hidden ?? bundled?.hidden,
@@ -210,6 +212,7 @@ function* handleExport(action: ReturnType<typeof exportBuiltinToFile>, context: 
       model: bundled.defaultModel,
       roleReminder: bundled.roleReminder,
       modelOptions: bundled.modelOptions,
+      reasoningEffort: bundled.reasoningEffort,
       behaviorPrompt: bundled.defaultBehaviorPrompt,
       source: 'user',
       hidden: bundled.hidden,

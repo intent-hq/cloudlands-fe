@@ -25,7 +25,7 @@
  * selectors (importing them would evaluate `store.createSelector` while the
  * store module is still mid-init through the middleware chain).
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
+import type { StoreMiddleware } from '@augmentcode/themis/types';
 import { githubAuthClient } from "$features/github-auth/renderer/github-auth.client";
 import type { GithubRepo } from "$features/github-auth/types";
 import { store as appStore } from "$store/renderer/store";
@@ -125,8 +125,8 @@ function handleSearch(query: string): void {
 export function createGithubRepoSearchMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     const result = next(action);
-    if (action?.type === searchGithubRepos.type) {
-      handleSearch(queryOf(action));
+    if ((action as { type?: unknown })?.type === searchGithubRepos.type) {
+      handleSearch(queryOf(action as { payload?: unknown }));
     }
     return result;
   };

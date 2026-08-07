@@ -100,4 +100,3 @@ backgroundHooksReducer.with(backgroundHooksCleared, (state, { payload: [workspac
 backgroundHooksReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) =>
     clearWorkspaceState(state, wsId),
   );
-

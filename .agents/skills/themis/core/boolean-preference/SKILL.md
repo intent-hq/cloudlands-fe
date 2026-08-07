@@ -263,4 +263,3 @@ createBooleanPreference<PrefsState>({
   `same-reference on no-op` rule.
 - `core/actions` — `createAction<[Params]>` tuple payloads.
 - `core/local-storage` — persistence saga for preference fields.
-

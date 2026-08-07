@@ -78,4 +78,3 @@ const dispose = store.init();
 - `../selector-lifecycle/SKILL.md` — component-init, handler, and saga call modes.
 - `../component-integration/SKILL.md` — root layout wiring and template reactivity.
 - `../../core/import-boundaries/SKILL.md` — public package import surface.
-

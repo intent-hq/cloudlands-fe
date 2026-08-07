@@ -163,12 +163,12 @@ workspaceInitializerReducer.with(removeWorkspaceInitializerRemoteSetup, (state, 
 workspaceInitializerReducer.with(setWorkspaceInitializerLastSubmittedAgent, (state, { payload: [lastSubmittedAgent] }) => ({
     ...state,
     lastSubmittedAgent,
-  }))
-  .with(setWorkspaceInitializerPendingGitHubPrefill, (state, { payload: [pendingGitHubPrefill] }) => ({
+  }));
+workspaceInitializerReducer.with(setWorkspaceInitializerPendingGitHubPrefill, (state, { payload: [pendingGitHubPrefill] }) => ({
     ...state,
     pendingGitHubPrefill,
-  }))
-  .with(clearWorkspaceInitializerPendingGitHubPrefill, (state) => ({
+  }));
+workspaceInitializerReducer.with(clearWorkspaceInitializerPendingGitHubPrefill, (state) => ({
     ...state,
     pendingGitHubPrefill: null,
   }));

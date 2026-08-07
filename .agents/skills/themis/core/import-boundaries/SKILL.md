@@ -240,4 +240,3 @@ Source: `../SKILL.md` §2 (Components must never import saga files / redux-saga 
 
 - `core/core-policy/SKILL.md` — the policy these boundaries enforce
 - Selected Store family skill — Store dispatch + selector usage inside components
-

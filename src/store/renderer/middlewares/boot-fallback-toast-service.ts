@@ -17,7 +17,7 @@
  * lazily. Dependency-light per src/store/renderer/AGENTS.md — no selector/store
  * imports.
  */
-import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { StoreMiddleware } from '@augmentcode/themis/types';
 import { isElectron } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type { ConnectionBootFallbackEvent } from '$shared/types/connections';
