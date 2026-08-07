@@ -25,6 +25,7 @@ import {
   stopUnslothFailed,
   stopUnslothRequested,
   systemStatusFailure,
+  switchLocalAndSpawnRequested,
 } from '../daemon-health-slice';
 import type { SystemStatusWirePayload } from '../daemon-health-types';
 import { daemonHealthSaga, pollSystemStatusSaga } from './daemon-health-saga';
@@ -133,16 +134,24 @@ describe('daemonHealthSaga', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(statusActions(dispatched)).toEqual([
-      connectionStatusChanged('connected', {
-        mode: 'external-uds',
-        versionMismatch: true,
-        daemonVersion: '2.0.0',
-      }, { sidecarGaveUp: undefined, sidecarStartupFailed: undefined, reason: undefined }),
-      connectionStatusChanged('disconnected', {
-        mode: 'external-uds',
-        versionMismatch: true,
-        daemonVersion: 'v2.0.0',
-      }, { sidecarGaveUp: undefined, sidecarStartupFailed: undefined, reason: 'restart' }),
+      connectionStatusChanged(
+        'connected',
+        {
+          mode: 'external-uds',
+          versionMismatch: true,
+          daemonVersion: '2.0.0',
+        },
+        { sidecarGaveUp: undefined, sidecarStartupFailed: undefined, reason: undefined },
+      ),
+      connectionStatusChanged(
+        'disconnected',
+        {
+          mode: 'external-uds',
+          versionMismatch: true,
+          daemonVersion: 'v2.0.0',
+        },
+        { sidecarGaveUp: undefined, sidecarStartupFailed: undefined, reason: 'restart' },
+      ),
     ]);
     expect(mocks.backendRequest).toHaveBeenCalledWith('system.status');
     expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
@@ -308,10 +317,14 @@ describe('daemonHealthSaga', () => {
     input.put(pollUnslothStatus());
     input.put(pollUnslothStatus());
     await settle();
-    expect(mocks.backendRequest.mock.calls.filter(([method]) => method === 'unsloth.status')).toHaveLength(1);
+    expect(
+      mocks.backendRequest.mock.calls.filter(([method]) => method === 'unsloth.status'),
+    ).toHaveLength(1);
     resolvers[0]({ running: true });
     await settle();
-    expect(mocks.backendRequest.mock.calls.filter(([method]) => method === 'unsloth.status')).toHaveLength(2);
+    expect(
+      mocks.backendRequest.mock.calls.filter(([method]) => method === 'unsloth.status'),
+    ).toHaveLength(2);
 
     input.put(stopUnslothRequested());
     await settle();
@@ -348,8 +361,7 @@ describe('daemonHealthSaga', () => {
     expect(dispatched).toContainEqual(spawnSidecarFailed('missing'));
     expect(
       dispatched.some(
-        (action) =>
-          (action as { type?: string }).type === fetchSidecarRunLogSucceeded.type,
+        (action) => (action as { type?: string }).type === fetchSidecarRunLogSucceeded.type,
       ),
     ).toBe(false);
 
@@ -359,10 +371,26 @@ describe('daemonHealthSaga', () => {
     await settle();
     expect(
       dispatched.filter(
-        (action) =>
-          (action as { type?: string }).type === fetchSidecarRunLogSucceeded.type,
+        (action) => (action as { type?: string }).type === fetchSidecarRunLogSucceeded.type,
       ),
     ).toHaveLength(0);
+  });
+
+  it('routes external recovery through the atomic switch-and-spawn channel', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_STATUS) return { status: 'connected' };
+      if (channel === BACKEND.SWITCH_LOCAL_AND_SPAWN) return { ok: true, spawned: true };
+      return undefined;
+    });
+    const { input, task } = startHealthSaga();
+    await settle();
+
+    input.put(switchLocalAndSpawnRequested());
+    await settle();
+
+    expect(invoke).toHaveBeenCalledWith(BACKEND.SWITCH_LOCAL_AND_SPAWN);
+    task.cancel();
+    await task.toPromise();
   });
 
   it('dispatches failure then degradation when a poll fails while healthy', async () => {

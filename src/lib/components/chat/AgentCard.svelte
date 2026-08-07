@@ -119,7 +119,6 @@
   $effect(() => {
     const wsId = workspace?.id;
     if (wsId) {
-      console.log('LOAD');
       appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
     }
   });

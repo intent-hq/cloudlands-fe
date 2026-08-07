@@ -85,8 +85,6 @@ vi.mock('$features/voice/workspace-vocabulary-service', () => ({
 import {
   actionHudHidden,
   actionHudShown,
-  pttRecordingFinished,
-  pttSendRequested,
   voiceTranscriptionFinished,
   voiceTranscriptionStarted,
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
@@ -114,9 +112,6 @@ const RECORDING = {
   mimeType: 'audio/webm',
   durationMs: 1800,
 };
-
-/** `pttRecordingFinished` payload shape (recording + gesture outcome). */
-const FINISHED_PAYLOAD = { ...RECORDING, stopReason: 'hold-release' as const, autoSend: false };
 
 /** Daemon-canonical `voice.transcribe` result (PROTOCOL §5.41). */
 const TRANSCRIBE_RESULT = {

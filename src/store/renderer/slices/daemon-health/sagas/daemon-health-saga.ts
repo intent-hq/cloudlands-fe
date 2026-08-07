@@ -25,6 +25,7 @@ import {
   pollUnslothStatus,
   spawnSidecarFailed,
   spawnSidecarRequested,
+  switchLocalAndSpawnRequested,
   stopUnslothFailed,
   stopUnslothRequested,
   stopUnslothSucceeded,
@@ -66,8 +67,13 @@ async function invokeGetBackendStatus(): Promise<BackendStatusSnapshot> {
 async function invokeSpawnSidecar() {
   if (!window.electronAPI) throw new Error('electronAPI is not available');
   return (await window.electronAPI.invoke(BACKEND.SPAWN_SIDECAR)) as
-    | { ok: boolean; spawned: boolean; reason?: string; error?: { message?: string } }
-    | undefined;
+    { ok: boolean; spawned: boolean; reason?: string; error?: { message?: string } } | undefined;
+}
+
+async function invokeSwitchLocalAndSpawn() {
+  if (!window.electronAPI) throw new Error('electronAPI is not available');
+  return (await window.electronAPI.invoke(BACKEND.SWITCH_LOCAL_AND_SPAWN)) as
+    { ok: boolean; spawned: boolean; reason?: string; error?: { message?: string } } | undefined;
 }
 
 async function invokeSidecarRunLog(): Promise<SidecarRunLog> {
@@ -228,6 +234,21 @@ function* spawnSidecarSaga() {
   }
 }
 
+function* switchLocalAndSpawnSaga() {
+  try {
+    const result = yield* call(invokeSwitchLocalAndSpawn);
+    if (!result?.ok) {
+      yield* put(
+        spawnSidecarFailed(
+          result?.error?.message ?? result?.reason ?? m.daemonStatus_spawnSidecarFailed_error(),
+        ),
+      );
+    }
+  } catch (error) {
+    yield* put(spawnSidecarFailed(error instanceof Error ? error.message : String(error)));
+  }
+}
+
 function* fetchSidecarRunLogSaga() {
   try {
     const log = yield* call(invokeSidecarRunLog);
@@ -239,6 +260,7 @@ function* fetchSidecarRunLogSaga() {
 
 function* watchDaemonControls() {
   yield* takeEvery(spawnSidecarRequested, spawnSidecarSaga);
+  yield* takeEvery(switchLocalAndSpawnRequested, switchLocalAndSpawnSaga);
   yield* takeEvery(fetchSidecarRunLogRequested, fetchSidecarRunLogSaga);
   yield* takeLeading(stopUnslothRequested, stopUnslothSaga);
 }

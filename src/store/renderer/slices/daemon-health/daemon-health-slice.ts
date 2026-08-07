@@ -72,16 +72,12 @@ export const connectionStatusChanged = createAction<
  * Heartbeat health check failed while connected (heartbeat timeout/error).
  * This transitions health to 'degraded' while status stays 'connected'.
  */
-export const heartbeatFailed = createAction(
-  'daemonHealth/heartbeatFailed',
-);
+export const heartbeatFailed = createAction('daemonHealth/heartbeatFailed');
 
 /**
  * Poll system.status for stats (middleware trigger).
  */
-export const pollSystemStatus = createAction(
-  'daemonHealth/pollSystemStatus',
-);
+export const pollSystemStatus = createAction('daemonHealth/pollSystemStatus');
 
 /**
  * system.status poll succeeded.
@@ -93,16 +89,20 @@ export const systemStatusSuccess = createAction<
 /**
  * system.status poll failed.
  */
-export const systemStatusFailure = createAction(
-  'daemonHealth/systemStatusFailure',
-);
+export const systemStatusFailure = createAction('daemonHealth/systemStatusFailure');
 
 /**
  * User asked for the app-managed sidecar fallback from the daemon-loss UI
  * (#439). The daemon-health middleware invokes backend:spawn-sidecar.
  */
-export const spawnSidecarRequested = createAction(
-  'daemonHealth/spawnSidecarRequested',
+export const spawnSidecarRequested = createAction('daemonHealth/spawnSidecarRequested');
+
+/**
+ * User asked to switch an external backend back to the local sidecar and spawn
+ * it atomically in the main process so the initiating window can be replaced.
+ */
+export const switchLocalAndSpawnRequested = createAction(
+  'daemonHealth/switchLocalAndSpawnRequested',
 );
 
 /**
@@ -110,18 +110,14 @@ export const spawnSidecarRequested = createAction(
  * spawn has no dedicated action — the pending flag clears when the reconnect
  * lands as a 'connected' backend:status event.
  */
-export const spawnSidecarFailed = createAction<[error: string]>(
-  'daemonHealth/spawnSidecarFailed',
-);
+export const spawnSidecarFailed = createAction<[error: string]>('daemonHealth/spawnSidecarFailed');
 
 /**
  * User asked for the last-run sidecar log from the daemon-loss dialog. The
  * daemon-health middleware invokes backend:get-sidecar-run-log (main-process
  * in-memory capture — no daemon wire request involved).
  */
-export const fetchSidecarRunLogRequested = createAction(
-  'daemonHealth/fetchSidecarRunLogRequested',
-);
+export const fetchSidecarRunLogRequested = createAction('daemonHealth/fetchSidecarRunLogRequested');
 
 /**
  * backend:get-sidecar-run-log resolved with the contract-shaped payload.
@@ -141,9 +137,7 @@ export const fetchSidecarRunLogFailed = createAction<[error: string]>(
  * Poll unsloth.status (middleware trigger). Dispatched by the status
  * dropdown only while it is open — there is no background interval.
  */
-export const pollUnslothStatus = createAction(
-  'daemonHealth/pollUnslothStatus',
-);
+export const pollUnslothStatus = createAction('daemonHealth/pollUnslothStatus');
 
 /**
  * unsloth.status poll succeeded with the wire payload.
@@ -156,17 +150,13 @@ export const unslothStatusSuccess = createAction<[payload: UnslothStatusWirePayl
  * unsloth.status poll failed (older daemon without the method, transport
  * error). The stored status clears so the UI never shows stale server rows.
  */
-export const unslothStatusFailure = createAction(
-  'daemonHealth/unslothStatusFailure',
-);
+export const unslothStatusFailure = createAction('daemonHealth/unslothStatusFailure');
 
 /**
  * User confirmed stopping the managed unsloth server. The middleware invokes
  * unsloth.stop and re-polls unsloth.status when it resolves.
  */
-export const stopUnslothRequested = createAction(
-  'daemonHealth/stopUnslothRequested',
-);
+export const stopUnslothRequested = createAction('daemonHealth/stopUnslothRequested');
 
 /**
  * unsloth.stop resolved (`{ stopped: boolean }` — false is a no-op, not an
@@ -179,9 +169,7 @@ export const stopUnslothSucceeded = createAction<[stopped: boolean]>(
 /**
  * unsloth.stop failed.
  */
-export const stopUnslothFailed = createAction<[error: string]>(
-  'daemonHealth/stopUnslothFailed',
-);
+export const stopUnslothFailed = createAction<[error: string]>('daemonHealth/stopUnslothFailed');
 
 // ---------------------------------------------------------------------------
 // Reducer
@@ -279,6 +267,9 @@ daemonHealthReducer.with(systemStatusFailure, (state) => {
   return { ...state, polling: false };
 });
 daemonHealthReducer.with(spawnSidecarRequested, (state) => {
+  return { ...state, sidecarSpawnPending: true, sidecarSpawnError: null };
+});
+daemonHealthReducer.with(switchLocalAndSpawnRequested, (state) => {
   return { ...state, sidecarSpawnPending: true, sidecarSpawnError: null };
 });
 daemonHealthReducer.with(spawnSidecarFailed, (state, { payload: [error] }) => {
