@@ -3,9 +3,17 @@
  *
  * Used by the sidebar Active card's Unread rows: after navigating to
  * `/workspace/{id}`, land on the first foreground agent whose session carries
- * `hasUnread === true` (PROTOCOL §5.5 AgentLite) rather than whatever tab the
- * workspace last had active. Ordering is `foregroundAgentIds` order, so the
- * daemon's agent order decides which unread agent wins.
+ * `hasUnread === true` rather than whatever tab the workspace last had active.
+ * Ordering is `foregroundAgentIds` order, so the daemon's agent order decides
+ * which unread agent wins.
+ *
+ * NOTE: `AgentSession.hasUnread` is currently never populated — it is not on
+ * AgentLite (PROTOCOL §5.5 carries the per-conversation seen marker
+ * `metadata.lastSeenMessageId` instead) and nothing derives it client-side, so
+ * the predicate is inert today and Unread rows fall back to plain navigation.
+ * Tracked in intent-hq/monorepo#1597; once the field (or a projected
+ * newest-message id to compare the marker against) exists, this helper's single
+ * read is the only seam to re-point.
  *
  * The agent list is usually not in the store yet at click time — the
  * navigation itself triggers the workspace's agent hydration. Instead of
