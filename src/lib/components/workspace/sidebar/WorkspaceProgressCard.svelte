@@ -262,7 +262,7 @@
   let titleInputRef: HTMLInputElement | null = $state(null);
   let isEditingStatusMessage = $state(false);
   let editedStatusMessage = $state('');
-  let statusInputRef: HTMLInputElement | null = $state(null);
+  let statusInputRef: HTMLTextAreaElement | null = $state(null);
   let isSavingStatusMessage = $state(false);
   let skipNextStatusBlurSave = $state(false);
   let dropdownOpen = $state(false);
@@ -414,6 +414,13 @@
     }
   }
 
+  // Grow the status textarea to fit its wrapped content so no scrollbar appears.
+  function autoResizeStatusInput() {
+    if (!statusInputRef) return;
+    statusInputRef.style.height = 'auto';
+    statusInputRef.style.height = `${statusInputRef.scrollHeight}px`;
+  }
+
   function startEditingStatusMessage() {
     if (!$workspace) return;
     skipNextStatusBlurSave = false;
@@ -423,6 +430,7 @@
       if (statusInputRef) {
         statusInputRef.focus();
         statusInputRef.select();
+        autoResizeStatusInput();
       }
     });
   }
@@ -468,7 +476,7 @@
   }
 
   function handleStatusMessageKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       saveStatusMessage();
     } else if (e.key === 'Escape') {
@@ -1186,10 +1194,11 @@
       {#if isEditingStatusMessage || currentStatusMessage}
         <div>
           {#if isEditingStatusMessage}
-            <input
+            <textarea
               bind:this={statusInputRef}
-              type="text"
+              rows="1"
               bind:value={editedStatusMessage}
+              oninput={autoResizeStatusInput}
               onblur={saveStatusMessage}
               onkeydown={handleStatusMessageKeydown}
               disabled={isSavingStatusMessage}
@@ -1198,10 +1207,11 @@
               class="text-xs text-foreground bg-none
                    px-0.5 py-1 rounded
                    outline-none w-full leading-snug
+                   resize-none overflow-hidden break-words whitespace-pre-wrap
                    focus:ring-none! focus:outline-none!
                    transition-all duration-150 disabled:opacity-50"
               placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}
-            />
+            ></textarea>
           {:else if $workspace && currentStatusMessage}
             <button
               class="w-full text-xs text-subtle bg-transparent
