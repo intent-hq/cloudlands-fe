@@ -179,6 +179,10 @@
   // `inputLocked` is an editability-only lock — it never routes through the
   // `disabled` styling, so the placeholder keeps rendering while it is on.
   const isEditable = $derived((!disabled || editableWhileDisabled) && !inputLocked);
+  // Placeholder is configured with `showOnlyWhenEditable: false` for the lock,
+  // which would otherwise also surface it in the plain-disabled state. The
+  // extension options are fixed at editor creation, so suppression is CSS-side.
+  const placeholderSuppressed = $derived(!isEditable && !inputLocked);
 
   let element: HTMLDivElement;
   let editor: Editor | null = $state(null);
@@ -1359,6 +1363,7 @@
 <div
   bind:this={element}
   class="tiptap-container {className}"
+  class:placeholder-suppressed={placeholderSuppressed}
   style={`--tt-min-height:${minHeight}px;--tt-max-height:${maxHeight}px`}
 ></div>
 
@@ -1398,6 +1403,15 @@
     pointer-events: none;
     float: left;
     height: 0;
+  }
+
+  /* `showOnlyWhenEditable: false` keeps the placeholder alive for `inputLocked`;
+     the plain-disabled state must stay placeholder-free as before. */
+  .tiptap-container.placeholder-suppressed
+    :global(.tiptap-editor p.is-editor-empty:first-child::before),
+  .tiptap-container.placeholder-suppressed
+    :global(.tiptap-editor p.is-empty:first-child::before) {
+    content: none;
   }
 
   /* Mention chip styles are defined in tiptap-editor.css */

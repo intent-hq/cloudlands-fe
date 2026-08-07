@@ -30,6 +30,17 @@ function editorEl(container: HTMLElement): HTMLElement {
   return el as HTMLElement;
 }
 
+/**
+ * The placeholder text itself comes from a `::before` rule on the empty
+ * paragraph; the suppression class on the container is the observable switch
+ * that turns that rule off (jsdom does not resolve scoped pseudo-elements).
+ */
+function placeholderSuppressed(container: HTMLElement): boolean {
+  const el = container.querySelector('.tiptap-container');
+  if (!el) throw new Error('container did not mount');
+  return el.classList.contains('placeholder-suppressed');
+}
+
 describe('TipTapEditor inputLocked', () => {
   afterEach(() => {
     cleanup();
@@ -44,6 +55,7 @@ describe('TipTapEditor inputLocked', () => {
     const paragraph = container.querySelector('.tiptap-editor p');
     expect(paragraph?.classList.contains('is-editor-empty')).toBe(true);
     expect(paragraph?.getAttribute('data-placeholder')).toBe(PLACEHOLDER);
+    expect(placeholderSuppressed(container)).toBe(false);
 
     expect(component.focus()).toBe(false);
     expect(component.focusEnd()).toBe(false);
@@ -66,5 +78,38 @@ describe('TipTapEditor inputLocked', () => {
   it('stays editable when neither disabled nor locked', async () => {
     const { container } = await mountEditor({});
     expect(editorEl(container).getAttribute('contenteditable')).toBe('true');
+    expect(placeholderSuppressed(container)).toBe(false);
+  });
+
+  it('hides the placeholder when plain-disabled and empty', async () => {
+    const { container } = await mountEditor({ disabled: true });
+
+    expect(editorEl(container).getAttribute('contenteditable')).toBe('false');
+    expect(placeholderSuppressed(container)).toBe(true);
+  });
+
+  it('keeps the placeholder when disabled but locked, and when editableWhileDisabled', async () => {
+    const locked = await mountEditor({ disabled: true, inputLocked: true });
+    expect(placeholderSuppressed(locked.container)).toBe(false);
+    cleanup();
+
+    const editableWhileDisabled = await mountEditor({
+      disabled: true,
+      editableWhileDisabled: true,
+    });
+    expect(placeholderSuppressed(editableWhileDisabled.container)).toBe(false);
+  });
+
+  it('suppresses the placeholder reactively when disabled toggles on', async () => {
+    const { container, rerender } = await mountEditor({});
+    expect(placeholderSuppressed(container)).toBe(false);
+
+    await rerender({ placeholder: PLACEHOLDER, disabled: true });
+    await tick();
+    expect(placeholderSuppressed(container)).toBe(true);
+
+    await rerender({ placeholder: PLACEHOLDER, disabled: false });
+    await tick();
+    expect(placeholderSuppressed(container)).toBe(false);
   });
 });
