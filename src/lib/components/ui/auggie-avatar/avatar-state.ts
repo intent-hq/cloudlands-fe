@@ -5,7 +5,7 @@ import { store as appStore } from '$store/renderer/store';
 import {
   selectAgentSession,
   selectAgentIsResponding,
-  selectAgentIsWaiting,
+  selectAgentIsBlockedWaiting,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
 /**
@@ -67,14 +67,32 @@ export function isAgentActivelyWorking(input: AgentStateInput): boolean {
 }
 
 /**
+ * Whether the input describes a live turn — the activity flags plus the
+ * running statuses the `running` branch below already accepts.
+ */
+function isRunningInput(input: AgentStateInput): boolean {
+  return (
+    isAgentActivelyWorking(input) ||
+    input.status === AgentStatus.Processing ||
+    input.status === 'streaming' ||
+    input.status === 'processing'
+  );
+}
+
+/**
  * Get the avatar state based on agent state input and options.
  * This is the core centralized logic for determining avatar display state.
  */
 export function getAvatarState(input: AgentStateInput, options: AvatarStateOptions = {}): AvatarState {
   const { hasUnread = false, isActive = false, isCompleted = false, isFailed = false, hasPermissionRequest = false, attentionKind = null } = options;
 
-  // Completed state takes precedence
-  if (isCompleted) {
+  // Completed state takes precedence — EXCEPT over live work. `isCompleted`
+  // comes from the delegation group's `completedAgentIds`/`deletedAgentIds`,
+  // which never un-complete when an agent is re-woken, so an unconditional
+  // check-mark would outlive the completion it describes for the whole of the
+  // agent's next turn. Deferring to the running branch below makes the
+  // check-mark return on its own once the new turn settles.
+  if (isCompleted && !isRunningInput(input)) {
     return 'completed';
   }
 
@@ -102,7 +120,7 @@ export function getAvatarState(input: AgentStateInput, options: AvatarStateOptio
   }
 
   // Check if agent is currently running (streaming/processing/responding)
-  if (isAgentActivelyWorking(input) || input.status === AgentStatus.Processing || input.status === 'streaming' || input.status === 'processing') {
+  if (isRunningInput(input)) {
     return 'running';
   }
 
@@ -158,7 +176,10 @@ export function getAvatarStateFromStore(
     return 'idle';
   }
 
-  const isWaiting = selectAgentIsWaiting.select(state, agentId);
+  // Blocked waits (explicit Waiting status / paused on peer agents / a tool
+  // wait with no live turn) render the hourglass; a tool executing inside an
+  // in-flight turn stays "running".
+  const isWaiting = selectAgentIsBlockedWaiting.select(state, agentId);
   const isResponding = selectAgentIsResponding.select(state, agentId);
 
   return getAvatarState(

@@ -17,7 +17,7 @@
   selectAgentIsResponding,
   selectAgentSessionHasStreamOwnedMessage,
   selectAgentSessionStreamingContent,
-  selectAgentIsWaiting,
+  selectAgentIsBlockedWaiting,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import {
   selectChatLastChunkReceivedAt,
@@ -362,7 +362,9 @@
   // above handles the disk restore.
   const agent$ = selectAgentSession(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
-  const agentIsWaiting$ = selectAgentIsWaiting(agentIdStore);
+  // Hourglass-worthy waits only: a tool executing inside an in-flight turn is
+  // active work, so it must not suppress the running indicator.
+  const agentIsWaiting$ = selectAgentIsBlockedWaiting(agentIdStore);
   const agentData = $derived(getAgentPeekData($agent$));
 
   // Get parent agent ID from metadata (for delegation info)
@@ -404,7 +406,7 @@
   const avatarState = $derived(
     getAvatarState(
       {
-        isStreaming: isStreamActive || ($agentIsResponding$ && !$agentIsWaiting$),
+        isStreaming: isStreamActive,
         status: $agentIsWaiting$ ? 'waiting' : agentData?.status,
       },
       {

@@ -441,6 +441,34 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
+  it('agent:queue:processing flips an idle agent to responding, and agent:idle flips it back', async () => {
+    // Queue-delivery wake: nothing else opens the busy flags for this
+    // turn-start shape, so the status indicator must flip on the drain start
+    // rather than waiting for the first agent:status-changed.
+    seedSession({ status: AgentStatus.Idle, isStreaming: false, isProcessing: false });
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:queue:processing', {
+        agentId: AGENT,
+        messageId: 'q-wake',
+        content: 'wake up',
+        turnId: 'q-wake',
+      }),
+    );
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+
+    handler(
+      notification('agent:idle', { agentId: AGENT, status: 'idle', isActive: false }),
+    );
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
   it('routes agent:session-stats-changed (PROTOCOL §5.24) into agent-session.stats', async () => {
     seedSession();
     await primeBridge();
