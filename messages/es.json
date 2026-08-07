@@ -271,7 +271,7 @@
   "settings_workspaceApi_toonOutput_label": "Salida TOON",
   "settings_workspaceApi_toonOutput_description": "Codificar los resultados de herramientas de la API de Workspace como TOON (eficiente en tokens) en lugar de JSON plano",
   "settings_workspaceApi_toonOutput_error": "Error al alternar la salida TOON: {error}",
-  "settings_agentFeatures_newSessionsNote": "Los cambios solo se aplican a las sesiones de agente recién creadas; las sesiones existentes conservan las funciones con las que se crearon.",
+  "settings_agentFeatures_newSessionsNote": "Salvo que se indique lo contrario a continuación, los cambios solo se aplican a las sesiones de agente recién creadas; las sesiones existentes conservan las funciones con las que se crearon.",
   "settings_agentFeatures_loadError": "No se pudieron cargar los ajustes de funciones del agente: {error}",
   "settings_agentFeatures_saveError": "No se pudieron guardar los ajustes de funciones del agente: {error}",
   "settings_agentFeatures_rollbackError": "No se pudo cambiar la función del agente; se restauró el ajuste",

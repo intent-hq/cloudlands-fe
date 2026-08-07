@@ -271,7 +271,7 @@
   "settings_workspaceApi_toonOutput_label": "Sortie TOON",
   "settings_workspaceApi_toonOutput_description": "Encoder les résultats d'outils de l'API Workspace en TOON (économe en jetons) au lieu de JSON brut",
   "settings_workspaceApi_toonOutput_error": "Échec du basculement de la sortie TOON : {error}",
-  "settings_agentFeatures_newSessionsNote": "Les modifications ne s'appliquent qu'aux nouvelles sessions d'agent — les sessions existantes conservent les fonctionnalités avec lesquelles elles ont été créées.",
+  "settings_agentFeatures_newSessionsNote": "Sauf indication contraire ci-dessous, les modifications ne s'appliquent qu'aux nouvelles sessions d'agent — les sessions existantes conservent les fonctionnalités avec lesquelles elles ont été créées.",
   "settings_agentFeatures_loadError": "Impossible de charger les paramètres des fonctionnalités de l'agent : {error}",
   "settings_agentFeatures_saveError": "Impossible d'enregistrer les paramètres des fonctionnalités de l'agent : {error}",
   "settings_agentFeatures_rollbackError": "Impossible de modifier la fonctionnalité de l'agent ; paramètre rétabli",

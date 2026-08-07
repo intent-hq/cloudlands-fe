@@ -271,7 +271,7 @@
   "settings_workspaceApi_toonOutput_label": "TOON 输出",
   "settings_workspaceApi_toonOutput_description": "将工作区 API 工具结果编码为 TOON（节省 token）而非纯 JSON",
   "settings_workspaceApi_toonOutput_error": "切换 TOON 输出失败：{error}",
-  "settings_agentFeatures_newSessionsNote": "更改仅对新创建的智能体会话生效，现有会话将保留创建时的功能。",
+  "settings_agentFeatures_newSessionsNote": "除下方另有说明外，更改仅对新创建的智能体会话生效，现有会话将保留创建时的功能。",
   "settings_agentFeatures_loadError": "无法加载智能体功能设置：{error}",
   "settings_agentFeatures_saveError": "无法保存智能体功能设置：{error}",
   "settings_agentFeatures_rollbackError": "无法更改智能体功能；设置已回滚",

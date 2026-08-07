@@ -65,10 +65,12 @@ describe('AgentFeaturesSettings', () => {
     }
   });
 
-  it('shows the new-sessions-only note', async () => {
+  it('shows the new-sessions-only note, qualified for the live-read exception', async () => {
     render(AgentFeaturesSettings);
 
-    expect(screen.getByText(/newly created agent sessions only/i)).toBeTruthy();
+    const note = screen.getByText(/newly created agent sessions only/i);
+    expect(note).toBeTruthy();
+    expect(note.textContent).toMatch(/unless noted otherwise/i);
   });
 
   it('defaults a feature to on when the daemon has no entry for its path', async () => {

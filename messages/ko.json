@@ -271,7 +271,7 @@
   "settings_workspaceApi_toonOutput_label": "TOON 출력",
   "settings_workspaceApi_toonOutput_description": "워크스페이스 API 도구 결과를 일반 JSON 대신 TOON(토큰 효율적)으로 인코딩합니다",
   "settings_workspaceApi_toonOutput_error": "TOON 출력 전환에 실패했습니다: {error}",
-  "settings_agentFeatures_newSessionsNote": "변경 사항은 새로 생성된 에이전트 세션에만 적용됩니다. 기존 세션은 생성 당시의 기능을 유지합니다.",
+  "settings_agentFeatures_newSessionsNote": "아래에 별도로 명시된 경우를 제외하고, 변경 사항은 새로 생성된 에이전트 세션에만 적용됩니다. 기존 세션은 생성 당시의 기능을 유지합니다.",
   "settings_agentFeatures_loadError": "에이전트 기능 설정을 불러오지 못했습니다: {error}",
   "settings_agentFeatures_saveError": "에이전트 기능 설정을 저장하지 못했습니다: {error}",
   "settings_agentFeatures_rollbackError": "에이전트 기능을 변경하지 못했습니다. 설정이 복원되었습니다",

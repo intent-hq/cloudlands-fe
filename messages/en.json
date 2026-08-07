@@ -272,7 +272,7 @@
   "settings_workspaceApi_toonOutput_description": "Encode workspace API tool results as TOON (token-efficient) instead of plain JSON",
   "settings_workspaceApi_toonOutput_error": "Failed to toggle TOON output: {error}",
   "settings_workspaceApi_toonOutput_rollbackError": "Failed to change TOON output; setting rolled back",
-  "settings_agentFeatures_newSessionsNote": "Changes apply to newly created agent sessions only — existing sessions keep the features they were created with.",
+  "settings_agentFeatures_newSessionsNote": "Unless noted otherwise below, changes apply to newly created agent sessions only — existing sessions keep the features they were created with.",
   "settings_agentFeatures_loadError": "Failed to load Agent Features settings: {error}",
   "settings_agentFeatures_saveError": "Failed to save Agent Features settings: {error}",
   "settings_agentFeatures_rollbackError": "Failed to change agent feature; setting rolled back",
