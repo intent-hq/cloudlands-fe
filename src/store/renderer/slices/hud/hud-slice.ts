@@ -104,6 +104,27 @@ export interface HudRateHistoryState {
   fetchedAtMs: number;
 }
 
+/** Direction of the last-5-minute burn-rate change between polls. */
+export type HudBurnTrend = 'up' | 'down' | 'none';
+
+/** Minute buckets averaged for the TOKEN BURN "…/min" readout. */
+export const HUD_BURN_RATE_WINDOW = 5;
+
+/**
+ * Average per-minute token spend over the LAST 5 MINUTES (PROTOCOL §5.39
+ * `RateSample` counters summed) — the mean of the last 5 one-minute buckets,
+ * rounded to the displayed integer. The daemon zero-fills to exactly `limit`
+ * samples, so in practice this divides the last-5-minute total by 5; the
+ * `Math.min` guard keeps a partial window (fewer samples) a true mean. Zero
+ * when there are no samples.
+ */
+export function computeBurnRatePerMin(samples: readonly HudRateHistorySample[]): number {
+  if (samples.length === 0) return 0;
+  const window = samples.slice(-HUD_BURN_RATE_WINDOW);
+  const sum = window.reduce((total, sample) => total + sample.tokens, 0);
+  return Math.round(sum / Math.min(HUD_BURN_RATE_WINDOW, window.length));
+}
+
 /** Live attention flag for one workspace (`workspace:attention-changed`). */
 export interface HudAttentionFlag {
   /**
@@ -159,6 +180,15 @@ export interface HudState {
   /** Per-minute TOK/MIN history from `stats.getRateHistory` (PROTOCOL §5.39). */
   rateHistory: HudRateHistoryState | null;
   rateHistoryError: string | null;
+  /** Last-5-minute averaged per-minute burn (rounded); the "…/min" readout. */
+  burnRatePerMin: number;
+  /**
+   * Direction of the averaged burn between the two most recent polls, compared
+   * on the ROUNDED averages so rolling-window jitter never flips the arrow.
+   * 'none' on the first load (no previous average) and when flat — the readout
+   * then renders neutral/black with no arrow glyph.
+   */
+  burnTrend: HudBurnTrend;
   /** Latest captured clarifying question per agent (§7.1 trailingBlocks). */
   questionsByAgentId: Record<string, HudCapturedQuestion>;
   /** Header FLEET OPS repo + status grid filter (shared with the center grid). */
@@ -183,6 +213,8 @@ export const initialState: HudState = {
   usageError: null,
   rateHistory: null,
   rateHistoryError: null,
+  burnRatePerMin: 0,
+  burnTrend: 'none',
   questionsByAgentId: {},
   gridFilter: EMPTY_HUD_GRID_FILTER,
   takeoverRequestWorkspaceId: null,
@@ -350,11 +382,45 @@ export const hudReducer = createReducer<HudState>(initialState)
   )
   .with(hudUsageLoaded, (state, { payload: [usage] }) => ({ ...state, usage, usageError: null }))
   .with(hudUsageFailed, (state, { payload: [error] }) => ({ ...state, usageError: error }))
-  .with(hudRateHistoryLoaded, (state, { payload: [rateHistory] }) => ({
-    ...state,
-    rateHistory,
-    rateHistoryError: null,
-  }))
+  .with(hudRateHistoryLoaded, (state, { payload: [rateHistory] }) => {
+    // Drop stale/reordered responses: `loadRateHistory` fires independent 15s
+    // async requests, so a delayed EARLIER response can arrive after a newer
+    // one. Recency lives in the DATA, not arrival order (`fetchedAtMs` is
+    // stamped at response-processing time, so a reordered arrival still looks
+    // "new"). Compare the newest sample's `bucketUtc` (samples are
+    // chronological) against what is already stored; an incoming payload older
+    // than the stored one overwrites a more-current rate and would show a false
+    // down-trend, so ignore it entirely. Equal-or-newer proceeds as usual.
+    const incomingNewest = rateHistory.samples.at(-1)?.bucketUtc;
+    const storedNewest = state.rateHistory?.samples.at(-1)?.bucketUtc;
+    if (
+      incomingNewest !== undefined &&
+      storedNewest !== undefined &&
+      incomingNewest < storedNewest
+    ) {
+      return state;
+    }
+    const burnRatePerMin = computeBurnRatePerMin(rateHistory.samples);
+    // First load has no previous average to compare against (the slice resets
+    // `rateHistory` to null on activation) → neutral 'none'. Otherwise the arrow
+    // reflects the rounded average moving up/down since the previous poll; equal
+    // stays 'none'.
+    const burnTrend: HudBurnTrend =
+      state.rateHistory === null
+        ? 'none'
+        : burnRatePerMin > state.burnRatePerMin
+          ? 'up'
+          : burnRatePerMin < state.burnRatePerMin
+            ? 'down'
+            : 'none';
+    return {
+      ...state,
+      rateHistory,
+      rateHistoryError: null,
+      burnRatePerMin,
+      burnTrend,
+    };
+  })
   .with(hudRateHistoryFailed, (state, { payload: [error] }) => ({
     ...state,
     rateHistoryError: error,

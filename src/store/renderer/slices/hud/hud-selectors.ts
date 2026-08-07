@@ -52,6 +52,12 @@ export const selectHudUsageError = store.createSelector((state) => state.hud.usa
 
 export const selectHudRateHistory = store.createSelector((state) => state.hud.rateHistory);
 
+/** Last-5-minute averaged per-minute burn (rounded) — the "…/min" readout. */
+export const selectHudBurnRatePerMin = store.createSelector((state) => state.hud.burnRatePerMin);
+
+/** Up/down/none trend of the averaged burn between polls (arrow glyph + color). */
+export const selectHudBurnTrend = store.createSelector((state) => state.hud.burnTrend);
+
 /** Daemon status view the HUD footer LEFT zone and SYSTEM panel render. */
 export interface HudSystemView {
   /** Whether the daemon is reachable (see the health mapping below). */
