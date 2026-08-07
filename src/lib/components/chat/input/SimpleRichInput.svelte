@@ -1239,7 +1239,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   <div
     class="action-bar flex items-end justify-between px-1 pt-0 pb-0.5 transition-opacity duration-150"
   >
-    <div class="flex items-end gap-1 min-w-0 mb-0.5">
+    <div class="flex items-center gap-1 min-w-0 mb-0.5">
       <ModelPicker
         bind:this={modelPickerRef}
         {selectedModel}
