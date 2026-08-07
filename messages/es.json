@@ -2403,6 +2403,7 @@
   "hud_feedKind_agentDeleted_label": "AGENTE ELIMINADO",
   "hud_feedKind_agentRunning_label": "AGENTE ACTIVO",
   "hud_feedKind_agentWaiting_label": "AGENTE EN ESPERA",
+  "hud_feedKind_taskCreated_label": "TAREA CREADA",
   "hud_feedKind_taskStatusChanged_label": "ESTADO TAREA",
   "hud_feedKind_displayStatusChanged_label": "ESTADO DEL ESPACIO",
   "hud_feedKind_attentionChanged_label": "ATENCIÓN",

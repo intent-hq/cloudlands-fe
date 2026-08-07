@@ -1112,6 +1112,19 @@ function handleNoteEvent(
 }
 
 /**
+ * `task:created` (§6.5) carries `{ noteId, noteTitle, status, createdAt,
+ * agentId? }` — a new task changes the BE-owned `task.list` rollup, so refetch
+ * through the same debounced, initialized-workspaces-only path `note:*` uses.
+ * The new task itself arrives with that refetch; the HUD feed row is rendered
+ * off the HUD's own feed subscription. The dispatched refresh is single-flight
+ * with a trailing rerun in `lifecycle-read-service`, so an event landing while
+ * `task.list` is in flight still yields one follow-up fetch.
+ */
+function handleTaskCreatedEvent(workspaceId: string): void {
+  debouncedWorkspaceTasksRefresh(workspaceId);
+}
+
+/**
  * `task:status-changed` (§6.5) carries the self-sufficient payload
  * `{ noteId, noteTitle, previousStatus, newStatus, changedAt }` — the daemon
  * mints the FE-canonical status word (`not_started` | `in_progress` |
@@ -2129,6 +2142,10 @@ function handleNotification(method: string, params: unknown): void {
   // Task/comment/PR domain events converge into their owning slices so the
   // task pane, inline comment thread, and workspace PR pill refresh without a
   // reload.
+  if (type === 'task:created') {
+    handleTaskCreatedEvent(workspaceId);
+    return;
+  }
   if (type === 'task:status-changed') {
     handleTaskStatusChangedEvent(event, workspaceId);
     return;

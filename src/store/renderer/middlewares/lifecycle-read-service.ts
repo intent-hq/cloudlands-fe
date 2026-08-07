@@ -150,6 +150,39 @@ function coalesce(key: string, fn: () => Promise<void>): void {
   inFlight.set(key, run);
 }
 
+/** Keys that were re-requested while in flight and owe exactly one rerun. */
+const trailingPending = new Set<string>();
+
+/**
+ * Like `coalesce`, but a request arriving while `key` is in flight queues a
+ * single trailing rerun instead of being dropped. Event-driven refetches must
+ * be single-flight WITH trailing coalesce (see AGENTS.md): without the trailing
+ * rerun, a response that started before the change lands leaves the store stale
+ * until the next unrelated event. N requests during a fetch still produce at
+ * most one follow-up fetch.
+ */
+function coalesceWithTrailing(key: string, fn: () => Promise<void>): void {
+  if (inFlight.has(key)) {
+    trailingPending.add(key);
+    return;
+  }
+  trailingPending.delete(key);
+  // `let` + late assign for the same self-reference reason as `coalesce`.
+  let run: Promise<void> | undefined;
+  // eslint-disable-next-line prefer-const
+  run = (async () => {
+    try {
+      await fn();
+    } catch (error) {
+      logger.error(`Refresh failed for ${key}`, error);
+    } finally {
+      if (inFlight.get(key) === run) inFlight.delete(key);
+      if (trailingPending.delete(key)) coalesceWithTrailing(key, fn);
+    }
+  })();
+  inFlight.set(key, run);
+}
+
 /**
  * Per-workspace agent-hydration generation. `workspaceDeleted` (real delete or
  * the recycled-ID purge in daemon-events-bridge) bumps it and evicts the
@@ -186,9 +219,15 @@ function ensureTasks(wsId: string): void {
   });
 }
 
-/** Force-refetch tasks (no guard) for live updates when tasks change. */
+/**
+ * Force-refetch tasks (no guard) for live updates when tasks change. Driven by
+ * daemon events (`task:created`, `task:status-changed`, `note:*`), so it is
+ * single-flight with a trailing rerun: a refresh requested while `task.list` is
+ * in flight would otherwise be dropped, leaving the store on a response that
+ * predates the change.
+ */
 function refreshTasks(wsId: string): void {
-  coalesce(`tasks:${wsId}`, async () => {
+  coalesceWithTrailing(`tasks:${wsId}`, async () => {
     const { tasks, stats } = await appClient.tasks.list(wsId);
     appStore.dispatch(loadWorkspaceTasksSucceeded(wsId, tasks, stats));
   });
