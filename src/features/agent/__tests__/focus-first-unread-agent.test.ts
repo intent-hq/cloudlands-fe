@@ -12,10 +12,11 @@ interface MockSession {
 }
 
 const mockState = {
+  workspace: { activeWorkspaceId: null as string | null },
   workspaceAgents: {
     byWorkspaceId: {} as Record<
       string,
-      { foregroundAgentIds: string[]; agentsLoaded: boolean }
+      { foregroundAgentIds: string[]; agentsLoaded: boolean; activeAgentId: string | null }
     >,
   },
   agentSessions: { byAgentId: {} as Record<string, MockSession> },
@@ -43,25 +44,42 @@ import {
 
 const WS = 'ws-1';
 
-function seedAgents(foregroundAgentIds: string[], agentsLoaded: boolean): void {
-  mockState.workspaceAgents.byWorkspaceId[WS] = { foregroundAgentIds, agentsLoaded };
+function seedAgents(
+  foregroundAgentIds: string[],
+  agentsLoaded: boolean,
+  activeAgentId: string | null = null,
+): void {
+  mockState.workspaceAgents.byWorkspaceId[WS] = {
+    foregroundAgentIds,
+    agentsLoaded,
+    activeAgentId,
+  };
 }
 
 function seedSessions(sessions: Record<string, MockSession>): void {
   mockState.agentSessions.byAgentId = sessions;
 }
 
+interface SubscribeSeam {
+  subscribe: (listener: () => void) => () => void;
+  notify: () => void;
+  unsubscribeCalls: () => number;
+}
+
 /** Controllable store-change seam: `notify()` replays the store listener. */
-function createSubscribeSeam(): { subscribe: (listener: () => void) => () => void; notify: () => void } {
+function createSubscribeSeam(): SubscribeSeam {
   let listener: (() => void) | null = null;
+  let unsubscribeCalls = 0;
   return {
     subscribe: (fn) => {
       listener = fn;
       return () => {
+        unsubscribeCalls++;
         listener = null;
       };
     },
     notify: () => listener?.(),
+    unsubscribeCalls: () => unsubscribeCalls,
   };
 }
 
@@ -71,6 +89,7 @@ function dispatchedTypes(): string[] {
 
 beforeEach(() => {
   dispatched.length = 0;
+  mockState.workspace.activeWorkspaceId = WS;
   mockState.workspaceAgents.byWorkspaceId = {};
   mockState.agentSessions.byAgentId = {};
 });
@@ -193,6 +212,7 @@ describe('focusFirstUnreadAgent', () => {
       expect(dispatched).toEqual([]);
 
       vi.advanceTimersByTime(100);
+      expect(seam.unsubscribeCalls()).toBe(1);
 
       // Watch torn down: a late unread arrival must not switch tabs.
       seedAgents(['agent-a'], true);
@@ -202,5 +222,100 @@ describe('focusFirstUnreadAgent', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('supersedes the previous pending watch instead of stacking', () => {
+    const first = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, first);
+
+    const second = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, second);
+
+    // The first watch was torn down by the second call.
+    expect(first.unsubscribeCalls()).toBe(1);
+
+    seedAgents(['agent-a'], true);
+    seedSessions({ 'agent-a': { hasUnread: true } });
+
+    // A notification on the superseded seam must not dispatch.
+    first.notify();
+    expect(dispatched).toEqual([]);
+
+    // Only the surviving watch acts, and exactly once.
+    second.notify();
+    expect(dispatchedTypes()).toEqual([
+      'workspaceAgents/setActiveAgentId',
+      'appLayout/openAgentTabRequested',
+    ]);
+  });
+
+  it('tolerates a store seam that emits synchronously during subscribe', () => {
+    // The real store readable notifies immediately on subscribe; that emission
+    // reflects the state already checked, so it must not dispatch or throw.
+    let listener: (() => void) | null = null;
+    const subscribe = (fn: () => void) => {
+      listener = fn;
+      fn();
+      return () => {
+        listener = null;
+      };
+    };
+
+    expect(() => focusFirstUnreadAgent(WS, { subscribe })).not.toThrow();
+    expect(dispatched).toEqual([]);
+
+    // The watch is still armed and works on the next real change.
+    seedAgents(['agent-a'], true);
+    seedSessions({ 'agent-a': { hasUnread: true } });
+    listener?.();
+    expect(dispatchedTypes()).toEqual([
+      'workspaceAgents/setActiveAgentId',
+      'appLayout/openAgentTabRequested',
+    ]);
+  });
+
+  it('abandons the watch when the user navigates to another workspace', () => {
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, seam);
+
+    mockState.workspace.activeWorkspaceId = 'ws-other';
+    seedAgents(['agent-a'], true);
+    seedSessions({ 'agent-a': { hasUnread: true } });
+    seam.notify();
+
+    expect(dispatched).toEqual([]);
+    expect(seam.unsubscribeCalls()).toBe(1);
+  });
+
+  it('abandons the watch when the user picks an agent tab themselves', () => {
+    seedAgents([], false, 'agent-user-picked');
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, seam);
+
+    // User opened a different agent tab before hydration landed.
+    seedAgents(['agent-a'], true, 'agent-other');
+    seedSessions({ 'agent-a': { hasUnread: true } });
+    seam.notify();
+
+    expect(dispatched).toEqual([]);
+    expect(seam.unsubscribeCalls()).toBe(1);
+  });
+
+  it('still switches when hydration sets the default agent from no selection', () => {
+    // No selection when the watch arms: hydration picking a default agent is
+    // expected, not a user takeover.
+    seedAgents([], false, null);
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, seam);
+
+    seedAgents(['agent-a', 'agent-b'], true, 'agent-a');
+    seedSessions({ 'agent-a': { hasUnread: false }, 'agent-b': { hasUnread: true } });
+    seam.notify();
+
+    expect(dispatchedTypes()).toEqual([
+      'workspaceAgents/setActiveAgentId',
+      'appLayout/openAgentTabRequested',
+    ]);
+    expect(dispatched[0].payload).toEqual([WS, 'agent-b']);
   });
 });

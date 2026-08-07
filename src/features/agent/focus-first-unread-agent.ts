@@ -47,8 +47,7 @@ export function findFirstUnreadForegroundAgentId(workspaceId: string): string | 
   const foregroundAgentIds =
     state.workspaceAgents?.byWorkspaceId[workspaceId]?.foregroundAgentIds ?? [];
   const sessions = state.agentSessions?.byAgentId ?? {};
-  for (const id of foregroundAgentIds) {
-    const agentId = String(id);
+  for (const agentId of foregroundAgentIds) {
     if (sessions[agentId]?.hasUnread === true) return agentId;
   }
   return null;
@@ -73,7 +72,14 @@ function areAgentsLoaded(workspaceId: string): boolean {
   const foregroundAgentIds = workspaceState.foregroundAgentIds ?? [];
   if (foregroundAgentIds.length === 0) return false;
   const sessions = state.agentSessions?.byAgentId ?? {};
-  return foregroundAgentIds.every((id) => sessions[String(id)] !== undefined);
+  return foregroundAgentIds.every((agentId) => sessions[agentId] !== undefined);
+}
+
+/** The workspace's currently selected agent, or null when none is set. */
+function activeAgentIdOf(workspaceId: string): string | null {
+  const activeAgentId =
+    appStore.state.workspaceAgents?.byWorkspaceId[workspaceId]?.activeAgentId ?? null;
+  return activeAgentId === null ? null : String(activeAgentId);
 }
 
 function activateAgent(workspaceId: string, agentId: string): void {
@@ -104,6 +110,22 @@ export function focusFirstUnreadAgent(
   // Agents already hydrated and none unread: nothing to wait for.
   if (areAgentsLoaded(workspaceId)) return;
 
+  // Focus-steal guards: the watch outlives the click, so it must not yank a
+  // selection the user made in the meantime. Bail when they navigated away from
+  // this workspace, or when an existing agent selection changed under us.
+  //
+  // The selection guard only applies to a NON-NULL armed selection: hydration
+  // itself picks a default agent when none is set (`hydrateWorkspaceAgents` /
+  // `agents-seeder`), and that expected default must not read as a takeover.
+  // With a selection already in place both hydration paths preserve it, so a
+  // change then really is someone else moving the tab.
+  const armedActiveAgentId = activeAgentIdOf(workspaceId);
+  function userTookOver(): boolean {
+    if (appStore.state.workspace?.activeWorkspaceId !== workspaceId) return true;
+    if (armedActiveAgentId === null) return false;
+    return activeAgentIdOf(workspaceId) !== armedActiveAgentId;
+  }
+
   let unsubscribe: (() => void) | null = null;
   const timer = setTimeout(() => {
     stop();
@@ -121,6 +143,10 @@ export function focusFirstUnreadAgent(
   // any post-stop notification).
   unsubscribe = (deps.subscribe ?? subscribeToStore)(() => {
     if (unsubscribe === null) return;
+    if (userTookOver()) {
+      stop();
+      return;
+    }
     const agentId = findFirstUnreadForegroundAgentId(workspaceId);
     if (agentId !== null) {
       stop();
