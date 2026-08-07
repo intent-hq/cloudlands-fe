@@ -104,6 +104,44 @@ function isAgentWaiting(stored: StoredAgentSession): boolean {
 }
 
 /**
+ * Whether the turn is live in the daemon's sense — `isResponding` or the
+ * transient FE-owned send signals. `isWaitingOnTool` is deliberately excluded:
+ * it is the discriminator the blocked-waiting predicate below tests against.
+ */
+function isTurnInFlight(stored: StoredAgentSession): boolean {
+  return (
+    stored.isResponding === true ||
+    stored.isStreaming === true ||
+    stored.isProcessing === true
+  );
+}
+
+/**
+ * Waiting state that genuinely blocks on someone else — the hourglass
+ * indicator. It is the BE-owned waiting signals MINUS the ones a live turn
+ * contradicts:
+ *
+ * - `isWaitingForOtherAgents` is the daemon's explicit peer/child pause and
+ *   can legitimately hold mid-turn, so it counts unconditionally. A wake
+ *   clears the parked flag in the reducer (`chatQueueProcessingReceived`,
+ *   and the running-transition clear in `updateSessionFields`).
+ * - `isWaitingOnTool` on an in-flight turn is the agent executing a tool —
+ *   work, not a block.
+ * - A `Waiting` STATUS is a coarse between-turns marker with no dedicated
+ *   clear path of its own: the daemon revises it on the next
+ *   `agent:status-changed`, which is exactly the signal that can lag a
+ *   turn start (a queue drain opens the busy flags before it lands). So it
+ *   only counts when no turn is in flight; the dedicated flags above still
+ *   raise the hourglass for a genuine mid-turn block.
+ */
+function isAgentBlockedWaiting(stored: StoredAgentSession): boolean {
+  if (isTerminalAgentStatus(stored.status)) return false;
+  if (isAgentWaitingForOtherAgents(stored)) return true;
+  if (isTurnInFlight(stored)) return false;
+  return stored.status === AgentStatus.Waiting || stored.isWaitingOnTool === true;
+}
+
+/**
  * Active-thread state driven by BE-owned activity flags (PROTOCOL.md §5.5:
  * `isResponding`, `isWaitingOnTool`) plus transient FE-owned signals
  * (optimistic `isStreaming`/`isProcessing` set on send, `ACTIVATING`) and the
@@ -395,6 +433,22 @@ export const selectAgentIsWaiting = store.createSelector(
     const stored = state.agentSessions?.byAgentId[agentId];
     if (!stored) return false;
     return isAgentWaiting(stored) || selectAgentIsWaitingForOtherAgents.select(state, agentId);
+  },
+);
+
+/**
+ * Status-indicator variant of `selectAgentIsWaiting`: true only for waits that
+ * genuinely block on something outside the agent (explicit `Waiting` status,
+ * paused on peer/child agents, or a tool wait with no live turn behind it).
+ * A tool executing inside an in-flight responding turn is active work, so this
+ * returns false there and the surface renders "running" rather than the
+ * hourglass.
+ */
+export const selectAgentIsBlockedWaiting = store.createSelector(
+  (state, agentId: string): boolean => {
+    const stored = state.agentSessions?.byAgentId[agentId];
+    if (!stored) return false;
+    return isAgentBlockedWaiting(stored);
   },
 );
 
