@@ -3,7 +3,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
-import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
@@ -76,10 +76,11 @@ async function buildState(fileSpecialists: object[]) {
     githubAuth: { isAuthenticated: false },
     agentAvailability: {
       providerStatusMap: {
+        auggie: { available: true, authenticated: true },
         'claude-code': { available: true, authenticated: true },
         codex: { available: true, authenticated: true },
       },
-      providerLoadingMap: { 'claude-code': false, codex: false },
+      providerLoadingMap: { auggie: false, 'claude-code': false, codex: false },
       providerUserInfoLoadingMap: {},
       hasCheckedOnce: true,
       watchedTerminalIds: [],
@@ -126,18 +127,6 @@ describe('ProviderSelector disable guard', () => {
       },
     ]);
     mocks.invoke.mockImplementation(async (channel: string) => {
-      if (channel === AUGGIE_CHANNELS.STATUS) {
-        return {
-          success: true,
-          data: {
-            installed: true,
-            authenticated: true,
-            versionOk: true,
-            nodeVersionOk: true,
-            minimumVersion: '0.0.0',
-          },
-        };
-      }
       if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) {
         return { success: true, data: availability };
       }
@@ -225,18 +214,6 @@ describe('ProviderSelector default-unavailable honesty', () => {
       },
     };
     mocks.invoke.mockImplementation(async (channel: string) => {
-      if (channel === AUGGIE_CHANNELS.STATUS) {
-        return {
-          success: true,
-          data: {
-            installed: true,
-            authenticated: true,
-            versionOk: true,
-            nodeVersionOk: true,
-            minimumVersion: '0.0.0',
-          },
-        };
-      }
       if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) {
         return {
           success: true,
@@ -261,26 +238,22 @@ describe('ProviderSelector default-unavailable honesty', () => {
   });
 
   it('shows "Default (unavailable)" when Auggie is active but not installed', async () => {
+    const base = await buildState([]);
     mocks.state.current = {
-      ...(await buildState([])),
+      ...base,
       providerSettings: {
         activeProviderId: 'auggie',
         enabledProviders: { 'claude-code': true, codex: true },
       },
+      agentAvailability: {
+        ...base.agentAvailability,
+        providerStatusMap: {
+          ...base.agentAvailability.providerStatusMap,
+          auggie: { available: false },
+        },
+      },
     };
     mocks.invoke.mockImplementation(async (channel: string) => {
-      if (channel === AUGGIE_CHANNELS.STATUS) {
-        return {
-          success: true,
-          data: {
-            installed: false,
-            authenticated: false,
-            versionOk: false,
-            nodeVersionOk: true,
-            minimumVersion: '0.0.0',
-          },
-        };
-      }
       if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) {
         return { success: true, data: availability };
       }

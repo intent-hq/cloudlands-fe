@@ -63,7 +63,6 @@ const notInstalledProvider = (): ProviderCardData => ({
 const baseProps = () => ({
   brand,
   npxStatus: null,
-  auggieNeedsUpdate: false,
   onSelect: vi.fn(),
 });
 
