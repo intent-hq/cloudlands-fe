@@ -25,7 +25,11 @@ const mockState: {
   },
   workspaceAgents: { byWorkspaceId: {} },
   agentSessions: { byAgentId: {} },
-  sidebarNav: { multiSelectTabOrder: [], multiSelectSelectedTabIdsByWorkspaceId: {} },
+  sidebarNav: {
+    multiSelectTabOrder: [],
+    multiSelectSelectedTabIdsByWorkspaceId: {},
+    showCreateModal: false,
+  },
   voiceSettings: {
     isLoading: false,
     engine: 'daemon',
@@ -46,6 +50,7 @@ vi.mock('$store/renderer/store', () => ({
       dispatched.push(action);
       return action;
     }),
+    createSelector: vi.fn((fn) => fn),
   },
 }));
 

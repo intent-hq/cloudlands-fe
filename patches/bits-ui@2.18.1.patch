@@ -1,8 +1,28 @@
 diff --git a/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js b/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
-index 924869bdb3eedccf57345314adb7c1a9b2a12b20..c35414273ee5e35d4cc197d99ad31ce175ba38f5 100644
---- a/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
-+++ b/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
-@@ -105,6 +105,10 @@ export class DismissibleLayerState {
+index 924869bdb3eedccf57345314adb7c1a9b2a12b20..e7e16b37d4b4f07a51b27ccd10d73df47226761f 100644
+--- a/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js	
++++ b/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js	
+@@ -68,7 +68,9 @@ export class DismissibleLayerState {
+             if (!this.opts.ref.current || this.#isTargetWithinLayer(event.target))
+                 return;
+             if (event.target && !this.#isFocusInsideDOMTree) {
+-                this.#onFocusOutside.current?.(event);
++                if (typeof this.#onFocusOutside?.current !== "function")
++                    return;
++                this.#onFocusOutside.current(event);
+             }
+         });
+     };
+@@ -98,6 +100,8 @@ export class DismissibleLayerState {
+         if (event.defaultPrevented) {
+             event = createWrappedEvent(e);
+         }
++        if (typeof this.#interactOutsideProp?.current !== "function")
++            return;
+         this.#interactOutsideProp.current(e);
+     };
+     #handleInteractOutside = debounce((e) => {
+@@ -105,6 +109,10 @@ export class DismissibleLayerState {
              this.#unsubClickListener();
              return;
          }
@@ -13,3 +33,14 @@ index 924869bdb3eedccf57345314adb7c1a9b2a12b20..c35414273ee5e35d4cc197d99ad31ce1
          const isEventValid = this.opts.isValidEvent.current(e, this.opts.ref.current) ||
              isValidEvent(e, this.opts.ref.current);
          if (!this.#isResponsibleLayer || this.#isAnyEventIntercepted() || !isEventValid) {
+@@ -127,6 +135,10 @@ export class DismissibleLayerState {
+             });
+         }
+         else {
++            if (typeof this.#interactOutsideProp?.current !== "function") {
++                this.#unsubClickListener();
++                return;
++            }
+             this.#interactOutsideProp.current(event);
+         }
+     }, 10);

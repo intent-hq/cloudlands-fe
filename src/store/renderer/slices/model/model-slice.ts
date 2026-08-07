@@ -42,6 +42,7 @@ function buildLoadingState(
     retryAttempt?: number;
     error?: string;
     warning?: string;
+    stale?: boolean;
   },
 ): ModelLoadingState {
   const nextState: ModelLoadingState = {
@@ -64,6 +65,17 @@ function buildLoadingState(
     nextState.warning = warning;
   }
 
+  // `stale` qualifies `warning`, so it follows the same lifecycle.
+  const stale =
+    updates.status === 'success'
+      ? updates.stale
+      : updates.status === 'error'
+        ? undefined
+        : (updates.stale ?? previous?.stale);
+  if (stale !== undefined) {
+    nextState.stale = stale;
+  }
+
   return nextState;
 }
 
@@ -76,6 +88,7 @@ export const initialState: ModelState = {
   availableModelsProviderId: '',
   loadingState: {},
   providerModels: {},
+  defaultReasoningEffort: '',
   modelPickerCollapsedGroups: [],
   fallbackInfoByAgentId: {},
   defaultProviderId: '',
@@ -101,6 +114,7 @@ export const setLoadingStateForProvider = createAction<
       retryAttempt?: number;
       error?: string;
       warning?: string;
+      stale?: boolean;
     },
   ]
 >('model/setLoadingStateForProvider');
@@ -114,6 +128,22 @@ export const setRetryAttempt =
 
 export const loadProviderModelsFromStorage = createAction<[models: Record<string, string>]>(
   'model/loadProviderModelsFromStorage',
+);
+
+/**
+ * User pick of the default reasoning-effort level ('' clears it). Persisted to
+ * `model.defaultReasoningEffort` by the model-selection persistence middleware.
+ */
+export const setDefaultReasoningEffort = createAction<[effort: string]>(
+  'model/setDefaultReasoningEffort',
+);
+
+/**
+ * Hydration echo of `model.defaultReasoningEffort` from the daemon settings
+ * catalog — deliberately NOT persisted, so there is no write loop.
+ */
+export const loadDefaultReasoningEffortFromStorage = createAction<[effort: string]>(
+  'model/loadDefaultReasoningEffortFromStorage',
 );
 
 export const hydrateModelPickerCollapsedGroups = createAction<[groupKeys: string[]]>(
@@ -236,7 +266,7 @@ export const modelReducer = createReducer<ModelState>(initialState)
   }))
   .with(
     setLoadingStateForProvider,
-    (state, { payload: [{ providerId, status, retryAttempt, error, warning }] }) => ({
+    (state, { payload: [{ providerId, status, retryAttempt, error, warning, stale }] }) => ({
       ...state,
       loadingState: {
         ...state.loadingState,
@@ -245,6 +275,7 @@ export const modelReducer = createReducer<ModelState>(initialState)
           retryAttempt,
           error,
           warning,
+          stale,
         }),
       },
     }),
@@ -274,6 +305,14 @@ export const modelReducer = createReducer<ModelState>(initialState)
   .with(loadProviderModelsFromStorage, (state, { payload: [models] }) => ({
     ...state,
     providerModels: normalizeProviderModels(models, state.defaultProviderId),
+  }))
+  .with(setDefaultReasoningEffort, (state, { payload: [effort] }) => ({
+    ...state,
+    defaultReasoningEffort: effort,
+  }))
+  .with(loadDefaultReasoningEffortFromStorage, (state, { payload: [effort] }) => ({
+    ...state,
+    defaultReasoningEffort: effort,
   }))
   .with(hydrateModelPickerCollapsedGroups, (state, { payload: [groupKeys] }) => ({
     ...state,

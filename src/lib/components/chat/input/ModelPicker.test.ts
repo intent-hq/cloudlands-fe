@@ -15,6 +15,7 @@ import {
 } from '@testing-library/svelte';
 import {
   derived,
+  get,
   readable,
   writable,
 } from 'svelte/store';
@@ -82,6 +83,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 const providerWarnings$ = writable<Record<string, string>>({});
+const providerStaleFlags$ = writable<Record<string, boolean>>({});
 const codexManagedInstallStatus$ = writable<{
   managedInstallState: string;
   version?: string;
@@ -90,12 +92,22 @@ const codexManagedInstallStatus$ = writable<{
 const mockSvelteDispatch = vi.hoisted(() => vi.fn((action: { type?: string; payload?: unknown }) => {
   if (action.type === 'model/setLoadingStateForProvider' && Array.isArray(action.payload)) {
     const [payload] = action.payload as [
-      { providerId: string; status: string; warning?: string } & Record<string, unknown>,
+      { providerId: string; status: string; warning?: string; stale?: boolean } & Record<
+        string,
+        unknown
+      >,
     ];
     providerWarnings$.update((warnings) => {
       const { [payload.providerId]: _cleared, ...remaining } = warnings;
       if (payload.status === 'success' && payload.warning) {
         return { ...remaining, [payload.providerId]: payload.warning };
+      }
+      return remaining;
+    });
+    providerStaleFlags$.update((flags) => {
+      const { [payload.providerId]: _cleared, ...remaining } = flags;
+      if (payload.status === 'success' && payload.stale) {
+        return { ...remaining, [payload.providerId]: true };
       }
       return remaining;
     });
@@ -139,6 +151,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectIsLoadingModels: () => readable(false),
   selectLoadError: () => readable(mockModelState.loadError),
   selectAllProviderWarnings: () => providerWarnings$,
+  selectAllProviderStaleFlags: () => providerStaleFlags$,
 }));
 
 const hasCheckedOnce$ = writable(true);
@@ -209,6 +222,7 @@ afterEach(() => {
   availableProviderOverride$.set(null);
   mockModelState.availableModelsProviderId = 'auggie';
   daemonHealth$.set('healthy');
+  providerStaleFlags$.set({});
 });
 
 describe('ModelPicker locked state', () => {
@@ -564,6 +578,60 @@ describe('ModelPicker multi-provider mode', () => {
     );
   });
 
+  it('suppresses the Codex install notice when a stale warning accompanies real models', async () => {
+    // PROTOCOL §5.30/§6.7 degraded-but-cached response: the daemon serves the
+    // last-known-good list with `stale: true` after a transient probe failure,
+    // so the models on screen are real and the install prompt would be wrong.
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return {
+          models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
+          warning: 'probe timed out; serving last known model list',
+          stale: true,
+        };
+      }
+
+      return { models: [] };
+    });
+    enabledProviderIds$.set(['codex']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        variant: 'default',
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(get(providerStaleFlags$)).toEqual({ codex: true });
+    });
+    expect(screen.queryByText('Showing default model list.')).toBeNull();
+    expect(screen.queryByText(/Install Codex CLI to see all your available models/)).toBeNull();
+  });
+
+  it('keeps the Codex install notice when the warning arrives with no codex models', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return { models: [], warning: 'codex: CLI not found' };
+      }
+
+      return { models: [] };
+    });
+    enabledProviderIds$.set(['codex']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        variant: 'default',
+        portal: false,
+      },
+    });
+
+    expect(await screen.findByText('Showing default model list.')).toBeTruthy();
+    expect(screen.getByText(/Install Codex CLI to see all your available models/)).toBeTruthy();
+  });
+
   it('does not show the Codex stale-list notice when no fallback warning is present', async () => {
     vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
       models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
@@ -826,6 +894,33 @@ describe('ModelPicker availability gating', () => {
     expect(screen.getByText('No provider available')).toBeTruthy();
   });
 
+  it('gives the no-provider toast an action that opens provider settings', async () => {
+    const { toast } = await import('svelte-sonner');
+    const { navigateToSettings } = await import('$lib/utils/workspace-navigation');
+    vi.mocked(navigateToSettings).mockResolvedValue(undefined);
+    availableProviderOverride$.set([]);
+
+    render(ModelPicker, {
+      props: { portal: false },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalled();
+    });
+
+    const options = vi.mocked(toast.error).mock.calls[0][1] as
+      | { action?: { label: string; onClick: () => void } }
+      | undefined;
+    expect(options?.action?.label).toBe('Open Settings');
+
+    options?.action?.onClick();
+
+    expect(vi.mocked(navigateToSettings)).toHaveBeenCalledWith({
+      tab: 'accounts',
+      hash: 'providers',
+    });
+  });
+
   it('suppresses the no-provider notice and toast while the daemon is not yet connected (pre-connect probe failure)', async () => {
     // Regression (startup window): the mount-time ensureProvidersChecked can
     // run its bulk probe before the daemon socket is up — every probe fails,
@@ -970,6 +1065,119 @@ describe('ModelPicker availability gating', () => {
 
     // Reset for other tests
     activeProviderId$.set('auggie');
+  });
+});
+
+describe('ModelPicker selected-model loading state', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'auggie:sonnet4.6';
+    mockModelState.loadError = null;
+    mockModelState.availableModels = [];
+    mockModelState.availableModelsProviderId = '';
+    providerWarnings$.set({});
+    codexManagedInstallStatus$.set(null);
+    mockSvelteDispatch.mockClear();
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models: [] });
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+    availableProviderOverride$.set(null);
+    hasCheckedOnce$.set(true);
+    daemonHealth$.set('healthy');
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+    availableProviderOverride$.set(null);
+    hasCheckedOnce$.set(true);
+    mockModelState.availableModelsProviderId = 'auggie';
+  });
+
+  it('shows a spinner instead of the warning while availability has not hydrated yet, then clears once the model arrives', async () => {
+    // Regression (transient warning on refresh): with the availability list not
+    // hydrated, fetchAllProviderModels([]) marks the catalog "loaded" while
+    // empty — the selected model must read as still-loading, not unavailable.
+    hasCheckedOnce$.set(false);
+    availableProviderOverride$.set([]);
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'auggie:sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' }],
+    });
+
+    render(ModelPicker, {
+      props: { selectedModel: 'auggie:sonnet4.6', agentId: 'test-agent', portal: false },
+    });
+
+    const trigger = await screen.findByRole('button');
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(screen.getByRole('status')).toBeTruthy();
+
+    // Availability hydrates and the provider's catalog resolves with the model.
+    hasCheckedOnce$.set(true);
+    availableProviderOverride$.set(['auggie']);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('status')).toBeNull();
+    });
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(trigger.textContent).toContain('Sonnet 4.6');
+  });
+
+  it('shows the warning once the selected model provider has settled without the model', async () => {
+    hasCheckedOnce$.set(false);
+    availableProviderOverride$.set([]);
+    // Empty catalog so the auto-fallback has no candidate and the warning stays.
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models: [] });
+
+    render(ModelPicker, {
+      props: { selectedModel: 'auggie:sonnet4.6', agentId: 'test-agent', portal: false },
+    });
+
+    const trigger = await screen.findByRole('button');
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(screen.getByRole('status')).toBeTruthy();
+
+    hasCheckedOnce$.set(true);
+    availableProviderOverride$.set(['auggie']);
+
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('never shows the warning while the selected model provider fetch is still in flight', async () => {
+    let resolveFetch:
+      | ((result: { models: { value: string; label: string; description: string }[] }) => void)
+      | undefined;
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    render(ModelPicker, {
+      props: { selectedModel: 'auggie:sonnet4.6', agentId: 'test-agent', portal: false },
+    });
+
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+    });
+
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+
+    resolveFetch?.({ models: [] });
+
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+    expect(screen.queryByRole('status')).toBeNull();
   });
 });
 

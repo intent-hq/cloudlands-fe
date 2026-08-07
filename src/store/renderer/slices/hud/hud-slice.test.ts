@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  computeBurnRatePerMin,
   HUD_FEED_LIMIT,
   hudActivated,
   hudAttentionChanged,
@@ -10,7 +11,7 @@ import {
   hudGridFilterStatesCleared,
   hudGridFilterStateToggled,
   hudQuestionCaptured,
-  hudQuestionSuperseded,
+  hudQuestionsResolvedForWorkspace,
   hudRateHistoryFailed,
   hudRateHistoryLoaded,
   hudReducer,
@@ -22,6 +23,8 @@ import {
   type HudFeedEntry,
   type HudState,
 } from './hud-slice';
+import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
+import { replaceWorkspaceList, setWorkspaceEntity } from '../workspace/workspace-slice';
 
 function makeEntry(id: string, overrides: Partial<HudFeedEntry> = {}): HudFeedEntry {
   return {
@@ -153,6 +156,76 @@ describe('hud-slice reducer', () => {
     expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-1': 'pr_merged' });
   });
 
+  describe('displayStatus override reconciliation', () => {
+    function withOverrides(): HudState {
+      let state = activeState();
+      state = hudReducer(state, hudDisplayStatusChanged('ws-1', 'pr_open'));
+      return hudReducer(state, hudDisplayStatusChanged('ws-2', 'in_progress'));
+    }
+
+    function entity(id: string, displayStatus?: WorkspaceDisplayStatus): Workspace {
+      return { id, displayStatus } as Workspace;
+    }
+
+    it('an entity that agrees with the override retires it immediately', () => {
+      const state = hudReducer(withOverrides(), setWorkspaceEntity(entity('ws-1', 'pr_open')));
+      expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-2': 'in_progress' });
+    });
+
+    it('the FIRST contradicting entity keeps the override (it may be an in-flight refetch)', () => {
+      const state = hudReducer(withOverrides(), setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      expect(state.displayStatusByWorkspaceId).toEqual({
+        'ws-1': 'pr_open',
+        'ws-2': 'in_progress',
+      });
+      expect(state.displayStatusOverridesContradicted).toEqual({ 'ws-1': true });
+    });
+
+    it('a SECOND contradicting entity retires the override', () => {
+      let state = hudReducer(withOverrides(), setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      state = hudReducer(state, setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-2': 'in_progress' });
+      expect(state.displayStatusOverridesContradicted).toEqual({});
+    });
+
+    it('a refetch that predates the event cannot clobber the override (reverse race)', () => {
+      // `workspace.list` starts, the event lands mid-flight, then the stale
+      // response resolves: the override must survive and keep rendering.
+      let state = hudReducer(activeState(), hudDisplayStatusChanged('ws-1', 'failed'));
+      state = hudReducer(state, replaceWorkspaceList([entity('ws-1', 'in_progress')]));
+      expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-1': 'failed' });
+    });
+
+    it('a newer event restarts the two-strike count', () => {
+      let state = hudReducer(withOverrides(), setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      state = hudReducer(state, hudDisplayStatusChanged('ws-1', 'complete'));
+      expect(state.displayStatusOverridesContradicted).toEqual({});
+      state = hudReducer(state, setWorkspaceEntity(entity('ws-1', 'pr_merged')));
+      expect(state.displayStatusByWorkspaceId['ws-1']).toBe('complete');
+    });
+
+    it('replaceWorkspaceList reconciles every row carrying a value', () => {
+      let state = hudReducer(
+        withOverrides(),
+        replaceWorkspaceList([entity('ws-1', 'complete'), entity('ws-2', 'in_progress')]),
+      );
+      // ws-2 agreed (retired now); ws-1 contradicted once (survives).
+      expect(state.displayStatusByWorkspaceId).toEqual({ 'ws-1': 'pr_open' });
+      state = hudReducer(state, replaceWorkspaceList([entity('ws-1', 'complete')]));
+      expect(state.displayStatusByWorkspaceId).toEqual({});
+    });
+
+    it('an entity without a displayStatus keeps the override (nothing fresher arrived)', () => {
+      const state = withOverrides();
+      expect(hudReducer(state, setWorkspaceEntity(entity('ws-1')))).toBe(state);
+    });
+
+    it('an unrelated workspace leaves the overrides untouched', () => {
+      const state = withOverrides();
+      expect(hudReducer(state, setWorkspaceEntity(entity('ws-9', 'complete')))).toBe(state);
+    });
+  });
+
   it('hudUsageLoaded stores the rollup and clears a prior error', () => {
     let state = hudReducer(activeState(), hudUsageFailed('boom'));
     const usage = {
@@ -201,6 +274,100 @@ describe('hud-slice reducer', () => {
     expect(state.rateHistoryError).toBe('daemon offline');
   });
 
+  describe('last-5-minute burn rate + trend', () => {
+    function history(tokens: number[]) {
+      return {
+        samples: tokens.map((value, index) => ({
+          bucketUtc: `2026-07-30T14:${String(index).padStart(2, '0')}:00Z`,
+          tokens: value,
+        })),
+        fetchedAtMs: 1,
+      };
+    }
+
+    it('computeBurnRatePerMin averages the last 5 buckets (÷5), rounded', () => {
+      // Only the last 5 of the 7 buckets count: (100+200+300+400+500)/5 = 300.
+      expect(
+        computeBurnRatePerMin(history([9999, 8888, 100, 200, 300, 400, 500]).samples),
+      ).toBe(300);
+    });
+
+    it('computeBurnRatePerMin is 0 for no samples and a true mean for a partial window', () => {
+      expect(computeBurnRatePerMin([])).toBe(0);
+      // Fewer than 5 buckets → divide by the count present, not by 5.
+      expect(computeBurnRatePerMin(history([300, 300, 300]).samples)).toBe(300);
+    });
+
+    it('first load derives the average with a neutral trend (no previous average)', () => {
+      const state = hudReducer(activeState(), hudRateHistoryLoaded(history([100, 200, 300, 400, 500])));
+      expect(state.burnRatePerMin).toBe(300);
+      expect(state.burnTrend).toBe('none');
+    });
+
+    it('a rising rounded average since the previous poll shows the up trend', () => {
+      let state = hudReducer(activeState(), hudRateHistoryLoaded(history([100, 100, 100, 100, 100])));
+      expect(state.burnRatePerMin).toBe(100);
+      state = hudReducer(state, hudRateHistoryLoaded(history([100, 100, 100, 100, 600])));
+      expect(state.burnRatePerMin).toBe(200);
+      expect(state.burnTrend).toBe('up');
+    });
+
+    it('a falling rounded average since the previous poll shows the down trend', () => {
+      let state = hudReducer(activeState(), hudRateHistoryLoaded(history([500, 500, 500, 500, 500])));
+      expect(state.burnRatePerMin).toBe(500);
+      state = hudReducer(state, hudRateHistoryLoaded(history([100, 100, 100, 100, 100])));
+      expect(state.burnTrend).toBe('down');
+    });
+
+    it('an equal rounded average is flat — sub-integer jitter never flips the arrow', () => {
+      // 1500/5 = 300 then 1502/5 = 300.4 → both round to 300 → still 'none'.
+      let state = hudReducer(activeState(), hudRateHistoryLoaded(history([300, 300, 300, 300, 300])));
+      state = hudReducer(state, hudRateHistoryLoaded(history([300, 300, 300, 300, 302])));
+      expect(state.burnRatePerMin).toBe(300);
+      expect(state.burnTrend).toBe('none');
+    });
+
+    it('ignores a stale/out-of-order load older than the stored one (no false down-trend)', () => {
+      // Buckets 14:05..14:09 (newest 14:09) — the current, most-recent poll.
+      const newer = {
+        samples: [5, 6, 7, 8, 9].map((minute) => ({
+          bucketUtc: `2026-07-30T14:${String(minute).padStart(2, '0')}:00Z`,
+          tokens: 500,
+        })),
+        fetchedAtMs: 2,
+      };
+      // A delayed EARLIER poll (buckets 14:00..14:04, newest 14:04) with a
+      // much lower rate, arriving AFTER the newer response.
+      const olderDelayed = {
+        samples: [0, 1, 2, 3, 4].map((minute) => ({
+          bucketUtc: `2026-07-30T14:${String(minute).padStart(2, '0')}:00Z`,
+          tokens: 100,
+        })),
+        fetchedAtMs: 3,
+      };
+      let state = hudReducer(activeState(), hudRateHistoryLoaded(newer));
+      expect(state.burnRatePerMin).toBe(500);
+      const before = state;
+      state = hudReducer(state, hudRateHistoryLoaded(olderDelayed));
+      // The stale response is dropped wholesale — no samples/burn/trend change,
+      // and crucially no false 'down' trend from the reordered arrival.
+      expect(state).toBe(before);
+      expect(state.rateHistory).toEqual(newer);
+      expect(state.burnRatePerMin).toBe(500);
+      expect(state.burnTrend).toBe('none');
+    });
+
+    it('resets to a neutral first-load trend after the HUD deactivates', () => {
+      let state = hudReducer(activeState(), hudRateHistoryLoaded(history([100, 100, 100, 100, 100])));
+      state = hudReducer(state, hudRateHistoryLoaded(history([600, 600, 600, 600, 600])));
+      expect(state.burnTrend).toBe('up');
+      state = hudReducer(state, hudDeactivated());
+      state = hudReducer(hudReducer(state, hudActivated()), hudRateHistoryLoaded(history([50, 50, 50, 50, 50])));
+      expect(state.burnRatePerMin).toBe(50);
+      expect(state.burnTrend).toBe('none');
+    });
+  });
+
   it('hudTakeoverRequested records the workspace id (idempotent on repeats)', () => {
     let state = hudReducer(activeState(), hudTakeoverRequested('ws-1'));
     expect(state.takeoverRequestWorkspaceId).toBe('ws-1');
@@ -245,16 +412,16 @@ describe('hud-slice question capture (§7.1 trailingBlocks)', () => {
     expect(state.questionsByAgentId).toEqual({});
   });
 
-  it('supersession drops the agent question (no-op when none pends)', () => {
-    // §7.1: a question hold only breaks on a user-origin delivery, so the
-    // answered agent's next running transition supersedes the question.
+  it('workspace resolution clears only that workspace\u2019s captured questions', () => {
+    // Pendingness is persistent: the daemon's needs_attention rollup dropping
+    // is the release signal, and it is workspace-scoped.
+    const elsewhere = { ...QUESTION, agentId: 'agent-9', workspaceId: 'ws-2' };
     let state = hudReducer(activeState(), hudQuestionCaptured(QUESTION));
-    const other = { ...QUESTION, agentId: 'agent-2' };
-    state = hudReducer(state, hudQuestionCaptured(other));
-    state = hudReducer(state, hudQuestionSuperseded('agent-1'));
-    expect(state.questionsByAgentId).toEqual({ 'agent-2': other });
-    // Unknown agent: no state churn.
-    const repeat = hudReducer(state, hudQuestionSuperseded('agent-1'));
+    state = hudReducer(state, hudQuestionCaptured(elsewhere));
+    state = hudReducer(state, hudQuestionsResolvedForWorkspace(QUESTION.workspaceId));
+    expect(state.questionsByAgentId).toEqual({ 'agent-9': elsewhere });
+    // Nothing left for that workspace: no state churn.
+    const repeat = hudReducer(state, hudQuestionsResolvedForWorkspace(QUESTION.workspaceId));
     expect(repeat).toBe(state);
   });
 });

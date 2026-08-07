@@ -25,12 +25,22 @@ vi.mock('../../../backend/main/backend.ipc', () => {
       return client;
     },
   };
+  // T9: notification/status listeners now register on the stable forwarders.
+  // Wire them onto the same `clientListeners` map that `emit()` drives so the
+  // tests keep delivering `notification`/`status` to the service handlers.
+  const register = (event: string) => (handler: (...args: unknown[]) => void) => {
+    if (!clientListeners.has(event)) clientListeners.set(event, new Set());
+    clientListeners.get(event)!.add(handler);
+    return () => clientListeners.get(event)?.delete(handler);
+  };
   return {
     getBackendClient: () => client,
     onBackendReconnected: (handler: () => void) => {
       reconnectHandlers.push(handler);
       return () => {};
     },
+    onBackendNotification: register('notification'),
+    onBackendStatus: register('status'),
   };
 });
 
@@ -99,9 +109,8 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
   });
 
   it('sync getters return "" before hydration completes', async () => {
-    const { getBranchPrefix, getWorktreesLocation, getSshKeyPath } = await import(
-      '../app-settings.service'
-    );
+    const { getBranchPrefix, getWorktreesLocation, getSshKeyPath } =
+      await import('../app-settings.service');
     expect(getBranchPrefix()).toBe('');
     expect(getWorktreesLocation()).toBe('');
     expect(getSshKeyPath()).toBe('');
@@ -115,12 +124,8 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
       'workspace.sshKeyPath': '/home/me/.ssh/id_ed25519',
     });
 
-    const {
-      initAppSettingsService,
-      getBranchPrefix,
-      getWorktreesLocation,
-      getSshKeyPath,
-    } = await import('../app-settings.service');
+    const { initAppSettingsService, getBranchPrefix, getWorktreesLocation, getSshKeyPath } =
+      await import('../app-settings.service');
 
     await initAppSettingsService();
 
@@ -150,12 +155,8 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
       return { path, value: 42 };
     });
 
-    const {
-      initAppSettingsService,
-      getBranchPrefix,
-      getWorktreesLocation,
-      getSshKeyPath,
-    } = await import('../app-settings.service');
+    const { initAppSettingsService, getBranchPrefix, getWorktreesLocation, getSshKeyPath } =
+      await import('../app-settings.service');
 
     await initAppSettingsService();
 
@@ -170,9 +171,8 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
       { failPaths: ['workspace.branchPrefix'] },
     );
 
-    const { initAppSettingsService, getBranchPrefix, getWorktreesLocation } = await import(
-      '../app-settings.service'
-    );
+    const { initAppSettingsService, getBranchPrefix, getWorktreesLocation } =
+      await import('../app-settings.service');
 
     await expect(initAppSettingsService()).resolves.toBeUndefined();
     expect(getBranchPrefix()).toBe('');
@@ -251,9 +251,8 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
       { subscriptionId: 'sub-1' },
     );
 
-    const { initAppSettingsService, getBranchPrefix, getSshKeyPath } = await import(
-      '../app-settings.service'
-    );
+    const { initAppSettingsService, getBranchPrefix, getSshKeyPath } =
+      await import('../app-settings.service');
     await initAppSettingsService();
     await flush();
 
@@ -548,9 +547,8 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
       'workspace.worktreesLocation': '/tmp/wt',
       'workspace.sshKeyPath': '/id',
     });
-    const { initAppSettingsService, __resetAppSettingsForTesting } = await import(
-      '../app-settings.service'
-    );
+    const { initAppSettingsService, __resetAppSettingsForTesting } =
+      await import('../app-settings.service');
     await initAppSettingsService();
     expect(clientListeners.get('notification')?.size).toBe(1);
 

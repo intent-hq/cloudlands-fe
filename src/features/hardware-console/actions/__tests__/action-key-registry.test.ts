@@ -18,6 +18,14 @@ vi.mock('../../voice/voice-setup-toast', () => ({
   showVoiceSetupToast: vi.fn(),
 }));
 
+vi.mock('$features/layout/panel-layout-adapter', () => ({
+  getPanelLayoutManager: vi.fn((workspaceId: string) => ({ workspaceId })),
+}));
+
+vi.mock('$features/layout/preset-executor', () => ({
+  applyContentPreset: vi.fn(async () => true),
+}));
+
 import { isVoiceRecordingSupported } from '../../voice/voice-recorder';
 import {
   handleVoiceKeyDown,
@@ -25,6 +33,7 @@ import {
   isPttRecordingActive,
 } from '../../voice/ptt-controller';
 import { showVoiceSetupToast } from '../../voice/voice-setup-toast';
+import { applyContentPreset } from '$features/layout/preset-executor';
 import {
   ACTION_KEY_REGISTRY,
   actionSlotIcons,
@@ -65,6 +74,7 @@ interface StateOptions {
   sessionOverrides?: Record<string, Record<string, unknown>>;
   unreadWorkspaceIds?: string[];
   selectedTabs?: Record<string, string[]>;
+  showCreateModal?: boolean;
   cycleScopes?: Partial<Record<CycleScopeFamilyId, CycleScope>>;
   voiceSettings?: Partial<ActionKeyState['voiceSettings']>;
 }
@@ -107,6 +117,7 @@ function makeState(options: StateOptions = {}): ActionKeyState {
     sidebarNav: {
       multiSelectTabOrder: [],
       multiSelectSelectedTabIdsByWorkspaceId: options.selectedTabs ?? {},
+      showCreateModal: options.showCreateModal ?? false,
     },
     voiceSettings: {
       isLoading: false,
@@ -966,23 +977,109 @@ describe('execute dispatch', () => {
     );
   });
 
-  it('new-workspace opens the create-workspace modal', () => {
-    const { context, dispatch } = makeContext(makeState({ activeWorkspaceId: null }));
+  it('new-workspace opens the create-workspace modal when it is closed', () => {
+    const state = makeState({ activeWorkspaceId: null });
+    const { context, dispatch } = makeContext(state);
+    expect(getActionKeyDefinition('new-workspace').isAvailable(context)).toBe(true);
     getActionKeyDefinition('new-workspace').execute(context);
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: [true] }),
     );
   });
 
-  it('switch-window-layouts cycles through the layout presets per workspace', () => {
-    const { context, dispatch } = makeContext(makeState());
+  it('new-workspace closes the create-workspace modal when it is already open', () => {
+    const state = makeState({ activeWorkspaceId: null, showCreateModal: true });
+    const { context, dispatch } = makeContext(state);
+    expect(getActionKeyDefinition('new-workspace').isAvailable(context)).toBe(true);
+    getActionKeyDefinition('new-workspace').execute(context);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: [false] }),
+    );
+  });
+
+  it('switch-window-layouts cycles through the content presets per workspace', async () => {
+    const applyContentPresetMock = applyContentPreset as ReturnType<typeof vi.fn>;
+    applyContentPresetMock.mockClear();
+    const { context } = makeContext(makeState({ agentsByWorkspace: { 'ws-1': { ids: ['a-1'] } } }));
     getActionKeyDefinition('switch-window-layouts').execute(context);
+    await vi.waitFor(() => {
+      expect(applyContentPresetMock).toHaveBeenCalledTimes(1);
+    });
     getActionKeyDefinition('switch-window-layouts').execute(context);
-    const presets = dispatch.mock.calls
-      .map(([action]) => action as { type: string; payload: { preset?: string } })
-      .filter((action) => action.type === 'panelLayout/applyPreset')
-      .map((action) => action.payload.preset);
-    expect(presets).toEqual(['single', 'split-horizontal']);
+    await vi.waitFor(() => {
+      expect(applyContentPresetMock).toHaveBeenCalledTimes(2);
+    });
+    const presets = applyContentPresetMock.mock.calls.map(([presetId]) => presetId);
+    expect(presets).toEqual(['planning', 'agents-row']);
+    expect(applyContentPresetMock.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ workspaceId: 'ws-1' }),
+    );
+    expect(applyContentPresetMock.mock.calls[0][2]).toEqual(
+      expect.objectContaining({ workspaceId: 'ws-1' }),
+    );
+  });
+
+  it('switch-window-layouts walks all four presets when the workspace has agents', async () => {
+    const applyContentPresetMock = applyContentPreset as ReturnType<typeof vi.fn>;
+    applyContentPresetMock.mockClear();
+    const { context } = makeContext(makeState({ agentsByWorkspace: { 'ws-1': { ids: ['a-1'] } } }));
+    for (let press = 1; press <= 5; press++) {
+      getActionKeyDefinition('switch-window-layouts').execute(context);
+      await vi.waitFor(() => {
+        expect(applyContentPresetMock).toHaveBeenCalledTimes(press);
+      });
+    }
+    expect(applyContentPresetMock.mock.calls.map(([presetId]) => presetId)).toEqual([
+      'planning',
+      'agents-row',
+      'changes',
+      'review',
+      'planning',
+    ]);
+  });
+
+  it('switch-window-layouts skips agents-row when the workspace has no agents', async () => {
+    const applyContentPresetMock = applyContentPreset as ReturnType<typeof vi.fn>;
+    applyContentPresetMock.mockClear();
+    const { context, showHint } = makeContext(makeState());
+    for (let press = 1; press <= 4; press++) {
+      getActionKeyDefinition('switch-window-layouts').execute(context);
+      await vi.waitFor(() => {
+        expect(applyContentPresetMock).toHaveBeenCalledTimes(press);
+      });
+    }
+    // No dead press: the cycle is planning → changes → review → planning.
+    expect(applyContentPresetMock.mock.calls.map(([presetId]) => presetId)).toEqual([
+      'planning',
+      'changes',
+      'review',
+      'planning',
+    ]);
+    expect(showHint).not.toHaveBeenCalled();
+  });
+
+  it('switch-window-layouts hints when the preset resolves false (race fallback)', async () => {
+    const applyContentPresetMock = applyContentPreset as ReturnType<typeof vi.fn>;
+    applyContentPresetMock.mockClear();
+    applyContentPresetMock.mockResolvedValueOnce(false);
+    const { context, showHint } = makeContext(makeState());
+    getActionKeyDefinition('switch-window-layouts').execute(context);
+    await vi.waitFor(() => {
+      expect(showHint).toHaveBeenCalledExactlyOnceWith(
+        m.hardwareConsole_actionKey_switchWindowLayouts_notApplicable_hint(),
+      );
+    });
+  });
+
+  it('switch-window-layouts catches and logs a rejected preset application', async () => {
+    const applyContentPresetMock = applyContentPreset as ReturnType<typeof vi.fn>;
+    applyContentPresetMock.mockClear();
+    applyContentPresetMock.mockRejectedValueOnce(new Error('boom'));
+    const { context } = makeContext(makeState());
+    expect(() => getActionKeyDefinition('switch-window-layouts').execute(context)).not.toThrow();
+    await vi.waitFor(() => {
+      expect(applyContentPresetMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('none executes as a no-op', () => {

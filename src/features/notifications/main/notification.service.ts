@@ -21,7 +21,12 @@ import { m } from '../../../shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '../../../shared/types/branded-ids';
 import type { AgentIdleEvent } from '../../events/types';
 import type { ConnectionStatus, JsonRpcNotification } from '../../backend/main/json-rpc-client';
-import { getBackendClient, onBackendReconnected } from '../../backend/main/backend.ipc';
+import {
+  getBackendClient,
+  onBackendNotification,
+  onBackendReconnected,
+  onBackendStatus,
+} from '../../backend/main/backend.ipc';
 import {
   getFocusedWindowWorkspaceId,
   getWindowIdsForWorkspace,
@@ -162,7 +167,8 @@ export class NotificationService {
   private subscriptionId?: string;
   /** Guards against stale in-flight `events.subscribe` calls (bumped on stop/reconnect). */
   private subscribeEpoch = 0;
-  private notificationListener?: (n: JsonRpcNotification) => void;
+  /** Disposer for the stable-forwarder notification listener, once attached. */
+  private notificationDisposer?: () => void;
   private reconnectDisposer?: () => void;
   /** Detaches the pending connect-retry `status` listener, when armed. */
   private statusRetryDisposer?: () => void;
@@ -203,14 +209,13 @@ export class NotificationService {
     this.reconnectDisposer?.();
     this.reconnectDisposer = undefined;
     this.clearStatusRetry();
-    const listener = this.notificationListener;
-    this.notificationListener = undefined;
+    this.notificationDisposer?.();
+    this.notificationDisposer = undefined;
     const subscriptionId = this.subscriptionId;
     this.subscriptionId = undefined;
     void (async () => {
       try {
         const client = getBackendClient();
-        if (listener) client.off('notification', listener);
         if (subscriptionId) {
           await client.request('events.unsubscribe', { subscriptionId });
         }
@@ -227,7 +232,7 @@ export class NotificationService {
    * Attach the daemon notification listener and issue the initial
    * `events.subscribe`. Mirrors the terminal-registry / script-manager
    * long-lived subscription pattern: the listener persists across reconnects
-   * (same singleton client); only the subscription id is re-issued.
+   * AND client swaps (stable forwarder); only the subscription id is re-issued.
    *
    * The notification listener and reconnect disposer are attached
    * synchronously (before the first `await`), so a later `stop()` always
@@ -236,7 +241,6 @@ export class NotificationService {
    */
   private async attachIdleSubscription(): Promise<void> {
     try {
-      const client = getBackendClient();
       const listener = (n: JsonRpcNotification): void => {
         if (n.method !== 'events.event') return;
         const params = n.params as { subscriptionId?: unknown; event?: unknown } | undefined;
@@ -254,8 +258,7 @@ export class NotificationService {
         if (typeof event.workspaceId !== 'string') return;
         void this.handleAgentIdle(event as unknown as AgentIdleEvent);
       };
-      this.notificationListener = listener;
-      client.on('notification', listener);
+      this.notificationDisposer = onBackendNotification(listener);
       this.reconnectDisposer = onBackendReconnected(() => {
         // The daemon dropped every in-memory subscription on reconnect; the
         // stale id belonged to the previous connection. Invalidate any
@@ -328,7 +331,6 @@ export class NotificationService {
   /** Re-issue `events.subscribe` on the client's next `connected` transition. */
   private armStatusRetry(): void {
     if (this.statusRetryDisposer) return;
-    const client = getBackendClient();
     const listener = (status: ConnectionStatus): void => {
       if (status !== 'connected') return;
       this.clearStatusRetry();
@@ -337,8 +339,9 @@ export class NotificationService {
       if (!this.started || this.subscriptionId) return;
       void this.subscribeToIdleEvents();
     };
-    client.on('status', listener);
-    this.statusRetryDisposer = () => client.off('status', listener);
+    // Register on the stable status forwarder so the retry survives a backend
+    // switch instead of stranding on the disposed client.
+    this.statusRetryDisposer = onBackendStatus(listener);
   }
 
   private clearStatusRetry(): void {

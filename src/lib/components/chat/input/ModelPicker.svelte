@@ -37,6 +37,7 @@
   selectIsLoadingModels,
   selectLoadError,
   selectAllProviderWarnings,
+  selectAllProviderStaleFlags,
 } from '$store/renderer/slices/model/model-selectors';
   import {
   clearModelFallbackInfo,
@@ -83,6 +84,7 @@
 } from './model-picker-utils';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
+  import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -123,6 +125,7 @@
   const isLoadingModels$ = selectIsLoadingModels();
   const loadError$ = selectLoadError();
   const allProviderWarnings$ = selectAllProviderWarnings();
+  const allProviderStaleFlags$ = selectAllProviderStaleFlags();
   const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
   const hasCheckedOnce$ = selectHasCheckedOnce();
   const daemonHealth$ = selectDaemonHealth();
@@ -181,6 +184,13 @@
     updateGlobalDefault?: boolean;
     silentFallback?: boolean;
     showProviderWarningNotice?: boolean;
+    /**
+     * Extra classes for the provider notice boxes. Callers that render the
+     * picker inside a flex row use this to let the notice break onto its own
+     * full-width line (e.g. `basis-full w-full max-w-full` + `flex-wrap` on
+     * the row) instead of sitting inline next to the trigger.
+     */
+    noticeClass?: string;
   }
 
   let {
@@ -211,7 +221,14 @@
     updateGlobalDefault = false,
     silentFallback = false,
     showProviderWarningNotice,
+    noticeClass,
   }: Props = $props();
+
+  // `default`-variant pickers stack the notice directly under a full-width
+  // trigger, so give it a default top margin; callers can still override it.
+  const resolvedNoticeClass = $derived(
+    variant === 'default' ? cn('mt-2', noticeClass) : noticeClass,
+  );
 
   const agentSession$ = useAgentSession(() => agentId);
 
@@ -241,9 +258,15 @@
   let agentProviderLoading = $state(false);
   let agentProviderError = $state<string | null>(null);
 
-  function setProviderWarningState(providerId: string, warning: string | undefined) {
+  function setProviderWarningState(
+    providerId: string,
+    warning: string | undefined,
+    stale: boolean | undefined,
+  ) {
     const normalizedId = normalizeProviderId(providerId);
-    appStore.dispatch(setLoadingStateForProvider({ providerId: normalizedId, status: 'success', warning }));
+    appStore.dispatch(
+      setLoadingStateForProvider({ providerId: normalizedId, status: 'success', warning, stale }),
+    );
   }
 
   function setProviderErrorState(providerId: string, error: string) {
@@ -313,7 +336,7 @@
             ...allProviderModels,
             [providerId]: toDropdownOptions(result.models),
           };
-          setProviderWarningState(providerId, result.warning);
+          setProviderWarningState(providerId, result.warning, result.stale);
         } catch (err) {
           if (fetchGeneration !== currentGen) return;
           const providerError = formatProviderLoadError(providerId, err);
@@ -353,7 +376,7 @@
       const result = await getModelsForProviderForLoadingState(providerId);
       if (agentFetchGeneration !== currentGen) return;
       agentProviderModels = result.models;
-      setProviderWarningState(providerId, result.warning);
+      setProviderWarningState(providerId, result.warning, result.stale);
     } catch (err) {
       if (agentFetchGeneration !== currentGen) return;
       const providerError = formatProviderLoadError(providerId, err);
@@ -429,7 +452,7 @@
       // duration and the returned list replaces the group immediately.
       const result = await getModelsForProviderForLoadingState(providerId, { forceRefresh: true });
       if (fetchGeneration !== gen) return;
-      setProviderWarningState(providerId, result.warning);
+      setProviderWarningState(providerId, result.warning, result.stale);
       if (providerId === effectiveProviderId && usesAgentProviderFetch) {
         agentProviderModels = result.models;
       }
@@ -727,8 +750,20 @@
       .filter((warning): warning is ProviderWarningNotice => Boolean(warning));
   });
 
+  const hasCodexModels = $derived(
+    (allProviderModels['codex']?.length ?? 0) > 0 ||
+      (normalizeProviderId(effectiveProviderId) === 'codex' &&
+        (agentProviderModels?.length ?? 0) > 0),
+  );
+
+  // A stale warning (PROTOCOL §5.30 `stale: true`) accompanies the daemon's
+  // last-known-good list after a transient probe failure: the models on screen
+  // are real and usable, so the "install Codex CLI" notice would be wrong.
+  // The notice stays for the degraded case (warning with no codex models).
   const codexFallbackWarning = $derived(
-    providerFallbackWarnings.find((warning) => warning.providerId === 'codex') ?? null,
+    $allProviderStaleFlags$['codex'] && hasCodexModels
+      ? null
+      : (providerFallbackWarnings.find((warning) => warning.providerId === 'codex') ?? null),
   );
 
   const isCodexManagedInstallInstalling = $derived(
@@ -771,6 +806,16 @@
         noProviderToastShown = true;
         toast.error(m.chat_modelPicker_noProviderAvailable_toast(), {
           duration: 6000,
+          action: {
+            label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
+            onClick: () => {
+              void navigateToSettings({ tab: 'accounts', hash: 'providers' }).catch(
+                (error: unknown) => {
+                  logger.error('Failed to open provider settings from no-provider toast', error);
+                },
+              );
+            },
+          },
         });
       }
     } else {
@@ -830,14 +875,46 @@
     })),
   );
 
-  const isSelectedModelUnavailable = $derived.by(() => {
-    if (isLoadingModels) return false;
-    if (!allProvidersLoaded) return false;
+  // Provider the explicitly selected model belongs to ('' when inheriting).
+  const selectedModelProviderId = $derived(
+    hasExplicitModel && localModel
+      ? normalizeProviderId(parseCompoundModelId(localModel).providerId)
+      : '',
+  );
+
+  // True while a settled fetch result for the selected model's own provider is
+  // still outstanding but expected. `allProvidersLoaded` is not enough: on boot
+  // the availability list is empty, so fetchAllProviderModels([]) marks
+  // "loaded" with an empty catalog and the model looks unavailable before its
+  // provider was ever queried.
+  const isSelectedModelProviderPending = $derived.by(() => {
+    const modelProvider = selectedModelProviderId;
+    if (!modelProvider) return false;
+    if (hasProviderResult(modelProvider)) return false;
+    if (allProviderLoading[modelProvider]) return true;
+    // Availability hasn't been probed yet — an empty enabled list is "unknown".
+    if (!$hasCheckedOnce$) return true;
+    if (isProviderEnabled($availableEnabledProviderIds$, modelProvider)) return true;
+    // Not enabled: the per-agent fetch is the only source of a result.
+    if (usesAgentProviderFetch && normalizeProviderId(effectiveProviderId) === modelProvider) {
+      return agentProviderLoading || (agentProviderModels === null && agentProviderError === null);
+    }
+    return false;
+  });
+
+  const isSelectedModelMissingFromCatalog = $derived.by(() => {
     if (!hasExplicitModel) return false;
     if (!localModel) return false;
 
     const values = new Set(flatModelOptions.map((opt) => normalizeModelIdForMatch(opt.value)));
     return !values.has(normalizeModelIdForMatch(localModel));
+  });
+
+  const isSelectedModelUnavailable = $derived.by(() => {
+    if (isLoadingModels) return false;
+    if (!allProvidersLoaded) return false;
+    if (isSelectedModelProviderPending) return false;
+    return isSelectedModelMissingFromCatalog;
   });
 
   // --- Per-agent fallback tracking (persisted through Redux sagas so it survives page refresh) ---
@@ -871,6 +948,22 @@
   // initializer creates new agents and shouldn't display fallback warnings.
   const showModelWarning = $derived(
     !!agentId && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
+  );
+
+  // The selected model isn't in the catalog yet, but its provider hasn't
+  // settled — show a spinner in the trigger rather than a warning that would
+  // flip back to normal a moment later (transient warning on refresh).
+  const showModelLoading = $derived(
+    !!agentId &&
+      $fallbackInfo$ === null &&
+      isSelectedModelMissingFromCatalog &&
+      (isLoadingModels || !allProvidersLoaded || isSelectedModelProviderPending),
+  );
+
+  const modelLoadingTitle = $derived(
+    m.chat_modelPicker_loadingProviderModels_label({
+      provider: providerDisplayName(selectedModelProviderId || effectiveProviderId),
+    }),
   );
 
   // Warning message to display
@@ -1195,7 +1288,14 @@
         {#if isCompact}
           <Fa icon={faSettings} class="h-4 w-4" />
         {:else if isTriggerLabelResolved}
-          {#if showModelWarning}
+          {#if showModelLoading}
+            <span
+              class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin shrink-0"
+              role="status"
+              aria-label={modelLoadingTitle}
+              title={modelLoadingTitle}
+            ></span>
+          {:else if showModelWarning}
             <Fa icon={faTriangleExclamation} class="h-3 w-3 text-amber-600 shrink-0" />
           {/if}
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
@@ -1324,6 +1424,7 @@
     title={m.chat_modelPicker_noProviderAvailable_title()}
     description={m.chat_modelPicker_noProviderAvailable_description()}
     variant="warning"
+    class={resolvedNoticeClass}
   />
 
   <ModelPickerProviderNotice
@@ -1336,5 +1437,6 @@
     title={isCodexManagedInstallInstalling ? m.chat_modelPicker_settingUpCodex_title() : undefined}
     description={isCodexManagedInstallInstalling ? codexManagedInstallProgressText : undefined}
     variant={isCodexManagedInstallInstalling ? 'progress' : 'warning'}
+    class={resolvedNoticeClass}
   />
 {/if}

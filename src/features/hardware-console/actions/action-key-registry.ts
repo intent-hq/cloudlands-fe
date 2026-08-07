@@ -39,7 +39,6 @@ import type { StoredAgentSession } from '$store/renderer/slices/agent-session/ag
 import { agentSessionStopChatRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { actionHudShown } from '$store/renderer/slices/hardware-console/hardware-console-slice';
-import { applyPreset } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
   setMultiSelectSidebarSelectedTabs,
   setShowCreateModal,
@@ -53,6 +52,7 @@ import {
   resolveEffectiveVoiceEngine,
   type EffectiveVoiceEngineInputs,
 } from '$features/voice/effective-voice-engine';
+import { createLogger } from '$lib/utils/client-logger';
 import { isVoiceRecordingSupported } from '../voice/voice-recorder';
 import {
   handleVoiceKeyDown,
@@ -72,6 +72,8 @@ import {
   type CycleAgentEntry,
 } from './agent-cycle';
 import type { CycleScope, CycleScopeFamilyId } from './cycle-scope';
+
+const logger = createLogger('HardwareConsoleActionKeyRegistry');
 
 /** The narrow slice of the app store state the action registry reads. */
 export interface ActionKeyState {
@@ -94,6 +96,7 @@ export interface ActionKeyState {
   sidebarNav: {
     multiSelectTabOrder: string[];
     multiSelectSelectedTabIdsByWorkspaceId: Record<string, string[]>;
+    showCreateModal: boolean;
   };
   /** Engine preference + configuration reality for the push-to-talk gate. */
   voiceSettings: EffectiveVoiceEngineInputs;
@@ -140,7 +143,7 @@ export interface ActionKeyDefinition {
 /** Mirror of the sidebar TAB_DEFINITIONS ids (MultiSelectTabbedSidebar). */
 const SIDEBAR_TAB_IDS = ['overview', 'agents', 'context', 'changes', 'files'] as const;
 
-const LAYOUT_PRESETS = ['single', 'split-horizontal', 'split-vertical', 'three-column'] as const;
+const LAYOUT_PRESETS = ['planning', 'agents-row', 'changes', 'review'] as const;
 
 /** Transient per-workspace cursor for layout-preset cycling (UI-only). */
 const layoutPresetCursor = new Map<string, number>();
@@ -153,6 +156,29 @@ function activeWorkspaceId(state: ActionKeyState): string | null {
 
 function workspaceActiveAgentId(state: ActionKeyState, wsId: string): string | null {
   return state.workspaceAgents.byWorkspaceId[wsId]?.activeAgentId ?? null;
+}
+
+/**
+ * Advance the per-workspace layout-preset cursor and return the preset to
+ * apply. `agents-row` is skipped when the workspace has no agents — the
+ * preset executor returns false there, which would make the press a silent
+ * no-op (intent-hq/monorepo#1612). Mirrors the executor's own criterion
+ * (`applyAgentsRowPreset` in preset-executor.ts only tiles agents with a
+ * resolvable session) by requiring at least one workspace agentId to have an
+ * entry in `agentSessions.byAgentId`, rather than just counting agentIds —
+ * an agentId whose session hasn't loaded yet would otherwise cycle to an
+ * empty agents-row. The cursor lands on the preset actually applied so the
+ * next press continues from the right stop.
+ */
+function nextLayoutPreset(state: ActionKeyState, wsId: string): (typeof LAYOUT_PRESETS)[number] {
+  const agentIds = state.workspaceAgents.byWorkspaceId[wsId]?.agentIds ?? [];
+  const hasAgents = agentIds.some((agentId) => state.agentSessions.byAgentId[agentId] !== undefined);
+  const applicable = LAYOUT_PRESETS.filter((presetId) => presetId !== 'agents-row' || hasAgents);
+  const previous = layoutPresetCursor.get(wsId) ?? -1;
+  const presetId =
+    applicable.find((candidate) => LAYOUT_PRESETS.indexOf(candidate) > previous) ?? applicable[0];
+  layoutPresetCursor.set(wsId, LAYOUT_PRESETS.indexOf(presetId));
+  return presetId;
 }
 
 /** The globally focused agent: the active workspace's active agent id. */
@@ -239,6 +265,7 @@ const lastCycledAgentByAction = new Map<ActionKeyActionId, string>();
 /** Reset the cycle cursors (test isolation). */
 export function resetActionKeyCycleCursors(): void {
   lastCycledAgentByAction.clear();
+  layoutPresetCursor.clear();
 }
 
 /** One entry of the global cross-workspace cycle family. */
@@ -483,8 +510,8 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
     isAvailable() {
       return true;
     },
-    execute({ dispatch }) {
-      dispatch(setShowCreateModal(true));
+    execute({ state, dispatch }) {
+      dispatch(setShowCreateModal(!state.sidebarNav.showCreateModal));
     },
   },
   {
@@ -496,12 +523,36 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
     isAvailable({ state }) {
       return activeWorkspaceId(state) !== null;
     },
-    execute({ state, dispatch }) {
+    execute({ state, showHint }) {
       const wsId = activeWorkspaceId(state);
       if (wsId === null) return;
-      const next = ((layoutPresetCursor.get(wsId) ?? -1) + 1) % LAYOUT_PRESETS.length;
-      layoutPresetCursor.set(wsId, next);
-      dispatch(applyPreset(wsId, LAYOUT_PRESETS[next]));
+      const presetId = nextLayoutPreset(state, wsId);
+      // Dynamic import: panel-layout-adapter/preset-executor transitively pull
+      // in selectors that call `store.createSelector` at module scope, which
+      // would crash if evaluated eagerly here — this registry is imported by
+      // middleware.ts during store construction, before `store` exists. See
+      // panel-layout-persistence-service.ts for the same workaround.
+      void Promise.all([
+        import('$features/layout/panel-layout-adapter'),
+        import('$features/layout/preset-executor'),
+      ])
+        .then(([{ getPanelLayoutManager }, { applyContentPreset }]) =>
+          applyContentPreset(presetId, getPanelLayoutManager(wsId), {
+            workspaceId: wsId,
+            containerWidth: window.innerWidth,
+            containerHeight: window.innerHeight,
+          }),
+        )
+        .then((applied) => {
+          // Race fallback: the preset became inapplicable between the
+          // synchronous skip check and the async application (e.g. the last
+          // agent disappeared), so tell the user instead of dead-pressing.
+          if (!applied)
+            showHint(m.hardwareConsole_actionKey_switchWindowLayouts_notApplicable_hint());
+        })
+        .catch((error: unknown) => {
+          logger.error('Failed to apply layout preset', { presetId, wsId, error });
+        });
     },
   },
   {

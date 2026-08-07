@@ -51,7 +51,10 @@ vi.mock('../../logger', () => ({
   },
 }));
 
-import { hostExecStream } from '../host-exec-stream';
+import {
+  cancelInflightHostExecStreamsForBackendSwitch,
+  hostExecStream,
+} from '../host-exec-stream';
 
 /** Push a PROTOCOL-shaped `events.event` frame through the captured listener. */
 function emit(type: string, data: Record<string, unknown>): void {
@@ -208,6 +211,113 @@ describe('hostExecStream', () => {
     expect(mockRequest).toHaveBeenCalledTimes(1);
     expect(mockRequest).toHaveBeenCalledWith('events.subscribe', {
       eventTypes: ['host:exec:stdout', 'host:exec:stderr', 'host:exec:exit'],
+    });
+  });
+
+  it('terminates an in-flight stream with a cancelled-by-backend-switch frame on a backend switch', async () => {
+    mockRequest
+      .mockResolvedValueOnce({ subscriptionId: 'sub-switch' }) // events.subscribe
+      .mockResolvedValueOnce({ requestId: 'req-switch' }); // host.execStream
+
+    const handle = await hostExecStream('auggie');
+
+    // A switch fires while the stream is live: (a) best-effort cancel to the old
+    // daemon, (b) unsubscribe cleanup — prime both so the sweep doesn't reject.
+    mockRequest
+      .mockResolvedValueOnce({ ok: true, cancelled: true }) // host.execStream.cancel
+      .mockResolvedValueOnce({ ok: true }); // events.unsubscribe cleanup
+
+    await cancelInflightHostExecStreamsForBackendSwitch();
+
+    // The consumer resolves deterministically instead of hanging on frames that
+    // can never arrive on the about-to-be-disposed client.
+    const result = await handle.done;
+    expect(result).toEqual({ ok: false, cancelled: true, cancelledByBackendSwitch: true });
+
+    // Best-effort cancel sent to the old daemon before it is disposed.
+    expect(mockRequest).toHaveBeenCalledWith('host.execStream.cancel', {
+      requestId: 'req-switch',
+    });
+    // No listener remains attached to the (soon-disposed) client.
+    expect(mockOff).toHaveBeenCalledWith('notification', expect.any(Function));
+
+    // Registry emptied: a second sweep is a no-op (no further wire traffic).
+    mockRequest.mockClear();
+    await cancelInflightHostExecStreamsForBackendSwitch();
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op when nothing is streaming at switch time', async () => {
+    await expect(cancelInflightHostExecStreamsForBackendSwitch()).resolves.toBeUndefined();
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it('settles a stream that registers DURING the switch sweep (no hang)', async () => {
+    // Finding 1: a stream whose `host.execStream` response lands *while the
+    // sweep is draining* must still receive the terminal cancellation frame and
+    // never attach to the about-to-be-disposed client.
+    let resolveExecB: ((v: { requestId: string }) => void) | undefined;
+    // Default fallback so the fire-and-forget cancel + unsubscribe cleanup calls
+    // resolve without a queued value.
+    mockRequest.mockResolvedValue({ ok: true });
+    mockRequest
+      .mockResolvedValueOnce({ subscriptionId: 'sub-A' }) // A: events.subscribe
+      .mockResolvedValueOnce({ requestId: 'req-A' }) // A: host.execStream
+      .mockResolvedValueOnce({ subscriptionId: 'sub-B' }) // B: events.subscribe
+      // B: host.execStream — deferred so B sits mid-flight, unregistered.
+      .mockImplementationOnce(
+        () => new Promise<{ requestId: string }>((r) => { resolveExecB = r; }),
+      );
+
+    const handleA = await hostExecStream('cmd-a'); // A live + registered
+    const bPromise = hostExecStream('cmd-b'); // B: subscribed, awaiting execStream
+
+    // Let B advance to its `host.execStream` await (still pending, not registered).
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    expect(resolveExecB).toBeDefined();
+
+    // Resolve B's response so its registration continuation is queued, THEN run
+    // the sweep. The sweep snapshots {A} (B not yet registered), terminates A,
+    // and yields — during that yield B registers, sees the drain flag, and is
+    // settled inline instead of orphaned.
+    resolveExecB?.({ requestId: 'req-B' });
+    await cancelInflightHostExecStreamsForBackendSwitch();
+
+    const switchFrame = { ok: false, cancelled: true, cancelledByBackendSwitch: true };
+    expect(await handleA.done).toEqual(switchFrame);
+    const handleB = await bPromise;
+    expect(await handleB.done).toEqual(switchFrame);
+
+    // Registry drained: a follow-up sweep is a no-op.
+    mockRequest.mockClear();
+    await cancelInflightHostExecStreamsForBackendSwitch();
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not block teardown on an unresponsive old-daemon cancel RPC', async () => {
+    // Finding 2: the switch must not wait on `host.execStream.cancel` — an
+    // unresponsive-but-connected old backend would otherwise stall teardown for
+    // the JsonRpcClient 30s request timeout. If the sweep awaited the RPC below
+    // (a promise that never resolves) this test would hang and time out.
+    mockRequest
+      .mockResolvedValueOnce({ subscriptionId: 'sub-hang' })
+      .mockResolvedValueOnce({ requestId: 'req-hang' });
+
+    const handle = await hostExecStream('auggie');
+
+    mockRequest
+      .mockImplementationOnce(() => new Promise(() => {})) // host.execStream.cancel: never resolves
+      .mockResolvedValueOnce({ ok: true }); // events.unsubscribe cleanup
+
+    // Resolves promptly despite the hung cancel RPC (fire-and-forget).
+    await cancelInflightHostExecStreamsForBackendSwitch();
+
+    // The consumer still gets its deterministic terminal frame.
+    const result = await handle.done;
+    expect(result).toEqual({ ok: false, cancelled: true, cancelledByBackendSwitch: true });
+    // The best-effort cancel was still dispatched to the old daemon.
+    expect(mockRequest).toHaveBeenCalledWith('host.execStream.cancel', {
+      requestId: 'req-hang',
     });
   });
 

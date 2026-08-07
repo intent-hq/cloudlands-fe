@@ -23,6 +23,12 @@ export interface TokenUsageTotals {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
+  /**
+   * Reasoning ("thought") tokens, reported by providers that break them out of
+   * `outputTokens`. Omitted (never `null`, per PROTOCOL §5.23) when no provider
+   * reported any, so pre-field payloads keep their exact previous shape.
+   */
+  thoughtTokens?: number;
   cost?: TokenUsageCost;
 }
 

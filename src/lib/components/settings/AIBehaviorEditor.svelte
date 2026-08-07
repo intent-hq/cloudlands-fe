@@ -8,6 +8,8 @@
 } from '@fortawesome/free-solid-svg-icons';
 
   import {
+    selectDefaultReasoningEffort,
+    selectModelDisplayName,
     selectModelEffortLevels,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
@@ -36,7 +38,10 @@
   import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-  import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
+  import {
+    reloadModelsForProvider,
+    setDefaultReasoningEffort,
+  } from '$store/renderer/slices/model/model-slice';
   import Button from '$lib/components/ui/button/button.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
@@ -75,6 +80,7 @@
   const specialists = selectSpecialists();
   const fileSpecialists$ = selectFileSpecialists();
   const selectedModel = selectSelectedModel();
+  const defaultReasoningEffort$ = selectDefaultReasoningEffort();
   const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
 
@@ -215,11 +221,33 @@
 
   function handleGlobalModelChange(compoundModelId: string) {
     if (!compoundModelId) return;
-    const { providerId } = parseCompoundModelId(compoundModelId);
+    const { providerId, modelId } = parseCompoundModelId(compoundModelId);
+    // The default effort is paired with the default model — drop a level the
+    // newly picked model does not advertise instead of leaving an unsupported
+    // level persisted. Decided BEFORE the provider switch below, because
+    // `reloadModelsForProvider` empties `availableModels` until the new
+    // catalog lands and every lookup would then miss. A model the loaded
+    // catalog does not know (a cross-provider pick) is inconclusive, not
+    // "no levels" — keep the level instead of clearing it blindly.
+    const current = $defaultReasoningEffort$;
+    const isKnownModel =
+      selectModelDisplayName.select(appStore.state, providerId, modelId) !== undefined;
+    if (current && isKnownModel && !effortForModel(compoundModelId, current)) {
+      appStore.dispatch(setDefaultReasoningEffort(''));
+    }
     if (providerId && providerId !== $activeProviderId$) {
       appStore.dispatch(setActiveProvider(providerId));
       appStore.dispatch(reloadModelsForProvider());
     }
+  }
+
+  /**
+   * Persist the default effort level paired with the default model
+   * (`model.defaultReasoningEffort`). Default (undefined) writes '' so the
+   * daemon reads it as unset.
+   */
+  function handleDefaultEffortChange(effort: string | undefined) {
+    appStore.dispatch(setDefaultReasoningEffort(effort ?? ''));
   }
 
   /**
@@ -709,6 +737,12 @@
           variant="default"
           size="sm"
           updateGlobalDefault
+        />
+        <EffortSelect
+          model={$selectedModel}
+          value={$defaultReasoningEffort$ || undefined}
+          onChange={handleDefaultEffortChange}
+          testId="default-effort"
         />
         {#if anySpecialistHasExplicitModel}
           <button

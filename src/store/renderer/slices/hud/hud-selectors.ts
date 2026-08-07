@@ -6,7 +6,8 @@
  * `agentSummary`, `taskStats` — PROTOCOL §5.1). The hud slice's live
  * `displayStatusByWorkspaceId` overrides win over the entity's enrichment
  * value so `workspace:displayStatus-changed` transitions render without a
- * refetch.
+ * refetch. An override is retired by the slice once an entity delivery shows
+ * the store has caught up (see `reconcileDisplayStatusOverride`).
  */
 
 import { store } from '../../store';
@@ -27,7 +28,7 @@ import type { TaskAgentAssociation } from '../task-agent-associations/task-agent
 import type { HudAgentStateBucket, HudCardStateKey } from './hud-types';
 import {
   HUD_AGENT_STATE_BUCKETS,
-  HUD_UNREAD_ATTENTION_VALUE,
+  displayStatusCardStateKey,
   isHudAttentionValue,
   isHudTrackedAttentionValue,
   isWaitingWireStatus,
@@ -50,6 +51,12 @@ export const selectHudUsage = store.createSelector((state) => state.hud.usage);
 export const selectHudUsageError = store.createSelector((state) => state.hud.usageError);
 
 export const selectHudRateHistory = store.createSelector((state) => state.hud.rateHistory);
+
+/** Last-5-minute averaged per-minute burn (rounded) — the "…/min" readout. */
+export const selectHudBurnRatePerMin = store.createSelector((state) => state.hud.burnRatePerMin);
+
+/** Up/down/none trend of the averaged burn between polls (arrow glyph + color). */
+export const selectHudBurnTrend = store.createSelector((state) => state.hud.burnTrend);
 
 /** Daemon status view the HUD footer LEFT zone and SYSTEM panel render. */
 export interface HudSystemView {
@@ -306,12 +313,12 @@ function sinceMs(item: HudAttentionItem): number {
  * flag is raised (the hud slice mirrors the event stream; the wire attention
  * enum is only `none | unread | review_required` (§9.9) —
  * question/blocker/discussion attention never travels on it, so the
- * `review_required` allowlist stays exact and `unread` stays excluded). A
- * wire `needs_attention` displayStatus
- * (the daemon's step-0 rollup, intentd#825) no other row already covers
- * raises a generic workspace row — the same authoritative-rollup fallback
- * the ATTN counter applies, so a question hold the FE never captured still
- * gets a panel row. Rows for workspaces no longer in the list are dropped.
+ * `review_required` allowlist stays exact and `unread` stays excluded). An
+ * attention card state (`wait`/`blocked`/`failed` — the BE rollup, §5.1) no
+ * other row already covers raises a generic workspace row — the same
+ * authoritative-rollup fallback the ATTN counter applies, so a question hold
+ * the FE never captured still gets a panel row. Rows for workspaces no longer
+ * in the list are dropped.
  */
 export const selectHudAttentionItems = store.createSelector((state): HudAttentionItem[] => {
   const flags = state.hud.attentionByWorkspaceId;
@@ -360,7 +367,7 @@ export const selectHudAttentionItems = store.createSelector((state): HudAttentio
       });
       covered = true;
     }
-    if (workspace.displayStatus === 'needs_attention' && !covered) {
+    if (ATTENTION_CARD_STATES.has(cardStateKey(workspace)) && !covered) {
       items.push({
         workspaceId,
         workspaceTitle: workspace.title,
@@ -503,73 +510,44 @@ export interface HudWorkspaceCard {
 const ZERO_TASKS = { total: 0, completed: 0, inProgress: 0 };
 
 /**
- * Card state key precedence: a failed live agent wins, then `blocked`, then
- * `wait`, then the BE-owned `workspace.displayStatus` rendered VERBATIM
- * (cloudlands-fe#578 — the daemon owns the derivation including the
- * agent-running promotion, the idle demotion (intentd#793), and the step-0
- * `needs_attention` rollup (intentd#825: a top-level, non-background,
- * non-deleted agent with a pending attention request or pending questions —
- * the same gating the HUD previously derived locally)). Unknown or absent
- * wire values default to `not_started` so the card never vanishes (same
- * convention as `AllWorkspacesCard`); there is no local promotion or
- * demotion.
- *
- * The wire `needs_attention` renders as `wait` (NEEDS ATTENTION, yellow).
- * Two FE refinements the single wire value cannot express remain, both from
- * live session signals: `blocked` (red) when a TOP-LEVEL NON-BACKGROUND
- * agent's pending request is specifically a `blocker` (§5.5 — the daemon
- * folds blockers into `needs_attention`), and `failed` for a failed live
- * agent. The workspace-level live attention flag
- * (`workspace:attention-changed`) keeps raising `wait` — but ONLY for HUD
- * attention values (`isHudAttentionValue` allowlist): an idle workspace with
- * no pending question/blocker/discussion cannot render NEEDS ATTENTION.
- *
- * The non-urgent `unread` flag (the main app's blue dot, raised on every
- * turn end, cleared by `workspace.markSeen`) outranks only the idle bucket
- * (`idle` / `not_started`) and the TERMINAL states (`complete` /
- * `pr_merged` — nothing is running and no action pends, so the unseen-result
- * signal is the more useful render): it renders the blue UNREAD state there
- * and never masks failed / blocked / wait / in_progress / pr_open /
- * pr_ready.
+ * Card state key: the BE-owned `workspace.displayStatus` rendered VERBATIM
+ * (cloudlands-fe#578). The daemon owns the whole canonical precedence
+ * (intentd#945 — `failed` > `blocked` > `needs_attention` > `in_progress` >
+ * `unread` > the PR/task rollup, PROTOCOL §5.1), including the agent-running
+ * promotion, the idle demotion (intentd#793), the blocker/failed axes and the
+ * blue-dot `unread` promotion — so the HUD applies NO local promotion or
+ * demotion over live sessions or attention flags. The only mapping left is
+ * presentational: the wire `needs_attention` renders as `wait` (NEEDS
+ * ATTENTION, yellow). Unknown or absent wire values default to `not_started`
+ * so the card never vanishes (same convention as `AllWorkspacesCard`).
  */
-function cardStateKey(
-  workspace: Workspace,
-  attention: string | null,
-  agents: HudCardAgent[],
-): HudCardStateKey {
-  if (agents.some((agent) => agent.bucket === 'failed')) return 'failed';
-  const gated = agents.filter((agent) => agent.topLevel && !agent.isBackground);
-  if (gated.some((agent) => agent.attentionKind === 'blocker')) return 'blocked';
+function cardStateKey(workspace: Workspace): HudCardStateKey {
   const displayStatus = isWorkspaceDisplayStatus(workspace.displayStatus)
     ? workspace.displayStatus
     : 'not_started';
-  if (displayStatus === 'needs_attention' || (attention !== null && isHudAttentionValue(attention)))
-    return 'wait';
-  if (
-    attention === HUD_UNREAD_ATTENTION_VALUE &&
-    (displayStatus === 'idle' ||
-      displayStatus === 'not_started' ||
-      displayStatus === 'complete' ||
-      displayStatus === 'pr_merged')
-  )
-    return 'unread';
-  return displayStatus;
+  return displayStatusCardStateKey(displayStatus) ?? 'not_started';
 }
 
+/** Card states that are a call to action (ATTN counter + ATTENTION panel). */
+const ATTENTION_CARD_STATES: ReadonlySet<HudCardStateKey> = new Set<HudCardStateKey>([
+  'wait',
+  'blocked',
+  'failed',
+]);
+
 /**
- * Attention-reason strip content for a card in the `wait`/`blocked` states:
- * the first TOP-LEVEL NON-BACKGROUND agent's raising signal (the same gating
- * as `cardStateKey` / the ATTN counter), by the precedence question >
- * blocker > discussion (a captured §7.1 question is the most actionable —
+ * Attention-reason strip content for a card the BE put in the `wait` /
+ * `blocked` / `failed` states — a DETAIL-TEXT lookup only; the state itself
+ * comes from `cardStateKey` (the wire `displayStatus`). It surfaces the first
+ * TOP-LEVEL NON-BACKGROUND agent's raising signal, by the precedence question
+ * > blocker > discussion (a captured §7.1 question is the most actionable —
  * the user can answer it verbatim). The text is the captured question or the
  * §5.5 `attentionRequestReason` (read from the tracked session, where the
- * attention-request trio lives). When no gated agent carries a reason but
- * the daemon's `needs_attention` rollup (intentd#825) is raised, the
- * `pending` fallback keeps the strip on the attention reason (a generic
- * localized "awaiting your input" line) — the workspace status text must
- * never mask pending attention. Null when the attention came from the
- * workspace-level flag alone (review_required — the strip falls back to the
- * status message there).
+ * attention-request trio lives). When no gated agent carries a reason (e.g.
+ * the question was asked before the HUD window opened, or the daemon raised
+ * the axis off the workspace `attention` flag), the `pending` fallback keeps
+ * the strip on the attention reason (a generic localized "awaiting your
+ * input" line) — the workspace status text must never mask pending attention.
  *
  * A `failed` card always gets a `failed` snippet: the first failed-bucket
  * agent's §5.5 `stopReason` (read from the tracked session) is the error the
@@ -578,7 +556,6 @@ function cardStateKey(
  */
 function cardAttentionSnippet(
   state: StoreState,
-  workspace: Workspace,
   stateKey: HudCardStateKey,
   agents: HudCardAgent[],
 ): HudCardAttentionSnippet | null {
@@ -605,8 +582,7 @@ function cardAttentionSnippet(
       if (reason) return { kind, text: reason };
     }
   }
-  if (workspace.displayStatus === 'needs_attention') return { kind: 'pending', text: '' };
-  return null;
+  return { kind: 'pending', text: '' };
 }
 
 const LIVE_BUCKETS: ReadonlySet<HudAgentStateBucket> = new Set([
@@ -757,19 +733,22 @@ function agentBucketOf(state: StoreState, info: WorkspaceAgentInfo): HudAgentBuc
   else {
     base = toHudAgentStateBucket(typeof session.status === 'string' ? session.status : info.status);
   }
-  // A captured §7.1 question pends while the agent is parked between turns
-  // (base `idle` — a genuine `ws.app.question.ask` ends the asking turn, so
-  // the daemon leaves the agent at lowercase `idle`, NOT `waiting`; gating on
-  // the waiting wire status alone missed every real coordinator question).
-  // It stops pending once the agent runs again (`hudQuestionSuperseded` also
-  // drops it from the slice on the next turn's running transition — §7.1:
-  // any later user message supersedes the questions) or finishes/fails, and
-  // a question the user dismissed (its message id ===
-  // metadata.dismissedQuestionsMessageId, §5.5) no longer pends — the same
-  // predicate the chat wizard gate uses.
+  // A captured §7.1 question pends PERSISTENTLY (spec §Decisions): a plain
+  // user message and the turn it starts no longer supersede it, so the
+  // capture survives the agent running again — it only stops pending when
+  // the daemon's `needs_attention` rollup drops
+  // (`hudQuestionsResolvedForWorkspace` clears the slice entry on answer /
+  // dismissal), when the agent fails, or when the user dismissed it (its
+  // message id === metadata.dismissedQuestionsMessageId, §5.5) — the same
+  // predicate the chat wizard gate uses. It raises `needs-attention` from
+  // any non-failed base — including `running`, exactly like an outstanding
+  // attention request does: the user still owes an answer while the agent
+  // works on an unrelated message.
   const question = state.hud.questionsByAgentId[info.id];
   const hasQuestion =
-    base === 'idle' && !!question && !isQuestionMessageDismissed(metadata, question.messageId);
+    base !== 'failed' &&
+    !!question &&
+    !isQuestionMessageDismissed(metadata, question.messageId);
   const bucket =
     base === 'failed'
       ? 'failed'
@@ -908,7 +887,7 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
         ? workspace.attention
         : null);
     const agents = cardAgentsOf(workspace, state);
-    const stateKey = cardStateKey(workspace, attention, agents);
+    const stateKey = cardStateKey(workspace);
     const usageTotals = state.tokenUsage?.byWorkspaceId[workspaceId]?.totals;
     const stats = state.workspaceTasks?.byWorkspaceId[workspaceId]?.stats;
     const statusMessage =
@@ -924,7 +903,7 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
       stateKey,
       attention,
       statusMessage,
-      attentionSnippet: cardAttentionSnippet(state, workspace, stateKey, agents),
+      attentionSnippet: cardAttentionSnippet(state, stateKey, agents),
       prNumber: typeof workspace.prNumber === 'number' ? workspace.prNumber : null,
       tasks: stats
         ? { total: stats.total, completed: stats.completed, inProgress: stats.inProgress }
@@ -950,12 +929,20 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
  * intentd#825, mirrored per-agent; delegated (`parentAgentId`, §5.1 v2.9 —
  * the parentage signal main's #573 uses to skip toasts) and background
  * agents never count). Each raised workspace-level attention flag adds one
- * (it renders NEEDS ATTENTION with no raising agent), as does a wire
- * `needs_attention` displayStatus no per-agent signal already covered (the
- * daemon rollup is authoritative — e.g. a question hold the FE never
- * captured must still blink). Pending requests clear only on user-origin
- * deliveries (`attentionRequestCleared`, §5.5), so a cleared request drops
- * out live — no stale entries linger.
+ * (it renders NEEDS ATTENTION with no raising agent), as does an attention
+ * card state (`wait`/`blocked`/`failed` — the BE rollup, §5.1) no per-agent
+ * signal already covered (the daemon rollup is authoritative — e.g. a
+ * question hold the FE never captured must still blink). Pending requests
+ * clear only on user-origin deliveries (`attentionRequestCleared`, §5.5), so
+ * a cleared request drops out live — no stale entries linger.
+ *
+ * The ungated `failed` bucket is a DELIBERATE per-agent axis, not a leftover
+ * of the removed card-state synthesis: the BE rollup deliberately ignores
+ * child/background sessions, so a failed delegated agent leaves every card
+ * `in_progress` while still being actionable. The counter and the ATTENTION
+ * panel share this rule (they stay mutually consistent), and the card keeps
+ * rendering the daemon value verbatim — the per-agent counter is a separate
+ * axis over the agent roster, not a second opinion on the workspace status.
  */
 export const selectHudAttnCount = store.createSelector((state): number => {
   const flags = state.hud.attentionByWorkspaceId;
@@ -978,7 +965,7 @@ export const selectHudAttnCount = store.createSelector((state): number => {
     const flag = flags[String(workspace.id)];
     const flagged = flag !== undefined && isHudAttentionValue(flag.attention);
     if (flagged) count += 1;
-    if (workspace.displayStatus === 'needs_attention' && !agentCounted && !flagged) count += 1;
+    if (ATTENTION_CARD_STATES.has(cardStateKey(workspace)) && !agentCounted && !flagged) count += 1;
   }
   return count;
 });
