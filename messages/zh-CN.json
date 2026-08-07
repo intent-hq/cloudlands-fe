@@ -1360,7 +1360,7 @@
   "workspace_remoteSetupSelector_whereRun_description": "默认在本地运行，也可以连接远程机器让智能体直接在其中工作。",
   "workspace_remoteSetupSelector_whereRun_label": "智能体应在哪里运行？",
   "workspace_remoteSetupSelector_workIn_before": "工作于",
-  "workspace_repoAndBranchPicker_cloneRepoAndCreateOffBranch_label": "克隆 {repo} 并基于 {branch} 创建{isolationLabel}",
+  "workspace_repoAndBranchPicker_cloneRepoAndWorkOffBranch_label": "克隆 {repo} 并基于 {branch} 工作",
   "workspace_repoAndBranchPicker_createNewRepo_label": "创建新仓库",
   "workspace_repoAndBranchPicker_repoOffBranch_label": "{repo}，基于 {branch}",
   "workspace_repoAndBranchPicker_workDirectly_label": "直接在你的文件夹中工作",

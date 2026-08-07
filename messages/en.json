@@ -1361,7 +1361,7 @@
   "workspace_remoteSetupSelector_whereRun_description": "Run locally by default, or connect a remote machine for agents to work in directly.",
   "workspace_remoteSetupSelector_whereRun_label": "Where should agents run?",
   "workspace_remoteSetupSelector_workIn_before": "Work in",
-  "workspace_repoAndBranchPicker_cloneRepoAndCreateOffBranch_label": "Clone {repo} and create {isolationLabel} off {branch}",
+  "workspace_repoAndBranchPicker_cloneRepoAndWorkOffBranch_label": "Clone {repo} and work off {branch}",
   "workspace_repoAndBranchPicker_createNewRepo_label": "Create new repo",
   "workspace_repoAndBranchPicker_repoOffBranch_label": "{repo} off {branch}",
   "workspace_repoAndBranchPicker_workDirectly_label": "Work directly in your folder",
