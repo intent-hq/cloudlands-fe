@@ -2404,6 +2404,7 @@
   "hud_feedKind_agentDeleted_label": "AGENT DELETED",
   "hud_feedKind_agentRunning_label": "AGENT RUNNING",
   "hud_feedKind_agentWaiting_label": "AGENT WAITING",
+  "hud_feedKind_taskCreated_label": "TASK CREATED",
   "hud_feedKind_taskStatusChanged_label": "TASK STATUS",
   "hud_feedKind_displayStatusChanged_label": "WORKSPACE STATUS",
   "hud_feedKind_attentionChanged_label": "ATTENTION",
