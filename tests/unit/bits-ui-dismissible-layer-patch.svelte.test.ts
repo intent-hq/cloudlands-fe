@@ -13,7 +13,7 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // bits-ui's exports map has no deep specifier, so resolve the patched module
 // through the package root and import it by absolute path.
@@ -25,7 +25,12 @@ const patchedModulePath = path.join(
 
 const box = <T>(value: T) => ({ current: value });
 
-const createLayer = async (ref: HTMLElement) => {
+// Defaults to the transiently non-function boxes from the crash report; the
+// positive-control test passes real callbacks instead.
+const createLayer = async (
+  ref: HTMLElement,
+  callbacks: { onInteractOutside?: unknown; onFocusOutside?: unknown } = {},
+) => {
   const { DismissibleLayerState } = await import(/* @vite-ignore */ patchedModulePath);
 
   const cleanup = $effect.root(() =>
@@ -33,9 +38,8 @@ const createLayer = async (ref: HTMLElement) => {
       ref: box(ref),
       enabled: box(true),
       interactOutsideBehavior: box('close'),
-      // The transiently non-function boxes from the crash report.
-      onInteractOutside: box({} as unknown as () => void),
-      onFocusOutside: box({} as unknown as () => void),
+      onInteractOutside: box((callbacks.onInteractOutside ?? {}) as () => void),
+      onFocusOutside: box((callbacks.onFocusOutside ?? {}) as () => void),
       isValidEvent: box(() => true),
     } as never),
   );
@@ -90,6 +94,27 @@ describe('bits-ui DismissibleLayerState patch (monorepo#1605)', () => {
     // #handleInteractOutside is debounced by 10ms.
     await new Promise((resolve) => setTimeout(resolve, 50));
 
+    expect(asyncErrors).toEqual([]);
+
+    cleanup();
+  });
+
+  // Positive control: proves the dispatched events actually reach the guarded
+  // call sites, so the two no-throw assertions above cannot pass vacuously.
+  it('still invokes the callbacks when they are functions', async () => {
+    const onFocusOutside = vi.fn();
+    const onInteractOutside = vi.fn();
+    const cleanup = await createLayer(ref, { onFocusOutside, onInteractOutside });
+
+    document.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    document.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(onFocusOutside).toHaveBeenCalled();
+    expect(onInteractOutside).toHaveBeenCalled();
     expect(asyncErrors).toEqual([]);
 
     cleanup();
