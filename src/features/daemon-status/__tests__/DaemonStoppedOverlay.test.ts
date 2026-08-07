@@ -17,7 +17,9 @@ vi.mock('$store/renderer/store', async () => {
   const { runSaga, stdChannel } = await import('redux-saga');
   const { daemonHealthReducer, initialState } =
     await import('$store/renderer/slices/daemon-health/daemon-health-slice');
-  let state = { daemonHealth: initialState };
+  const { initialState: connectionsInitialState } =
+    await import('$store/renderer/slices/connections/connections-slice');
+  let state = { daemonHealth: initialState, connections: connectionsInitialState };
   const listeners = new Set<() => void>();
   const channel = stdChannel();
   const store = {
@@ -25,7 +27,7 @@ vi.mock('$store/renderer/store', async () => {
       return state;
     },
     init() {
-      state = { daemonHealth: initialState };
+      state = { daemonHealth: initialState, connections: connectionsInitialState };
       listeners.forEach((listener) => listener());
       return () => {};
     },
@@ -33,7 +35,10 @@ vi.mock('$store/renderer/store', async () => {
       listeners.clear();
     },
     dispatch(action: { type: string }) {
-      state = { daemonHealth: daemonHealthReducer(state.daemonHealth, action as never) };
+      state = {
+        daemonHealth: daemonHealthReducer(state.daemonHealth, action as never),
+        connections: state.connections,
+      };
       channel.put(action);
       listeners.forEach((listener) => listener());
       return action;
@@ -253,10 +258,10 @@ describe('DaemonStoppedOverlay', () => {
     expect(overlay()!.textContent).toContain('may use a different data directory');
   });
 
-  it('hides the spawn button in external-ws mode (the UDS sidecar would never be reached)', async () => {
+  it('offers the local sidecar fallback in external-ws mode', async () => {
     render(DaemonStoppedOverlay);
     await showOverlay({ mode: 'external-ws', target: 'ws://127.0.0.1:5181/ws' });
-    expect(screen.queryByTestId('daemon-stopped-spawn-sidecar')).toBeNull();
+    expect(screen.getByTestId('daemon-stopped-spawn-sidecar')).toBeTruthy();
     expect(overlay()!.textContent).toContain('external intentd daemon was lost');
   });
 
@@ -377,7 +382,7 @@ describe('DaemonStoppedOverlay', () => {
     expect(overlay()!.textContent).not.toContain('was lost');
     // Buttons follow the same transport-mode rules as the lost-connection posture.
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar').textContent).toContain(
-      'Start app-managed sidecar',
+      'Start local intentd',
     );
   });
 
@@ -398,7 +403,7 @@ describe('DaemonStoppedOverlay', () => {
       ).toBe(true);
     });
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar').textContent).toContain(
-      'Starting sidecar',
+      'Starting intentd',
     );
 
     // Reconnect (backend:status 'connected' via RESUB-1 main-side flow) dismisses.
@@ -423,7 +428,7 @@ describe('DaemonStoppedOverlay', () => {
     dispatchAndFlush(connectionStatusChanged('disconnected', sidecarTransport));
     const button = screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    expect(button.textContent).toContain('Starting sidecar');
+    expect(button.textContent).toContain('Starting intentd');
   });
 
   it('shows the spawn error and re-enables the button when the spawn fails', async () => {

@@ -113,9 +113,7 @@
   // App-managed failure posture: the app runs its own intentd (transport is
   // sidecar-uds or still unresolved) and either the spawn never happened
   // (startup failure) or the supervisor crash-looped past its restart policy.
-  const isSidecarFailure = $derived(
-    ($sidecarStartupFailed$ || $sidecarGaveUp$) && !isExternalMode,
-  );
+  const isSidecarFailure = $derived(($sidecarStartupFailed$ || $sidecarGaveUp$) && !isExternalMode);
   // "Start local intentd" is offered in any external mode — external-uds AND
   // external-ws (T20). The on-demand sidecar binds the local UDS socket, which a
   // WS-connected client would never reconnect to on its own, so handleSpawnSidecar
