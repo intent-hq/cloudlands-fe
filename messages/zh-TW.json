@@ -2487,6 +2487,7 @@
   "layout_activeCard_search_placeholder": "搜尋空間…",
   "layout_activeCard_unread_header": "未讀",
   "layout_activeCard_running_header": "執行中",
+  "layout_activeCard_waiting_header": "等待中",
   "layout_activeCard_pinned_header": "已置頂",
   "layout_allCard_recent_label": "最近",
   "layout_allCard_repo_label": "儲存庫",

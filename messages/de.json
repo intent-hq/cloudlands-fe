@@ -2487,6 +2487,7 @@
   "layout_activeCard_search_placeholder": "Spaces durchsuchen...",
   "layout_activeCard_unread_header": "Ungelesen",
   "layout_activeCard_running_header": "Laufend",
+  "layout_activeCard_waiting_header": "Wartend",
   "layout_activeCard_pinned_header": "Angeheftet",
   "layout_allCard_recent_label": "Zuletzt verwendet",
   "layout_allCard_repo_label": "Repo",

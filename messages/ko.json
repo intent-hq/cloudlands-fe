@@ -2487,6 +2487,7 @@
   "layout_activeCard_search_placeholder": "스페이스 검색...",
   "layout_activeCard_unread_header": "읽지 않음",
   "layout_activeCard_running_header": "실행 중",
+  "layout_activeCard_waiting_header": "대기 중",
   "layout_activeCard_pinned_header": "고정됨",
   "layout_allCard_recent_label": "최근",
   "layout_allCard_repo_label": "저장소",
