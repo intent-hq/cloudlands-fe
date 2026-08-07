@@ -251,7 +251,7 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
     expect(onchange.mock.calls[0][0].detail.path).toBe('octo/beta');
   });
 
-  it('Enter with free text and no highlight still confirms the typed owner/repo', async () => {
+  it('Enter on free text commits the pick and closes the dropdown in one keypress', async () => {
     const onchange = vi.fn();
     const { input } = await openGithubTab({ onchange });
 
@@ -266,6 +266,18 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
       isNewRepo: false,
       isValidPath: true,
     });
+    await waitFor(() => expect(screen.queryByText(DROPDOWN_HEADING)).toBeFalsy());
+  });
+
+  it('Enter on free text that is not a valid owner/repo neither commits nor closes', async () => {
+    const onchange = vi.fn();
+    const { input } = await openGithubTab({ onchange });
+
+    await fireEvent.input(input, { target: { value: 'notarepo' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onchange).not.toHaveBeenCalled();
+    expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy();
   });
 
   it('signed out: shows the connect hint, dispatches no repo load or search, and still confirms typed input', async () => {
