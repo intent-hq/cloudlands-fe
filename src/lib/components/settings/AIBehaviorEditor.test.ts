@@ -41,6 +41,9 @@ const mocks = vi.hoisted(() => {
     effectivePrompt: { value: '' },
     explicitEffort: { value: undefined as string | undefined },
     effortLevels: { value: {} as Record<string, string[] | undefined> },
+    // Model ids the loaded `availableModels` catalog knows about — drives the
+    // selectModelDisplayName lookup that gates default-effort clearing.
+    catalogModels: { value: [] as string[] },
     dispatched: [] as { type: string; payload: unknown[] }[],
   };
 });
@@ -130,6 +133,13 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
     select: (_state: unknown, modelId?: string) =>
       modelId ? mocks.effortLevels.value[modelId] : undefined,
   },
+  selectModelDisplayName: {
+    select: (_state: unknown, providerId: string, modelId: string) =>
+      mocks.catalogModels.value.includes(`${providerId}:${modelId}`) ||
+      mocks.catalogModels.value.includes(modelId)
+        ? modelId
+        : undefined,
+  },
 }));
 
 vi.mock('./AgentRulesEditor.svelte', async () => ({
@@ -178,6 +188,7 @@ describe('AIBehaviorEditor default reasoning-effort dropdown', () => {
     selectedModel$.set('');
     mocks.defaultEffort$.set('');
     mocks.effortLevels.value = {};
+    mocks.catalogModels.value = [];
     mocks.dispatched.length = 0;
   });
 
@@ -228,6 +239,7 @@ describe('AIBehaviorEditor default reasoning-effort dropdown', () => {
 
   it('clears the stored level when the default model changes to one lacking it', async () => {
     mocks.effortLevels.value = { [DEFAULT_MODEL]: ['low', 'high'] };
+    mocks.catalogModels.value = [DEFAULT_MODEL, 'user-picked-model'];
     selectedModel$.set(DEFAULT_MODEL);
     mocks.defaultEffort$.set('high');
     render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
@@ -246,6 +258,23 @@ describe('AIBehaviorEditor default reasoning-effort dropdown', () => {
       [DEFAULT_MODEL]: ['low', 'high'],
       'user-picked-model': ['high'],
     };
+    mocks.catalogModels.value = [DEFAULT_MODEL, 'user-picked-model'];
+    selectedModel$.set(DEFAULT_MODEL);
+    mocks.defaultEffort$.set('high');
+    render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
+
+    await fireEvent.click(screen.getByTestId('pick-model'));
+
+    expect(lastEffortDispatch()).toBeUndefined();
+  });
+
+  it('keeps the stored level for a model the loaded catalog does not know', async () => {
+    // Cross-provider pick: the global catalog holds only the current
+    // provider's rows, so the newly picked model resolves no effortLevels.
+    // That is a lookup miss, not "no effort support" — clearing here would
+    // drop a level the new model may well advertise once its catalog loads.
+    mocks.effortLevels.value = { [DEFAULT_MODEL]: ['low', 'high'] };
+    mocks.catalogModels.value = [DEFAULT_MODEL];
     selectedModel$.set(DEFAULT_MODEL);
     mocks.defaultEffort$.set('high');
     render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });

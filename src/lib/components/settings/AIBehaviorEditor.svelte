@@ -9,6 +9,7 @@
 
   import {
     selectDefaultReasoningEffort,
+    selectModelDisplayName,
     selectModelEffortLevels,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
@@ -220,17 +221,23 @@
 
   function handleGlobalModelChange(compoundModelId: string) {
     if (!compoundModelId) return;
-    const { providerId } = parseCompoundModelId(compoundModelId);
+    const { providerId, modelId } = parseCompoundModelId(compoundModelId);
+    // The default effort is paired with the default model — drop a level the
+    // newly picked model does not advertise instead of leaving an unsupported
+    // level persisted. Decided BEFORE the provider switch below, because
+    // `reloadModelsForProvider` empties `availableModels` until the new
+    // catalog lands and every lookup would then miss. A model the loaded
+    // catalog does not know (a cross-provider pick) is inconclusive, not
+    // "no levels" — keep the level instead of clearing it blindly.
+    const current = $defaultReasoningEffort$;
+    const isKnownModel =
+      selectModelDisplayName.select(appStore.state, providerId, modelId) !== undefined;
+    if (current && isKnownModel && !effortForModel(compoundModelId, current)) {
+      appStore.dispatch(setDefaultReasoningEffort(''));
+    }
     if (providerId && providerId !== $activeProviderId$) {
       appStore.dispatch(setActiveProvider(providerId));
       appStore.dispatch(reloadModelsForProvider());
-    }
-    // The default effort is paired with the default model — drop a level the
-    // newly picked model does not advertise instead of leaving an unsupported
-    // level persisted.
-    const current = $defaultReasoningEffort$;
-    if (current && !effortForModel(compoundModelId, current)) {
-      appStore.dispatch(setDefaultReasoningEffort(''));
     }
   }
 
