@@ -1354,7 +1354,7 @@ function fileDeleteDisplay(name: string, input: Record<string, any>): ToolDispla
 }
 
 function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay {
-  let verb = m.chat_toolClassifier_run_label();
+  let verb: string = m.chat_toolClassifier_run_label();
   let subject: string | null = null;
 
   // Extract terminal ID from name like "read terminal 123", "kill terminal 5"

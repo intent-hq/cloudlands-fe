@@ -802,6 +802,17 @@ function applySessionUpsert(
       finalSession.lastAgentResponse = existing.lastAgentResponse;
     }
 
+    // Same guard for the live tool preview (§7 `lastToolUse`, push-applied
+    // from `agent:stream:activity`): no hydration payload carries it, so an
+    // upsert that applies for any other reason would otherwise erase the
+    // pushed value mid-turn and flicker the row back to stale text.
+    if (
+      existing.lastToolUse !== undefined &&
+      !Object.prototype.hasOwnProperty.call(session, 'lastToolUse')
+    ) {
+      finalSession.lastToolUse = existing.lastToolUse;
+    }
+
     // Sticky FE turn slot (liveTurnOpen): hydration snapshots never carry
     // this FE-owned flag, and the daemon opens the STAB-125 live-turn slot
     // only AFTER emitting the turn-start event (try_begin →

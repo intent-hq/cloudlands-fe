@@ -666,6 +666,56 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].name).toBe('New Name');
     });
 
+    // Live tool preview (§7 `lastToolUse`): pushed by the daemon-events bridge
+    // during a turn, cleared by it at each turn boundary / on stream end.
+    it('applies and clears the pushed lastToolUse', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { lastToolUse: { name: 'launch-process', status: 'started' } }),
+      );
+      expect(state.byAgentId['a1'].lastToolUse).toEqual({
+        name: 'launch-process',
+        status: 'started',
+      });
+
+      state = agentSessionReducer(state, updateSession('a1', { lastToolUse: undefined }));
+      expect(state.byAgentId['a1'].lastToolUse).toBeUndefined();
+    });
+
+    // No hydration payload carries lastToolUse (AgentLite does not project it),
+    // so without a preservation guard any upsert that applies for another
+    // reason would erase the pushed value mid-turn.
+    it('keeps a pushed lastToolUse across a hydration upsert that omits the field', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { lastToolUse: { name: 'launch-process' } }),
+      );
+
+      // An upsert that applies for an unrelated reason (fresh lastAgentResponse)
+      // must not take the tool preview down with it.
+      state = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1', { lastAgentResponse: 'Working on it…' })),
+      );
+      expect(state.byAgentId['a1'].lastToolUse).toEqual({ name: 'launch-process' });
+
+      // A snapshot that explicitly carries the key still replaces it (no
+      // hydration path does today; the guard is key-existence, not blanket
+      // preservation).
+      state = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            lastAgentResponse: 'Done — tests pass.',
+            lastToolUse: { name: 'read_file' },
+          }),
+        ),
+      );
+      expect(state.byAgentId['a1'].lastToolUse).toEqual({ name: 'read_file' });
+    });
+
     it('handles messages in updates with normalization and logical dedup', () => {
       const msg = makeMessage('m1');
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
