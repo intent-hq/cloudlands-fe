@@ -82,6 +82,51 @@ vi.mock('$store/renderer/slices/feature-codes/feature-codes-selectors', async ()
   return { selectIsFeatureEnabled: store.createSelector(() => false) };
 });
 
+// GitHub autocomplete sources on the "Pick a repo" tab — signed out here, so
+// no suggestions render and the Recent list assertions below stay isolated.
+vi.mock('$store/renderer/slices/github-auth/github-auth-slice', () => ({
+  initializeGitHubAuth: () => ({ type: 'githubAuth/initialize' }),
+  startGitHubAuth: () => ({ type: 'githubAuth/start' }),
+  cancelGitHubAuth: () => ({ type: 'githubAuth/cancel' }),
+  clearGitHubAuthError: () => ({ type: 'githubAuth/clearError' }),
+}));
+vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', async () => {
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const store = createAppStoreMock({ state: {} });
+  return {
+    selectGitHubAuthIsAuthenticated: store.createSelector(() => false),
+    selectGitHubAuthIsAuthenticating: store.createSelector(() => false),
+    selectGitHubAuthDeviceFlow: store.createSelector(() => null),
+    selectGitHubAuthError: store.createSelector(() => null),
+    selectGitHubAuthRequiresDaemonAuth: store.createSelector(() => false),
+  };
+});
+vi.mock('$store/renderer/slices/github-repos/github-repos-slice', () => ({
+  loadGithubRepos: () => ({ type: 'githubRepos/load' }),
+}));
+vi.mock('$store/renderer/slices/github-repos/github-repos-selectors', async () => {
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const store = createAppStoreMock({ state: {} });
+  return {
+    selectGithubRepos: store.createSelector(() => []),
+    selectGithubReposError: store.createSelector(() => null),
+    selectGithubReposLoaded: store.createSelector(() => true),
+    selectGithubReposLoading: store.createSelector(() => false),
+  };
+});
+vi.mock('$store/renderer/slices/github-repo-search/github-repo-search-slice', () => ({
+  searchGithubRepos: (query: string) => ({ type: 'githubRepoSearch/search', payload: [query] }),
+}));
+vi.mock('$store/renderer/slices/github-repo-search/github-repo-search-selectors', async () => {
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const store = createAppStoreMock({ state: {} });
+  return {
+    selectGithubRepoSearchLastQuery: store.createSelector(() => ''),
+    selectGithubRepoSearchLoading: store.createSelector(() => false),
+    selectGithubRepoSearchResults: store.createSelector(() => []),
+  };
+});
+
 vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn(async () => ({ success: true, data: [] })),
 }));
