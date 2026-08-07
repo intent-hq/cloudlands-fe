@@ -56,6 +56,14 @@ export interface HostExecStreamResult {
   exitCode?: number;
   timedOut?: boolean;
   cancelled?: boolean;
+  /**
+   * Set when the stream was terminated because the live backend was switched
+   * out from under it (see {@link cancelInflightHostExecStreamsForBackendSwitch}).
+   * A `host.execStream` bound to the now-disposed client can never receive its
+   * remaining output or exit frame, so the switch synthesizes this terminal
+   * result so the consumer resolves deterministically instead of hanging.
+   */
+  cancelledByBackendSwitch?: boolean;
 }
 
 export interface HostExecStreamHandle {
@@ -73,6 +81,50 @@ export interface HostExecStreamHandle {
 }
 
 const EXEC_EVENT_TYPES = ['host:exec:stdout', 'host:exec:stderr', 'host:exec:exit'] as const;
+
+/**
+ * One entry per live `host.execStream` call, so a backend switch can enumerate
+ * and terminate streams whose per-call subscription is bound to the client it
+ * is about to dispose. Unlike the T8/T9 long-lived listeners, the exec-stream
+ * subscription is per-call and cannot be migrated onto a stable forwarder, so
+ * the chosen contract is cancel-and-notify (issue #1616): the switch tears the
+ * stream down and hands the consumer a deterministic terminal frame.
+ */
+interface InflightExecStream {
+  readonly requestId: string;
+  /**
+   * Best-effort `host.execStream.cancel` to the still-connected old daemon, then
+   * settle the consumer's `done` with a cancelled-by-backend-switch terminal
+   * result. Idempotent (a stream that settled on its own between snapshot and
+   * sweep is a no-op) and never throws.
+   */
+  terminate(): Promise<void>;
+}
+
+const inflightExecStreams = new Set<InflightExecStream>();
+
+/**
+ * Cancel + notify every in-flight `host.execStream`, invoked by `switchBackend`
+ * BEFORE the old client is disposed. Each stream's subscription and settle
+ * callbacks are bound to the outgoing client; once it is disposed the remaining
+ * output and terminal exit frame are unreachable and the consumer's `done`
+ * would hang forever. For each in-flight stream this best-effort sends
+ * `host.execStream.cancel` to the old daemon (still connected here; failure is
+ * non-fatal) and settles `done` with a terminal cancelled-by-backend-switch
+ * result. The registry is emptied and every per-call listener detached from the
+ * outgoing client. A no-op when nothing is streaming.
+ */
+export async function cancelInflightHostExecStreamsForBackendSwitch(): Promise<void> {
+  if (inflightExecStreams.size === 0) return;
+  const entries = [...inflightExecStreams];
+  // Clear up front so each terminate()'s own cleanup (which deletes its entry)
+  // is a harmless no-op and a re-entrant call finds nothing to do.
+  inflightExecStreams.clear();
+  logger.debug('Cancelling in-flight host.execStream on backend switch', {
+    count: entries.length,
+  });
+  await Promise.all(entries.map((entry) => entry.terminate()));
+}
 
 function decodeChunk(input: unknown): Buffer | null {
   if (typeof input !== 'string' || input.length === 0) return null;
@@ -127,6 +179,7 @@ export async function hostExecStream(
 
   let notificationListener: ((n: JsonRpcNotification) => void) | null = null;
   let settled = false;
+  let inflightEntry: InflightExecStream | null = null;
   let resolveDone: (r: HostExecStreamResult) => void = () => {};
   let rejectDone: (e: Error) => void = () => {};
 
@@ -136,6 +189,10 @@ export async function hostExecStream(
   });
 
   const cleanup = (): void => {
+    if (inflightEntry) {
+      inflightExecStreams.delete(inflightEntry);
+      inflightEntry = null;
+    }
     if (notificationListener) {
       client.off('notification', notificationListener);
       notificationListener = null;
@@ -262,6 +319,21 @@ export async function hostExecStream(
     cleanup();
     throw error;
   }
+
+  // Register in the in-flight set so a backend switch can enumerate and
+  // terminate this stream before disposing the client it is bound to. Removed
+  // again by `cleanup()` on any settle (normal exit, abort, or the switch sweep).
+  inflightEntry = {
+    requestId,
+    terminate: async () => {
+      // (a) Best-effort cancel on the still-connected old daemon.
+      await cancelRpc();
+      // (b) Hand the consumer a deterministic terminal frame so `done` resolves
+      // instead of hanging on a client that is about to be disposed.
+      settleOk({ ok: false, cancelled: true, cancelledByBackendSwitch: true });
+    },
+  };
+  inflightExecStreams.add(inflightEntry);
 
   const handle: HostExecStreamHandle = {
     requestId,
