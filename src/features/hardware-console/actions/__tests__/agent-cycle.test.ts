@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
 import { WorkspaceStatus, type Workspace } from '$shared/types';
+import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import {
   collectCycleAgents,
@@ -80,6 +81,42 @@ describe('predicates', () => {
         makeSession('a', { attentionRequestKind: 'blocker', status: 'deleted' }),
       ),
     ).toBe(false);
+  });
+
+  it('sessionNeedsAttention holds a pending question until the tagged answer lands', () => {
+    // Persistent pendingness (shared `derivePendingQuestions`): a later plain
+    // user message does not resolve the question — only the id-keyed
+    // `question_answers` tag does — so the cycle keeps the agent in the
+    // attention family across the intervening turn.
+    const question = {
+      id: 'msg-1',
+      role: 'assistant',
+      contentBlocks: [
+        {
+          type: 'resource',
+          resource: {
+            mimeType: QUESTION_RESOURCE_MIME_TYPE,
+            uri: 'intent-question:1',
+            text: JSON.stringify({
+              attachmentId: 'tar-1',
+              header: 'Choice',
+              question: 'Which one?',
+              options: [{ label: 'A' }, { label: 'B' }],
+            }),
+          },
+        },
+      ],
+    };
+    const plainUser = { id: 'msg-2', role: 'user', contentBlocks: [] };
+    expect(sessionNeedsAttention(makeSession('a', { messages: [question] }))).toBe(true);
+    expect(sessionNeedsAttention(makeSession('a', { messages: [question, plainUser] }))).toBe(
+      true,
+    );
+    const answer = {
+      ...plainUser,
+      metadata: { type: 'question_answers', answeredQuestionsMessageId: 'msg-1' },
+    };
+    expect(sessionNeedsAttention(makeSession('a', { messages: [question, answer] }))).toBe(false);
   });
 
   it('sessionHasFailed matches error status only', () => {

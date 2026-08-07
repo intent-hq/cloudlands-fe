@@ -727,19 +727,22 @@ function agentBucketOf(state: StoreState, info: WorkspaceAgentInfo): HudAgentBuc
   else {
     base = toHudAgentStateBucket(typeof session.status === 'string' ? session.status : info.status);
   }
-  // A captured §7.1 question pends while the agent is parked between turns
-  // (base `idle` — a genuine `ws.app.question.ask` ends the asking turn, so
-  // the daemon leaves the agent at lowercase `idle`, NOT `waiting`; gating on
-  // the waiting wire status alone missed every real coordinator question).
-  // It stops pending once the agent runs again (`hudQuestionSuperseded` also
-  // drops it from the slice on the next turn's running transition — §7.1:
-  // any later user message supersedes the questions) or finishes/fails, and
-  // a question the user dismissed (its message id ===
-  // metadata.dismissedQuestionsMessageId, §5.5) no longer pends — the same
-  // predicate the chat wizard gate uses.
+  // A captured §7.1 question pends PERSISTENTLY (spec §Decisions): a plain
+  // user message and the turn it starts no longer supersede it, so the
+  // capture survives the agent running again — it only stops pending when
+  // the daemon's `needs_attention` rollup drops
+  // (`hudQuestionsResolvedForWorkspace` clears the slice entry on answer /
+  // dismissal), when the agent fails, or when the user dismissed it (its
+  // message id === metadata.dismissedQuestionsMessageId, §5.5) — the same
+  // predicate the chat wizard gate uses. It raises `needs-attention` from
+  // any non-failed base — including `running`, exactly like an outstanding
+  // attention request does: the user still owes an answer while the agent
+  // works on an unrelated message.
   const question = state.hud.questionsByAgentId[info.id];
   const hasQuestion =
-    base === 'idle' && !!question && !isQuestionMessageDismissed(metadata, question.messageId);
+    base !== 'failed' &&
+    !!question &&
+    !isQuestionMessageDismissed(metadata, question.messageId);
   const bucket =
     base === 'failed'
       ? 'failed'

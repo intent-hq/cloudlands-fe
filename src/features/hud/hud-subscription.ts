@@ -41,7 +41,11 @@ import {
 } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
 import { getItems } from '$lib/store-shim/utils/collections/collection-utils';
-import { isWorkspaceDisplayStatus, WorkspaceStatus } from '$shared/types';
+import {
+  isWorkspaceDisplayStatus,
+  WorkspaceStatus,
+  type WorkspaceDisplayStatus,
+} from '$shared/types';
 import { hydrateAgentsRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   hudActivated,
@@ -50,7 +54,7 @@ import {
   hudDisplayStatusChanged,
   hudFeedEntryReceived,
   hudQuestionCaptured,
-  hudQuestionSuperseded,
+  hudQuestionsResolvedForWorkspace,
   hudRateHistoryFailed,
   hudRateHistoryLoaded,
   hudUsageFailed,
@@ -223,6 +227,60 @@ function withFirstStartRewrite(entry: HudFeedEntry): HudFeedEntry {
   return { ...entry, kind: HUD_AGENT_DELEGATED_FEED_KIND };
 }
 
+/**
+ * displayStatus values whose arrival releases a workspace's captured questions
+ * (see the dispatch site below). An ALLOWLIST, not `!== 'needs_attention'`,
+ * because the rollup is precedence-ordered and a HIGHER-ranked signal masks a
+ * still-pending question rather than resolving it: intentd#945 extends the
+ * rollup with `failed`/`blocked`, which outrank `needs_attention`, so another
+ * agent failing or raising a blocker mid-question would transition the
+ * workspace and wrongly clear the capture. Only statuses that rank BELOW
+ * `needs_attention` imply the hold is genuinely gone. Unknown/future wire
+ * values never reach here (`isWorkspaceDisplayStatus` rejects them) and, being
+ * absent from this set, would not release either.
+ *
+ * Residual (either way): the rollup is workspace-scoped, so an answered
+ * question whose workspace still holds attention for an unrelated agent stays
+ * captured until the workspace clears. Per-agent release arrives with the
+ * daemon's persisted pending-questions marker (the intentd counterpart of this
+ * change), which the HUD will read off session metadata exactly like it
+ * already reads `dismissedQuestionsMessageId`.
+ */
+const QUESTION_RELEASING_DISPLAY_STATUSES: ReadonlySet<WorkspaceDisplayStatus> = new Set([
+  'not_started',
+  'in_progress',
+  'idle',
+  'complete',
+  'pr_ready',
+  'pr_open',
+  'pr_merged',
+]);
+
+/**
+ * Set on reconnect and consumed by the first refetched workspace list —
+ * see `sweepQuestionReleaseAgainstWorkspaces`.
+ */
+let questionReleaseSweepArmed = false;
+
+/**
+ * Reconnect fallback for the release signal. The live
+ * `workspace:displayStatus-changed` event is the ONLY release trigger, so a
+ * transition missed during an outage would leave a captured question pending
+ * forever. RESUB-1 refetches the workspace list, whose entries carry the
+ * BE-owned `displayStatus` — replay the same allowlist decision against it.
+ * Workspaces whose refetched status is absent or non-releasing are left
+ * untouched (never a speculative clear).
+ */
+function sweepQuestionReleaseAgainstWorkspaces(): void {
+  const workspaces = appStore.state.workspace?.workspaces;
+  for (const workspace of workspaces ? getItems(workspaces) : []) {
+    const displayStatus = (workspace as { displayStatus?: unknown }).displayStatus;
+    if (!isWorkspaceDisplayStatus(displayStatus)) continue;
+    if (!QUESTION_RELEASING_DISPLAY_STATUSES.has(displayStatus)) continue;
+    appStore.dispatch(hudQuestionsResolvedForWorkspace(String(workspace.id)));
+  }
+}
+
 /** Whether a status_update trigger repeats the workspace's last shown text. */
 function isDuplicateStatusUpdate(trigger: HudTakeoverTrigger): boolean {
   if (trigger.kind !== 'status_update') return false;
@@ -243,21 +301,6 @@ function handleEvent(event: WorkspaceEvent): void {
       appStore.dispatch(hudQuestionCaptured(question));
     }
   }
-  if (type === 'agent:status-changed') {
-    // Question supersession (§7.1): a question hold breaks only on a
-    // user-origin delivery, and that delivery starts a turn — so a running
-    // transition means the captured question was answered (or explicitly
-    // released) and must stop pending on every HUD surface.
-    const agentId = data.agentId;
-    const status = data.status;
-    if (
-      typeof agentId === 'string' &&
-      typeof status === 'string' &&
-      toHudAgentStateBucket(status) === 'running'
-    ) {
-      appStore.dispatch(hudQuestionSuperseded(agentId));
-    }
-  }
   if (type === 'workspace:attention-changed') {
     const attention = data.attention;
     if (workspaceId && typeof attention === 'string') {
@@ -273,6 +316,15 @@ function handleEvent(event: WorkspaceEvent): void {
     const displayStatus = data.displayStatus;
     if (workspaceId && isWorkspaceDisplayStatus(displayStatus)) {
       appStore.dispatch(hudDisplayStatusChanged(workspaceId, displayStatus));
+      // Question release (spec §Decisions): pendingness is persistent — a
+      // plain user message and the turn it starts no longer supersede a
+      // captured question, so the ONLY release signal the HUD sees is the
+      // daemon's rollup. A pending question always holds `needs_attention`
+      // up, so landing on a status that ranks BELOW it means the questions
+      // were answered or dismissed.
+      if (QUESTION_RELEASING_DISPLAY_STATUSES.has(displayStatus)) {
+        appStore.dispatch(hudQuestionsResolvedForWorkspace(workspaceId));
+      }
     }
   }
   const entry = mapEventToFeedEntry(event);
@@ -335,6 +387,7 @@ export function startHudSubscription(): () => void {
   lastStatusUpdateTextByWorkspaceId.clear();
   delegatedRowEmittedAgentIds.clear();
   hydratedAgentWorkspaceIds.clear();
+  questionReleaseSweepArmed = false;
   appStore.dispatch(hudActivated());
 
   async function subscribe(): Promise<void> {
@@ -382,6 +435,13 @@ export function startHudSubscription(): () => void {
     void loadRateHistory();
     hydratedAgentWorkspaceIds.clear();
     hydrateVisibleWorkspaceAgents();
+    // A `workspace:displayStatus-changed` that landed during the outage is
+    // simply gone, and the release is only ever driven by that live event —
+    // so a question answered while disconnected would stay captured forever.
+    // Arm a one-shot sweep against the REFETCHED workspace list instead of
+    // reading now (the store still holds the pre-outage snapshot at this
+    // point); the store listener below runs it when the list reference moves.
+    questionReleaseSweepArmed = true;
   });
 
   void subscribe();
@@ -399,7 +459,12 @@ export function startHudSubscription(): () => void {
     if (workspaces === lastWorkspaces) return;
     lastWorkspaces = workspaces;
     queueMicrotask(() => {
-      if (!disposed) hydrateVisibleWorkspaceAgents();
+      if (disposed) return;
+      hydrateVisibleWorkspaceAgents();
+      if (questionReleaseSweepArmed) {
+        questionReleaseSweepArmed = false;
+        sweepQuestionReleaseAgainstWorkspaces();
+      }
     });
   });
 
