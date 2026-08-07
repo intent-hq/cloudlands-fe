@@ -9,7 +9,6 @@
   import AuggieInstructionsPanel from '$lib/components/AuggieInstructionsPanel.svelte';
 
   import { createLogger } from '$lib/utils/client-logger';
-  import { MINIMUM_AUGGIE_VERSION } from '$shared/constants/auggie';
   import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
   import { selectProviderCatalogEntry } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
@@ -28,14 +27,10 @@
   const logger = createLogger('AuggieSetupGate');
   const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
 
+  /** Auggie install/auth state, from the generic per-provider check. */
   type AuggieStatus = {
     installed: boolean;
     authenticated: boolean;
-    version?: string;
-    versionOk: boolean;
-    minimumVersion: string;
-    authDetails?: string;
-    binaryInstallAvailable?: boolean;
   };
 
   const STATUS_REFRESH_INTERVAL_MS = 15000;
@@ -91,19 +86,19 @@
     }
   }
 
-  /** Fetch auggie install/auth state from AUGGIE_CHANNELS.STATUS. */
+  /** Fetch auggie install/auth state from the generic per-provider check. */
   async function checkStatus() {
     try {
-      const result = await invoke<{ success: boolean; data?: AuggieStatus; error?: string }>(
-        AUGGIE_CHANNELS.STATUS,
-      );
-      status = result.data ?? {
-        installed: false,
-        authenticated: false,
-        versionOk: false,
-        minimumVersion: MINIMUM_AUGGIE_VERSION,
+      const result = await invoke<{
+        success: boolean;
+        data?: { available: boolean; authenticated?: boolean };
+        error?: string;
+      }>(PROVIDERS_CHANNELS.CHECK_SINGLE, { providerId: 'auggie' });
+      status = {
+        installed: result.data?.available ?? false,
+        authenticated: result.data?.authenticated === true,
       };
-      if (status?.installed && status?.versionOk && status?.authenticated) {
+      if (status.installed && status.authenticated) {
         appStore.dispatch(retryLoadModels());
       }
     } catch (err) {
@@ -201,16 +196,13 @@
     actionInProgress = true;
     try {
       await checkStatus();
-      if (status?.installed && status?.versionOk && status?.authenticated) {
+      if (status?.installed && status?.authenticated) {
         auggieInstructions = null;
         auggieCommand = null;
         toast.success(m.lib_auggieSetup_readyToGo_message());
         return;
       }
-      const channel =
-        status?.installed && status?.versionOk
-          ? AUGGIE_CHANNELS.AUTHENTICATE
-          : AUGGIE_CHANNELS.INSTALL;
+      const channel = status?.installed ? AUGGIE_CHANNELS.AUTHENTICATE : AUGGIE_CHANNELS.INSTALL;
       const args = channel === AUGGIE_CHANNELS.AUTHENTICATE ? [{ action: 'start' }] : [];
       const result = await invoke<InstructionResponse>(channel, ...args);
       if (result.success && result.data?.authenticated) {
@@ -457,7 +449,7 @@
       </section>
 
       <!-- Auggie login section (rendered when installed but not authenticated) -->
-      {#if status?.installed && status?.versionOk && !status?.authenticated}
+      {#if status?.installed && !status?.authenticated}
         <section class="authenticate">
           <h2>{m.lib_auggieSetup_authenticate_title()}</h2>
           <div class="actions">

@@ -32,9 +32,13 @@
 
   type Step = 'details' | 'confirm';
 
+  // The WSS default port (`server.wsApi.port`, PROTOCOL §1.1). Prefilled as a
+  // sensible default; the field stays editable for operators who reconfigured it.
+  const DEFAULT_WS_PORT = '5181';
+
   let step = $state<Step>('details');
   let host = $state('');
-  let port = $state('');
+  let port = $state(DEFAULT_WS_PORT);
   let token = $state('');
   let fingerprint = $state('');
   let busy = $state(false);
@@ -54,7 +58,7 @@
   function reset() {
     step = 'details';
     host = '';
-    port = '';
+    port = DEFAULT_WS_PORT;
     token = '';
     fingerprint = '';
     busy = false;
@@ -218,6 +222,8 @@
               spellcheck="false"
             />
           </div>
+
+          <p class="text-xs text-subtle">{m.modals_connect_whereToFind_help()}</p>
         {:else}
           <p class="text-sm text-subtle">{m.modals_connect_confirmStep_description()}</p>
           <div class="space-y-1">

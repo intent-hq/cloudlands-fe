@@ -15,11 +15,14 @@ import {
   connectOperationFailed,
   certMismatchReceived,
   certMismatchCleared,
+  protocolMismatchReceived,
+  protocolMismatchModalDismissed,
 } from './connections-slice';
 import type {
   ConnectionRecord,
   ConnectionsListResult,
   ConnectionCertMismatchEvent,
+  ConnectionProtocolMismatchEvent,
 } from './connections-types';
 
 const LOCAL: ConnectionRecord = {
@@ -48,6 +51,14 @@ const CERT_MISMATCH: ConnectionCertMismatchEvent = {
   actualFingerprint: 'EF:01',
 };
 
+const PROTOCOL_MISMATCH: ConnectionProtocolMismatchEvent = {
+  id: 'remote-1',
+  host: '10.0.0.5',
+  port: 8443,
+  localProtocolVersion: '1',
+  remoteProtocolVersion: '2',
+};
+
 describe('connectionsReducer', () => {
   it('has the correct initial state', () => {
     expect(initialState).toEqual({
@@ -56,6 +67,8 @@ describe('connectionsReducer', () => {
       status: 'idle',
       error: null,
       certMismatch: null,
+      protocolMismatch: null,
+      protocolMismatchModalDismissed: false,
     });
   });
 
@@ -114,6 +127,31 @@ describe('connectionsReducer', () => {
       const state = { ...initialState, certMismatch: CERT_MISMATCH };
       const next = connectionsReducer(state, certMismatchCleared());
       expect(next.certMismatch).toBeNull();
+    });
+  });
+
+  describe('protocol mismatch', () => {
+    it('protocolMismatchReceived stores the event and un-dismisses the modal', () => {
+      const state = { ...initialState, protocolMismatchModalDismissed: true };
+      const next = connectionsReducer(state, protocolMismatchReceived(PROTOCOL_MISMATCH));
+      expect(next.protocolMismatch).toEqual(PROTOCOL_MISMATCH);
+      expect(next.protocolMismatchModalDismissed).toBe(false);
+    });
+
+    it('protocolMismatchModalDismissed keeps the event but hides the modal (warn-but-allow)', () => {
+      const state = { ...initialState, protocolMismatch: PROTOCOL_MISMATCH };
+      const next = connectionsReducer(state, protocolMismatchModalDismissed());
+      expect(next.protocolMismatch).toEqual(PROTOCOL_MISMATCH);
+      expect(next.protocolMismatchModalDismissed).toBe(true);
+    });
+
+    it('connectionsListReceived leaves the protocol-mismatch state untouched', () => {
+      const state = { ...initialState, protocolMismatch: PROTOCOL_MISMATCH };
+      const next = connectionsReducer(
+        state,
+        connectionsListReceived({ connections: [LOCAL, REMOTE], activeId: 'remote-1' }),
+      );
+      expect(next.protocolMismatch).toEqual(PROTOCOL_MISMATCH);
     });
   });
 });

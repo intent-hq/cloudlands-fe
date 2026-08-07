@@ -257,6 +257,31 @@ describe('WorkspaceConfig', () => {
       );
     });
 
+    it('paths.panelLayoutHistory keeps the legacy filename for the local backend (migration)', () => {
+      // No backend id and the reserved local id both map to the original file so
+      // pre-multi-backend history carries over unchanged (cloudlands-fe#823).
+      const legacy = toOsPath('/Users/testuser/intent/ws-1/.workspace/panel-layout-history.json');
+      expect(WorkspaceConfig.paths.panelLayoutHistory('ws-1')).toBe(legacy);
+      expect(WorkspaceConfig.paths.panelLayoutHistory('ws-1', 'local')).toBe(legacy);
+    });
+
+    it('paths.panelLayoutHistory namespaces the filename per remote backend', () => {
+      expect(WorkspaceConfig.paths.panelLayoutHistory('ws-1', 'remote-abc')).toBe(
+        toOsPath(
+          '/Users/testuser/intent/ws-1/.workspace/panel-layout-history.backend-remote-abc.json',
+        ),
+      );
+    });
+
+    it('paths.panelLayoutHistory sanitizes filesystem-unsafe backend ids', () => {
+      // A host:port-style id must not yield a colon-bearing (invalid) filename.
+      expect(WorkspaceConfig.paths.panelLayoutHistory('ws-1', '10.0.0.9:5181')).toBe(
+        toOsPath(
+          '/Users/testuser/intent/ws-1/.workspace/panel-layout-history.backend-10.0.0.9_5181.json',
+        ),
+      );
+    });
+
     it('all derived paths should use legacy root for legacy workspaces', () => {
       mockExistsSync.mockImplementation((p: any) => {
         return String(p).startsWith(toOsPath('/Users/testuser/.workspaces/ws-old'));

@@ -59,6 +59,7 @@ import {
   hudRateHistoryLoaded,
   hudUsageFailed,
   hudUsageLoaded,
+  sumHudUsageTotals,
   type HudFeedEntry,
   type HudRateHistorySample,
   type HudRateSample,
@@ -102,12 +103,6 @@ export const HUD_RATE_HISTORY_POLL_MS = 15_000;
 /** Trailing minute samples for the TOK/MIN chart (mock renders 40 bars). */
 export const HUD_RATE_HISTORY_LIMIT = 40;
 
-function sumTotals(totals: HudUsageTotals): number {
-  return (
-    totals.inputTokens + totals.outputTokens + totals.cacheReadTokens + totals.cacheCreationTokens
-  );
-}
-
 /** Fetch the 24h usage rollup (§5.36) and fold it into the slice. */
 async function loadUsage(): Promise<void> {
   try {
@@ -128,7 +123,7 @@ async function loadUsage(): Promise<void> {
     }
     const rateSamples: HudRateSample[] = byHourOfDay.map((bucket) => ({
       hour: bucket.hour,
-      tokens: sumTotals(bucket),
+      tokens: sumHudUsageTotals(bucket),
     }));
     appStore.dispatch(
       hudUsageLoaded({
@@ -153,9 +148,16 @@ async function loadRateHistory(): Promise<void> {
     if (!Array.isArray(samples)) {
       throw new Error('stats.getRateHistory result is missing `samples` (PROTOCOL §5.39)');
     }
+    // Counters are kept per-kind for the stacked chart segments; §5.39 samples
+    // are dense (thoughtTokens is always present), but a pre-#976 daemon omits
+    // it — the field then stays absent rather than being healed to 0.
     const mapped: HudRateHistorySample[] = samples.map((sample) => ({
       bucketUtc: sample.bucketUtc,
-      tokens: sumTotals(sample),
+      inputTokens: sample.inputTokens,
+      outputTokens: sample.outputTokens,
+      cacheReadTokens: sample.cacheReadTokens,
+      cacheCreationTokens: sample.cacheCreationTokens,
+      ...(sample.thoughtTokens === undefined ? {} : { thoughtTokens: sample.thoughtTokens }),
     }));
     appStore.dispatch(hudRateHistoryLoaded({ samples: mapped, fetchedAtMs: Date.now() }));
   } catch (error) {

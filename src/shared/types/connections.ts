@@ -37,6 +37,7 @@ export const CONNECTION_CHANNELS = IPC_CHANNELS.CONNECTIONS;
  */
 export const CONNECTIONS_CHANGED_EVENT = 'connections:changed';
 export const CONNECTION_CERT_MISMATCH_EVENT = 'connections:cert-mismatch';
+export const CONNECTION_PROTOCOL_MISMATCH_EVENT = 'connections:protocol-mismatch';
 
 /**
  * Reserved id for the always-present, non-forgettable local sidecar entry
@@ -67,6 +68,13 @@ export interface ConnectionRecord {
   port: number | null;
   /** Pinned self-signed cert fingerprint, SHA-256 colon-hex (PROTOCOL §1.2); `null` for local. */
   fingerprint: string | null;
+  /**
+   * The remote machine's hostname (from `host.status`), captured on the first
+   * successful connect so the menu can label a remote as `hostname (host:port)`
+   * instead of the raw address. `null`/absent until captured or unavailable —
+   * the UI then falls back to `host:port`. Never set for the local entry.
+   */
+  hostname?: string | null;
   /** True for the synthesized local sidecar entry. */
   isLocal: boolean;
 }
@@ -93,6 +101,14 @@ export type ConnectionsListParams = void;
 export interface ConnectionsListResult {
   connections: ConnectionRecord[];
   activeId: string;
+  /**
+   * Sticky protocol mismatch for the currently active backend, replayed here so
+   * a renderer that missed the one-shot `connections:protocol-mismatch`
+   * broadcast (e.g. a window created by a backend switch, after the remote
+   * handshake already fired) still surfaces the advisory. `null`/absent when the
+   * active backend matches local (or is local itself).
+   */
+  protocolMismatch?: ConnectionProtocolMismatchEvent | null;
 }
 
 /**
@@ -174,4 +190,23 @@ export interface ConnectionCertMismatchEvent {
   expectedFingerprint: string;
   /** The fingerprint actually presented on this connect. */
   actualFingerprint: string;
+}
+
+/**
+ * `connections:protocol-mismatch` — broadcast when a remote backend's
+ * `protocolVersion` (from its `client.hello` handshake) differs in **major
+ * version** from the local intentd's. Warn-but-allow: the connection still
+ * proceeds; the renderer surfaces a non-blocking advisory modal on first
+ * connect/switch and a persistent warning in the daemon-status menu. Unlike
+ * {@link ConnectionCertMismatchEvent}, this NEVER blocks the connection.
+ */
+export interface ConnectionProtocolMismatchEvent {
+  /** id of the connection whose protocol differs. */
+  id: string;
+  host: string;
+  port: number;
+  /** The local (bundled sidecar) intentd's protocolVersion. */
+  localProtocolVersion: string;
+  /** The remote daemon's reported protocolVersion. */
+  remoteProtocolVersion: string;
 }

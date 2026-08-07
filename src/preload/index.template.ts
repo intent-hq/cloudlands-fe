@@ -204,7 +204,6 @@ const ALLOWED_CHANNELS = [
   'events:get-stats',
   'events:clear',
   'auggie:check-availability',
-  'auggie:status',
   'auggie:install',
   'auggie:get-models',
   'auggie:get-config',

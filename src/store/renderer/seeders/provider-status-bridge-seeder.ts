@@ -1,10 +1,10 @@
 /**
  * Provider status bridge — routes `providers:get-availability`,
- * `providers:check-single`, `providers:get-paths`, `auggie:status`, the
- * per-provider `*:check-availability` probes, and the `auggie:install` /
+ * `providers:check-single`, `providers:get-paths`, the per-provider
+ * `*:check-availability` probes, and the `auggie:install` /
  * `auggie:authenticate` guidance flows to real daemon probes
  * (`host.checkAuggie` / `host.toolAvailability` / `host.findBinary` /
- * `host.checkGit` / `host.providerAuthStatus`, PROTOCOL §5.14) instead of
+ * `host.providerAuthStatus`, PROTOCOL §5.14) instead of
  * the retired "installed + authenticated mock@example.com" seeding.
  *
  * Per the integration principle BE = source of truth: availability comes
@@ -17,9 +17,8 @@
  * their static install/login guidance.
  *
  * Mirrors the main-process semantics in
- * `features/providers/main/provider-availability.service.ts` and
- * `features/auggie/main/auggie.ipc.ts` (STATUS), which the renderer cannot
- * reach in this mock-router build:
+ * `features/providers/main/provider-availability.service.ts`, which the
+ * renderer cannot reach in this mock-router build:
  *  - auggie:      availability via `host.checkAuggie` (settings precedence +
  *                 PATH scan on the daemon).
  *  - claude-code: `claude` CLI installed (prerequisite for claude-agent-acp).
@@ -60,7 +59,7 @@ import {
 } from "$shared/ipc/channels";
 import { getItem, getItems } from "$lib/store-shim/utils/collections/collection-utils";
 import { store as appStore } from "$store/renderer/store";
-import { MINIMUM_AUGGIE_VERSION, MINIMUM_NODE_VERSION } from "$shared/constants/auggie";
+import { MINIMUM_NODE_VERSION } from "$shared/constants/auggie";
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from "$shared/constants/claude-code";
 import { CODEX_ADAPTER_MISSING_WARNING } from "$shared/constants/codex";
 import { m } from "$shared/paraglide/messages.js";
@@ -78,7 +77,7 @@ import type {
   ProviderStatus,
 } from "$shared/types/provider-availability";
 
-/** Daemon `host.checkAuggie` / `host.checkGit` / `host.findBinary` shape. */
+/** Daemon `host.checkAuggie` / `host.findBinary` shape. */
 interface HostCheckResult {
   available: boolean;
   version?: string;
@@ -110,26 +109,6 @@ const PROVIDER_BINARIES: Record<string, string> = {
 const CODEX_ACP_BINARY = "codex-acp";
 
 /**
- * Compare a probed version against a minimum. Extracts the first
- * `major.minor.patch` triple so prerelease suffixes and prefixes (`v22.1.0`,
- * `auggie 0.13.4`) are tolerated — mirrors the main-process check that treats
- * `0.13.0-beta.1` as meeting a `0.13.0` requirement.
- */
-function meetsMinimumVersion(version: string, minimum: string): boolean {
-  const parse = (raw: string): number[] | null => {
-    const match = raw.match(/(\d+)\.(\d+)\.(\d+)/);
-    return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
-  };
-  const current = parse(version);
-  const required = parse(minimum);
-  if (!current || !required) return false;
-  for (let i = 0; i < 3; i++) {
-    if (current[i] !== required[i]) return current[i] > required[i];
-  }
-  return true;
-}
-
-/**
  * Auth verdicts from the daemon's `host.providerAuthStatus`
  * (intent-hq/intentd#339) as an id → verdict map. The daemon owns the
  * CLI/ACP probes and their caching; the wire `null` (unknown) folds to
@@ -152,7 +131,7 @@ async function getAuthVerdicts(
 
 /** Daemon `host.checkAuggie` — `available:false` on RPC failure is NOT folded
  * here; callers decide between degrading (availability aggregate) and
- * surfacing the error (auggie:status). */
+ * surfacing the error. */
 async function checkAuggie(): Promise<HostCheckResult> {
   const result = await backendRequest<HostCheckResult>("host.checkAuggie");
   return result ?? { available: false };
@@ -406,97 +385,6 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.CHECK_SINGLE, async (arg) => {
   }
 });
 
-/** `auggie:status` payload consumed by AuggieSetupGate / ProviderSelector /
- * AgentGrid. `binaryInstallAvailable` /
- * `managedBinaryInstalled` remain for renderer compatibility but are always
- * false — install is a manual step (AUGGIE_CHANNELS.INSTALL instructions). */
-interface AuggieStatusPayload {
-  installed: boolean;
-  authenticated: boolean;
-  version?: string;
-  versionOk: boolean;
-  minimumVersion: string;
-  authDetails?: string;
-  nodeVersion?: string;
-  nodeVersionOk: boolean;
-  gitInstalled: boolean;
-  gitVersion?: string;
-  binaryInstallAvailable: boolean;
-  managedBinaryInstalled: boolean;
-}
-
-registerMockIpcHandler(AUGGIE_CHANNELS.STATUS, async () => {
-  const status: AuggieStatusPayload = {
-    installed: false,
-    authenticated: false,
-    versionOk: false,
-    minimumVersion: MINIMUM_AUGGIE_VERSION,
-    nodeVersionOk: false,
-    gitInstalled: false,
-    binaryInstallAvailable: false,
-    managedBinaryInstalled: false,
-  };
-
-  // Node + git describe the daemon host (the host that runs auggie); they
-  // feed the setup UI's platform-support instructions. Best-effort.
-  const [nodeSettled, gitSettled] = await Promise.allSettled([
-    backendRequest<HostCheckResult>("host.findBinary", { name: "node" }),
-    backendRequest<HostCheckResult>("host.checkGit"),
-  ]);
-  if (nodeSettled.status === "fulfilled" && nodeSettled.value?.available) {
-    const raw = nodeSettled.value.version?.trim().replace(/^v/, "");
-    if (raw) {
-      status.nodeVersion = raw;
-      status.nodeVersionOk = meetsMinimumVersion(raw, MINIMUM_NODE_VERSION);
-    }
-  }
-  if (gitSettled.status === "fulfilled" && gitSettled.value?.available) {
-    status.gitInstalled = true;
-    const gitVersion = gitSettled.value.version?.trim();
-    if (gitVersion) status.gitVersion = gitVersion;
-  }
-
-  // Install + version detection via the daemon (settings precedence + PATH
-  // scan). An RPC failure surfaces as success:false WITH the partial status —
-  // ProviderSelector reads `data` regardless of `success` so the node/git
-  // warnings still render.
-  let auggiePath: string | null = null;
-  try {
-    const check = await checkAuggie();
-    status.installed = check.available === true;
-    if (typeof check.version === "string" && check.version.trim()) {
-      status.version = check.version.trim();
-    }
-    if (typeof check.path === "string" && check.path.trim()) {
-      auggiePath = check.path.trim();
-    }
-    if (status.installed && status.version) {
-      status.versionOk = meetsMinimumVersion(status.version, MINIMUM_AUGGIE_VERSION);
-    }
-  } catch (error) {
-    return {
-      success: false,
-      error: m.providers_bridge_auggieCheckFailed_error({
-        details: error instanceof Error ? error.message : String(error),
-      }),
-      data: status,
-    };
-  }
-
-  if (!status.installed || !status.versionOk || !auggiePath) {
-    return { success: true, data: status };
-  }
-
-  // Auth verdict from the daemon (`host.providerAuthStatus`, force to pick
-  // up a login that just completed). No identity is fabricated: authDetails
-  // stays undefined (the daemon has no user-info surface), so consumers
-  // render their generic "Authenticated" state instead of a fake email.
-  if ((await getAuthVerdicts({ providerId: "auggie", force: true }))["auggie"] === true) {
-    status.authenticated = true;
-  }
-  return { success: true, data: status };
-});
-
 /**
  * Per-provider `*:check-availability` (the `check<Provider>Availability`
  * model clients) — presence-only probes against the daemon host, mirroring
@@ -535,7 +423,7 @@ const AUGGIE_INSTALL_COMMAND = "npm install -g @augmentcode/auggie";
  * the local host; the daemon has no interactive install surface, so the
  * bridge returns the manual instructions the callers (ProviderSelector /
  * AgentGrid `applyInstructionResponse`) render, and the user re-probes with
- * "Check again" (`providers:check-single` / `auggie:status`).
+ * "Check again" (`providers:check-single`).
  */
 registerMockIpcHandler(AUGGIE_CHANNELS.INSTALL, async () => ({
   success: true,
