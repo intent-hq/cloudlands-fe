@@ -297,9 +297,15 @@
         const data = JSON.parse(prefillData);
         logger.debug('Applying prefill data from sessionStorage', { data });
 
-        // Apply repo and branch settings (skip if onMount already set repoPath)
-        if (data.repoPath && !repoPath) {
+        // Apply repo and branch settings. An explicit prefill wins over form
+        // state restored from persistence, so no `!repoPath` guard here — the
+        // onMount reader applies the same data first, making this idempotent.
+        if (data.repoPath) {
           repoPath = data.repoPath;
+          repoType = 'local';
+          githubUrl = '';
+          clonePath = '';
+          isNewRepo = false;
           isValidPath = true;
           // Reset scope when changing repos - scope is repo-specific
           scope = '';
@@ -791,9 +797,15 @@
         const data = JSON.parse(prefillData);
         logger.debug('Applying prefill data from sessionStorage', { data });
 
-        // Apply repo and branch settings
+        // Apply repo and branch settings — a repoPath prefill is always a
+        // local repo, so set the full selection (clearing any restored
+        // github/clone state) so the picker opens on the Copy local repo tab
         if (data.repoPath) {
           repoPath = data.repoPath;
+          repoType = 'local';
+          githubUrl = '';
+          clonePath = '';
+          isNewRepo = false;
           isValidPath = true;
           // Reset scope when changing repos - scope is repo-specific
           scope = '';
