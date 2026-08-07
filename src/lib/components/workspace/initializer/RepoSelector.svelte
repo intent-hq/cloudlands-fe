@@ -175,6 +175,9 @@
   let inputValue = $state(value);
   let searchTerm = $state(''); // Separate search term that starts empty
   let inputElement: any;
+  /** The GitHub tab's owner/repo input, so the window-level Enter interceptor
+   *  can target it exactly rather than matching any focused <input>. */
+  let githubInputElement = $state<HTMLInputElement | null>(null);
   let isOpen = $state(false); // Track dropdown open state
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let isDialogOpen = $state(false); // Track if a native dialog is open (prevents dropdown from closing)
@@ -578,7 +581,7 @@
         e.stopPropagation();
         // This capture-phase listener also prevents the event from reaching
         // the GitHub input, so the tab's Enter action is driven from here.
-        if (activeTab === 'github' && (e.target as HTMLElement | null)?.tagName === 'INPUT') {
+        if (activeTab === 'github' && e.target === githubInputElement) {
           e.preventDefault();
           confirmGitHubFromKeyboard();
         }
@@ -1431,6 +1434,7 @@
             <!-- i18n-ignore (GitHub path format example placeholder) -->
             <Input placeholder="owner/repo"
               bind:this={inputElement}
+              bind:ref={githubInputElement}
               type="text"
               bind:value={githubUrlInput}
               oninput={(e) => handleGitHubInputChange(e.currentTarget.value)}
@@ -1501,7 +1505,7 @@
                 </button>
               {/each}
             </div>
-          {:else if githubQuery && ($githubSearchLoading$ || $githubReposLoading$)}
+          {:else if githubQuery && $githubSearchLoading$}
             <div class="mt-2 flex items-center gap-2 px-1 text-sm text-subtle">
               <Fa icon={faSpinner} size="xs" class="animate-spin" />
               <span>{m.workspace_repoSelector_searchingGithub_label({ query: githubQuery })}</span>
