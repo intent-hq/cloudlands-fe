@@ -162,11 +162,17 @@ function workspaceActiveAgentId(state: ActionKeyState, wsId: string): string | n
  * Advance the per-workspace layout-preset cursor and return the preset to
  * apply. `agents-row` is skipped when the workspace has no agents — the
  * preset executor returns false there, which would make the press a silent
- * no-op (intent-hq/monorepo#1612). The cursor lands on the preset actually
- * applied so the next press continues from the right stop.
+ * no-op (intent-hq/monorepo#1612). Mirrors the executor's own criterion
+ * (`applyAgentsRowPreset` in preset-executor.ts only tiles agents with a
+ * resolvable session) by requiring at least one workspace agentId to have an
+ * entry in `agentSessions.byAgentId`, rather than just counting agentIds —
+ * an agentId whose session hasn't loaded yet would otherwise cycle to an
+ * empty agents-row. The cursor lands on the preset actually applied so the
+ * next press continues from the right stop.
  */
 function nextLayoutPreset(state: ActionKeyState, wsId: string): (typeof LAYOUT_PRESETS)[number] {
-  const hasAgents = (state.workspaceAgents.byWorkspaceId[wsId]?.agentIds.length ?? 0) > 0;
+  const agentIds = state.workspaceAgents.byWorkspaceId[wsId]?.agentIds ?? [];
+  const hasAgents = agentIds.some((agentId) => state.agentSessions.byAgentId[agentId] !== undefined);
   const applicable = LAYOUT_PRESETS.filter((presetId) => presetId !== 'agents-row' || hasAgents);
   const previous = layoutPresetCursor.get(wsId) ?? -1;
   const presetId =
