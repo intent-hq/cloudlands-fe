@@ -4,7 +4,6 @@
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
   import { invoke, shell } from '$lib/electron-bridge';
-  import { selectManagedInstallStatusByProvider } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import { retryLoadModels } from '$store/renderer/slices/model/model-slice';
   import AuggieInstructionsPanel from '$lib/components/AuggieInstructionsPanel.svelte';
 
@@ -25,7 +24,6 @@
   import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('AuggieSetupGate');
-  const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
 
   /** Auggie install/auth state, from the generic per-provider check. */
   type AuggieStatus = {
@@ -237,14 +235,6 @@
 
   const providerOptions = $derived.by(() => {
     const hidden = providerAvailability?.hiddenProviders ?? [];
-    const codexManagedInstallStatus = $codexManagedInstallStatus$;
-    const codexSetupInProgress = codexManagedInstallStatus?.managedInstallState === 'installing';
-    const codexProgress = codexManagedInstallStatus?.downloadProgress;
-    const codexSetupStatus = codexSetupInProgress
-      ? typeof codexProgress === 'number'
-        ? m.lib_auggieSetup_settingUpCodexPercent_label({ percent: Math.round(codexProgress * 100) })
-        : m.lib_auggieSetup_settingUpCodex_label()
-      : undefined;
     return [
       {
         id: 'auggie',
@@ -260,7 +250,7 @@
         id: 'claude-code',
         name: catalogRow('claude-code').displayName,
         command: catalogRow('claude-code').command,
-        installCommand: 'npm install -g @agentclientprotocol/claude-agent-acp',
+        installCommand: 'curl -fsSL https://claude.ai/install.sh | bash',
         description: m.lib_auggieSetup_claudeCode_description(),
         available: providerAvailability?.providers.claudeCode.available ?? false,
         requiresAuth: false,
@@ -270,10 +260,7 @@
         id: 'codex',
         name: catalogRow('codex').displayName,
         command: catalogRow('codex').command,
-        installCommand: codexSetupInProgress
-          ? undefined
-          : 'npm install -g @agentclientprotocol/codex-acp',
-        setupStatus: codexSetupStatus,
+        installCommand: 'npm i -g @openai/codex',
         description: m.lib_auggieSetup_codex_description(),
         available: providerAvailability?.providers.codex.available ?? false,
         requiresAuth: false,
@@ -388,12 +375,7 @@
                     {/if}
                   </Button>
                 {:else}
-                  {#if provider.setupStatus}
-                    <div class="setup-status" role="status">
-                      <Fa icon={faCircleNotch} class="animate-spin" size="sm" />
-                      <span>{provider.setupStatus}</span>
-                    </div>
-                  {:else if provider.installCommand}
+                  {#if provider.installCommand}
                     {@const installCommand = provider.installCommand}
                     <button
                       class="install-command-button"
@@ -562,15 +544,6 @@
 
   .install-command-button:hover :global(.copy-icon) {
     opacity: 1;
-  }
-
-  .setup-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    color: hsl(var(--muted-foreground));
-    font-size: 0.875rem;
   }
 
   .error-message {

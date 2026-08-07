@@ -271,7 +271,6 @@ vi.mock('$shared/main/async-utils', () => ({
   findExecutableAsync: vi.fn(async () => null),
   findVSCodeAsync: vi.fn(async () => null),
   findAuggieAsync: vi.fn(async () => null),
-  getNpmGlobalBinAsync: vi.fn(async () => null),
   writeJsonAsync: vi.fn(async () => undefined),
   readJsonAsync: vi.fn(async () => null),
   VSCODE_COMMON_PATHS: [],

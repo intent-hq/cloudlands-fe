@@ -10,17 +10,7 @@ import type {
   ProviderStatus as SharedProviderStatus,
 } from '$shared/types/provider-availability';
 
-export type ManagedInstallState = 'not_installed' | 'installing' | 'installed' | 'failed' | 'unsupported';
-
-export type ManagedInstallStatus = {
-  managedInstallState: ManagedInstallState;
-  version?: string;
-  downloadProgress?: number;
-  error?: string;
-  usingFallback?: boolean;
-};
-
-export type ProviderStatus = SharedProviderStatus & Partial<ManagedInstallStatus>;
+export type ProviderStatus = SharedProviderStatus;
 
 export type AgentAvailabilityState = {
   /** Per-provider status results (e.g. availability, auth details). */

@@ -187,7 +187,6 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
-  selectManagedInstallStatusByProvider: () => writable(null),
   selectHasCheckedOnce: () => writable(true),
 }));
 
