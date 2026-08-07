@@ -8,6 +8,13 @@ export type ModelLoadingState = {
   retryAttempt: number;
   error?: string;
   warning?: string;
+  /**
+   * Whether `warning` accompanies a last-known-good model list served from the
+   * daemon's cache (PROTOCOL §5.30 `stale: true`) rather than a degraded
+   * static fallback. Consumers use it to tell a transient probe failure apart
+   * from a genuinely missing CLI.
+   */
+  stale?: boolean;
 };
 
 export type ModelFallbackInfo = {
