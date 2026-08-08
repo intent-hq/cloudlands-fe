@@ -3624,6 +3624,25 @@ describe('daemonEventsBridge (agent:attention-requested → showAgentAttentionTo
     expect(after).toBe(before + 1);
     expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('re-reads through the ensureAgentSession seam so the sidebar/footer indicator converges', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    ensureAgentSessionSpy.mockClear();
+
+    handler(
+      notification('agent:attention-requested', {
+        agentId: AGENT,
+        agentName: 'auggie',
+        kind: 'blocker',
+        reason: 'Session refresh check',
+      }),
+    );
+    await flush();
+
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5)', () => {
