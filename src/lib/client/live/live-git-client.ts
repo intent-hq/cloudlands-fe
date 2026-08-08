@@ -60,7 +60,12 @@ import {
   onBackendNotification,
   onBackendReconnected,
 } from "./backend-transport";
-import { isEventInFamily, listWorkspaceIds, runMutation } from "./live-support";
+import {
+  isEventInFamily,
+  listWorkspaceIds,
+  runMutation,
+  subscribeWorkspaceIds,
+} from "./live-support";
 
 /**
  * Transport timeout for `git.pull` (PROTOCOL §5.6). Longer than the daemon's
@@ -117,6 +122,16 @@ let statusFetchDirty = false;
 let statusFetchTrailingTimer: ReturnType<typeof setTimeout> | undefined;
 /** Disposer for the shared event/reconnect triggers; set while subscribers exist. */
 let statusTriggersOff: (() => void) | undefined;
+/**
+ * Disposer for this client's hold on the shared push-driven workspace-id
+ * source. The id source is ref-counted and resets to "unseeded" at refcount 0,
+ * so without a hold of our own the seeded set would only exist while some
+ * OTHER client (notes/tasks/agents) happens to be subscribed — and every
+ * status refetch past the short TTL would fall back to a real `workspace.list`
+ * RPC, which is exactly the flood this path is fixing
+ * (intent-hq/monorepo#1716). Held while status subscribers exist.
+ */
+let statusWorkspaceIdsOff: (() => void) | undefined;
 
 /**
  * Minimum spacing before the trailing status refetch, mirroring
@@ -187,6 +202,13 @@ function refetchSharedStatus(): void {
  */
 function attachStatusTriggers(): void {
   if (statusTriggersOff) return;
+  // Hold the shared push-driven id source open for as long as status
+  // subscribers exist, so `listWorkspaceIds("git-status")` above is served
+  // from the seeded set rather than re-issuing `workspace.list` once the
+  // short TTL lapses. The listener itself is a no-op: this path only needs
+  // the set to stay seeded, membership changes reach it via the git/changes
+  // events it already listens to.
+  statusWorkspaceIdsOff = subscribeWorkspaceIds(() => {});
   const offNotify = onBackendNotification((n) => {
     if (isEventInFamily(n.method, n.params, "git") || isEventInFamily(n.method, n.params, "changes"))
       refetchSharedStatus();
@@ -207,6 +229,8 @@ function detachStatusTriggers(): void {
     statusFetchTrailingTimer = undefined;
   }
   statusFetchDirty = false;
+  statusWorkspaceIdsOff?.();
+  statusWorkspaceIdsOff = undefined;
   if (!statusTriggersOff) return;
   statusTriggersOff();
   statusTriggersOff = undefined;

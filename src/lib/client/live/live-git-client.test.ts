@@ -23,6 +23,11 @@ vi.mock("./live-support", async (importActual) => {
     ...actual,
     isEventInFamily: vi.fn(() => false),
     listWorkspaceIds: vi.fn(() => Promise.resolve([])),
+    // The client holds the shared push-driven id source open while status
+    // subscribers exist; stubbed by default so these suites see only the
+    // client's OWN transport traffic (the real helper seeds itself with a
+    // `workspace.list` and registers its own notification listener).
+    subscribeWorkspaceIds: vi.fn(() => () => {}),
   };
 });
 
@@ -32,13 +37,14 @@ import {
   onBackendNotification,
   onBackendReconnected,
 } from "./backend-transport";
-import { isEventInFamily, listWorkspaceIds } from "./live-support";
+import { isEventInFamily, listWorkspaceIds, subscribeWorkspaceIds } from "./live-support";
 import { LiveGitClient } from "./live-git-client";
 
 const mockedRequest = vi.mocked(backendRequest);
 const mockedSubscribe = vi.mocked(backendSubscribe);
 const mockedIsEventInFamily = vi.mocked(isEventInFamily);
 const mockedListWorkspaceIds = vi.mocked(listWorkspaceIds);
+const mockedSubscribeWorkspaceIds = vi.mocked(subscribeWorkspaceIds);
 const mockedOnBackendNotification = vi.mocked(onBackendNotification);
 const mockedOnBackendReconnected = vi.mocked(onBackendReconnected);
 
@@ -1018,6 +1024,9 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
     const real = await vi.importActual<typeof import("./live-support")>("./live-support");
     mockedIsEventInFamily.mockImplementation(real.isEventInFamily);
     mockedListWorkspaceIds.mockResolvedValue(["ws-1"]);
+    // Default: the id-source hold is inert (vi.clearAllMocks keeps
+    // implementations, so re-stub it for every test in this suite).
+    mockedSubscribeWorkspaceIds.mockImplementation(() => () => {});
     const notifyListeners = new Set<(n: { method: string; params: unknown }) => void>();
     mockedOnBackendNotification.mockImplementation((cb) => {
       notifyListeners.add(cb);
@@ -1199,6 +1208,8 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
       const real = await vi.importActual<typeof import("./live-support")>("./live-support");
       real.__resetLiveSupportCachesForTests();
       mockedListWorkspaceIds.mockImplementation(real.listWorkspaceIds);
+      // Real id source: the client's own hold is what keeps it seeded here.
+      mockedSubscribeWorkspaceIds.mockImplementation(real.subscribeWorkspaceIds);
       mockedRequest.mockImplementation((method: string) => {
         if (method === "workspace.list") return Promise.resolve({ workspaces: [{ id: "ws-1" }] });
         return Promise.resolve(GIT_STATUS_FIXTURE);
@@ -1208,6 +1219,10 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
       const unsubscribe = client.subscribe(() => {});
       await flush();
       expect(workspaceListCalls()).toBe(1);
+
+      // Drop the short TTL snapshot so only the seeded push-driven set can
+      // serve the reads below — this is what the client's hold guarantees.
+      real.__resetLiveSupportCachesForTests();
 
       for (let i = 0; i < 6; i += 1) {
         notify({ method: "events.event", params: { event: { type: "changes:git-status" } } });
@@ -1219,6 +1234,28 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
       unsubscribe();
       await flush();
       real.__resetLiveSupportCachesForTests();
+    });
+
+    // The hold is what keeps the shared id source seeded for this client; it
+    // must be released with the last subscriber so the source can reset.
+    it("holds the shared workspace-id source while subscribers exist", async () => {
+      await setupWithRealMatcher();
+      const release = vi.fn();
+      mockedSubscribeWorkspaceIds.mockReturnValue(release);
+      const client = new LiveGitClient();
+
+      const first = client.subscribe(() => {});
+      const second = client.subscribe(() => {});
+      await flush();
+      expect(mockedSubscribeWorkspaceIds).toHaveBeenCalledTimes(1);
+
+      first();
+      await flush();
+      expect(release).not.toHaveBeenCalled();
+
+      second();
+      await flush();
+      expect(release).toHaveBeenCalledTimes(1);
     });
 
     // Without the delay the trailing fetch starts the instant the in-flight
