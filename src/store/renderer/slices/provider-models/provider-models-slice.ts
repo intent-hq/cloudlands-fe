@@ -19,6 +19,7 @@ import type {
 
 export const initialState: ProviderModelsState = {
   byProviderId: {},
+  clearEpoch: 0,
 };
 
 /**
@@ -26,28 +27,42 @@ export const initialState: ProviderModelsState = {
  * under its NORMALIZED provider id (callers normalize via
  * `selectNormalizedProviderId`). The payload modifier stamps `fetchedAt`
  * at dispatch time so the reducer stays deterministic.
+ *
+ * `epoch` is the `clearEpoch` the caller read when its fetch STARTED
+ * (`selectProviderModelsClearEpoch`); the reducer drops the write when it no
+ * longer matches — a reconnect clear happened while the response was in
+ * flight, so the rows came from the pre-restart daemon.
  */
 export const providerModelsLoaded = createAction<
-  [providerId: string, result: ProviderModelsFetchResult],
-  [providerId: string, entry: ProviderModelsCacheEntry]
->('providerModels/providerModelsLoaded', (providerId, result) => [
+  [providerId: string, result: ProviderModelsFetchResult, epoch: number],
+  [providerId: string, entry: ProviderModelsCacheEntry, epoch: number]
+>('providerModels/providerModelsLoaded', (providerId, result, epoch) => [
   providerId,
   { ...result, fetchedAt: new Date().toISOString() },
+  epoch,
 ]);
 
 /**
- * Drop every cached entry. Dispatched on backend reconnect: the new daemon
- * may serve different adapters/catalogs, so cached rows are no longer
- * trustworthy and providers fall back to honest loading states.
+ * Drop every cached entry and bump `clearEpoch`. Dispatched on backend
+ * reconnect: the new daemon may serve different adapters/catalogs, so cached
+ * rows are no longer trustworthy and providers fall back to honest loading
+ * states. The epoch bump invalidates in-flight writes issued before the clear.
  */
 export const providerModelsCacheCleared = createAction('providerModels/providerModelsCacheCleared');
 
 export const providerModelsReducer = createReducer<ProviderModelsState>(initialState)
-  .with(providerModelsLoaded, (state, { payload: [providerId, entry] }) => ({
-    ...state,
-    byProviderId: {
-      ...state.byProviderId,
-      [providerId]: entry,
-    },
-  }))
-  .with(providerModelsCacheCleared, () => initialState);
+  .with(providerModelsLoaded, (state, { payload: [providerId, entry, epoch] }) =>
+    epoch !== state.clearEpoch
+      ? state
+      : {
+          ...state,
+          byProviderId: {
+            ...state.byProviderId,
+            [providerId]: entry,
+          },
+        },
+  )
+  .with(providerModelsCacheCleared, (state) => ({
+    byProviderId: {},
+    clearEpoch: state.clearEpoch + 1,
+  }));
