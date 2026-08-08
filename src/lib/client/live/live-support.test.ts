@@ -412,6 +412,74 @@ describe('subscribeWorkspaceIds (push-driven, shared source)', () => {
     unsub();
   });
 
+  it('a failed resync never clobbers a previously good set', async () => {
+    listWorkspaceIdsImpl = () => Promise.resolve(workspaceListResult(['ws-1']));
+    const received: (readonly string[])[] = [];
+    const unsub = subscribeWorkspaceIds((ids) => received.push(ids));
+    await flush();
+    received.length = 0;
+
+    listWorkspaceIdsImpl = () => Promise.reject(new Error('transport down'));
+    reconnect();
+    await flush();
+
+    // The good set survives and listeners are not renotified with [].
+    expect(received).toEqual([]);
+    expect(await listWorkspaceIds()).toEqual(['ws-1']);
+    unsub();
+  });
+
+  it('a seed joining an ALREADY-in-flight RPC arms a trailing follow-up to reconcile', async () => {
+    vi.useFakeTimers();
+    let resolveResolver: ((v: unknown) => void) | undefined;
+    listWorkspaceIdsImpl = () =>
+      new Promise((resolve) => {
+        resolveResolver = resolve;
+      });
+    // A resolver-tagged fetch is in flight before any subscriber exists.
+    const resolverCall = listWorkspaceIds('resolver');
+    expect(listWorkspaceIdsCalls).toHaveLength(1);
+
+    // The seed joins that in-flight RPC (single-flight) — its response may
+    // predate the seed trigger, so a trailing follow-up must reconcile.
+    const received: (readonly string[])[] = [];
+    const unsub = subscribeWorkspaceIds((ids) => received.push(ids));
+    expect(listWorkspaceIdsCalls).toHaveLength(1);
+
+    resolveResolver?.(workspaceListResult(['ws-1']));
+    await flush();
+    expect(await resolverCall).toEqual(['ws-1']);
+    expect(received).toEqual([['ws-1']]);
+
+    listWorkspaceIdsImpl = () => Promise.resolve(workspaceListResult(['ws-1', 'ws-2']));
+    await advance(250);
+
+    expect(listWorkspaceIdsCalls).toHaveLength(2);
+    expect(received).toEqual([['ws-1'], ['ws-1', 'ws-2']]);
+    unsub();
+  });
+
+  it('a set-changing event invalidates the TTL cache so a post-teardown caller is not served a pre-event list', async () => {
+    listWorkspaceIdsImpl = () => Promise.resolve(workspaceListResult(['ws-1']));
+    // Populate the TTL cache, then seed the shared set.
+    expect(await listWorkspaceIds()).toEqual(['ws-1']);
+    const unsub = subscribeWorkspaceIds(() => {});
+    await flush();
+    expect(listWorkspaceIdsCalls).toHaveLength(2);
+
+    emit('events.event', {
+      event: { type: 'workspace:created', data: { workspaceId: 'ws-2', workspace: {} } },
+    });
+    await flush();
+    unsub();
+
+    // Set torn down AND TTL cache invalidated by the event: the next caller
+    // re-fetches instead of serving the pre-event cached ['ws-1'].
+    listWorkspaceIdsImpl = () => Promise.resolve(workspaceListResult(['ws-1', 'ws-2']));
+    expect(await listWorkspaceIds()).toEqual(['ws-1', 'ws-2']);
+    expect(listWorkspaceIdsCalls).toHaveLength(3);
+  });
+
   it('a transient seed failure leaves the set unseeded — a later event re-seeds instead of locking in an empty set', async () => {
     listWorkspaceIdsImpl = () => Promise.reject(new Error('transport down'));
     const received: (readonly string[])[] = [];
@@ -746,6 +814,35 @@ describe('resolveNoteWorkspaceId (negative cache)', () => {
     noteListImpl = () => Promise.resolve({ notes: [{ id: 'note-flaky' }] });
     expect(await resolveNoteWorkspaceId('note-flaky')).toBe('ws-1');
     expect(noteListCalls).toHaveLength(2);
+  });
+
+  it('a VACUOUS scan (failed workspace.list) is not negative-cached — the retry scans once the transport recovers', async () => {
+    listWorkspaceIdsImpl = () => Promise.reject(new Error('transport down'));
+    noteListImpl = () => Promise.resolve({ notes: [{ id: 'note-real' }] });
+    expect(await resolveNoteWorkspaceId('note-real')).toBeNull();
+    expect(noteListCalls).toHaveLength(0);
+
+    // Transport recovers within what would have been the negative TTL: the
+    // retry performs a real scan and finds the note.
+    listWorkspaceIdsImpl = () => Promise.resolve(workspaceListResult(['ws-1']));
+    expect(await resolveNoteWorkspaceId('note-real')).toBe('ws-1');
+    expect(noteListCalls).toHaveLength(1);
+  });
+
+  it('an EMPTY workspace list is not negative-cached — nothing was scanned', async () => {
+    vi.useFakeTimers();
+    listWorkspaceIdsImpl = () => Promise.resolve(workspaceListResult([]));
+    expect(await resolveNoteWorkspaceId('note-early')).toBeNull();
+    expect(noteListCalls).toHaveLength(0);
+
+    // Past the 2s workspace-list TTL but well within the 5s negative TTL: a
+    // (wrongly) cached miss would still be served here. A workspace appears —
+    // the retry scans it instead of serving a cached null.
+    vi.advanceTimersByTime(2_500);
+    listWorkspaceIdsImpl = () => Promise.resolve(workspaceListResult(['ws-1']));
+    noteListImpl = () => Promise.resolve({ notes: [{ id: 'note-early' }] });
+    expect(await resolveNoteWorkspaceId('note-early')).toBe('ws-1');
+    expect(noteListCalls).toHaveLength(1);
   });
 
   it('rememberNoteWorkspace clears the negative entry so a newly discovered note resolves immediately', async () => {

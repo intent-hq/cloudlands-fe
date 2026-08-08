@@ -175,8 +175,10 @@ let workspaceListRpcInFlight: Promise<string[]> | null = null;
  * Debug-log every REAL `workspace.list` RPC issue with its caller tag
  * (seed | reconnect | defensive-resync | follow-up | resolver | explicit) so
  * any future flood identifies its source (intent-hq/monorepo#1716).
+ * Deliberately `console.debug` (hidden unless devtools Verbose is enabled)
+ * rather than the shared ClientLogger, whose default `info` level would
+ * suppress the diagnostic entirely.
  */
-// i18n-ignore (log line)
 function logWorkspaceListRpc(tag: string, detail?: string): void {
   console.debug(`[live-support] workspace.list RPC (${tag})${detail ? `: ${detail}` : ''}`);
 }
@@ -216,16 +218,15 @@ function fetchWorkspaceIdsRpc(tag: string, detail?: string): Promise<string[]> {
 }
 
 /**
- * Enumerate the daemon's workspace ids (best-effort; empty on transport
- * error). Shared cached read path for ALL renderer callers
- * (intent-hq/monorepo#1716):
+ * `listWorkspaceIds` minus the swallow: rejects on transport failure so
+ * internal callers that must distinguish "no workspaces" from "fetch failed"
+ * (e.g. the note resolver's negative cache) can. Same layered read path:
  *  1. when the push-driven shared set is seeded, serve it directly — zero RPC;
  *  2. otherwise serve the TTL cache when fresh — zero RPC;
  *  3. otherwise issue ONE single-flighted `workspace.list` (concurrent
  *     callers coalesce onto the same promise).
- * `tag` names the caller in the RPC debug log when a real fetch is issued.
  */
-export async function listWorkspaceIds(tag = 'explicit'): Promise<string[]> {
+async function listWorkspaceIdsOrThrow(tag: string): Promise<string[]> {
   if (sharedWorkspaceIds !== null) return [...sharedWorkspaceIds];
   if (
     workspaceListCache !== null &&
@@ -233,7 +234,18 @@ export async function listWorkspaceIds(tag = 'explicit'): Promise<string[]> {
   ) {
     return [...workspaceListCache.ids];
   }
-  return fetchWorkspaceIdsRpc(tag).catch(() => []);
+  return fetchWorkspaceIdsRpc(tag);
+}
+
+/**
+ * Enumerate the daemon's workspace ids (best-effort; empty on transport
+ * error). Shared cached read path for ALL renderer callers
+ * (intent-hq/monorepo#1716) — see {@link listWorkspaceIdsOrThrow} for the
+ * layering. `tag` names the caller in the RPC debug log when a real fetch is
+ * issued.
+ */
+export async function listWorkspaceIds(tag = 'explicit'): Promise<string[]> {
+  return listWorkspaceIdsOrThrow(tag).catch(() => []);
 }
 
 /** Test-only: clear the module-level workspace.list / note-resolution caches. */
@@ -316,6 +328,11 @@ function runWorkspaceIdResyncFetch(tag: string, detail?: string): void {
   const startGeneration = workspaceIdMutationGeneration;
   // Raw single-flighted RPC on purpose: `listWorkspaceIds()` would serve the
   // (possibly stale) shared set / TTL cache right back, defeating the resync.
+  // Joining an ALREADY-in-flight RPC (e.g. an earlier resolver fetch) means
+  // the adopted response may have been computed before this trigger — arm the
+  // trailing follow-up so one fresh fetch reconciles, exactly like a raced
+  // incremental event.
+  if (workspaceListRpcInFlight !== null) workspaceIdFetchFollowUpWanted = true;
   void fetchWorkspaceIdsRpc(tag, detail)
     .then((ids) => {
       // An incremental update raced this fetch, so its result may already be
@@ -392,6 +409,9 @@ function addWorkspaceId(id: string): void {
   if (sharedWorkspaceIds.has(id)) return;
   sharedWorkspaceIds.add(id);
   workspaceIdMutationGeneration += 1;
+  // The set changed: any TTL-cached snapshot predates this event. Drop it so
+  // a post-teardown caller can't be served a pre-event id list.
+  workspaceListCache = null;
   notifyWorkspaceIdListeners();
 }
 
@@ -409,6 +429,8 @@ function removeWorkspaceId(id: string): void {
   if (!sharedWorkspaceIds.has(id)) return;
   sharedWorkspaceIds.delete(id);
   workspaceIdMutationGeneration += 1;
+  // See addWorkspaceId: keep the TTL cache consistent with the push source.
+  workspaceListCache = null;
   notifyWorkspaceIdListeners();
 }
 
@@ -572,13 +594,21 @@ const noteResolveScansInFlight = new Map<string, Promise<string | null>>();
 /**
  * Full workspace scan for one noteId: walks each workspace's `note.list`
  * (caching every note it sees) until the note is found. A miss is
- * negative-cached ONLY when every `note.list` call succeeded — a scan with a
- * failed workspace has not established that no workspace claims the note, so
- * the next resolution retries instead of serving a stale `null`.
+ * negative-cached ONLY when the scan actually established it: the workspace
+ * enumeration succeeded, at least one workspace was scanned, and every
+ * `note.list` call succeeded. A vacuous scan (failed `workspace.list`) or one
+ * with a failed workspace has not proven that no workspace claims the note,
+ * so the next resolution retries instead of serving a stale `null`.
  */
 async function scanForNoteWorkspace(noteId: string): Promise<string | null> {
+  let workspaceIds: string[];
+  try {
+    workspaceIds = await listWorkspaceIdsOrThrow('resolver');
+  } catch {
+    return null;
+  }
   let scanComplete = true;
-  for (const workspaceId of await listWorkspaceIds('resolver')) {
+  for (const workspaceId of workspaceIds) {
     try {
       const result = await backendRequest<{ notes?: unknown[] }>('note.list', { workspaceId });
       const notes = Array.isArray(result?.notes) ? result.notes : [];
@@ -595,7 +625,7 @@ async function scanForNoteWorkspace(noteId: string): Promise<string | null> {
       scanComplete = false;
     }
   }
-  if (scanComplete) noteResolveNegativeCache.set(noteId, Date.now());
+  if (scanComplete && workspaceIds.length > 0) noteResolveNegativeCache.set(noteId, Date.now());
   return null;
 }
 
