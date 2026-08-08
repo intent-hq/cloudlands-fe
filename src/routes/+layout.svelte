@@ -114,6 +114,7 @@
 
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
   import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
+  import { wireSplashGate } from '$features/backend/splash-gate';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import { ROOT_WORKSPACE_ID, isValidWorkspaceId } from '$shared/types/branded-ids';
@@ -294,13 +295,13 @@
   let paletteShortcuts: KeyboardShortcutManager | null = null;
 
   onMount(() => {
-    // Hide the splash screen from app.html now that Svelte has mounted
-    const splash = document.getElementById('splash');
-    if (splash) {
-      splash.classList.add('mounted');
-      // Remove from DOM after fade-out transition completes
-      splash.addEventListener('transitionend', () => splash.remove(), { once: true });
-    }
+    // Gate the splash screen's dismissal on backend connectivity (see
+    // splash-gate.ts): it stays visible past Svelte mount until
+    // backend:get-status resolves 'connected' (or a BACKEND.STATUS push
+    // reports it), with a bounded fallback/startup-failure dismiss so a
+    // dead/never-connecting daemon can't strand it. Non-Electron (browser/
+    // mock) environments dismiss immediately, same as before.
+    const stopSplashGate = wireSplashGate(document.getElementById('splash'));
 
     // Remove the static drag region from app.html now that Svelte's own drag region is active
     document.getElementById('app-drag-region')?.remove();
@@ -769,6 +770,7 @@
     }
 
     return () => {
+      stopSplashGate();
       paletteShortcuts?.detach();
       paletteShortcuts?.destroy();
       paletteShortcuts = null;
