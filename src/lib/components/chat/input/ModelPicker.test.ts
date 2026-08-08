@@ -2062,13 +2062,13 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
     });
   });
 
-  it('stamps write-throughs with the epoch read at fetch start (pre-clear responses are droppable)', async () => {
-    // The epoch must be captured when the fetch STARTS, not when the response
-    // settles: a clear that lands mid-flight bumps the state epoch, and the
-    // stale stamp is what lets the reducer drop the late write instead of
-    // re-polluting the just-cleared cache. The epoch is mutated here without
-    // an emitState() so the reconnect-reaction refetch (whose generation bump
-    // would discard the response before it dispatches) stays out of the way.
+  it('discards a pre-clear response entirely (no local state, no write-through)', async () => {
+    // The epoch is captured when the fetch STARTS: a clear that lands
+    // mid-flight bumps the state epoch, and the settle-time epoch check
+    // drops the stale response before it reaches local component state OR
+    // the cache write-through. The epoch is mutated here without an
+    // emitState() (no reconnect-reaction refetch) to isolate the settle-time
+    // guard itself.
     let resolveFetch!: (result: {
       models: { value: string; label: string; description?: string }[];
     }) => void;
@@ -2088,12 +2088,76 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
 
     await waitFor(() => expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalled());
 
-    // Epoch bumps while the response is in flight.
+    // Epoch bumps while the response is in flight; the late settle must be
+    // fully discarded.
     mockProviderModelsState.clearEpoch = 1;
     resolveFetch({
       models: [{ value: 'sonnet4.6', label: 'Claude Sonnet 4.6', description: 'Smart model' }],
     });
+    await new Promise((r) => setTimeout(r, 50));
 
+    // No cache write-through was dispatched for the stale response…
+    expect(
+      mockSvelteDispatch.mock.calls.find(
+        ([action]) => action?.type === 'providerModels/providerModelsLoaded',
+      ),
+    ).toBeUndefined();
+    // …and the stale rows never reached local state (the trigger label
+    // would have resolved from allProviderModels).
+    expect(screen.getByRole('button').textContent).not.toContain('Claude Sonnet 4.6');
+  });
+
+  it('refetches and discards the stale response when reconnect happens during initial load (empty cache)', async () => {
+    // Reconnect DURING initial load: the cache is already empty, so the map
+    // never transitions non-empty → empty — only the clear epoch (which
+    // increments on every providerModelsCacheCleared) signals the reconnect.
+    // The in-flight pre-reconnect response must be discarded and a
+    // replacement fetch must start.
+    const resolvers: ((result: {
+      models: { value: string; label: string; description?: string }[];
+    }) => void)[] = [];
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        portal: false,
+      },
+    });
+
+    // First fetch (epoch 0) is in flight against the pre-restart daemon.
+    await waitFor(() => expect(resolvers).toHaveLength(1));
+
+    // Backend reconnect: the seeder dispatches providerModelsCacheCleared.
+    // The map stays {} (empty→empty) — only the epoch moves.
+    mockProviderModelsState.clearEpoch = 1;
+    (mockAppStore as unknown as { emitState: () => void }).emitState();
+
+    // A replacement fetch starts despite unchanged provider ids + empty map.
+    await waitFor(() => expect(resolvers.length).toBeGreaterThan(1));
+
+    // The stale pre-reconnect response settles late — fully discarded.
+    resolvers[0]({
+      models: [{ value: 'stale-model', label: 'Stale Model', description: 'Pre-reconnect' }],
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(
+      mockSvelteDispatch.mock.calls.find(
+        ([action]) => action?.type === 'providerModels/providerModelsLoaded',
+      ),
+    ).toBeUndefined();
+    expect(screen.getByRole('button').textContent).not.toContain('Stale Model');
+
+    // The post-reconnect fetch settles — applied to local state AND written
+    // through with the post-clear epoch.
+    resolvers[resolvers.length - 1]({
+      models: [{ value: 'sonnet4.6', label: 'Claude Sonnet 4.6', description: 'Smart model' }],
+    });
     await waitFor(() => {
       const writeThrough = mockSvelteDispatch.mock.calls.find(
         ([action]) => action?.type === 'providerModels/providerModelsLoaded',
@@ -2101,9 +2165,9 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
       expect(writeThrough).toBeTruthy();
       const [providerId, , epoch] = writeThrough![0].payload as [string, unknown, number];
       expect(providerId).toBe('auggie');
-      // Stamped with the fetch-start epoch (0), not the current one (1).
-      expect(epoch).toBe(0);
+      expect(epoch).toBe(1);
     });
+    expect(screen.getByRole('button').textContent).toContain('Claude Sonnet 4.6');
   });
 
   it('hydrates the agent-provider path (disabled effective provider) from the cache', async () => {
