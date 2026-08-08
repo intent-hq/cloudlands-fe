@@ -11,9 +11,7 @@
  *   3. Stop-looking boundary — the divider-session boundary seam (chat tab
  *      close / active-workspace switch) fires for the affected agents.
  *
- * Triggers 1–2 are observed by `createMarkAgentSeenTriggerMiddleware`;
- * trigger 3 is wired through `createDividerSessionBoundaryService`'s
- * `onBoundary` seam (see middleware.ts). Each trigger targets the newest
+ * The unread-tracking root saga observes all three triggers. Each trigger targets the newest
  * PERSISTED message id at fire time — streaming/partial rows are never
  * eligible. The daemon persists `lastSeenMessageId` (served on AgentLite,
  * converging via `agent:updated`), so callers never await the mutation:
@@ -31,8 +29,6 @@
  * imports are slice action types (no selector modules).
  */
 import type { AgentMessage } from '$shared/types';
-import type { StoreMiddleware } from '$lib/store-shim/types';
-import { sendMessage, streamEnded } from '$store/renderer/slices/chat-state/chat-state-slice';
 
 /** Debounce window for coalescing turn-finish / user-send bursts. */
 export const MARK_AGENT_SEEN_DEBOUNCE_MS = 1000;
@@ -215,30 +211,4 @@ async function fire(agentId: string, gates: FireGates): Promise<void> {
       lastSentByAgent.delete(agentId);
     }
   }
-}
-
-/**
- * Middleware observing the two action-driven triggers: `streamEnded` (turn
- * finish, PROTOCOL §7 terminal `agent:stream:end`) and `sendMessage` (user
- * send). Runs after the reducer so the fire-time state read sees the
- * post-action world. The boundary trigger is wired separately through
- * `createDividerSessionBoundaryService({ onBoundary })` in middleware.ts.
- */
-export function createMarkAgentSeenTriggerMiddleware(): StoreMiddleware {
-  return () => (next) => (action) => {
-    const result = next(action);
-    const type = (action as { type?: unknown }).type;
-    if (type === streamEnded.type) {
-      const [agentId] = (action as { payload?: [string?] }).payload ?? [];
-      if (typeof agentId === 'string' && agentId.length > 0) {
-        markAgentSeenOnTurnFinish(agentId);
-      }
-    } else if (type === sendMessage.type) {
-      const agentId = (action as { payload?: { agentId?: unknown } }).payload?.agentId;
-      if (typeof agentId === 'string' && agentId.length > 0) {
-        markAgentSeenOnUserSend(agentId);
-      }
-    }
-    return result;
-  };
 }

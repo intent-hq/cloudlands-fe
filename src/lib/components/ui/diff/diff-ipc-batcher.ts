@@ -26,7 +26,7 @@ import { invoke } from '$lib/electron-bridge';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 import { store as appStore } from '$store/renderer/store';
-import { getItem } from '$lib/store-shim/utils/collections/collection-utils';
+import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
 
 const logger = createLogger('diff-ipc-batcher');

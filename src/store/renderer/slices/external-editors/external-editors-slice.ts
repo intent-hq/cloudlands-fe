@@ -1,10 +1,10 @@
 import type { EditorCategory } from '$shared/editors/editor-registry';
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   createCollection,
   type Collection,
-} from '$lib/store-shim/utils/collections/collection-utils';
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 
 // ============================================================================
@@ -216,45 +216,46 @@ export function normalizeHiddenEditorIds(editorIds: unknown): string[] {
 // Reducer
 // ============================================================================
 
-export const externalEditorsReducer = createReducer<ExternalEditorsState>(initialState)
-  .with(setOpenAction, (state, { payload: [selectedAction] }) => ({
-    ...state,
-    selectedAction: normalizeOpenAction(selectedAction),
-  }))
-  .with(fetchEditorsSuccess, (state, { payload: [editors, lastFetched] }) => ({
-    ...state,
-    editors: createCollection<InstalledEditor, 'id'>('id', normalizeInstalledEditors(editors)),
-    lastFetched: typeof lastFetched === 'number' && Number.isFinite(lastFetched) ? lastFetched : 0,
-    loading: false,
-    error: null,
-  }))
-  .with(fetchEditorsFailure, (state, { payload: [error] }) => ({
-    ...state,
-    error: normalizeExternalEditorsError(error),
-    loading: false,
-  }))
-  .with(clearError, (state) => ({
-    ...state,
-    error: null,
-  }))
-  .with(setLoading, (state, { payload: [loading] }) => ({
-    ...state,
-    loading,
-  }))
-  .with(setHiddenEditorIds, (state, { payload: [editorIds] }) => ({
-    ...state,
-    hiddenEditorIds: normalizeHiddenEditorIds(editorIds),
-  }))
-  .with(toggleHiddenEditor, (state, { payload: [editorId] }) => {
-    const normalizedEditorId = coerceString(editorId, '');
-    if (!normalizedEditorId) return state;
+export const externalEditorsReducer = createReducer<ExternalEditorsState>(initialState);
 
-    const hiddenEditorIds = state.hiddenEditorIds.includes(normalizedEditorId)
-      ? state.hiddenEditorIds.filter((id) => id !== normalizedEditorId)
-      : [...state.hiddenEditorIds, normalizedEditorId];
+externalEditorsReducer.with(setOpenAction, (state, { payload: [selectedAction] }) => ({
+  ...state,
+  selectedAction: normalizeOpenAction(selectedAction),
+}));
+externalEditorsReducer.with(fetchEditorsSuccess, (state, { payload: [editors, lastFetched] }) => ({
+  ...state,
+  editors: createCollection<InstalledEditor, 'id'>('id', normalizeInstalledEditors(editors)),
+  lastFetched: typeof lastFetched === 'number' && Number.isFinite(lastFetched) ? lastFetched : 0,
+  loading: false,
+  error: null,
+}));
+externalEditorsReducer.with(fetchEditorsFailure, (state, { payload: [error] }) => ({
+  ...state,
+  error: normalizeExternalEditorsError(error),
+  loading: false,
+}));
+externalEditorsReducer.with(clearError, (state) => ({
+  ...state,
+  error: null,
+}));
+externalEditorsReducer.with(setLoading, (state, { payload: [loading] }) => ({
+  ...state,
+  loading,
+}));
+externalEditorsReducer.with(setHiddenEditorIds, (state, { payload: [editorIds] }) => ({
+  ...state,
+  hiddenEditorIds: normalizeHiddenEditorIds(editorIds),
+}));
+externalEditorsReducer.with(toggleHiddenEditor, (state, { payload: [editorId] }) => {
+  const normalizedEditorId = coerceString(editorId, '');
+  if (!normalizedEditorId) return state;
 
-    return {
-      ...state,
-      hiddenEditorIds,
-    };
-  });
+  const hiddenEditorIds = state.hiddenEditorIds.includes(normalizedEditorId)
+    ? state.hiddenEditorIds.filter((id) => id !== normalizedEditorId)
+    : [...state.hiddenEditorIds, normalizedEditorId];
+
+  return {
+    ...state,
+    hiddenEditorIds,
+  };
+});

@@ -1,4 +1,5 @@
 import { store } from '../../store';
+import { buildHardwareLedSnapshot } from '$features/hardware-console/led/snapshot';
 import {
   isKeyAssignableWorkspace,
   resolveKeySlots,
@@ -28,6 +29,14 @@ export const selectHardwareConsoleCycleScopes = store.createSelector(
 /** Raw 6-slot pin array (slot 0 = agent key AG00). */
 export const selectHardwareConsoleKeyPins = store.createSelector<[], (string | null)[]>(
   (state) => state.hardwareConsole.keyPins,
+);
+
+export const selectHardwareConsoleExcludedWorkspaceIds = store.createSelector<[], string[]>(
+  (state) => state.hardwareConsole.excludedWorkspaceIds,
+);
+
+export const selectHardwareConsolePromptUsage = store.createSelector(
+  (state) => state.hardwareConsole.promptUsage,
 );
 
 /**
@@ -76,6 +85,16 @@ export const selectEncoderHudWorkspaceId = store.createSelector(
   (state) => state.hardwareConsole.encoderHudWorkspaceId,
 );
 
+/** Title for the encoder-rotate HUD's current workspace target. */
+export const selectEncoderHudWorkspaceTitle = store.createSelector((state): string | null => {
+  const workspaceId = state.hardwareConsole.encoderHudWorkspaceId;
+  if (workspaceId === null) return null;
+  return (
+    selectWorkspaceItems.select(state).find((workspace) => workspace.id === workspaceId)?.title ??
+    null
+  );
+});
+
 /** Label of the last-fired cycle action key shown by the action HUD; `null` = HUD hidden. */
 export const selectActionHudLabel = store.createSelector(
   (state) => state.hardwareConsole.actionHudLabel,
@@ -89,4 +108,9 @@ export const selectPttRecording = store.createSelector(
 /** True while a `voice.transcribe` request is in flight (mic-button spinner). */
 export const selectVoiceTranscribing = store.createSelector(
   (state) => state.hardwareConsole.voiceTranscribing,
+);
+
+/** Derived six-key and ambient LED state for hardware-console device wiring. */
+export const selectHardwareLedSnapshot = store.createSelector((state) =>
+  buildHardwareLedSnapshot(state),
 );

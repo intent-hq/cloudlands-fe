@@ -83,9 +83,9 @@
     protocolMismatchModalDismissed,
   } from '$store/renderer/slices/connections/connections-slice';
   import {
-    switchConnection,
-    forgetConnection,
-  } from '$store/renderer/middlewares/connections-service';
+    switchConnectionRequested,
+    forgetConnectionRequested,
+  } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import { store as appStore } from '$store/renderer/store';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
@@ -225,7 +225,9 @@
   async function handleSwitchConnection(id: string) {
     dropdownOpen = false;
     try {
-      await switchConnection(id);
+      const action = switchConnectionRequested(id);
+      appStore.dispatch(action);
+      await action.promise;
     } catch {
       // The failure is surfaced via the slice's op-status/error; nothing more
       // to do here (the list/active refresh arrives via connections:changed).
@@ -234,7 +236,9 @@
 
   async function handleForgetConnection(id: string) {
     try {
-      await forgetConnection(id);
+      const action = forgetConnectionRequested(id);
+      appStore.dispatch(action);
+      await action.promise;
     } catch {
       // Refresh + any error surface via the connections service; no-op here.
     }
@@ -249,7 +253,9 @@
   async function switchBackToLocal() {
     dismissCertMismatch();
     try {
-      await switchConnection(LOCAL_CONNECTION_ID);
+      const action = switchConnectionRequested(LOCAL_CONNECTION_ID);
+      appStore.dispatch(action);
+      await action.promise;
     } catch {
       // no-op; op-status/error surface via the slice.
     }
@@ -258,7 +264,9 @@
   async function forgetMismatchedConnection(id: string) {
     dismissCertMismatch();
     try {
-      await forgetConnection(id);
+      const action = forgetConnectionRequested(id);
+      appStore.dispatch(action);
+      await action.promise;
     } catch {
       // no-op; refresh via connections:changed.
     }
@@ -275,7 +283,9 @@
   async function switchBackFromProtocolMismatch() {
     continueWithProtocolMismatch();
     try {
-      await switchConnection(LOCAL_CONNECTION_ID);
+      const action = switchConnectionRequested(LOCAL_CONNECTION_ID);
+      appStore.dispatch(action);
+      await action.promise;
     } catch {
       // no-op; op-status/error surface via the slice.
     }

@@ -1,43 +1,48 @@
 /**
- * Wire-contract + middleware tests for the agent-subscription read service.
+ * Wire-contract tests for the agent-subscription read helpers.
  *
  * FAKE seam: `backendRequest` is stubbed so no daemon call happens. The
- * middleware is registered in the REAL configured store, so dispatching
- * `requestSubscriptionFetch` exercises the wiring, the request shape sent on
- * the wire (`agent.getSubscriptions`, PROTOCOL §5.5 extensions), the
- * response→slice mapping, waitingState derivation, and the LEAK-1 purge on
- * `workspaceDeleted` end to end. Mock payloads mirror the documented contract.
+ * direct helper calls exercise the request shape sent on the wire
+ * (`agent.getSubscriptions`, PROTOCOL §5.5 extensions), response→slice mapping,
+ * waitingState derivation, and LEAK-1 purge. Mock payloads mirror the contract.
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { backendRequestSpy } = vi.hoisted(() => ({
   backendRequestSpy: vi.fn(),
 }));
-vi.mock("$lib/client/live/backend-transport", () => ({
+vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: (method: string, params?: unknown) => backendRequestSpy(method, params),
   onBackendNotification: () => () => {},
   onBackendReconnected: () => () => {},
 }));
 
-import { store as appStore } from "$store/renderer/store";
+import { store as appStore } from '$store/renderer/store';
+
+const testStore = appStore as typeof appStore & {
+  storeContext?: unknown;
+  getExistingStoreContext(): unknown;
+};
+testStore.getExistingStoreContext = function () {
+  return this.storeContext;
+};
 import {
   fetchAgentSubscriptionSnapshot,
+  purgeWorkspaceSubscriptionEntries,
   refreshWorkspaceSubscriptionEntries,
   COMPLETED_DISPLAY_DURATION_MS,
   __resetAgentSubscriptionReadServiceForTests,
-} from "./agent-subscription-read-service";
+} from './agent-subscription-read-service';
 import {
   makeKey,
-  requestSubscriptionFetch,
   setSubscriptionSnapshot,
-} from "$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice";
-import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
-import type { AgentSubscriptionUIEntry } from "$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types";
+} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+import type { AgentSubscriptionUIEntry } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types';
 
-const WS = "ws-sub-read-1";
-const PARENT = "agent-parent-1";
-const CHILD_A = "agent-child-a";
-const CHILD_B = "agent-child-b";
+const WS = 'ws-sub-read-1';
+const PARENT = 'agent-parent-1';
+const CHILD_A = 'agent-child-a';
+const CHILD_B = 'agent-child-b';
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** PROTOCOL §5.5 `agent.getSubscriptions` result with one after_all group. */
@@ -45,29 +50,34 @@ function wireResult() {
   return {
     subscriptions: [
       {
-        id: "watch-1",
+        id: 'watch-1',
         agentId: PARENT,
-        agentName: "Coordinator",
+        agentName: 'Coordinator',
         workspaceId: WS,
-        createdAt: "2026-01-01T00:00:00.000Z",
+        createdAt: '2026-01-01T00:00:00.000Z',
+        oneShot: true,
         actorIds: [CHILD_A],
-        eventTypes: ["agent:idle", "agent:failed", "agent:deleted"],
-        delegationGroup: { groupId: "grp-1", awaitMode: "all" as const, expectedAgentIds: [CHILD_A, CHILD_B] },
-        description: "Waiting for agent completion",
+        eventTypes: ['agent:idle', 'agent:failed', 'agent:deleted'],
+        delegationGroup: {
+          groupId: 'grp-1',
+          awaitMode: 'all' as const,
+          expectedAgentIds: [CHILD_A, CHILD_B],
+        },
+        description: 'Waiting for agent completion',
       },
     ],
     delegationGroups: [
       {
-        groupId: "grp-1",
+        groupId: 'grp-1',
         parentAgentId: PARENT,
-        awaitMode: "all" as const,
+        awaitMode: 'all' as const,
         expectedAgentIds: [CHILD_A, CHILD_B],
         completedAgentIds: [CHILD_A],
         deletedAgentIds: [],
         delivered: false,
       },
     ],
-    agentStatuses: { [PARENT]: "waiting", [CHILD_A]: "completed", [CHILD_B]: "responding" },
+    agentStatuses: { [PARENT]: 'waiting', [CHILD_A]: 'completed', [CHILD_B]: 'responding' },
   };
 }
 
@@ -83,17 +93,17 @@ function readEntry(wsId: string, agentId: string): AgentSubscriptionUIEntry | un
 }
 
 function getSubscriptionsCalls(): Array<[string, unknown]> {
-  return backendRequestSpy.mock.calls.filter(([method]) => method === "agent.getSubscriptions");
+  return backendRequestSpy.mock.calls.filter(([method]) => method === 'agent.getSubscriptions');
 }
 
-describe("agent-subscription-read-service", () => {
+describe('agent-subscription-read-service', () => {
   beforeAll(() => {
     appStore.init();
   });
 
   beforeEach(() => {
     __resetAgentSubscriptionReadServiceForTests();
-    appStore.dispatch(workspaceDeleted(WS, []));
+    purgeWorkspaceSubscriptionEntries(WS);
     __resetAgentSubscriptionReadServiceForTests();
     backendRequestSpy.mockReset();
     backendRequestSpy.mockResolvedValue(emptyWireResult());
@@ -104,60 +114,63 @@ describe("agent-subscription-read-service", () => {
     vi.clearAllMocks();
   });
 
-  it("requestSubscriptionFetch sends the §5.5 request shape and maps the response into the slice", async () => {
+  it('fetch sends the §5.5 request shape and maps the response into the slice', async () => {
     backendRequestSpy.mockResolvedValue(wireResult());
-    appStore.dispatch(requestSubscriptionFetch(WS, PARENT));
-    await flush();
+    await fetchAgentSubscriptionSnapshot(WS, PARENT);
 
     expect(getSubscriptionsCalls()).toContainEqual([
-      "agent.getSubscriptions",
+      'agent.getSubscriptions',
       { workspaceId: WS, agentId: PARENT },
     ]);
 
     const entry = readEntry(WS, PARENT);
     expect(entry).toBeDefined();
-    expect(entry!.waitingState).toBe("waiting");
+    expect(entry!.waitingState).toBe('waiting');
     expect(entry!.subscriptions).toEqual([
       {
-        id: "watch-1",
+        id: 'watch-1',
         agentId: PARENT,
-        eventTypes: ["agent:idle", "agent:failed", "agent:deleted"],
+        eventTypes: ['agent:idle', 'agent:failed', 'agent:deleted'],
         actorIds: [CHILD_A],
-        createdAt: "2026-01-01T00:00:00.000Z",
-        description: "Waiting for agent completion",
-        delegationGroup: { groupId: "grp-1", awaitMode: "all", expectedAgentIds: [CHILD_A, CHILD_B] },
+        createdAt: '2026-01-01T00:00:00.000Z',
+        description: 'Waiting for agent completion',
+        delegationGroup: {
+          groupId: 'grp-1',
+          awaitMode: 'all',
+          expectedAgentIds: [CHILD_A, CHILD_B],
+        },
       },
     ]);
     // Per-group agentStatuses are derived from the top-level map filtered to
     // expectedAgentIds (no per-group wire field exists).
     expect(entry!.delegationGroups).toEqual([
       {
-        groupId: "grp-1",
-        awaitMode: "all",
+        groupId: 'grp-1',
+        awaitMode: 'all',
         expectedAgentIds: [CHILD_A, CHILD_B],
         completedAgentIds: [CHILD_A],
         deletedAgentIds: [],
-        agentStatuses: { [CHILD_A]: "completed", [CHILD_B]: "responding" },
+        agentStatuses: { [CHILD_A]: 'completed', [CHILD_B]: 'responding' },
         delivered: false,
       },
     ]);
     expect(entry!.agentStatuses).toEqual({
-      [PARENT]: "waiting",
-      [CHILD_A]: "completed",
-      [CHILD_B]: "responding",
+      [PARENT]: 'waiting',
+      [CHILD_A]: 'completed',
+      [CHILD_B]: 'responding',
     });
   });
 
-  it("empty response keeps waitingState idle (no phantom completed on first fetch)", async () => {
+  it('empty response keeps waitingState idle (no phantom completed on first fetch)', async () => {
     await fetchAgentSubscriptionSnapshot(WS, PARENT);
     const entry = readEntry(WS, PARENT);
     expect(entry).toBeDefined();
-    expect(entry!.waitingState).toBe("idle");
+    expect(entry!.waitingState).toBe('idle');
     expect(entry!.subscriptions).toEqual([]);
     expect(entry!.delegationGroups).toEqual([]);
   });
 
-  it("coalesces concurrent fetches for the same (workspace, agent)", async () => {
+  it('coalesces concurrent fetches for the same (workspace, agent)', async () => {
     backendRequestSpy.mockResolvedValue(wireResult());
     const first = fetchAgentSubscriptionSnapshot(WS, PARENT);
     const second = fetchAgentSubscriptionSnapshot(WS, PARENT);
@@ -173,8 +186,8 @@ describe("agent-subscription-read-service", () => {
         subscriptions: [],
         delegationGroups: [
           {
-            groupId: "grp-1",
-            awaitMode: "all",
+            groupId: 'grp-1',
+            awaitMode: 'all',
             expectedAgentIds: [CHILD_A],
             completedAgentIds: [],
             deletedAgentIds: [],
@@ -183,7 +196,7 @@ describe("agent-subscription-read-service", () => {
           },
         ],
         agentStatuses: {},
-        waitingState: "waiting",
+        waitingState: 'waiting',
       }),
     );
 
@@ -191,25 +204,25 @@ describe("agent-subscription-read-service", () => {
     // next snapshot comes back empty.
     backendRequestSpy.mockResolvedValue(emptyWireResult());
     await fetchAgentSubscriptionSnapshot(WS, PARENT);
-    expect(readEntry(WS, PARENT)?.waitingState).toBe("completed");
+    expect(readEntry(WS, PARENT)?.waitingState).toBe('completed');
 
     // The cleanup re-fetches (still empty) and transitions to idle.
     // STAB-23: resetSubscriptionUI keeps an idle entry instead of deleting so
     // refreshWorkspaceSubscriptionEntries can reach the agent on future events.
     await vi.advanceTimersByTimeAsync(COMPLETED_DISPLAY_DURATION_MS);
     await vi.advanceTimersByTimeAsync(0);
-    expect(readEntry(WS, PARENT)?.waitingState).toBe("idle");
+    expect(readEntry(WS, PARENT)?.waitingState).toBe('idle');
   });
 
-  it("completed cleanup refreshes instead of resetting when new active data arrived", async () => {
+  it('completed cleanup refreshes instead of resetting when new active data arrived', async () => {
     vi.useFakeTimers();
     appStore.dispatch(
       setSubscriptionSnapshot(WS, PARENT, {
         subscriptions: [],
         delegationGroups: [
           {
-            groupId: "grp-old",
-            awaitMode: "all",
+            groupId: 'grp-old',
+            awaitMode: 'all',
             expectedAgentIds: [CHILD_A],
             completedAgentIds: [CHILD_A],
             deletedAgentIds: [],
@@ -218,26 +231,26 @@ describe("agent-subscription-read-service", () => {
           },
         ],
         agentStatuses: {},
-        waitingState: "waiting",
+        waitingState: 'waiting',
       }),
     );
     backendRequestSpy.mockResolvedValue(emptyWireResult());
     await fetchAgentSubscriptionSnapshot(WS, PARENT);
-    expect(readEntry(WS, PARENT)?.waitingState).toBe("completed");
+    expect(readEntry(WS, PARENT)?.waitingState).toBe('completed');
 
     // A new delegation started during the display window.
     backendRequestSpy.mockResolvedValue(wireResult());
     await vi.advanceTimersByTimeAsync(COMPLETED_DISPLAY_DURATION_MS);
     await vi.advanceTimersByTimeAsync(0);
-    expect(readEntry(WS, PARENT)?.waitingState).toBe("waiting");
-    expect(readEntry(WS, PARENT)?.delegationGroups[0]?.groupId).toBe("grp-1");
+    expect(readEntry(WS, PARENT)?.waitingState).toBe('waiting');
+    expect(readEntry(WS, PARENT)?.delegationGroups[0]?.groupId).toBe('grp-1');
   });
 
-  it("refreshWorkspaceSubscriptionEntries re-fetches every tracked entry in the workspace only", async () => {
+  it('refreshWorkspaceSubscriptionEntries re-fetches every tracked entry in the workspace only', async () => {
     backendRequestSpy.mockResolvedValue(wireResult());
     await fetchAgentSubscriptionSnapshot(WS, PARENT);
-    await fetchAgentSubscriptionSnapshot(WS, "agent-parent-2");
-    await fetchAgentSubscriptionSnapshot("ws-other", "agent-elsewhere");
+    await fetchAgentSubscriptionSnapshot(WS, 'agent-parent-2');
+    await fetchAgentSubscriptionSnapshot('ws-other', 'agent-elsewhere');
     backendRequestSpy.mockClear();
     backendRequestSpy.mockResolvedValue(wireResult());
 
@@ -246,30 +259,33 @@ describe("agent-subscription-read-service", () => {
 
     const calls = getSubscriptionsCalls().map(([, params]) => params);
     expect(calls).toContainEqual({ workspaceId: WS, agentId: PARENT });
-    expect(calls).toContainEqual({ workspaceId: WS, agentId: "agent-parent-2" });
+    expect(calls).toContainEqual({ workspaceId: WS, agentId: 'agent-parent-2' });
     expect(calls).toHaveLength(2);
   });
 
-  it("workspaceDeleted purges the workspace's entries and leaves other workspaces intact", async () => {
+  it("purges the workspace's entries and leaves other workspaces intact", async () => {
     backendRequestSpy.mockResolvedValue(wireResult());
     await fetchAgentSubscriptionSnapshot(WS, PARENT);
-    await fetchAgentSubscriptionSnapshot("ws-other", "agent-elsewhere");
+    await fetchAgentSubscriptionSnapshot('ws-other', 'agent-elsewhere');
     expect(readEntry(WS, PARENT)).toBeDefined();
 
-    appStore.dispatch(workspaceDeleted(WS, [PARENT]));
+    purgeWorkspaceSubscriptionEntries(WS);
 
     expect(readEntry(WS, PARENT)).toBeUndefined();
-    expect(readEntry("ws-other", "agent-elsewhere")).toBeDefined();
+    expect(readEntry('ws-other', 'agent-elsewhere')).toBeDefined();
   });
 
-  it("LEAK-1: a pre-purge fetch that resolves after workspaceDeleted is discarded", async () => {
+  it('LEAK-1: a pre-purge fetch that resolves after purge is discarded', async () => {
     let resolveFetch!: (value: unknown) => void;
     backendRequestSpy.mockImplementation(
-      () => new Promise((resolve) => { resolveFetch = resolve; }),
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
     );
     const pending = fetchAgentSubscriptionSnapshot(WS, PARENT);
 
-    appStore.dispatch(workspaceDeleted(WS, [PARENT]));
+    purgeWorkspaceSubscriptionEntries(WS);
 
     resolveFetch(wireResult());
     await pending;

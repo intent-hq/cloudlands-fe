@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 
 // Create state holder
@@ -24,7 +25,7 @@ let mockDispatch = vi.fn();
 // `mockStoreState` so the component's connections selectors always resolve
 // (a test that only sets `daemonHealth` still gets a valid `connections` slice).
 const DEFAULT_CONNECTIONS = {
-  connections: [],
+  connections: createCollection('id'),
   activeId: 'local',
   status: 'idle',
   error: null,
@@ -34,14 +35,6 @@ const DEFAULT_CONNECTIONS = {
 // Mock svelte-fa
 vi.mock('svelte-fa', () => ({
   default: () => null,
-}));
-
-// Mock the connect thunks so menu actions are observable without real IPC.
-vi.mock('$store/renderer/middlewares/connections-service', () => ({
-  switchConnection: vi.fn(() => Promise.resolve()),
-  forgetConnection: vi.fn(() => Promise.resolve()),
-  addConnection: vi.fn(() => Promise.resolve()),
-  captureFingerprint: vi.fn(() => Promise.resolve({ fingerprint: '' })),
 }));
 
 // Mock tooltip with a passthrough component so the real dropdown can render
@@ -601,7 +594,7 @@ describe('DaemonStatusIndicator', () => {
 
     function withConnections(activeId: string) {
       return {
-        connections: [localRecord, remoteRecord],
+        connections: createCollection('id', [localRecord, remoteRecord]),
         activeId,
         status: 'idle',
         error: null,
@@ -667,8 +660,7 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.getByText('Forget')).toBeTruthy();
     });
 
-    it('calls switchConnection when Switch is chosen on a non-active remote', async () => {
-      const { switchConnection } = await import('$store/renderer/middlewares/connections-service');
+    it('dispatches switchConnectionRequested when Switch is chosen on a non-active remote', async () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
@@ -678,7 +670,13 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(screen.getByText('desk:4180'));
       await fireEvent.click(screen.getByText('Switch'));
 
-      expect(vi.mocked(switchConnection)).toHaveBeenCalledWith('r1');
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: ['r1'],
+          type: 'connections/switchRequested',
+          asyncActionType: 'connections/switch',
+        }),
+      );
     });
 
     it('disables Switch for the active entry', async () => {
@@ -693,8 +691,7 @@ describe('DaemonStatusIndicator', () => {
       expect(switchBtn?.disabled).toBe(true);
     });
 
-    it('calls forgetConnection when Forget is chosen on a remote', async () => {
-      const { forgetConnection } = await import('$store/renderer/middlewares/connections-service');
+    it('dispatches forgetConnectionRequested when Forget is chosen on a remote', async () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
@@ -704,7 +701,13 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(screen.getByText('desk:4180'));
       await fireEvent.click(screen.getByText('Forget'));
 
-      expect(vi.mocked(forgetConnection)).toHaveBeenCalledWith('r1');
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: ['r1'],
+          type: 'connections/forgetRequested',
+          asyncActionType: 'connections/forget',
+        }),
+      );
     });
 
     it('opens the add-connection modal from the connect action', async () => {
@@ -768,7 +771,7 @@ describe('DaemonStatusIndicator', () => {
           polling: false,
         },
         connections: {
-          connections: [remoteWithHostname],
+          connections: createCollection('id', [remoteWithHostname]),
           activeId: 'local',
           status: 'idle',
           error: null,
@@ -795,7 +798,7 @@ describe('DaemonStatusIndicator', () => {
 
     function withMismatch() {
       return {
-        connections: [],
+        connections: createCollection('id'),
         activeId: 'local',
         status: 'idle',
         error: null,
@@ -819,8 +822,7 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.getByText('Switch back to This machine (local)')).toBeTruthy();
     });
 
-    it('switch-back clears the mismatch and switches to local', async () => {
-      const { switchConnection } = await import('$store/renderer/middlewares/connections-service');
+    it('switch-back clears the mismatch and dispatches a local switch request', async () => {
       mockStoreState = {
         daemonHealth: { health: 'healthy', stats: null, lastUpdated: null, polling: false },
         connections: withMismatch(),
@@ -834,11 +836,16 @@ describe('DaemonStatusIndicator', () => {
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'connections/certMismatchCleared' }),
       );
-      expect(vi.mocked(switchConnection)).toHaveBeenCalledWith('local');
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: ['local'],
+          type: 'connections/switchRequested',
+          asyncActionType: 'connections/switch',
+        }),
+      );
     });
 
-    it('forget & re-pair clears the mismatch and forgets the connection', async () => {
-      const { forgetConnection } = await import('$store/renderer/middlewares/connections-service');
+    it('forget & re-pair clears the mismatch and dispatches a forget request', async () => {
       mockStoreState = {
         daemonHealth: { health: 'healthy', stats: null, lastUpdated: null, polling: false },
         connections: withMismatch(),
@@ -852,7 +859,13 @@ describe('DaemonStatusIndicator', () => {
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'connections/certMismatchCleared' }),
       );
-      expect(vi.mocked(forgetConnection)).toHaveBeenCalledWith('r1');
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: ['r1'],
+          type: 'connections/forgetRequested',
+          asyncActionType: 'connections/forget',
+        }),
+      );
     });
   });
 });

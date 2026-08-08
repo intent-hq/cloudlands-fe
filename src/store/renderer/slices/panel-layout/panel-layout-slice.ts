@@ -5,8 +5,8 @@
  * Migrated from features/layout/panel-layout-manager.svelte.ts
  */
 
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { removeTerminal } from "../terminals/terminals-slice";
 import type {
@@ -719,9 +719,9 @@ function selfDispatch(state: PanelLayoutSliceState, action: { type: string; payl
   return _reducerRef(state, action);
 }
 
-export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialState)
+export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialState);
   // --- Initialization ---
-  .with(initializeLayout, (state, { payload }) => {
+panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
     const { wsId, layout } = payload;
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, {
@@ -730,12 +730,12 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       panels: layout.panels,
       focusedPanelId: layout.focusedPanelId,
     });
-  })
-  .with(setRestoreStatus, (state, { payload: [wsId, restoreStatus] }) => {
+  });
+panelLayoutReducer.with(setRestoreStatus, (state, { payload: [wsId, restoreStatus] }) => {
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, { ...ws, restoreStatus });
-  })
-  .with(loadLayoutHistory, (state, { payload }) => {
+  });
+panelLayoutReducer.with(loadLayoutHistory, (state, { payload }) => {
     const { wsId, history, historyIndex } = payload;
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, {
@@ -744,9 +744,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       historyIndex: Math.min(historyIndex, history.length),
       historyLoaded: true,
     });
-  })
+  });
   // --- Open Tab ---
-  .with(openTab, (state, { payload }) => {
+panelLayoutReducer.with(openTab, (state, { payload }) => {
     const { wsId, tab, panelId, newTabId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
 
@@ -814,9 +814,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     };
     ws = addToFocusHistory(ws, targetPanelId, newTabId, timestamp);
     return setWorkspaceState(state, wsId, ws);
-  })
+  });
   // --- Close Tab ---
-  .with(closeTab, (state, { payload }) => {
+panelLayoutReducer.with(closeTab, (state, { payload }) => {
     const { wsId, tabId, panelId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
 
@@ -868,9 +868,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     }
 
     return setWorkspaceState(state, wsId, ws);
-  })
+  });
   // --- Close Active Tab ---
-  .with(closeActiveTab, (state, { payload }) => {
+panelLayoutReducer.with(closeActiveTab, (state, { payload }) => {
     const { wsId, panelId, timestamp } = payload;
     const ws = getWorkspaceState(state, wsId);
     const targetPanelId = panelId ?? ws.focusedPanelId;
@@ -884,9 +884,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
 
     // Delegate to closeTab reducer by dispatching inline
     return selfDispatch(state, closeTab(wsId, panel.activeTabId, targetPanelId, timestamp));
-  })
+  });
   // --- Close Tabs By Type ---
-  .with(closeTabsByType, (state, { payload }) => {
+panelLayoutReducer.with(closeTabsByType, (state, { payload }) => {
     const { wsId, tabType, matchField, matchValue, timestamp } = payload;
     const ws = getWorkspaceState(state, wsId);
     const tabsToClose: { tabId: string; panelId: string }[] = [];
@@ -910,9 +910,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp));
     }
     return result;
-  })
+  });
   // --- Close Tabs By Agent ID ---
-  .with(closeTabsByAgentId, (state, { payload }) => {
+panelLayoutReducer.with(closeTabsByAgentId, (state, { payload }) => {
     const { wsId, agentId, timestamp } = payload;
     const ws = getWorkspaceState(state, wsId);
     const tabsToClose: { tabId: string; panelId: string }[] = [];
@@ -929,9 +929,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp));
     }
     return result;
-  })
+  });
   // --- Prune Recently Closed ---
-  .with(pruneRecentlyClosed, (state, { payload: [wsId, match] }) => {
+panelLayoutReducer.with(pruneRecentlyClosed, (state, { payload: [wsId, match] }) => {
     const ws = getWorkspaceState(state, wsId);
     if (ws.recentlyClosed.length === 0) return state;
     const { agentId, terminalId } = match;
@@ -943,9 +943,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     });
     if (filtered.length === ws.recentlyClosed.length) return state;
     return setWorkspaceState(state, wsId, { ...ws, recentlyClosed: filtered });
-  })
+  });
   // --- Cross-slice: prune recentlyClosed when a terminal is removed ---
-  .with(removeTerminal, (state, { payload: [wsId, termId] }) => {
+panelLayoutReducer.with(removeTerminal, (state, { payload: [wsId, termId] }) => {
     const ws = state.byWorkspaceId[wsId];
     if (!ws || ws.recentlyClosed.length === 0) return state;
     const filtered = ws.recentlyClosed.filter(
@@ -953,9 +953,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     );
     if (filtered.length === ws.recentlyClosed.length) return state;
     return setWorkspaceState(state, wsId, { ...ws, recentlyClosed: filtered });
-  })
+  });
   // --- Reopen Closed Tab ---
-  .with(reopenClosedTab, (state, { payload }) => {
+panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
     const { wsId, newTabId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     if (ws.recentlyClosed.length === 0) return state;
@@ -984,9 +984,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       },
     };
     return setWorkspaceState(state, wsId, ws);
-  })
+  });
   // --- Set Active Tab ---
-  .with(setActiveTab, (state, { payload }) => {
+panelLayoutReducer.with(setActiveTab, (state, { payload }) => {
     const { wsId, tabId, panelId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     const targetPanelId = panelId ?? ws.focusedPanelId;
@@ -1003,9 +1003,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     };
     ws = addToFocusHistory(ws, targetPanelId, tabId, timestamp);
     return setWorkspaceState(state, wsId, ws);
-  })
+  });
   // --- Select Next/Previous Tab ---
-  .with(selectNextTab, (state, { payload }) => {
+panelLayoutReducer.with(selectNextTab, (state, { payload }) => {
     const { wsId, panelId, timestamp } = payload;
     const ws = getWorkspaceState(state, wsId);
     const targetPanelId = panelId ?? ws.focusedPanelId;
@@ -1017,8 +1017,8 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     const nextTab = panel.tabs[nextIndex];
     if (!nextTab || nextTab.id === panel.activeTabId) return state;
     return selfDispatch(state, setActiveTab(wsId, nextTab.id, targetPanelId, timestamp));
-  })
-  .with(selectPreviousTab, (state, { payload }) => {
+  });
+panelLayoutReducer.with(selectPreviousTab, (state, { payload }) => {
     const { wsId, panelId, timestamp } = payload;
     const ws = getWorkspaceState(state, wsId);
     const targetPanelId = panelId ?? ws.focusedPanelId;
@@ -1030,9 +1030,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     const prevTab = panel.tabs[prevIndex];
     if (!prevTab || prevTab.id === panel.activeTabId) return state;
     return selfDispatch(state, setActiveTab(wsId, prevTab.id, targetPanelId, timestamp));
-  })
+  });
   // --- Reorder Tabs ---
-  .with(reorderTabs, (state, { payload: [wsId, panelId, fromIndex, toIndex] }) => {
+panelLayoutReducer.with(reorderTabs, (state, { payload: [wsId, panelId, fromIndex, toIndex] }) => {
     const ws = getWorkspaceState(state, wsId);
     const panel = ws.panels[panelId];
     if (!panel) return state;
@@ -1046,9 +1046,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       ...ws,
       panels: { ...ws.panels, [panelId]: { ...panel, tabs: newTabs } },
     });
-  })
+  });
   // --- Move Tab To Panel ---
-  .with(moveTabToPanel, (state, { payload }) => {
+panelLayoutReducer.with(moveTabToPanel, (state, { payload }) => {
     const { wsId, tabId, fromPanelId, toPanelId, insertIndex, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     const fromPanel = ws.panels[fromPanelId];
@@ -1083,9 +1083,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       ws = closePanelHelper(ws, fromPanelId);
     }
     return setWorkspaceState(state, wsId, ws);
-  })
+  });
   // --- Update Tab Title ---
-  .with(updateTabTitle, (state, { payload: [wsId, tabId, newTitle] }) => {
+panelLayoutReducer.with(updateTabTitle, (state, { payload: [wsId, tabId, newTitle] }) => {
     const ws = getWorkspaceState(state, wsId);
     for (const [pId, panel] of Object.entries(ws.panels)) {
       const tabIdx = panel.tabs.findIndex((t) => t.id === tabId);
@@ -1098,9 +1098,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       }
     }
     return state;
-  })
+  });
   // --- Update Tab Browser URL ---
-  .with(updateTabBrowserUrl, (state, { payload: [wsId, tabId, newUrl] }) => {
+panelLayoutReducer.with(updateTabBrowserUrl, (state, { payload: [wsId, tabId, newUrl] }) => {
     const ws = getWorkspaceState(state, wsId);
     for (const [pId, panel] of Object.entries(ws.panels)) {
       const tabIdx = panel.tabs.findIndex((t) => t.id === tabId && t.type === "browser");
@@ -1113,9 +1113,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       }
     }
     return state;
-  })
+  });
   // --- Update Tab Favicon ---
-  .with(updateTabFavicon, (state, { payload: [wsId, tabId, faviconUrl] }) => {
+panelLayoutReducer.with(updateTabFavicon, (state, { payload: [wsId, tabId, faviconUrl] }) => {
     const ws = getWorkspaceState(state, wsId);
     for (const [pId, panel] of Object.entries(ws.panels)) {
       const tabIdx = panel.tabs.findIndex((t) => t.id === tabId && t.type === "browser");
@@ -1128,9 +1128,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       }
     }
     return state;
-  })
+  });
   // --- Update File Tab Path ---
-  .with(updateFileTabPath, (state, { payload: [wsId, oldPath, newPath] }) => {
+panelLayoutReducer.with(updateFileTabPath, (state, { payload: [wsId, oldPath, newPath] }) => {
     const ws = getWorkspaceState(state, wsId);
     const newFileName = newPath.split("/").pop() || newPath;
     let updated = false;
@@ -1147,9 +1147,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     }
     if (!updated) return state;
     return setWorkspaceState(state, wsId, { ...ws, panels: newPanels });
-  })
+  });
   // --- Close Other Tabs ---
-  .with(closeOtherTabs, (state, { payload }) => {
+panelLayoutReducer.with(closeOtherTabs, (state, { payload }) => {
     const { wsId, tabId, panelId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     const targetPanelId = panelId ?? ws.focusedPanelId;
@@ -1170,9 +1170,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       recentlyClosed,
     };
     return setWorkspaceState(state, wsId, ws);
-  })
+  });
   // --- Close Tabs To Right ---
-  .with(closeTabsToRight, (state, { payload }) => {
+panelLayoutReducer.with(closeTabsToRight, (state, { payload }) => {
     const { wsId, tabId, panelId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     const targetPanelId = panelId ?? ws.focusedPanelId;
@@ -1198,9 +1198,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       recentlyClosed,
     };
     return setWorkspaceState(state, wsId, ws);
-  })
+  });
   // --- Close All Tabs ---
-  .with(closeAllTabs, (state, { payload }) => {
+panelLayoutReducer.with(closeAllTabs, (state, { payload }) => {
     const { wsId, panelId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     const targetPanelId = panelId ?? ws.focusedPanelId;
@@ -1225,9 +1225,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       ws = closePanelHelper(ws, targetPanelId);
     }
     return setWorkspaceState(state, wsId, ws);
-  })
+  });
   // --- Close All Others Everywhere ---
-  .with(closeAllOthersEverywhere, (state, { payload }) => {
+panelLayoutReducer.with(closeAllOthersEverywhere, (state, { payload }) => {
     const { wsId, tabId, panelId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     const targetPanelId = panelId ?? ws.focusedPanelId;
@@ -1266,15 +1266,15 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       }
     }
     return setWorkspaceState(state, wsId, ws);
-  })
+  });
   // --- Focus Panel ---
-  .with(focusPanel, (state, { payload: [wsId, panelId] }) => {
+panelLayoutReducer.with(focusPanel, (state, { payload: [wsId, panelId] }) => {
     const ws = getWorkspaceState(state, wsId);
     if (!ws.panels[panelId] || ws.focusedPanelId === panelId) return state;
     return setWorkspaceState(state, wsId, { ...ws, focusedPanelId: panelId });
-  })
+  });
   // --- Split Panel ---
-  .with(splitPanel, (state, { payload }) => {
+panelLayoutReducer.with(splitPanel, (state, { payload }) => {
     const { wsId, panelId, direction, animated, newPanelId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
 
@@ -1326,17 +1326,17 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       };
     }
     return setWorkspaceState(state, wsId, ws);
-  })
+  });
   // --- Close Panel ---
-  .with(closePanel, (state, { payload }) => {
+panelLayoutReducer.with(closePanel, (state, { payload }) => {
     const { wsId, panelId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     ws = saveToHistory(ws, timestamp);
     ws = closePanelHelper(ws, panelId);
     return setWorkspaceState(state, wsId, ws);
-  })
+  });
   // --- Update Sizes ---
-  .with(updateSizes, (state, { payload: [wsId, nodePath, sizes] }) => {
+panelLayoutReducer.with(updateSizes, (state, { payload: [wsId, nodePath, sizes] }) => {
     const ws = getWorkspaceState(state, wsId);
     // Navigate to the node
     const newRoot = JSON.parse(JSON.stringify(ws.root));
@@ -1353,9 +1353,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       return setWorkspaceState(state, wsId, { ...ws, root: newRoot });
     }
     return state;
-  })
+  });
   // --- Update Split Sizes ---
-  .with(updateSplitSizes, (state, { payload: [wsId, sizes, splitPath] }) => {
+panelLayoutReducer.with(updateSplitSizes, (state, { payload: [wsId, sizes, splitPath] }) => {
     const ws = getWorkspaceState(state, wsId);
     const path = splitPath ?? [];
     const newRoot = JSON.parse(JSON.stringify(ws.root));
@@ -1372,9 +1372,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       return setWorkspaceState(state, wsId, { ...ws, root: newRoot });
     }
     return state;
-  })
+  });
   // --- Toggle Expand Panel ---
-  .with(toggleExpandPanel, (state, { payload: [wsId, panelId] }) => {
+panelLayoutReducer.with(toggleExpandPanel, (state, { payload: [wsId, panelId] }) => {
     const ws = getWorkspaceState(state, wsId);
     const newRoot = JSON.parse(JSON.stringify(ws.root)) as PanelLayoutNode;
 
@@ -1428,9 +1428,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       expandedPanelId: panelId,
       savedSizesBeforeExpand: savedSizes,
     });
-  })
+  });
   // --- Reset Layout ---
-  .with(resetLayout, (state, { payload }) => {
+panelLayoutReducer.with(resetLayout, (state, { payload }) => {
     const { wsId, defaultLayout } = payload;
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, {
@@ -1439,9 +1439,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       expandedPanelId: null,
       savedSizesBeforeExpand: [],
     });
-  })
+  });
   // --- Go Back ---
-  .with(goBack, (state, { payload: { wsId, timestamp } }) => {
+panelLayoutReducer.with(goBack, (state, { payload: { wsId, timestamp } }) => {
     const ws = getWorkspaceState(state, wsId);
     if (ws.historyIndex <= 0 || ws.layoutHistory.length === 0) return state;
 
@@ -1474,9 +1474,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       layoutHistory,
       historyIndex,
     });
-  })
+  });
   // --- Go Forward ---
-  .with(goForward, (state, { payload: [wsId] }) => {
+panelLayoutReducer.with(goForward, (state, { payload: [wsId] }) => {
     const ws = getWorkspaceState(state, wsId);
     if (ws.historyIndex >= ws.layoutHistory.length - 1) return state;
 
@@ -1494,9 +1494,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       focusedPanelId: snapshot.focusedPanelId,
       historyIndex,
     });
-  })
+  });
   // --- Go Back In Focus History ---
-  .with(goBackInFocusHistory, (state, { payload: [wsId] }) => {
+panelLayoutReducer.with(goBackInFocusHistory, (state, { payload: [wsId] }) => {
     const ws = getWorkspaceState(state, wsId);
     if (ws.focusHistoryIndex <= 0) return state;
 
@@ -1521,9 +1521,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       idx--;
     }
     return state;
-  })
+  });
   // --- Go Forward In Focus History ---
-  .with(goForwardInFocusHistory, (state, { payload: [wsId] }) => {
+panelLayoutReducer.with(goForwardInFocusHistory, (state, { payload: [wsId] }) => {
     const ws = getWorkspaceState(state, wsId);
     if (ws.focusHistoryIndex >= ws.focusHistory.length - 1) return state;
 
@@ -1547,24 +1547,24 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       idx++;
     }
     return state;
-  })
+  });
   // --- Set Defer Spec Tab ---
-  .with(setDeferSpecTab, (state, { payload: [wsId, value] }) => {
+panelLayoutReducer.with(setDeferSpecTab, (state, { payload: [wsId, value] }) => {
     let ws = getWorkspaceState(state, wsId);
     ws = { ...ws, deferSpecTab: value };
     if (value) {
       ws = { ...ws, panels: stripSpecTabs(ws.panels) };
     }
     return setWorkspaceState(state, wsId, ws);
-  })
+  });
   // --- Consume Pending Focus ---
-  .with(consumePendingFocus, (state, { payload: [wsId, tabId] }) => {
+panelLayoutReducer.with(consumePendingFocus, (state, { payload: [wsId, tabId] }) => {
     const ws = getWorkspaceState(state, wsId);
     if (ws.pendingFocusTabId !== tabId) return state;
     return setWorkspaceState(state, wsId, { ...ws, pendingFocusTabId: null });
-  })
+  });
   // --- Reconcile Stale Agent Tabs ---
-  .with(reconcileStaleAgentTabs, (state, { payload: [wsId, validAgentIds, replacementAgentId, replacementTitle] }) => {
+panelLayoutReducer.with(reconcileStaleAgentTabs, (state, { payload: [wsId, validAgentIds, replacementAgentId, replacementTitle] }) => {
     const ws = getWorkspaceState(state, wsId);
     const validSet = new Set(validAgentIds);
 
@@ -1598,13 +1598,13 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       newPanels[pId] = { ...panel, tabs: newTabs, activeTabId };
     }
     return setWorkspaceState(state, wsId, { ...ws, panels: newPanels });
-  })
+  });
   // --- Clear Panel Layout ---
-  .with(clearPanelLayout, (state, { payload: [wsId] }) => {
+panelLayoutReducer.with(clearPanelLayout, (state, { payload: [wsId] }) => {
     return clearWorkspaceState(state, wsId);
-  })
+  });
   // --- Open Tab In Adjacent Or Split ---
-  .with(openTabInAdjacentOrSplit, (state, { payload }) => {
+panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { wsId, tab, sourcePanelId, animated, force, newTabId, newPanelId, timestamp } = payload;
     const ws = getWorkspaceState(state, wsId);
@@ -1644,9 +1644,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     result = selfDispatch(result, openTab(wsId, tab, undefined, newTabId, force, timestamp));
     const updatedWs = getWorkspaceState(result, wsId);
     return setWorkspaceState(result, wsId, { ...updatedWs, pendingFocusTabId: newTabId });
-  })
+  });
   // --- Move Tab To Split ---
-  .with(moveTabToSplit, (state, { payload }) => {
+panelLayoutReducer.with(moveTabToSplit, (state, { payload }) => {
     const { wsId, tabId, fromPanelId, targetPanelId, zone, newPanelId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     const fromPanel = ws.panels[fromPanelId];
@@ -1704,9 +1704,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       ws = closePanelHelper(ws, fromPanelId);
     }
     return setWorkspaceState(state, wsId, ws);
-  })
+  });
   // --- Move Tab To Split Level ---
-  .with(moveTabToSplitLevel, (state, { payload }) => {
+panelLayoutReducer.with(moveTabToSplitLevel, (state, { payload }) => {
     const { wsId, tabId, fromPanelId, splitPath, position, direction, newPanelId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     const fromPanel = ws.panels[fromPanelId];
@@ -1759,8 +1759,8 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       ws = closePanelHelper(ws, fromPanelId);
     }
     return setWorkspaceState(state, wsId, ws);
-  })
-  .with(createGridLayout, (state, { payload }) => {
+  });
+panelLayoutReducer.with(createGridLayout, (state, { payload }) => {
     const { wsId, panelCount, panelIds, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     ws = saveToHistory(ws, timestamp);
@@ -1802,8 +1802,8 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
 
     ws = { ...ws, root, panels: newPanels, focusedPanelId: usedIds[0] };
     return setWorkspaceState(state, wsId, ws);
-  })
-  .with(applyPreset, (state, { payload }) => {
+  });
+panelLayoutReducer.with(applyPreset, (state, { payload }) => {
     const { wsId, preset, panelIds, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     ws = saveToHistory(ws, timestamp);

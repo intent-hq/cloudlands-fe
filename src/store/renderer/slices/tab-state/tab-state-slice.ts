@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import { omitKey } from "../../utils/utils";
 
 export type HandleDropZoneType = "row-above" | "row-below" | "column-left" | "column-right";
@@ -171,20 +171,20 @@ export const loadWorkspaceTabsState = createAction<[state: PersistedWorkspaceTab
   "tabState/loadWorkspaceTabsState"
 );
 
-export const tabStateReducer = createReducer<TabState>(initialState)
-  .with(startDrag, (state) => {
+export const tabStateReducer = createReducer<TabState>(initialState);
+tabStateReducer.with(startDrag, (state) => {
     if (state.isDragging) return state;
     return { ...state, isDragging: true };
-  })
-  .with(endDrag, (state) => {
+  });
+tabStateReducer.with(endDrag, (state) => {
     if (!state.isDragging && state.activeHandleDrop === null) return state;
     return { ...state, isDragging: false, activeHandleDrop: null };
-  })
-  .with(setActiveHandleDrop, (state, { payload: [info] }) => ({
+  });
+tabStateReducer.with(setActiveHandleDrop, (state, { payload: [info] }) => ({
     ...state,
     activeHandleDrop: info,
-  }))
-  .with(saveScrollPosition, (state, { payload: [tabId, scrollTop] }) => {
+  }));
+tabStateReducer.with(saveScrollPosition, (state, { payload: [tabId, scrollTop] }) => {
     if (scrollTop <= 0) {
       return state;
     }
@@ -193,8 +193,8 @@ export const tabStateReducer = createReducer<TabState>(initialState)
       ...state,
       scrollPositions: { ...state.scrollPositions, [tabId]: scrollTop },
     };
-  })
-  .with(removeScrollPosition, (state, { payload: [tabId] }) => {
+  });
+tabStateReducer.with(removeScrollPosition, (state, { payload: [tabId] }) => {
     if (!(tabId in state.scrollPositions)) {
       return state;
     }
@@ -203,8 +203,8 @@ export const tabStateReducer = createReducer<TabState>(initialState)
       ...state,
       scrollPositions: omitKey(state.scrollPositions, tabId),
     };
-  })
-  .with(clearForWorkspace, (state, { payload: [workspaceId] }) => {
+  });
+tabStateReducer.with(clearForWorkspace, (state, { payload: [workspaceId] }) => {
     const workspaceKeyPrefix = `${workspaceId}-`;
     const keysToRemove = Object.keys(state.scrollPositions).filter((key) =>
       key.startsWith(workspaceKeyPrefix)
@@ -223,12 +223,12 @@ export const tabStateReducer = createReducer<TabState>(initialState)
       ...state,
       scrollPositions: nextScrollPositions,
     };
-  })
-  .with(loadScrollPositions, (state, { payload: [scrollPositions] }) => ({
+  });
+tabStateReducer.with(loadScrollPositions, (state, { payload: [scrollPositions] }) => ({
     ...state,
     scrollPositions,
-  }))
-  .with(openWorkspaceTab, (state, { payload: [workspaceId] }) => {
+  }));
+tabStateReducer.with(openWorkspaceTab, (state, { payload: [workspaceId] }) => {
     const isNewTab = !state.openTabs[workspaceId];
     const isCurrentTab = state.currentTabId === workspaceId;
 
@@ -241,8 +241,8 @@ export const tabStateReducer = createReducer<TabState>(initialState)
       currentTabId: workspaceId,
       tabOrder: isNewTab ? [...state.tabOrder, workspaceId] : state.tabOrder,
     });
-  })
-  .with(closeWorkspaceTab, (state, { payload: [workspaceId] }) => {
+  });
+tabStateReducer.with(closeWorkspaceTab, (state, { payload: [workspaceId] }) => {
     const index = state.tabOrder.indexOf(workspaceId);
     const nextTabOrder = index > -1 ? state.tabOrder.filter((tabId) => tabId !== workspaceId) : state.tabOrder;
 
@@ -263,8 +263,8 @@ export const tabStateReducer = createReducer<TabState>(initialState)
       unsavedTabs: removeTabFlag(state.unsavedTabs, workspaceId),
       tabOrder: nextTabOrder,
     });
-  })
-  .with(clearCurrentWorkspaceTab, (state) => {
+  });
+tabStateReducer.with(clearCurrentWorkspaceTab, (state) => {
     if (state.currentTabId === null) {
       return state;
     }
@@ -272,8 +272,8 @@ export const tabStateReducer = createReducer<TabState>(initialState)
     return withNextVersion(state, {
       currentTabId: null,
     });
-  })
-  .with(cleanupInvalidWorkspaceTabs, (state, { payload: [validIds] }) => {
+  });
+tabStateReducer.with(cleanupInvalidWorkspaceTabs, (state, { payload: [validIds] }) => {
     const validIdLookup = createTabFlagMap(validIds);
     let nextOpenTabs = state.openTabs;
     let nextPinnedTabs = state.pinnedTabs;
@@ -314,22 +314,22 @@ export const tabStateReducer = createReducer<TabState>(initialState)
       unsavedTabs: nextUnsavedTabs,
       tabOrder: nextTabOrder,
     });
-  })
-  .with(toggleWorkspaceTabPin, (state, { payload: [workspaceId] }) => ({
+  });
+tabStateReducer.with(toggleWorkspaceTabPin, (state, { payload: [workspaceId] }) => ({
     ...state,
     pinnedTabs: state.pinnedTabs[workspaceId]
       ? removeTabFlag(state.pinnedTabs, workspaceId)
       : addTabFlag(state.pinnedTabs, workspaceId),
     version: state.version + 1,
-  }))
-  .with(markWorkspaceTabUnsaved, (state, { payload: [workspaceId, unsaved] }) => ({
+  }));
+tabStateReducer.with(markWorkspaceTabUnsaved, (state, { payload: [workspaceId, unsaved] }) => ({
     ...state,
     unsavedTabs: unsaved
       ? addTabFlag(state.unsavedTabs, workspaceId)
       : removeTabFlag(state.unsavedTabs, workspaceId),
     version: state.version + 1,
-  }))
-  .with(reorderWorkspaceTabs, (state, { payload: [fromId, toId] }) => {
+  }));
+tabStateReducer.with(reorderWorkspaceTabs, (state, { payload: [fromId, toId] }) => {
     const fromIndex = state.tabOrder.indexOf(fromId);
     const toIndex = state.tabOrder.indexOf(toId);
 
@@ -344,18 +344,18 @@ export const tabStateReducer = createReducer<TabState>(initialState)
     return withNextVersion(state, {
       tabOrder: nextTabOrder,
     });
-  })
-  .with(markWorkspaceTabOptimistic, (state, { payload: [workspaceId] }) => ({
+  });
+tabStateReducer.with(markWorkspaceTabOptimistic, (state, { payload: [workspaceId] }) => ({
     ...state,
     optimisticTabs: addTabFlag(state.optimisticTabs, workspaceId),
     version: state.version + 1,
-  }))
-  .with(unmarkWorkspaceTabOptimistic, (state, { payload: [workspaceId] }) => ({
+  }));
+tabStateReducer.with(unmarkWorkspaceTabOptimistic, (state, { payload: [workspaceId] }) => ({
     ...state,
     optimisticTabs: removeTabFlag(state.optimisticTabs, workspaceId),
     version: state.version + 1,
-  }))
-  .with(handleOptimisticWorkspaceTabTransition, (state, { payload: [optimisticId, realId] }) => {
+  }));
+tabStateReducer.with(handleOptimisticWorkspaceTabTransition, (state, { payload: [optimisticId, realId] }) => {
     let changed = false;
     let nextOpenTabs = state.openTabs;
     let nextTabOrder = state.tabOrder;
@@ -406,8 +406,8 @@ export const tabStateReducer = createReducer<TabState>(initialState)
       optimisticTabs: nextOptimisticTabs,
       tabOrder: nextTabOrder,
     });
-  })
-  .with(switchToNextWorkspaceTab, (state) => {
+  });
+tabStateReducer.with(switchToNextWorkspaceTab, (state) => {
     if (state.tabOrder.length === 0) {
       return state;
     }
@@ -423,8 +423,8 @@ export const tabStateReducer = createReducer<TabState>(initialState)
     return withNextVersion(state, {
       currentTabId: nextTabId,
     });
-  })
-  .with(switchToPreviousWorkspaceTab, (state) => {
+  });
+tabStateReducer.with(switchToPreviousWorkspaceTab, (state) => {
     if (state.tabOrder.length === 0) {
       return state;
     }
@@ -440,8 +440,8 @@ export const tabStateReducer = createReducer<TabState>(initialState)
     return withNextVersion(state, {
       currentTabId: previousTabId,
     });
-  })
-  .with(switchToWorkspaceTabByIndex, (state, { payload: [index] }) => {
+  });
+tabStateReducer.with(switchToWorkspaceTabByIndex, (state, { payload: [index] }) => {
     if (index < 0 || index >= state.tabOrder.length) {
       return state;
     }
@@ -454,8 +454,8 @@ export const tabStateReducer = createReducer<TabState>(initialState)
     return withNextVersion(state, {
       currentTabId: nextTabId,
     });
-  })
-  .with(loadWorkspaceTabsState, (state, { payload: [workspaceTabsState] }) => ({
+  });
+tabStateReducer.with(loadWorkspaceTabsState, (state, { payload: [workspaceTabsState] }) => ({
     ...state,
     openTabs: createTabFlagMap(workspaceTabsState.openTabs ?? []),
     currentTabId: workspaceTabsState.currentTabId ?? null,

@@ -20,7 +20,7 @@ import {
   getAgentStopReasonTimestamp,
 } from '$shared/utils/agent-attention';
 import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
-import { getItems, type Collection } from '$lib/store-shim/utils/collections/collection-utils';
+import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { isKeyAssignableWorkspace } from '../assignment/key-assignment';
 import type { CycleScope } from './cycle-scope';

@@ -1,6 +1,8 @@
 # Svelte Store → Redux Slice Migration Guide
 
-This project guide records the Intent-app migration checkpoints and repository paths for moving Svelte stores (`*.store.svelte.ts`) into Redux-style slices built on the local store shim (`src/lib/store-shim/`).
+This project guide records the Intent-app migration checkpoints and repository
+paths for moving Svelte stores (`*.store.svelte.ts`) into Themis slices built on
+`@augmentcode/themis`.
 
 ## Migration policy
 

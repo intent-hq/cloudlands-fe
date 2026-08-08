@@ -55,6 +55,10 @@
 
   const logger = createLogger('AgentSubscriptions');
 
+  function createPropStore(read: () => string) {
+    return writable(read());
+  }
+
   interface Props {
     workspaceId: string;
     agentId: string;
@@ -66,8 +70,8 @@
 
   // Writable stores mirror prop values so Redux selectors re-evaluate
   // when workspaceId or agentId changes.
-  const workspaceIdStore = writable(workspaceId);
-  const agentIdStore = writable(agentId);
+  const workspaceIdStore = createPropStore(() => workspaceId);
+  const agentIdStore = createPropStore(() => agentId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });

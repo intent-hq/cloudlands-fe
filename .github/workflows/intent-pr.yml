@@ -219,6 +219,8 @@ jobs:
         run: bash scripts/check-accessibility.sh
       - name: workspace:* dispatcher gate
         run: node scripts/check-workspace-event-dispatchers.mjs
+      - name: Architecture validation
+        run: pnpm run validate:architecture
       - name: Build main process
         run: pnpm run build:main
       - name: Verify main process has no devDependency imports
@@ -359,7 +361,6 @@ jobs:
     steps:
       - name: Check results
         run: |
-          echo "Architecture gate temporarily disabled; re-enable by restoring the lint:architecture package script and architecture-gate workflow job."
           if [ "${{ needs.checks.result }}" != "success" ] || \
              [ "${{ needs.build-web.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ]; then

@@ -6,7 +6,7 @@
  * The Add-context pane (`IssueSuggestions.svelte`) and the connections
  * settings read these channels directly through `invoke()`, which resolves
  * through the in-memory mock IPC router — so the boot-time fixture stubs that
- * used to live in settings-integrations-seeder.ts made every tab render mock
+ * used to live in the legacy snapshot seeder made every tab render mock
  * data in the live app. Per the integration principle BE = source of truth:
  * each handler forwards to the canonical daemon RPC and maps the response to
  * the legacy envelope the call sites already consume — never synthesizing

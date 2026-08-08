@@ -8,10 +8,11 @@
  * - Delegation group trackers
  * - Delivery health stats
  * - Deleted agent tracking
+ * - One-shot subscription tracking
  */
 
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../../utils/workspace-scoped";
 import type { WorkspaceEvent } from "../../../../features/events/types";
 
@@ -211,183 +212,182 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 // Reducer
 // ============================================================================
 
-export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(initialState)
-  // --- Subscription lifecycle ---
-  .with(addSubscription, (state, { payload: [wsId, subscription] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      subscriptions: { ...ws.subscriptions, [subscription.id]: subscription },
-    });
-  })
-  .with(subscribeToDelegationGroup, (state, { payload: [wsId, seed] }) => {
-    const seedDelegationGroup = seed.filter.delegationGroup;
-    if (!seedDelegationGroup) return state;
-    const groupId = seedDelegationGroup.groupId;
-    if (!groupId) return state;
-    const delegatedAgentId = seedDelegationGroup.expectedAgentIds[0];
-    if (!delegatedAgentId) return state;
-    const ws = getWorkspaceState(state, wsId);
+export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(initialState);
+// --- Subscription lifecycle ---
+agentSubscriptionsReducer.with(addSubscription, (state, { payload: [wsId, subscription] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    subscriptions: { ...ws.subscriptions, [subscription.id]: subscription },
+  });
+});
+agentSubscriptionsReducer.with(subscribeToDelegationGroup, (state, { payload: [wsId, seed] }) => {
+  const seedDelegationGroup = seed.filter.delegationGroup;
+  if (!seedDelegationGroup) return state;
+  const groupId = seedDelegationGroup.groupId;
+  if (!groupId) return state;
+  const delegatedAgentId = seedDelegationGroup.expectedAgentIds[0];
+  if (!delegatedAgentId) return state;
+  const ws = getWorkspaceState(state, wsId);
 
-    const existing = Object.values(ws.subscriptions).find(
-      s => s.agentId === seed.agentId && s.filter.delegationGroup?.groupId === groupId,
-    );
+  const existing = Object.values(ws.subscriptions).find(
+    (s) => s.agentId === seed.agentId && s.filter.delegationGroup?.groupId === groupId,
+  );
 
-    let nextSubscriptions = ws.subscriptions;
-    let canonicalSubId: string;
+  let nextSubscriptions = ws.subscriptions;
+  let canonicalSubId: string;
 
-    if (existing) {
-      canonicalSubId = existing.id;
-      const currentActorIds = existing.filter.actorIds ?? [];
-      // `existing` matched on `delegationGroup?.groupId === groupId` (truthy), so
-      // its delegationGroup is guaranteed defined here.
-      const dg = existing.filter.delegationGroup;
-      if (dg) {
-        const actorAlready = currentActorIds.includes(delegatedAgentId);
-        const dgAlready = dg.expectedAgentIds.includes(delegatedAgentId);
-        if (!actorAlready || !dgAlready) {
-          const nextActorIds = actorAlready
-            ? currentActorIds
-            : [...currentActorIds, delegatedAgentId];
-          const nextExpected = dgAlready
-            ? dg.expectedAgentIds
-            : [...dg.expectedAgentIds, delegatedAgentId];
-          nextSubscriptions = {
-            ...ws.subscriptions,
-            [existing.id]: {
-              ...existing,
-              filter: {
-                ...existing.filter,
-                actorIds: nextActorIds,
-                delegationGroup: { ...dg, expectedAgentIds: nextExpected },
-              },
+  if (existing) {
+    canonicalSubId = existing.id;
+    const currentActorIds = existing.filter.actorIds ?? [];
+    // `existing` matched on `delegationGroup?.groupId === groupId` (truthy), so
+    // its delegationGroup is guaranteed defined here.
+    const dg = existing.filter.delegationGroup;
+    if (dg) {
+      const actorAlready = currentActorIds.includes(delegatedAgentId);
+      const dgAlready = dg.expectedAgentIds.includes(delegatedAgentId);
+      if (!actorAlready || !dgAlready) {
+        const nextActorIds = actorAlready
+          ? currentActorIds
+          : [...currentActorIds, delegatedAgentId];
+        const nextExpected = dgAlready
+          ? dg.expectedAgentIds
+          : [...dg.expectedAgentIds, delegatedAgentId];
+        nextSubscriptions = {
+          ...ws.subscriptions,
+          [existing.id]: {
+            ...existing,
+            filter: {
+              ...existing.filter,
+              actorIds: nextActorIds,
+              delegationGroup: { ...dg, expectedAgentIds: nextExpected },
             },
-          };
-        }
-      }
-    } else {
-      canonicalSubId = seed.id;
-      nextSubscriptions = { ...ws.subscriptions, [seed.id]: seed };
-    }
-
-    const existingTracker = ws.delegationGroups[groupId];
-    let nextDelegationGroups = ws.delegationGroups;
-    if (existingTracker) {
-      if (!existingTracker.expectedAgentIds.includes(delegatedAgentId)) {
-        nextDelegationGroups = {
-          ...ws.delegationGroups,
-          [groupId]: {
-            ...existingTracker,
-            expectedAgentIds: [...existingTracker.expectedAgentIds, delegatedAgentId],
           },
         };
       }
-    } else {
-      const dgSeed = seedDelegationGroup;
+    }
+  } else {
+    canonicalSubId = seed.id;
+    nextSubscriptions = { ...ws.subscriptions, [seed.id]: seed };
+  }
+
+  const existingTracker = ws.delegationGroups[groupId];
+  let nextDelegationGroups = ws.delegationGroups;
+  if (existingTracker) {
+    if (!existingTracker.expectedAgentIds.includes(delegatedAgentId)) {
       nextDelegationGroups = {
         ...ws.delegationGroups,
         [groupId]: {
-          groupId,
-          parentAgentId: seed.agentId,
-          parentAgentName: seed.agentName,
-          awaitMode: dgSeed.awaitMode,
-          expectedAgentIds: [delegatedAgentId],
-          completedAgentIds: [],
-          deletedAgentIds: [],
-          events: [],
-          subscriptionId: canonicalSubId,
-          delivered: false,
+          ...existingTracker,
+          expectedAgentIds: [...existingTracker.expectedAgentIds, delegatedAgentId],
         },
       };
     }
+  } else {
+    const dgSeed = seedDelegationGroup;
+    nextDelegationGroups = {
+      ...ws.delegationGroups,
+      [groupId]: {
+        groupId,
+        parentAgentId: seed.agentId,
+        parentAgentName: seed.agentName,
+        awaitMode: dgSeed.awaitMode,
+        expectedAgentIds: [delegatedAgentId],
+        completedAgentIds: [],
+        deletedAgentIds: [],
+        events: [],
+        subscriptionId: canonicalSubId,
+        delivered: false,
+      },
+    };
+  }
 
-    if (
-      nextSubscriptions === ws.subscriptions &&
-      nextDelegationGroups === ws.delegationGroups
-    ) {
-      return state;
-    }
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      subscriptions: nextSubscriptions,
-      delegationGroups: nextDelegationGroups,
-    });
-  })
-  .with(removeSubscription, (state, { payload: [wsId, subscriptionId] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    if (!ws.subscriptions[subscriptionId]) return state;
+  if (nextSubscriptions === ws.subscriptions && nextDelegationGroups === ws.delegationGroups) {
+    return state;
+  }
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    subscriptions: nextSubscriptions,
+    delegationGroups: nextDelegationGroups,
+  });
+});
+agentSubscriptionsReducer.with(removeSubscription, (state, { payload: [wsId, subscriptionId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (!ws.subscriptions[subscriptionId]) return state;
 
-    const { [subscriptionId]: _removed, ...rest } = ws.subscriptions;
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      subscriptions: rest,
-    });
-  })
-  .with(removeAllSubscriptions, (state, { payload: [wsId, agentId] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    const subs: Record<string, AgentSubscriptionRecord> = {};
-    for (const [id, sub] of Object.entries(ws.subscriptions)) {
-      if (sub.agentId !== agentId) subs[id] = sub;
-    }
-    // Also clean up delegation groups where this agent is parent
-    const groups: Record<string, DelegationGroupTrackerRecord> = {};
-    for (const [gId, g] of Object.entries(ws.delegationGroups)) {
-      if (g.parentAgentId !== agentId) groups[gId] = g;
-    }
+  const { [subscriptionId]: _removed, ...rest } = ws.subscriptions;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    subscriptions: rest,
+  });
+});
+agentSubscriptionsReducer.with(removeAllSubscriptions, (state, { payload: [wsId, agentId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const subs: Record<string, AgentSubscriptionRecord> = {};
+  for (const [id, sub] of Object.entries(ws.subscriptions)) {
+    if (sub.agentId !== agentId) subs[id] = sub;
+  }
+  // Also clean up delegation groups where this agent is parent
+  const groups: Record<string, DelegationGroupTrackerRecord> = {};
+  for (const [gId, g] of Object.entries(ws.delegationGroups)) {
+    if (g.parentAgentId !== agentId) groups[gId] = g;
+  }
 
-    const { [agentId]: _q, ...queues } = ws.agentQueues;
+  const { [agentId]: _q, ...queues } = ws.agentQueues;
 
-    const { [agentId]: _s, ...statuses } = ws.agentStatuses;
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      subscriptions: subs,
-      delegationGroups: groups,
-      agentQueues: queues,
-      agentStatuses: statuses,
-    });
-  })
-  // --- Agent status ---
-  .with(setAgentStatus, (state, { payload: [wsId, agentId, status] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    if (ws.agentStatuses[agentId] === status) return state;
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      agentStatuses: { ...ws.agentStatuses, [agentId]: status },
-    });
-  })
-  // --- Agent queues ---
-  .with(enqueueEvent, (state, { payload: [wsId, agentId, event] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    const existing = ws.agentQueues[agentId] ?? [];
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      agentQueues: { ...ws.agentQueues, [agentId]: [...existing, event] },
-    });
-  })
-  .with(clearAgentQueue, (state, { payload: [wsId, agentId] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    if (!ws.agentQueues[agentId]?.length) return state;
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      agentQueues: { ...ws.agentQueues, [agentId]: [] },
-    });
-  })
-  // --- Delegation groups ---
-  .with(setDelegationGroup, (state, { payload: [wsId, tracker] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      delegationGroups: { ...ws.delegationGroups, [tracker.groupId]: tracker },
-    });
-  })
-  .with(removeDelegationGroup, (state, { payload: [wsId, groupId] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    if (!ws.delegationGroups[groupId]) return state;
+  const { [agentId]: _s, ...statuses } = ws.agentStatuses;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    subscriptions: subs,
+    delegationGroups: groups,
+    agentQueues: queues,
+    agentStatuses: statuses,
+  });
+});
+// --- Agent status ---
+agentSubscriptionsReducer.with(setAgentStatus, (state, { payload: [wsId, agentId, status] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (ws.agentStatuses[agentId] === status) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    agentStatuses: { ...ws.agentStatuses, [agentId]: status },
+  });
+});
+// --- Agent queues ---
+agentSubscriptionsReducer.with(enqueueEvent, (state, { payload: [wsId, agentId, event] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const existing = ws.agentQueues[agentId] ?? [];
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    agentQueues: { ...ws.agentQueues, [agentId]: [...existing, event] },
+  });
+});
+agentSubscriptionsReducer.with(clearAgentQueue, (state, { payload: [wsId, agentId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (!ws.agentQueues[agentId]?.length) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    agentQueues: { ...ws.agentQueues, [agentId]: [] },
+  });
+});
+// --- Delegation groups ---
+agentSubscriptionsReducer.with(setDelegationGroup, (state, { payload: [wsId, tracker] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    delegationGroups: { ...ws.delegationGroups, [tracker.groupId]: tracker },
+  });
+});
+agentSubscriptionsReducer.with(removeDelegationGroup, (state, { payload: [wsId, groupId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (!ws.delegationGroups[groupId]) return state;
 
-    const { [groupId]: _removed, ...rest } = ws.delegationGroups;
-    return setWorkspaceState(state, wsId, { ...ws, delegationGroups: rest });
-  })
-  .with(markDelegationAgentCompleted, (state, { payload: [wsId, groupId, agentId] }) => {
+  const { [groupId]: _removed, ...rest } = ws.delegationGroups;
+  return setWorkspaceState(state, wsId, { ...ws, delegationGroups: rest });
+});
+agentSubscriptionsReducer.with(
+  markDelegationAgentCompleted,
+  (state, { payload: [wsId, groupId, agentId] }) => {
     const ws = getWorkspaceState(state, wsId);
     const tracker = ws.delegationGroups[groupId];
     if (!tracker) return state;
@@ -404,8 +404,11 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
         },
       },
     });
-  })
-  .with(markDelegationAgentDeleted, (state, { payload: [wsId, groupId, agentId] }) => {
+  },
+);
+agentSubscriptionsReducer.with(
+  markDelegationAgentDeleted,
+  (state, { payload: [wsId, groupId, agentId] }) => {
     const ws = getWorkspaceState(state, wsId);
     const tracker = ws.delegationGroups[groupId];
     if (!tracker) return state;
@@ -422,16 +425,20 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
         },
       },
     });
-  })
-  .with(appendDelegationGroupEvent, (state, { payload: [wsId, groupId, event] }) => {
+  },
+);
+agentSubscriptionsReducer.with(
+  appendDelegationGroupEvent,
+  (state, { payload: [wsId, groupId, event] }) => {
     const ws = getWorkspaceState(state, wsId);
     const tracker = ws.delegationGroups[groupId];
     if (!tracker) return state;
     const updatedEvents = [...tracker.events, event];
     // Cap events array to prevent unbounded growth
-    const cappedEvents = updatedEvents.length > MAX_DELEGATION_GROUP_EVENTS
-      ? updatedEvents.slice(-MAX_DELEGATION_GROUP_EVENTS)
-      : updatedEvents;
+    const cappedEvents =
+      updatedEvents.length > MAX_DELEGATION_GROUP_EVENTS
+        ? updatedEvents.slice(-MAX_DELEGATION_GROUP_EVENTS)
+        : updatedEvents;
     return setWorkspaceState(state, wsId, {
       ...ws,
       delegationGroups: {
@@ -442,82 +449,86 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
         },
       },
     });
-  })
-  .with(markDelegationDelivered, (state, { payload: [wsId, groupId] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    const tracker = ws.delegationGroups[groupId];
-    if (!tracker || tracker.delivered) return state;
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      delegationGroups: {
-        ...ws.delegationGroups,
-        [groupId]: { ...tracker, delivered: true },
-      },
-    });
-  })
-  // --- Delivery stats ---
-  .with(recordDeliverySuccess, (state, { payload: [wsId, observedAt] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      deliveryStats: {
-        ...ws.deliveryStats,
-        totalDeliveries: ws.deliveryStats.totalDeliveries + 1,
-        successfulDeliveries: ws.deliveryStats.successfulDeliveries + 1,
-        lastDeliveryTime: observedAt,
-      },
-    });
-  })
-  .with(recordDeliveryFailure, (state, { payload: [wsId, observedAt] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      deliveryStats: {
-        ...ws.deliveryStats,
-        totalDeliveries: ws.deliveryStats.totalDeliveries + 1,
-        failedDeliveries: ws.deliveryStats.failedDeliveries + 1,
-        lastFailureTime: observedAt,
-      },
-    });
-  })
-  .with(recordDeliveryTimeout, (state, { payload: [wsId, observedAt] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      deliveryStats: {
-        ...ws.deliveryStats,
-        totalDeliveries: ws.deliveryStats.totalDeliveries + 1,
-        timeoutDeliveries: ws.deliveryStats.timeoutDeliveries + 1,
-        lastFailureTime: observedAt,
-      },
-    });
-  })
-  .with(recordDroppedEvents, (state, { payload: [wsId, count] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      deliveryStats: {
-        ...ws.deliveryStats,
-        droppedEvents: ws.deliveryStats.droppedEvents + count,
-      },
-    });
-  })
-  // --- Deleted agent tracking ---
-  .with(markAgentDeleted, (state, { payload: [wsId, agentId, deletedAt] }) => {
+  },
+);
+agentSubscriptionsReducer.with(markDelegationDelivered, (state, { payload: [wsId, groupId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const tracker = ws.delegationGroups[groupId];
+  if (!tracker || tracker.delivered) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    delegationGroups: {
+      ...ws.delegationGroups,
+      [groupId]: { ...tracker, delivered: true },
+    },
+  });
+});
+// --- Delivery stats ---
+agentSubscriptionsReducer.with(recordDeliverySuccess, (state, { payload: [wsId, observedAt] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    deliveryStats: {
+      ...ws.deliveryStats,
+      totalDeliveries: ws.deliveryStats.totalDeliveries + 1,
+      successfulDeliveries: ws.deliveryStats.successfulDeliveries + 1,
+      lastDeliveryTime: observedAt,
+    },
+  });
+});
+agentSubscriptionsReducer.with(recordDeliveryFailure, (state, { payload: [wsId, observedAt] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    deliveryStats: {
+      ...ws.deliveryStats,
+      totalDeliveries: ws.deliveryStats.totalDeliveries + 1,
+      failedDeliveries: ws.deliveryStats.failedDeliveries + 1,
+      lastFailureTime: observedAt,
+    },
+  });
+});
+agentSubscriptionsReducer.with(recordDeliveryTimeout, (state, { payload: [wsId, observedAt] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    deliveryStats: {
+      ...ws.deliveryStats,
+      totalDeliveries: ws.deliveryStats.totalDeliveries + 1,
+      timeoutDeliveries: ws.deliveryStats.timeoutDeliveries + 1,
+      lastFailureTime: observedAt,
+    },
+  });
+});
+agentSubscriptionsReducer.with(recordDroppedEvents, (state, { payload: [wsId, count] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    deliveryStats: {
+      ...ws.deliveryStats,
+      droppedEvents: ws.deliveryStats.droppedEvents + count,
+    },
+  });
+});
+// --- Deleted agent tracking ---
+agentSubscriptionsReducer.with(
+  markAgentDeleted,
+  (state, { payload: [wsId, agentId, deletedAt] }) => {
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, {
       ...ws,
       deletedAgents: { ...ws.deletedAgents, [agentId]: deletedAt },
     });
-  })
-  .with(evictDeletedAgent, (state, { payload: [wsId, agentId] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    if (!(agentId in ws.deletedAgents)) return state;
+  },
+);
+agentSubscriptionsReducer.with(evictDeletedAgent, (state, { payload: [wsId, agentId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (!(agentId in ws.deletedAgents)) return state;
 
-    const { [agentId]: _removed, ...rest } = ws.deletedAgents;
-    return setWorkspaceState(state, wsId, { ...ws, deletedAgents: rest });
-  })
-  // --- Workspace cleanup ---
-  .with(clearWorkspace, (state, { payload: [wsId] }) => {
-    return clearWorkspaceState(state, wsId);
-  });
+  const { [agentId]: _removed, ...rest } = ws.deletedAgents;
+  return setWorkspaceState(state, wsId, { ...ws, deletedAgents: rest });
+});
+// --- Workspace cleanup ---
+agentSubscriptionsReducer.with(clearWorkspace, (state, { payload: [wsId] }) => {
+  return clearWorkspaceState(state, wsId);
+});

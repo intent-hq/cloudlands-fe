@@ -1,4 +1,4 @@
-import type { StoreMiddleware } from "$lib/store-shim/types";
+import type { StoreMiddleware } from "@augmentcode/themis/types";
 
 const MAX_DEPTH = 15;
 

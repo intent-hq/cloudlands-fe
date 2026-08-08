@@ -20,17 +20,17 @@ import type {
   SpecialistsClient,
   SubscriptionHandler,
   Unsubscribe,
-} from "../app-client";
-import { createLogger } from "$lib/utils/client-logger";
+} from '../app-client';
+import { createLogger } from '$lib/utils/client-logger';
 import {
   backendRequest,
   backendSubscribe,
   backendUnsubscribe,
   onBackendNotification,
   onBackendReconnected,
-} from "./backend-transport";
+} from './backend-transport';
 
-const logger = createLogger("LiveSpecialistsClient");
+const logger = createLogger('LiveSpecialistsClient');
 
 /**
  * Trailing debounce applied to `specialists:changed` bursts so one refetch
@@ -46,22 +46,16 @@ export class LiveSpecialistsClient implements SpecialistsClient {
    * public `list()` folds errors to an empty list (picker falls back to the
    * hardcoded `SPECIALISTS`); event-driven refetches use this directly so a
    * transient failure keeps the last known-good view instead of wiping the
-   * store (#610). The optional `provider` supplies the resolution context for
-   * the additive `resolvedModel`/`resolvedProvider` preview fields.
+   * store (#610).
    */
-  private async fetchList(provider?: string): Promise<SpecialistDef[]> {
-    const result = await backendRequest<{ specialists?: unknown[] }>(
-      "specialist.list",
-      provider ? { provider } : undefined,
-    );
-    return Array.isArray(result?.specialists)
-      ? (result.specialists as SpecialistDef[])
-      : [];
+  private async fetchList(): Promise<SpecialistDef[]> {
+    const result = await backendRequest<{ specialists?: unknown[] }>('specialist.list');
+    return Array.isArray(result?.specialists) ? (result.specialists as SpecialistDef[]) : [];
   }
 
-  async list(provider?: string): Promise<SpecialistDef[]> {
+  async list(): Promise<SpecialistDef[]> {
     try {
-      return await this.fetchList(provider);
+      return await this.fetchList();
     } catch {
       return [];
     }
@@ -83,14 +77,14 @@ export class LiveSpecialistsClient implements SpecialistsClient {
 
     // Event/reconnect refetch: non-folding — on failure, log and skip the
     // emit so the store keeps its last known-good view (#610), matching
-    // `specialists-mutation-service.refetchAndDispatch`.
+    // the specialists saga's authoritative refetch.
     const refetch = () => {
       this.fetchList()
         .then((specialists) => {
           if (!disposed) handler(specialists);
         })
         .catch((error) => {
-          logger.error("Failed to refetch specialist list; keeping last known-good view", error);
+          logger.error('Failed to refetch specialist list; keeping last known-good view', error);
         });
     };
 
@@ -98,7 +92,7 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     // subscriber disposed while registration was in flight, release the id
     // instead of leaking the daemon-side subscription.
     const doSubscribe = () =>
-      backendSubscribe<{ subscriptionId?: string }>({ eventTypes: ["specialists:changed"] })
+      backendSubscribe<{ subscriptionId?: string }>({ eventTypes: ['specialists:changed'] })
         .then((result) => {
           subscriptionId = result?.subscriptionId;
           if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
@@ -112,7 +106,7 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     // Listen for specialists:changed events and refetch the resolved view,
     // coalescing bursts into one `specialist.list` call.
     const removeNotificationListener = onBackendNotification((n) => {
-      if (n.method === "specialists:changed" && !disposed) {
+      if (n.method === 'specialists:changed' && !disposed) {
         if (debounceTimer !== undefined) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
           debounceTimer = undefined;
@@ -154,7 +148,7 @@ export class LiveSpecialistsClient implements SpecialistsClient {
   async create(
     id: string,
     spec: SpecialistDef,
-    scope?: "project" | "user",
+    scope?: 'project' | 'user',
     workspacePath?: string,
   ): Promise<SpecialistDef> {
     const params: { id: string; spec: SpecialistDef; scope?: string; workspacePath?: string } = {
@@ -164,17 +158,14 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     if (scope) params.scope = scope;
     if (workspacePath) params.workspacePath = workspacePath;
 
-    const result = await backendRequest<{ specialist: SpecialistDef }>(
-      "specialist.create",
-      params,
-    );
+    const result = await backendRequest<{ specialist: SpecialistDef }>('specialist.create', params);
     return result.specialist;
   }
 
   async edit(
     id: string,
     spec: SpecialistDef,
-    scope: "project" | "user",
+    scope: 'project' | 'user',
     workspacePath?: string,
   ): Promise<SpecialistDef> {
     const params: { id: string; spec: SpecialistDef; scope: string; workspacePath?: string } = {
@@ -184,13 +175,13 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     };
     if (workspacePath) params.workspacePath = workspacePath;
 
-    const result = await backendRequest<{ specialist: SpecialistDef }>("specialist.edit", params);
+    const result = await backendRequest<{ specialist: SpecialistDef }>('specialist.edit', params);
     return result.specialist;
   }
 
   async delete(
     id: string,
-    scope: "project" | "user",
+    scope: 'project' | 'user',
     workspacePath?: string,
   ): Promise<{ success: true }> {
     const params: { id: string; scope: string; workspacePath?: string } = {
@@ -199,12 +190,11 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     };
     if (workspacePath) params.workspacePath = workspacePath;
 
-    return await backendRequest<{ success: true }>("specialist.delete", params);
+    return await backendRequest<{ success: true }>('specialist.delete', params);
   }
 }
 
 // Tied to AppClient["specialists"] so the seam composition catches drift in CI.
-const _interfaceCheck: AppClient["specialists"] | undefined = undefined as
-  | LiveSpecialistsClient
-  | undefined;
+const _interfaceCheck: AppClient['specialists'] | undefined = undefined as
+  LiveSpecialistsClient | undefined;
 void _interfaceCheck;

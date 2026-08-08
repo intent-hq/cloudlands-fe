@@ -1,6 +1,6 @@
 import { resetWorkspaceState } from "../workspace/workspace-slice";
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 
 export interface WorkspaceSwitcherState {
   selectedIndex: number;
@@ -52,8 +52,8 @@ function resetSwitcherState(
   };
 }
 
-export const workspaceSwitcherReducer = createReducer<WorkspaceSwitcherState>(initialState)
-  .with(openSwitcher, (state, { payload: [workspaceIds, activeWorkspaceId] }) => {
+export const workspaceSwitcherReducer = createReducer<WorkspaceSwitcherState>(initialState);
+workspaceSwitcherReducer.with(openSwitcher, (state, { payload: [workspaceIds, activeWorkspaceId] }) => {
     if (workspaceIds.length === 0) {
       return state;
     }
@@ -68,16 +68,16 @@ export const workspaceSwitcherReducer = createReducer<WorkspaceSwitcherState>(in
       selectedIndex,
       selectionHandled: false,
     };
-  })
-  .with(closeSwitcher, (state) => {
+  });
+workspaceSwitcherReducer.with(closeSwitcher, (state) => {
     if (state.selectionHandled) {
       return state;
     }
 
     const nextSwitcher = resetSwitcherState(state, true);
     return nextSwitcher;
-  })
-  .with(cycleNext, (state, { payload: [workspaceCount] }) => {
+  });
+workspaceSwitcherReducer.with(cycleNext, (state, { payload: [workspaceCount] }) => {
     if (state.selectionHandled || workspaceCount === 0) {
       return state;
     }
@@ -86,8 +86,8 @@ export const workspaceSwitcherReducer = createReducer<WorkspaceSwitcherState>(in
       ...state,
       selectedIndex: (state.selectedIndex + 1) % workspaceCount,
     };
-  })
-  .with(cyclePrevious, (state, { payload: [workspaceCount] }) => {
+  });
+workspaceSwitcherReducer.with(cyclePrevious, (state, { payload: [workspaceCount] }) => {
     if (state.selectionHandled || workspaceCount === 0) {
       return state;
     }
@@ -96,12 +96,12 @@ export const workspaceSwitcherReducer = createReducer<WorkspaceSwitcherState>(in
       ...state,
       selectedIndex: (state.selectedIndex - 1 + workspaceCount) % workspaceCount,
     };
-  })
-  .with(confirmSelection, (state) => {
+  });
+workspaceSwitcherReducer.with(confirmSelection, (state) => {
     if (state.selectionHandled) {
       return state;
     }
 
     return resetSwitcherState(state, true);
-  })
-  .with(resetWorkspaceState, () => initialState);
+  });
+workspaceSwitcherReducer.with(resetWorkspaceState, () => initialState);

@@ -1,15 +1,8 @@
 /**
- * Agent read service — the sanctioned post-saga on-demand session-load mechanism.
+ * Reusable agent-session read seam used by the agent read saga and event router.
  *
- * The `ensureAgentSessionLoaded` trigger lost its handler when the saga runtime
- * was removed (it used to live in `sagas/ensure-agent-session-saga.ts`), so the
- * AgentCard / WorkspaceHoverCard dispatch sites became no-ops and a selected
- * agent's session/conversation never hydrated on demand. This restores the read
- * path WITHOUT re-adding a saga and WITHOUT changing any call site:
- * `createAgentReadMiddleware()` observes every dispatched action and, on
- * `ensureAgentSessionLoaded`, runs `ensureAgentSession(agentId)` — which fetches
- * `appClient.agents.get` and hydrates the store exactly as the agents-seeder
- * does: `bulkUpsertSessions([session])` populates the agent-session slice
+ * `ensureAgentSession(agentId)` fetches `appClient.agents.get` and hydrates the
+ * store: `bulkUpsertSessions([session])` populates the agent-session slice
  * (`byAgentId` + messages = the conversation), and `upsertSession(session)`
  * registers the agent id in the workspace-agents index. `upsertSession` alone is
  * NOT enough — the agent-session reducer only consumes `bulkUpsertSessions`.
@@ -27,23 +20,19 @@
  * (Track C chat snapshot) — this service does not fabricate them.
  *
  * Dependency-light per src/store AGENTS.md: imports only the AppClient seam, the
- * configured store, the slice actions, and the logger (NOT selectors — importing
- * them would evaluate `store.createSelector` while the store module is still
- * mid-initialization through the middleware chain).
+ * configured store, the slice actions, and the logger.
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
-import { appClient } from "$lib/client";
-import { store as appStore } from "$store/renderer/store";
-import { ensureAgentSessionLoaded } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
+import { appClient } from '$lib/client';
+import { store as appStore } from '$store/renderer/store';
 import {
   bulkUpsertSessions,
   upsertSession,
-} from "$store/renderer/slices/agent-session/agent-session-slice";
-import { createLogger } from "$lib/utils/client-logger";
-import { isAgentDeletionPending } from "./utils/pending-agent-deletions";
-import { staleRuntimeFlagClearUpsertOptions } from "./utils/stale-runtime-flag-clear";
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { createLogger } from '$lib/utils/client-logger';
+import { isAgentDeletionPending } from './utils/pending-agent-deletions';
+import { staleRuntimeFlagClearUpsertOptions } from './utils/stale-runtime-flag-clear';
 
-const logger = createLogger("AgentReadService");
+const logger = createLogger('AgentReadService');
 
 /** In-flight loads keyed by agent id; coalesces concurrent requests. */
 const inFlight = new Map<string, Promise<void>>();
@@ -64,11 +53,6 @@ export async function ensureAgentSession(agentId: string): Promise<void> {
 
   const run = (async () => {
     try {
-      // Capture BEFORE the fetch (monorepo#1250): a pre-existing both-true
-      // runtime-flag pair paired with a fresh session the daemon reports
-      // idle is a crash-orphaned leftover; a pair set DURING the fetch
-      // (chatSendStarted racing this read) keeps the pair-guard's default
-      // preservation semantics.
       const storedBefore = appStore.state.agentSessions?.byAgentId[agentId];
       const hadInFlightPairBeforeFetch =
         storedBefore?.isStreaming === true && storedBefore?.isProcessing === true;
@@ -98,7 +82,7 @@ export async function ensureAgentSession(agentId: string): Promise<void> {
         appStore.dispatch(upsertSession(merged));
       }
     } catch (error) {
-      logger.error("Failed to load agent session", error);
+      logger.error('Failed to load agent session', error);
     } finally {
       inFlight.delete(agentId);
     }
@@ -106,23 +90,4 @@ export async function ensureAgentSession(agentId: string): Promise<void> {
 
   inFlight.set(agentId, run);
   return run;
-}
-
-/**
- * Middleware that gives `ensureAgentSessionLoaded` a real handler: after the
- * action passes through the reducer, it kicks off a (deduped) session load for
- * the target agent. Fire-and-forget — dispatch stays synchronous and never
- * throws. The action payload is the `[wsId, agentId]` tuple.
- */
-export function createAgentReadMiddleware(): StoreMiddleware {
-  return () => (next) => (action) => {
-    const result = next(action);
-    if (action && action.type === ensureAgentSessionLoaded.type) {
-      const agentId = Array.isArray(action.payload) ? action.payload[1] : undefined;
-      if (typeof agentId === "string" && agentId.length > 0) {
-        void ensureAgentSession(agentId);
-      }
-    }
-    return result;
-  };
 }

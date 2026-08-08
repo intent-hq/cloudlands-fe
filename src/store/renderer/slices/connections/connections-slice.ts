@@ -8,14 +8,19 @@
  * The list + active selection are authoritative from main: they are set from
  * the `connections:list` result on boot and refreshed on every
  * `connections:changed` push (both carry `ConnectionsListResult`). The op
- * status + cert-mismatch are renderer-local UI state driven by the thunks and
- * the `connections:cert-mismatch` push (see connections-service.ts).
+ * status + cert-mismatch are renderer-local UI state driven by saga-owned
+ * async actions and the `connections:cert-mismatch` push.
  */
 
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type {
+  AddConnectionParams,
+  CaptureFingerprintParams,
+  CaptureFingerprintResult,
+  ConnectionRecord,
   ConnectionsState,
   ConnectionsListResult,
   ConnectionCertMismatchEvent,
@@ -27,7 +32,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 export const initialState: ConnectionsState = {
-  connections: [],
+  connections: createCollection<ConnectionRecord, 'id'>('id'),
   activeId: LOCAL_CONNECTION_ID,
   status: 'idle',
   error: null,
@@ -96,32 +101,66 @@ export const protocolMismatchModalDismissed = createAction(
   'connections/protocolMismatchModalDismissed',
 );
 
+/** Saga-owned initial/list hydration trigger. */
+export const loadConnectionsRequested = createAsyncAction<[], void>(
+  'connections/load',
+  'connections/loadRequested',
+);
+
+/** Saga-owned trust-on-first-use fingerprint request. */
+export const captureFingerprintRequested = createAsyncAction<
+  [params: CaptureFingerprintParams],
+  CaptureFingerprintResult
+>('connections/captureFingerprint', 'connections/captureFingerprintRequested');
+
+/** Saga-owned connection add request. Resolves with the token-free record. */
+export const addConnectionRequested = createAsyncAction<
+  [params: AddConnectionParams],
+  ConnectionRecord
+>('connections/add', 'connections/addRequested');
+
+/** Saga-owned stored-connection removal request. */
+export const forgetConnectionRequested = createAsyncAction<[id: string], void>(
+  'connections/forget',
+  'connections/forgetRequested',
+);
+
+/** Saga-owned active-backend switch request. */
+export const switchConnectionRequested = createAsyncAction<[id: string], void>(
+  'connections/switch',
+  'connections/switchRequested',
+);
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
-export const connectionsReducer = createReducer<ConnectionsState>(initialState)
-  .with(connectionsListReceived, (state, { payload: [result] }) => {
-    return { ...state, connections: result.connections, activeId: result.activeId };
-  })
-  .with(connectOperationStarted, (state) => {
-    return { ...state, status: 'connecting', error: null };
-  })
-  .with(connectOperationSettled, (state) => {
-    return { ...state, status: 'idle', error: null };
-  })
-  .with(connectOperationFailed, (state, { payload: [error] }) => {
-    return { ...state, status: 'error', error };
-  })
-  .with(certMismatchReceived, (state, { payload: [event] }) => {
-    return { ...state, certMismatch: event };
-  })
-  .with(certMismatchCleared, (state) => {
-    return { ...state, certMismatch: null };
-  })
-  .with(protocolMismatchReceived, (state, { payload: [event] }) => {
-    return { ...state, protocolMismatch: event, protocolMismatchModalDismissed: false };
-  })
-  .with(protocolMismatchModalDismissed, (state) => {
-    return { ...state, protocolMismatchModalDismissed: true };
-  });
+export const connectionsReducer = createReducer<ConnectionsState>(initialState);
+connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) => {
+  return {
+    ...state,
+    connections: createCollection<ConnectionRecord, 'id'>('id', result.connections),
+    activeId: result.activeId,
+  };
+});
+connectionsReducer.with(connectOperationStarted, (state) => {
+  return { ...state, status: 'connecting', error: null };
+});
+connectionsReducer.with(connectOperationSettled, (state) => {
+  return { ...state, status: 'idle', error: null };
+});
+connectionsReducer.with(connectOperationFailed, (state, { payload: [error] }) => {
+  return { ...state, status: 'error', error };
+});
+connectionsReducer.with(certMismatchReceived, (state, { payload: [event] }) => {
+  return { ...state, certMismatch: event };
+});
+connectionsReducer.with(certMismatchCleared, (state) => {
+  return { ...state, certMismatch: null };
+});
+connectionsReducer.with(protocolMismatchReceived, (state, { payload: [event] }) => {
+  return { ...state, protocolMismatch: event, protocolMismatchModalDismissed: false };
+});
+connectionsReducer.with(protocolMismatchModalDismissed, (state) => {
+  return { ...state, protocolMismatchModalDismissed: true };
+});

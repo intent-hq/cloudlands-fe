@@ -1,5 +1,5 @@
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   normalizePaletteFileMru,
   getPaletteMruEntries,
@@ -29,41 +29,41 @@ export const hydratePaletteFileMru =
 export const recordPaletteFileMru =
   createAction<[path: string, timestamp: number]>('palette/recordFileMru');
 
-export const paletteReducer = createReducer<PaletteState>(initialState)
-  .with(openPalette, (state) => ({
+export const paletteReducer = createReducer<PaletteState>(initialState);
+paletteReducer.with(openPalette, (state) => ({
     ...state,
     isOpen: true,
     query: '',
-  }))
-  .with(closePalette, (state) => ({
+  }));
+paletteReducer.with(closePalette, (state) => ({
     ...state,
     isOpen: false,
     query: '',
-  }))
-  .with(openGoToLine, (state) => ({
+  }));
+paletteReducer.with(openGoToLine, (state) => ({
     ...state,
     isOpen: true,
     query: ':',
-  }))
-  .with(togglePalette, (state) => {
+  }));
+paletteReducer.with(togglePalette, (state) => {
     if (state.isOpen) {
       return { ...state, isOpen: false, query: '' };
     }
     return { ...state, isOpen: true, query: '' };
-  })
-  .with(hydratePaletteMruEntries, (state, { payload: [entries] }) => ({
+  });
+paletteReducer.with(hydratePaletteMruEntries, (state, { payload: [entries] }) => ({
     ...state,
     ...normalizePaletteMruState(entries),
-  }))
-  .with(recordPaletteMruItem, (state, { payload: [type, id, timestamp] }) => ({
+  }));
+paletteReducer.with(recordPaletteMruItem, (state, { payload: [type, id, timestamp] }) => ({
     ...state,
     ...normalizePaletteMruState([{ type, id, timestamp }, ...getPaletteMruEntries(state)]),
-  }))
-  .with(hydratePaletteFileMru, (state, { payload: [fileMru] }) => ({
+  }));
+paletteReducer.with(hydratePaletteFileMru, (state, { payload: [fileMru] }) => ({
     ...state,
     fileMru: normalizePaletteFileMru(fileMru),
-  }))
-  .with(recordPaletteFileMru, (state, { payload: [path, timestamp] }) => ({
+  }));
+paletteReducer.with(recordPaletteFileMru, (state, { payload: [path, timestamp] }) => ({
     ...state,
     fileMru: normalizePaletteFileMru({ ...state.fileMru, [path]: timestamp }),
   }));

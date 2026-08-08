@@ -1,33 +1,22 @@
 # State Management Guide
 
-> **Architecture update — Redux and the saga runtime have been removed.**
-> The `redux`, `redux-saga`, and `typed-redux-saga` packages are no longer
-> dependencies. The in-use store surface (`svelte-store`, `types`,
-> `utils/store/create-action`, `utils/store/create-reducer`,
-> `utils/store/boolean-preference`, `utils/collections/collection-utils`)
-> lives in a local, redux/saga-free shim at `src/lib/store-shim/`, imported
-> directly via `$lib/store-shim/...`; the main/preload bundles rewrite the
-> `$lib/...` specifiers to relative paths in `scripts/fix-esm-imports.ts`.
->
-> The app is now mock-driven via the `AppClient` (`src/lib/client/`). The saga
-> runtime no longer exists: `startAllAppSagas`, `startAllMainSagas`, and
-> `store.runSaga(sagaFn)` no longer start anything (the Store's `runSaga` is a
-> no-op), and `selector.effect(...)` throws. Use `selector.select(state, ...args)`
-> for one-shot reads and the configured Store's `dispatch` for writes. References
-> below to saga registries, `store.runSaga`, and the real npm package describe the
-> historical architecture and are retained only for context.
+> **Architecture update — the renderer uses the published Themis runtime.**
+> `@augmentcode/themis` provides the Store, actions, reducers, selectors, and
+> collection utilities. Themis initializes its saga middleware during
+> `Store.init()`, and the root layout starts the app-owned saga registry with
+> `store.runSaga(sagaFn)`.
 
 This is the project entrypoint for state-management orientation. The store API
-surface is the local shim at `src/lib/store-shim/`; app-specific companion
+surface is the installed `@augmentcode/themis` package; app-specific companion
 notes live under `src/store/renderer/docs/`.
 
-If this doc conflicts with the shim implementation, follow the shim and report
-the drift.
+If this doc conflicts with the installed Themis runtime, follow the runtime and
+report the drift.
 
 ## Repository orientation
 
 Renderer shared/domain state lives under `src/store/renderer/` and uses the
-configured `Store` from `$lib/store-shim/svelte-store`. Svelte store modules
+configured `Store` from `@augmentcode/themis`. Svelte store modules
 (`*.store.svelte.ts`) are deprecated migration targets; do not create new ones or
 expand existing ones.
 
@@ -52,6 +41,18 @@ The current app-specific map is:
   selectors (the main-process store itself has been removed).
 - `src/store/main/redux-store-bridge.ts` — neutralized no-op bridge retained so
   main-process services continue to type-check.
+
+## Side-effect ownership
+
+Renderer business side effects belong to root-owned Themis/Redux sagas. API and
+IPC calls, persistence, timers, subscriptions, navigation, and toasts must not
+be introduced through Store middleware or a new renderer bridge.
+
+`src/store/renderer/middleware.ts` contains exactly five approved infrastructure
+and diagnostic categories: store guards, action batching, logging, state-reference
+checks, and structured-clone checks. Existing web/mock IPC bridge installers may
+adapt Electron-shaped channels, but must not become alternate business workflows.
+`pnpm validate:architecture` enforces these boundaries.
 
 ## Local rules worth remembering
 

@@ -79,6 +79,7 @@ export class PanelLayoutAdapter {
   constructor(public readonly workspaceId: string) {}
 
   private get state() { return appStore.state; }
+  // TODO(themis-migration): narrow to `unknown` and guard, see monorepo#1170
   private dispatch(action: any) { appStore.dispatch(action); }
 
   // --- Imperative read methods (for event handlers / one-time reads only) ---

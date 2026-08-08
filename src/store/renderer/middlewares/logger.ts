@@ -1,4 +1,4 @@
-import type { StoreMiddleware } from "$lib/store-shim/types";
+import type { StoreMiddleware } from "@augmentcode/themis/types";
 
 function isPrimitive(value: unknown): value is string | number | bigint | boolean | symbol | null | undefined {
   return value === null || (typeof value !== "object" && typeof value !== "function");

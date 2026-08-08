@@ -4,18 +4,13 @@
  * (there is no main process, so `agent:idle` → OS notification →
  * `notification:show`/`notification:navigate` never happens).
  *
- * Active ONLY when `getPlatform() === 'web'` (NOT `isElectron()`, which is
- * true under the dev browser mock). On Electron this middleware registers
- * nothing and the native pipeline is untouched.
- *
- * Event source: the daemon `events.subscribe` firehose the renderer already
- * receives — `daemon-events-bridge.client.ts` re-emits `agent:idle` onto the
- * legacy mock-IPC channel (`relayLegacyIpcEvent`), which this service listens
- * on. Trigger conditions, suppression rules, and payload shape are a port of
+ * The notifications saga owns the platform-gated `agent:idle` channel. This
+ * module retains callable browser notification helpers used by the web bridge
+ * and focused tests. Trigger conditions, suppression rules, and payload shape
+ * are a port of
  * `main/notification.service.ts#handleAgentIdle`:
  *   - `notifications.enabled` off → skip (read from the renderer store, which
- *     the user-preferences-notification-persistence middleware keeps in sync
- *     with the daemon `notifications.*` catalog).
+ *     the settings saga keeps in sync with the daemon catalog).
  *   - background agents (event fast path or `agent.list` metadata) → skip.
  *   - other agents still streaming/responding in the workspace → skip.
  *   - focused + viewing the event's workspace + `soundOnlyWhenUnfocused` →
@@ -36,12 +31,9 @@
  * the shared `handleNotificationNavigate` (workspace page, or chief → sidebar
  * Assistant panel + thread selection).
  */
-import type { StoreMiddleware } from '$lib/store-shim/types';
 import { store as appStore } from '$store/renderer/store';
 import type { StoreState } from '$store/renderer/types';
-import { addMockIpcListener } from '$shared/ipc-mock-router';
 import { backendRequest } from '$lib/client/live/backend-transport';
-import { getPlatform } from '$lib/utils/platform-capabilities';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -52,7 +44,6 @@ import { playNotificationSoundPerSettings } from './notification-sound-gate';
 
 const logger = createLogger('WebNotificationService');
 
-let installed = false;
 /** Log the missing-permission skip once, not on every idle event. */
 let loggedPermissionSkip = false;
 /** In-flight permission prompt, shared so concurrent idle events coalesce
@@ -61,12 +52,7 @@ let loggedPermissionSkip = false;
 let pendingPermissionRequest: Promise<NotificationPermission> | null = null;
 /** Strong refs so pending notifications aren't GC'd before click (parity with main). */
 const activeNotifications = new Set<Notification>();
-/**
- * Latest notification per tag. Tag-based replacement may not fire `onclose`
- * for the replaced instance, so we evict it here to keep the strong-reference
- * set from growing over repeated same-tag idles.
- */
-const notificationsByTag = new Map<string, Notification>();
+const activeNotificationsByTag = new Map<string, Notification>();
 
 /** True when the browser exposes the Notification API (jsdom-safe guard). */
 function isNotificationSupported(): boolean {
@@ -184,8 +170,7 @@ interface AgentListResult {
 async function fetchWorkspaceTitle(workspaceId: string): Promise<string | undefined> {
   try {
     const response = (await backendRequest('workspace.get', { workspaceId })) as
-      | { workspace?: { title?: string } }
-      | undefined;
+      { workspace?: { title?: string } } | undefined;
     const title = response?.workspace?.title;
     return typeof title === 'string' && title.length > 0 ? title : undefined;
   } catch {
@@ -211,33 +196,15 @@ async function showWebNotification(
   if (!granted) return;
 
   try {
-    // Native tag-based replacement: same workspace+agent notifications
-    // replace instead of stacking. No `renotify` — our own sound gate above
-    // already plays the sound on every idle that reaches this path. Test
-    // notifications (no workspaceId/agentId) carry no tag and stack freely.
     const tag = workspaceId && agentId ? `${workspaceId}:${agentId}` : undefined;
-    const notification = new Notification(content.title, {
-      body: content.body,
-      ...(tag ? { tag } : {}),
-    });
+    const notification = new Notification(content.title, { body: content.body, ...(tag ? { tag } : {}) });
+    const previous = tag ? activeNotificationsByTag.get(tag) : undefined;
+    if (previous) activeNotifications.delete(previous);
     activeNotifications.add(notification);
-    if (tag) {
-      // Tag replacement may retire the previous notification WITHOUT an
-      // onclose — evict it so the set cannot leak.
-      const replaced = notificationsByTag.get(tag);
-      if (replaced) {
-        activeNotifications.delete(replaced);
-      }
-      notificationsByTag.set(tag, notification);
-    }
-    const release = () => {
-      activeNotifications.delete(notification);
-      if (tag && notificationsByTag.get(tag) === notification) {
-        notificationsByTag.delete(tag);
-      }
-    };
+    if (tag) activeNotificationsByTag.set(tag, notification);
     notification.onclick = () => {
-      release();
+      activeNotifications.delete(notification);
+      if (tag && activeNotificationsByTag.get(tag) === notification) activeNotificationsByTag.delete(tag);
       try {
         window.focus();
       } catch {
@@ -253,10 +220,12 @@ async function showWebNotification(
       notification.close();
     };
     notification.onclose = () => {
-      release();
+      activeNotifications.delete(notification);
+      if (tag && activeNotificationsByTag.get(tag) === notification) activeNotificationsByTag.delete(tag);
     };
     notification.onerror = () => {
-      release();
+      activeNotifications.delete(notification);
+      if (tag && activeNotificationsByTag.get(tag) === notification) activeNotificationsByTag.delete(tag);
       logger.warn('Web notification failed to show', { title: content.title });
     };
   } catch (error) {
@@ -309,8 +278,7 @@ export async function handleWebAgentIdle(event: AgentIdleEvent): Promise<void> {
     // payload), and `isStreaming`/`isResponding` feed the other-agents-active
     // suppression gate below (parity with main/notification.service.ts).
     const agentList = (await backendRequest('agent.list', { workspaceId })) as
-      | AgentListResult
-      | undefined;
+      AgentListResult | undefined;
     const agents = agentList?.agents ?? [];
     const idleAgent = agents.find((agent) => agent.id === event.data.agentId);
 
@@ -440,36 +408,15 @@ export async function requestWebNotificationPermission(): Promise<{
   }
 }
 
-/**
- * Middleware activating the web notification service. Registers ONE listener
- * on the relayed legacy `agent:idle` channel when the platform is web;
- * registers nothing on Electron (native pipeline unchanged). The listener
- * persists for the renderer lifetime (zoom-sync/notification-ipc idiom).
- */
-export function createWebNotificationMiddleware(): StoreMiddleware {
-  return () => {
-    if (!installed && getPlatform() === 'web') {
-      installed = true;
-      addMockIpcListener('agent:idle', (payload) => {
-        const event = payload as AgentIdleEvent | undefined;
-        if (!event || event.type !== 'agent:idle' || !event.data) return;
-        void handleWebAgentIdle(event);
-      });
-    }
-    return (next) => (action) => next(action);
-  };
-}
-
-/** Test-only: observe the strong-reference set size (leak regression). @internal */
-export function __getActiveWebNotificationCountForTesting(): number {
-  return activeNotifications.size;
-}
-
 /** Test-only: reset module state between tests. @internal */
 export function __resetWebNotificationServiceForTesting(): void {
-  installed = false;
   loggedPermissionSkip = false;
   pendingPermissionRequest = null;
   activeNotifications.clear();
-  notificationsByTag.clear();
+  activeNotificationsByTag.clear();
+}
+
+/** Test-only: visible active notification strong-reference count. @internal */
+export function __getActiveWebNotificationCountForTesting(): number {
+  return activeNotifications.size;
 }

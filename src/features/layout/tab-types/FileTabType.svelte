@@ -10,19 +10,19 @@
   import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   import {
-  selectFileContent,
-  selectFileError,
-  selectFileIsBinary,
-  selectFileIsDirty,
-  selectFileLastUpdated,
-  selectFileLoading,
-  selectFileSaving,
-} from '$store/renderer/slices/files/files-selectors';
-  import { loadFileContentRequested } from '$store/renderer/slices/files/files-slice';
+    selectFileContent,
+    selectFileError,
+    selectFileIsBinary,
+    selectFileIsDirty,
+    selectFileLastUpdated,
+    selectFileLoading,
+    selectFileSaving,
+  } from '$store/renderer/slices/files/files-selectors';
   import {
-  writeFileContent,
-  flushFileContent,
-} from '$features/files/files-write-service';
+    loadFileContentRequested,
+    saveFileContentRequested,
+    updateFileContent,
+  } from '$store/renderer/slices/files/files-slice';
   import { selectFileTrackingChanges } from '$store/renderer/slices/changes/changes-selectors';
   import type { TrackedChange } from '$features/file-tracking/types';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -31,10 +31,7 @@
   import { LineType } from '$shared/types';
   import { getLanguageFromPath } from '$lib/utils/file-utils';
   import { isAbsolutePath, isAbsolutePathOutsideRoot, isTildePath } from '$lib/utils/path-utils';
-  import {
-  parseHunksToLineChanges,
-  type LineChange,
-} from '$lib/utils/line-change-decorations';
+  import { parseHunksToLineChanges, type LineChange } from '$lib/utils/line-change-decorations';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import MarkdownFileEditor from '$lib/components/editor/MarkdownFileEditor.svelte';
   import FileViewer from '$lib/components/editor/FileViewer.svelte';
@@ -43,26 +40,26 @@
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import SaveIndicator from '$lib/components/ui/SaveIndicator.svelte';
   import {
-  selectLineWrapping,
-  selectDiffIndicators,
-} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
+    selectLineWrapping,
+    selectDiffIndicators,
+  } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
-  toggleLineWrapping,
-  toggleDiffIndicators,
-} from '$store/renderer/slices/ui-layout/ui-layout-slice';
+    toggleLineWrapping,
+    toggleDiffIndicators,
+  } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import {
-  faPaintbrush,
-  faTextWidth,
-  faPencil,
-  faTrash,
-  faEye,
-  faCode,
-} from '@fortawesome/free-solid-svg-icons';
+    faPaintbrush,
+    faTextWidth,
+    faPencil,
+    faTrash,
+    faEye,
+    faCode,
+  } from '@fortawesome/free-solid-svg-icons';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import { m } from '$shared/paraglide/messages.js';
   import { writable } from 'svelte/store';
@@ -141,8 +138,7 @@
   const isOutsideWorkspace = $derived(
     !!(
       tab.filePath &&
-      (isTildePath(tab.filePath) ||
-        (repoPath && isAbsolutePathOutsideRoot(tab.filePath, repoPath)))
+      (isTildePath(tab.filePath) || (repoPath && isAbsolutePathOutsideRoot(tab.filePath, repoPath)))
     ),
   );
   const fileAbsolutePath = $derived(
@@ -172,14 +168,24 @@
   });
   const fileHasChanges = $derived(!!fileChange);
 
-  // Auto-save is debounced inside the files-write-service (keyed by ws::path).
+  // Auto-save is debounced inside filesWriteSaga (keyed by ws::path).
   // Flush any pending save when the file/workspace changes or the tab unmounts
   // so an in-flight edit is never lost.
   $effect(() => {
     const wsId = workspaceId;
     const filePath = tab.filePath;
     return () => {
-      if (wsId && filePath) flushFileContent(wsId, filePath);
+      if (!wsId || !filePath) return;
+      const content = selectFileContent.select(appStore.state, wsId, filePath);
+      const dirty = selectFileIsDirty.select(appStore.state, wsId, filePath);
+      const absolutePath = isAbsolutePath(filePath)
+        ? filePath
+        : repoPath
+          ? `${repoPath}/${filePath}`
+          : null;
+      if (dirty && content !== null && absolutePath) {
+        appStore.dispatch(saveFileContentRequested(wsId, filePath, absolutePath, content));
+      }
     };
   });
 
@@ -202,12 +208,14 @@
   function setFileContentFromEditor(content: string) {
     if (!tab.filePath || !workspaceId || !fileAbsolutePath) return;
     // Optimistic local update + debounced file.write through the seam.
-    writeFileContent(workspaceId, tab.filePath, fileAbsolutePath, content);
+    appStore.dispatch(updateFileContent(workspaceId, tab.filePath, content));
   }
 
   function saveFileContent() {
     if (!tab.filePath || !fileAbsolutePath || fileContent === null || fileSaving) return;
-    writeFileContent(workspaceId, tab.filePath, fileAbsolutePath, fileContent, { immediate: true });
+    appStore.dispatch(
+      saveFileContentRequested(workspaceId, tab.filePath, fileAbsolutePath, fileContent),
+    );
   }
 
   // Fetch line changes for diff indicators
@@ -278,8 +286,7 @@
     const filePath = tab.filePath;
     const fileName = filePath.split('/').pop() || m.layout_fileTab_file_fallback();
     // Capture current content so we can restore on undo
-    const savedContent =
-      selectFileContent.select(appStore.state, workspaceId, filePath) ?? '';
+    const savedContent = selectFileContent.select(appStore.state, workspaceId, filePath) ?? '';
 
     await deleteWithUndo(
       `"${fileName}"`,
@@ -298,7 +305,9 @@
       },
       async () => {
         // Undo action — re-create the file with saved content (immediate write).
-        writeFileContent(workspaceId, filePath, absolutePath, savedContent, { immediate: true });
+        appStore.dispatch(
+          saveFileContentRequested(workspaceId, filePath, absolutePath, savedContent),
+        );
       },
     );
   }

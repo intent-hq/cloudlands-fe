@@ -26,16 +26,12 @@
  * (`workspaceId`, §5.41 v5.1) so the daemon injects the workspace's
  * auto-derived vocabulary server-side; the OS-engine route fetches the same
  * terms via the cached workspace-vocabulary-service for parity.
- * Dependency-light middleware module per src/store/renderer/AGENTS.md: no
- * selector imports; the toast lib is imported lazily.
+ * The app-owned transcription saga owns action watching and cancellation;
+ * this module retains the trigger-agnostic flow helpers.
  */
-import type { StoreMiddleware } from '$lib/store-shim/types';
 import { appClient } from '$lib/client';
 import type { VoiceTranscribeContext } from '$lib/client';
-import {
-  OsTranscriptionError,
-  transcribeWithOs,
-} from '$features/voice/os-transcription-service';
+import { OsTranscriptionError, transcribeWithOs } from '$features/voice/os-transcription-service';
 import { getWorkspaceVocabularyTerms } from '$features/voice/workspace-vocabulary-service';
 import {
   resolveEffectiveVoiceEngine,
@@ -43,19 +39,16 @@ import {
 } from '$features/voice/effective-voice-engine';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
-import { getItem, type Collection } from '$lib/store-shim/utils/collections/collection-utils';
+import { getItem, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
 import {
   actionHudHidden,
   actionHudShown,
-  pttRecordingFinished,
-  pttSendRequested,
   voiceTranscriptionFinished,
   voiceTranscriptionStarted,
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
-import type { PttRecordingFinishedPayload } from './ptt-controller';
 import type { VoiceRecordingResult } from './voice-recorder';
 import { voiceSettingsToastAction } from './voice-setup-toast';
 import { focusAgentComposer } from '../actions/action-key-service';
@@ -90,7 +83,7 @@ export const TRANSCRIPT_INSERT_DELAYS_MS = [250, 800] as const;
 /** Shared id: transcription toasts replace one another instead of stacking. */
 const TRANSCRIPTION_TOAST_ID = 'hardware-console-voice-transcription';
 
-/** Lazily pull the toast lib so this middleware-reachable module stays light. */
+/** Lazily pull the toast lib so this service stays light. */
 let toastPromise: Promise<(typeof import('svelte-sonner'))['toast']> | null = null;
 function getToast() {
   if (!toastPromise) toastPromise = import('svelte-sonner').then((module) => module.toast);
@@ -230,7 +223,7 @@ export function mergeOsContextualStrings(
  * to the daemon — the triggers gate that case up front, and the daemon's
  * no-key error toast covers any race. State is read at call time so a
  * settings change applies to the next dictation without re-wiring the
- * middleware.
+ * saga.
  */
 async function transcribeWithSelectedEngine(
   audio: Blob,
@@ -447,9 +440,12 @@ export async function handleFinishedRecording(
   const hudLabel = m.hardwareConsole_voice_transcribing_label();
   dispatch(voiceTranscriptionStarted());
   dispatch(actionHudShown(hudLabel));
-  // The action-key middleware hides the HUD after ~1.2s of inactivity;
+  // The action-key saga hides the HUD after ~1.2s of inactivity;
   // re-dispatching the same label re-arms its timer without state churn.
-  const hudRefresh = setInterval(() => dispatch(actionHudShown(hudLabel)), TRANSCRIBING_HUD_REFRESH_MS);
+  const hudRefresh = setInterval(
+    () => dispatch(actionHudShown(hudLabel)),
+    TRANSCRIBING_HUD_REFRESH_MS,
+  );
   // Single idempotent reset for the in-flight state, guaranteed by the
   // finally below so no exit path (helper crash, insertion throw, toast
   // import failure) can leave the "Transcribing…" HUD stuck.
@@ -569,24 +565,4 @@ export async function runTranscriptionFlow(
     return;
   }
   await handleFinishedRecording(recording, deps, options);
-}
-
-/**
- * Middleware: run the transcription flow for every `pttRecordingFinished`
- * dispatch (fire-and-forget — the flow settles via HUD/toasts/insertion).
- * The payload's `autoSend` flag (send gestures) carries through to the
- * flow; `pttSendRequested` (send gesture without transcribable audio)
- * sends the target composer's current content as-is, no transcription.
- */
-export function createVoiceTranscriptionMiddleware(deps: TranscriptionDeps = {}): StoreMiddleware {
-  return () => (next) => (action) => {
-    const result = next(action);
-    if (action && action.type === pttRecordingFinished.type) {
-      const [recording] = (action as { payload: [PttRecordingFinishedPayload] }).payload;
-      void runTranscriptionFlow(recording, { autoSend: recording.autoSend === true }, deps);
-    } else if (action && action.type === pttSendRequested.type) {
-      void runTranscriptionFlow(null, { autoSend: true }, deps);
-    }
-    return result;
-  };
 }
