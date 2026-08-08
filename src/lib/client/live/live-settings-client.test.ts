@@ -270,6 +270,58 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
     });
   });
 
+  // monorepo#1729: the quick-action model settings live under `quickActions.*`
+  // on the wire (renamed from `backgroundAgents.*`, which the daemon retired).
+  it("getBackgroundAgentSettings folds the quickActions.* paths out of settings.list", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      settings: [
+        {
+          path: "quickActions.defaultModel",
+          label: "",
+          description: "",
+          category: "providers",
+          type: "string",
+          value: "auggie:haiku",
+        },
+        {
+          path: "quickActions.typeOverrides",
+          label: "",
+          description: "",
+          category: "providers",
+          type: "object",
+          value: { commit: "auggie:fast", pr: "", review: "", fast: "" },
+        },
+        {
+          path: "quickActions.providerSettings",
+          label: "",
+          description: "",
+          category: "providers",
+          type: "object",
+          value: { auggie: { defaultModel: "auggie:haiku" } },
+        },
+      ],
+    });
+    const client = new LiveSettingsClient();
+
+    const result = await client.getBackgroundAgentSettings();
+    expect(mockedRequest).toHaveBeenCalledWith("settings.list");
+    expect(result).toEqual({
+      defaultModel: "auggie:haiku",
+      typeOverrides: { commit: "auggie:fast", pr: "", review: "", fast: "" },
+      providerSettings: { auggie: { defaultModel: "auggie:haiku" } },
+    });
+  });
+
+  it("setBackgroundAgentSettings writes the quickActions.* paths on the wire", async () => {
+    mockedRequest.mockResolvedValueOnce({ applied: [] });
+    const client = new LiveSettingsClient();
+
+    await client.setBackgroundAgentSettings({ defaultModel: "auggie:opus" });
+    expect(mockedRequest).toHaveBeenCalledWith("settings.update", {
+      changes: [{ path: "quickActions.defaultModel", value: "auggie:opus" }],
+    });
+  });
+
 
   it("getMcpServers preserves the daemon-assigned id so status events can resolve name", async () => {
     // The `mcp.servers:status-changed` bridge (§6.5) receives `{ serverId, status }`

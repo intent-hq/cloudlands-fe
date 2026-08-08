@@ -447,9 +447,10 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'user-mcp-settings', key: 'mcpServers' },
   },
   {
-    path: 'backgroundAgents.defaultModel',
+    path: 'quickActions.defaultModel',
     label: 'Default quick action model',
-    description: 'Default model for quick/background agents.',
+    description:
+      'Default model for single-shot quick actions (commit messages, PR descriptions, quick tasks). Never applied to agent sessions.',
     category: 'agents',
     type: 'string',
     source: 'local-storage',
@@ -459,7 +460,7 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'redux-action', action: 'backgroundAgentSettings/setDefaultModel' },
   },
   {
-    path: 'backgroundAgents.typeOverrides',
+    path: 'quickActions.typeOverrides',
     label: 'Quick action model overrides',
     description: 'Per-quick-action model overrides.',
     category: 'agents',
@@ -471,9 +472,9 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'redux-action', action: 'backgroundAgentSettings/setTypeOverride' },
   },
   {
-    path: 'backgroundAgents.providerSettings',
+    path: 'quickActions.providerSettings',
     label: 'Per-provider quick action settings',
-    description: 'Cached quick/background agent settings by provider ID.',
+    description: 'Cached quick action settings by provider ID.',
     category: 'agents',
     type: 'object',
     source: 'local-storage',

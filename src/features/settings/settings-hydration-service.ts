@@ -77,8 +77,8 @@ function applyOne(change: AppliedSettingChange): void {
       }
       return;
     }
-    case 'backgroundAgents.defaultModel':
-    case 'backgroundAgents.typeOverrides':
+    case 'quickActions.defaultModel':
+    case 'quickActions.typeOverrides':
       // These are bundled and applied via applyBackgroundAgentBundle at the
       // end of applySettingsChanges, so we don't dispatch here to avoid
       // duplicate/partial hydration. Individual path changes still trigger
@@ -91,7 +91,7 @@ function applyOne(change: AppliedSettingChange): void {
  * One-time migration of legacy persisted `haiku4.5` background-model values.
  *
  * The pre-provider-default persistence middleware wrote
- * `backgroundAgents.defaultModel: "haiku4.5"` on ANY background-settings
+ * `quickActions.defaultModel: "haiku4.5"` on ANY background-settings
  * action (with '' → haiku4.5 hydration normalization), so for existing
  * installs a persisted haiku4.5 is an artifact of the removed hardcode, not a
  * deliberate pick. On the first hydration per install, strip haiku4.5 (default
@@ -138,8 +138,8 @@ function migrateLegacyBackgroundModel(
     logger.info("migrating legacy haiku4.5 background-model settings to provider default");
     void appClient.settings
       .update([
-        { path: "backgroundAgents.defaultModel", value: migrated.defaultModel },
-        { path: "backgroundAgents.typeOverrides", value: migrated.typeOverrides },
+        { path: "quickActions.defaultModel", value: migrated.defaultModel },
+        { path: "quickActions.typeOverrides", value: migrated.typeOverrides },
       ])
       .catch((error) =>
         logger.error("failed to persist legacy background-model migration", error),
@@ -156,17 +156,17 @@ function migrateLegacyBackgroundModel(
 
 /**
  * Background-agent settings reconcile two dotted paths in one dispatch.
- * Only called when the delta actually includes at least one backgroundAgents.* key.
+ * Only called when the delta actually includes at least one quickActions.* key.
  */
 function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
   // A settings:changed delta may only include ONE of defaultModel / typeOverrides.
   // Fall back to current slice state for missing keys so partial updates don't drop values.
   const currentState = appStore.state.backgroundAgentSettings;
   const defaultModel =
-    (byPath.get('backgroundAgents.defaultModel') as string | undefined) ??
+    (byPath.get('quickActions.defaultModel') as string | undefined) ??
     currentState.defaultModel;
   const typeOverrides =
-    (byPath.get('backgroundAgents.typeOverrides') as
+    (byPath.get('quickActions.typeOverrides') as
       Record<BackgroundAgentType, string> | undefined) ?? currentState.typeOverrides;
 
   // Always dispatch when defaultModel is a string (even if empty) so typeOverrides can hydrate.
@@ -203,11 +203,11 @@ export function applySettingsChanges(changes: readonly AppliedSettingChange[]): 
   for (const change of changes) {
     applyOne(change);
     bundle.set(change.path, change.value);
-    if (change.path.startsWith('backgroundAgents.')) {
+    if (change.path.startsWith('quickActions.')) {
       hasBackgroundAgentPaths = true;
     }
   }
-  // Only reconcile background-agent bundle when the delta contains at least one backgroundAgents.* key
+  // Only reconcile quick-action bundle when the delta contains at least one quickActions.* key
   if (hasBackgroundAgentPaths) {
     applyBackgroundAgentBundle(bundle);
   }

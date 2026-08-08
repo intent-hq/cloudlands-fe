@@ -23,8 +23,8 @@ export function* persistBackgroundAgentSettingsWorker() {
     yield* call(
       [appClient.settings, appClient.settings.update],
       [
-        { path: 'backgroundAgents.defaultModel', value: defaultModel },
-        { path: 'backgroundAgents.typeOverrides', value: { ...typeOverrides } },
+        { path: 'quickActions.defaultModel', value: defaultModel },
+        { path: 'quickActions.typeOverrides', value: { ...typeOverrides } },
       ],
     );
   } catch (error) {
