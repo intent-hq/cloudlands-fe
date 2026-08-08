@@ -23,20 +23,19 @@
  *
  * The aggregated `getProviderAvailability()` client stays available for
  * non-onboarding callers (ProviderSelector, InitialAgentPicker,
- * resolve-onboarding-model, AuggieSetupGate). After each bulk fan-out we
- * invalidate its 30s cache so a subsequent aggregated caller sees the fresh
- * per-provider results instead of a pre-refresh snapshot.
+ * resolve-onboarding-model, AuggieSetupGate). It has no cache of its own
+ * (every call reaches the daemon directly, aside from in-flight
+ * coalescing), so a subsequent aggregated caller always sees fresh
+ * per-provider results with no invalidation step needed here.
  *
- * Dependency-light per src/store/renderer/AGENTS.md: imports the availability
- * client (cache-invalidation only), the configured store, slice actions, and
- * the logger (no selectors).
+ * Dependency-light per src/store/renderer/AGENTS.md: imports the configured
+ * store, slice actions, and the logger (no selectors).
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
 import { invoke } from "$lib/electron-bridge";
 import { createLogger } from "$lib/utils/client-logger";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { PROVIDER_AVAILABILITY_KEY_TO_ID } from "$shared/types/provider-availability";
-import { clearProviderAvailabilityCache } from "$features/providers/provider-availability.client";
 import { store as appStore } from "$store/renderer/store";
 
 const PROVIDERS_CHANNELS = IPC_CHANNELS.PROVIDERS;
@@ -134,11 +133,6 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
           runNpxDiscovery(),
         ]);
       } finally {
-        // The onboarding path just probed every provider fresh; drop the
-        // aggregated client cache so the next non-onboarding caller
-        // (settings, resolve-onboarding-model, …) picks up the same fresh
-        // state instead of returning a pre-refresh snapshot.
-        clearProviderAvailabilityCache();
         appStore.dispatch(checkAllProvidersComplete());
         inFlight = null;
       }
