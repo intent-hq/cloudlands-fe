@@ -21,6 +21,11 @@ export const selectProviderModelsCacheMap = store.createSelector(
 /**
  * One provider's cached catalog; `undefined` on a cache miss (never fetched
  * this session, or the cache was cleared on reconnect).
+ *
+ * Hydration consumes only `entry.models`; cached `warning`/`stale` are NOT
+ * replayed on mount — warning notices live in the renderer-global
+ * loading-state slice (`setLoadingStateForProvider`), which survives remounts
+ * on its own. The fields are stored verbatim per the fetch-result contract.
  */
 export const selectProviderModelsCacheEntry = store.createSelector(
   (state, providerId: string): ProviderModelsCacheEntry | undefined =>
