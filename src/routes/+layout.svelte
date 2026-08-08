@@ -30,6 +30,7 @@
   } from '$store/renderer/slices/release-notes/release-notes-selectors';
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { globalCleanupService } from '$features/memory/browser/global-cleanup.service';
+  import { startSplashGate } from '$features/backend/splash-gate';
   import {
     openPalette,
     closePalette,
@@ -291,13 +292,15 @@
   let paletteShortcuts: KeyboardShortcutManager | null = null;
 
   onMount(() => {
-    // Hide the splash screen from app.html now that Svelte has mounted
+    // Keep the splash visible until the backend connects, startup fails, or
+    // the bounded fallback expires. Browser/mock environments dismiss now.
     const splash = document.getElementById('splash');
-    if (splash) {
-      splash.classList.add('mounted');
-      // Remove from DOM after fade-out transition completes
-      splash.addEventListener('transitionend', () => splash.remove(), { once: true });
-    }
+    const stopSplashGate = splash
+      ? startSplashGate(() => {
+          splash.classList.add('mounted');
+          splash.addEventListener('transitionend', () => splash.remove(), { once: true });
+        })
+      : () => {};
 
     // Remove the static drag region from app.html now that Svelte's own drag region is active
     document.getElementById('app-drag-region')?.remove();
@@ -766,6 +769,7 @@
     }
 
     return () => {
+      stopSplashGate();
       paletteShortcuts?.detach();
       paletteShortcuts?.destroy();
       paletteShortcuts = null;

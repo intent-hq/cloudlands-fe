@@ -111,10 +111,7 @@ agentAvailabilityReducer.with(
     providerLoadingMap: { ...state.providerLoadingMap, [providerId]: false },
   }),
 );
-agentAvailabilityReducer.with(checkSingleProviderFailure, (state, { payload: [providerId] }) => ({
-  ...state,
-  providerLoadingMap: { ...state.providerLoadingMap, [providerId]: false },
-}));
+agentAvailabilityReducer.with(checkSingleProviderFailure, (state) => state);
 agentAvailabilityReducer.with(checkAllProvidersComplete, (state) => ({
   ...state,
   hasCheckedOnce: true,

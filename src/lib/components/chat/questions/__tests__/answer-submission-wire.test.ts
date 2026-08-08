@@ -294,9 +294,15 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
     // Q3: explicit Skip completes the wizard.
     await fireEvent.click(screen.getByRole('button', { name: /skip/i }));
 
-    await vi.waitFor(() => {
-      expect(backendRequestMock.mock.calls.map((c) => c[0])).toContain('agent.sendMessage');
-    });
+    // The send path is a fire-and-forget middleware chain (dynamic imports +
+    // pre-send transcript hydration) that can exceed the 1s default timeout
+    // under CI load — see intent-hq/monorepo#1619.
+    await vi.waitFor(
+      () => {
+        expect(backendRequestMock.mock.calls.map((c) => c[0])).toContain('agent.sendMessage');
+      },
+      { timeout: 15000, interval: 50 },
+    );
 
     const sendCall = backendRequestMock.mock.calls.find((c) => c[0] === 'agent.sendMessage')!;
     const params = sendCall[1] as Record<string, unknown>;

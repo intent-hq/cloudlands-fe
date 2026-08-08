@@ -1,6 +1,5 @@
 import { all, call, cancelled, put, takeEvery, takeLeading } from 'typed-redux-saga';
 
-import { clearProviderAvailabilityCache } from '$features/providers/provider-availability.client';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -72,7 +71,6 @@ export function* checkAllProvidersWorker() {
 
     yield* all(providerIds.map((providerId) => call(checkSingleProviderWorker, providerId)));
   } finally {
-    yield* call(clearProviderAvailabilityCache);
     const wasCancelled = yield* cancelled();
     if (!wasCancelled) yield* put(checkAllProvidersComplete());
   }
