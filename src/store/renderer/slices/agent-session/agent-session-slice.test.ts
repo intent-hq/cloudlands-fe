@@ -848,7 +848,7 @@ describe('agent-session-slice reducer', () => {
       // An absent key leaves the stored value untouched.
       let state = agentSessionReducer(
         initialState,
-        upsertSession(makeSession('a1', 'ws-1', { effortLevels: ['low', 'high'] } as any)),
+        upsertSession(makeSession('a1', 'ws-1', { effortLevels: ['low', 'high'] })),
       );
       expect(state.byAgentId['a1'].effortLevels).toEqual(['low', 'high']);
 
@@ -886,7 +886,7 @@ describe('agent-session-slice reducer', () => {
 
       state = agentSessionReducer(
         state,
-        upsertSession(makeSession('a1', 'ws-1', { effortLevels: ['low', 'high'] } as any)),
+        upsertSession(makeSession('a1', 'ws-1', { effortLevels: ['low', 'high'] })),
       );
       expect(state.byAgentId['a1'].effortLevels).toEqual(['low', 'high']);
     });
