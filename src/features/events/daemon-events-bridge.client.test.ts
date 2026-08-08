@@ -1802,15 +1802,127 @@ describe('daemonEventsBridge (agent:stream:activity — push-applied live previe
     expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
   });
 
-  it('ignores malformed agent:stream:activity payloads (missing agentId or messageId)', async () => {
+  it('ignores malformed agent:stream:activity payloads (missing/empty agentId or messageId)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
     handler(notification('agent:stream:activity', { messageId: MESSAGE_ID, digest: 'x' }));
     handler(notification('agent:stream:activity', { agentId: AGENT, digest: 'x' }));
-    handler(notification('agent:stream:activity', { agentId: '', messageId: MESSAGE_ID }));
+    handler(notification('agent:stream:activity', { agentId: '', messageId: MESSAGE_ID, digest: 'x' }));
+    handler(notification('agent:stream:activity', { agentId: AGENT, messageId: '', digest: 'x' }));
 
     expect(readAgentSessionField('digest')).toBeUndefined();
+  });
+
+  // Regression: `ensureAgentSession` hydration is async, so a ping for an
+  // agent unknown to the store must not silently drop its preview fields —
+  // they should apply once hydration settles instead of only firing the
+  // fetch-and-forget.
+  it('applies the push-applied preview fields once ensureAgentSession hydrates an unknown session', async () => {
+    appStore.dispatch(clearAllSessions());
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      appStore.dispatch(
+        bulkUpsertSessions([
+          {
+            id: AGENT,
+            backendSessionId: 'backend-1',
+            workspaceId: WS,
+            name: 'A',
+            status: AgentStatus.Active,
+            messages: [],
+            isStreaming: true,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          } as AgentSession,
+        ]),
+      );
+    });
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'text for an unhydrated agent',
+        digest: 'Hydrated preview',
+      }),
+    );
+    await flush();
+
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    expect(readAgentSessionField('lastAgentResponse')).toBe('text for an unhydrated agent');
+    expect(readAgentSessionField('digest')).toBe('Hydrated preview');
+  });
+
+  // Regression: previewTurnMessageIdByAgent was only stamped by activity
+  // pings, so a same-turn activity ping delivered out-of-order AFTER the
+  // terminal stream:end looked like a new turn (no tracked messageId change
+  // recorded by stream:end) and wiped the just-applied terminal digest.
+  it('a same-turn activity straggler delivered after stream:end does not wipe the terminal digest', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'final answer',
+        digest: 'Final summary',
+      }),
+    );
+    expect(readAgentSessionField('digest')).toBe('Final summary');
+
+    // Same turn's own activity ping, delivered late (no digest of its own —
+    // a mid-turn ping snapshot from before the turn's own completion).
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+      }),
+    );
+
+    expect(readAgentSessionField('digest')).toBe('Final summary');
+  });
+
+  // Regression: a delayed/out-of-order stream:end for an EARLIER turn than
+  // the one already tracked (a newer turn has already started streaming)
+  // must not clobber the newer turn's live preview.
+  it('an out-of-order stream:end for a stale earlier turn does not clobber a newer turn preview', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const OLDER_MESSAGE_ID = 'm-1000';
+    const NEWER_MESSAGE_ID = 'm-2000';
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: OLDER_MESSAGE_ID,
+        digest: 'Turn A digest',
+      }),
+    );
+    expect(readAgentSessionField('digest')).toBe('Turn A digest');
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: NEWER_MESSAGE_ID,
+        digest: 'Turn B digest',
+      }),
+    );
+    expect(readAgentSessionField('digest')).toBe('Turn B digest');
+
+    // Turn A's terminal event arrives late, after turn B has already started.
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        messageId: OLDER_MESSAGE_ID,
+        digest: 'Turn A final (stale)',
+      }),
+    );
+
+    expect(readAgentSessionField('digest')).toBe('Turn B digest');
   });
 });
 

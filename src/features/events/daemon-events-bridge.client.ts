@@ -254,14 +254,18 @@ const streamsByAgent = new Map<string, StreamState>();
 
 /**
  * Per-agent turn tracking for the push-applied preview digest: the last
- * `agent:stream:activity` messageId seen. When a ping arrives for a NEW
- * messageId (a new turn), the previous turn's `session.digest` and
- * `lastToolUse` are cleared before the ping's own fields apply, so a stale
- * summary/tool can't outrank this turn's live text in the AgentCard preview
- * (monorepo#1327). Entries deliberately survive `agent:stream:end`: a
- * straggler same-turn ping delivered after the terminal event must not look
- * like a new turn and wipe the final digest that `agent:stream:end` just
- * applied.
+ * `agent:stream:activity` / `agent:stream:end` messageId seen. When an
+ * activity ping arrives for a NEW messageId (a new turn), the previous turn's
+ * `session.digest` and `lastToolUse` are cleared before the ping's own fields
+ * apply, so a stale summary/tool can't outrank this turn's live text in the
+ * AgentCard preview (monorepo#1327). `agent:stream:end` also stamps its
+ * turn's messageId here (not just activity pings): a straggler same-turn
+ * activity ping delivered after the terminal event must not look like a new
+ * turn and wipe the final digest `agent:stream:end` just applied, and a
+ * stale/out-of-order `agent:stream:end` for an EARLIER turn than the one
+ * already tracked must not clobber a newer turn's live preview either — see
+ * the ordering guards in `handleStreamActivityEvent` /
+ * `handleStreamEndEvent`.
  */
 const previewTurnMessageIdByAgent = new Map<string, string>();
 
@@ -583,8 +587,8 @@ function readLastToolUse(value: unknown): { name: string; status?: string } | un
  * `agent:stream:activity` / terminal `agent:stream:end` (intentd#792) into
  * the agent-session slice — no RPC, no client-side debounce (the daemon
  * already throttles the activity signal to 1s leading-edge). `updateSession`
- * is a no-op for unknown agents, so `hydrateSessionIfUnknown` (below) is what
- * recovers a missing session.
+ * is a no-op for unknown agents, so callers route this through
+ * `withHydratedSession` (below) rather than calling it directly.
  */
 function applyStreamPreviewFields(
   agentId: string,
@@ -613,16 +617,23 @@ function applyStreamPreviewFields(
 /**
  * A live-stream event can arrive for an agent the agent-session slice does
  * not know yet — e.g. a delegated sub-agent whose session was never hydrated
- * in this window. `updateSession` no-ops for unknown agents, so the
- * push-applied preview fields (`lastAgentResponse`/`digest`) and busy flags
- * would be silently dropped until an unrelated refetch. Kick off the
- * read-service hydration instead: `ensureAgentSession` coalesces concurrent
- * calls per agent via its in-flight map and the daemon throttles activity to
- * ≤1/s, so this cannot stampede. Already-hydrated agents never refetch.
+ * in this window. `updateSession` no-ops for unknown agents, so agent-session
+ * writes (push-applied preview fields, digest/lastToolUse clears) would be
+ * silently dropped rather than just deferred. `ensureAgentSession` is async
+ * (it fetches + hydrates the store), so `apply` runs immediately when the
+ * session is already known, otherwise it is deferred until hydration settles
+ * — `ensureAgentSession` coalesces concurrent calls per agent via its
+ * in-flight map and the daemon throttles activity to ≤1/s, so this cannot
+ * stampede, and it never rejects (errors are swallowed/logged), so `apply`
+ * always runs even after a failed fetch (a still-unknown session then makes
+ * the deferred writes no-ops, same as today).
  */
-function hydrateSessionIfUnknown(agentId: string): void {
-  if (appStore.state.agentSessions?.byAgentId[agentId]) return;
-  void ensureAgentSession(agentId);
+function withHydratedSession(agentId: string, apply: () => void): void {
+  if (appStore.state.agentSessions?.byAgentId[agentId]) {
+    apply();
+    return;
+  }
+  void ensureAgentSession(agentId).then(apply);
 }
 
 /**
@@ -638,18 +649,22 @@ function hydrateSessionIfUnknown(agentId: string): void {
  * footer preview advances mid-turn without a fetch. The preview fields are
  * omitted until derivable (pre-first-token / pre-first-tool) — an omission
  * means "nothing to preview yet this turn", so the ping only refreshes
- * timestamps. The wire guard mirrors the §7 payload (`agentId`/`messageId`)
- * so malformed events stay inert.
+ * timestamps. The wire guard mirrors the §7 payload (`agentId`/`messageId`,
+ * both required non-empty strings) so malformed events stay inert.
  */
 function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const agentId = data.agentId;
   const messageId = data.messageId;
-  if (typeof agentId !== 'string' || agentId.length === 0 || typeof messageId !== 'string') {
+  if (
+    typeof agentId !== 'string' ||
+    agentId.length === 0 ||
+    typeof messageId !== 'string' ||
+    messageId.length === 0
+  ) {
     return;
   }
-  hydrateSessionIfUnknown(agentId);
   const lastAgentResponse =
     typeof data.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined;
   const digest = typeof data.digest === 'string' ? data.digest : undefined;
@@ -667,13 +682,20 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   // from "older daemon" and a carried-over tool would render as live. Values
   // carried on this very ping are re-applied right below; idle agents keep
   // their last digest as the preview fallback because no ping arrives until
-  // the next turn starts.
-  if (previewTurnMessageIdByAgent.get(agentId) !== messageId) {
+  // the next turn starts. The map write itself is synchronous bookkeeping
+  // (no store dependency) — only the resulting agent-session dispatches below
+  // wait on hydration.
+  const isNewTurn = previewTurnMessageIdByAgent.get(agentId) !== messageId;
+  if (isNewTurn) {
     previewTurnMessageIdByAgent.set(agentId, messageId);
-    appStore.dispatch(updateAgentDigest(workspaceId, agentId, null));
-    appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));
   }
-  applyStreamPreviewFields(agentId, lastAgentResponse, digest, readLastToolUse(data.lastToolUse));
+  withHydratedSession(agentId, () => {
+    if (isNewTurn) {
+      appStore.dispatch(updateAgentDigest(workspaceId, agentId, null));
+      appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));
+    }
+    applyStreamPreviewFields(agentId, lastAgentResponse, digest, readLastToolUse(data.lastToolUse));
+  });
 }
 
 function handleStreamChunkEvent(event: WorkspaceEvent, workspaceId: string): void {
@@ -1037,12 +1059,32 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // throttled mid-turn ping), so push-applying it here lands the preview on
   // the turn's true final state without an `agent.get` refetch. `lastToolUse`
   // describes a running turn only — clear it now that the turn is over.
-  applyStreamPreviewFields(
-    agentId,
-    typeof data?.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined,
-    typeof data?.digest === 'string' ? data.digest : undefined,
-  );
-  appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));
+  //
+  // Ordering guard: the turn's assistant `messageId` is a UUIDv7 (minted at
+  // turn start, `Uuid::now_v7()` in agent_session.rs), so lexicographic
+  // comparison mirrors chronological turn order. A `messageId`-bearing
+  // `stream:end` for a turn OLDER than the one `previewTurnMessageIdByAgent`
+  // already tracks (a delayed/out-of-order terminal delivery) must not
+  // clobber the newer turn's live preview/lastToolUse — skip the preview
+  // writes and let the newer turn's own state stand; an unstamped/older
+  // (falsy-comparison) terminal or one with no messageId still applies
+  // (matches pre-existing behavior for daemons that omit messageId).
+  const trackedMessageId = previewTurnMessageIdByAgent.get(agentId);
+  const isStaleTerminalForPreview =
+    messageId !== undefined && trackedMessageId !== undefined && messageId < trackedMessageId;
+  if (!isStaleTerminalForPreview) {
+    if (messageId !== undefined) {
+      previewTurnMessageIdByAgent.set(agentId, messageId);
+    }
+    withHydratedSession(agentId, () => {
+      applyStreamPreviewFields(
+        agentId,
+        typeof data?.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined,
+        typeof data?.digest === 'string' ? data.digest : undefined,
+      );
+      appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));
+    });
+  }
   const state = streamsByAgent.get(agentId);
   if (state && (!messageId || state.messageId === messageId)) {
     if (trailingBlocks.length > 0) {
