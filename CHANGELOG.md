@@ -4,6 +4,35 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.20.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.19.0...v2.20.0) (2026-08-08)
+
+
+### 🚀 Features
+
+* gate splash dismissal on backend connected signal ([#846](https://github.com/intent-hq/cloudlands-fe/issues/846)) ([4ab80ba](https://github.com/intent-hq/cloudlands-fe/commit/4ab80ba23c5b6391e1bdddde55f47fe018101254))
+* prefer session-advertised effortLevels in the effort picker gate ([#847](https://github.com/intent-hq/cloudlands-fe/issues/847)) ([9db4cb6](https://github.com/intent-hq/cloudlands-fe/commit/9db4cb60fd5d5ffd401ccb4ed99ce61f5c5b9467))
+
+
+### 🐛 Bug Fixes
+
+* beta-updates toggle desync from actual updater channel (dead real-mode hydration + persistence echo) ([#853](https://github.com/intent-hq/cloudlands-fe/issues/853)) ([b60b456](https://github.com/intent-hq/cloudlands-fe/commit/b60b456ddcf37edb8a01ca3bd1758f5eb9b77d3f))
+* bump intentd sidecar pin to 0.6.1 ([a9fd8ac](https://github.com/intent-hq/cloudlands-fe/commit/a9fd8ac142adddbcbe574627486e36f086c650cb))
+* Copy local repo tab prefill and Direct checkout-mode pill label ([#849](https://github.com/intent-hq/cloudlands-fe/issues/849)) ([b508f7f](https://github.com/intent-hq/cloudlands-fe/commit/b508f7f4a8893341dd84cef82b441c66b4868623))
+* discard pre-clear provider-models cache writes via clear epoch ([#855](https://github.com/intent-hq/cloudlands-fe/issues/855)) ([bf2fc86](https://github.com/intent-hq/cloudlands-fe/commit/bf2fc86abc35323b89d2e315f348c46deba962cd))
+* extend waitFor timeout in flaky answer-submission wire test ([#862](https://github.com/intent-hq/cloudlands-fe/issues/862)) ([096dcf1](https://github.com/intent-hq/cloudlands-fe/commit/096dcf12bc4910be50ff45138ce041a9d520b1f8))
+* keep provider cards indeterminate on probe failure ([#859](https://github.com/intent-hq/cloudlands-fe/issues/859)) ([709f82a](https://github.com/intent-hq/cloudlands-fe/commit/709f82a3c567a401784d3fe2be22b087baf79dda))
+* reconcile Changes tab with git status ([#870](https://github.com/intent-hq/cloudlands-fe/issues/870)) ([d202527](https://github.com/intent-hq/cloudlands-fe/commit/d20252772741c8bd2db935b6f11046a454bf4f66))
+* reconnect background-executor quick actions via agent.completeOnce ([#851](https://github.com/intent-hq/cloudlands-fe/issues/851)) ([90e87c6](https://github.com/intent-hq/cloudlands-fe/commit/90e87c6ce746c4aa64bbbf95e91c4fe16e0f319e))
+* restore Open In after daemon transport changes ([#869](https://github.com/intent-hq/cloudlands-fe/issues/869)) ([961d666](https://github.com/intent-hq/cloudlands-fe/commit/961d6661b28f7eaa02a02354a033b48798ca9ef3))
+* run component tests with the ct-core-aligned playwright runner ([#861](https://github.com/intent-hq/cloudlands-fe/issues/861)) ([51e87de](https://github.com/intent-hq/cloudlands-fe/commit/51e87de7bacaf6f1733463ce6dcc4eed20cd5d67))
+* stop fabricating/caching negative provider availability on daemon failure ([#850](https://github.com/intent-hq/cloudlands-fe/issues/850)) ([44363b8](https://github.com/intent-hq/cloudlands-fe/commit/44363b88d93f65d7b9513cebede1ce1da57e88c2))
+* unify quick-action settings model sources and surface enhancePrompt gate ([#852](https://github.com/intent-hq/cloudlands-fe/issues/852)) ([250e79c](https://github.com/intent-hq/cloudlands-fe/commit/250e79cf9c6d96e47556c330d59bba44796ba6b6))
+
+
+### ⚡ Performance
+
+* cache provider model catalogs renderer-side to remove model-picker loading flash ([#848](https://github.com/intent-hq/cloudlands-fe/issues/848)) ([2c7ed84](https://github.com/intent-hq/cloudlands-fe/commit/2c7ed84ef01ee668fe77a04b7370c4bfb8c8fba0))
+
 ## [2.19.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.18.0...v2.19.0) (2026-08-07)
 
 

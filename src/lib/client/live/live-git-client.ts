@@ -9,9 +9,9 @@
  * file-tracking reads `file-tracking.getChanges` / `file-tracking.loadCommits`
  * (PROTOCOL §5.19 — the per-file audit trail with agent attribution, replacing
  * the retired local file-tracking.json store). All are mapped into the renderer
- * `DiffChunk[]` / `TrackedChange[]` / `CommitInfo[]` shapes; transport/daemon
- * errors fold to an empty list so a single failed read does not throw into the
- * store. `subscribe` refetches on `git:*` / `changes:tracked` /
+ * `DiffChunk[]` / `TrackedChange[]` / `CommitInfo[]` shapes. A failed tracked-
+ * changes read folds to `null`, preserving a distinction from a successful empty
+ * result; other list reads remain best-effort. `subscribe` refetches on `git:*` / `changes:tracked` /
  * `changes:git-status` events (§6.5), through a module-level single-flight +
  * trailing-coalesce guard shared by all subscribers
  * (intent-hq/monorepo#1648). `stage`, `commit`, and `pull` are the supported
@@ -457,9 +457,10 @@ export class LiveGitClient implements GitClient {
   // `file-tracking.getChanges` (PROTOCOL §5.19) returns the daemon's tracked
   // changes `{ changes, truncated, totalCount }` — the per-file audit trail
   // with stats and agent attribution the local file-tracking.json store used
-  // to hold. The seam surfaces only `TrackedChange[]`; the pagination envelope
+  // to hold. The seam surfaces `TrackedChange[] | null` so callers can preserve
+  // existing attribution on read failure; the pagination envelope
   // (`truncated`/`totalCount`) is not yet threaded through.
-  async trackedChanges(workspaceId: string): Promise<TrackedChange[]> {
+  async trackedChanges(workspaceId: string): Promise<TrackedChange[] | null> {
     try {
       const result = await backendRequest<{ changes?: unknown[] }>("file-tracking.getChanges", {
         workspaceId,
@@ -469,7 +470,7 @@ export class LiveGitClient implements GitClient {
         .map(toTrackedChange)
         .filter((c): c is TrackedChange => c !== null);
     } catch {
-      return [];
+      return null;
     }
   }
 

@@ -179,6 +179,11 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
 daemonHealthReducer.with(
   connectionStatusChanged,
   (state, { payload: [status, transport, extras] }) => {
+    const transportChanged =
+      transport !== undefined &&
+      (transport.mode !== state.transport?.mode || transport.target !== state.transport?.target);
+    const hostLocality = transportChanged ? null : state.hostLocality;
+
     if (status === 'connected') {
       // Connection established — health moves to 'healthy'.
       // Update transport info if present (additive) and clear any give-up /
@@ -188,6 +193,10 @@ daemonHealthReducer.with(
         health: 'healthy',
         stats: transport && state.stats ? { ...state.stats, transport } : state.stats,
         transport: transport ?? state.transport,
+        // A reported locality belongs to the daemon/transport that produced it.
+        // Drop it when switching connections so selectors immediately fall back
+        // to the new transport until that daemon's next system.status response.
+        hostLocality,
         sidecarGaveUp: false,
         sidecarGaveUpReason: null,
         sidecarStartupFailed: false,
@@ -209,6 +218,7 @@ daemonHealthReducer.with(
         ...state,
         health: 'down',
         transport: transport ?? state.transport,
+        hostLocality,
         sidecarGaveUp: extras?.sidecarGaveUp ? true : state.sidecarGaveUp,
         sidecarGaveUpReason: extras?.sidecarGaveUp
           ? (extras.reason ?? null)

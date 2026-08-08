@@ -95,6 +95,37 @@ describe('daemonHealthReducer', () => {
       expect(next.transport).toEqual(externalTransport);
     });
 
+    it('clears locality reported by a different transport when switching to local UDS', () => {
+      const state = {
+        ...initialState,
+        transport: { mode: 'external-ws', target: 'wss://remote.example' } as const,
+        hostLocality: 'remote' as const,
+      };
+
+      const next = daemonHealthReducer(
+        state,
+        connectionStatusChanged('connected', sidecarTransport),
+      );
+
+      expect(next.transport).toEqual(sidecarTransport);
+      expect(next.hostLocality).toBeNull();
+    });
+
+    it('preserves forced locality when reconnecting to the same transport', () => {
+      const state = {
+        ...initialState,
+        transport: sidecarTransport,
+        hostLocality: 'remote' as const,
+      };
+
+      const next = daemonHealthReducer(
+        state,
+        connectionStatusChanged('connected', { ...sidecarTransport }),
+      );
+
+      expect(next.hostLocality).toBe('remote');
+    });
+
     it('preserves last-known transport across a disconnect without transport info', () => {
       const state = { ...initialState, health: 'healthy' as const, transport: sidecarTransport };
       const next = daemonHealthReducer(state, connectionStatusChanged('disconnected'));
