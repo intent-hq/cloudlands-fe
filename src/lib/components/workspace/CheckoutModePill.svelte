@@ -48,17 +48,23 @@
   // isolation is active; default to "Direct" until the async settings read
   // resolves so the label never flashes "CoW"→"Direct".
   let cowIsolationActive = $state(false);
+  // Bumped on every effect re-run and on teardown so a resolver settling for a
+  // previous workspace/mode never applies its stale result out of order.
+  let isolationGeneration = 0;
   $effect(() => {
+    // Reset to the Direct default before resolving so a prior workspace's
+    // "CoW" never lingers across a prop change while the read is in flight.
+    cowIsolationActive = false;
     if (mode !== 'cow') return;
     const ws = workspace;
-    let cancelled = false;
+    const gen = ++isolationGeneration;
     void resolveEffectiveIsolationMode(ws?.cowSupported === true ? [ws] : undefined).then(
       (resolved) => {
-        if (!cancelled) cowIsolationActive = resolved === 'cow';
+        if (gen === isolationGeneration) cowIsolationActive = resolved === 'cow';
       },
     );
     return () => {
-      cancelled = true;
+      isolationGeneration += 1;
     };
   });
 

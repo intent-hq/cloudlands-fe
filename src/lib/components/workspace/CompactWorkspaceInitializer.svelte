@@ -309,6 +309,13 @@
           isValidPath = true;
           // Reset scope when changing repos - scope is repo-specific
           scope = '';
+          // Clear stale remote/branch state from a persisted prior selection:
+          // submission reads remoteSetup.workspacePath and branch regardless of
+          // repoType, so a leftover value would create against the wrong
+          // checkout or a branch that doesn't exist in the local repo. An
+          // explicit data.branch (applied below) still wins.
+          remoteSetup = null;
+          branch = '';
         } else if (data.githubUrl && !repoPath) {
           // repoPath wasn't resolved at deep-link time (knownRepos may not have loaded yet).
           // Try resolving now via IPC to the repo registry.
@@ -809,6 +816,13 @@
           isValidPath = true;
           // Reset scope when changing repos - scope is repo-specific
           scope = '';
+          // Clear stale remote/branch state from a persisted prior selection:
+          // submission reads remoteSetup.workspacePath and branch regardless of
+          // repoType, so a leftover value would create against the wrong
+          // checkout or a branch that doesn't exist in the local repo. An
+          // explicit data.branch (applied below) still wins.
+          remoteSetup = null;
+          branch = '';
         }
         if (data.branch) branch = data.branch;
 

@@ -168,6 +168,51 @@ describe('CheckoutModePill', () => {
     expect(screen.queryByText('CoW')).toBeNull();
   });
 
+  it('resets a stale "CoW" to "Direct" when the workspace prop changes (resolve pending)', async () => {
+    const { rerender } = await renderPill({
+      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
+    });
+    await flushLabel();
+    expect(screen.getByText('CoW')).toBeTruthy();
+
+    // The next workspace's settings read never settles within this test —
+    // ws-1's resolved "CoW" must not linger for ws-2 in the meantime.
+    mocks.settingsGet.mockImplementation(() => new Promise(() => {}));
+    await rerender({
+      workspace: { ...baseWorkspace, id: 'ws-2', checkoutMode: 'cow', cowSupported: true } as Workspace,
+    });
+    await flushLabel();
+    expect(screen.getByText('Direct')).toBeTruthy();
+    expect(screen.queryByText('CoW')).toBeNull();
+  });
+
+  it('ignores an isolation resolve that settles after the workspace prop changed', async () => {
+    const deferred: Array<(value: unknown) => void> = [];
+    mocks.settingsGet.mockImplementation(() => new Promise((resolve) => deferred.push(resolve)));
+    const { rerender } = await renderPill({
+      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
+    });
+    await tick();
+    await vi.waitFor(() => expect(mocks.settingsGet).toHaveBeenCalledTimes(1));
+
+    await rerender({
+      workspace: { ...baseWorkspace, id: 'ws-2', checkoutMode: 'cow', cowSupported: true } as Workspace,
+    });
+    await tick();
+    await vi.waitFor(() => expect(mocks.settingsGet).toHaveBeenCalledTimes(2));
+
+    // ws-2's own read settles first: isolation off → Direct.
+    deferred[1]({ path: 'workspace.cowIsolation', value: false });
+    await flushLabel();
+    expect(screen.getByText('Direct')).toBeTruthy();
+
+    // ws-1's read settles late with isolation ON — it must not apply to ws-2.
+    deferred[0]({ path: 'workspace.cowIsolation', value: true });
+    await flushLabel();
+    expect(screen.getByText('Direct')).toBeTruthy();
+    expect(screen.queryByText('CoW')).toBeNull();
+  });
+
   it('renders "Worktree" when checkoutMode is worktree', async () => {
     await renderPill({ checkoutMode: 'worktree' });
     expect(screen.getByText('Worktree')).toBeTruthy();

@@ -172,6 +172,9 @@ function githubFormState() {
     branch: 'main',
     isNewRepo: false,
     isValidPath: true,
+    // A persisted remote selection: submission reads remoteSetup.workspacePath
+    // regardless of repoType, so a local prefill must clear it.
+    remoteSetup: { type: 'remote', ssh: { host: 'remote.example' }, workspacePath: '/remote/ws' },
   };
 }
 
@@ -219,6 +222,11 @@ describe('local repoPath prefill overrides a restored github selection', () => {
         isNewRepo: false,
         isValidPath: true,
         scope: '',
+        // Stale remote/branch state from the persisted selection is cleared
+        // so submission can't target the previous remote checkout or a branch
+        // that doesn't exist in the local repo.
+        remoteSetup: null,
+        branch: '',
       });
     });
   });
@@ -246,9 +254,35 @@ describe('local repoPath prefill overrides a restored github selection', () => {
         isNewRepo: false,
         isValidPath: true,
         scope: '',
+        remoteSetup: null,
+        branch: '',
       });
     });
     // The prefill key is consumed so it is not reapplied on the next mount
     expect(sessionStorage.getItem(PREFILL_KEY)).toBeNull();
+  });
+
+  it('honors an explicit branch from the prefill payload after the reset', async () => {
+    sessionStorage.setItem(
+      PREFILL_KEY,
+      JSON.stringify({ repoPath: LOCAL_REPO, branch: 'feature-x' }),
+    );
+
+    const { component } = render(CompactWorkspaceInitializer, {
+      props: { isExpanded: false },
+    });
+    await component.applyPrefill();
+
+    await waitFor(() => {
+      const persisted = lastPersistedFormState();
+      expect(persisted).toBeDefined();
+      expect(persisted).toMatchObject({
+        repoPath: LOCAL_REPO,
+        repoType: 'local',
+        remoteSetup: null,
+        // The persisted 'main' is dropped, but the prefill's own branch wins.
+        branch: 'feature-x',
+      });
+    });
   });
 });
