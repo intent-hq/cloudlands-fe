@@ -1080,6 +1080,52 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(agent?.lastMessageRole).toBeUndefined();
   });
 
+  it('list and get carry session-advertised effortLevels verbatim (§5.5 additive field)', async () => {
+    // The daemon serves the levels its `thought_level` discovery captured at
+    // the most recent session open (claude-code case) — pass-through, no
+    // healing/transforms.
+    const effortLevels = ['low', 'medium', 'high', 'max'];
+    backend.onRequest('agent.list', () => ({
+      agents: [
+        {
+          id: 'agent-1',
+          workspaceId: 'ws-1',
+          name: 'A1',
+          status: 'idle',
+          model: 'claude-code:opus',
+          effortLevels,
+        },
+      ],
+    }));
+    backend.onRequest('agent.get', () => ({
+      agent: {
+        id: 'agent-1',
+        workspaceId: 'ws-1',
+        name: 'A1',
+        status: 'idle',
+        model: 'claude-code:opus',
+        effortLevels,
+      },
+    }));
+    const client = new LiveAgentsClient();
+
+    const [listed] = await client.list('ws-1');
+    expect(listed.effortLevels).toEqual(effortLevels);
+
+    const fetched = await client.get('agent-1');
+    expect(fetched?.effortLevels).toEqual(effortLevels);
+  });
+
+  it('does not synthesize effortLevels when the daemon omits them (no thought_level support)', async () => {
+    backend.onRequest('agent.get', () => ({
+      agent: { id: 'agent-1', workspaceId: 'ws-1', name: 'A1', status: 'idle' },
+    }));
+    const client = new LiveAgentsClient();
+
+    const agent = await client.get('agent-1');
+    expect(agent?.effortLevels).toBeUndefined();
+  });
+
   // ---- §5.5 agent.getConversation pagination -----------------------------
 
   it('getConversation forwards limit only when no pageToken is given (first page)', async () => {
