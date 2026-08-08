@@ -125,6 +125,87 @@ describe('AcceptChangesClient (accept-changes.* over backendRequest)', () => {
       expect(retried).toEqual(gitStatus);
       expect(mocks.backendRequest).toHaveBeenCalledTimes(2);
     });
+
+    it('forceRefresh issues a fresh request instead of joining an in-flight one', async () => {
+      let resolveFirst!: (value: typeof gitStatus) => void;
+      mocks.backendRequest.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      );
+
+      const first = AcceptChangesClient.getStatus(WS);
+
+      const updatedStatus = { ...gitStatus, aheadOfTrunk: 5 };
+      mocks.backendRequest.mockResolvedValueOnce(updatedStatus);
+      const forced = AcceptChangesClient.getStatus(WS, { forceRefresh: true });
+
+      expect(mocks.backendRequest).toHaveBeenCalledTimes(2);
+
+      resolveFirst(gitStatus);
+      const [firstResult, forcedResult] = await Promise.all([first, forced]);
+      expect(firstResult).toEqual(gitStatus);
+      expect(forcedResult).toEqual(updatedStatus);
+    });
+
+    it('forceRefresh republishes the fresh request so subsequent non-forced callers join it, not the stale one', async () => {
+      let resolveFirst!: (value: typeof gitStatus) => void;
+      let resolveForced!: (value: typeof gitStatus) => void;
+      mocks.backendRequest
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+        )
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveForced = resolve;
+          }),
+        );
+
+      const first = AcceptChangesClient.getStatus(WS);
+      const forced = AcceptChangesClient.getStatus(WS, { forceRefresh: true });
+      // A non-forced call issued after the forced one should join the fresh
+      // (forced) in-flight request, not the stale pre-mutation one.
+      const joiner = AcceptChangesClient.getStatus(WS);
+
+      expect(mocks.backendRequest).toHaveBeenCalledTimes(2);
+
+      const updatedStatus = { ...gitStatus, aheadOfTrunk: 7 };
+      resolveForced(updatedStatus);
+      resolveFirst(gitStatus);
+
+      const [firstResult, forcedResult, joinerResult] = await Promise.all([first, forced, joiner]);
+      expect(firstResult).toEqual(gitStatus);
+      expect(forcedResult).toEqual(updatedStatus);
+      expect(joinerResult).toEqual(updatedStatus);
+      expect(mocks.backendRequest).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not clear a fresher forced entry when the stale pre-mutation request settles after it', async () => {
+      let resolveFirst!: (value: typeof gitStatus) => void;
+      mocks.backendRequest.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      );
+      const first = AcceptChangesClient.getStatus(WS);
+
+      const updatedStatus = { ...gitStatus, aheadOfTrunk: 9 };
+      mocks.backendRequest.mockResolvedValueOnce(updatedStatus);
+      const forced = await AcceptChangesClient.getStatus(WS, { forceRefresh: true });
+      expect(forced).toEqual(updatedStatus);
+
+      // The stale request settles after the forced one already cleared/replaced the map entry.
+      resolveFirst(gitStatus);
+      await first;
+
+      // A subsequent call should issue a brand-new request, not resurrect the stale one.
+      mocks.backendRequest.mockResolvedValueOnce(gitStatus);
+      const next = await AcceptChangesClient.getStatus(WS);
+      expect(next).toEqual(gitStatus);
+      expect(mocks.backendRequest).toHaveBeenCalledTimes(3);
+    });
   });
 
   it('prepare sends accept-changes.prepare with workspaceId/action/files', async () => {
