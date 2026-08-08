@@ -161,4 +161,56 @@ describe('agent:get-active-streams IPC wire contract', () => {
     expect(result.data).toEqual([]);
     expect(String(result.error)).toContain('workspace boom');
   });
+
+  it('serves the last known snapshot on a transient agent.listActive failure without fanning out', async () => {
+    requestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.listActive') {
+        return {
+          streams: [
+            { agentId: 'agent-a', sessionId: 'agent-a', workspaceId: 'ws-1', startTime: 1 },
+          ],
+        };
+      }
+      return {};
+    });
+
+    const handler = await registerAndGetHandler();
+    const first = await handler({} as any);
+    expect(first.success).toBe(true);
+    expect(first.data).toHaveLength(1);
+
+    requestMock.mockReset();
+    requestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.listActive') throw new Error('request timed out');
+      throw new Error('should not fan out on a transient failure');
+    });
+
+    const second = await handler({} as any);
+    expect(second).toEqual(first);
+    expect(requestMock.mock.calls).toEqual([['agent.listActive']]);
+    expect(requestMock).not.toHaveBeenCalledWith('workspace.list');
+    expect(requestMock).not.toHaveBeenCalledWith('agent.list', expect.anything());
+  });
+
+  it('treats an rpcCode -32601 failure as method-not-found and falls back to the legacy fan-out', async () => {
+    requestMock.mockImplementation(async (method: string, params?: any) => {
+      if (method === 'agent.listActive') {
+        const error: any = new Error('Method not found');
+        error.rpcCode = -32601;
+        throw error;
+      }
+      if (method === 'workspace.list') return { workspaces: [{ id: 'ws-1' }] };
+      if (method === 'agent.list' && params?.workspaceId === 'ws-1') {
+        return { agents: [{ id: 'agent-e', workspaceId: 'ws-1', isStreaming: true }] };
+      }
+      return {};
+    });
+
+    const handler = await registerAndGetHandler();
+    const result = await handler({} as any);
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([
+      { agentId: 'agent-e', sessionId: 'agent-e', workspaceId: 'ws-1', startTime: 0 },
+    ]);
+  });
 });

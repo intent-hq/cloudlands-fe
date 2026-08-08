@@ -124,13 +124,49 @@ export class WorkspaceService {
    * FE having to load-and-drop archived rows. Chief is never surfaced by the daemon
    * `workspace.list` — parity with the retired `findAll()` which relied on
    * `getChiefWorkspace()` being fetched via `findById` on demand.
+   *
+   * Single-flighted and cached for a short TTL (keyed by `includeArchived`) so
+   * concurrent/rapid main-process callers (menu rebuilds, quit checks, IPC list
+   * handlers) coalesce onto one in-flight request instead of each firing their
+   * own `workspace.list` round-trip — the `workspace.list` flood fix (monorepo
+   * Phase 2). A cached promise serves both purposes: concurrent callers before
+   * the request resolves share the same in-flight promise (single-flight), and
+   * callers within the TTL window after it resolves reuse the resolved value.
+   * A rejected promise is evicted immediately so the next caller retries rather
+   * than waiting out the TTL on a cached failure.
    */
+  private readonly WORKSPACE_LIST_CACHE_TTL_MS = 2000;
+  private readonly workspaceListCache = new Map<
+    boolean,
+    { expiresAt: number; promise: Promise<Workspace[]> }
+  >();
+
   private async fetchWorkspacesFromDaemon(includeArchived: boolean): Promise<Workspace[]> {
-    const response = (await getBackendClient().request('workspace.list', {
-      includeArchived,
-    })) as { workspaces?: unknown[] };
-    const rows = Array.isArray(response?.workspaces) ? response.workspaces : [];
-    return rows.map((raw) => this.normalizeDaemonWorkspace(raw as Record<string, unknown>));
+    const now = Date.now();
+    const cached = this.workspaceListCache.get(includeArchived);
+    if (cached && cached.expiresAt > now) {
+      return cached.promise;
+    }
+
+    const promise = (async () => {
+      const response = (await getBackendClient().request('workspace.list', {
+        includeArchived,
+      })) as { workspaces?: unknown[] };
+      const rows = Array.isArray(response?.workspaces) ? response.workspaces : [];
+      return rows.map((raw) => this.normalizeDaemonWorkspace(raw as Record<string, unknown>));
+    })();
+
+    this.workspaceListCache.set(includeArchived, {
+      expiresAt: now + this.WORKSPACE_LIST_CACHE_TTL_MS,
+      promise,
+    });
+    promise.catch(() => {
+      if (this.workspaceListCache.get(includeArchived)?.promise === promise) {
+        this.workspaceListCache.delete(includeArchived);
+      }
+    });
+
+    return promise;
   }
 
   /**
@@ -869,8 +905,7 @@ export class WorkspaceService {
       }
 
       const response = (await getBackendClient().request('workspace.update', daemonParams)) as
-        | { workspace?: unknown }
-        | undefined;
+        { workspace?: unknown } | undefined;
       const rawWorkspace =
         response && typeof response === 'object' ? response.workspace : undefined;
       if (!rawWorkspace || typeof rawWorkspace !== 'object') {
@@ -1522,6 +1557,7 @@ export class WorkspaceService {
     // Clear metadata/UI-only caches.
     this.lastContextCache.clear();
     this.contextCacheOrder = [];
+    this.workspaceListCache.clear();
 
     logger.debug('WorkspaceService cleaned up');
   }

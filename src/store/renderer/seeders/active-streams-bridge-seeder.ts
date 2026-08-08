@@ -28,6 +28,32 @@ interface AgentListActiveResult {
 }
 
 /**
+ * Last successfully resolved active-streams snapshot. Served back on a
+ * transient `agent.listActive` failure so a slow/overloaded daemon degrades
+ * to a stale read instead of triggering the legacy fan-out — mirrors the
+ * main-process handler in agent-missing.ipc.ts.
+ */
+let lastKnownActiveStreams: ActiveStream[] = [];
+
+/**
+ * The legacy `workspace.list` → `agent.list` fan-out is only a safe substitute
+ * for `agent.listActive` when the daemon genuinely predates the method
+ * (JSON-RPC -32601 / `METHOD_NOT_FOUND`). Any other failure (timeout,
+ * connection drop, internal error) means the daemon is already struggling, and
+ * fanning out into O(workspaces) extra RPCs would amplify that load —
+ * precisely the load ⇒ timeout ⇒ fan-out ⇒ more load loop this guards against
+ * (monorepo#1395).
+ */
+function isMethodNotFoundError(error: unknown): boolean {
+  if (error && typeof error === 'object') {
+    if ((error as { code?: unknown }).code === 'METHOD_NOT_FOUND') return true;
+    if ((error as { rpcCode?: unknown }).rpcCode === -32601) return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return /method not found/i.test(message);
+}
+
+/**
  * Legacy compatibility path for sidecars without agent.listActive.
  */
 async function getLegacyActiveStreamsFromDaemon(): Promise<ActiveStream[]> {
@@ -70,17 +96,32 @@ async function getLegacyActiveStreamsFromDaemon(): Promise<ActiveStream[]> {
 async function getActiveStreamsFromDaemon(): Promise<ActiveStream[]> {
   try {
     const result = await backendRequest<AgentListActiveResult>('agent.listActive');
-    return result.streams.map(({ agentId, sessionId, workspaceId, startTime }) => ({
+    const activeStreams = result.streams.map(({ agentId, sessionId, workspaceId, startTime }) => ({
       agentId,
       sessionId,
       workspaceId,
       startTime,
     }));
+    lastKnownActiveStreams = activeStreams;
+    return activeStreams;
   } catch (error) {
+    if (!isMethodNotFoundError(error)) {
+      // Transient failure (timeout, connection drop, internal error) — the
+      // daemon is already struggling, so serve the last known snapshot
+      // instead of fanning out into the legacy workspace.list + agent.list
+      // per-workspace probe, which would only add more load.
+      console.warn(
+        'agent.listActive failed transiently; returning last known active streams',
+        error,
+      );
+      return lastKnownActiveStreams;
+    }
     // Compatibility fallback: shipped FE versions may briefly run against a
     // pre-PROTOCOL-4.1 sidecar that does not implement agent.listActive yet.
     console.warn('agent.listActive unavailable; using legacy active-streams probe', error);
-    return getLegacyActiveStreamsFromDaemon();
+    const activeStreams = await getLegacyActiveStreamsFromDaemon();
+    lastKnownActiveStreams = activeStreams;
+    return activeStreams;
   }
 }
 
