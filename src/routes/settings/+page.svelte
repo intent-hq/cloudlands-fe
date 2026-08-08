@@ -10,7 +10,6 @@
     installUpdate,
     simulateSetState,
   } from '$store/renderer/slices/auto-update/auto-update-slice';
-  import { autoUpdateClient } from '$features/auto-update/auto-update.client';
   import ProviderSelector from '$lib/components/settings/ProviderSelector.svelte';
   import AIBehaviorEditor from '$lib/components/settings/AIBehaviorEditor.svelte';
   import AIBehaviorSidebar, {
@@ -319,18 +318,11 @@
     appStore.dispatch(requestThemePreferenceChange(theme));
   }
 
-  async function handleBetaUpdatesToggle(enabled: string | boolean) {
-    const value = Boolean(enabled);
-    // Call the auto-update service to persist and switch the feed immediately
-    try {
-      await autoUpdateClient.setChannel(value ? 'beta' : 'stable');
-      // Only update Redux state after successful IPC call
-      appStore.dispatch(setBetaUpdatesEnabled(value));
-      logger.info('Update channel set to', value ? 'beta' : 'stable');
-    } catch (error) {
-      logger.error('Failed to set update channel', error);
-      // On failure, toggle state remains unchanged in Redux
-    }
+  function handleBetaUpdatesToggle(enabled: string | boolean) {
+    // Dispatch only: the beta-updates persistence middleware is the single
+    // owner of the SET_CHANNEL write (persist + feed switch). A direct
+    // setChannel call here would issue a duplicate write.
+    appStore.dispatch(setBetaUpdatesEnabled(Boolean(enabled)));
   }
 
   function handleResetInterfaceSystem() {
