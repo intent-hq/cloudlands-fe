@@ -127,7 +127,10 @@
   import { startAllAppSagas } from '$store/renderer/sagas';
   // Side-effect import: installs bridge-less IPC handlers without running snapshot seeders.
   import '$store/renderer/seeders';
-  import { installInterruptedAgentsService } from '$features/agent/interrupted-agents-service';
+  import {
+    installInterruptedAgentsService,
+    notifyInterruptedAgentsModalClosed,
+  } from '$features/agent/interrupted-agents-service';
   import InterruptedAgentsModal from '$lib/components/modals/InterruptedAgentsModal.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
   import { LiveAppClient } from '$lib/client/live/live-app-client';
@@ -1120,6 +1123,7 @@
     onAbandonAll={handleAbandonAllAgents}
     onClose={() => {
       showInterruptedAgentsModal = false;
+      notifyInterruptedAgentsModalClosed();
     }}
   />
 
