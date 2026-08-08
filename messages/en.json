@@ -176,6 +176,8 @@
   "settings_backgroundAgent_useDefaultOption": "Use default quick action model",
   "settings_backgroundAgent_customBadge": "Custom",
   "settings_backgroundAgent_providerDefault_description": "Use the provider CLI's default model",
+  "settings_backgroundAgent_useDefault_description": "Fall back to the default quick action model",
+  "settings_backgroundAgent_fastAuggieOnlyNote": "Prompt enhancement and layout suggestions require Auggie. Switch to Auggie as your provider to use them.",
   "settings_gitWorkspace_loadError": "Failed to load settings from the backend.",
   "settings_gitWorkspace_saveError": "Failed to save settings. Please try again.",
   "settings_gitWorkspace_shell_autoDetect": "Auto-detect (System Default)",
@@ -5475,5 +5477,8 @@
   "workspace_progress_viewMonitoredPrCrossRepo_tooltip": "Opens monitored pull request {repo}#{number} on GitHub in your browser.",
   "workspace_card_morePrs_label": "+{count}",
   "workspace_card_morePrs_tooltip_one": "1 more active monitored PR",
-  "workspace_card_morePrs_tooltip_many": "{count} more active monitored PRs"
+  "workspace_card_morePrs_tooltip_many": "{count} more active monitored PRs",
+  "bgExecutor_service_generateFailed_error": "Failed to generate",
+  "bgExecutor_service_unavailable_error": "One-shot completion is not available for the current provider",
+  "bgExecutor_service_noResult_error": "No result extracted from the model response"
 }

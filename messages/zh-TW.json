@@ -176,6 +176,8 @@
   "settings_backgroundAgent_useDefaultOption": "使用預設快速操作模型",
   "settings_backgroundAgent_customBadge": "自訂",
   "settings_backgroundAgent_providerDefault_description": "使用提供者 CLI 的預設模型",
+  "settings_backgroundAgent_useDefault_description": "回退至預設快速操作模型",
+  "settings_backgroundAgent_fastAuggieOnlyNote": "提示詞增強與版面配置建議需要 Auggie。請將提供者切換為 Auggie 以使用這些功能。",
   "settings_gitWorkspace_loadError": "從後端載入設定失敗。",
   "settings_gitWorkspace_saveError": "儲存設定失敗，請重試。",
   "settings_gitWorkspace_shell_autoDetect": "自動偵測（系統預設）",
@@ -5475,5 +5477,8 @@
   "workspace_progress_viewMonitoredPrCrossRepo_tooltip": "在瀏覽器中的 GitHub 上開啟監控中的提取請求 {repo}#{number}。",
   "workspace_card_morePrs_label": "+{count}",
   "workspace_card_morePrs_tooltip_one": "還有 1 個作用中的監控 PR",
-  "workspace_card_morePrs_tooltip_many": "還有 {count} 個作用中的監控 PR"
+  "workspace_card_morePrs_tooltip_many": "還有 {count} 個作用中的監控 PR",
+  "bgExecutor_service_generateFailed_error": "產生失敗",
+  "bgExecutor_service_unavailable_error": "目前的提供者不支援一次性補全",
+  "bgExecutor_service_noResult_error": "未能從模型回應中擷取結果"
 }

@@ -46,6 +46,7 @@ import { createHostRequirementsCheckMiddleware } from '$features/system/host-req
 import { createAgentCreationMiddleware } from '$features/agent/agent-creation-service';
 import { createAgentMutationMiddleware } from '$features/agent/agent-mutation-service';
 import { createEditRegenerateMiddleware } from '$features/agent/edit-regenerate-service';
+import { createBackgroundExecutorMiddleware } from '$features/agent/background-executor-service';
 import { createContextMutationMiddleware } from '$features/context/context-mutation-service';
 import { createTaskAgentAssociationsMutationMiddleware } from '$features/tasks/task-agent-associations-mutation-service';
 import { createAppLayoutNavigationMiddleware } from '$features/layout/app-layout-navigation-service';
@@ -328,6 +329,13 @@ function buildMiddleware(): StoreMiddleware[] {
     // transcript at the edited message and regenerating from there — instead
     // of being a no-op.
     createEditRegenerateMiddleware(),
+    // Give the (post-saga) background-executor triggers (`bgExecutor/execute`,
+    // `bgExecutor/cancel`) a real handler so the Generate quick actions
+    // (commit message, PR description, code review, walkthrough) run through
+    // the daemon's one-shot `agent.completeOnce` (PROTOCOL §5.32) and drive
+    // the executor state the reactive UI reads — including surfacing the
+    // §5.32 `{ available: false, reason }` provider gate as a visible error.
+    createBackgroundExecutorMiddleware(),
     // Give the (post-saga) context slice's `addContextItem` /
     // `removeContextItem` / `updateContextItem` triggers a real write handler
     // so chat-context edits forward to `workspace.updateContext` (PROTOCOL

@@ -29,6 +29,22 @@ const mockModelState = vi.hoisted(() => ({
   loadError: null as string | null,
 }));
 
+// Seedable session-lifetime provider-models cache (providerModels slice state)
+// exposed through the store mock, for the cache-hydration tests. Empty by
+// default so every existing test keeps the uncached first-boot path.
+const mockProviderModelsState = vi.hoisted(() => ({
+  byProviderId: {} as Record<
+    string,
+    {
+      models: { value: string; label: string; description?: string }[];
+      fetchedAt: string;
+      warning?: string;
+      stale?: boolean;
+    }
+  >,
+  clearEpoch: 0,
+}));
+
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa };
@@ -77,7 +93,13 @@ vi.mock('$store/renderer/store', async () => {
   );
 
   return createAppStoreMockModule({
-    state: () => ({ providerCatalog }),
+    state: () => ({
+      providerCatalog,
+      providerModels: {
+        byProviderId: mockProviderModelsState.byProviderId,
+        clearEpoch: mockProviderModelsState.clearEpoch,
+      },
+    }),
     dispatch: mockSvelteDispatch,
   });
 });
@@ -204,6 +226,7 @@ import {
   getModelsForProviderForLoadingState,
 } from '$store/renderer/slices/model/model-utils';
 import { selectModel } from '$store/renderer/slices/model/model-slice';
+import { store as mockAppStore } from '$store/renderer/store';
 import ModelPicker from './ModelPicker.svelte';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -217,6 +240,8 @@ afterEach(() => {
   mockModelState.availableModelsProviderId = 'auggie';
   daemonHealth$.set('healthy');
   providerStaleFlags$.set({});
+  mockProviderModelsState.byProviderId = {};
+  mockProviderModelsState.clearEpoch = 0;
 });
 
 describe('ModelPicker locked state', () => {
@@ -1860,6 +1885,407 @@ describe('ModelPicker specialist inherit state (default-option plumbing)', () =>
 
     await waitFor(() => {
       expect(onModelChange).toHaveBeenCalledWith('model-2');
+    });
+  });
+});
+
+describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'sonnet4.6';
+    mockModelState.loadError = null;
+    // The global catalog does NOT contain the selected model — only the
+    // seeded providerModels cache (or a settled fetch) can resolve its label.
+    mockModelState.availableModels = [];
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  function seedCache() {
+    mockProviderModelsState.byProviderId = {
+      auggie: {
+        models: [{ value: 'sonnet4.6', label: 'Claude Sonnet 4.6', description: 'Smart model' }],
+        fetchedAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  it('renders the cached model label immediately with no skeleton while the fetch is pending', async () => {
+    seedCache();
+    // Revalidation fetch never settles — only the cache can resolve the label.
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () => new Promise(() => {}),
+    );
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    const button = screen.getByRole('button');
+    // Trigger label resolved on the very first render: pretty name, no
+    // skeleton placeholder, no loading spinner.
+    expect(button.textContent).toContain('Claude Sonnet 4.6');
+    expect(button.querySelector('.animate-pulse')).toBeNull();
+    expect(button.querySelector('[role="status"]')).toBeNull();
+
+    // Still resolved after the debounced background revalidation kicks off.
+    await new Promise((r) => setTimeout(r, 100));
+    expect(button.textContent).toContain('Claude Sonnet 4.6');
+    expect(button.querySelector('.animate-pulse')).toBeNull();
+    expect(button.querySelector('[role="status"]')).toBeNull();
+    // The background revalidation fetch did start (stale-while-revalidate).
+    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+  });
+
+  it('keeps the skeleton on the uncached first-boot path while the fetch is pending', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () => new Promise(() => {}),
+    );
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    await new Promise((r) => setTimeout(r, 100));
+    const button = screen.getByRole('button');
+    expect(button.textContent).not.toContain('Claude Sonnet 4.6');
+    expect(button.querySelector('.animate-pulse')).not.toBeNull();
+  });
+
+  it('writes successful fetch results through to the cache slice', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'sonnet4.6', label: 'Claude Sonnet 4.6', description: 'Smart model' }],
+    });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      const writeThrough = mockSvelteDispatch.mock.calls.find(
+        ([action]) => action?.type === 'providerModels/providerModelsLoaded',
+      );
+      expect(writeThrough).toBeTruthy();
+      const [providerId, entry] = writeThrough![0].payload as [
+        string,
+        { models: { value: string }[]; fetchedAt: string },
+      ];
+      expect(providerId).toBe('auggie');
+      expect(entry.models).toEqual([
+        { value: 'sonnet4.6', label: 'Claude Sonnet 4.6', description: 'Smart model' },
+      ]);
+      expect(Number.isNaN(Date.parse(entry.fetchedAt))).toBe(false);
+    });
+  });
+
+  it('writes force-refresh (↻) results through to the cache slice', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'sonnet4.6', label: 'Claude Sonnet 4.6', description: 'Smart model' }],
+    });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    const refreshButton = await screen.findByRole('button', { name: /Refresh .* models/ });
+
+    mockSvelteDispatch.mockClear();
+    vi.mocked(getModelsForProviderForLoadingState).mockClear();
+    await fireEvent.click(refreshButton);
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie', {
+        forceRefresh: true,
+      });
+      const writeThrough = mockSvelteDispatch.mock.calls.find(
+        ([action]) => action?.type === 'providerModels/providerModelsLoaded',
+      );
+      expect(writeThrough).toBeTruthy();
+      expect((writeThrough![0].payload as [string, unknown])[0]).toBe('auggie');
+    });
+  });
+
+  it('refetches when the cache is cleared on reconnect even though provider ids are unchanged', async () => {
+    seedCache();
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'sonnet4.6', label: 'Claude Sonnet 4.6', description: 'Smart model' }],
+    });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        portal: false,
+      },
+    });
+
+    // The initial background revalidation settles.
+    await waitFor(() => {
+      expect(
+        vi.mocked(getModelsForProviderForLoadingState).mock.calls.filter(([pid]) => pid === 'auggie'),
+      ).toHaveLength(1);
+    });
+
+    // Backend reconnect: the seeder dispatches providerModelsCacheCleared and
+    // the map goes empty (and the clear epoch bumps). The enabled-provider
+    // ids are UNCHANGED, so the fetch-effect dedup key alone would skip —
+    // the picker must still revalidate off the cache-clear signal.
+    mockProviderModelsState.byProviderId = {};
+    mockProviderModelsState.clearEpoch = 1;
+    (mockAppStore as unknown as { emitState: () => void }).emitState();
+
+    await waitFor(() => {
+      expect(
+        vi.mocked(getModelsForProviderForLoadingState).mock.calls.filter(([pid]) => pid === 'auggie'),
+      ).toHaveLength(2);
+    });
+  });
+
+  it('discards a pre-clear response entirely (no local state, no write-through)', async () => {
+    // The epoch is captured when the fetch STARTS: a clear that lands
+    // mid-flight bumps the state epoch, and the settle-time epoch check
+    // drops the stale response before it reaches local component state OR
+    // the cache write-through. The epoch is mutated here without an
+    // emitState() (no reconnect-reaction refetch) to isolate the settle-time
+    // guard itself.
+    let resolveFetch!: (result: {
+      models: { value: string; label: string; description?: string }[];
+    }) => void;
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        portal: false,
+      },
+    });
+
+    await waitFor(() => expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalled());
+
+    // Epoch bumps while the response is in flight; the late settle must be
+    // fully discarded.
+    mockProviderModelsState.clearEpoch = 1;
+    resolveFetch({
+      models: [{ value: 'sonnet4.6', label: 'Claude Sonnet 4.6', description: 'Smart model' }],
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    // No cache write-through was dispatched for the stale response…
+    expect(
+      mockSvelteDispatch.mock.calls.find(
+        ([action]) => action?.type === 'providerModels/providerModelsLoaded',
+      ),
+    ).toBeUndefined();
+    // …and the stale rows never reached local state (the trigger label
+    // would have resolved from allProviderModels).
+    expect(screen.getByRole('button').textContent).not.toContain('Claude Sonnet 4.6');
+  });
+
+  it('refetches and discards the stale response when reconnect happens during initial load (empty cache)', async () => {
+    // Reconnect DURING initial load: the cache is already empty, so the map
+    // never transitions non-empty → empty — only the clear epoch (which
+    // increments on every providerModelsCacheCleared) signals the reconnect.
+    // The in-flight pre-reconnect response must be discarded and a
+    // replacement fetch must start.
+    const resolvers: ((result: {
+      models: { value: string; label: string; description?: string }[];
+    }) => void)[] = [];
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        portal: false,
+      },
+    });
+
+    // First fetch (epoch 0) is in flight against the pre-restart daemon.
+    await waitFor(() => expect(resolvers).toHaveLength(1));
+
+    // Backend reconnect: the seeder dispatches providerModelsCacheCleared.
+    // The map stays {} (empty→empty) — only the epoch moves.
+    mockProviderModelsState.clearEpoch = 1;
+    (mockAppStore as unknown as { emitState: () => void }).emitState();
+
+    // A replacement fetch starts despite unchanged provider ids + empty map.
+    await waitFor(() => expect(resolvers.length).toBeGreaterThan(1));
+
+    // The stale pre-reconnect response settles late — fully discarded.
+    resolvers[0]({
+      models: [{ value: 'stale-model', label: 'Stale Model', description: 'Pre-reconnect' }],
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(
+      mockSvelteDispatch.mock.calls.find(
+        ([action]) => action?.type === 'providerModels/providerModelsLoaded',
+      ),
+    ).toBeUndefined();
+    expect(screen.getByRole('button').textContent).not.toContain('Stale Model');
+
+    // The post-reconnect fetch settles — applied to local state AND written
+    // through with the post-clear epoch.
+    resolvers[resolvers.length - 1]({
+      models: [{ value: 'sonnet4.6', label: 'Claude Sonnet 4.6', description: 'Smart model' }],
+    });
+    await waitFor(() => {
+      const writeThrough = mockSvelteDispatch.mock.calls.find(
+        ([action]) => action?.type === 'providerModels/providerModelsLoaded',
+      );
+      expect(writeThrough).toBeTruthy();
+      const [providerId, , epoch] = writeThrough![0].payload as [string, unknown, number];
+      expect(providerId).toBe('auggie');
+      expect(epoch).toBe(1);
+    });
+    expect(screen.getByRole('button').textContent).toContain('Claude Sonnet 4.6');
+  });
+
+  it('hydrates the agent-provider path (disabled effective provider) from the cache', async () => {
+    // Locked/agent picker whose provider (codex) is no longer enabled: the
+    // all-provider fetch prunes cached codex rows, so only the per-agent
+    // path's own cache hydration can resolve the label while the
+    // never-settling revalidation is pending.
+    mockProviderModelsState.byProviderId = {
+      codex: {
+        models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
+        fetchedAt: new Date().toISOString(),
+      },
+    };
+    mockModelState.selectedModel = 'codex:gpt-5-codex';
+    enabledProviderIds$.set(['auggie']);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () => new Promise(() => {}),
+    );
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    // Past the debounce: the all-provider fetch has pruned codex from its
+    // local map, so a resolved label + no spinner proves the agent path
+    // rendered the cached catalog instead of flipping to loading.
+    await new Promise((r) => setTimeout(r, 100));
+    const button = screen.getByRole('button');
+    expect(button.textContent).toContain('GPT-5 Codex');
+    expect(button.querySelector('.animate-pulse')).toBeNull();
+    expect(button.querySelector('[role="status"]')).toBeNull();
+    // The background revalidation for the agent's provider still fired.
+    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+
+    mockAgentSession$.set(undefined);
+  });
+
+  it('writes agent-provider fetch results through to the cache slice', async () => {
+    mockModelState.selectedModel = 'codex:gpt-5-codex';
+    enabledProviderIds$.set(['auggie']);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return {
+          models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
+        };
+      }
+      return { models: [] };
+    });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      const writeThrough = mockSvelteDispatch.mock.calls.find(
+        ([action]) =>
+          action?.type === 'providerModels/providerModelsLoaded' &&
+          (action.payload as [string, unknown])[0] === 'codex',
+      );
+      expect(writeThrough).toBeTruthy();
+      const entry = (writeThrough![0].payload as [string, { models: { value: string }[] }])[1];
+      expect(entry.models).toEqual([
+        { value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' },
+      ]);
+    });
+
+    mockAgentSession$.set(undefined);
+  });
+
+  it('writes the silent-fallback retry fetch through to the cache slice', async () => {
+    // The selected model's provider (auggie) has no models while another
+    // enabled provider does, so the silent-fallback retry
+    // (getModelsForProvider) is the path that recovers auggie's models — it
+    // must write through like the other fetch paths.
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return {
+          models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
+        };
+      }
+      return { models: [] };
+    });
+    vi.mocked(getModelsForProvider).mockResolvedValue([
+      { value: 'auggie:model-1', label: 'Auggie Model 1', description: 'A model' },
+    ]);
+    mockModelState.selectedModel = 'auggie:missing-model';
+    enabledProviderIds$.set(['auggie', 'codex']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:missing-model',
+        silentFallback: true,
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      const writeThrough = mockSvelteDispatch.mock.calls.find(
+        ([action]) =>
+          action?.type === 'providerModels/providerModelsLoaded' &&
+          (action.payload as [string, { models: { value: string }[] }])[1].models.some(
+            (model) => model.value === 'auggie:model-1',
+          ),
+      );
+      expect(writeThrough).toBeTruthy();
+      expect((writeThrough![0].payload as [string, unknown])[0]).toBe('auggie');
     });
   });
 });

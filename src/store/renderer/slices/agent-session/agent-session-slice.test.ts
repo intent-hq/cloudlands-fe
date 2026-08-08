@@ -842,6 +842,55 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].waitingForAgentIds).toEqual(['child-1']);
     });
 
+    it('folds session-advertised effortLevels from a convergence payload (§5.5)', () => {
+      // The daemon includes the discovered `thought_level` levels on
+      // agent:updated/agent:session-updated payloads after a session open.
+      // An absent key leaves the stored value untouched.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { effortLevels: ['low', 'high'] })),
+      );
+      expect(state.byAgentId['a1'].effortLevels).toEqual(['low', 'high']);
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-levels-absent',
+          type: 'agent:session-updated',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'idle' },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].effortLevels).toEqual(['low', 'high']);
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-levels-set',
+          type: 'agent:session-updated',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'idle', effortLevels: ['low', 'medium', 'high', 'max'] },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].effortLevels).toEqual(['low', 'medium', 'high', 'max']);
+    });
+
+    it('an effortLevels-only change is not swallowed as a no-op upsert', () => {
+      // The refetch after the first session open often differs from the
+      // stored session only in the newly discovered effortLevels — the
+      // comparison snapshot must register that change.
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
+      expect(state.byAgentId['a1'].effortLevels).toBeUndefined();
+
+      state = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1', { effortLevels: ['low', 'high'] })),
+      );
+      expect(state.byAgentId['a1'].effortLevels).toEqual(['low', 'high']);
+    });
+
     it('folds reasoningEffort from an agent:session-updated payload (set and clear)', () => {
       // Option B (§5.5): the daemon echoes the session-level reasoningEffort
       // on `agent:updated`/`agent:session-updated` convergence payloads — a

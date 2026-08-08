@@ -6,13 +6,21 @@
  * dispatched from settings UI has NO EFFECT — the setting is not persisted and
  * the update channel is not switched, so user cannot toggle between stable/beta.
  *
- * This middleware reconnects the path WITHOUT re-adding a saga and WITHOUT
- * changing any call site:
+ * This middleware reconnects the path WITHOUT re-adding a saga and is the
+ * SINGLE owner of the SET_CHANNEL write — UI call sites (Settings toggle,
+ * settings proposals) only dispatch the actions and must not call
+ * autoUpdateClient.setChannel directly, or a user toggle would issue the
+ * channel write twice:
  *   - Watches setBetaUpdatesEnabled and toggleBetaUpdates actions
  *   - Calls autoUpdateClient.setChannel(enabled ? "beta" : "stable")
  *     (which persists via local-prefs internally)
- *   - On first action, hydrates betaUpdatesEnabled from autoUpdateClient.getState()
- *     to ensure Redux reflects the actual channel in real mode
+ *   - At store init (middleware chain construction), hydrates
+ *     betaUpdatesEnabled from autoUpdateClient.getState() so Redux reflects
+ *     the actual channel in real mode without waiting for any action
+ *
+ * Hydration dispatches loadBetaUpdatesSettings (NOT setBetaUpdatesEnabled) so the
+ * middleware never re-persists the channel in response to its own hydration — a
+ * user toggle is distinguishable from a boot-time sync (intent-hq/monorepo#1672).
  *
  * Dependency-light per src/store/renderer AGENTS.md: imports only slice actions,
  * auto-update client, and safe logger — no selectors.
@@ -20,6 +28,7 @@
 import type { StoreMiddleware } from "$lib/store-shim/types";
 import type { StoreState } from "../types";
 import {
+  loadBetaUpdatesSettings,
   setBetaUpdatesEnabled,
   toggleBetaUpdates,
 } from "../slices/user-preferences/user-preferences-slice";
@@ -44,38 +53,42 @@ async function applyUpdateChannel(enabled: boolean): Promise<void> {
 /**
  * Middleware giving beta-updates persistence real handlers again, plus real-mode
  * boot hydration. Watches setBetaUpdatesEnabled/toggleBetaUpdates and switches
- * channel. On first action, syncs Redux state with main-process channel.
+ * channel. At store init, syncs Redux state with the main-process channel.
  */
 export function createUserPreferencesBetaPersistenceMiddleware(): StoreMiddleware {
-  let hasHydrated = false;
+  return (api) => {
+    // Boot-time hydration at store init (Store.init() builds the middleware
+    // chain) — unconditional, so real mode never depends on the mock seeder
+    // path (live getUserPreferences() returns null per PROTOCOL §5.12) or on
+    // a first action being dispatched. The GET_STATE IPC handler answers
+    // after AutoUpdateService.initialize() has loaded the persisted channel
+    // (see auto-update.ipc.ts), so this read reflects local-prefs.json.
+    // Async hydration (fire and forget, errors logged).
+    void (async () => {
+      try {
+        const autoUpdateState = await autoUpdateClient.getState();
+        const mainProcessBetaEnabled = autoUpdateState.channel === "beta";
+        // Hydrate via loadBetaUpdatesSettings so this middleware does not
+        // echo the hydration back into setChannel/local-prefs.json.
+        api.dispatch(loadBetaUpdatesSettings(mainProcessBetaEnabled));
+      } catch (error) {
+        logger.warn("Failed to hydrate betaUpdatesEnabled from main process", { error });
+      }
+    })();
 
-  return (api) => (next) => (action) => {
-    // Boot-time hydration on first action (real mode only — mock seeder handles it)
-    if (!hasHydrated) {
-      hasHydrated = true;
-      // Async hydration (fire and forget, errors logged)
-      void (async () => {
-        try {
-          const autoUpdateState = await autoUpdateClient.getState();
-          const mainProcessBetaEnabled = autoUpdateState.channel === "beta";
-          api.dispatch(setBetaUpdatesEnabled(mainProcessBetaEnabled));
-        } catch (error) {
-          logger.warn("Failed to hydrate betaUpdatesEnabled from main process", { error });
-        }
-      })();
-    }
-
-    const result = next(action);
-    if (
-      action &&
-      (action.type === setBetaUpdatesEnabled.type || action.type === toggleBetaUpdates.type)
-    ) {
-      // Read the updated state after reducer ran
-      const state = api.getState() as StoreState;
-      const enabled = state.userPreferences.betaUpdatesEnabled ?? false;
-      // Async channel switch (fire and forget, errors logged)
-      void applyUpdateChannel(enabled);
-    }
-    return result;
+    return (next) => (action) => {
+      const result = next(action);
+      if (
+        action &&
+        (action.type === setBetaUpdatesEnabled.type || action.type === toggleBetaUpdates.type)
+      ) {
+        // Read the updated state after reducer ran
+        const state = api.getState() as StoreState;
+        const enabled = state.userPreferences.betaUpdatesEnabled ?? false;
+        // Async channel switch (fire and forget, errors logged)
+        void applyUpdateChannel(enabled);
+      }
+      return result;
+    };
   };
 }
