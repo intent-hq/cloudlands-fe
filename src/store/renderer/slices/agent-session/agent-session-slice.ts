@@ -260,6 +260,8 @@ type CanonicalAgentSessionUpdates = {
   processQueueHint?: AgentSession['processQueueHint'];
   isWaitingForOtherAgents?: boolean;
   waitingForAgentIds?: string[];
+  waitingOnHooks?: AgentSession['waitingOnHooks'];
+  waitingOnPrMonitors?: AgentSession['waitingOnPrMonitors'];
   liveTurnOpen?: boolean;
 };
 
@@ -339,6 +341,18 @@ function canonicalSessionUpdates(
       (id): id is string => typeof id === 'string',
     );
   }
+  // waitingOnHooks/waitingOnPrMonitors (§3.1/§5.42): fold the live event's
+  // list straight onto the session so HUD idle-bucketing (hud-selectors.ts)
+  // doesn't have to wait on the async agent.list re-hydration. Presence-only
+  // (same convention as waitingForAgentIds above) — the `agent:idle` branch
+  // of canonicalFieldsFromWorkspaceEvent defaults the field to `[]` when
+  // absent (protocol stamps it on every idle emit site, omitted only when
+  // empty), so an idle event always clears a stale list; other canonical
+  // event types that don't carry the field leave the existing value alone.
+  if (Array.isArray(fields.waitingOnHooks)) updates.waitingOnHooks = fields.waitingOnHooks;
+  if (Array.isArray(fields.waitingOnPrMonitors)) {
+    updates.waitingOnPrMonitors = fields.waitingOnPrMonitors;
+  }
 
   const isRunningTransition =
     fields.isActive === true &&
@@ -398,6 +412,12 @@ function canonicalFieldsFromWorkspaceEvent(event: {
         isResponding: data.isResponding ?? false,
         stopReason: data.stopReason ?? data.finishReason ?? null,
         stopReasonTimestamp: data.stopReasonTimestamp ?? null,
+        // waitingOnHooks/waitingOnPrMonitors (§3.1/§5.42) are stamped on
+        // EVERY idle emit site, omitted only when empty (never absent for
+        // lack-of-support — an older daemon simply never populates them) —
+        // default to [] so a stale list from a prior idle is cleared.
+        waitingOnHooks: data.waitingOnHooks ?? [],
+        waitingOnPrMonitors: data.waitingOnPrMonitors ?? [],
       },
     ];
   }
