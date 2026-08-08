@@ -1229,7 +1229,9 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
       }
       await flushTrailing();
 
-      expect(gitStatusCalls()).toBeGreaterThan(1);
+      // Initial subscribe snapshot + the burst's leading fetch + exactly one
+      // trailing fetch — and still the single seeding `workspace.list`.
+      expect(gitStatusCalls()).toBe(3);
       expect(workspaceListCalls()).toBe(1);
       unsubscribe();
       await flush();
