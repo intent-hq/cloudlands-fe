@@ -22,10 +22,11 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/active-streams-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/agent-ipc-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/auto-update-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
-  ['src/store/renderer/seeders/backend-status-bridge-seeder.ts', { registerMockIpcHandler: 3 }],
+  ['src/store/renderer/seeders/backend-status-bridge-seeder.ts', { registerMockIpcHandler: 4 }],
+  ['src/store/renderer/seeders/connections-bridge-seeder.ts', { registerMockIpcHandler: 6 }],
   ['src/store/renderer/seeders/file-bridge-seeder.ts', { registerMockIpcHandler: 8 }],
   ['src/store/renderer/seeders/git-bridge-seeder.ts', { registerMockIpcHandler: 9 }],
-  ['src/store/renderer/seeders/host-bridge-seeder.ts', { registerMockIpcHandler: 14 }],
+  ['src/store/renderer/seeders/host-bridge-seeder.ts', { registerMockIpcHandler: 16 }],
   ['src/store/renderer/seeders/integrations-bridge-seeder.ts', { registerMockIpcHandler: 26 }],
   [
     'src/store/renderer/seeders/language-preference-bridge-seeder.ts',
@@ -37,13 +38,15 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/notification-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/panel-layout-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/pi-mcp-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
-  ['src/store/renderer/seeders/provider-status-bridge-seeder.ts', { registerMockIpcHandler: 8 }],
+  ['src/store/renderer/seeders/provider-status-bridge-seeder.ts', { registerMockIpcHandler: 7 }],
+  ['src/store/renderer/seeders/release-notes-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/repo-config-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/settings-legacy-bridge-seeder.ts', { registerMockIpcHandler: 5 }],
   ['src/store/renderer/seeders/shell-reveal-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/terminals-scripts-seeder.ts', { registerMockIpcHandler: 2 }],
-  ['src/store/renderer/seeders/window-state-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
-  ['src/store/renderer/seeders/workspaces-seeder.ts', { registerMockIpcHandler: 6 }],
+  ['src/store/renderer/seeders/voice-local-bridge-seeder.ts', { registerMockIpcHandler: 3 }],
+  ['src/store/renderer/seeders/window-state-bridge-seeder.ts', { registerMockIpcHandler: 3 }],
+  ['src/store/renderer/seeders/workspaces-seeder.ts', { registerMockIpcHandler: 7 }],
   [
     'src/store/renderer/slices/notifications/sagas/notifications-saga.ts',
     { addMockIpcListener: 1 },
@@ -54,9 +57,21 @@ const IPC_ROUTER_PATH = 'src/shared/ipc-mock-router.ts';
 const IPC_REGISTRARS = new Set(['registerMockIpcHandler', 'addMockIpcListener']);
 const REGISTRY_PATH = 'src/store/renderer/middleware.ts';
 const CONFIGURED_STORE_PATH = 'src/store/renderer/configured-store.ts';
+const MIDDLEWARE_REGISTRY_ORIGIN = 'MiddlewareRegistry';
+const REGISTRY_BUILDER = 'buildMiddleware';
 
 function normalize(filePath) {
   return filePath.split(path.sep).join('/').replace(/^\.\//, '');
+}
+
+function isRendererSource(filePath) {
+  return (
+    (filePath.startsWith('src/features/') && !filePath.includes('/main/')) ||
+    filePath.startsWith('src/lib/') ||
+    filePath.startsWith('src/routes/') ||
+    filePath.startsWith('src/store/renderer/') ||
+    filePath.startsWith('src/store/utils/')
+  );
 }
 
 export function findRendererSideEffectBoundaryViolations(files) {
@@ -108,6 +123,9 @@ export function findRendererSideEffectBoundaryViolations(files) {
       specifier === '$shared/ipc-mock-router' || specifier === IPC_ROUTER_PATH.replace(/\.ts$/, '');
     if (isRouter && IPC_REGISTRARS.has(exportedName)) return exportedName;
     for (const candidate of moduleCandidates(fromPath, specifier)) {
+      if (candidate === REGISTRY_PATH && exportedName === 'middleware') {
+        return MIDDLEWARE_REGISTRY_ORIGIN;
+      }
       if (APPROVED_MIDDLEWARE.get(candidate) === exportedName) {
         return `middleware:${candidate}#${exportedName}`;
       }
@@ -122,12 +140,68 @@ export function findRendererSideEffectBoundaryViolations(files) {
     if (target === IPC_ROUTER_PATH && IPC_REGISTRARS.has(exportedName)) return exportedName;
     return target ? exportedOrigin(target, exportedName, seen) : undefined;
   };
-  const bindingOrigin = (filePath, localName, seen = new Set()) => {
+  const resolveTypeOrigin = (filePath, typeNode, seen = new Set()) => {
+    if (!typeNode || !ts.isTypeReferenceNode(typeNode)) return undefined;
+    const typeName = typeNode.typeName;
+    if (ts.isIdentifier(typeName)) {
+      return bindingOrigin(filePath, typeName.text, seen);
+    }
+    if (ts.isQualifiedName(typeName) && ts.isIdentifier(typeName.left)) {
+      const source = sources.get(filePath)?.source;
+      for (const statement of source?.statements ?? []) {
+        if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
+          continue;
+        const bindings = statement.importClause?.namedBindings;
+        if (
+          bindings &&
+          ts.isNamespaceImport(bindings) &&
+          bindings.name.text === typeName.left.text
+        ) {
+          return originFromModule(
+            filePath,
+            statement.moduleSpecifier.text,
+            typeName.right.text,
+            seen,
+          );
+        }
+      }
+    }
+    return undefined;
+  };
+  const parameterOrigin = (filePath, localName, referenceNode, seen) => {
+    let current = referenceNode.parent;
+    while (current) {
+      if (
+        (ts.isFunctionDeclaration(current) ||
+          ts.isFunctionExpression(current) ||
+          ts.isArrowFunction(current) ||
+          ts.isMethodDeclaration(current) ||
+          ts.isConstructorDeclaration(current)) &&
+        current.parameters
+      ) {
+        const param = current.parameters.find(
+          (p) => ts.isIdentifier(p.name) && p.name.text === localName,
+        );
+        if (param) {
+          return resolveTypeOrigin(filePath, param.type, seen) === 'Store'
+            ? 'StoreInstance'
+            : undefined;
+        }
+      }
+      current = current.parent;
+    }
+    return undefined;
+  };
+  const bindingOrigin = (filePath, localName, seen = new Set(), referenceNode) => {
     const key = `${filePath}#local:${localName}`;
     if (seen.has(key)) return undefined;
     seen.add(key);
     const source = sources.get(filePath)?.source;
     if (!source) return undefined;
+    if (referenceNode) {
+      const fromParameter = parameterOrigin(filePath, localName, referenceNode, seen);
+      if (fromParameter) return fromParameter;
+    }
     for (const statement of source.statements) {
       if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
         const clause = statement.importClause;
@@ -148,6 +222,12 @@ export function findRendererSideEffectBoundaryViolations(files) {
           }
         }
       }
+      if (ts.isClassDeclaration(statement) && statement.name?.text === localName) {
+        const baseClass = statement.heritageClauses
+          ?.find((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
+          ?.types.at(0)?.expression;
+        return expressionOrigin(filePath, baseClass, seen) === 'Store' ? 'Store' : undefined;
+      }
       if (!ts.isVariableStatement(statement)) continue;
       for (const declaration of statement.declarationList.declarations) {
         if (ts.isIdentifier(declaration.name) && declaration.name.text === localName) {
@@ -162,7 +242,8 @@ export function findRendererSideEffectBoundaryViolations(files) {
     if (ts.isParenthesizedExpression(expression) || ts.isAsExpression(expression)) {
       return expressionOrigin(filePath, expression.expression, seen);
     }
-    if (ts.isIdentifier(expression)) return bindingOrigin(filePath, expression.text, seen);
+    if (ts.isIdentifier(expression))
+      return bindingOrigin(filePath, expression.text, seen, expression);
     if (ts.isNewExpression(expression)) {
       return expressionOrigin(filePath, expression.expression, seen) === 'Store'
         ? 'StoreInstance'
@@ -308,6 +389,7 @@ export function findRendererSideEffectBoundaryViolations(files) {
 
     const registryCalls = [];
     const bridgeCalls = { registerMockIpcHandler: 0, addMockIpcListener: 0 };
+    let configuredRegistryConsumptions = 0;
     visit(file.source, (node) => {
       let factoryName;
       let returnType;
@@ -327,13 +409,14 @@ export function findRendererSideEffectBoundaryViolations(files) {
         const typedFactory = typeUsesStoreMiddleware(returnType);
         const conventionalFactory =
           /^create[A-Za-z0-9_]*ReduxBridge$/.test(factoryName) ||
-          (/^create[A-Za-z0-9_]*Middleware$/.test(factoryName) &&
-            (typedFactory || storeMiddlewareNames.size > 0 || storeMiddlewareNamespaces.size > 0));
+          (/^create[A-Za-z0-9_]*Middleware$/.test(factoryName) && isRendererSource(filePath));
         const serviceFactory = /^create[A-Za-z0-9_]*Service$/.test(factoryName) && typedFactory;
+        const approvedRegistryBuilder =
+          filePath === REGISTRY_PATH && factoryName === REGISTRY_BUILDER;
         if (
           (conventionalFactory || typedFactory || serviceFactory) &&
           APPROVED_MIDDLEWARE.get(filePath) !== factoryName &&
-          filePath !== REGISTRY_PATH
+          !approvedRegistryBuilder
         ) {
           violations.push(`${filePath}: unapproved side-effect factory ${factoryName}`);
         }
@@ -351,8 +434,7 @@ export function findRendererSideEffectBoundaryViolations(files) {
         if (
           ts.isPropertyAccessExpression(node.expression) &&
           node.expression.name.text === 'addMiddleware' &&
-          expressionOrigin(filePath, node.expression.expression) === 'StoreInstance' &&
-          filePath !== CONFIGURED_STORE_PATH
+          expressionOrigin(filePath, node.expression.expression) === 'StoreInstance'
         ) {
           violations.push(`${filePath}: direct Store middleware registration is not allowed`);
         }
@@ -385,15 +467,22 @@ export function findRendererSideEffectBoundaryViolations(files) {
             ts.isIdentifier(node.expression.expression) &&
             storeConstructorNamespaces.has(node.expression.expression.text) &&
             node.expression.name.text === 'Store');
-        if (
-          directStore &&
-          (node.arguments?.length ?? 0) > 1 &&
-          filePath !== CONFIGURED_STORE_PATH
-        ) {
-          violations.push(`${filePath}: direct Store middleware registration is not allowed`);
+        if (directStore && (node.arguments?.length ?? 0) > 1) {
+          const consumesConfiguredRegistry =
+            filePath === CONFIGURED_STORE_PATH &&
+            node.arguments?.length === 2 &&
+            expressionOrigin(filePath, node.arguments[1]) === MIDDLEWARE_REGISTRY_ORIGIN;
+          if (consumesConfiguredRegistry) configuredRegistryConsumptions += 1;
+          else violations.push(`${filePath}: direct Store middleware registration is not allowed`);
         }
       }
     });
+
+    if (filePath === CONFIGURED_STORE_PATH && configuredRegistryConsumptions !== 1) {
+      violations.push(
+        `${filePath}: configured Store must consume the central middleware registry exactly once`,
+      );
+    }
 
     const approvedBridgeCalls = APPROVED_BRIDGE_REGISTRATIONS.get(filePath);
     if (

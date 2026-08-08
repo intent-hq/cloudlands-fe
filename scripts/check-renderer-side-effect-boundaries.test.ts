@@ -17,6 +17,17 @@ const registry = {
   ].join('\n'),
 };
 
+const configuredStore = {
+  path: 'src/store/renderer/configured-store.ts',
+  content: [
+    "import { Store } from '@augmentcode/themis/svelte-store';",
+    "import { middleware } from './middleware';",
+    "import { reducers } from './reducer';",
+    'class RendererStore extends Store {}',
+    'export const store = new RendererStore(reducers, middleware);',
+  ].join('\n'),
+};
+
 describe('renderer side-effect boundary guard', () => {
   it('allows the five approved middleware and reusable non-middleware utilities', () => {
     const files = [
@@ -35,6 +46,10 @@ describe('renderer side-effect boundary guard', () => {
         ].join('\n'),
       },
       {
+        path: 'src/shared/type-system/validation.ts',
+        content: 'export function createValidationMiddleware() { return validate; }',
+      },
+      {
         path: 'src/store/renderer/seeders/misc-ui-events-seeder.ts',
         content: [
           "import { registerMockIpcHandler as register } from '$shared/ipc-mock-router';",
@@ -43,6 +58,10 @@ describe('renderer side-effect boundary guard', () => {
       },
     ];
     expect(findRendererSideEffectBoundaryViolations(files)).toEqual([]);
+  });
+
+  it('allows the configured Store to consume the central middleware registry exactly once', () => {
+    expect(findRendererSideEffectBoundaryViolations([registry, configuredStore])).toEqual([]);
   });
 
   it('rejects a new business middleware factory', () => {
@@ -95,6 +114,21 @@ describe('renderer side-effect boundary guard', () => {
     ]);
     expect(violations).toEqual([
       expect.stringContaining('unapproved side-effect factory buildTaskEffects'),
+    ]);
+  });
+
+  it('rejects an untyped conventionally named renderer middleware factory', () => {
+    const violations = findRendererSideEffectBoundaryViolations([
+      registry,
+      {
+        path: 'src/features/tasks/task-middleware.ts',
+        content: 'export function createTaskMiddleware() { return () => (next) => next; }',
+      },
+    ]);
+    expect(violations).toEqual([
+      expect.stringContaining(
+        'task-middleware.ts: unapproved side-effect factory createTaskMiddleware',
+      ),
     ]);
   });
 
@@ -177,6 +211,86 @@ describe('renderer side-effect boundary guard', () => {
     ]);
   });
 
+  it.each([
+    ['addMiddleware', `${configuredStore.content}\nstore.addMiddleware(undefined as never);`],
+    [
+      'a second Store constructor',
+      `${configuredStore.content}\nnew Store(reducers, [undefined as never]);`,
+    ],
+  ])('rejects configured-store bypass through %s', (_bypass, content) => {
+    expect(
+      findRendererSideEffectBoundaryViolations([registry, { ...configuredStore, content }]),
+    ).toEqual([
+      expect.stringContaining(
+        'src/store/renderer/configured-store.ts: direct Store middleware registration is not allowed',
+      ),
+    ]);
+  });
+
+  it.each([
+    [
+      'a function declaration parameter',
+      [
+        "import { Store } from '@augmentcode/themis/svelte-store';",
+        'function install(store: Store) {',
+        '  store.addMiddleware(otherMiddleware);',
+        '}',
+      ].join('\n'),
+    ],
+    [
+      'an arrow function parameter',
+      [
+        "import { Store } from '@augmentcode/themis/svelte-store';",
+        'const install = (store: Store) => {',
+        '  store.addMiddleware(otherMiddleware);',
+        '};',
+      ].join('\n'),
+    ],
+    [
+      'a class method parameter',
+      [
+        "import { Store } from '@augmentcode/themis/svelte-store';",
+        'class Installer {',
+        '  install(store: Store) {',
+        '    store.addMiddleware(otherMiddleware);',
+        '  }',
+        '}',
+      ].join('\n'),
+    ],
+    [
+      'a namespace-qualified parameter type',
+      [
+        "import * as themis from '@augmentcode/themis/svelte-store';",
+        'function install(store: themis.Store) {',
+        '  store.addMiddleware(otherMiddleware);',
+        '}',
+      ].join('\n'),
+    ],
+  ])('rejects direct Store middleware registration via %s', (_variant, content) => {
+    const violations = findRendererSideEffectBoundaryViolations([
+      registry,
+      { path: 'src/features/tasks/task-install.ts', content },
+    ]);
+    expect(violations).toEqual([
+      expect.stringContaining('direct Store middleware registration is not allowed'),
+    ]);
+  });
+
+  it('allows a non-Store-typed function parameter to call addMiddleware', () => {
+    const violations = findRendererSideEffectBoundaryViolations([
+      registry,
+      {
+        path: 'src/features/tasks/task-install.ts',
+        content: [
+          'function install(store: SomeOtherType) {',
+          '  store.addMiddleware(otherMiddleware);',
+          '}',
+        ].join('\n'),
+      },
+    ]);
+    expect(violations).toEqual([]);
+  });
+
   it('allows unrelated objects that happen to expose addMiddleware', () => {
     expect(
       findRendererSideEffectBoundaryViolations([
@@ -213,6 +327,21 @@ describe('renderer side-effect boundary guard', () => {
     expect(violations).toEqual([
       expect.stringContaining(
         'registry must contain exactly the five approved middleware factories',
+      ),
+    ]);
+  });
+
+  it.each([
+    ['removed', registry.content.replace('createLoggerMiddleware()\n', '')],
+    [
+      'replaced',
+      registry.content.replace('createLoggerMiddleware()', 'createUnapprovedMiddleware()'),
+    ],
+    ['duplicated', `${registry.content}\ncreateLoggerMiddleware()`],
+  ])('rejects an approved factory that is %s in the registry', (_change, content) => {
+    expect(findRendererSideEffectBoundaryViolations([{ ...registry, content }])).toEqual([
+      expect.stringContaining(
+        'src/store/renderer/middleware.ts: registry must contain exactly the five approved middleware factories',
       ),
     ]);
   });
