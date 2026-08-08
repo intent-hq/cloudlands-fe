@@ -37,13 +37,15 @@ import type { BrowserWindow } from 'electron';
 
 import { IPC_CHANNELS } from '../shared/ipc-registry';
 
-export type SwipeHistoryDirection = 'back' | 'forward';
+type SwipeHistoryDirection = 'back' | 'forward';
 
 /**
  * Map a `swipe` event direction to a history direction.
  * Returns null for vertical swipes ('up' / 'down') and anything unexpected.
+ * Kept module-internal: orchestration modules must not export utilities
+ * (AGENTS.md); the mapping is exercised through attachSwipeHistoryNavigation.
  */
-export function historyDirectionForSwipe(direction: string): SwipeHistoryDirection | null {
+function historyDirectionForSwipe(direction: string): SwipeHistoryDirection | null {
   if (direction === 'left') return 'back';
   if (direction === 'right') return 'forward';
   return null;

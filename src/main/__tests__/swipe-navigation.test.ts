@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { BrowserWindow } from 'electron';
 
-import { attachSwipeHistoryNavigation, historyDirectionForSwipe } from '../swipe-navigation';
+import { attachSwipeHistoryNavigation } from '../swipe-navigation';
 import { IPC_CHANNELS } from '../../shared/ipc-registry';
 
 /** Minimal BrowserWindow stand-in capturing the swipe listener. */
@@ -24,20 +24,6 @@ function createFakeWindow(overrides?: { windowDestroyed?: boolean; contentsDestr
   return { window: window as unknown as BrowserWindow, send, emitSwipe };
 }
 
-describe('historyDirectionForSwipe', () => {
-  it('maps left to back', () => {
-    expect(historyDirectionForSwipe('left')).toBe('back');
-  });
-
-  it('maps right to forward', () => {
-    expect(historyDirectionForSwipe('right')).toBe('forward');
-  });
-
-  it.each(['up', 'down', 'back', 'forward', ''])('returns null for %j', (direction) => {
-    expect(historyDirectionForSwipe(direction)).toBeNull();
-  });
-});
-
 describe('attachSwipeHistoryNavigation', () => {
   it('sends app:history-navigate back for a left swipe', () => {
     const { window, send, emitSwipe } = createFakeWindow();
@@ -55,13 +41,15 @@ describe('attachSwipeHistoryNavigation', () => {
     expect(send).toHaveBeenCalledWith(IPC_CHANNELS.APP.HISTORY_NAVIGATE, 'forward');
   });
 
-  it('ignores vertical swipes', () => {
-    const { window, send, emitSwipe } = createFakeWindow();
-    attachSwipeHistoryNavigation(window, 'darwin');
-    emitSwipe('up');
-    emitSwipe('down');
-    expect(send).not.toHaveBeenCalled();
-  });
+  it.each(['up', 'down', 'back', 'forward', ''])(
+    'ignores vertical/unexpected swipe direction %j',
+    (direction) => {
+      const { window, send, emitSwipe } = createFakeWindow();
+      attachSwipeHistoryNavigation(window, 'darwin');
+      emitSwipe(direction);
+      expect(send).not.toHaveBeenCalled();
+    },
+  );
 
   it('does not send to a destroyed window', () => {
     const { window, send, emitSwipe } = createFakeWindow({ windowDestroyed: true });
