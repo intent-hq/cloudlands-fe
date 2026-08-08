@@ -8,15 +8,12 @@ import type { CreateNoteRequest } from "$shared/types";
 // and the success/error folding are the genuine code paths. Notification /
 // reconnect handlers are captured as LISTS — `subscribe` registers two
 // listeners (the delta subscription's and the workspace-id source's) — so the
-// typed §6.9 channel tests can drive pushes and legacy events to both.
+// typed §6.9 channel tests can drive pushes to both.
 let notifyHandlers: Array<(n: { method: string; params?: unknown }) => void> = [];
 let reconnectHandlers: Array<() => void> = [];
-let liveStateCapability = false;
 
 vi.mock("./backend-transport", () => ({
   backendRequest: vi.fn(),
-  backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: "sub-1" })),
-  backendUnsubscribe: vi.fn(() => Promise.resolve()),
   onBackendNotification: vi.fn((handler: (n: { method: string; params?: unknown }) => void) => {
     notifyHandlers.push(handler);
     return () => {
@@ -29,7 +26,6 @@ vi.mock("./backend-transport", () => ({
       reconnectHandlers = reconnectHandlers.filter((h) => h !== handler);
     };
   }),
-  detectLiveStateCapability: vi.fn(() => Promise.resolve(liveStateCapability)),
 }));
 
 vi.mock("./live-support", async (importActual) => {
@@ -585,13 +581,12 @@ describe("LiveNotesClient mutations (fake transport)", () => {
   });
 });
 
-// ---- Typed per-workspace note channel (PROTOCOL §6.9, monorepo#775) --------
-// On liveState daemons `subscribe` registers ONE `note.subscribe` per
-// workspace id (`{ workspaceId }`), sourced from the same `workspace.list`
-// enumeration `fetchAll` flattens over. Snapshots/deltas reconcile per
-// channel and merge; workspace add/delete re-reconciles the channel set. The
-// subscription is live only while EVERY channel is push-confirmed — any gap
-// keeps legacy refetches serving.
+// ---- Typed per-workspace note channel (PROTOCOL §6.9, monorepo#1697) -------
+// `subscribe` registers ONE `note.subscribe` per workspace id
+// (`{ workspaceId }`), sourced from the same `workspace.list` enumeration —
+// the sole data path; there is no legacy `note:*` events-driven refetch.
+// Snapshots/deltas reconcile per channel and merge; workspace add/delete
+// re-reconciles the channel set, each channel emitting independently.
 describe("LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL §6.9)", () => {
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
   const requestsFor = (method: string) =>
@@ -623,21 +618,18 @@ describe("LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL �
     notify({ method: "subscription.push", params: { subscriptionId, kind: "snapshot", seq, snapshot } });
   const pushDelta = (subscriptionId: string, seq: number, delta: Record<string, unknown>) =>
     notify({ method: "subscription.push", params: { subscriptionId, kind: "delta", seq, delta } });
-  const fireLegacy = (type: string) =>
+  const fireWorkspaceSetEvent = (type: string) =>
     notify({ method: "events.event", params: { event: { type } } });
 
-  // Mutable daemon fixture the mock serves: the workspace set and each
-  // workspace's `note.list` rows (the legacy/bridging refetch source).
+  // Mutable daemon fixture the mock serves: the workspace set driving the
+  // dynamic channel-per-id scope.
   let workspaceIds: string[] = [];
-  let notesByWorkspace: Record<string, unknown[]> = {};
   let chanSeq = 0;
 
   beforeEach(() => {
-    liveStateCapability = true;
     chanSeq = 0;
     workspaceIds = ["ws-1", "ws-2"];
-    notesByWorkspace = {};
-    mockedRequest.mockImplementation((method: string, params?: unknown) => {
+    mockedRequest.mockImplementation((method: string) => {
       if (method === "workspace.list") {
         return Promise.resolve({ workspaces: workspaceIds.map((id) => ({ id })) });
       }
@@ -646,16 +638,11 @@ describe("LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL �
         return Promise.resolve({ subscriptionId: `chan-${chanSeq}` });
       }
       if (method === "note.unsubscribe") return Promise.resolve({ success: true });
-      if (method === "note.list") {
-        const wsId = (params as { workspaceId?: string })?.workspaceId ?? "";
-        return Promise.resolve({ notes: notesByWorkspace[wsId] ?? [] });
-      }
       return Promise.resolve({ success: true });
     });
   });
 
   afterEach(() => {
-    liveStateCapability = false;
     notifyHandlers = [];
     reconnectHandlers = [];
     mockedRequest.mockReset();
@@ -676,56 +663,29 @@ describe("LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL �
     unsubscribe();
   });
 
-  it("does not register channels on a daemon without liveState — legacy refetches keep serving", async () => {
-    liveStateCapability = false;
-    notesByWorkspace = { "ws-1": [wireNote("a", "ws-1", "A")] };
-    workspaceIds = ["ws-1"];
-    const handler = vi.fn();
-    const client = new LiveNotesClient();
-    const unsubscribe = client.subscribe(handler);
-
-    // Initial one-shot refetch aggregates across workspaces as before.
-    await vi.waitFor(() => expect(handler).toHaveBeenCalled());
-    expect((handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>).map((n) => n.id)).toEqual(["a"]);
-    expect(requestsFor("note.subscribe")).toEqual([]);
-
-    // A legacy note event still refetches.
-    const listCallsBefore = requestsFor("note.list").length;
-    fireLegacy("note:updated");
-    await flush();
-    expect(requestsFor("note.list").length).toBeGreaterThan(listCallsBefore);
-    unsubscribe();
-  });
-
-  it("goes live only when every workspace channel is snapshot-confirmed, merging their notes", async () => {
+  it("each channel emits independently, merging into the cross-workspace collection", async () => {
     const handler = vi.fn();
     const client = new LiveNotesClient();
     const unsubscribe = client.subscribe(handler);
     await vi.waitFor(() => expect(requestsFor("note.subscribe")).toHaveLength(2));
     await flush();
 
-    // Only chan-1 (ws-1) confirmed: not live yet — legacy events still refetch.
+    // chan-1 (ws-1) confirms: emits immediately with just its notes.
     pushSnapshot("chan-1", 0, [wireNote("a", "ws-1", "A")]);
-    const listCallsBefore = requestsFor("note.list").length;
-    fireLegacy("note:updated");
-    await flush();
-    expect(requestsFor("note.list").length).toBeGreaterThan(listCallsBefore);
+    const afterFirst = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
+    expect(afterFirst.map((n) => n.id)).toEqual(["a"]);
 
-    // chan-2 (ws-2) confirms: live — the merged cross-workspace collection emits.
+    // chan-2 (ws-2) confirms: merged cross-workspace collection.
     pushSnapshot("chan-2", 0, [wireNote("b", "ws-2", "B")]);
     const merged = handler.mock.calls.at(-1)?.[0] as Array<Record<string, unknown>>;
     expect(merged.map((n) => n.id).sort()).toEqual(["a", "b"]);
     expect(merged.find((n) => n.id === "a")).toMatchObject({ workspaceId: "ws-1" });
     expect(merged.find((n) => n.id === "b")).toMatchObject({ workspaceId: "ws-2" });
 
-    // Deltas reconcile per channel; legacy note events no longer refetch.
+    // Deltas reconcile per channel.
     pushDelta("chan-2", 1, { added: [wireNote("c", "ws-2", "C")] });
     const afterDelta = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
     expect(afterDelta.map((n) => n.id).sort()).toEqual(["a", "b", "c"]);
-    const listCallsLive = requestsFor("note.list").length;
-    fireLegacy("note:updated");
-    await flush();
-    expect(requestsFor("note.list")).toHaveLength(listCallsLive);
     unsubscribe();
   });
 
@@ -739,7 +699,7 @@ describe("LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL �
     pushSnapshot("chan-1", 0, [wireNote("a", "ws-1", "A")]);
 
     workspaceIds = ["ws-1", "ws-2"];
-    fireLegacy("workspace:created");
+    fireWorkspaceSetEvent("workspace:created");
     await vi.waitFor(() => {
       expect(requestsFor("note.subscribe")).toEqual([
         { workspaceId: "ws-1" },
@@ -764,7 +724,7 @@ describe("LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL �
     pushSnapshot("chan-2", 0, [wireNote("b", "ws-2", "B")]);
 
     workspaceIds = ["ws-1"];
-    fireLegacy("workspace:deleted");
+    fireWorkspaceSetEvent("workspace:deleted");
     await vi.waitFor(() => {
       expect(requestsFor("note.unsubscribe")).toEqual([{ subscriptionId: "chan-2" }]);
     });
@@ -773,44 +733,42 @@ describe("LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL �
     unsubscribe();
   });
 
-  it("stays legacy while any channel registration fails — refetches keep serving", async () => {
-    notesByWorkspace = {
-      "ws-1": [wireNote("a", "ws-1", "A")],
-      "ws-2": [wireNote("b", "ws-2", "B")],
-    };
-    mockedRequest.mockImplementation((method: string, params?: unknown) => {
-      if (method === "workspace.list") {
-        return Promise.resolve({ workspaces: workspaceIds.map((id) => ({ id })) });
-      }
-      if (method === "note.subscribe") {
-        const wsId = (params as { workspaceId?: string })?.workspaceId;
-        if (wsId === "ws-2") return Promise.reject(new Error("boom"));
-        chanSeq += 1;
-        return Promise.resolve({ subscriptionId: `chan-${chanSeq}` });
-      }
-      if (method === "note.unsubscribe") return Promise.resolve({ success: true });
-      if (method === "note.list") {
-        const wsId = (params as { workspaceId?: string })?.workspaceId ?? "";
-        return Promise.resolve({ notes: notesByWorkspace[wsId] ?? [] });
-      }
-      return Promise.resolve({ success: true });
-    });
-    const handler = vi.fn();
-    const client = new LiveNotesClient();
-    const unsubscribe = client.subscribe(handler);
-    await vi.waitFor(() => expect(requestsFor("note.subscribe")).toHaveLength(2));
-    await flush();
+  it("retries a failed channel registration with backoff until it succeeds", async () => {
+    vi.useFakeTimers();
+    try {
+      let ws2Attempts = 0;
+      mockedRequest.mockImplementation((method: string, params?: unknown) => {
+        if (method === "workspace.list") {
+          return Promise.resolve({ workspaces: workspaceIds.map((id) => ({ id })) });
+        }
+        if (method === "note.subscribe") {
+          const wsId = (params as { workspaceId?: string })?.workspaceId;
+          if (wsId === "ws-2") {
+            ws2Attempts += 1;
+            if (ws2Attempts < 2) return Promise.reject(new Error("boom"));
+          }
+          chanSeq += 1;
+          return Promise.resolve({ subscriptionId: `chan-${chanSeq}` });
+        }
+        if (method === "note.unsubscribe") return Promise.resolve({ success: true });
+        return Promise.resolve({ success: true });
+      });
+      const client = new LiveNotesClient();
+      const unsubscribe = client.subscribe(() => {});
+      await vi.advanceTimersByTimeAsync(0);
+      expect(requestsFor("note.subscribe")).toEqual([
+        { workspaceId: "ws-1" },
+        { workspaceId: "ws-2" },
+      ]);
+      expect(ws2Attempts).toBe(1);
 
-    // chan-1 confirms but ws-2's registration failed: never live.
-    pushSnapshot("chan-1", 0, [wireNote("a", "ws-1", "A")]);
-    const listCallsBefore = requestsFor("note.list").length;
-    fireLegacy("note:updated");
-    await flush();
-    expect(requestsFor("note.list").length).toBeGreaterThan(listCallsBefore);
-    // The refetch (not the lone snapshot) serves the full cross-workspace set.
-    const served = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
-    expect(served.map((n) => n.id).sort()).toEqual(["a", "b"]);
-    unsubscribe();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(ws2Attempts).toBe(2);
+      expect(requestsFor("note.subscribe")).toHaveLength(3);
+      unsubscribe();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reconnect re-enumerates workspaces and re-registers only the surviving channels", async () => {
@@ -825,8 +783,7 @@ describe("LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL �
     // ws-2 disappeared during the outage. The reconnect handler re-registers
     // both surviving channel states synchronously (ws-1 → chan-3, ws-2 →
     // chan-4); the id source's reconnect refresh then re-enumerates and
-    // reconciles ws-2 away — its dead channel is unsubscribed instead of
-    // pinning the subscription in legacy mode.
+    // reconciles ws-2 away — its dead channel is unsubscribed.
     workspaceIds = ["ws-1"];
     for (const handler of [...reconnectHandlers]) handler();
     await vi.waitFor(() => {
@@ -837,8 +794,8 @@ describe("LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL �
       expect(requestsFor("note.unsubscribe")).toEqual([{ subscriptionId: "chan-4" }]);
     });
 
-    // The surviving ws-1 channel's recovery snapshot re-enters live mode with
-    // only ws-1's notes.
+    // The surviving ws-1 channel's recovery snapshot re-populates with only
+    // ws-1's notes.
     pushSnapshot("chan-3", 0, [wireNote("a", "ws-1", "A")]);
     await flush();
     const recovered = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
