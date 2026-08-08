@@ -86,6 +86,16 @@ vi.mock('$features/workspace/navigate-away-if-viewing', () => ({
   navigateAwayIfViewing: navigateAwayIfViewingSpy,
 }));
 
+// Fake the mark-workspace-seen helper so the bridge's
+// `workspace:attention-changed` → markWorkspaceSeenIfViewing routing is
+// observable without jsdom location choreography.
+const { markWorkspaceSeenIfViewingSpy } = vi.hoisted(() => ({
+  markWorkspaceSeenIfViewingSpy: vi.fn(),
+}));
+vi.mock('$features/workspace/mark-workspace-seen', () => ({
+  markWorkspaceSeenIfViewing: markWorkspaceSeenIfViewingSpy,
+}));
+
 // Fake the agent-subscription read service so the bridge's completion-watch
 // refresh routing (agent:idle/failed/deleted/created →
 // refreshWorkspaceSubscriptionEntries) is observable without real
@@ -155,6 +165,7 @@ import {
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectEnabledProviderIds } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import {
+  DAEMON_EVENTS_SUBSCRIBE_TYPES,
   __resetDaemonEventsBridgeForTests,
   refreshDaemonEventsAfterReconnect,
   routeDaemonEventsNotification,
@@ -5277,6 +5288,219 @@ describe('daemonEventsBridge (workspace:displayStatus-changed → workspace slic
 
     const ws = await readWorkspace();
     expect(ws.displayStatus).toBe('pr_merged');
+  });
+});
+
+describe('daemonEventsBridge (workspace:attention-changed → workspace slice)', () => {
+  const WS_ATT = 'ws-attention-1';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    markWorkspaceSeenIfViewingSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_ATT,
+        title: 'Attention ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{
+    attention?: 'none' | 'unread' | 'review_required';
+  }> {
+    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, WS_ATT) ?? {}) as never;
+  }
+
+  function attentionChangedNotification(attention: 'none' | 'unread' | 'review_required') {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-attention-${attention}`,
+          workspaceId: WS_ATT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:attention-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_ATT,
+            attention,
+          },
+        },
+      },
+    };
+  }
+
+  it('subscribes to workspace:attention-changed in the bridge firehose filter', () => {
+    // The actual `events.subscribe` wire call is owned by the daemon-events
+    // saga (see daemon-events-saga.test.ts), which subscribes using this
+    // exported constant — assert the type is present in the shared filter
+    // list so a divergence between the bridge's routing and the saga's
+    // subscription is caught here.
+    expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('workspace:attention-changed');
+  });
+
+  it('merges attention=unread onto the workspace entity', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(attentionChangedNotification('unread'));
+
+    const ws = await readWorkspace();
+    expect(ws.attention).toBe('unread');
+  });
+
+  it('merges attention=none onto the workspace entity (markSeen round-trip)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(attentionChangedNotification('unread'));
+    let ws = await readWorkspace();
+    expect(ws.attention).toBe('unread');
+
+    handler(attentionChangedNotification('none'));
+    ws = await readWorkspace();
+    expect(ws.attention).toBe('none');
+  });
+
+  it('merges attention=review_required onto the workspace entity', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(attentionChangedNotification('review_required'));
+
+    const ws = await readWorkspace();
+    expect(ws.attention).toBe('review_required');
+  });
+
+  it('is a no-op when the attention value is invalid', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(attentionChangedNotification('unread'));
+    let ws = await readWorkspace();
+    expect(ws.attention).toBe('unread');
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-attention-bad',
+          workspaceId: WS_ATT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:attention-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_ATT,
+            attention: 'invalid_value',
+          },
+        },
+      },
+    });
+
+    ws = await readWorkspace();
+    expect(ws.attention).toBe('unread');
+  });
+
+  it('is a no-op when data or attention is missing', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(attentionChangedNotification('unread'));
+    let ws = await readWorkspace();
+    expect(ws.attention).toBe('unread');
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-attention-no-data',
+          workspaceId: WS_ATT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:attention-changed',
+          actor: { type: 'system' },
+        },
+      },
+    });
+
+    ws = await readWorkspace();
+    expect(ws.attention).toBe('unread');
+  });
+
+  it('calls markWorkspaceSeenIfViewing when attention transitions to unread', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(attentionChangedNotification('unread'));
+
+    expect(markWorkspaceSeenIfViewingSpy).toHaveBeenCalledWith(WS_ATT);
+    expect(markWorkspaceSeenIfViewingSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call markWorkspaceSeenIfViewing for non-unread attention values', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(attentionChangedNotification('none'));
+    handler(attentionChangedNotification('review_required'));
+
+    expect(markWorkspaceSeenIfViewingSpy).not.toHaveBeenCalled();
+  });
+
+  it('prefers data.workspaceId over the envelope workspaceId (self-sufficient payload)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Envelope points at a different (nonexistent) workspace; the payload's
+    // own workspaceId must win so the correct entity is updated.
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-attention-data-id',
+          workspaceId: 'ws-attention-other',
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:attention-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_ATT,
+            attention: 'unread',
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.attention).toBe('unread');
+    expect(markWorkspaceSeenIfViewingSpy).toHaveBeenCalledWith(WS_ATT);
   });
 });
 
