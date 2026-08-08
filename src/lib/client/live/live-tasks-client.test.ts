@@ -7,15 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // and the success/error folding are the genuine code paths. Notification /
 // reconnect handlers are captured as LISTS — `subscribe` registers two
 // listeners (the delta subscription's and the workspace-id source's) — so the
-// typed §6.9 channel tests can drive pushes and legacy events to both.
+// typed §6.9 channel tests can drive pushes to both.
 let notifyHandlers: Array<(n: { method: string; params?: unknown }) => void> = [];
 let reconnectHandlers: Array<() => void> = [];
-let liveStateCapability = false;
 
 vi.mock("./backend-transport", () => ({
   backendRequest: vi.fn(),
-  backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: "sub-1" })),
-  backendUnsubscribe: vi.fn(() => Promise.resolve()),
   onBackendNotification: vi.fn((handler: (n: { method: string; params?: unknown }) => void) => {
     notifyHandlers.push(handler);
     return () => {
@@ -28,7 +25,6 @@ vi.mock("./backend-transport", () => ({
       reconnectHandlers = reconnectHandlers.filter((h) => h !== handler);
     };
   }),
-  detectLiveStateCapability: vi.fn(() => Promise.resolve(liveStateCapability)),
 }));
 
 vi.mock("./live-support", async (importActual) => {
@@ -464,15 +460,14 @@ describe("LiveTasksClient task↔agent linkage (PROTOCOL §5.4, fake transport)"
 });
 
 
-// ---- Typed per-workspace task channel (PROTOCOL §6.9, monorepo#775) --------
-// On liveState daemons `subscribe` registers ONE `task.subscribe` per
-// workspace id (`{ workspaceId }`), sourced from the same `workspace.list`
-// enumeration `fetchAll` flattens over. The channel carries task-filtered
-// note entities; the BE emits `removedIds` when a note is deleted OR demoted
-// (task metadata removed). Snapshots/deltas reconcile per channel and merge;
-// workspace add/delete re-reconciles the channel set. The subscription is
-// live only while EVERY channel is push-confirmed — any gap keeps legacy
-// refetches serving.
+// ---- Typed per-workspace task channel (PROTOCOL §6.9, monorepo#1697) -------
+// `subscribe` registers ONE `task.subscribe` per workspace id
+// (`{ workspaceId }`), sourced from the same `workspace.list` enumeration —
+// the sole data path; there is no legacy `task:*`/`note:*` events-driven
+// refetch. The channel carries task-filtered note entities; the BE emits
+// `removedIds` when a note is deleted OR demoted (task metadata removed).
+// Snapshots/deltas reconcile per channel and merge; workspace add/delete
+// re-reconciles the channel set, each channel emitting independently.
 describe("LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL §6.9)", () => {
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
   const requestsFor = (method: string) =>
@@ -506,21 +501,18 @@ describe("LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL �
     notify({ method: "subscription.push", params: { subscriptionId, kind: "snapshot", seq, snapshot } });
   const pushDelta = (subscriptionId: string, seq: number, delta: Record<string, unknown>) =>
     notify({ method: "subscription.push", params: { subscriptionId, kind: "delta", seq, delta } });
-  const fireLegacy = (type: string) =>
+  const fireWorkspaceSetEvent = (type: string) =>
     notify({ method: "events.event", params: { event: { type } } });
 
-  // Mutable daemon fixture the mock serves: the workspace set and each
-  // workspace's `task.list` projection rows (the legacy/bridging refetch source).
+  // Mutable daemon fixture the mock serves: the workspace set driving the
+  // dynamic channel-per-id scope.
   let workspaceIds: string[] = [];
-  let tasksByWorkspace: Record<string, unknown[]> = {};
   let chanSeq = 0;
 
   beforeEach(() => {
-    liveStateCapability = true;
     chanSeq = 0;
     workspaceIds = ["ws-1", "ws-2"];
-    tasksByWorkspace = {};
-    mockedRequest.mockImplementation((method: string, params?: unknown) => {
+    mockedRequest.mockImplementation((method: string) => {
       if (method === "workspace.list") {
         return Promise.resolve({ workspaces: workspaceIds.map((id) => ({ id })) });
       }
@@ -529,19 +521,11 @@ describe("LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL �
         return Promise.resolve({ subscriptionId: `chan-${chanSeq}` });
       }
       if (method === "task.unsubscribe") return Promise.resolve({ success: true });
-      if (method === "task.list") {
-        const wsId = (params as { workspaceId?: string })?.workspaceId ?? "";
-        return Promise.resolve({
-          tasks: tasksByWorkspace[wsId] ?? [],
-          stats: { total: 0, completed: 0, inProgress: 0 },
-        });
-      }
       return Promise.resolve({ success: true });
     });
   });
 
   afterEach(() => {
-    liveStateCapability = false;
     notifyHandlers = [];
     reconnectHandlers = [];
     mockedRequest.mockReset();
@@ -562,57 +546,28 @@ describe("LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL �
     unsubscribe();
   });
 
-  it("does not register channels on a daemon without liveState — legacy refetches keep serving", async () => {
-    liveStateCapability = false;
-    tasksByWorkspace = { "ws-1": [{ id: "a", title: "A", status: "not_started" }] };
-    workspaceIds = ["ws-1"];
-    const handler = vi.fn();
-    const client = new LiveTasksClient();
-    const unsubscribe = client.subscribe(handler);
-
-    // Initial one-shot refetch aggregates across workspaces as before.
-    await vi.waitFor(() => expect(handler).toHaveBeenCalled());
-    expect((handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>).map((t) => t.id)).toEqual(["a"]);
-    expect(requestsFor("task.subscribe")).toEqual([]);
-
-    // A legacy task event still refetches.
-    const listCallsBefore = requestsFor("task.list").length;
-    fireLegacy("task:status-changed");
-    await flush();
-    expect(requestsFor("task.list").length).toBeGreaterThan(listCallsBefore);
-    unsubscribe();
-  });
-
-  it("goes live only when every workspace channel is snapshot-confirmed, merging their tasks", async () => {
+  it("each channel emits independently, merging into the cross-workspace collection", async () => {
     const handler = vi.fn();
     const client = new LiveTasksClient();
     const unsubscribe = client.subscribe(handler);
     await vi.waitFor(() => expect(requestsFor("task.subscribe")).toHaveLength(2));
     await flush();
 
-    // Only chan-1 (ws-1) confirmed: not live yet — legacy events still refetch.
+    // chan-1 (ws-1) confirms: emits immediately with just its tasks.
     pushSnapshot("chan-1", 0, [wireTaskNote("a", "ws-1", "A")]);
-    const listCallsBefore = requestsFor("task.list").length;
-    fireLegacy("task:status-changed");
-    await flush();
-    expect(requestsFor("task.list").length).toBeGreaterThan(listCallsBefore);
+    const afterFirst = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
+    expect(afterFirst.map((t) => t.id)).toEqual(["a"]);
 
-    // chan-2 (ws-2) confirms: live — the merged cross-workspace collection emits.
+    // chan-2 (ws-2) confirms: merged cross-workspace collection.
     pushSnapshot("chan-2", 0, [wireTaskNote("b", "ws-2", "B")]);
     const merged = handler.mock.calls.at(-1)?.[0] as Array<Record<string, unknown>>;
     expect(merged.map((t) => t.id).sort()).toEqual(["a", "b"]);
     expect(merged.find((t) => t.id === "a")).toMatchObject({ status: "not_started", rev: 1 });
 
-    // A task:status-changed-driven `updated` delta reconciles the projection;
-    // legacy task/note events no longer refetch.
+    // A task:status-changed-driven `updated` delta reconciles the projection.
     pushDelta("chan-2", 1, { updated: [wireTaskNote("b", "ws-2", "B", "in_progress")] });
     const afterDelta = handler.mock.calls.at(-1)?.[0] as Array<Record<string, unknown>>;
     expect(afterDelta.find((t) => t.id === "b")).toMatchObject({ status: "in_progress" });
-    const listCallsLive = requestsFor("task.list").length;
-    fireLegacy("task:status-changed");
-    fireLegacy("note:updated");
-    await flush();
-    expect(requestsFor("task.list")).toHaveLength(listCallsLive);
     unsubscribe();
   });
 
@@ -644,7 +599,7 @@ describe("LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL �
     pushSnapshot("chan-1", 0, [wireTaskNote("a", "ws-1", "A")]);
 
     workspaceIds = ["ws-1", "ws-2"];
-    fireLegacy("workspace:created");
+    fireWorkspaceSetEvent("workspace:created");
     await vi.waitFor(() => {
       expect(requestsFor("task.subscribe")).toEqual([
         { workspaceId: "ws-1" },
@@ -669,7 +624,7 @@ describe("LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL �
     pushSnapshot("chan-2", 0, [wireTaskNote("b", "ws-2", "B")]);
 
     workspaceIds = ["ws-1"];
-    fireLegacy("workspace:deleted");
+    fireWorkspaceSetEvent("workspace:deleted");
     await vi.waitFor(() => {
       expect(requestsFor("task.unsubscribe")).toEqual([{ subscriptionId: "chan-2" }]);
     });
@@ -678,47 +633,42 @@ describe("LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL �
     unsubscribe();
   });
 
-  it("stays legacy while any channel registration fails — refetches keep serving", async () => {
-    tasksByWorkspace = {
-      "ws-1": [{ id: "a", title: "A", status: "not_started" }],
-      "ws-2": [{ id: "b", title: "B", status: "not_started" }],
-    };
-    mockedRequest.mockImplementation((method: string, params?: unknown) => {
-      if (method === "workspace.list") {
-        return Promise.resolve({ workspaces: workspaceIds.map((id) => ({ id })) });
-      }
-      if (method === "task.subscribe") {
-        const wsId = (params as { workspaceId?: string })?.workspaceId;
-        if (wsId === "ws-2") return Promise.reject(new Error("boom"));
-        chanSeq += 1;
-        return Promise.resolve({ subscriptionId: `chan-${chanSeq}` });
-      }
-      if (method === "task.unsubscribe") return Promise.resolve({ success: true });
-      if (method === "task.list") {
-        const wsId = (params as { workspaceId?: string })?.workspaceId ?? "";
-        return Promise.resolve({
-          tasks: tasksByWorkspace[wsId] ?? [],
-          stats: { total: 0, completed: 0, inProgress: 0 },
-        });
-      }
-      return Promise.resolve({ success: true });
-    });
-    const handler = vi.fn();
-    const client = new LiveTasksClient();
-    const unsubscribe = client.subscribe(handler);
-    await vi.waitFor(() => expect(requestsFor("task.subscribe")).toHaveLength(2));
-    await flush();
+  it("retries a failed channel registration with backoff until it succeeds", async () => {
+    vi.useFakeTimers();
+    try {
+      let ws2Attempts = 0;
+      mockedRequest.mockImplementation((method: string, params?: unknown) => {
+        if (method === "workspace.list") {
+          return Promise.resolve({ workspaces: workspaceIds.map((id) => ({ id })) });
+        }
+        if (method === "task.subscribe") {
+          const wsId = (params as { workspaceId?: string })?.workspaceId;
+          if (wsId === "ws-2") {
+            ws2Attempts += 1;
+            if (ws2Attempts < 2) return Promise.reject(new Error("boom"));
+          }
+          chanSeq += 1;
+          return Promise.resolve({ subscriptionId: `chan-${chanSeq}` });
+        }
+        if (method === "task.unsubscribe") return Promise.resolve({ success: true });
+        return Promise.resolve({ success: true });
+      });
+      const client = new LiveTasksClient();
+      const unsubscribe = client.subscribe(() => {});
+      await vi.advanceTimersByTimeAsync(0);
+      expect(requestsFor("task.subscribe")).toEqual([
+        { workspaceId: "ws-1" },
+        { workspaceId: "ws-2" },
+      ]);
+      expect(ws2Attempts).toBe(1);
 
-    // chan-1 confirms but ws-2's registration failed: never live.
-    pushSnapshot("chan-1", 0, [wireTaskNote("a", "ws-1", "A")]);
-    const listCallsBefore = requestsFor("task.list").length;
-    fireLegacy("task:status-changed");
-    await flush();
-    expect(requestsFor("task.list").length).toBeGreaterThan(listCallsBefore);
-    // The refetch (not the lone snapshot) serves the full cross-workspace set.
-    const served = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
-    expect(served.map((t) => t.id).sort()).toEqual(["a", "b"]);
-    unsubscribe();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(ws2Attempts).toBe(2);
+      expect(requestsFor("task.subscribe")).toHaveLength(3);
+      unsubscribe();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reconnect re-enumerates workspaces and re-registers only the surviving channels", async () => {
@@ -733,8 +683,7 @@ describe("LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL �
     // ws-2 disappeared during the outage. The reconnect handler re-registers
     // both surviving channel states synchronously (ws-1 → chan-3, ws-2 →
     // chan-4); the id source's reconnect refresh then re-enumerates and
-    // reconciles ws-2 away — its dead channel is unsubscribed instead of
-    // pinning the subscription in legacy mode.
+    // reconciles ws-2 away — its dead channel is unsubscribed.
     workspaceIds = ["ws-1"];
     for (const handler of [...reconnectHandlers]) handler();
     await vi.waitFor(() => {
@@ -745,8 +694,8 @@ describe("LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL �
       expect(requestsFor("task.unsubscribe")).toEqual([{ subscriptionId: "chan-4" }]);
     });
 
-    // The surviving ws-1 channel's recovery snapshot re-enters live mode with
-    // only ws-1's tasks.
+    // The surviving ws-1 channel's recovery snapshot re-populates with only
+    // ws-1's tasks.
     pushSnapshot("chan-3", 0, [wireTaskNote("a", "ws-1", "A")]);
     await flush();
     const recovered = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
