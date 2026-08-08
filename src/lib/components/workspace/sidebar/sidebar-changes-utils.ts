@@ -343,10 +343,13 @@ function monitorDisplayStatus(monitor: PrMonitorRow): 'open' | 'merged' | 'close
 
 /**
  * Merge agent-monitored PRs (PROTOCOL §6.9) into the workspace PR list.
- * Same-repo monitors that duplicate an existing row (by PR number) only
- * annotate it with the owning agent; cross-repo and unmatched monitors
- * append as new rows carrying agent attribution (and the `<owner>/<name>`
- * repo context when it differs from the workspace repo).
+ * A monitor that duplicates an existing row's repo-qualified identity
+ * (`crossRepo ? "repo#number" : "number"`, mirroring PRSection's `prKey`)
+ * only annotates it with the owning agent; same-repo lookups only match
+ * bare (non-`crossRepo`) rows, so a same-repo monitor never annotates a
+ * cross-repo row sharing a PR number. Unmatched monitors append as new
+ * rows carrying agent attribution (and the `<owner>/<name>` repo context
+ * when it differs from the workspace repo).
  */
 export function mergeMonitoredPRs(
   basePRs: PRInfo[],
@@ -358,7 +361,11 @@ export function mergeMonitoredPRs(
   const merged = basePRs.map((pr) => ({ ...pr }));
   for (const monitor of monitors) {
     const sameRepo = !workspaceRepo || monitor.repo === workspaceRepo;
-    const existing = sameRepo ? merged.find((pr) => pr.number === monitor.prNumber) : undefined;
+    const existing = merged.find((pr) =>
+      sameRepo
+        ? !pr.crossRepo && pr.number === monitor.prNumber
+        : pr.crossRepo === monitor.repo && pr.number === monitor.prNumber,
+    );
     if (existing) {
       existing.monitorAgentId = monitor.agentId;
       continue;
