@@ -216,7 +216,12 @@ const WORKSPACE_ID_RESYNC_COALESCE_MS = 250;
  */
 let sharedWorkspaceIds: Set<string> | null = null;
 let workspaceIdRefCount = 0;
-const workspaceIdListeners = new Set<(ids: readonly string[]) => void>();
+// Keyed by a per-subscription id (not the listener function itself) so two
+// subscriptions passing the same callback reference are tracked
+// independently — a `Set<listener>` would collapse them into one entry and
+// unsubscribing either would silently drop the other's updates.
+const workspaceIdListeners = new Map<number, (ids: readonly string[]) => void>();
+let nextWorkspaceIdListenerId = 0;
 let offWorkspaceIdNotify: Unsubscribe | null = null;
 let offWorkspaceIdReconnect: Unsubscribe | null = null;
 
@@ -236,7 +241,7 @@ let workspaceIdFetchFollowUpTimer: ReturnType<typeof setTimeout> | undefined;
 
 function notifyWorkspaceIdListeners(): void {
   const ids = sharedWorkspaceIds ? [...sharedWorkspaceIds] : [];
-  for (const listener of workspaceIdListeners) listener(ids);
+  for (const listener of workspaceIdListeners.values()) listener(ids);
 }
 
 function runWorkspaceIdResyncFetch(): void {
@@ -292,17 +297,38 @@ function resyncWorkspaceIds(): void {
   runWorkspaceIdResyncFetch();
 }
 
-/** Add `id` to the shared set and notify listeners, but only if it changed. */
+/**
+ * Add `id` to the shared set and notify listeners, but only if it changed.
+ * While the initial seed fetch is still in flight (`sharedWorkspaceIds ===
+ * null`) the id can't be applied yet, but the event must not be silently
+ * dropped: bump the generation so the in-flight `workspace.list` snapshot
+ * (taken before this event) is treated as stale, and arm a trailing resync
+ * so the set is reconciled once that fetch settles.
+ */
 function addWorkspaceId(id: string): void {
-  if (!sharedWorkspaceIds || sharedWorkspaceIds.has(id)) return;
+  if (!sharedWorkspaceIds) {
+    workspaceIdMutationGeneration += 1;
+    resyncWorkspaceIds();
+    return;
+  }
+  if (sharedWorkspaceIds.has(id)) return;
   sharedWorkspaceIds.add(id);
   workspaceIdMutationGeneration += 1;
   notifyWorkspaceIdListeners();
 }
 
-/** Remove `id` from the shared set and notify listeners, but only if it changed. */
+/**
+ * Remove `id` from the shared set and notify listeners, but only if it
+ * changed. See {@link addWorkspaceId} for the seed-time (`null` set) race
+ * handling.
+ */
 function removeWorkspaceId(id: string): void {
-  if (!sharedWorkspaceIds || !sharedWorkspaceIds.has(id)) return;
+  if (!sharedWorkspaceIds) {
+    workspaceIdMutationGeneration += 1;
+    resyncWorkspaceIds();
+    return;
+  }
+  if (!sharedWorkspaceIds.has(id)) return;
   sharedWorkspaceIds.delete(id);
   workspaceIdMutationGeneration += 1;
   notifyWorkspaceIdListeners();
@@ -402,7 +428,8 @@ function applyWorkspaceIdEvent(method: string, params: unknown): void {
 export function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void): Unsubscribe {
   let disposed = false;
   workspaceIdRefCount += 1;
-  workspaceIdListeners.add(listener);
+  const listenerId = nextWorkspaceIdListenerId++;
+  workspaceIdListeners.set(listenerId, listener);
 
   if (workspaceIdRefCount === 1) {
     offWorkspaceIdNotify = onBackendNotification((n) => applyWorkspaceIdEvent(n.method, n.params));
@@ -416,7 +443,7 @@ export function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void
   return () => {
     if (disposed) return;
     disposed = true;
-    workspaceIdListeners.delete(listener);
+    workspaceIdListeners.delete(listenerId);
     workspaceIdRefCount -= 1;
     if (workspaceIdRefCount > 0) return;
     offWorkspaceIdNotify?.();

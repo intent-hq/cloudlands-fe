@@ -426,6 +426,67 @@ describe("subscribeWorkspaceIds (push-driven, shared source)", () => {
     unsub();
   });
 
+  it("an event arriving during the in-flight seed fetch is not dropped: the stale seed result is discarded and a trailing resync reconciles it", async () => {
+    vi.useFakeTimers();
+    let resolveSeed: ((v: unknown) => void) | undefined;
+    listWorkspaceIdsImpl = () =>
+      new Promise((resolve) => {
+        resolveSeed = resolve;
+      });
+    const received: (readonly string[])[] = [];
+    const unsub = subscribeWorkspaceIds((ids) => received.push(ids));
+    // Seed fetch is in flight; sharedWorkspaceIds is still null.
+    expect(listWorkspaceIdsCalls).toHaveLength(1);
+
+    // A create event races the in-flight seed — the snapshot below was
+    // effectively taken before this event, so it must not be accepted as-is.
+    emit("events.event", {
+      event: { type: "workspace:created", data: { workspaceId: "ws-new", workspace: {} } },
+    });
+    await flush();
+    // Still null: the event can't be applied incrementally before the seed
+    // has produced a base set, but it must not be silently dropped either.
+    expect(received).toEqual([]);
+
+    // The seed resolves with a snapshot that does NOT include ws-new (stale
+    // relative to the event that raced it).
+    resolveSeed?.(workspaceListResult(["ws-1"]));
+    await flush();
+    // The stale seed result must be discarded, not delivered to listeners.
+    expect(received).toEqual([]);
+    // A trailing resync must be armed — not fired immediately.
+    expect(listWorkspaceIdsCalls).toHaveLength(1);
+
+    // The trailing resync's fetch reflects the post-event truth.
+    listWorkspaceIdsImpl = () => Promise.resolve(workspaceListResult(["ws-1", "ws-new"]));
+    await advance(250);
+
+    expect(listWorkspaceIdsCalls).toHaveLength(2);
+    expect(received).toEqual([["ws-1", "ws-new"]]);
+    unsub();
+  });
+
+  it("two subscriptions passing the same listener function are tracked independently", async () => {
+    listWorkspaceIdsImpl = () => Promise.resolve(workspaceListResult(["ws-1"]));
+    const received: (readonly string[])[] = [];
+    const sharedListener = (ids: readonly string[]) => received.push(ids);
+    const unsubA = subscribeWorkspaceIds(sharedListener);
+    const unsubB = subscribeWorkspaceIds(sharedListener);
+    await flush();
+    received.length = 0;
+
+    // Unsubscribing one of the two identical-callback subscriptions must not
+    // remove the other's registration.
+    unsubA();
+    emit("events.event", {
+      event: { type: "workspace:created", data: { workspaceId: "ws-2", workspace: {} } },
+    });
+    await flush();
+
+    expect(received).toEqual([["ws-1", "ws-2"]]);
+    unsubB();
+  });
+
   it("teardown at refcount 0 removes listeners; the next subscribe re-seeds fresh", async () => {
     listWorkspaceIdsImpl = () => Promise.resolve(workspaceListResult(["ws-1"]));
     const unsub = subscribeWorkspaceIds(() => {});
