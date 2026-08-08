@@ -5,6 +5,7 @@
  * clients that still invoke Electron-shaped channels in web/mock mode. Domain
  * hydration and business subscriptions are owned by the root sagas.
  */
+import './provider-models-seeder';
 import './workspaces-seeder';
 import './active-streams-bridge-seeder';
 import './agent-ipc-bridge-seeder';

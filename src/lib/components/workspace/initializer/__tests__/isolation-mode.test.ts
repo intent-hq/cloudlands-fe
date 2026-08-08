@@ -4,7 +4,9 @@
  * Unit tests for the effective isolated-checkout mode resolver: `cow` only
  * when the BE-owned `workspace.cowIsolation` setting (PROTOCOL §5.12) is on
  * AND a loaded workspace carries `cowSupported: true` (a machine capability);
- * `worktree` otherwise, including on wire failure.
+ * `worktree` otherwise, including on wire failure. The setting read is a
+ * module-level cached single-flight promise (cow-isolation-setting.ts) shared
+ * by all callers, invalidated on `settings:changed`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -36,6 +38,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 
 import { isolationNoun, resolveEffectiveIsolationMode } from '../isolation-mode';
+import { invalidateCowIsolationSetting, readCowIsolationSetting } from '../cow-isolation-setting';
 
 describe('isolationNoun', () => {
   it('maps modes to human copy', () => {
@@ -49,6 +52,9 @@ describe('resolveEffectiveIsolationMode', () => {
     mockSettingsGet.mockReset();
     mockSelectItems.mockReset();
     mockSelectItems.mockReturnValue([]);
+    // Each test primes its own settings.get mock, so the shared cache must
+    // not carry a previous test's resolved value.
+    invalidateCowIsolationSetting();
   });
 
   it('asks the daemon for workspace.cowIsolation (§5.9 settings.get envelope)', async () => {
@@ -91,5 +97,44 @@ describe('resolveEffectiveIsolationMode', () => {
   it('settings.get failure → worktree', async () => {
     mockSettingsGet.mockRejectedValue(new Error('wire down'));
     await expect(resolveEffectiveIsolationMode()).resolves.toBe('worktree');
+  });
+});
+
+describe('cow-isolation-setting cache', () => {
+  beforeEach(() => {
+    mockSettingsGet.mockReset();
+    invalidateCowIsolationSetting();
+  });
+
+  it('coalesces concurrent reads into a single settings.get RPC', async () => {
+    mockSettingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: true });
+    const results = await Promise.all([
+      readCowIsolationSetting(),
+      readCowIsolationSetting(),
+      readCowIsolationSetting(),
+    ]);
+    expect(results).toEqual([true, true, true]);
+    expect(mockSettingsGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves later reads from the cache until invalidated', async () => {
+    mockSettingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: true });
+    await expect(readCowIsolationSetting()).resolves.toBe(true);
+    await expect(readCowIsolationSetting()).resolves.toBe(true);
+    expect(mockSettingsGet).toHaveBeenCalledTimes(1);
+
+    mockSettingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: false });
+    invalidateCowIsolationSetting();
+    await expect(readCowIsolationSetting()).resolves.toBe(false);
+    expect(mockSettingsGet).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not cache a failed read — the next call retries the wire', async () => {
+    mockSettingsGet.mockRejectedValueOnce(new Error('wire down'));
+    await expect(readCowIsolationSetting()).rejects.toThrow('wire down');
+
+    mockSettingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: true });
+    await expect(readCowIsolationSetting()).resolves.toBe(true);
+    expect(mockSettingsGet).toHaveBeenCalledTimes(2);
   });
 });

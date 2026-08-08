@@ -59,6 +59,12 @@
   getModelsForProvider,
   getModelsForProviderForLoadingState,
 } from '$store/renderer/slices/model/model-utils';
+  import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
+  import {
+  selectProviderModelsCacheEntry,
+  selectProviderModelsCacheMap,
+  selectProviderModelsClearEpoch,
+} from '$store/renderer/slices/provider-models/provider-models-selectors';
 
   import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
   import {
@@ -277,11 +283,33 @@
     return createProviderWarningNotice(normalizedId, warnings[normalizedId]);
   }
 
-  let allProviderModels = $state<Record<string, DropdownOption[]>>({});
+  // Hydrate from the session-lifetime provider-models cache
+  // (stale-while-revalidate): cached providers render their catalogs — and a
+  // resolved trigger label — synchronously on mount, with no spinner/skeleton
+  // frame, while the debounced background fetch below still revalidates every
+  // provider and writes fresh results back through the cache. Uncached
+  // providers keep the normal loading path.
+  const cachedProviderCatalogs = selectProviderModelsCacheMap.select(appStore.state);
+  const seededProviderModels: Record<string, DropdownOption[]> = {};
+  const seededProviderLoading: Record<string, boolean> = {};
+  for (const [pid, entry] of Object.entries(cachedProviderCatalogs)) {
+    seededProviderModels[pid] = toDropdownOptions(entry.models);
+    seededProviderLoading[pid] = false;
+  }
+  // "All loaded" only when every currently-enabled provider is cache-covered;
+  // otherwise the first fetch pass settles it exactly as before.
+  const seededEnabledIds = $availableEnabledProviderIds$;
+  const seededAllProvidersLoaded =
+    seededEnabledIds.length > 0 &&
+    seededEnabledIds.every((pid) =>
+      Object.prototype.hasOwnProperty.call(seededProviderModels, normalizeProviderId(pid)),
+    );
+
+  let allProviderModels = $state<Record<string, DropdownOption[]>>(seededProviderModels);
   let allProviderErrors = $state<Record<string, ProviderLoadError>>({});
-  let allProviderLoading = $state<Record<string, boolean>>({});
+  let allProviderLoading = $state<Record<string, boolean>>(seededProviderLoading);
   let fetchGeneration = 0;
-  let allProvidersLoaded = $state(false);
+  let allProvidersLoaded = $state(seededAllProvidersLoaded);
   let lastFetchedProviderIds = '';
 
   function hasProviderResult(providerId: string): boolean {
@@ -320,20 +348,32 @@
     allProviderErrors = {};
     allProviderLoading = Object.fromEntries(providerIds.map((providerId) => [providerId, true]));
 
+    // Epoch at fetch start: a reconnect clear that lands while these
+    // responses are in flight makes them stale — the settle-time isStale()
+    // check keeps them out of local state (the epoch effect's generation
+    // bump can run after a pending response settles) and the reducer drops
+    // any pre-clear write-through stamped below as a second line of defense.
+    const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
+    const isStale = () =>
+      fetchGeneration !== currentGen ||
+      selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
+
     await Promise.allSettled(
       providerIds.map(async (providerId) => {
         try {
           const result = await getModelsForProviderForLoadingState(providerId);
-          if (fetchGeneration !== currentGen) return;
+          if (isStale()) return;
           const { [providerId]: _clearedError, ...remainingErrors } = allProviderErrors;
           allProviderErrors = remainingErrors;
           allProviderModels = {
             ...allProviderModels,
             [providerId]: toDropdownOptions(result.models),
           };
+          // Write through to the session cache (providerId is normalized here).
+          appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch));
           setProviderWarningState(providerId, result.warning, result.stale);
         } catch (err) {
-          if (fetchGeneration !== currentGen) return;
+          if (isStale()) return;
           const providerError = formatProviderLoadError(providerId, err);
           allProviderErrors = {
             ...allProviderErrors,
@@ -341,8 +381,9 @@
           };
           setProviderErrorState(providerId, providerError.displayText);
         } finally {
-          if (fetchGeneration !== currentGen) return;
-          setProviderLoading(providerId, false);
+          if (!isStale()) {
+            setProviderLoading(providerId, false);
+          }
         }
       }),
     );
@@ -364,21 +405,41 @@
   let agentFetchGeneration = 0;
   async function fetchAgentProviderModels(providerId: string) {
     const currentGen = ++agentFetchGeneration;
-    agentProviderLoading = true;
+    // Hydrate from the session cache (stale-while-revalidate): a cached
+    // catalog renders immediately with no loading state — the all-provider
+    // fetch prunes disabled providers from allProviderModels, so this path is
+    // the only cache consumer for a locked/agent picker whose provider is no
+    // longer enabled. The fetch below still revalidates.
+    const cacheId = normalizeProviderId(providerId);
+    const cached = selectProviderModelsCacheEntry.select(appStore.state, cacheId);
+    if (cached) {
+      agentProviderModels = cached.models;
+      agentProviderLoading = false;
+    } else {
+      agentProviderLoading = true;
+    }
     agentProviderError = null;
 
+    // Epoch at fetch start: a reconnect clear mid-flight makes this response
+    // stale for local state too, not just for the reducer write-through.
+    const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
+    const isStale = () =>
+      agentFetchGeneration !== currentGen ||
+      selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
     try {
       const result = await getModelsForProviderForLoadingState(providerId);
-      if (agentFetchGeneration !== currentGen) return;
+      if (isStale()) return;
       agentProviderModels = result.models;
+      // Write through so the next mount of this picker hydrates too.
+      appStore.dispatch(providerModelsLoaded(cacheId, result, cacheEpoch));
       setProviderWarningState(providerId, result.warning, result.stale);
     } catch (err) {
-      if (agentFetchGeneration !== currentGen) return;
+      if (isStale()) return;
       const providerError = formatProviderLoadError(providerId, err);
       agentProviderError = providerError.displayText;
       setProviderErrorState(providerId, providerError.displayText);
     } finally {
-      if (agentFetchGeneration === currentGen) {
+      if (!isStale()) {
         agentProviderLoading = false;
       }
     }
@@ -402,6 +463,31 @@
     const providerIds = $availableEnabledProviderIds$;
     clearTimeout(fetchDebounceTimer);
     fetchDebounceTimer = setTimeout(() => fetchAllProviderModels(providerIds), 50);
+  });
+
+  // React to the session cache being cleared (backend reconnect, RESUB-1):
+  // a mounted picker has already copied cached rows into local state and
+  // fetchAllProviderModels dedups on unchanged enabled-provider ids, so
+  // without this an open picker would keep the pre-reconnect catalog
+  // indefinitely. Keyed on the clear EPOCH, not the map going empty: the
+  // epoch increments on every providerModelsCacheCleared, so a reconnect
+  // during initial load (cache already empty — an empty→empty map
+  // transition) still triggers the generation bump + refetch. The fresh
+  // fetches read the post-clear epoch at start, so their results land in
+  // both local state and the cache.
+  const providerModelsClearEpoch$ = selectProviderModelsClearEpoch();
+  let lastSeenClearEpoch = selectProviderModelsClearEpoch.select(appStore.state);
+  $effect(() => {
+    const epoch = $providerModelsClearEpoch$;
+    if (epoch === lastSeenClearEpoch) return;
+    lastSeenClearEpoch = epoch;
+    untrack(() => {
+      lastFetchedProviderIds = '';
+      void fetchAllProviderModels($availableEnabledProviderIds$);
+      if (usesAgentProviderFetch) {
+        void fetchAgentProviderModels(effectiveProviderId);
+      }
+    });
   });
 
   // Models for the effective provider: the per-agent fetch result when the
@@ -441,12 +527,18 @@
     if (refreshingProviders.has(providerId)) return;
     refreshingProviders = new Set([...refreshingProviders, providerId]);
     const gen = fetchGeneration;
+    // Epoch at fetch start: a reconnect clear mid-flight makes this response
+    // stale for local state as well as for the reducer write-through.
+    const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
+    const isStale = () =>
+      fetchGeneration !== gen ||
+      selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
     try {
       // True force refresh: the daemon skips its cache and awaits a fresh
       // probe (PROTOCOL §6.7), so the spinner spins for the real probe
       // duration and the returned list replaces the group immediately.
       const result = await getModelsForProviderForLoadingState(providerId, { forceRefresh: true });
-      if (fetchGeneration !== gen) return;
+      if (isStale()) return;
       setProviderWarningState(providerId, result.warning, result.stale);
       if (providerId === effectiveProviderId && usesAgentProviderFetch) {
         agentProviderModels = result.models;
@@ -457,7 +549,10 @@
         ...allProviderModels,
         [providerId]: toDropdownOptions(result.models),
       };
+      // Write through to the session cache (group keys are normalized ids).
+      appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch));
     } catch (err) {
+      if (isStale()) return;
       const providerError = formatProviderLoadError(providerId, err);
       allProviderErrors = {
         ...allProviderErrors,
@@ -1124,14 +1219,20 @@
     silentRetryAttemptedForProvider = currentProvider;
 
     void (async () => {
+      // Epoch at fetch start: a reconnect clear mid-flight makes this
+      // response stale for local state as well as the cache write-through.
+      const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
       try {
         const models = await getModelsForProvider(currentProvider);
+        if (selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch) return;
         if (models.length > 0) {
           const normalizedId = normalizeProviderId(currentProvider);
           allProviderModels = {
             ...allProviderModels,
             [normalizedId]: toDropdownOptions(models),
           };
+          // Write through to the session cache like the other fetch paths.
+          appStore.dispatch(providerModelsLoaded(normalizedId, { models }, cacheEpoch));
           return;
         }
       } catch (err) {

@@ -13,8 +13,25 @@ vi.mock('$features/auto-update/auto-update.client', () => ({
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ warn: mocks.warn }),
 }));
+vi.mock('../user-preferences-selectors', async () => {
+  const { select } = await import('typed-redux-saga');
+  return {
+    selectBetaUpdatesEnabled: {
+      effect: function* () {
+        return yield* select(
+          (state: { userPreferences: { betaUpdatesEnabled: boolean } }) =>
+            state.userPreferences.betaUpdatesEnabled,
+        );
+      },
+    },
+  };
+});
 
-import { setBetaUpdatesEnabled, toggleBetaUpdates } from '../user-preferences-slice';
+import {
+  loadBetaUpdatesSettings,
+  setBetaUpdatesEnabled,
+  toggleBetaUpdates,
+} from '../user-preferences-slice';
 import {
   betaUpdatesSaga,
   hydrateBetaUpdatesWorker,
@@ -38,9 +55,10 @@ describe('betaUpdatesSaga', () => {
     await runSaga({ dispatch, getState: () => ({}) }, hydrateBetaUpdatesWorker).toPromise();
 
     expect(dispatch.mock.calls).toEqual([
-      [setBetaUpdatesEnabled(true)],
-      [setBetaUpdatesEnabled(false)],
+      [loadBetaUpdatesSettings(true)],
+      [loadBetaUpdatesSettings(false)],
     ]);
+    expect(mocks.setChannel).not.toHaveBeenCalled();
   });
 
   it('swallows hydration failures without dispatching', async () => {
@@ -52,18 +70,47 @@ describe('betaUpdatesSaga', () => {
     expect(mocks.warn.mock.calls).toHaveLength(1);
   });
 
-  it('persists the post-reducer channel and swallows failures', async () => {
-    mocks.setChannel.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('denied'));
+  it('does not persist the dedicated boot hydration action', async () => {
+    mocks.getState.mockResolvedValue({ channel: 'beta', status: 'idle' });
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel, dispatch, getState: () => ({ userPreferences: { betaUpdatesEnabled: true } }) },
+      betaUpdatesSaga,
+    );
+    await settle();
+    channel.put(loadBetaUpdatesSettings(true));
+    await settle();
+
+    expect(dispatch.mock.calls).toEqual([[loadBetaUpdatesSettings(true)]]);
+    expect(mocks.setChannel).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('persists the post-reducer channel', async () => {
+    mocks.setChannel.mockResolvedValue(undefined);
     await runSaga(
       { dispatch: vi.fn(), getState: () => ({ userPreferences: { betaUpdatesEnabled: true } }) },
       persistBetaUpdatesWorker,
     ).toPromise();
+
+    expect(mocks.setChannel.mock.calls).toEqual([['beta']]);
+    expect(mocks.getState).not.toHaveBeenCalled();
+  });
+
+  it('re-hydrates from the main-process channel when persistence fails', async () => {
+    const dispatch = vi.fn();
+    mocks.setChannel.mockRejectedValue(new Error('denied'));
+    mocks.getState.mockResolvedValue({ channel: 'stable', status: 'idle' });
     await runSaga(
-      { dispatch: vi.fn(), getState: () => ({ userPreferences: { betaUpdatesEnabled: false } }) },
+      { dispatch, getState: () => ({ userPreferences: { betaUpdatesEnabled: true } }) },
       persistBetaUpdatesWorker,
     ).toPromise();
 
-    expect(mocks.setChannel.mock.calls).toEqual([['beta'], ['stable']]);
+    expect(mocks.setChannel.mock.calls).toEqual([['beta']]);
+    expect(mocks.getState).toHaveBeenCalledTimes(1);
+    expect(dispatch.mock.calls).toEqual([[loadBetaUpdatesSettings(false)]]);
     expect(mocks.warn.mock.calls).toHaveLength(1);
   });
 

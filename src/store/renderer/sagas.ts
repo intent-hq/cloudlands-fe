@@ -9,6 +9,7 @@
 import type { Store } from '@augmentcode/themis/svelte-store';
 import { all, call } from 'typed-redux-saga';
 
+import { backgroundAgentExecutorSaga } from '$features/agent/background-executor-service';
 import { providerAvailabilitySaga } from './slices/agent-availability/sagas/provider-availability-saga';
 import { agentEventsIpcSaga } from './slices/agent-events/sagas/agent-events-ipc-saga';
 import { agentFailureToastSaga } from './slices/agent-session/sagas/agent-failure-toast-saga';
@@ -114,6 +115,7 @@ export const sagas = [
   agentCreationSaga,
   agentMutationSaga,
   editRegenerateSaga,
+  backgroundAgentExecutorSaga,
   agentFailureToastSaga,
   gitReadSaga,
   fileExplorerSaga,
