@@ -398,6 +398,28 @@ function* retroactiveRestore(): SagaGenerator<void> {
 }
 
 /**
+ * Re-restore the active workspace after a backend switch. Unlike a fresh mount,
+ * the store still holds the outgoing backend's tabs and history, so a backend
+ * with nothing saved must be reset rather than left showing (and later
+ * persisting) the previous backend's layout.
+ */
+function* restoreAfterBackendSwitch(): SagaGenerator<void> {
+  const wsId = yield* selectActiveWorkspaceId.effect();
+  if (!isValidWorkspaceId(wsId)) return;
+  restoredWorkspaceIds.add(wsId);
+  yield* put(setRestoreStatus(wsId, 'pending'));
+  const stored = yield* call(loadLayoutFromStorage, wsId);
+  if (stored === null || stored === 'invalid') {
+    yield* put(resetLayout(wsId));
+    yield* put(loadLayoutHistory(wsId, [], 0));
+    yield* put(setRestoreStatus(wsId, stored === null ? 'empty' : 'invalid'));
+  } else {
+    yield* put(initializeLayout(wsId, stored));
+    yield* put(setRestoreStatus(wsId, 'restored'));
+  }
+}
+
+/**
  * Backend switched (activeId flips via the boot connections:list refresh after
  * the window reloads): re-restore the active workspace's layout from the
  * incoming backend's namespace.
@@ -410,7 +432,7 @@ function* watchBackendSwitch(): SagaGenerator<void> {
     if (backendId === lastBackendId) continue;
     lastBackendId = backendId;
     restoredWorkspaceIds.clear();
-    yield* call(retroactiveRestore);
+    yield* call(restoreAfterBackendSwitch);
   }
 }
 

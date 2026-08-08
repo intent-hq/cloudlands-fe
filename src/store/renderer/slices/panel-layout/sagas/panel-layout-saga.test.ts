@@ -436,5 +436,35 @@ describe('panelLayoutSaga', () => {
       ]);
       await cancelSaga(task);
     });
+
+    it('resets the layout on switch when the incoming backend has nothing saved', async () => {
+      mocks.getJSON.mockReturnValue(undefined);
+      let backendId = LOCAL_CONNECTION_ID;
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => storeState(WS_1, backendId) },
+        panelLayoutSaga,
+      );
+      await settle();
+      dispatch.mockClear();
+
+      backendId = REMOTE_ID;
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      await settle();
+
+      const dispatched = dispatch.mock.calls.map(([action]) => action);
+      expect(dispatched.map((action) => action.type)).toEqual([
+        setRestoreStatus.type,
+        resetLayout.type,
+        loadLayoutHistory.type,
+        setRestoreStatus.type,
+      ]);
+      expect(dispatched[0]).toEqual(setRestoreStatus(WS_1, 'pending'));
+      expect(dispatched[1].payload.wsId).toBe(WS_1);
+      expect(dispatched[2]).toEqual(loadLayoutHistory(WS_1, [], 0));
+      expect(dispatched[3]).toEqual(setRestoreStatus(WS_1, 'empty'));
+      await cancelSaga(task);
+    });
   });
 });
