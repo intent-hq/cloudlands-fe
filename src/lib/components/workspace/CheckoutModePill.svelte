@@ -46,7 +46,11 @@
   // checkout (isolation follows the BE-owned `workspace.cowIsolation`
   // setting, PROTOCOL §5.1/§5.12). Show "CoW" only when effective CoW agent
   // isolation is active; default to "Direct" until the async settings read
-  // resolves so the label never flashes "CoW"→"Direct".
+  // resolves so the label never flashes "CoW"→"Direct". The setting is
+  // machine-global, so the resolver reads it through a module-level cached
+  // single-flight promise (cow-isolation-setting.ts) — every pill instance
+  // and every list-refetch re-run share one RPC, invalidated on
+  // `settings:changed`.
   let cowIsolationActive = $state(false);
   // Bumped on every effect re-run and on teardown so a resolver settling for a
   // previous workspace/mode never applies its stale result out of order.

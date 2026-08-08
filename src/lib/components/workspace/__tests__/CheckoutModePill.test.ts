@@ -23,6 +23,7 @@ import { cleanup, render, screen, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Workspace } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
+import { invalidateCowIsolationSetting } from '../initializer/cow-isolation-setting';
 
 const mocks = vi.hoisted(() => ({
   runShrinkWorkspaceAction: vi.fn().mockResolvedValue(undefined),
@@ -123,6 +124,9 @@ describe('CheckoutModePill', () => {
     mocks.settingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: true });
     mocks.selectWorkspaceItems.mockReset();
     mocks.selectWorkspaceItems.mockReturnValue([{ cowSupported: true }]);
+    // The setting read is cached module-wide (machine-global single-flight);
+    // each test primes its own mock, so drop the previous test's value.
+    invalidateCowIsolationSetting();
   });
   afterEach(cleanup);
 
@@ -177,6 +181,9 @@ describe('CheckoutModePill', () => {
 
     // The next workspace's settings read never settles within this test —
     // ws-1's resolved "CoW" must not linger for ws-2 in the meantime.
+    // (Invalidate the shared cache so ws-2's read actually hits the pending
+    // mock instead of resolving instantly from ws-1's cached value.)
+    invalidateCowIsolationSetting();
     mocks.settingsGet.mockImplementation(() => new Promise(() => {}));
     await rerender({
       workspace: { ...baseWorkspace, id: 'ws-2', checkoutMode: 'cow', cowSupported: true } as Workspace,
@@ -195,6 +202,9 @@ describe('CheckoutModePill', () => {
     await tick();
     await vi.waitFor(() => expect(mocks.settingsGet).toHaveBeenCalledTimes(1));
 
+    // Invalidate between reads so ws-2 issues its own wire call — otherwise
+    // the shared single-flight cache coalesces both onto deferred[0].
+    invalidateCowIsolationSetting();
     await rerender({
       workspace: { ...baseWorkspace, id: 'ws-2', checkoutMode: 'cow', cowSupported: true } as Workspace,
     });
@@ -211,6 +221,27 @@ describe('CheckoutModePill', () => {
     await flushLabel();
     expect(screen.getByText('Direct')).toBeTruthy();
     expect(screen.queryByText('CoW')).toBeNull();
+  });
+
+  it('shares one settings.get RPC across pill instances and workspace-row churn', async () => {
+    // Two pills mount concurrently, then one re-runs its effect because the
+    // workspace row object identity changed (a list refetch) — the
+    // machine-global setting must still cost exactly one RPC.
+    const first = await renderPill({
+      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
+    });
+    await renderPill({
+      workspace: { ...baseWorkspace, id: 'ws-2', checkoutMode: 'cow', cowSupported: true } as Workspace,
+    });
+    await flushLabel();
+    expect(screen.getAllByText('CoW')).toHaveLength(2);
+
+    await first.rerender({
+      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
+    });
+    await flushLabel();
+    expect(screen.getAllByText('CoW')).toHaveLength(2);
+    expect(mocks.settingsGet).toHaveBeenCalledTimes(1);
   });
 
   it('renders "Worktree" when checkoutMode is worktree', async () => {
