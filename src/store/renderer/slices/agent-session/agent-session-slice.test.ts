@@ -835,6 +835,50 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(true);
     });
 
+    it('folds the agent:idle waitingOnHooks/waitingOnPrMonitors lists onto the session', () => {
+      // §3.1/§5.42: stamped on every idle emit site, so HUD idle-bucketing
+      // (hud-selectors.ts) can read them straight off the live event instead
+      // of waiting on the async agent.list re-hydration.
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-idle-hooks',
+          type: 'agent:idle',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'idle',
+            waitingOnHooks: [{ hookId: 'h1', name: 'watch-ci' }],
+            waitingOnPrMonitors: [{ monitorId: 'm1', repo: 'o/r', prNumber: 1 }],
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].waitingOnHooks).toEqual([{ hookId: 'h1', name: 'watch-ci' }]);
+      expect(state.byAgentId['a1'].waitingOnPrMonitors).toEqual([
+        { monitorId: 'm1', repo: 'o/r', prNumber: 1 },
+      ]);
+
+      // A later idle with no active hooks/monitors clears the stale lists
+      // (the field is stamped on every idle emit site, omitted-when-empty on
+      // the wire but defaulted to [] by canonicalFieldsFromWorkspaceEvent).
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-idle-clear',
+          type: 'agent:idle',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'idle' },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].waitingOnHooks).toEqual([]);
+      expect(state.byAgentId['a1'].waitingOnPrMonitors).toEqual([]);
+    });
+
     it('folds the agent:subscriptions-changed waiting snapshot onto the session', () => {
       // §6.5: { agentId, isWaitingForOtherAgents, waitingForAgentIds } — the
       // refreshed completion-watch snapshot after a watch is added/consumed.

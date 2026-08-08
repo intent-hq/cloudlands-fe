@@ -141,7 +141,19 @@ function* handleWebIdle(event: AgentIdleEvent) {
     } catch (error) {
       logger.warn('Failed to fetch notifications.* settings from daemon', { error });
     }
-    if (!enabled || event.data.isBackground || event.data.isWaitingForOtherAgents) return;
+    // Fast path: skip when the agent is waiting on other agents (§5.5),
+    // active background hooks (§3.1), or active PR monitors (§5.42) — it
+    // will run again on its own, so the workspace isn't truly quiet yet.
+    // Both hook/monitor fields are absent on older daemons.
+    if (
+      !enabled ||
+      event.data.isBackground ||
+      event.data.isWaitingForOtherAgents ||
+      (event.data.waitingOnHooks?.length ?? 0) > 0 ||
+      (event.data.waitingOnPrMonitors?.length ?? 0) > 0
+    ) {
+      return;
+    }
 
     const agentList = (yield* call(backendRequest, 'agent.list', { workspaceId })) as AgentListResult | undefined;
     const agents = agentList?.agents ?? [];
