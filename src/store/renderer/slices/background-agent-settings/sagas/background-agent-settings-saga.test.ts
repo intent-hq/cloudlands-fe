@@ -57,18 +57,18 @@ describe('backgroundAgentSettingsSaga', () => {
     expect(mocks.update.mock.calls).toEqual([
       [
         [
-          { path: 'backgroundAgents.defaultModel', value: 'opus4.7' },
+          { path: 'quickActions.defaultModel', value: 'opus4.7' },
           {
-            path: 'backgroundAgents.typeOverrides',
+            path: 'quickActions.typeOverrides',
             value: { commit: '', pr: '', review: '', fast: '' },
           },
         ],
       ],
       [
         [
-          { path: 'backgroundAgents.defaultModel', value: 'opus4.7' },
+          { path: 'quickActions.defaultModel', value: 'opus4.7' },
           {
-            path: 'backgroundAgents.typeOverrides',
+            path: 'quickActions.typeOverrides',
             value: { commit: 'haiku4.5', pr: '', review: '', fast: 'gpt-5' },
           },
         ],

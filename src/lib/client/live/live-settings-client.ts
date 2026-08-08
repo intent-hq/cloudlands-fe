@@ -20,8 +20,8 @@
  * `headers` secrets (redacted on the wire) are preserved; an *edited* server is
  * replaced wholesale per §5.22 semantics.
  *   - `providers.active` / `providers.enabled`            ↔ provider settings
- *   - `backgroundAgents.defaultModel` / `.typeOverrides` /
- *     `.providerSettings`                                 ↔ background agents
+ *   - `quickActions.defaultModel` / `.typeOverrides` /
+ *     `.providerSettings`                                 ↔ quick actions
  *   - `git.autoCommit`                                    ↔ workspace settings
  *
  * Sensitive entries return a redacted placeholder (§5.12); the client surfaces
@@ -267,11 +267,11 @@ export class LiveSettingsClient implements SettingsClient {
 
   async getBackgroundAgentSettings(): Promise<BackgroundAgentSettingsState | null> {
     const settings = await this.list();
-    const defaultModel = readString(settings, "backgroundAgents.defaultModel");
-    const typeOverrides = readObject(settings, "backgroundAgents.typeOverrides") as
+    const defaultModel = readString(settings, "quickActions.defaultModel");
+    const typeOverrides = readObject(settings, "quickActions.typeOverrides") as
       | BackgroundAgentSettingsState["typeOverrides"]
       | null;
-    const providerSettings = readObject(settings, "backgroundAgents.providerSettings") as
+    const providerSettings = readObject(settings, "quickActions.providerSettings") as
       | BackgroundAgentSettingsState["providerSettings"]
       | null;
     if (defaultModel === null && typeOverrides === null && providerSettings === null) {
@@ -290,9 +290,9 @@ export class LiveSettingsClient implements SettingsClient {
   ): Promise<MutationResult> {
     return runMutation("settings.update", {
       changes: changesFrom({
-        "backgroundAgents.defaultModel": settings.defaultModel,
-        "backgroundAgents.typeOverrides": settings.typeOverrides,
-        "backgroundAgents.providerSettings": settings.providerSettings,
+        "quickActions.defaultModel": settings.defaultModel,
+        "quickActions.typeOverrides": settings.typeOverrides,
+        "quickActions.providerSettings": settings.providerSettings,
       }),
     });
   }
