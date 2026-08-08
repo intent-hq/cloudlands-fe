@@ -40,6 +40,7 @@ import {
   downloadUpdate,
   initAutoUpdate,
   installUpdate,
+  setCheckTimedOut,
   setProgress,
   setUpToDate,
   setUpdateError,
@@ -47,12 +48,18 @@ import {
   showToast,
   showToastChecking,
 } from '../auto-update-slice';
-import { autoUpdateSaga } from './auto-update-saga';
+import { autoUpdateSaga, CHECK_TIMEOUT_MS } from './auto-update-saga';
 
 const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
+};
+
+/** Like `settle`, but also flushes fake-timer-scheduled microtasks (watchdog tests). */
+const settleFake = async () => {
+  await settle();
+  await vi.advanceTimersByTimeAsync(0);
 };
 
 const state = (version: string) => ({
@@ -220,5 +227,115 @@ describe('autoUpdateSaga', () => {
     expect(dispatch).not.toHaveBeenCalled();
     raced.cancel();
     await raced.toPromise();
+  });
+
+  // Renderer-side watchdog (intent-hq/monorepo#1698): the main-process
+  // "checking" status can go un-terminated (deduped hung check, null
+  // checkForUpdates result), so the saga arms its own timer as a safety
+  // net independent of any main-process event ever arriving.
+  it('dispatches setCheckTimedOut when the watchdog fires while still checking', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.getState.mockResolvedValue(state('initial'));
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ autoUpdate: { status: 'idle' } }) },
+        autoUpdateSaga,
+      );
+      channel.put(initAutoUpdate());
+      await settleFake();
+      dispatch.mockClear();
+
+      mocks.callbacks.toast();
+      await settleFake();
+      expect(dispatch).toHaveBeenCalledWith(showToastChecking());
+      dispatch.mockClear();
+
+      await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS - 1);
+      await settleFake();
+      expect(dispatch).not.toHaveBeenCalledWith(setCheckTimedOut());
+
+      await vi.advanceTimersByTimeAsync(1);
+      await settleFake();
+      expect(dispatch).toHaveBeenCalledWith(setCheckTimedOut());
+
+      task.cancel();
+      await task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels the pending watchdog when a terminal status event lands first', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.getState.mockResolvedValue(state('initial'));
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ autoUpdate: { status: 'idle' } }) },
+        autoUpdateSaga,
+      );
+      channel.put(initAutoUpdate());
+      await settleFake();
+      dispatch.mockClear();
+
+      mocks.callbacks.toast();
+      await settleFake();
+      await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS / 2);
+      mocks.callbacks.status(state('available-event'));
+      await settleFake();
+      dispatch.mockClear();
+
+      await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS);
+      await settleFake();
+      expect(dispatch).not.toHaveBeenCalledWith(setCheckTimedOut());
+
+      task.cancel();
+      await task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('re-arms the watchdog on a repeated manual check with no leaked prior timer', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.getState.mockResolvedValue(state('initial'));
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ autoUpdate: { status: 'idle' } }) },
+        autoUpdateSaga,
+      );
+      channel.put(initAutoUpdate());
+      await settleFake();
+      dispatch.mockClear();
+
+      mocks.callbacks.toast();
+      await settleFake();
+      await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS * 0.6);
+      mocks.callbacks.toast();
+      await settleFake();
+      dispatch.mockClear();
+
+      // If the first timer were not cancelled, it would fire around here.
+      await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS * 0.4);
+      await settleFake();
+      expect(dispatch).not.toHaveBeenCalledWith(setCheckTimedOut());
+
+      await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS * 0.6);
+      await settleFake();
+      expect(dispatch).toHaveBeenCalledWith(setCheckTimedOut());
+      expect(
+        dispatch.mock.calls.filter(([action]) => action.type === setCheckTimedOut.type),
+      ).toHaveLength(1);
+
+      task.cancel();
+      await task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

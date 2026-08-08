@@ -1,5 +1,5 @@
-import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
-import { call, fork, put, take, takeEvery } from 'typed-redux-saga';
+import { END, buffers, eventChannel, type EventChannel, type Task } from 'redux-saga';
+import { call, cancel, delay, fork, put, take, takeEvery } from 'typed-redux-saga';
 
 import { autoUpdateClient } from '$features/auto-update/auto-update.client';
 import type { UpdateProgress, UpdateState } from '$features/auto-update/types';
@@ -10,6 +10,7 @@ import {
   downloadUpdate,
   initAutoUpdate,
   installUpdate,
+  setCheckTimedOut,
   setProgress,
   setUpToDate,
   setUpdateError,
@@ -19,6 +20,16 @@ import {
 } from '../auto-update-slice';
 
 const logger = createLogger('AutoUpdateSaga');
+
+/**
+ * Renderer-side watchdog window (intent-hq/monorepo#1698). Slightly longer
+ * than the main-process 30s watchdog so a main-side error/status event wins
+ * the race when it does arrive.
+ */
+export const CHECK_TIMEOUT_MS = 35_000;
+
+/** Mutable holder for the in-flight check-timeout fork, if any. */
+type CheckWatchdog = { task?: Task };
 
 type AutoUpdateEvent =
   | { kind: 'show-toast' }
@@ -84,22 +95,45 @@ function* loadInitialState() {
   }
 }
 
-function* handleAutoUpdateEvent(event: AutoUpdateEvent) {
+function* cancelCheckTimeout(watchdog: CheckWatchdog) {
+  if (watchdog.task) {
+    yield* cancel(watchdog.task);
+    watchdog.task = undefined;
+  }
+}
+
+function* armCheckTimeout(watchdog: CheckWatchdog) {
+  yield* cancelCheckTimeout(watchdog);
+  watchdog.task = yield* fork(function* () {
+    yield* delay(CHECK_TIMEOUT_MS);
+    yield* put(setCheckTimedOut());
+  });
+}
+
+function* handleAutoUpdateEvent(event: AutoUpdateEvent, watchdog: CheckWatchdog) {
   switch (event.kind) {
     case 'show-toast':
+      yield* armCheckTimeout(watchdog);
       yield* put(showToastChecking());
       break;
     case 'up-to-date':
+      yield* cancelCheckTimeout(watchdog);
       yield* put(setUpToDate(event.version));
       yield* put(showToast());
       break;
     case 'status':
+      if (event.state.status === 'checking') {
+        yield* armCheckTimeout(watchdog);
+      } else {
+        yield* cancelCheckTimeout(watchdog);
+      }
       yield* put(setUpdateState(mapUpdateState(event.state)));
       break;
     case 'progress':
       yield* put(setProgress(mapProgress(event.progress)));
       break;
     case 'error':
+      yield* cancelCheckTimeout(watchdog);
       yield* put(setUpdateError(event.error));
       break;
   }
@@ -107,15 +141,17 @@ function* handleAutoUpdateEvent(event: AutoUpdateEvent) {
 
 function* runAutoUpdateSession() {
   const channel = createAutoUpdateChannel();
+  const watchdog: CheckWatchdog = {};
   try {
     yield* fork(loadInitialState);
     while (true) {
       const event: AutoUpdateEvent = yield* take(channel);
       if (event === (END as unknown as AutoUpdateEvent)) break;
-      yield* call(handleAutoUpdateEvent, event);
+      yield* handleAutoUpdateEvent(event, watchdog);
     }
   } finally {
     channel.close();
+    yield* cancelCheckTimeout(watchdog);
   }
 }
 
