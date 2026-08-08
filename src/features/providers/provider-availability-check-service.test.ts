@@ -272,7 +272,7 @@ describe("provider-availability-check-service", () => {
     }
   });
 
-  it("checkAllProvidersRequested still terminates when every per-provider probe fails", async () => {
+  it("checkAllProvidersRequested terminates the bulk sweep but leaves cards indeterminate when every per-provider probe fails", async () => {
     const failing: Record<string, () => Promise<CheckSingleResponse>> = {};
     for (const providerId of ALL_PROVIDER_IDS) {
       failing[providerId] = async () => ({
@@ -283,17 +283,23 @@ describe("provider-availability-check-service", () => {
     }
     routeCheckSingle(failing);
 
+    const statusMapBefore = appStore.state.agentAvailability.providerStatusMap;
+
     appStore.dispatch(checkAllProvidersRequested());
     await flush();
 
     const state = appStore.state.agentAvailability;
-    // Every card lands terminal — loading cleared and hasCheckedOnce true —
-    // so onboarding is never stuck on "Checking…" even when the daemon is
-    // unreachable. Status stays undefined on probe failure, which the UI
-    // renders as `available: false` via `status?.available ?? false`.
+    // The bulk sweep itself always terminates (hasCheckedOnce flips) so
+    // onboarding's overall gate never hangs. But an unreachable-daemon probe
+    // failure must NOT be treated as a genuine "not installed" verdict: each
+    // card's per-provider loading flag stays set (never explicitly cleared
+    // on failure) and no NEW status is recorded, so the UI keeps rendering
+    // the existing indeterminate "Checking…" state (`loading && !status`)
+    // instead of a fabricated terminal "Install".
     expect(state.hasCheckedOnce).toBe(true);
     for (const providerId of ALL_PROVIDER_IDS) {
-      expect(state.providerLoadingMap[providerId]).toBe(false);
+      expect(state.providerLoadingMap[providerId]).toBe(true);
+      expect(state.providerStatusMap[providerId]).toEqual(statusMapBefore[providerId]);
     }
   });
 
@@ -315,13 +321,20 @@ describe("provider-availability-check-service", () => {
     expect(appStore.state.agentAvailability.providerLoadingMap.codex).toBe(false);
   });
 
-  it("checkSingleProviderRequested clears the loading flag on a failed envelope", async () => {
+  it("checkSingleProviderRequested leaves the loading flag set (indeterminate) on a failed envelope", async () => {
     checkSingleSpy.mockResolvedValue({ success: false, providerId: "droid", error: "probe failed" });
+
+    const statusBefore = appStore.state.agentAvailability.providerStatusMap.droid;
 
     appStore.dispatch(checkSingleProviderRequested("droid"));
     await flush();
 
-    expect(appStore.state.agentAvailability.providerLoadingMap.droid).toBe(false);
+    // A failed probe must not fall through to a fabricated terminal
+    // "Install" — the card stays in its indeterminate "Checking…" state
+    // (and its last-known status, if any, is left untouched) until a fresh
+    // probe actually succeeds.
+    expect(appStore.state.agentAvailability.providerLoadingMap.droid).toBe(true);
+    expect(appStore.state.agentAvailability.providerStatusMap.droid).toEqual(statusBefore);
   });
 
   // Backend connect/reconnect functional test: Verify the listener triggers bulk re-check.
