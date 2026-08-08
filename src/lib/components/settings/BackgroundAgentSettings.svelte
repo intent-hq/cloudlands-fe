@@ -18,7 +18,10 @@
   selectBgTypeOverrides,
   selectHasOverride,
 } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
-  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+  selectEffectiveDefaultProviderId,
+  selectProviderCatalogLoaded,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { isEnhancePromptAvailable } from '$lib/client/live/live-prompt-enhancement';
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
@@ -31,12 +34,16 @@
   const hasPrOverride$ = selectHasOverride('pr');
   const hasFastOverride$ = selectHasOverride('fast');
   const effectiveProviderId$ = selectEffectiveDefaultProviderId();
+  const catalogLoaded$ = selectProviderCatalogLoaded();
 
   // §5.31 gate mirror: `agent.enhancePrompt` (the `fast` consumer for prompt
   // enhancement and layout suggestions) stays auggie-only even though
-  // `agent.completeOnce` (§5.32) is provider-neutral.
+  // `agent.completeOnce` (§5.32) is provider-neutral. Gated on catalog
+  // hydration so auggie users don't see a flash of the note before the
+  // effective provider resolves; once hydrated, shown iff genuinely
+  // unavailable.
   // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pure predicate (string equality), not a data fetch; rule misfires on the '/client/' import source
-  const fastEnhanceUnavailable = $derived(!isEnhancePromptAvailable($effectiveProviderId$));
+  const fastEnhanceUnavailable = $derived($catalogLoaded$ && !isEnhancePromptAvailable($effectiveProviderId$));
 
   // ModelPicker reports "use default" as '' — stored verbatim as a cleared override.
   function handleOverrideChange(type: BackgroundAgentType, model: string) {

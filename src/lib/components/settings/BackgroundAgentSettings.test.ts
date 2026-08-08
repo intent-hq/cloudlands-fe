@@ -5,8 +5,9 @@
  * per-action override rows all render the multi-provider ModelPicker (no
  * single-active-provider Dropdown asymmetry), override picks dispatch
  * setTypeOverride ('' for "use default"), and the `fast` row surfaces the
- * auggie-only `agent.enhancePrompt` gate when the effective provider is not
- * auggie.
+ * auggie-only `agent.enhancePrompt` gate when the catalog is hydrated and
+ * the effective provider is not auggie (hidden pre-hydration to avoid a
+ * flash of the note for auggie users).
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   }),
   typeOverrides: { value: { commit: '', pr: '', review: '', fast: '' } },
   effectiveProviderId: { value: 'auggie' },
+  catalogLoaded: { value: true },
   dispatched: [] as { type: string; payload: unknown[] }[],
 }));
 
@@ -49,6 +51,7 @@ vi.mock(
 
 vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', () => ({
   selectEffectiveDefaultProviderId: () => mocks.readable(mocks.effectiveProviderId.value),
+  selectProviderCatalogLoaded: () => mocks.readable(mocks.catalogLoaded.value),
 }));
 
 vi.mock('$lib/components/chat/input/ModelPicker.svelte', async () => ({
@@ -64,6 +67,7 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     cleanup();
     mocks.typeOverrides.value = { commit: '', pr: '', review: '', fast: '' };
     mocks.effectiveProviderId.value = 'auggie';
+    mocks.catalogLoaded.value = true;
     mocks.dispatched.length = 0;
   });
 
@@ -91,6 +95,7 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     render(BackgroundAgentSettings);
     // Index 0 is the default picker; 1..3 are commit/pr/fast overrides.
     await fireEvent.click(screen.getAllByTestId('pick-model')[1]);
+    expect(mocks.dispatched).toHaveLength(1);
     expect(mocks.dispatched).toContainEqual({
       type: 'backgroundAgentSettings/setTypeOverride',
       payload: [{ type: 'commit', model: 'user-picked-model' }],
@@ -101,6 +106,7 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     mocks.typeOverrides.value = { commit: '', pr: '', review: '', fast: 'some-model' };
     render(BackgroundAgentSettings);
     await fireEvent.click(screen.getAllByTestId('pick-default')[3]);
+    expect(mocks.dispatched).toHaveLength(1);
     expect(mocks.dispatched).toContainEqual({
       type: 'backgroundAgentSettings/setTypeOverride',
       payload: [{ type: 'fast', model: '' }],
@@ -119,7 +125,15 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     expect(screen.getByTestId('fast-auggie-only-note')).toBeTruthy();
   });
 
-  it("shows the note before hydration ('' provider) — enhancement is honestly unavailable", () => {
+  it('hides the note before catalog hydration — no flash for auggie users', () => {
+    mocks.catalogLoaded.value = false;
+    mocks.effectiveProviderId.value = '';
+    render(BackgroundAgentSettings);
+    expect(screen.queryByTestId('fast-auggie-only-note')).toBeNull();
+  });
+
+  it("shows the note when hydrated but the provider is still '' — genuinely unavailable", () => {
+    mocks.catalogLoaded.value = true;
     mocks.effectiveProviderId.value = '';
     render(BackgroundAgentSettings);
     expect(screen.getByTestId('fast-auggie-only-note')).toBeTruthy();
