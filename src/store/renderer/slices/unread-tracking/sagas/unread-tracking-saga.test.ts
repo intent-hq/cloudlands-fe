@@ -189,6 +189,34 @@ describe('unreadTrackingSaga', () => {
     await task.toPromise();
   });
 
+  it('does not record a watched streaming tail when a persisted message follows the streaming assistant row (interrupt-priority send)', async () => {
+    const channel = stdChannel();
+    let current = snapshot({ dividerSessionAgentIds: ['a1'], openAgentTabIds: ['a1'] });
+    const dispatch = vi.fn();
+    const agentSessionsByAgentId = {
+      a1: {
+        isStreaming: true,
+        messages: [
+          { id: 'msg-1', role: 'assistant', isStreaming: true },
+          { id: 'msg-2', role: 'user', isStreaming: false },
+        ],
+      },
+    };
+    const task = runSaga(
+      { channel, dispatch, getState: () => state(current, agentSessionsByAgentId) },
+      unreadTrackingSaga,
+    );
+    await settle();
+    current = snapshot({ dividerSessionAgentIds: ['a1'] });
+    channel.put(closeTab('ws-1', 'tab-a1'));
+    await settle();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'unreadTracking/recordWatchedStreamingTail' }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('does not record a watched streaming tail when the agent has no live stream', async () => {
     const channel = stdChannel();
     let current = snapshot({ dividerSessionAgentIds: ['a1'], openAgentTabIds: ['a1'] });

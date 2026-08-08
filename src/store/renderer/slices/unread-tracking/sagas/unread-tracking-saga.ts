@@ -8,7 +8,7 @@ import {
 } from '$features/agent/mark-agent-seen';
 import {
   selectAgentMessages,
-  selectAgentSessionHasStreamOwnedMessage,
+  selectAgentSessionHasStreamingTailMessage,
 } from '../../agent-session/agent-session-selectors';
 import { sendMessage } from '../../chat-state/chat-state-slice';
 import {
@@ -150,9 +150,9 @@ function* watchDividerBoundaries(): SagaGenerator<void> {
     if (boundary) {
       yield* call(markAgentSeenAtBoundary, boundary.agentIds);
       for (const agentId of boundary.agentIds) {
-        const hasStreamOwnedMessage =
-          yield* selectAgentSessionHasStreamOwnedMessage.effect(agentId);
-        if (hasStreamOwnedMessage) {
+        const hasStreamingTailMessage =
+          yield* selectAgentSessionHasStreamingTailMessage.effect(agentId);
+        if (hasStreamingTailMessage) {
           const messages = yield* selectAgentMessages.effect(agentId);
           const messageId = newestPersistedMessageId(messages);
           if (messageId) yield* put(recordWatchedStreamingTail(agentId, messageId));
