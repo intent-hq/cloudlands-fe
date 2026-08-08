@@ -131,6 +131,16 @@ vi.mock('$features/agent/agent-attention-toast-service', () => ({
   showAgentAttentionToast: showAgentAttentionToastSpy,
 }));
 
+// Fake the terminal manager (dynamically imported by the bridge) so the
+// `terminal:exit` handler's disposal call is observable without a real
+// TerminalAdapter/xterm instance.
+const { disposeExitedTerminalSpy } = vi.hoisted(() => ({
+  disposeExitedTerminalSpy: vi.fn(),
+}));
+vi.mock('$features/terminal/terminal-manager.svelte', () => ({
+  terminalManager: { disposeExitedTerminal: disposeExitedTerminalSpy },
+}));
+
 // Mock electron-bridge to avoid Electron dependency in tests. Provides stubs
 // for all exports; tests that need specific behavior (e.g., app-UI events suite)
 // can override via mockImplementation/mockReturnValue.
@@ -205,6 +215,8 @@ import {
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 import { disposeScripts, upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
 import type { ScriptOutputBuffer } from '$store/renderer/slices/scripts/scripts-types';
+import { addTerminal } from '$store/renderer/slices/terminals/terminals-slice';
+import { selectTerminalsForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
 import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
 import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/question-resource';
@@ -3360,6 +3372,54 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
 
     expect(readScriptsState().scripts[SCRIPT_ID].runtime.previouslyRunning).toBe(false);
     expect(readScriptsState().scripts[SCRIPT_ID].runtime.status).toBe('running');
+  });
+});
+
+describe('daemonEventsBridge (terminal wire contract — terminal:exit → terminals slice)', () => {
+  const TERMINAL_ID = 'terminal-bridge-1';
+
+  function readTerminalIds(): string[] {
+    return selectTerminalsForWorkspace.select(appStore.state, WS).map((t) => t.id);
+  }
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    disposeExitedTerminalSpy.mockClear();
+    appStore.dispatch(addTerminal(WS, TERMINAL_ID));
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it('removes the exited terminal from the terminals slice and releases its adapter', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    expect(readTerminalIds()).toContain(TERMINAL_ID);
+
+    // PROTOCOL §6.5 payload: { terminalId } — the daemon's PTY exited.
+    handler(notification('terminal:exit', { terminalId: TERMINAL_ID }));
+    await flush();
+
+    expect(readTerminalIds()).not.toContain(TERMINAL_ID);
+    expect(disposeExitedTerminalSpy).toHaveBeenCalledWith(TERMINAL_ID);
+  });
+
+  it('ignores terminal:exit payloads without a terminalId', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('terminal:exit', {}));
+    await flush();
+
+    expect(readTerminalIds()).toContain(TERMINAL_ID);
+    expect(disposeExitedTerminalSpy).not.toHaveBeenCalled();
   });
 });
 

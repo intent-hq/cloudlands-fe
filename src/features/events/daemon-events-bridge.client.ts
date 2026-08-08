@@ -190,6 +190,7 @@ import {
   updateRuntimeState,
 } from '$store/renderer/slices/scripts/scripts-slice';
 import type { ScriptRuntimeState } from '$store/renderer/slices/scripts/scripts-types';
+import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
 import {
   clearServerErrorMessage,
   setServerErrorMessage,
@@ -1884,6 +1885,20 @@ function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): voi
   appStore.dispatch(updateRuntimeState(workspaceId, scriptId, rest as Partial<ScriptRuntimeState>));
 }
 
+/** Remove an exited PTY from the transient terminal strip and release any live adapter. */
+function handleTerminalExitEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  const terminalId = data?.terminalId;
+  if (typeof terminalId !== 'string' || terminalId.length === 0) return;
+
+  appStore.dispatch(removeTerminal(workspaceId, terminalId));
+  void import('$features/terminal/terminal-manager.svelte')
+    .then(({ terminalManager }) => terminalManager.disposeExitedTerminal(terminalId))
+    .catch((error: unknown) => {
+      logger.warn('Failed to release exited terminal adapter', { terminalId, error });
+    });
+}
+
 /**
  * Re-emit daemon events onto the legacy mock-IPC event channels components
  * still `listenSync`/`on` (see file header). Channel names are string
@@ -2486,6 +2501,10 @@ export function routeDaemonEventsNotification(
     handleScriptStateEvent(event, workspaceId);
     // fall through to the lifecycle dispatch below
   }
+  if (type === 'terminal:exit') {
+    handleTerminalExitEvent(event, workspaceId);
+    // fall through so the activity timeline records the exit
+  }
   if (type === 'agent:failed') {
     handleAgentFailedStream(event, workspaceId);
     // fall through to the lifecycle dispatch below
@@ -2589,6 +2608,12 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'note:*',
   'comment:*',
   'script:*',
+  // Narrowed to `terminal:exit` only (not the full `terminal:*` firehose):
+  // `terminal:data` fires on every byte of terminal output and would flood
+  // the 100-entry activity-timeline buffer (workspace-events-slice.ts),
+  // evicting unrelated events. `terminal:exit` is the only terminal event
+  // this bridge currently handles (handleTerminalExitEvent below).
+  'terminal:exit',
   'settings:changed',
   'workspace:tokenUsage-changed',
   // `workspace:context-changed` (§5.1 / §6.5) — chat-context attachment
