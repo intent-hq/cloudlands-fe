@@ -17,6 +17,15 @@ describe('app UI targets registry', () => {
     });
   });
 
+  // monorepo#1729: the hash is UI-only, so links minted before the
+  // backgroundAgents.* → quickActions.* rename must keep resolving.
+  it('still resolves the pre-rename backgroundAgents.defaultModel hash', () => {
+    expect(resolveHashToTarget('backgroundAgents.defaultModel')).toMatchObject({
+      id: 'quickActions.defaultModel',
+    });
+    expect(isResolvableNavTarget('/settings#backgroundAgents.defaultModel')).toBe(true);
+  });
+
   it('returns undefined for an unknown hash', () => {
     expect(resolveHashToTarget('does-not-exist')).toBeUndefined();
   });
