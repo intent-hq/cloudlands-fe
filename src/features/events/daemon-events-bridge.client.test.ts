@@ -1698,6 +1698,267 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
   });
 });
 
+// Restore of the pre-Themis `agent:stream:activity` handling (monorepo#1708):
+// the content-free liveness ping (PROTOCOL §7) push-applies the server-derived
+// live-preview fields onto the agent-session slice and feeds the chat-state
+// bookkeeping — independent of the (unused today) chunk-accumulator paths
+// above.
+describe('daemonEventsBridge (agent:stream:activity — push-applied live preview)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(AGENT));
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  function readAgentSessionField<K extends keyof AgentSession>(field: K): AgentSession[K] {
+    return readSession()?.[field];
+  }
+
+  it('push-applies lastAgentResponse/digest and flips receivedFirstChunk on a text-bearing ping', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'streamed so far',
+        digest: 'Working on it',
+      }),
+    );
+
+    expect(readAgentSessionField('lastAgentResponse')).toBe('streamed so far');
+    expect(readAgentSessionField('digest')).toBe('Working on it');
+    const state = appStore.state as {
+      chatState?: { byAgentId: Record<string, { receivedFirstChunk: boolean }> };
+    };
+    expect(state.chatState?.byAgentId[AGENT]?.receivedFirstChunk).toBe(true);
+  });
+
+  it('applies the tool-arm lastToolUse without flipping receivedFirstChunk (no response text)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastToolUse: { name: 'read_file', status: 'started' },
+      }),
+    );
+
+    expect(readAgentSessionField('lastToolUse')).toEqual({ name: 'read_file', status: 'started' });
+    const state = appStore.state as {
+      chatState?: { byAgentId: Record<string, { receivedFirstChunk: boolean }> };
+    };
+    expect(state.chatState?.byAgentId[AGENT]?.receivedFirstChunk).toBe(false);
+  });
+
+  it('clears the previous turn digest/lastToolUse on a fresh messageId (monorepo#1327)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        digest: 'Turn one summary',
+        lastToolUse: { name: 'read_file' },
+      }),
+    );
+    expect(readAgentSessionField('digest')).toBe('Turn one summary');
+    expect(readAgentSessionField('lastToolUse')).toEqual({ name: 'read_file' });
+
+    // New turn, fresh messageId: stale digest/lastToolUse must be dropped
+    // before this ping's own (absent) fields apply.
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: 'msg_assistant_2',
+      }),
+    );
+
+    expect(readAgentSessionField('digest')).toBeUndefined();
+    expect(readAgentSessionField('lastToolUse')).toBeUndefined();
+  });
+
+  it('applies the terminal lastAgentResponse/digest and clears lastToolUse on agent:stream:end', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastToolUse: { name: 'read_file' },
+      }),
+    );
+    expect(readAgentSessionField('lastToolUse')).toEqual({ name: 'read_file' });
+
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'final answer',
+        digest: 'Done',
+      }),
+    );
+
+    expect(readAgentSessionField('lastAgentResponse')).toBe('final answer');
+    expect(readAgentSessionField('digest')).toBe('Done');
+    expect(readAgentSessionField('lastToolUse')).toBeUndefined();
+  });
+
+  it('hydrates a session unknown to the agent-session slice instead of dropping the ping', async () => {
+    appStore.dispatch(clearAllSessions());
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'text for an unhydrated agent',
+      }),
+    );
+
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+  });
+
+  it('ignores malformed agent:stream:activity payloads (missing/empty agentId or messageId)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:stream:activity', { messageId: MESSAGE_ID, digest: 'x' }));
+    handler(notification('agent:stream:activity', { agentId: AGENT, digest: 'x' }));
+    handler(notification('agent:stream:activity', { agentId: '', messageId: MESSAGE_ID, digest: 'x' }));
+    handler(notification('agent:stream:activity', { agentId: AGENT, messageId: '', digest: 'x' }));
+
+    expect(readAgentSessionField('digest')).toBeUndefined();
+  });
+
+  // Regression: `ensureAgentSession` hydration is async, so a ping for an
+  // agent unknown to the store must not silently drop its preview fields —
+  // they should apply once hydration settles instead of only firing the
+  // fetch-and-forget.
+  it('applies the push-applied preview fields once ensureAgentSession hydrates an unknown session', async () => {
+    appStore.dispatch(clearAllSessions());
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      appStore.dispatch(
+        bulkUpsertSessions([
+          {
+            id: AGENT,
+            backendSessionId: 'backend-1',
+            workspaceId: WS,
+            name: 'A',
+            status: AgentStatus.Active,
+            messages: [],
+            isStreaming: true,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          } as AgentSession,
+        ]),
+      );
+    });
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'text for an unhydrated agent',
+        digest: 'Hydrated preview',
+      }),
+    );
+    await flush();
+
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    expect(readAgentSessionField('lastAgentResponse')).toBe('text for an unhydrated agent');
+    expect(readAgentSessionField('digest')).toBe('Hydrated preview');
+  });
+
+  // Regression: previewTurnMessageIdByAgent was only stamped by activity
+  // pings, so a same-turn activity ping delivered out-of-order AFTER the
+  // terminal stream:end looked like a new turn (no tracked messageId change
+  // recorded by stream:end) and wiped the just-applied terminal digest.
+  it('a same-turn activity straggler delivered after stream:end does not wipe the terminal digest', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'final answer',
+        digest: 'Final summary',
+      }),
+    );
+    expect(readAgentSessionField('digest')).toBe('Final summary');
+
+    // Same turn's own activity ping, delivered late (no digest of its own —
+    // a mid-turn ping snapshot from before the turn's own completion).
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+      }),
+    );
+
+    expect(readAgentSessionField('digest')).toBe('Final summary');
+  });
+
+  // Regression: a delayed/out-of-order stream:end for an EARLIER turn than
+  // the one already tracked (a newer turn has already started streaming)
+  // must not clobber the newer turn's live preview.
+  it('an out-of-order stream:end for a stale earlier turn does not clobber a newer turn preview', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const OLDER_MESSAGE_ID = 'm-1000';
+    const NEWER_MESSAGE_ID = 'm-2000';
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: OLDER_MESSAGE_ID,
+        digest: 'Turn A digest',
+      }),
+    );
+    expect(readAgentSessionField('digest')).toBe('Turn A digest');
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: NEWER_MESSAGE_ID,
+        digest: 'Turn B digest',
+      }),
+    );
+    expect(readAgentSessionField('digest')).toBe('Turn B digest');
+
+    // Turn A's terminal event arrives late, after turn B has already started.
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        messageId: OLDER_MESSAGE_ID,
+        digest: 'Turn A final (stale)',
+      }),
+    );
+
+    expect(readAgentSessionField('digest')).toBe('Turn B digest');
+  });
+});
+
 // Regression (intentd#336): a user interrupt (agent.stop, or agent.sendMessage
 // with priority:interrupt) mid-stream must NOT erase the streamed-so-far
 // deltas. The daemon persists the partial turn as an interrupted assistant row
@@ -6583,20 +6844,19 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
     };
   }
 
-  function agentStreamChunkNotification() {
+  function agentStreamActivityNotification() {
     return {
       method: 'events.event',
       params: {
         event: {
-          id: 'evt-chunk-1',
+          id: 'evt-activity-1',
           workspaceId: WS_RECON,
           timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'agent:stream:chunk',
+          type: 'agent:stream:activity',
           actor: { type: 'system' },
           data: {
             agentId: 'agent-1',
-            content: 'chunk data',
-            streamId: 'stream-1',
+            messageId: 'msg-recon-1',
           },
         },
       },
@@ -6667,7 +6927,7 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
     expect(ws.activity).toBe('agent_running');
   });
 
-  it('reconciles activity to agent_running when agent:stream:chunk arrives and entity is idle', async () => {
+  it('reconciles activity to agent_running when agent:stream:activity arrives and entity is idle', async () => {
     await seedWorkspace('idle');
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -6688,7 +6948,7 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
       },
     });
 
-    handler(agentStreamChunkNotification());
+    handler(agentStreamActivityNotification());
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 
