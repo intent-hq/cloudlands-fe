@@ -139,15 +139,16 @@ describe("userPreferencesBetaPersistenceMiddleware", () => {
       chain = middleware(mockApi)(mockNext);
     });
 
-    it("calls setChannel(beta) when setBetaUpdatesEnabled(true)", async () => {
+    it("calls setChannel(beta) exactly once when setBetaUpdatesEnabled(true)", async () => {
       chain(setBetaUpdatesEnabled(true));
 
       await vi.waitFor(() => {
         expect(autoUpdateClient.setChannel).toHaveBeenCalledWith("beta");
       });
+      expect(autoUpdateClient.setChannel).toHaveBeenCalledTimes(1);
     });
 
-    it("calls setChannel(stable) when setBetaUpdatesEnabled(false)", async () => {
+    it("calls setChannel(stable) exactly once when setBetaUpdatesEnabled(false)", async () => {
       mockApi.getState.mockReturnValue({
         userPreferences: { betaUpdatesEnabled: false },
       } as StoreState);
@@ -157,14 +158,16 @@ describe("userPreferencesBetaPersistenceMiddleware", () => {
       await vi.waitFor(() => {
         expect(autoUpdateClient.setChannel).toHaveBeenCalledWith("stable");
       });
+      expect(autoUpdateClient.setChannel).toHaveBeenCalledTimes(1);
     });
 
-    it("calls setChannel on toggleBetaUpdates", async () => {
+    it("calls setChannel exactly once on toggleBetaUpdates", async () => {
       chain(toggleBetaUpdates());
 
       await vi.waitFor(() => {
         expect(autoUpdateClient.setChannel).toHaveBeenCalled();
       });
+      expect(autoUpdateClient.setChannel).toHaveBeenCalledTimes(1);
     });
 
     it("does not call setChannel for unrelated actions", () => {
