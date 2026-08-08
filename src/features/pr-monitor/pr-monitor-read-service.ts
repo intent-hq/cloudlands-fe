@@ -18,9 +18,9 @@
  * `intent/no-component-async-data-fetch` ESLint rule and matches the
  * "service middleware" pattern used by `background-hooks-read-service`.
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
-import { store as appStore } from "$store/renderer/store";
-import { createLogger } from "$lib/utils/client-logger";
+import type { GenericAction, StoreMiddleware } from '@augmentcode/themis/types';
+import { store as appStore } from '$store/renderer/store';
+import { createLogger } from '$lib/utils/client-logger';
 import {
   cancelPrMonitorRequested,
   flushPrMonitorRequested,
@@ -28,28 +28,28 @@ import {
   prMonitorsSubscribeRequested,
   prMonitorsUnsubscribeRequested,
   prMonitorsUpdated,
-} from "$store/renderer/slices/pr-monitor/pr-monitor-slice";
+} from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
 import {
   cancelPrMonitor,
   flushPrMonitor,
   subscribePrMonitors,
   type PrMonitorsSubscription,
-} from "./pr-monitor-service";
+} from './pr-monitor-service';
 
-const logger = createLogger("PrMonitorReadService");
+const logger = createLogger('PrMonitorReadService');
 
 /** First payload element, treated as a workspace ID string. */
 function workspaceIdOf(action: { payload?: unknown }): string | null {
   if (!Array.isArray(action.payload)) return null;
   const raw = action.payload[0];
-  return typeof raw === "string" && raw ? raw : null;
+  return typeof raw === 'string' && raw ? raw : null;
 }
 
 /** `[workspaceId, monitorId]` tuple payload, or null when malformed. */
 function monitorRefOf(action: { payload?: unknown }): [string, string] | null {
   if (!Array.isArray(action.payload)) return null;
   const [workspaceId, monitorId] = action.payload;
-  if (typeof workspaceId !== "string" || typeof monitorId !== "string") return null;
+  if (typeof workspaceId !== 'string' || typeof monitorId !== 'string') return null;
   return [workspaceId, monitorId];
 }
 
@@ -64,9 +64,10 @@ export function createPrMonitorMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     const result = next(action);
     if (!action) return result;
+    const typedAction = action as GenericAction & { type: string; payload?: unknown };
 
-    if (action.type === prMonitorsSubscribeRequested.type) {
-      const workspaceId = workspaceIdOf(action);
+    if (typedAction.type === prMonitorsSubscribeRequested.type) {
+      const workspaceId = workspaceIdOf(typedAction);
       if (workspaceId) {
         const entry = active.get(workspaceId);
         if (entry) {
@@ -78,8 +79,8 @@ export function createPrMonitorMiddleware(): StoreMiddleware {
           active.set(workspaceId, { count: 1, subscription });
         }
       }
-    } else if (action.type === prMonitorsUnsubscribeRequested.type) {
-      const workspaceId = workspaceIdOf(action);
+    } else if (typedAction.type === prMonitorsUnsubscribeRequested.type) {
+      const workspaceId = workspaceIdOf(typedAction);
       if (workspaceId) {
         const entry = active.get(workspaceId);
         if (entry) {
@@ -91,20 +92,20 @@ export function createPrMonitorMiddleware(): StoreMiddleware {
           }
         }
       }
-    } else if (action.type === flushPrMonitorRequested.type) {
-      const ref = monitorRefOf(action);
+    } else if (typedAction.type === flushPrMonitorRequested.type) {
+      const ref = monitorRefOf(typedAction);
       if (ref) {
         const [workspaceId, monitorId] = ref;
         void flushPrMonitor(workspaceId, monitorId).catch((error) => {
-          logger.error("prMonitor.flush failed", { workspaceId, monitorId, error });
+          logger.error('prMonitor.flush failed', { workspaceId, monitorId, error });
         });
       }
-    } else if (action.type === cancelPrMonitorRequested.type) {
-      const ref = monitorRefOf(action);
+    } else if (typedAction.type === cancelPrMonitorRequested.type) {
+      const ref = monitorRefOf(typedAction);
       if (ref) {
         const [workspaceId, monitorId] = ref;
         void cancelPrMonitor(workspaceId, monitorId).catch((error) => {
-          logger.error("prMonitor.cancel failed", { workspaceId, monitorId, error });
+          logger.error('prMonitor.cancel failed', { workspaceId, monitorId, error });
         });
       }
     }

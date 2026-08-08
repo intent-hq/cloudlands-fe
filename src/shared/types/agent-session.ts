@@ -150,6 +150,15 @@ export interface AgentSession {
    */
   reasoningEffort?: string | null;
 
+  /**
+   * Session-advertised reasoning-effort levels (§5.5, additive): the values
+   * the provider's `thought_level` config select advertised at the most
+   * recent session open, discovered and persisted by the daemon. Omitted when
+   * the provider advertised no such option. Takes precedence over the model's
+   * catalog `effortLevels` metadata in the picker gate; rendered verbatim.
+   */
+  effortLevels?: string[];
+
   /** ACP provider ID (e.g., "auggie", "claude-code", "opencode"). Mutable only until first real session use, then locked. */
   provider?: string;
 

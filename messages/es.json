@@ -176,6 +176,8 @@
   "settings_backgroundAgent_useDefaultOption": "Usar el modelo predeterminado de acciones rápidas",
   "settings_backgroundAgent_customBadge": "Personalizado",
   "settings_backgroundAgent_providerDefault_description": "Usar el modelo predeterminado de la CLI del proveedor",
+  "settings_backgroundAgent_useDefault_description": "Volver al modelo predeterminado de acciones rápidas",
+  "settings_backgroundAgent_fastAuggieOnlyNote": "La mejora de prompts y las sugerencias de diseño requieren Auggie. Cambie a Auggie como proveedor para usarlas.",
   "settings_gitWorkspace_loadError": "No se pudo cargar la configuración desde el backend.",
   "settings_gitWorkspace_saveError": "No se pudo guardar la configuración. Inténtelo de nuevo.",
   "settings_gitWorkspace_shell_autoDetect": "Detección automática (predeterminado del sistema)",
@@ -5475,5 +5477,8 @@
   "workspace_progress_viewMonitoredPrCrossRepo_tooltip": "Abre el pull request supervisado {repo}#{number} en GitHub en tu navegador.",
   "workspace_card_morePrs_label": "+{count}",
   "workspace_card_morePrs_tooltip_one": "1 PR supervisado activo más",
-  "workspace_card_morePrs_tooltip_many": "{count} PRs supervisados activos más"
+  "workspace_card_morePrs_tooltip_many": "{count} PRs supervisados activos más",
+  "bgExecutor_service_generateFailed_error": "Error al generar",
+  "bgExecutor_service_unavailable_error": "La finalización de una sola pasada no está disponible para el proveedor actual",
+  "bgExecutor_service_noResult_error": "No se extrajo ningún resultado de la respuesta del modelo"
 }

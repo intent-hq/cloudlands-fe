@@ -38,11 +38,13 @@ import workspaceAgent from './workspace-agent';
 // Shared documentation
 import notesSystemGuide from './notes-system-guide';
 
-// Utility agents
-import codeReview from './background/code-review';
-import codeWalkthrough from './background/code-walkthrough';
-import commitMessage from './background/commit-message';
-import prDescription from './background/pr-description';
+// Utility agents — browser-safe templates shared with the renderer's
+// background-executor service, hosted outside main/ (see
+// src/features/agent/instructions/background/).
+import codeReview from '../../instructions/background/code-review';
+import codeWalkthrough from '../../instructions/background/code-walkthrough';
+import commitMessage from '../../instructions/background/commit-message';
+import prDescription from '../../instructions/background/pr-description';
 
 // Re-export for direct imports
 export {

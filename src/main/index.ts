@@ -1476,17 +1476,27 @@ app.whenReady().then(async () => {
       });
     }
 
-    // Setup browser debugger IPC handlers for CDP access to embedded browser tabs
-    const { registerBrowserHandlers } = await import('../features/browser/main/browser.ipc');
-    registerBrowserHandlers();
-
     // setupAutoUpdateIPC(); // Already called in critical IPC setup
-    // Initialize auto-updater in production (not needed at startup, depends on mainWindow)
-    const { initializeAutoUpdater } = await import('../features/auto-update/main/auto-update.ipc');
+    // Initialize auto-updater in production (not needed at startup, depends on
+    // mainWindow). Runs BEFORE any awaited step in this task so the GET_STATE
+    // boot gate is always settled — a rejection in a later awaited import must
+    // not leave boot-time GET_STATE waiters hanging. (auto-update.ipc is
+    // statically imported above, so this dynamic import is a cache hit.)
+    const { initializeAutoUpdater, markAutoUpdaterNotInitialized } = await import(
+      '../features/auto-update/main/auto-update.ipc'
+    );
     const mainWindow = getMainWindow();
     if (process.env.NODE_ENV !== 'development' && mainWindow) {
       initializeAutoUpdater(mainWindow);
+    } else {
+      // Dev mode (or no window): the updater never initializes — unblock
+      // boot-time GET_STATE waiters so they answer the default state.
+      markAutoUpdaterNotInitialized();
     }
+
+    // Setup browser debugger IPC handlers for CDP access to embedded browser tabs
+    const { registerBrowserHandlers } = await import('../features/browser/main/browser.ipc');
+    registerBrowserHandlers();
 
     // Show this version's release notes on the first launch after an update.
     // Packaged builds only — a dev build's version is never a published tag.

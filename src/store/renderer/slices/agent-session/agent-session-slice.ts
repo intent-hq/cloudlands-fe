@@ -261,6 +261,8 @@ type CanonicalAgentSessionUpdates = {
   isWaitingForOtherAgents?: boolean;
   waitingForAgentIds?: string[];
   liveTurnOpen?: boolean;
+  reasoningEffort?: string | null;
+  effortLevels?: string[];
 };
 
 /** Wire statuses that mean a turn is running (lowercase IPC + PascalCase enum). */
@@ -288,6 +290,8 @@ type CanonicalAgentStatusWithSummary = CanonicalAgentStatusFields & {
   lastResponseSummary?: unknown;
   isWaitingForOtherAgents?: unknown;
   waitingForAgentIds?: unknown;
+  reasoningEffort?: unknown;
+  effortLevels?: unknown;
 };
 
 function canonicalSessionUpdates(
@@ -337,6 +341,22 @@ function canonicalSessionUpdates(
   if (Array.isArray(fields.waitingForAgentIds)) {
     updates.waitingForAgentIds = fields.waitingForAgentIds.filter(
       (id): id is string => typeof id === 'string',
+    );
+  }
+  // Session-level reasoning effort (Option B, §5.5): fold the field from
+  // `agent:updated` / `agent:session-updated` convergence payloads when
+  // present — a string sets it, an explicit null clears it back to the
+  // provider default. Absent keys leave the stored value untouched.
+  if (typeof fields.reasoningEffort === 'string' || fields.reasoningEffort === null) {
+    updates.reasoningEffort = fields.reasoningEffort;
+  }
+  // Session-advertised effort levels (§5.5): fold alongside reasoningEffort
+  // when a convergence payload carries them. Absent keys leave the stored
+  // value untouched; the wholesale replace happens on the refetch-driven
+  // session upsert (the daemon replaces the set at every session open).
+  if (Array.isArray(fields.effortLevels)) {
+    updates.effortLevels = fields.effortLevels.filter(
+      (level): level is string => typeof level === 'string',
     );
   }
 
@@ -557,6 +577,7 @@ type SessionComparisonSnapshot = Pick<
   sandboxPath: string | undefined;
   sandboxBranch: string | undefined;
   waitingForAgentIdsKey: string | undefined;
+  effortLevelsKey: string | undefined;
   turnInFlight: boolean | undefined;
   liveTurnOpen: boolean | undefined;
 };
@@ -610,6 +631,18 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     waitingForAgentIdsKey: Array.isArray(session.waitingForAgentIds)
       ? session.waitingForAgentIds.join(',')
       : undefined,
+    // Session-advertised effort levels (§5.5) gate the effort picker — the
+    // agent:updated-driven refetch after the first session open is often the
+    // only change, so it must not be swallowed as a no-op. Joined to a scalar
+    // for the shallow comparison.
+    effortLevelsKey: Array.isArray(session.effortLevels)
+      ? session.effortLevels.join(',')
+      : undefined,
+    // STAB-125 turn-liveness (§5.5, additive — not declared on AgentSession):
+    // the HUD bucket gate reads it to defeat the waiting check mid-turn, so a
+    // re-hydration whose only change is this flag flipping must not be
+    // swallowed as a no-op (the STAB-9 refetch on agent:status-changed is the
+    // only path that updates it for HUD summary-only sessions).
     turnInFlight:
       (session as { turnInFlight?: unknown }).turnInFlight === true ? true : undefined,
     liveTurnOpen: session.liveTurnOpen === true ? true : undefined,

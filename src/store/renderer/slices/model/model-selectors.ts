@@ -200,13 +200,19 @@ export const selectModelEffortLevels = store.createSelector(
 
 /**
  * Effort levels for the model an agent session currently uses — the
- * session-scoped companion to `selectAgentReasoningEffort`. `undefined` when
- * the session is unknown, uses the provider default model, or the model has
- * no effort support in the loaded catalog.
+ * session-scoped companion to `selectAgentReasoningEffort`. The session's own
+ * daemon-served `effortLevels` (the provider's `thought_level` select
+ * discovered at session open, §5.5) take precedence when present; otherwise
+ * the catalog metadata lookup applies (codex static catalog etc.).
+ * `undefined` when the session is unknown, uses the provider default model,
+ * or neither the session nor the loaded catalog advertises effort support.
  */
 export const selectAgentModelEffortLevels = store.createSelector(
   (state, agentId: string): string[] | undefined => {
-    const model = state.agentSessions?.byAgentId[agentId]?.model;
-    return selectModelEffortLevels.select(state, model);
+    const session = state.agentSessions?.byAgentId[agentId];
+    if (Array.isArray(session?.effortLevels) && session.effortLevels.length > 0) {
+      return session.effortLevels;
+    }
+    return selectModelEffortLevels.select(state, session?.model);
   },
 );

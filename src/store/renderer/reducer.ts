@@ -1,5 +1,6 @@
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
 import { providerCatalogReducer } from './slices/provider-catalog/provider-catalog-slice';
+import { providerModelsReducer } from './slices/provider-models/provider-models-slice';
 import { backgroundAgentSettingsReducer } from './slices/background-agent-settings/background-agent-settings-slice';
 import { externalEditorsReducer } from './slices/external-editors/external-editors-slice';
 import { uiLayoutReducer } from './slices/ui-layout/ui-layout-slice';
@@ -90,6 +91,7 @@ import { hudReducer } from './slices/hud/hud-slice';
 export const reducers = {
   providerSettings: providerSettingsReducer,
   providerCatalog: providerCatalogReducer,
+  providerModels: providerModelsReducer,
   backgroundAgentSettings: backgroundAgentSettingsReducer,
   externalEditors: externalEditorsReducer,
   uiLayout: uiLayoutReducer,
