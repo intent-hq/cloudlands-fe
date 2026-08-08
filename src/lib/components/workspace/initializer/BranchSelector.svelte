@@ -419,6 +419,35 @@
     }
   }
 
+  /**
+   * GitHub-path selection order: value prop, then the repo's saved branch,
+   * then the default branch, then the first available branch. Shared by the
+   * cached-first paint and the authoritative GitHub API path.
+   */
+  function applyGithubBranchSelection() {
+    // If value prop is provided, trust it (e.g., for remote branches like origin/...)
+    if (value) {
+      // Value prop is the source of truth - don't override it
+      setInternalBranch(value);
+      return;
+    }
+    // Look up saved branch for THIS repo from Redux (not from stale selectedBranch)
+    const savedBranchForRepo = getSavedBranchForRepo(repoPath);
+    if (
+      savedBranchForRepo &&
+      (branches.includes(savedBranchForRepo) || remoteBranches.includes(savedBranchForRepo))
+    ) {
+      // Saved branch exists (in local or remote branches), use it
+      setInternalBranch(savedBranchForRepo);
+    } else if (defaultBranch && branches.includes(defaultBranch)) {
+      // Fall back to default branch
+      setInternalBranch(defaultBranch);
+    } else {
+      // Last resort: use first available branch
+      setInternalBranch(branches[0]);
+    }
+  }
+
   async function fetchBranches() {
     if (!repoPath) {
       isLoading = false;
@@ -507,6 +536,9 @@
     }
 
     let fetchSucceeded = false;
+    // Cached-first paint state for the GitHub path (`github.branches.listCached`).
+    let cachedListingApplied = false;
+    let freshListingSettled = false;
 
     try {
       // Simulate network delay if enabled
@@ -563,6 +595,29 @@
         }
         const [, owner, repo] = match;
 
+        // Cached-first paint (`github.branches.listCached`, PROTOCOL §5.27):
+        // refs from the daemon's local repo cache render instantly while the
+        // authoritative GitHub API list loads in parallel. The seam folds
+        // failures to a cold-cache miss, so this never surfaces an error.
+        void appClient.integrations.githubBranchesCached(owner, repo).then((cachedListing) => {
+          // A superseded fetch must not clobber a newer repo's state, and the
+          // authoritative list wins once it has settled (either way).
+          if (abortController.signal.aborted || freshListingSettled) return;
+          // Cold cache keeps today's behavior (skeleton until the API responds).
+          if (!cachedListing.cached || cachedListing.branches.length === 0) return;
+          branches = cachedListing.branches;
+          defaultBranch = cachedListing.defaultBranch || '';
+          isLoading = false;
+          cachedListingApplied = true;
+          applyGithubBranchSelection();
+          notifyBranchesLoaded();
+          logger.debug('Rendered cached branches via github.branches.listCached', {
+            owner,
+            repo,
+            count: cachedListing.branches.length,
+          });
+        });
+
         // URL-only GitHub repo (no local clone to ask git): the daemon lists
         // remote branch names via `github.branches.list` and the default
         // branch via `github.repos.get` (PROTOCOL §5.27). There is no direct
@@ -575,6 +630,7 @@
             logger.debug('Branch fetch aborted after response');
             return;
           }
+          freshListingSettled = true;
           branches = listing.branches;
           defaultBranch = listing.defaultBranch || '';
           githubAuthNeeded = 'none';
@@ -585,6 +641,7 @@
             count: branches.length,
           });
         } catch (githubError) {
+          freshListingSettled = true;
           const message = githubError instanceof Error ? githubError.message : String(githubError);
           // The daemon reports a missing/failed GitHub token as
           // "GitHub is not configured." (§5.27 error conventions).
@@ -616,26 +673,18 @@
       // For GitHub repos, ensure a valid branch is selected
       // (Local repos already handle this above)
       if (effectiveRepoType === 'github' && branches.length > 0) {
-        // If value prop is provided, trust it (e.g., for remote branches like origin/...)
-        if (value) {
-          // Value prop is the source of truth - don't override it
-          setInternalBranch(value);
-        } else {
-          // Look up saved branch for THIS repo from Redux (not from stale selectedBranch)
-          const savedBranchForRepo = getSavedBranchForRepo(repoPath);
-          if (
-            savedBranchForRepo &&
-            (branches.includes(savedBranchForRepo) || remoteBranches.includes(savedBranchForRepo))
-          ) {
-            // Saved branch exists (in local or remote branches), use it
-            setInternalBranch(savedBranchForRepo);
-          } else if (defaultBranch && branches.includes(defaultBranch)) {
-            // Fall back to default branch
-            setInternalBranch(defaultBranch);
-          } else {
-            // Last resort: use first available branch
-            setInternalBranch(branches[0]);
+        if (cachedListingApplied && !value) {
+          // Reconcile the cached-first selection against the authoritative
+          // list: keep a branch that still exists; a vanished selection
+          // switches to the default branch (setInternalBranch fires onchange
+          // and persists) — never leave a vanished branch selected.
+          if (!internalSelectedBranch || !branches.includes(internalSelectedBranch)) {
+            setInternalBranch(
+              defaultBranch && branches.includes(defaultBranch) ? defaultBranch : branches[0],
+            );
           }
+        } else {
+          applyGithubBranchSelection();
         }
       }
 
