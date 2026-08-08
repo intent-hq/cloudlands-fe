@@ -15,6 +15,7 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import type { DraftAttachment, DraftsClient } from '$lib/client/app-client';
+import { clearDraftCacheForTests } from '../chat-draft-cache';
 import ChatDraftHarness from './mocks/ChatDraftHarness.svelte';
 
 type Draft = { text: string; attachments?: DraftAttachment[]; updatedAt: string };
@@ -60,6 +61,7 @@ const AGENT = 'agent-1';
 describe('ChatPanel draft restore/save (mounted)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    clearDraftCacheForTests();
   });
 
   afterEach(() => {
