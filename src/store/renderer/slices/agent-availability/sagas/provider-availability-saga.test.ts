@@ -1,12 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), clearCache: vi.fn(), catalog: vi.fn() }));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), catalog: vi.fn() }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 vi.mock('$lib/client', () => ({ appClient: { providers: { catalog: mocks.catalog } } }));
-vi.mock('$features/providers/provider-availability.client', () => ({
-  clearProviderAvailabilityCache: mocks.clearCache,
-}));
 
 import { PROVIDER_AVAILABILITY_KEY_TO_ID } from '$shared/types/provider-availability';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
@@ -117,7 +114,6 @@ describe('providerAvailabilitySaga', () => {
       ['providers:get-availability'],
       ...ids.map((id) => ['providers:check-single', id]),
     ]);
-    expect(mocks.clearCache).toHaveBeenCalledTimes(1);
     expect(dispatch.mock.calls.at(-1)?.[0]).toEqual({
       type: 'agentAvailability/checkAllProvidersComplete',
       payload: [],
@@ -151,7 +147,6 @@ describe('providerAvailabilitySaga', () => {
     expect(mocks.invoke.mock.calls).toEqual([['providers:get-availability']]);
     task.cancel();
     await task.toPromise();
-    expect(mocks.clearCache).toHaveBeenCalledTimes(1);
     expect(
       dispatch.mock.calls
         .map(([action]) => action)
