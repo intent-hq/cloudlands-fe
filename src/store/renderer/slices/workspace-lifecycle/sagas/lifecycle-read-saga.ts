@@ -100,7 +100,11 @@ const triggers = [
 
 type LifecycleAction = ReturnType<(typeof triggers)[number]>;
 type ReadDescriptor = { key: string; workspaceId?: string };
-type RunningRead = ReadDescriptor & { task?: Task; token: symbol };
+type RunningRead = ReadDescriptor & {
+  task?: Task;
+  token: symbol;
+  trailingAction?: LifecycleAction;
+};
 
 function tupleString(action: { payload?: unknown }): string | undefined {
   const value = Array.isArray(action.payload) ? action.payload[0] : undefined;
@@ -221,7 +225,7 @@ function* refreshChanges(workspaceId: string): SagaGenerator<void> {
     trackedChanges: call([appClient.git, appClient.git.trackedChanges], workspaceId),
     commitsEnvelope: call([appClient.git, appClient.git.commitsWithBoundary], workspaceId),
   });
-  if (!status) return;
+  if (!status || trackedChanges === null) return;
   const changes = reconcileGitStatusChanges(status.files, trackedChanges);
   yield* put(setChangesData(workspaceId, changes, false, changes.length));
   yield* put(setCommitsData(workspaceId, commitsEnvelope.commits, commitsEnvelope.boundarySha));
@@ -390,7 +394,12 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       }
 
       const descriptor = descriptorFor(action);
-      if (!descriptor || running.has(descriptor.key)) continue;
+      if (!descriptor) continue;
+      const activeRead = running.get(descriptor.key);
+      if (activeRead) {
+        if (descriptor.key.startsWith('changes:')) activeRead.trailingAction = action;
+        continue;
+      }
       if (descriptor.key.startsWith('context:') && initializedContexts.has(descriptor.workspaceId ?? '')) {
         continue;
       }
@@ -398,9 +407,18 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       running.set(descriptor.key, { ...descriptor, token });
       const task = yield* fork(function* () {
         try {
-          yield* call(lifecycleReadWorker, action, initializedContexts);
-        } catch (error) {
-          logger.error(`Refresh failed for ${descriptor.key}`, error);
+          let nextAction: LifecycleAction | undefined = action;
+          while (nextAction) {
+            try {
+              yield* call(lifecycleReadWorker, nextAction, initializedContexts);
+            } catch (error) {
+              logger.error(`Refresh failed for ${descriptor.key}`, error);
+            }
+            const active = running.get(descriptor.key);
+            if (!active || active.token !== token) break;
+            nextAction = active.trailingAction;
+            active.trailingAction = undefined;
+          }
         } finally {
           if (running.get(descriptor.key)?.token === token) running.delete(descriptor.key);
         }

@@ -373,6 +373,81 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('accepts an empty tracked-change result but preserves state on a folded read failure', async () => {
+    mocks.git.status.mockResolvedValue({
+      branch: 'main',
+      ahead: 0,
+      behind: 0,
+      diverged: false,
+      files: [{ path: 'src/status-only.ts', status: GitFileStatus.Modified, staged: false }],
+      hasUncommittedChanges: true,
+      hasUntrackedFiles: false,
+    });
+    mocks.git.trackedChanges.mockResolvedValueOnce([]).mockResolvedValueOnce(null);
+    const run = start();
+
+    run.channel.put(refreshRequested(WS));
+    await settle();
+    run.channel.put(refreshRequested(WS));
+    await settle();
+
+    expect(mocks.git.status).toHaveBeenCalledTimes(2);
+    expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(2);
+    expect(run.actions).toEqual([
+      {
+        type: 'changes/setChangesData',
+        payload: {
+          wsId: WS,
+          changes: [expect.objectContaining({
+            relativePath: 'src/status-only.ts',
+            stats: { additions: 0, deletions: 0 },
+            attribution: { manual: true, timestamp: 0 },
+          })],
+          truncated: false,
+          totalCount: 1,
+        },
+      },
+      { type: 'changes/setCommitsData', payload: { wsId: WS, commits: [], boundarySha: null } },
+      { type: 'changes/setHasLoadedInitialData', payload: [WS, true] },
+    ]);
+    await stop(run.task);
+  });
+
+  it('coalesces many in-flight changes triggers into one non-concurrent trailing refresh', async () => {
+    let resolveStatus!: (value: Awaited<ReturnType<typeof mocks.git.status>>) => void;
+    mocks.git.status.mockReturnValueOnce(new Promise((resolve) => { resolveStatus = resolve; }));
+    const run = start();
+
+    run.channel.put(refreshRequested(WS));
+    await settle();
+    run.channel.put(loadWorkspaceDataRequested(WS));
+    run.channel.put(refreshRequested(WS));
+    run.channel.put(loadWorkspaceDataRequested(WS));
+    await settle();
+
+    expect(mocks.git.status).toHaveBeenCalledTimes(1);
+    expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(1);
+    expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+
+    resolveStatus({
+      branch: 'main',
+      ahead: 0,
+      behind: 0,
+      diverged: false,
+      files: [],
+      hasUncommittedChanges: false,
+      hasUntrackedFiles: false,
+    });
+    await settle();
+
+    expect(mocks.git.status).toHaveBeenCalledTimes(2);
+    expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(2);
+    expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
+    await settle();
+    expect(mocks.git.status).toHaveBeenCalledTimes(2);
+    await stop(run.task);
+  });
+
   it('loads older commits and always clears loading on failure and cancellation', async () => {
     const commit = { hash: 'old', message: 'old', wire_only: true };
     mocks.git.commitsWithBoundary.mockResolvedValueOnce({ commits: [commit], boundarySha: null, nextToken: null });
