@@ -282,9 +282,8 @@
     (window as any).__app_goto = goto;
   }
 
-  // Chrome-less HUD pop-out window: suppress SidebarNav/SidebarPanel and the
-  // rounded main chrome (see HudChromelessMain). Prefix match, matching
-  // isHudWindow()/isHudWindowRenderer().
+  // Chrome-less HUD pop-out: suppress sidebar/main chrome (see HudChromelessMain);
+  // prefix match, matching isHudWindow()/isHudWindowRenderer().
   const isHudRoute = $derived($page.url.pathname.startsWith('/hud'));
 
   // Track last non-settings path for cmd+, toggle behavior
@@ -990,7 +989,7 @@
     aria-label={m.layout_appShell_shell_ariaLabel()}
     data-testid="app-ready"
   >
-    <!-- Title bar + update indicator (suppressed on the HUD route: its own header is the only top chrome and carries the drag region) -->
+    <!-- Title bar + update indicator (suppressed on HUD: its own header is the only top chrome) -->
     {#if !isHudRoute}
       <WindowTitleBar workspaceId={$activeWorkspaceId || undefined} />
       <div class="absolute top-2 right-3 z-10">
@@ -1049,15 +1048,9 @@
   <!-- Spaces Switcher Overlay (Ctrl+Tab) -->
   <SpacesSwitcherOverlay />
 
-  <!-- Joystick Radial Prompt Picker Overlay (hardware console joystick deflection;
-       suppressed in the HUD pop-out window, which is inert to hardware-console input) -->
+  <!-- Joystick Radial Prompt Picker + Encoder Cycling HUD (suppressed in the HUD pop-out, inert to hardware-console input) -->
   {#if !isHudRoute}
     <RadialPromptPickerOverlay />
-  {/if}
-
-  <!-- Encoder Cycling HUD (hardware console encoder rotation; suppressed in the
-       HUD pop-out window, which is inert to hardware-console input) -->
-  {#if !isHudRoute}
     <EncoderCycleHud />
   {/if}
 

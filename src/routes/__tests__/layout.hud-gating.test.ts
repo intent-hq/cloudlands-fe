@@ -38,7 +38,7 @@ vi.mock('$store/renderer/root-store-lifecycle', () => ({
 vi.mock('$store/renderer/sagas', () => ({ startAllAppSagas: () => [] }));
 vi.mock('$store/renderer/seeders', () => ({}));
 vi.mock('$features/layout/tab-types/register-all', () => ({ registerAllTabTypes: () => {} }));
-vi.mock('$features/backend/splash-gate', () => ({ startSplashGate: () => () => {} }));
+vi.mock('$features/backend/splash-gate', () => ({ wireSplashGate: () => () => {} }));
 vi.mock('$lib/utils/diff-highlighter-preloader', () => ({ preloadDiffHighlighter: () => {} }));
 vi.mock('$lib/utils/monaco-workers', () => ({ configureMonacoWorkers: async () => {} }));
 vi.mock('$features/agent/interrupted-agents-service', () => ({
