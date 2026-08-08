@@ -114,6 +114,14 @@ type RunningRead = ReadDescriptor & {
   trailingAction?: LifecycleAction;
 };
 
+/**
+ * Read keys whose triggers are daemon-event-driven and therefore must be
+ * single-flight *with* trailing coalesce: an event arriving while the read is
+ * in flight collapses into exactly one follow-up read once it settles, rather
+ * than being dropped (the in-flight response can predate the change).
+ */
+const TRAILING_COALESCE_PREFIXES = ['changes:', 'tasks:'];
+
 function tupleString(action: { payload?: unknown }): string | undefined {
   const value = Array.isArray(action.payload) ? action.payload[0] : undefined;
   return typeof value === 'string' && value.length > 0 ? value : undefined;
@@ -414,7 +422,9 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       if (!descriptor) continue;
       const activeRead = running.get(descriptor.key);
       if (activeRead) {
-        if (descriptor.key.startsWith('changes:')) activeRead.trailingAction = action;
+        if (TRAILING_COALESCE_PREFIXES.some((prefix) => descriptor.key.startsWith(prefix))) {
+          activeRead.trailingAction = action;
+        }
         continue;
       }
       if (descriptor.key.startsWith('context:') && initializedContexts.has(descriptor.workspaceId ?? '')) {
