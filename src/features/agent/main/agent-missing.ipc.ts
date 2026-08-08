@@ -84,6 +84,37 @@ interface AgentListActiveResult {
   streams: ActiveStream[];
 }
 
+/**
+ * Last successfully resolved active-streams snapshot (from either the daemon
+ * `agent.listActive` probe or the legacy fallback). Served back on a transient
+ * `agent.listActive` failure so a slow/overloaded daemon degrades to a stale
+ * read instead of triggering the legacy fan-out — see `isMethodNotFoundError`.
+ */
+let lastKnownActiveStreams: ActiveStream[] = [];
+
+/**
+ * The legacy `workspace.list` → `agent.list` fan-out is only a safe substitute
+ * for `agent.listActive` when the daemon genuinely predates the method
+ * (JSON-RPC -32601 / `METHOD_NOT_FOUND`). Any other failure (timeout,
+ * connection drop, internal error) means the daemon is already struggling, and
+ * fanning out into O(workspaces) extra RPCs would amplify that load —
+ * precisely the load ⇒ timeout ⇒ fan-out ⇒ more load loop this guards against
+ * (monorepo#1395).
+ *
+ * Checks the structured `code`/`rpcCode` fields only — never the error
+ * message — so a daemon error whose message happens to contain "method not
+ * found" (e.g. an internal error surfacing an unrelated method name) is not
+ * misclassified as a genuine `METHOD_NOT_FOUND` and does not trigger the
+ * fan-out.
+ */
+function isMethodNotFoundError(error: unknown): boolean {
+  if (error && typeof error === 'object') {
+    if ((error as { code?: unknown }).code === 'METHOD_NOT_FOUND') return true;
+    if ((error as { rpcCode?: unknown }).rpcCode === -32601) return true;
+  }
+  return false;
+}
+
 async function getLegacyActiveStreams(
   client: ReturnType<typeof getBackendClient>,
 ): Promise<ActiveStream[]> {
@@ -169,6 +200,16 @@ export function registerMissingAgentHandlers(): void {
           startTime,
         }));
       } catch (error) {
+        if (!isMethodNotFoundError(error)) {
+          // Transient failure (timeout, connection drop, internal error) — the
+          // daemon is already struggling, so serve the last known snapshot
+          // instead of fanning out into the legacy workspace.list + agent.list
+          // per-workspace probe, which would only add more load.
+          logger.warn('agent.listActive failed transiently; returning last known active streams', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return { success: true, data: lastKnownActiveStreams };
+        }
         logger.warn('agent.listActive unavailable; falling back to legacy active-streams probe', {
           error: error instanceof Error ? error.message : String(error),
         });
@@ -179,6 +220,8 @@ export function registerMissingAgentHandlers(): void {
         count: activeStreams.length,
         agentIds: activeStreams.map((s) => s.agentId),
       });
+
+      lastKnownActiveStreams = activeStreams;
 
       return {
         success: true,

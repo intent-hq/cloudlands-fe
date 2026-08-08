@@ -124,13 +124,66 @@ export class WorkspaceService {
    * FE having to load-and-drop archived rows. Chief is never surfaced by the daemon
    * `workspace.list` — parity with the retired `findAll()` which relied on
    * `getChiefWorkspace()` being fetched via `findById` on demand.
+   *
+   * Single-flighted and cached for a short TTL (keyed by `includeArchived`) so
+   * concurrent/rapid main-process callers (menu rebuilds, quit checks, IPC list
+   * handlers) coalesce onto one in-flight request instead of each firing their
+   * own `workspace.list` round-trip — the `workspace.list` flood fix (monorepo
+   * Phase 2). A cache entry serves both purposes: concurrent callers before the
+   * request resolves share the same in-flight promise (single-flight), and
+   * callers within the TTL window after it resolves reuse the resolved value.
+   * `expiresAt` starts `null` and is only stamped once the request resolves, so
+   * a slow request (>TTL) is never mistaken for "expired while still pending" —
+   * a pending entry (`expiresAt === null`) is always reused regardless of how
+   * long it has been in flight. A rejected promise is evicted immediately so
+   * the next caller retries rather than waiting out the TTL on a cached failure.
+   * Mutation methods (`updateWorkspace`, `duplicateWorkspace`, `deleteWorkspace`,
+   * `archiveWorkspace`, `unarchiveWorkspace`, `restoreWorkspace`) clear this
+   * cache on success so a list requested shortly after a write does not serve
+   * pre-mutation rows.
    */
+  private readonly WORKSPACE_LIST_CACHE_TTL_MS = 2000;
+  private readonly workspaceListCache = new Map<
+    boolean,
+    { expiresAt: number | null; promise: Promise<Workspace[]> }
+  >();
+
   private async fetchWorkspacesFromDaemon(includeArchived: boolean): Promise<Workspace[]> {
-    const response = (await getBackendClient().request('workspace.list', {
-      includeArchived,
-    })) as { workspaces?: unknown[] };
-    const rows = Array.isArray(response?.workspaces) ? response.workspaces : [];
-    return rows.map((raw) => this.normalizeDaemonWorkspace(raw as Record<string, unknown>));
+    const now = Date.now();
+    const cached = this.workspaceListCache.get(includeArchived);
+    if (cached && (cached.expiresAt === null || cached.expiresAt > now)) {
+      return cached.promise;
+    }
+
+    const entry: { expiresAt: number | null; promise: Promise<Workspace[]> } = {
+      expiresAt: null,
+      promise: (async () => {
+        const response = (await getBackendClient().request('workspace.list', {
+          includeArchived,
+        })) as { workspaces?: unknown[] };
+        const rows = Array.isArray(response?.workspaces) ? response.workspaces : [];
+        return rows.map((raw) => this.normalizeDaemonWorkspace(raw as Record<string, unknown>));
+      })(),
+    };
+    this.workspaceListCache.set(includeArchived, entry);
+
+    entry.promise.then(
+      () => {
+        // Start the TTL window only now that the request has actually
+        // resolved, so a request slower than the TTL is never treated as
+        // expired while still pending.
+        if (this.workspaceListCache.get(includeArchived) === entry) {
+          entry.expiresAt = Date.now() + this.WORKSPACE_LIST_CACHE_TTL_MS;
+        }
+      },
+      () => {
+        if (this.workspaceListCache.get(includeArchived) === entry) {
+          this.workspaceListCache.delete(includeArchived);
+        }
+      },
+    );
+
+    return entry.promise;
   }
 
   /**
@@ -869,8 +922,7 @@ export class WorkspaceService {
       }
 
       const response = (await getBackendClient().request('workspace.update', daemonParams)) as
-        | { workspace?: unknown }
-        | undefined;
+        { workspace?: unknown } | undefined;
       const rawWorkspace =
         response && typeof response === 'object' ? response.workspace : undefined;
       if (!rawWorkspace || typeof rawWorkspace !== 'object') {
@@ -917,6 +969,10 @@ export class WorkspaceService {
       if (requestedPullRequests !== undefined) {
         merged.pullRequests = requestedPullRequests ?? [];
       }
+
+      // Invalidate the workspace.list cache so a list requested shortly after
+      // this write does not serve pre-mutation rows.
+      this.workspaceListCache.clear();
 
       // Emit event
       mainDispatch(
@@ -966,6 +1022,10 @@ export class WorkspaceService {
         return { ok: false, error: m.workspaceService_invalidDaemonPayload_error() };
       }
       const newWorkspace = this.normalizeDaemonWorkspace(raw as Record<string, unknown>);
+
+      // Invalidate the workspace.list cache so a list requested shortly after
+      // this write does not serve pre-mutation rows.
+      this.workspaceListCache.clear();
 
       mainDispatch(
         workspaceCreated({
@@ -1025,6 +1085,10 @@ export class WorkspaceService {
       // idempotent success.
       await getBackendClient().request('workspace.delete', { workspaceId: id });
 
+      // Invalidate the workspace.list cache so a list requested shortly after
+      // this write does not serve pre-mutation rows.
+      this.workspaceListCache.clear();
+
       // Emit event
       mainDispatch(
         workspaceDeleted({
@@ -1069,6 +1133,10 @@ export class WorkspaceService {
       }
 
       await getBackendClient().request('workspace.archive', { workspaceId: id });
+
+      // Invalidate the workspace.list cache so a list requested shortly after
+      // this write does not serve pre-mutation rows.
+      this.workspaceListCache.clear();
 
       // Refetch to get the daemon-canonical workspace (server-stamped timestamps
       // and archived flags). Fall back to a locally-derived shape if the refetch
@@ -1119,6 +1187,10 @@ export class WorkspaceService {
       }
 
       await getBackendClient().request('workspace.unarchive', { workspaceId: id });
+
+      // Invalidate the workspace.list cache so a list requested shortly after
+      // this write does not serve pre-mutation rows.
+      this.workspaceListCache.clear();
 
       let workspace = await this.fetchWorkspaceFromDaemon(id);
       if (!workspace) {
@@ -1172,6 +1244,10 @@ export class WorkspaceService {
         return { ok: false, error: m.workspaceService_invalidDaemonPayload_error() };
       }
       const workspace = this.normalizeDaemonWorkspace(raw as Record<string, unknown>);
+
+      // Invalidate the workspace.list cache so a list requested shortly after
+      // this write does not serve pre-mutation rows.
+      this.workspaceListCache.clear();
 
       mainDispatch(
         workspaceUpdated({
@@ -1522,6 +1598,7 @@ export class WorkspaceService {
     // Clear metadata/UI-only caches.
     this.lastContextCache.clear();
     this.contextCacheOrder = [];
+    this.workspaceListCache.clear();
 
     logger.debug('WorkspaceService cleaned up');
   }
