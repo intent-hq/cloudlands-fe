@@ -17,6 +17,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -33,24 +34,20 @@ function resolveCtAlignedPlaywrightCli() {
   // and require from there instead.
   const ctCoreEntry = ctSvelteRequire.resolve('@playwright/experimental-ct-core');
   const ctCoreRequire = createRequire(ctCoreEntry);
-  const playwrightEntry = ctCoreRequire.resolve('playwright');
+  // Unlike ct-core, playwright does export its ./package.json subpath.
+  const playwrightPkgJsonPath = ctCoreRequire.resolve('playwright/package.json');
+  const packageDir = path.dirname(playwrightPkgJsonPath);
 
-  // Locate the playwright package dir (its package.json subpath is not
-  // exported either) and its CLI entry point.
-  let packageDir = path.dirname(playwrightEntry);
-  while (!existsSync(path.join(packageDir, 'package.json'))) {
-    const parent = path.dirname(packageDir);
-    if (parent === packageDir) {
-      throw new Error(`could not locate playwright package.json above ${playwrightEntry}`);
-    }
-    packageDir = parent;
+  const pkg = JSON.parse(readFileSync(playwrightPkgJsonPath, 'utf8'));
+  const binRel = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.playwright;
+  if (!binRel) {
+    throw new Error(`playwright bin entry not found in ${playwrightPkgJsonPath}`);
   }
-  const cliPath = path.join(packageDir, 'cli.js');
+  const cliPath = path.join(packageDir, binRel);
   if (!existsSync(cliPath)) {
     throw new Error(`playwright CLI not found at ${cliPath}`);
   }
-  const { version } = JSON.parse(readFileSync(path.join(packageDir, 'package.json'), 'utf8'));
-  return { cliPath, version };
+  return { cliPath, version: pkg.version };
 }
 
 let cli;
@@ -75,6 +72,14 @@ const child = spawn(process.execPath, [cli.cliPath, ...args], {
   cwd: repoRoot,
   stdio: 'inherit',
 });
+child.on('error', (error) => {
+  console.error(`[run-ct-tests] failed to spawn playwright: ${error.message}`);
+  process.exit(1);
+});
 child.on('exit', (code, signal) => {
-  process.exit(signal ? 1 : (code ?? 1));
+  if (signal) {
+    const signalNumber = os.constants.signals[signal];
+    process.exit(signalNumber ? 128 + signalNumber : 1);
+  }
+  process.exit(code ?? 1);
 });
