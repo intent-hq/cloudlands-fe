@@ -6409,6 +6409,122 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
   });
 });
 
+// monorepo#1712: the HUD card's agent rows are built from
+// `workspace.agentSummary.agents` (`agentInfosOf` in hud-selectors.ts), which
+// the `agent.list` hydration path (STAB-9, above) does NOT touch — without a
+// `workspace.get` refetch on `agent:deleted` a deleted agent lingers on its
+// card until an unrelated workspace refetch.
+describe('daemonEventsBridge (agent:deleted → reconcileWorkspaceAgentSummary)', () => {
+  const WS_SUMMARY = 'ws-agent-summary-1';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    backendRequestSpy.mockReset();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(agentIds: string[]): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_SUMMARY,
+        title: 'Agent summary ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        agentSummary: { agentIds },
+      } as never),
+    );
+  }
+
+  async function readAgentSummary(): Promise<{ agentIds: string[] } | undefined> {
+    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    const ws = getItem(state.workspace.workspaces as never, WS_SUMMARY) as
+      | { agentSummary?: { agentIds: string[] } }
+      | undefined;
+    return ws?.agentSummary;
+  }
+
+  function agentDeletedNotification() {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-deleted-1',
+          workspaceId: WS_SUMMARY,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:deleted',
+          actor: { type: 'system' },
+          data: { agentId: 'agent-deleted-1' },
+        },
+      },
+    };
+  }
+
+  it('refetches workspace.get and merges the fresh agentSummary into the store', async () => {
+    await seedWorkspace(['agent-deleted-1', 'agent-kept-1']);
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const { WorkspaceStatus } = await import('$shared/types');
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method === 'workspace.get') {
+        return {
+          workspace: {
+            id: WS_SUMMARY,
+            title: 'Agent summary ws',
+            branch: 'main',
+            status: WorkspaceStatus.Active,
+            changesets: [],
+            timeline: [],
+            conversationInfo: [],
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-02T00:00:00.000Z',
+            agentSummary: { agentIds: ['agent-kept-1'] },
+          },
+        };
+      }
+      return { subscriptionId: 'sub-1' };
+    });
+
+    handler(agentDeletedNotification());
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS_SUMMARY });
+    const agentSummary = await readAgentSummary();
+    expect(agentSummary?.agentIds).toEqual(['agent-kept-1']);
+  });
+
+  it('ignores workspace.get errors gracefully', async () => {
+    await seedWorkspace(['agent-deleted-1']);
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    backendRequestSpy.mockRejectedValueOnce(new Error('Workspace not found'));
+
+    handler(agentDeletedNotification());
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS_SUMMARY });
+    const agentSummary = await readAgentSummary();
+    expect(agentSummary?.agentIds).toEqual(['agent-deleted-1']);
+  });
+});
+
 describe('DaemonEventsBridge — app-UI events', () => {
   const { navigateToRouteSpy } = vi.hoisted(() => ({
     navigateToRouteSpy: vi.fn(() => Promise.resolve()),

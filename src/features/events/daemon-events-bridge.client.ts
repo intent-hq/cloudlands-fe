@@ -1495,6 +1495,33 @@ async function reconcileWorkspaceActivity(
 }
 
 /**
+ * Refresh the workspace entity's BE-owned `agentSummary` aggregate (PROTOCOL
+ * §5.1) after an `agent:deleted` event. The HUD card agent rows are built
+ * from `workspace.agentSummary.agents` (`agentInfosOf` in hud-selectors.ts),
+ * which the `agent.list` hydration path does NOT touch — without this
+ * refetch a deleted agent lingers on its card until an unrelated workspace
+ * refetch. Fetch `workspace.get` and merge the fresh entity via
+ * `setWorkspaceEntity` (the `mergeWorkspaceEnrichment` path takes the
+ * incoming `agentSummary` when present). Best-effort like
+ * `reconcileWorkspaceActivity`: errors (workspace itself deleted, transport)
+ * are swallowed.
+ */
+async function reconcileWorkspaceAgentSummary(workspaceId: string): Promise<void> {
+  const { backendRequest } = await import('$lib/client/live/backend-transport');
+  try {
+    const response = (await backendRequest('workspace.get', { workspaceId })) as
+      | { workspace?: Workspace }
+      | undefined;
+    const workspace = response?.workspace;
+    if (!workspace) return;
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    appStore.dispatch(setWorkspaceEntity(workspace));
+  } catch (_error) {
+    // Workspace might have been deleted or transport error; no-op is safe.
+  }
+}
+
+/**
  * `workspace:updated` (PROTOCOL §6.5 / §7) carries `{ workspaceId, changes }`
  * where `changes` is the applied `WorkspaceUpdate` delta — the fields the
  * caller actually asked to mutate, with `Option::is_none` fields skipped in
@@ -2172,6 +2199,11 @@ export function routeDaemonEventsNotification(
     if (typeof data?.agentId === 'string') {
       removeAgentFailure(data.agentId);
     }
+    // Refresh the workspace entity's BE-owned `agentSummary` aggregate so the
+    // HUD card rows drop the deleted agent immediately — the `agent.list`
+    // hydration above does not touch it. Fire-and-forget side effect, falls
+    // through to the timeline dispatch below.
+    void reconcileWorkspaceAgentSummary(workspaceId);
   }
 
   // Activity reconciliation: busy-implying agent events may indicate a missed
