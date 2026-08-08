@@ -279,8 +279,9 @@
   }
 
   // Chrome-less HUD pop-out window: suppress SidebarNav/SidebarPanel and the
-  // rounded main chrome (see HudChromelessMain).
-  const isHudRoute = $derived($page.url.pathname === '/hud');
+  // rounded main chrome (see HudChromelessMain). Prefix match, matching
+  // isHudWindow()/isHudWindowRenderer().
+  const isHudRoute = $derived($page.url.pathname.startsWith('/hud'));
 
   // Track last non-settings path for cmd+, toggle behavior
   let lastNonSettingsPath = $state('/');

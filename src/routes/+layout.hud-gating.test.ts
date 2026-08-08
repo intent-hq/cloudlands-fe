@@ -156,6 +156,19 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
     expect(screen.getByTestId('hud-gating-children')).toBeTruthy();
   });
 
+  it('suppresses app chrome on nested /hud/* routes, matching isHudWindow/isHudWindowRenderer prefix semantics', () => {
+    mockPage.pathname = '/hud/settings';
+
+    render(Layout, { props: { children: childrenSnippet } });
+
+    expect(screen.queryByTestId('window-title-bar-marker')).toBeNull();
+    expect(screen.queryByTestId('sidebar-nav-marker')).toBeNull();
+    expect(screen.queryByTestId('toast-marker')).toBeNull();
+    expect(screen.queryByTestId('radial-prompt-picker-overlay-marker')).toBeNull();
+    expect(screen.queryByTestId('encoder-cycle-hud-marker')).toBeNull();
+    expect(screen.getByTestId('hud-gating-children')).toBeTruthy();
+  });
+
   it('renders full chrome on non-HUD routes', () => {
     mockPage.pathname = '/';
 
