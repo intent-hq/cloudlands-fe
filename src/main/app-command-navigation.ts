@@ -13,7 +13,9 @@
  * `src/main/index.ts`. Registration is gated to Windows: Electron also emits
  * `app-command` on Linux (electron#18322), where the X buttons ALREADY reach
  * the renderer as mouse events — registering there would double-fire (two
- * history steps per press). macOS/Linux use the renderer mouse-event path only.
+ * history steps per press). Linux uses the renderer mouse-event path only;
+ * macOS adds a `swipe`-event path (see `src/main/swipe-navigation.ts`) for
+ * utilities like Logi Options+ that synthesize swipes instead of X-buttons.
  */
 import type { BrowserWindow } from 'electron';
 

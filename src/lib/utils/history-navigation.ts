@@ -18,11 +18,12 @@ export const MOUSE_BUTTON_FORWARD = 4;
 export type HistoryDirection = 'back' | 'forward';
 
 /**
- * Same-direction suppression window for `navigateHistory`. On Windows the X
- * buttons can reach us twice per press — as renderer mouse events (buttons
- * 3/4, see electron#17134) AND as an `app-command` forwarded over IPC — so
- * the shared dispatch point dedupes same-direction calls landing within this
- * window to a single history step.
+ * Same-direction suppression window for `navigateHistory`. The X buttons can
+ * reach us twice per press — as renderer mouse events (buttons 3/4, see
+ * electron#17134) AND as a main-process gesture forwarded over IPC (Windows
+ * `app-command`; macOS `swipe` for mice whose driver both passes the button
+ * through and synthesizes a swipe) — so the shared dispatch point dedupes
+ * same-direction calls landing within this window to a single history step.
  */
 export const NAVIGATION_DEDUPE_WINDOW_MS = 100;
 
