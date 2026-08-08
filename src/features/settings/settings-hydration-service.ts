@@ -16,9 +16,10 @@
  * writes the normalized values back so the daemon's stored settings are
  * actually migrated. Dependency-light per `src/store/renderer/AGENTS.md` —
  * imports only the AppClient seam, the configured store, slice actions, the
- * typed `settingsChanged` trigger, and the logger (NOT selectors — importing
- * them would evaluate `store.createSelector` while the store module is still
- * mid-init).
+ * typed `settingsChanged` trigger, the (equally dependency-light)
+ * cow-isolation setting-cache invalidator, and the logger (NOT selectors —
+ * importing them would evaluate `store.createSelector` while the store module
+ * is still mid-init).
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
 import type { AppliedSettingChange } from "$lib/client/app-client";
@@ -44,6 +45,7 @@ import {
   loadDefaultReasoningEffortFromStorage,
   loadProviderModelsFromStorage,
 } from "$store/renderer/slices/model/model-slice";
+import { invalidateCowIsolationSetting } from "$lib/components/workspace/initializer/cow-isolation-setting";
 
 const logger = createLogger("SettingsHydrationService");
 
@@ -104,6 +106,12 @@ function applyOne(change: AppliedSettingChange): void {
       // duplicate/partial hydration. Individual path changes still trigger
       // the bundle logic.
       return;
+    case "workspace.cowIsolation": {
+      // No slice owns this path; drop the module-level single-flight cache so
+      // the next isolation-mode resolution re-reads the toggled value.
+      invalidateCowIsolationSetting();
+      return;
+    }
   }
 }
 

@@ -138,6 +138,8 @@ describe('PostMergeActions', () => {
     mockUnarchive.mockReset().mockResolvedValue({ ok: true });
     mocks.gitOps.isResettingToTrunk = false;
     mocks.workspaceEntity.archived = false;
+    mocks.workspaceEntity.repositoryPath = '/repo';
+    delete mocks.workspaceEntity.worktreePath;
     sessionStorage.clear();
   });
 
@@ -240,6 +242,7 @@ describe('PostMergeActions', () => {
   });
 
   it('archive and start new: archives workspace, writes prefill, opens create modal', async () => {
+    mocks.workspaceEntity.worktreePath = '/worktrees/ws-1';
     const { container } = await renderPostMerge();
     const archiveBtn = Array.from(container.querySelectorAll('button')).find((b) =>
       b.textContent?.includes('Archive and start new'),
@@ -260,5 +263,43 @@ describe('PostMergeActions', () => {
         expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: true }),
       ),
     );
+  });
+
+  it('archive and start new: does not prefill a workspace-owned standalone checkout (GitHub pick)', async () => {
+    // GitHub-pick workspaces: repositoryPath IS the worktreePath — a
+    // daemon-owned standalone checkout, not a copyable local source.
+    mocks.workspaceEntity.repositoryPath = '/workspaces/ws-1/repo';
+    mocks.workspaceEntity.worktreePath = '/workspaces/ws-1/repo';
+    const { container } = await renderPostMerge();
+    const archiveBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Archive and start new'),
+    ) as HTMLButtonElement;
+    await fireEvent.click(archiveBtn);
+
+    await waitFor(() => expect(mockArchive).toHaveBeenCalledWith('ws-1'));
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: true }),
+      ),
+    );
+    expect(sessionStorage.getItem('workspace-prefill')).toBeNull();
+  });
+
+  it('archive and start new: does not prefill a daemon-managed repo path (.repo-cache)', async () => {
+    mocks.workspaceEntity.repositoryPath = '/workspaces/.repo-cache/owner/repo';
+    mocks.workspaceEntity.worktreePath = '/worktrees/ws-1';
+    const { container } = await renderPostMerge();
+    const archiveBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Archive and start new'),
+    ) as HTMLButtonElement;
+    await fireEvent.click(archiveBtn);
+
+    await waitFor(() => expect(mockArchive).toHaveBeenCalledWith('ws-1'));
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: true }),
+      ),
+    );
+    expect(sessionStorage.getItem('workspace-prefill')).toBeNull();
   });
 });
