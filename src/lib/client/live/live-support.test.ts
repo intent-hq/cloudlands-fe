@@ -43,6 +43,7 @@ import {
   isEventInFamily,
   isEventOneOf,
   listWorkspaceIds,
+  rememberNoteWorkspace,
   resolveNoteWorkspaceId,
   subscribeWorkspaceIds,
 } from './live-support';
@@ -411,6 +412,28 @@ describe('subscribeWorkspaceIds (push-driven, shared source)', () => {
     unsub();
   });
 
+  it('a transient seed failure leaves the set unseeded — a later event re-seeds instead of locking in an empty set', async () => {
+    listWorkspaceIdsImpl = () => Promise.reject(new Error('transport down'));
+    const received: (readonly string[])[] = [];
+    const unsub = subscribeWorkspaceIds((ids) => received.push(ids));
+    await flush();
+    expect(listWorkspaceIdsCalls).toHaveLength(1);
+    // Listeners get a best-effort empty list, but no empty set is installed…
+    expect(received).toEqual([[]]);
+
+    // …so once the transport recovers, a workspace event re-seeds via a
+    // defensive resync instead of being absorbed by an empty seeded set.
+    listWorkspaceIdsImpl = () => Promise.resolve(workspaceListResult(['ws-1', 'ws-new']));
+    emit('events.event', {
+      event: { type: 'workspace:created', data: { workspaceId: 'ws-new', workspace: {} } },
+    });
+    await flush();
+
+    expect(listWorkspaceIdsCalls).toHaveLength(2);
+    expect(received).toEqual([[], ['ws-1', 'ws-new']]);
+    unsub();
+  });
+
   it('an id-less workspace:created payload falls back to a defensive resync fetch', async () => {
     listWorkspaceIdsImpl = () => Promise.resolve(workspaceListResult(['ws-1']));
     const received: (readonly string[])[] = [];
@@ -692,6 +715,48 @@ describe('resolveNoteWorkspaceId (negative cache)', () => {
 
     // Second resolution: positive cache hit, no further scans.
     expect(await resolveNoteWorkspaceId('note-found')).toBe('ws-1');
+    expect(noteListCalls).toHaveLength(1);
+  });
+
+  it('concurrent resolutions of the same unknown note coalesce onto ONE in-flight scan', async () => {
+    let resolveScan: ((v: unknown) => void) | undefined;
+    noteListImpl = () =>
+      new Promise((resolve) => {
+        resolveScan = resolve;
+      });
+
+    const first = resolveNoteWorkspaceId('note-burst');
+    const second = resolveNoteWorkspaceId('note-burst');
+    const third = resolveNoteWorkspaceId('note-burst');
+    await flush();
+    expect(noteListCalls).toHaveLength(1);
+
+    resolveScan?.({ notes: [] });
+    expect(await Promise.all([first, second, third])).toEqual([null, null, null]);
+    expect(noteListCalls).toHaveLength(1);
+  });
+
+  it('a miss from an INCOMPLETE scan (failed note.list) is not negative-cached — the next attempt retries', async () => {
+    noteListImpl = () => Promise.reject(new Error('transport down'));
+    expect(await resolveNoteWorkspaceId('note-flaky')).toBeNull();
+    expect(noteListCalls).toHaveLength(1);
+
+    // The owning workspace recovers within the negative TTL: the retry scans
+    // again (no stale negative entry) and finds the note.
+    noteListImpl = () => Promise.resolve({ notes: [{ id: 'note-flaky' }] });
+    expect(await resolveNoteWorkspaceId('note-flaky')).toBe('ws-1');
+    expect(noteListCalls).toHaveLength(2);
+  });
+
+  it('rememberNoteWorkspace clears the negative entry so a newly discovered note resolves immediately', async () => {
+    vi.useFakeTimers();
+    expect(await resolveNoteWorkspaceId('note-arrives')).toBeNull();
+    expect(noteListCalls).toHaveLength(1);
+
+    // The note is discovered (e.g. via LiveNotesClient.list) while its
+    // negative entry is still within the TTL.
+    rememberNoteWorkspace('note-arrives', 'ws-1');
+    expect(await resolveNoteWorkspaceId('note-arrives')).toBe('ws-1');
     expect(noteListCalls).toHaveLength(1);
   });
 });

@@ -184,32 +184,35 @@ function logWorkspaceListRpc(tag: string, detail?: string): void {
 /**
  * Single-flighted raw `workspace.list` RPC: concurrent callers await the one
  * in-flight promise. A successful result populates the TTL cache; failures
- * resolve to `[]` (best-effort, matching the historical contract) and are
- * never cached, so the next caller retries.
+ * REJECT (never cached) so every consumer decides its own fallback —
+ * `listWorkspaceIds()` resolves `[]` (historical contract) and
+ * `runWorkspaceIdResyncFetch` declines to install a set, keeping both paths
+ * retryable after the transport recovers.
  */
 function fetchWorkspaceIdsRpc(tag: string, detail?: string): Promise<string[]> {
   if (workspaceListRpcInFlight) return workspaceListRpcInFlight;
   logWorkspaceListRpc(tag, detail);
-  workspaceListRpcInFlight = backendRequest<{ workspaces?: unknown[] }>('workspace.list')
-    .then((result) => {
-      const workspaces = Array.isArray(result?.workspaces) ? result.workspaces : [];
-      const ids = workspaces
-        .map((w) =>
-          String(
-            (w as { id?: unknown; workspaceId?: unknown }).id ??
-              (w as { workspaceId?: unknown }).workspaceId ??
-              '',
-          ),
-        )
-        .filter((id) => id.length > 0);
-      workspaceListCache = { ids, fetchedAt: Date.now() };
-      return ids;
-    })
-    .catch(() => [] as string[])
+  const fetch = backendRequest<{ workspaces?: unknown[] }>('workspace.list').then((result) => {
+    const workspaces = Array.isArray(result?.workspaces) ? result.workspaces : [];
+    const ids = workspaces
+      .map((w) =>
+        String(
+          (w as { id?: unknown; workspaceId?: unknown }).id ??
+            (w as { workspaceId?: unknown }).workspaceId ??
+            '',
+        ),
+      )
+      .filter((id) => id.length > 0);
+    workspaceListCache = { ids, fetchedAt: Date.now() };
+    return ids;
+  });
+  workspaceListRpcInFlight = fetch;
+  fetch
+    .catch(() => {})
     .finally(() => {
-      workspaceListRpcInFlight = null;
+      if (workspaceListRpcInFlight === fetch) workspaceListRpcInFlight = null;
     });
-  return workspaceListRpcInFlight;
+  return fetch;
 }
 
 /**
@@ -230,7 +233,7 @@ export async function listWorkspaceIds(tag = 'explicit'): Promise<string[]> {
   ) {
     return [...workspaceListCache.ids];
   }
-  return fetchWorkspaceIdsRpc(tag);
+  return fetchWorkspaceIdsRpc(tag).catch(() => []);
 }
 
 /** Test-only: clear the module-level workspace.list / note-resolution caches. */
@@ -238,6 +241,7 @@ export function __resetLiveSupportCachesForTests(): void {
   workspaceListCache = null;
   workspaceListRpcInFlight = null;
   noteResolveNegativeCache.clear();
+  noteResolveScansInFlight.clear();
 }
 
 /**
@@ -333,12 +337,14 @@ function runWorkspaceIdResyncFetch(tag: string, detail?: string): void {
       notifyWorkspaceIdListeners();
     })
     .catch(() => {
-      // Best-effort: only fall back to an empty set if nothing was ever
-      // seeded, so a transient resync failure never clobbers a good set.
+      // Transport failure: deliver a best-effort empty list to listeners so
+      // they are not left waiting, but do NOT install an empty set — the set
+      // stays unseeded (`null`) so `listWorkspaceIds()` keeps falling through
+      // to a real RPC and the next event / reconnect / subscriber re-seeds
+      // once the transport recovers. Installing `new Set()` here would lock
+      // every caller onto an empty fast path until an unrelated event.
       if (sharedWorkspaceIds === null) {
-        sharedWorkspaceIds = new Set();
-        workspaceIdMutationGeneration += 1;
-        notifyWorkspaceIdListeners();
+        for (const listener of workspaceIdListeners.values()) listener([]);
       }
     })
     .finally(() => {
@@ -537,9 +543,16 @@ export function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void
 /** noteId → workspaceId, populated as notes are listed so note-scoped reads resolve. */
 const noteWorkspaceIndex = new Map<string, string>();
 
-/** Record the workspace a note belongs to (called from `LiveNotesClient.list`). */
+/**
+ * Record the workspace a note belongs to (called from `LiveNotesClient.list`).
+ * Discovering a note also clears any negative-cache entry for it so a note
+ * that appears within the negative TTL resolves immediately.
+ */
 export function rememberNoteWorkspace(noteId: string, workspaceId: string): void {
-  if (noteId && workspaceId) noteWorkspaceIndex.set(noteId, workspaceId);
+  if (noteId && workspaceId) {
+    noteWorkspaceIndex.set(noteId, workspaceId);
+    noteResolveNegativeCache.delete(noteId);
+  }
 }
 
 /**
@@ -550,26 +563,21 @@ export function rememberNoteWorkspace(noteId: string, workspaceId: string): void
  */
 const NOTE_RESOLVE_NEGATIVE_TTL_MS = 5_000;
 
-/** noteId → time the last full scan found NO owning workspace. */
+/** noteId → time the last COMPLETE full scan found NO owning workspace. */
 const noteResolveNegativeCache = new Map<string, number>();
 
+/** noteId → in-flight full scan, so concurrent resolutions coalesce onto one. */
+const noteResolveScansInFlight = new Map<string, Promise<string | null>>();
+
 /**
- * Resolve the workspace a note belongs to. Returns the cached value when known,
- * otherwise scans each workspace's `note.list` (caching every note it sees)
- * until the note is found. Returns `null` when no workspace claims the note;
- * that miss is negative-cached for {@link NOTE_RESOLVE_NEGATIVE_TTL_MS} so a
- * burst of retries for the same unknown note performs one scan, not many.
+ * Full workspace scan for one noteId: walks each workspace's `note.list`
+ * (caching every note it sees) until the note is found. A miss is
+ * negative-cached ONLY when every `note.list` call succeeded — a scan with a
+ * failed workspace has not established that no workspace claims the note, so
+ * the next resolution retries instead of serving a stale `null`.
  */
-export async function resolveNoteWorkspaceId(noteId: string): Promise<string | null> {
-  const cached = noteWorkspaceIndex.get(noteId);
-  if (cached) return cached;
-
-  const missedAt = noteResolveNegativeCache.get(noteId);
-  if (missedAt !== undefined) {
-    if (Date.now() - missedAt < NOTE_RESOLVE_NEGATIVE_TTL_MS) return null;
-    noteResolveNegativeCache.delete(noteId);
-  }
-
+async function scanForNoteWorkspace(noteId: string): Promise<string | null> {
+  let scanComplete = true;
   for (const workspaceId of await listWorkspaceIds('resolver')) {
     try {
       const result = await backendRequest<{ notes?: unknown[] }>('note.list', { workspaceId });
@@ -582,11 +590,42 @@ export async function resolveNoteWorkspaceId(noteId: string): Promise<string | n
       }
       if (found) return workspaceId;
     } catch {
-      // Skip workspaces whose notes cannot be listed.
+      // Skip workspaces whose notes cannot be listed — but remember the scan
+      // is incomplete so the miss is not negative-cached.
+      scanComplete = false;
     }
   }
-  noteResolveNegativeCache.set(noteId, Date.now());
+  if (scanComplete) noteResolveNegativeCache.set(noteId, Date.now());
   return null;
+}
+
+/**
+ * Resolve the workspace a note belongs to. Returns the cached value when known,
+ * otherwise scans each workspace's `note.list` (caching every note it sees)
+ * until the note is found. Concurrent resolutions of the same noteId coalesce
+ * onto ONE in-flight scan. Returns `null` when no workspace claims the note;
+ * a COMPLETE-scan miss is negative-cached for
+ * {@link NOTE_RESOLVE_NEGATIVE_TTL_MS} so a burst of retries for the same
+ * unknown note performs one scan, not many.
+ */
+export async function resolveNoteWorkspaceId(noteId: string): Promise<string | null> {
+  const cached = noteWorkspaceIndex.get(noteId);
+  if (cached) return cached;
+
+  const missedAt = noteResolveNegativeCache.get(noteId);
+  if (missedAt !== undefined) {
+    if (Date.now() - missedAt < NOTE_RESOLVE_NEGATIVE_TTL_MS) return null;
+    noteResolveNegativeCache.delete(noteId);
+  }
+
+  const inFlight = noteResolveScansInFlight.get(noteId);
+  if (inFlight) return inFlight;
+
+  const scan = scanForNoteWorkspace(noteId).finally(() => {
+    noteResolveScansInFlight.delete(noteId);
+  });
+  noteResolveScansInFlight.set(noteId, scan);
+  return scan;
 }
 
 /**
