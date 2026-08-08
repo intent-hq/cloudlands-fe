@@ -55,6 +55,7 @@ import {
 import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
+import { prMonitorSaga } from './slices/pr-monitor/sagas/pr-monitor-saga';
 import { releaseNotesSaga } from './slices/release-notes/sagas/release-notes-saga';
 import { sentryAuthSaga } from './slices/sentry-auth/sagas/sentry-auth-saga';
 import { settingsHydrationSaga } from './slices/settings-events/sagas/settings-hydration-saga';
@@ -146,6 +147,7 @@ export const sagas = [
   directoryPickerSaga,
   legacyImportSaga,
   statsReadSaga,
+  prMonitorSaga,
   uiLayoutPersistenceSaga,
   tabStateSaga,
   sidebarNavSaga,

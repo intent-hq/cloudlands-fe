@@ -14,7 +14,7 @@
    * Hidden entirely when the agent has no active monitors.
    *
    * All wire traffic lives in the `prMonitor` slice + its companion read
-   * middleware (`pr-monitor-read-service`): this component only dispatches
+   * saga (`pr-monitor-saga`): this component only dispatches
    * the subscribe/unsubscribe + flush/cancel triggers and renders from the
    * selector.
    */
