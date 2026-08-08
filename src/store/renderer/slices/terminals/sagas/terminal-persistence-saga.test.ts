@@ -1,0 +1,393 @@
+import { runSaga, stdChannel } from 'redux-saga';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const storage = vi.hoisted(() => ({
+  values: new Map<string, string>(),
+  getItem: vi.fn(),
+  setItem: vi.fn(),
+  getJSON: vi.fn(),
+  setJSON: vi.fn(),
+}));
+
+vi.mock('$lib/utils/safe-storage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/utils/safe-storage')>();
+  return {
+    ...actual,
+    safeLocalStorage: {
+      ...actual.safeLocalStorage,
+      getItem: storage.getItem,
+      setItem: storage.setItem,
+      getJSON: storage.getJSON,
+      setJSON: storage.setJSON,
+    },
+  };
+});
+
+import {
+  CUSTOM_NAMES_STORAGE_KEY,
+  STORAGE_KEY,
+  WORKSPACE_STATE_STORAGE_KEY,
+  addTerminal,
+  closeTerminalOverlay,
+  loadWorkspaceTerminals,
+  openTerminalOverlay,
+  removeTerminal,
+  renameTerminal,
+  saveTerminalMetadata,
+  selectTerminal,
+  setTerminalOverlayHeight,
+  terminalsReducer,
+  toggleTerminalOverlay,
+} from '../terminals-slice';
+import { terminalPersistenceSaga } from './terminal-persistence-saga';
+
+const settle = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+};
+
+function startSaga() {
+  let terminals = terminalsReducer(undefined, { type: '@@init' } as never);
+  const input = stdChannel();
+  const dispatched: unknown[] = [];
+  const dispatch = (action: unknown) => {
+    dispatched.push(action);
+    terminals = terminalsReducer(terminals, action as never);
+    input.put(action as never);
+    return action;
+  };
+  const task = runSaga(
+    { channel: input, dispatch, getState: () => ({ terminals }) },
+    terminalPersistenceSaga,
+  );
+  const send = (action: unknown) => {
+    terminals = terminalsReducer(terminals, action as never);
+    input.put(action as never);
+  };
+  return { dispatched, send, task };
+}
+
+beforeEach(() => {
+  storage.values.clear();
+  vi.clearAllMocks();
+  storage.getItem.mockImplementation((key: string) => storage.values.get(key) ?? null);
+  storage.setItem.mockImplementation((key: string, value: string) => {
+    storage.values.set(key, value);
+  });
+  storage.getJSON.mockImplementation((key: string) => {
+    const value = storage.values.get(key);
+    return value === undefined ? undefined : JSON.parse(value);
+  });
+  storage.setJSON.mockImplementation((key: string, value: unknown) => {
+    storage.values.set(key, JSON.stringify(value));
+  });
+});
+
+describe('terminalPersistenceSaga', () => {
+  it('hydrates the stored height before installing persistence watchers', async () => {
+    storage.values.set(STORAGE_KEY, '64');
+    const { dispatched, task } = startSaga();
+    await settle();
+
+    expect(dispatched).toEqual([{ type: 'terminals/hydrateHeight', payload: [64] }]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('uses the default height for missing and invalid persisted values', async () => {
+    storage.values.set(STORAGE_KEY, 'invalid');
+    const { dispatched, task } = startSaga();
+    await settle();
+
+    expect(dispatched).toEqual([{ type: 'terminals/hydrateHeight', payload: [50] }]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('persists the post-reducer clamped terminal height', async () => {
+    const { send, task } = startSaga();
+    await settle();
+    storage.setItem.mockClear();
+    send(setTerminalOverlayHeight(100));
+    await settle();
+
+    expect(storage.setItem.mock.calls).toEqual([[STORAGE_KEY, '90']]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('migrates legacy custom names and persists trimmed workspace names exactly', async () => {
+    storage.values.set(
+      CUSTOM_NAMES_STORAGE_KEY,
+      JSON.stringify({ 'term-1': 'Old', 'term-2': 'Keep' }),
+    );
+    const { send, task } = startSaga();
+    await settle();
+    storage.setJSON.mockClear();
+    send(renameTerminal('ws-1', 'term-1', '  Setup  '));
+    await settle();
+
+    expect(storage.setJSON.mock.calls).toEqual([
+      [CUSTOM_NAMES_STORAGE_KEY, { __legacy__: { 'term-1': 'Old', 'term-2': 'Keep' } }],
+      [
+        CUSTOM_NAMES_STORAGE_KEY,
+        { __legacy__: { 'term-2': 'Keep' }, 'ws-1': { 'term-1': 'Setup' } },
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('removes a custom-name bucket when the renamed value is blank', async () => {
+    storage.values.set(CUSTOM_NAMES_STORAGE_KEY, JSON.stringify({ 'ws-1': { 'term-1': 'Setup' } }));
+    const { send, task } = startSaga();
+    await settle();
+    storage.setJSON.mockClear();
+    send(renameTerminal('ws-1', 'term-1', '   '));
+    await settle();
+
+    expect(storage.setJSON.mock.calls).toEqual([[CUSTOM_NAMES_STORAGE_KEY, {}]]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('persists metadata, retaining stored title and creation time on later blank updates', async () => {
+    storage.values.set(
+      'terminal-metadata-ws-1',
+      JSON.stringify([
+        {
+          terminalId: 'term-1',
+          workspaceId: 'ws-1',
+          createdAt: '2024-01-01T00:00:00.000Z',
+          title: 'Setup',
+        },
+      ]),
+    );
+    const { send, task } = startSaga();
+    await settle();
+    storage.setJSON.mockClear();
+    send(saveTerminalMetadata('ws-1', 'term-1', undefined, '2025-01-01T00:00:00.000Z'));
+    await settle();
+
+    expect(storage.setJSON.mock.calls).toEqual([
+      [
+        'terminal-metadata-ws-1',
+        [
+          {
+            terminalId: 'term-1',
+            workspaceId: 'ws-1',
+            createdAt: '2024-01-01T00:00:00.000Z',
+            title: 'Setup',
+          },
+        ],
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('filters invalid metadata before appending and caps the stored list at ten entries', async () => {
+    storage.values.set(
+      'terminal-metadata-ws-1',
+      JSON.stringify([
+        { terminalId: 'wrong', workspaceId: 'ws-2', createdAt: 'old' },
+        ...Array.from({ length: 10 }, (_, index) => ({
+          terminalId: `term-${index}`,
+          workspaceId: 'ws-1',
+          createdAt: `created-${index}`,
+          title: `Title ${index}`,
+        })),
+      ]),
+    );
+    const { send, task } = startSaga();
+    await settle();
+    storage.setJSON.mockClear();
+    send(saveTerminalMetadata('ws-1', 'term-10', 'Title 10', 'created-10'));
+    await settle();
+
+    const expectedValid = Array.from({ length: 10 }, (_, index) => ({
+      terminalId: `term-${index}`,
+      workspaceId: 'ws-1',
+      createdAt: `created-${index}`,
+      title: `Title ${index}`,
+    }));
+    expect(storage.setJSON.mock.calls).toEqual([
+      ['terminal-metadata-ws-1', expectedValid],
+      [
+        'terminal-metadata-ws-1',
+        [
+          ...expectedValid.slice(1),
+          {
+            terminalId: 'term-10',
+            workspaceId: 'ws-1',
+            createdAt: 'created-10',
+            title: 'Title 10',
+          },
+        ],
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('persists every overlay-state trigger from post-reducer workspace state', async () => {
+    const { send, task } = startSaga();
+    await settle();
+    storage.setJSON.mockClear();
+    send(openTerminalOverlay('ws-1', 'term-1'));
+    await settle();
+    send(closeTerminalOverlay('ws-1'));
+    await settle();
+    send(toggleTerminalOverlay('ws-1'));
+    await settle();
+    send(addTerminal('ws-1', 'term-2'));
+    await settle();
+    send(selectTerminal('ws-1', 'term-1'));
+    await settle();
+
+    expect(storage.setJSON.mock.calls).toEqual([
+      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: true, activeTerminalId: 'term-1' } }],
+      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: false, activeTerminalId: 'term-1' } }],
+      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: true, activeTerminalId: 'term-1' } }],
+      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: true, activeTerminalId: 'term-2' } }],
+      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: true, activeTerminalId: 'term-1' } }],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('cleans custom names and metadata before persisting removal state', async () => {
+    storage.values.set(CUSTOM_NAMES_STORAGE_KEY, JSON.stringify({ 'ws-1': { 'term-1': 'Setup' } }));
+    storage.values.set(
+      'terminal-metadata-ws-1',
+      JSON.stringify([
+        {
+          terminalId: 'term-1',
+          workspaceId: 'ws-1',
+          createdAt: 'created',
+          title: 'Setup',
+        },
+      ]),
+    );
+    const { send, task } = startSaga();
+    await settle();
+    send(openTerminalOverlay('ws-1', 'term-1'));
+    await settle();
+    storage.setJSON.mockClear();
+    send(removeTerminal('ws-1', 'term-1'));
+    await settle();
+
+    expect(storage.setJSON.mock.calls).toEqual([
+      [CUSTOM_NAMES_STORAGE_KEY, {}],
+      ['terminal-metadata-ws-1', []],
+      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: false, activeTerminalId: null } }],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('rehydrates a load without saved state and does not echo that hydration to storage', async () => {
+    const savedState = { isOpen: true, activeTerminalId: 'term-2' };
+    storage.values.set(WORKSPACE_STATE_STORAGE_KEY, JSON.stringify({ 'ws-1': savedState }));
+    const { dispatched, send, task } = startSaga();
+    await settle();
+    dispatched.length = 0;
+    storage.setJSON.mockClear();
+    const terminals = [
+      { id: 'term-1', name: 'Terminal 1' },
+      { id: 'term-2', name: 'Terminal 2' },
+    ];
+    send(loadWorkspaceTerminals('ws-1', terminals));
+    await settle();
+
+    expect(dispatched).toEqual([
+      {
+        type: 'terminals/loadWorkspaceTerminals',
+        payload: ['ws-1', terminals, savedState],
+      },
+    ]);
+    expect(storage.setJSON.mock.calls).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('preserves explicit load state and persists its post-reducer result', async () => {
+    storage.values.set(WORKSPACE_STATE_STORAGE_KEY, JSON.stringify({}));
+    const { dispatched, send, task } = startSaga();
+    await settle();
+    dispatched.length = 0;
+    storage.setJSON.mockClear();
+    send(
+      loadWorkspaceTerminals('ws-1', [{ id: 'term-1', name: 'Terminal 1' }], {
+        isOpen: true,
+        activeTerminalId: 'missing',
+      }),
+    );
+    await settle();
+
+    expect(dispatched).toEqual([]);
+    expect(storage.setJSON.mock.calls).toEqual([
+      [WORKSPACE_STATE_STORAGE_KEY, { 'ws-1': { isOpen: true, activeTerminalId: 'term-1' } }],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('ignores unrelated actions and workspace-state actions for missing workspaces', async () => {
+    const { send, task } = startSaga();
+    await settle();
+    storage.setItem.mockClear();
+    storage.setJSON.mockClear();
+    send({ type: 'unrelated/action' });
+    send(closeTerminalOverlay('missing'));
+    await settle();
+
+    expect(storage.setItem.mock.calls).toEqual([]);
+    expect(storage.setJSON.mock.calls).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('swallows storage failures and keeps later persistence work alive', async () => {
+    const { send, task } = startSaga();
+    await settle();
+    storage.setJSON.mockImplementationOnce(() => {
+      throw new Error('quota');
+    });
+    send(renameTerminal('ws-1', 'term-1', 'First'));
+    await settle();
+    storage.setJSON.mockImplementation((key: string, value: unknown) => {
+      storage.values.set(key, JSON.stringify(value));
+    });
+    send(renameTerminal('ws-1', 'term-1', 'Second'));
+    await settle();
+
+    expect(JSON.parse(storage.values.get(CUSTOM_NAMES_STORAGE_KEY) ?? '{}')).toEqual({
+      'ws-1': { 'term-1': 'Second' },
+    });
+    expect(task.isRunning()).toBe(true);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('cancels pending hydration without a late dispatch and stops future writes', async () => {
+    let resolveHeight!: (value: string | null) => void;
+    storage.getItem.mockReturnValueOnce(
+      new Promise<string | null>((resolve) => {
+        resolveHeight = resolve;
+      }),
+    );
+    const { dispatched, send, task } = startSaga();
+    task.cancel();
+    await task.toPromise();
+    resolveHeight('70');
+    await settle();
+    send(setTerminalOverlayHeight(70));
+    await settle();
+
+    expect(dispatched).toEqual([]);
+    expect(storage.setItem.mock.calls).toEqual([]);
+  });
+});

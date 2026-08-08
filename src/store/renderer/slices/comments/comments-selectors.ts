@@ -6,7 +6,7 @@ import { store } from "../../store";
 import {
   getItem,
   getItems,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 
 /** All comments as an ordered array. */
 export const selectComments = store.createSelector((state) =>

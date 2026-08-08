@@ -35,6 +35,7 @@ import {
   toggleTerminalOverlay,
 } from '$store/renderer/slices/terminals/terminals-slice';
 import type { TerminalTab } from '$store/renderer/slices/terminals/terminals-slice';
+import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
 const logger = new Logger('TerminalAdapter');
 
@@ -59,6 +60,13 @@ export interface TerminalOptions extends TerminalCallbacks {
    * domain is consumed today.
    */
   appClient?: Pick<AppClient, 'terminals'>;
+  /**
+   * Initial CSS font-family applied to the XTerm instance. When omitted, the
+   * adapter reads the current value of `selectCodeFontFamilyCSS` once at
+   * construction — Redux is never subscribed inside the adapter. Callers own
+   * later updates via {@link TerminalAdapter.updateFontFamily}.
+   */
+  fontFamily?: string;
 }
 
 export interface TerminalInfo {
@@ -164,10 +172,14 @@ export class TerminalAdapter {
     this.bufferManager = new TerminalBufferManager(this.workspaceId, this.terminalId);
     this.themeManager = new TerminalThemeManager(this.container);
 
-    // Initialize XTerm.js with optimized settings
+    // Initialize XTerm.js with optimized settings. Font family follows the
+    // canonical selectCodeFontFamilyCSS preference; caller-provided value wins
+    // when explicitly passed (component captures it at init).
+    const initialFontFamily =
+      options.fontFamily ?? selectCodeFontFamilyCSS.select(appStore.state);
     this.xterm = new Terminal({
       allowProposedApi: true,
-      fontFamily: '"SF Mono", Monaco, Menlo, "Courier New", monospace',
+      fontFamily: initialFontFamily,
       fontSize: 13,
       lineHeight: 1.2,
       letterSpacing: 0,
@@ -1442,6 +1454,17 @@ export class TerminalAdapter {
    */
   updateCallbacks(callbacks: Partial<TerminalCallbacks>): void {
     Object.assign(this.callbacks, callbacks);
+  }
+
+  /**
+   * Update the XTerm font-family on the live instance. Callers observe the
+   * canonical selectCodeFontFamilyCSS selector and forward changes here; the
+   * adapter itself does not subscribe to Redux. No-op after disposal.
+   */
+  updateFontFamily(fontFamily: string): void {
+    if (this.isDisposed) return;
+    if (this.xterm.options.fontFamily === fontFamily) return;
+    this.xterm.options.fontFamily = fontFamily;
   }
 
   /**

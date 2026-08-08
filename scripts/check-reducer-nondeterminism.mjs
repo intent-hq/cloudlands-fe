@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
+import { inspectReducerShape } from './check-reducer-shape.mjs';
 
 const ROOT = process.cwd();
 const SEARCH_DIR = resolve(ROOT, process.argv[2] ?? 'src/store');
@@ -39,7 +40,7 @@ function lineFor(src, index) {
 
 function stripComments(src) {
   let out = '';
-  for (let i = 0; i < src.length; ) {
+  for (let i = 0; i < src.length;) {
     if (src[i] === '/' && src[i + 1] === '/') {
       while (i < src.length && src[i] !== '\n') {
         out += ' ';
@@ -145,8 +146,10 @@ function scanFile(absPath) {
 }
 
 const violations = [];
+const reducerFiles = [];
 for await (const file of walk(SEARCH_DIR)) {
   const rel = relative(ROOT, file).split('\\').join('/');
+  reducerFiles.push({ path: rel, content: readFileSync(file, 'utf8') });
   for (const violation of scanFile(file)) violations.push({ file: rel, ...violation });
 }
 
@@ -159,4 +162,17 @@ if (violations.length) {
   process.exit(1);
 }
 
+const reducerShape = inspectReducerShape(reducerFiles);
+if (reducerShape.violations.length) {
+  console.error('\nReducer shape violations found:');
+  for (const violation of reducerShape.violations) console.error(`  ${violation}`);
+  console.error(
+    '\nExport createReducer(...) directly and register handlers with standalone reducer.with(...) statements.',
+  );
+  process.exit(1);
+}
+
 console.log('✓ No reducer nondeterminism violations found.');
+console.log(
+  `✓ Reducer shape valid (${reducerShape.reducerCount} direct exports, ${reducerShape.registrationCount} standalone registrations).`,
+);

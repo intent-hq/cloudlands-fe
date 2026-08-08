@@ -11,7 +11,7 @@
  * mock IPC router so the test asserts the exact `providers:check-single`
  * wire request and feeds back a contract-shaped response.
  */
-import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 
@@ -22,6 +22,14 @@ vi.mock('$lib/client/live/backend-transport', () => ({
   backendUnsubscribe: () => Promise.resolve(),
   onBackendNotification: () => () => {},
   onBackendReconnected: () => () => {},
+}));
+
+vi.mock('$lib/client', () => ({
+  appClient: {
+    providers: {
+      catalog: vi.fn(async () => ({ providers: [], defaultProviderId: 'auggie' })),
+    },
+  },
 }));
 
 vi.mock('svelte-fa', async () => ({
@@ -40,6 +48,7 @@ import {
   checkSingleProviderSuccess,
   setAllProvidersLoading,
 } from '$store/renderer/slices/agent-availability/agent-availability-slice';
+import { providerAvailabilitySaga } from '$store/renderer/slices/agent-availability/sagas/provider-availability-saga';
 import ProviderCard from './ProviderCard.svelte';
 import type { ProviderCardData, ProviderBrandColors } from './ProviderCard.svelte';
 
@@ -70,6 +79,7 @@ const refreshButton = (root: HTMLElement) =>
   root.querySelector('[aria-label="Refresh OpenCode status"]') as HTMLElement;
 const statusText = (root: HTMLElement) => root.textContent ?? '';
 const spinner = (root: HTMLElement) => refreshButton(root)?.querySelector('span.inline-block');
+let stopProviderAvailabilitySaga: (() => void) | undefined;
 
 const flush = async () => {
   for (let i = 0; i < 8; i++) {
@@ -80,6 +90,12 @@ const flush = async () => {
 describe('ProviderCard explicit refresh feedback', () => {
   beforeAll(() => {
     appStore.init();
+    stopProviderAvailabilitySaga = appStore.runSaga(providerAvailabilitySaga);
+  });
+
+  afterAll(() => {
+    stopProviderAvailabilitySaga?.();
+    stopProviderAvailabilitySaga = undefined;
   });
 
   beforeEach(async () => {
@@ -112,7 +128,7 @@ describe('ProviderCard explicit refresh feedback', () => {
     await fireEvent.click(refreshButton(container));
 
     // Exact wire request: providers:check-single with the provider id.
-    expect(checkSingle).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(checkSingle).toHaveBeenCalledTimes(1));
     expect(checkSingle).toHaveBeenCalledWith('opencode');
 
     // Feedback is immediate even though the card has a cached status.

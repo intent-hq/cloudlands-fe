@@ -35,7 +35,7 @@ async function buildState(fileSpecialists: object[]) {
     '$store/renderer/slices/agent-availability/agent-availability-slice'
   );
   const { createCollection } = await import(
-    '$lib/store-shim/utils/collections/collection-utils'
+    '@augmentcode/themis/utils/collections/collection-utils'
   );
   const { initialState: providerCatalogInitialState, providerCatalogReducer, providerCatalogLoaded } =
     await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');

@@ -4,9 +4,9 @@
  * Actions and reducer for the sidebar navigation state.
  */
 
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
-import { createBooleanPreference } from "$lib/store-shim/utils/store/boolean-preference";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createBooleanPreference } from "@augmentcode/themis/utils/store/boolean-preference";
 import type { SidebarNavState, SidebarNavItem, AllSpacesViewMode } from "./sidebar-nav-types";
 
 // ── localStorage keys ──
@@ -23,6 +23,7 @@ export const WORKSPACE_COLLAPSED_NOTES_PREFIX = "workspace-collapsed-notes-";
 
 // ── Initial State ──
 export const initialState: SidebarNavState = {
+  activeStreamsVersion: 0,
   unreadVersion: 0,
   hoveredItem: null,
   expandedItem: null,
@@ -46,6 +47,8 @@ export const initialState: SidebarNavState = {
 
 // ── Actions ──
 
+// Version bumps for reactive tracking
+export const bumpActiveStreamsVersion = createAction("sidebarNav/bumpActiveStreamsVersion");
 // Hover card state
 export const setHoveredItem = createAction<[item: SidebarNavItem | null]>("sidebarNav/setHoveredItem");
 export const setExpandedItem = createAction<[item: SidebarNavItem | null]>("sidebarNav/setExpandedItem");
@@ -132,52 +135,55 @@ export const hydrateSidebarNav = createAction(
 );
 
 // ── Reducer ──
-export const sidebarNavReducer = cardPinnedPreference.register(
-  createReducer<SidebarNavState>(initialState)
-)
-  .with(setHoveredItem, (state, { payload: [item] }) => ({
+export const sidebarNavReducer = createReducer<SidebarNavState>(initialState);
+cardPinnedPreference.register(sidebarNavReducer);
+sidebarNavReducer.with(bumpActiveStreamsVersion, (state) => ({
+    ...state,
+    activeStreamsVersion: state.activeStreamsVersion + 1,
+  }));
+sidebarNavReducer.with(setHoveredItem, (state, { payload: [item] }) => ({
     ...state,
     hoveredItem: item,
-  }))
-  .with(setExpandedItem, (state, { payload: [item] }) => ({
+  }));
+sidebarNavReducer.with(setExpandedItem, (state, { payload: [item] }) => ({
     ...state,
     expandedItem: item,
-  }))
-  .with(setPanelWidth, (state, { payload: [width] }) => ({
+  }));
+sidebarNavReducer.with(setPanelWidth, (state, { payload: [width] }) => ({
     ...state,
     panelWidth: width,
-  }))
-  .with(setOnboardingActive, (state, { payload: [active] }) => ({
+  }));
+sidebarNavReducer.with(setOnboardingActive, (state, { payload: [active] }) => ({
     ...state,
     onboardingActive: active,
-  }))
-  .with(setShowCreateModal, (state, { payload: [show] }) => ({
+  }));
+sidebarNavReducer.with(setShowCreateModal, (state, { payload: [show] }) => ({
     ...state,
     showCreateModal: show,
-  }))
-  .with(setAllSpacesViewMode, (state, { payload: [mode] }) => ({
+  }));
+sidebarNavReducer.with(setAllSpacesViewMode, (state, { payload: [mode] }) => ({
     ...state,
     allSpacesViewMode: mode,
-  }))
-  .with(setPinnedWorkspaceIds, (state, { payload: [ids] }) => ({
+  }));
+sidebarNavReducer.with(setPinnedWorkspaceIds, (state, { payload: [ids] }) => ({
     ...state,
     pinnedWorkspaceIds: ids,
-  }))
-  .with(pinWorkspace, (state, { payload: [id] }) => {
+  }));
+sidebarNavReducer.with(pinWorkspace, (state, { payload: [id] }) => {
     if (state.pinnedWorkspaceIds.includes(id)) return state;
     return {
       ...state,
       pinnedWorkspaceIds: [...state.pinnedWorkspaceIds, id],
     };
-  })
-  .with(unpinWorkspace, (state, { payload: [id] }) => {
+  });
+sidebarNavReducer.with(unpinWorkspace, (state, { payload: [id] }) => {
     if (!state.pinnedWorkspaceIds.includes(id)) return state;
     return {
       ...state,
       pinnedWorkspaceIds: state.pinnedWorkspaceIds.filter((wid) => wid !== id),
     };
-  })
-  .with(togglePinWorkspace, (state, { payload: [id] }) => {
+  });
+sidebarNavReducer.with(togglePinWorkspace, (state, { payload: [id] }) => {
     if (state.pinnedWorkspaceIds.includes(id)) {
       return {
         ...state,
@@ -188,19 +194,19 @@ export const sidebarNavReducer = cardPinnedPreference.register(
       ...state,
       pinnedWorkspaceIds: [...state.pinnedWorkspaceIds, id],
     };
-  })
-  .with(setMultiSelectSidebarTabOrder, (state, { payload: [tabIds] }) => ({
+  });
+sidebarNavReducer.with(setMultiSelectSidebarTabOrder, (state, { payload: [tabIds] }) => ({
     ...state,
     multiSelectTabOrder: tabIds,
-  }))
-  .with(setMultiSelectSidebarSelectedTabs, (state, { payload: [workspaceId, tabIds] }) => ({
+  }));
+sidebarNavReducer.with(setMultiSelectSidebarSelectedTabs, (state, { payload: [workspaceId, tabIds] }) => ({
     ...state,
     multiSelectSelectedTabIdsByWorkspaceId: {
       ...state.multiSelectSelectedTabIdsByWorkspaceId,
       [workspaceId]: tabIds,
     },
-  }))
-  .with(hydrateWorkspaceSidebarUi, (state, { payload: [workspaceId, data] }) => ({
+  }));
+sidebarNavReducer.with(hydrateWorkspaceSidebarUi, (state, { payload: [workspaceId, data] }) => ({
     ...state,
     multiSelectSelectedTabIdsByWorkspaceId: data.selectedTabIds
       ? {
@@ -220,26 +226,26 @@ export const sidebarNavReducer = cardPinnedPreference.register(
           [workspaceId]: data.collapsedNoteIds,
         }
       : state.collapsedNoteIdsByWorkspaceId,
-  }))
-  .with(setWorkspaceNoteOrder, (state, { payload: [workspaceId, noteIds] }) => ({
+  }));
+sidebarNavReducer.with(setWorkspaceNoteOrder, (state, { payload: [workspaceId, noteIds] }) => ({
     ...state,
     noteOrderByWorkspaceId: {
       ...state.noteOrderByWorkspaceId,
       [workspaceId]: noteIds,
     },
-  }))
-  .with(setWorkspaceCollapsedNoteIds, (state, { payload: [workspaceId, noteIds] }) => ({
+  }));
+sidebarNavReducer.with(setWorkspaceCollapsedNoteIds, (state, { payload: [workspaceId, noteIds] }) => ({
     ...state,
     collapsedNoteIdsByWorkspaceId: {
       ...state.collapsedNoteIdsByWorkspaceId,
       [workspaceId]: noteIds,
     },
-  }))
-  .with(setChiefActiveAgentId, (state, { payload: [agentId] }) => ({
+  }));
+sidebarNavReducer.with(setChiefActiveAgentId, (state, { payload: [agentId] }) => ({
     ...state,
     chiefActiveAgentId: agentId,
-  }))
-  .with(toggleWorkspaceCollapsedNote, (state, { payload: [workspaceId, noteId] }) => {
+  }));
+sidebarNavReducer.with(toggleWorkspaceCollapsedNote, (state, { payload: [workspaceId, noteId] }) => {
     const current = state.collapsedNoteIdsByWorkspaceId[workspaceId] ?? [];
     const next = current.includes(noteId)
       ? current.filter((id) => id !== noteId)
@@ -251,27 +257,27 @@ export const sidebarNavReducer = cardPinnedPreference.register(
         [workspaceId]: next,
       },
     };
-  })
-  .with(closeHoverCards, (state) => ({
+  });
+sidebarNavReducer.with(closeHoverCards, (state) => ({
     ...state,
     hoveredItem: null,
     expandedItem: null,
     // Reset pin if no panel is open
     isCardPinned: state.panelItem ? state.isCardPinned : false,
-  }))
-  .with(openPanel, (state, { payload: [item] }) => ({
+  }));
+sidebarNavReducer.with(openPanel, (state, { payload: [item] }) => ({
     ...state,
     hoveredItem: null,
     expandedItem: null,
     isCardPinned: state.panelItem ? state.isCardPinned : false,
     panelItem: item,
-  }))
-  .with(closePanel, (state) => ({
+  }));
+sidebarNavReducer.with(closePanel, (state) => ({
     ...state,
     isCardPinned: false,
     panelItem: null,
-  }))
-  .with(togglePanel, (state, { payload: [item] }) => {
+  }));
+sidebarNavReducer.with(togglePanel, (state, { payload: [item] }) => {
     if (state.onboardingActive) return state;
     if (state.panelItem === item) {
       // If pinned, unpin instead of closing
@@ -288,8 +294,8 @@ export const sidebarNavReducer = cardPinnedPreference.register(
       isCardPinned: state.panelItem ? state.isCardPinned : false,
       panelItem: item,
     };
-  })
-  .with(closeAll, (state, { payload: [force] }) => {
+  });
+sidebarNavReducer.with(closeAll, (state, { payload: [force] }) => {
     const shouldClosePanel = !state.isCardPinned || force;
     return {
       ...state,
@@ -298,32 +304,32 @@ export const sidebarNavReducer = cardPinnedPreference.register(
       isCardPinned: shouldClosePanel ? false : state.isCardPinned,
       panelItem: shouldClosePanel ? null : state.panelItem,
     };
-  })
-  .with(incrementContextMenuOpen, (state) => ({
+  });
+sidebarNavReducer.with(incrementContextMenuOpen, (state) => ({
     ...state,
     contextMenuOpenCount: state.contextMenuOpenCount + 1,
-  }))
-  .with(decrementContextMenuOpen, (state) => ({
+  }));
+sidebarNavReducer.with(decrementContextMenuOpen, (state) => ({
     ...state,
     contextMenuOpenCount: Math.max(0, state.contextMenuOpenCount - 1),
-  }))
-  .with(setDeferredLeave, (state, { payload: [leaveType] }) => ({
+  }));
+sidebarNavReducer.with(setDeferredLeave, (state, { payload: [leaveType] }) => ({
     ...state,
     deferredLeave: leaveType,
-  }))
-  .with(clearDeferredLeave, (state) => ({
+  }));
+sidebarNavReducer.with(clearDeferredLeave, (state) => ({
     ...state,
     deferredLeave: null,
-  }))
-  .with(setStatsOverlayOpen, (state, { payload: [open] }) => ({
+  }));
+sidebarNavReducer.with(setStatsOverlayOpen, (state, { payload: [open] }) => ({
     ...state,
     statsOverlayOpen: open,
-  }))
-  .with(toggleStatsOverlay, (state) => ({
+  }));
+sidebarNavReducer.with(toggleStatsOverlay, (state) => ({
     ...state,
     statsOverlayOpen: !state.statsOverlayOpen,
-  }))
-  .with(hydrateSidebarNav, (state, { payload }) => ({
+  }));
+sidebarNavReducer.with(hydrateSidebarNav, (state, { payload }) => ({
     ...state,
     ...payload,
   }));

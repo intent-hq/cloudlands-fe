@@ -43,11 +43,13 @@ describe('agentAvailabilityReducer status retention during re-checks', () => {
     // probe actually succeeds.
     const loadingState: AgentAvailabilityState = {
       ...initialState,
+      providerStatusMap: { auggie: { available: true, authenticated: true } },
       providerLoadingMap: { auggie: true },
     };
     const next = agentAvailabilityReducer(loadingState, checkSingleProviderFailure('auggie'));
     expect(next).toBe(loadingState);
     expect(next.providerLoadingMap.auggie).toBe(true);
-    expect(next.providerStatusMap.auggie).toBeUndefined();
+    expect(next.providerStatusMap).toBe(loadingState.providerStatusMap);
+    expect(next.providerStatusMap.auggie).toEqual({ available: true, authenticated: true });
   });
 });

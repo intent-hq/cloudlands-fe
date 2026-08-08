@@ -3,7 +3,7 @@ import {
   getItem,
   getItems,
   type Collection,
-} from '$lib/store-shim/utils/collections/collection-utils';
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { isModelValidForProvider } from '$shared/utils/compound-model-id';
 import {

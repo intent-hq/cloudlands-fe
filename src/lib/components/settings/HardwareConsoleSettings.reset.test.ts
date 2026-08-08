@@ -45,7 +45,7 @@ async function buildState(actionMapping: readonly string[]) {
   const { initialState } =
     await import('$store/renderer/slices/hardware-console/hardware-console-slice');
   const { createCollection } =
-    await import('$lib/store-shim/utils/collections/collection-utils');
+    await import('@augmentcode/themis/utils/collections/collection-utils');
   return {
     hardwareConsole: {
       ...initialState,

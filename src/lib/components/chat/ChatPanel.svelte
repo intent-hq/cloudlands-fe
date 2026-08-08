@@ -41,6 +41,7 @@
   untrack,
   tick,
 } from 'svelte';
+  import { deepEqual } from 'fast-equals';
   import { writable } from 'svelte/store';
   import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
   import type { AgentMessage } from '$shared/types';
@@ -1185,13 +1186,23 @@
 
   // Get panel layout manager for reading available panels (not agent tabs)
   const panelLayoutManager = $derived(workspace?.id ? getPanelLayoutManager(workspace.id) : null);
+  let previousAvailablePanelContexts: PanelContextItem[] = [];
+
+  function stabilizeAvailablePanelContexts(panels: PanelContextItem[]): PanelContextItem[] {
+    if (deepEqual(previousAvailablePanelContexts, panels)) {
+      return previousAvailablePanelContexts;
+    }
+
+    previousAvailablePanelContexts = panels;
+    return panels;
+  }
 
   // Derive available panel contexts from all open tabs (excluding agent tabs and this agent's tab)
   // Reading $allPanelLayoutTabs$ creates a reactive dependency on Redux panel-layout state,
   // so this derived recomputes whenever tabs are added, removed, or reordered.
   let availablePanelContexts = $derived.by((): PanelContextItem[] => {
     void $allPanelLayoutTabs$; // reactive dependency on panel layout tab changes
-    if (!panelLayoutManager || !workspace?.id) return [];
+    if (!panelLayoutManager || !workspace?.id) return stabilizeAvailablePanelContexts([]);
 
     const panels: PanelContextItem[] = [];
     const panelIds = panelLayoutManager.getPanelIds();
@@ -1295,23 +1306,27 @@
     }
 
     // Sort panels: active tabs first, then alphabetically by label
-    return panels.sort((a, b) => {
+    const sortedPanels = panels.sort((a, b) => {
       if (a.isActive && !b.isActive) return -1;
       if (!a.isActive && b.isActive) return 1;
       return a.label.localeCompare(b.label);
     });
+
+    return stabilizeAvailablePanelContexts(sortedPanels);
   });
 
   // Update the multi-panel context store when available panels change
-  // Use untrack to prevent infinite loop - we only care about the value, not reactivity of the update
   $effect(() => {
-    if (workspace?.id) {
-      const panels = availablePanelContexts;
-      untrack(() => {
-        appStore.dispatch(setMultiPanelWorkspace(workspace.id));
-        appStore.dispatch(updateMultiPanels(panels));
-      });
+    const workspaceId = workspace?.id ?? null;
+    if (!workspaceId || !isActive) {
+      return;
     }
+
+    const panels = availablePanelContexts;
+    untrack(() => {
+      appStore.dispatch(setMultiPanelWorkspace(workspaceId));
+      appStore.dispatch(updateMultiPanels(panels));
+    });
   });
 
   // Sync selection context from editors to multi-panel context Redux store

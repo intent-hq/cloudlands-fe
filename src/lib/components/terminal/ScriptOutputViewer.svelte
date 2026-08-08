@@ -31,6 +31,7 @@
   selectScriptRuntime,
   selectScriptOutput,
 } from '$store/renderer/slices/scripts/scripts-selectors';
+  import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { removeScript } from '$store/renderer/slices/scripts/scripts-slice';
   import { scriptOutputTailText } from '$lib/utils/script-output-text';
   import { TerminalThemeManager } from '$features/terminal/terminal-theme-manager';
@@ -64,6 +65,9 @@
   const script$ = selectScriptById(scriptId);
   const runtime$ = selectScriptRuntime(scriptId);
   const output$ = selectScriptOutput(scriptId);
+  // Canonical code-font preference: used to construct the read-only xterm
+  // and to update its font option later without disposing/replaying output.
+  const codeFontFamilyCSS = selectCodeFontFamilyCSS();
 
   // Stream position already written to xterm: buffer.dropped + chunk index.
   let writtenChunkCount = $state(0);
@@ -85,7 +89,7 @@
 
     xterm = new Terminal({
       allowProposedApi: true,
-      fontFamily: '"SF Mono", Monaco, Menlo, "Courier New", monospace',
+      fontFamily: $codeFontFamilyCSS,
       fontSize: 13,
       lineHeight: 1.2,
       letterSpacing: 0,
@@ -196,6 +200,16 @@
     const startIndex = Math.max(written - buffer.dropped, 0);
     xterm.write(buffer.chunks.slice(startIndex).map((c) => c.text).join(''));
     writtenChunkCount = total;
+  });
+
+  // Update font on the mounted xterm when the preference changes. Setting
+  // `options.fontFamily` is a pure display update — no dispose, no output
+  // replay, no lifecycle change.
+  $effect(() => {
+    const fontFamily = $codeFontFamilyCSS;
+    if (xterm && xterm.options.fontFamily !== fontFamily) {
+      xterm.options.fontFamily = fontFamily;
+    }
   });
 
   // ---- Start ----

@@ -26,25 +26,18 @@
  *
  * Dependency-light per src/store AGENTS.md: imports only the AppClient seam,
  * the configured store, slice actions/empty-state, collection-utils, and the
- * logger (NOT selectors — once registered in `middleware.ts`, statically
- * importing a `*-selectors.ts` module would evaluate `store.createSelector`
- * while the store module is still mid-initialization through the middleware
- * chain). State reads use the raw `appStore.state.workspaceNotes` shape via
+ * logger. State reads use the raw `appStore.state.workspaceNotes` shape via
  * the `readWorkspaceNotes` / `readNoteById` helpers below.
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
-import {
-  getItem,
-  getItems,
-} from "$lib/store-shim/utils/collections/collection-utils";
-import { appClient } from "$lib/client";
-import type { MutationResult, NoteMetadataPatch } from "$lib/client";
-import { toast } from "svelte-sonner";
-import { m } from "$shared/paraglide/messages.js";
-import { ContentType, NoteVisibility } from "$shared/types";
-import type { CreateNoteRequest, Note } from "$shared/types";
-import { NoteId, WorkspaceId } from "$shared/types/branded-ids";
-import { store as appStore } from "$store/renderer/store";
+import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { appClient } from '$lib/client';
+import type { MutationResult, NoteMetadataPatch } from '$lib/client';
+import { toast } from 'svelte-sonner';
+import { m } from '$shared/paraglide/messages.js';
+import { ContentType, NoteVisibility } from '$shared/types';
+import type { CreateNoteRequest, Note } from '$shared/types';
+import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
+import { store as appStore } from '$store/renderer/store';
 import {
   addOptimisticNote,
   applyLocalNoteUpdate,
@@ -54,15 +47,10 @@ import {
   emptyWorkspaceNotesState,
   loadWorkspaceNotesSucceeded,
   removeOptimisticNote,
-} from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
-import {
-  createNoteRequested,
-  markNoteRead,
-} from "$store/renderer/slices/note-read-tracking/note-read-tracking-slice";
-import { openTab } from "$store/renderer/slices/panel-layout/panel-layout-slice";
-import { createLogger } from "$lib/utils/client-logger";
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import { createLogger } from '$lib/utils/client-logger';
 
-const logger = createLogger("NotesWriteService");
+const logger = createLogger('NotesWriteService');
 
 /** Debounce window for content saves (the removed saga debounced ~1s). */
 export const NOTE_CONTENT_SAVE_DEBOUNCE_MS = 800;
@@ -121,7 +109,7 @@ function enqueueNoteMutation<T>(key: string, run: () => Promise<T>): Promise<T> 
 
 function genTempNoteId(): string {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
-  if (typeof c?.randomUUID === "function") return `optimistic-${c.randomUUID()}`;
+  if (typeof c?.randomUUID === 'function') return `optimistic-${c.randomUUID()}`;
   return `optimistic-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
@@ -131,14 +119,12 @@ function genTempNoteId(): string {
 // module is still mid-initialization through the middleware chain. See
 // `git-read-service.ts` / `files-write-service.ts` for the same pattern.
 function readWorkspaceNotes(workspaceId: string): Note[] {
-  const ws =
-    appStore.state.workspaceNotes.byWorkspaceId[workspaceId] ?? emptyWorkspaceNotesState;
+  const ws = appStore.state.workspaceNotes.byWorkspaceId[workspaceId] ?? emptyWorkspaceNotesState;
   return getItems(ws.notes);
 }
 
 function readNoteById(workspaceId: string, noteId: string): Note | undefined {
-  const ws =
-    appStore.state.workspaceNotes.byWorkspaceId[workspaceId] ?? emptyWorkspaceNotesState;
+  const ws = appStore.state.workspaceNotes.byWorkspaceId[workspaceId] ?? emptyWorkspaceNotesState;
   return getItem(ws.notes, NoteId(noteId));
 }
 
@@ -199,7 +185,7 @@ async function refetchWorkspaceNotes(workspaceId: string): Promise<void> {
     const notes = await appClient.notes.list(workspaceId);
     appStore.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
   } catch (error) {
-    logger.error("Failed to refetch notes after a mutation error", error);
+    logger.error('Failed to refetch notes after a mutation error', error);
   }
 }
 
@@ -218,12 +204,12 @@ function reconcileNoteConflict(
 ): boolean {
   if (!result.conflict) return false;
   const current = result.conflict.current as Note | undefined;
-  if (current && typeof current === "object") {
+  if (current && typeof current === 'object') {
     appStore.dispatch(applyNoteUpdated(workspaceId, String(current.id ?? noteId), current));
   } else {
     void refetchWorkspaceNotes(workspaceId);
   }
-  logger.warn("Note mutation conflicted; reloaded the latest version", { noteId });
+  logger.warn('Note mutation conflicted; reloaded the latest version', { noteId });
   toast.warning(m.notes_writeService_noteChanged_label(), {
     description: m.notes_writeService_noteChanged_description(),
   });
@@ -233,7 +219,7 @@ function reconcileNoteConflict(
 /** Create a note with optimistic insert; reconciles to the canonical id on success. */
 export async function createNote(
   workspaceId: string,
-  data: Omit<CreateNoteRequest, "workspaceId">,
+  data: Omit<CreateNoteRequest, 'workspaceId'>,
 ): Promise<string | undefined> {
   const tempId = genTempNoteId();
   const now = new Date().toISOString();
@@ -258,7 +244,7 @@ export async function createNote(
   const result = await appClient.notes.create({ workspaceId: WorkspaceId(workspaceId), ...data });
   if (!result.success) {
     appStore.dispatch(removeOptimisticNote(workspaceId, tempId));
-    logger.error("Failed to create note", result.error);
+    logger.error('Failed to create note', result.error);
     return undefined;
   }
 
@@ -274,57 +260,9 @@ export async function createNote(
     // The create succeeded but the reconcile refetch threw. Keep the optimistic
     // note rather than dropping it — the live note:* subscribe→refetch loop will
     // converge it to the canonical id — so the user's note is neither orphaned nor duplicated.
-    logger.error("Failed to refetch notes after creating a note", error);
+    logger.error('Failed to refetch notes after creating a note', error);
   }
   return undefined;
-}
-
-/**
- * Handle the (post-saga) `createNoteRequested` action: forward to the
- * `appClient.notes.create` seam with the same defaults the legacy
- * "Add new note" saga used (title `"New Note"`, empty content, no tags), then
- * mark the new note read and open it as a real panel-layout tab so it appears
- * in its own focused tab without a manual reload. Mirrors the sidebar's
- * `handleOpenNoteInPanel` path (`openTab` + `markNoteRead`); the panel-layout
- * reducer dedupes by `noteId` so a repeat dispatch focuses the existing tab.
- */
-async function handleCreateNoteRequested(workspaceId: string): Promise<void> {
-  if (!workspaceId) return;
-  const newNoteId = await createNote(workspaceId, {
-    title: m.notes_writeService_newNote_title(),
-    content: "",
-    tags: [],
-  });
-  if (!newNoteId) return;
-  appStore.dispatch(markNoteRead(workspaceId, newNoteId));
-  appStore.dispatch(
-    openTab(workspaceId, {
-      type: "note",
-      title: m.notes_writeService_newNote_title(),
-      closable: true,
-      noteId: newNoteId,
-      workspaceId,
-    }),
-  );
-}
-
-/**
- * Middleware that gives the (post-saga) `createNoteRequested` trigger a real
- * handler: after the (no-op) reducer passes the action through, it forwards to
- * `appClient.notes.create` and reconciles by opening the new note.
- * Fire-and-forget — dispatch stays synchronous and never throws.
- */
-export function createNotesWriteMiddleware(): StoreMiddleware {
-  return () => (next) => (action) => {
-    const result = next(action);
-    if (action?.type === createNoteRequested.type && Array.isArray(action.payload)) {
-      const [wsId] = action.payload as [unknown];
-      if (typeof wsId === "string" && wsId.length > 0) {
-        void handleCreateNoteRequested(wsId);
-      }
-    }
-    return result;
-  };
 }
 
 /** Update note content optimistically; the network save is debounced per note. */
@@ -381,7 +319,7 @@ async function flushContent(key: string, noteId: string): Promise<void> {
       );
       if (!result.success) {
         if (reconcileNoteConflict(pending.workspaceId, noteId, result)) return;
-        logger.error("Failed to save note content", result.error);
+        logger.error('Failed to save note content', result.error);
         toast.error(m.notes_writeService_saveFailed_error(), {
           description: result.error ?? m.notes_writeService_unknown_error(),
         });
@@ -420,7 +358,7 @@ export async function updateNoteTitle(
     const result = await appClient.notes.updateMetadata(noteId, { title }, rev, workspaceId);
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
-      logger.error("Failed to update note title", result.error);
+      logger.error('Failed to update note title', result.error);
       toast.error(m.notes_writeService_updateTitleFailed_error(), {
         description: result.error ?? m.notes_writeService_unknown_error(),
       });
@@ -441,7 +379,7 @@ export async function updateNoteMetadata(
 ): Promise<void> {
   const existing = readNoteById(workspaceId, noteId);
   const rollback: NoteMetadataPatch = {};
-  if (metadata.title !== undefined) rollback.title = existing?.title ?? "";
+  if (metadata.title !== undefined) rollback.title = existing?.title ?? '';
   if (metadata.tags !== undefined) rollback.tags = existing?.tags ?? [];
   appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, metadata));
 
@@ -450,7 +388,7 @@ export async function updateNoteMetadata(
     const result = await appClient.notes.updateMetadata(noteId, metadata, rev, workspaceId);
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
-      logger.error("Failed to update note metadata", result.error);
+      logger.error('Failed to update note metadata', result.error);
       toast.error(m.notes_writeService_updateFailed_error(), {
         description: result.error ?? m.notes_writeService_unknown_error(),
       });
@@ -471,7 +409,7 @@ export async function deleteNote(workspaceId: string, noteId: string): Promise<v
     const result = await appClient.notes.delete(noteId, rev, workspaceId);
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
-      logger.error("Failed to delete note", result.error);
+      logger.error('Failed to delete note', result.error);
       toast.error(m.notes_writeService_deleteFailed_error(), {
         description: result.error ?? m.notes_writeService_unknown_error(),
       });

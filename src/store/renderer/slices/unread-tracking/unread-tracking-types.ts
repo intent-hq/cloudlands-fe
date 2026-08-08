@@ -1,8 +1,8 @@
 /**
  * Types for the unread-tracking Redux slice.
  *
- * Only the currently viewed agent is tracked here (it gates the chat stream
- * lifecycle). Unread state is backend-owned via `workspace.attention`.
+ * Tracks the currently viewed agent for chat-stream lifecycle and transient
+ * divider viewing sessions. Canonical unread state lives on workspace.attention.
  */
 
 /** A latched "New messages" divider viewing session for one agent conversation. */
@@ -27,4 +27,3 @@ export type UnreadTrackingState = {
    */
   dividerSessionByAgentId: Record<string, DividerSession>;
 };
-

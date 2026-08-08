@@ -2,15 +2,15 @@
  * Comments V2 Redux slice — actions & reducer.
  */
 
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   createCollection,
   addItem,
   updateItem,
   removeItem,
   getItem,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 import type { CommentV2 } from "$features/comments/comment-types-v2";
 import type { CommentsV2State, CommentThread } from "./comments-types";
 
@@ -92,103 +92,99 @@ function rebuildThreads(
   return createCollection<CommentThread, "id">("id", threads);
 }
 
-
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
-export const commentsReducer = createReducer<CommentsV2State>(initialState)
-  // ── addComment ──────────────────────────────────────────────────────────
-  .with(addCommentAction, (state, { payload: [comment] }) => {
-    const commentsById = addItem(state.commentsById, comment);
+export const commentsReducer = createReducer<CommentsV2State>(initialState);
+// ── addComment ──────────────────────────────────────────────────────────
+commentsReducer.with(addCommentAction, (state, { payload: [comment] }) => {
+  const commentsById = addItem(state.commentsById, comment);
 
-    // Update commentIdsByThread
-    const threadIds = state.commentIdsByThread[comment.threadId]
-      ? [...state.commentIdsByThread[comment.threadId], comment.id]
-      : [comment.id];
-    const commentIdsByThread = { ...state.commentIdsByThread, [comment.threadId]: threadIds };
+  // Update commentIdsByThread
+  const threadIds = state.commentIdsByThread[comment.threadId]
+    ? [...state.commentIdsByThread[comment.threadId], comment.id]
+    : [comment.id];
+  const commentIdsByThread = { ...state.commentIdsByThread, [comment.threadId]: threadIds };
 
-    return {
-      ...state,
-      commentsById,
-      commentIdsByThread,
-      threadsById: rebuildThreads(commentsById, commentIdsByThread),
-    };
-  })
-
-  // ── updateComment ───────────────────────────────────────────────────────
-  .with(updateCommentAction, (state, action) => {
-    const { id, updates } = action.payload;
-    const existing = getItem(state.commentsById, id);
-    if (!existing) return state;
-
-    const merged = { ...existing, ...updates, id: existing.id } as CommentV2;
-    const commentsById = updateItem(state.commentsById, merged);
-
-    // If status changed, rebuild threads to recalculate thread status
-    const threadsById =
-      updates.status !== undefined
-        ? rebuildThreads(commentsById, state.commentIdsByThread)
-        : state.threadsById;
-
-    return { ...state, commentsById, threadsById };
-  })
-
-  // ── removeComment ───────────────────────────────────────────────────────
-  .with(removeCommentAction, (state, { payload: [id] }) => {
-    const existing = getItem(state.commentsById, id);
-    if (!existing) return state;
-
-    const commentsById = removeItem(state.commentsById, id);
-    const threadId = existing.threadId;
-
-    // Update commentIdsByThread
-    const threadCommentIds = (state.commentIdsByThread[threadId] || []).filter(
-      (cid) => cid !== id,
-    );
-    let commentIdsByThread: Record<string, string[]>;
-    if (threadCommentIds.length === 0) {
-      commentIdsByThread = { ...state.commentIdsByThread };
-      delete commentIdsByThread[threadId];
-    } else {
-      commentIdsByThread = { ...state.commentIdsByThread, [threadId]: threadCommentIds };
-    }
-
-    return {
-      ...state,
-      commentsById,
-      commentIdsByThread,
-      threadsById: rebuildThreads(commentsById, commentIdsByThread),
-    };
-  })
-
-  // ── loadComments (bulk replace) ─────────────────────────────────────────
-  .with(loadCommentsAction, (state, { payload: [comments] }) => {
-    const commentsById = createCollection<CommentV2, "id">("id", comments);
-
-    // Build commentIdsByThread
-    const commentIdsByThread: Record<string, string[]> = {};
-    for (const comment of comments) {
-      if (!commentIdsByThread[comment.threadId]) {
-        commentIdsByThread[comment.threadId] = [];
-      }
-      commentIdsByThread[comment.threadId].push(comment.id);
-    }
-
-    return {
-      ...state,
-      commentsById,
-      commentIdsByThread,
-      threadsById: rebuildThreads(commentsById, commentIdsByThread),
-    };
-  })
-
-  // ── clear ───────────────────────────────────────────────────────────────
-  .with(clearCommentsAction, () => initialState)
-
-  // ── selectComment ───────────────────────────────────────────────────────
-  .with(selectCommentAction, (state, { payload: [id] }) => ({
+  return {
     ...state,
-    selectedCommentId: id,
-  }));
+    commentsById,
+    commentIdsByThread,
+    threadsById: rebuildThreads(commentsById, commentIdsByThread),
+  };
+});
 
+// ── updateComment ───────────────────────────────────────────────────────
+commentsReducer.with(updateCommentAction, (state, action) => {
+  const { id, updates } = action.payload;
+  const existing = getItem(state.commentsById, id);
+  if (!existing) return state;
+
+  const merged = { ...existing, ...updates, id: existing.id } as CommentV2;
+  const commentsById = updateItem(state.commentsById, merged);
+
+  // If status changed, rebuild threads to recalculate thread status
+  const threadsById =
+    updates.status !== undefined
+      ? rebuildThreads(commentsById, state.commentIdsByThread)
+      : state.threadsById;
+
+  return { ...state, commentsById, threadsById };
+});
+
+// ── removeComment ───────────────────────────────────────────────────────
+commentsReducer.with(removeCommentAction, (state, { payload: [id] }) => {
+  const existing = getItem(state.commentsById, id);
+  if (!existing) return state;
+
+  const commentsById = removeItem(state.commentsById, id);
+  const threadId = existing.threadId;
+
+  // Update commentIdsByThread
+  const threadCommentIds = (state.commentIdsByThread[threadId] || []).filter((cid) => cid !== id);
+  let commentIdsByThread: Record<string, string[]>;
+  if (threadCommentIds.length === 0) {
+    commentIdsByThread = { ...state.commentIdsByThread };
+    delete commentIdsByThread[threadId];
+  } else {
+    commentIdsByThread = { ...state.commentIdsByThread, [threadId]: threadCommentIds };
+  }
+
+  return {
+    ...state,
+    commentsById,
+    commentIdsByThread,
+    threadsById: rebuildThreads(commentsById, commentIdsByThread),
+  };
+});
+
+// ── loadComments (bulk replace) ─────────────────────────────────────────
+commentsReducer.with(loadCommentsAction, (state, { payload: [comments] }) => {
+  const commentsById = createCollection<CommentV2, 'id'>('id', comments);
+
+  // Build commentIdsByThread
+  const commentIdsByThread: Record<string, string[]> = {};
+  for (const comment of comments) {
+    if (!commentIdsByThread[comment.threadId]) {
+      commentIdsByThread[comment.threadId] = [];
+    }
+    commentIdsByThread[comment.threadId].push(comment.id);
+  }
+
+  return {
+    ...state,
+    commentsById,
+    commentIdsByThread,
+    threadsById: rebuildThreads(commentsById, commentIdsByThread),
+  };
+});
+
+// ── clear ───────────────────────────────────────────────────────────────
+commentsReducer.with(clearCommentsAction, () => initialState);
+
+// ── selectComment ───────────────────────────────────────────────────────
+commentsReducer.with(selectCommentAction, (state, { payload: [id] }) => ({
+  ...state,
+  selectedCommentId: id,
+}));

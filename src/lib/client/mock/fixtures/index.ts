@@ -110,12 +110,6 @@ export const mockScripts: ScriptWithState[] = [
 
 export const mockSkills: SkillInfo[] = [
   {
-    name: "store-shim",
-    description: "Local store shim conventions for this codebase.",
-    location: ".agents/skills/store-shim/SKILL.md",
-    scope: "project",
-  },
-  {
     name: "electron",
     description: "Automate Electron desktop apps over the Chrome DevTools Protocol.",
     location: ".agents/skills/electron/SKILL.md",

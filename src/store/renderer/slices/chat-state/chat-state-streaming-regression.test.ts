@@ -21,13 +21,16 @@ import {
   chatSendFailed,
   chatInterrupted,
   chatStopCompleted,
-  streamEnded,
-  streamFailed,
+  streamCompleted,
   chatStreamingReconciled,
 } from './chat-state-slice';
 import type { AgentSession } from '$shared/types';
 
 const AGENT = 'agent-regression';
+
+const streamEnded = (agentId: string) =>
+  streamCompleted(agentId, { lastAttemptedMessage: null, modelUnavailable: null });
+const streamFailed = streamEnded;
 
 const dummySession: AgentSession = {
   id: AGENT,

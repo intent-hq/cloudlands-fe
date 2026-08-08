@@ -39,14 +39,20 @@ import {
   onBackendNotification,
   onBackendReconnected,
 } from '$lib/client/live/backend-transport';
+import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
-import { getItems } from '$lib/store-shim/utils/collections/collection-utils';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { isWorkspaceDisplayStatus, WorkspaceStatus } from '$shared/types';
 import {
-  isWorkspaceDisplayStatus,
-  WorkspaceStatus,
-  type WorkspaceDisplayStatus,
-} from '$shared/types';
-import { hydrateAgentsRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  hydrateAgentsRequested,
+  setAgents,
+  setAgentsLoaded,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import {
+  bulkUpsertSessions,
+  upsertSession,
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import {
   hudActivated,
   hudAttentionChanged,
@@ -54,12 +60,11 @@ import {
   hudDisplayStatusChanged,
   hudFeedEntryReceived,
   hudQuestionCaptured,
-  hudQuestionsResolvedForWorkspace,
   hudRateHistoryFailed,
   hudRateHistoryLoaded,
   hudUsageFailed,
   hudUsageLoaded,
-  sumHudUsageTotals,
+  hudQuestionsResolvedForWorkspace,
   type HudFeedEntry,
   type HudRateHistorySample,
   type HudRateSample,
@@ -103,6 +108,24 @@ export const HUD_RATE_HISTORY_POLL_MS = 15_000;
 /** Trailing minute samples for the TOK/MIN chart (mock renders 40 bars). */
 export const HUD_RATE_HISTORY_LIMIT = 40;
 
+function sumTotals(totals: HudUsageTotals): number {
+  return (
+    totals.inputTokens +
+    totals.outputTokens +
+    totals.cacheReadTokens +
+    totals.cacheCreationTokens +
+    (totals.thoughtTokens ?? 0)
+  );
+}
+
+const QUESTION_HOLD_DISPLAY_STATUSES = new Set(['failed', 'blocked', 'needs_attention']);
+
+function resolveQuestionsForDisplayStatus(workspaceId: string, displayStatus: string): void {
+  if (!QUESTION_HOLD_DISPLAY_STATUSES.has(displayStatus)) {
+    appStore.dispatch(hudQuestionsResolvedForWorkspace(workspaceId));
+  }
+}
+
 /** Fetch the 24h usage rollup (§5.36) and fold it into the slice. */
 async function loadUsage(): Promise<void> {
   try {
@@ -123,7 +146,7 @@ async function loadUsage(): Promise<void> {
     }
     const rateSamples: HudRateSample[] = byHourOfDay.map((bucket) => ({
       hour: bucket.hour,
-      tokens: sumHudUsageTotals(bucket),
+      tokens: sumTotals(bucket),
     }));
     appStore.dispatch(
       hudUsageLoaded({
@@ -148,17 +171,7 @@ async function loadRateHistory(): Promise<void> {
     if (!Array.isArray(samples)) {
       throw new Error('stats.getRateHistory result is missing `samples` (PROTOCOL §5.39)');
     }
-    // Counters are kept per-kind for the stacked chart segments; §5.39 samples
-    // are dense (thoughtTokens is always present), but a pre-#976 daemon omits
-    // it — the field then stays absent rather than being healed to 0.
-    const mapped: HudRateHistorySample[] = samples.map((sample) => ({
-      bucketUtc: sample.bucketUtc,
-      inputTokens: sample.inputTokens,
-      outputTokens: sample.outputTokens,
-      cacheReadTokens: sample.cacheReadTokens,
-      cacheCreationTokens: sample.cacheCreationTokens,
-      ...(sample.thoughtTokens === undefined ? {} : { thoughtTokens: sample.thoughtTokens }),
-    }));
+    const mapped: HudRateHistorySample[] = samples.map((sample) => ({ ...sample }));
     appStore.dispatch(hudRateHistoryLoaded({ samples: mapped, fetchedAtMs: Date.now() }));
   } catch (error) {
     appStore.dispatch(hudRateHistoryFailed(error instanceof Error ? error.message : String(error)));
@@ -195,6 +208,23 @@ function hydrateVisibleWorkspaceAgents(): void {
     if (hydratedAgentWorkspaceIds.has(workspaceId)) continue;
     hydratedAgentWorkspaceIds.add(workspaceId);
     appStore.dispatch(hydrateAgentsRequested(workspaceId));
+    void hydrateHudWorkspaceAgents(workspaceId);
+  }
+}
+
+async function hydrateHudWorkspaceAgents(workspaceId: string): Promise<void> {
+  try {
+    const listed = await appClient.agents.list(workspaceId);
+    const agents = listed
+      .filter((agent) => !isAgentDeletionPending(String(agent.id)))
+      .map((agent) => ({ ...agent, messages: agent.messages ?? [] }));
+    appStore.dispatch(setAgentsLoaded(workspaceId, true));
+    if (agents.length === 0) return;
+    appStore.dispatch(setAgents(workspaceId, agents));
+    appStore.dispatch(bulkUpsertSessions(agents));
+    for (const agent of agents) appStore.dispatch(upsertSession(agent));
+  } catch (error) {
+    logger.warn('agent.list hydration failed for HUD workspace', { workspaceId, error });
   }
 }
 
@@ -227,60 +257,6 @@ function withFirstStartRewrite(entry: HudFeedEntry): HudFeedEntry {
   if (delegatedRowEmittedAgentIds.has(entry.agentId)) return entry;
   delegatedRowEmittedAgentIds.add(entry.agentId);
   return { ...entry, kind: HUD_AGENT_DELEGATED_FEED_KIND };
-}
-
-/**
- * displayStatus values whose arrival releases a workspace's captured questions
- * (see the dispatch site below). An ALLOWLIST, not `!== 'needs_attention'`,
- * because the rollup is precedence-ordered and a HIGHER-ranked signal masks a
- * still-pending question rather than resolving it: intentd#945 extends the
- * rollup with `failed`/`blocked`, which outrank `needs_attention`, so another
- * agent failing or raising a blocker mid-question would transition the
- * workspace and wrongly clear the capture. Only statuses that rank BELOW
- * `needs_attention` imply the hold is genuinely gone. Unknown/future wire
- * values never reach here (`isWorkspaceDisplayStatus` rejects them) and, being
- * absent from this set, would not release either.
- *
- * Residual (either way): the rollup is workspace-scoped, so an answered
- * question whose workspace still holds attention for an unrelated agent stays
- * captured until the workspace clears. Per-agent release arrives with the
- * daemon's persisted pending-questions marker (the intentd counterpart of this
- * change), which the HUD will read off session metadata exactly like it
- * already reads `dismissedQuestionsMessageId`.
- */
-const QUESTION_RELEASING_DISPLAY_STATUSES: ReadonlySet<WorkspaceDisplayStatus> = new Set([
-  'not_started',
-  'in_progress',
-  'idle',
-  'complete',
-  'pr_ready',
-  'pr_open',
-  'pr_merged',
-]);
-
-/**
- * Set on reconnect and consumed by the first refetched workspace list —
- * see `sweepQuestionReleaseAgainstWorkspaces`.
- */
-let questionReleaseSweepArmed = false;
-
-/**
- * Reconnect fallback for the release signal. The live
- * `workspace:displayStatus-changed` event is the ONLY release trigger, so a
- * transition missed during an outage would leave a captured question pending
- * forever. RESUB-1 refetches the workspace list, whose entries carry the
- * BE-owned `displayStatus` — replay the same allowlist decision against it.
- * Workspaces whose refetched status is absent or non-releasing are left
- * untouched (never a speculative clear).
- */
-function sweepQuestionReleaseAgainstWorkspaces(): void {
-  const workspaces = appStore.state.workspace?.workspaces;
-  for (const workspace of workspaces ? getItems(workspaces) : []) {
-    const displayStatus = (workspace as { displayStatus?: unknown }).displayStatus;
-    if (!isWorkspaceDisplayStatus(displayStatus)) continue;
-    if (!QUESTION_RELEASING_DISPLAY_STATUSES.has(displayStatus)) continue;
-    appStore.dispatch(hudQuestionsResolvedForWorkspace(String(workspace.id)));
-  }
 }
 
 /** Whether a status_update trigger repeats the workspace's last shown text. */
@@ -318,15 +294,7 @@ function handleEvent(event: WorkspaceEvent): void {
     const displayStatus = data.displayStatus;
     if (workspaceId && isWorkspaceDisplayStatus(displayStatus)) {
       appStore.dispatch(hudDisplayStatusChanged(workspaceId, displayStatus));
-      // Question release (spec §Decisions): pendingness is persistent — a
-      // plain user message and the turn it starts no longer supersede a
-      // captured question, so the ONLY release signal the HUD sees is the
-      // daemon's rollup. A pending question always holds `needs_attention`
-      // up, so landing on a status that ranks BELOW it means the questions
-      // were answered or dismissed.
-      if (QUESTION_RELEASING_DISPLAY_STATUSES.has(displayStatus)) {
-        appStore.dispatch(hudQuestionsResolvedForWorkspace(workspaceId));
-      }
+      resolveQuestionsForDisplayStatus(workspaceId, displayStatus);
     }
   }
   const entry = mapEventToFeedEntry(event);
@@ -389,7 +357,6 @@ export function startHudSubscription(): () => void {
   lastStatusUpdateTextByWorkspaceId.clear();
   delegatedRowEmittedAgentIds.clear();
   hydratedAgentWorkspaceIds.clear();
-  questionReleaseSweepArmed = false;
   appStore.dispatch(hudActivated());
 
   async function subscribe(): Promise<void> {
@@ -437,13 +404,6 @@ export function startHudSubscription(): () => void {
     void loadRateHistory();
     hydratedAgentWorkspaceIds.clear();
     hydrateVisibleWorkspaceAgents();
-    // A `workspace:displayStatus-changed` that landed during the outage is
-    // simply gone, and the release is only ever driven by that live event —
-    // so a question answered while disconnected would stay captured forever.
-    // Arm a one-shot sweep against the REFETCHED workspace list instead of
-    // reading now (the store still holds the pre-outage snapshot at this
-    // point); the store listener below runs it when the list reference moves.
-    questionReleaseSweepArmed = true;
   });
 
   void subscribe();
@@ -460,13 +420,13 @@ export function startHudSubscription(): () => void {
     const workspaces = state.workspace?.workspaces;
     if (workspaces === lastWorkspaces) return;
     lastWorkspaces = workspaces;
-    queueMicrotask(() => {
-      if (disposed) return;
-      hydrateVisibleWorkspaceAgents();
-      if (questionReleaseSweepArmed) {
-        questionReleaseSweepArmed = false;
-        sweepQuestionReleaseAgainstWorkspaces();
+    for (const workspace of workspaces ? getItems(workspaces) : []) {
+      if (typeof workspace.displayStatus === 'string') {
+        resolveQuestionsForDisplayStatus(String(workspace.id), workspace.displayStatus);
       }
+    }
+    queueMicrotask(() => {
+      if (!disposed) hydrateVisibleWorkspaceAgents();
     });
   });
 

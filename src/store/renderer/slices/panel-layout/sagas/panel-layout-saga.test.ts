@@ -1,0 +1,371 @@
+import { runSaga, stdChannel } from 'redux-saga';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  clearAdapter: vi.fn(),
+  getJSON: vi.fn(),
+  loadHistory: vi.fn(),
+  removeItem: vi.fn(),
+  saveHistory: vi.fn(),
+  setJSON: vi.fn(),
+}));
+
+vi.mock('$features/layout/panel-layout-adapter', () => ({
+  clearPanelLayoutAdapter: mocks.clearAdapter,
+}));
+vi.mock('$features/layout/panel-layout-history.client', () => ({
+  loadPanelLayoutHistory: mocks.loadHistory,
+  savePanelLayoutHistory: mocks.saveHistory,
+}));
+vi.mock('../../../utils/safe-local-storage-saga', () => ({
+  getLocalStorageJSON: function* (key: string) {
+    return mocks.getJSON(key);
+  },
+  removeLocalStorageItem: function* (key: string) {
+    mocks.removeItem(key);
+  },
+  setLocalStorageJSON: function* (key: string, value: unknown) {
+    mocks.setJSON(key, value);
+  },
+}));
+
+import { workspaceMounted, workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  clearPanelLayout,
+  closeActiveTab,
+  closeAllOthersEverywhere,
+  closeAllTabs,
+  closeOtherTabs,
+  closePanel,
+  closeTab,
+  closeTabsByAgentId,
+  closeTabsByType,
+  closeTabsToRight,
+  consumePendingFocus,
+  emptyWorkspaceState,
+  focusPanel,
+  goBack,
+  goBackInFocusHistory,
+  goForward,
+  goForwardInFocusHistory,
+  initializeLayout,
+  loadLayoutHistory,
+  moveTabToPanel,
+  moveTabToSplit,
+  moveTabToSplitLevel,
+  openTab,
+  openTabInAdjacentOrSplit,
+  reconcileStaleAgentTabs,
+  reorderTabs,
+  reopenClosedTab,
+  resetLayout,
+  selectNextTab,
+  selectPreviousTab,
+  setActiveTab,
+  setDeferSpecTab,
+  setRestoreStatus,
+  splitPanel,
+  toggleExpandPanel,
+  updateFileTabPath,
+  updateSizes,
+  updateSplitSizes,
+  updateTabBrowserUrl,
+  updateTabFavicon,
+  updateTabTitle,
+} from '../panel-layout-slice';
+import {
+  HISTORY_PERSIST_DEBOUNCE_MS,
+  PANEL_LAYOUT_STORAGE_KEY_PREFIX,
+  type LayoutSnapshot,
+  type WorkspacePanelLayout,
+} from '../panel-layout-types';
+import { isStoredLayoutValid, panelLayoutSaga } from './panel-layout-saga';
+
+const WS_1 = 'ws-1';
+const WS_2 = 'ws-2';
+const STORAGE_KEY_1 = `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${WS_1}`;
+const NOW = new Date('2026-07-31T00:00:00.000Z');
+
+const tab = { id: 'tab-1', type: 'note' as const, title: 'Note', closable: true, noteId: 'note-1' };
+const layout: WorkspacePanelLayout = {
+  root: { type: 'panel', panelId: 'panel-1' },
+  panels: { 'panel-1': { id: 'panel-1', tabs: [tab], activeTabId: tab.id } },
+  focusedPanelId: 'panel-1',
+};
+const snapshot: LayoutSnapshot = { ...layout, timestamp: 10 };
+
+function workspaceState(history: LayoutSnapshot[] = [snapshot]) {
+  return {
+    ...emptyWorkspaceState,
+    ...layout,
+    layoutHistory: history,
+    historyIndex: history.length - 1,
+  };
+}
+
+function storeState(activeWorkspaceId: string | null = null) {
+  return {
+    panelLayout: {
+      byWorkspaceId: {
+        [WS_1]: workspaceState(),
+        [WS_2]: workspaceState([{ ...snapshot, timestamp: 20 }]),
+      },
+    },
+    workspace: { activeWorkspaceId },
+  };
+}
+
+async function settle() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+function startSaga(state = storeState()) {
+  const channel = stdChannel();
+  const dispatch = vi.fn();
+  const task = runSaga({ channel, dispatch, getState: () => state }, panelLayoutSaga);
+  return { channel, dispatch, task };
+}
+
+async function cancelSaga(task: ReturnType<typeof runSaga>) {
+  task.cancel();
+  await task.toPromise();
+}
+
+const persistActionCreators = [
+  initializeLayout, openTab, openTabInAdjacentOrSplit, closeTab, closeActiveTab,
+  closeTabsByType, closeTabsByAgentId, reopenClosedTab, setActiveTab, selectNextTab,
+  selectPreviousTab, reorderTabs, moveTabToPanel, moveTabToSplit, moveTabToSplitLevel,
+  closeOtherTabs, closeTabsToRight, closeAllTabs, closeAllOthersEverywhere, focusPanel,
+  splitPanel, closePanel, updateSizes, updateSplitSizes, toggleExpandPanel, resetLayout,
+  goBack, goForward, goBackInFocusHistory, goForwardInFocusHistory, setDeferSpecTab,
+  reconcileStaleAgentTabs, updateTabTitle, updateTabBrowserUrl, updateTabFavicon,
+  updateFileTabPath, consumePendingFocus,
+];
+
+describe('panelLayoutSaga', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    mocks.loadHistory.mockResolvedValue(null);
+    mocks.saveHistory.mockResolvedValue(true);
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it('validates stored tree references, focus, tabs, and active tab ids', () => {
+    expect(isStoredLayoutValid(layout)).toBe(true);
+    expect(isStoredLayoutValid(null)).toBe(false);
+    expect(isStoredLayoutValid({ ...layout, root: { type: 'panel', panelId: 'missing' } })).toBe(false);
+    expect(isStoredLayoutValid({ ...layout, focusedPanelId: 'missing' })).toBe(false);
+    expect(isStoredLayoutValid({ ...layout, panels: { 'panel-1': { ...layout.panels['panel-1'], tabs: [null] } } })).toBe(false);
+    expect(isStoredLayoutValid({ ...layout, panels: { 'panel-1': { ...layout.panels['panel-1'], activeTabId: 'missing' } } })).toBe(false);
+    expect(isStoredLayoutValid({ ...layout, root: { type: 'split', direction: 'horizontal', children: [layout.root], sizes: [] } })).toBe(false);
+  });
+
+  it('retroactively restores the active workspace with exact status transitions', async () => {
+    mocks.getJSON.mockReturnValue(layout);
+    const { dispatch, task } = startSaga(storeState(WS_1));
+    await settle();
+
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      setRestoreStatus(WS_1, 'pending'),
+      initializeLayout(WS_1, layout),
+      setRestoreStatus(WS_1, 'restored'),
+    ]);
+    await cancelSaga(task);
+  });
+
+  it('marks missing and malformed mount storage exactly and skips invalid workspace ids', async () => {
+    mocks.getJSON.mockImplementation((key: string) => key.endsWith(WS_1) ? undefined : { bad: true });
+    const { channel, dispatch, task } = startSaga();
+    await settle();
+    channel.put(workspaceMounted(WS_1));
+    channel.put(workspaceMounted(WS_2));
+    channel.put(workspaceMounted('optimistic-new'));
+    await settle();
+
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      setRestoreStatus(WS_1, 'pending'), setRestoreStatus(WS_1, 'empty'),
+      setRestoreStatus(WS_2, 'pending'), setRestoreStatus(WS_2, 'invalid'),
+    ]);
+    await cancelSaga(task);
+  });
+
+  it.each(persistActionCreators)('persists the exact post-reducer layout for $type', async (creator) => {
+    mocks.getJSON.mockReturnValue(undefined);
+    const { channel, task } = startSaga();
+    await settle();
+    channel.put({ type: creator.type, payload: { wsId: WS_1 } });
+    await settle();
+
+    expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, layout]]);
+    await cancelSaga(task);
+  });
+
+  it('protects a non-empty stored layout from a pre-restore empty-state write', async () => {
+    mocks.getJSON.mockReturnValue(layout);
+    const state = storeState();
+    state.panelLayout.byWorkspaceId[WS_1] = { ...emptyWorkspaceState };
+    const { channel, task } = startSaga(state);
+    await settle();
+    channel.put({ type: focusPanel.type, payload: [WS_1, 'default'] });
+    await settle();
+
+    expect(mocks.setJSON.mock.calls).toEqual([]);
+    await cancelSaga(task);
+  });
+
+  it('survives a local-storage failure and processes the next mutation', async () => {
+    mocks.getJSON.mockReturnValue(undefined);
+    mocks.setJSON.mockImplementationOnce(() => { throw new Error('quota'); });
+    const { channel, task } = startSaga();
+    await settle();
+    channel.put({ type: focusPanel.type, payload: [WS_1, 'panel-1'] });
+    channel.put({ type: focusPanel.type, payload: [WS_2, 'panel-1'] });
+    await settle();
+
+    expect(mocks.setJSON.mock.calls).toEqual([
+      [STORAGE_KEY_1, layout],
+      [`${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${WS_2}`, layout],
+    ]);
+    await cancelSaga(task);
+  });
+
+  it('debounces history independently per workspace and reads the latest state', async () => {
+    const { channel, task } = startSaga();
+    await settle();
+    channel.put({ type: openTab.type, payload: { wsId: WS_1 } });
+    channel.put({ type: closeTab.type, payload: { wsId: WS_1 } });
+    channel.put({ type: openTab.type, payload: { wsId: WS_2 } });
+    await settle();
+    await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
+    await vi.runAllTimersAsync();
+    await settle();
+    const persistedAt = new Date(NOW.getTime() + HISTORY_PERSIST_DEBOUNCE_MS).toISOString();
+
+    expect(mocks.saveHistory.mock.calls).toEqual([
+      [WS_1, { version: 1, workspaceId: WS_1, history: [snapshot], historyIndex: 0, lastUpdated: persistedAt }],
+      [WS_2, { version: 1, workspaceId: WS_2, history: [{ ...snapshot, timestamp: 20 }], historyIndex: 0, lastUpdated: persistedAt }],
+    ]);
+    await cancelSaga(task);
+  });
+
+  it('loads valid history after initialization and ignores malformed history', async () => {
+    mocks.loadHistory
+      .mockResolvedValueOnce({ version: 1, workspaceId: WS_1, history: [snapshot], historyIndex: 0, lastUpdated: NOW.toISOString() })
+      .mockResolvedValueOnce({ history: 'bad', historyIndex: 0 });
+    const { channel, dispatch, task } = startSaga();
+    await settle();
+    channel.put(initializeLayout(WS_1, layout));
+    await settle();
+    channel.put(initializeLayout(WS_2, layout));
+    await settle();
+
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      loadLayoutHistory(WS_1, [snapshot], 0),
+    ]);
+    await cancelSaga(task);
+  });
+
+  it('ignores an empty workspace id when clearing persisted layout', async () => {
+    const { channel, task } = startSaga();
+    await settle();
+    channel.put(clearPanelLayout(''));
+    await settle();
+
+    expect(mocks.removeItem.mock.calls).toEqual([]);
+    await cancelSaga(task);
+  });
+
+  it('survives rejected history loads, history saves, and adapter cleanup', async () => {
+    const historyData = {
+      version: 1,
+      workspaceId: WS_2,
+      history: [{ ...snapshot, timestamp: 20 }],
+      historyIndex: 0,
+      lastUpdated: NOW.toISOString(),
+    };
+    mocks.loadHistory
+      .mockRejectedValueOnce(new Error('history load failed'))
+      .mockResolvedValueOnce(historyData);
+    mocks.saveHistory
+      .mockRejectedValueOnce(new Error('history save failed'))
+      .mockResolvedValueOnce(true);
+    mocks.clearAdapter
+      .mockRejectedValueOnce(new Error('adapter cleanup failed'))
+      .mockResolvedValueOnce(undefined);
+    const { channel, dispatch, task } = startSaga();
+    await settle();
+
+    channel.put(initializeLayout(WS_1, layout));
+    await settle();
+    channel.put(initializeLayout(WS_2, layout));
+    await settle();
+    channel.put({ type: openTab.type, payload: { wsId: WS_1 } });
+    await settle();
+    await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
+    channel.put({ type: openTab.type, payload: { wsId: WS_2 } });
+    await settle();
+    await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
+    channel.put(workspaceUnmounted(WS_1));
+    await settle();
+    channel.put(workspaceUnmounted(WS_2));
+    await settle();
+
+    expect(mocks.loadHistory.mock.calls).toEqual([[WS_1], [WS_2]]);
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      loadLayoutHistory(WS_2, historyData.history, historyData.historyIndex),
+    ]);
+    expect(mocks.saveHistory.mock.calls).toEqual([
+      [WS_1, {
+        version: 1,
+        workspaceId: WS_1,
+        history: [snapshot],
+        historyIndex: 0,
+        lastUpdated: new Date(NOW.getTime() + HISTORY_PERSIST_DEBOUNCE_MS).toISOString(),
+      }],
+      [WS_2, {
+        version: 1,
+        workspaceId: WS_2,
+        history: historyData.history,
+        historyIndex: 0,
+        lastUpdated: new Date(NOW.getTime() + HISTORY_PERSIST_DEBOUNCE_MS * 2).toISOString(),
+      }],
+    ]);
+    expect(mocks.clearAdapter.mock.calls).toEqual([[WS_1], [WS_2]]);
+    expect(task.isRunning()).toBe(true);
+    await cancelSaga(task);
+  });
+
+  it('clears persisted state and cancels pending history on workspace unmount', async () => {
+    const { channel, task } = startSaga();
+    await settle();
+    channel.put(clearPanelLayout(WS_1));
+    channel.put({ type: openTab.type, payload: { wsId: WS_1 } });
+    channel.put(workspaceUnmounted(WS_1));
+    await settle();
+    await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
+
+    expect(mocks.removeItem.mock.calls).toEqual([[STORAGE_KEY_1]]);
+    expect(mocks.clearAdapter.mock.calls).toEqual([[WS_1]]);
+    expect(mocks.saveHistory.mock.calls).toEqual([]);
+    await cancelSaga(task);
+  });
+
+  it('flushes pending history exactly once when the saga is cancelled', async () => {
+    const { channel, task } = startSaga();
+    await settle();
+    channel.put({ type: openTab.type, payload: { wsId: WS_1 } });
+    await settle();
+    await cancelSaga(task);
+
+    expect(task.isCancelled()).toBe(true);
+    expect(mocks.saveHistory.mock.calls).toEqual([
+      [WS_1, { version: 1, workspaceId: WS_1, history: [snapshot], historyIndex: 0, lastUpdated: NOW.toISOString() }],
+    ]);
+  });
+});

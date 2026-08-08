@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import type { SkillInfo, SkillsState, SkillsWorkspaceState } from "./skills-types";
@@ -49,8 +49,8 @@ export const setSkillsError = createAction<[workspaceId: string, error: string]>
 // Reducer
 // ============================================================================
 
-export const skillsReducer = createReducer<SkillsState>(initialState)
-  .with(setSkillsLoading, (state, { payload: [workspaceId, loading] }) => {
+export const skillsReducer = createReducer<SkillsState>(initialState);
+skillsReducer.with(setSkillsLoading, (state, { payload: [workspaceId, loading] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     if (ws.loading === loading) {
       return state; // No change needed
@@ -60,15 +60,15 @@ export const skillsReducer = createReducer<SkillsState>(initialState)
       loading,
       error: loading ? null : ws.error,
     });
-  })
-  .with(setSkills, (state, { payload: [workspaceId, skills] }) => {
+  });
+skillsReducer.with(setSkills, (state, { payload: [workspaceId, skills] }) => {
     return setWorkspaceState(state, workspaceId, {
       skills,
       loading: false,
       error: null,
     });
-  })
-  .with(setSkillsError, (state, { payload: [workspaceId, error] }) => {
+  });
+skillsReducer.with(setSkillsError, (state, { payload: [workspaceId, error] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     if (ws.error === error && !ws.loading) {
       return state; // No change needed
@@ -78,6 +78,6 @@ export const skillsReducer = createReducer<SkillsState>(initialState)
       loading: false,
       error,
     });
-  })
-  .with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
+  });
+skillsReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
 

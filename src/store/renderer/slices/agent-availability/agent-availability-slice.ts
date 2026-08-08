@@ -4,8 +4,8 @@
  * Actions and reducer for tracking ACP provider availability status.
  */
 
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   AgentAvailabilityState,
   ProviderStatus,
@@ -93,41 +93,39 @@ export const setNpxStatus = createAction<[npxStatus: NpxStatus | null]>(
 // Reducer
 // ---------------------------------------------------------------------------
 
-export const agentAvailabilityReducer = createReducer<AgentAvailabilityState>(initialState)
-  .with(setAllProvidersLoading, (state, { payload: [loadingMap] }) => ({
-    ...state,
-    providerLoadingMap: loadingMap,
-  }))
-  .with(checkSingleProviderRequested, (state, { payload: [providerId] }) => ({
-    ...state,
-    providerLoadingMap: { ...state.providerLoadingMap, [providerId]: true },
-  }))
-  .with(checkSingleProviderSuccess, (state, { payload: [providerId, status] }) => ({
+export const agentAvailabilityReducer = createReducer<AgentAvailabilityState>(initialState);
+
+agentAvailabilityReducer.with(setAllProvidersLoading, (state, { payload: [loadingMap] }) => ({
+  ...state,
+  providerLoadingMap: loadingMap,
+}));
+agentAvailabilityReducer.with(checkSingleProviderRequested, (state, { payload: [providerId] }) => ({
+  ...state,
+  providerLoadingMap: { ...state.providerLoadingMap, [providerId]: true },
+}));
+agentAvailabilityReducer.with(
+  checkSingleProviderSuccess,
+  (state, { payload: [providerId, status] }) => ({
     ...state,
     providerStatusMap: { ...state.providerStatusMap, [providerId]: status },
     providerLoadingMap: { ...state.providerLoadingMap, [providerId]: false },
-  }))
-  .with(checkSingleProviderFailure, (state) => {
-    // Do NOT clear the loading flag here. A per-provider probe failure is
-    // typically an unreachable-daemon/RPC error, not a genuine "not
-    // installed" verdict — clearing the flag would fall through to a
-    // fabricated terminal "Install" render (AgentGrid's `statusLoading` and
-    // ProviderSelector's `isProviderStatusPending` both key off
-    // `loading && !status`). Leaving it set keeps the card in its existing
-    // indeterminate "Checking…" state until a fresh probe actually
-    // succeeds — via the focus/visibility recheck or the backend-connect
-    // bulk re-check in provider-availability-check-service.ts.
-    return state;
-  })
-  .with(checkAllProvidersComplete, (state) => ({
-    ...state,
-    hasCheckedOnce: true,
-  }))
-  .with(fetchProviderUserInfoRequested, (state, { payload: [providerId] }) => ({
+  }),
+);
+agentAvailabilityReducer.with(checkSingleProviderFailure, (state) => state);
+agentAvailabilityReducer.with(checkAllProvidersComplete, (state) => ({
+  ...state,
+  hasCheckedOnce: true,
+}));
+agentAvailabilityReducer.with(
+  fetchProviderUserInfoRequested,
+  (state, { payload: [providerId] }) => ({
     ...state,
     providerUserInfoLoadingMap: { ...state.providerUserInfoLoadingMap, [providerId]: true },
-  }))
-  .with(fetchProviderUserInfoSuccess, (state, { payload: [providerId, status] }) => {
+  }),
+);
+agentAvailabilityReducer.with(
+  fetchProviderUserInfoSuccess,
+  (state, { payload: [providerId, status] }) => {
     const existing = state.providerStatusMap[providerId];
     if (!existing) return state;
     return {
@@ -141,27 +139,31 @@ export const agentAvailabilityReducer = createReducer<AgentAvailabilityState>(in
         },
       },
     };
-  })
-  .with(fetchProviderUserInfoComplete, (state, { payload: [providerId] }) => ({
+  },
+);
+agentAvailabilityReducer.with(
+  fetchProviderUserInfoComplete,
+  (state, { payload: [providerId] }) => ({
     ...state,
     providerUserInfoLoadingMap: { ...state.providerUserInfoLoadingMap, [providerId]: false },
-  }))
-  .with(trackInstallTerminal, (state, { payload: [terminalId] }) => {
-    if (state.watchedTerminalIds.includes(terminalId)) return state;
-    return {
-      ...state,
-      watchedTerminalIds: [...state.watchedTerminalIds, terminalId],
-    };
-  })
-  .with(removeWatchedTerminal, (state, { payload: [terminalId] }) => {
-    const idx = state.watchedTerminalIds.indexOf(terminalId);
-    if (idx === -1) return state;
-    return {
-      ...state,
-      watchedTerminalIds: state.watchedTerminalIds.filter((id) => id !== terminalId),
-    };
-  })
-  .with(setNpxStatus, (state, { payload: [npxStatus] }) => ({
+  }),
+);
+agentAvailabilityReducer.with(trackInstallTerminal, (state, { payload: [terminalId] }) => {
+  if (state.watchedTerminalIds.includes(terminalId)) return state;
+  return {
     ...state,
-    npxStatus,
-  }));
+    watchedTerminalIds: [...state.watchedTerminalIds, terminalId],
+  };
+});
+agentAvailabilityReducer.with(removeWatchedTerminal, (state, { payload: [terminalId] }) => {
+  const idx = state.watchedTerminalIds.indexOf(terminalId);
+  if (idx === -1) return state;
+  return {
+    ...state,
+    watchedTerminalIds: state.watchedTerminalIds.filter((id) => id !== terminalId),
+  };
+});
+agentAvailabilityReducer.with(setNpxStatus, (state, { payload: [npxStatus] }) => ({
+  ...state,
+  npxStatus,
+}));
