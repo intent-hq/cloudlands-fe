@@ -77,7 +77,11 @@ import { workspaceDeleted, workspaceUnmounted } from '../workspace-lifecycle-sli
 
 const logger = createLogger('LifecycleReadSaga');
 
-/** Skip a non-forced `pr.refresh` when the last successful refresh is within this window. */
+/**
+ * Skip a non-forced `pr.refresh` when the last successful refresh is within this window.
+ * `lastRefreshTime` is only stamped on success, so a failed/errored refresh never arms
+ * the TTL and the next trigger will retry immediately.
+ */
 const PR_STATUS_REFRESH_TTL_MS = 60_000;
 
 const triggers = [
