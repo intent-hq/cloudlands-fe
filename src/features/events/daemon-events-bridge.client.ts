@@ -1495,6 +1495,44 @@ async function reconcileWorkspaceActivity(
 }
 
 /**
+ * Single-flight + trailing-coalesce state for
+ * {@link reconcileWorkspaceAgentSummary}, keyed per workspaceId (AGENTS.md
+ * "Event-driven refetches — single-flight and coalesced"). A burst of
+ * `agent:deleted` events for the same workspace (e.g. a multi-agent cleanup)
+ * must produce at most one immediate `workspace.get` plus at most one
+ * trailing follow-up — never one independent fetch per event, since
+ * unordered resolution could let a stale response that resolves last
+ * restore an already-deleted agent into `agentSummary`.
+ */
+const agentSummaryFetchInFlightByWorkspace = new Set<string>();
+const agentSummaryFetchFollowUpWantedByWorkspace = new Set<string>();
+
+async function runReconcileWorkspaceAgentSummaryFetch(workspaceId: string): Promise<void> {
+  const { backendRequest } = await import('$lib/client/live/backend-transport');
+  try {
+    const response = (await backendRequest('workspace.get', { workspaceId })) as
+      | { workspace?: Workspace }
+      | undefined;
+    const workspace = response?.workspace;
+    if (workspace) {
+      const { setWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(setWorkspaceEntity(workspace));
+    }
+  } catch (_error) {
+    // Workspace might have been deleted or transport error; no-op is safe.
+  } finally {
+    agentSummaryFetchInFlightByWorkspace.delete(workspaceId);
+    // Trailing coalesce: one or more triggers arrived while this fetch was in
+    // flight — run exactly one follow-up fetch to pick up the latest state,
+    // regardless of how many triggers piled up.
+    if (agentSummaryFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
+      void runReconcileWorkspaceAgentSummaryFetch(workspaceId);
+    }
+  }
+}
+
+/**
  * Refresh the workspace entity's BE-owned `agentSummary` aggregate (PROTOCOL
  * §5.1) after an `agent:deleted` event. The HUD card agent rows are built
  * from `workspace.agentSummary.agents` (`agentInfosOf` in hud-selectors.ts),
@@ -1502,23 +1540,18 @@ async function reconcileWorkspaceActivity(
  * refetch a deleted agent lingers on its card until an unrelated workspace
  * refetch. Fetch `workspace.get` and merge the fresh entity via
  * `setWorkspaceEntity` (the `mergeWorkspaceEnrichment` path takes the
- * incoming `agentSummary` when present). Best-effort like
- * `reconcileWorkspaceActivity`: errors (workspace itself deleted, transport)
- * are swallowed.
+ * incoming `agentSummary` when present). Single-flighted with trailing
+ * coalesce per workspaceId (see {@link agentSummaryFetchInFlightByWorkspace}):
+ * the leading edge fetches immediately, and any triggers that arrive while
+ * that fetch is in flight collapse into at most one trailing follow-up.
  */
 async function reconcileWorkspaceAgentSummary(workspaceId: string): Promise<void> {
-  const { backendRequest } = await import('$lib/client/live/backend-transport');
-  try {
-    const response = (await backendRequest('workspace.get', { workspaceId })) as
-      | { workspace?: Workspace }
-      | undefined;
-    const workspace = response?.workspace;
-    if (!workspace) return;
-    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
-    appStore.dispatch(setWorkspaceEntity(workspace));
-  } catch (_error) {
-    // Workspace might have been deleted or transport error; no-op is safe.
+  if (agentSummaryFetchInFlightByWorkspace.has(workspaceId)) {
+    agentSummaryFetchFollowUpWantedByWorkspace.add(workspaceId);
+    return;
   }
+  agentSummaryFetchInFlightByWorkspace.add(workspaceId);
+  await runReconcileWorkspaceAgentSummaryFetch(workspaceId);
 }
 
 /**
@@ -2507,6 +2540,8 @@ export function disposeDaemonEventsRoutingState(): void {
   }
   tasksRefreshTimersByWorkspace.clear();
   scriptOutputDecoders.clear();
+  agentSummaryFetchInFlightByWorkspace.clear();
+  agentSummaryFetchFollowUpWantedByWorkspace.clear();
 }
 
 /** Test-only — reset stream accumulators and debounce state. */
