@@ -381,6 +381,9 @@ describe("interrupted-agents-service", () => {
       mockAppClient.agents.listInterrupted.mockResolvedValueOnce(agents);
       dispose = installInterruptedAgentsService(mockAppClient, showHandler);
       await new Promise((resolve) => setTimeout(resolve, 10));
+      // Confirm the catch-up really opened the modal for these agents, so the
+      // watcher state under test is actually populated before we clear.
+      expect(showHandler).toHaveBeenCalledWith(agents);
       showHandler.mockClear();
       mockAppClient.agents.listInterrupted.mockClear();
     }
