@@ -335,9 +335,21 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
           }
           return;
         }
+        if (!id) {
+          // A resolved reply without a usable subscriptionId is as unseeded
+          // as an outright rejection — retry with backoff instead of
+          // stranding this channel unconfirmed forever.
+          const delay = retryDelayMs(retryAttempt);
+          retryAttempt += 1;
+          retryTimer = setTimeout(() => {
+            retryTimer = undefined;
+            if (!disposed) registerChannel();
+          }, delay);
+          return;
+        }
         channelSubscriptionId = id;
         retryAttempt = 0;
-        if (id) drainBufferedPushes(id);
+        drainBufferedPushes(id);
         pruneForeignBufferedPushes();
       })
       .catch(() => {
@@ -390,9 +402,21 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
           }
           return;
         }
+        if (!sid) {
+          // A resolved reply without a usable subscriptionId is as unseeded
+          // as an outright rejection — retry with backoff instead of
+          // stranding this channel unconfirmed forever.
+          const delay = retryDelayMs(state.retryAttempt);
+          state.retryAttempt += 1;
+          state.retryTimer = setTimeout(() => {
+            state.retryTimer = undefined;
+            if (!disposed && dynamicChannels.get(id) === state) registerDynamicChannel(id, state);
+          }, delay);
+          return;
+        }
         state.subscriptionId = sid;
         state.retryAttempt = 0;
-        if (sid) drainBufferedPushes(sid);
+        drainBufferedPushes(sid);
         pruneForeignBufferedPushes();
       })
       .catch(() => {

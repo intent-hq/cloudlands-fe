@@ -17,6 +17,10 @@ const channelSubscribeResolvers: Array<() => void> = [];
 // When set, the next N `.subscribe` calls reject instead of resolving — used
 // to exercise the registration-retry backoff.
 let failNextSubscribes = 0;
+// When set, the next N `.subscribe` calls resolve WITHOUT a subscriptionId —
+// used to exercise the registration-retry backoff on a malformed-but-settled
+// reply, distinct from an outright rejection.
+let emptyNextSubscribes = 0;
 
 vi.mock("./backend-transport", () => ({
   backendRequest: vi.fn((method: string, params?: unknown) => {
@@ -25,6 +29,10 @@ vi.mock("./backend-transport", () => ({
       if (failNextSubscribes > 0) {
         failNextSubscribes -= 1;
         return Promise.reject(new Error("registration failed"));
+      }
+      if (emptyNextSubscribes > 0) {
+        emptyNextSubscribes -= 1;
+        return Promise.resolve({});
       }
       channelIdSeq += 1;
       const subscriptionId = `chan-${channelIdSeq}`;
@@ -374,6 +382,28 @@ describe("createDeltaSubscription", () => {
         vi.useRealTimers();
       }
     });
+
+    it("retries when a subscribe reply resolves without a subscriptionId", async () => {
+      // A resolved-but-empty reply must be treated as retryable, same as an
+      // outright rejection — otherwise the channel is silently stranded with
+      // no id and no retry, permanently unable to receive pushes.
+      vi.useFakeTimers();
+      try {
+        emptyNextSubscribes = 1;
+        const { handler, dispose } = setupChannel();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(channelSubscribes().length).toBe(1); // first attempt (empty reply)
+
+        await vi.advanceTimersByTimeAsync(1000); // RETRY_BASE_MS
+        expect(channelSubscribes().length).toBe(2); // retried, this one seeds
+
+        chanSnapshot("chan-1", 0, [{ id: "a" }]);
+        expect(handler).toHaveBeenLastCalledWith([{ id: "a" }]);
+        dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe("dynamic per-id channels (per-workspace note/task/agent.subscribe)", () => {
@@ -615,6 +645,28 @@ describe("createDeltaSubscription", () => {
         { method: "ws.unsubscribe", params: { subscriptionId: "chan-1" } },
         { method: "ws.unsubscribe", params: { subscriptionId: "chan-2" } },
       ]);
+    });
+
+    it("retries a channel whose subscribe reply resolves without a subscriptionId", async () => {
+      // Same malformed-but-settled-reply regression as the static form: a
+      // resolved response missing subscriptionId must retry with backoff,
+      // not strand the channel permanently unconfirmed.
+      vi.useFakeTimers();
+      try {
+        emptyNextSubscribes = 1;
+        const { handler, dispose } = setupDynamic(["w1"]);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(channelSubscribes().length).toBe(1); // first attempt (empty reply)
+
+        await vi.advanceTimersByTimeAsync(1000); // RETRY_BASE_MS
+        expect(channelSubscribes().length).toBe(2); // retried, this one seeds
+
+        chanSnapshot("chan-1", 0, [{ id: "a" }]);
+        expect(handler).toHaveBeenLastCalledWith([{ id: "a" }]);
+        dispose();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });
