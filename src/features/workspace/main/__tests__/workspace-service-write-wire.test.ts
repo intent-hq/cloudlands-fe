@@ -473,5 +473,97 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
       expect(retried.ok).toBe(true);
       expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
     });
+
+    it('keeps single-flighting a still-pending request slower than the TTL (no expire-while-pending race)', async () => {
+      vi.useFakeTimers();
+      try {
+        const ws = seed();
+        daemonWorkspaces.set(ws.id, { ...ws });
+        requestMock.mockClear();
+
+        let resolveSlowRequest!: (value: { workspaces: unknown[] }) => void;
+        requestMock.mockImplementationOnce(
+          (method: string) =>
+            new Promise((resolve) => {
+              if (method !== 'workspace.list') throw new Error('unexpected method');
+              resolveSlowRequest = resolve;
+            }),
+        );
+
+        const first = service.listWorkspaces();
+        // Advance past the 2s TTL while the request is still in flight — a
+        // caller arriving now must still join the same pending request
+        // instead of firing a second concurrent workspace.list.
+        vi.advanceTimersByTime(5000);
+        const second = service.listWorkspaces();
+
+        resolveSlowRequest({ workspaces: Array.from(daemonWorkspaces.values()) });
+        const [a, b] = await Promise.all([first, second]);
+
+        expect(a.ok && b.ok).toBe(true);
+        expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe('workspace.list cache invalidation on mutation', () => {
+    it.each([
+      ['updateWorkspace', async (id: WorkspaceId) => service.updateWorkspace({ id, title: 'New' })],
+      ['deleteWorkspace', async (id: WorkspaceId) => service.deleteWorkspace(id)],
+      ['archiveWorkspace', async (id: WorkspaceId) => service.archiveWorkspace(id)],
+    ])('clears the cached workspace.list after %s so a later list refetches', async (_name, mutate) => {
+      const ws = seed();
+      daemonWorkspaces.set(ws.id, { ...ws });
+
+      // Prime the cache.
+      await service.listWorkspaces();
+      requestMock.mockClear();
+
+      await mutate(ws.id);
+
+      await service.listWorkspaces();
+      expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
+    });
+
+    it('clears the cached workspace.list after unarchiveWorkspace so a later list refetches', async () => {
+      const ws = seed({ status: WorkspaceStatus.Archived });
+      daemonWorkspaces.set(ws.id, { ...ws });
+
+      await service.listWorkspaces();
+      requestMock.mockClear();
+
+      await service.unarchiveWorkspace(ws.id);
+
+      await service.listWorkspaces();
+      expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
+    });
+
+    it('clears the cached workspace.list after restoreWorkspace so a later list refetches', async () => {
+      const ws = seed({ status: WorkspaceStatus.Archived });
+      daemonWorkspaces.set(ws.id, { ...ws });
+
+      await service.listWorkspaces();
+      requestMock.mockClear();
+
+      await service.restoreWorkspace(ws.id);
+
+      await service.listWorkspaces();
+      expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
+    });
+
+    it('clears the cached workspace.list after duplicateWorkspace so a later list refetches', async () => {
+      const ws = seed();
+      daemonWorkspaces.set(ws.id, { ...ws });
+
+      await service.listWorkspaces();
+      requestMock.mockClear();
+
+      await service.duplicateWorkspace(ws.id);
+
+      await service.listWorkspaces();
+      expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
+    });
   });
 });

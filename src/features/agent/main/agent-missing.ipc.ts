@@ -100,14 +100,19 @@ let lastKnownActiveStreams: ActiveStream[] = [];
  * fanning out into O(workspaces) extra RPCs would amplify that load —
  * precisely the load ⇒ timeout ⇒ fan-out ⇒ more load loop this guards against
  * (monorepo#1395).
+ *
+ * Checks the structured `code`/`rpcCode` fields only — never the error
+ * message — so a daemon error whose message happens to contain "method not
+ * found" (e.g. an internal error surfacing an unrelated method name) is not
+ * misclassified as a genuine `METHOD_NOT_FOUND` and does not trigger the
+ * fan-out.
  */
 function isMethodNotFoundError(error: unknown): boolean {
   if (error && typeof error === 'object') {
     if ((error as { code?: unknown }).code === 'METHOD_NOT_FOUND') return true;
     if ((error as { rpcCode?: unknown }).rpcCode === -32601) return true;
   }
-  const message = error instanceof Error ? error.message : String(error);
-  return /method not found/i.test(message);
+  return false;
 }
 
 async function getLegacyActiveStreams(
