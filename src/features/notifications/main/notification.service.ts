@@ -386,6 +386,26 @@ export class NotificationService {
         return;
       }
 
+      // Fast path: the agent went idle while it still owns active
+      // background hooks (PROTOCOL §3.1) or active PR monitors (§5.42) — it
+      // will run again when a hook dispatches/expires or a monitor
+      // condition fires, so the workspace isn't truly quiet yet. Absent on
+      // older daemons.
+      if ((event.data.waitingOnHooks?.length ?? 0) > 0) {
+        logger.debug('Skipping notification for agent waiting on hooks', {
+          workspaceId,
+          agentName: event.data.agentName,
+        });
+        return;
+      }
+      if ((event.data.waitingOnPrMonitors?.length ?? 0) > 0) {
+        logger.debug('Skipping notification for agent waiting on PR monitors', {
+          workspaceId,
+          agentName: event.data.agentName,
+        });
+        return;
+      }
+
       // `agent.list` (PROTOCOL.md §5.5) serves two purposes: AgentLite
       // `metadata` carries `isBackground`/`specialist` (absent from the
       // daemon idle payload), and `isStreaming`/`isResponding` feed the

@@ -344,6 +344,58 @@ describe('web-notification-service', () => {
       expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
     });
 
+    it('skips when the agent is waiting on active hooks (event fast path, no agent.list read)', async () => {
+      await handleWebAgentIdle(
+        makeIdleEvent({ waitingOnHooks: [{ hookId: 'hook-1', name: 'Watch CI' }] }),
+      );
+
+      expect(MockNotification.instances).toHaveLength(0);
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+      );
+    });
+
+    it('does not skip when waitingOnHooks is empty', async () => {
+      await handleWebAgentIdle(makeIdleEvent({ waitingOnHooks: [] }));
+
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
+    });
+
+    it('does not skip when waitingOnHooks is absent (older daemons)', async () => {
+      await handleWebAgentIdle(makeIdleEvent());
+
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
+    });
+
+    it('skips when the agent is waiting on active PR monitors (event fast path, no agent.list read)', async () => {
+      await handleWebAgentIdle(
+        makeIdleEvent({
+          waitingOnPrMonitors: [{ monitorId: 'mon-1', repo: 'intent-hq/intentd', prNumber: 42 }],
+        }),
+      );
+
+      expect(MockNotification.instances).toHaveLength(0);
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+      );
+    });
+
+    it('does not skip when waitingOnPrMonitors is empty', async () => {
+      await handleWebAgentIdle(makeIdleEvent({ waitingOnPrMonitors: [] }));
+
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
+    });
+
+    it('does not skip when waitingOnPrMonitors is absent (older daemons)', async () => {
+      await handleWebAgentIdle(makeIdleEvent());
+
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
+    });
+
     it('skips when other agents are still active in the workspace', async () => {
       stubBackendWire({
         agentListResult: {

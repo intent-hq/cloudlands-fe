@@ -12,6 +12,8 @@
  *   - `notifications.enabled` off → skip (read from the renderer store, which
  *     the settings saga keeps in sync with the daemon catalog).
  *   - background agents (event fast path or `agent.list` metadata) → skip.
+ *   - agent idle while waiting on other agents, active background hooks
+ *     (§3.1), or active PR monitors (§5.42) → skip (event fast path).
  *   - other agents still streaming/responding in the workspace → skip.
  *   - focused + viewing the event's workspace + `soundOnlyWhenUnfocused` →
  *     suppress the banner but still run the sound gate (the Electron
@@ -267,6 +269,25 @@ export async function handleWebAgentIdle(event: AgentIdleEvent): Promise<void> {
     // older daemons, in which case the agent.list gate below still applies.
     if (event.data.isWaitingForOtherAgents === true) {
       logger.debug('Skipping notification for agent waiting on other agents', {
+        workspaceId,
+        agentName: event.data.agentName,
+      });
+      return;
+    }
+
+    // Fast path: the agent went idle while it still owns active background
+    // hooks (PROTOCOL §3.1) or active PR monitors (§5.42) — it will run
+    // again when a hook dispatches/expires or a monitor condition fires, so
+    // the workspace isn't truly quiet yet. Absent on older daemons.
+    if ((event.data.waitingOnHooks?.length ?? 0) > 0) {
+      logger.debug('Skipping notification for agent waiting on hooks', {
+        workspaceId,
+        agentName: event.data.agentName,
+      });
+      return;
+    }
+    if ((event.data.waitingOnPrMonitors?.length ?? 0) > 0) {
+      logger.debug('Skipping notification for agent waiting on PR monitors', {
         workspaceId,
         agentName: event.data.agentName,
       });
