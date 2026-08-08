@@ -238,21 +238,14 @@ interface ProviderDiscoveryResponse {
 
 /**
  * Call intentd's host.providerDiscovery to get base availability + npx status.
- * Returns null on RPC failure (the caller degrades to empty/unavailable state).
+ * Rejects on RPC failure — the daemon could not answer, so callers must not
+ * fabricate an "all unavailable" result from it. `getProviderAvailability`
+ * lets the rejection propagate as an explicit failure; `getProviderPaths`
+ * (a settings-only path lookup, not an install/not-installed verdict)
+ * degrades to empty maps.
  */
-async function callProviderDiscovery(): Promise<ProviderDiscoveryResponse | null> {
-  try {
-    const result = await getBackendClient().request<ProviderDiscoveryResponse>(
-      'host.providerDiscovery',
-      {},
-    );
-    return result;
-  } catch (error) {
-    logger.warn('host.providerDiscovery RPC failed; degrading to empty availability', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
+async function callProviderDiscovery(): Promise<ProviderDiscoveryResponse> {
+  return getBackendClient().request<ProviderDiscoveryResponse>('host.providerDiscovery', {});
 }
 
 /**
@@ -479,7 +472,14 @@ export interface ProviderPathsResult {
  * avoid the aggregated GET_AVAILABILITY round-trip.
  */
 export async function getProviderPaths(): Promise<ProviderPathsResult> {
-  const discovery = await callProviderDiscovery();
+  let discovery: ProviderDiscoveryResponse | undefined;
+  try {
+    discovery = await callProviderDiscovery();
+  } catch (error) {
+    logger.warn('host.providerDiscovery RPC failed; degrading to empty paths', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   const paths: Record<string, string | null> = {};
   const secondaryPaths: Record<string, string | null> = {};
   for (const provider of discovery?.providers ?? []) {

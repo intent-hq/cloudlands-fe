@@ -188,15 +188,14 @@ describe("provider-status-bridge-seeder", () => {
       });
     });
 
-    it("folds daemon RPC failures to all-unavailable (honest degradation, never an error banner)", async () => {
+    it("propagates daemon RPC failures as an explicit failure (never a fabricated all-unavailable result)", async () => {
       mockedRequest.mockRejectedValue(new Error("transport down"));
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
         PROVIDERS_CHANNELS.GET_AVAILABILITY,
       );
 
-      expect(response.success).toBe(true);
-      expect(response.data?.hasAnyProvider).toBe(false);
+      expect(response).toEqual({ success: false, error: "transport down" });
     });
 
     it("attaches per-provider verdicts from one sweep — claude-code in, codex out", async () => {
