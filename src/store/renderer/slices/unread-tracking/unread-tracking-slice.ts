@@ -17,7 +17,6 @@ import type { UnreadTrackingState } from "./unread-tracking-types";
 export const initialState: UnreadTrackingState = {
   currentlyViewedAgentId: null,
   dividerSessionByAgentId: {},
-  watchedStreamingTailByAgentId: {},
 };
 
 // ── Actions ──
@@ -58,17 +57,6 @@ export const endAllDividerSessions = createAction(
   "unreadTracking/endAllDividerSessions"
 );
 
-/**
- * Record that, at a stop-looking boundary, an agent's transcript tail was a
- * streaming (not yet persisted) reply the user was watching. `messageId` is
- * the newest PERSISTED message id at that moment — the same id
- * `markAgentSeenAtBoundary` targets. Consumed (cleared) the next time
- * `startDividerSession` fires for that agent.
- */
-export const recordWatchedStreamingTail = createAction<[agentId: string, messageId: string]>(
-  "unreadTracking/recordWatchedStreamingTail"
-);
-
 // ── Reducer ──
 
 export const unreadTrackingReducer = createReducer<UnreadTrackingState>(initialState);
@@ -85,20 +73,12 @@ unreadTrackingReducer.with(clearCurrentlyViewedAgent, (state, { payload: [agentI
 unreadTrackingReducer.with(startDividerSession, (state, { payload: [agentId, anchorId] }) => {
     if (!agentId) return state;
     if (state.dividerSessionByAgentId[agentId] !== undefined) return state;
-    const watchedTail = state.watchedStreamingTailByAgentId[agentId];
-    const suppress = watchedTail !== undefined && watchedTail === (anchorId ?? null);
-    let watchedStreamingTailByAgentId = state.watchedStreamingTailByAgentId;
-    if (watchedTail !== undefined) {
-      watchedStreamingTailByAgentId = { ...state.watchedStreamingTailByAgentId };
-      delete watchedStreamingTailByAgentId[agentId];
-    }
     return {
       ...state,
       dividerSessionByAgentId: {
         ...state.dividerSessionByAgentId,
-        [agentId]: { anchorId: suppress ? null : anchorId ?? null },
+        [agentId]: { anchorId: anchorId ?? null },
       },
-      watchedStreamingTailByAgentId,
     };
   });
 unreadTrackingReducer.with(endDividerSession, (state, { payload: [agentId] }) => {
@@ -111,14 +91,4 @@ unreadTrackingReducer.with(endAllDividerSessions, (state) => {
     if (Object.keys(state.dividerSessionByAgentId).length === 0) return state;
     return { ...state, dividerSessionByAgentId: {} };
   });
-unreadTrackingReducer.with(recordWatchedStreamingTail, (state, { payload: [agentId, messageId] }) => {
-    if (!agentId || !messageId) return state;
-    if (state.watchedStreamingTailByAgentId[agentId] === messageId) return state;
-    return {
-      ...state,
-      watchedStreamingTailByAgentId: {
-        ...state.watchedStreamingTailByAgentId,
-        [agentId]: messageId,
-      },
-    };
-  });
+
