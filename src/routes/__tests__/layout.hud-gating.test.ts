@@ -50,81 +50,81 @@ vi.mock('$lib/client/live/live-app-client', () => ({ LiveAppClient: class {} }))
 // Components this suite asserts the presence/absence of get a distinct
 // labeled marker; every other heavy child gets the generic marker.
 vi.mock('$lib/components/layout/sidebar-nav', async () => ({
-  SidebarNav: (await import('./__tests__/mocks/SidebarNavMarker.svelte')).default,
-  SidebarPanel: (await import('./__tests__/mocks/Marker.svelte')).default,
+  SidebarNav: (await import('./mocks/SidebarNavMarker.svelte')).default,
+  SidebarPanel: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/layout/WindowTitleBar.svelte', async () => ({
-  default: (await import('./__tests__/mocks/WindowTitleBarMarker.svelte')).default,
+  default: (await import('./mocks/WindowTitleBarMarker.svelte')).default,
 }));
 vi.mock('$lib/components/UpdateDownloadIndicator.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/ui/toast/Toast.svelte', async () => ({
-  default: (await import('./__tests__/mocks/ToastMarker.svelte')).default,
+  default: (await import('./mocks/ToastMarker.svelte')).default,
 }));
 vi.mock('$features/hardware-console/prompt-picker/RadialPromptPickerOverlay.svelte', async () => ({
-  default: (await import('./__tests__/mocks/RadialPromptPickerOverlayMarker.svelte')).default,
+  default: (await import('./mocks/RadialPromptPickerOverlayMarker.svelte')).default,
 }));
 vi.mock('$features/hardware-console/encoder/EncoderCycleHud.svelte', async () => ({
-  default: (await import('./__tests__/mocks/EncoderCycleHudMarker.svelte')).default,
+  default: (await import('./mocks/EncoderCycleHudMarker.svelte')).default,
 }));
 vi.mock('$features/hardware-console/actions/ActionKeyHud.svelte', async () => ({
-  default: (await import('./__tests__/mocks/ActionKeyHudMarker.svelte')).default,
+  default: (await import('./mocks/ActionKeyHudMarker.svelte')).default,
 }));
 vi.mock('$lib/components/CommandPalette.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/AuggieSetupGate.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/debug/DebugPanel.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/GitCredentialsModal.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/GitHubAuthModal.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/layout/KeyboardShortcutsCheatSheet.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/modals/WorkspaceWarningDialogs.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/modals/ReleaseNotesModal.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$features/workspace/SpacesSwitcherOverlay.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$features/stats/StatsOverlay.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$features/daemon-status/DaemonStoppedOverlay.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/terminal/RootQuakeTerminalOverlay.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/modals/FeatureCodeDialog.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/modals/NewSpaceModal.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/modals/InterruptedAgentsModal.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$features/navigation/LinkActionMenu.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/ui/tooltip/LinkTooltip.svelte', async () => ({
-  default: (await import('./__tests__/mocks/Marker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 
 import { store as appStore } from '$store/renderer/store';
-import Layout from './+layout.svelte';
+import Layout from '../+layout.svelte';
 
 const childrenSnippet = createRawSnippet(() => ({
   render: () => '<div data-testid="hud-gating-children">content</div>',
