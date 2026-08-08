@@ -319,6 +319,20 @@ describe("interrupted-agents-service", () => {
       expect(showHandler).not.toHaveBeenCalled();
     });
 
+    it("cancels a pending reconcile timer when notified the modal closed (dismiss via onClose)", async () => {
+      await installWithOpenModal([interrupted("agent-1")]);
+
+      // A listed agent:updated schedules the debounced reconcile...
+      notifyInterruptedAgentUpdated("agent-1");
+      // ...but the user dismisses the modal (layout onClose) before it fires.
+      notifyInterruptedAgentsModalClosed();
+      await flushDebounce();
+
+      // The stale re-query must not fire and must not re-open the modal.
+      expect(mockAppClient.agents.listInterrupted).not.toHaveBeenCalled();
+      expect(showHandler).not.toHaveBeenCalled();
+    });
+
     it("a reconnect-epoch re-check replaces the open list instead of double-showing", async () => {
       const a1 = interrupted("agent-1");
       const a2 = interrupted("agent-2");
