@@ -34,6 +34,7 @@
  */
 import type { StoreMiddleware } from '$lib/store-shim/types';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import { store as appStore } from '$store/renderer/store';
 import {
   cancelExecution,
@@ -220,11 +221,32 @@ async function handleExecute(
     });
   } catch (error) {
     if (!isCurrentGeneration(workspaceId, executorType, generation)) return;
-    const message = error instanceof Error ? error.message : String(error);
+    const message = executionErrorMessage(error);
     logger.error('Background execution failed', { workspaceId, executorType, error });
     updateExecutor(workspaceId, executorType, { status: 'error', error: message, progress: 0 });
     void showErrorToast(m.bgExecutor_service_generateFailed_error(), message);
   }
+}
+
+/**
+ * Human-readable message for a failed execution. The daemon maps internal
+ * failures to JSON-RPC -32603 with the generic message "Internal error" and
+ * the actionable cause (e.g. "<providerId>: …", "…timed out after <n>ms";
+ * PROTOCOL §5.32 Errors) in `error.data`, which the transports normalize onto
+ * `BackendError.data.detail` (json-rpc-errors.ts / browser-websocket-
+ * transport.ts). Prefer that detail so the error state and toast never show a
+ * bare "Internal error"; fall back to `message` when no detail is carried.
+ */
+function executionErrorMessage(error: unknown): string {
+  if (error instanceof BackendError && error.rpcCode === -32603) {
+    const data = error.data;
+    if (typeof data === 'string' && data.length > 0) return data;
+    if (data && typeof data === 'object') {
+      const detail = (data as { detail?: unknown }).detail;
+      if (typeof detail === 'string' && detail.length > 0) return detail;
+    }
+  }
+  return error instanceof Error ? error.message : String(error);
 }
 
 function handleCancel(workspaceId: string, executorType: string): void {

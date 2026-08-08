@@ -39,6 +39,7 @@ import {
 import { setWorkspaceEntity } from "$store/renderer/slices/workspace/workspace-slice";
 import { setTypeOverride } from "$store/renderer/slices/background-agent-settings/background-agent-settings-slice";
 import commitMessageInstruction from "./instructions/background/commit-message";
+import { BackendError } from "$lib/client/live/backend-transport-types";
 import type { Workspace } from "$shared/types";
 
 const WS = "ws-bg-exec-1";
@@ -143,7 +144,45 @@ describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)"
     expect(toastErrorSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("lands transport errors as a visible error state with a toast", async () => {
+  it("surfaces the -32603 data.detail instead of the generic 'Internal error'", async () => {
+    // The daemon maps Error::Internal to message "Internal error" with the
+    // actionable cause in `data` (PROTOCOL §5.32 Errors); the transport
+    // normalizes it onto BackendError.data.detail (json-rpc-errors.ts).
+    completeOnceSpy.mockRejectedValueOnce(
+      new BackendError({
+        code: "INTERNAL_ERROR",
+        message: "Internal error",
+        data: { code: "INTERNAL_ERROR", detail: "auggie: auggie CLI not found in PATH" },
+        rpcCode: -32603,
+      }),
+    );
+
+    appStore.dispatch(executeBackgroundAgent(WS, "review"));
+    await waitForSettled("review", ["error"]);
+
+    expect(readExecutor("review")).toMatchObject({
+      status: "error",
+      error: "auggie: auggie CLI not found in PATH",
+      progress: 0,
+    });
+    expect(toastErrorSpy).toHaveBeenCalledTimes(1);
+    expect(toastErrorSpy.mock.calls[0][1]).toMatchObject({
+      description: "auggie: auggie CLI not found in PATH",
+    });
+  });
+
+  it("falls back to the -32603 message when the error carries no data detail", async () => {
+    completeOnceSpy.mockRejectedValueOnce(
+      new BackendError({ code: "INTERNAL_ERROR", message: "Internal error", rpcCode: -32603 }),
+    );
+
+    appStore.dispatch(executeBackgroundAgent(WS, "pr"));
+    await waitForSettled("pr", ["error"]);
+
+    expect(readExecutor("pr")).toMatchObject({ status: "error", error: "Internal error" });
+  });
+
+  it("lands plain transport errors as a visible error state with a toast", async () => {
     completeOnceSpy.mockRejectedValueOnce(new Error("auggie CLI not found"));
 
     appStore.dispatch(executeBackgroundAgent(WS, "review"));
