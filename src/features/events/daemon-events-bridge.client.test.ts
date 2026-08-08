@@ -5473,6 +5473,35 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
 
     expect(markWorkspaceSeenIfViewingSpy).not.toHaveBeenCalled();
   });
+
+  it('prefers data.workspaceId over the envelope workspaceId (self-sufficient payload)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Envelope points at a different (nonexistent) workspace; the payload's
+    // own workspaceId must win so the correct entity is updated.
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-attention-data-id',
+          workspaceId: 'ws-attention-other',
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:attention-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_ATT,
+            attention: 'unread',
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.attention).toBe('unread');
+    expect(markWorkspaceSeenIfViewingSpy).toHaveBeenCalledWith(WS_ATT);
+  });
 });
 
 describe('daemonEventsBridge (completion-watch refresh routing)', () => {

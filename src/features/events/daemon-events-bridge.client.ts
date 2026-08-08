@@ -1453,11 +1453,18 @@ function handleDisplayStatusChangedEvent(event: WorkspaceEvent, envelopeWorkspac
  * snake_case and match the FE type exactly, so no mapping is needed. The
  * HUD consumes this same event through its own subscription
  * (`hud-subscription.ts`) with independent bucket semantics — this handler
- * only feeds the workspace entity store.
+ * only feeds the workspace entity store. Like the tokenUsage/context/
+ * displayStatus handlers, the payload's own `data.workspaceId` wins over the
+ * envelope id when present.
  */
-function handleAttentionChangedEvent(event: WorkspaceEvent, workspaceId: string): void {
+function handleAttentionChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : envelopeWorkspaceId;
   const attention = data.attention;
   if (!isWorkspaceAttention(attention)) return;
   appStore.dispatch(
