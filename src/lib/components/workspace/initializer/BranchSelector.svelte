@@ -1248,7 +1248,8 @@
             {:else if !repoPath}
               <span>{m.workspace_branchSelector_selectRepoFirst_label()}</span>
             {:else if isLoading}
-              <span class="inline-block h-4 w-24 bg-muted rounded animate-pulse"></span>
+              <Fa icon={faSpinner} class="text-ghost animate-spin" size="sm" />
+              <span class="sr-only">{m.workspace_compactInitializer_waitingBranchSelection_label()}</span>
             {:else}
               <span>{m.workspace_branchSelector_selectBranch_label()}</span>
             {/if}

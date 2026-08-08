@@ -2919,7 +2919,7 @@
         </div>
       {/if}
       <!-- Validation hint -->
-      {#if isExpanded && !isValid && !isCreating && !error}
+      {#if isExpanded && !isValid && !isCreating && !error && (gitAvailable !== true || !repoPath || !isValidPath || (repoType === 'github' && githubAuthNeeded !== 'none'))}
         <div
           class="mt-2 px-4.5 text-sm text-subtle"
           transition:slide={{ axis: 'y', duration: 200 }}
@@ -2934,8 +2934,6 @@
             {m.workspace_compactInitializer_invalidPathHint_label()}
           {:else if repoType === 'github' && githubAuthNeeded !== 'none'}
             {m.workspace_compactInitializer_githubAuthRequired_label()}
-          {:else if !isNewRepo && !branch && repoType !== 'remote'}
-            {m.workspace_compactInitializer_waitingBranchSelection_label()}
           {/if}
         </div>
       {/if}
