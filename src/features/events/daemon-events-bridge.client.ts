@@ -18,7 +18,13 @@
  *      `agents.getConversation`). `agent:stream:start` (§6.6, agent-initiated
  *      harness-wake turns only) additionally dispatches `chatSendStarted` so
  *      the busy/Thinking UI opens without a user send — see
- *      `handleStreamStartEvent`.
+ *      `handleStreamStartEvent`. `agent:stream:activity` (§7 — the content-free
+ *      liveness ping that superseded `agent:stream:chunk`, PROTOCOL §7 /
+ *      intentd#775) is routed separately, not into this accumulator: it feeds
+ *      `chatState/streamActivityReceived` bookkeeping and push-applies the
+ *      server-derived `lastAgentResponse`/`digest`/`lastToolUse` preview
+ *      fields (intentd#792) onto the agent-session slice — see
+ *      `handleStreamActivityEvent`.
  *   3. `chatState/streamStatusReceived` on `agent:tool:call` — surfaces the
  *      "Calling tool" hint next to the Thinking spinner on `status=started`
  *      and appends a follow-up "Awaiting tool response" entry on
@@ -139,12 +145,15 @@ import {
   chatQueueProcessingReceived,
   chatSendFailed,
   chatSendStarted,
+  streamActivityReceived,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import {
   renameSession,
   setProcessQueueHint,
   clearProcessQueueHint,
+  updateSession,
+  updateAgentDigest,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { hydrateAgentsRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -242,6 +251,19 @@ interface StreamState {
 }
 
 const streamsByAgent = new Map<string, StreamState>();
+
+/**
+ * Per-agent turn tracking for the push-applied preview digest: the last
+ * `agent:stream:activity` messageId seen. When a ping arrives for a NEW
+ * messageId (a new turn), the previous turn's `session.digest` and
+ * `lastToolUse` are cleared before the ping's own fields apply, so a stale
+ * summary/tool can't outrank this turn's live text in the AgentCard preview
+ * (monorepo#1327). Entries deliberately survive `agent:stream:end`: a
+ * straggler same-turn ping delivered after the terminal event must not look
+ * like a new turn and wipe the final digest that `agent:stream:end` just
+ * applied.
+ */
+const previewTurnMessageIdByAgent = new Map<string, string>();
 
 /**
  * Debounce timers for changes-slice refresh per workspace. Change events can
@@ -540,6 +562,118 @@ function dispatchStreamUpdate(
       ...(stopReason ? { stopReason } : {}),
     }),
   );
+}
+
+/**
+ * Extract the `lastToolUse` preview hint from an `agent:stream:activity`
+ * tool-arm ping (PROTOCOL §7): `{ name, status? }`, omitted entirely on
+ * text-chunk pings. `name` is required and non-empty; a payload that diverges
+ * from the documented shape is rejected whole rather than partially absorbed.
+ */
+function readLastToolUse(value: unknown): { name: string; status?: string } | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { name, status } = value as { name?: unknown; status?: unknown };
+  if (typeof name !== 'string' || name.trim().length === 0) return undefined;
+  if (status !== undefined && typeof status !== 'string') return undefined;
+  return status === undefined ? { name } : { name, status };
+}
+
+/**
+ * Push-apply the server-derived live-preview fields carried on
+ * `agent:stream:activity` / terminal `agent:stream:end` (intentd#792) into
+ * the agent-session slice — no RPC, no client-side debounce (the daemon
+ * already throttles the activity signal to 1s leading-edge). `updateSession`
+ * is a no-op for unknown agents, so `hydrateSessionIfUnknown` (below) is what
+ * recovers a missing session.
+ */
+function applyStreamPreviewFields(
+  agentId: string,
+  lastAgentResponse: string | undefined,
+  digest: string | undefined,
+  lastToolUse?: { name: string; status?: string },
+): void {
+  const updates: {
+    lastAgentResponse?: string;
+    digest?: string;
+    lastToolUse?: { name: string; status?: string };
+  } = {};
+  if (typeof lastAgentResponse === 'string' && lastAgentResponse.trim()) {
+    updates.lastAgentResponse = lastAgentResponse;
+  }
+  if (typeof digest === 'string' && digest.trim()) {
+    updates.digest = digest;
+  }
+  if (lastToolUse) {
+    updates.lastToolUse = lastToolUse;
+  }
+  if (Object.keys(updates).length === 0) return;
+  appStore.dispatch(updateSession(agentId, updates));
+}
+
+/**
+ * A live-stream event can arrive for an agent the agent-session slice does
+ * not know yet — e.g. a delegated sub-agent whose session was never hydrated
+ * in this window. `updateSession` no-ops for unknown agents, so the
+ * push-applied preview fields (`lastAgentResponse`/`digest`) and busy flags
+ * would be silently dropped until an unrelated refetch. Kick off the
+ * read-service hydration instead: `ensureAgentSession` coalesces concurrent
+ * calls per agent via its in-flight map and the daemon throttles activity to
+ * ≤1/s, so this cannot stampede. Already-hydrated agents never refetch.
+ */
+function hydrateSessionIfUnknown(agentId: string): void {
+  if (appStore.state.agentSessions?.byAgentId[agentId]) return;
+  void ensureAgentSession(agentId);
+}
+
+/**
+ * `agent:stream:activity` (PROTOCOL §7) is the content-free liveness ping —
+ * no raw transcript content, leading-edge throttled per agent (first ping of
+ * a turn immediate, then ≤1/s until the turn ends). The standing
+ * `chat.subscribe` delta stream (§7.1) is the transcript writer. Two jobs
+ * remain: chat-state bookkeeping (the `receivedFirstChunk` flip that
+ * auto-appends the "Streaming response…" status entry once response text
+ * exists, plus the stall-detection timestamps) and the push-applied
+ * live-preview fields (`lastAgentResponse`/`digest`, intentd#792, plus
+ * `lastToolUse` for tool-only stretches) so a non-viewed watched agent's
+ * footer preview advances mid-turn without a fetch. The preview fields are
+ * omitted until derivable (pre-first-token / pre-first-tool) — an omission
+ * means "nothing to preview yet this turn", so the ping only refreshes
+ * timestamps. The wire guard mirrors the §7 payload (`agentId`/`messageId`)
+ * so malformed events stay inert.
+ */
+function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  const messageId = data.messageId;
+  if (typeof agentId !== 'string' || agentId.length === 0 || typeof messageId !== 'string') {
+    return;
+  }
+  hydrateSessionIfUnknown(agentId);
+  const lastAgentResponse =
+    typeof data.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined;
+  const digest = typeof data.digest === 'string' ? data.digest : undefined;
+  // Meaningful `lastAgentResponse` text means the turn has streamed response
+  // text — the signal for the "Streaming response…" flip; a pre-text ping
+  // only refreshes timestamps. The predicate mirrors the empty/whitespace
+  // drop in `applyStreamPreviewFields` so the bookkeeping never advances into
+  // the text-streaming path without a preview actually applying.
+  const hasResponseText = lastAgentResponse !== undefined && lastAgentResponse.trim().length > 0;
+  appStore.dispatch(streamActivityReceived(agentId, hasResponseText));
+  // First ping of a new turn (fresh messageId): drop the previous turn's
+  // digest so it can't masquerade as this turn's summary (monorepo#1327), and
+  // the previous turn's `lastToolUse` for the same reason — the wire omits it
+  // before this turn's first tool call, so an omission cannot be distinguished
+  // from "older daemon" and a carried-over tool would render as live. Values
+  // carried on this very ping are re-applied right below; idle agents keep
+  // their last digest as the preview fallback because no ping arrives until
+  // the next turn starts.
+  if (previewTurnMessageIdByAgent.get(agentId) !== messageId) {
+    previewTurnMessageIdByAgent.set(agentId, messageId);
+    appStore.dispatch(updateAgentDigest(workspaceId, agentId, null));
+    appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));
+  }
+  applyStreamPreviewFields(agentId, lastAgentResponse, digest, readLastToolUse(data.lastToolUse));
 }
 
 function handleStreamChunkEvent(event: WorkspaceEvent, workspaceId: string): void {
@@ -897,6 +1031,18 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   const trailingBlocks = Array.isArray(data?.trailingBlocks)
     ? (data.trailingBlocks.filter((b) => b !== null && typeof b === 'object') as ContentBlock[])
     : [];
+  // Terminal live-preview values (intentd#792, PROTOCOL §7): every
+  // transcript-bearing terminal emit re-derives `lastAgentResponse`/`digest`
+  // from the turn's full streamed text (no newline clipping, unlike the
+  // throttled mid-turn ping), so push-applying it here lands the preview on
+  // the turn's true final state without an `agent.get` refetch. `lastToolUse`
+  // describes a running turn only — clear it now that the turn is over.
+  applyStreamPreviewFields(
+    agentId,
+    typeof data?.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined,
+    typeof data?.digest === 'string' ? data.digest : undefined,
+  );
+  appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));
   const state = streamsByAgent.get(agentId);
   if (state && (!messageId || state.messageId === messageId)) {
     if (trailingBlocks.length > 0) {
@@ -2177,7 +2323,7 @@ export function routeDaemonEventsNotification(
   // Activity reconciliation: busy-implying agent events may indicate a missed
   // `workspace:activity-changed` edge (coordinator-only workspace starting
   // before the bridge subscribed). On busy signals (status-changed with
-  // isResponding/isStreaming, stream chunk/status), reconcile activity to
+  // isResponding/isStreaming, stream activity/status), reconcile activity to
   // agent_running if stale. On agent:idle, always refetch — the daemon knows
   // if other agents remain busy.
   if (type === 'agent:status-changed') {
@@ -2192,7 +2338,7 @@ export function routeDaemonEventsNotification(
   }
   if (
     type === 'agent:stream:start' ||
-    type === 'agent:stream:chunk' ||
+    type === 'agent:stream:activity' ||
     type === 'agent:stream:status'
   ) {
     void reconcileWorkspaceActivity(workspaceId, true);
@@ -2255,6 +2401,10 @@ export function routeDaemonEventsNotification(
   // session status transitions to "failed".
   if (type === 'agent:stream:start') {
     handleStreamStartEvent(event, workspaceId);
+    return;
+  }
+  if (type === 'agent:stream:activity') {
+    handleStreamActivityEvent(event, workspaceId);
     return;
   }
   if (type === 'agent:stream:chunk') {
@@ -2466,6 +2616,7 @@ export async function refreshDaemonEventsAfterReconnect(): Promise<void> {
 
 export function disposeDaemonEventsRoutingState(): void {
   streamsByAgent.clear();
+  previewTurnMessageIdByAgent.clear();
   for (const timer of changesRefreshTimersByWorkspace.values()) {
     clearTimeout(timer);
   }
