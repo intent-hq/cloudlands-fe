@@ -30,12 +30,31 @@ function toFailureResult(error: unknown, fallbackMessage: string): AcceptChanges
   };
 }
 
+/**
+ * Per-workspace single-flight for `getStatus`. Concurrent callers for the same
+ * workspace share one in-flight `backendRequest`; the entry is cleared as soon
+ * as it settles (resolve or reject), so this coalesces duplicate concurrent
+ * calls without introducing any TTL/caching of the result.
+ */
+const inFlightGetStatus = new Map<WorkspaceId, Promise<WorkspaceGitStatus>>();
+
 export class AcceptChangesClient {
   /**
    * Get the current git status for accept changes workflow
    */
   static async getStatus(workspaceId: WorkspaceId): Promise<WorkspaceGitStatus> {
-    return backendRequest<WorkspaceGitStatus>('accept-changes.getStatus', { workspaceId });
+    const existing = inFlightGetStatus.get(workspaceId);
+    if (existing) {
+      return existing;
+    }
+
+    const request = backendRequest<WorkspaceGitStatus>('accept-changes.getStatus', {
+      workspaceId,
+    }).finally(() => {
+      inFlightGetStatus.delete(workspaceId);
+    });
+    inFlightGetStatus.set(workspaceId, request);
+    return request;
   }
 
   /**
