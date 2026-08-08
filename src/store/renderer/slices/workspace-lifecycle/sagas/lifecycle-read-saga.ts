@@ -28,6 +28,7 @@ import { selectShouldRequestAgentLineStats } from '../../changes/changes-selecto
 import { hydrateContextItems, initContextForWorkspace } from '../../context/context-slice';
 import { prBranchLookupSucceeded } from '../../pr-branch-lookup/pr-branch-lookup-slice';
 import type { PrBranchLookupPayload } from '../../pr-branch-lookup/pr-branch-lookup-types';
+import { selectPRStatusLastRefreshTime } from '../../pr-status/pr-status-selectors';
 import {
   prStatusRefreshCompleted,
   prStatusRefreshStarted,
@@ -75,6 +76,9 @@ import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { workspaceDeleted, workspaceUnmounted } from '../workspace-lifecycle-slice';
 
 const logger = createLogger('LifecycleReadSaga');
+
+/** Skip a non-forced `pr.refresh` when the last successful refresh is within this window. */
+const PR_STATUS_REFRESH_TTL_MS = 60_000;
 
 const triggers = [
   loadWorkspacesRequested,
@@ -181,7 +185,13 @@ function* refreshTokenUsage(workspaceId: string): SagaGenerator<void> {
   }
 }
 
-function* refreshPrStatus(workspaceId: string): SagaGenerator<void> {
+function* refreshPrStatus(workspaceId: string, force: boolean): SagaGenerator<void> {
+  if (!force) {
+    const lastRefreshTime = yield* selectPRStatusLastRefreshTime.effect(workspaceId);
+    if (lastRefreshTime != null && Date.now() - lastRefreshTime < PR_STATUS_REFRESH_TTL_MS) {
+      return;
+    }
+  }
   yield* put(prStatusRefreshStarted(workspaceId));
   try {
     const refresh: Awaited<ReturnType<typeof appClient.git.prRefresh>> = yield* call(
@@ -350,7 +360,10 @@ function* lifecycleReadWorker(
     yield* put(setScriptsInitialized(workspaceId, true));
     return;
   }
-  if (action.type === refreshPRStatusRequested.type) return yield* call(refreshPrStatus, workspaceId);
+  if (action.type === refreshPRStatusRequested.type) {
+    const [, force] = action.payload as [string, boolean, boolean];
+    return yield* call(refreshPrStatus, workspaceId, force);
+  }
   if (action.type === refreshRequested.type || action.type === loadWorkspaceDataRequested.type) {
     return yield* call(refreshChanges, workspaceId);
   }
