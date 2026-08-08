@@ -40,6 +40,8 @@ import {
   VIEW_MODE_KEY,
 } from '../sidebar-nav-slice';
 import { initialState } from '../sidebar-nav-slice';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { connectionsListReceived } from '../../connections/connections-slice';
 import { sidebarNavSaga } from './sidebar-nav-saga';
 
 const current = {
@@ -53,7 +55,14 @@ const current = {
     chiefActiveAgentId: 'agent-1',
     multiSelectTabOrder: ['context', 'overview'],
   },
+  connections: { activeId: LOCAL_CONNECTION_ID },
 };
+
+const REMOTE_ID = 'remote-1';
+const REMOTE_PINNED_KEY = `backend:${REMOTE_ID}:${PINNED_WORKSPACES_KEY}`;
+const REMOTE_CHIEF_KEY = `backend:${REMOTE_ID}:${CHIEF_ACTIVE_AGENT_ID_KEY}`;
+const REMOTE_TAB_ORDER_KEY = `backend:${REMOTE_ID}:${MULTISELECT_SIDEBAR_TAB_ORDER_KEY}`;
+const remoteCurrent = { ...current, connections: { activeId: REMOTE_ID } };
 
 const settle = async () => {
   await Promise.resolve();
@@ -169,5 +178,71 @@ describe('sidebarNavSaga', () => {
     task.cancel();
     await task.toPromise();
     expect(task.isCancelled()).toBe(true);
+  });
+
+  describe('multi-backend namespacing', () => {
+    it('namespaces only the backend-specific keys for a remote backend', async () => {
+      storage.getItem.mockReturnValue(null);
+      storage.getJSON.mockReturnValue(undefined);
+      const channel = stdChannel();
+      const task = runSaga(
+        { channel, dispatch: vi.fn(), getState: () => remoteCurrent },
+        sidebarNavSaga,
+      );
+      await settle();
+      channel.put(setPinnedWorkspaceIds(['ws-1']));
+      channel.put(setChiefActiveAgentId('agent-1'));
+      channel.put(setMultiSelectSidebarTabOrder(['context']));
+      channel.put(setPanelWidth(320));
+      channel.put(setAllSpacesViewMode('repo'));
+      channel.put(setCardPinned(true));
+      await settle();
+
+      expect(storage.getJSON.mock.calls).toEqual([
+        [REMOTE_PINNED_KEY],
+        [PANEL_WIDTH_KEY],
+        [PANEL_ITEM_KEY],
+        [CARD_PINNED_KEY],
+        [REMOTE_CHIEF_KEY],
+        [REMOTE_TAB_ORDER_KEY],
+      ]);
+      expect(storage.setJSON.mock.calls).toEqual([
+        [REMOTE_PINNED_KEY, ['ws-1']],
+        [REMOTE_CHIEF_KEY, 'agent-1'],
+        [REMOTE_TAB_ORDER_KEY, ['context', 'overview']],
+        [PANEL_WIDTH_KEY, 320],
+        [VIEW_MODE_KEY, 'repo'],
+        [CARD_PINNED_KEY, true],
+      ]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('re-hydrates per-backend keys on switch, resetting the ones the backend lacks', async () => {
+      storage.getItem.mockReturnValue(null);
+      storage.getJSON.mockImplementation((key: string) =>
+        key === REMOTE_PINNED_KEY ? ['ws-9'] : undefined,
+      );
+      let state = current;
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => state }, sidebarNavSaga);
+      await settle();
+      dispatch.mockClear();
+
+      state = remoteCurrent;
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      await settle();
+
+      expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        hydrateSidebarNav({
+          pinnedWorkspaceIds: ['ws-9'],
+          chiefActiveAgentId: null,
+          multiSelectTabOrder: [],
+        }),
+      ]);
+      task.cancel();
+      await task.toPromise();
+    });
   });
 });

@@ -1,10 +1,15 @@
-import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, take, takeEvery, fork, type SagaGenerator } from 'typed-redux-saga';
 
+import {
+  namespaceBackendKey,
+  selectActiveBackendId,
+} from '../../../utils/backend-storage-namespace';
 import {
   getLocalStorageItem,
   getLocalStorageJSON,
   setLocalStorageJSON,
 } from '../../../utils/safe-local-storage-saga';
+import { connectionsListReceived } from '../../connections/connections-slice';
 import {
   selectAllSpacesViewMode,
   selectChiefActiveAgentId,
@@ -67,6 +72,23 @@ const PINNED_TYPES = new Set(PINNED_ACTIONS.map((action) => action.type));
 const PANEL_ITEM_TYPES = new Set(PANEL_ITEM_ACTIONS.map((action) => action.type));
 const CARD_PINNED_TYPES = new Set(CARD_PINNED_ACTIONS.map((action) => action.type));
 
+// Pinned workspace IDs, the multi-select sidebar tab order, and the chief
+// active agent id all reference backend-specific workspace/agent IDs, so they
+// are namespaced per backend (local keeps the legacy un-prefixed key). The
+// remaining keys (view mode, panel width/item, card-pinned) are global UI
+// preferences shared across backends and stay un-namespaced.
+function pinnedWorkspacesKey(backendId: string): string {
+  return namespaceBackendKey(PINNED_WORKSPACES_KEY, backendId);
+}
+
+function chiefActiveAgentIdKey(backendId: string): string {
+  return namespaceBackendKey(CHIEF_ACTIVE_AGENT_ID_KEY, backendId);
+}
+
+function multiSelectTabOrderKey(backendId: string): string {
+  return namespaceBackendKey(MULTISELECT_SIDEBAR_TAB_ORDER_KEY, backendId);
+}
+
 function stringArray(value: unknown): string[] | undefined {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
@@ -108,8 +130,11 @@ function panelItem(value: unknown): SidebarNavItem | null | undefined {
 
 export function* hydrateSidebarNavState(): SagaGenerator<void> {
   try {
+    const backendId = yield* selectActiveBackendId();
     const data: Parameters<typeof hydrateSidebarNav>[0] = {};
-    const pinned = stringArray(yield* call(getLocalStorageJSON<unknown>, PINNED_WORKSPACES_KEY));
+    const pinned = stringArray(
+      yield* call(getLocalStorageJSON<unknown>, pinnedWorkspacesKey(backendId)),
+    );
     if (pinned !== undefined) data.pinnedWorkspaceIds = pinned;
 
     const viewMode = parseViewMode(yield* call(getLocalStorageItem, VIEW_MODE_KEY));
@@ -129,14 +154,14 @@ export function* hydrateSidebarNavState(): SagaGenerator<void> {
 
     const chiefAgentId = yield* call(
       getLocalStorageJSON<unknown>,
-      CHIEF_ACTIVE_AGENT_ID_KEY,
+      chiefActiveAgentIdKey(backendId),
     );
     if (chiefAgentId === null || typeof chiefAgentId === 'string') {
       data.chiefActiveAgentId = chiefAgentId;
     }
 
     const tabOrder = stringArray(
-      yield* call(getLocalStorageJSON<unknown>, MULTISELECT_SIDEBAR_TAB_ORDER_KEY),
+      yield* call(getLocalStorageJSON<unknown>, multiSelectTabOrderKey(backendId)),
     );
     if (tabOrder !== undefined) data.multiSelectTabOrder = tabOrder;
 
@@ -151,7 +176,7 @@ export function* persistSidebarNavState(action: { type: string }): SagaGenerator
     if (PINNED_TYPES.has(action.type)) {
       yield* call(
         setLocalStorageJSON,
-        PINNED_WORKSPACES_KEY,
+        pinnedWorkspacesKey(yield* selectActiveBackendId()),
         yield* selectPinnedWorkspaceIds.effect(),
       );
     }
@@ -170,14 +195,14 @@ export function* persistSidebarNavState(action: { type: string }): SagaGenerator
     if (action.type === setChiefActiveAgentId.type) {
       yield* call(
         setLocalStorageJSON,
-        CHIEF_ACTIVE_AGENT_ID_KEY,
+        chiefActiveAgentIdKey(yield* selectActiveBackendId()),
         yield* selectChiefActiveAgentId.effect(),
       );
     }
     if (action.type === setMultiSelectSidebarTabOrder.type) {
       yield* call(
         setLocalStorageJSON,
-        MULTISELECT_SIDEBAR_TAB_ORDER_KEY,
+        multiSelectTabOrderKey(yield* selectActiveBackendId()),
         yield* selectMultiSelectSidebarTabOrder.effect(),
       );
     }
@@ -186,8 +211,42 @@ export function* persistSidebarNavState(action: { type: string }): SagaGenerator
   }
 }
 
+/**
+ * Backend switched (activeId flips via the boot connections:list refresh after
+ * the window reloads): re-hydrate the per-backend keys from the incoming
+ * backend's namespace, resetting to empty where it has none so the previous
+ * backend's pins/tab order don't linger.
+ */
+export function* watchBackendSwitch(): SagaGenerator<void> {
+  let lastBackendId = yield* selectActiveBackendId();
+  while (true) {
+    yield* take(connectionsListReceived);
+    const backendId = yield* selectActiveBackendId();
+    if (backendId === lastBackendId) continue;
+    lastBackendId = backendId;
+    const pinned = stringArray(
+      yield* call(getLocalStorageJSON<unknown>, pinnedWorkspacesKey(backendId)),
+    );
+    const chiefAgentId = yield* call(
+      getLocalStorageJSON<unknown>,
+      chiefActiveAgentIdKey(backendId),
+    );
+    const tabOrder = stringArray(
+      yield* call(getLocalStorageJSON<unknown>, multiSelectTabOrderKey(backendId)),
+    );
+    yield* put(
+      hydrateSidebarNav({
+        pinnedWorkspaceIds: pinned ?? [],
+        chiefActiveAgentId: typeof chiefAgentId === 'string' ? chiefAgentId : null,
+        multiSelectTabOrder: tabOrder ?? [],
+      }),
+    );
+  }
+}
+
 /** Unregistered until the S20 middleware cutover. */
 export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* call(hydrateSidebarNavState);
+  yield* fork(watchBackendSwitch);
   yield* takeEvery(ALL_PERSIST_ACTIONS, persistSidebarNavState);
 }

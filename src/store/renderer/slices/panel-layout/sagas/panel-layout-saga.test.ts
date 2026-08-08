@@ -29,6 +29,8 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
   },
 }));
 
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { connectionsListReceived } from '../../connections/connections-slice';
 import { workspaceMounted, workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   clearPanelLayout,
@@ -83,7 +85,9 @@ import { isStoredLayoutValid, panelLayoutSaga } from './panel-layout-saga';
 
 const WS_1 = 'ws-1';
 const WS_2 = 'ws-2';
+const REMOTE_ID = 'remote-1';
 const STORAGE_KEY_1 = `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${WS_1}`;
+const REMOTE_STORAGE_KEY_1 = `backend:${REMOTE_ID}:${STORAGE_KEY_1}`;
 const NOW = new Date('2026-07-31T00:00:00.000Z');
 
 const tab = { id: 'tab-1', type: 'note' as const, title: 'Note', closable: true, noteId: 'note-1' };
@@ -103,7 +107,10 @@ function workspaceState(history: LayoutSnapshot[] = [snapshot]) {
   };
 }
 
-function storeState(activeWorkspaceId: string | null = null) {
+function storeState(
+  activeWorkspaceId: string | null = null,
+  activeBackendId: string = LOCAL_CONNECTION_ID,
+) {
   return {
     panelLayout: {
       byWorkspaceId: {
@@ -112,6 +119,7 @@ function storeState(activeWorkspaceId: string | null = null) {
       },
     },
     workspace: { activeWorkspaceId },
+    connections: { activeId: activeBackendId },
   };
 }
 
@@ -248,8 +256,8 @@ describe('panelLayoutSaga', () => {
     const persistedAt = new Date(NOW.getTime() + HISTORY_PERSIST_DEBOUNCE_MS).toISOString();
 
     expect(mocks.saveHistory.mock.calls).toEqual([
-      [WS_1, { version: 1, workspaceId: WS_1, history: [snapshot], historyIndex: 0, lastUpdated: persistedAt }],
-      [WS_2, { version: 1, workspaceId: WS_2, history: [{ ...snapshot, timestamp: 20 }], historyIndex: 0, lastUpdated: persistedAt }],
+      [WS_1, { version: 1, workspaceId: WS_1, history: [snapshot], historyIndex: 0, lastUpdated: persistedAt }, LOCAL_CONNECTION_ID],
+      [WS_2, { version: 1, workspaceId: WS_2, history: [{ ...snapshot, timestamp: 20 }], historyIndex: 0, lastUpdated: persistedAt }, LOCAL_CONNECTION_ID],
     ]);
     await cancelSaga(task);
   });
@@ -316,7 +324,10 @@ describe('panelLayoutSaga', () => {
     channel.put(workspaceUnmounted(WS_2));
     await settle();
 
-    expect(mocks.loadHistory.mock.calls).toEqual([[WS_1], [WS_2]]);
+    expect(mocks.loadHistory.mock.calls).toEqual([
+      [WS_1, LOCAL_CONNECTION_ID],
+      [WS_2, LOCAL_CONNECTION_ID],
+    ]);
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       loadLayoutHistory(WS_2, historyData.history, historyData.historyIndex),
     ]);
@@ -327,14 +338,14 @@ describe('panelLayoutSaga', () => {
         history: [snapshot],
         historyIndex: 0,
         lastUpdated: new Date(NOW.getTime() + HISTORY_PERSIST_DEBOUNCE_MS).toISOString(),
-      }],
+      }, LOCAL_CONNECTION_ID],
       [WS_2, {
         version: 1,
         workspaceId: WS_2,
         history: historyData.history,
         historyIndex: 0,
         lastUpdated: new Date(NOW.getTime() + HISTORY_PERSIST_DEBOUNCE_MS * 2).toISOString(),
-      }],
+      }, LOCAL_CONNECTION_ID],
     ]);
     expect(mocks.clearAdapter.mock.calls).toEqual([[WS_1], [WS_2]]);
     expect(task.isRunning()).toBe(true);
@@ -365,7 +376,65 @@ describe('panelLayoutSaga', () => {
 
     expect(task.isCancelled()).toBe(true);
     expect(mocks.saveHistory.mock.calls).toEqual([
-      [WS_1, { version: 1, workspaceId: WS_1, history: [snapshot], historyIndex: 0, lastUpdated: NOW.toISOString() }],
+      [WS_1, { version: 1, workspaceId: WS_1, history: [snapshot], historyIndex: 0, lastUpdated: NOW.toISOString() }, LOCAL_CONNECTION_ID],
     ]);
+  });
+
+  describe('multi-backend namespacing', () => {
+    it('keeps the bare legacy key for the local backend', async () => {
+      mocks.getJSON.mockReturnValue(undefined);
+      const { channel, task } = startSaga(storeState(null, LOCAL_CONNECTION_ID));
+      await settle();
+      channel.put({ type: openTab.type, payload: { wsId: WS_1 } });
+      await settle();
+
+      expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, layout]]);
+      await cancelSaga(task);
+    });
+
+    it('namespaces layout reads, writes, clears, and history by remote backend id', async () => {
+      mocks.getJSON.mockReturnValue(undefined);
+      const { channel, task } = startSaga(storeState(null, REMOTE_ID));
+      await settle();
+      channel.put(workspaceMounted(WS_1));
+      channel.put({ type: openTab.type, payload: { wsId: WS_1 } });
+      channel.put(clearPanelLayout(WS_1));
+      await settle();
+      await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
+
+      expect(mocks.getJSON.mock.calls).toEqual([[REMOTE_STORAGE_KEY_1]]);
+      expect(mocks.setJSON.mock.calls).toEqual([[REMOTE_STORAGE_KEY_1, layout]]);
+      expect(mocks.removeItem.mock.calls).toEqual([[REMOTE_STORAGE_KEY_1]]);
+      expect(mocks.saveHistory.mock.calls.map(([wsId, , backendId]) => [wsId, backendId])).toEqual([
+        [WS_1, REMOTE_ID],
+      ]);
+      await cancelSaga(task);
+    });
+
+    it('re-restores the active workspace from the incoming backend namespace on switch', async () => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === REMOTE_STORAGE_KEY_1 ? layout : undefined,
+      );
+      let backendId = LOCAL_CONNECTION_ID;
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => storeState(WS_1, backendId) },
+        panelLayoutSaga,
+      );
+      await settle();
+      dispatch.mockClear();
+
+      backendId = REMOTE_ID;
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      await settle();
+
+      expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        setRestoreStatus(WS_1, 'pending'),
+        initializeLayout(WS_1, layout),
+        setRestoreStatus(WS_1, 'restored'),
+      ]);
+      await cancelSaga(task);
+    });
   });
 });
