@@ -288,6 +288,25 @@ export interface AgentSession {
   waitingForAgentIds?: string[];
 
   /**
+   * Idle-visibility for hook-owning agents (PROTOCOL.md §5.5, within v3.1,
+   * additive): light metadata for the agent's ACTIVE (`scheduled`/`running`)
+   * background hooks (§5.40), omitted when empty (absent, never `[]`) — so
+   * a parent or client can tell a hook-waiting idle agent from a stalled
+   * one. Emitted on `AgentLite` (`agent.list`/`agent.get`), the `agent:idle`
+   * event payload, and `agent.diagnostics` agent rows. Rendered verbatim.
+   */
+  waitingOnHooks?: Array<{ hookId: string; name: string; nextRunAt?: string; expiresAt?: string }>;
+
+  /**
+   * Idle-visibility for PR-monitor-owning agents — the `waitingOnHooks`
+   * companion for centralized PR monitoring (§5.42): light metadata for the
+   * agent's active PR monitors, omitted when empty (absent, never `[]`), so
+   * a parent or client can tell a PR-monitor-waiting idle agent from a
+   * stalled one. Rendered verbatim.
+   */
+  waitingOnPrMonitors?: Array<{ monitorId: string; repo: string; prNumber: number; title?: string }>;
+
+  /**
    * Process queue hint (PROTOCOL §6.5 agent:process:queued/resumed).
    * Set when the agent is queued for a process slot, cleared when resumed or
    * transitions to normal running state. UI renders as "Waiting for a free agent

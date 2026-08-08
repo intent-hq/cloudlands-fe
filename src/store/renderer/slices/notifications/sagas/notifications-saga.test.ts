@@ -127,6 +127,28 @@ describe('notification sagas', () => {
     emitMockIpcEvent('agent:idle', idle()); await flush();
     expect(MockNotification.instances).toEqual([]);
 
+    // waitingOnHooks / waitingOnPrMonitors (individually and combined) skip
+    // via the same fast path as isWaitingForOtherAgents — no `agent.list`
+    // read at all (proves the check runs before the wire-read gate, not
+    // just that some other suppression happens to also apply).
+    mocks.backend.mockClear();
+    mocks.backend.mockImplementation(async (method, params) => {
+      if (method === 'settings.get') return { value: params.path === 'notifications.enabled' ? true : false };
+      throw new Error(`unexpected ${method}`);
+    });
+    emitMockIpcEvent('agent:idle', idle({ waitingOnHooks: [{ hookId: 'h1', name: 'watch-ci' }] }));
+    emitMockIpcEvent('agent:idle', idle({ waitingOnPrMonitors: [{ monitorId: 'm1', repo: 'o/r', prNumber: 1 }] }));
+    emitMockIpcEvent(
+      'agent:idle',
+      idle({
+        waitingOnHooks: [{ hookId: 'h1', name: 'watch-ci' }],
+        waitingOnPrMonitors: [{ monitorId: 'm1', repo: 'o/r', prNumber: 1 }],
+      }),
+    );
+    await flush();
+    expect(MockNotification.instances).toEqual([]);
+    expect(mocks.backend.mock.calls.some(([method]) => method === 'agent.list')).toBe(false);
+
     current.workspace.activeWorkspaceId = 'ws-1';
     vi.spyOn(document, 'hasFocus').mockReturnValue(true);
     mocks.backend.mockImplementation(async (method, params) => {
