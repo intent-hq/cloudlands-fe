@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { startSplashGate, SPLASH_FALLBACK_TIMEOUT_MS } from './splash-gate';
+import { startSplashGate, wireSplashGate, SPLASH_FALLBACK_TIMEOUT_MS } from './splash-gate';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
 
@@ -128,5 +128,52 @@ describe('startSplashGate', () => {
     vi.advanceTimersByTime(5000);
     expect(dismiss).not.toHaveBeenCalled();
     expect(api.offById).toHaveBeenCalled();
+  });
+});
+
+describe('wireSplashGate', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns a no-op cleanup when the splash element is missing', () => {
+    const stop = wireSplashGate(null, { api: null });
+    expect(() => stop()).not.toThrow();
+  });
+
+  it('adds the "mounted" class and removes the element after its fade transition, once connected', async () => {
+    const splash = document.createElement('div');
+    document.body.appendChild(splash);
+    const { api, emit } = makeMockApi({ status: 'connecting' });
+
+    const stop = wireSplashGate(splash, { api });
+
+    await vi.waitFor(() => expect(api.invoke).toHaveBeenCalledWith(BACKEND.GET_STATUS));
+    expect(splash.classList.contains('mounted')).toBe(false);
+    expect(splash.isConnected).toBe(true);
+
+    emit(BACKEND.STATUS, { status: 'connected' });
+    expect(splash.classList.contains('mounted')).toBe(true);
+    expect(splash.isConnected).toBe(true);
+
+    splash.dispatchEvent(new Event('transitionend'));
+    expect(splash.isConnected).toBe(false);
+
+    stop();
+  });
+
+  it('dismisses immediately (non-Electron) so the splash is mounted+removed with no bridge', () => {
+    const splash = document.createElement('div');
+    document.body.appendChild(splash);
+
+    wireSplashGate(splash, { api: null });
+
+    expect(splash.classList.contains('mounted')).toBe(true);
+    splash.dispatchEvent(new Event('transitionend'));
+    expect(splash.isConnected).toBe(false);
   });
 });
