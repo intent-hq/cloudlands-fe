@@ -6,6 +6,7 @@
  * wave appends its own seeder import below; never remove existing entries.
  */
 import './provider-catalog-seeder';
+import './provider-models-seeder';
 import './workspaces-seeder';
 import './active-streams-bridge-seeder';
 import './agents-seeder';
