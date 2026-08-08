@@ -140,12 +140,68 @@ export function findRendererSideEffectBoundaryViolations(files) {
     if (target === IPC_ROUTER_PATH && IPC_REGISTRARS.has(exportedName)) return exportedName;
     return target ? exportedOrigin(target, exportedName, seen) : undefined;
   };
-  const bindingOrigin = (filePath, localName, seen = new Set()) => {
+  const resolveTypeOrigin = (filePath, typeNode, seen = new Set()) => {
+    if (!typeNode || !ts.isTypeReferenceNode(typeNode)) return undefined;
+    const typeName = typeNode.typeName;
+    if (ts.isIdentifier(typeName)) {
+      return bindingOrigin(filePath, typeName.text, seen);
+    }
+    if (ts.isQualifiedName(typeName) && ts.isIdentifier(typeName.left)) {
+      const source = sources.get(filePath)?.source;
+      for (const statement of source?.statements ?? []) {
+        if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
+          continue;
+        const bindings = statement.importClause?.namedBindings;
+        if (
+          bindings &&
+          ts.isNamespaceImport(bindings) &&
+          bindings.name.text === typeName.left.text
+        ) {
+          return originFromModule(
+            filePath,
+            statement.moduleSpecifier.text,
+            typeName.right.text,
+            seen,
+          );
+        }
+      }
+    }
+    return undefined;
+  };
+  const parameterOrigin = (filePath, localName, referenceNode, seen) => {
+    let current = referenceNode.parent;
+    while (current) {
+      if (
+        (ts.isFunctionDeclaration(current) ||
+          ts.isFunctionExpression(current) ||
+          ts.isArrowFunction(current) ||
+          ts.isMethodDeclaration(current) ||
+          ts.isConstructorDeclaration(current)) &&
+        current.parameters
+      ) {
+        const param = current.parameters.find(
+          (p) => ts.isIdentifier(p.name) && p.name.text === localName,
+        );
+        if (param) {
+          return resolveTypeOrigin(filePath, param.type, seen) === 'Store'
+            ? 'StoreInstance'
+            : undefined;
+        }
+      }
+      current = current.parent;
+    }
+    return undefined;
+  };
+  const bindingOrigin = (filePath, localName, seen = new Set(), referenceNode) => {
     const key = `${filePath}#local:${localName}`;
     if (seen.has(key)) return undefined;
     seen.add(key);
     const source = sources.get(filePath)?.source;
     if (!source) return undefined;
+    if (referenceNode) {
+      const fromParameter = parameterOrigin(filePath, localName, referenceNode, seen);
+      if (fromParameter) return fromParameter;
+    }
     for (const statement of source.statements) {
       if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
         const clause = statement.importClause;
@@ -186,7 +242,8 @@ export function findRendererSideEffectBoundaryViolations(files) {
     if (ts.isParenthesizedExpression(expression) || ts.isAsExpression(expression)) {
       return expressionOrigin(filePath, expression.expression, seen);
     }
-    if (ts.isIdentifier(expression)) return bindingOrigin(filePath, expression.text, seen);
+    if (ts.isIdentifier(expression))
+      return bindingOrigin(filePath, expression.text, seen, expression);
     if (ts.isNewExpression(expression)) {
       return expressionOrigin(filePath, expression.expression, seen) === 'Store'
         ? 'StoreInstance'

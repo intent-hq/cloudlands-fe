@@ -227,6 +227,70 @@ describe('renderer side-effect boundary guard', () => {
     ]);
   });
 
+  it.each([
+    [
+      'a function declaration parameter',
+      [
+        "import { Store } from '@augmentcode/themis/svelte-store';",
+        'function install(store: Store) {',
+        '  store.addMiddleware(otherMiddleware);',
+        '}',
+      ].join('\n'),
+    ],
+    [
+      'an arrow function parameter',
+      [
+        "import { Store } from '@augmentcode/themis/svelte-store';",
+        'const install = (store: Store) => {',
+        '  store.addMiddleware(otherMiddleware);',
+        '};',
+      ].join('\n'),
+    ],
+    [
+      'a class method parameter',
+      [
+        "import { Store } from '@augmentcode/themis/svelte-store';",
+        'class Installer {',
+        '  install(store: Store) {',
+        '    store.addMiddleware(otherMiddleware);',
+        '  }',
+        '}',
+      ].join('\n'),
+    ],
+    [
+      'a namespace-qualified parameter type',
+      [
+        "import * as themis from '@augmentcode/themis/svelte-store';",
+        'function install(store: themis.Store) {',
+        '  store.addMiddleware(otherMiddleware);',
+        '}',
+      ].join('\n'),
+    ],
+  ])('rejects direct Store middleware registration via %s', (_variant, content) => {
+    const violations = findRendererSideEffectBoundaryViolations([
+      registry,
+      { path: 'src/features/tasks/task-install.ts', content },
+    ]);
+    expect(violations).toEqual([
+      expect.stringContaining('direct Store middleware registration is not allowed'),
+    ]);
+  });
+
+  it('allows a non-Store-typed function parameter to call addMiddleware', () => {
+    const violations = findRendererSideEffectBoundaryViolations([
+      registry,
+      {
+        path: 'src/features/tasks/task-install.ts',
+        content: [
+          'function install(store: SomeOtherType) {',
+          '  store.addMiddleware(otherMiddleware);',
+          '}',
+        ].join('\n'),
+      },
+    ]);
+    expect(violations).toEqual([]);
+  });
+
   it('allows unrelated objects that happen to expose addMiddleware', () => {
     expect(
       findRendererSideEffectBoundaryViolations([
