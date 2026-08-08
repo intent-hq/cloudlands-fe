@@ -129,6 +129,7 @@ import { initializeWarningSuppression } from './utils/suppress-warnings';
 import { runWithHardExitTimeout } from './utils/hard-exit-timeout';
 import { setupWebviewSecurity } from './webview-security';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
+import { attachSwipeHistoryNavigation } from './swipe-navigation';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
 import { requestHardwareConsoleLightingClear } from '../features/hardware-console/main/clear-lighting-shutdown';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
@@ -574,6 +575,9 @@ app.whenReady().then(async () => {
     // Windows: forward mouse X-button app-commands to the renderer as
     // app:history-navigate IPC events (see src/main/app-command-navigation.ts).
     attachAppCommandHistoryNavigation(window);
+    // macOS: forward swipe gestures (incl. Logi Options+ synthesized swipes
+    // for mouse side buttons) the same way (see src/main/swipe-navigation.ts).
+    attachSwipeHistoryNavigation(window);
   });
 
   // Set application menu with correct app name on macOS
