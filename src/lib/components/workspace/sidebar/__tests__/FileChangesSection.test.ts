@@ -261,6 +261,16 @@ describe('FileChangesSection', () => {
     expect(paths).toEqual(expect.arrayContaining(['src/a.ts', 'src/b.ts', 'src/c.ts']));
   });
 
+  it('renders a path once in each section when it has staged and unstaged changes', async () => {
+    mocks.unstaged.push(makeChange('src/dual.ts'));
+    mocks.staged.push(makeChange('src/dual.ts', { stage: ChangeStage.Staged }));
+
+    const { container } = await renderSection();
+
+    const rows = Array.from(container.querySelectorAll('[data-testid="file-row"]'));
+    expect(rows.filter((row) => row.getAttribute('data-file-path') === 'src/dual.ts')).toHaveLength(2);
+  });
+
   it('handleStageAll stages all unstaged paths through the git-write-service seam', async () => {
     mocks.unstaged.push(makeChange('src/a.ts'), makeChange('src/b.ts'));
     const { getByText } = await renderSection();

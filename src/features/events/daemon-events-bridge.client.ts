@@ -244,8 +244,8 @@ interface StreamState {
 const streamsByAgent = new Map<string, StreamState>();
 
 /**
- * Debounce timers for changes-slice refresh per workspace. `changes:tracked`
- * can fire very frequently during agent activity (matching the note in
+ * Debounce timers for changes-slice refresh per workspace. Change events can
+ * fire very frequently during agent activity (matching the note in
  * WorkspaceProgressCard.svelte line ~213), so we debounce ~1s per workspace to
  * avoid redundant refreshRequested dispatches.
  */
@@ -1857,7 +1857,7 @@ function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
 
 /**
  * Debounced changes-slice refresh for git/changes events (`git:commit`,
- * `git:pull`, `changes:tracked`). These events can fire very frequently during
+ * `git:pull`, `changes:git-status`, `changes:tracked`). These can fire frequently during
  * agent activity, so we debounce ~1s per workspace to avoid redundant
  * refreshRequested dispatches. Mirrors the precedent in
  * WorkspaceProgressCard.svelte line ~213.
@@ -2234,11 +2234,16 @@ export function routeDaemonEventsNotification(
     return;
   }
 
-  // Git/changes events (`git:commit`, `git:pull`, `changes:tracked`) should
+  // Git/changes events should
   // refresh the changes slice so daemon-originated commits appear live in the
   // sidebar Changes panel. Debounce per workspace (~1s) because
   // `changes:tracked` can fire very frequently during agent activity.
-  if (type === 'git:commit' || type === 'git:pull' || type === 'changes:tracked') {
+  if (
+    type === 'git:commit' ||
+    type === 'git:pull' ||
+    type === 'changes:git-status' ||
+    type === 'changes:tracked'
+  ) {
     debouncedChangesRefresh(workspaceId);
     // Fall through to the relayLegacyIpcEvent + eventReceived dispatches below
     // so the legacy mock-IPC listeners and activity timeline still work.
