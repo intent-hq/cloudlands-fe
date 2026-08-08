@@ -75,8 +75,8 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
   it('hydrates the background-agent-settings slice as a single bundle', async () => {
     applySettingsChanges([
-      { path: 'backgroundAgents.defaultModel', value: 'claude-sonnet' },
-      { path: 'backgroundAgents.typeOverrides', value: { commit: 'fast-1' } },
+      { path: 'quickActions.defaultModel', value: 'claude-sonnet' },
+      { path: 'quickActions.typeOverrides', value: { commit: 'fast-1' } },
     ]);
     const state = appStore.state as {
       backgroundAgentSettings: {
@@ -99,9 +99,9 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
   it('preserves sibling backgroundAgents keys when partial delta contains only one', () => {
     // First hydrate with both keys
     applySettingsChanges([
-      { path: 'backgroundAgents.defaultModel', value: 'claude-sonnet' },
+      { path: 'quickActions.defaultModel', value: 'claude-sonnet' },
       {
-        path: 'backgroundAgents.typeOverrides',
+        path: 'quickActions.typeOverrides',
         value: { commit: 'fast-1', pr: 'pr-model', review: '', fast: '' },
       },
     ]);
@@ -116,7 +116,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     expect(stateBefore.backgroundAgentSettings.typeOverrides.pr).toBe('pr-model');
 
     // Now apply a partial delta with ONLY defaultModel (simulates daemon echo-back of a single-field update)
-    applySettingsChanges([{ path: 'backgroundAgents.defaultModel', value: 'new-model' }]);
+    applySettingsChanges([{ path: 'quickActions.defaultModel', value: 'new-model' }]);
 
     const stateAfter = appStore.state as {
       backgroundAgentSettings: {
@@ -157,9 +157,9 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
     it("migrates legacy persisted haiku4.5 (default + overrides) to '' and persists the migration", () => {
       applySettingsChanges([
-        { path: "backgroundAgents.defaultModel", value: "haiku4.5" },
+        { path: "quickActions.defaultModel", value: "haiku4.5" },
         {
-          path: "backgroundAgents.typeOverrides",
+          path: "quickActions.typeOverrides",
           value: { commit: "haiku4.5", pr: "pr-model", review: "", fast: "" },
         },
       ]);
@@ -174,9 +174,9 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       expect(updateSpy).toHaveBeenCalledTimes(1);
       expect(updateSpy).toHaveBeenCalledWith({
         changes: [
-          { path: "backgroundAgents.defaultModel", value: "" },
+          { path: "quickActions.defaultModel", value: "" },
           {
-            path: "backgroundAgents.typeOverrides",
+            path: "quickActions.typeOverrides",
             value: { commit: "", pr: "pr-model", review: "", fast: "" },
           },
         ],
@@ -186,9 +186,9 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
     it("passes any other persisted model id through untouched (and never writes back)", () => {
       applySettingsChanges([
-        { path: "backgroundAgents.defaultModel", value: "claude-sonnet" },
+        { path: "quickActions.defaultModel", value: "claude-sonnet" },
         {
-          path: "backgroundAgents.typeOverrides",
+          path: "quickActions.typeOverrides",
           value: { commit: "fast-1", pr: "", review: "", fast: "" },
         },
       ]);
@@ -204,15 +204,15 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     it("does not re-run: a deliberate post-migration re-pick of haiku4.5 hydrates verbatim", () => {
       // First hydration runs (and completes) the migration.
       applySettingsChanges([
-        { path: "backgroundAgents.defaultModel", value: "haiku4.5" },
-        { path: "backgroundAgents.typeOverrides", value: { commit: "", pr: "", review: "", fast: "" } },
+        { path: "quickActions.defaultModel", value: "haiku4.5" },
+        { path: "quickActions.typeOverrides", value: { commit: "", pr: "", review: "", fast: "" } },
       ]);
       expect((appStore.state as BgState).backgroundAgentSettings.defaultModel).toBe("");
       updateSpy.mockClear();
 
       // The user re-picks haiku4.5; the daemon echoes it back via settings:changed.
       applySettingsChanges([
-        { path: "backgroundAgents.defaultModel", value: "haiku4.5" },
+        { path: "quickActions.defaultModel", value: "haiku4.5" },
       ]);
 
       const state = appStore.state as BgState;

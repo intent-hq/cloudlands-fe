@@ -10,10 +10,10 @@ describe('app UI targets registry', () => {
     const target = resolveHashToTarget('default-model');
 
     expect(target).toMatchObject({
-      id: 'backgroundAgents.defaultModel',
+      id: 'quickActions.defaultModel',
       tab: 'agents',
       scrollSelector: '#default-model',
-      highlightSelector: '[data-highlight-id="backgroundAgents.defaultModel"]',
+      highlightSelector: '[data-highlight-id="quickActions.defaultModel"]',
     });
   });
 

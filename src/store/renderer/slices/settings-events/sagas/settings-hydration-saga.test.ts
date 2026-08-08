@@ -33,8 +33,8 @@ describe('settingsHydrationSaga', () => {
   it('hydrates once in source order without issuing a persistence write', async () => {
     mocks.list.mockResolvedValue([
       { path: 'providers.active', value: 'auggie', label: '', description: '' },
-      { path: 'backgroundAgents.defaultModel', value: 'fast', label: '', description: '' },
-      { path: 'backgroundAgents.typeOverrides', value: { commit: 'model' }, label: '', description: '' },
+      { path: 'quickActions.defaultModel', value: 'fast', label: '', description: '' },
+      { path: 'quickActions.typeOverrides', value: { commit: 'model' }, label: '', description: '' },
     ]);
 
     await runSaga({ dispatch: vi.fn() }, hydrateSettingsOnceSaga).toPromise();
@@ -43,8 +43,8 @@ describe('settingsHydrationSaga', () => {
     expect(mocks.list).toHaveBeenCalledWith();
     expect(mocks.apply).toHaveBeenCalledWith([
       { path: 'providers.active', value: 'auggie' },
-      { path: 'backgroundAgents.defaultModel', value: 'fast' },
-      { path: 'backgroundAgents.typeOverrides', value: { commit: 'model' } },
+      { path: 'quickActions.defaultModel', value: 'fast' },
+      { path: 'quickActions.typeOverrides', value: { commit: 'model' } },
     ]);
     expect(mocks.update).not.toHaveBeenCalled();
   });

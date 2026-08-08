@@ -271,9 +271,9 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectSoundOnlyWhenUnfocused.select(state);
     case 'notifications.volume':
       return selectNotificationVolume.select(state);
-    case 'backgroundAgents.defaultModel':
+    case 'quickActions.defaultModel':
       return selectBgDefaultModel.select(state);
-    case 'backgroundAgents.typeOverrides':
+    case 'quickActions.typeOverrides':
       return selectBgTypeOverrides.select(state);
     case 'fonts.agent':
       return selectAgentFontStyle.select(state);
@@ -385,10 +385,10 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       appStore.dispatch(setVolume(parsed));
       return true;
     }
-    case 'backgroundAgents.defaultModel':
+    case 'quickActions.defaultModel':
       appStore.dispatch(setDefaultModel(String(value ?? '')));
       return true;
-    case 'backgroundAgents.typeOverrides':
+    case 'quickActions.typeOverrides':
       for (const [type, model] of Object.entries(objectValue(value))) {
         appStore.dispatch(
           setTypeOverride({ type: type as BackgroundAgentType, model: String(model ?? '') }),
