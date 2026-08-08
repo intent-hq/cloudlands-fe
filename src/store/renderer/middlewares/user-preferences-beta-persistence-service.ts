@@ -6,8 +6,11 @@
  * dispatched from settings UI has NO EFFECT — the setting is not persisted and
  * the update channel is not switched, so user cannot toggle between stable/beta.
  *
- * This middleware reconnects the path WITHOUT re-adding a saga and WITHOUT
- * changing any call site:
+ * This middleware reconnects the path WITHOUT re-adding a saga and is the
+ * SINGLE owner of the SET_CHANNEL write — UI call sites (Settings toggle,
+ * settings proposals) only dispatch the actions and must not call
+ * autoUpdateClient.setChannel directly, or a user toggle would issue the
+ * channel write twice:
  *   - Watches setBetaUpdatesEnabled and toggleBetaUpdates actions
  *   - Calls autoUpdateClient.setChannel(enabled ? "beta" : "stable")
  *     (which persists via local-prefs internally)

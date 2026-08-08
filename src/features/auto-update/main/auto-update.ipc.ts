@@ -21,11 +21,20 @@ const logger = new Logger('AutoUpdateIPC');
 // Validation schemas
 const EmptySchema = z.object({}).optional();
 
-// Pending initialize() from initializeAutoUpdater(). GET_STATE awaits it so a
-// boot-time renderer read reflects the channel loaded from local-prefs.json
-// instead of the pre-init default. Null when the updater is never initialized
-// (dev mode) — the default state is answered immediately in that case.
-let initializePromise: Promise<void> | null = null;
+// Gate for boot-time GET_STATE reads. setupAutoUpdateIPC() runs before window
+// creation, but initialize() only starts later in the deferred
+// secondary-startup task — so an early renderer GET_STATE could otherwise see
+// no pending initialization and answer the pre-init default (stable) even
+// when local-prefs.json holds a beta preference. The gate settles when the
+// boot flow decides the updater's fate:
+//   - initializeAutoUpdater() completed (channel loaded from local-prefs;
+//     failures settle too and are logged there), or
+//   - markAutoUpdaterNotInitialized() declared the updater will never start
+//     this run (dev mode / no window) — the default state is the real answer.
+let settleChannelLoaded: () => void = () => {};
+const channelLoaded = new Promise<void>((resolve) => {
+  settleChannelLoaded = resolve;
+});
 
 /**
  * Setup auto-update IPC handlers
@@ -78,12 +87,11 @@ export function setupAutoUpdateIPC(): void {
     createSafeValidatedHandler(
       EmptySchema,
       async () => {
-        // Answer after service init so the read reflects the loaded channel
-        // (initialize() loads it async from local-prefs). Errors are already
-        // logged by initializeAutoUpdater; fall through to current state.
-        if (initializePromise) {
-          await initializePromise.catch(() => {});
-        }
+        // Answer after the boot flow settles the gate so the read reflects
+        // the channel loaded from local-prefs (or the default state when the
+        // updater is never initialized). Init errors are already logged by
+        // initializeAutoUpdater; fall through to current state.
+        await channelLoaded;
         return { success: true, data: autoUpdateService.getState() };
       },
       AUTO_UPDATE_CHANNELS.GET_STATE,
@@ -111,10 +119,23 @@ export function setupAutoUpdateIPC(): void {
  * Call this after the main window is created
  */
 export function initializeAutoUpdater(mainWindow: BrowserWindow): void {
-  initializePromise = autoUpdateService.initialize(mainWindow);
-  initializePromise.catch((error) => {
-    logger.error('AutoUpdateService initialization failed', error as Error);
-  });
+  void autoUpdateService
+    .initialize(mainWindow)
+    .catch((error) => {
+      logger.error('AutoUpdateService initialization failed', error as Error);
+    })
+    .finally(() => {
+      settleChannelLoaded();
+    });
+}
+
+/**
+ * Declare that the auto-updater will not be initialized this run (dev mode or
+ * no main window). Unblocks boot-time GET_STATE waiters so they answer the
+ * default state instead of waiting on an initialization that never comes.
+ */
+export function markAutoUpdaterNotInitialized(): void {
+  settleChannelLoaded();
 }
 
 /**

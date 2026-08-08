@@ -1482,10 +1482,16 @@ app.whenReady().then(async () => {
 
     // setupAutoUpdateIPC(); // Already called in critical IPC setup
     // Initialize auto-updater in production (not needed at startup, depends on mainWindow)
-    const { initializeAutoUpdater } = await import('../features/auto-update/main/auto-update.ipc');
+    const { initializeAutoUpdater, markAutoUpdaterNotInitialized } = await import(
+      '../features/auto-update/main/auto-update.ipc'
+    );
     const mainWindow = getMainWindow();
     if (process.env.NODE_ENV !== 'development' && mainWindow) {
       initializeAutoUpdater(mainWindow);
+    } else {
+      // Dev mode (or no window): the updater never initializes — unblock
+      // boot-time GET_STATE waiters so they answer the default state.
+      markAutoUpdaterNotInitialized();
     }
 
     // Show this version's release notes on the first launch after an update.

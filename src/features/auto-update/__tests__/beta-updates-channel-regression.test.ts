@@ -12,6 +12,9 @@
  *      the requested channel.
  */
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import * as fs from "fs/promises";
+import * as path from "path";
+import { fileURLToPath } from "url";
 
 // Mock backend transport so unrelated middlewares/seeder probes resolve quietly
 vi.mock("$lib/client/live/backend-transport", () => ({
@@ -148,5 +151,54 @@ describe("beta-updates channel regression (intent-hq/monorepo#1672)", () => {
 
     await flush();
     expect(setChannelSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Single-writer guard: the beta-updates persistence middleware must be the
+ * ONLY renderer call site of autoUpdateClient.setChannel. UI surfaces
+ * (Settings toggle, settings proposals) dispatch setBetaUpdatesEnabled /
+ * toggleBetaUpdates only — a direct setChannel there would duplicate the
+ * middleware's write on every user toggle. Combined with the exactly-once
+ * dispatch tests above, this proves the real UI path issues one write.
+ */
+describe("setChannel single-writer source guard", () => {
+  const SRC_ROOT = path.resolve(fileURLToPath(import.meta.url), "../../../..");
+  const ALLOWED = "store/renderer/middlewares/user-preferences-beta-persistence-service.ts";
+
+  async function findSetChannelCallSites(dir: string, hits: string[]): Promise<void> {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name === "__tests__") continue;
+        await findSetChannelCallSites(full, hits);
+      } else if (/\.(ts|svelte)$/.test(entry.name) && !/\.(test|spec)\.ts$/.test(entry.name)) {
+        const content = await fs.readFile(full, "utf8");
+        if (content.includes("autoUpdateClient.setChannel(")) {
+          hits.push(path.relative(SRC_ROOT, full));
+        }
+      }
+    }
+  }
+
+  it("the persistence middleware is the only renderer call site of autoUpdateClient.setChannel", async () => {
+    const hits: string[] = [];
+    await findSetChannelCallSites(SRC_ROOT, hits);
+    expect(hits).toEqual([ALLOWED]);
+  });
+
+  it("Settings toggle and settings proposals dispatch the Redux action instead", async () => {
+    const [settingsPage, proposalActions] = await Promise.all([
+      fs.readFile(path.join(SRC_ROOT, "routes/settings/+page.svelte"), "utf8"),
+      fs.readFile(
+        path.join(SRC_ROOT, "lib/components/chat/proposals/settings-proposal-actions.ts"),
+        "utf8",
+      ),
+    ]);
+    expect(settingsPage).toContain("setBetaUpdatesEnabled(");
+    expect(settingsPage).not.toContain("autoUpdateClient.setChannel");
+    expect(proposalActions).toContain("setBetaUpdatesEnabled(");
+    expect(proposalActions).not.toContain("autoUpdateClient.setChannel");
   });
 });
