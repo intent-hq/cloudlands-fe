@@ -41,8 +41,12 @@
     selectPaletteQuery,
   } from '$store/renderer/slices/palette/palette-selectors';
   import SpacesSwitcherOverlay from '$features/workspace/SpacesSwitcherOverlay.svelte';
+  import RadialPromptPickerOverlay from '$features/hardware-console/prompt-picker/RadialPromptPickerOverlay.svelte';
+  import EncoderCycleHud from '$features/hardware-console/encoder/EncoderCycleHud.svelte';
+  import ActionKeyHud from '$features/hardware-console/actions/ActionKeyHud.svelte';
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
+  import HudChromelessMain from '$features/hud/components/HudChromelessMain.svelte';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
   import DebugPanel from '$lib/components/debug/DebugPanel.svelte';
@@ -277,6 +281,10 @@
   if (typeof window !== 'undefined') {
     (window as any).__app_goto = goto;
   }
+
+  // Chrome-less HUD pop-out: suppress sidebar/main chrome (see HudChromelessMain);
+  // prefix match, matching isHudWindow()/isHudWindowRenderer().
+  const isHudRoute = $derived($page.url.pathname.startsWith('/hud'));
 
   // Track last non-settings path for cmd+, toggle behavior
   let lastNonSettingsPath = $state('/');
@@ -981,16 +989,19 @@
     aria-label={m.layout_appShell_shell_ariaLabel()}
     data-testid="app-ready"
   >
-    <!-- Title bar at top -->
-    <WindowTitleBar workspaceId={$activeWorkspaceId || undefined} />
-
-    <!-- Update indicator (top-right corner) -->
-    <div class="absolute top-2 right-3 z-10">
-      <UpdateDownloadIndicator />
-    </div>
+    <!-- Title bar + update indicator (suppressed on HUD: its own header is the only top chrome) -->
+    {#if !isHudRoute}
+      <WindowTitleBar workspaceId={$activeWorkspaceId || undefined} />
+      <div class="absolute top-2 right-3 z-10">
+        <UpdateDownloadIndicator />
+      </div>
+    {/if}
 
     <!-- Main Content Area with Sidebar Nav -->
     <ErrorBoundary componentName="MainLayout">
+      {#if isHudRoute}
+        <HudChromelessMain resolvedLocale={$resolvedLocale$} {children} />
+      {:else}
       <div class="flex flex-1 min-h-0">
         <!-- Global Sidebar Nav Rail -->
         <SidebarNav />
@@ -1011,6 +1022,7 @@
           <RootQuakeTerminalOverlay />
         </main>
       </div>
+      {/if}
     </ErrorBoundary>
   </div>
 
@@ -1036,6 +1048,15 @@
   <!-- Spaces Switcher Overlay (Ctrl+Tab) -->
   <SpacesSwitcherOverlay />
 
+  <!-- Joystick Radial Prompt Picker + Encoder Cycling HUD (suppressed in the HUD pop-out, inert to hardware-console input) -->
+  {#if !isHudRoute}
+    <RadialPromptPickerOverlay />
+    <EncoderCycleHud />
+  {/if}
+
+  <!-- Action-key HUD (hardware console cycle action keys; paints over the encoder HUD) -->
+  <ActionKeyHud />
+
   <!-- Usage Stats Overlay (sidebar Stats button) -->
   <StatsOverlay />
 
@@ -1048,8 +1069,10 @@
   <!-- Auggie Setup Gate -->
   <AuggieSetupGate />
 
-  <!-- Toast Notifications -->
-  <Toast />
+  <!-- Toast Notifications (suppressed in the HUD pop-out window) -->
+  {#if !isHudRoute}
+    <Toast />
+  {/if}
 
   <!-- Link Hover Tooltip (singleton — shows URL + Cmd+Click hint on link hover) -->
   <LinkTooltip />
