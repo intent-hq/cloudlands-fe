@@ -1,10 +1,9 @@
 /**
  * Provider models cache seeder tests.
  *
- * Pins the reconnect-invalidation contract: the seeder performs NO
- * connect-time hydration (the session cache starts empty by design) and
- * dispatches `providerModelsCacheCleared` on every backend reconnect, the
- * same RESUB-1 trigger the provider-catalog seeder re-hydrates on.
+ * Pins mock-harness parity with the production reconnect invalidation owned
+ * by `daemonEventsSaga`: the seeder performs NO connect-time hydration and
+ * clears the session cache on every backend reconnect.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AppClient } from '$lib/client';
@@ -44,7 +43,7 @@ describe('provider-models-seeder', () => {
     reconnectHandlers.length = 0;
   });
 
-  it('registers the reconnect listener without dispatching at seed time', async () => {
+  it('registers the mock reconnect listener without dispatching at seed time', async () => {
     const { store, client, dispatch } = makeHarness();
 
     await seedMockStore(store, client);
@@ -53,7 +52,7 @@ describe('provider-models-seeder', () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
-  it('clears the cache on every backend reconnect', async () => {
+  it('keeps mock stores in parity by clearing on every backend reconnect', async () => {
     const { store, client, dispatch } = makeHarness();
 
     await seedMockStore(store, client);

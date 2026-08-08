@@ -16,13 +16,13 @@ import {
   routeDaemonEventsNotification,
 } from '$features/events/daemon-events-bridge.client';
 import { createLogger } from '$lib/utils/client-logger';
+import { providerModelsCacheCleared } from '$store/renderer/slices/provider-models/provider-models-slice';
 import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
 
 const logger = createLogger('DaemonEventsSaga');
 
 type DaemonChannelMessage =
-  | { kind: 'notification'; notification: BackendNotification }
-  | { kind: 'reconnected' };
+  { kind: 'notification'; notification: BackendNotification } | { kind: 'reconnected' };
 
 interface SubscriptionLease {
   subscriptionId?: string;
@@ -87,23 +87,18 @@ export function* daemonEventsSaga() {
       if (message.kind === 'notification') {
         const { method, params } = message.notification;
         let settingsChanges: AppliedSettingChange[] | undefined;
-        yield* call(
-          routeDaemonEventsNotification,
-          method,
-          params,
-          lease.subscriptionId,
-          {
-            onSettingsChanges: (changes: AppliedSettingChange[]) => {
-              settingsChanges = changes;
-            },
+        yield* call(routeDaemonEventsNotification, method, params, lease.subscriptionId, {
+          onSettingsChanges: (changes: AppliedSettingChange[]) => {
+            settingsChanges = changes;
           },
-        );
+        });
         if (settingsChanges) yield* put(settingsChangesReceived(settingsChanges));
         continue;
       }
 
       // The daemon drops per-connection subscriptions on disconnect. Dispose
       // the old lease, subscribe again, then converge snapshots.
+      yield* put(providerModelsCacheCleared());
       yield* call(unsubscribeFirehose, lease);
       lease = { cancelled: false };
       yield* call(subscribeFirehose, lease);

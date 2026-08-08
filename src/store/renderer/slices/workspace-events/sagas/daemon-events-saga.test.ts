@@ -36,6 +36,7 @@ vi.mock('$features/events/daemon-events-bridge.client', async (importOriginal) =
 
 import { daemonEventsSaga } from './daemon-events-saga';
 import { DAEMON_EVENTS_SUBSCRIBE_TYPES } from '$features/events/daemon-events-bridge.client';
+import { providerModelsCacheCleared } from '$store/renderer/slices/provider-models/provider-models-slice';
 import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
 
 const settle = async () => {
@@ -121,13 +122,15 @@ describe('daemonEventsSaga', () => {
     mocks.subscribe
       .mockResolvedValueOnce({ subscriptionId: 'sub-old' })
       .mockResolvedValueOnce({ subscriptionId: 'sub-new' });
-    const task = runSaga({ dispatch: vi.fn() }, daemonEventsSaga);
+    const dispatch = vi.fn();
+    const task = runSaga({ dispatch }, daemonEventsSaga);
     await settle();
 
     mocks.reconnectHandler!();
     await settle();
 
     expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-old');
+    expect(dispatch).toHaveBeenCalledWith(providerModelsCacheCleared());
     expect(mocks.subscribe).toHaveBeenCalledTimes(2);
     expect(mocks.refresh).toHaveBeenCalledTimes(1);
     expect(mocks.subscribe.mock.invocationCallOrder[1]).toBeLessThan(
