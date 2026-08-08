@@ -73,6 +73,7 @@
 } from '$store/renderer/slices/palette/palette-selectors';
   import { computeResults } from '$store/renderer/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
+  import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectCurrentChanges } from '$store/renderer/slices/changes/changes-selectors';
@@ -1102,31 +1103,7 @@
 
                 <div class="flex-1 min-w-0 flex flex-col gap-0.5">
                   <!-- First line: label and time -->
-                  <div class="flex items-center gap-2.5">
-                    {#if item.type === 'message' && item.isArchivedWorkspace}
-                      <span
-                        class="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-foreground/[0.05] text-subtle flex-none"
-                      >
-                        {m.lib_commandPalette_archivedWorkspace_pill_label()}
-                      </span>
-                    {/if}
-                    <span class="text-[14px] font-medium text-foreground truncate"
-                      >{item.label}</span
-                    >
-                    {#if item.type === 'message' && item.workspaceName}
-                      <span class="text-xs text-subtle truncate">
-                        <span aria-hidden="true">·</span>
-                        {item.workspaceName}
-                        {#if item.repoLabel}
-                          <span aria-hidden="true">·</span>
-                          {item.repoLabel}
-                        {/if}
-                      </span>
-                    {/if}
-                    {#if item._time}
-                      <span class="text-ui text-subtle flex-none ml-auto">{item._time}</span>
-                    {/if}
-                  </div>
+                  <CommandPaletteItemTitle {item} />
 
                   <!-- Second line: description or breadcrumbs -->
                   {#if item.description || item.breadcrumbs || item.path}
