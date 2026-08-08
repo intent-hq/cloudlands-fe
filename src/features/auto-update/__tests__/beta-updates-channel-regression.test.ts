@@ -26,6 +26,7 @@ vi.mock("$lib/client/live/backend-transport", () => ({
 }));
 
 import { AUTO_UPDATE_CHANNELS } from "$features/auto-update/types";
+import { autoUpdateClient } from "$features/auto-update/auto-update.client";
 import type { UpdateState } from "$features/auto-update/types";
 import { store as appStore } from "$store/renderer/store";
 import {
@@ -151,6 +152,22 @@ describe("beta-updates channel regression (intent-hq/monorepo#1672)", () => {
 
     await flush();
     expect(setChannelSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("a call site that direct-calls setChannel in addition to dispatching double-writes (why the single-writer guard exists)", async () => {
+    setChannelSpy.mockClear();
+
+    // Replays the pre-fix Settings-page handler sequence (await a direct
+    // client setChannel, then dispatch) against the real store + middleware
+    // chain: the middleware has no value-dedup — it fires on every
+    // setBetaUpdatesEnabled — so the direct call adds a second SET_CHANNEL
+    // write. Dispatch-only call sites are therefore mandatory.
+    await autoUpdateClient.setChannel("beta");
+    appStore.dispatch(setBetaUpdatesEnabled(true));
+
+    await vi.waitFor(() => {
+      expect(setChannelSpy).toHaveBeenCalledTimes(2);
+    });
   });
 });
 

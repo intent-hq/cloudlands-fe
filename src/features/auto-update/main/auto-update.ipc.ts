@@ -27,10 +27,12 @@ const EmptySchema = z.object({}).optional();
 // no pending initialization and answer the pre-init default (stable) even
 // when local-prefs.json holds a beta preference. The gate settles when the
 // boot flow decides the updater's fate:
+//   - setupAutoUpdateIPC() settles it at registration in development (the
+//     updater never initializes in dev — the default state is the answer),
 //   - initializeAutoUpdater() completed (channel loaded from local-prefs;
 //     failures settle too and are logged there), or
 //   - markAutoUpdaterNotInitialized() declared the updater will never start
-//     this run (dev mode / no window) — the default state is the real answer.
+//     this run (no window) — the default state is the real answer.
 let settleChannelLoaded: () => void = () => {};
 const channelLoaded = new Promise<void>((resolve) => {
   settleChannelLoaded = resolve;
@@ -41,6 +43,13 @@ const channelLoaded = new Promise<void>((resolve) => {
  */
 export function setupAutoUpdateIPC(): void {
   logger.info('Setting up auto-update IPC handlers');
+
+  // Dev bypass: the updater is never initialized in development, so settle
+  // the gate at registration — GET_STATE must not wait on the deferred
+  // secondary-startup task for an initialization that will never come.
+  if (process.env.NODE_ENV === 'development') {
+    settleChannelLoaded();
+  }
 
   // Manual check for updates (triggers "up to date" notification if no updates)
   ipcMain.handle(

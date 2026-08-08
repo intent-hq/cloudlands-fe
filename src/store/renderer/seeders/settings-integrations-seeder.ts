@@ -61,11 +61,13 @@ registerMockSeeder("settings-integrations", async ({ store, client }) => {
   // ── User preferences ──
   const prefs = await client.settings.getUserPreferences();
   if (prefs) {
-    // betaUpdatesEnabled is intentionally NOT seeded here: the beta-persistence
-    // middleware hydrates it unconditionally at store init from the
-    // main-process channel (local-prefs.json, the source of truth) in both
-    // real and mock modes, so seeding it again from mock prefs would fight
-    // that hydration (intent-hq/monorepo#1672).
+    // betaUpdatesEnabled is intentionally NOT seeded here: at store init the
+    // beta-persistence middleware hydrates it from the main-process channel
+    // (local-prefs.json, the source of truth) whenever the Electron bridge —
+    // or the mock GET_STATE bridge — can answer. In a bridge-less build the
+    // hydration warn-logs and the toggle stays at the Redux default, where
+    // setChannel writes are equally inert. Seeding it again from mock prefs
+    // would fight that hydration (intent-hq/monorepo#1672).
     store.dispatch(setSpellcheckEnabled(prefs.spellcheckEnabled));
     store.dispatch(setZoomFactor(prefs.zoomFactor));
     store.dispatch(setShowArchived(prefs.showArchived));
