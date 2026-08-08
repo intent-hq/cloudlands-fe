@@ -351,19 +351,40 @@ jobs:
       - name: Unit tests
         run: pnpm run test:unit
 
+  # Single required status check for branch protection / the merge queue: fans
+  # in pr-title, conflict-markers, and the three heavy jobs (checks /
+  # build-web / test). checks/build-web/test must succeed outright;
+  # pr-title/conflict-markers accept success OR skipped since both carry
+  # `if: github.event_name == 'pull_request'` and are legitimately skipped on
+  # merge_group runs — requiring strict success there would fail the gate in
+  # the merge queue.
   gate:
-    name: Type Check & Test
+    name: CI Gate
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
     runs-on: ubuntu-latest
     permissions: {}
     if: always()
-    needs: [checks, build-web, test]
+    needs: [pr-title, conflict-markers, checks, build-web, test]
     steps:
       - name: Check results
         run: |
           if [ "${{ needs.checks.result }}" != "success" ] || \
              [ "${{ needs.build-web.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ]; then
-            echo "One or more jobs failed"
+            echo "One or more required jobs failed"
             exit 1
           fi
+          case "${{ needs.pr-title.result }}" in
+            success|skipped) ;;
+            *)
+              echo "pr-title did not succeed or skip"
+              exit 1
+              ;;
+          esac
+          case "${{ needs.conflict-markers.result }}" in
+            success|skipped) ;;
+            *)
+              echo "conflict-markers did not succeed or skip"
+              exit 1
+              ;;
+          esac
