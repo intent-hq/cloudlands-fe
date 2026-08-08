@@ -124,7 +124,12 @@ import type {
   TaskStatus,
   Workspace,
 } from '$shared/types';
-import { WorkspaceStatus, isProposal, isWorkspaceDisplayStatus } from '$shared/types';
+import {
+  WorkspaceStatus,
+  isProposal,
+  isWorkspaceAttention,
+  isWorkspaceDisplayStatus,
+} from '$shared/types';
 import {
   PROPOSAL_RESOURCE_MIME_TYPE,
   createProposalResource,
@@ -158,10 +163,12 @@ import {
   updateWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
+import { markWorkspaceSeenIfViewing } from '$features/workspace/mark-workspace-seen';
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import { ensureAgentSession } from '$features/agent/agent-read-service';
 import { recordAgentFailure, removeAgentFailure } from '$features/agent/agent-failure-registry';
+import { showAgentAttentionToast } from '$features/agent/agent-attention-toast-service';
 import { refreshWorkspaceSubscriptionEntries } from '$features/agent/agent-subscription-read-service';
 import {
   permissionRequestReceived,
@@ -1289,6 +1296,70 @@ function handlePermissionResolvedEvent(event: WorkspaceEvent): void {
 }
 
 /**
+ * `agent:attention-requested` (§6.5) carries the self-sufficient payload
+ * `{ workspaceId, agentId, agentName, kind, reason }` — an agent raised a
+ * discussion request or blocker report via `ws.agent.requestDiscussion` /
+ * `reportBlocker`. Route it to the attention-toast service, which shows a
+ * STICKY kind-flavored toast with a "Switch To" action that navigates to the
+ * reporting workspace and focuses that agent's conversation. Deliberately NOT
+ * gated on the focused workspace: the bridge firehose spans every workspace,
+ * so attention requests surface no matter what is on screen.
+ *
+ * IS gated on the payload's optional `parentAgentId` (PROTOCOL §6.5): a
+ * delegated agent's attention request wakes its parent, which handles it and
+ * escalates to the user itself if needed — so no sticky toast. The gate reads
+ * strictly the payload field (no local session lookups); absent → toast shows,
+ * which keeps older daemons working. The caller still falls through to the
+ * activity-timeline dispatch and the session refetch either way.
+ */
+function handleAttentionRequestedEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  const agentName = data.agentName;
+  const kind = data.kind;
+  const reason = data.reason;
+  if (
+    typeof agentId !== 'string' ||
+    agentId.length === 0 ||
+    typeof agentName !== 'string' ||
+    (kind !== 'discussion' && kind !== 'blocker') ||
+    typeof reason !== 'string' ||
+    reason.length === 0
+  ) {
+    logger.warn('agent:attention-requested with malformed payload', { data });
+    return;
+  }
+  const parentAgentId = data.parentAgentId;
+  if (typeof parentAgentId === 'string' && parentAgentId.length > 0) {
+    return;
+  }
+  // Prefer the payload's own workspaceId (self-sufficient per the contract),
+  // falling back to the envelope's workspace scope.
+  const targetWorkspaceId =
+    typeof data.workspaceId === 'string' && data.workspaceId.length > 0
+      ? data.workspaceId
+      : workspaceId;
+  // Prefer the payload's own timestamp, falling back to the event envelope's.
+  // An empty/whitespace payload timestamp is treated as missing so the
+  // envelope timestamp can still be used instead of dropping it.
+  const rawTimestamp =
+    typeof data.timestamp === 'string' && data.timestamp.trim().length > 0
+      ? data.timestamp
+      : event.timestamp;
+  const timestamp =
+    typeof rawTimestamp === 'string' && rawTimestamp.trim().length > 0 ? rawTimestamp : undefined;
+  void showAgentAttentionToast({
+    workspaceId: targetWorkspaceId,
+    agentId,
+    agentName,
+    kind,
+    reason,
+    timestamp,
+  });
+}
+
+/**
  * `note:*` (§7 workspace-scoped) carries `{ noteId, path, action, ... }` — the
  * daemon-authoritative "something changed" ping (PROTOCOL §7 note events do
  * NOT embed the full note body). The handler routes to `applyNoteFromEvent`,
@@ -1440,6 +1511,38 @@ function handleDisplayStatusChangedEvent(event: WorkspaceEvent, envelopeWorkspac
 }
 
 /**
+ * `workspace:attention-changed` (PROTOCOL §6.5 / §9.9) carries the
+ * self-sufficient payload `{ workspaceId, attention }` — the daemon emits it
+ * only on an actual change, so the FE mirrors the new value directly into the
+ * workspace entity without a follow-up `workspace.get`. The wire values are
+ * snake_case and match the FE type exactly, so no mapping is needed. The
+ * HUD consumes this same event through its own subscription
+ * (`hud-subscription.ts`) with independent bucket semantics — this handler
+ * only feeds the workspace entity store. Like the tokenUsage/context/
+ * displayStatus handlers, the payload's own `data.workspaceId` wins over the
+ * envelope id when present.
+ */
+function handleAttentionChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : envelopeWorkspaceId;
+  const attention = data.attention;
+  if (!isWorkspaceAttention(attention)) return;
+  appStore.dispatch(
+    bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { attention })]),
+  );
+  // An unread raise for the workspace the user is currently viewing is marked
+  // seen immediately (fire-and-forget `workspace.markSeen`, §5.1) — no
+  // self-blue-dot while the user is looking at it. The daemon answers with a
+  // fresh attention-changed (`none`) that flows back through this handler.
+  if (attention === 'unread') markWorkspaceSeenIfViewing(workspaceId);
+}
+
+/**
  * Reconcile workspace.activity when a missed edge is detected. The daemon only
  * emits `workspace:activity-changed` on the 0↔1 edge; for coordinator-only
  * workspaces that edge can fire before the FE bridge subscribed or before the
@@ -1495,6 +1598,66 @@ async function reconcileWorkspaceActivity(
 }
 
 /**
+ * Single-flight + trailing-coalesce state for
+ * {@link reconcileWorkspaceAgentSummary}, keyed per workspaceId (AGENTS.md
+ * "Event-driven refetches — single-flight and coalesced"). A burst of
+ * `agent:deleted` events for the same workspace (e.g. a multi-agent cleanup)
+ * must produce at most one immediate `workspace.get` plus at most one
+ * trailing follow-up — never one independent fetch per event, since
+ * unordered resolution could let a stale response that resolves last
+ * restore an already-deleted agent into `agentSummary`.
+ */
+const agentSummaryFetchInFlightByWorkspace = new Set<string>();
+const agentSummaryFetchFollowUpWantedByWorkspace = new Set<string>();
+
+async function runReconcileWorkspaceAgentSummaryFetch(workspaceId: string): Promise<void> {
+  const { backendRequest } = await import('$lib/client/live/backend-transport');
+  try {
+    const response = (await backendRequest('workspace.get', { workspaceId })) as
+      | { workspace?: Workspace }
+      | undefined;
+    const workspace = response?.workspace;
+    if (workspace) {
+      const { setWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(setWorkspaceEntity(workspace));
+    }
+  } catch (_error) {
+    // Workspace might have been deleted or transport error; no-op is safe.
+  } finally {
+    agentSummaryFetchInFlightByWorkspace.delete(workspaceId);
+    // Trailing coalesce: one or more triggers arrived while this fetch was in
+    // flight — run exactly one follow-up fetch to pick up the latest state,
+    // regardless of how many triggers piled up.
+    if (agentSummaryFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
+      void runReconcileWorkspaceAgentSummaryFetch(workspaceId);
+    }
+  }
+}
+
+/**
+ * Refresh the workspace entity's BE-owned `agentSummary` aggregate (PROTOCOL
+ * §5.1) after an `agent:deleted` event. The HUD card agent rows are built
+ * from `workspace.agentSummary.agents` (`agentInfosOf` in hud-selectors.ts),
+ * which the `agent.list` hydration path does NOT touch — without this
+ * refetch a deleted agent lingers on its card until an unrelated workspace
+ * refetch. Fetch `workspace.get` and merge the fresh entity via
+ * `setWorkspaceEntity` (the `mergeWorkspaceEnrichment` path takes the
+ * incoming `agentSummary` when present). Single-flighted with trailing
+ * coalesce per workspaceId (see {@link agentSummaryFetchInFlightByWorkspace}):
+ * the leading edge fetches immediately, and any triggers that arrive while
+ * that fetch is in flight collapse into at most one trailing follow-up.
+ */
+async function reconcileWorkspaceAgentSummary(workspaceId: string): Promise<void> {
+  if (agentSummaryFetchInFlightByWorkspace.has(workspaceId)) {
+    agentSummaryFetchFollowUpWantedByWorkspace.add(workspaceId);
+    return;
+  }
+  agentSummaryFetchInFlightByWorkspace.add(workspaceId);
+  await runReconcileWorkspaceAgentSummaryFetch(workspaceId);
+}
+
+/**
  * `workspace:updated` (PROTOCOL §6.5 / §7) carries `{ workspaceId, changes }`
  * where `changes` is the applied `WorkspaceUpdate` delta — the fields the
  * caller actually asked to mutate, with `Option::is_none` fields skipped in
@@ -1507,8 +1670,9 @@ async function reconcileWorkspaceActivity(
  * `WorkspaceProgressCard`'s `listenSync`, but never touched Redux).
  *
  * The wire delta is whitelisted against the applied-delta shape rather than
- * blind-spread, so unknown fields (e.g. `attention`, which has no FE
- * `Workspace` field) are dropped rather than leaking into the entity. Field
+ * blind-spread, so unknown fields are dropped rather than leaking into the
+ * entity (`attention` is deliberately absent from the whitelist — its changes
+ * arrive via the dedicated `workspace:attention-changed` event). Field
  * names match FE `Workspace` camelCase 1:1 with the daemon struct.
  *
  * The legacy `relayLegacyIpcEvent` re-emit (case `"workspace:updated"`) stays
@@ -2130,6 +2294,12 @@ export function routeDaemonEventsNotification(
   if (type === 'workspace:displayStatus-changed') {
     handleDisplayStatusChangedEvent(event, workspaceId);
   }
+  // `workspace:attention-changed` (§6.5 / §9.9) — merge the BE-owned
+  // dismissible attention flag onto the workspace entity so unread indicators
+  // update live without a refetch. Side effect, never an early return.
+  if (type === 'workspace:attention-changed') {
+    handleAttentionChangedEvent(event, workspaceId);
+  }
 
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
   // still listening on the legacy channels get the daemon event too.
@@ -2172,6 +2342,11 @@ export function routeDaemonEventsNotification(
     if (typeof data?.agentId === 'string') {
       removeAgentFailure(data.agentId);
     }
+    // Refresh the workspace entity's BE-owned `agentSummary` aggregate so the
+    // HUD card rows drop the deleted agent immediately — the `agent.list`
+    // hydration above does not touch it. Fire-and-forget side effect, falls
+    // through to the timeline dispatch below.
+    void reconcileWorkspaceAgentSummary(workspaceId);
   }
 
   // Activity reconciliation: busy-implying agent events may indicate a missed
@@ -2291,6 +2466,11 @@ export function routeDaemonEventsNotification(
     // fall through to the storage dispatch below so the activity timeline
     // records the outcome.
   }
+  if (type === 'agent:attention-requested') {
+    handleAttentionRequestedEvent(event, workspaceId);
+    // fall through to the storage dispatch below so the activity timeline
+    // records the attention request alongside the sticky toast.
+  }
   // Script output/state (§6.5) — script:output feeds the live buffer the
   // `ScriptOutputViewer` xterm reads from, script:state mirrors the
   // recomputed `ScriptRuntimeState` into the scripts slice. Both fall
@@ -2321,6 +2501,14 @@ export function routeDaemonEventsNotification(
     handleAgentRenamedEvent(event);
   }
   if (type === 'agent:updated') {
+    handleAgentUpdatedEvent(event);
+  }
+  // `agent:attention-requested` (requestDiscussion / reportBlocker) — the
+  // daemon persists the attention-request fields on the session and also
+  // emits `agent:updated`, but re-fetch here too so the sidebar/footer
+  // indicator appears even if that companion event is missed. Same
+  // metadata-only refresh as handleAgentUpdatedEvent (transcript preserved).
+  if (type === 'agent:attention-requested') {
     handleAgentUpdatedEvent(event);
   }
   // STAB-22: agent:message events with role="assistant" should trigger a
@@ -2415,6 +2603,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // current-cycle display status transitions so the sidebar grouping updates
   // without a refetch.
   'workspace:displayStatus-changed',
+  // `workspace:attention-changed` (§6.5 / §9.9) — self-sufficient dismissible
+  // attention flag changes so unread indicators update without a refetch.
+  'workspace:attention-changed',
   'workspace:updated',
   'workspace:created',
   'workspace:deleted',
@@ -2475,6 +2666,8 @@ export function disposeDaemonEventsRoutingState(): void {
   }
   tasksRefreshTimersByWorkspace.clear();
   scriptOutputDecoders.clear();
+  agentSummaryFetchInFlightByWorkspace.clear();
+  agentSummaryFetchFollowUpWantedByWorkspace.clear();
 }
 
 /** Test-only — reset stream accumulators and debounce state. */

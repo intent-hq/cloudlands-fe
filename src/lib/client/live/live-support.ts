@@ -195,36 +195,270 @@ const WORKSPACE_ID_SET_EVENTS = [
 ] as const;
 
 /**
+ * Trailing-coalesce window for the shared id source's resync fetch (seed,
+ * reconnect, or a defensive re-enumeration on a malformed payload) — mirrors
+ * `LEGACY_REFETCH_COALESCE_MS` in `delta-subscription.ts` so a burst of
+ * triggers collapses to at most one in-flight `workspace.list` call plus one
+ * trailing follow-up.
+ */
+const WORKSPACE_ID_RESYNC_COALESCE_MS = 250;
+
+/**
+ * Ref-counted, push-driven workspace-id broadcaster shared by every
+ * `subscribeWorkspaceIds()` caller (the notes/tasks/agents clients each wire
+ * one per-workspace typed channel off it, PROTOCOL §6.9). `listWorkspaceIds()`
+ * (`workspace.list`) is called ONLY to seed the first subscriber, to recover
+ * after `onBackendReconnected`, or defensively when an event that should
+ * change the set arrives without the id/fields needed to apply it
+ * incrementally — never on every event (the flood this replaces). `null`
+ * means "not yet seeded"; teardown at refcount 0 resets it so the next
+ * subscriber re-seeds fresh.
+ */
+let sharedWorkspaceIds: Set<string> | null = null;
+let workspaceIdRefCount = 0;
+// Keyed by a per-subscription id (not the listener function itself) so two
+// subscriptions passing the same callback reference are tracked
+// independently — a `Set<listener>` would collapse them into one entry and
+// unsubscribing either would silently drop the other's updates.
+const workspaceIdListeners = new Map<number, (ids: readonly string[]) => void>();
+let nextWorkspaceIdListenerId = 0;
+let offWorkspaceIdNotify: Unsubscribe | null = null;
+let offWorkspaceIdReconnect: Unsubscribe | null = null;
+
+/**
+ * Bumped on every direct mutation of `sharedWorkspaceIds` (an incremental
+ * add/remove applied from an event payload). A resync fetch captures this
+ * value when it starts and only applies its result if it is unchanged at
+ * resolve-time — otherwise an incremental update raced the fetch and the set
+ * already reflects the current truth, so the (now-stale) fetch result is
+ * discarded instead of clobbering it.
+ */
+let workspaceIdMutationGeneration = 0;
+
+let workspaceIdFetchInFlight = false;
+let workspaceIdFetchFollowUpWanted = false;
+let workspaceIdFetchFollowUpTimer: ReturnType<typeof setTimeout> | undefined;
+
+function notifyWorkspaceIdListeners(): void {
+  const ids = sharedWorkspaceIds ? [...sharedWorkspaceIds] : [];
+  for (const listener of workspaceIdListeners.values()) listener(ids);
+}
+
+function runWorkspaceIdResyncFetch(): void {
+  workspaceIdFetchInFlight = true;
+  const startGeneration = workspaceIdMutationGeneration;
+  void listWorkspaceIds()
+    .then((ids) => {
+      // An incremental update raced this fetch, so its result may already be
+      // stale (it was computed before that update landed). Never overwrite —
+      // arm the trailing coalesced follow-up (below) so we reconcile with one
+      // more fetch instead of silently losing the race.
+      if (workspaceIdMutationGeneration !== startGeneration) {
+        workspaceIdFetchFollowUpWanted = true;
+        return;
+      }
+      sharedWorkspaceIds = new Set(ids);
+      workspaceIdMutationGeneration += 1;
+      notifyWorkspaceIdListeners();
+    })
+    .catch(() => {
+      // Best-effort: only fall back to an empty set if nothing was ever
+      // seeded, so a transient resync failure never clobbers a good set.
+      if (sharedWorkspaceIds === null) {
+        sharedWorkspaceIds = new Set();
+        workspaceIdMutationGeneration += 1;
+        notifyWorkspaceIdListeners();
+      }
+    })
+    .finally(() => {
+      workspaceIdFetchInFlight = false;
+      if (!workspaceIdFetchFollowUpWanted) return;
+      workspaceIdFetchFollowUpWanted = false;
+      workspaceIdFetchFollowUpTimer = setTimeout(() => {
+        workspaceIdFetchFollowUpTimer = undefined;
+        if (workspaceIdRefCount > 0) runWorkspaceIdResyncFetch();
+      }, WORKSPACE_ID_RESYNC_COALESCE_MS);
+    });
+}
+
+/**
+ * Single-flighted, trailing-coalesced resync trigger (seed/reconnect/
+ * defensive), mirroring `coalescedRefetchEmit` in `delta-subscription.ts`: a
+ * trigger while a trailing follow-up is already scheduled is absorbed (that
+ * follow-up will re-fetch the latest state); a trigger while a fetch is
+ * in-flight arms exactly one trailing follow-up; otherwise fetch immediately.
+ */
+function resyncWorkspaceIds(): void {
+  if (workspaceIdFetchFollowUpTimer !== undefined) return;
+  if (workspaceIdFetchInFlight) {
+    workspaceIdFetchFollowUpWanted = true;
+    return;
+  }
+  runWorkspaceIdResyncFetch();
+}
+
+/**
+ * Add `id` to the shared set and notify listeners, but only if it changed.
+ * While the initial seed fetch is still in flight (`sharedWorkspaceIds ===
+ * null`) the id can't be applied yet, but the event must not be silently
+ * dropped: bump the generation so the in-flight `workspace.list` snapshot
+ * (taken before this event) is treated as stale, and arm a trailing resync
+ * so the set is reconciled once that fetch settles.
+ */
+function addWorkspaceId(id: string): void {
+  if (!sharedWorkspaceIds) {
+    workspaceIdMutationGeneration += 1;
+    resyncWorkspaceIds();
+    return;
+  }
+  if (sharedWorkspaceIds.has(id)) return;
+  sharedWorkspaceIds.add(id);
+  workspaceIdMutationGeneration += 1;
+  notifyWorkspaceIdListeners();
+}
+
+/**
+ * Remove `id` from the shared set and notify listeners, but only if it
+ * changed. See {@link addWorkspaceId} for the seed-time (`null` set) race
+ * handling.
+ */
+function removeWorkspaceId(id: string): void {
+  if (!sharedWorkspaceIds) {
+    workspaceIdMutationGeneration += 1;
+    resyncWorkspaceIds();
+    return;
+  }
+  if (!sharedWorkspaceIds.has(id)) return;
+  sharedWorkspaceIds.delete(id);
+  workspaceIdMutationGeneration += 1;
+  notifyWorkspaceIdListeners();
+}
+
+/** Resolve the `data` payload of an `events.event` notification (mirrors `resolveEventType`'s envelope unwrap). */
+function resolveEventData(params: unknown): unknown {
+  if (!params || typeof params !== "object") return undefined;
+  const wrapped = (params as { event?: unknown }).event;
+  if (wrapped && typeof wrapped === "object") return (wrapped as { data?: unknown }).data;
+  return (params as { data?: unknown }).data;
+}
+
+/** Extract a workspace id from a `workspace:created`/`workspace:deleted` payload's `workspaceId` or `workspace.id`. */
+function extractCreatedOrDeletedWorkspaceId(data: unknown): string | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const rec = data as Record<string, unknown>;
+  if (typeof rec.workspaceId === "string" && rec.workspaceId.length > 0) return rec.workspaceId;
+  const nested = rec.workspace;
+  if (nested && typeof nested === "object") {
+    const nestedId = (nested as Record<string, unknown>).id;
+    if (typeof nestedId === "string" && nestedId.length > 0) return nestedId;
+  }
+  return undefined;
+}
+
+/** Whether a `workspace:created` payload's embedded workspace is (unexpectedly) already archived. */
+function isCreatedWorkspaceArchived(data: unknown): boolean {
+  if (!data || typeof data !== "object") return false;
+  const nested = (data as Record<string, unknown>).workspace;
+  if (!nested || typeof nested !== "object") return false;
+  return (nested as Record<string, unknown>).archived === true;
+}
+
+/**
+ * Apply one `events.event` notification to the shared id set. Valid
+ * `workspace:created`/`workspace:deleted` mutate the set directly from the
+ * payload's id; `workspace:updated` inspects ONLY `changes.archived` (every
+ * other delta — lastActivity, git fields, status text, … — is ignored: no
+ * fetch, no notify). A payload that arrives without the id/fields needed to
+ * apply it incrementally — or a truly typeless payload — falls back to a
+ * defensive coalesced resync (older daemons / malformed payloads).
+ */
+function applyWorkspaceIdEvent(method: string, params: unknown): void {
+  if (!isEventOneOf(method, params, WORKSPACE_ID_SET_EVENTS)) return;
+  const type = resolveEventType(params);
+  if (type === undefined) {
+    resyncWorkspaceIds();
+    return;
+  }
+  const data = resolveEventData(params);
+  if (type === "workspace:created") {
+    const id = extractCreatedOrDeletedWorkspaceId(data);
+    if (!id) {
+      resyncWorkspaceIds();
+      return;
+    }
+    if (isCreatedWorkspaceArchived(data)) return;
+    addWorkspaceId(id);
+    return;
+  }
+  if (type === "workspace:deleted") {
+    const id = extractCreatedOrDeletedWorkspaceId(data);
+    if (!id) {
+      resyncWorkspaceIds();
+      return;
+    }
+    removeWorkspaceId(id);
+    return;
+  }
+  if (type === "workspace:updated") {
+    const rec = data && typeof data === "object" ? (data as Record<string, unknown>) : undefined;
+    const id = typeof rec?.workspaceId === "string" ? rec.workspaceId : undefined;
+    const changes = rec?.changes;
+    if (!id || !changes || typeof changes !== "object") {
+      resyncWorkspaceIds();
+      return;
+    }
+    const archived = (changes as Record<string, unknown>).archived;
+    if (archived === true) removeWorkspaceId(id);
+    else if (archived === false) addWorkspaceId(id);
+    // Any other delta (lastActivity, git fields, status text, …) is ignored.
+  }
+}
+
+/**
  * Dynamic workspace-id source for the per-workspace typed channels (one
- * `note`/`task`/`agent.subscribe` per workspace, PROTOCOL §6.9): yields the
- * FULL desired workspace-id set from `listWorkspaceIds()` — the same
- * enumeration the clients' `subscribe` `fetchAll` flattens over, so typed
- * coverage matches legacy coverage — re-enumerating on the legacy workspace
- * events that can change that set ({@link WORKSPACE_ID_SET_EVENTS}) and on
- * reconnect (the set may have changed during the outage; a stale channel for
- * a deleted workspace would otherwise fail re-registration and pin the
- * subscription in legacy mode). A generation guard drops out-of-order
- * enumerations so an older set can never overwrite a newer one.
+ * `note`/`task`/`agent.subscribe` per workspace, PROTOCOL §6.9): a shared,
+ * ref-counted, push-driven broadcaster. The first subscriber wires the
+ * notification/reconnect listeners and seeds the set via ONE
+ * `listWorkspaceIds()` call; every subsequent event that can change set
+ * membership ({@link WORKSPACE_ID_SET_EVENTS}) is applied incrementally from
+ * its own payload — steady-state operation issues ZERO `workspace.list`
+ * calls. The last unsubscribe tears the shared listeners down and resets the
+ * seed so the next subscriber starts fresh.
  */
 export function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void): Unsubscribe {
-  let cancelled = false;
-  let generation = 0;
-  const refresh = () => {
-    generation += 1;
-    const current = generation;
-    void listWorkspaceIds().then((ids) => {
-      if (!cancelled && current === generation) listener(ids);
-    });
-  };
-  refresh();
-  const offNotify = onBackendNotification((n) => {
-    if (isEventOneOf(n.method, n.params, WORKSPACE_ID_SET_EVENTS)) refresh();
-  });
-  const offReconnect = onBackendReconnected(refresh);
+  let disposed = false;
+  workspaceIdRefCount += 1;
+  const listenerId = nextWorkspaceIdListenerId++;
+  workspaceIdListeners.set(listenerId, listener);
+
+  if (workspaceIdRefCount === 1) {
+    offWorkspaceIdNotify = onBackendNotification((n) => applyWorkspaceIdEvent(n.method, n.params));
+    offWorkspaceIdReconnect = onBackendReconnected(resyncWorkspaceIds);
+    resyncWorkspaceIds();
+  } else if (sharedWorkspaceIds !== null) {
+    // Already seeded: give the new subscriber the current set immediately.
+    listener([...sharedWorkspaceIds]);
+  }
+
   return () => {
-    cancelled = true;
-    offNotify();
-    offReconnect();
+    if (disposed) return;
+    disposed = true;
+    workspaceIdListeners.delete(listenerId);
+    workspaceIdRefCount -= 1;
+    if (workspaceIdRefCount > 0) return;
+    offWorkspaceIdNotify?.();
+    offWorkspaceIdNotify = null;
+    offWorkspaceIdReconnect?.();
+    offWorkspaceIdReconnect = null;
+    if (workspaceIdFetchFollowUpTimer !== undefined) {
+      clearTimeout(workspaceIdFetchFollowUpTimer);
+      workspaceIdFetchFollowUpTimer = undefined;
+    }
+    workspaceIdFetchFollowUpWanted = false;
+    sharedWorkspaceIds = null;
+    // Invalidate any still-in-flight fetch from this cycle so a late resolve
+    // cannot repopulate the set after the last subscriber has torn it down.
+    workspaceIdMutationGeneration += 1;
   };
 }
 

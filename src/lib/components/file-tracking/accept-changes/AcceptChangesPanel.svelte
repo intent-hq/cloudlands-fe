@@ -686,7 +686,11 @@
   });
 
   // Load only git status (branch, commits, PRs) - used for background refresh
-  async function loadStatusOnly() {
+  // `forceRefresh` bypasses the client's single-flight cache; use it after a
+  // git mutation (commit/push/merge/etc) so this call cannot be coalesced
+  // into a request that started before the mutation and would return
+  // pre-mutation status.
+  async function loadStatusOnly(forceRefresh = false) {
     // Capture version at start to prevent stale responses from overwriting fresh data
     const thisVersion = ++statusRequestVersion;
     isLoadingStatus = true;
@@ -694,7 +698,9 @@
       // Refresh file tracking in background (don't await - it may be slow)
       appStore.dispatch(refreshRequested(workspaceId));
 
-      const newStatus = await AcceptChangesClient.getStatus(WorkspaceId(workspaceId));
+      const newStatus = await AcceptChangesClient.getStatus(WorkspaceId(workspaceId), {
+        forceRefresh,
+      });
 
       // Only update state if this is still the most recent request
       if (thisVersion !== statusRequestVersion) return;
@@ -814,7 +820,10 @@
   async function loadStatus(showLoading = true) {
     // This is used for refreshing after actions - run in background without blocking UI
     void showLoading; // Unused but kept for API compatibility
-    await Promise.all([loadStatusOnly(), prepareAction()]);
+    // Force a fresh getStatus request: a mutation just happened, so any
+    // request that was already in flight (started before the mutation)
+    // must not be reused for this post-mutation refresh.
+    await Promise.all([loadStatusOnly(true), prepareAction()]);
   }
 
   // Actions - use Redux file tracking to keep both panels in sync

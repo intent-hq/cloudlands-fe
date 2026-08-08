@@ -78,6 +78,7 @@ function state() {
     workspace: { workspaces: createCollection('id', []) },
     agentSessions: { byAgentId: {} },
     workspaceAgents: { byWorkspaceId: {} },
+    prStatus: { byWorkspaceId: {} },
   };
 }
 
@@ -311,6 +312,60 @@ describe('lifecycleReadSaga', () => {
       { type: 'prStatus/refreshCompleted', payload: { wsId: WS, success: false, error: 'pr.refresh failed', timestamp: NOW.getTime() } },
       { type: 'prStatus/refreshStarted', payload: [WS] },
       { type: 'prStatus/refreshCompleted', payload: { wsId: WS, success: false, error: 'refresh failed', timestamp: NOW.getTime() } },
+    ]);
+    await stop(run.task);
+  });
+
+  it('skips a non-forced PR refresh within the freshness TTL', async () => {
+    const current = state();
+    current.prStatus.byWorkspaceId[WS] = {
+      lastRefreshTime: NOW.getTime() - 59_000,
+      isRefreshing: false,
+      lastError: null,
+    };
+    const run = start(current);
+    run.channel.put(refreshPRStatusRequested(WS, false, false));
+    await settle();
+
+    expect(mocks.git.prRefresh.mock.calls).toEqual([]);
+    expect(run.actions).toEqual([]);
+    await stop(run.task);
+  });
+
+  it('runs a non-forced PR refresh once the freshness TTL has expired', async () => {
+    const current = state();
+    current.prStatus.byWorkspaceId[WS] = {
+      lastRefreshTime: NOW.getTime() - 60_000,
+      isRefreshing: false,
+      lastError: null,
+    };
+    const run = start(current);
+    run.channel.put(refreshPRStatusRequested(WS, false, false));
+    await settle();
+
+    expect(mocks.git.prRefresh.mock.calls).toEqual([[WS]]);
+    expect(run.actions).toEqual([
+      { type: 'prStatus/refreshStarted', payload: [WS] },
+      { type: 'prStatus/refreshCompleted', payload: { wsId: WS, success: true, error: undefined, timestamp: NOW.getTime() } },
+    ]);
+    await stop(run.task);
+  });
+
+  it('runs a forced PR refresh even within the freshness TTL', async () => {
+    const current = state();
+    current.prStatus.byWorkspaceId[WS] = {
+      lastRefreshTime: NOW.getTime() - 1_000,
+      isRefreshing: false,
+      lastError: null,
+    };
+    const run = start(current);
+    run.channel.put(refreshPRStatusRequested(WS, true, false));
+    await settle();
+
+    expect(mocks.git.prRefresh.mock.calls).toEqual([[WS]]);
+    expect(run.actions).toEqual([
+      { type: 'prStatus/refreshStarted', payload: [WS] },
+      { type: 'prStatus/refreshCompleted', payload: { wsId: WS, success: true, error: undefined, timestamp: NOW.getTime() } },
     ]);
     await stop(run.task);
   });

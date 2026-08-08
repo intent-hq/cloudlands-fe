@@ -100,6 +100,7 @@ describe('daemonEventsSaga', () => {
       'workspace:context-changed',
       'workspace:activity-changed',
       'workspace:displayStatus-changed',
+      'workspace:attention-changed',
       'workspace:updated',
       'workspace:created',
       'workspace:deleted',

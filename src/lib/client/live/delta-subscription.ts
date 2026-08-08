@@ -9,45 +9,33 @@
  * upserts `added`/`updated` and deletes `removedIds`, all keyed by id. State is
  * held in the subscription seam (a `Map`) feeding the existing AppClient handler.
  *
- * Item 3 (coexist + reconnect): the legacy `events.subscribe` firehose keeps
- * running. Until a valid push is seen for our subscription we serve today's
- * one-shot refetch (dual-mode-safe — the default when the daemon has no
- * live-state). Event-driven refetches are coalesced (leading edge + one
- * trailing follow-up per window, single-flight) so an event storm while not
- * live cannot fan out one fetchAll per event (intent-hq/monorepo#1010).
- * Once live, legacy events are ignored to avoid double-application.
- * A sequence gap (or an unseeded delta) triggers reconnect-to-resnapshot: the
- * reconciler resets and the subscription re-registers to obtain a fresh seq-0
- * snapshot, with a one-shot refetch bridging the stale-UI window.
+ * Item 3 (channel-only, no legacy path): every subscription is backed
+ * exclusively by a typed snapshot+delta channel of PROTOCOL §6.9 (e.g.
+ * `workspace.subscribe`), registered unconditionally via a plain
+ * `backendRequest` (the `chat.subscribe` precedent) — daemons are always
+ * up to date and always advertise the channel, so there is no coexisting
+ * `events.subscribe` firehose, no `fetchAll` refetch, and no liveState
+ * capability gating (intent-hq/monorepo#1697). A failed registration retries
+ * with capped exponential backoff — the channel is the only data path, so a
+ * registration failure must keep retrying rather than silently going stale.
+ * A sequence gap (or an unseeded delta) triggers resnapshot: the affected
+ * channel's reconciler resets and it re-registers for a fresh seq-0 snapshot;
+ * the handler is not re-invoked until that fresh snapshot lands, so
+ * previously reconciled state is never flashed away by a transient gap.
  *
- * Item 4 (typed channel): when the config carries a `channel` descriptor AND
- * the daemon advertises `capabilities.liveState`, the matching snapshot+delta
- * channel of PROTOCOL §6.9 (e.g. `workspace.subscribe`) is registered via a
- * plain `backendRequest` — the `chat.subscribe` precedent — alongside the
- * firehose. Its `subscription.push` frames are what actually flip a
- * subscription live; the capability flag alone never suppresses refetches
- * (intent-hq/monorepo#775).
- *
- * Item 5 (dynamic per-id channels): a `channel.dynamic` scope expands the
+ * Item 4 (dynamic per-id channels): a `channel.dynamic` scope expands the
  * descriptor into ONE typed channel per desired id (e.g. one `note.subscribe`
  * per workspace), each with an independent subscriptionId/seq/registration-
  * generation. Ids added at runtime register a channel and merge its seq-0
- * snapshot into the emitted collection; ids removed unsubscribe and evict
- * their entities. The subscription is live ONLY while EVERY desired channel
- * is push-confirmed — any channel gap/loss drops back to bridging legacy
- * refetches (the #775 safety net never regresses). Pre-ack pushes are
- * buffered until the subscribe reply resolves (the chat-client precedent)
- * instead of dropped.
+ * snapshot into the emitted collection once it arrives; ids removed
+ * unsubscribe and evict their entities immediately. Confirmed sibling
+ * channels keep emitting while another channel is still registering or
+ * recovering — there is no "every channel must be live" global gate. Pre-ack
+ * pushes are buffered until the subscribe reply resolves (the chat-client
+ * precedent) instead of dropped.
  */
 import type { SubscriptionHandler, Unsubscribe } from "../app-client";
-import {
-  backendRequest,
-  backendSubscribe,
-  backendUnsubscribe,
-  detectLiveStateCapability,
-  onBackendNotification,
-  onBackendReconnected,
-} from "./backend-transport";
+import { backendRequest, onBackendNotification, onBackendReconnected } from "./backend-transport";
 
 /** Incremental change set carried by a `kind:"delta"` push. */
 export interface DeltaPayload {
@@ -168,9 +156,9 @@ export interface DynamicChannelScope {
 
 /**
  * Descriptor for a typed snapshot+delta channel (PROTOCOL §6.9). Registered
- * via plain `backendRequest` (not `backendSubscribe`) when the daemon
- * advertises `capabilities.liveState`; its `subscription.push` frames drive
- * the reconciler.
+ * unconditionally via a plain `backendRequest` (the `chat.subscribe`
+ * precedent) — daemons always advertise the channel, so there is no
+ * capability gate; its `subscription.push` frames drive the reconciler.
  */
 export interface TypedChannelDescriptor {
   /** Channel registration method, e.g. `"workspace.subscribe"`. */
@@ -188,22 +176,12 @@ export interface TypedChannelDescriptor {
 
 /** Configuration for {@link createDeltaSubscription}. */
 export interface DeltaSubscriptionConfig<T> {
-  /** Daemon event types for the coexisting legacy `events.subscribe` firehose. */
-  eventTypes: string[];
-  /**
-   * Optional typed §6.9 channel to register when the daemon advertises
-   * liveState. Without it (or on legacy daemons) only the firehose +
-   * refetch path runs, exactly as today.
-   */
-  channel?: TypedChannelDescriptor;
-  /** One-shot refetch: initial snapshot, legacy refresh, and gap-recovery bridge. */
-  fetchAll: () => Promise<T[]>;
+  /** The typed §6.9 channel backing this subscription — the only data path. */
+  channel: TypedChannelDescriptor;
   /** Stable id for an entity from its raw daemon shape. */
   getId: (raw: Record<string, unknown>) => string;
   /** Coerce a raw push entity into `T`; `null` drops it. */
   normalize: (raw: Record<string, unknown>) => T | null;
-  /** Whether a legacy `events.event` notification warrants a refetch. */
-  matchLegacyEvent: (method: string, params: unknown) => boolean;
   /** Receives the reconciled collection on every change. */
   handler: SubscriptionHandler<T[]>;
 }
@@ -227,6 +205,10 @@ interface DynamicChannelState<T> {
   seeded: boolean;
   /** Gap seen: deltas are ignored until the recovery snapshot lands. */
   awaitingResnapshot: boolean;
+  /** Consecutive registration failures, feeding the backoff delay. */
+  retryAttempt: number;
+  /** Pending retry timer, cleared on a superseding registration/teardown. */
+  retryTimer?: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -237,40 +219,38 @@ interface DynamicChannelState<T> {
  */
 const MAX_BUFFERED_PUSHES = 32;
 
-/**
- * Trailing window for coalescing legacy-event refetches. While a subscription
- * is not live, daemon event storms (e.g. the agent-lifecycle burst after a
- * restart) must not fan out one `fetchAll` per event — for the agents client
- * that is one `agent.list` per workspace per event, the intent-hq/monorepo#1010
- * slow-statement burst. Events arriving while a refetch is in flight (or a
- * follow-up is already scheduled) collapse into a single trailing refetch
- * this many ms after the in-flight one settles.
- */
-const LEGACY_REFETCH_COALESCE_MS = 250;
+/** Base delay for channel-registration retry backoff. */
+const RETRY_BASE_MS = 1000;
+
+/** Cap on the exponential registration-retry backoff. */
+const RETRY_MAX_MS = 30_000;
 
 /**
- * Wire a dual-mode subscription with runtime-only live-state detection: live
- * mode is entered per-subscription when the first valid `subscription.push`
- * for THIS subscription is observed; until then legacy `events.event` matches
- * keep serving today's one-shot refetch. A hello-time capability flag alone
- * must never silence refetches — when the typed channel is not actually wired
- * that would leave the UI permanently stale (intent-hq/monorepo#775). Once
- * live, snapshots/deltas reconcile incrementally. Returns the disposer.
+ * Exponential backoff (capped) for the given consecutive-failure count. The
+ * channel is the only data path for a subscription (intent-hq/monorepo#1697:
+ * fetchAll is gone), so a registration failure must keep retrying rather than
+ * leaving the subscription permanently unseeded.
+ */
+function retryDelayMs(attempt: number): number {
+  return Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS);
+}
+
+/**
+ * Wire a subscription backed exclusively by a typed §6.9 snapshot+delta
+ * channel (intent-hq/monorepo#1697 — no legacy `events.subscribe` firehose,
+ * no `fetchAll` refetch, no liveState capability gating: the channel is
+ * registered unconditionally and retries with backoff on failure). Snapshot
+ * and delta pushes reconcile into the collection incrementally; a sequence
+ * gap resnapshots just the affected channel. Returns the disposer.
  */
 export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): Unsubscribe {
-  const { eventTypes, channel, fetchAll, getId, normalize, matchLegacyEvent, handler } = config;
-  const dynamic = channel?.dynamic;
-  // Static/legacy reconciler; the dynamic form holds one reconciler per
-  // channel in `dynamicChannels` instead.
+  const { channel, getId, normalize, handler } = config;
+  const dynamic = channel.dynamic;
+  // Static reconciler; the dynamic form holds one reconciler per channel in
+  // `dynamicChannels` instead.
   const reconciler = new DeltaReconciler<T>(getId, normalize);
 
   let disposed = false;
-  let live = false;
-  let awaitingResnapshot = false;
-  let subscriptionId: string | undefined;
-  // Typed §6.9 channel state: registered only after the hello handshake
-  // confirms liveState; its pushes are what actually flip `live`.
-  let channelCapable = false;
   let channelSubscriptionId: string | undefined;
   // Registration-generation token: bumped whenever a new registration or a
   // teardown (unregister, reconnect, resnapshot, dispose) supersedes prior
@@ -278,15 +258,10 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   // overwrite `channelSubscriptionId` from a newer registration nor leak a
   // daemon-side subscription — the stale id is best-effort unsubscribed.
   let channelGeneration = 0;
-  // Stale-refetch guard: bumped whenever the live/legacy regime changes (a
-  // push entering live mode, reconnect, resnapshot) so an in-flight
-  // refetchEmit() started under an older regime is dropped at resolve-time
-  // instead of overwriting newer reconciled state.
-  let refetchEpoch = 0;
+  let retryAttempt = 0;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
   // Dynamic form: one channel per desired id, keyed by id.
   const dynamicChannels = new Map<string, DynamicChannelState<T>>();
-  // The id source has reported at least one (possibly empty) desired set.
-  let idsInitialized = false;
   // Pre-ack buffer (PR #397 carry-over): pushes that raced their subscribe
   // reply are held and replayed once a registration resolves to their id.
   const bufferedPushes: SubscriptionPush[] = [];
@@ -309,87 +284,19 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     return merged;
   };
 
-  const emitLive = () => {
+  const emit = () => {
     if (!disposed) handler(currentValues());
-  };
-
-  // Legacy-event refetch coalescing (intent-hq/monorepo#1010): single-flight
-  // tracking plus one trailing follow-up per coalesce window, so an event
-  // storm while not live costs at most ~1 fetchAll per (window + fetch)
-  // instead of one per event. A counter (not a boolean) because refetchEmit
-  // is also invoked directly by the initial/reconnect/resnapshot bridges,
-  // whose fetches can overlap a legacy-driven one.
-  let refetchesInFlight = 0;
-  let refetchFollowUpWanted = false;
-  let refetchFollowUpTimer: ReturnType<typeof setTimeout> | undefined;
-
-  const refetchEmit = () => {
-    const epoch = refetchEpoch;
-    refetchesInFlight += 1;
-    // Promise.resolve().then(fetchAll) so a synchronously-throwing fetchAll
-    // still flows through .finally and cannot strand the in-flight counter.
-    Promise.resolve()
-      .then(fetchAll)
-      .then((items) => {
-        if (!disposed && !live && epoch === refetchEpoch) handler(items);
-      })
-      .catch(() => {
-        // Refresh failures are non-fatal for the subscription.
-      })
-      .finally(() => {
-        refetchesInFlight -= 1;
-        if (!refetchFollowUpWanted || disposed) return;
-        // Events arrived mid-flight: their changes may postdate the fetch
-        // that just settled, so run exactly one trailing refetch after the
-        // coalesce window (unless a push flips us live first).
-        refetchFollowUpWanted = false;
-        refetchFollowUpTimer = setTimeout(() => {
-          refetchFollowUpTimer = undefined;
-          if (!disposed && !live) refetchEmit();
-        }, LEGACY_REFETCH_COALESCE_MS);
-      });
-  };
-
-  // Legacy-event entry point: leading edge fires immediately; events landing
-  // while a refetch is in flight collapse into the single trailing follow-up;
-  // events landing while that follow-up is pending are already covered by it.
-  const coalescedRefetchEmit = () => {
-    if (refetchFollowUpTimer !== undefined) return;
-    if (refetchesInFlight > 0) {
-      refetchFollowUpWanted = true;
-      return;
-    }
-    refetchEmit();
-  };
-
-  const register = () => {
-    backendSubscribe<{ subscriptionId?: string }>({ eventTypes })
-      .then((result) => {
-        subscriptionId = result?.subscriptionId;
-        if (disposed && subscriptionId) {
-          void backendUnsubscribe(subscriptionId);
-        } else if (!dynamic && subscriptionId) {
-          // The legacy id is a push-match target in the static form; replay
-          // any pre-ack pushes that raced this reply.
-          drainBufferedPushes(subscriptionId);
-        }
-        pruneForeignBufferedPushes();
-      })
-      .catch(() => {
-        // Without a daemon subscription we still serve the refetch fallback.
-      });
   };
 
   // A subscribe reply is still in flight somewhere, so an unmatched push may
   // be ours pre-ack — the buffering window. When nothing is pending, unmatched
   // pushes belong to other subscriptions and are dropped as before.
   const hasPendingRegistration = (): boolean => {
-    if (subscriptionId === undefined) return true;
     if (dynamic) {
       for (const s of dynamicChannels.values()) if (s.subscriptionId === undefined) return true;
       return false;
     }
-    return Boolean(channel) && channelCapable && channelSubscriptionId === undefined;
+    return channelSubscriptionId === undefined;
   };
 
   // Once no registration awaits its ack, any push still buffered was drained
@@ -402,11 +309,15 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   };
 
   // Typed channel registration goes through plain `backendRequest` (the
-  // `chat.subscribe` precedent) — NOT `backendSubscribe`, which is the
-  // `events.subscribe` firehose surface. Static form only; the dynamic form
-  // registers per id via `registerDynamicChannel`.
+  // `chat.subscribe` precedent). Static form only; the dynamic form registers
+  // per id via `registerDynamicChannel`. A failed registration retries with
+  // capped exponential backoff — the channel is the only data path.
   const registerChannel = () => {
-    if (!channel || dynamic || !channelCapable) return;
+    if (dynamic) return;
+    if (retryTimer !== undefined) {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+    }
     channelGeneration += 1;
     const generation = channelGeneration;
     backendRequest<{ subscriptionId?: string }>(channel.subscribeMethod, channel.params ?? {})
@@ -424,21 +335,43 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
           }
           return;
         }
+        if (!id) {
+          // A resolved reply without a usable subscriptionId is as unseeded
+          // as an outright rejection — retry with backoff instead of
+          // stranding this channel unconfirmed forever.
+          const delay = retryDelayMs(retryAttempt);
+          retryAttempt += 1;
+          retryTimer = setTimeout(() => {
+            retryTimer = undefined;
+            if (!disposed) registerChannel();
+          }, delay);
+          return;
+        }
         channelSubscriptionId = id;
-        if (id) drainBufferedPushes(id);
+        retryAttempt = 0;
+        drainBufferedPushes(id);
         pruneForeignBufferedPushes();
       })
       .catch(() => {
-        // Registration failure leaves `live` false, so legacy refetches keep
-        // serving — the #775 safety net is never regressed.
+        if (generation !== channelGeneration || disposed) return;
+        const delay = retryDelayMs(retryAttempt);
+        retryAttempt += 1;
+        retryTimer = setTimeout(() => {
+          retryTimer = undefined;
+          if (!disposed) registerChannel();
+        }, delay);
       });
   };
 
   const unregisterChannel = () => {
-    if (!channel || dynamic) return;
+    if (dynamic) return;
     // Invalidate any in-flight registration so its late resolve cleans up
     // after itself instead of resurrecting a subscription past teardown.
     channelGeneration += 1;
+    if (retryTimer !== undefined) {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+    }
     if (!channelSubscriptionId) return;
     const id = channelSubscriptionId;
     channelSubscriptionId = undefined;
@@ -447,29 +380,12 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     });
   };
 
-  // Live-flip rule for the dynamic form: live ONLY while the id source has
-  // reported a non-empty desired set and EVERY desired channel holds a
-  // push-confirmed (seeded, gap-free) registration. An empty desired set
-  // stays legacy — harmless refetches instead of a push-less "live" that
-  // could flash a transiently-empty id source as an empty collection.
-  const updateDynamicLive = () => {
-    if (!dynamic) return;
-    let nowLive = idsInitialized && dynamicChannels.size > 0;
-    if (nowLive) {
-      for (const s of dynamicChannels.values()) {
-        if (!s.seeded || s.awaitingResnapshot) {
-          nowLive = false;
-          break;
-        }
-      }
-    }
-    if (nowLive === live) return;
-    live = nowLive;
-    refetchEpoch += 1;
-  };
-
   const registerDynamicChannel = (id: string, state: DynamicChannelState<T>) => {
-    if (!channel || !dynamic || !channelCapable) return;
+    if (!dynamic) return;
+    if (state.retryTimer !== undefined) {
+      clearTimeout(state.retryTimer);
+      state.retryTimer = undefined;
+    }
     state.generation += 1;
     const generation = state.generation;
     backendRequest<{ subscriptionId?: string }>(channel.subscribeMethod, dynamic.paramsForId(id))
@@ -486,21 +402,44 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
           }
           return;
         }
+        if (!sid) {
+          // A resolved reply without a usable subscriptionId is as unseeded
+          // as an outright rejection — retry with backoff instead of
+          // stranding this channel unconfirmed forever.
+          const delay = retryDelayMs(state.retryAttempt);
+          state.retryAttempt += 1;
+          state.retryTimer = setTimeout(() => {
+            state.retryTimer = undefined;
+            if (!disposed && dynamicChannels.get(id) === state) registerDynamicChannel(id, state);
+          }, delay);
+          return;
+        }
         state.subscriptionId = sid;
-        if (sid) drainBufferedPushes(sid);
+        state.retryAttempt = 0;
+        drainBufferedPushes(sid);
         pruneForeignBufferedPushes();
       })
       .catch(() => {
-        // This channel stays unconfirmed, so `live` stays false and legacy
-        // refetches keep serving — the #775 safety net is never regressed.
+        if (disposed || dynamicChannels.get(id) !== state || generation !== state.generation) {
+          return;
+        }
+        const delay = retryDelayMs(state.retryAttempt);
+        state.retryAttempt += 1;
+        state.retryTimer = setTimeout(() => {
+          state.retryTimer = undefined;
+          if (!disposed && dynamicChannels.get(id) === state) registerDynamicChannel(id, state);
+        }, delay);
       });
   };
 
   const unregisterDynamicChannel = (state: DynamicChannelState<T>) => {
-    if (!channel) return;
     // Invalidate any in-flight registration so its late resolve cleans up
     // after itself instead of resurrecting a subscription past teardown.
     state.generation += 1;
+    if (state.retryTimer !== undefined) {
+      clearTimeout(state.retryTimer);
+      state.retryTimer = undefined;
+    }
     const sid = state.subscriptionId;
     state.subscriptionId = undefined;
     if (sid) {
@@ -511,8 +450,9 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   };
 
   // Per-channel gap recovery: reset just this channel and re-register it for
-  // a fresh seq-0 snapshot; sibling channels keep their state. `live` drops
-  // (all-channels rule) so a bridging refetch serves until recovery.
+  // a fresh seq-0 snapshot; sibling channels keep their state and keep
+  // emitting — this channel's stale values simply drop out of the merged
+  // collection until its recovery snapshot lands.
   const resnapshotDynamicChannel = (id: string, state: DynamicChannelState<T>) => {
     if (state.awaitingResnapshot) return;
     state.awaitingResnapshot = true;
@@ -520,15 +460,13 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     state.reconciler.reset();
     unregisterDynamicChannel(state);
     registerDynamicChannel(id, state);
-    updateDynamicLive();
-    refetchEmit();
+    emit();
   };
 
   // The id source reported the FULL desired id set: register channels for new
   // ids, tear down (and evict the entities of) ids that disappeared.
   const reconcileDesiredIds = (ids: readonly string[]) => {
-    if (disposed || !channel || !dynamic) return;
-    idsInitialized = true;
+    if (disposed || !dynamic) return;
     const desired = new Set(ids);
     let changed = false;
     for (const [id, state] of [...dynamicChannels]) {
@@ -544,48 +482,30 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
         reconciler: new DeltaReconciler<T>(getId, normalize),
         seeded: false,
         awaitingResnapshot: false,
+        retryAttempt: 0,
       };
       dynamicChannels.set(id, state);
       registerDynamicChannel(id, state);
       changed = true;
     }
-    if (!changed) return;
-    const wasLive = live;
-    updateDynamicLive();
-    // Removal while every remaining channel is confirmed keeps us live and
-    // the emit evicts the removed ids' entities. An unconfirmed channel (an
-    // addition, or an emptied set) that DROPS us out of live mode bridges
-    // the stale window with a one-shot refetch; when we were already legacy
-    // the running refetch/legacy-event path keeps serving as-is.
-    if (live) emitLive();
-    else if (wasLive) refetchEmit();
+    // A removed id's entities must be evicted immediately; an added id only
+    // contributes once its own seq-0 snapshot lands (handled in processPush).
+    if (changed) emit();
   };
 
-  // Reconnect-to-resnapshot: drop local state, re-register for a fresh seq-0
-  // snapshot, and bridge the stale-UI window with a one-shot refetch.
+  // Reset local state and re-register for a fresh seq-0 snapshot. No pushes
+  // are emitted until that fresh snapshot lands, so a transient reconnect or
+  // sequence gap never flashes the UI to an empty collection.
   const resnapshot = () => {
-    if (awaitingResnapshot) return;
-    awaitingResnapshot = true;
-    // Drop back to legacy mode until the recovery seq-0 snapshot arrives —
-    // symmetric with the reconnect reset — so a failed re-register cannot
-    // leave legacy refetches suppressed; interim refetches are harmless
-    // one-shots and the recovery push immediately re-enters live mode.
-    live = false;
-    refetchEpoch += 1;
     reconciler.reset();
-    if (subscriptionId) void backendUnsubscribe(subscriptionId);
-    subscriptionId = undefined;
     unregisterChannel();
-    register();
     registerChannel();
-    refetchEmit();
   };
 
   // Route a push (fresh or replayed from the pre-ack buffer) to its channel.
-  // Dynamic form: apply against the matching per-id reconciler; the merged
-  // collection is only emitted while `live` (all channels confirmed) —
-  // otherwise legacy refetches keep serving. Static form: original semantics,
-  // including the legacy id as a runtime first-push match target.
+  // Dynamic form: apply against the matching per-id reconciler and emit the
+  // merged collection immediately — confirmed sibling channels are not
+  // gated on this one. Static form: applies directly to the single reconciler.
   const processPush = (push: SubscriptionPush) => {
     if (disposed) return;
     if (dynamic) {
@@ -595,11 +515,10 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
           state.awaitingResnapshot = false;
           state.seeded = true;
           state.reconciler.applySnapshot(push.seq, push.snapshot ?? []);
-          updateDynamicLive();
-          if (live) emitLive();
+          emit();
         } else if (!state.awaitingResnapshot) {
           if (state.reconciler.applyDelta(push.seq, push.delta ?? {})) {
-            if (live) emitLive();
+            emit();
           } else {
             resnapshotDynamicChannel(id, state);
           }
@@ -611,62 +530,39 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
       if (hasPendingRegistration()) bufferPush(push);
       return;
     }
-    const isOurs =
-      (channelSubscriptionId !== undefined && push.subscriptionId === channelSubscriptionId) ||
-      (subscriptionId !== undefined && push.subscriptionId === subscriptionId);
-    if (!isOurs) {
+    if (push.subscriptionId !== channelSubscriptionId) {
       if (hasPendingRegistration()) bufferPush(push);
       return;
     }
-    if (!live) {
-      live = true;
-      refetchEpoch += 1;
-    }
     if (push.kind === "snapshot") {
-      awaitingResnapshot = false;
       reconciler.applySnapshot(push.seq, push.snapshot ?? []);
-      emitLive();
-    } else if (!awaitingResnapshot) {
-      if (reconciler.applyDelta(push.seq, push.delta ?? {})) emitLive();
-      else resnapshot();
+      emit();
+    } else if (reconciler.applyDelta(push.seq, push.delta ?? {})) {
+      emit();
+    } else {
+      resnapshot();
     }
   };
 
-  // Initial snapshot (legacy behavior; replaced by a push once live).
-  refetchEmit();
-
   const off = onBackendNotification((n) => {
     const push = parseSubscriptionPush(n.method, n.params);
-    if (push) {
-      processPush(push);
-      return;
-    }
-    // Legacy firehose: only drives a refetch while not in live-state mode, so
-    // the two paths never double-apply or diverge (R1 coexistence). Bursts
-    // are coalesced — see coalescedRefetchEmit.
-    if (!live && matchLegacyEvent(n.method, n.params)) coalescedRefetchEmit();
+    if (push) processPush(push);
   });
 
   // Reconnect (RESUB-1): the daemon dropped its subscription registry on
-  // restart, so the stashed id points at nothing. Clear local state, re-
-  // register for a fresh seq-0 snapshot, and bridge with a refetch so we
-  // converge on anything missed during the outage. Skip the
-  // `awaitingResnapshot` early-out so a reconnect racing an in-flight
-  // resnapshot still re-registers. `live` drops back to false so a restarted
-  // (possibly downgraded) daemon that never pushes again cannot leave legacy
-  // refetches suppressed (#775); the next push re-enters live mode.
+  // restart, so the stashed id points at nothing — no unsubscribe frame, just
+  // re-register for a fresh seq-0 snapshot on a bumped generation so a
+  // pre-restart in-flight registration cannot land.
   const offReconnect = onBackendReconnected(() => {
     if (disposed) return;
-    live = false;
-    refetchEpoch += 1;
-    awaitingResnapshot = false;
-    reconciler.reset();
-    subscriptionId = undefined;
-    // The restarted daemon dropped its registry, so the stale channel id
-    // points at nothing — no unsubscribe frame; just re-register. Bump the
-    // generation so an in-flight pre-restart registration cannot land.
     channelGeneration += 1;
     channelSubscriptionId = undefined;
+    retryAttempt = 0;
+    if (retryTimer !== undefined) {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+    }
+    reconciler.reset();
     // Pre-restart pushes reference ids from the dropped registry.
     bufferedPushes.length = 0;
     for (const [id, state] of dynamicChannels) {
@@ -674,44 +570,34 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
       state.subscriptionId = undefined;
       state.seeded = false;
       state.awaitingResnapshot = false;
+      state.retryAttempt = 0;
+      if (state.retryTimer !== undefined) {
+        clearTimeout(state.retryTimer);
+        state.retryTimer = undefined;
+      }
       state.reconciler.reset();
       registerDynamicChannel(id, state);
     }
-    register();
-    registerChannel();
-    refetchEmit();
+    if (!dynamic) registerChannel();
   });
 
-  register();
-
-  // Typed channel (opt-in): register only when the hello handshake confirms
-  // liveState. The gate is registration-only — `live` still flips solely on
-  // an observed push (PR #391 runtime-flip semantics stay intact). The
+  // Registration is unconditional — daemons always advertise the channel
+  // (intent-hq/monorepo#1697) — with a bounded-backoff retry on failure. The
   // dynamic form additionally waits for the id source before registering.
-  let offIds: Unsubscribe | undefined;
-  if (channel) {
-    detectLiveStateCapability()
-      .then((capable) => {
-        if (!capable || disposed) return;
-        channelCapable = true;
-        if (dynamic) offIds = dynamic.subscribeIds(reconcileDesiredIds);
-        else registerChannel();
-      })
-      .catch(() => {
-        // Treated as a legacy daemon; refetches keep serving.
-      });
-  }
+  const offIds: Unsubscribe | undefined = dynamic
+    ? dynamic.subscribeIds(reconcileDesiredIds)
+    : undefined;
+  if (!dynamic) registerChannel();
 
   return () => {
     disposed = true;
-    if (refetchFollowUpTimer !== undefined) {
-      clearTimeout(refetchFollowUpTimer);
-      refetchFollowUpTimer = undefined;
+    if (retryTimer !== undefined) {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
     }
     off();
     offReconnect();
     offIds?.();
-    if (subscriptionId) void backendUnsubscribe(subscriptionId);
     unregisterChannel();
     for (const state of dynamicChannels.values()) unregisterDynamicChannel(state);
     dynamicChannels.clear();

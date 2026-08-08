@@ -4,7 +4,12 @@ import {
   markAgentSeenAtBoundary,
   markAgentSeenOnTurnFinish,
   markAgentSeenOnUserSend,
+  newestPersistedMessageId,
 } from '$features/agent/mark-agent-seen';
+import {
+  selectAgentMessages,
+  selectAgentSessionHasStreamingTailMessage,
+} from '../../agent-session/agent-session-selectors';
 import { sendMessage } from '../../chat-state/chat-state-slice';
 import {
   agentStreamUpdateReceived,
@@ -50,7 +55,7 @@ import {
   selectDividerBoundarySnapshot,
   type DividerBoundarySnapshot,
 } from '../unread-tracking-selectors';
-import { endDividerSession } from '../unread-tracking-slice';
+import { endDividerSession, recordWatchedStreamingTail } from '../unread-tracking-slice';
 
 export type DividerSessionBoundary =
   | { kind: 'tab-close'; agentIds: string[] }
@@ -144,7 +149,16 @@ function* watchDividerBoundaries(): SagaGenerator<void> {
     const boundary = detectDividerSessionBoundary(previous, current, action.type);
     if (boundary) {
       yield* call(markAgentSeenAtBoundary, boundary.agentIds);
-      for (const agentId of boundary.agentIds) yield* put(endDividerSession(agentId));
+      for (const agentId of boundary.agentIds) {
+        const hasStreamingTailMessage =
+          yield* selectAgentSessionHasStreamingTailMessage.effect(agentId);
+        if (hasStreamingTailMessage) {
+          const messages = yield* selectAgentMessages.effect(agentId);
+          const messageId = newestPersistedMessageId(messages);
+          if (messageId) yield* put(recordWatchedStreamingTail(agentId, messageId));
+        }
+        yield* put(endDividerSession(agentId));
+      }
       previous = yield* selectDividerBoundarySnapshot.effect();
     } else {
       previous = current;

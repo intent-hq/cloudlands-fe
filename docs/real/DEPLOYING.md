@@ -162,13 +162,13 @@ Each release ships four platform builds, produced by parallel jobs in `release-b
 | Platform      | Runner                                                     | Artifacts                                           | Feed file                |
 | ------------- | ---------------------------------------------------------- | --------------------------------------------------- | ------------------------ |
 | macOS (arm64) | `macos-14` (GitHub-hosted)                                 | `.dmg`, `.zip` (+ blockmaps)                        | `latest-mac.yml`         |
-| Windows (x64) | self-hosted `5090pc` (`[self-hosted, Windows, X64]`)       | NSIS installer `.exe`, portable `.exe` (+ blockmap) | `latest.yml`             |
+| Windows (x64) | `windows-latest` (GitHub-hosted)                           | NSIS installer `.exe`, portable `.exe` (+ blockmap) | `latest.yml`             |
 | Linux (x64)   | `ubuntu-latest` (GitHub-hosted)                            | AppImage, `.deb`                                    | `latest-linux.yml`       |
 | Linux (arm64) | self-hosted `comfy` (`[self-hosted, Linux, ARM64, comfy]`) | AppImage, `.deb`                                    | `latest-linux-arm64.yml` |
 
 Notes:
 
-- **Self-hosted runner dependency**: the Windows job requires the `5090pc` runner and the Linux arm64 job requires the `comfy` runner to be online; a release run queues (and eventually fails) if they are unavailable. macOS and Linux x64 use GitHub-hosted runners.
+- **Self-hosted runner dependency**: the Linux arm64 job requires the `comfy` runner to be online; a release run queues (and eventually fails) if it is unavailable. macOS, Windows, and Linux x64 use GitHub-hosted runners.
 - **Windows builds are unsigned** (first iteration). The `scripts/windows-sign.cjs` sign hook silently skips signing when `INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING` is unset; DigiCert integrated signing in releases is a follow-up. Expect SmartScreen warnings on install.
 - **Linux packages are unsigned** (standard for AppImage/deb distributed outside a package repository). Snap is not built or published.
 - macOS remains signed + notarized as before.

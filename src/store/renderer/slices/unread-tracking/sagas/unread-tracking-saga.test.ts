@@ -2,11 +2,15 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const marks = vi.hoisted(() => ({ boundary: vi.fn(), finish: vi.fn(), send: vi.fn() }));
-vi.mock('$features/agent/mark-agent-seen', () => ({
-  markAgentSeenAtBoundary: marks.boundary,
-  markAgentSeenOnTurnFinish: marks.finish,
-  markAgentSeenOnUserSend: marks.send,
-}));
+vi.mock('$features/agent/mark-agent-seen', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$features/agent/mark-agent-seen')>();
+  return {
+    ...actual,
+    markAgentSeenAtBoundary: marks.boundary,
+    markAgentSeenOnTurnFinish: marks.finish,
+    markAgentSeenOnUserSend: marks.send,
+  };
+});
 
 import { sendMessage } from '../../chat-state/chat-state-slice';
 import { closeTab } from '../../panel-layout/panel-layout-slice';
@@ -25,7 +29,10 @@ const snapshot = (overrides: Partial<DividerBoundarySnapshot> = {}): DividerBoun
   ...overrides,
 });
 
-function state(current: DividerBoundarySnapshot): StoreState {
+function state(
+  current: DividerBoundarySnapshot,
+  agentSessionsByAgentId: Record<string, { messages: unknown[]; isStreaming?: boolean }> = {},
+): StoreState {
   return {
     workspace: { activeWorkspaceId: current.activeWorkspaceId },
     sidebarNav: {
@@ -38,9 +45,10 @@ function state(current: DividerBoundarySnapshot): StoreState {
       dividerSessionByAgentId: Object.fromEntries(
         current.dividerSessionAgentIds.map((id) => [id, { anchorId: null }]),
       ),
+      watchedStreamingTailByAgentId: {},
     },
     agentSessions: {
-      byAgentId: {},
+      byAgentId: agentSessionsByAgentId,
       agentIdsByWorkspace: { chief: current.chiefSessionAgentIds },
     },
     panelLayout: {
@@ -148,6 +156,88 @@ describe('unreadTrackingSaga', () => {
       type: 'unreadTracking/endDividerSession',
       payload: ['a1'],
     });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('records the watched streaming tail when a boundary hits a live-streaming agent', async () => {
+    const channel = stdChannel();
+    let current = snapshot({ dividerSessionAgentIds: ['a1'], openAgentTabIds: ['a1'] });
+    const dispatch = vi.fn();
+    const agentSessionsByAgentId = {
+      a1: {
+        isStreaming: true,
+        messages: [
+          { id: 'msg-1', role: 'user', isStreaming: false },
+          { id: 'msg-2', role: 'assistant', isStreaming: true },
+        ],
+      },
+    };
+    const task = runSaga(
+      { channel, dispatch, getState: () => state(current, agentSessionsByAgentId) },
+      unreadTrackingSaga,
+    );
+    await settle();
+    current = snapshot({ dividerSessionAgentIds: ['a1'] });
+    channel.put(closeTab('ws-1', 'tab-a1'));
+    await settle();
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'unreadTracking/recordWatchedStreamingTail',
+      payload: ['a1', 'msg-1'],
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not record a watched streaming tail when a persisted message follows the streaming assistant row (interrupt-priority send)', async () => {
+    const channel = stdChannel();
+    let current = snapshot({ dividerSessionAgentIds: ['a1'], openAgentTabIds: ['a1'] });
+    const dispatch = vi.fn();
+    const agentSessionsByAgentId = {
+      a1: {
+        isStreaming: true,
+        messages: [
+          { id: 'msg-1', role: 'assistant', isStreaming: true },
+          { id: 'msg-2', role: 'user', isStreaming: false },
+        ],
+      },
+    };
+    const task = runSaga(
+      { channel, dispatch, getState: () => state(current, agentSessionsByAgentId) },
+      unreadTrackingSaga,
+    );
+    await settle();
+    current = snapshot({ dividerSessionAgentIds: ['a1'] });
+    channel.put(closeTab('ws-1', 'tab-a1'));
+    await settle();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'unreadTracking/recordWatchedStreamingTail' }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not record a watched streaming tail when the agent has no live stream', async () => {
+    const channel = stdChannel();
+    let current = snapshot({ dividerSessionAgentIds: ['a1'], openAgentTabIds: ['a1'] });
+    const dispatch = vi.fn();
+    const agentSessionsByAgentId = {
+      a1: {
+        isStreaming: false,
+        messages: [{ id: 'msg-1', role: 'assistant', isStreaming: false }],
+      },
+    };
+    const task = runSaga(
+      { channel, dispatch, getState: () => state(current, agentSessionsByAgentId) },
+      unreadTrackingSaga,
+    );
+    await settle();
+    current = snapshot({ dividerSessionAgentIds: ['a1'] });
+    channel.put(closeTab('ws-1', 'tab-a1'));
+    await settle();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'unreadTracking/recordWatchedStreamingTail' }),
+    );
     task.cancel();
     await task.toPromise();
   });
