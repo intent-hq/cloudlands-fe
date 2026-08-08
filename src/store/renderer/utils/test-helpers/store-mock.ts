@@ -8,12 +8,6 @@ type StoreReadableStateSource = {
 };
 
 const noop = () => {};
-const readable = <T>(getter: () => T) => ({
-  subscribe: (listener: (value: T) => void) => {
-    listener(getter());
-    return noop;
-  },
-});
 
 const resolveState = (state: AppStoreMockOptions['state']) =>
   typeof state === 'function' ? (state as () => unknown)() : (state ?? {});
@@ -27,11 +21,28 @@ export const createAppStoreMock = ({
   state,
   dispatch,
 }: AppStoreMockOptions = {}) => {
+  // Live subscribers to the mock's readables; `emitState()` re-notifies them
+  // all so tests can simulate a store-state change after mutating the state
+  // source (e.g. clearing a seeded slice).
+  const listeners = new Set<() => void>();
+  const readable = <T>(getter: () => T) => ({
+    subscribe: (listener: (value: T) => void) => {
+      listener(getter());
+      const notify = () => listener(getter());
+      listeners.add(notify);
+      return () => {
+        listeners.delete(notify);
+      };
+    },
+  });
   const appStore = {
     get state() {
       return resolveState(state);
     },
     dispatch: (...args: any[]) => (dispatch ?? noop)(...args),
+    emitState: () => {
+      for (const notify of [...listeners]) notify();
+    },
     getReadableState: () => readable(() => appStore.state),
     createSelector: (selectorFunc: (state: any, ...args: any[]) => any) => {
       const selector = Object.assign(
