@@ -1,17 +1,18 @@
 /**
- * Regression test for the /hud chrome-less gating restored after e10980e5
- * (#584) dropped it. Mounts the real root `+layout.svelte` with the `/hud`
- * route mocked via `$app/stores`, stubbing every heavy child component and
- * module-level side effect (sagas, root-store lifecycle, tab-type
- * registration, splash gate, interrupted-agents service, Monaco/diff
- * preloaders, LiveAppClient) so the isHudRoute branch itself is what's
- * under test.
+ * Regression test for intent-hq/monorepo#1727: the layout's interrupted-agents
+ * resume/abandon handlers must go through `resolveInterruptedAgents()` so the
+ * service's cross-window watcher is stopped (pre-#584 behaviour). Mounts the
+ * real root `+layout.svelte` with a probe standing in for
+ * `InterruptedAgentsModal` that publishes the handler props the layout wires
+ * up, stubbing the same heavy children/side effects as the HUD gating suite.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { cleanup, render } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 
-const mockPage = vi.hoisted(() => ({ pathname: '/' }));
+const interruptedService = vi.hoisted(() => ({
+  resolveInterruptedAgents: vi.fn(async () => {}),
+}));
 
 vi.mock('$app/navigation', () => ({
   goto: vi.fn(),
@@ -22,11 +23,7 @@ vi.mock('$app/navigation', () => ({
 vi.mock('$app/stores', () => ({
   page: {
     subscribe: (run: (value: unknown) => void) => {
-      run({
-        url: { pathname: mockPage.pathname },
-        params: {},
-        route: { id: mockPage.pathname },
-      });
+      run({ url: { pathname: '/' }, params: {}, route: { id: '/' } });
       return () => {};
     },
   },
@@ -44,33 +41,35 @@ vi.mock('$lib/utils/monaco-workers', () => ({ configureMonacoWorkers: async () =
 vi.mock('$features/agent/interrupted-agents-service', () => ({
   installInterruptedAgentsService: () => () => {},
   notifyInterruptedAgentsModalClosed: () => {},
-  resolveInterruptedAgents: async () => {},
+  resolveInterruptedAgents: interruptedService.resolveInterruptedAgents,
 }));
 vi.mock('$lib/client/live/live-app-client', () => ({ LiveAppClient: class {} }));
 
-// Components this suite asserts the presence/absence of get a distinct
-// labeled marker; every other heavy child gets the generic marker.
+vi.mock('$lib/components/modals/InterruptedAgentsModal.svelte', async () => ({
+  default: (await import('./mocks/InterruptedAgentsModalProbe.svelte')).default,
+}));
+
 vi.mock('$lib/components/layout/sidebar-nav', async () => ({
-  SidebarNav: (await import('./mocks/SidebarNavMarker.svelte')).default,
+  SidebarNav: (await import('./mocks/Marker.svelte')).default,
   SidebarPanel: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/layout/WindowTitleBar.svelte', async () => ({
-  default: (await import('./mocks/WindowTitleBarMarker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/UpdateDownloadIndicator.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/ui/toast/Toast.svelte', async () => ({
-  default: (await import('./mocks/ToastMarker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$features/hardware-console/prompt-picker/RadialPromptPickerOverlay.svelte', async () => ({
-  default: (await import('./mocks/RadialPromptPickerOverlayMarker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$features/hardware-console/encoder/EncoderCycleHud.svelte', async () => ({
-  default: (await import('./mocks/EncoderCycleHudMarker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$features/hardware-console/actions/ActionKeyHud.svelte', async () => ({
-  default: (await import('./mocks/ActionKeyHudMarker.svelte')).default,
+  default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/CommandPalette.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
@@ -114,9 +113,6 @@ vi.mock('$lib/components/modals/FeatureCodeDialog.svelte', async () => ({
 vi.mock('$lib/components/modals/NewSpaceModal.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
-vi.mock('$lib/components/modals/InterruptedAgentsModal.svelte', async () => ({
-  default: (await import('./mocks/Marker.svelte')).default,
-}));
 vi.mock('$features/navigation/LinkActionMenu.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
@@ -128,59 +124,51 @@ import { store as appStore } from '$store/renderer/store';
 import Layout from '../+layout.svelte';
 
 const childrenSnippet = createRawSnippet(() => ({
-  render: () => '<div data-testid="hud-gating-children">content</div>',
+  render: () => '<div data-testid="interrupted-children">content</div>',
 }));
 
-describe('+layout.svelte isHudRoute chrome-less gating', () => {
+type ModalProps = {
+  onResumeSelected?: (resumeIds: string[], abandonIds: string[]) => Promise<void> | void;
+  onAbandonAll?: (abandonIds: string[]) => Promise<void> | void;
+};
+
+function modalProps(): ModalProps {
+  return (globalThis as Record<string, unknown>).__interruptedAgentsModalProps as ModalProps;
+}
+
+describe('+layout.svelte interrupted-agents resolve handlers', () => {
   beforeEach(() => {
     appStore.init();
+    interruptedService.resolveInterruptedAgents.mockClear();
   });
 
   afterEach(() => {
     cleanup();
     appStore.dispose();
+    delete (globalThis as Record<string, unknown>).__interruptedAgentsModalProps;
   });
 
-  it('suppresses app chrome and renders HudChromelessMain on /hud', () => {
-    mockPage.pathname = '/hud';
-
+  it('routes resume-selected through resolveInterruptedAgents (stops the watcher)', async () => {
     render(Layout, { props: { children: childrenSnippet } });
 
-    expect(screen.queryByTestId('window-title-bar-marker')).toBeNull();
-    expect(screen.queryByTestId('sidebar-nav-marker')).toBeNull();
-    expect(screen.queryByTestId('toast-marker')).toBeNull();
-    expect(screen.queryByTestId('radial-prompt-picker-overlay-marker')).toBeNull();
-    expect(screen.queryByTestId('encoder-cycle-hud-marker')).toBeNull();
+    await modalProps().onResumeSelected?.(['agent-1'], ['agent-2']);
 
-    // ActionKeyHud stays mounted unconditionally even on the HUD route.
-    expect(screen.getAllByTestId('action-key-hud-marker').length).toBeGreaterThan(0);
-    expect(screen.getByTestId('hud-gating-children')).toBeTruthy();
+    expect(interruptedService.resolveInterruptedAgents).toHaveBeenCalledWith(
+      expect.anything(),
+      ['agent-1'],
+      ['agent-2'],
+    );
   });
 
-  it('suppresses app chrome on nested /hud/* routes, matching isHudWindow/isHudWindowRenderer prefix semantics', () => {
-    mockPage.pathname = '/hud/settings';
-
+  it('routes abandon-all through resolveInterruptedAgents (stops the watcher)', async () => {
     render(Layout, { props: { children: childrenSnippet } });
 
-    expect(screen.queryByTestId('window-title-bar-marker')).toBeNull();
-    expect(screen.queryByTestId('sidebar-nav-marker')).toBeNull();
-    expect(screen.queryByTestId('toast-marker')).toBeNull();
-    expect(screen.queryByTestId('radial-prompt-picker-overlay-marker')).toBeNull();
-    expect(screen.queryByTestId('encoder-cycle-hud-marker')).toBeNull();
-    expect(screen.getByTestId('hud-gating-children')).toBeTruthy();
-  });
+    await modalProps().onAbandonAll?.(['agent-1', 'agent-2']);
 
-  it('renders full chrome on non-HUD routes', () => {
-    mockPage.pathname = '/';
-
-    render(Layout, { props: { children: childrenSnippet } });
-
-    expect(screen.getAllByTestId('window-title-bar-marker').length).toBeGreaterThan(0);
-    expect(screen.getAllByTestId('sidebar-nav-marker').length).toBeGreaterThan(0);
-    expect(screen.getAllByTestId('toast-marker').length).toBeGreaterThan(0);
-    expect(screen.getAllByTestId('radial-prompt-picker-overlay-marker').length).toBeGreaterThan(0);
-    expect(screen.getAllByTestId('encoder-cycle-hud-marker').length).toBeGreaterThan(0);
-    expect(screen.getAllByTestId('action-key-hud-marker').length).toBeGreaterThan(0);
-    expect(screen.getByTestId('hud-gating-children')).toBeTruthy();
+    expect(interruptedService.resolveInterruptedAgents).toHaveBeenCalledWith(
+      expect.anything(),
+      [],
+      ['agent-1', 'agent-2'],
+    );
   });
 });
