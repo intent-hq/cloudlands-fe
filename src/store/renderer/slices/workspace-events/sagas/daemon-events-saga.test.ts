@@ -95,7 +95,7 @@ describe('daemonEventsSaga', () => {
       'note:*',
       'comment:*',
       'script:*',
-      'terminal:*',
+      'terminal:exit',
       'settings:changed',
       'workspace:tokenUsage-changed',
       'workspace:context-changed',

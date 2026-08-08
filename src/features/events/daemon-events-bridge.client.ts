@@ -2608,7 +2608,12 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'note:*',
   'comment:*',
   'script:*',
-  'terminal:*',
+  // Narrowed to `terminal:exit` only (not the full `terminal:*` firehose):
+  // `terminal:data` fires on every byte of terminal output and would flood
+  // the 100-entry activity-timeline buffer (workspace-events-slice.ts),
+  // evicting unrelated events. `terminal:exit` is the only terminal event
+  // this bridge currently handles (handleTerminalExitEvent below).
+  'terminal:exit',
   'settings:changed',
   'workspace:tokenUsage-changed',
   // `workspace:context-changed` (§5.1 / §6.5) — chat-context attachment
