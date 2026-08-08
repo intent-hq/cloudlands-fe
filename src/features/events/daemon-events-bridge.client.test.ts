@@ -121,6 +121,16 @@ vi.mock('$features/agent/chat-read-service', () => ({
   createChatReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) => next(a),
 }));
 
+// Fake the attention-toast service so the bridge's `agent:attention-requested`
+// routing (monorepo#1709) is observable without a real Sonner/toast-component
+// import chain.
+const { showAgentAttentionToastSpy } = vi.hoisted(() => ({
+  showAgentAttentionToastSpy: vi.fn(() => Promise.resolve()),
+}));
+vi.mock('$features/agent/agent-attention-toast-service', () => ({
+  showAgentAttentionToast: showAgentAttentionToastSpy,
+}));
+
 // Mock electron-bridge to avoid Electron dependency in tests. Provides stubs
 // for all exports; tests that need specific behavior (e.g., app-UI events suite)
 // can override via mockImplementation/mockReturnValue.
@@ -3469,6 +3479,180 @@ describe('daemonEventsBridge (permission flow — PROTOCOL §8 request/resolved 
     );
 
     expect(readPermissionRequests()).toHaveLength(0);
+  });
+});
+
+describe('daemonEventsBridge (agent:attention-requested → showAgentAttentionToast, monorepo#1709)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    showAgentAttentionToastSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it('shows the attention toast on a valid discussion payload, preferring payload workspaceId/timestamp', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: 'ws-payload-1',
+        agentId: AGENT,
+        agentName: 'auggie',
+        kind: 'discussion',
+        reason: 'Need a decision on approach',
+        timestamp: '2026-02-03T04:05:06.000Z',
+      }),
+    );
+    await flush();
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledWith({
+      workspaceId: 'ws-payload-1',
+      agentId: AGENT,
+      agentName: 'auggie',
+      kind: 'discussion',
+      reason: 'Need a decision on approach',
+      timestamp: '2026-02-03T04:05:06.000Z',
+    });
+  });
+
+  it('shows the attention toast on a valid blocker payload', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'auggie',
+        kind: 'blocker',
+        reason: 'Sandbox is broken',
+      }),
+    );
+    await flush();
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'blocker', reason: 'Sandbox is broken' }),
+    );
+  });
+
+  it('falls back to the envelope workspaceId/timestamp when the payload omits them', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        agentId: AGENT,
+        agentName: 'auggie',
+        kind: 'discussion',
+        reason: 'Need input',
+      }),
+    );
+    await flush();
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: WS, timestamp: '2026-01-02T00:00:00.000Z' }),
+    );
+  });
+
+  it.each([
+    ['missing agentId', { agentName: 'auggie', kind: 'discussion', reason: 'x' }],
+    ['missing agentName', { agentId: AGENT, kind: 'discussion', reason: 'x' }],
+    ['invalid kind', { agentId: AGENT, agentName: 'auggie', kind: 'oops', reason: 'x' }],
+    ['empty reason', { agentId: AGENT, agentName: 'auggie', kind: 'blocker', reason: '' }],
+    ['missing reason', { agentId: AGENT, agentName: 'auggie', kind: 'blocker' }],
+  ])('drops a malformed payload (%s) without showing a toast', async (_label, data) => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:attention-requested', data));
+    await flush();
+
+    expect(showAgentAttentionToastSpy).not.toHaveBeenCalled();
+  });
+
+  it('suppresses the toast when parentAgentId is present and non-empty (delegated agent)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        agentId: AGENT,
+        agentName: 'auggie',
+        kind: 'blocker',
+        reason: 'Delegated blocker',
+        parentAgentId: 'agent-parent-1',
+      }),
+    );
+    await flush();
+
+    expect(showAgentAttentionToastSpy).not.toHaveBeenCalled();
+  });
+
+  it('still shows the toast when parentAgentId is an empty string (treated as absent)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        agentId: AGENT,
+        agentName: 'auggie',
+        kind: 'discussion',
+        reason: 'Top-level agent',
+        parentAgentId: '',
+      }),
+    );
+    await flush();
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('still dispatches eventReceived (activity-timeline fall-through) alongside the toast', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const before = appStore.state.workspaceEvents?.byWorkspaceId?.[WS]?.events?.length ?? 0;
+
+    handler(
+      notification('agent:attention-requested', {
+        agentId: AGENT,
+        agentName: 'auggie',
+        kind: 'discussion',
+        reason: 'Fall-through check',
+      }),
+    );
+    await flush();
+
+    const after = appStore.state.workspaceEvents?.byWorkspaceId?.[WS]?.events?.length ?? 0;
+    expect(after).toBe(before + 1);
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-reads through the ensureAgentSession seam so the sidebar/footer indicator converges', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    ensureAgentSessionSpy.mockClear();
+
+    handler(
+      notification('agent:attention-requested', {
+        agentId: AGENT,
+        agentName: 'auggie',
+        kind: 'blocker',
+        reason: 'Session refresh check',
+      }),
+    );
+    await flush();
+
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
   });
 });
 
