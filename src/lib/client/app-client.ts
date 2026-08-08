@@ -964,7 +964,8 @@ export interface GitClient {
    * commit's own changes against its first parent (`<commitHash>^..<commitHash>`).
    */
   diffs(workspaceId: string, options?: GitDiffsOptions): Promise<DiffChunk[]>;
-  trackedChanges(workspaceId: string): Promise<TrackedChange[]>;
+  /** Returns `null` when the tracked-change read fails; an empty array is a successful empty result. */
+  trackedChanges(workspaceId: string): Promise<TrackedChange[] | null>;
   /**
    * `file-tracking.loadCommits` — workspace commits with agent attribution.
    * When `includeOlder` is true, fetches commits before and including the workspace boundary.

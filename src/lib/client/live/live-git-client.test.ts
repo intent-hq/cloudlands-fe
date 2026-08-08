@@ -607,11 +607,20 @@ describe("LiveGitClient reads (fake transport)", () => {
     });
   });
 
-  it("trackedChanges resolves [] when the daemon errors", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("changes boom"));
+  it("trackedChanges distinguishes a daemon error from a successful empty result", async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ changes: [], truncated: false, totalCount: 0 })
+      .mockRejectedValueOnce(new Error("changes boom"));
     const client = new LiveGitClient();
 
     expect(await client.trackedChanges("ws-1")).toEqual([]);
+    expect(await client.trackedChanges("ws-1")).toBeNull();
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, "file-tracking.getChanges", {
+      workspaceId: "ws-1",
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, "file-tracking.getChanges", {
+      workspaceId: "ws-1",
+    });
   });
 
   // `git.getBranches` is path-based (not workspace-scoped) and is the new

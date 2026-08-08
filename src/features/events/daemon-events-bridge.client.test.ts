@@ -5768,7 +5768,7 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
   });
 });
 
-describe('daemonEventsBridge (changes refresh — git:commit/git:pull/changes:tracked → refreshRequested)', () => {
+describe('daemonEventsBridge (changes refresh — git/changes events → refreshRequested)', () => {
   beforeAll(() => {
     appStore.init();
   });
@@ -5893,6 +5893,20 @@ describe('daemonEventsBridge (changes refresh — git:commit/git:pull/changes:tr
       type: 'changes/refreshRequested',
       payload: [WS],
     });
+  });
+
+  it('changes:git-status event triggers a debounced refresh for its workspace', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    wrapDispatch();
+    handler(notification('changes:git-status', { workspaceId: WS, status: { files: [] } }));
+    vi.advanceTimersByTime(1000);
+
+    expect(dispatchCalls.filter((action) => action.type === 'changes/refreshRequested')).toEqual([
+      expect.objectContaining({ type: 'changes/refreshRequested', payload: [WS] }),
+    ]);
   });
 
   it('rapid changes:tracked events for the same workspace are debounced into a single refreshRequested', async () => {
