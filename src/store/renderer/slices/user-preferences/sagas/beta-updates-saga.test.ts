@@ -88,18 +88,29 @@ describe('betaUpdatesSaga', () => {
     await task.toPromise();
   });
 
-  it('persists the post-reducer channel and swallows failures', async () => {
-    mocks.setChannel.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('denied'));
+  it('persists the post-reducer channel', async () => {
+    mocks.setChannel.mockResolvedValue(undefined);
     await runSaga(
       { dispatch: vi.fn(), getState: () => ({ userPreferences: { betaUpdatesEnabled: true } }) },
       persistBetaUpdatesWorker,
     ).toPromise();
+
+    expect(mocks.setChannel.mock.calls).toEqual([['beta']]);
+    expect(mocks.getState).not.toHaveBeenCalled();
+  });
+
+  it('re-hydrates from the main-process channel when persistence fails', async () => {
+    const dispatch = vi.fn();
+    mocks.setChannel.mockRejectedValue(new Error('denied'));
+    mocks.getState.mockResolvedValue({ channel: 'stable', status: 'idle' });
     await runSaga(
-      { dispatch: vi.fn(), getState: () => ({ userPreferences: { betaUpdatesEnabled: false } }) },
+      { dispatch, getState: () => ({ userPreferences: { betaUpdatesEnabled: true } }) },
       persistBetaUpdatesWorker,
     ).toPromise();
 
-    expect(mocks.setChannel.mock.calls).toEqual([['beta'], ['stable']]);
+    expect(mocks.setChannel.mock.calls).toEqual([['beta']]);
+    expect(mocks.getState).toHaveBeenCalledTimes(1);
+    expect(dispatch.mock.calls).toEqual([[loadBetaUpdatesSettings(false)]]);
     expect(mocks.warn.mock.calls).toHaveLength(1);
   });
 

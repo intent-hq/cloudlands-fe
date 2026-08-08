@@ -29,6 +29,7 @@ export function* persistBetaUpdatesWorker() {
     yield* call([autoUpdateClient, autoUpdateClient.setChannel], channel);
   } catch (error) {
     logger.warn('Failed to apply update channel', { enabled, error });
+    yield* call(hydrateBetaUpdatesWorker);
   }
 }
 
