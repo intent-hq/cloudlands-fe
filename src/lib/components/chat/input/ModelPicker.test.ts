@@ -42,6 +42,7 @@ const mockProviderModelsState = vi.hoisted(() => ({
       stale?: boolean;
     }
   >,
+  clearEpoch: 0,
 }));
 
 vi.mock('svelte-fa', async () => {
@@ -94,7 +95,10 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({
     state: () => ({
       providerCatalog,
-      providerModels: { byProviderId: mockProviderModelsState.byProviderId },
+      providerModels: {
+        byProviderId: mockProviderModelsState.byProviderId,
+        clearEpoch: mockProviderModelsState.clearEpoch,
+      },
     }),
     dispatch: mockSvelteDispatch,
   });
@@ -237,6 +241,7 @@ afterEach(() => {
   daemonHealth$.set('healthy');
   providerStaleFlags$.set({});
   mockProviderModelsState.byProviderId = {};
+  mockProviderModelsState.clearEpoch = 0;
 });
 
 describe('ModelPicker locked state', () => {
@@ -2043,16 +2048,61 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
     });
 
     // Backend reconnect: the seeder dispatches providerModelsCacheCleared and
-    // the map goes empty. The enabled-provider ids are UNCHANGED, so the
-    // fetch-effect dedup key alone would skip — the picker must still
-    // revalidate off the cache-clear signal.
+    // the map goes empty (and the clear epoch bumps). The enabled-provider
+    // ids are UNCHANGED, so the fetch-effect dedup key alone would skip —
+    // the picker must still revalidate off the cache-clear signal.
     mockProviderModelsState.byProviderId = {};
+    mockProviderModelsState.clearEpoch = 1;
     (mockAppStore as unknown as { emitState: () => void }).emitState();
 
     await waitFor(() => {
       expect(
         vi.mocked(getModelsForProviderForLoadingState).mock.calls.filter(([pid]) => pid === 'auggie'),
       ).toHaveLength(2);
+    });
+  });
+
+  it('stamps write-throughs with the epoch read at fetch start (pre-clear responses are droppable)', async () => {
+    // The epoch must be captured when the fetch STARTS, not when the response
+    // settles: a clear that lands mid-flight bumps the state epoch, and the
+    // stale stamp is what lets the reducer drop the late write instead of
+    // re-polluting the just-cleared cache. The epoch is mutated here without
+    // an emitState() so the reconnect-reaction refetch (whose generation bump
+    // would discard the response before it dispatches) stays out of the way.
+    let resolveFetch!: (result: {
+      models: { value: string; label: string; description?: string }[];
+    }) => void;
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        portal: false,
+      },
+    });
+
+    await waitFor(() => expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalled());
+
+    // Epoch bumps while the response is in flight.
+    mockProviderModelsState.clearEpoch = 1;
+    resolveFetch({
+      models: [{ value: 'sonnet4.6', label: 'Claude Sonnet 4.6', description: 'Smart model' }],
+    });
+
+    await waitFor(() => {
+      const writeThrough = mockSvelteDispatch.mock.calls.find(
+        ([action]) => action?.type === 'providerModels/providerModelsLoaded',
+      );
+      expect(writeThrough).toBeTruthy();
+      const [providerId, , epoch] = writeThrough![0].payload as [string, unknown, number];
+      expect(providerId).toBe('auggie');
+      // Stamped with the fetch-start epoch (0), not the current one (1).
+      expect(epoch).toBe(0);
     });
   });
 

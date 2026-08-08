@@ -63,6 +63,7 @@
   import {
   selectProviderModelsCacheEntry,
   selectProviderModelsCacheMap,
+  selectProviderModelsClearEpoch,
 } from '$store/renderer/slices/provider-models/provider-models-selectors';
 
   import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
@@ -347,6 +348,10 @@
     allProviderErrors = {};
     allProviderLoading = Object.fromEntries(providerIds.map((providerId) => [providerId, true]));
 
+    // Epoch at fetch start: the reducer drops the write-through if a
+    // reconnect clear lands while these responses are in flight.
+    const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
+
     await Promise.allSettled(
       providerIds.map(async (providerId) => {
         try {
@@ -359,7 +364,7 @@
             [providerId]: toDropdownOptions(result.models),
           };
           // Write through to the session cache (providerId is normalized here).
-          appStore.dispatch(providerModelsLoaded(providerId, result));
+          appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch));
           setProviderWarningState(providerId, result.warning, result.stale);
         } catch (err) {
           if (fetchGeneration !== currentGen) return;
@@ -408,12 +413,13 @@
     }
     agentProviderError = null;
 
+    const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
     try {
       const result = await getModelsForProviderForLoadingState(providerId);
       if (agentFetchGeneration !== currentGen) return;
       agentProviderModels = result.models;
       // Write through so the next mount of this picker hydrates too.
-      appStore.dispatch(providerModelsLoaded(cacheId, result));
+      appStore.dispatch(providerModelsLoaded(cacheId, result, cacheEpoch));
       setProviderWarningState(providerId, result.warning, result.stale);
     } catch (err) {
       if (agentFetchGeneration !== currentGen) return;
@@ -506,6 +512,7 @@
     if (refreshingProviders.has(providerId)) return;
     refreshingProviders = new Set([...refreshingProviders, providerId]);
     const gen = fetchGeneration;
+    const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
     try {
       // True force refresh: the daemon skips its cache and awaits a fresh
       // probe (PROTOCOL §6.7), so the spinner spins for the real probe
@@ -523,7 +530,7 @@
         [providerId]: toDropdownOptions(result.models),
       };
       // Write through to the session cache (group keys are normalized ids).
-      appStore.dispatch(providerModelsLoaded(providerId, result));
+      appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch));
     } catch (err) {
       const providerError = formatProviderLoadError(providerId, err);
       allProviderErrors = {
@@ -1191,6 +1198,7 @@
     silentRetryAttemptedForProvider = currentProvider;
 
     void (async () => {
+      const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
       try {
         const models = await getModelsForProvider(currentProvider);
         if (models.length > 0) {
@@ -1200,7 +1208,7 @@
             [normalizedId]: toDropdownOptions(models),
           };
           // Write through to the session cache like the other fetch paths.
-          appStore.dispatch(providerModelsLoaded(normalizedId, { models }));
+          appStore.dispatch(providerModelsLoaded(normalizedId, { models }, cacheEpoch));
           return;
         }
       } catch (err) {
