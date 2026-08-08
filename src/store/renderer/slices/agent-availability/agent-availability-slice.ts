@@ -107,10 +107,18 @@ export const agentAvailabilityReducer = createReducer<AgentAvailabilityState>(in
     providerStatusMap: { ...state.providerStatusMap, [providerId]: status },
     providerLoadingMap: { ...state.providerLoadingMap, [providerId]: false },
   }))
-  .with(checkSingleProviderFailure, (state, { payload: [providerId] }) => ({
-    ...state,
-    providerLoadingMap: { ...state.providerLoadingMap, [providerId]: false },
-  }))
+  .with(checkSingleProviderFailure, (state) => {
+    // Do NOT clear the loading flag here. A per-provider probe failure is
+    // typically an unreachable-daemon/RPC error, not a genuine "not
+    // installed" verdict — clearing the flag would fall through to a
+    // fabricated terminal "Install" render (AgentGrid's `statusLoading` and
+    // ProviderSelector's `isProviderStatusPending` both key off
+    // `loading && !status`). Leaving it set keeps the card in its existing
+    // indeterminate "Checking…" state until a fresh probe actually
+    // succeeds — via the focus/visibility recheck or the backend-connect
+    // bulk re-check in provider-availability-check-service.ts.
+    return state;
+  })
   .with(checkAllProvidersComplete, (state) => ({
     ...state,
     hasCheckedOnce: true,
