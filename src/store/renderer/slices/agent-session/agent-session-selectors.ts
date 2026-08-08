@@ -275,6 +275,25 @@ export const selectAgentSessionHasStreamOwnedMessage = store.createSelector(
   },
 );
 
+/**
+ * Select whether the transcript's actual TAIL entry is a stream-owned
+ * assistant message — stricter than `selectAgentSessionHasStreamOwnedMessage`,
+ * which reports true for a streaming assistant row ANYWHERE in the array. An
+ * interrupt-priority send can persist a new user message immediately after a
+ * still-streaming assistant row, so "some streaming assistant message
+ * exists" is too broad a signal for latching a watched-streaming-tail
+ * suppression marker: it would suppress the divider for a newer reply the
+ * user never actually saw. This selector only answers true when the
+ * streaming assistant message is genuinely the last thing in the transcript.
+ */
+export const selectAgentSessionHasStreamingTailMessage = store.createSelector(
+  (state, agentId: string): boolean => {
+    const messages = state.agentSessions?.byAgentId[agentId]?.messages ?? [];
+    const lastMessage = messages[messages.length - 1];
+    return lastMessage?.role === 'assistant' && isStreamingMessage(lastMessage);
+  },
+);
+
 /** Select the workspace ID for a given agent session. */
 export const selectAgentSessionWorkspaceId = store.createSelector(
   (state, agentId: string): AgentSession['workspaceId'] | undefined =>
