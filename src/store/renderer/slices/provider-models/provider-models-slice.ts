@@ -9,8 +9,8 @@
  * backend reconnect by the provider-models seeder (RESUB-1 idiom — a daemon
  * restart may have changed adapters/catalogs).
  */
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   ProviderModelsCacheEntry,
   ProviderModelsFetchResult,

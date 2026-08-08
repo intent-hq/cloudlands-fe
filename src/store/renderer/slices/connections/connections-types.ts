@@ -17,6 +17,9 @@ import type {
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 export type {
+  AddConnectionParams,
+  CaptureFingerprintParams,
+  CaptureFingerprintResult,
   ConnectionRecord,
   ConnectionsListResult,
   ConnectionCertMismatchEvent,

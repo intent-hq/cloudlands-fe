@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Fake the live backend transport so `agent.completeOnce` routes through an
 // in-memory stub (no Electron). `vi.hoisted` keeps the spy visible to the
@@ -36,6 +36,7 @@ import {
   cancelExecution,
   executeBackgroundAgent,
 } from "$store/renderer/slices/background-agent-executor/background-agent-executor-slice";
+import { backgroundExecutorSaga } from "./background-executor-service";
 import { setWorkspaceEntity } from "$store/renderer/slices/workspace/workspace-slice";
 import { setTypeOverride } from "$store/renderer/slices/background-agent-settings/background-agent-settings-slice";
 import commitMessageInstruction from "./instructions/background/commit-message";
@@ -44,6 +45,7 @@ import type { Workspace } from "$shared/types";
 
 const WS = "ws-bg-exec-1";
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+let stopBackgroundExecutorSaga: (() => void) | undefined;
 
 function readExecutor(executorType: string) {
   return appStore.state.bgExecutor.byWorkspaceId[WS]?.executors[executorType];
@@ -62,6 +64,7 @@ async function waitForSettled(executorType: string, statuses: string[]): Promise
 describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)", () => {
   beforeAll(() => {
     appStore.init();
+    stopBackgroundExecutorSaga = appStore.runSaga(backgroundExecutorSaga);
     appStore.dispatch(
       setWorkspaceEntity({
         id: WS,
@@ -77,6 +80,11 @@ describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)"
         conversationInfo: [],
       } as unknown as Workspace),
     );
+  });
+
+  afterAll(() => {
+    stopBackgroundExecutorSaga?.();
+    stopBackgroundExecutorSaga = undefined;
   });
 
   beforeEach(async () => {
@@ -239,6 +247,24 @@ describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)"
 
     // The stale response must not overwrite the cancelled state.
     expect(readExecutor("commit")).toMatchObject({ status: "cancelled", result: null });
+  });
+
+  it("discards a stale result when a newer execution supersedes it", async () => {
+    let resolveFirst: (value: unknown) => void = () => {};
+    completeOnceSpy
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
+      .mockResolvedValueOnce({ text: "<<<COMMIT_MESSAGE>>>new<<</COMMIT_MESSAGE>>>" });
+
+    appStore.dispatch(executeBackgroundAgent(WS, "commit"));
+    await waitForSettled("commit", ["running"]);
+    appStore.dispatch(executeBackgroundAgent(WS, "commit"));
+    await waitForSettled("commit", ["success"]);
+
+    resolveFirst({ text: "<<<COMMIT_MESSAGE>>>stale<<</COMMIT_MESSAGE>>>" });
+    await flush();
+    await flush();
+
+    expect(readExecutor("commit")).toMatchObject({ status: "success", result: "new" });
   });
 
   it("marks the executor error when context preparation fails (e.g. nothing staged)", async () => {

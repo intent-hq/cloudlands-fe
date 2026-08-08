@@ -48,7 +48,7 @@
     selectActiveConnectionId,
     selectIsConnecting,
   } from '$store/renderer/slices/connections/connections-selectors';
-  import { switchConnection } from '$store/renderer/middlewares/connections-service';
+  import { switchConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import type { ConnectionRecord } from '$shared/types/connections';
   import { m } from '$shared/paraglide/messages.js';
@@ -163,7 +163,9 @@
 
   async function handleSwitchConnection(id: string) {
     try {
-      await switchConnection(id);
+      const action = switchConnectionRequested(id);
+      appStore.dispatch(action);
+      await action.promise;
     } catch {
       // Failure surfaces via the connections slice op-status; the list/active
       // refresh arrives via the connections:changed push.

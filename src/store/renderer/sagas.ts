@@ -9,6 +9,7 @@
 import type { Store } from '@augmentcode/themis/svelte-store';
 import { all, call } from 'typed-redux-saga';
 
+import { backgroundExecutorSaga } from '../../features/agent/background-executor-service';
 import { providerAvailabilitySaga } from './slices/agent-availability/sagas/provider-availability-saga';
 import { agentEventsIpcSaga } from './slices/agent-events/sagas/agent-events-ipc-saga';
 import { agentFailureToastSaga } from './slices/agent-session/sagas/agent-failure-toast-saga';
@@ -21,10 +22,13 @@ import { browserIpcSaga } from './slices/app-layout/sagas/browser-ipc-saga';
 import { menuIpcSaga } from './slices/app-layout/sagas/menu-ipc-saga';
 import { autoUpdateSaga } from './slices/auto-update/sagas/auto-update-saga';
 import { backgroundAgentSettingsSaga } from './slices/background-agent-settings/sagas/background-agent-settings-saga';
+import { backgroundHooksSaga } from './slices/background-hooks/sagas/background-hooks-saga';
 import { browserPersistenceSaga } from './slices/browser/sagas/browser-persistence-saga';
 import { chatReadSaga } from './slices/chat-state/sagas/chat-read-saga';
 import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
 import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga';
+import { bootFallbackToastSaga } from './slices/connections/sagas/boot-fallback-toast-saga';
+import { connectionsSaga } from './slices/connections/sagas/connections-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
 import { daemonHealthSaga } from './slices/daemon-health/sagas/daemon-health-saga';
 import { directoryPickerSaga } from './slices/directory-picker/sagas/directory-picker-saga';
@@ -72,6 +76,7 @@ import { betaUpdatesSaga } from './slices/user-preferences/sagas/beta-updates-sa
 import { notificationSettingsSaga } from './slices/user-preferences/sagas/notification-settings-saga';
 import { userPreferencesPersistenceSaga } from './slices/user-preferences/sagas/user-preferences-persistence-saga';
 import { zoomIpcSaga } from './slices/user-preferences/sagas/zoom-ipc-saga';
+import { voiceSettingsSaga } from './slices/voice-settings/sagas/voice-settings-saga';
 import { activeStreamsSaga } from './slices/workspace-agents/sagas/active-streams-saga';
 import { agentCreationSaga } from './slices/workspace-agents/sagas/agent-creation-saga';
 import { agentReadSaga } from './slices/workspace-agents/sagas/agent-read-saga';
@@ -103,6 +108,8 @@ export function* hardwareConsoleSaga() {
 export const sagas = [
   daemonEventsSaga,
   daemonHealthSaga,
+  connectionsSaga,
+  bootFallbackToastSaga,
   settingsHydrationSaga,
   activeStreamsSaga,
   agentReadSaga,
@@ -113,6 +120,7 @@ export const sagas = [
   permissionResponseSaga,
   agentStreamSaga,
   agentCreationSaga,
+  backgroundExecutorSaga,
   agentMutationSaga,
   editRegenerateSaga,
   agentFailureToastSaga,
@@ -135,7 +143,9 @@ export const sagas = [
   modelReloadSaga,
   providerAvailabilitySaga,
   hostRequirementsSaga,
+  backgroundHooksSaga,
   hardwareConsoleSaga,
+  voiceSettingsSaga,
   themeSaga,
   autoUpdateSaga,
   specialistsSaga,
