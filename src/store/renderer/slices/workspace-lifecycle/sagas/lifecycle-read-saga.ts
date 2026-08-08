@@ -3,6 +3,7 @@ import type { SagaGenerator } from 'typed-redux-saga';
 import { all, call, cancel, fork, put, take } from 'typed-redux-saga';
 
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
+import { reconcileGitStatusChanges } from '$features/file-tracking/git-status-reconciliation';
 import { getAgentLineStats } from '$features/line-changes/line-changes.client';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -215,10 +216,13 @@ function* refreshPrStatus(workspaceId: string): SagaGenerator<void> {
 }
 
 function* refreshChanges(workspaceId: string): SagaGenerator<void> {
-  const { changes, commitsEnvelope } = yield* all({
-    changes: call([appClient.git, appClient.git.trackedChanges], workspaceId),
+  const { status, trackedChanges, commitsEnvelope } = yield* all({
+    status: call([appClient.git, appClient.git.status], workspaceId),
+    trackedChanges: call([appClient.git, appClient.git.trackedChanges], workspaceId),
     commitsEnvelope: call([appClient.git, appClient.git.commitsWithBoundary], workspaceId),
   });
+  if (!status) return;
+  const changes = reconcileGitStatusChanges(status.files, trackedChanges);
   yield* put(setChangesData(workspaceId, changes, false, changes.length));
   yield* put(setCommitsData(workspaceId, commitsEnvelope.commits, commitsEnvelope.boundarySha));
   yield* put(setHasLoadedInitialData(workspaceId, true));
