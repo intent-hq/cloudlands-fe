@@ -31,3 +31,13 @@ export const selectProviderModelsCacheEntry = store.createSelector(
   (state, providerId: string): ProviderModelsCacheEntry | undefined =>
     state.providerModels?.byProviderId[providerId],
 );
+
+/**
+ * The current clear epoch. Writers read this when their fetch STARTS and
+ * stamp it into `providerModelsLoaded`; the reducer drops writes stamped
+ * with a pre-clear epoch (a reconnect happened while the response was in
+ * flight).
+ */
+export const selectProviderModelsClearEpoch = store.createSelector(
+  (state): number => state.providerModels?.clearEpoch ?? 0,
+);
