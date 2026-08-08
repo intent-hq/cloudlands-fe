@@ -11,12 +11,8 @@
  *    workspace without an extra parameter; when the cache misses they fall back
  *    to scanning the workspace list.
  */
-import type { MutationResult, Unsubscribe } from "../app-client";
-import {
-  backendRequest,
-  onBackendNotification,
-  onBackendReconnected,
-} from "./backend-transport";
+import type { MutationResult, Unsubscribe } from '../app-client';
+import { backendRequest, onBackendNotification, onBackendReconnected } from './backend-transport';
 
 /**
  * Generate an idempotency key for create/commit/merge mutations (§5.6): a UUID
@@ -25,7 +21,7 @@ import {
  */
 export function newIdempotencyKey(): string {
   const cryptoObj = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
-  if (typeof cryptoObj?.randomUUID === "function") return cryptoObj.randomUUID();
+  if (typeof cryptoObj?.randomUUID === 'function') return cryptoObj.randomUUID();
   return `idk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
@@ -41,12 +37,12 @@ export function newIdempotencyKey(): string {
  */
 export function mutationErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  if (message === "Internal error" && error && typeof error === "object") {
+  if (message === 'Internal error' && error && typeof error === 'object') {
     const data = (error as { data?: unknown }).data;
-    if (typeof data === "string" && data.length > 0) return `${message}: ${data}`;
-    if (data && typeof data === "object") {
+    if (typeof data === 'string' && data.length > 0) return `${message}: ${data}`;
+    if (data && typeof data === 'object') {
       const detail = (data as { detail?: unknown }).detail;
-      if (typeof detail === "string" && detail.length > 0) return `${message}: ${detail}`;
+      if (typeof detail === 'string' && detail.length > 0) return `${message}: ${detail}`;
     }
   }
   return message;
@@ -64,11 +60,11 @@ export const CONFLICT_RPC_CODE = -32005;
  * works regardless of how the transport layer is mocked in tests.
  */
 export function extractConflict(error: unknown): { current: unknown } | undefined {
-  if (!error || typeof error !== "object") return undefined;
+  if (!error || typeof error !== 'object') return undefined;
   if ((error as { rpcCode?: unknown }).rpcCode !== CONFLICT_RPC_CODE) return undefined;
   const data = (error as { data?: unknown }).data;
-  if (!data || typeof data !== "object") return undefined;
-  if ((data as { code?: unknown }).code !== "conflict") return undefined;
+  if (!data || typeof data !== 'object') return undefined;
+  if ((data as { code?: unknown }).code !== 'conflict') return undefined;
   return { current: (data as { current?: unknown }).current };
 }
 
@@ -80,9 +76,9 @@ export function extractConflict(error: unknown): { current: unknown } | undefine
  * carries a finite number.
  */
 function extractNoteRev(result: unknown): number | undefined {
-  if (!result || typeof result !== "object") return undefined;
+  if (!result || typeof result !== 'object') return undefined;
   const noteRev = (result as { noteRev?: unknown }).noteRev;
-  return typeof noteRev === "number" && Number.isFinite(noteRev) ? noteRev : undefined;
+  return typeof noteRev === 'number' && Number.isFinite(noteRev) ? noteRev : undefined;
 }
 
 /**
@@ -124,15 +120,15 @@ export async function runMutation(
  * (`{ task }`, `{ note }`, `{ entity }`). Returns undefined when no id is found.
  */
 function extractEntityId(result: unknown): string | undefined {
-  if (!result || typeof result !== "object") return undefined;
+  if (!result || typeof result !== 'object') return undefined;
   const record = result as Record<string, unknown>;
   const direct = record.id;
-  if (typeof direct === "string" && direct.length > 0) return direct;
-  for (const key of ["task", "note", "entity"]) {
+  if (typeof direct === 'string' && direct.length > 0) return direct;
+  for (const key of ['task', 'note', 'entity']) {
     const nested = record[key];
-    if (nested && typeof nested === "object") {
+    if (nested && typeof nested === 'object') {
       const nestedId = (nested as Record<string, unknown>).id;
-      if (typeof nestedId === "string" && nestedId.length > 0) return nestedId;
+      if (typeof nestedId === 'string' && nestedId.length > 0) return nestedId;
     }
   }
   return undefined;
@@ -164,17 +160,84 @@ export async function runMutationWithId(
   }
 }
 
-/** Enumerate the daemon's workspace ids (best-effort; empty on transport error). */
-export async function listWorkspaceIds(): Promise<string[]> {
-  try {
-    const result = await backendRequest<{ workspaces?: unknown[] }>("workspace.list");
-    const workspaces = Array.isArray(result?.workspaces) ? result.workspaces : [];
-    return workspaces
-      .map((w) => String((w as { id?: unknown; workspaceId?: unknown }).id ?? (w as { workspaceId?: unknown }).workspaceId ?? ""))
-      .filter((id) => id.length > 0);
-  } catch {
-    return [];
+/**
+ * TTL for the module-level `workspace.list` result cache (intent-hq/monorepo#1716):
+ * callers within this window share the last fetched id list instead of
+ * re-issuing the RPC. Short on purpose — the push-driven shared set (below)
+ * is the durable zero-RPC path; the TTL only absorbs pre-seed call bursts.
+ */
+const WORKSPACE_LIST_TTL_MS = 2_000;
+
+let workspaceListCache: { ids: readonly string[]; fetchedAt: number } | null = null;
+let workspaceListRpcInFlight: Promise<string[]> | null = null;
+
+/**
+ * Debug-log every REAL `workspace.list` RPC issue with its caller tag
+ * (seed | reconnect | defensive-resync | follow-up | resolver | explicit) so
+ * any future flood identifies its source (intent-hq/monorepo#1716).
+ */
+// i18n-ignore (log line)
+function logWorkspaceListRpc(tag: string, detail?: string): void {
+  console.debug(`[live-support] workspace.list RPC (${tag})${detail ? `: ${detail}` : ''}`);
+}
+
+/**
+ * Single-flighted raw `workspace.list` RPC: concurrent callers await the one
+ * in-flight promise. A successful result populates the TTL cache; failures
+ * resolve to `[]` (best-effort, matching the historical contract) and are
+ * never cached, so the next caller retries.
+ */
+function fetchWorkspaceIdsRpc(tag: string, detail?: string): Promise<string[]> {
+  if (workspaceListRpcInFlight) return workspaceListRpcInFlight;
+  logWorkspaceListRpc(tag, detail);
+  workspaceListRpcInFlight = backendRequest<{ workspaces?: unknown[] }>('workspace.list')
+    .then((result) => {
+      const workspaces = Array.isArray(result?.workspaces) ? result.workspaces : [];
+      const ids = workspaces
+        .map((w) =>
+          String(
+            (w as { id?: unknown; workspaceId?: unknown }).id ??
+              (w as { workspaceId?: unknown }).workspaceId ??
+              '',
+          ),
+        )
+        .filter((id) => id.length > 0);
+      workspaceListCache = { ids, fetchedAt: Date.now() };
+      return ids;
+    })
+    .catch(() => [] as string[])
+    .finally(() => {
+      workspaceListRpcInFlight = null;
+    });
+  return workspaceListRpcInFlight;
+}
+
+/**
+ * Enumerate the daemon's workspace ids (best-effort; empty on transport
+ * error). Shared cached read path for ALL renderer callers
+ * (intent-hq/monorepo#1716):
+ *  1. when the push-driven shared set is seeded, serve it directly — zero RPC;
+ *  2. otherwise serve the TTL cache when fresh — zero RPC;
+ *  3. otherwise issue ONE single-flighted `workspace.list` (concurrent
+ *     callers coalesce onto the same promise).
+ * `tag` names the caller in the RPC debug log when a real fetch is issued.
+ */
+export async function listWorkspaceIds(tag = 'explicit'): Promise<string[]> {
+  if (sharedWorkspaceIds !== null) return [...sharedWorkspaceIds];
+  if (
+    workspaceListCache !== null &&
+    Date.now() - workspaceListCache.fetchedAt < WORKSPACE_LIST_TTL_MS
+  ) {
+    return [...workspaceListCache.ids];
   }
+  return fetchWorkspaceIdsRpc(tag);
+}
+
+/** Test-only: clear the module-level workspace.list / note-resolution caches. */
+export function __resetLiveSupportCachesForTests(): void {
+  workspaceListCache = null;
+  workspaceListRpcInFlight = null;
+  noteResolveNegativeCache.clear();
 }
 
 /**
@@ -189,9 +252,9 @@ export async function listWorkspaceIds(): Promise<string[]> {
  * activity tick.
  */
 const WORKSPACE_ID_SET_EVENTS = [
-  "workspace:created",
-  "workspace:updated",
-  "workspace:deleted",
+  'workspace:created',
+  'workspace:updated',
+  'workspace:deleted',
 ] as const;
 
 /**
@@ -244,18 +307,26 @@ function notifyWorkspaceIdListeners(): void {
   for (const listener of workspaceIdListeners.values()) listener(ids);
 }
 
-function runWorkspaceIdResyncFetch(): void {
+function runWorkspaceIdResyncFetch(tag: string, detail?: string): void {
   workspaceIdFetchInFlight = true;
   const startGeneration = workspaceIdMutationGeneration;
-  void listWorkspaceIds()
+  // Raw single-flighted RPC on purpose: `listWorkspaceIds()` would serve the
+  // (possibly stale) shared set / TTL cache right back, defeating the resync.
+  void fetchWorkspaceIdsRpc(tag, detail)
     .then((ids) => {
       // An incremental update raced this fetch, so its result may already be
-      // stale (it was computed before that update landed). Never overwrite —
-      // arm the trailing coalesced follow-up (below) so we reconcile with one
-      // more fetch instead of silently losing the race.
+      // stale (it was computed before that update landed). Arm the trailing
+      // coalesced follow-up (below) so we reconcile with one more fetch
+      // instead of silently losing the race. While the set is still unseeded
+      // (`null`) the raced result is nonetheless applied as the BASE set —
+      // never discarded — so the set can't stay null under event pressure
+      // (intent-hq/monorepo#1716 seed race); the follow-up then reconciles
+      // the raced events. `workspaceIdRefCount === 0` means teardown bumped
+      // the generation to invalidate this fetch: never repopulate after it.
       if (workspaceIdMutationGeneration !== startGeneration) {
+        if (workspaceIdRefCount === 0) return;
         workspaceIdFetchFollowUpWanted = true;
-        return;
+        if (sharedWorkspaceIds !== null) return;
       }
       sharedWorkspaceIds = new Set(ids);
       workspaceIdMutationGeneration += 1;
@@ -276,7 +347,7 @@ function runWorkspaceIdResyncFetch(): void {
       workspaceIdFetchFollowUpWanted = false;
       workspaceIdFetchFollowUpTimer = setTimeout(() => {
         workspaceIdFetchFollowUpTimer = undefined;
-        if (workspaceIdRefCount > 0) runWorkspaceIdResyncFetch();
+        if (workspaceIdRefCount > 0) runWorkspaceIdResyncFetch('follow-up');
       }, WORKSPACE_ID_RESYNC_COALESCE_MS);
     });
 }
@@ -287,14 +358,15 @@ function runWorkspaceIdResyncFetch(): void {
  * trigger while a trailing follow-up is already scheduled is absorbed (that
  * follow-up will re-fetch the latest state); a trigger while a fetch is
  * in-flight arms exactly one trailing follow-up; otherwise fetch immediately.
+ * `tag`/`detail` name the trigger in the RPC debug log.
  */
-function resyncWorkspaceIds(): void {
+function resyncWorkspaceIds(tag: string, detail?: string): void {
   if (workspaceIdFetchFollowUpTimer !== undefined) return;
   if (workspaceIdFetchInFlight) {
     workspaceIdFetchFollowUpWanted = true;
     return;
   }
-  runWorkspaceIdResyncFetch();
+  runWorkspaceIdResyncFetch(tag, detail);
 }
 
 /**
@@ -308,7 +380,7 @@ function resyncWorkspaceIds(): void {
 function addWorkspaceId(id: string): void {
   if (!sharedWorkspaceIds) {
     workspaceIdMutationGeneration += 1;
-    resyncWorkspaceIds();
+    resyncWorkspaceIds('defensive-resync', 'workspace event before seed settled');
     return;
   }
   if (sharedWorkspaceIds.has(id)) return;
@@ -325,7 +397,7 @@ function addWorkspaceId(id: string): void {
 function removeWorkspaceId(id: string): void {
   if (!sharedWorkspaceIds) {
     workspaceIdMutationGeneration += 1;
-    resyncWorkspaceIds();
+    resyncWorkspaceIds('defensive-resync', 'workspace event before seed settled');
     return;
   }
   if (!sharedWorkspaceIds.has(id)) return;
@@ -336,30 +408,30 @@ function removeWorkspaceId(id: string): void {
 
 /** Resolve the `data` payload of an `events.event` notification (mirrors `resolveEventType`'s envelope unwrap). */
 function resolveEventData(params: unknown): unknown {
-  if (!params || typeof params !== "object") return undefined;
+  if (!params || typeof params !== 'object') return undefined;
   const wrapped = (params as { event?: unknown }).event;
-  if (wrapped && typeof wrapped === "object") return (wrapped as { data?: unknown }).data;
+  if (wrapped && typeof wrapped === 'object') return (wrapped as { data?: unknown }).data;
   return (params as { data?: unknown }).data;
 }
 
 /** Extract a workspace id from a `workspace:created`/`workspace:deleted` payload's `workspaceId` or `workspace.id`. */
 function extractCreatedOrDeletedWorkspaceId(data: unknown): string | undefined {
-  if (!data || typeof data !== "object") return undefined;
+  if (!data || typeof data !== 'object') return undefined;
   const rec = data as Record<string, unknown>;
-  if (typeof rec.workspaceId === "string" && rec.workspaceId.length > 0) return rec.workspaceId;
+  if (typeof rec.workspaceId === 'string' && rec.workspaceId.length > 0) return rec.workspaceId;
   const nested = rec.workspace;
-  if (nested && typeof nested === "object") {
+  if (nested && typeof nested === 'object') {
     const nestedId = (nested as Record<string, unknown>).id;
-    if (typeof nestedId === "string" && nestedId.length > 0) return nestedId;
+    if (typeof nestedId === 'string' && nestedId.length > 0) return nestedId;
   }
   return undefined;
 }
 
 /** Whether a `workspace:created` payload's embedded workspace is (unexpectedly) already archived. */
 function isCreatedWorkspaceArchived(data: unknown): boolean {
-  if (!data || typeof data !== "object") return false;
+  if (!data || typeof data !== 'object') return false;
   const nested = (data as Record<string, unknown>).workspace;
-  if (!nested || typeof nested !== "object") return false;
+  if (!nested || typeof nested !== 'object') return false;
   return (nested as Record<string, unknown>).archived === true;
 }
 
@@ -376,35 +448,35 @@ function applyWorkspaceIdEvent(method: string, params: unknown): void {
   if (!isEventOneOf(method, params, WORKSPACE_ID_SET_EVENTS)) return;
   const type = resolveEventType(params);
   if (type === undefined) {
-    resyncWorkspaceIds();
+    resyncWorkspaceIds('defensive-resync', 'typeless event payload');
     return;
   }
   const data = resolveEventData(params);
-  if (type === "workspace:created") {
+  if (type === 'workspace:created') {
     const id = extractCreatedOrDeletedWorkspaceId(data);
     if (!id) {
-      resyncWorkspaceIds();
+      resyncWorkspaceIds('defensive-resync', `${type} without workspace id`);
       return;
     }
     if (isCreatedWorkspaceArchived(data)) return;
     addWorkspaceId(id);
     return;
   }
-  if (type === "workspace:deleted") {
+  if (type === 'workspace:deleted') {
     const id = extractCreatedOrDeletedWorkspaceId(data);
     if (!id) {
-      resyncWorkspaceIds();
+      resyncWorkspaceIds('defensive-resync', `${type} without workspace id`);
       return;
     }
     removeWorkspaceId(id);
     return;
   }
-  if (type === "workspace:updated") {
-    const rec = data && typeof data === "object" ? (data as Record<string, unknown>) : undefined;
-    const id = typeof rec?.workspaceId === "string" ? rec.workspaceId : undefined;
+  if (type === 'workspace:updated') {
+    const rec = data && typeof data === 'object' ? (data as Record<string, unknown>) : undefined;
+    const id = typeof rec?.workspaceId === 'string' ? rec.workspaceId : undefined;
     const changes = rec?.changes;
-    if (!id || !changes || typeof changes !== "object") {
-      resyncWorkspaceIds();
+    if (!id || !changes || typeof changes !== 'object') {
+      resyncWorkspaceIds('defensive-resync', `${type} without workspaceId/changes`);
       return;
     }
     const archived = (changes as Record<string, unknown>).archived;
@@ -433,8 +505,8 @@ export function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void
 
   if (workspaceIdRefCount === 1) {
     offWorkspaceIdNotify = onBackendNotification((n) => applyWorkspaceIdEvent(n.method, n.params));
-    offWorkspaceIdReconnect = onBackendReconnected(resyncWorkspaceIds);
-    resyncWorkspaceIds();
+    offWorkspaceIdReconnect = onBackendReconnected(() => resyncWorkspaceIds('reconnect'));
+    resyncWorkspaceIds('seed');
   } else if (sharedWorkspaceIds !== null) {
     // Already seeded: give the new subscriber the current set immediately.
     listener([...sharedWorkspaceIds]);
@@ -471,21 +543,40 @@ export function rememberNoteWorkspace(noteId: string, workspaceId: string): void
 }
 
 /**
+ * Negative-cache TTL for `resolveNoteWorkspaceId`: a noteId no workspace
+ * claimed is remembered for this long so repeated resolution attempts (e.g.
+ * a component retrying a dangling note reference) don't re-scan every
+ * workspace's `note.list` back to back (intent-hq/monorepo#1716).
+ */
+const NOTE_RESOLVE_NEGATIVE_TTL_MS = 5_000;
+
+/** noteId → time the last full scan found NO owning workspace. */
+const noteResolveNegativeCache = new Map<string, number>();
+
+/**
  * Resolve the workspace a note belongs to. Returns the cached value when known,
  * otherwise scans each workspace's `note.list` (caching every note it sees)
- * until the note is found. Returns `null` when no workspace claims the note.
+ * until the note is found. Returns `null` when no workspace claims the note;
+ * that miss is negative-cached for {@link NOTE_RESOLVE_NEGATIVE_TTL_MS} so a
+ * burst of retries for the same unknown note performs one scan, not many.
  */
 export async function resolveNoteWorkspaceId(noteId: string): Promise<string | null> {
   const cached = noteWorkspaceIndex.get(noteId);
   if (cached) return cached;
 
-  for (const workspaceId of await listWorkspaceIds()) {
+  const missedAt = noteResolveNegativeCache.get(noteId);
+  if (missedAt !== undefined) {
+    if (Date.now() - missedAt < NOTE_RESOLVE_NEGATIVE_TTL_MS) return null;
+    noteResolveNegativeCache.delete(noteId);
+  }
+
+  for (const workspaceId of await listWorkspaceIds('resolver')) {
     try {
-      const result = await backendRequest<{ notes?: unknown[] }>("note.list", { workspaceId });
+      const result = await backendRequest<{ notes?: unknown[] }>('note.list', { workspaceId });
       const notes = Array.isArray(result?.notes) ? result.notes : [];
       let found = false;
       for (const note of notes) {
-        const id = String((note as { id?: unknown }).id ?? "");
+        const id = String((note as { id?: unknown }).id ?? '');
         if (id) rememberNoteWorkspace(id, workspaceId);
         if (id === noteId) found = true;
       }
@@ -494,6 +585,7 @@ export async function resolveNoteWorkspaceId(noteId: string): Promise<string | n
       // Skip workspaces whose notes cannot be listed.
     }
   }
+  noteResolveNegativeCache.set(noteId, Date.now());
   return null;
 }
 
@@ -507,19 +599,19 @@ export async function resolveNoteWorkspaceId(noteId: string): Promise<string | n
  * properly wrapped events of an unrelated family.
  */
 function resolveEventType(params: unknown): string | undefined {
-  if (!params || typeof params !== "object") return undefined;
+  if (!params || typeof params !== 'object') return undefined;
   const wrapped = (params as { event?: unknown }).event;
-  if (wrapped && typeof wrapped === "object") {
+  if (wrapped && typeof wrapped === 'object') {
     const wrappedType = (wrapped as { type?: unknown }).type;
-    if (typeof wrappedType === "string") return wrappedType;
+    if (typeof wrappedType === 'string') return wrappedType;
   }
   const flat = (params as { type?: unknown }).type;
-  return typeof flat === "string" ? flat : undefined;
+  return typeof flat === 'string' ? flat : undefined;
 }
 
 /** Whether a daemon notification belongs to the given colon-delimited event family. */
 export function isEventInFamily(method: string, params: unknown, family: string): boolean {
-  if (method !== "events.event") return false;
+  if (method !== 'events.event') return false;
   const type = resolveEventType(params);
   // Refetch on any event whose type starts with the family; if the type is
   // absent (older daemons) refetch defensively.
@@ -528,7 +620,7 @@ export function isEventInFamily(method: string, params: unknown, family: string)
 
 /** Whether a daemon notification's event type is one of the listed types. */
 export function isEventOneOf(method: string, params: unknown, types: readonly string[]): boolean {
-  if (method !== "events.event") return false;
+  if (method !== 'events.event') return false;
   const type = resolveEventType(params);
   if (type === undefined) return true;
   return types.includes(type);
