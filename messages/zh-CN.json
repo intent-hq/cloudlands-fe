@@ -4721,6 +4721,7 @@
   "lib_commandPalette_terminal_pill": "终端",
   "lib_commandPalette_note_pill": "笔记",
   "lib_commandPalette_file_pill": "文件",
+  "lib_commandPalette_archivedWorkspace_pill_label": "已归档工作区",
   "events_activity_file_fallback": "文件",
   "events_activity_note_fallback": "笔记",
   "events_activity_agent_fallback": "智能体",

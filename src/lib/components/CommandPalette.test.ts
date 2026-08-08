@@ -404,6 +404,7 @@ describe('CommandPalette chat message rows', () => {
         id: 'ws-noowner',
         title: 'Local space',
         repositoryName: 'tools',
+        status: 'Archived',
         createdAt: '2025-01-01T00:00:00.000Z',
         updatedAt: '2025-01-01T00:00:00.000Z',
       },
@@ -472,10 +473,14 @@ describe('CommandPalette chat message rows', () => {
     );
     expect(coordinator.textContent).toContain('hello from coordinator');
 
-    // No owner: Agent · Workspace · repo-name only
+    // Active workspace: no archived pill
+    expect(coordinator.textContent).not.toContain('Archived workspace');
+
+    // No owner: Agent · Workspace · repo-name only; archived workspace shows the pill
     const local = screen.getByRole('button', { name: /Local Agent/ });
     expect(local.textContent).toMatch(/Local Agent\s*·\s*Local space\s*·\s*tools/);
     expect(local.textContent).not.toContain('panghy');
+    expect(local.textContent).toContain('Archived workspace');
 
     // Unknown workspace: no segments, no dangling separators, no "undefined"
     const ghost = screen.getByRole('button', { name: /Ghost Agent/ });

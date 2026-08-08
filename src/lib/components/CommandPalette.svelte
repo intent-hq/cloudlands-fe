@@ -1103,6 +1103,13 @@
                 <div class="flex-1 min-w-0 flex flex-col gap-0.5">
                   <!-- First line: label and time -->
                   <div class="flex items-center gap-2.5">
+                    {#if item.type === 'message' && item.isArchivedWorkspace}
+                      <span
+                        class="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-foreground/[0.05] text-subtle flex-none"
+                      >
+                        {m.lib_commandPalette_archivedWorkspace_pill_label()}
+                      </span>
+                    {/if}
                     <span class="text-[14px] font-medium text-foreground truncate"
                       >{item.label}</span
                     >

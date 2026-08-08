@@ -16,7 +16,7 @@ import {
   buildRecentItems,
   type WorkspaceObject,
 } from "./command-palette-utils";
-import type { Note } from "$shared/types";
+import { WorkspaceStatus, type Note } from "$shared/types";
 
 // ── fuzzyScore ─────────────────────────────────────────────────────────────
 
@@ -187,6 +187,32 @@ describe("buildMessageTitleSegments", () => {
       workspaceName: "ws-1",
       repoLabel: undefined,
     });
+  });
+
+  it("flags an archived workspace", () => {
+    expect(
+      buildMessageTitleSegments({
+        id: "ws-1",
+        title: "Old space",
+        status: WorkspaceStatus.Archived,
+      }),
+    ).toEqual({ workspaceName: "Old space", repoLabel: undefined, isArchivedWorkspace: true });
+  });
+
+  it("does not flag an active workspace", () => {
+    expect(
+      buildMessageTitleSegments({
+        id: "ws-1",
+        title: "Live space",
+        status: WorkspaceStatus.Active,
+      }).isArchivedWorkspace,
+    ).toBeUndefined();
+  });
+
+  it("does not flag a workspace without a status", () => {
+    expect(
+      buildMessageTitleSegments({ id: "ws-1", title: "No status" }).isArchivedWorkspace,
+    ).toBeUndefined();
   });
 });
 
