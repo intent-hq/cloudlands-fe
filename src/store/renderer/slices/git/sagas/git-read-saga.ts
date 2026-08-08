@@ -41,7 +41,7 @@ function* loadGitStatusWorker(workspaceId: string) {
   }
 }
 
-type RunningRead = { task?: Task; token: symbol };
+type RunningRead = { task?: Task; token: symbol; pending?: boolean };
 
 /**
  * Bridges daemon-pushed git-change notifications (`appClient.git.subscribe`)
@@ -80,6 +80,26 @@ function* watchGitStatusSubscription() {
   }
 }
 
+/**
+ * Single-flight git-status read with trailing coalesce: a `loadGitStatus`
+ * that arrives while `workspaceId`'s read is already in flight is never
+ * dropped — it flips `entry.pending`, and once the in-flight read settles
+ * the loop below re-reads once more (clearing `pending` first) before
+ * releasing the single-flight slot, so at most one trailing read follows
+ * any burst of triggers.
+ */
+function* runRead(running: Map<string, RunningRead>, workspaceId: string, entry: RunningRead) {
+  try {
+    while (running.get(workspaceId) === entry) {
+      entry.pending = false;
+      yield* call(loadGitStatusWorker, workspaceId);
+      if (!entry.pending) break;
+    }
+  } finally {
+    if (running.get(workspaceId) === entry) running.delete(workspaceId);
+  }
+}
+
 export function* gitReadSaga() {
   const running = new Map<string, RunningRead>();
   yield* fork(watchGitStatusSubscription);
@@ -91,17 +111,15 @@ export function* gitReadSaga() {
 
       if (action.type === loadGitStatus.type) {
         const [workspaceId] = action.payload as [string];
-        if (!workspaceId || running.has(workspaceId)) continue;
-        const token = Symbol(workspaceId);
-        running.set(workspaceId, { token });
-        const task = yield* fork(function* () {
-          try {
-            yield* call(loadGitStatusWorker, workspaceId);
-          } finally {
-            if (running.get(workspaceId)?.token === token) running.delete(workspaceId);
-          }
-        });
-        if (running.get(workspaceId)?.token === token) running.set(workspaceId, { task, token });
+        if (!workspaceId) continue;
+        const existing = running.get(workspaceId);
+        if (existing) {
+          existing.pending = true;
+          continue;
+        }
+        const entry: RunningRead = { token: Symbol(workspaceId) };
+        running.set(workspaceId, entry);
+        entry.task = yield* fork(runRead, running, workspaceId, entry);
         continue;
       }
 

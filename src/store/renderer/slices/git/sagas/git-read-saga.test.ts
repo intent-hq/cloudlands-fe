@@ -89,6 +89,58 @@ describe('gitReadSaga', () => {
     await task.toPromise();
   });
 
+  it('trailing-coalesces a loadGitStatus that arrives while a read is in flight', async () => {
+    const results: GitStatus[] = [
+      {
+        branch: 'main',
+        ahead: 0,
+        behind: 0,
+        diverged: false,
+        files: [],
+        hasUncommittedChanges: false,
+        hasUntrackedFiles: false,
+      },
+      {
+        branch: 'main',
+        ahead: 1,
+        behind: 0,
+        diverged: false,
+        files: [],
+        hasUncommittedChanges: true,
+        hasUntrackedFiles: false,
+      },
+    ];
+    let resolveFirst!: (status: GitStatus) => void;
+    vi.spyOn(appClient.git, 'status').mockImplementationOnce(
+      () =>
+        new Promise<GitStatus>((done) => {
+          resolveFirst = done;
+        }),
+    );
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+
+    // Second trigger arrives while the first read is still in flight: it must
+    // not start a concurrent read, but must not be dropped either.
+    channel.put(loadGitStatus('ws-1'));
+    await settle();
+    channel.put(loadGitStatus('ws-1'));
+    await settle();
+
+    expect(appClient.git.status).toHaveBeenCalledTimes(1);
+
+    vi.spyOn(appClient.git, 'status').mockResolvedValueOnce(results[1]!);
+    resolveFirst(results[0]!);
+    await settle();
+    await settle();
+
+    expect(appClient.git.status).toHaveBeenCalledTimes(2);
+    expect(actions).toEqual([setGitStatus('ws-1', results[0]!), setGitStatus('ws-1', results[1]!)]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('refreshes the active workspace when a daemon git-change signal arrives', async () => {
     let notify: (() => void) | undefined;
     vi.spyOn(appClient.git, 'subscribe').mockImplementation((handler) => {
