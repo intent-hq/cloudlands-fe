@@ -240,6 +240,41 @@ export function createFormatters(getLocale: () => string) {
     return formatShortDate(date, { now });
   }
 
+  /**
+   * Compact duration for countdowns/elapsed badges: narrow units, showing the
+   * most significant unit plus its immediately adjacent smaller unit ("42s",
+   * "12m 30s", "1h 5m", "2d 3h"). The adjacent unit is omitted when zero, and
+   * any remainder below it is truncated rather than rounded — "1h 0m 30s" →
+   * "1h", "1d 23h 59m" → "1d 23h" — so a countdown never overstates the time
+   * remaining. (Sub-minute values still round to the nearest second, carrying
+   * upward: 59.6s → "1m".) Negative durations clamp to "0s"; invalid input → "".
+   */
+  function formatCompactDuration(durationMs: number): string {
+    if (!Number.isFinite(durationMs)) return '';
+    const locale = getLocale();
+    const unitOf = (unit: string, value: number) =>
+      numberFormat(locale, { style: 'unit', unit, unitDisplay: 'narrow' }).format(value);
+    const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+    const seconds = totalSeconds % 60;
+    const totalMinutes = Math.floor(totalSeconds / 60);
+    if (totalMinutes === 0) return unitOf('second', seconds);
+    const minutes = totalMinutes % 60;
+    const totalHours = Math.floor(totalMinutes / 60);
+    if (totalHours === 0) {
+      return seconds === 0
+        ? unitOf('minute', minutes)
+        : `${unitOf('minute', minutes)} ${unitOf('second', seconds)}`;
+    }
+    const hours = totalHours % 24;
+    const days = Math.floor(totalHours / 24);
+    if (days === 0) {
+      return minutes === 0
+        ? unitOf('hour', hours)
+        : `${unitOf('hour', hours)} ${unitOf('minute', minutes)}`;
+    }
+    return hours === 0 ? unitOf('day', days) : `${unitOf('day', days)} ${unitOf('hour', hours)}`;
+  }
+
   /** Clock time, e.g. "2:30 PM" / "14:30"; `seconds` → "02:30:05 PM". */
   function formatTime(input: DateInput, options?: { seconds?: boolean }): string {
     const date = toDate(input);
@@ -345,6 +380,7 @@ export function createFormatters(getLocale: () => string) {
     formatBytesBinary,
     formatRelativeTime,
     formatCompactRelativeTime,
+    formatCompactDuration,
     formatTime,
     formatDate,
     formatShortDate,
