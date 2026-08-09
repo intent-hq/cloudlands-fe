@@ -90,6 +90,30 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     expect(state.backgroundAgentSettings.typeOverrides.pr).toBe('');
   });
 
+  it('hydrates model.defaultReasoningEffort into the model slice', () => {
+    applySettingsChanges([{ path: 'model.defaultReasoningEffort', value: 'high' }]);
+    const state = appStore.state as { model: { defaultReasoningEffort: string } };
+    expect(state.model.defaultReasoningEffort).toBe('high');
+
+    // Clearing to Default persists (and rehydrates) an empty string.
+    applySettingsChanges([{ path: 'model.defaultReasoningEffort', value: '' }]);
+    expect(
+      (appStore.state as { model: { defaultReasoningEffort: string } }).model
+        .defaultReasoningEffort,
+    ).toBe('');
+  });
+
+  it('ignores non-string model.defaultReasoningEffort values', () => {
+    applySettingsChanges([{ path: 'model.defaultReasoningEffort', value: 'medium' }]);
+    applySettingsChanges([
+      { path: 'model.defaultReasoningEffort', value: 42 },
+      { path: 'model.defaultReasoningEffort', value: null },
+      { path: 'model.defaultReasoningEffort', value: { level: 'low' } },
+    ]);
+    const state = appStore.state as { model: { defaultReasoningEffort: string } };
+    expect(state.model.defaultReasoningEffort).toBe('medium');
+  });
+
   it('silently skips unknown paths so BE-side schema additions never crash the FE', () => {
     expect(() =>
       applySettingsChanges([{ path: 'completely.unknown.path', value: 42 }]),
