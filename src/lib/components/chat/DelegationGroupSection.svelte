@@ -8,7 +8,8 @@
    * stop/cancel actions, an avatar strip when collapsed, and the group's
    * agent cards when expanded.
    */
-  import { fade, slide } from 'svelte/transition';
+  import { fade } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { flip } from 'svelte/animate';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import {
@@ -163,13 +164,13 @@
   {#if !isCollapsed}
     <div
       class="flex flex-col gap-0.5 w-full pl-4.5 pr-2 font-family-child"
-      transition:slide={{ duration: 150 }}
+      transition:safeSlide={{ duration: 150 }}
     >
       {#each orderedAgentIds.slice(0, 5) as agentId (agentId)}
         <div
           class="w-full"
           animate:flip={{ duration: 200 }}
-          transition:slide={{ axis: 'y', duration: 200 }}
+          transition:safeSlide={{ axis: 'y', duration: 200 }}
         >
           <AgentCard {agentId} {workspace} isCompleted={completedAgentIdSet.has(agentId)} />
         </div>

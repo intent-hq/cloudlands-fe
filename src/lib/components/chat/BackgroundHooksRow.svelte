@@ -19,7 +19,7 @@
 
   import Fa from 'svelte-fa';
   import { faBolt, faCode, faPlay, faSpinner, faXmark } from '@fortawesome/free-solid-svg-icons';
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -139,7 +139,7 @@
     role="group"
     aria-label={m.chat_backgroundHooks_row_ariaLabel()}
     data-testid="background-hooks-row"
-    transition:slide={{ axis: 'y', duration: 200 }}
+    transition:safeSlide={{ axis: 'y', duration: 200 }}
   >
     <Fa icon={faBolt} class="w-2.5 h-2.5 text-ghost shrink-0" />
     <span class="text-xs leading-tight text-ghost shrink-0"

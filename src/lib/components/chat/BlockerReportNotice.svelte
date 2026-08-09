@@ -8,7 +8,7 @@
    */
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -23,7 +23,7 @@
 
 <div
   class="blocker-report-notice flex items-start gap-2.5 px-3 py-2.5 my-2 rounded-md bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 {className}"
-  transition:slide={{ axis: 'y', duration: 200 }}
+  transition:safeSlide={{ axis: 'y', duration: 200 }}
   role="alert"
   aria-live="polite"
 >
