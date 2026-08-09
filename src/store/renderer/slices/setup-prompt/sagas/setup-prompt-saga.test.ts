@@ -3,7 +3,7 @@
  */
 
 import { runSaga, stdChannel } from 'redux-saga';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { ConnectionRecord } from '../../connections/connections-types';
@@ -12,10 +12,10 @@ import {
   checkAllProvidersComplete,
   ensureProvidersChecked,
 } from '../../agent-availability/agent-availability-slice';
-import { setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
-import { setupEvaluationCompleted } from '../setup-prompt-slice';
+import { loadWorkspacesRequested, replaceWorkspaceList } from '../../workspace/workspace-slice';
+import { evaluateSetupStateRequested, setupEvaluationCompleted } from '../setup-prompt-slice';
 import { hasReadyProvider } from '../setup-prompt-utils';
-import { evaluateSetupStateWorker } from './setup-prompt-saga';
+import { evaluateSetupStateWorker, requestReevaluation } from './setup-prompt-saga';
 
 const LOCAL: ConnectionRecord = {
   id: LOCAL_CONNECTION_ID,
@@ -41,6 +41,7 @@ interface HarnessOptions {
   hasLoaded?: boolean;
   hasCheckedOnce?: boolean;
   providerStatusMap?: Record<string, { available: boolean; authenticated?: boolean }>;
+  providerLoadingMap?: Record<string, boolean>;
 }
 
 function harness(opts: HarnessOptions = {}) {
@@ -66,7 +67,7 @@ function harness(opts: HarnessOptions = {}) {
     },
     agentAvailability: {
       providerStatusMap: opts.providerStatusMap ?? {},
-      providerLoadingMap: {},
+      providerLoadingMap: opts.providerLoadingMap ?? {},
       providerUserInfoLoadingMap: {},
       hasCheckedOnce: opts.hasCheckedOnce ?? true,
       watchedTerminalIds: [],
@@ -86,8 +87,19 @@ function harness(opts: HarnessOptions = {}) {
 }
 
 const settle = async () => {
-  for (let i = 0; i < 4; i++) await Promise.resolve();
+  for (let i = 0; i < 10; i++) await Promise.resolve();
 };
+
+/**
+ * The worker starts by dispatching loadWorkspacesRequested and waiting for
+ * the resulting replaceWorkspaceList — answer that refresh.
+ */
+async function answerWorkspaceRefresh(h: ReturnType<typeof harness>) {
+  await settle();
+  expect(h.dispatched.some((a) => a.type === loadWorkspacesRequested.type)).toBe(true);
+  h.channel.put(replaceWorkspaceList([]) as never);
+  await settle();
+}
 
 function completedEvaluations(dispatched: { type: string; payload?: unknown }[]) {
   return dispatched
@@ -97,37 +109,37 @@ function completedEvaluations(dispatched: { type: string; payload?: unknown }[])
 
 describe('evaluateSetupStateWorker', () => {
   it('reports setupNeeded for an empty backend with no ready providers', async () => {
-    const { dispatched, task } = harness({
-      providerStatusMap: { auggie: { available: false } },
-    });
-    await task.toPromise();
-    expect(completedEvaluations(dispatched)).toEqual([
+    const h = harness({ providerStatusMap: { auggie: { available: false } } });
+    await answerWorkspaceRefresh(h);
+    await h.task.toPromise();
+    expect(completedEvaluations(h.dispatched)).toEqual([
       { connectionId: LOCAL_CONNECTION_ID, isLocal: true, setupNeeded: true },
     ]);
   });
 
   it('reports no setup needed when a ready provider exists', async () => {
-    const { dispatched, task } = harness({
-      providerStatusMap: { auggie: { available: true } },
-    });
-    await task.toPromise();
-    expect(completedEvaluations(dispatched)).toEqual([
+    const h = harness({ providerStatusMap: { auggie: { available: true } } });
+    await answerWorkspaceRefresh(h);
+    await h.task.toPromise();
+    expect(completedEvaluations(h.dispatched)).toEqual([
       { connectionId: LOCAL_CONNECTION_ID, isLocal: true, setupNeeded: false },
     ]);
   });
 
   it('reports no setup needed when workspaces exist', async () => {
-    const { dispatched, task } = harness({ workspaceIds: ['ws-1'] });
-    await task.toPromise();
-    expect(completedEvaluations(dispatched)).toEqual([
+    const h = harness({ workspaceIds: ['ws-1'] });
+    await answerWorkspaceRefresh(h);
+    await h.task.toPromise();
+    expect(completedEvaluations(h.dispatched)).toEqual([
       { connectionId: LOCAL_CONNECTION_ID, isLocal: true, setupNeeded: false },
     ]);
   });
 
   it('stamps the evaluation with the remote connection identity', async () => {
-    const { dispatched, task } = harness({ activeId: 'remote-1' });
-    await task.toPromise();
-    expect(completedEvaluations(dispatched)).toEqual([
+    const h = harness({ activeId: 'remote-1' });
+    await answerWorkspaceRefresh(h);
+    await h.task.toPromise();
+    expect(completedEvaluations(h.dispatched)).toEqual([
       { connectionId: 'remote-1', isLocal: false, setupNeeded: true },
     ]);
   });
@@ -138,22 +150,86 @@ describe('evaluateSetupStateWorker', () => {
       hasCheckedOnce: false,
     });
     await settle();
-    // Blocked on the workspace list: nothing evaluated, no provider check yet.
+    // Blocked on the workspace-list refresh it requested: nothing evaluated,
+    // no provider check yet.
+    expect(dispatched.some((a) => a.type === loadWorkspacesRequested.type)).toBe(true);
     expect(completedEvaluations(dispatched)).toEqual([]);
     expect(dispatched.some((a) => a.type === ensureProvidersChecked.type)).toBe(false);
 
     state.workspace.hasLoaded = true;
-    channel.put(setWorkspaceHasLoaded(true) as never);
+    channel.put(replaceWorkspaceList([]) as never);
     await settle();
     // Now blocked on the bulk provider check it requested.
     expect(dispatched.some((a) => a.type === ensureProvidersChecked.type)).toBe(true);
     expect(completedEvaluations(dispatched)).toEqual([]);
 
+    state.agentAvailability.hasCheckedOnce = true;
     channel.put(checkAllProvidersComplete() as never);
     await task.toPromise();
     expect(completedEvaluations(dispatched)).toEqual([
       { connectionId: LOCAL_CONNECTION_ID, isLocal: true, setupNeeded: true },
     ]);
+  });
+
+  it('re-requests the bulk provider check until one settles (missed-dispatch retry)', async () => {
+    vi.useFakeTimers();
+    try {
+      const { channel, dispatched, task, state } = harness({ hasCheckedOnce: false });
+      await settle();
+      channel.put(replaceWorkspaceList([]) as never);
+      await settle();
+      const requests = () =>
+        dispatched.filter((a) => a.type === ensureProvidersChecked.type).length;
+      expect(requests()).toBe(1);
+
+      // The first request was missed (no watcher yet): the retry timer fires
+      // and the worker re-dispatches.
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(requests()).toBe(2);
+
+      state.agentAvailability.hasCheckedOnce = true;
+      channel.put(checkAllProvidersComplete() as never);
+      await task.toPromise();
+      expect(completedEvaluations(dispatched)).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('waits out an in-flight provider re-check before evaluating', async () => {
+    const h = harness({
+      providerLoadingMap: { auggie: true },
+      providerStatusMap: { auggie: { available: true } },
+    });
+    await answerWorkspaceRefresh(h);
+    // Blocked on the in-flight re-check.
+    expect(completedEvaluations(h.dispatched)).toEqual([]);
+
+    h.state.agentAvailability.providerLoadingMap = {};
+    h.channel.put(checkAllProvidersComplete() as never);
+    await h.task.toPromise();
+    expect(completedEvaluations(h.dispatched)).toEqual([
+      { connectionId: LOCAL_CONNECTION_ID, isLocal: true, setupNeeded: false },
+    ]);
+  });
+});
+
+describe('requestReevaluation', () => {
+  it('dispatches evaluateSetupStateRequested', async () => {
+    const channel = stdChannel();
+    const dispatched: { type: string }[] = [];
+    await runSaga(
+      {
+        channel,
+        dispatch: (a: { type: string }) => {
+          dispatched.push(a);
+          return a;
+        },
+        getState: () => ({}),
+      },
+      requestReevaluation,
+    ).toPromise();
+    expect(dispatched.map((a) => a.type)).toEqual([evaluateSetupStateRequested.type]);
   });
 });
 
