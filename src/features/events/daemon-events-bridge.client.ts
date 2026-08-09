@@ -176,6 +176,7 @@ import { markWorkspaceSeenIfViewing } from '$features/workspace/mark-workspace-s
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import { ensureAgentSession } from '$features/agent/agent-read-service';
+import { notifyInterruptedAgentUpdated } from '$features/agent/interrupted-agents-service';
 import { recordAgentFailure, removeAgentFailure } from '$features/agent/agent-failure-registry';
 import { showAgentAttentionToast } from '$features/agent/agent-attention-toast-service';
 import { refreshWorkspaceSubscriptionEntries } from '$features/agent/agent-subscription-read-service';
@@ -1219,6 +1220,11 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || agentId.length === 0) return;
   void ensureAgentSession(agentId);
+  // Cross-window InterruptedAgentsModal reconciliation (§5.35):
+  // agent.resolveInterrupted emits agent:updated per resolved agent, so an
+  // open modal listing this agent re-checks agent.listInterrupted (debounced;
+  // no-op when the modal is closed or the agent is not listed).
+  notifyInterruptedAgentUpdated(agentId);
 }
 
 /**
@@ -1575,6 +1581,17 @@ function handleNoteEvent(
 }
 
 /**
+ * `task:created` (§6.5) carries `{ noteId, noteTitle, status, createdAt,
+ * agentId? }` — a new task changes the BE-owned `task.list` rollup, so refetch
+ * through the same debounced, initialized-workspaces-only path `note:*` uses.
+ * The new task itself arrives with that refetch; the HUD feed row is rendered
+ * off the HUD's own feed subscription.
+ */
+function handleTaskCreatedEvent(workspaceId: string): void {
+  debouncedWorkspaceTasksRefresh(workspaceId);
+}
+
+/**
  * `task:status-changed` (§6.5) carries the self-sufficient payload
  * `{ noteId, noteTitle, previousStatus, newStatus, changedAt }` — the daemon
  * mints the FE-canonical status word (`not_started` | `in_progress` |
@@ -1803,8 +1820,7 @@ async function runReconcileWorkspaceAgentSummaryFetch(workspaceId: string): Prom
   const { backendRequest } = await import('$lib/client/live/backend-transport');
   try {
     const response = (await backendRequest('workspace.get', { workspaceId })) as
-      | { workspace?: Workspace }
-      | undefined;
+      { workspace?: Workspace } | undefined;
     const workspace = response?.workspace;
     if (workspace) {
       const { setWorkspaceEntity } =
@@ -2587,6 +2603,11 @@ export function routeDaemonEventsNotification(
   // Task/comment/PR domain events converge into their owning slices so the
   // task pane, inline comment thread, and workspace PR pill refresh without a
   // reload.
+  if (type === 'task:created') {
+    handleTaskCreatedEvent(workspaceId);
+    // Side effect, never an early return: the activity timeline still records
+    // the creation via the `eventReceived` dispatch below.
+  }
   if (type === 'task:status-changed') {
     handleTaskStatusChangedEvent(event, workspaceId);
     return;

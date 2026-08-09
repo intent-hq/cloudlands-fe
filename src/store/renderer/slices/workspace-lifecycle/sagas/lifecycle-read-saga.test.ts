@@ -172,16 +172,22 @@ describe('lifecycleReadSaga', () => {
     expect(run.actions).toEqual([]);
 
     let resolve!: (value: { tasks: unknown[]; stats: { total: number } }) => void;
-    mocks.tasks.list.mockReturnValue(new Promise((done) => { resolve = done; }));
+    mocks.tasks.list.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
     run.channel.put(loadWorkspaceTasksRequested(WS));
     run.channel.put(loadWorkspaceTasksRequested(WS));
     await settle();
     expect(mocks.tasks.list.mock.calls).toEqual([[WS]]);
     resolve({ tasks: [], stats: { total: 0 } });
     await settle();
+    // Trailing coalesce: the trigger that arrived in flight runs exactly once
+    // afterwards, so a task change made after the first response is not lost.
+    expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
+      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
     ]);
+    await settle();
+    expect(mocks.tasks.list.mock.calls).toHaveLength(2);
     await stop(run.task);
   });
 

@@ -75,6 +75,16 @@ vi.mock('$features/agent/agent-read-service', () => ({
   createAgentReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) => next(a),
 }));
 
+// Fake the interrupted-agents service so the bridge's `agent:updated` →
+// cross-window reconcile notify (monorepo#1728) is observable without the real
+// modal/appClient choreography.
+const { notifyInterruptedAgentUpdatedSpy } = vi.hoisted(() => ({
+  notifyInterruptedAgentUpdatedSpy: vi.fn(),
+}));
+vi.mock('$features/agent/interrupted-agents-service', () => ({
+  notifyInterruptedAgentUpdated: notifyInterruptedAgentUpdatedSpy,
+}));
+
 // Fake the navigate-away helper so the bridge's `workspace:deleted` navigation
 // routing is observable without jsdom location/tab-state choreography. This is
 // the live-mode path for #766: the `events.event` firehose fires in both live
@@ -1841,7 +1851,9 @@ describe('daemonEventsBridge (agent:stream:activity — push-applied live previe
 
     handler(notification('agent:stream:activity', { messageId: MESSAGE_ID, digest: 'x' }));
     handler(notification('agent:stream:activity', { agentId: AGENT, digest: 'x' }));
-    handler(notification('agent:stream:activity', { agentId: '', messageId: MESSAGE_ID, digest: 'x' }));
+    handler(
+      notification('agent:stream:activity', { agentId: '', messageId: MESSAGE_ID, digest: 'x' }),
+    );
     handler(notification('agent:stream:activity', { agentId: AGENT, messageId: '', digest: 'x' }));
 
     expect(readAgentSessionField('digest')).toBeUndefined();
@@ -4328,6 +4340,29 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     expect(state.agentSessions.byAgentId[AGENT]?.messages[0].id).toBe('asst-keep');
   });
 
+  // monorepo#1728: #584 dropped the notifyInterruptedAgentUpdated call, so a
+  // real agent:updated (emitted per agent by agent.resolveInterrupted,
+  // PROTOCOL §5.35) could never schedule the cross-window modal reconcile.
+  it('agent:updated notifies the interrupted-agents service so a cross-window resolve reconciles the modal', async () => {
+    const handler = capturedHandlers[0]!;
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-updated-interrupted',
+          workspaceId: WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:updated',
+          actor: { type: 'system', id: 'daemon' },
+          data: { agentId: AGENT },
+        },
+      },
+    });
+    await flush();
+
+    expect(notifyInterruptedAgentUpdatedSpy).toHaveBeenCalledWith(AGENT);
+  });
+
   it('ignores agent:created/renamed/updated payloads missing agentId (schema guard)', async () => {
     const handler = capturedHandlers[0]!;
 
@@ -4349,6 +4384,7 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     await flush();
 
     expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
+    expect(notifyInterruptedAgentUpdatedSpy).not.toHaveBeenCalled();
   });
 });
 describe('daemonEventsBridge (note:* wire contract → applyNoteFromEvent)', () => {
@@ -4593,6 +4629,95 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
     vi.advanceTimersByTime(1000);
 
     expect(taskListCalls(BURST_WS)).toHaveLength(1);
+  });
+
+  // monorepo#1732: #584 dropped the `task:created` arm, so the §6.5 edge that
+  // exists precisely so subscribers need not infer task-ness from a note
+  // payload no longer refreshed the BE-owned task.list rollup.
+  it('task:created on an initialized workspace triggers the debounced task.list refetch', async () => {
+    const CREATED_WS = 'ws-bridge-task-created';
+    const { loadWorkspaceTasksSucceeded } =
+      await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(CREATED_WS, [], { total: 0, completed: 0, inProgress: 0 }),
+    );
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    backendRequestSpy.mockImplementation((method: string) =>
+      method === 'task.list'
+        ? Promise.resolve({
+            tasks: [{ id: 'task-new', title: 'New Task', status: 'not_started' }],
+            stats: { total: 1, completed: 0, inProgress: 0 },
+          })
+        : undefined,
+    );
+
+    vi.useFakeTimers();
+    // PROTOCOL §6.5 task:created payload.
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-task-created-1',
+          workspaceId: CREATED_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'task:created',
+          actor: { type: 'agent', id: AGENT },
+          data: {
+            noteId: 'task-new',
+            noteTitle: 'New Task',
+            status: 'not_started',
+            createdAt: '2026-01-02T00:00:00.000Z',
+          },
+        },
+      },
+    });
+
+    // Debounced: no wire call before the ~1s window elapses.
+    expect(taskListCalls(CREATED_WS)).toHaveLength(0);
+    vi.advanceTimersByTime(1000);
+
+    expect(taskListCalls(CREATED_WS)).toHaveLength(1);
+    expect(backendRequestSpy).toHaveBeenCalledWith('task.list', { workspaceId: CREATED_WS });
+
+    vi.useRealTimers();
+    await flush();
+    const wsState = (
+      appStore.state as {
+        workspaceTasks: { byWorkspaceId: Record<string, { stats: unknown }> };
+      }
+    ).workspaceTasks.byWorkspaceId[CREATED_WS];
+    expect(wsState.stats).toEqual({ total: 1, completed: 0, inProgress: 0 });
+  });
+
+  it('task:created on a workspace whose tasks slice is not initialized does NOT trigger a task.list fetch', async () => {
+    const UNINIT_WS = 'ws-bridge-task-created-uninit';
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-task-created-uninit',
+          workspaceId: UNINIT_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'task:created',
+          actor: { type: 'agent', id: AGENT },
+          data: {
+            noteId: 'task-x',
+            noteTitle: 'X',
+            status: 'not_started',
+            createdAt: '2026-01-02T00:00:00.000Z',
+          },
+        },
+      },
+    });
+    vi.advanceTimersByTime(2000);
+
+    expect(taskListCalls(UNINIT_WS)).toHaveLength(0);
   });
 
   it('a pending refetch is dropped if the tasks slice is cleared during the debounce window', async () => {
@@ -7180,8 +7305,7 @@ describe('daemonEventsBridge (agent:deleted → reconcileWorkspaceAgentSummary)'
     const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     const ws = getItem(state.workspace.workspaces as never, WS_SUMMARY) as
-      | { agentSummary?: { agentIds: string[] } }
-      | undefined;
+      { agentSummary?: { agentIds: string[] } } | undefined;
     return ws?.agentSummary;
   }
 
@@ -7313,7 +7437,9 @@ describe('daemonEventsBridge (agent:deleted → reconcileWorkspaceAgentSummary)'
     // Settle the leading-edge fetch with a (now-stale) single-deletion
     // snapshot; the trailing fetch should fire immediately after and its
     // fresher result must be what lands in the store.
-    resolveFirstFetch?.(workspaceResponse(['agent-deleted-2', 'agent-kept-1'], '2026-01-01T00:00:01.000Z'));
+    resolveFirstFetch?.(
+      workspaceResponse(['agent-deleted-2', 'agent-kept-1'], '2026-01-01T00:00:01.000Z'),
+    );
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 
