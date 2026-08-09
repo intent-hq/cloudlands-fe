@@ -1540,12 +1540,17 @@ export interface ProvidersClient {
 /** Wire `period` mode for `stats.getUsage`. */
 export type UsageStatsPeriod = "24h" | "month" | "year";
 
-/** The 4 separate token counters for one `stats.getUsage` aggregation cell. */
+/** The separate token counters for one `stats.getUsage` aggregation cell. */
 export interface UsageTokenTotals {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
+  /**
+   * Reasoning ("thought") tokens — **omitted when zero or unreported** (§5.23),
+   * so an absent field means no provider broke reasoning out of `outputTokens`.
+   */
+  thoughtTokens?: number;
 }
 
 /** Per-model rollup row (sorted desc by total tokens by the daemon). */
