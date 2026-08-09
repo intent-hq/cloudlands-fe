@@ -145,28 +145,43 @@ describe('ProviderSelector disable guard', () => {
   async function renderSelector() {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
-    const buttons = await waitFor(() => {
-      const found = result
-        .getAllByRole('button', { hidden: true })
-        .filter((b) => b.textContent?.trim() === 'Disable');
-      expect(found.length).toBe(2);
-      return found;
+    await waitFor(() => {
+      expect(
+        result.getByRole('button', { name: 'Provider actions for OpenAI Codex' }),
+      ).toBeTruthy();
     });
-    return { result, buttons };
+    return result;
+  }
+
+  async function getDisableButton(
+    result: Awaited<ReturnType<typeof renderSelector>>,
+    providerName: string,
+  ) {
+    await fireEvent.click(
+      result.getByRole('button', { name: `Provider actions for ${providerName}` }),
+    );
+    return await waitFor(() => result.getByRole('menuitem', { name: 'Disable' }));
   }
 
   it('disables the Disable control for an in-use provider with a reason', async () => {
-    const { buttons } = await renderSelector();
-    // Rows are alphabetical: Anthropic Claude Code before OpenAI Codex
-    const [claudeButton, codexButton] = buttons as HTMLButtonElement[];
+    const result = await renderSelector();
+    const claudeButton = (await getDisableButton(
+      result,
+      'Anthropic Claude Code',
+    )) as HTMLButtonElement;
     expect(claudeButton.disabled).toBe(true);
     expect(claudeButton.title).toContain('My Spec');
+
+    await fireEvent.click(
+      result.getByRole('button', { name: 'Provider actions for Anthropic Claude Code' }),
+    );
+    const codexButton = (await getDisableButton(result, 'OpenAI Codex')) as HTMLButtonElement;
     expect(codexButton.disabled).toBe(false);
   });
 
   it('still dispatches setProviderEnabled(false) for providers not in use', async () => {
-    const { buttons } = await renderSelector();
-    const codexButton = buttons[1] as HTMLButtonElement;
+    const result = await renderSelector();
+    const codexButton = await getDisableButton(result, 'OpenAI Codex');
     await fireEvent.click(codexButton);
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -177,8 +192,8 @@ describe('ProviderSelector disable guard', () => {
   });
 
   it('blocks disabling an in-use provider even if the click fires', async () => {
-    const { buttons } = await renderSelector();
-    const claudeButton = buttons[0] as HTMLButtonElement;
+    const result = await renderSelector();
+    const claudeButton = await getDisableButton(result, 'Anthropic Claude Code');
     await fireEvent.click(claudeButton);
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'providerSettings/setProviderEnabled' }),

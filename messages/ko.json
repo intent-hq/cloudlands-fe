@@ -493,6 +493,7 @@
   "settings_providers_installing": "설치 중...",
   "settings_providers_logIn": "로그인",
   "settings_providers_loading": "불러오는 중…",
+  "settings_providers_actionsFor_ariaLabel": "{name} 공급자 작업",
   "settings_providers_loggedInStatus": "로그인됨",
   "settings_providers_disable": "비활성화",
   "settings_providers_enable": "활성화",

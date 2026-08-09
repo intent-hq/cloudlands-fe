@@ -493,6 +493,7 @@
   "settings_providers_installing": "安裝中…",
   "settings_providers_logIn": "登入",
   "settings_providers_loading": "載入中…",
+  "settings_providers_actionsFor_ariaLabel": "{name} 的提供者操作",
   "settings_providers_loggedInStatus": "已登入",
   "settings_providers_disable": "停用",
   "settings_providers_enable": "啟用",

@@ -493,6 +493,7 @@
   "settings_providers_installing": "Wird installiert...",
   "settings_providers_logIn": "Anmelden",
   "settings_providers_loading": "Wird geladen…",
+  "settings_providers_actionsFor_ariaLabel": "Anbieteraktionen für {name}",
   "settings_providers_loggedInStatus": "Angemeldet",
   "settings_providers_disable": "Deaktivieren",
   "settings_providers_enable": "Aktivieren",

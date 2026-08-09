@@ -9,7 +9,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { warmImport } from '../../../test/warm-import';
 
@@ -136,11 +136,12 @@ describe('ProviderSelector progressive rendering', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
 
-    // Codex settled → terminal status; OpenCode settled → its login CTA.
+    // Codex settled → terminal status; OpenCode settled → its login action.
     await waitFor(() => {
       expect(result.getByText('Logged in')).toBeTruthy();
     });
-    expect(result.getByText('Log in')).toBeTruthy();
+    await fireEvent.click(result.getByRole('button', { name: 'Provider actions for OpenCode' }));
+    expect(result.getByRole('menuitem', { name: 'Log in' })).toBeTruthy();
     // Providers whose probe has not landed keep a per-row pending indicator.
     expect(result.getAllByLabelText('Loading…').length).toBeGreaterThan(0);
   });

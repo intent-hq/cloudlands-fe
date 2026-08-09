@@ -45,6 +45,7 @@
   import {
     faCheck,
     faCircleNotch,
+    faEllipsisVertical,
     faTerminal,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
@@ -56,6 +57,7 @@
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import { checkPiMcpAdapterInstalled, installPiMcpAdapter } from '$features/pi/pi-models.client';
   import Button from '../ui/button/button.svelte';
+  import DropdownMenu from '../ui/dropdown-menu.svelte';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('ProviderSelector');
@@ -412,9 +414,9 @@
   }
 </script>
 
-<div class="space-y-6">
+<div class="flex flex-col divide-y divide-border">
   {#if checkError}
-    <div class="flex items-center justify-between gap-4">
+    <div class="flex items-center justify-between gap-4 py-4">
       <p class="text-sm text-destructive-foreground">{checkError}</p>
       <button
         type="button"
@@ -434,7 +436,14 @@
     {@const isReady = isProviderReadyForUse(provider.id)}
     {@const canManageEnablement = canManageProviderEnablement(provider.id)}
     {@const inUseReason = $providerInUseReasons$[provider.id] ?? null}
-    <div>
+    {@const canDisable = canManageEnablement && !isActive && isEnabled}
+    {@const canEnable = canManageEnablement && !isActive && !isEnabled && isReady}
+    {@const canLogIn =
+      provider.available && provider.authenticated === false && provider.loginDocsUrl}
+    {@const canSetDefault = provider.available && !isActive && isReady}
+    {@const canInstall = !provider.available}
+    {@const hasActions = canDisable || canEnable || canLogIn || canSetDefault || canInstall}
+    <div class="py-4">
       <div class="flex items-start justify-between gap-4">
         <div class="space-y-1">
           <div class="flex items-center gap-2 h-7">
@@ -523,7 +532,7 @@
           {/if}
         </div>
 
-        <div class="flex items-center gap-4 text-xs flex-wrap justify-end">
+        <div class="flex min-h-7 shrink-0 items-center gap-2 text-xs">
           {#if provider.statusPending}
             <!-- This row's own probe has not settled yet; the rest of the
                      row is already rendered from the catalog. -->
@@ -531,75 +540,118 @@
               class="h-4 w-20 bg-muted/50 rounded animate-pulse"
               aria-label={m.settings_providers_loading()}
             ></div>
-          {:else if provider.available}
-            <!-- Auth status -->
-            {#if provider.authenticated === true}
+          {:else}
+            {#if provider.available && provider.authenticated === true}
               <span class="text-xs text-subtle flex items-center gap-1">
                 <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
                 {m.settings_providers_loggedInStatus()}
               </span>
-            {:else if provider.authenticated === false && provider.loginDocsUrl}
-              <button
-                type="button"
-                class="text-yellow-600 dark:text-yellow-500 hover:text-yellow-700 dark:hover:text-yellow-400 cursor-pointer transition-colors"
-                onclick={() => openDocs(provider.loginDocsUrl!)}
-              >
-                {m.settings_providers_logIn()}
-              </button>
-            {/if}
-
-            {#if canManageEnablement && !isActive && isEnabled}
-              <button
-                type="button"
-                class="font-medium transition-colors {inUseReason
-                  ? 'text-muted-foreground/50 cursor-not-allowed'
-                  : 'text-muted-foreground hover:text-foreground cursor-pointer'}"
-                disabled={!!inUseReason}
-                title={inUseReason ?? undefined}
-                onclick={() => handleToggleProvider(provider.id, false)}
-              >
-                {m.settings_providers_disable()}
-              </button>
-            {:else if canManageEnablement && !isActive && !isEnabled && isReady}
-              <button
-                type="button"
-                class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-                onclick={() => handleToggleProvider(provider.id, true)}
-              >
-                {m.settings_providers_enable()}
-              </button>
             {/if}
 
             {#if isActive}
-              <span class="text-xs text-subtle flex items-center gap-1">
-                {m.settings_providers_default()}
-              </span>
-            {:else if isReady}
-              <button
-                type="button"
-                class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-                onclick={() => handleSelectProvider(provider.id)}
-                disabled={selectingProviderId !== null}
-              >
-                {selectingProviderId === provider.id
-                  ? m.settings_providers_switching()
-                  : m.settings_providers_setAsDefault()}
-              </button>
+              {#if provider.available}
+                <span class="rounded-full bg-muted px-2 py-0.5 text-xs text-subtle">
+                  {m.settings_providers_default()}
+                </span>
+              {:else}
+                <span class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1">
+                  <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
+                  {m.settings_providers_defaultUnavailable_label()}
+                </span>
+              {/if}
             {/if}
-          {:else}
-            {#if isActive}
-              <span class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1">
-                <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
-                {m.settings_providers_defaultUnavailable_label()}
-              </span>
-            {/if}
-            <button
-              type="button"
-              class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-              onclick={() => openDocs(provider.docsUrl)}
-            >
-              {m.settings_providers_install()}
-            </button>
+          {/if}
+
+          {#if hasActions && !provider.statusPending}
+            <DropdownMenu align="end" contentClass="p-0!">
+              {#snippet trigger({ toggle }: { toggle: () => void })}
+                <Button
+                  variant="ghost-light"
+                  size="icon-xs"
+                  onclick={toggle}
+                  aria-label={m.settings_providers_actionsFor_ariaLabel({ name: provider.name })}
+                >
+                  <Fa icon={faEllipsisVertical} />
+                </Button>
+              {/snippet}
+
+              {#snippet content({ close }: { close: () => void })}
+                <div class="w-44 py-1">
+                  {#if canSetDefault}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={selectingProviderId !== null}
+                      onclick={() => {
+                        void handleSelectProvider(provider.id);
+                        close();
+                      }}
+                    >
+                      {selectingProviderId === provider.id
+                        ? m.settings_providers_switching()
+                        : m.settings_providers_setAsDefault()}
+                    </button>
+                  {/if}
+
+                  {#if canDisable}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={!!inUseReason}
+                      title={inUseReason ?? undefined}
+                      onclick={() => {
+                        handleToggleProvider(provider.id, false);
+                        close();
+                      }}
+                    >
+                      {m.settings_providers_disable()}
+                    </button>
+                  {:else if canEnable}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
+                      onclick={() => {
+                        handleToggleProvider(provider.id, true);
+                        close();
+                      }}
+                    >
+                      {m.settings_providers_enable()}
+                    </button>
+                  {/if}
+
+                  {#if canLogIn}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
+                      onclick={() => {
+                        openDocs(provider.loginDocsUrl!);
+                        close();
+                      }}
+                    >
+                      {m.settings_providers_logIn()}
+                    </button>
+                  {/if}
+
+                  {#if canInstall}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
+                      onclick={() => {
+                        openDocs(provider.docsUrl);
+                        close();
+                      }}
+                    >
+                      {m.settings_providers_install()}
+                    </button>
+                  {/if}
+                </div>
+              {/snippet}
+            </DropdownMenu>
           {/if}
         </div>
       </div>

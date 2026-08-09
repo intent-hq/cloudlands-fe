@@ -493,6 +493,7 @@
   "settings_providers_installing": "Installation...",
   "settings_providers_logIn": "Se connecter",
   "settings_providers_loading": "Chargement…",
+  "settings_providers_actionsFor_ariaLabel": "Actions du fournisseur pour {name}",
   "settings_providers_loggedInStatus": "Connecté",
   "settings_providers_disable": "Désactiver",
   "settings_providers_enable": "Activer",

@@ -493,6 +493,7 @@
   "settings_providers_installing": "Instalando...",
   "settings_providers_logIn": "Iniciar sesión",
   "settings_providers_loading": "Cargando…",
+  "settings_providers_actionsFor_ariaLabel": "Acciones del proveedor para {name}",
   "settings_providers_loggedInStatus": "Sesión iniciada",
   "settings_providers_disable": "Deshabilitar",
   "settings_providers_enable": "Habilitar",

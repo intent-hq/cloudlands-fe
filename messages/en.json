@@ -493,6 +493,7 @@
   "settings_providers_installing": "Installing...",
   "settings_providers_logIn": "Log in",
   "settings_providers_loading": "Loading…",
+  "settings_providers_actionsFor_ariaLabel": "Provider actions for {name}",
   "settings_providers_loggedInStatus": "Logged in",
   "settings_providers_disable": "Disable",
   "settings_providers_enable": "Enable",
