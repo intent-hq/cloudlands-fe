@@ -1,4 +1,7 @@
 @import 'tailwindcss';
+/* Tailwind v4 ignores the legacy tailwind.config.js, so the typography plugin
+   must be loaded here for the `prose` classes (markdown rendering) to exist. */
+@plugin '@tailwindcss/typography';
 @import '$lib/styles/tiptap-editor.css';
 @import '$lib/styles/chat-messages.css';
 @import '$lib/styles/comments.css';
