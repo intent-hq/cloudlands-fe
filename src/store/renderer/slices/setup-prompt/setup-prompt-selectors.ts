@@ -4,7 +4,9 @@
 
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import { store } from '../../store';
+import { selectWorkspaceItems } from '../workspace/workspace-selectors';
 import type { SetupEvaluation } from './setup-prompt-types';
+import { hasReadyProvider } from './setup-prompt-utils';
 
 /** Latest completed evaluation, or null until the first one resolves. */
 export const selectSetupEvaluation = store.createSelector(
@@ -52,7 +54,14 @@ export const selectLocalSetupGate = store.createSelector(
     const { connections, activeId } = state.connections;
     const active = getItem(connections, activeId);
     if (active && !active.isLocal) return 'none';
-    if (state.workspace.hasLoaded && state.workspace.workspaces.ids.length > 0) return 'none';
+    // Same workspace count the saga evaluates (selectWorkspaceItems excludes
+    // the chief workspace), so the gate and the evaluation never disagree.
+    if (state.workspace.hasLoaded && selectWorkspaceItems.select(state).length > 0) return 'none';
+    // A known-ready provider already means no setup is needed — resolve
+    // immediately instead of holding the home page blank for the duration of
+    // the bulk provider check (whose per-provider auth checks can take
+    // seconds).
+    if (hasReadyProvider(state.agentAvailability.providerStatusMap)) return 'none';
     const evaluation = selectActiveSetupEvaluation.select(state);
     if (!evaluation) return 'pending';
     return evaluation.setupNeeded ? 'redirect' : 'none';

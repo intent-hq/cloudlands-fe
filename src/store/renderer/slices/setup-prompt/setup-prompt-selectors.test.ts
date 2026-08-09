@@ -4,6 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { StoreState } from '../../types';
 import type { ConnectionRecord } from '../connections/connections-types';
@@ -40,6 +41,7 @@ function stateWith(opts: {
   setupPrompt?: Partial<SetupPromptState>;
   workspaceIds?: string[];
   workspaceHasLoaded?: boolean;
+  providerStatusMap?: Record<string, { available: boolean; authenticated?: boolean }>;
 }): StoreState {
   const workspaceIds = opts.workspaceIds ?? [];
   return {
@@ -51,7 +53,13 @@ function stateWith(opts: {
     setupPrompt: { ...setupPromptInitialState, ...opts.setupPrompt },
     workspace: {
       hasLoaded: opts.workspaceHasLoaded ?? true,
-      workspaces: { ids: workspaceIds, entities: {}, key: 'id' },
+      workspaces: createCollection<{ id: string }, 'id'>(
+        'id',
+        workspaceIds.map((id) => ({ id })),
+      ),
+    },
+    agentAvailability: {
+      providerStatusMap: opts.providerStatusMap ?? {},
     },
   } as unknown as StoreState;
 }
@@ -128,5 +136,20 @@ describe('selectLocalSetupGate', () => {
     const evaluation = { connectionId: LOCAL_CONNECTION_ID, isLocal: true, setupNeeded: false };
     const state = stateWith({ setupPrompt: { evaluation } });
     expect(selectLocalSetupGate.select(state)).toBe('none');
+  });
+
+  it('ignores the chief workspace when counting workspaces (matches the saga)', () => {
+    const state = stateWith({ workspaceIds: [CHIEF_WORKSPACE_ID] });
+    expect(selectLocalSetupGate.select(state)).toBe('pending');
+  });
+
+  it("resolves 'none' as soon as a ready provider is known, without an evaluation", () => {
+    const state = stateWith({ providerStatusMap: { auggie: { available: true } } });
+    expect(selectLocalSetupGate.select(state)).toBe('none');
+
+    const notReady = stateWith({
+      providerStatusMap: { auggie: { available: true, authenticated: false } },
+    });
+    expect(selectLocalSetupGate.select(notReady)).toBe('pending');
   });
 });

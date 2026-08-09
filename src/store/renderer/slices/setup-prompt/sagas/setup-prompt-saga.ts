@@ -83,7 +83,11 @@ export function* evaluateSetupStateWorker() {
   }
 
   // If a re-check is in flight (e.g. the reconnect-triggered one), give it a
-  // bounded window to settle rather than reading the half-updated map. A
+  // bounded window to settle rather than reading the half-updated map.
+  // Caveat: the bulk check runs under takeLeading, so a reconnect-triggered
+  // request that arrives while a pre-reconnect check is still in flight is
+  // dropped — the checkAllProvidersComplete observed here can belong to the
+  // STALE check ("settled" does not imply "fresh"). That is acceptable: any
   // check that starts or finishes after we evaluate re-triggers evaluation
   // via the checkAllProvidersComplete watcher in the root saga, so a stale
   // read here is always corrected once fresh results land.

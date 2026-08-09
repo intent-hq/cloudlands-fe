@@ -12,6 +12,8 @@
   import Fa from 'svelte-fa';
   import { faXmark, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
+  import { FocusTrap } from '$lib/utils/accessibility';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { store as appStore } from '$store/renderer/store';
   import { selectActiveConnection } from '$store/renderer/slices/connections/connections-selectors';
   import { selectShowRemoteSetupPrompt } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
@@ -22,14 +24,18 @@
 
   let dialogRef: HTMLDivElement | null = $state(null);
 
-  // Focus dialog when it opens so Escape key works. Deferred a microtask so
-  // it lands after any Portal relocation in the same flush (moving a focused
-  // node in the DOM drops focus back to <body>).
+  // Escape layer (LIFO across stacked overlays) + focus trap while open, so
+  // Escape dismisses regardless of where focus is and Tab cycles within the
+  // dialog instead of escaping behind the overlay.
   $effect(() => {
-    if ($showPrompt && dialogRef) {
-      const el = dialogRef;
-      queueMicrotask(() => el.focus());
-    }
+    if (!$showPrompt || !dialogRef) return;
+    const trap = new FocusTrap(dialogRef);
+    trap.activate();
+    const releaseEscape = pushEscapeLayer(() => dismiss());
+    return () => {
+      releaseEscape();
+      trap.deactivate();
+    };
   });
 
   function dismiss() {
@@ -41,21 +47,15 @@
     dismiss();
     await goto('/workspace/new');
   }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      dismiss();
-    }
-  }
 </script>
 
 {#if $showPrompt}
   <div
     class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
     role="presentation"
-    onkeydown={handleKeydown}
     onclick={dismiss}
   >
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
       bind:this={dialogRef}
       class="bg-background border border-border rounded-lg shadow-lg w-full max-w-md overflow-hidden flex flex-col"
@@ -65,14 +65,6 @@
       aria-labelledby="setup-prompt-title"
       aria-describedby="setup-prompt-description"
       tabindex="-1"
-      onkeydown={(e) => {
-        if (e.key === 'Escape') {
-          e.stopPropagation();
-          dismiss();
-        } else {
-          e.stopPropagation();
-        }
-      }}
     >
       <!-- Header -->
       <div class="px-6 py-4 border-b border-border flex items-center justify-between">
