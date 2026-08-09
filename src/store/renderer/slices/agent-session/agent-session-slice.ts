@@ -263,6 +263,7 @@ type CanonicalAgentSessionUpdates = {
   waitingOnHooks?: AgentSession['waitingOnHooks'];
   waitingOnPrMonitors?: AgentSession['waitingOnPrMonitors'];
   liveTurnOpen?: boolean;
+  liveTurnOpenedAt?: string | undefined;
 };
 
 /** Wire statuses that mean a turn is running (lowercase IPC + PascalCase enum). */
@@ -294,6 +295,7 @@ type CanonicalAgentStatusWithSummary = CanonicalAgentStatusFields & {
 
 function canonicalSessionUpdates(
   fields: CanonicalAgentStatusWithSummary,
+  eventTimestamp?: string,
 ): CanonicalAgentSessionUpdates {
   const updates: CanonicalAgentSessionUpdates = {};
   if (fields.status !== null && fields.status !== undefined) {
@@ -362,7 +364,12 @@ function canonicalSessionUpdates(
     updates.isWaitingForOtherAgents = false;
     if (!Array.isArray(fields.waitingForAgentIds)) updates.waitingForAgentIds = [];
   }
-  if (isRunningTransition) updates.liveTurnOpen = true;
+  if (isRunningTransition) {
+    updates.liveTurnOpen = true;
+    // Stamp the daemon's own event timestamp (never renderer-generated) so
+    // the monorepo#1815 stale-snapshot guard has an ordering signal.
+    if (typeof eventTimestamp === 'string') updates.liveTurnOpenedAt = eventTimestamp;
+  }
 
   // When the status indicates a terminal/idle state, default streaming flags
   // to false unless the caller explicitly provided them.
@@ -374,6 +381,7 @@ function canonicalSessionUpdates(
     updates.isProcessing = fields.isProcessing ?? false;
     updates.isResponding = fields.isResponding ?? false;
     updates.liveTurnOpen = false;
+    updates.liveTurnOpenedAt = undefined;
   }
 
   // Defensively clear processQueueHint when agent transitions to normal running state
@@ -579,6 +587,7 @@ type SessionComparisonSnapshot = Pick<
   waitingForAgentIdsKey: string | undefined;
   turnInFlight: boolean | undefined;
   liveTurnOpen: boolean | undefined;
+  liveTurnOpenedAt: string | undefined;
 };
 
 function toSessionComparisonSnapshot(session: StoredAgentSession): SessionComparisonSnapshot {
@@ -633,6 +642,8 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     turnInFlight:
       (session as { turnInFlight?: unknown }).turnInFlight === true ? true : undefined,
     liveTurnOpen: session.liveTurnOpen === true ? true : undefined,
+    liveTurnOpenedAt:
+      typeof session.liveTurnOpenedAt === 'string' ? session.liveTurnOpenedAt : undefined,
     messageCount: messages.length,
     lastMessageId: messages.length === 0 ? undefined : messages[messages.length - 1]?.id,
     // The daemon can append trailing blocks to an already-stored message
@@ -741,7 +752,43 @@ function applySessionUpsert(
       const incomingClosed =
         session.isActive === false ||
         (typeof session.status === 'string' && TERMINAL_STATUSES.has(session.status));
-      if (!incomingClosed) finalSession.liveTurnOpen = true;
+      if (!incomingClosed) {
+        finalSession.liveTurnOpen = true;
+        finalSession.liveTurnOpenedAt = existing.liveTurnOpenedAt;
+      }
+    }
+
+    // Guard (monorepo#1815): an agents.list snapshot fetched while the daemon
+    // still reported a failure can land AFTER the live crash-recovery edges
+    // (error→pending→active, stopReason:null) already converged the session
+    // onto the redriven turn. When a live running edge opened a turn
+    // (liveTurnOpen) and the existing status is running, an incoming
+    // failure-status snapshot whose failure PREDATES that live edge
+    // (stopReasonTimestamp ≤ liveTurnOpenedAt, both daemon-stamped) is
+    // provably stale — keep the recovered live fields instead of regressing
+    // status/stopReason (which re-arms the "Response failed" banner over the
+    // streaming turn). A failure the ordering signal cannot prove stale still
+    // applies: a daemon crash mid-turn (monorepo#1250) emits no terminal edge,
+    // so the parked error arrives ONLY via snapshot, with a
+    // stopReasonTimestamp recorded after the live edge (or with the signal
+    // absent) — that convergence path must never be blocked.
+    const incomingStatus = finalSession.status as string;
+    if (
+      existing.liveTurnOpen === true &&
+      RUNNING_STATUSES.has(existing.status as string) &&
+      (incomingStatus === 'error' || incomingStatus === 'failed') &&
+      typeof existing.liveTurnOpenedAt === 'string' &&
+      typeof finalSession.stopReasonTimestamp === 'string' &&
+      finalSession.stopReasonTimestamp <= existing.liveTurnOpenedAt
+    ) {
+      finalSession.status = existing.status;
+      finalSession.activationState = existing.activationState;
+      finalSession.isActive = existing.isActive;
+      finalSession.stopReason = existing.stopReason;
+      finalSession.stopReasonTimestamp = existing.stopReasonTimestamp;
+      finalSession.sessionCorrupted = existing.sessionCorrupted;
+      finalSession.liveTurnOpen = true;
+      finalSession.liveTurnOpenedAt = existing.liveTurnOpenedAt;
     }
   }
 
@@ -1032,7 +1079,10 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
   const canonical = canonicalFieldsFromWorkspaceEvent(event);
   if (!canonical) return state;
   const [agentId, fields] = canonical;
-  const updates = canonicalSessionUpdates(fields);
+  const updates = canonicalSessionUpdates(
+    fields,
+    typeof event.timestamp === 'string' ? event.timestamp : undefined,
+  );
   if (Object.keys(updates).length === 0) return state;
   return updateSessionFields(
     state,

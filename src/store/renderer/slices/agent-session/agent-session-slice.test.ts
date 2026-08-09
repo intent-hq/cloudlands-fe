@@ -2147,6 +2147,206 @@ describe('agent-session-slice reducer', () => {
     });
   });
 
+  // monorepo#1815 — an agents.list hydrate triggered by a terminal-failure
+  // edge is fetched while the daemon still reports error; it can land AFTER
+  // the live crash-recovery edges (error→pending→active, stopReason:null)
+  // already converged the session onto the redriven turn. Applying that stale
+  // snapshot wholesale regresses status/stopReason and re-renders the
+  // "Response failed" banner (ChatPanel's effectiveError persisted-session
+  // fallback: status === Error → stopReason) over the live turn.
+  describe('stale failure snapshot after crash-recovery edges (monorepo#1815)', () => {
+    const CRASH_ERROR =
+      'internal error: session/prompt transport closed before output: JSON-RPC error 0: agent stdout closed';
+
+    /**
+     * Replays the confirmed wire sequence from monorepo#1815: agent:failed,
+     * the terminal-failure agent:status-changed persisting error, then the
+     * daemon redrive's recovery edges (pending → active, stopReason:null).
+     */
+    function replayCrashRecovery(): AgentSessionState {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { status: 'active' as any, isActive: true })),
+      );
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-1815-failed',
+          type: 'agent:failed',
+          timestamp: '2026-08-09T13:33:09.762Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', error: CRASH_ERROR },
+        } as any),
+      );
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-1815-status-error',
+          type: 'agent:status-changed',
+          timestamp: '2026-08-09T13:33:09.763Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'error',
+            isActive: false,
+            stopReason: CRASH_ERROR,
+            stopReasonTimestamp: '2026-08-09T13:33:09.763Z',
+          },
+        } as any),
+      );
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-1815-status-pending',
+          type: 'agent:status-changed',
+          timestamp: '2026-08-09T13:33:15.367Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'pending',
+            isActive: false,
+            stopReason: null,
+            stopReasonTimestamp: null,
+          },
+        } as any),
+      );
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-1815-status-active',
+          type: 'agent:status-changed',
+          timestamp: '2026-08-09T13:33:15.377Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'active',
+            isActive: true,
+            stopReason: null,
+            stopReasonTimestamp: null,
+          },
+        } as any),
+      );
+      return state;
+    }
+
+    function staleErrorSnapshot(): AgentSession {
+      return makeSession('a1', 'ws-1', {
+        status: 'error' as any,
+        activationState: 'error' as any,
+        isActive: false,
+        stopReason: CRASH_ERROR,
+        stopReasonTimestamp: '2026-08-09T13:33:09.763Z',
+      });
+    }
+
+    it('does not regress a recovered session to error when a stale hydrate snapshot lands late', () => {
+      let state = replayCrashRecovery();
+      expect(state.byAgentId['a1'].status).toBe('active');
+      expect(state.byAgentId['a1'].stopReason).toBeNull();
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+      // The live running edge stamps its daemon timestamp as the ordering
+      // signal the guard compares the snapshot's failure against.
+      expect(state.byAgentId['a1'].liveTurnOpenedAt).toBe('2026-08-09T13:33:15.377Z');
+
+      // The stale agents.list snapshot lands after the recovery edges
+      // (hydrateAgents dispatches bulkUpsertSessions with default options).
+      state = agentSessionReducer(state, bulkUpsertSessions([staleErrorSnapshot()]));
+
+      // Banner condition (status === Error → stopReason) must not re-arm.
+      expect(state.byAgentId['a1'].status).toBe('active');
+      expect(state.byAgentId['a1'].stopReason).toBeNull();
+      expect(state.byAgentId['a1'].stopReasonTimestamp).toBeNull();
+      expect(state.byAgentId['a1'].isActive).toBe(true);
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+    });
+
+    it('still applies a failure snapshot when no live turn is open (fresh error on load)', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
+
+      state = agentSessionReducer(state, bulkUpsertSessions([staleErrorSnapshot()]));
+
+      expect(state.byAgentId['a1'].status).toBe('error');
+      expect(state.byAgentId['a1'].stopReason).toBe(CRASH_ERROR);
+    });
+
+    it('still applies a failure snapshot to a session parked in error', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { status: 'active' as any, isActive: true })),
+      );
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-1815-parked-error',
+          type: 'agent:status-changed',
+          timestamp: '2026-08-09T13:33:09.763Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'error',
+            isActive: false,
+            stopReason: CRASH_ERROR,
+            stopReasonTimestamp: '2026-08-09T13:33:09.763Z',
+          },
+        } as any),
+      );
+
+      state = agentSessionReducer(state, bulkUpsertSessions([staleErrorSnapshot()]));
+
+      expect(state.byAgentId['a1'].status).toBe('error');
+      expect(state.byAgentId['a1'].stopReason).toBe(CRASH_ERROR);
+    });
+
+    // monorepo#1250 convergence path: a daemon crash mid-turn emits NO
+    // terminal edge, so the parked error reaches the FE only via snapshot
+    // (agents.list hydrate after restart). Its stopReasonTimestamp is
+    // recorded AFTER the live running edge, so the ordering signal proves it
+    // is not stale — the guard must let it through.
+    it('applies a genuine post-edge failure snapshot when the terminal event was never emitted (daemon crash)', () => {
+      let state = replayCrashRecovery();
+      expect(state.byAgentId['a1'].status).toBe('active');
+      expect(state.byAgentId['a1'].liveTurnOpenedAt).toBe('2026-08-09T13:33:15.377Z');
+
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions([
+          makeSession('a1', 'ws-1', {
+            status: 'error' as any,
+            activationState: 'error' as any,
+            isActive: false,
+            stopReason: CRASH_ERROR,
+            // Recorded after the live edge that opened the turn.
+            stopReasonTimestamp: '2026-08-09T13:35:00.000Z',
+          }),
+        ]),
+      );
+
+      expect(state.byAgentId['a1'].status).toBe('error');
+      expect(state.byAgentId['a1'].stopReason).toBe(CRASH_ERROR);
+      expect(state.byAgentId['a1'].stopReasonTimestamp).toBe('2026-08-09T13:35:00.000Z');
+    });
+
+    it('applies a failure snapshot when the ordering signal is absent (cannot be proven stale)', () => {
+      let state = replayCrashRecovery();
+
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions([
+          makeSession('a1', 'ws-1', {
+            status: 'error' as any,
+            activationState: 'error' as any,
+            isActive: false,
+            stopReason: CRASH_ERROR,
+            // No stopReasonTimestamp: staleness unprovable → snapshot wins.
+          }),
+        ]),
+      );
+
+      expect(state.byAgentId['a1'].status).toBe('error');
+      expect(state.byAgentId['a1'].stopReason).toBe(CRASH_ERROR);
+    });
+  });
+
   describe('removeWorkspaceSessions', () => {
     it('removes all sessions for a workspace', () => {
       const s1 = makeSession('a1', 'ws-1');
