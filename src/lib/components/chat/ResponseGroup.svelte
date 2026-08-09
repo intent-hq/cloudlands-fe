@@ -45,7 +45,9 @@
   // - showCylinder: cylinder preview is visible (during/after streaming).
   //   For the last group (or while streaming) it stays true on collapse, so
   //   "collapse" lands on the semi-open preview instead of fully closing.
+  // svelte-ignore state_referenced_locally -- intentional initial seed; the streaming-edge effect below manages transitions.
   let isExpanded = $state(isLast && !isStreaming);
+  // svelte-ignore state_referenced_locally -- intentional initial seed; the streaming-edge effect below manages transitions.
   let showCylinder = $state(isLast && !isStreaming);
   let collapseTimer: ReturnType<typeof setTimeout> | null = null;
   let contentEl: HTMLElement | undefined = $state();

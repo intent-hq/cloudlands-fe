@@ -171,6 +171,7 @@
 
   // Reactive writable store that mirrors workspaceId so the Redux selector
   // re-evaluates whenever the route param changes.
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const workspaceIdStore = writable(workspaceId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);

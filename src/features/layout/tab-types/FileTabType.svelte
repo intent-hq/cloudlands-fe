@@ -73,22 +73,32 @@
 
   let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
+  // svelte-ignore state_referenced_locally
   const filePathStore = writable<string | null | undefined>(tab.filePath);
   $effect(() => {
     filePathStore.set(tab.filePath);
   });
 
+  // svelte-ignore state_referenced_locally
   const fileContentStore = selectFileContent(workspaceId, filePathStore);
+  // svelte-ignore state_referenced_locally
   const fileLoadingStore = selectFileLoading(workspaceId, filePathStore);
+  // svelte-ignore state_referenced_locally
   const fileSavingStore = selectFileSaving(workspaceId, filePathStore);
+  // svelte-ignore state_referenced_locally
   const fileErrorStore = selectFileError(workspaceId, filePathStore);
+  // svelte-ignore state_referenced_locally
   const isFileBinaryStore = selectFileIsBinary(workspaceId, filePathStore);
+  // svelte-ignore state_referenced_locally
   const isFileDirtyStore = selectFileIsDirty(workspaceId, filePathStore);
+  // svelte-ignore state_referenced_locally
   const fileLastUpdatedStore = selectFileLastUpdated(workspaceId, filePathStore);
 
+  // svelte-ignore state_referenced_locally
   const ftChanges$ = selectFileTrackingChanges(workspaceId);
   const headerContext = getPanelHeaderContext();
 
+  // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
   const repoPath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || null);
 

@@ -8,6 +8,7 @@
   import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
   import { selectSkills } from '$store/renderer/slices/skills/skills-selectors';
   import { loadSkillsRequested } from '$store/renderer/slices/skills/skills-slice';
+  import { writable } from 'svelte/store';
 
   import { slide } from 'svelte/transition';
   import {
@@ -27,8 +28,16 @@
 
   let { workspaceId, class: className }: Props = $props();
 
+  // Writable store mirrors the prop so the Redux selector re-evaluates when
+  // workspaceId changes (selector readables are init-time only).
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
+
   // ✅ At component init — selectors use getContext(); dispatch uses the configured app store
-  const skills$ = selectSkills(workspaceId);
+  const skills$ = selectSkills(workspaceIdStore);
 
   // Collapse state - collapsed by default
   let isExpanded = $state(false);

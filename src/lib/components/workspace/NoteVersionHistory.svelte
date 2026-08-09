@@ -9,6 +9,7 @@
   import { fetchNoteVersions } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { selectNoteVersions } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { writable } from 'svelte/store';
   import { m } from '$shared/paraglide/messages.js';
 
   let {
@@ -25,7 +26,14 @@
     onRestore?: (versionId: string) => void;
   } = $props();
 
-  const noteVersionsState = selectNoteVersions(workspace.id);
+  // Writable store mirrors workspace.id so the Redux selector re-evaluates
+  // when the workspace prop changes (selector readables are init-time only).
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
+  const workspaceIdStore = writable(workspace.id);
+  $effect(() => {
+    workspaceIdStore.set(workspace.id);
+  });
+  const noteVersionsState = selectNoteVersions(workspaceIdStore);
 
   const versions = $derived(
     $noteVersionsState?.versions ? [...$noteVersionsState.versions].reverse().slice(0, 10) : [],

@@ -37,6 +37,7 @@
   }: Props = $props();
 
   // isAggregate is not used by UnifiedMultiStageDiff but kept for API compat
+  // svelte-ignore state_referenced_locally -- one-shot read purely to silence the unused-variable lint.
   void _isAggregate;
 </script>
 

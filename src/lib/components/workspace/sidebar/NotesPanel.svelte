@@ -276,6 +276,7 @@
   // to avoid duplicate IPC calls from multiple components.
   const unreadNoteIds = selectUnreadNoteIds();
   const relevantAgentIds = $derived(collectAssignedAgentIds(renderedNotes));
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const initialRelevantAgentIds = collectAssignedAgentIds(notes);
   const relevantAgentIdsStore = writable<string[]>(initialRelevantAgentIds);
   let relevantAgentIdsKey = initialRelevantAgentIds.join('\0');

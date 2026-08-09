@@ -130,6 +130,8 @@
   );
 
   // Reactive writable store for workspaceId so Redux selectors re-evaluate
+  // (initial value only; the $effect below keeps it in sync)
+  // svelte-ignore state_referenced_locally
   const workspaceIdStore = writable(workspaceId ?? '');
   $effect(() => {
     workspaceIdStore.set(workspaceId ?? '');

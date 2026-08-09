@@ -88,6 +88,7 @@
     onExternalFilesDrop,
   }: Props = $props();
 
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const workspaceIdStore = writable(workspaceId);
   const fileExplorerWorkspacePath = selectEffectiveFileExplorerWorkspacePath(workspaceIdStore);
 

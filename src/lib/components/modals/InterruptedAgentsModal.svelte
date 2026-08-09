@@ -49,11 +49,13 @@
   });
 
   // All agents checked by default
+  // svelte-ignore state_referenced_locally - intentional initial capture; the reconcile $effect below syncs later changes
   let checkedAgents = $state<Set<string>>(new Set(agents.map((a) => a.agentId)));
 
   // Reconcile checked state when agents change: survivors of a cross-window
   // prune keep their checkbox state; agents not previously listed default to
   // checked.
+  // svelte-ignore state_referenced_locally - intentional initial capture; updated inside the reconcile $effect
   let knownAgentIds = new Set(agents.map((a) => a.agentId));
   $effect(() => {
     const checked = untrack(() => checkedAgents);

@@ -61,6 +61,7 @@
   let { workspaceId, onOpenFileChanges, onShowAgent, onOpenNote }: Props = $props();
 
   // Wrap workspaceId prop in a writable store so selectors react to prop changes
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const workspaceIdStore = writable(workspaceId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);

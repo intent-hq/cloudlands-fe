@@ -190,6 +190,7 @@
   // to `undefined` when either id is empty, so subscribing unconditionally with
   // empty-string fallbacks is safe and avoids a conditional-store gotcha with
   // Svelte's `$store` auto-subscription.
+  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by message id.
   const storeMessage$ = selectAgentMessageById(agentId ?? '', messageId ?? '');
 
   // Looked-up message drives ALL downstream $derived values, the `data-message-id`

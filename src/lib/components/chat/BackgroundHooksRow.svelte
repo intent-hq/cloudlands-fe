@@ -47,6 +47,7 @@
 
   // Writable store mirrors the prop so the Redux selector re-evaluates when
   // workspaceId changes (selector readables are init-time only).
+  // svelte-ignore state_referenced_locally -- store is seeded with the current value; the effect below mirrors prop changes.
   const workspaceIdStore = writable(workspaceId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);
