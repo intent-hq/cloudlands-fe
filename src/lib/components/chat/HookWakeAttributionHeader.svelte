@@ -19,6 +19,18 @@
   }
 
   let { attribution, class: className = '' }: Props = $props();
+
+  // Post-fire state suffix: on dispatched wakes carrying the additive
+  // `hookStillActive` metadata field (PROTOCOL §5.40), say whether the hook
+  // re-armed or retired; otherwise fall back to the plain "woke the agent".
+  let stateLabel = $derived.by(() => {
+    if (attribution.reason === 'dispatched' && attribution.hookStillActive !== undefined) {
+      return attribution.hookStillActive
+        ? m.chat_hookWakeAttribution_wokeAgentStillActive_after()
+        : m.chat_hookWakeAttribution_wokeAgentRetired_after();
+    }
+    return m.chat_hookWakeAttribution_wokeAgent_after();
+  });
 </script>
 
 <div
@@ -29,5 +41,5 @@
   <span class="text-foreground truncate max-w-[150px] font-medium">
     {attribution.displayName}
   </span>
-  <span class="text-subtle">{m.chat_hookWakeAttribution_wokeAgent_after()}</span>
+  <span class="text-subtle">{stateLabel}</span>
 </div>

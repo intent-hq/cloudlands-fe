@@ -1969,6 +1969,8 @@
   "chat_backgroundHooks_modal_noLogs_description": "Aún no hay registros — este hook todavía no ha completado una ejecución.",
   "chat_backgroundHooks_modal_lastError_label": "Último error",
   "chat_hookWakeAttribution_wokeAgent_after": "despertó al agente",
+  "chat_hookWakeAttribution_wokeAgentRetired_after": "despertó al agente y ahora está retirado",
+  "chat_hookWakeAttribution_wokeAgentStillActive_after": "despertó al agente y seguirá ejecutándose",
   "chat_hookWakeAttribution_fallbackName_label": "Hook",
   "chat_regularAgentWelcome_generalDescription_label": "Este agente tiene el contexto completo del espacio de trabajo. Pregúnteme lo que quiera sobre su código o sobre lo que le gustaría trabajar.",
   "chat_shared_general_fallback": "General",
