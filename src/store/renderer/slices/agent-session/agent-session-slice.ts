@@ -565,6 +565,7 @@ type SessionComparisonSnapshot = Pick<
 > & {
   messageCount: number;
   lastMessageId: AgentMessage['id'] | undefined;
+  wireLastMessageId: string | undefined;
   lastMessageBlockCount: number;
   attentionRequestKind: string | undefined;
   attentionRequestReason: string | undefined;
@@ -598,6 +599,11 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     lastMessageRole: session.lastMessageRole,
     lastUserMessage: session.lastUserMessage,
     lastAgentResponse: session.lastAgentResponse,
+    // Wire lastMessageId (§5.5 AgentLite, monorepo#1597) — one input of the
+    // hasUnread derivation; distinct key because `lastMessageId` below is the
+    // transcript-derived last message id.
+    wireLastMessageId:
+      typeof session.lastMessageId === 'string' ? session.lastMessageId : undefined,
     backendSessionId: session.backendSessionId,
     acpSessionId: session.acpSessionId,
     createdAt: session.createdAt,

@@ -221,7 +221,15 @@ export interface AgentSession {
   currentTurnNumber?: number;
 
   // ========== Unread Tracking ==========
-  /** Whether the agent has unread messages (new responses since last viewed) */
+  /**
+   * Whether the agent has unread messages. FE-derived at wire ingest
+   * (`normalizeAgent`) from the §5.5 AgentLite freshness fields:
+   * `lastMessageRole === 'assistant' && lastMessageId != null &&
+   * lastMessageId !== metadata.lastSeenMessageId` (an absent seen marker
+   * counts as unread). See `deriveAgentHasUnread` and
+   * intent-hq/monorepo#1597. Always `false` for daemons that omit
+   * `lastMessageId`.
+   */
   hasUnread?: boolean;
 
   /** When the user last viewed this agent's messages */
@@ -260,6 +268,15 @@ export interface AgentSession {
    * the in-flight turn has derivable streamed text. Rendered verbatim.
    */
   lastMessageRole?: 'user' | 'assistant';
+
+  /**
+   * Id of the session's newest user/assistant transcript message
+   * (PROTOCOL.md §5.5 `AgentLite` additive field) — the same message
+   * `lastMessageRole` describes. Omitted by older daemons and when the
+   * session has no user/assistant message. Compared against
+   * `metadata.lastSeenMessageId` to derive `hasUnread`.
+   */
+  lastMessageId?: string;
 
   /** Whether the agent is currently responding */
   isResponding?: boolean;

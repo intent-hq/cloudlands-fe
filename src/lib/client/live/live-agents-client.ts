@@ -9,6 +9,7 @@
  */
 import { AgentStatus } from "$shared/types";
 import { AgentId, WorkspaceId } from "$shared/types/branded-ids";
+import { deriveAgentHasUnread } from "$shared/utils/agent-unread";
 import type { AgentMessage, AgentSession } from "$shared/types";
 import type { QueuedMessage } from "$shared/types/agent-session";
 import type {
@@ -45,7 +46,7 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   const acpSessionId = raw.acpSessionId ? String(raw.acpSessionId) : null;
   const workspaceId = String(raw.workspaceId ?? "");
   rememberAgentWorkspace(id, workspaceId);
-  return {
+  const session = {
     ...(raw as Partial<AgentSession>),
     id: AgentId(id),
     backendSessionId: acpSessionId ? AgentId(acpSessionId) : null,
@@ -58,6 +59,11 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
     createdAt: String(raw.createdAt ?? now),
     updatedAt: String(raw.updatedAt ?? now),
   } as AgentSession;
+  // Per-agent unread (monorepo#1597): derived here so every AgentLite ingest
+  // path — list/get reads, new-message pushes, and the agent:updated marker
+  // convergence after agent.markSeen — recomputes it through one seam.
+  session.hasUnread = deriveAgentHasUnread(session);
+  return session;
 }
 
 export class LiveAgentsClient implements AgentsClient {
