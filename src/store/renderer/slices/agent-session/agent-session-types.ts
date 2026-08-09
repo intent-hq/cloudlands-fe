@@ -85,6 +85,15 @@ export type StoredAgentSession = Omit<AgentSession, "messages"> & {
    * — the HUD waiting gate must not trust that single racy snapshot field.
    */
   liveTurnOpen?: boolean;
+  /**
+   * Daemon timestamp of the live running edge that opened `liveTurnOpen`
+   * (the `agent:status-changed` event's own `timestamp`, never
+   * renderer-generated). Ordering signal for the monorepo#1815 stale-snapshot
+   * guard: a hydrate snapshot's failure (`stopReasonTimestamp`) that predates
+   * this edge is provably stale, while a failure recorded after it (e.g. a
+   * terminal event missed across a disconnect) still applies.
+   */
+  liveTurnOpenedAt?: string;
 };
 
 /**
