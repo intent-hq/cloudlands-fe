@@ -47,6 +47,7 @@
   faTextWidth,
 } from '@fortawesome/free-solid-svg-icons';
   import { createLogger } from '$lib/utils/client-logger';
+  import { isAbsolutePath } from '$lib/utils/path-utils';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
@@ -79,7 +80,7 @@
 
   // Compute absolute path for "open in" actions
   const diffAbsolutePath = $derived(
-    filePath && repoPath ? (filePath.startsWith('/') ? filePath : `${repoPath}/${filePath}`) : null,
+    filePath && repoPath ? (isAbsolutePath(filePath) ? filePath : `${repoPath}/${filePath}`) : null,
   );
 
   // Extract the diff string from the event (try multiple locations)

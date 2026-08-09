@@ -44,6 +44,7 @@
 } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { toast } from '$lib/components/ui/toast';
+  import { isAbsolutePath } from '$lib/utils/path-utils';
   import { m } from '$shared/paraglide/messages.js';
   import Fa from 'svelte-fa';
   import {
@@ -85,7 +86,7 @@
   // Compute absolute path for diff files
   const diffAbsolutePath = $derived(
     tab.diffPath && repoPath
-      ? tab.diffPath.startsWith('/')
+      ? isAbsolutePath(tab.diffPath)
         ? tab.diffPath
         : `${repoPath}/${tab.diffPath}`
       : null,
