@@ -37,7 +37,7 @@ export function setupFirstVisitStateIPC() {
       async (_event, validated: any): Promise<FirstVisitState | null> => {
         try {
           const workspaceId = WorkspaceIdFn(validated.workspaceId);
-          return await repository.load(workspaceId);
+          return await repository.load(workspaceId, validated.backendId);
         } catch (error) {
           logger.error(
             // i18n-ignore (developer log message)
@@ -66,7 +66,7 @@ export function setupFirstVisitStateIPC() {
             ...validated.state,
             workspaceId: WorkspaceIdFn(validated.state.workspaceId),
           } as FirstVisitState;
-          await repository.save(workspaceId, state);
+          await repository.save(workspaceId, state, validated.backendId);
           return true;
         } catch (error) {
           logger.error(
@@ -91,7 +91,7 @@ export function setupFirstVisitStateIPC() {
       async (_event, validated: any): Promise<boolean> => {
         try {
           const workspaceId = WorkspaceIdFn(validated.workspaceId);
-          await repository.delete(workspaceId);
+          await repository.delete(workspaceId, validated.backendId);
           return true;
         } catch (error) {
           logger.error(
@@ -116,7 +116,7 @@ export function setupFirstVisitStateIPC() {
       async (_event, validated: any): Promise<boolean> => {
         try {
           const workspaceId = WorkspaceIdFn(validated.workspaceId);
-          return await repository.exists(workspaceId);
+          return await repository.exists(workspaceId, validated.backendId);
         } catch (error) {
           logger.error(
             // i18n-ignore (developer log message)

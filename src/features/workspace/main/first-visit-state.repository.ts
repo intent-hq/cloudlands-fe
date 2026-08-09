@@ -6,8 +6,12 @@
  */
 
 import { promises as fs } from 'fs';
+import * as path from 'path';
 import type { FirstVisitState, WorkspaceId } from '../../../shared/types';
-import { WorkspaceConfig } from '../../../shared/main/config';
+import {
+  workspaceStateBackendKey,
+  workspaceStateDir,
+} from '../../../shared/main/workspace-state-paths';
 import { validateFirstVisitState, safeValidateFirstVisitState } from '../../../shared/schemas';
 import * as Errors from '../../../shared/errors';
 import { Logger } from '../../../shared/logger';
@@ -19,14 +23,24 @@ const logger = new Logger('FirstVisitStateRepository');
 
 const CURRENT_VERSION = 1;
 
+const STATE_FILE = 'first-visit-state.json';
+
+/**
+ * State file under `<userData>/workspace-state/<backendKey>/<workspaceId>/`,
+ * keyed by backend id + workspace id like the panel-layout history.
+ */
+function stateFilePath(workspaceId: WorkspaceId, backendId?: string): string {
+  return path.join(workspaceStateDir(workspaceId, backendId), STATE_FILE);
+}
+
 /**
  * Repository interface for first visit state persistence
  */
 export interface FirstVisitStateRepository {
-  load(workspaceId: WorkspaceId): Promise<FirstVisitState | null>;
-  save(workspaceId: WorkspaceId, state: FirstVisitState): Promise<void>;
-  delete(workspaceId: WorkspaceId): Promise<void>;
-  exists(workspaceId: WorkspaceId): Promise<boolean>;
+  load(workspaceId: WorkspaceId, backendId?: string): Promise<FirstVisitState | null>;
+  save(workspaceId: WorkspaceId, state: FirstVisitState, backendId?: string): Promise<void>;
+  delete(workspaceId: WorkspaceId, backendId?: string): Promise<void>;
+  exists(workspaceId: WorkspaceId, backendId?: string): Promise<boolean>;
 }
 
 /**
@@ -36,9 +50,9 @@ export class FileSystemFirstVisitStateRepository implements FirstVisitStateRepos
   /**
    * Load first visit state for a workspace
    */
-  async load(workspaceId: WorkspaceId): Promise<FirstVisitState | null> {
+  async load(workspaceId: WorkspaceId, backendId?: string): Promise<FirstVisitState | null> {
     try {
-      const statePath = WorkspaceConfig.paths.firstVisitState(workspaceId);
+      const statePath = stateFilePath(workspaceId, backendId);
 
       // Check if file exists
       try {
@@ -85,14 +99,14 @@ export class FileSystemFirstVisitStateRepository implements FirstVisitStateRepos
         `Failed to load first visit state for workspace: ${workspaceId}`,
         error as Error,
       );
-      throw new FileReadError(WorkspaceConfig.paths.firstVisitState(workspaceId), error as Error);
+      throw new FileReadError(stateFilePath(workspaceId, backendId), error as Error);
     }
   }
 
   /**
    * Save first visit state for a workspace
    */
-  async save(workspaceId: WorkspaceId, state: FirstVisitState): Promise<void> {
+  async save(workspaceId: WorkspaceId, state: FirstVisitState, backendId?: string): Promise<void> {
     try {
       // Validate state before saving
       validateFirstVisitState(state);
@@ -105,12 +119,11 @@ export class FileSystemFirstVisitStateRepository implements FirstVisitStateRepos
         );
       }
 
-      // Ensure metadata directory exists
-      const metadataDir = WorkspaceConfig.paths.metadata(workspaceId);
-      await fs.mkdir(metadataDir, { recursive: true });
+      // Ensure the per-workspace state directory exists
+      await fs.mkdir(workspaceStateDir(workspaceId, backendId), { recursive: true });
 
       // Write state file
-      const statePath = WorkspaceConfig.paths.firstVisitState(workspaceId);
+      const statePath = stateFilePath(workspaceId, backendId);
       await fs.writeFile(statePath, JSON.stringify(state, null, 2), 'utf-8');
 
       // Sync file to disk for durability
@@ -124,7 +137,7 @@ export class FileSystemFirstVisitStateRepository implements FirstVisitStateRepos
         error as Error,
       );
       if (error instanceof Error) {
-        throw new FileWriteError(WorkspaceConfig.paths.firstVisitState(workspaceId), error);
+        throw new FileWriteError(stateFilePath(workspaceId, backendId), error);
       }
       throw error;
     }
@@ -133,9 +146,9 @@ export class FileSystemFirstVisitStateRepository implements FirstVisitStateRepos
   /**
    * Delete first visit state for a workspace
    */
-  async delete(workspaceId: WorkspaceId): Promise<void> {
+  async delete(workspaceId: WorkspaceId, backendId?: string): Promise<void> {
     try {
-      const statePath = WorkspaceConfig.paths.firstVisitState(workspaceId);
+      const statePath = stateFilePath(workspaceId, backendId);
 
       // Check if file exists
       try {
@@ -162,9 +175,9 @@ export class FileSystemFirstVisitStateRepository implements FirstVisitStateRepos
   /**
    * Check if first visit state exists for a workspace
    */
-  async exists(workspaceId: WorkspaceId): Promise<boolean> {
+  async exists(workspaceId: WorkspaceId, backendId?: string): Promise<boolean> {
     try {
-      const statePath = WorkspaceConfig.paths.firstVisitState(workspaceId);
+      const statePath = stateFilePath(workspaceId, backendId);
       await fs.access(statePath);
       return true;
     } catch {
@@ -177,13 +190,17 @@ export class FileSystemFirstVisitStateRepository implements FirstVisitStateRepos
  * In-memory implementation for testing
  */
 export class InMemoryFirstVisitStateRepository implements FirstVisitStateRepository {
-  private states = new Map<WorkspaceId, FirstVisitState>();
+  private states = new Map<string, FirstVisitState>();
 
-  async load(workspaceId: WorkspaceId): Promise<FirstVisitState | null> {
-    return this.states.get(workspaceId) || null;
+  private key(workspaceId: WorkspaceId, backendId?: string): string {
+    return `${workspaceStateBackendKey(backendId)}:${workspaceId}`;
   }
 
-  async save(workspaceId: WorkspaceId, state: FirstVisitState): Promise<void> {
+  async load(workspaceId: WorkspaceId, backendId?: string): Promise<FirstVisitState | null> {
+    return this.states.get(this.key(workspaceId, backendId)) || null;
+  }
+
+  async save(workspaceId: WorkspaceId, state: FirstVisitState, backendId?: string): Promise<void> {
     // Validate before saving
     validateFirstVisitState(state);
 
@@ -195,15 +212,15 @@ export class InMemoryFirstVisitStateRepository implements FirstVisitStateReposit
       );
     }
 
-    this.states.set(workspaceId, state);
+    this.states.set(this.key(workspaceId, backendId), state);
   }
 
-  async delete(workspaceId: WorkspaceId): Promise<void> {
-    this.states.delete(workspaceId);
+  async delete(workspaceId: WorkspaceId, backendId?: string): Promise<void> {
+    this.states.delete(this.key(workspaceId, backendId));
   }
 
-  async exists(workspaceId: WorkspaceId): Promise<boolean> {
-    return this.states.has(workspaceId);
+  async exists(workspaceId: WorkspaceId, backendId?: string): Promise<boolean> {
+    return this.states.has(this.key(workspaceId, backendId));
   }
 
   // Test helper
