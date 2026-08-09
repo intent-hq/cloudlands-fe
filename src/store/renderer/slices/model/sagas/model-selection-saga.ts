@@ -7,7 +7,7 @@ import { splitCompoundModelId } from '$shared/utils/compound-model-id';
 import { selectProviderCatalogEntry } from '../../provider-catalog/provider-catalog-selectors';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
 import { setActiveProvider } from '../../provider-settings/provider-settings-slice';
-import { selectDefaultReasoningEffort, selectProviderModels } from '../model-selectors';
+import { selectProviderModels } from '../model-selectors';
 import {
   reloadModelsForProvider,
   selectModel,
@@ -63,14 +63,15 @@ function* watchSelectedModelPersistence() {
 }
 
 /**
- * Persist the current default reasoning-effort snapshot to the daemon settings
- * catalog (PROTOCOL §5.12). Fire-and-forget like `model.providerDefaults`; the
- * daemon echoes the write back via `settings:changed`, which hydration applies
+ * Persist a default reasoning-effort pick to the daemon settings catalog
+ * (PROTOCOL §5.12). Fire-and-forget like `model.providerDefaults`; the daemon
+ * echoes the write back via `settings:changed`, which hydration applies
  * through `loadDefaultReasoningEffortFromStorage` — deliberately NOT observed
- * here, so there is no write loop.
+ * here, so there is no write loop. The taken action's payload is persisted
+ * (not a store snapshot read at worker time), so an interleaved hydration
+ * echo of an older value can never displace a newer queued pick.
  */
-export function* persistDefaultReasoningEffortWorker() {
-  const effort = yield* selectDefaultReasoningEffort.effect();
+export function* persistDefaultReasoningEffortWorker(effort: string) {
   try {
     yield* call(
       [appClient.settings, appClient.settings.update],
@@ -85,8 +86,8 @@ function* watchDefaultReasoningEffortPersistence() {
   const channel = yield* actionChannel(setDefaultReasoningEffort, buffers.sliding(1));
   try {
     while (true) {
-      yield* take(channel);
-      yield* call(persistDefaultReasoningEffortWorker);
+      const action = yield* take(channel);
+      yield* call(persistDefaultReasoningEffortWorker, action.payload[0]);
     }
   } finally {
     channel.close();
