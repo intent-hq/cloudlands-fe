@@ -128,7 +128,15 @@ jobs:
         id: build_windows
         shell: pwsh
         env:
-          NODE_OPTIONS: '--max-old-space-size=8192'
+          # 12288: the bundle's peak heap outgrew the old 8192 cap even with
+          # sourcemaps disabled (monorepo#1340) — run 31310837286 JS-heap-OOM'd
+          # at ~7.9 GB under 8192 on gh-windows-16x. Mirrors the release-beta
+          # build-windows leg; the 16x runner's 64 GB RAM gives ample headroom.
+          NODE_OPTIONS: '--max-old-space-size=12288'
+          # Sourcemap generation multiplies rollup's peak heap past the cap
+          # (monorepo#1074/#1282/#1340). Nothing consumes the 'hidden'
+          # production maps in these builds, so skip them like release-beta.
+          INTENT_DISABLE_SOURCEMAPS: '1'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
           # detects the pre-staged binary and leaves it in place.
