@@ -62,4 +62,14 @@ describe('deriveAgentHasUnread', () => {
   it('treats an empty-string lastMessageId as absent', () => {
     expect(deriveAgentHasUnread({ lastMessageRole: 'assistant', lastMessageId: '' })).toBe(false);
   });
+
+  it('treats an empty-string seen marker as absent (counts as unread)', () => {
+    expect(
+      deriveAgentHasUnread({
+        lastMessageRole: 'assistant',
+        lastMessageId: 'm-1',
+        metadata: { lastSeenMessageId: '' },
+      }),
+    ).toBe(true);
+  });
 });

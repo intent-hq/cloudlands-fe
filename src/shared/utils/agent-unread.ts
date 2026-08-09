@@ -29,7 +29,12 @@ interface AgentUnreadInputs {
  */
 export function deriveAgentHasUnread(agent: AgentUnreadInputs): boolean {
   if (agent.lastMessageRole !== 'assistant') return false;
-  const lastMessageId = agent.lastMessageId;
-  if (typeof lastMessageId !== 'string' || lastMessageId.length === 0) return false;
-  return lastMessageId !== agent.metadata?.lastSeenMessageId;
+  const lastMessageId = normalizeId(agent.lastMessageId);
+  if (lastMessageId === undefined) return false;
+  return lastMessageId !== normalizeId(agent.metadata?.lastSeenMessageId);
+}
+
+/** Treats non-string / empty-string ids (daemon contract violations) as absent. */
+function normalizeId(id: unknown): string | undefined {
+  return typeof id === 'string' && id.length > 0 ? id : undefined;
 }
