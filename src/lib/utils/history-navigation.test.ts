@@ -100,6 +100,41 @@ describe('history-navigation', () => {
         expect(forwardSpy).not.toHaveBeenCalled();
       },
     );
+
+    // jsdom never reports hover state, so the hovered case mocks the
+    // `webview:hover` query the suppression check performs.
+    describe('webview hover suppression', () => {
+      const mockHoveredWebview = () =>
+        vi
+          .spyOn(document, 'querySelector')
+          .mockImplementation((selector: string) =>
+            selector === 'webview:hover' ? document.createElement('webview') : null,
+          );
+
+      it.each(['back', 'forward'] as const)(
+        'does not navigate %s while a webview is hovered',
+        (direction) => {
+          const querySpy = mockHoveredWebview();
+          handleHistoryNavigateIpc(direction);
+          expect(querySpy).toHaveBeenCalledWith('webview:hover');
+          expect(backSpy).not.toHaveBeenCalled();
+          expect(forwardSpy).not.toHaveBeenCalled();
+        },
+      );
+
+      it('navigates when no webview is hovered', () => {
+        const querySpy = vi.spyOn(document, 'querySelector').mockReturnValue(null);
+        handleHistoryNavigateIpc('back');
+        expect(querySpy).toHaveBeenCalledWith('webview:hover');
+        expect(backSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it('leaves the raw mouse path unaffected by hover state', () => {
+        mockHoveredWebview();
+        handleHistoryMouseUp(new MouseEvent('mouseup', { button: 3, cancelable: true }));
+        expect(backSpy).toHaveBeenCalledTimes(1);
+      });
+    });
   });
 
   describe('handleHistoryMouseUp', () => {
