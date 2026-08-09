@@ -20,10 +20,14 @@
   import { navigateToNote } from '$lib/utils/workspace-navigation';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { cycleFontStyle } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import {
+  cycleFontStyle,
+  toggleShowReasoningBlocks,
+} from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
   selectAgentFontStyleLabel,
   selectIsAgentMonospace,
+  selectShowReasoningBlocks,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
@@ -33,6 +37,7 @@
 } from '$store/renderer/slices/specialists/specialists-selectors';
   import Fa from 'svelte-fa';
   import {
+  faBrain,
   faCheck,
   faCopy,
   faTrash,
@@ -47,6 +52,7 @@
 
   const fontStyleLabel = selectAgentFontStyleLabel();
   const isMonospace = selectIsAgentMonospace();
+  const showReasoningBlocks = selectShowReasoningBlocks();
 
   let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
@@ -204,6 +210,18 @@
     <span class="text-xs font-semibold tracking-tight" class:font-mono={$isMonospace}
       >{m.layout_agentTab_fontSample_label()}</span
     >
+  </Button>
+  <Button
+    variant="ghost-light"
+    size="icon-xs"
+    onclick={() => appStore.dispatch(toggleShowReasoningBlocks())}
+    tooltip={$showReasoningBlocks
+      ? m.layout_agentTab_reasoningHide_tooltip()
+      : m.layout_agentTab_reasoningShow_tooltip()}
+    tooltipSide="bottom"
+    class={$showReasoningBlocks ? '' : 'opacity-50'}
+  >
+    <Fa icon={faBrain} size="xs" />
   </Button>
   <Button
     variant="ghost-light"

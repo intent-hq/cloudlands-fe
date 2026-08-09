@@ -1334,6 +1334,25 @@ export function groupContentBlocks(
 }
 
 /**
+ * Remove thinking blocks from grouped render output, both at the top level
+ * and inside content_group children.
+ *
+ * This must run AFTER groupContentBlocks: legacy <think>…</think> text is
+ * only converted into thinking blocks during grouping, so a pre-grouping
+ * filter would miss them (the showReasoningBlocks preference would be
+ * ineffective for external-provider or older messages).
+ */
+export function stripThinkingBlocks(blocks: RenderContentBlock[]): RenderContentBlock[] {
+  return blocks
+    .filter((block) => block.type !== 'thinking')
+    .map((block) =>
+      block.type === 'content_group'
+        ? { ...block, children: block.children.filter((child) => child.type !== 'thinking') }
+        : block,
+    );
+}
+
+/**
  * Format parsed content blocks into markdown
  */
 export function formatParsedContent(blocks: ParsedContent[]): string {
