@@ -48,6 +48,11 @@
     stripHookWakePrefix,
     stripHookWakeStateNote,
   } from '$lib/utils/hook-wake-attribution';
+  import PrMonitorWakeAttributionHeader from './PrMonitorWakeAttributionHeader.svelte';
+  import {
+    getPrMonitorWakeAttribution,
+    stripPrMonitorWakePrefix,
+  } from '$lib/utils/pr-monitor-wake-attribution';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
 
@@ -285,6 +290,24 @@
     for (const block of blocks) {
       if (block.type === 'text') {
         const fromBlock = getHookWakeAttribution(block.messageMetadata);
+        if (fromBlock) return fromBlock;
+      }
+    }
+    return null;
+  });
+
+  // PR-monitor wake attribution (PROTOCOL §5.42): same dual check as hook
+  // wakes — the daemon tags the row's `metadata` AND the persisted text
+  // block's `messageMetadata` with
+  // `{ type: 'pr_monitor_wake', monitorId, repo, prNumber, reason, url? }`.
+  let prMonitorWakeAttribution = $derived.by(() => {
+    if (role !== 'user') return null;
+    const fromRow = getPrMonitorWakeAttribution(message?.metadata);
+    if (fromRow) return fromRow;
+    const blocks = Array.isArray(message?.contentBlocks) ? message.contentBlocks : [];
+    for (const block of blocks) {
+      if (block.type === 'text') {
+        const fromBlock = getPrMonitorWakeAttribution(block.messageMetadata);
         if (fromBlock) return fromBlock;
       }
     }
@@ -723,12 +746,15 @@
 
   // Parse context and get clean text for user messages
   const parsedMessage = $derived.by(() => {
-    // Display-only strip of the daemon's literal `[Background hook "…"]`
-    // prefix and trailing `[This hook …]` state note on wake rows — the
-    // attribution chip already names the hook and conveys the post-fire state.
+    // Display-only strip of the daemon's literal `[Background hook "…"]` /
+    // `[PR monitor …]` prefix on wake rows (plus the trailing `[This hook …]`
+    // state note for hook wakes) — the attribution chip already names the
+    // hook / PR and conveys the post-fire state.
     const rawText = hookWakeAttribution
       ? stripHookWakeStateNote(stripHookWakePrefix(extractTextFromMessage()))
-      : extractTextFromMessage();
+      : prMonitorWakeAttribution
+        ? stripPrMonitorWakePrefix(extractTextFromMessage())
+        : extractTextFromMessage();
     if (role === 'user') {
       // Hide the daemon's dequeue-wait [SYSTEM NOTE] from the displayed body
       // when structured queueInfo metadata renders it as a chip instead.
@@ -1044,11 +1070,16 @@
         <div
           class="relative bg-sidebar rounded-xs px-2 pt-2 pb-2 {onEditSubmit &&
           !agentAttribution &&
-          !hookWakeAttribution
+          !hookWakeAttribution &&
+          !prMonitorWakeAttribution
             ? 'cursor-pointer'
             : 'cursor-default'} overflow-hidden z-20"
           ondblclick={() =>
-            onEditSubmit && !agentAttribution && !hookWakeAttribution && handleStartEdit()}
+            onEditSubmit &&
+            !agentAttribution &&
+            !hookWakeAttribution &&
+            !prMonitorWakeAttribution &&
+            handleStartEdit()}
         >
           <!-- Actions -->
           <div
@@ -1073,6 +1104,9 @@
           {:else if hookWakeAttribution}
             <!-- Background-hook wake attribution header (PROTOCOL §5.40) -->
             <HookWakeAttributionHeader attribution={hookWakeAttribution} class="mb-1.5" />
+          {:else if prMonitorWakeAttribution}
+            <!-- PR-monitor wake attribution header (PROTOCOL §5.42) -->
+            <PrMonitorWakeAttributionHeader attribution={prMonitorWakeAttribution} class="mb-1.5" />
           {/if}
 
           <!-- Queued-delivery notice for messages drained from the pending queue -->
@@ -1084,11 +1118,17 @@
           <div
             class="leading-normal text-subtle select-text line-clamp-6 {onEditSubmit &&
             !agentAttribution &&
-            !hookWakeAttribution
+            !hookWakeAttribution &&
+            !prMonitorWakeAttribution
               ? 'cursor-pointer'
               : 'cursor-text'}"
             onclick={(e) => {
-              if (onEditSubmit && !agentAttribution && !hookWakeAttribution) {
+              if (
+                onEditSubmit &&
+                !agentAttribution &&
+                !hookWakeAttribution &&
+                !prMonitorWakeAttribution
+              ) {
                 e.preventDefault();
                 e.stopPropagation();
                 handleStartEdit();
