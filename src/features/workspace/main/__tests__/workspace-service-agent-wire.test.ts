@@ -52,7 +52,7 @@ const GIT_CONFIG_FIXTURE = `
     fetch = +refs/heads/*:refs/remotes/origin/*
 `;
 
-describe('workspace.service ↔ daemon agent.* (PROTOCOL.md §5.5)', () => {
+describe('workspace.service ↔ daemon agentSummary card aggregate (PROTOCOL.md §5.1)', () => {
   let service: WorkspaceService;
   let repository: InMemoryWorkspaceRepository;
 
@@ -142,7 +142,13 @@ describe('workspace.service ↔ daemon agent.* (PROTOCOL.md §5.5)', () => {
       repositoryPath: '/path/to/repo',
       createdAt: now,
       updatedAt: now,
-      agentSummary: { count: 1, agents: [], agentIds: ['agent-a'] },
+      agentSummary: {
+        count: 1,
+        agents: [
+          { id: 'agent-a', name: 'A', status: 'idle', isStreaming: false, isResponding: false },
+        ],
+        agentIds: ['agent-a'],
+      },
     });
 
     requestMock.mockClear();
