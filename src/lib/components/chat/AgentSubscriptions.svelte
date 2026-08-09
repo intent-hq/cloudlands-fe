@@ -140,6 +140,8 @@
   // daemon guarantees watch uniqueness per (parent, target, event), so no
   // client-side dedup beyond the Set here. Merged single-agent groups render
   // here too, so their agents are counted in the "Waiting for…" header.
+  // Sorted by agent id so daemon snapshot iteration-order churn cannot
+  // change `.slice(0, 5)` membership and trigger spurious row enter/exit.
   const oneShotWatchedIds = $derived.by(() => {
     const ids = new Set<string>();
     for (const sub of $subs$) {
@@ -147,7 +149,7 @@
       for (const actorId of sub.actorIds || []) ids.add(actorId);
     }
     for (const id of mergedGroupByAgentId.keys()) ids.add(id);
-    return Array.from(ids);
+    return Array.from(ids).sort();
   });
 
   // Agents that have finished (completed or deleted) across delegation groups
@@ -345,7 +347,10 @@
   <div class="w-full font-family-child">
     {#if isCompleted || $wokenUpInfo$}
       <!-- Slim status row: transitional "Completed" state and/or "Woken up" pill -->
-      <div class="flex items-center gap-2 px-3 py-1.5 text-sm text-subtle">
+      <div
+        class="flex items-center gap-2 px-3 py-1.5 text-sm text-subtle"
+        transition:safeSlide={{ axis: 'y', duration: 200 }}
+      >
         {#if isCompleted}
           <span
             class="shrink-0 flex items-center gap-2 whitespace-nowrap text-green-500"
