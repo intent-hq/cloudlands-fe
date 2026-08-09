@@ -787,6 +787,70 @@ describe('DaemonStatusIndicator', () => {
     });
   });
 
+  describe('connection row overflow (monorepo#1744)', () => {
+    const longTarget = 'wss:100.70.219.113:5181';
+
+    function withTransport(transport?: {
+      mode: 'sidecar-uds' | 'external-uds' | 'external-ws';
+      target?: string;
+    }) {
+      return {
+        daemonHealth: {
+          health: 'healthy' as const,
+          stats: {
+            clients: 1,
+            agents: 0,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+            transport,
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
+      };
+    }
+
+    it('truncates a long external target and exposes the full value via title', async () => {
+      mockStoreState = withTransport({ mode: 'external-ws', target: longTarget });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      const value = screen.getByText(`external (${longTarget})`);
+      // Full value available via tooltip; ellipsis truncation keeps it inside the popover.
+      expect(value.getAttribute('title')).toBe(`external (${longTarget})`);
+      expect(value.classList.contains('truncate')).toBe(true);
+      expect(value.classList.contains('min-w-0')).toBe(true);
+      // Row keeps a gap so the value can never collide with the label.
+      const row = value.parentElement!;
+      expect(row.classList.contains('gap-2')).toBe(true);
+      const label = row.querySelector('.text-subtle')!;
+      expect(label.classList.contains('shrink-0')).toBe(true);
+    });
+
+    it('renders short values unchanged (sidecar mode)', async () => {
+      mockStoreState = withTransport({ mode: 'sidecar-uds' });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      expect(screen.getByText('sidecar (UDS)')).toBeTruthy();
+    });
+
+    it('formatTransportLabel maps transport shapes to display strings', async () => {
+      const { formatTransportLabel } = await import('$lib/utils/daemon-status-format');
+      expect(formatTransportLabel({ mode: 'sidecar-uds' })).toBe('sidecar (UDS)');
+      expect(formatTransportLabel({ mode: 'external-ws', target: longTarget })).toBe(
+        `external (${longTarget})`,
+      );
+      expect(formatTransportLabel({ mode: 'external-ws' })).toBe('external (WebSocket)');
+    });
+  });
+
   describe('cert-mismatch modal', () => {
     const mismatch = {
       id: 'r1',
