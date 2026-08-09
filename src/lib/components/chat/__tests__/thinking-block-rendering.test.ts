@@ -21,13 +21,22 @@ vi.mock('$lib/components/markdown/MarkdownViewer.svelte', async () => ({
   default: (await import('./mocks/MarkdownViewerStub.svelte')).default,
 }));
 
+// Thinking blocks only render when the global showReasoningBlocks
+// preference is on; these tests opt in unless they exercise the default.
+const storeState = vi.hoisted(() => ({
+  current: { userPreferences: { showReasoningBlocks: true } } as Record<string, unknown>,
+}));
+
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: vi.fn() });
+  return createAppStoreMockModule({ state: () => storeState.current, dispatch: vi.fn() });
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  storeState.current = { userPreferences: { showReasoningBlocks: true } };
+  cleanup();
+});
 
 warmImport(() => import('../StreamingMessageContent.svelte'));
 
@@ -76,5 +85,64 @@ describe('thinking blocks — StreamingMessageContent', () => {
     await renderStreaming([{ type: 'thinking', content: 'legacy reasoning' }], true);
 
     expect(screen.getByTestId('markdown-viewer').textContent).toContain('legacy reasoning');
+  });
+
+  it('hides thinking blocks when showReasoningBlocks is off (the default)', async () => {
+    storeState.current = { userPreferences: { showReasoningBlocks: false } };
+    await renderStreaming(
+      [
+        thinking('msg_1:0', 'Hidden reasoning'),
+        { type: 'text', id: 'msg_1:1', text: 'Visible answer' },
+      ],
+      false,
+    );
+
+    expect(document.querySelector('.content-block--thinking')).toBeNull();
+    expect(document.querySelector('.content-block--text')?.textContent).toContain(
+      'Visible answer',
+    );
+  });
+
+  it('hides thinking blocks on a fresh (empty) preferences state', async () => {
+    storeState.current = {};
+    await renderStreaming([thinking('msg_1:0', 'Hidden reasoning')], true);
+
+    expect(document.querySelector('.content-block--thinking')).toBeNull();
+  });
+
+  it('hides legacy <think>-tag reasoning when showReasoningBlocks is off', async () => {
+    // groupContentBlocks converts <think>…</think> text into thinking blocks,
+    // so the preference filter must run AFTER grouping to catch them.
+    storeState.current = { userPreferences: { showReasoningBlocks: false } };
+    await renderStreaming(
+      [
+        {
+          type: 'text',
+          id: 'msg_1:0',
+          text: '<think>legacy hidden reasoning</think>Visible answer',
+        },
+      ],
+      false,
+    );
+
+    expect(document.querySelector('.content-block--thinking')).toBeNull();
+    expect(document.body.textContent).not.toContain('legacy hidden reasoning');
+    expect(document.body.textContent).toContain('Visible answer');
+  });
+
+  it('still renders legacy <think>-tag reasoning when showReasoningBlocks is on', async () => {
+    await renderStreaming(
+      [
+        {
+          type: 'text',
+          id: 'msg_1:0',
+          text: '<think>legacy visible reasoning</think>Visible answer',
+        },
+      ],
+      false,
+    );
+
+    expect(document.querySelector('.content-block--thinking')).not.toBeNull();
+    expect(document.body.textContent).toContain('legacy visible reasoning');
   });
 });
