@@ -4,6 +4,50 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.21.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.20.0...v2.21.0) (2026-08-09)
+
+
+### 🚀 Features
+
+* add 60s freshness TTL for mount-driven pr.refresh ([#874](https://github.com/intent-hq/cloudlands-fe/issues/874)) ([17da59a](https://github.com/intent-hq/cloudlands-fe/commit/17da59a5f18a2519b3728b7a74ed566f02cd73c8))
+* instant switch-back draft hydration via per-pair cache ([#879](https://github.com/intent-hq/cloudlands-fe/issues/879)) ([d77cbd9](https://github.com/intent-hq/cloudlands-fe/commit/d77cbd9fade564b5717b3df30959de434e8a8cf9))
+* move panel-layout history and first-visit state to userData ([#903](https://github.com/intent-hq/cloudlands-fe/issues/903)) ([15c93a9](https://github.com/intent-hq/cloudlands-fe/commit/15c93a927fddc0706a8786ec924ea83f451b148a))
+* resolve workspace checkout paths from daemon data only ([#909](https://github.com/intent-hq/cloudlands-fe/issues/909)) ([befa55e](https://github.com/intent-hq/cloudlands-fe/commit/befa55e550370d835233d9e59a33033f964733f1))
+* restore external git-change auto-refresh ([#893](https://github.com/intent-hq/cloudlands-fe/issues/893)) ([f3ac5ab](https://github.com/intent-hq/cloudlands-fe/commit/f3ac5aba9a3cd398de9547d5ae85524c415cb195))
+* treat PR-monitor-waiting like hook-waiting in idle suppression ([#871](https://github.com/intent-hq/cloudlands-fe/issues/871)) ([95ae10e](https://github.com/intent-hq/cloudlands-fe/commit/95ae10ed4e257d380bb99e460f156e5a8a2be43b))
+
+
+### 🐛 Bug Fixes
+
+* classify agent-not-found on session load as WARN and clean up stale views ([#906](https://github.com/intent-hq/cloudlands-fe/issues/906)) ([4800014](https://github.com/intent-hq/cloudlands-fe/commit/480001488e5c84ccab36b5c3957cf8e9846a0a8d))
+* coalesce reconcileWorkspaceActivity workspace.get refetch per workspace ([#904](https://github.com/intent-hq/cloudlands-fe/issues/904)) ([6a37077](https://github.com/intent-hq/cloudlands-fe/commit/6a370771671e0ea804f357625150286028e49dbe))
+* dedupe concurrent accept-changes.getStatus calls ([#875](https://github.com/intent-hq/cloudlands-fe/issues/875)) ([ba62c36](https://github.com/intent-hq/cloudlands-fe/commit/ba62c361fda2cc7ff869ee0eb4007b09cda360c7))
+* dedupe monitored PR rows by repo-qualified identity ([#880](https://github.com/intent-hq/cloudlands-fe/issues/880)) ([f0ea382](https://github.com/intent-hq/cloudlands-fe/commit/f0ea3820b8f1dc9e037f812da2b3fb5406408ec7))
+* drop per-event workspace.list from live-git-client status refetch ([#896](https://github.com/intent-hq/cloudlands-fe/issues/896)) ([dd35779](https://github.com/intent-hq/cloudlands-fe/commit/dd35779585c19b3ca1f9ab8d80c9263a36d839a5))
+* guarantee terminal state for manual update checks (main watchdog session + renderer setCheckTimedOut) ([#882](https://github.com/intent-hq/cloudlands-fe/issues/882)) ([8f19c42](https://github.com/intent-hq/cloudlands-fe/commit/8f19c4299365b10c665cb5d0938b088b77e15786))
+* label non-user stream cancellations with accurate reasons ([#907](https://github.com/intent-hq/cloudlands-fe/issues/907)) ([63fc7a1](https://github.com/intent-hq/cloudlands-fe/commit/63fc7a13df2468aa77b9bde46791e8cbed424dd4))
+* load Tailwind typography plugin so release notes render as styled markdown ([#908](https://github.com/intent-hq/cloudlands-fe/issues/908)) ([5ed8f65](https://github.com/intent-hq/cloudlands-fe/commit/5ed8f650b489a7609730d50e87482afcae2c2e99))
+* make subscribeWorkspaceIds push-driven (no steady-state workspace.list) ([#876](https://github.com/intent-hq/cloudlands-fe/issues/876)) ([1ac9e72](https://github.com/intent-hq/cloudlands-fe/commit/1ac9e724b3c187c3d55b6a0031236013d4022eb0))
+* prevent Daemon Status Connection row overflow with long external targets ([94b2322](https://github.com/intent-hq/cloudlands-fe/commit/94b232289050b452b8f935ee409dcc6636cc83ab))
+* read workspace agent IDs from agentSummary instead of agent.list fan-out ([c0aee51](https://github.com/intent-hq/cloudlands-fe/commit/c0aee51b9e69670276502aea3318a1bb30c51020))
+* read/write quick action model settings under quickActions.* ([#897](https://github.com/intent-hq/cloudlands-fe/issues/897)) ([63b29e5](https://github.com/intent-hq/cloudlands-fe/commit/63b29e5dd667d1a394f2eab82df240c12c884f8f))
+* remove legacy refetch mode from createDeltaSubscription ([#881](https://github.com/intent-hq/cloudlands-fe/issues/881)) ([87f0b5e](https://github.com/intent-hq/cloudlands-fe/commit/87f0b5e0f2c9bfb8e9cb4fb30261aee59dafee13))
+* restore agent:attention-requested bridge handler ([aefc535](https://github.com/intent-hq/cloudlands-fe/commit/aefc5355e3eb2a698819797370637e1a90672242))
+* restore agent:stream:activity handling in the daemon-events bridge ([92fa951](https://github.com/intent-hq/cloudlands-fe/commit/92fa951c9366bbc3333562e0fdfb095d66f4013d))
+* restore agent:updated interrupted notify and task:created routing in the events bridge ([#898](https://github.com/intent-hq/cloudlands-fe/issues/898)) ([4efa212](https://github.com/intent-hq/cloudlands-fe/commit/4efa21295fe281e5cb816b04fa3d8131c75d72d0))
+* restore chrome-less HUD window layout gating dropped in [#584](https://github.com/intent-hq/cloudlands-fe/issues/584) ([#895](https://github.com/intent-hq/cloudlands-fe/issues/895)) ([0053341](https://github.com/intent-hq/cloudlands-fe/commit/00533410f24d4c1ec920c3d2fabbbc144b2b0df7))
+* restore interrupted-agents modal close notify ([#891](https://github.com/intent-hq/cloudlands-fe/issues/891)) ([8f157d6](https://github.com/intent-hq/cloudlands-fe/commit/8f157d685295709d2ba82a94e3c275e34667adeb))
+* restore multi-backend localStorage namespacing in persistence sagas ([#899](https://github.com/intent-hq/cloudlands-fe/issues/899)) ([4915bcf](https://github.com/intent-hq/cloudlands-fe/commit/4915bcf91e5c60175c2514f848e48e8672d83fcf))
+* restore reconcileWorkspaceAgentSummary in daemon events bridge ([#884](https://github.com/intent-hq/cloudlands-fe/issues/884)) ([8708a66](https://github.com/intent-hq/cloudlands-fe/commit/8708a6674299f6a1d6b018055fab29d53dfecf18))
+* restore splash-gate dismissal in +layout.svelte ([#892](https://github.com/intent-hq/cloudlands-fe/issues/892)) ([a4ea363](https://github.com/intent-hq/cloudlands-fe/commit/a4ea363bf85df3d0b4fdedd2451f6e9b42aa579c))
+* restore terminal:exit event routing in daemon-events-bridge ([#885](https://github.com/intent-hq/cloudlands-fe/issues/885)) ([34e3e63](https://github.com/intent-hq/cloudlands-fe/commit/34e3e63c1d8e4a89be2ce22132cbd00a75411fac))
+* restore workspace:attention-changed handling in daemon events bridge ([#886](https://github.com/intent-hq/cloudlands-fe/issues/886)) ([dd20d66](https://github.com/intent-hq/cloudlands-fe/commit/dd20d668c8cfa0501f4c88bd55c05f12633d5da9))
+* route interrupted-agents resume/abandon through the service ([#900](https://github.com/intent-hq/cloudlands-fe/issues/900)) ([aa66a33](https://github.com/intent-hq/cloudlands-fe/commit/aa66a33893b3c996f3cc071a715f0bb73d6ec015))
+* send quick-action type and let the daemon resolve the model ([#901](https://github.com/intent-hq/cloudlands-fe/issues/901)) ([50f1333](https://github.com/intent-hq/cloudlands-fe/commit/50f13330b50105250f95412d04c6b63561e1f3ba))
+* shared cached listWorkspaceIds + seed-race fix in live-support ([#894](https://github.com/intent-hq/cloudlands-fe/issues/894)) ([c3fb53f](https://github.com/intent-hq/cloudlands-fe/commit/c3fb53f6eac5a9ab4c5eb2ad538f15349fb21e6e))
+* single-flight + TTL cache for workspace.list, safer agent.listActive fallback ([#890](https://github.com/intent-hq/cloudlands-fe/issues/890)) ([f2e84fc](https://github.com/intent-hq/cloudlands-fe/commit/f2e84fc7d00b87bc202aa2b33598a9b8e934001f))
+* suppress New messages divider for a watched streaming tail ([#883](https://github.com/intent-hq/cloudlands-fe/issues/883)) ([ee47d01](https://github.com/intent-hq/cloudlands-fe/commit/ee47d0151d0d6566ccf9f42e396dcf3c0c8cc60d))
+
 ## [2.20.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.19.0...v2.20.0) (2026-08-08)
 
 
