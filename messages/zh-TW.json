@@ -4728,6 +4728,7 @@
   "lib_commandPalette_terminal_pill": "終端",
   "lib_commandPalette_note_pill": "筆記",
   "lib_commandPalette_file_pill": "檔案",
+  "lib_commandPalette_archivedWorkspace_pill": "已封存工作區",
   "events_activity_file_fallback": "檔案",
   "events_activity_note_fallback": "筆記",
   "events_activity_agent_fallback": "智慧體",

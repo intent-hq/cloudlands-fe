@@ -3,7 +3,7 @@
  * Extracted from the component so they are testable outside Svelte.
  */
 
-import type { Note } from "$shared/types";
+import { WorkspaceStatus, type Note } from "$shared/types";
 import { formatRelativeTime as formatRelative, formatShortDate } from "$lib/i18n/format";
 import type { PaletteMruEntry, PaletteMruEntryType } from "../palette/palette-types";
 
@@ -124,15 +124,21 @@ export function parseQueryFilter(query: string): {
 
 /**
  * Resolve the secondary title-line segments for a chat-message palette row:
- * the owning workspace's title and its "owner/repo" label. An unknown
- * workspace yields no segments; a repository without an owner yields just the
- * repo name.
+ * the owning workspace's title, its "owner/repo" label, and whether the
+ * workspace is archived. An unknown workspace yields no segments; a
+ * repository without an owner yields just the repo name.
  */
 export function buildMessageTitleSegments(
   workspace:
-    | { id: string; title?: string; repositoryOwner?: string; repositoryName?: string }
+    | {
+        id: string;
+        title?: string;
+        repositoryOwner?: string;
+        repositoryName?: string;
+        status?: WorkspaceStatus;
+      }
     | undefined,
-): { workspaceName?: string; repoLabel?: string } {
+): { workspaceName?: string; repoLabel?: string; isArchivedWorkspace?: boolean } {
   if (!workspace) return {};
   return {
     workspaceName: workspace.title || workspace.id,
@@ -141,6 +147,7 @@ export function buildMessageTitleSegments(
         ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
         : workspace.repositoryName
       : undefined,
+    isArchivedWorkspace: workspace.status === WorkspaceStatus.Archived ? true : undefined,
   };
 }
 
