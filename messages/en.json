@@ -1970,6 +1970,8 @@
   "chat_backgroundHooks_modal_noLogs_description": "No logs yet — this hook has not completed a run.",
   "chat_backgroundHooks_modal_lastError_label": "Last error",
   "chat_hookWakeAttribution_wokeAgent_after": "woke the agent",
+  "chat_hookWakeAttribution_wokeAgentRetired_after": "woke the agent and is now retired",
+  "chat_hookWakeAttribution_wokeAgentStillActive_after": "woke the agent and will continue to run",
   "chat_hookWakeAttribution_fallbackName_label": "Hook",
   "chat_regularAgentWelcome_generalDescription_label": "This agent has full workspace context. Ask me anything about your code or what you'd like to work on.",
   "chat_shared_general_fallback": "General",

@@ -254,19 +254,25 @@ describe('ChatMessage hook wake attribution', () => {
     reason: 'dispatched',
   };
 
-  function hookWakeMessage(opts: { rowMetadata?: boolean; blockMetadata?: boolean }): AgentMessage {
+  function hookWakeMessage(opts: {
+    rowMetadata?: boolean;
+    blockMetadata?: boolean;
+    metadata?: Record<string, unknown>;
+    text?: string;
+  }): AgentMessage {
+    const metadata = opts.metadata ?? hookWakeMetadata;
     return {
       id: 'msg-1',
       role: 'user',
       contentBlocks: [
         {
           type: 'text',
-          text: '[Background hook "ci-watch"] CI is red',
-          ...(opts.blockMetadata ? { messageMetadata: hookWakeMetadata } : {}),
+          text: opts.text ?? '[Background hook "ci-watch"] CI is red',
+          ...(opts.blockMetadata ? { messageMetadata: metadata } : {}),
         },
       ],
       timestamp: new Date('2026-01-01T12:00:00Z'),
-      ...(opts.rowMetadata ? { metadata: hookWakeMetadata } : {}),
+      ...(opts.rowMetadata ? { metadata } : {}),
     };
   }
 
@@ -308,5 +314,91 @@ describe('ChatMessage hook wake attribution', () => {
 
     expect(screen.getByText('CI is red')).toBeTruthy();
     expect(screen.getByTestId('hook-wake-attribution')).toBeTruthy();
+  });
+
+  it('hides the trailing state note (old wording) from the rendered body', () => {
+    render(ChatMessage, {
+      props: {
+        message: hookWakeMessage({
+          rowMetadata: true,
+          text:
+            '[Background hook "ci-watch"] CI is red\n\n' +
+            '[This hook has now fired and is retired — it will not run again. ' +
+            'Schedule a new hook via ws.hook.schedule if you still need to watch this condition.]',
+        }),
+      },
+    });
+
+    expect(screen.getByText('CI is red')).toBeTruthy();
+    expect(screen.queryByText(/\[This hook/)).toBeNull();
+  });
+
+  it('hides the trailing state note (new wording) from the rendered body', () => {
+    render(ChatMessage, {
+      props: {
+        message: hookWakeMessage({
+          rowMetadata: true,
+          text:
+            '[Background hook "ci-watch"] CI is red\n\n' +
+            '[This hook is now retired and will not run again — ' +
+            'reschedule via ws.hook.schedule if still needed.]',
+        }),
+      },
+    });
+
+    expect(screen.getByText('CI is red')).toBeTruthy();
+    expect(screen.queryByText(/\[This hook/)).toBeNull();
+  });
+
+  it('says "and is now retired" when hookStillActive is false', () => {
+    render(ChatMessage, {
+      props: {
+        message: hookWakeMessage({
+          rowMetadata: true,
+          metadata: { ...hookWakeMetadata, hookStillActive: false },
+        }),
+      },
+    });
+
+    expect(screen.getByText('woke the agent and is now retired')).toBeTruthy();
+  });
+
+  it('says "and will continue to run" when hookStillActive is true', () => {
+    render(ChatMessage, {
+      props: {
+        message: hookWakeMessage({
+          rowMetadata: true,
+          metadata: { ...hookWakeMetadata, hookStillActive: true },
+        }),
+      },
+    });
+
+    expect(screen.getByText('woke the agent and will continue to run')).toBeTruthy();
+  });
+
+  it('falls back to the plain "woke the agent" chip when hookStillActive is absent', () => {
+    render(ChatMessage, {
+      props: { message: hookWakeMessage({ rowMetadata: true }) },
+    });
+
+    expect(screen.getByText('woke the agent')).toBeTruthy();
+  });
+
+  it('shows the retired suffix for evicted wakes without needing hookStillActive', () => {
+    render(ChatMessage, {
+      props: {
+        message: hookWakeMessage({
+          rowMetadata: true,
+          metadata: { ...hookWakeMetadata, reason: 'evicted' },
+          text:
+            '[Background hook "ci-watch"] Hook failed\n\n' +
+            '[This hook will not run again. Schedule a new hook via ' +
+            'ws.hook.schedule if the condition is still worth watching.]',
+        }),
+      },
+    });
+
+    expect(screen.getByText('woke the agent and is now retired')).toBeTruthy();
+    expect(screen.queryByText(/\[This hook/)).toBeNull();
   });
 });
