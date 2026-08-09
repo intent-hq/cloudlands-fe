@@ -305,7 +305,11 @@ jobs:
     # (nodejs/node-gyp#3282), breaking native module builds (node-pty).
     # Un-pin once the Node/npm/node-gyp stack in use supports VS 18.
     runs-on: windows-2022
-    timeout-minutes: 60
+    # 120 min: the hosted Windows runner is far slower than the old
+    # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
+    # and the job was cancelled at the previous 60-min cap before
+    # electron-builder packaging even started (run 31302887167).
+    timeout-minutes: 120
 
     steps:
       - name: Checkout release tag
