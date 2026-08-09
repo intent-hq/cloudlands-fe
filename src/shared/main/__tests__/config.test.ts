@@ -62,10 +62,15 @@ describe('regression guard: no legacy workspace-root probing', () => {
   it('config.ts performs no filesystem access', () => {
     const source = readFileSync(CONFIG_SOURCE_PATH, 'utf-8');
 
-    expect(source).not.toMatch(/from\s+['"](node:)?fs['"]/);
-    expect(source).not.toMatch(/require\(\s*['"](node:)?fs['"]\s*\)/);
+    // No fs imports in any form: 'fs', 'node:fs', 'fs/promises', 'node:fs/promises'.
+    expect(source).not.toMatch(/from\s+['"](node:)?fs(\/promises)?['"]/);
+    expect(source).not.toMatch(/require\(\s*['"](node:)?fs(\/promises)?['"]\s*\)/);
+    expect(source).not.toMatch(/import\(\s*['"](node:)?fs(\/promises)?['"]\s*\)/);
+    // No filesystem probe calls, sync or async.
     expect(source).not.toMatch(/existsSync/);
     expect(source).not.toMatch(/readdir/);
+    expect(source).not.toMatch(/\baccess(Sync)?\s*\(/);
+    expect(source).not.toMatch(/\b(l)?stat(Sync)?\s*\(/);
   });
 
   it('config.ts derives no paths from assumed roots', () => {
@@ -75,6 +80,11 @@ describe('regression guard: no legacy workspace-root probing', () => {
     expect(source).not.toMatch(/LEGACY_WORKSPACE_ROOT/);
     expect(source).not.toMatch(/['"]\.workspaces['"]/);
     expect(source).not.toMatch(/getSafeHomeDir/);
+    // No home-directory-based root derivation (os.homedir + path.join guessing).
+    expect(source).not.toMatch(/homedir/);
+    expect(source).not.toMatch(/from\s+['"](node:)?os['"]/);
+    expect(source).not.toMatch(/require\(\s*['"](node:)?os['"]\s*\)/);
+    expect(source).not.toMatch(/process\.env\.HOME/);
   });
 
   it('no source module references the deleted root-probing API or legacy roots', () => {
