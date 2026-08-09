@@ -15,7 +15,9 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { webContents } from 'electron';
 import { Logger } from '../../../shared/logger';
-import { WorkspaceConfig } from '../../../shared/main/config';
+import { WorkspaceConfigConstants } from '../../../shared/config-constants';
+import { workspaceStateDir } from '../../../shared/main/workspace-state-paths';
+import { getActiveId } from '../../backend/main/connections-store';
 import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
 import type {
   SnapshotOptions,
@@ -70,6 +72,27 @@ function sanitizePathName(name: string): string {
 function generateTimestamp(): string {
   const now = new Date();
   return now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+}
+
+/**
+ * Output directory for a snapshot/session:
+ * `<userData>/workspace-state/<backendKey>/<workspaceId>/browser-snapshots/<domain>/<name>`.
+ *
+ * FE-local debug state keyed by the active backend + workspace id
+ * (intent-hq/monorepo#1760) — snapshots never land in the workspace checkout.
+ */
+async function snapshotSessionDir(
+  workspaceId: string,
+  domain: string,
+  name: string,
+): Promise<string> {
+  const backendId = await getActiveId();
+  return path.join(
+    workspaceStateDir(workspaceId, backendId),
+    WorkspaceConfigConstants.BROWSER_SNAPSHOTS_FOLDER,
+    domain,
+    name,
+  );
 }
 
 /**
@@ -231,7 +254,7 @@ class BrowserCaptureService {
     const domain = extractDomain(url);
     // Sanitize user-provided name to prevent path traversal
     const snapshotName = sanitizePathName(name || generateTimestamp());
-    const outputDir = WorkspaceConfig.paths.browserSnapshotSession(workspaceId, domain, snapshotName);
+    const outputDir = await snapshotSessionDir(workspaceId, domain, snapshotName);
 
     // Create output directory
     await fs.mkdir(outputDir, { recursive: true });
@@ -339,7 +362,7 @@ class BrowserCaptureService {
     // Sanitize user-provided name to prevent path traversal
     const sessionName = sanitizePathName(name || generateTimestamp());
     const sessionId = `session-${randomUUID()}`;
-    const outputDir = WorkspaceConfig.paths.browserSnapshotSession(workspaceId, domain, sessionName);
+    const outputDir = await snapshotSessionDir(workspaceId, domain, sessionName);
 
     // Create output directory
     await fs.mkdir(outputDir, { recursive: true });
