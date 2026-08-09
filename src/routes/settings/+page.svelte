@@ -335,7 +335,7 @@
 <div class="h-full grid grid-rows-[min-content_1fr_min-content]">
   <!-- Sticky header with back button -->
   <div class="bg-sidebar px-6 pt-8 pb-6">
-    <div class="max-w-5xl mx-auto px-6">
+    <div class="max-w-6xl mx-auto px-6">
       <!-- Back button with keyboard shortcut -->
       <button
         onclick={navigateBackFromSettings}
@@ -358,7 +358,7 @@
 
   <div class="overflow-auto h-full">
     <div
-      class="min-h-[calc(100%-2rem)] grid grid-cols-[11rem_minmax(0,1fr)] gap-8 max-w-5xl mx-auto mt-6 px-6 pb-8"
+      class="min-h-[calc(100%-2rem)] grid grid-cols-[9rem_minmax(0,1fr)] gap-6 lg:grid-cols-[11rem_minmax(0,1fr)] lg:gap-8 max-w-6xl mx-auto mt-6 px-6 pb-8"
     >
       <SettingsSidebarNav {activeTab} onSelect={setActiveTab} />
       <main class="min-w-0 flex flex-col">
@@ -405,7 +405,7 @@
 
         <!-- Agents Tab -->
         {#if activeTab === 'agents'}
-          <div class="grid grid-cols-[min-content_1fr] gap-6 grow">
+          <div class="grid min-w-0 grow grid-cols-[13rem_minmax(0,1fr)] gap-4 xl:gap-6">
             <AIBehaviorSidebar
               activeView={aiBehaviorView}
               onSelect={(view) => (aiBehaviorView = view)}
