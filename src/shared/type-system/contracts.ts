@@ -313,11 +313,10 @@ export const IpcContracts = {
     request: z.object({
       workspaceId: z.string() as unknown as z.ZodType<WorkspaceId>,
     }),
-    response: z.object({
-      success: z.boolean(),
-      data: z.string().optional(),
-      error: z.string().optional(),
-    }),
+    // The handler returns the daemon-reported checkout path directly, or null
+    // when no local checkout is known (virtual/unknown workspace or remote
+    // backend, monorepo#1759) — not a { success, data } envelope.
+    response: z.string().nullable(),
   },
 
   'workspace:get-recent-repositories': {

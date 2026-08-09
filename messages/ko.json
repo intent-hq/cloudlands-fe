@@ -3718,6 +3718,7 @@
   "terminal_ipc_disposed_error": "터미널이 삭제되었습니다",
   "terminal_ipc_unknown_error": "알 수 없는 오류",
   "terminal_ipc_workspaceNotReady_error": "WORKSPACE_NOT_READY: 작업 공간 디렉터리가 아직 존재하지 않습니다. 작업 공간 초기화가 완료될 때까지 기다리세요.",
+  "terminal_ipc_workspacePathUnknown_error": "이 작업 공간에 대한 로컬 폴더를 알 수 없으므로 여기에서 터미널을 열 수 없습니다. 원격 백엔드 또는 체크아웃이 없는 작업 공간에서 발생할 수 있습니다.",
   "terminal_ipc_commandTitle_label": "명령: {command}",
   "terminal_quakeOverlay_terminalNumber_label": "터미널 {number}",
   "terminal_ipc_workingDirInaccessible_error": "WORKSPACE_NOT_READY: 작업 디렉터리 {workingDir}에 액세스할 수 없습니다",

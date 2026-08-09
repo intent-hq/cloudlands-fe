@@ -3718,6 +3718,7 @@
   "terminal_ipc_disposed_error": "終端已被銷燬",
   "terminal_ipc_unknown_error": "未知錯誤",
   "terminal_ipc_workspaceNotReady_error": "WORKSPACE_NOT_READY: 工作區目錄尚不存在。請等待工作區初始化完成。",
+  "terminal_ipc_workspacePathUnknown_error": "此工作區沒有已知的本地資料夾，因此無法在此處開啟終端機。這可能發生在遠端後端或沒有檢出目錄的工作區中。",
   "terminal_ipc_commandTitle_label": "命令：{command}",
   "terminal_quakeOverlay_terminalNumber_label": "終端 {number}",
   "terminal_ipc_workingDirInaccessible_error": "WORKSPACE_NOT_READY: 無法存取工作目錄 {workingDir}",
