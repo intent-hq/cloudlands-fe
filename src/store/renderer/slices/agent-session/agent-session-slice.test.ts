@@ -353,6 +353,40 @@ describe('agent-session-slice reducer', () => {
       );
     });
 
+    // Wire lastMessageId + derived hasUnread (monorepo#1597): an upsert whose
+    // only change is the newest-message id (new-message push) or the derived
+    // unread flag flipping (agent:updated seen-marker convergence re-derives
+    // hasUnread at ingest) must not be swallowed by the no-op guard.
+    it('applies an upsert when only the wire lastMessageId changes on an otherwise-equivalent session', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { lastMessageId: 'm-1' })),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1', { lastMessageId: 'm-2' })),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].lastMessageId).toBe('m-2');
+    });
+
+    it('applies an upsert when only hasUnread flips on an otherwise-equivalent session (marker convergence)', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { hasUnread: true })),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1', { hasUnread: false })),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].hasUnread).toBe(false);
+    });
+
     it('applies an upsert when only lastAgentResponse changes on an otherwise-equivalent session', () => {
       const state = agentSessionReducer(
         initialState,

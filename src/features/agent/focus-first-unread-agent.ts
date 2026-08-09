@@ -5,24 +5,24 @@
  * `/workspace/{id}`, land on the agent that plausibly holds the unread message
  * rather than whatever tab the workspace last had active.
  *
- * ## Unread is workspace-level, not per-agent
+ * ## Workspace-level trigger, per-agent answer
  *
- * The unread signal the user sees is the BE-owned workspace `attention` flag
+ * The unread signal the user clicks is the BE-owned workspace `attention` flag
  * (`attention === 'unread'`, PROTOCOL §5.1) — the same flag the Unread section
- * itself filters on. There is no per-agent unread flag on the wire:
- * `AgentSession.hasUnread` exists in the FE type but is never populated (it is
- * absent from AgentLite, which carries the per-conversation seen marker
- * `metadata.lastSeenMessageId` instead), and nothing derives it client-side.
+ * itself filters on. Per agent, `AgentSession.hasUnread` is FE-derived at wire
+ * ingest (monorepo#1597, see `deriveAgentHasUnread`) from the AgentLite
+ * freshness fields: the newest transcript message id (`lastMessageId`) versus
+ * the per-conversation seen marker (`metadata.lastSeenMessageId`). Older
+ * daemons omit `lastMessageId`, deriving `hasUnread: false` everywhere.
  *
- * So this helper mirrors what every other FE surface already does — see
+ * So this helper starts from the workspace flag — mirroring
  * `WorkspaceHoverCard.svelte`, `SpacesSwitcherOverlay.svelte`, and
  * `WorkspaceTableView.svelte`, which all treat a workspace's member agents as
  * unread when the workspace flag is raised — and then picks the most plausible
  * member by the tiered heuristic in
- * {@link findFirstUnreadForegroundAgentId}: the exact `hasUnread` marker first
- * (inert today, so the fix tracked in intent-hq/monorepo#1597 lands here for
- * free), then "the agent spoke last", then the workspace's first foreground
- * agent. It is a heuristic, not an exact answer.
+ * {@link findFirstUnreadForegroundAgentId}: the exact `hasUnread` marker
+ * first, then "the agent spoke last" (the older-daemon fallback), then the
+ * workspace's first foreground agent.
  *
  * The caller must pass the workspace's `attention === 'unread'` state as
  * `wasUnread`, captured **before** navigation: viewing a workspace fires
@@ -70,9 +70,10 @@ function subscribeToStore(listener: () => void): () => void {
  * Three tiers, each scanned in `foregroundAgentIds` order so the daemon's agent
  * order breaks ties (see the module doc for why a heuristic is needed at all):
  *
- * 1. `session.hasUnread === true` — the exact per-agent answer. Never matches
- *    today (nothing populates the field), kept so the projection tracked in
- *    intent-hq/monorepo#1597 takes effect here without a code change.
+ * 1. `session.hasUnread === true` — the exact per-agent answer, derived at
+ *    wire ingest from `lastMessageId` vs `metadata.lastSeenMessageId`
+ *    (intent-hq/monorepo#1597). Never matches on daemons that predate
+ *    `lastMessageId`.
  * 2. `session.lastMessageRole === 'assistant'` (`AgentLite`, PROTOCOL §5.5) —
  *    the agent spoke last, so there is plausibly something new to read.
  * 3. The first foreground agent — the workspace *is* unread, so landing on its
