@@ -71,7 +71,6 @@ export class WorkspaceService {
   private summaryInvalidationTimer: NodeJS.Timeout | null = null;
   private readonly SUMMARY_INVALIDATION_DEBOUNCE_MS = 100;
   private disposed = false;
-  private readonly LIST_ENRICHMENT_CONCURRENCY = 3;
   private readonly BACKGROUND_ENRICHMENT_CONCURRENCY = 3;
   // Domain event listeners (workspace:deleted, note:created, note:deleted, git:status-changed)
   // are now handled by sagas in domain-event-listener-sagas.ts.
@@ -338,7 +337,7 @@ export class WorkspaceService {
     limit?: number;
     offset?: number;
     includeArchived?: boolean;
-    lite?: boolean; // Defaults to true; pass false to opt into bounded list enrichment
+    lite?: boolean; // Accepted for caller compatibility; list rows are always metadata-only
   }): Promise<
     Result<{ workspaces: WorkspaceMetadata[]; total: number; hasMore: boolean }, string>
   > {
@@ -369,46 +368,14 @@ export class WorkspaceService {
       const limit = options?.limit || filteredWorkspaces.length;
       const paginatedWorkspaces = filteredWorkspaces.slice(offset, offset + limit);
 
-      let sanitizedWorkspaces: WorkspaceMetadata[];
-      // PERF: Default workspace lists to lite mode so startup and validation flows
-      // never trigger unbounded per-workspace enrichment. Callers must opt into
-      // full enrichment explicitly, and even then we cap concurrency.
-      const useLiteMode = options?.lite ?? true;
-      if (useLiteMode) {
-        // PERF: In lite mode, skip heavy buildListWorkspace() computations.
-        // Workspace payloads are metadata-only; diff/git/task summaries are
-        // fetched on demand via dedicated endpoints.
-        logger.debug('Using lite mode for workspace list - skipping heavy computations');
-
-        // Fetch agent IDs with bounded concurrency — it's cheap (directory listings)
-        // but we still don't want 200 concurrent reads.
-        const AGENT_IDS_CONCURRENCY = 10;
-        const agentIdsResults = new Array<string[]>(paginatedWorkspaces.length);
-        let agentIdsNextIndex = 0;
-        await Promise.all(
-          Array.from(
-            { length: Math.min(AGENT_IDS_CONCURRENCY, paginatedWorkspaces.length) },
-            async () => {
-              while (true) {
-                const idx = agentIdsNextIndex++;
-                if (idx >= paginatedWorkspaces.length) return;
-                const paginatedWorkspace = paginatedWorkspaces[idx];
-                if (!paginatedWorkspace) continue;
-                agentIdsResults[idx] = await this.getWorkspaceAgentIds(paginatedWorkspace.id);
-              }
-            },
-          ),
-        );
-
-        sanitizedWorkspaces = paginatedWorkspaces.map((workspace, i) =>
-          this.toWorkspaceMetadata(workspace, agentIdsResults[i]),
-        );
-      } else {
-        sanitizedWorkspaces = await this.buildListWorkspacesWithConcurrency(
-          paginatedWorkspaces,
-          this.LIST_ENRICHMENT_CONCURRENCY,
-        );
-      }
+      // Workspace payloads are metadata-only; diff/git/task summaries are
+      // fetched on demand via dedicated endpoints, and agent IDs come straight
+      // off the daemon `workspace.list` rows' `agentSummary.agentIds`
+      // (PROTOCOL.md §5.1 card aggregates) — no per-workspace `agent.list`
+      // fan-out (monorepo#1768).
+      const sanitizedWorkspaces = paginatedWorkspaces.map((workspace) =>
+        this.toWorkspaceMetadata(workspace),
+      );
 
       // Hydrate repo/PR data incrementally in the background.
       // This keeps the bulk list response cheap while still filling in richer data.
@@ -447,81 +414,26 @@ export class WorkspaceService {
     return { ok: false, error: (result as any).error };
   }
 
-  private async buildListWorkspace(workspace: Workspace): Promise<WorkspaceMetadata> {
-    // Workspace payloads are metadata-only: agent summary carries IDs only, and
-    // diff/git/task summaries are served by dedicated on-demand endpoints.
-    const agentIds = await this.getWorkspaceAgentIds(workspace.id);
-    return this.toWorkspaceMetadata(workspace, agentIds);
-  }
-
-  private async buildListWorkspacesWithConcurrency(
-    workspaces: Workspace[],
-    concurrency: number,
-  ): Promise<WorkspaceMetadata[]> {
-    if (workspaces.length === 0) {
-      return [];
-    }
-
-    const results = new Array<WorkspaceMetadata>(workspaces.length);
-    let nextIndex = 0;
-    const workerCount = Math.max(1, Math.min(concurrency, workspaces.length));
-
-    await Promise.all(
-      Array.from({ length: workerCount }, async () => {
-        while (true) {
-          const currentIndex = nextIndex++;
-          if (currentIndex >= workspaces.length) {
-            return;
-          }
-
-          const workspace = workspaces[currentIndex];
-          if (!workspace) continue;
-          results[currentIndex] = await this.buildListWorkspace(workspace);
-        }
-      }),
-    );
-
-    return results;
-  }
-
-  /**
-   * Get the agent IDs for a workspace. Workspace payloads carry agent IDs only;
-   * detailed agent state is served by agent endpoints.
-   */
-  private async getWorkspaceAgentIds(workspaceId: WorkspaceId): Promise<string[]> {
-    try {
-      // Route through the daemon (PROTOCOL.md §5.5 `agent.list`) and project
-      // to the ids the workspace payload carries.
-      const result = (await getBackendClient().request('agent.list', {
-        workspaceId,
-      })) as { agents?: Array<{ id: string }> };
-      return (result?.agents ?? []).map((a) => a.id);
-    } catch (error) {
-      logger.warn('Failed to list agent IDs for workspace', {
-        workspaceId,
-        error: (error as Error).message,
-      });
-      return [];
-    }
-  }
-
   /**
    * Convert a workspace to its metadata-only payload shape: high-frequency
-   * summary fields are stripped and agent summary carries IDs only.
+   * summary fields are stripped and agent summary carries IDs only, projected
+   * from the daemon row's `agentSummary.agentIds` (PROTOCOL.md §5.1 card
+   * aggregates) and present only when non-empty.
    */
-  private toWorkspaceMetadata(workspace: Workspace, agentIds?: string[]): WorkspaceMetadata {
+  private toWorkspaceMetadata(workspace: Workspace): WorkspaceMetadata {
     const {
       diffs: _diffs,
       diffSummary: _diffSummary,
-      agentSummary: _agentSummary,
+      agentSummary,
       taskStats: _taskStats,
       gitSummary: _gitSummary,
       ...metadata
     } = workspace;
 
+    const agentIds = agentSummary?.agentIds ?? [];
     return {
       ...metadata,
-      ...(agentIds && agentIds.length > 0 ? { agentSummary: { agentIds } } : {}),
+      ...(agentIds.length > 0 ? { agentSummary: { agentIds } } : {}),
     };
   }
 
