@@ -1,11 +1,36 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getAppUiTargets,
   getHighlightIdFromRoute,
   isResolvableNavTarget,
   resolveHashToTarget,
 } from '../app-ui-targets';
 
 describe('app UI targets registry', () => {
+  it('keeps every settings route aligned with its tab and hash target', () => {
+    const settingsTargets = getAppUiTargets().filter(
+      (target) => target.category === 'settings' && target.route,
+    );
+
+    for (const target of settingsTargets) {
+      const url = new URL(target.route!, 'app://intent');
+      expect(url.searchParams.get('tab'), target.id).toBe(target.tab);
+      expect(resolveHashToTarget(url.hash), target.id).toBeDefined();
+      expect(isResolvableNavTarget(target.route), target.id).toBe(true);
+    }
+  });
+
+  it('preserves agents sub-view query parameters', () => {
+    const targets = getAppUiTargets();
+
+    expect(targets.find((target) => target.id === 'create-specialist')?.route).toBe(
+      '/settings?tab=agents&view=create-specialist#create-specialist',
+    );
+    expect(targets.find((target) => target.id === 'specialist-entry')?.route).toBe(
+      '/settings?tab=agents&specialist={specialistId}#specialist-{specialistId}',
+    );
+  });
+
   it('resolves the default-model hash to the canonical background agent target', () => {
     const target = resolveHashToTarget('default-model');
 
