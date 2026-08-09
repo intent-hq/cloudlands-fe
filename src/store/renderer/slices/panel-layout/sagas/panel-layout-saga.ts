@@ -18,10 +18,15 @@ import {
   type PanelLayoutHistoryData,
 } from '$features/layout/panel-layout-history.client';
 import {
+  namespaceBackendKey,
+  selectActiveBackendId,
+} from '../../../utils/backend-storage-namespace';
+import {
   getLocalStorageJSON,
   removeLocalStorageItem,
   setLocalStorageJSON,
 } from '../../../utils/safe-local-storage-saga';
+import { connectionsListReceived } from '../../connections/connections-slice';
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -145,8 +150,11 @@ const pendingHistoryWorkspaceIds = new Set<string>();
 const historyLoadTasks = new Map<string, Task>();
 const historyLoadGenerations = new Map<string, number>();
 
-function storageKey(wsId: string): string {
-  return `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${wsId}`;
+// Layout keys hold backend-specific workspace IDs, so two backends surfacing
+// the same workspace id would clobber each other without a per-backend
+// namespace (local keeps the legacy un-prefixed key).
+function storageKey(wsId: string, backendId: string): string {
+  return namespaceBackendKey(`${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${wsId}`, backendId);
 }
 
 function isValidWorkspaceId(wsId: string | null | undefined): wsId is string {
@@ -219,7 +227,8 @@ function hasAnyTab(layout: WorkspacePanelLayout): boolean {
 export function* loadLayoutFromStorage(
   wsId: string,
 ): SagaGenerator<WorkspacePanelLayout | 'invalid' | null> {
-  const stored = yield* call(getLocalStorageJSON<unknown>, storageKey(wsId));
+  const backendId = yield* selectActiveBackendId();
+  const stored = yield* call(getLocalStorageJSON<unknown>, storageKey(wsId, backendId));
   if (!stored) return null;
   return isStoredLayoutValid(stored) ? stored : 'invalid';
 }
@@ -257,7 +266,7 @@ export function* persistPanelLayout(action: { payload?: unknown }): SagaGenerato
       const stored = yield* call(loadLayoutFromStorage, wsId);
       if (stored !== null && stored !== 'invalid' && hasAnyTab(stored)) return;
     }
-    yield* call(setLocalStorageJSON, storageKey(wsId), layout);
+    yield* call(setLocalStorageJSON, storageKey(wsId, yield* selectActiveBackendId()), layout);
   } catch {
     // Local layout persistence is best-effort.
   }
@@ -274,7 +283,9 @@ export function* persistHistoryToDisk(wsId: string): SagaGenerator<void> {
       historyIndex: workspace.historyIndex,
       lastUpdated: new Date().toISOString(),
     };
-    yield* call(savePanelLayoutHistory, wsId, data);
+    // Namespace the on-disk history by active backend (read at save time) so
+    // two backends sharing a workspace id keep separate undo/redo snapshots.
+    yield* call(savePanelLayoutHistory, wsId, data, yield* selectActiveBackendId());
   } catch {
     // History is non-critical and can be rebuilt.
   }
@@ -308,7 +319,7 @@ function* watchHistoryPersistence(): SagaGenerator<void> {
 
 function* loadHistoryForWorkspace(wsId: string, generation: number): SagaGenerator<void> {
   try {
-    const data = yield* call(loadPanelLayoutHistory, wsId);
+    const data = yield* call(loadPanelLayoutHistory, wsId, yield* selectActiveBackendId());
     if (
       historyLoadGenerations.get(wsId) === generation &&
       data &&
@@ -376,13 +387,52 @@ function* watchWorkspaceLifecycle(): SagaGenerator<void> {
 function* clearPersistedLayout(action: ReturnType<typeof clearPanelLayout>): SagaGenerator<void> {
   const [wsId] = action.payload;
   if (!wsId) return;
-  yield* call(removeLocalStorageItem, storageKey(wsId));
+  yield* call(removeLocalStorageItem, storageKey(wsId, yield* selectActiveBackendId()));
 }
 
 function* retroactiveRestore(): SagaGenerator<void> {
   const activeWsId = yield* selectActiveWorkspaceId.effect();
   if (isValidWorkspaceId(activeWsId)) {
     yield* call(handleWorkspaceMountedRestore, workspaceMounted(activeWsId));
+  }
+}
+
+/**
+ * Re-restore the active workspace after a backend switch. Unlike a fresh mount,
+ * the store still holds the outgoing backend's tabs and history, so a backend
+ * with nothing saved must be reset rather than left showing (and later
+ * persisting) the previous backend's layout.
+ */
+function* restoreAfterBackendSwitch(): SagaGenerator<void> {
+  const wsId = yield* selectActiveWorkspaceId.effect();
+  if (!isValidWorkspaceId(wsId)) return;
+  restoredWorkspaceIds.add(wsId);
+  yield* put(setRestoreStatus(wsId, 'pending'));
+  const stored = yield* call(loadLayoutFromStorage, wsId);
+  if (stored === null || stored === 'invalid') {
+    yield* put(resetLayout(wsId));
+    yield* put(loadLayoutHistory(wsId, [], 0));
+    yield* put(setRestoreStatus(wsId, stored === null ? 'empty' : 'invalid'));
+  } else {
+    yield* put(initializeLayout(wsId, stored));
+    yield* put(setRestoreStatus(wsId, 'restored'));
+  }
+}
+
+/**
+ * Backend switched (activeId flips via the boot connections:list refresh after
+ * the window reloads): re-restore the active workspace's layout from the
+ * incoming backend's namespace.
+ */
+function* watchBackendSwitch(): SagaGenerator<void> {
+  let lastBackendId = yield* selectActiveBackendId();
+  while (true) {
+    yield* take(connectionsListReceived);
+    const backendId = yield* selectActiveBackendId();
+    if (backendId === lastBackendId) continue;
+    lastBackendId = backendId;
+    restoredWorkspaceIds.clear();
+    yield* call(restoreAfterBackendSwitch);
   }
 }
 
@@ -397,6 +447,7 @@ export function* panelLayoutSaga(): SagaGenerator<void> {
     yield* takeEvery(clearPanelLayout, clearPersistedLayout);
     yield* fork(watchHistoryPersistence);
     yield* fork(watchHistoryLoads);
+    yield* fork(watchBackendSwitch);
     yield* call(retroactiveRestore);
     yield* call(watchWorkspaceLifecycle);
   } finally {
