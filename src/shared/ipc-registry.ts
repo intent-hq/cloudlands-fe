@@ -606,14 +606,6 @@ export const IPC_CHANNELS = {
     GET_UNREAD_NOTE_IDS: 'user-activity:get-unread-note-ids',
   },
 
-  // Diffs
-  DIFFS: {
-    LIST: 'diffs:list',
-    CREATE: 'diffs:create',
-    UPDATE: 'diffs:update',
-    GET: 'diffs:get',
-  },
-
   // Line Attribution
   LINE_ATTRIBUTION: {
     UPDATED: 'line-attribution:updated',

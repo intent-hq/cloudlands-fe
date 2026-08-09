@@ -261,7 +261,6 @@ import { setupUnslothIPC } from '../features/unsloth/main/unsloth.ipc';
 import { setupFeatureCodesIPC } from '../features/feature-codes/main/feature-codes.ipc';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
-import { setupDiffsIPC } from '../features/diffs/main/diffs.ipc';
 
 import { setupEventsIPC } from '../features/events/main/events.ipc';
 import { registerExternalEditorsHandlers } from '../features/external-editors/main/external-editors.ipc';
@@ -1450,7 +1449,6 @@ app.whenReady().then(async () => {
     registerAgentContextHandlers();
 
     // setupTerminalIPC(); // Already called in critical IPC setup
-    setupDiffsIPC();
     setupLogIPC();
     // setupAuggieIPC(); // Already called in critical IPC setup
     // setupEventsIPC(); // Already called in critical IPC setup

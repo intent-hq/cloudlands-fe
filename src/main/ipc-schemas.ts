@@ -929,24 +929,6 @@ export const TerminalCreateWithCommandSchema = z.object({
 
 // Legacy Terminal Schemas
 // ============================================================================
-// Diffs Schemas
-// ============================================================================
-
-export const DiffsListSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-});
-
-export const DiffsCreateSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  diff: z.any(), // The diff object structure varies
-});
-
-export const DiffsUpdateSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  diff: z.any(), // The diff object structure varies
-});
-
-// ============================================================================
 // Agent Context Schemas
 // ============================================================================
 
