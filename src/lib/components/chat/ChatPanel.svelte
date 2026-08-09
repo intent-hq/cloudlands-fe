@@ -583,12 +583,13 @@
     }),
   );
 
-  // Dismiss = persistent, unlike Ignore: the mutation middleware stamps
-  // `dismissedQuestionsMessageId` into session metadata optimistically (the
-  // wizard-gate reads it, so the wizard hides immediately) and forwards
-  // `agent.dismissQuestions` — the daemon persists the marker (survives
-  // reload) and releases the question hold. On failure the middleware rolls
-  // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
+  // Dismiss = persistent, unlike Ignore: the dismiss saga forwards
+  // `agent.dismissQuestions` — the daemon persists
+  // `dismissedQuestionsMessageId` in session metadata (survives reload),
+  // releases the question hold, and pushes the marker back via
+  // `agent:updated` (the wizard-gate reads it, so the wizard hides). On
+  // failure no marker lands, so the wizard stays pending and the saga
+  // surfaces the error toast.
   function handleQuestionWizardDismiss() {
     if (!workspace || !pendingQuestions) return;
     appStore.dispatch(
