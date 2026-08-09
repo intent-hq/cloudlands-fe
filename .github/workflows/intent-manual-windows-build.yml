@@ -61,6 +61,13 @@ jobs:
 
       # Stages the pinned intentd release (intentd.version) at resources/sidecar;
       # fails fast when the pinned release or its Windows asset doesn't exist.
+      # PATH prefix: the hosted runner's PATH resolves GNU tar (Git's usr/bin),
+      # which can't read the .zip release asset ("This does not look like a
+      # tar archive", run 31310028897; the old self-hosted runner resolved
+      # bsdtar and didn't need this). Prefer the System32 bsdtar, which
+      # handles .zip natively — same workaround as release-beta.yml
+      # build-windows (intent-hq/monorepo#1282). Scoped to this step so bash
+      # keeps resolving to Git Bash (see PATH workaround above).
       - name: Fetch pinned intentd sidecar
         shell: bash
         env:
@@ -70,7 +77,7 @@ jobs:
             echo "::error::INTENTD_READ_PAT secret is required to fetch the pinned intentd release"
             exit 1
           fi
-          node scripts/fetch-sidecar.cjs
+          PATH="/c/Windows/System32:$PATH" node scripts/fetch-sidecar.cjs
 
       # ── DigiCert signing setup (official action) ──────────────────────
       - name: Check integrated signing configuration
