@@ -162,8 +162,6 @@ export const IPC_CHANNELS = {
   },
 
   // Events System
-  // NOTE: Advanced queries (recent files, agent activity, workspace summary) are handled
-  // via AgentEventTools on the main process side, not via IPC.
   EVENTS: {
     QUERY: 'events:query',
     SUBSCRIBE: 'events:subscribe',
