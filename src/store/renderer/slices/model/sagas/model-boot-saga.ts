@@ -49,7 +49,7 @@ export function* loadModelsOnBootWorker() {
   }
 }
 
-/** Unregistered until the S20 middleware cutover. */
+/** One-shot boot-time load of the active provider's model catalog. */
 export function* modelBootSaga() {
   yield* call(loadModelsOnBootWorker);
 }
