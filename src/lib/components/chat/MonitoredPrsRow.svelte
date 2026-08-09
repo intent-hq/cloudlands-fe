@@ -14,7 +14,7 @@
    * Hidden entirely when the agent has no active monitors.
    *
    * All wire traffic lives in the `prMonitor` slice + its companion read
-   * middleware (`pr-monitor-read-service`): this component only dispatches
+   * saga (`pr-monitor-saga`): this component only dispatches
    * the subscribe/unsubscribe + flush/cancel triggers and renders from the
    * selector.
    */
@@ -26,7 +26,7 @@
     faPaperPlane,
     faXmark,
   } from '@fortawesome/free-solid-svg-icons';
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -187,7 +187,7 @@
     role="group"
     aria-label={m.chat_monitoredPrs_row_ariaLabel()}
     data-testid="monitored-prs-row"
-    transition:slide={{ axis: 'y', duration: 200 }}
+    transition:safeSlide={{ axis: 'y', duration: 200 }}
   >
     <Fa icon={faCodePullRequest} class="w-2.5 h-2.5 text-ghost shrink-0" />
     <span class="text-xs leading-tight text-ghost shrink-0"

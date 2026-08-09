@@ -54,7 +54,10 @@ function dispatchCallbacks(
 function ensureStoreSubscription() {
   if (storeUnsubscribe) return;
   let didEmitInitialValue = false;
-  storeUnsubscribe = appStore.getReadableState().subscribe(() => {
+  // T3b: Themis removed getReadableState(); a whole-state selector readable
+  // preserves its synchronous initial emission and teardown semantics here.
+  const stateReadable = appStore.createSelector((state) => state)();
+  storeUnsubscribe = stateReadable.subscribe(() => {
     if (!didEmitInitialValue) {
       didEmitInitialValue = true;
       return;

@@ -96,34 +96,34 @@ describe('AgentsList — initial fetch + render against scripted daemon (WSS sea
   it('drives LiveAgentsClient over the scripted seam and renders both agents', async () => {
     const WORKSPACE_ID = 'ws-mock-1';
 
+    const agentRows = [
+      {
+        id: 'agent-1',
+        workspaceId: WORKSPACE_ID,
+        name: 'First Agent',
+        status: 'active',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'agent-2',
+        workspaceId: WORKSPACE_ID,
+        name: 'Second Agent',
+        status: 'idle',
+        createdAt: '2026-01-01T00:00:01.000Z',
+        updatedAt: '2026-01-01T00:00:01.000Z',
+      },
+    ];
     backend.onRequest('workspace.list', () => ({
       workspaces: [{ id: WORKSPACE_ID, name: 'Mock Workspace' }],
     }));
-    backend.onRequest('agent.list', () => ({
-      agents: [
-        {
-          id: 'agent-1',
-          workspaceId: WORKSPACE_ID,
-          name: 'First Agent',
-          status: 'active',
-          createdAt: '2026-01-01T00:00:00.000Z',
-          updatedAt: '2026-01-01T00:00:00.000Z',
-        },
-        {
-          id: 'agent-2',
-          workspaceId: WORKSPACE_ID,
-          name: 'Second Agent',
-          status: 'idle',
-          createdAt: '2026-01-01T00:00:01.000Z',
-          updatedAt: '2026-01-01T00:00:01.000Z',
-        },
-      ],
-    }));
+    backend.onRequest('agent.subscribe', () => ({ subscriptionId: 'chan-1' }));
+    backend.onRequest('agent.unsubscribe', () => ({ success: true }));
 
     // Drive the initial snapshot through the exact seam the real renderer
-    // uses: `LiveAgentsClient.subscribe()` → `listWorkspaceIds()` +
-    // `agent.list({workspaceId})` (see createDeltaSubscription's initial
-    // refetchEmit).
+    // uses: `LiveAgentsClient.subscribe()` registers the typed per-workspace
+    // `agent.subscribe` channel (§6.9, intent-hq/monorepo#1697 — the sole
+    // data path) and reconciles its seq-0 snapshot push.
     const client = new LiveAgentsClient();
     const initialSnapshot = new Promise<AgentSession[]>((resolve) => {
       let resolved = false;
@@ -133,6 +133,14 @@ describe('AgentsList — initial fetch + render against scripted daemon (WSS sea
           resolve(agents);
         }
       });
+    });
+
+    await flush();
+    backend.pushSubscriptionPush({
+      subscriptionId: 'chan-1',
+      kind: 'snapshot',
+      seq: 0,
+      snapshot: agentRows,
     });
 
     const agents = await initialSnapshot;
@@ -152,13 +160,12 @@ describe('AgentsList — initial fetch + render against scripted daemon (WSS sea
     expect(container.textContent).toContain('Second Agent');
     expect(container.querySelectorAll('button').length).toBeGreaterThanOrEqual(2);
 
-    // Wire-shape assertions per PROTOCOL §5: subscribe issues exactly one
-    // `workspace.list` and one `agent.list({workspaceId})` for the initial
-    // snapshot. The daemon's `events.subscribe` fast-path is also exercised
-    // by createDeltaSubscription but is unrelated to the render assertion.
-    const agentListCalls = backend.requests.filter((r) => r.method === 'agent.list');
-    expect(agentListCalls).toHaveLength(1);
-    expect(agentListCalls[0]?.params).toEqual({ workspaceId: WORKSPACE_ID });
+    // Wire-shape assertions per PROTOCOL §6.9: subscribe issues exactly one
+    // `workspace.list` and one `agent.subscribe({workspaceId})` for the
+    // initial snapshot — the sole data path (intent-hq/monorepo#1697).
+    const agentSubscribeCalls = backend.requests.filter((r) => r.method === 'agent.subscribe');
+    expect(agentSubscribeCalls).toHaveLength(1);
+    expect(agentSubscribeCalls[0]?.params).toEqual({ workspaceId: WORKSPACE_ID });
 
     const workspaceListCalls = backend.requests.filter((r) => r.method === 'workspace.list');
     expect(workspaceListCalls).toHaveLength(1);

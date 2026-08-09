@@ -3,15 +3,15 @@
  *
  * Actions and reducer for tracking daemon-host tool requirements (git +
  * node, plus the informational gh probe). Mirrors the agent-availability
- * idiom: trigger actions are consumed by the host-requirements check service
- * (middleware), which probes via the legacy IPC bridges (system:check-git /
- * system:check-node / system:check-gh → daemon host.*) and dispatches the
- * per-tool resolved actions plus a completion action so the state ALWAYS
- * lands terminal — never stuck on "checking".
+ * idiom: trigger actions are consumed by the host-requirements saga, which
+ * probes via the legacy IPC bridges (system:check-git / system:check-node /
+ * system:check-gh → daemon host.*) and dispatches the per-tool resolved
+ * actions plus a completion action so the state ALWAYS lands terminal — never
+ * stuck on "checking".
  */
 
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { HostRequirementsState } from './host-requirements-types';
 
 // ---------------------------------------------------------------------------
@@ -69,25 +69,31 @@ export const checkHostRequirementsComplete = createAction(
 // Reducer
 // ---------------------------------------------------------------------------
 
-export const hostRequirementsReducer = createReducer<HostRequirementsState>(initialState)
-  .with(checkHostRequirementsStarted, (state) => ({
+export const hostRequirementsReducer = createReducer<HostRequirementsState>(initialState);
+
+hostRequirementsReducer.with(checkHostRequirementsStarted, (state) => ({
+  ...state,
+  checking: true,
+}));
+hostRequirementsReducer.with(
+  gitRequirementResolved,
+  (state, { payload: [available, version] }) => ({
     ...state,
-    checking: true,
-  }))
-  .with(gitRequirementResolved, (state, { payload: [available, version] }) => ({
-    ...state,
-    git: available ? { checked: true, available: true, version } : { checked: true, available: false },
-  }))
-  .with(nodeRequirementResolved, (state, { payload: [ok, version] }) => ({
-    ...state,
-    node: { checked: true, ok, version },
-  }))
-  .with(ghRequirementResolved, (state, { payload: [available, version] }) => ({
-    ...state,
-    gh: available ? { checked: true, available: true, version } : { checked: true, available: false },
-  }))
-  .with(checkHostRequirementsComplete, (state) => ({
-    ...state,
-    checking: false,
-    hasCheckedOnce: true,
-  }));
+    git: available
+      ? { checked: true, available: true, version }
+      : { checked: true, available: false },
+  }),
+);
+hostRequirementsReducer.with(nodeRequirementResolved, (state, { payload: [ok, version] }) => ({
+  ...state,
+  node: { checked: true, ok, version },
+}));
+hostRequirementsReducer.with(ghRequirementResolved, (state, { payload: [available, version] }) => ({
+  ...state,
+  gh: available ? { checked: true, available: true, version } : { checked: true, available: false },
+}));
+hostRequirementsReducer.with(checkHostRequirementsComplete, (state) => ({
+  ...state,
+  checking: false,
+  hasCheckedOnce: true,
+}));

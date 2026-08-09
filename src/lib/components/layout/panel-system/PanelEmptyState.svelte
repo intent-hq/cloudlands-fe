@@ -58,6 +58,8 @@
   const layoutManager = $derived(getLayoutManager?.());
 
   // Wrap workspaceId in a writable store so selectors react to prop changes
+  // (initial value only; the $effect below keeps it in sync)
+  // svelte-ignore state_referenced_locally
   const workspaceIdStore = writable(_workspaceId);
   $effect(() => {
     workspaceIdStore.set(_workspaceId);

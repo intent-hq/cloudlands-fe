@@ -3,7 +3,7 @@
  */
 
 import { store } from "../../store";
-import { getItems } from "$lib/store-shim/utils/collections/collection-utils";
+import { getItems } from "@augmentcode/themis/utils/collections/collection-utils";
 import type { PrMonitorRow } from "$features/pr-monitor/pr-monitor-service";
 
 /** All live-subscribed monitors for a workspace (active + completed), in seed order. */

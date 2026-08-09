@@ -124,6 +124,7 @@
   // menu zoom sagas. The selector form (called at component init) returns a
   // Svelte readable that updates only when the selected slice value changes,
   // so the $effect below is not woken by unrelated dispatches.
+  // svelte-ignore state_referenced_locally - selector readables must be created at component init; tabId/workspaceId are stable per panel
   const pendingZoom$ = tabId ? selectPendingBrowserZoom(_workspaceId, tabId) : null;
 
   // Log the URL prop on mount and changes
@@ -218,6 +219,7 @@
   // This is intentionally non-reactive: navigation event handlers update it as
   // bookkeeping before notifying the parent, and those writes must not wake the
   // prop-change effect or they can cause a redundant webview load/reload.
+  // svelte-ignore state_referenced_locally - intentional initial capture (see comment above)
   const navigationSync = createEmbeddedBrowserNavigationSyncState(url);
 
   // Focus URL bar on mount if requested

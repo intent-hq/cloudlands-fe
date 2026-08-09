@@ -83,6 +83,7 @@
   const searchLastQuery$ = selectGithubRepoSearchLastQuery();
   const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
 
+  // svelte-ignore state_referenced_locally - intentional: seed the editable input from the prop at mount (component re-mounts per tab switch)
   let githubInput = $state(githubUrl.replace(/^https?:\/\/github\.com\//, ''));
 
   /**

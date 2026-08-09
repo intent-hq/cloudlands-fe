@@ -1,4 +1,4 @@
-import type { GenericAction, StoreMiddleware } from "$lib/store-shim/types";
+import type { GenericAction, StoreMiddleware } from "@augmentcode/themis/types";
 
 import type { StoreTarget } from "./types";
 

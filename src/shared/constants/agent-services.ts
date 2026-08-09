@@ -351,9 +351,9 @@ export function expandPath(path: string): string {
 
 /**
  * Get the full path for an agent session file.
- * @param resolvedBasePath - Optional pre-resolved workspace base path (e.g. from WorkspaceConfig.resolveWorkspaceRoot).
- *   When running in the main process, callers should pass the resolved path to support legacy ~/.workspaces workspaces.
- *   Falls back to expanding FILE_PATHS.WORKSPACE_BASE when not provided (browser / test usage).
+ * @param resolvedBasePath - Optional pre-resolved workspace base path (daemon-reported,
+ *   e.g. via WorkspacePathService). Falls back to expanding FILE_PATHS.WORKSPACE_BASE
+ *   when not provided (browser / test usage).
  */
 export function getSessionPath(
   workspaceId: string,
@@ -366,9 +366,9 @@ export function getSessionPath(
 
 /**
  * Get the full path for a recovery file.
- * @param resolvedBasePath - Optional pre-resolved workspace base path (e.g. from WorkspaceConfig.resolveWorkspaceRoot).
- *   When running in the main process, callers should pass the resolved path to support legacy ~/.workspaces workspaces.
- *   Falls back to expanding FILE_PATHS.WORKSPACE_BASE when not provided (browser / test usage).
+ * @param resolvedBasePath - Optional pre-resolved workspace base path (daemon-reported,
+ *   e.g. via WorkspacePathService). Falls back to expanding FILE_PATHS.WORKSPACE_BASE
+ *   when not provided (browser / test usage).
  */
 export function getRecoveryPath(
   workspaceId: string,

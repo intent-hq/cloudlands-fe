@@ -19,7 +19,7 @@
 
   import Fa from 'svelte-fa';
   import { faBolt, faCode, faPlay, faSpinner, faXmark } from '@fortawesome/free-solid-svg-icons';
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -27,7 +27,7 @@
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import HookScriptModal from '$lib/components/chat/HookScriptModal.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { formatInteger, formatTime } from '$lib/i18n/format';
+  import { formatCompactDuration, formatInteger, formatTime } from '$lib/i18n/format';
   import type { BackgroundHook } from '$features/hooks/background-hooks-service';
   import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
   import {
@@ -47,6 +47,7 @@
 
   // Writable store mirrors the prop so the Redux selector re-evaluates when
   // workspaceId changes (selector readables are init-time only).
+  // svelte-ignore state_referenced_locally -- store is seeded with the current value; the effect below mirrors prop changes.
   const workspaceIdStore = writable(workspaceId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);
@@ -112,30 +113,23 @@
   }
 
   /**
-   * Compact TTL duration (`expiresAt − createdAt`): "60m" / "12m 30s" / "45s"
-   * — the seconds part is omitted when zero.
+   * Duration helpers for the hover card timing row (monorepo#1756):
+   * relative durations are glanceable where absolute wall-clock times force
+   * clock math. Computed when the hover card renders (each open re-reads
+   * `Date.now()`); the absolute instants stay available as native `title`
+   * tooltips on the spans.
    */
-  function ttlDuration(hook: BackgroundHook): string {
-    const totalSeconds = Math.max(
-      0,
-      Math.round((new Date(hook.expiresAt!).getTime() - new Date(hook.createdAt).getTime()) / 1000),
-    );
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    if (minutes === 0) {
-      return m.chat_backgroundHooks_hover_ttlDurationSeconds_label({
-        seconds: formatInteger(seconds),
-      });
-    }
-    if (seconds === 0) {
-      return m.chat_backgroundHooks_hover_ttlDurationMinutes_label({
-        minutes: formatInteger(minutes),
-      });
-    }
-    return m.chat_backgroundHooks_hover_ttlDurationMinutesSeconds_label({
-      minutes: formatInteger(minutes),
-      seconds: formatInteger(seconds),
-    });
+  function nextRunIn(hook: BackgroundHook): string {
+    return formatCompactDuration(new Date(hook.nextRunAt!).getTime() - Date.now());
+  }
+
+  /** Elapsed since the hook last ran, falling back to its creation. */
+  function elapsedSince(hook: BackgroundHook): string {
+    return formatCompactDuration(Date.now() - new Date(hook.lastRunAt ?? hook.createdAt).getTime());
+  }
+
+  function expiresIn(hook: BackgroundHook): string {
+    return formatCompactDuration(new Date(hook.expiresAt!).getTime() - Date.now());
   }
 </script>
 
@@ -145,7 +139,7 @@
     role="group"
     aria-label={m.chat_backgroundHooks_row_ariaLabel()}
     data-testid="background-hooks-row"
-    transition:slide={{ axis: 'y', duration: 200 }}
+    transition:safeSlide={{ axis: 'y', duration: 200 }}
   >
     <Fa icon={faBolt} class="w-2.5 h-2.5 text-ghost shrink-0" />
     <span class="text-xs leading-tight text-ghost shrink-0"
@@ -176,18 +170,23 @@
                   >
                   {#if hook.nextRunAt}
                     <span class="mx-1" aria-hidden="true">·</span>
-                    <span
-                      >{m.chat_backgroundHooks_hover_nextRun_label({
-                        time: formatTime(hook.nextRunAt, { seconds: true }),
+                    <span title={formatTime(hook.nextRunAt, { seconds: true })}
+                      >{m.chat_backgroundHooks_hover_nextRunIn_label({
+                        duration: nextRunIn(hook),
                       })}</span
                     >
                   {/if}
+                  <span class="mx-1" aria-hidden="true">·</span>
+                  <span title={formatTime(hook.lastRunAt ?? hook.createdAt, { seconds: true })}
+                    >{m.chat_backgroundHooks_hover_elapsed_label({
+                      duration: elapsedSince(hook),
+                    })}</span
+                  >
                   {#if hook.expiresAt}
                     <span class="mx-1" aria-hidden="true">·</span>
-                    <span
-                      >{m.chat_backgroundHooks_hover_ttl_label({
-                        duration: ttlDuration(hook),
-                        time: formatTime(hook.expiresAt, { seconds: true }),
+                    <span title={formatTime(hook.expiresAt, { seconds: true })}
+                      >{m.chat_backgroundHooks_hover_ttlExpiresIn_label({
+                        duration: expiresIn(hook),
                       })}</span
                     >
                   {/if}

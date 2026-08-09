@@ -1,16 +1,13 @@
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
-import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
   hydrateActiveProvider,
   setActiveProvider,
 } from '../provider-settings/provider-settings-slice';
-import {
-  normalizeModelForProvider,
-  normalizeProviderModels,
-} from './model-selection-utils';
+import { normalizeModelForProvider, normalizeProviderModels } from './model-selection-utils';
 import type {
   ModelFallbackInfo,
   ModelLoadingState,
@@ -65,15 +62,14 @@ function buildLoadingState(
     nextState.warning = warning;
   }
 
-  // `stale` qualifies `warning`, so it follows the same lifecycle.
   const stale =
     updates.status === 'success'
       ? updates.stale
       : updates.status === 'error'
         ? undefined
         : (updates.stale ?? previous?.stale);
-  if (stale !== undefined) {
-    nextState.stale = stale;
+  if (stale) {
+    nextState.stale = true;
   }
 
   return nextState;
@@ -88,9 +84,9 @@ export const initialState: ModelState = {
   availableModelsProviderId: '',
   loadingState: {},
   providerModels: {},
-  defaultReasoningEffort: '',
   modelPickerCollapsedGroups: [],
   fallbackInfoByAgentId: {},
+  defaultReasoningEffort: '',
   defaultProviderId: '',
   catalogProviderIds: [],
 };
@@ -202,146 +198,136 @@ function validatedDefaultProviderId(
   return fallback;
 }
 
-export const modelReducer = createReducer<ModelState>(initialState)
-  .with(providerCatalogLoaded, (state, { payload: [catalog] }) => {
-    // The registry carries no default designation — the active provider
-    // (mirrored via setActiveProvider/hydrateActiveProvider) is the effective
-    // default; the first catalog row is the last-resort fallback. A mirrored
-    // id that no longer exists in the newly hydrated catalog is stale — reset
-    // it to the first row instead of letting it drive normalization.
-    const catalogProviderIds = catalog.providers.map((provider) => provider.id);
-    const firstRowId = catalogProviderIds[0] ?? '';
-    const defaultProviderId = validatedDefaultProviderId(
-      state.defaultProviderId,
-      catalogProviderIds,
-      firstRowId,
-    );
-    return {
-      ...state,
-      catalogProviderIds,
-      defaultProviderId,
-      // Re-normalize persisted picks that landed before hydration: bare ids
-      // for the default provider, prefixed otherwise (same rule as writes).
-      providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
-    };
-  })
-  .with(setActiveProvider, (state, { payload: [providerId] }) => {
-    const defaultProviderId = validatedDefaultProviderId(
-      providerId,
-      state.catalogProviderIds,
-      state.defaultProviderId,
-    );
-    return {
-      ...state,
-      defaultProviderId,
-      providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
-    };
-  })
-  .with(hydrateActiveProvider, (state, { payload: [providerId] }) => {
-    const defaultProviderId = validatedDefaultProviderId(
-      providerId,
-      state.catalogProviderIds,
-      state.defaultProviderId,
-    );
-    return {
-      ...state,
-      defaultProviderId,
-      providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
-    };
-  })
-  .with(setSelectedModel, (state, { payload: [{ providerId, model }] }) => ({
+export const modelReducer = createReducer<ModelState>(initialState);
+modelReducer.with(providerCatalogLoaded, (state, { payload: [catalog] }) => {
+  const catalogProviderIds = catalog.providers.map((provider) => provider.id);
+  const firstRowId = catalogProviderIds[0] ?? '';
+  const defaultProviderId = validatedDefaultProviderId(
+    state.defaultProviderId,
+    catalogProviderIds,
+    firstRowId,
+  );
+  return {
     ...state,
-    providerModels: {
-      ...state.providerModels,
-      [providerId]: normalizeModelForProvider(providerId, model, state.defaultProviderId),
+    catalogProviderIds,
+    defaultProviderId,
+    providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
+  };
+});
+modelReducer.with(setActiveProvider, (state, { payload: [providerId] }) => {
+  const defaultProviderId = validatedDefaultProviderId(
+    providerId,
+    state.catalogProviderIds,
+    state.defaultProviderId,
+  );
+  return {
+    ...state,
+    defaultProviderId,
+    providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
+  };
+});
+modelReducer.with(hydrateActiveProvider, (state, { payload: [providerId] }) => {
+  const defaultProviderId = validatedDefaultProviderId(
+    providerId,
+    state.catalogProviderIds,
+    state.defaultProviderId,
+  );
+  return {
+    ...state,
+    defaultProviderId,
+    providerModels: normalizeProviderModels(state.providerModels, defaultProviderId),
+  };
+});
+modelReducer.with(setSelectedModel, (state, { payload: [{ providerId, model }] }) => ({
+  ...state,
+  providerModels: {
+    ...state.providerModels,
+    [providerId]: normalizeModelForProvider(providerId, model, state.defaultProviderId),
+  },
+}));
+modelReducer.with(setAvailableModels, (state, { payload: [models, providerId] }) => ({
+  ...state,
+  availableModels: createCollection<AuggieModel, 'value'>('value', models),
+  availableModelsProviderId: providerId,
+}));
+modelReducer.with(
+  setLoadingStateForProvider,
+  (state, { payload: [{ providerId, status, retryAttempt, error, warning, stale }] }) => ({
+    ...state,
+    loadingState: {
+      ...state.loadingState,
+      [providerId]: buildLoadingState(state.loadingState[providerId], {
+        status,
+        retryAttempt,
+        error,
+        warning,
+        stale,
+      }),
     },
-  }))
-  .with(setAvailableModels, (state, { payload: [models, providerId] }) => ({
-    ...state,
-    availableModels: createCollection<AuggieModel, 'value'>('value', models),
-    // Explicit provenance is required: silently attributing to the current
-    // default provider would stamp the wrong provenance whenever the active
-    // provider changed between trigger and dispatch.
-    availableModelsProviderId: providerId,
-  }))
-  .with(
-    setLoadingStateForProvider,
-    (state, { payload: [{ providerId, status, retryAttempt, error, warning, stale }] }) => ({
-      ...state,
-      loadingState: {
-        ...state.loadingState,
-        [providerId]: buildLoadingState(state.loadingState[providerId], {
-          status,
-          retryAttempt,
-          error,
-          warning,
-          stale,
-        }),
-      },
-    }),
-  )
-  .with(clearLoadingStateForProvider, (state, { payload: [providerId] }) => {
-    const { [providerId]: _removed, ...loadingState } = state.loadingState;
+  }),
+);
+modelReducer.with(clearLoadingStateForProvider, (state, { payload: [providerId] }) => {
+  const { [providerId]: _removed, ...loadingState } = state.loadingState;
 
-    return {
-      ...state,
-      loadingState,
-    };
-  })
-  .with(setRetryAttempt, (state, { payload: [{ providerId, attempt }] }) => {
-    const previous = state.loadingState[providerId];
+  return {
+    ...state,
+    loadingState,
+  };
+});
+modelReducer.with(setRetryAttempt, (state, { payload: [{ providerId, attempt }] }) => {
+  const previous = state.loadingState[providerId];
 
-    return {
-      ...state,
-      loadingState: {
-        ...state.loadingState,
-        [providerId]: buildLoadingState(previous, {
-          status: previous?.status ?? 'loading',
-          retryAttempt: attempt,
-        }),
-      },
-    };
-  })
-  .with(loadProviderModelsFromStorage, (state, { payload: [models] }) => ({
+  return {
     ...state,
-    providerModels: normalizeProviderModels(models, state.defaultProviderId),
-  }))
-  .with(setDefaultReasoningEffort, (state, { payload: [effort] }) => ({
-    ...state,
-    defaultReasoningEffort: effort,
-  }))
-  .with(loadDefaultReasoningEffortFromStorage, (state, { payload: [effort] }) => ({
-    ...state,
-    defaultReasoningEffort: effort,
-  }))
-  .with(hydrateModelPickerCollapsedGroups, (state, { payload: [groupKeys] }) => ({
-    ...state,
-    modelPickerCollapsedGroups: [...new Set(groupKeys)],
-  }))
-  .with(setModelPickerGroupCollapsed, (state, { payload: [groupKey, collapsed] }) => {
-    const groups = new Set(state.modelPickerCollapsedGroups);
-    if (collapsed) {
-      groups.add(groupKey);
-    } else {
-      groups.delete(groupKey);
-    }
-    return { ...state, modelPickerCollapsedGroups: [...groups] };
-  })
-  .with(hydrateModelFallbackInfo, (state, { payload: [agentId, info] }) => {
-    const fallbackInfoByAgentId = { ...state.fallbackInfoByAgentId };
-    if (info) {
-      fallbackInfoByAgentId[agentId] = info;
-    } else {
-      delete fallbackInfoByAgentId[agentId];
-    }
-    return { ...state, fallbackInfoByAgentId };
-  })
-  .with(setModelFallbackInfo, (state, { payload: [agentId, info] }) => ({
-    ...state,
-    fallbackInfoByAgentId: { ...state.fallbackInfoByAgentId, [agentId]: info },
-  }))
-  .with(clearModelFallbackInfo, (state, { payload: [agentId] }) => {
-    const fallbackInfoByAgentId = { ...state.fallbackInfoByAgentId };
+    loadingState: {
+      ...state.loadingState,
+      [providerId]: buildLoadingState(previous, {
+        status: previous?.status ?? 'loading',
+        retryAttempt: attempt,
+      }),
+    },
+  };
+});
+modelReducer.with(loadProviderModelsFromStorage, (state, { payload: [models] }) => ({
+  ...state,
+  providerModels: normalizeProviderModels(models, state.defaultProviderId),
+}));
+modelReducer.with(setDefaultReasoningEffort, (state, { payload: [effort] }) => ({
+  ...state,
+  defaultReasoningEffort: effort,
+}));
+modelReducer.with(loadDefaultReasoningEffortFromStorage, (state, { payload: [effort] }) => ({
+  ...state,
+  defaultReasoningEffort: effort,
+}));
+modelReducer.with(hydrateModelPickerCollapsedGroups, (state, { payload: [groupKeys] }) => ({
+  ...state,
+  modelPickerCollapsedGroups: [...new Set(groupKeys)],
+}));
+modelReducer.with(setModelPickerGroupCollapsed, (state, { payload: [groupKey, collapsed] }) => {
+  const groups = new Set(state.modelPickerCollapsedGroups);
+  if (collapsed) {
+    groups.add(groupKey);
+  } else {
+    groups.delete(groupKey);
+  }
+  return { ...state, modelPickerCollapsedGroups: [...groups] };
+});
+modelReducer.with(hydrateModelFallbackInfo, (state, { payload: [agentId, info] }) => {
+  const fallbackInfoByAgentId = { ...state.fallbackInfoByAgentId };
+  if (info) {
+    fallbackInfoByAgentId[agentId] = info;
+  } else {
     delete fallbackInfoByAgentId[agentId];
-    return { ...state, fallbackInfoByAgentId };
-  });
+  }
+  return { ...state, fallbackInfoByAgentId };
+});
+modelReducer.with(setModelFallbackInfo, (state, { payload: [agentId, info] }) => ({
+  ...state,
+  fallbackInfoByAgentId: { ...state.fallbackInfoByAgentId, [agentId]: info },
+}));
+modelReducer.with(clearModelFallbackInfo, (state, { payload: [agentId] }) => {
+  const fallbackInfoByAgentId = { ...state.fallbackInfoByAgentId };
+  delete fallbackInfoByAgentId[agentId];
+  return { ...state, fallbackInfoByAgentId };
+});

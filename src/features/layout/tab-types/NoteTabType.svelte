@@ -59,11 +59,15 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   const headerContext = getPanelHeaderContext();
 
+  // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
   const spellcheckEnabled = selectSpellcheckEnabled();
+  // svelte-ignore state_referenced_locally
   const scrollPosition = selectScrollPosition(tab.id);
 
+  // svelte-ignore state_referenced_locally
   const note = selectNoteById(workspaceId, tab.noteId);
+  // svelte-ignore state_referenced_locally
   const rawNoteViewEnabled = selectIsRawNoteViewEnabled(workspaceId, tab.noteId ?? '');
   const headerToggleActiveClass =
     'text-foreground bg-sidebar hover:text-foreground hover:bg-sidebar';
@@ -104,6 +108,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   );
 
   // Track if initial spec write is in progress — read from Redux
+  // svelte-ignore state_referenced_locally
   const isInitialSpecWriteInProgressStore = selectIsInitialSpecWriteInProgress(workspaceId ?? '');
   let isInitialSpecWriteInProgress = $derived($isInitialSpecWriteInProgressStore);
 

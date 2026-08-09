@@ -4,7 +4,7 @@ import {
   it,
 } from 'vitest';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {

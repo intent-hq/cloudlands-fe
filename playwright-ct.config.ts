@@ -8,6 +8,13 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 /**
  * See https://playwright.dev/docs/test-configuration.
+ *
+ * NOTE: run this config via `pnpm run test:ct` (scripts/run-ct-tests.mjs), not
+ * bare `npx playwright test -c playwright-ct.config.ts`. The experimental CT
+ * packages stopped at 1.58.x while the repo's @playwright/test is newer, and a
+ * mismatched runner crashes in ct-core's babel transform before discovery
+ * (intent-hq/monorepo#1586). The launcher resolves the runner from ct-core's
+ * own dependency tree so the versions always align.
  */
 export default defineConfig({
   testDir: './src',

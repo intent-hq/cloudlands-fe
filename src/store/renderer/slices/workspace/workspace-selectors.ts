@@ -1,7 +1,7 @@
 import { store } from '../../store';
 import type { EnvironmentConfig, PullRequestInfo, Workspace } from '$shared/types';
 import { CHIEF_WORKSPACE_ID, type WorkspaceId } from '$shared/types/branded-ids';
-import { getItem, getItems } from '$lib/store-shim/utils/collections/collection-utils';
+import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { type WorkspaceRecencyState } from './workspace-slice';
 import { selectIsNewlyCreatedWorkspace } from '../workspace-agents/workspace-agents-selectors';
 import {

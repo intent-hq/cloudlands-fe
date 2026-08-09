@@ -57,7 +57,7 @@ import {
   OPENCODE_CHANNELS,
   PROVIDERS_CHANNELS,
 } from "$shared/ipc/channels";
-import { getItem, getItems } from "$lib/store-shim/utils/collections/collection-utils";
+import { getItem, getItems } from "@augmentcode/themis/utils/collections/collection-utils";
 import { store as appStore } from "$store/renderer/store";
 import { MINIMUM_NODE_VERSION } from "$shared/constants/auggie";
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from "$shared/constants/claude-code";
@@ -160,18 +160,25 @@ function withAuth(status: ProviderStatus, authenticated: boolean | undefined): P
  * Aggregate availability for all providers — the daemon resolves every binary
  * in one `host.toolAvailability` round-trip and the auth verdicts arrive in
  * one `host.providerAuthStatus` sweep.
+ *
+ * `checkAuggie()` and `host.toolAvailability` are NOT caught here: a daemon-
+ * RPC failure on either means we cannot honestly answer "is it installed",
+ * so it propagates to the `GET_AVAILABILITY` handler's catch below, which
+ * returns an explicit `{ success: false }` instead of a fabricated
+ * all-unavailable result (auth verdicts are a separate, best-effort axis and
+ * still degrade to unknown via `getAuthVerdicts()`).
  */
 async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const hiddenProviders = computeHiddenProviders();
   const [auggieCheck, toolsResult, authVerdicts] = await Promise.all([
-    checkAuggie().catch(() => ({ available: false }) as HostCheckResult),
+    checkAuggie(),
     backendRequest<HostToolAvailabilityResult>("host.toolAvailability", {
       // `codex-acp` (the adapter) rides along for the codex warning —
       // availability itself keys off the real `codex` CLI. `npx` rides
       // along for the claude-code adapter check (it always runs via npx)
       // and as the codex adapter's pinned fallback runner.
       tools: [...Object.values(PROVIDER_BINARIES), CODEX_ACP_BINARY, "npx"],
-    }).catch(() => ({ tools: {} }) as HostToolAvailabilityResult),
+    }),
     getAuthVerdicts(),
   ]);
   const tools = toolsResult?.tools ?? {};

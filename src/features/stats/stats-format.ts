@@ -16,9 +16,15 @@ import type {
 import { formatInteger, formatNumber } from '$lib/i18n/format';
 import { m } from '$shared/paraglide/messages.js';
 
-/** Sum of the 4 separate token counters (Spec D6). */
+/** Sum of every token counter (Spec D6), thoughts included when reported. */
 export function totalTokens(t: UsageTokenTotals): number {
-  return t.inputTokens + t.outputTokens + t.cacheReadTokens + t.cacheCreationTokens;
+  return (
+    t.inputTokens +
+    t.outputTokens +
+    t.cacheReadTokens +
+    t.cacheCreationTokens +
+    (t.thoughtTokens ?? 0)
+  );
 }
 
 /** Abbreviate a raw token count like the design's fmt(): 12.3B / 2.41B / 241M / 12K. */

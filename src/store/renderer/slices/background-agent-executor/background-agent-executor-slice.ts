@@ -6,9 +6,9 @@
  * by executor type.
  */
 
-import type { StoreAction } from "$lib/store-shim/types";
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import type { StoreAction } from "@augmentcode/themis/types";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import type {
   BackgroundAgentExecutorState,
@@ -124,20 +124,32 @@ export const initialState: BackgroundAgentExecutorState = {
 // ============================================================================
 
 export const backgroundAgentExecutorReducer =
-  createReducer<BackgroundAgentExecutorState>(initialState)
-    .with(setExecutorState, (state, { payload: [workspaceId, executorType, updates] }) => {
-      const current = getExecutor(state, workspaceId, executorType);
-      return setExecutor(state, workspaceId, executorType, { ...current, ...updates });
-    })
-    .with(resetExecutor, (state, { payload: [workspaceId, executorType] }) => {
-      return setExecutor(state, workspaceId, executorType, { ...emptyExecutorState });
-    })
-    .with(clearWorkspaceExecutors, (state, { payload: [workspaceId] }) => {
-      return clearWorkspaceState(state, workspaceId);
-    })
-    .with(hydrateBgExecutorState, (state, { payload: [workspaceId, workspaceState] }) => {
-      return setWorkspaceState(state, workspaceId, workspaceState);
-    });
+  createReducer<BackgroundAgentExecutorState>(initialState);
+backgroundAgentExecutorReducer.with(
+  setExecutorState,
+  (state, { payload: [workspaceId, executorType, updates] }) => {
+    const current = getExecutor(state, workspaceId, executorType);
+    return setExecutor(state, workspaceId, executorType, { ...current, ...updates });
+  },
+);
+backgroundAgentExecutorReducer.with(
+  resetExecutor,
+  (state, { payload: [workspaceId, executorType] }) => {
+    return setExecutor(state, workspaceId, executorType, { ...emptyExecutorState });
+  },
+);
+backgroundAgentExecutorReducer.with(
+  clearWorkspaceExecutors,
+  (state, { payload: [workspaceId] }) => {
+    return clearWorkspaceState(state, workspaceId);
+  },
+);
+backgroundAgentExecutorReducer.with(
+  hydrateBgExecutorState,
+  (state, { payload: [workspaceId, workspaceState] }) => {
+    return setWorkspaceState(state, workspaceId, workspaceState);
+  },
+);
 
 // Re-export types for convenience
 export type {

@@ -5,7 +5,7 @@
   Shows a summary when collapsed and full content when expanded.
 -->
 <script lang="ts">
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
   import {
@@ -91,7 +91,7 @@
   {#if isExpanded}
     <div
       class="px-3 pb-3 text-xs leading-relaxed text-subtle [&_p]:my-2 [&_p:first-child]:mt-0"
-      transition:slide={{ duration: 200, easing: cubicOut }}
+      transition:safeSlide={{ duration: 200, easing: cubicOut }}
     >
       <MarkdownViewer {content} {isStreaming} />
     </div>

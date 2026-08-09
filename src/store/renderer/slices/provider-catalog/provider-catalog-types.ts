@@ -10,7 +10,7 @@
  * daemon's registry order — informational per §5.38, consumers must key rows
  * by `id`, never by array position).
  */
-import type { Collection } from '$lib/store-shim/utils/collections/collection-utils';
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { ProviderCatalogEntry } from '$shared/provider-catalog';
 
 export type { ProviderCatalogEntry } from '$shared/provider-catalog';

@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import { resolveProviderEnabled } from "$shared/provider-catalog";
 import { providerCatalogLoaded } from "../provider-catalog/provider-catalog-slice";
 
@@ -59,8 +59,8 @@ export const loadEnabledProvidersFromStorage = createAction<
   [providers: Record<string, boolean>]
 >("providerSettings/loadEnabledProvidersFromStorage");
 
-export const providerSettingsReducer = createReducer<ProviderSettingsState>(initialState)
-  .with(providerCatalogLoaded, (state, { payload: [catalog] }) => ({
+export const providerSettingsReducer = createReducer<ProviderSettingsState>(initialState);
+providerSettingsReducer.with(providerCatalogLoaded, (state, { payload: [catalog] }) => ({
     ...state,
     nonDisableableProviderIds: catalog.providers
       .filter((provider) => provider.canBeDisabled === false)
@@ -68,16 +68,16 @@ export const providerSettingsReducer = createReducer<ProviderSettingsState>(init
     // The registry carries no default designation; the active provider is
     // user-derived (settings hydration / onboarding pick). Before those land
     // it stays '' — never silently adopted from the catalog.
-  }))
-  .with(setActiveProvider, (state, { payload: [providerId] }) => ({
+  }));
+providerSettingsReducer.with(setActiveProvider, (state, { payload: [providerId] }) => ({
     ...state,
     activeProviderId: providerId,
-  }))
-  .with(hydrateActiveProvider, (state, { payload: [providerId] }) => ({
+  }));
+providerSettingsReducer.with(hydrateActiveProvider, (state, { payload: [providerId] }) => ({
     ...state,
     activeProviderId: providerId,
-  }))
-  .with(
+  }));
+providerSettingsReducer.with(
     setProviderEnabled,
     (state, { payload: [{ providerId, enabled }] }) => {
       if (!canBeDisabled(state, providerId)) return state;
@@ -86,8 +86,8 @@ export const providerSettingsReducer = createReducer<ProviderSettingsState>(init
         enabledProviders: { ...state.enabledProviders, [providerId]: enabled },
       };
     }
-  )
-  .with(toggleProvider, (state, { payload: [providerId] }) => {
+  );
+providerSettingsReducer.with(toggleProvider, (state, { payload: [providerId] }) => {
     if (!canBeDisabled(state, providerId)) return state;
     return {
       ...state,
@@ -96,8 +96,8 @@ export const providerSettingsReducer = createReducer<ProviderSettingsState>(init
         [providerId]: !resolveProviderEnabled(state.enabledProviders, providerId),
       },
     };
-  })
-  .with(ensureEnabledIfUnset, (state, { payload: [providerId] }) => {
+  });
+providerSettingsReducer.with(ensureEnabledIfUnset, (state, { payload: [providerId] }) => {
     if (state.enabledProviders[providerId] !== undefined) {
       return state;
     }
@@ -105,8 +105,8 @@ export const providerSettingsReducer = createReducer<ProviderSettingsState>(init
       ...state,
       enabledProviders: { ...state.enabledProviders, [providerId]: true },
     };
-  })
-  .with(loadEnabledProvidersFromStorage, (state, { payload: [providers] }) => ({
+  });
+providerSettingsReducer.with(loadEnabledProvidersFromStorage, (state, { payload: [providers] }) => ({
     ...state,
     enabledProviders: providers,
   }));

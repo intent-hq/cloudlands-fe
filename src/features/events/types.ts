@@ -60,6 +60,22 @@ export interface CanonicalAgentStatusFields {
    * the wire) and on older daemons.
    */
   sessionCorrupted?: boolean;
+  /**
+   * Idle-visibility for hook-owning agents (PROTOCOL §3.1, within v3.1,
+   * additive): light metadata for the agent's ACTIVE (`scheduled`/`running`)
+   * background hooks (§5.40) — omitted when empty (absent, never `[]`) — so
+   * a parent or client can tell a hook-waiting idle agent from a stalled
+   * one. Rendered verbatim.
+   */
+  waitingOnHooks?: Array<{ hookId: string; name: string; nextRunAt?: string; expiresAt?: string }>;
+  /**
+   * Idle-visibility for PR-monitor-owning agents — the `waitingOnHooks`
+   * companion for centralized PR monitoring (§5.42): light metadata for the
+   * agent's active PR monitors, omitted when empty (absent, never `[]`), so
+   * a parent or client can tell a PR-monitor-waiting idle agent from a
+   * stalled one. Rendered verbatim.
+   */
+  waitingOnPrMonitors?: Array<{ monitorId: string; repo: string; prNumber: number; title?: string }>;
 }
 
 // ============================================================================
@@ -1665,15 +1681,7 @@ export type DomainEvent =
   | 'git:op-started'
   | 'git:op-progress'
   | 'git:op-completed'
-  | 'git:op-failed'
-  // Log events
-  | 'log:events-updated'
-  // Script events
-  | 'script:started'
-  | 'script:stopped'
-  | 'script:output'
-  | 'script:error'
-  | 'script:url-detected';
+  | 'git:op-failed';
 
 /**
  * Domain event data payloads
@@ -1864,40 +1872,5 @@ export interface DomainEventPayloads {
     operationType: 'commit' | 'push' | 'create-pr' | 'auto-commit';
     error: string;
     metadata?: { message?: string; prTitle?: string; agentId?: string; agentName?: string };
-  };
-
-  'log:events-updated': { workspaceId: WorkspaceId; events: any };
-
-  'script:started': {
-    workspaceId: WorkspaceId;
-    scriptId: string;
-    scriptName: string;
-    pid?: number;
-    startedAt?: string;
-  };
-  'script:stopped': {
-    workspaceId: WorkspaceId;
-    scriptId: string;
-    scriptName: string;
-    exitCode?: number | null;
-    signal?: string | null;
-    stoppedAt?: string;
-  };
-  'script:output': {
-    workspaceId: WorkspaceId;
-    scriptId: string;
-    lines: Array<{ text: string; stream: 'stdout' | 'stderr'; timestamp: string }>;
-  };
-  'script:error': {
-    workspaceId: WorkspaceId;
-    scriptId: string;
-    scriptName: string;
-    error: string;
-  };
-  'script:url-detected': {
-    workspaceId: WorkspaceId;
-    scriptId: string;
-    scriptName: string;
-    url: string;
   };
 }

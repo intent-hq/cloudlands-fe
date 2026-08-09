@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import Fa from 'svelte-fa';
   import { faPaperPlane } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
@@ -79,7 +79,7 @@
     </p>
   </div>
 
-  <div class="flex flex-col gap-px" transition:slide={{ axis: 'y', duration: 150 }}>
+  <div class="flex flex-col gap-px" transition:safeSlide={{ axis: 'y', duration: 150 }}>
     {#each suggestions as suggestion (suggestion.id)}
       <div
         role="button"

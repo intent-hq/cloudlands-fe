@@ -10,11 +10,20 @@ describe('app UI targets registry', () => {
     const target = resolveHashToTarget('default-model');
 
     expect(target).toMatchObject({
-      id: 'backgroundAgents.defaultModel',
+      id: 'quickActions.defaultModel',
       tab: 'agents',
       scrollSelector: '#default-model',
-      highlightSelector: '[data-highlight-id="backgroundAgents.defaultModel"]',
+      highlightSelector: '[data-highlight-id="quickActions.defaultModel"]',
     });
+  });
+
+  // monorepo#1729: the hash is UI-only, so links minted before the
+  // backgroundAgents.* → quickActions.* rename must keep resolving.
+  it('still resolves the pre-rename backgroundAgents.defaultModel hash', () => {
+    expect(resolveHashToTarget('backgroundAgents.defaultModel')).toMatchObject({
+      id: 'quickActions.defaultModel',
+    });
+    expect(isResolvableNavTarget('/settings#backgroundAgents.defaultModel')).toBe(true);
   });
 
   it('returns undefined for an unknown hash', () => {

@@ -19,6 +19,10 @@ function fakeTerminalsClient(): TerminalsClient {
 
 const xtermMock = vi.hoisted(() => ({ instances: [] as any[] }));
 
+const fontMock = vi.hoisted(() => ({
+  current: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace",
+}));
+
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}));
 vi.mock('@xterm/xterm', () => {
   class MockTerminal {
@@ -86,6 +90,17 @@ vi.mock('../../../shared/logger', () => ({
   },
 }));
 vi.mock('$store/renderer/store', () => ({ store: { dispatch: vi.fn(), state: {} } }));
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectCodeFontFamilyCSS: Object.assign(
+    () => ({
+      subscribe: (fn: (v: string) => void) => {
+        fn(fontMock.current);
+        return () => undefined;
+      },
+    }),
+    { select: () => fontMock.current },
+  ),
+}));
 vi.mock('$store/renderer/slices/terminals/terminals-slice', () => ({
   closeActiveTerminalRequested: vi.fn((workspaceId: string) => ({ payload: [workspaceId] })),
   toggleTerminalOverlay: vi.fn((workspaceId: string) => ({ payload: [workspaceId] })),
@@ -435,5 +450,183 @@ describe('TerminalAdapter cursor suppression on exit', () => {
     const xterm = (adapter as any).xterm;
     expect(xterm.options.cursorBlink).toBe(true);
     expect(xterm.write).toHaveBeenCalledWith('\x1b[?25h');
+  });
+});
+
+
+describe('TerminalAdapter code-font preference wiring', () => {
+  beforeEach(() => {
+    xtermMock.instances.length = 0;
+    vi.clearAllMocks();
+    fontMock.current = "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({ addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    });
+    (globalThis as any).ResizeObserver = class {
+      observe = vi.fn();
+      disconnect = vi.fn();
+    };
+    (globalThis as any).IntersectionObserver = class {
+      observe = vi.fn();
+      disconnect = vi.fn();
+    };
+    (window as any).electronAPI = {
+      invoke: vi.fn().mockResolvedValue({ success: false }),
+      on: vi.fn(() => 'listener-id'),
+      offById: vi.fn(),
+    };
+  });
+
+  it('constructs the XTerm with the canonical system-default selector value when no font is passed', () => {
+    const container = document.createElement('div');
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals: fakeTerminalsClient() },
+    });
+
+    const xterm = (adapter as any).xterm;
+    expect(xterm.options.fontFamily).toBe(
+      "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace",
+    );
+
+    adapter.detach();
+  });
+
+  it('honors an explicit fontFamily option (component-provided) over the selector', () => {
+    const container = document.createElement('div');
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals: fakeTerminalsClient() },
+      fontFamily: "'JetBrains Mono', monospace",
+    });
+
+    const xterm = (adapter as any).xterm;
+    expect(xterm.options.fontFamily).toBe("'JetBrains Mono', monospace");
+
+    adapter.detach();
+  });
+
+  it('constructs the XTerm with a named-font selector value', () => {
+    fontMock.current = "'Fira Code', monospace";
+    const container = document.createElement('div');
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals: fakeTerminalsClient() },
+    });
+
+    const xterm = (adapter as any).xterm;
+    expect(xterm.options.fontFamily).toBe("'Fira Code', monospace");
+
+    adapter.detach();
+  });
+
+  it('updateFontFamily() updates the live XTerm without creating a new instance or PTY', () => {
+    const container = document.createElement('div');
+    const terminals = fakeTerminalsClient();
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals },
+    });
+
+    const xtermBefore = (adapter as any).xterm;
+    const instanceCountBefore = xtermMock.instances.length;
+    const createCallsBefore = (terminals.create as any).mock.calls.length;
+
+    adapter.updateFontFamily("'JetBrains Mono', monospace");
+
+    const xtermAfter = (adapter as any).xterm;
+    expect(xtermAfter).toBe(xtermBefore);
+    expect(xtermAfter.options.fontFamily).toBe("'JetBrains Mono', monospace");
+    expect(xtermMock.instances.length).toBe(instanceCountBefore);
+    expect((terminals.create as any).mock.calls.length).toBe(createCallsBefore);
+
+    adapter.detach();
+  });
+
+  it('updateFontFamily() is a no-op when the value is unchanged', () => {
+    const container = document.createElement('div');
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals: fakeTerminalsClient() },
+    });
+    const xterm = (adapter as any).xterm;
+    const initial = xterm.options.fontFamily;
+
+    // Replace with a getter/setter to detect writes.
+    let writes = 0;
+    let stored = initial;
+    Object.defineProperty(xterm.options, 'fontFamily', {
+      configurable: true,
+      get: () => stored,
+      set: (v: string) => {
+        writes += 1;
+        stored = v;
+      },
+    });
+
+    adapter.updateFontFamily(initial);
+    expect(writes).toBe(0);
+
+    adapter.updateFontFamily("'JetBrains Mono', monospace");
+    expect(writes).toBe(1);
+
+    adapter.detach();
+  });
+
+  it('updateFontFamily() after reattach updates the same XTerm instance (cached adapter path)', async () => {
+    const firstContainer = document.createElement('div');
+    const secondContainer = document.createElement('div');
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container: firstContainer,
+      appClient: { terminals: fakeTerminalsClient() },
+    });
+    const xtermBefore = (adapter as any).xterm;
+    const instanceCountBefore = xtermMock.instances.length;
+
+    (adapter as any).setupXTermEventHandlers();
+    await adapter.reattach(secondContainer);
+
+    // Component captures a fresh selector value and forwards it after
+    // getOrCreateTerminal resolves — the adapter must accept and apply it
+    // without disposing/recreating anything.
+    adapter.updateFontFamily("'JetBrains Mono', monospace");
+
+    const xtermAfter = (adapter as any).xterm;
+    expect(xtermAfter).toBe(xtermBefore);
+    expect(xtermAfter.options.fontFamily).toBe("'JetBrains Mono', monospace");
+    expect(xtermMock.instances.length).toBe(instanceCountBefore);
+
+    adapter.detach();
+  });
+
+  it('updateFontFamily() is a no-op after disposal', () => {
+    const container = document.createElement('div');
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals: fakeTerminalsClient() },
+    });
+    const xterm = (adapter as any).xterm;
+
+    adapter.dispose({ killPty: false });
+    const before = xterm.options.fontFamily;
+
+    adapter.updateFontFamily("'JetBrains Mono', monospace");
+
+    expect(xterm.options.fontFamily).toBe(before);
   });
 });

@@ -34,7 +34,9 @@
   let { agent, onclick, onmouseenter, onmouseleave }: Props = $props();
 
   const isActive = $derived(agent.status === 'responding');
+  // svelte-ignore state_referenced_locally - selector readables must be created at component init; agentId is stable per card
   const agentIsWaitingForOtherAgents$ = selectAgentIsWaitingForOtherAgents(agent.agentId);
+  // svelte-ignore state_referenced_locally - selector readables must be created at component init; agentId is stable per card
   const attentionRequest$ = selectAgentAttentionRequest(agent.agentId);
 
   // Map agent status to avatar state

@@ -47,7 +47,7 @@ describe('NavLink', () => {
     await waitFor(() =>
       expect(mocks.dispatch).toHaveBeenCalledWith({
         type: 'uiHighlight/requestUiHighlight',
-        payload: ['backgroundAgents.defaultModel'],
+        payload: ['quickActions.defaultModel'],
       }),
     );
   });

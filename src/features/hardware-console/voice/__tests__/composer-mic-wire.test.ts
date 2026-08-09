@@ -1,6 +1,6 @@
 /**
  * Wire-contract test for the composer mic latch flow: a latch stop's
- * `pttRecordingFinished` runs through the transcription middleware and must
+ * `pttRecordingFinished` runs through the transcription saga and must
  * send the exact `voice.transcribe` request (PROTOCOL §5.41) on the backend
  * channel, then insert the §5.41-shaped mock transcript into the composer.
  * Follows the ipc-mock-router suite pattern (assert the exact request, feed
@@ -8,7 +8,8 @@
  * is the backend bridge, so the stub sits on its `invoke` boundary.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { runSaga, stdChannel } from 'redux-saga';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 const mockState = {
@@ -35,12 +36,9 @@ vi.mock('$store/renderer/store', () => ({
 vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn(), info: vi.fn() } }));
 
 import { voiceTranscriptionStarted } from '$store/renderer/slices/hardware-console/hardware-console-slice';
-import { createVoiceTranscriptionMiddleware } from '../transcription-service';
+import { voiceTranscriptionSaga } from '$store/renderer/slices/hardware-console/sagas/voice-transcription-saga';
 import { resetPttRecording, PTT_MIN_RECORDING_MS, type PttContext } from '../ptt-controller';
-import {
-  resetComposerMic,
-  toggleComposerMicRecording,
-} from '../composer-mic-controller';
+import { resetComposerMic, toggleComposerMicRecording } from '../composer-mic-controller';
 
 class FakeMediaRecorder {
   static isTypeSupported(): boolean {
@@ -66,7 +64,14 @@ class FakeMediaRecorder {
 }
 
 class FakeMediaStream {
-  tracks = [{ stopped: false, stop(): void { this.stopped = true; } }];
+  tracks = [
+    {
+      stopped: false,
+      stop(): void {
+        this.stopped = true;
+      },
+    },
+  ];
   getTracks() {
     return this.tracks;
   }
@@ -105,16 +110,20 @@ describe('composer mic latch → voice.transcribe wire contract', () => {
     const focusComposer = vi.fn();
     const insertText = vi.fn().mockReturnValue(true);
     const seen: { type: string }[] = [];
-    const middleware = createVoiceTranscriptionMiddleware({
-      focusComposer,
-      insertText,
-      dispatch: (action) => seen.push(action as { type: string }),
-    });
-    const invoke = middleware(undefined as never)((action: unknown) => action);
-    // The composer wires its dispatch straight into the store's middleware
-    // chain; the test context mirrors that so latch actions reach the flow.
+    const channel = stdChannel();
+    const task = runSaga(
+      {
+        channel,
+        dispatch: (action) => seen.push(action as { type: string }),
+        getState: () => mockState,
+      },
+      voiceTranscriptionSaga,
+      { focusComposer, insertText, dispatch: (action) => seen.push(action as { type: string }) },
+    );
+    // The composer dispatches into the app store; the saga channel receives
+    // the same post-reducer action in this focused integration harness.
     const context: PttContext = {
-      dispatch: (action) => invoke(action as never),
+      dispatch: (action) => channel.put(action),
       showHint: vi.fn(),
     };
 
@@ -142,5 +151,6 @@ describe('composer mic latch → voice.transcribe wire contract', () => {
     expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
     // The in-flight flag drove the button's transcribing state.
     expect(seen.some((action) => action.type === voiceTranscriptionStarted.type)).toBe(true);
+    task.cancel();
   });
 });

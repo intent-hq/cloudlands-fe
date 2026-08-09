@@ -3,7 +3,7 @@ import {
   getItem,
   getItems,
   type Collection,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 import {
   SPECIALISTS,
   GITHUB_DEPENDENT_SPECIALIST_IDS,

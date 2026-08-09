@@ -353,12 +353,15 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
     // sidebar showing the stale `Archived` status until a full refetch.
     const updateDispatch = (mainDispatch as unknown as ReturnType<typeof vi.fn>).mock.calls.find(
       ([action]) =>
-        typeof action === 'object' && action !== null && 'type' in action &&
+        typeof action === 'object' &&
+        action !== null &&
+        'type' in action &&
         (action as { type: string }).type === 'domainEvents/workspaceUpdated',
     );
     expect(updateDispatch).toBeDefined();
-    const payload = (updateDispatch![0] as { payload: [{ workspaceId: string; changes: Record<string, unknown> }] })
-      .payload[0];
+    const payload = (
+      updateDispatch![0] as { payload: [{ workspaceId: string; changes: Record<string, unknown> }] }
+    ).payload[0];
     expect(payload.workspaceId).toBe(ws.id);
     expect(payload.changes).toEqual({
       archived: false,
@@ -377,8 +380,6 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
     expect(cleanupCalls).toHaveLength(1);
     expect(cleanupCalls[0]![1]).toEqual({ workspaceId: ws.id });
   });
-
-
 
   it('findRepositories sends workspace.findRepositories with { directory } and returns the daemon repositories list', async () => {
     const result = await service.findRepositories('/some/directory');
@@ -403,5 +404,166 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
       // No `[object Object]` or other coerced garbage on the wire boundary.
       expect(result.data.every((r) => typeof r === 'string' && !r.includes('object'))).toBe(true);
     }
+  });
+
+  describe('workspace.list single-flight + TTL cache (monorepo workspace.list flood fix)', () => {
+    it('coalesces concurrent listWorkspaces calls into a single workspace.list request', async () => {
+      const ws = seed();
+      daemonWorkspaces.set(ws.id, { ...ws });
+      requestMock.mockClear();
+
+      const [a, b, c] = await Promise.all([
+        service.listWorkspaces(),
+        service.listWorkspaces(),
+        service.listWorkspaces(),
+      ]);
+
+      expect(a.ok && b.ok && c.ok).toBe(true);
+      const listCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.list');
+      expect(listCalls).toHaveLength(1);
+    });
+
+    it('reuses the cached result within the TTL window and refetches once it expires', async () => {
+      vi.useFakeTimers();
+      try {
+        const ws = seed();
+        daemonWorkspaces.set(ws.id, { ...ws });
+        requestMock.mockClear();
+
+        await service.listWorkspaces();
+        await service.listWorkspaces();
+        expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
+
+        vi.advanceTimersByTime(2001);
+
+        await service.listWorkspaces();
+        expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('caches includeArchived:true and includeArchived:false separately', async () => {
+      const ws = seed();
+      daemonWorkspaces.set(ws.id, { ...ws });
+      requestMock.mockClear();
+
+      await service.listWorkspaces({ includeArchived: false });
+      await service.listWorkspaces({ includeArchived: true });
+      await service.listWorkspaces({ includeArchived: false });
+      await service.listWorkspaces({ includeArchived: true });
+
+      expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(2);
+    });
+
+    it('evicts the cache entry on a rejected workspace.list so the next call retries', async () => {
+      requestMock.mockImplementationOnce(async (method: string) => {
+        if (method === 'workspace.list') throw new Error('daemon unavailable');
+        return {};
+      });
+
+      const failed = await service.listWorkspaces();
+      expect(failed.ok).toBe(false);
+
+      const ws = seed();
+      daemonWorkspaces.set(ws.id, { ...ws });
+      requestMock.mockClear();
+
+      const retried = await service.listWorkspaces();
+      expect(retried.ok).toBe(true);
+      expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
+    });
+
+    it('keeps single-flighting a still-pending request slower than the TTL (no expire-while-pending race)', async () => {
+      vi.useFakeTimers();
+      try {
+        const ws = seed();
+        daemonWorkspaces.set(ws.id, { ...ws });
+        requestMock.mockClear();
+
+        let resolveSlowRequest!: (value: { workspaces: unknown[] }) => void;
+        requestMock.mockImplementationOnce(
+          (method: string) =>
+            new Promise((resolve) => {
+              if (method !== 'workspace.list') throw new Error('unexpected method');
+              resolveSlowRequest = resolve;
+            }),
+        );
+
+        const first = service.listWorkspaces();
+        // Advance past the 2s TTL while the request is still in flight — a
+        // caller arriving now must still join the same pending request
+        // instead of firing a second concurrent workspace.list.
+        vi.advanceTimersByTime(5000);
+        const second = service.listWorkspaces();
+
+        resolveSlowRequest({ workspaces: Array.from(daemonWorkspaces.values()) });
+        const [a, b] = await Promise.all([first, second]);
+
+        expect(a.ok && b.ok).toBe(true);
+        expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe('workspace.list cache invalidation on mutation', () => {
+    it.each([
+      ['updateWorkspace', async (id: WorkspaceId) => service.updateWorkspace({ id, title: 'New' })],
+      ['deleteWorkspace', async (id: WorkspaceId) => service.deleteWorkspace(id)],
+      ['archiveWorkspace', async (id: WorkspaceId) => service.archiveWorkspace(id)],
+    ])('clears the cached workspace.list after %s so a later list refetches', async (_name, mutate) => {
+      const ws = seed();
+      daemonWorkspaces.set(ws.id, { ...ws });
+
+      // Prime the cache.
+      await service.listWorkspaces();
+      requestMock.mockClear();
+
+      await mutate(ws.id);
+
+      await service.listWorkspaces();
+      expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
+    });
+
+    it('clears the cached workspace.list after unarchiveWorkspace so a later list refetches', async () => {
+      const ws = seed({ status: WorkspaceStatus.Archived });
+      daemonWorkspaces.set(ws.id, { ...ws });
+
+      await service.listWorkspaces();
+      requestMock.mockClear();
+
+      await service.unarchiveWorkspace(ws.id);
+
+      await service.listWorkspaces();
+      expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
+    });
+
+    it('clears the cached workspace.list after restoreWorkspace so a later list refetches', async () => {
+      const ws = seed({ status: WorkspaceStatus.Archived });
+      daemonWorkspaces.set(ws.id, { ...ws });
+
+      await service.listWorkspaces();
+      requestMock.mockClear();
+
+      await service.restoreWorkspace(ws.id);
+
+      await service.listWorkspaces();
+      expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
+    });
+
+    it('clears the cached workspace.list after duplicateWorkspace so a later list refetches', async () => {
+      const ws = seed();
+      daemonWorkspaces.set(ws.id, { ...ws });
+
+      await service.listWorkspaces();
+      requestMock.mockClear();
+
+      await service.duplicateWorkspace(ws.id);
+
+      await service.listWorkspaces();
+      expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
+    });
   });
 });

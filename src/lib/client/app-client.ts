@@ -964,7 +964,8 @@ export interface GitClient {
    * commit's own changes against its first parent (`<commitHash>^..<commitHash>`).
    */
   diffs(workspaceId: string, options?: GitDiffsOptions): Promise<DiffChunk[]>;
-  trackedChanges(workspaceId: string): Promise<TrackedChange[]>;
+  /** Returns `null` when the tracked-change read fails; an empty array is a successful empty result. */
+  trackedChanges(workspaceId: string): Promise<TrackedChange[] | null>;
   /**
    * `file-tracking.loadCommits` — workspace commits with agent attribution.
    * When `includeOlder` is true, fetches commits before and including the workspace boundary.
@@ -1539,12 +1540,17 @@ export interface ProvidersClient {
 /** Wire `period` mode for `stats.getUsage`. */
 export type UsageStatsPeriod = "24h" | "month" | "year";
 
-/** The 4 separate token counters for one `stats.getUsage` aggregation cell. */
+/** The separate token counters for one `stats.getUsage` aggregation cell. */
 export interface UsageTokenTotals {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
+  /**
+   * Reasoning ("thought") tokens — **omitted when zero or unreported** (§5.23),
+   * so an absent field means no provider broke reasoning out of `outputTokens`.
+   */
+  thoughtTokens?: number;
 }
 
 /** Per-model rollup row (sorted desc by total tokens by the daemon). */

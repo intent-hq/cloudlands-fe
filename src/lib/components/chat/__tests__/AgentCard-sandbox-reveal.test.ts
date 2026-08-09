@@ -67,7 +67,7 @@ function seedLocality(locality: 'local' | 'remote') {
         protocolVersion: '2.4',
         host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality },
       },
-      '2026-07-01T00:00:00.000Z',
+      '2026-07-30T20:00:00.000Z',
     ),
   );
 }

@@ -114,7 +114,7 @@ describe('FileSystemUserActivityRepository', () => {
     const data = createEmptyUserActivityData();
     await repo.save(workspaceId, data);
 
-    const metadataDir = path.join(testDir, workspaceId, '.workspace');
+    const metadataDir = path.join(testDir, workspaceId);
     const exists = await fs
       .access(metadataDir)
       .then(() => true)
@@ -124,7 +124,7 @@ describe('FileSystemUserActivityRepository', () => {
 
   it('should handle corrupted JSON gracefully', async () => {
     // Manually write corrupted JSON
-    const metadataDir = path.join(testDir, workspaceId, '.workspace');
+    const metadataDir = path.join(testDir, workspaceId);
     await fs.mkdir(metadataDir, { recursive: true });
     await fs.writeFile(path.join(metadataDir, 'user-activity.json'), 'not valid json{{{');
 
@@ -133,7 +133,7 @@ describe('FileSystemUserActivityRepository', () => {
   });
 
   it('should handle empty file gracefully', async () => {
-    const metadataDir = path.join(testDir, workspaceId, '.workspace');
+    const metadataDir = path.join(testDir, workspaceId);
     await fs.mkdir(metadataDir, { recursive: true });
     await fs.writeFile(path.join(metadataDir, 'user-activity.json'), '');
 
@@ -143,7 +143,7 @@ describe('FileSystemUserActivityRepository', () => {
 
   it('should reject data with invalid schema version', async () => {
     // Write valid JSON but with wrong schema version
-    const metadataDir = path.join(testDir, workspaceId, '.workspace');
+    const metadataDir = path.join(testDir, workspaceId);
     await fs.mkdir(metadataDir, { recursive: true });
     const invalidData = {
       version: 999, // Invalid version
@@ -159,7 +159,7 @@ describe('FileSystemUserActivityRepository', () => {
 
   it('should reject data with missing required fields', async () => {
     // Write valid JSON but missing required fields
-    const metadataDir = path.join(testDir, workspaceId, '.workspace');
+    const metadataDir = path.join(testDir, workspaceId);
     await fs.mkdir(metadataDir, { recursive: true });
     const invalidData = {
       version: USER_ACTIVITY_VERSION,
@@ -173,7 +173,7 @@ describe('FileSystemUserActivityRepository', () => {
 
   it('should reject data with invalid noteReads structure', async () => {
     // Write valid JSON but with invalid noteReads structure
-    const metadataDir = path.join(testDir, workspaceId, '.workspace');
+    const metadataDir = path.join(testDir, workspaceId);
     await fs.mkdir(metadataDir, { recursive: true });
     const invalidData = {
       version: USER_ACTIVITY_VERSION,

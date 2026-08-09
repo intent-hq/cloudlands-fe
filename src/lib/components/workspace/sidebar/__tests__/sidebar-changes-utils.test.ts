@@ -826,6 +826,57 @@ describe('mergeMonitoredPRs', () => {
     expect(result).toHaveLength(1);
     expect(result[0].monitorAgentId).toBe('agent-1');
   });
+
+  // ─── Regression: intent-hq/monorepo#1699 (each_key_duplicate crash) ────────
+
+  it('dedupes two monitors (different agentIds) on the same cross-repo PR into one row', () => {
+    const result = mergeMonitoredPRs(
+      [],
+      [
+        makeMonitor({ monitorId: 'mon-1', agentId: 'agent-1', repo: 'other/repo' }),
+        makeMonitor({ monitorId: 'mon-2', agentId: 'agent-2', repo: 'other/repo' }),
+      ],
+      workspaceRepo,
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].crossRepo).toBe('other/repo');
+    expect(result[0].number).toBe(42);
+    // Keys collide under prKey (crossRepo#number), so there must be exactly one row.
+    const keys = result.map((pr) => (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number)));
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('dedupes two monitors on the same same-repo PR absent from basePRs into one row', () => {
+    const result = mergeMonitoredPRs(
+      [],
+      [
+        makeMonitor({ monitorId: 'mon-1', agentId: 'agent-1' }),
+        makeMonitor({ monitorId: 'mon-2', agentId: 'agent-2' }),
+      ],
+      workspaceRepo,
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].crossRepo).toBeUndefined();
+    expect(result[0].number).toBe(42);
+  });
+
+  it('keeps a same-repo monitor and a cross-repo row with the same PR number as two distinct, correctly attributed rows', () => {
+    const result = mergeMonitoredPRs(
+      [],
+      [
+        makeMonitor({ monitorId: 'mon-1', agentId: 'agent-1', repo: 'other/repo' }),
+        makeMonitor({ monitorId: 'mon-2', agentId: 'agent-2' }),
+      ],
+      workspaceRepo,
+    );
+    expect(result).toHaveLength(2);
+    const crossRepoRow = result.find((pr) => pr.crossRepo === 'other/repo');
+    const bareRow = result.find((pr) => pr.crossRepo === undefined);
+    expect(crossRepoRow?.monitorAgentId).toBe('agent-1');
+    expect(bareRow?.monitorAgentId).toBe('agent-2');
+    const keys = result.map((pr) => (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number)));
+    expect(new Set(keys).size).toBe(keys.length);
+  });
 });
 
 // ─── countOtherActiveMonitors (PROTOCOL §6.9 "+N" indicator) ───────────────────

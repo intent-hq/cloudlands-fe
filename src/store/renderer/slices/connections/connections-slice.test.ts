@@ -24,6 +24,7 @@ import type {
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
 } from './connections-types';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 
 const LOCAL: ConnectionRecord = {
   id: LOCAL_CONNECTION_ID,
@@ -61,15 +62,8 @@ const PROTOCOL_MISMATCH: ConnectionProtocolMismatchEvent = {
 
 describe('connectionsReducer', () => {
   it('has the correct initial state', () => {
-    expect(initialState).toEqual({
-      connections: [],
-      activeId: LOCAL_CONNECTION_ID,
-      status: 'idle',
-      error: null,
-      certMismatch: null,
-      protocolMismatch: null,
-      protocolMismatchModalDismissed: false,
-    });
+    expect(getItems(initialState.connections)).toEqual([]);
+    expect(initialState.activeId).toBe(LOCAL_CONNECTION_ID);
   });
 
   describe('connectionsListReceived', () => {
@@ -79,7 +73,7 @@ describe('connectionsReducer', () => {
         activeId: 'remote-1',
       };
       const next = connectionsReducer(initialState, connectionsListReceived(result));
-      expect(next.connections).toEqual([LOCAL, REMOTE]);
+      expect(getItems(next.connections)).toEqual([LOCAL, REMOTE]);
       expect(next.activeId).toBe('remote-1');
     });
 

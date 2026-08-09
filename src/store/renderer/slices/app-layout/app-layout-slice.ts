@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import type {
   AppLayoutState,
   CreateWorkspaceForRepoDetail,
@@ -63,20 +63,20 @@ export const locateItemInSidebarConsumed = createAction<[wsId: string]>(
   "appLayout/locateItemInSidebarConsumed"
 );
 
-export const appLayoutReducer = createReducer<AppLayoutState>(initialState)
-  .with(commandPaletteNewFileRequested, (state, { payload: [wsId] }) => ({
-    ...state,
-    pendingCommandPaletteAction: { type: "create-file", workspaceId: wsId },
-  }))
-  .with(commandPaletteActionConsumed, (state, { payload: [wsId] }) => {
-    if (state.pendingCommandPaletteAction?.workspaceId !== wsId) return state;
-    return { ...state, pendingCommandPaletteAction: null };
-  })
-  .with(locateItemInSidebarRequested, (state, { payload: [wsId, target] }) => ({
-    ...state,
-    pendingLocateInSidebar: { workspaceId: wsId, target },
-  }))
-  .with(locateItemInSidebarConsumed, (state, { payload: [wsId] }) => {
-    if (state.pendingLocateInSidebar?.workspaceId !== wsId) return state;
-    return { ...state, pendingLocateInSidebar: null };
-  });
+export const appLayoutReducer = createReducer<AppLayoutState>(initialState);
+appLayoutReducer.with(commandPaletteNewFileRequested, (state, { payload: [wsId] }) => ({
+  ...state,
+  pendingCommandPaletteAction: { type: 'create-file', workspaceId: wsId },
+}));
+appLayoutReducer.with(commandPaletteActionConsumed, (state, { payload: [wsId] }) => {
+  if (state.pendingCommandPaletteAction?.workspaceId !== wsId) return state;
+  return { ...state, pendingCommandPaletteAction: null };
+});
+appLayoutReducer.with(locateItemInSidebarRequested, (state, { payload: [wsId, target] }) => ({
+  ...state,
+  pendingLocateInSidebar: { workspaceId: wsId, target },
+}));
+appLayoutReducer.with(locateItemInSidebarConsumed, (state, { payload: [wsId] }) => {
+  if (state.pendingLocateInSidebar?.workspaceId !== wsId) return state;
+  return { ...state, pendingLocateInSidebar: null };
+});

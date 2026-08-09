@@ -1,5 +1,8 @@
 /**
  * Integration test for protocol adapter getCurrentContext functionality
+ *
+ * UI context is daemon-owned (workspace.getUiContext / workspace.updateUiContext,
+ * PROTOCOL.md §5.1); the daemon RPCs are mocked with an in-memory store.
  */
 
 import {
@@ -7,39 +10,51 @@ import {
   it,
   expect,
   beforeEach,
-  afterEach,
+  vi,
 } from 'vitest';
 import { randomUUID } from 'crypto';
-import { ProtocolAdapter } from '../protocol-adapter';
+import { ProtocolAdapter } from '../main/protocol-adapter';
 import { WorkspaceService } from '../../workspace/main/workspace.service';
 import type { WorkspaceUIContext } from '../../../shared/types';
-import { WorkspaceConfig } from '../../../shared/main/config.js';
-import { promises as fs } from 'fs';
+
+// test-setup.ts mocks the protocol adapter module globally — restore the real
+// implementation for this suite, which exercises the adapter itself.
+vi.unmock('$features/protocol/main/protocol-adapter');
+
+// Mock the backend client used by DaemonWorkspaceRepository
+vi.mock('../../backend/main/backend.ipc');
 
 describe('ProtocolAdapter getCurrentContext', () => {
   let protocolAdapter: ProtocolAdapter;
   let workspaceService: WorkspaceService;
   let testWorkspaceId: string;
+  let uiContextStore: Map<string, unknown>;
+
+  const createMockedService = async (): Promise<WorkspaceService> => {
+    const { getBackendClient } = await import('../../backend/main/backend.ipc');
+    vi.mocked(getBackendClient).mockReturnValue({
+      request: vi.fn(async (method: string, params?: { workspaceId?: string; uiContext?: unknown }) => {
+        if (method === 'workspace.updateUiContext') {
+          uiContextStore.set(params!.workspaceId!, params!.uiContext);
+          return {};
+        }
+        if (method === 'workspace.getUiContext') {
+          return { uiContext: uiContextStore.get(params!.workspaceId!) };
+        }
+        throw new Error(`Unexpected RPC: ${method}`);
+      }),
+    } as any);
+    return new WorkspaceService();
+  };
 
   beforeEach(async () => {
     // New workspace ID for each test
     testWorkspaceId = randomUUID();
+    uiContextStore = new Map();
 
-    // Create service and adapter instances
-    workspaceService = new WorkspaceService();
+    // Create service and adapter instances backed by the mocked daemon
+    workspaceService = await createMockedService();
     protocolAdapter = new ProtocolAdapter(workspaceService);
-  });
-
-  afterEach(async () => {
-    // Clean up test workspace directory
-    try {
-      await fs.rm(WorkspaceConfig.paths.workspace(testWorkspaceId), {
-        recursive: true,
-        force: true,
-      });
-    } catch {
-      // ignore
-    }
   });
 
   it('should return null when no context exists', async () => {
@@ -137,7 +152,7 @@ describe('ProtocolAdapter getCurrentContext', () => {
     expect(context1).toEqual(context2);
   });
 
-  it('should read from disk when cache is empty', async () => {
+  it('should read from the daemon when cache is empty', async () => {
     const testContext: WorkspaceUIContext = {
       workspaceId: testWorkspaceId,
       mainContentType: 'diff',
@@ -149,10 +164,10 @@ describe('ProtocolAdapter getCurrentContext', () => {
     await workspaceService.updateCurrentContext(testWorkspaceId, testContext);
 
     // Create new adapter instance (simulates app restart - cache is empty)
-    const newWorkspaceService = new WorkspaceService();
+    const newWorkspaceService = await createMockedService();
     const newProtocolAdapter = new ProtocolAdapter(newWorkspaceService);
 
-    // Get context via new adapter (should read from disk)
+    // Get context via new adapter (should read from the daemon)
     const retrievedContext = await newProtocolAdapter.getCurrentContext(testWorkspaceId);
 
     expect(retrievedContext).toEqual(testContext);

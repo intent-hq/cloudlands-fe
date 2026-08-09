@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 
 // ============================================================================
 // Types
@@ -48,14 +48,15 @@ export const toggleFeatureCodeDialog = createAction("featureCodes/toggleFeatureC
 // Reducer
 // ============================================================================
 
-export const featureCodesReducer = createReducer<FeatureCodesState>(initialState)
-  .with(fetchFeaturesSuccess, (state, { payload: [features] }) => ({
-    ...state,
-    activeFeatures: features,
-    initialized: true,
-  }))
-  .with(toggleFeatureCodeDialog, (state) => ({
-    ...state,
-    dialogOpen: !state.dialogOpen,
-  }));
+export const featureCodesReducer = createReducer<FeatureCodesState>(initialState);
 
+
+featureCodesReducer.with(fetchFeaturesSuccess, (state, { payload: [features] }) => ({
+  ...state,
+  activeFeatures: features,
+  initialized: true,
+}));
+featureCodesReducer.with(toggleFeatureCodeDialog, (state) => ({
+  ...state,
+  dialogOpen: !state.dialogOpen,
+}));

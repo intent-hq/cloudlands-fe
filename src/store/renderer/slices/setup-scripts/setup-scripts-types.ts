@@ -4,7 +4,7 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
-import type { Collection } from "$lib/store-shim/utils/collections/collection-utils";
+import type { Collection } from "@augmentcode/themis/utils/collections/collection-utils";
 
 export type SetupScript = {
   id: string;

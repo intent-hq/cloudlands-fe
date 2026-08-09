@@ -37,13 +37,11 @@ import {
   MARK_AGENT_SEEN_DEBOUNCE_MS,
   MARK_AGENT_SEEN_DEDUPE_LIMIT,
   cancelPendingMarkAgentSeen,
-  createMarkAgentSeenTriggerMiddleware,
   markAgentSeenAtBoundary,
   markAgentSeenOnTurnFinish,
   markAgentSeenOnUserSend,
   newestPersistedMessageId,
 } from './mark-agent-seen';
-import { sendMessage, streamEnded } from '$store/renderer/slices/chat-state/chat-state-slice';
 
 function msg(id: string, isStreaming = false): AgentMessage {
   return { id, role: 'assistant', contentBlocks: [], isStreaming } as unknown as AgentMessage;
@@ -352,70 +350,6 @@ describe('markAgentSeenAtBoundary (immediate, stop-looking boundary)', () => {
   it('ignores blank ids and unknown sessions', async () => {
     markAgentSeenAtBoundary(['', nextAgentId()]);
     await flushImmediate();
-    expect(mockMarkSeen).not.toHaveBeenCalled();
-  });
-});
-
-describe('createMarkAgentSeenTriggerMiddleware', () => {
-  const api = { dispatch: vi.fn(), getState: vi.fn(() => mockState) };
-  const next = vi.fn((action: unknown) => action);
-
-  it('schedules a turn-finish trigger on streamEnded', async () => {
-    const agentId = nextAgentId();
-    seedSession(agentId);
-    const middleware = createMarkAgentSeenTriggerMiddleware()(api)(next);
-
-    const action = streamEnded(agentId);
-    expect(middleware(action)).toBe(action); // passes the action through
-    expect(next).toHaveBeenCalledWith(action);
-    expect(mockMarkSeen).not.toHaveBeenCalled(); // debounced, not immediate
-    await fireDebounce();
-
-    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
-    expect(mockMarkSeen).toHaveBeenCalledWith({
-      workspaceId: 'ws-1',
-      agentId,
-      messageId: 'msg-1',
-    });
-  });
-
-  it('schedules an ungated user-send trigger on sendMessage', async () => {
-    const agentId = nextAgentId();
-    seedSession(agentId, {}, { viewed: false });
-    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
-    const middleware = createMarkAgentSeenTriggerMiddleware()(api)(next);
-
-    middleware(sendMessage(agentId, { wsId: 'ws-1', text: 'hello' }));
-    await fireDebounce();
-
-    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
-  });
-
-  it('ignores unrelated actions and malformed payloads', async () => {
-    const middleware = createMarkAgentSeenTriggerMiddleware()(api)(next);
-
-    middleware({ type: 'other/action' });
-    middleware({ type: streamEnded.type, payload: [] });
-    middleware({ type: sendMessage.type, payload: {} });
-    await fireDebounce();
-
-    expect(mockMarkSeen).not.toHaveBeenCalled();
-  });
-
-  it('never fires from scrolling — scroll actions are not markSeen triggers', async () => {
-    // The marker advances ONLY at the three discrete triggers (turn finish,
-    // user send, stop-looking boundary) — never continuously from scroll
-    // position. Scroll-position persistence actions flow through the store
-    // when the user scrolls a conversation; none of them may schedule a call.
-    const agentId = nextAgentId();
-    seedSession(agentId);
-    const middleware = createMarkAgentSeenTriggerMiddleware()(api)(next);
-
-    middleware({ type: 'tabState/saveScrollPosition', payload: [`tab-${agentId}`, 1200] });
-    middleware({ type: 'tabState/saveScrollPosition', payload: [`tab-${agentId}`, 4800] });
-    middleware({ type: 'tabState/removeScrollPosition', payload: [`tab-${agentId}`] });
-    await fireDebounce();
-
     expect(mockMarkSeen).not.toHaveBeenCalled();
   });
 });

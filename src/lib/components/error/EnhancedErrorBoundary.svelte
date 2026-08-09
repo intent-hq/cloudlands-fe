@@ -58,6 +58,7 @@
   let errorInfo: string = $state('');
   let recoveryAttempts = $state(0);
   let isRecovering = $state(false);
+  // svelte-ignore state_referenced_locally - intentional: prop seeds the initial value; the toggle owns it afterwards
   let showDetails = $state(showDetailsProp);
   let copyFeedback: boolean = $state(false);
 

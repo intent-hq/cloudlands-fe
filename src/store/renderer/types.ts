@@ -1,8 +1,8 @@
-import type { Store } from '$lib/store-shim/svelte-store';
+import type { Store } from '@augmentcode/themis/svelte-store';
 import type {
   PreloadedStoreState as ToolkitPreloadedStoreState,
   StoreState as ToolkitStoreState,
-} from '$lib/store-shim/types';
+} from '@augmentcode/themis/types';
 import type { store as configuredStore } from './configured-store';
 
 // ============================================================================

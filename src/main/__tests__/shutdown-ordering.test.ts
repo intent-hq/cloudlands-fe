@@ -190,7 +190,7 @@ describe('gracefulShutdown call ordering (AST)', () => {
     // teardown" bug. On the non-macOS last-window-close path, after the user
     // confirms the running-agent prompt, the handler must delegate teardown to
     // gracefulShutdown() (which runs cleanupTerminals/cleanupNoteTerminals/
-    // disposeAllScriptProcessManagers/cleanupAutoUpdater, sets
+    // cleanupAutoUpdater, sets
     // isShuttingDown=true, and calls app.exit(0)) — and then return before the
     // inline teardown block runs. Without this, app.quit() at the end of the
     // handler fires before-quit → gracefulShutdown for a duplicate teardown and a
@@ -249,11 +249,13 @@ describe('gracefulShutdown call ordering (AST)', () => {
     // cleanups that previously ran inline on that path MUST remain reachable
     // inside gracefulShutdown. If any of these are removed, the non-macOS
     // last-window-close path silently stops cleaning up those resources
-    // (PTY terminals, workspace scripts, auto-updater periodic checks) and the
+    // (PTY terminals, auto-updater periodic checks) and the
     // process no longer force-exits via app.exit() after teardown.
     // `cleanupNoteTerminals` was retired in D6 alongside `notes-primitives.ipc.ts`;
     // the MCP hub `cleanupMCP` step was retired in G3 alongside the FE MCP hub
-    // (the daemon owns MCP process lifecycle now). The cleanup chain now lives
+    // (the daemon owns MCP process lifecycle now); the local script runtime
+    // (`disposeAllScriptProcessManagers`) was retired when workspace scripts
+    // moved to the daemon (§6.5). The cleanup chain now lives
     // in performGracefulShutdown(); findShutdownCleanupBody() proves it is
     // still reachable from gracefulShutdown() via runWithHardExitTimeout.
     const sf = parseIndex();
@@ -261,7 +263,6 @@ describe('gracefulShutdown call ordering (AST)', () => {
     const calls = callsitesIn(cleanup.body!);
     const required = [
       'cleanupTerminals',
-      'disposeAllScriptProcessManagers',
       'cleanupAutoUpdater',
       'app.exit',
     ];

@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import type {
   SpecialistProposalHistoryEntry,
   SpecialistProposalHistoryState,
@@ -40,17 +40,17 @@ export function pruneExpiredSpecialistProposalHistoryEntries(
 
 export const specialistProposalHistoryReducer = createReducer<SpecialistProposalHistoryState>(
   initialState,
-)
-  .with(recordSpecialistApplied, (state, { payload: [{ proposalId, appliedAt, reverse }] }) => ({
+);
+specialistProposalHistoryReducer.with(recordSpecialistApplied, (state, { payload: [{ proposalId, appliedAt, reverse }] }) => ({
     ...state,
     entries: {
       ...state.entries,
       [proposalId]: { appliedAt, reverse },
     },
-  }))
-  .with(clearSpecialistApplied, (state, { payload: [proposalId] }) => {
+  }));
+specialistProposalHistoryReducer.with(clearSpecialistApplied, (state, { payload: [proposalId] }) => {
     if (!(proposalId in state.entries)) return state;
     const { [proposalId]: _removed, ...entries } = state.entries;
     return { ...state, entries };
-  })
-  .with(hydrateSpecialistProposalHistory, (_state, { payload: [entries] }) => ({ entries }));
+  });
+specialistProposalHistoryReducer.with(hydrateSpecialistProposalHistory, (_state, { payload: [entries] }) => ({ entries }));

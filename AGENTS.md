@@ -161,7 +161,7 @@ active-streams fan-out). Prefer a targeted query for the affected workspace, or 
 daemon-side aggregate that returns everything in one RPC — if none exists, request one
 on the BE rather than looping on the client.
 
-### Mutation middleware & soft-hide-then-commit
+### Saga-owned mutations & soft-hide-then-commit
 
 Some async-action triggers (`*Requested` actions with a `.promise`) lost their handlers
 when the saga runtime was removed. They are re-homed in a **mutation middleware** rather

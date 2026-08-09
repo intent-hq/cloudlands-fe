@@ -4,10 +4,10 @@
    *
    * Two-step trust-on-first-use flow:
    *   1. `details` — enter host / port / access token, then capture the cert
-   *      fingerprint the daemon presents (`captureFingerprint`).
+   *      fingerprint the daemon presents (`captureFingerprintRequested`).
    *   2. `confirm` — show the captured fingerprint; on confirm, store the
-   *      connection (`addConnection`, which encrypts the token in main) and
-   *      switch to it (`switchConnection`).
+   *      connection (`addConnectionRequested`, which encrypts the token in main)
+   *      and switch to it (`switchConnectionRequested`).
    *
    * The list/active refresh arrives via the `connections:changed` push handled
    * by the connections service — this modal only drives the add/switch thunks
@@ -18,11 +18,12 @@
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
+  import { store as appStore } from '$store/renderer/store';
   import {
-    captureFingerprint,
-    addConnection,
-    switchConnection,
-  } from '$store/renderer/middlewares/connections-service';
+    captureFingerprintRequested,
+    addConnectionRequested,
+    switchConnectionRequested,
+  } from '$store/renderer/slices/connections/connections-slice';
 
   interface Props {
     open?: boolean;
@@ -79,11 +80,13 @@
     busy = true;
     error = null;
     try {
-      const result = await captureFingerprint({
+      const action = captureFingerprintRequested({
         host: host.trim(),
         port: portNumber,
         token: token.trim(),
       });
+      appStore.dispatch(action);
+      const result = await action.promise;
       fingerprint = result.fingerprint;
       step = 'confirm';
     } catch (e) {
@@ -98,14 +101,18 @@
     error = null;
     const trimmedHost = host.trim();
     try {
-      const connection = await addConnection({
+      const addAction = addConnectionRequested({
         label: `${trimmedHost}:${portNumber}`,
         host: trimmedHost,
         port: portNumber,
         fingerprint,
         token: token.trim(),
       });
-      await switchConnection(connection.id);
+      appStore.dispatch(addAction);
+      const connection = await addAction.promise;
+      const switchAction = switchConnectionRequested(connection.id);
+      appStore.dispatch(switchAction);
+      await switchAction.promise;
       close();
     } catch (e) {
       error = toMessage(e);

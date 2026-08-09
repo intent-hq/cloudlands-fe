@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Fake the live backend transport so `agent.completeOnce` routes through an
 // in-memory stub (no Electron). `vi.hoisted` keeps the spy visible to the
@@ -36,14 +36,19 @@ import {
   cancelExecution,
   executeBackgroundAgent,
 } from "$store/renderer/slices/background-agent-executor/background-agent-executor-slice";
+import { backgroundExecutorSaga } from "./background-executor-service";
 import { setWorkspaceEntity } from "$store/renderer/slices/workspace/workspace-slice";
-import { setTypeOverride } from "$store/renderer/slices/background-agent-settings/background-agent-settings-slice";
+import {
+  setDefaultModel,
+  setTypeOverride,
+} from "$store/renderer/slices/background-agent-settings/background-agent-settings-slice";
 import commitMessageInstruction from "./instructions/background/commit-message";
 import { BackendError } from "$lib/client/live/backend-transport-types";
 import type { Workspace } from "$shared/types";
 
 const WS = "ws-bg-exec-1";
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+let stopBackgroundExecutorSaga: (() => void) | undefined;
 
 function readExecutor(executorType: string) {
   return appStore.state.bgExecutor.byWorkspaceId[WS]?.executors[executorType];
@@ -62,6 +67,7 @@ async function waitForSettled(executorType: string, statuses: string[]): Promise
 describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)", () => {
   beforeAll(() => {
     appStore.init();
+    stopBackgroundExecutorSaga = appStore.runSaga(backgroundExecutorSaga);
     appStore.dispatch(
       setWorkspaceEntity({
         id: WS,
@@ -79,12 +85,22 @@ describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)"
     );
   });
 
+  afterAll(() => {
+    stopBackgroundExecutorSaga?.();
+    stopBackgroundExecutorSaga = undefined;
+  });
+
   beforeEach(async () => {
     await flush();
     completeOnceSpy.mockReset();
     toastErrorSpy.mockReset();
     prepareContextSpy.mockReset();
     prepareContextSpy.mockResolvedValue("PREPARED PROMPT");
+  });
+
+  afterEach(() => {
+    appStore.dispatch(setTypeOverride({ type: "commit", model: "" }));
+    appStore.dispatch(setDefaultModel(""));
   });
 
   it("sends the §5.32 request and lands the tagged result as success", async () => {
@@ -101,6 +117,7 @@ describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)"
       prompt: "PREPARED PROMPT",
       workspaceId: WS,
       timeoutMs: 120_000,
+      type: "commit",
       systemPrompt: commitMessageInstruction,
     });
 
@@ -114,7 +131,12 @@ describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)"
     expect(executor?.agentId).toBeNull();
   });
 
-  it("forwards the per-type model override on the wire", async () => {
+  // monorepo#1743: the FE no longer resolves `quickActions.*` itself — the
+  // daemon owns the chain (typeOverrides[type] → defaultModel → provider
+  // default, intentd#1012), so configured settings must NOT leak onto the wire
+  // as an explicit `model`.
+  it("never sends `model`, even when quick-action settings are configured", async () => {
+    appStore.dispatch(setDefaultModel("auggie:haiku4.5"));
     appStore.dispatch(setTypeOverride({ type: "commit", model: "auggie:sonnet4.5" }));
     completeOnceSpy.mockResolvedValueOnce({
       text: "<<<COMMIT_MESSAGE>>>fix: x<<</COMMIT_MESSAGE>>>",
@@ -124,8 +146,25 @@ describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)"
     await waitForSettled("commit", ["success", "error"]);
 
     const [params] = completeOnceSpy.mock.calls[0];
-    expect(params).toMatchObject({ model: "auggie:sonnet4.5" });
-    appStore.dispatch(setTypeOverride({ type: "commit", model: "" }));
+    expect(params).not.toHaveProperty("model");
+    expect(params).toMatchObject({ type: "commit" });
+  });
+
+  it.each([
+    ["commit", "commit"],
+    ["commit-merge", "commit"],
+    ["pr", "pr"],
+    ["review", "review"],
+    ["walkthrough", "walkthrough"],
+  ])("sends executor %s as the wire `type` %s", async (executorType, expectedType) => {
+    completeOnceSpy.mockResolvedValueOnce({ text: "anything" });
+
+    appStore.dispatch(executeBackgroundAgent(WS, executorType));
+    await waitForSettled(executorType, ["success", "error"]);
+
+    const [params] = completeOnceSpy.mock.calls[0];
+    expect(params).toMatchObject({ type: expectedType });
+    expect(params).not.toHaveProperty("model");
   });
 
   it("surfaces the { available: false, reason } provider gate as a visible error", async () => {
@@ -239,6 +278,24 @@ describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)"
 
     // The stale response must not overwrite the cancelled state.
     expect(readExecutor("commit")).toMatchObject({ status: "cancelled", result: null });
+  });
+
+  it("discards a stale result when a newer execution supersedes it", async () => {
+    let resolveFirst: (value: unknown) => void = () => {};
+    completeOnceSpy
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
+      .mockResolvedValueOnce({ text: "<<<COMMIT_MESSAGE>>>new<<</COMMIT_MESSAGE>>>" });
+
+    appStore.dispatch(executeBackgroundAgent(WS, "commit"));
+    await waitForSettled("commit", ["running"]);
+    appStore.dispatch(executeBackgroundAgent(WS, "commit"));
+    await waitForSettled("commit", ["success"]);
+
+    resolveFirst({ text: "<<<COMMIT_MESSAGE>>>stale<<</COMMIT_MESSAGE>>>" });
+    await flush();
+    await flush();
+
+    expect(readExecutor("commit")).toMatchObject({ status: "success", result: "new" });
   });
 
   it("marks the executor error when context preparation fails (e.g. nothing staged)", async () => {

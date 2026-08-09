@@ -30,6 +30,7 @@
     onClose,
   }: Props = $props();
 
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   let userMessage = $state(initialMessage);
   let textareaRef: HTMLTextAreaElement | null = $state(null);
 

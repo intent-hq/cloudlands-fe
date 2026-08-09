@@ -2,11 +2,15 @@ import {
   describe,
   it,
   expect,
+  vi,
 } from "vitest";
-import {
-  combineReducers,
-  createStoreCore as createStore,
-} from "$lib/store-shim/internal/store-core";
+import { Store } from "@augmentcode/themis/svelte-store";
+
+vi.mock("svelte", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("svelte")>()),
+  getContext: () => undefined,
+}));
+
 import {
   browserReducer,
   browserTabZoomRequested,
@@ -93,7 +97,11 @@ describe("browserReducer", () => {
      * requests only produced one apply (when the slot held a single
      * action and rapid dispatches in the same microtask collapsed).
      */
-    const makeStore = () => createStore(combineReducers({ browser: browserReducer }));
+    const makeStore = () => {
+      const store = new Store({ browser: browserReducer });
+      store.init();
+      return store;
+    };
 
     const subscribeAsEmbeddedBrowser = (
       store: ReturnType<typeof makeStore>,
@@ -102,30 +110,39 @@ describe("browserReducer", () => {
       onApply: (action: "in" | "out" | "reset") => void,
     ) => {
       const apply = () => {
-        const pending = selectPendingBrowserZoom.select(store.getState(), wsId, tabId);
+        const pending = selectPendingBrowserZoom.select(store.state, wsId, tabId);
         if (!pending || pending.length === 0) return;
         for (const action of pending) onApply(action);
         store.dispatch(clearBrowserTabZoomRequest(wsId, tabId));
       };
-      const unsubscribe = store.subscribe(apply);
+      const stateReadable = store.createSelector((state) => state)();
+      const unsubscribe = stateReadable.subscribe(apply);
       apply();
-      return unsubscribe;
+      // Themis selector readables are cadenced. Flush after each test dispatch
+      // so this regression guard retains its synchronous rapid-dispatch contract.
+      return {
+        unsubscribe,
+        dispatch: (action: Parameters<typeof store.dispatch>[0]) => {
+          store.dispatch(action);
+          apply();
+        },
+      };
     };
 
     it("applies three consecutive identical zoom requests", () => {
       const store = makeStore();
       const applied: Array<"in" | "out" | "reset"> = [];
-      const unsubscribe = subscribeAsEmbeddedBrowser(store, "ws-1", "tab-a", (action) => {
+      const { unsubscribe, dispatch } = subscribeAsEmbeddedBrowser(store, "ws-1", "tab-a", (action) => {
         applied.push(action);
       });
 
-      store.dispatch(browserTabZoomRequested("ws-1", "tab-a", "in"));
-      store.dispatch(browserTabZoomRequested("ws-1", "tab-a", "in"));
-      store.dispatch(browserTabZoomRequested("ws-1", "tab-a", "in"));
+      dispatch(browserTabZoomRequested("ws-1", "tab-a", "in"));
+      dispatch(browserTabZoomRequested("ws-1", "tab-a", "in"));
+      dispatch(browserTabZoomRequested("ws-1", "tab-a", "in"));
 
       expect(applied).toEqual(["in", "in", "in"]);
       expect(
-        store.getState().browser.byWorkspaceId["ws-1"].pendingZoomByTabId["tab-a"],
+        store.state.browser.byWorkspaceId["ws-1"].pendingZoomByTabId["tab-a"],
       ).toBeUndefined();
 
       unsubscribe();
@@ -135,18 +152,18 @@ describe("browserReducer", () => {
       const store = makeStore();
       const appliedA: string[] = [];
       const appliedB: string[] = [];
-      const unsubA = subscribeAsEmbeddedBrowser(store, "ws-1", "tab-a", (a) => appliedA.push(a));
-      const unsubB = subscribeAsEmbeddedBrowser(store, "ws-1", "tab-b", (a) => appliedB.push(a));
+      const subA = subscribeAsEmbeddedBrowser(store, "ws-1", "tab-a", (a) => appliedA.push(a));
+      const subB = subscribeAsEmbeddedBrowser(store, "ws-1", "tab-b", (a) => appliedB.push(a));
 
-      store.dispatch(browserTabZoomRequested("ws-1", "tab-a", "in"));
-      store.dispatch(browserTabZoomRequested("ws-1", "tab-b", "out"));
-      store.dispatch(browserTabZoomRequested("ws-1", "tab-a", "reset"));
+      subA.dispatch(browserTabZoomRequested("ws-1", "tab-a", "in"));
+      subB.dispatch(browserTabZoomRequested("ws-1", "tab-b", "out"));
+      subA.dispatch(browserTabZoomRequested("ws-1", "tab-a", "reset"));
 
       expect(appliedA).toEqual(["in", "reset"]);
       expect(appliedB).toEqual(["out"]);
 
-      unsubA();
-      unsubB();
+      subA.unsubscribe();
+      subB.unsubscribe();
     });
   });
 });

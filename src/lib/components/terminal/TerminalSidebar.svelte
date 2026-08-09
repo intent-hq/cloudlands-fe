@@ -471,8 +471,12 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   const _sidebarTerminals = selectTerminalsSelector();
   const _sidebarActiveTerminalId = selectActiveTerminalIdSelector();
   const scriptEntries$ = selectScriptEntries();
-  // Background agent executor state via direct selector subscriptions
+  // Background agent executor state via direct selector subscriptions.
+  // Selector readables must be created at component init; workspaceId is
+  // stable for the lifetime of this sidebar.
+  // svelte-ignore state_referenced_locally
   const _scriptDetectIsRunning$ = selectExecutorIsRunning(workspaceId, 'script-detect');
+  // svelte-ignore state_referenced_locally
   const _scriptDetectAgentId$ = selectExecutorAgentId(workspaceId, 'script-detect');
 
   // Derived

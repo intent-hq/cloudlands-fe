@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   DEFAULT_THEME_CUSTOMIZATION,
   DEFAULT_THEME_NAME,
@@ -43,20 +43,20 @@ function isSameThemeCustomization(
   );
 }
 
-export const themeReducer = createReducer<ThemeState>(initialState)
-  .with(setThemeName, (state, { payload: [name] }) => {
+export const themeReducer = createReducer<ThemeState>(initialState);
+themeReducer.with(setThemeName, (state, { payload: [name] }) => {
     if (state.name === name) return state;
     return { ...state, name };
-  })
-  .with(setThemePreference, (state, { payload: [preference] }) => {
+  });
+themeReducer.with(setThemePreference, (state, { payload: [preference] }) => {
     if (state.preference === preference) return state;
     return { ...state, preference };
-  })
-  .with(setThemeCustomization, (state, { payload: [customization] }) => {
+  });
+themeReducer.with(setThemeCustomization, (state, { payload: [customization] }) => {
     if (isSameThemeCustomization(state, customization)) return state;
     return { ...state, ...customization };
-  })
-  .with(setThemeError, (state, { payload: [error] }) => {
+  });
+themeReducer.with(setThemeError, (state, { payload: [error] }) => {
     if (state.error === error) return state;
     return { ...state, error };
   });

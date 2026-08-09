@@ -2,8 +2,9 @@
  * LiveWorkspacesClient tests — includeArchived parameter handling.
  *
  * Ensures `list({ includeArchived: true })` sends the param to the daemon,
- * bare `list()` omits it (default false), and the subscription's `fetchAll`
- * includes archived workspaces.
+ * bare `list()` omits it (default false), and `subscribe`'s typed
+ * `workspace.subscribe` channel seq-0 snapshot includes archived workspaces
+ * (intentd#521) — the sole data path (intent-hq/monorepo#1697).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { LiveWorkspacesClient } from "../live-workspaces-client";
@@ -13,10 +14,15 @@ import { createTestWorkspaceId } from "../../../../test/factories/workspace.fact
 describe("LiveWorkspacesClient", () => {
   let client: LiveWorkspacesClient;
   let backendRequestSpy: ReturnType<typeof vi.spyOn>;
+  let onNotificationSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     client = new LiveWorkspacesClient();
     backendRequestSpy = vi.spyOn(backendTransport, "backendRequest");
+    onNotificationSpy = vi
+      .spyOn(backendTransport, "onBackendNotification")
+      .mockImplementation(() => () => {});
+    vi.spyOn(backendTransport, "onBackendReconnected").mockImplementation(() => () => {});
   });
 
   afterEach(() => {
@@ -76,20 +82,43 @@ describe("LiveWorkspacesClient", () => {
   });
 
   describe("subscribe()", () => {
-    it("fetchAll callback includes archived workspaces", async () => {
-      // Spy on the list method before subscribing
-      const listSpy = vi.spyOn(client, "list").mockResolvedValue([]);
+    it("registers the global workspace.subscribe channel and reconciles its snapshot verbatim", async () => {
+      backendRequestSpy.mockImplementation((method: unknown) => {
+        if (method === "workspace.subscribe") {
+          return Promise.resolve({ subscriptionId: "chan-1" });
+        }
+        return Promise.resolve({ success: true });
+      });
 
       const handler = vi.fn();
       const unsubscribe = client.subscribe(handler);
 
-      // Wait a tick for the subscription to initialize
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await vi.waitFor(() => {
+        expect(backendRequestSpy).toHaveBeenCalledWith("workspace.subscribe", {});
+      });
 
-      // The subscription's fetchAll should have been called, which calls list
-      // Verify list was called with includeArchived: true
-      expect(listSpy).toHaveBeenCalledWith({ includeArchived: true });
+      // The daemon's seq-0 snapshot for the one GLOBAL channel includes
+      // archived workspaces (intentd#521) — reconciled verbatim, no `list()`
+      // call involved (intent-hq/monorepo#1697: no legacy fetchAll).
+      const archivedWorkspace = {
+        id: createTestWorkspaceId(),
+        title: "Archived WS",
+        status: "archived",
+        branch: "main",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      };
+      const notifyHandler = onNotificationSpy.mock.calls.at(-1)?.[0] as
+        | ((n: { method: string; params?: unknown }) => void)
+        | undefined;
+      notifyHandler?.({
+        method: "subscription.push",
+        params: { subscriptionId: "chan-1", kind: "snapshot", seq: 0, snapshot: [archivedWorkspace] },
+      });
 
+      expect(handler).toHaveBeenLastCalledWith([
+        expect.objectContaining({ id: archivedWorkspace.id, title: "Archived WS" }),
+      ]);
       unsubscribe();
     });
   });

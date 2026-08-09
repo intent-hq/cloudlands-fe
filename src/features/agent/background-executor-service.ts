@@ -1,11 +1,8 @@
 /**
- * Background executor service — the post-saga consumer for the
- * background-agent-executor triggers (`bgExecutor/execute`,
- * `bgExecutor/cancel`) that lost their handler when
- * `background-agent-executor-saga.ts` was removed with the saga runtime.
- * Restores the Generate quick actions (commit message, PR description,
- * code review, walkthrough) WITHOUT re-adding a saga and WITHOUT changing
- * any dispatch site.
+ * Background executor saga for the background-agent-executor triggers
+ * (`bgExecutor/execute`, `bgExecutor/cancel`). Restores the Generate quick
+ * actions (commit message, PR description, code review, walkthrough) as an
+ * app-owned saga without changing any dispatch site.
  *
  * Unlike the deleted saga (create agent → send → monitor → extract →
  * delete), this rides the daemon's stateless one-shot completion
@@ -15,6 +12,12 @@
  * session is created and there is nothing to clean up on the error path;
  * `executor.agentId` therefore stays null ("view thought process"
  * affordances stay hidden).
+ *
+ * The quick-action model is NOT resolved here: the call carries the `type`
+ * hint and no `model`, so the daemon applies
+ * `quickActions.typeOverrides[type]` → `quickActions.defaultModel` →
+ * provider default (intentd#1012, monorepo#1743) as the single source of
+ * truth.
  *
  * The §5.32 provider gate returns `{ available: false, reason }` instead of
  * text when no one-shot route exists for the effective default provider
@@ -27,22 +30,20 @@
  * discarded on arrival, and marks the executor `cancelled` (the reference
  * saga's semantics).
  *
- * Dependency-light per src/store/renderer/AGENTS.md: top-level imports are
- * limited to the configured store, slice actions/types, store-free utils,
- * and the logger. Selector modules (which evaluate `store.createSelector`
- * at import) and the toast lib are dynamically imported inside handlers.
+ * Selector access uses selector `.effect()` inside the saga, and all state
+ * updates are dispatched through saga effects. The toast lib remains lazy.
  */
-import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { Task } from 'redux-saga';
+import { call, cancel, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { BackendError } from '$lib/client/live/backend-transport-types';
-import { store as appStore } from '$store/renderer/store';
 import {
   cancelExecution,
   executeBackgroundAgent,
   setExecutorState,
 } from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
 import { EXECUTOR_CONFIGS } from '$store/renderer/slices/background-agent-executor/background-agent-executor-types';
-import type { BackgroundAgentType } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import { prepareContext } from '$store/renderer/slices/background-agent-executor/utils/context-preparation';
 import { extractResultFromText } from '$store/renderer/slices/background-agent-executor/utils/result-extraction';
 import commitMessageInstruction from './instructions/background/commit-message';
@@ -70,7 +71,9 @@ const INSTRUCTIONS_BY_AGENT_TYPE: Record<string, string> = {
 /** §5.32 result envelope: text, or the provider-neutral unavailable gate. */
 type CompleteOnceResult = { text?: unknown } | { available: false; reason?: unknown };
 
-function isUnavailable(result: CompleteOnceResult): result is { available: false; reason?: unknown } {
+function isUnavailable(
+  result: CompleteOnceResult,
+): result is { available: false; reason?: unknown } {
   return 'available' in result && result.available === false;
 }
 
@@ -117,40 +120,19 @@ async function showErrorToast(message: string, description: string): Promise<voi
 }
 
 /**
- * Lazily load the selector modules (they evaluate `store.createSelector` at
- * import, which must not run during middleware-chain construction).
+ * Wire `type` hint per executor type (§5.32). The daemon keys
+ * `quickActions.typeOverrides` on it and falls back to
+ * `quickActions.defaultModel` then the provider default (intentd#1012), so
+ * an executor without an override key (e.g. 'walkthrough') simply misses the
+ * map and resolves to the default. 'commit-merge' shares the commit model.
  */
-async function loadSelectorDeps() {
-  const [wsSel, bgSel] = await Promise.all([
-    import('$store/renderer/slices/workspace/workspace-selectors'),
-    import('$store/renderer/slices/background-agent-settings/background-agent-settings-selectors'),
-  ]);
-  return {
-    selectWorkspaceById: wsSel.selectWorkspaceById,
-    selectModelForType: bgSel.selectModelForType,
-  };
-}
+const QUICK_ACTION_TYPE_MAP: Record<string, string> = { 'commit-merge': 'commit' };
 
-/**
- * Executor types map onto the background-agent settings types where one
- * exists ('commit-merge' shares the commit model); unmapped types (e.g.
- * 'walkthrough') fall through to the settings default model.
- */
-const SETTINGS_TYPE_MAP: Record<string, BackgroundAgentType> = { 'commit-merge': 'commit' };
-
-function updateExecutor(
-  workspaceId: string,
-  executorType: string,
-  updates: Parameters<typeof setExecutorState>[2],
-): void {
-  appStore.dispatch(setExecutorState(workspaceId, executorType, updates));
-}
-
-async function handleExecute(
+function* handleExecute(
   workspaceId: string,
   executorType: string,
   context?: Parameters<typeof executeBackgroundAgent>[2],
-): Promise<void> {
+): SagaGenerator<void> {
   const config = EXECUTOR_CONFIGS[executorType];
   if (!config) {
     logger.error(`Unknown executor type: ${executorType}`);
@@ -159,43 +141,49 @@ async function handleExecute(
 
   const generation = bumpGeneration(workspaceId, executorType);
 
-  updateExecutor(workspaceId, executorType, {
-    status: 'initializing',
-    result: null,
-    error: null,
-    progress: 0,
-    agentId: null,
-    workspaceId,
-    executionContext: context ?? null,
-  });
+  yield* put(
+    setExecutorState(workspaceId, executorType, {
+      status: 'initializing',
+      result: null,
+      error: null,
+      progress: 0,
+      agentId: null,
+      workspaceId,
+      executionContext: context ?? null,
+    }),
+  );
 
   try {
-    const { selectWorkspaceById, selectModelForType } = await loadSelectorDeps();
-
-    const workspace = selectWorkspaceById.select(appStore.state, workspaceId);
+    const workspace = yield* selectWorkspaceById.effect(workspaceId);
     if (!workspace) {
       // i18n-ignore (internal diagnostic, surfaced via localized toast title)
       throw new Error(`Workspace not found: ${workspaceId}`);
     }
 
-    // Effective model for this executor type ('' → omit, provider default).
-    const settingsType = SETTINGS_TYPE_MAP[executorType] ?? (executorType as BackgroundAgentType);
-    const model = selectModelForType.select(appStore.state, settingsType);
+    // Quick-action `type` hint; the daemon resolves the model from it.
+    const quickActionType = QUICK_ACTION_TYPE_MAP[executorType] ?? executorType;
 
     const systemPrompt = INSTRUCTIONS_BY_AGENT_TYPE[config.agentType];
-    const prompt = await prepareContext(workspace, executorType, config.resultTag, context);
+    const prompt = yield* call(prepareContext, workspace, executorType, config.resultTag, context);
     if (!isCurrentGeneration(workspaceId, executorType, generation)) return;
 
-    updateExecutor(workspaceId, executorType, { status: 'running', progress: 20 });
+    yield* put(setExecutorState(workspaceId, executorType, { status: 'running', progress: 20 }));
 
     const timeoutMs = Math.min(config.timeout, DAEMON_TIMEOUT_CAP_MS);
-    const params: Record<string, unknown> = { prompt, workspaceId, timeoutMs };
+    const params: Record<string, unknown> = {
+      prompt,
+      workspaceId,
+      timeoutMs,
+      type: quickActionType,
+    };
     if (systemPrompt) params.systemPrompt = systemPrompt;
-    if (model) params.model = model;
 
-    const response = await backendRequest<CompleteOnceResult>('agent.completeOnce', params, {
-      timeoutMs: timeoutMs + TRANSPORT_TIMEOUT_MARGIN_MS,
-    });
+    const response: CompleteOnceResult = yield* call(
+      backendRequest<CompleteOnceResult>,
+      'agent.completeOnce',
+      params,
+      { timeoutMs: timeoutMs + TRANSPORT_TIMEOUT_MARGIN_MS },
+    );
     if (!isCurrentGeneration(workspaceId, executorType, generation)) return;
 
     if (isUnavailable(response)) {
@@ -203,8 +191,14 @@ async function handleExecute(
         typeof response.reason === 'string' && response.reason.length > 0
           ? response.reason
           : m.bgExecutor_service_unavailable_error();
-      updateExecutor(workspaceId, executorType, { status: 'error', error: reason, progress: 0 });
-      void showErrorToast(m.bgExecutor_service_generateFailed_error(), reason);
+      yield* put(
+        setExecutorState(workspaceId, executorType, {
+          status: 'error',
+          error: reason,
+          progress: 0,
+        }),
+      );
+      yield* fork(showErrorToast, m.bgExecutor_service_generateFailed_error(), reason);
       return;
     }
 
@@ -213,18 +207,22 @@ async function handleExecute(
     const resultTag = executorType === 'walkthrough' ? undefined : config.resultTag;
     const { result, error: extractError } = extractResultFromText(text, resultTag);
 
-    updateExecutor(workspaceId, executorType, {
-      status: result ? 'success' : 'error',
-      result,
-      error: extractError ?? (result ? null : m.bgExecutor_service_noResult_error()),
-      progress: 100,
-    });
+    yield* put(
+      setExecutorState(workspaceId, executorType, {
+        status: result ? 'success' : 'error',
+        result,
+        error: extractError ?? (result ? null : m.bgExecutor_service_noResult_error()),
+        progress: 100,
+      }),
+    );
   } catch (error) {
     if (!isCurrentGeneration(workspaceId, executorType, generation)) return;
     const message = executionErrorMessage(error);
     logger.error('Background execution failed', { workspaceId, executorType, error });
-    updateExecutor(workspaceId, executorType, { status: 'error', error: message, progress: 0 });
-    void showErrorToast(m.bgExecutor_service_generateFailed_error(), message);
+    yield* put(
+      setExecutorState(workspaceId, executorType, { status: 'error', error: message, progress: 0 }),
+    );
+    yield* fork(showErrorToast, m.bgExecutor_service_generateFailed_error(), message);
   }
 }
 
@@ -249,28 +247,43 @@ function executionErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function handleCancel(workspaceId: string, executorType: string): void {
-  bumpGeneration(workspaceId, executorType);
-  updateExecutor(workspaceId, executorType, { status: 'cancelled' });
-}
+type ExecutorTrigger =
+  ReturnType<typeof executeBackgroundAgent> | ReturnType<typeof cancelExecution>;
 
-/**
- * Middleware wiring `bgExecutor/execute` and `bgExecutor/cancel` to the
- * §5.32 one-shot completion pipeline. Observes actions after the reducer
- * runs (execute/cancel are pure triggers with no reducer case).
- */
-export function createBackgroundExecutorMiddleware(): StoreMiddleware {
-  return () => (next) => (action) => {
-    const result = next(action);
-    if (action && action.type === executeBackgroundAgent.type) {
-      const [workspaceId, executorType, context] = (
-        action as ReturnType<typeof executeBackgroundAgent>
-      ).payload;
-      void handleExecute(workspaceId, executorType, context);
-    } else if (action && action.type === cancelExecution.type) {
-      const [workspaceId, executorType] = (action as ReturnType<typeof cancelExecution>).payload;
-      handleCancel(workspaceId, executorType);
+/** Owns background executor work under the app saga lifecycle. */
+export function* backgroundExecutorSaga(): SagaGenerator<void> {
+  const running = new Map<string, { task?: Task; token: symbol }>();
+
+  try {
+    while (true) {
+      const action: ExecutorTrigger = yield* take([executeBackgroundAgent, cancelExecution]);
+      const [workspaceId, executorType] = action.payload;
+      const key = generationKey(workspaceId, executorType);
+
+      if (action.type === executeBackgroundAgent.type) {
+        const [, , context] = action.payload;
+        const token = Symbol(key);
+        const task = yield* fork(function* (): SagaGenerator<void> {
+          try {
+            yield* call(handleExecute, workspaceId, executorType, context);
+          } finally {
+            if (running.get(key)?.token === token) running.delete(key);
+          }
+        });
+        running.set(key, { task, token });
+        continue;
+      }
+
+      bumpGeneration(workspaceId, executorType);
+      yield* put(setExecutorState(workspaceId, executorType, { status: 'cancelled' }));
+      const active = running.get(key);
+      if (active?.task) yield* cancel(active.task);
+      running.delete(key);
     }
-    return result;
-  };
+  } finally {
+    for (const active of running.values()) {
+      if (active.task) yield* cancel(active.task);
+    }
+    running.clear();
+  }
 }

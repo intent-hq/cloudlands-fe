@@ -30,16 +30,18 @@ function makeFakeManager(
 function makeFakeIpc() {
   const handlers = new Map<string, (...args: unknown[]) => void>();
   const sent: string[] = [];
+  const offById = vi.fn();
   const ipc: ClearLightingIpcLike = {
     on: vi.fn((channel: string, handler: (...args: unknown[]) => void) => {
       handlers.set(channel, handler);
       return 'listener-id';
     }),
+    offById,
     send: vi.fn((channel: string) => {
       sent.push(channel);
     }),
   };
-  return { ipc, handlers, sent };
+  return { ipc, handlers, sent, offById };
 }
 
 async function emitClearLighting(handlers: Map<string, (...args: unknown[]) => void>) {
@@ -101,13 +103,15 @@ describe('installHardwareConsoleClearLightingListener', () => {
     const { ipc, handlers, sent } = makeFakeIpc();
     const order: string[] = [];
     const disposeLedWiring = vi.fn(() => order.push('dispose'));
-    installHardwareConsoleClearLightingListener(fake, { ipc, disposeLedWiring });
+    const dispose = installHardwareConsoleClearLightingListener(fake, { ipc, disposeLedWiring });
     expect(ipc.on).toHaveBeenCalledWith('hardware-console:clear-lighting', expect.any(Function));
 
     await emitClearLighting(handlers);
     expect(disposeLedWiring).toHaveBeenCalledOnce();
     expect(calls.map((entry) => entry.method)).toEqual(['v.oai.thstatus', 'v.oai.rgbcfg']);
     expect(sent).toEqual(['hardware-console:clear-lighting-done']);
+    dispose();
+    expect(ipc.offById).toHaveBeenCalledWith('hardware-console:clear-lighting', 'listener-id');
   });
 
   it('acks even when no device is connected', async () => {

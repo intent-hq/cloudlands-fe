@@ -13,6 +13,7 @@
 
   let { tab, workspaceId }: TabTypeComponentProps = $props();
 
+  // svelte-ignore state_referenced_locally
   const workspaceIdStore = writable(workspaceId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);
