@@ -31,6 +31,7 @@
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import { getLastMeaningfulLine, stripUserMessagePrefixes } from '$lib/utils/text-utils';
   import { classifyTool } from './tool-classifier';
+  import { deriveAgentCardPreview } from './agent-card-preview';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
@@ -534,6 +535,26 @@
     );
   });
 
+  // Single preview value for the persistent container below: the precedence
+  // chain (attention → live text → live tool → user line → digest/report →
+  // persisted fallbacks) collapses into one { kind, text/toolUse } value so
+  // preview-source flips swap content in place instead of unmount/mounting
+  // sibling blocks with height animation.
+  const preview = $derived(
+    deriveAgentCardPreview({
+      attentionRequest,
+      liveResponseLine,
+      liveToolUse,
+      hasRenderableLiveTool,
+      showUserMessagePreview,
+      userFirstLine,
+      effectiveCompletionReport,
+      lastResponse,
+      lastToolUse,
+      lastUserMsg,
+    }),
+  );
+
   // Handle click - navigate to agent
   function handleClick(event: MouseEvent) {
     if (onclick) {
@@ -651,82 +672,42 @@
           </div>
         </div>
 
-        <!-- Message preview precedence: attention request, live streamed text,
-             renderable in-flight tool, newest user line, digest/report, then
-             persisted transcript fallback. Hidden tool labels fall through. -->
-        {#if !hidePreview}
-          {#if attentionRequest}
-            <div class="mt-0.5" transition:safeSlide={{ axis: 'y', duration: 150 }}>
+        <!-- Message preview: one persistent container rendering the derived
+             `preview` value (see agent-card-preview.ts for the precedence
+             chain). Content swaps in place — no per-branch transitions — so
+             source flips don't height-animate; the section as a whole still
+             slides when the preview appears/disappears entirely. -->
+        {#if !hidePreview && preview}
+          <div class="mt-0.5" transition:safeSlide={{ axis: 'y', duration: 150 }}>
+            {#if preview.kind === 'attention'}
               <p
-                class="text-sm truncate {attentionRequest.kind === 'blocker'
+                class="text-sm truncate {preview.attention.kind === 'blocker'
                   ? 'text-red-500'
                   : 'text-amber-500'}"
                 data-testid="agent-card-attention"
               >
-                {attentionRequest.kind === 'blocker'
+                {preview.attention.kind === 'blocker'
                   ? m.chat_agentCard_attentionBlocker_label()
-                  : m.chat_agentCard_attentionDiscussion_label()}{#if attentionRequest.reason}<span
+                  : m.chat_agentCard_attentionDiscussion_label()}{#if preview.attention.reason}<span
                     class="text-subtle"
                   >
-                    · {attentionRequest.reason}</span
+                    · {preview.attention.reason}</span
                   >{/if}
               </p>
-            </div>
-          {:else if liveResponseLine}
-            <div class="space-y-0.5">
-              <p
-                class="text-sm text-subtle truncate"
-                data-testid="agent-card-preview"
-                transition:safeSlide={{ axis: 'y', duration: 150 }}
-              >
-                {liveResponseLine}
-              </p>
-            </div>
-          {:else if hasRenderableLiveTool}
-            <div
-              class="text-sm text-subtle truncate"
-              data-testid="agent-card-preview"
-              transition:safeSlide={{ axis: 'y', duration: 150 }}
-            >
-              <AgentPreviewToolLabel toolUse={liveToolUse} animate={isRunning} />
-            </div>
-          {:else if showUserMessagePreview}
-            <div class="mt-0.5">
-              <p class="text-sm text-subtle truncate" data-testid="agent-card-preview">
-                {userFirstLine}
-              </p>
-            </div>
-          {:else if effectiveCompletionReport}
-            <div class="mt-0.5">
+            {:else if preview.kind === 'live-tool' || preview.kind === 'last-tool'}
+              <div class="text-sm text-subtle truncate" data-testid="agent-card-preview">
+                <AgentPreviewToolLabel toolUse={preview.toolUse} animate={isRunning} />
+              </div>
+            {:else if preview.kind === 'report'}
               <p class="text-sm text-subtle truncate">
-                {effectiveCompletionReport}
+                {preview.text}
               </p>
-            </div>
-          {:else if lastUserMsg || lastResponse || lastToolUse}
-            <div class="space-y-0.5">
-              {#if lastResponse}
-                <p
-                  class="text-sm text-subtle truncate"
-                  data-testid="agent-card-preview"
-                  transition:safeSlide={{ axis: 'y', duration: 150 }}
-                >
-                  {lastResponse}
-                </p>
-              {:else if lastToolUse}
-                <div
-                  class="text-sm text-subtle truncate"
-                  data-testid="agent-card-preview"
-                  transition:safeSlide={{ axis: 'y', duration: 150 }}
-                >
-                  <AgentPreviewToolLabel toolUse={lastToolUse} animate={isRunning} />
-                </div>
-              {:else if lastUserMsg}
-                <p class="text-sm text-subtle truncate" data-testid="agent-card-preview">
-                  {lastUserMsg}
-                </p>
-              {/if}
-            </div>
-          {/if}
+            {:else}
+              <p class="text-sm text-subtle truncate" data-testid="agent-card-preview">
+                {preview.text}
+              </p>
+            {/if}
+          </div>
         {/if}
       </div>
     </button>

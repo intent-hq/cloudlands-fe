@@ -275,6 +275,21 @@ describe('AgentSubscriptions sections', () => {
     );
   });
 
+  it('orders one-shot rows by agent id regardless of snapshot iteration order', async () => {
+    const WS = 'ws-sections-row-order';
+    await renderWithSnapshot(WS, {
+      subscriptions: [
+        oneShotSubscription('watch-b', WS, 'child-b'),
+        oneShotSubscription('watch-a', WS, 'child-a'),
+      ],
+      delegationGroups: [],
+      agentStatuses: { [PARENT]: 'waiting', 'child-a': 'responding', 'child-b': 'responding' },
+    });
+
+    const rows = within(screen.getByTestId('one-shot-watches')).getAllByTestId('agent-list-item');
+    expect(rows.map((row) => row.getAttribute('data-agent-id'))).toEqual(['child-a', 'child-b']);
+  });
+
   it('renders no one-shot header when there are no one-shot watches', async () => {
     const WS = 'ws-sections-header-none';
     await renderWithSnapshot(WS, {
@@ -385,9 +400,7 @@ describe('AgentSubscriptions sections', () => {
 
     // Expanding again restores the rows and removes the strip
     await fireEvent.click(screen.getByTestId('one-shot-collapse-toggle'));
-    await waitFor(() =>
-      expect(within(oneShots).getAllByTestId('agent-list-item')).toHaveLength(2),
-    );
+    await waitFor(() => expect(within(oneShots).getAllByTestId('agent-list-item')).toHaveLength(2));
     await waitFor(() => expect(screen.queryByTestId('one-shot-avatar-strip')).toBeNull());
   });
 
