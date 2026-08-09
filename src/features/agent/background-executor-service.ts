@@ -13,6 +13,12 @@
  * `executor.agentId` therefore stays null ("view thought process"
  * affordances stay hidden).
  *
+ * The quick-action model is NOT resolved here: the call carries the `type`
+ * hint and no `model`, so the daemon applies
+ * `quickActions.typeOverrides[type]` → `quickActions.defaultModel` →
+ * provider default (intentd#1012, monorepo#1743) as the single source of
+ * truth.
+ *
  * The §5.32 provider gate returns `{ available: false, reason }` instead of
  * text when no one-shot route exists for the effective default provider
  * (intentd#991 reason strings). That surfaces as a user-visible error state
@@ -37,8 +43,6 @@ import {
   setExecutorState,
 } from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
 import { EXECUTOR_CONFIGS } from '$store/renderer/slices/background-agent-executor/background-agent-executor-types';
-import type { BackgroundAgentType } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
-import { selectModelForType } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import { prepareContext } from '$store/renderer/slices/background-agent-executor/utils/context-preparation';
 import { extractResultFromText } from '$store/renderer/slices/background-agent-executor/utils/result-extraction';
@@ -116,11 +120,13 @@ async function showErrorToast(message: string, description: string): Promise<voi
 }
 
 /**
- * Executor types map onto the background-agent settings types where one
- * exists ('commit-merge' shares the commit model); unmapped types (e.g.
- * 'walkthrough') fall through to the settings default model.
+ * Wire `type` hint per executor type (§5.32). The daemon keys
+ * `quickActions.typeOverrides` on it and falls back to
+ * `quickActions.defaultModel` then the provider default (intentd#1012), so
+ * an executor without an override key (e.g. 'walkthrough') simply misses the
+ * map and resolves to the default. 'commit-merge' shares the commit model.
  */
-const SETTINGS_TYPE_MAP: Record<string, BackgroundAgentType> = { 'commit-merge': 'commit' };
+const QUICK_ACTION_TYPE_MAP: Record<string, string> = { 'commit-merge': 'commit' };
 
 function* handleExecute(
   workspaceId: string,
@@ -154,9 +160,8 @@ function* handleExecute(
       throw new Error(`Workspace not found: ${workspaceId}`);
     }
 
-    // Effective model for this executor type ('' → omit, provider default).
-    const settingsType = SETTINGS_TYPE_MAP[executorType] ?? (executorType as BackgroundAgentType);
-    const model = yield* selectModelForType.effect(settingsType);
+    // Quick-action `type` hint; the daemon resolves the model from it.
+    const quickActionType = QUICK_ACTION_TYPE_MAP[executorType] ?? executorType;
 
     const systemPrompt = INSTRUCTIONS_BY_AGENT_TYPE[config.agentType];
     const prompt = yield* call(prepareContext, workspace, executorType, config.resultTag, context);
@@ -165,9 +170,13 @@ function* handleExecute(
     yield* put(setExecutorState(workspaceId, executorType, { status: 'running', progress: 20 }));
 
     const timeoutMs = Math.min(config.timeout, DAEMON_TIMEOUT_CAP_MS);
-    const params: Record<string, unknown> = { prompt, workspaceId, timeoutMs };
+    const params: Record<string, unknown> = {
+      prompt,
+      workspaceId,
+      timeoutMs,
+      type: quickActionType,
+    };
     if (systemPrompt) params.systemPrompt = systemPrompt;
-    if (model) params.model = model;
 
     const response: CompleteOnceResult = yield* call(
       backendRequest<CompleteOnceResult>,
