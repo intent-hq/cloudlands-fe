@@ -23,9 +23,9 @@
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
   selectGroupByRepo,
-  selectHasCompletedProviderSetup,
   selectShowArchived,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectLocalSetupGate } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { clearHomePageInitializerRequest } from '$store/renderer/slices/deep-links/deep-links-slice';
   import { selectHomePageInitializerRequest } from '$store/renderer/slices/deep-links/deep-links-selectors';
   import {
@@ -153,9 +153,13 @@
 
   const showArchived = selectShowArchived();
   const groupByRepo = selectGroupByRepo();
-  const hasCompletedProviderSetup = selectHasCompletedProviderSetup();
+  const localSetupGate = selectLocalSetupGate();
   const nodeVersion = selectNodeVersion();
   const showNodeWarning = selectShowNodeWarning();
+
+  // Backend-aware first-run gate: hold rendering while the local backend's
+  // setup evaluation is pending or a redirect to /workspace/new is imminent.
+  const setupGateActive = $derived($localSetupGate !== 'none');
 
   let searchQuery = $state('');
   let searchExpanded = $state(false);
@@ -194,14 +198,14 @@
 <div class="h-full flex flex-col">
   <div
     class="home-layout flex-1 w-full min-h-0
-      {isEmpty || (!$hasCompletedProviderSetup && !$workspaceHasLoaded)
+      {isEmpty || setupGateActive
       ? 'flex items-center justify-center overflow-auto px-[clamp(2rem,6.25rem,6%)]'
       : 'grid gap-15 lg:grid-cols-[minmax(40rem,1fr)_2fr] px-[clamp(2rem,6.25rem,6%)] lg:pl-[clamp(2rem,6.25rem,6%)] lg:pr-0'}"
   >
-    <!-- Render nothing while workspaces are loading for users who haven't completed setup,
-         or when we know the layout will redirect to /workspace/new (no workspaces + no provider setup).
+    <!-- Render nothing while the backend setup evaluation is pending,
+         or when we know the layout will redirect to /workspace/new (no workspaces + no ready providers on the local backend).
          The splash screen in app.html covers the loading period. -->
-    {#if !$hasCompletedProviderSetup && (!$workspaceHasLoaded || isEmpty)}
+    {#if setupGateActive}
       <!-- Empty: splash / bg-sidebar visible while redirect to /workspace/new fires -->
     {:else}
       <!-- Empty state after provider setup, OR non-empty state: show workspace form -->
@@ -245,8 +249,8 @@
       </div>
     {/if}
 
-    <!-- Header + Controls Bar (hidden when empty or still loading for new users) -->
-    {#if !isEmpty && ($workspaceHasLoaded || $hasCompletedProviderSetup)}
+    <!-- Header + Controls Bar (hidden when empty or while the setup gate holds rendering) -->
+    {#if !isEmpty && !setupGateActive && $workspaceHasLoaded}
       <div
         class="right-column animate-entry min-w-0 lg:pr-[clamp(2rem,6.25rem,6%)]"
         style="--entry-delay: 120ms"

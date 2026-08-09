@@ -56,6 +56,7 @@
   import KeyboardShortcutsCheatSheet from '$lib/components/layout/KeyboardShortcutsCheatSheet.svelte';
   import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
+  import SetupPromptDialog from '$lib/components/modals/SetupPromptDialog.svelte';
   import ReleaseNotesModal from '$lib/components/modals/ReleaseNotesModal.svelte';
   import Toast from '$lib/components/ui/toast/Toast.svelte';
   import { TooltipProvider } from '$lib/components/ui/tooltip';
@@ -94,11 +95,11 @@
   import {
     selectActiveWorkspaceId,
     selectWorkspaceById,
-    selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
   } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectHasCompletedProviderSetup, selectResolvedLocale } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectResolvedLocale } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectLocalSetupGate } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import {
     clearActiveWorkspace,
     loadWorkspacesRequested,
@@ -155,8 +156,7 @@
   const workspaceItems = selectWorkspaceItems();
   const activeWorkspaceId = selectActiveWorkspaceId();
   const workspaceLoading = selectWorkspaceLoading();
-  const workspaceHasLoaded = selectWorkspaceHasLoaded();
-  const hasCompletedProviderSetup = selectHasCompletedProviderSetup();
+  const localSetupGate = selectLocalSetupGate();
   const resolvedLocale$ = selectResolvedLocale(); // {#key} on this re-renders m.*() strings on language change
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
   const workspaceTabOrder = selectWorkspaceTabOrder();
@@ -251,16 +251,13 @@
   });
 
   // Redirect first-time users to the full onboarding experience.
-  // Once workspaces have loaded, if there are none and the user hasn't
-  // completed provider setup, send them to /workspace/new instead of
-  // showing the home page.  The splash screen covers the loading gap.
+  // Backend-aware gate: once the LOCAL backend's setup evaluation resolves
+  // to "no workspaces and no ready providers", send them to /workspace/new
+  // instead of showing the home page. Remote backends get the setup prompt
+  // dialog instead of a silent redirect. The splash screen covers the
+  // loading gap.
   $effect(() => {
-    if (
-      $workspaceHasLoaded &&
-      $workspaceItems.length === 0 &&
-      !$hasCompletedProviderSetup &&
-      window.location.pathname === '/'
-    ) {
+    if ($localSetupGate === 'redirect' && window.location.pathname === '/') {
       goto('/workspace/new');
     }
   });
@@ -1088,6 +1085,9 @@
 
   <!-- Redux-owned delete/archive warning hosts (global for all workspace entrypoints) -->
   <WorkspaceWarningDialogs />
+
+  <!-- Remote-backend "Go through setup?" prompt (self-gates on the setup-prompt slice) -->
+  <SetupPromptDialog />
 
   <!-- Release Notes Modal (shown after update) -->
   <ReleaseNotesModal
