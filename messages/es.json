@@ -135,6 +135,7 @@
   "settings_providerPath_saveError": "No se pudo guardar la ruta",
   "settings_providerPath_placeholder": "Ruta a {command}",
   "settings_providerPath_configureTitle": "Configurar la ruta de {name}",
+  "settings_providerPath_setCustomPath_label": "Establecer ruta personalizada",
   "settings_providerPath_header": "Ruta de la CLI de {name}",
   "settings_providerPath_overrideHint": "Anule la ruta detectada automáticamente si es necesario.",
   "settings_providerPath_specifyHint_before": "Especifique la ruta al ejecutable de",

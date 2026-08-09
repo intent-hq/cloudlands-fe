@@ -135,6 +135,7 @@
   "settings_providerPath_saveError": "Failed to save path",
   "settings_providerPath_placeholder": "Path to {command}",
   "settings_providerPath_configureTitle": "Configure {name} path",
+  "settings_providerPath_setCustomPath_label": "Set custom path",
   "settings_providerPath_header": "{name} CLI Path",
   "settings_providerPath_overrideHint": "Override the auto-detected path if needed.",
   "settings_providerPath_specifyHint_before": "Specify the path to the",

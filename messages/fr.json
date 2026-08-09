@@ -135,6 +135,7 @@
   "settings_providerPath_saveError": "Impossible d'enregistrer le chemin",
   "settings_providerPath_placeholder": "Chemin vers {command}",
   "settings_providerPath_configureTitle": "Configurer le chemin de {name}",
+  "settings_providerPath_setCustomPath_label": "Définir un chemin personnalisé",
   "settings_providerPath_header": "Chemin de la CLI {name}",
   "settings_providerPath_overrideHint": "Remplacez le chemin détecté automatiquement si nécessaire.",
   "settings_providerPath_specifyHint_before": "Indiquez le chemin vers l'exécutable",

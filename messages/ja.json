@@ -135,6 +135,7 @@
   "settings_providerPath_saveError": "パスを保存できませんでした",
   "settings_providerPath_placeholder": "{command} のパス",
   "settings_providerPath_configureTitle": "{name} のパスを設定",
+  "settings_providerPath_setCustomPath_label": "カスタムパスを設定",
   "settings_providerPath_header": "{name} CLI パス",
   "settings_providerPath_overrideHint": "必要に応じて自動検出されたパスを上書きします。",
   "settings_providerPath_specifyHint_before": "お使いの",

@@ -135,6 +135,7 @@
   "settings_providerPath_saveError": "경로를 저장하지 못했습니다",
   "settings_providerPath_placeholder": "{command} 경로",
   "settings_providerPath_configureTitle": "{name} 경로 구성",
+  "settings_providerPath_setCustomPath_label": "사용자 지정 경로 설정",
   "settings_providerPath_header": "{name} CLI 경로",
   "settings_providerPath_overrideHint": "필요한 경우 자동 감지된 경로를 재정의하세요.",
   "settings_providerPath_specifyHint_before": "사용할",

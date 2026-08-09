@@ -135,6 +135,7 @@
   "settings_providerPath_saveError": "保存路径失败",
   "settings_providerPath_placeholder": "{command} 的路径",
   "settings_providerPath_configureTitle": "配置 {name} 路径",
+  "settings_providerPath_setCustomPath_label": "设置自定义路径",
   "settings_providerPath_header": "{name} CLI 路径",
   "settings_providerPath_overrideHint": "如有需要，可覆盖自动检测到的路径。",
   "settings_providerPath_specifyHint_before": "指定",

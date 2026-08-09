@@ -46,6 +46,8 @@
     faCheck,
     faCircleNotch,
     faEllipsisVertical,
+    faFolder,
+    faStar,
     faTerminal,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
@@ -449,7 +451,13 @@
         <div class="space-y-1">
           <div class="flex items-center gap-2 h-7">
             {@render providerIcon(provider.id)}
-            <span class="text-sm text-foreground">{provider.name}</span>
+            <span
+              class="text-sm {provider.available || provider.statusPending
+                ? 'text-foreground'
+                : 'text-muted-foreground opacity-60'}"
+            >
+              {provider.name}
+            </span>
           </div>
           {#if provider.id === 'pi' && provider.available && piMcpAdapterInstalled === false}
             <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
@@ -532,7 +540,11 @@
           {/if}
 
           {#if canEnable && !provider.statusPending}
-            <Button size="xs" onclick={() => handleToggleProvider(provider.id, true)}>
+            <Button
+              size="xs"
+              variant="secondary"
+              onclick={() => handleToggleProvider(provider.id, true)}
+            >
               {m.settings_providers_enable()}
             </Button>
           {/if}
@@ -592,26 +604,28 @@
                   <button
                     type="button"
                     role="menuitem"
-                    class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
+                    class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
                     onclick={() => {
                       close();
                       pathConfigOpen = { [provider.id]: true };
                     }}
                   >
-                    {m.settings_providerPath_configureTitle({ name: provider.name })}
+                    <Fa icon={faFolder} class="size-3.5 text-muted-foreground" />
+                    {m.settings_providerPath_setCustomPath_label()}
                   </button>
 
                   {#if canSetDefault}
                     <button
                       type="button"
                       role="menuitem"
-                      class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                      class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
                       disabled={selectingProviderId !== null}
                       onclick={() => {
                         void handleSelectProvider(provider.id);
                         close();
                       }}
                     >
+                      <Fa icon={faStar} class="size-3.5 text-muted-foreground" />
                       {selectingProviderId === provider.id
                         ? m.settings_providers_switching()
                         : m.settings_providers_setAsDefault()}

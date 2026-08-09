@@ -127,9 +127,7 @@ describe('ProviderSelector progressive rendering', () => {
     await fireEvent.click(
       result.getByRole('button', { name: 'Provider actions for Anthropic Claude Code' }),
     );
-    await fireEvent.click(
-      result.getByRole('menuitem', { name: 'Configure Anthropic Claude Code path' }),
-    );
+    await fireEvent.click(result.getByRole('menuitem', { name: 'Set custom path' }));
     await waitFor(() => {
       expect(result.getByText('Anthropic Claude Code CLI Path')).toBeTruthy();
     });
@@ -147,9 +145,12 @@ describe('ProviderSelector progressive rendering', () => {
     await waitFor(() => {
       expect(result.getByRole('button', { name: 'Enable' })).toBeTruthy();
     });
+    const enableButton = result.getByRole('button', { name: 'Enable' });
+    expect(enableButton.className).toContain('text-secondary-foreground');
+    expect(enableButton.className).not.toContain('bg-primary');
     expect(result.queryByText('Logged in')).toBeNull();
 
-    await fireEvent.click(result.getByRole('button', { name: 'Enable' }));
+    await fireEvent.click(enableButton);
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'providerSettings/setProviderEnabled',
@@ -167,5 +168,17 @@ describe('ProviderSelector progressive rendering', () => {
     expect(result.getByRole('menuitem', { name: 'Log in' })).toBeTruthy();
     // Providers whose probe has not landed keep a per-row pending indicator.
     expect(result.getAllByLabelText('Loading…').length).toBeGreaterThan(0);
+  });
+
+  it('mutes a provider name once its probe settles as unavailable', async () => {
+    mocks.state.current = await buildState({
+      'claude-code': { available: false },
+    });
+    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+    const result = render(ProviderSelector);
+
+    const providerName = result.getByText('Anthropic Claude Code');
+    expect(providerName.className).toContain('text-muted-foreground');
+    expect(providerName.className).toContain('opacity-60');
   });
 });
