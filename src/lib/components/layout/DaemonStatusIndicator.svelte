@@ -49,6 +49,7 @@
 
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
+  import { formatTransportLabel } from '$lib/utils/daemon-status-format';
   import Fa from 'svelte-fa';
   import { faPlus, faCheck, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -420,24 +421,16 @@
 
             <!-- FE connection mode -->
             {#if $stats$.transport}
-              <div class="flex justify-between text-xs">
-                <span class="text-subtle">{m.layout_daemonStatus_connection_label()}</span>
-                <span class="font-mono text-xs">
-                  {#if $stats$.transport.mode === 'sidecar-uds'}
-                    <!-- i18n-ignore (transport mode identifier, not translatable UI copy) -->
-                    sidecar (UDS)
-                  {:else if $stats$.transport.target}
-                    <!-- i18n-ignore (transport mode identifier, not translatable UI copy) -->
-                    external ({$stats$.transport.target})
-                  {:else}
-                    <!-- i18n-ignore (transport mode identifier, not translatable UI copy) -->
-                    external (WebSocket)
-                  {/if}
-                </span>
+              {@const transportLabel = formatTransportLabel($stats$.transport)}
+              <div class="flex justify-between gap-2 text-xs">
+                <span class="text-subtle shrink-0">{m.layout_daemonStatus_connection_label()}</span>
+                <span class="font-mono text-xs min-w-0 truncate" title={transportLabel}
+                  >{transportLabel}</span
+                >
               </div>
             {:else}
-              <div class="flex justify-between text-xs">
-                <span class="text-subtle">{m.layout_daemonStatus_connection_label()}</span>
+              <div class="flex justify-between gap-2 text-xs">
+                <span class="text-subtle shrink-0">{m.layout_daemonStatus_connection_label()}</span>
                 <!-- i18n-ignore (transport mode identifier) -->
                 <span class="font-mono text-xs text-subtle">unknown</span>
               </div>
