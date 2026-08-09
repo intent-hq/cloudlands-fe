@@ -38,7 +38,10 @@ import {
 } from "$store/renderer/slices/background-agent-executor/background-agent-executor-slice";
 import { backgroundExecutorSaga } from "./background-executor-service";
 import { setWorkspaceEntity } from "$store/renderer/slices/workspace/workspace-slice";
-import { setTypeOverride } from "$store/renderer/slices/background-agent-settings/background-agent-settings-slice";
+import {
+  setDefaultModel,
+  setTypeOverride,
+} from "$store/renderer/slices/background-agent-settings/background-agent-settings-slice";
 import commitMessageInstruction from "./instructions/background/commit-message";
 import { BackendError } from "$lib/client/live/backend-transport-types";
 import type { Workspace } from "$shared/types";
@@ -109,6 +112,7 @@ describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)"
       prompt: "PREPARED PROMPT",
       workspaceId: WS,
       timeoutMs: 120_000,
+      type: "commit",
       systemPrompt: commitMessageInstruction,
     });
 
@@ -122,7 +126,12 @@ describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)"
     expect(executor?.agentId).toBeNull();
   });
 
-  it("forwards the per-type model override on the wire", async () => {
+  // monorepo#1743: the FE no longer resolves `quickActions.*` itself — the
+  // daemon owns the chain (typeOverrides[type] → defaultModel → provider
+  // default, intentd#1012), so configured settings must NOT leak onto the wire
+  // as an explicit `model`.
+  it("never sends `model`, even when quick-action settings are configured", async () => {
+    appStore.dispatch(setDefaultModel("auggie:haiku4.5"));
     appStore.dispatch(setTypeOverride({ type: "commit", model: "auggie:sonnet4.5" }));
     completeOnceSpy.mockResolvedValueOnce({
       text: "<<<COMMIT_MESSAGE>>>fix: x<<</COMMIT_MESSAGE>>>",
@@ -132,8 +141,27 @@ describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)"
     await waitForSettled("commit", ["success", "error"]);
 
     const [params] = completeOnceSpy.mock.calls[0];
-    expect(params).toMatchObject({ model: "auggie:sonnet4.5" });
+    expect(params).not.toHaveProperty("model");
+    expect(params).toMatchObject({ type: "commit" });
     appStore.dispatch(setTypeOverride({ type: "commit", model: "" }));
+    appStore.dispatch(setDefaultModel(""));
+  });
+
+  it.each([
+    ["commit", "commit"],
+    ["commit-merge", "commit"],
+    ["pr", "pr"],
+    ["review", "review"],
+    ["walkthrough", "walkthrough"],
+  ])("sends executor %s as the wire `type` %s", async (executorType, expectedType) => {
+    completeOnceSpy.mockResolvedValueOnce({ text: "anything" });
+
+    appStore.dispatch(executeBackgroundAgent(WS, executorType));
+    await waitForSettled(executorType, ["success", "error"]);
+
+    const [params] = completeOnceSpy.mock.calls[0];
+    expect(params).toMatchObject({ type: expectedType });
+    expect(params).not.toHaveProperty("model");
   });
 
   it("surfaces the { available: false, reason } provider gate as a visible error", async () => {
