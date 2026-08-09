@@ -454,6 +454,13 @@
       return;
     }
 
+    // Abort any in-flight fetch first (e.g. a refresh clicked while the
+    // authoritative request is still active after a cached-first paint) so a
+    // superseded request can never overwrite this fetch's results.
+    if (currentFetchAbortController) {
+      currentFetchAbortController.abort();
+    }
+
     // Create a new abort controller for this fetch
     const abortController = new AbortController();
     currentFetchAbortController = abortController;
@@ -538,6 +545,10 @@
     let fetchSucceeded = false;
     // Cached-first paint state for the GitHub path (`github.branches.listCached`).
     let cachedListingApplied = false;
+    let cachedAutoSelectedBranch = '';
+    // Captured before the cached paint: its auto-selection persists via
+    // saveBranchForRepo, so the live saved value is clobbered by then.
+    let savedBranchBeforeCachedPaint = '';
     let freshListingSettled = false;
 
     try {
@@ -609,7 +620,9 @@
           defaultBranch = cachedListing.defaultBranch || '';
           isLoading = false;
           cachedListingApplied = true;
+          savedBranchBeforeCachedPaint = getSavedBranchForRepo(repoPath);
           applyGithubBranchSelection();
+          cachedAutoSelectedBranch = internalSelectedBranch;
           notifyBranchesLoaded();
           logger.debug('Rendered cached branches via github.branches.listCached', {
             owner,
@@ -675,13 +688,28 @@
       if (effectiveRepoType === 'github' && branches.length > 0) {
         if (cachedListingApplied && !value) {
           // Reconcile the cached-first selection against the authoritative
-          // list: keep a branch that still exists; a vanished selection
-          // switches to the default branch (setInternalBranch fires onchange
-          // and persists) — never leave a vanished branch selected.
-          if (!internalSelectedBranch || !branches.includes(internalSelectedBranch)) {
-            setInternalBranch(
-              defaultBranch && branches.includes(defaultBranch) ? defaultBranch : branches[0],
-            );
+          // list. A selection the user made after the cached paint is kept
+          // unless it vanished; an auto-selected one re-runs the documented
+          // saved → default → first order (a stale cache may have lacked the
+          // saved branch). setInternalBranch fires onchange and persists —
+          // never leave a vanished branch selected.
+          if (internalSelectedBranch && internalSelectedBranch !== cachedAutoSelectedBranch) {
+            if (!branches.includes(internalSelectedBranch)) {
+              setInternalBranch(
+                defaultBranch && branches.includes(defaultBranch) ? defaultBranch : branches[0],
+              );
+            }
+          } else {
+            // Use the saved value captured BEFORE the cached paint — the
+            // cached auto-selection persisted itself via saveBranchForRepo.
+            const saved = savedBranchBeforeCachedPaint;
+            const preferred =
+              saved && (branches.includes(saved) || remoteBranches.includes(saved))
+                ? saved
+                : defaultBranch && branches.includes(defaultBranch)
+                  ? defaultBranch
+                  : branches[0];
+            if (internalSelectedBranch !== preferred) setInternalBranch(preferred);
           }
         } else {
           applyGithubBranchSelection();
@@ -696,6 +724,13 @@
       if (err instanceof Error && err.name === 'AbortError') {
         logger.debug('Branch fetch aborted in outer catch (superseded by newer request)');
         return; // Exit silently - a newer fetch is in progress
+      }
+
+      // A superseded fetch must not overwrite the newer fetch's state with an
+      // error/empty list (e.g. a refresh started while this one was in flight).
+      if (abortController.signal.aborted) {
+        logger.debug('Branch fetch aborted; skipping error-state write');
+        return;
       }
 
       // Normalize error for logging - ensure we have an Error instance
