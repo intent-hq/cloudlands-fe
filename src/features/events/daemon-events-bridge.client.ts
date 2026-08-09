@@ -1806,12 +1806,16 @@ async function runReconcileWorkspaceActivityFetch(workspaceId: string): Promise<
   } catch (_error) {
     // Workspace might have been deleted or transport error; no-op is safe.
   } finally {
-    activityFetchInFlightByWorkspace.delete(workspaceId);
     // Trailing coalesce: one or more triggers arrived while this fetch was in
     // flight — run exactly one follow-up fetch to pick up the latest state,
-    // regardless of how many triggers piled up.
+    // regardless of how many triggers piled up. The in-flight marker stays
+    // set across the trailing fetch so triggers arriving during it keep
+    // coalescing instead of starting a parallel fetch; it is only cleared
+    // when no follow-up is pending.
     if (activityFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
       void runReconcileWorkspaceActivityFetch(workspaceId);
+    } else {
+      activityFetchInFlightByWorkspace.delete(workspaceId);
     }
   }
 }
