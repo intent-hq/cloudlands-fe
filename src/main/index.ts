@@ -1499,15 +1499,8 @@ app.whenReady().then(async () => {
     // Event-triggered handlers (message delivery, auto-commit) are now sagas
     // forked from workspaceEventsSaga — no manual registration needed.
 
-    // Migrate workspaces from ~/intent/{id} to ~/intent/workspaces/{id}
-    try {
-      const migrationResult = await protocolAdapter.migrateWorkspacesToCanonicalLocation();
-      if (migrationResult.migrated > 0 || migrationResult.errors > 0) {
-        logger.info('Workspace migration on startup', migrationResult);
-      }
-    } catch (error) {
-      logger.warn('Error migrating workspaces on startup', { error });
-    }
+    // Legacy workspace-location migration removed — the daemon owns workspace
+    // directories (PROTOCOL.md §5.1); the FE no longer moves data on disk.
 
     // Clean up stale temp files from ~/.intent/tmp (from crashed/killed agents)
     try {

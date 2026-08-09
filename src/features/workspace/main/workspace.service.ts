@@ -7,11 +7,9 @@
 
 import { BrowserWindow } from 'electron';
 import { promises as fs } from 'fs';
-import * as path from 'path';
 
 import { Logger } from '../../../shared/logger';
 import { m } from '$shared/paraglide/messages.js';
-import { WorkspaceConfig } from '../../../shared/main/config';
 import { getChangeHistoryForWorkspace } from './change-history-persistence';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 
@@ -1196,108 +1194,6 @@ export class WorkspaceService {
         ok: false,
         error: this.extractErrorMessage(error),
       };
-    }
-  }
-
-  /**
-   * Migrate workspaces from ~/intent/{id} to ~/intent/workspaces/{id}.
-   * For workspaces that exist in both locations, merges the .workspace/ metadata
-   * (~/intent/{id}/.workspace/ is authoritative) and removes the old location.
-   * Should be called once at startup.
-   */
-  async migrateWorkspacesToCanonicalLocation(): Promise<{
-    migrated: number;
-    errors: number;
-  }> {
-    let migrated = 0;
-    let errors = 0;
-
-    const workspaceRoot = WorkspaceConfig.WORKSPACE_ROOT;
-    const workspacesBase = WorkspaceConfig.WORKSPACES_BASE;
-
-    // Ensure canonical target directory exists
-    await fs.mkdir(workspacesBase, { recursive: true });
-
-    let entries: { name: string; isDirectory: () => boolean }[];
-    try {
-      entries = await fs.readdir(workspaceRoot, { withFileTypes: true });
-    } catch {
-      return { migrated, errors };
-    }
-
-    for (const entry of entries) {
-      if (
-        !entry.isDirectory() ||
-        !WorkspaceConfig.isValidWorkspaceId(entry.name) ||
-        WorkspaceConfig.isVirtualWorkspace(entry.name)
-      ) {
-        continue;
-      }
-
-      const id = entry.name;
-      const sourcePath = path.join(workspaceRoot, id);
-      const targetPath = path.join(workspacesBase, id);
-
-      try {
-        const targetExists = await fs
-          .access(targetPath)
-          .then(() => true)
-          .catch(() => false);
-
-        if (targetExists) {
-          // Target already exists -- merge .workspace/ metadata from source to target.
-          // Source (~/intent/{id}/.workspace/) is authoritative.
-          const sourceMetadata = path.join(sourcePath, WorkspaceConfig.METADATA_FOLDER);
-          const sourceMetadataExists = await fs
-            .access(sourceMetadata)
-            .then(() => true)
-            .catch(() => false);
-
-          if (sourceMetadataExists) {
-            const targetMetadata = path.join(targetPath, WorkspaceConfig.METADATA_FOLDER);
-            await this.mergeDirectoryRecursive(sourceMetadata, targetMetadata);
-          }
-
-          // Remove the old location
-          await fs.rm(sourcePath, { recursive: true, force: true });
-          migrated++;
-          logger.info('Migrated workspace (merged)', { id, from: sourcePath, to: targetPath });
-        } else {
-          // Target doesn't exist -- move the whole directory
-          await fs.rename(sourcePath, targetPath);
-          migrated++;
-          logger.info('Migrated workspace (moved)', { id, from: sourcePath, to: targetPath });
-        }
-      } catch (err) {
-        errors++;
-        logger.warn('Failed to migrate workspace', { id, error: err });
-      }
-    }
-
-    if (migrated > 0 || errors > 0) {
-      logger.info('Workspace migration completed', { migrated, errors });
-    }
-
-    return { migrated, errors };
-  }
-
-  /**
-   * Recursively copy contents of source directory into target directory.
-   * Files in source overwrite files in target (source is authoritative).
-   */
-  private async mergeDirectoryRecursive(source: string, target: string): Promise<void> {
-    await fs.mkdir(target, { recursive: true });
-    const entries = await fs.readdir(source, { withFileTypes: true });
-
-    for (const entry of entries) {
-      const srcPath = path.join(source, entry.name);
-      const tgtPath = path.join(target, entry.name);
-
-      if (entry.isDirectory()) {
-        await this.mergeDirectoryRecursive(srcPath, tgtPath);
-      } else {
-        await fs.copyFile(srcPath, tgtPath);
-      }
     }
   }
 
