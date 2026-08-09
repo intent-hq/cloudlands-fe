@@ -11,6 +11,8 @@
  */
 import { render, waitFor } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import ReleaseNotesModal from '../ReleaseNotesModal.svelte';
 
 const markdownBody = [
@@ -86,5 +88,22 @@ describe('ReleaseNotesModal markdown rendering', () => {
     expect(prose.querySelector('img')).toBeNull();
     expect(prose.querySelector('script')).toBeNull();
     expect(prose.querySelector('[onerror]')).toBeNull();
+  });
+});
+
+describe('Tailwind entry point (monorepo#1748 root cause)', () => {
+  // Tailwind v4 uses CSS-first config and ignores the legacy
+  // tailwind.config.js, so `prose` styling only exists if app.css loads the
+  // typography plugin itself. The jsdom tests above pass without any CSS, so
+  // guard the directives at the source level: removing either one silently
+  // reverts the app to unstyled markdown / media-query dark variants.
+  const appCss = readFileSync(path.resolve(__dirname, '../../../../app.css'), 'utf8');
+
+  it('loads the typography plugin via @plugin', () => {
+    expect(appCss).toMatch(/@plugin\s+["']@tailwindcss\/typography["'];/);
+  });
+
+  it('defines the class-based dark variant', () => {
+    expect(appCss).toMatch(/@custom-variant\s+dark\s+/);
   });
 });
