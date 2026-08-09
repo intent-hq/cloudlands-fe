@@ -473,6 +473,23 @@ describe('QueuedMessageList', () => {
       expect(tooltips.some((t) => t.startsWith('Send now'))).toBe(true);
     });
 
+    it('hides the trailing [This hook …] state note from the row and its tooltip', () => {
+      const content =
+        '[Background hook "ci-watch"] CI is red\n\n' +
+        '[This hook is now retired and will not run again — ' +
+        'reschedule via ws.hook.schedule if still needed.]';
+      const { container } = render(QueuedMessageList, {
+        props: {
+          messages: [queued({ content, messageMetadata: HOOK_WAKE_METADATA })],
+        },
+      });
+
+      expect(screen.getByText(/CI is red/)).toBeTruthy();
+      expect(screen.queryByText(/\[This hook/)).toBeNull();
+      const row = container.querySelector('[title*="CI is red"]');
+      expect(row?.getAttribute('title')).toBe('CI is red');
+    });
+
     it('falls back to "Hook" when hookName is absent', () => {
       render(QueuedMessageList, {
         props: {

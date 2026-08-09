@@ -43,7 +43,11 @@
   import QueuedMessageNoticeHeader from './QueuedMessageNoticeHeader.svelte';
   import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
   import HookWakeAttributionHeader from './HookWakeAttributionHeader.svelte';
-  import { getHookWakeAttribution, stripHookWakePrefix } from '$lib/utils/hook-wake-attribution';
+  import {
+    getHookWakeAttribution,
+    stripHookWakePrefix,
+    stripHookWakeStateNote,
+  } from '$lib/utils/hook-wake-attribution';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
 
@@ -720,9 +724,10 @@
   // Parse context and get clean text for user messages
   const parsedMessage = $derived.by(() => {
     // Display-only strip of the daemon's literal `[Background hook "…"]`
-    // prefix on wake rows — the attribution chip already names the hook.
+    // prefix and trailing `[This hook …]` state note on wake rows — the
+    // attribution chip already names the hook and conveys the post-fire state.
     const rawText = hookWakeAttribution
-      ? stripHookWakePrefix(extractTextFromMessage())
+      ? stripHookWakeStateNote(stripHookWakePrefix(extractTextFromMessage()))
       : extractTextFromMessage();
     if (role === 'user') {
       // Hide the daemon's dequeue-wait [SYSTEM NOTE] from the displayed body
