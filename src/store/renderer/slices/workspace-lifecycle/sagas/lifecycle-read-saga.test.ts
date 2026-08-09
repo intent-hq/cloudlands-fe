@@ -590,6 +590,33 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  // monorepo#1815 — a hydrate trigger arriving while an agents.list read is
+  // in flight (e.g. the crash-recovery redrive's lifecycle edges right after
+  // the failure-triggered hydrate) must schedule exactly one trailing re-read
+  // so the stale in-flight snapshot is never the last word.
+  it('coalesces in-flight agent hydrate triggers into one trailing refetch (monorepo#1815)', async () => {
+    let resolveList!: (value: AgentSession[]) => void;
+    mocks.agents.list.mockReturnValueOnce(new Promise((resolve) => { resolveList = resolve; }));
+    const run = start();
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+    run.channel.put(hydrateAgentsRequested(WS));
+    run.channel.put(hydrateAgentsRequested(WS));
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    expect(mocks.agents.list).toHaveBeenCalledTimes(1);
+
+    resolveList([agent('agent-stale', { status: 'error' as never })]);
+    await settle();
+
+    expect(mocks.agents.list).toHaveBeenCalledTimes(2);
+    await settle();
+    expect(mocks.agents.list).toHaveBeenCalledTimes(2);
+    await stop(run.task);
+  });
+
   it('cancels workspace reads on delete and suppresses late results', async () => {
     let resolve!: (value: unknown[]) => void;
     mocks.events.list.mockReturnValue(new Promise((done) => { resolve = done; }));

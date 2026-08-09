@@ -119,8 +119,12 @@ type RunningRead = ReadDescriptor & {
  * single-flight *with* trailing coalesce: an event arriving while the read is
  * in flight collapses into exactly one follow-up read once it settles, rather
  * than being dropped (the in-flight response can predate the change).
+ * `agents:` is included so a lifecycle edge arriving while an agents.list
+ * hydrate is in flight (e.g. crash-recovery redrive right after a failure,
+ * monorepo#1815) always schedules one trailing re-read instead of leaving the
+ * stale in-flight snapshot as the last word.
  */
-const TRAILING_COALESCE_PREFIXES = ['changes:', 'tasks:'];
+const TRAILING_COALESCE_PREFIXES = ['changes:', 'tasks:', 'agents:'];
 
 function tupleString(action: { payload?: unknown }): string | undefined {
   const value = Array.isArray(action.payload) ? action.payload[0] : undefined;

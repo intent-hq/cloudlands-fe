@@ -37,6 +37,7 @@ import {
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import {
   initialState as workspaceInitialState,
+  replaceWorkspaceList,
   setWorkspaceEntity,
   workspaceReducer,
 } from '../../workspace/workspace-slice';
@@ -57,7 +58,11 @@ import {
   requestUnarchiveWorkspace,
   workspaceOperationsReducer,
 } from '../workspace-operations-slice';
-import { workspaceOperationsSaga } from './workspace-operations-saga';
+import {
+  WORKSPACE_DELETION_TOMBSTONE_TTL_MS,
+  WORKSPACE_OPERATION_UNDO_DURATION_MS,
+  workspaceOperationsSaga,
+} from './workspace-operations-saga';
 
 const settle = async () => {
   await Promise.resolve();
@@ -215,16 +220,49 @@ describe('workspaceOperationsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('keeps the tombstone after a committed delete so stale refetches cannot resurrect the workspace', async () => {
+    vi.useFakeTimers();
+    mocks.deleteWorkspace.mockResolvedValue({ ok: true, data: undefined });
+    const run = harness([workspace('ws-1')]);
+    run.send(requestDeleteWorkspace('ws-1'));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
+    expect(run.state().workspace.pendingDeletions['ws-1']).toBe(true);
+
+    // Undo window elapses and the delete commits successfully
+    await vi.advanceTimersByTimeAsync(WORKSPACE_OPERATION_UNDO_DURATION_MS);
+    expect(mocks.deleteWorkspace).toHaveBeenCalledExactlyOnceWith('ws-1');
+    // Tombstone must survive the successful commit for the grace window
+    expect(run.state().workspace.pendingDeletions['ws-1']).toBe(true);
+
+    // Stale responses computed before the daemon committed the delete land now
+    run.send(setWorkspaceEntity(workspace('ws-1')));
+    run.send(replaceWorkspaceList([workspace('ws-1')]));
+    expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
+
+    // Grace window elapses: tombstone is cleared and state stays clean
+    await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
+    expect(run.state().workspace.pendingDeletions['ws-1']).toBeUndefined();
+    expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('flushes a pending soft delete to the wire when the root is cancelled', async () => {
+    vi.useFakeTimers();
     mocks.navigate.mockResolvedValue(undefined);
     mocks.deleteWorkspace.mockResolvedValue({ ok: true, data: undefined });
     const run = harness([workspace('ws-1')]);
     run.send(requestDeleteWorkspace('ws-1'));
-    await settle();
+    await vi.advanceTimersByTimeAsync(50);
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
     run.task.cancel();
     await run.task.toPromise();
     expect(mocks.deleteWorkspace).toHaveBeenCalledWith('ws-1');
+    // Drain the detached tombstone-grace timer so it cannot bleed across tests
+    await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
+    expect(run.state().workspace.pendingDeletions['ws-1']).toBeUndefined();
   });
 
   it('shows the delete warning, confirms it, and restores the soft-hidden workspace on undo', async () => {
@@ -284,20 +322,24 @@ describe('workspaceOperationsSaga', () => {
   });
 
   it('flushes pending deletion once on repeated unload events and removes both listeners', async () => {
+    vi.useFakeTimers();
     const removeListener = vi.spyOn(window, 'removeEventListener');
     mocks.deleteWorkspace.mockResolvedValue({ ok: true, data: undefined });
     const run = harness([workspace('ws-1')]);
     run.send(requestDeleteWorkspace('ws-1'));
-    await settle();
+    await vi.advanceTimersByTimeAsync(50);
     window.dispatchEvent(new Event('pagehide'));
-    await settle();
+    await vi.advanceTimersByTimeAsync(50);
     window.dispatchEvent(new Event('beforeunload'));
-    await settle();
+    await vi.advanceTimersByTimeAsync(50);
     expect(mocks.deleteWorkspace).toHaveBeenCalledExactlyOnceWith('ws-1');
     run.task.cancel();
     await run.task.toPromise();
     expect(removeListener).toHaveBeenCalledWith('beforeunload', expect.any(Function));
     expect(removeListener).toHaveBeenCalledWith('pagehide', expect.any(Function));
+    // Drain the detached tombstone-grace timer so it cannot bleed across tests
+    await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
+    expect(run.state().workspace.pendingDeletions['ws-1']).toBeUndefined();
     removeListener.mockRestore();
   });
 
@@ -331,13 +373,14 @@ describe('workspaceOperationsSaga', () => {
   });
 
   it('reports empty bulk archive/delete and gates running-agent deletion behind confirmation', async () => {
+    vi.useFakeTimers();
     const empty = harness([workspace('other')]);
     empty.send(openBulkArchiveConfirm('missing/repo'));
     empty.send(confirmBulkArchive());
-    await settle();
+    await vi.advanceTimersByTimeAsync(50);
     empty.send(openBulkDeleteArchivedConfirm('missing/repo'));
     empty.send(confirmBulkDeleteArchived());
-    await settle();
+    await vi.advanceTimersByTimeAsync(50);
     expect(mocks.archive).not.toHaveBeenCalled();
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
     expect(mocks.toast.info).toHaveBeenCalledTimes(2);
@@ -363,18 +406,25 @@ describe('workspaceOperationsSaga', () => {
     ]);
     guarded.send(openBulkDeleteArchivedConfirm('intent-hq/repo'));
     guarded.send(confirmBulkDeleteArchived());
-    await settle();
+    await vi.advanceTimersByTimeAsync(50);
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
     expect(guarded.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openBulkDeleteWarningConfirm',
       payload: [{ repoKey: 'intent-hq/repo', workspaceCount: 3, agentCount: 2, hookCount: 1 }],
     });
     guarded.send(confirmBulkDeleteWarning());
-    await settle();
+    await vi.advanceTimersByTimeAsync(50);
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(3);
     expect(mocks.toast.success).toHaveBeenCalledTimes(1);
     expect(mocks.toast.info).toHaveBeenCalledTimes(1);
     expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    // Only the successful delete (ws-1) is tombstoned; a stale refetch cannot
+    // resurrect it, and the grace timer clears the tombstone afterwards.
+    expect(guarded.state().workspace.pendingDeletions).toEqual({ 'ws-1': true });
+    guarded.send(replaceWorkspaceList([workspace('ws-1', WorkspaceStatusEnum.Archived)]));
+    expect(getItem(guarded.state().workspace.workspaces, 'ws-1')).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
+    expect(guarded.state().workspace.pendingDeletions).toEqual({});
     guarded.task.cancel();
     await guarded.task.toPromise();
   });
@@ -504,6 +554,7 @@ describe('workspaceOperationsSaga', () => {
   });
 
   it('applies bulk delete success/timeouts and marks hard failures while deduplicating lifecycle ids', async () => {
+    vi.useFakeTimers();
     mocks.deleteWorkspace
       .mockResolvedValueOnce({ ok: true, data: undefined })
       .mockResolvedValueOnce({ ok: false, error: 'timed out waiting' })
@@ -515,22 +566,29 @@ describe('workspaceOperationsSaga', () => {
     ]);
     const applied = bulkProposal('workspace.bulkDelete', ['ws-1', 'ws-2'], 'delete-applied');
     run.send(applyWorkspaceProposal({ proposal: applied }));
-    await settle();
+    await vi.advanceTimersByTimeAsync(50);
     run.send(applyWorkspaceProposal({ proposal: applied }));
-    await settle();
+    await vi.advanceTimersByTimeAsync(50);
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(2);
     expect(run.state().proposalLifecycle['delete-applied']).toMatchObject({ status: 'applied' });
     expect(mocks.toast.success).toHaveBeenCalledTimes(1);
     expect(mocks.toast.info).toHaveBeenCalledTimes(1);
+    // The successful delete (ws-1) is tombstoned for the grace window; a stale
+    // refetch cannot re-admit it, and the timer clears the tombstone afterwards.
+    expect(run.state().workspace.pendingDeletions).toEqual({ 'ws-1': true });
+    run.send(setWorkspaceEntity(workspace('ws-1', WorkspaceStatusEnum.Archived)));
+    expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
 
     run.send(
       applyWorkspaceProposal({
         proposal: bulkProposal('workspace.bulkDelete', ['ws-3'], 'delete-failed'),
       }),
     );
-    await settle();
+    await vi.advanceTimersByTimeAsync(50);
     expect(run.state().proposalLifecycle['delete-failed']).toMatchObject({ status: 'failed' });
     expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
+    expect(run.state().workspace.pendingDeletions).toEqual({});
     run.task.cancel();
     await run.task.toPromise();
   });

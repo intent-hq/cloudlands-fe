@@ -1,0 +1,69 @@
+/**
+ * Setup Prompt Selectors
+ */
+
+import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { store } from '../../store';
+import { selectWorkspaceItems } from '../workspace/workspace-selectors';
+import type { SetupEvaluation } from './setup-prompt-types';
+import { hasReadyProvider } from './setup-prompt-utils';
+
+/** Latest completed evaluation, or null until the first one resolves. */
+export const selectSetupEvaluation = store.createSelector(
+  (state) => state.setupPrompt.evaluation,
+);
+
+/**
+ * The evaluation for the CURRENTLY-ACTIVE backend, or null. Gated on the
+ * active connection id so a stale evaluation from a previous backend never
+ * drives the gate after a switch.
+ */
+export const selectActiveSetupEvaluation = store.createSelector(
+  (state): SetupEvaluation | null => {
+    const { evaluation } = state.setupPrompt;
+    return evaluation && evaluation.connectionId === state.connections.activeId
+      ? evaluation
+      : null;
+  },
+);
+
+/**
+ * True when the remote-backend "Go through setup?" prompt should show: the
+ * active backend is remote, its evaluation found no workspaces and no ready
+ * providers, and the user has not dismissed the prompt for this connection
+ * this session.
+ */
+export const selectShowRemoteSetupPrompt = store.createSelector((state) => {
+  const evaluation = selectActiveSetupEvaluation.select(state);
+  if (!evaluation || evaluation.isLocal || !evaluation.setupNeeded) return false;
+  return !state.setupPrompt.dismissedConnectionIds.includes(evaluation.connectionId);
+});
+
+/**
+ * First-run gate for the LOCAL backend. Drives the silent redirect to the
+ * setup wizard and the home page's anti-flash rendering holds:
+ * - 'none'     — no redirect will happen; render the home page normally.
+ * - 'pending'  — undecided (workspaces/providers still loading on an empty
+ *                local backend); hold rendering so the wizard redirect does
+ *                not flash the home page first.
+ * - 'redirect' — the local backend has no workspaces and no ready providers;
+ *                redirect to the setup wizard.
+ */
+export const selectLocalSetupGate = store.createSelector(
+  (state): 'none' | 'pending' | 'redirect' => {
+    const { connections, activeId } = state.connections;
+    const active = getItem(connections, activeId);
+    if (active && !active.isLocal) return 'none';
+    // Same workspace count the saga evaluates (selectWorkspaceItems excludes
+    // the chief workspace), so the gate and the evaluation never disagree.
+    if (state.workspace.hasLoaded && selectWorkspaceItems.select(state).length > 0) return 'none';
+    // A known-ready provider already means no setup is needed — resolve
+    // immediately instead of holding the home page blank for the duration of
+    // the bulk provider check (whose per-provider auth checks can take
+    // seconds).
+    if (hasReadyProvider(state.agentAvailability.providerStatusMap)) return 'none';
+    const evaluation = selectActiveSetupEvaluation.select(state);
+    if (!evaluation) return 'pending';
+    return evaluation.setupNeeded ? 'redirect' : 'none';
+  },
+);
