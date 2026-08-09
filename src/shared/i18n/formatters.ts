@@ -241,9 +241,13 @@ export function createFormatters(getLocale: () => string) {
   }
 
   /**
-   * Compact duration for countdowns/elapsed badges: narrow units, at most
-   * two ("42s", "12m 30s", "1h 5m", "2d 3h") — the second unit is omitted
-   * when zero. Negative durations clamp to "0s"; invalid input → "".
+   * Compact duration for countdowns/elapsed badges: narrow units, showing the
+   * most significant unit plus its immediately adjacent smaller unit ("42s",
+   * "12m 30s", "1h 5m", "2d 3h"). The adjacent unit is omitted when zero, and
+   * any remainder below it is truncated rather than rounded — "1h 0m 30s" →
+   * "1h", "1d 23h 59m" → "1d 23h" — so a countdown never overstates the time
+   * remaining. (Sub-minute values still round to the nearest second, carrying
+   * upward: 59.6s → "1m".) Negative durations clamp to "0s"; invalid input → "".
    */
   function formatCompactDuration(durationMs: number): string {
     if (!Number.isFinite(durationMs)) return '';

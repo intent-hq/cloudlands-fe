@@ -155,10 +155,13 @@ describe('formatCompactDuration', () => {
     expect(en.formatCompactDuration(12 * 60_000 + 30_000)).toBe('12m 30s');
   });
 
-  it('formats hours with minutes, dropping seconds', () => {
+  it('formats hours with minutes, truncating smaller remainders', () => {
     expect(en.formatCompactDuration(3_600_000)).toBe('1h');
     expect(en.formatCompactDuration(3_600_000 + 5 * 60_000)).toBe('1h 5m');
     expect(en.formatCompactDuration(3_600_000 + 5 * 60_000 + 30_000)).toBe('1h 5m');
+    // A zero adjacent unit is omitted even when a smaller remainder exists
+    expect(en.formatCompactDuration(3_600_000 + 30_000)).toBe('1h');
+    expect(en.formatCompactDuration(86_400_000 + 23 * 3_600_000 + 59 * 60_000)).toBe('1d 23h');
   });
 
   it('formats days with hours, dropping smaller units', () => {
