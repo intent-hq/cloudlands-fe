@@ -37,7 +37,7 @@
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
@@ -656,7 +656,7 @@
              persisted transcript fallback. Hidden tool labels fall through. -->
         {#if !hidePreview}
           {#if attentionRequest}
-            <div class="mt-0.5" transition:slide={{ axis: 'y', duration: 150 }}>
+            <div class="mt-0.5" transition:safeSlide={{ axis: 'y', duration: 150 }}>
               <p
                 class="text-sm truncate {attentionRequest.kind === 'blocker'
                   ? 'text-red-500'
@@ -677,7 +677,7 @@
               <p
                 class="text-sm text-subtle truncate"
                 data-testid="agent-card-preview"
-                transition:slide={{ axis: 'y', duration: 150 }}
+                transition:safeSlide={{ axis: 'y', duration: 150 }}
               >
                 {liveResponseLine}
               </p>
@@ -686,7 +686,7 @@
             <div
               class="text-sm text-subtle truncate"
               data-testid="agent-card-preview"
-              transition:slide={{ axis: 'y', duration: 150 }}
+              transition:safeSlide={{ axis: 'y', duration: 150 }}
             >
               <AgentPreviewToolLabel toolUse={liveToolUse} animate={isRunning} />
             </div>
@@ -708,7 +708,7 @@
                 <p
                   class="text-sm text-subtle truncate"
                   data-testid="agent-card-preview"
-                  transition:slide={{ axis: 'y', duration: 150 }}
+                  transition:safeSlide={{ axis: 'y', duration: 150 }}
                 >
                   {lastResponse}
                 </p>
@@ -716,7 +716,7 @@
                 <div
                   class="text-sm text-subtle truncate"
                   data-testid="agent-card-preview"
-                  transition:slide={{ axis: 'y', duration: 150 }}
+                  transition:safeSlide={{ axis: 'y', duration: 150 }}
                 >
                   <AgentPreviewToolLabel toolUse={lastToolUse} animate={isRunning} />
                 </div>

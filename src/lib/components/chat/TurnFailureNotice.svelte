@@ -8,7 +8,7 @@
    */
   import { faCircleXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -23,7 +23,7 @@
 
 <div
   class="turn-failure-notice flex items-start gap-2.5 px-3 py-2.5 my-2 rounded-md bg-destructive/10 border border-destructive/30 text-destructive-foreground {className}"
-  transition:slide={{ axis: 'y', duration: 200 }}
+  transition:safeSlide={{ axis: 'y', duration: 200 }}
   role="alert"
   aria-live="polite"
 >

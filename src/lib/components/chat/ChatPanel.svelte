@@ -172,10 +172,8 @@
   faLock,
   faLockOpen,
 } from '@fortawesome/free-solid-svg-icons';
-  import {
-  fade,
-  slide,
-} from 'svelte/transition';
+  import { fade } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
   import { resolvePreviousUserMessageId } from '$lib/utils/message-navigation';
   import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -3747,7 +3745,7 @@
                           class="message-nav-target z-10"
                           class:sticky={shouldEnableSticky}
                           class:-top-px={shouldEnableSticky}
-                          transition:slide={{ axis: 'y', duration: 200 }}
+                          transition:safeSlide={{ axis: 'y', duration: 200 }}
                         >
                           <EventWakeupBanner
                             metadata={message.metadata as {
@@ -4057,7 +4055,7 @@
            preventing stale "Waiting for N agents" UI from leaking across switches -->
       {#if workspace?.id}
         {#key `${workspace.id}::${agentId}`}
-          <div class="w-full pb-6" transition:slide={{ axis: 'y', duration: 200 }}>
+          <div class="w-full pb-6" transition:safeSlide={{ axis: 'y', duration: 200 }}>
             <!-- Pending attention request (discussion/blocker) for this agent -->
             {#if agentId}
               <AttentionRequestBanner {agentId} />
