@@ -19,10 +19,8 @@
   faBolt,
   faCircleQuestion,
 } from '@fortawesome/free-solid-svg-icons';
-  import {
-  fly,
-  slide,
-} from 'svelte/transition';
+  import { fly } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import type { QueuedMessage } from '$shared/types';
   import Button from '../ui/button/button.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
@@ -304,7 +302,7 @@
 {/snippet}
 
 {#if messages.length > 0}
-  <div class="relative border-t border-border/50 pt-3 pb-2 px-2 z-20" transition:slide={{ duration: 200 }}>
+  <div class="relative border-t border-border/50 pt-3 pb-2 px-2 z-20" transition:safeSlide={{ duration: 200 }}>
     <div class="flex items-center gap-1.5 text-xs text-subtle mb-2 px-2.5">
         <Fa icon={faListOl} class="w-3 h-3" />
         <span>{m.chat_queuedMessages_header_label({ count: formatInteger(messages.length) })}</span>
@@ -315,7 +313,7 @@
           class="flex items-center gap-1.5 text-xs text-warning mb-2 px-2.5"
           data-testid="queued-messages-held-hint"
           role="status"
-          transition:slide={{ duration: 200 }}
+          transition:safeSlide={{ duration: 200 }}
         >
           <div aria-hidden="true" class="shrink-0">
             <Fa icon={faCircleQuestion} class="w-3 h-3" />
@@ -343,7 +341,7 @@
               <!-- Edit mode -->
               <div
                 class="col-span-full row-span-full flex-1 flex gap-2 flex"
-                transition:slide={{ axis: 'y', duration: 200 }}
+                transition:safeSlide={{ axis: 'y', duration: 200 }}
               >
                 <textarea
                   bind:value={editContent}
@@ -396,7 +394,7 @@
                 </div>
                 <div
                   class="flex-1 min-w-0 truncate"
-                  transition:slide={{ axis: 'y', duration: 200 }}
+                  transition:safeSlide={{ axis: 'y', duration: 200 }}
                   title={message.content}
                 >
                   <span>{wake.label}</span>
@@ -449,7 +447,7 @@
                 {@render imageThumbnails(message)}
                 <div
                   class="flex-1 min-w-0 truncate"
-                  transition:slide={{ axis: 'y', duration: 200 }}
+                  transition:safeSlide={{ axis: 'y', duration: 200 }}
                   title={message.content}
                 >
                   <span class="text-foreground font-medium">{agentAttr.displayName}</span>
@@ -499,7 +497,7 @@
                 </div>
                 <div
                   class="flex-1 min-w-0 truncate"
-                  transition:slide={{ axis: 'y', duration: 200 }}
+                  transition:safeSlide={{ axis: 'y', duration: 200 }}
                   title={message.content}
                 >
                   <span class="text-foreground font-medium">{hookWakeAttr.displayName}</span>
@@ -549,7 +547,7 @@
                 {@render imageThumbnails(message)}
                 <button
                   class="flex-1 text-left truncate cursor-pointer"
-                  transition:slide={{ axis: 'y', duration: 200 }}
+                  transition:safeSlide={{ axis: 'y', duration: 200 }}
                   onclick={() => startEdit(message)}
                 >
                   {message.requeuedAfterFailure

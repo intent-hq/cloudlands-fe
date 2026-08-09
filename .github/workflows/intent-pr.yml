@@ -3,7 +3,6 @@ name: Intent PR Checks
 on:
   pull_request:
     branches: ['main']
-  merge_group:
 
 # Cancel in progress workflows on pull_requests.
 # https://docs.github.com/en/actions/using-jobs/using-concurrency#example-using-a-fallback-value
@@ -96,7 +95,6 @@ jobs:
     # Seconds-long job: pinned to the smallest GH-hosted runner rather than
     # routed — not worth a tinybox slot or a burst decision.
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
     permissions:
       pull-requests: read
     steps:
@@ -126,7 +124,6 @@ jobs:
     name: Conflict Markers
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
     timeout-minutes: 5
     permissions:
       contents: read
@@ -351,13 +348,9 @@ jobs:
       - name: Unit tests
         run: pnpm run test:unit
 
-  # Single required status check for branch protection / the merge queue: fans
-  # in pr-title, conflict-markers, and the three heavy jobs (checks /
-  # build-web / test). checks/build-web/test must succeed outright;
-  # pr-title/conflict-markers accept success OR skipped since both carry
-  # `if: github.event_name == 'pull_request'` and are legitimately skipped on
-  # merge_group runs — requiring strict success there would fail the gate in
-  # the merge queue.
+  # Single required status check for branch protection: fans in pr-title,
+  # conflict-markers, and the three heavy jobs (checks / build-web / test).
+  # All five must succeed outright.
   gate:
     name: CI Gate
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
@@ -368,23 +361,11 @@ jobs:
     steps:
       - name: Check results
         run: |
-          if [ "${{ needs.checks.result }}" != "success" ] || \
+          if [ "${{ needs.pr-title.result }}" != "success" ] || \
+             [ "${{ needs.conflict-markers.result }}" != "success" ] || \
+             [ "${{ needs.checks.result }}" != "success" ] || \
              [ "${{ needs.build-web.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ]; then
             echo "One or more required jobs failed"
             exit 1
           fi
-          case "${{ needs.pr-title.result }}" in
-            success|skipped) ;;
-            *)
-              echo "pr-title did not succeed or skip"
-              exit 1
-              ;;
-          esac
-          case "${{ needs.conflict-markers.result }}" in
-            success|skipped) ;;
-            *)
-              echo "conflict-markers did not succeed or skip"
-              exit 1
-              ;;
-          esac

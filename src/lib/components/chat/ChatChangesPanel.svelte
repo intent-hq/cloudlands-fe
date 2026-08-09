@@ -195,7 +195,7 @@
   import InlineDiffItem from './InlineDiffItem.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { onDestroy, tick, untrack } from 'svelte';
   import { Virtualizer } from '@pierre/diffs';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -2663,7 +2663,7 @@
                     </div>
                   </div>
                   {#if expandedCommits.has(group.hash)}
-                    <div class="flex flex-col gap-2 mt-2 mx-2" transition:slide={{ duration: 150 }}>
+                    <div class="flex flex-col gap-2 mt-2 mx-2" transition:safeSlide={{ duration: 150 }}>
                       {#each group.changes as change (getExpandKey(change))}
                         {@render fileCard(change, true)}
                       {/each}
@@ -3025,7 +3025,7 @@
     {#if expandedFiles.has(expandKey)}
       <div
         class="border-t border-border"
-        transition:slide={{ axis: 'y', duration: 200 }}
+        transition:safeSlide={{ axis: 'y', duration: 200 }}
         use:observeVisibility={expandKey}
       >
         {#if visibleFiles.has(expandKey)}
