@@ -416,7 +416,7 @@
 
 <div class="flex flex-col divide-y divide-border">
   {#if checkError}
-    <div class="flex items-center justify-between gap-4 py-4">
+    <div class="flex items-center justify-between gap-4 px-6 py-4">
       <p class="text-sm text-destructive-foreground">{checkError}</p>
       <button
         type="button"
@@ -443,7 +443,7 @@
     {@const canSetDefault = provider.available && !isActive && isReady}
     {@const canInstall = !provider.available}
     {@const hasActions = canDisable || canEnable || canLogIn || canSetDefault || canInstall}
-    <div class="py-4">
+    <div class="px-6 py-4">
       <div class="flex items-start justify-between gap-4">
         <div class="space-y-1">
           <div class="flex items-center gap-2 h-7">

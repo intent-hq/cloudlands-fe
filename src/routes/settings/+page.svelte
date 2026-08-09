@@ -432,10 +432,8 @@
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_aiCodingClis()}
             </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
-                <ProviderSelector />
-              </section>
+            <div class="bg-card rounded-xl overflow-hidden">
+              <ProviderSelector />
             </div>
             <p class="text-xs text-subtle mt-2">
               {m.settings_section_aiCodingClis_hint()}
