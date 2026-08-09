@@ -30,6 +30,7 @@ describe('app UI targets registry', () => {
       'utility-default-model': 'tools',
       notifications: 'general',
       'open-in': 'general',
+      'github-link-action': 'general',
       appearance: 'appearance',
       'color-theme': 'appearance',
       'note-font': 'appearance',

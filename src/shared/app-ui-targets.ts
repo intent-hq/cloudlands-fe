@@ -110,6 +110,12 @@ export const APP_UI_TARGETS: AppUiTarget[] = [
     ['utility-default-model', 'Quick Actions', 'Utility/default model settings.', 'tools'],
     ['notifications', 'Notifications', 'Notification preferences.', 'general'],
     ['open-in', 'Open In', 'External editor/app launch preferences.', 'general'],
+    [
+      'github-link-action',
+      'GitHub Links',
+      'GitHub issue and pull request link behavior.',
+      'general',
+    ],
   ].map(([id, label, description, tab]) =>
     settingsTarget({
       id,

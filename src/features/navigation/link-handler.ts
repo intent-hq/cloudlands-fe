@@ -9,7 +9,7 @@
  * - HTTP/HTTPS links → Open in external default browser
  * - Cmd+Click (⌘ on Mac, Ctrl on Windows/Linux) → Open in embedded browser panel
  * - Auth/OAuth URLs → Always open in external browser
- * - GitHub issue/PR URLs (plain click) → Anchored link action menu
+ * - GitHub issue/PR URLs (plain click) → Configured default action
  * - Intent links (intent://) → Handle internally (navigate to notes/tasks)
  * - File links (file://) → Open in external editor
  * - Other links → External browser as fallback
@@ -17,6 +17,7 @@
 
 import { Logger } from '$shared/logger';
 import type { WorkspaceId } from '$shared/types/branded-ids';
+import { writeTextToClipboard } from '$lib/utils/clipboard';
 import {
   type GitHubIssueOrPrRef,
   type LinkHandlerOptions,
@@ -25,6 +26,8 @@ import {
   parseGitHubIssueOrPrUrl,
 } from '$shared/utils/link-helpers';
 import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import { selectGithubLinkDefaultAction } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { store as appStore } from '$store/renderer/store';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
@@ -48,7 +51,7 @@ const logger = new Logger('LinkHandler');
  * 6. `http(s)://` + forceExternal → external browser
  * 7. `http(s)://` + Cmd+Click → embedded browser panel (external browser
  *    fallback without a workspaceId)
- * 8. GitHub issue/PR URLs (plain click with coordinates) → link action menu
+ * 8. GitHub issue/PR URLs (plain click with coordinates) → configured default action
  * 9. `http(s)://` (plain click) → external browser
  * 10. `file://` → external editor
  * 11. Anything else → external browser (fallback)
@@ -105,11 +108,36 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
         return await openInExternalBrowser(url);
       }
 
-      // GitHub issue/PR links (plain click) → anchored link action menu
+      // GitHub issue/PR links (plain click) → configured default action
       const gitHubRef = parseGitHubIssueOrPrUrl(url);
       const { event } = options;
       if (gitHubRef && event) {
-        return await openLinkActionMenu(url, gitHubRef, event, options.workspaceId);
+        const defaultAction =
+          options.githubLinkDefaultAction ?? selectGithubLinkDefaultAction.select(appStore.state);
+        switch (defaultAction) {
+          case 'open-in-browser':
+            return await openInExternalBrowser(url);
+          case 'open-in-app':
+            return options.workspaceId
+              ? await openInBrowserPanel(url, options.workspaceId)
+              : await openInExternalBrowser(url);
+          case 'copy-link':
+            await writeTextToClipboard(url);
+            return true;
+          case 'start-workspace': {
+            appStore.dispatch(
+              setWorkspaceInitializerPendingGitHubPrefill({
+                ...gitHubRef,
+                url,
+              }),
+            );
+            const { goto } = await import('$app/navigation');
+            await goto('/');
+            return true;
+          }
+          case 'show-choices':
+            return await openLinkActionMenu(url, gitHubRef, event, options.workspaceId);
+        }
       }
 
       // Default: external default browser

@@ -22,6 +22,7 @@
   import LegacyImportSettings from '$lib/components/settings/LegacyImportSettings.svelte';
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
   import LanguageSettings from '$lib/components/settings/LanguageSettings.svelte';
+  import GitHubLinkSettings from '$lib/components/settings/GitHubLinkSettings.svelte';
   import McpServersSettings from '$lib/components/settings/McpServersSettings.svelte';
   import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
@@ -144,6 +145,7 @@
     'agent-chat-font': 'appearance',
     'code-font': 'appearance',
     'open-in': 'general',
+    'github-link-action': 'general',
     'mcp-servers': 'tools',
     'cli-optimization': 'tools',
     'workspace-api': 'tools',
@@ -729,6 +731,18 @@
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section class="px-6 py-5">
                 <OpenInAppsSettings />
+              </section>
+            </div>
+          </div>
+
+          <!-- GitHub links -->
+          <div id="github-link-action" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_githubLinks_section_title()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <GitHubLinkSettings />
               </section>
             </div>
           </div>

@@ -2,6 +2,7 @@ import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import { createBooleanPreference } from "@augmentcode/themis/utils/store/boolean-preference";
 import { SYSTEM_LANGUAGE_PREFERENCE } from "$shared/i18n/locale-matcher";
+import type { GithubLinkDefaultAction } from "$shared/utils/link-helpers";
 
 export const SYSTEM_DEFAULT_FONT =
   "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";
@@ -53,6 +54,7 @@ export type UserPreferencesState = {
   activityLogPresets: ActivityLogPresetPreference[];
   /** BCP-47 locale tag of an available catalog, or "system" to follow the OS. */
   languagePreference: string;
+  githubLinkDefaultAction: GithubLinkDefaultAction;
 };
 
 export type FontSettingsState = Pick<
@@ -91,6 +93,7 @@ export const initialState: UserPreferencesState = {
   ...notificationSettingsInitialState,
   activityLogPresets: [],
   languagePreference: SYSTEM_LANGUAGE_PREFERENCE,
+  githubLinkDefaultAction: "show-choices",
 };
 
 const betaUpdatesPreference = createBooleanPreference<UserPreferencesState>({
@@ -175,6 +178,10 @@ export const deleteActivityLogPreset = createAction<[index: number]>(
 
 export const setLanguagePreference = createAction<[preference: string]>(
   "userPreferences/setLanguagePreference"
+);
+
+export const setGithubLinkDefaultAction = createAction<[action: GithubLinkDefaultAction]>(
+  "userPreferences/setGithubLinkDefaultAction"
 );
 
 const showArchivedPreference = createBooleanPreference<UserPreferencesState>({
@@ -296,4 +303,8 @@ userPreferencesReducer.with(deleteActivityLogPreset, (state, { payload: [index] 
 userPreferencesReducer.with(setLanguagePreference, (state, { payload: [preference] }) => ({
     ...state,
     languagePreference: preference,
+  }));
+userPreferencesReducer.with(setGithubLinkDefaultAction, (state, { payload: [action] }) => ({
+    ...state,
+    githubLinkDefaultAction: action,
   }));

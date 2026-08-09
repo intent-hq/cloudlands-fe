@@ -34,6 +34,7 @@ import {
   setAgentFontStyle,
   setCodeFontFamily,
   setGroupByRepo,
+  setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setLanguagePreference,
   setNoteFontStyle,
@@ -80,7 +81,10 @@ describe('userPreferencesPersistenceSaga', () => {
     mocks.getJSON.mockReturnValue(undefined);
     mocks.setJSON.mockReturnValue(undefined);
     vi.mocked(window.electronAPI.invoke).mockReset();
-    vi.mocked(window.electronAPI.invoke).mockResolvedValue({ success: false, error: 'not available' });
+    vi.mocked(window.electronAPI.invoke).mockResolvedValue({
+      success: false,
+      error: 'not available',
+    });
   });
 
   it('loads system fonts at startup through the exact IPC request', async () => {
@@ -112,7 +116,10 @@ describe('userPreferencesPersistenceSaga', () => {
     vi.mocked(window.electronAPI.invoke).mockResolvedValueOnce({ success: false, error: 'closed' });
     await runSaga({ dispatch, getState: () => ({}) }, loadSystemFontsWorker).toPromise();
 
-    vi.mocked(window.electronAPI.invoke).mockResolvedValueOnce({ success: true, data: ['Mono', 42] });
+    vi.mocked(window.electronAPI.invoke).mockResolvedValueOnce({
+      success: true,
+      data: ['Mono', 42],
+    });
     await runSaga({ dispatch, getState: () => ({}) }, loadSystemFontsWorker).toPromise();
 
     vi.mocked(window.electronAPI.invoke).mockRejectedValueOnce(new Error('closed'));
@@ -138,6 +145,7 @@ describe('userPreferencesPersistenceSaga', () => {
       'code-font-settings': { fontFamily: 'Monaco' },
       activityLogPresets: [preset],
       'language-preference': 'de',
+      'github-links:defaultAction': 'copy-link',
     };
     mocks.getJSON.mockImplementation((key: string) => stored[key]);
     const dispatch = vi.fn();
@@ -155,6 +163,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [setCodeFontFamily('Monaco')],
       [hydrateActivityLogPresets([preset])],
       [setLanguagePreference('de')],
+      [setGithubLinkDefaultAction('copy-link')],
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([]);
   });
@@ -165,6 +174,7 @@ describe('userPreferencesPersistenceSaga', () => {
       if (key === 'agent-font-settings') return { fontStyle: 'serif' };
       if (key === 'activityLogPresets') return [{ name: 1, filters: null }];
       if (key === 'language-preference') return ' ';
+      if (key === 'github-links:defaultAction') return 'launch-missiles';
       return undefined;
     });
     const dispatch = vi.fn();
@@ -186,6 +196,7 @@ describe('userPreferencesPersistenceSaga', () => {
         codeFontFamily: 'Monaco',
         activityLogPresets: [preset],
         languagePreference: 'de',
+        githubLinkDefaultAction: 'start-workspace',
       },
     };
     const channel = stdChannel();
@@ -216,6 +227,7 @@ describe('userPreferencesPersistenceSaga', () => {
       saveActivityLogPreset(preset),
       deleteActivityLogPreset(0),
       setLanguagePreference('de'),
+      setGithubLinkDefaultAction('start-workspace'),
     ];
     for (const action of actions) {
       channel.put(action);
@@ -241,6 +253,7 @@ describe('userPreferencesPersistenceSaga', () => {
       ['activityLogPresets', [preset]],
       ['activityLogPresets', [preset]],
       ['language-preference', 'de'],
+      ['github-links:defaultAction', 'start-workspace'],
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([['de']]);
     expect(vi.mocked(window.electronAPI.invoke).mock.calls).toEqual([

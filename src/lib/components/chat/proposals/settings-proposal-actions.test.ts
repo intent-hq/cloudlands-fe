@@ -7,6 +7,7 @@ import {
 import {
   initialState as userPreferencesInitialState,
   setAgentFontStyle,
+  setGithubLinkDefaultAction,
   setVolume,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
@@ -139,6 +140,21 @@ describe('settings-proposal-actions', () => {
     await applySettingsProposalWork(makeDetail(proposal));
 
     expect(mocks.dispatch).toHaveBeenCalledWith(setAgentFontStyle('monospace'));
+  });
+
+  it('applies and reverses the GitHub link default action preference', async () => {
+    const proposal = makeProposal('githubLinks.defaultAction', 'copy-link');
+
+    const result = await applySettingsProposalWork(makeDetail(proposal));
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(setGithubLinkDefaultAction('copy-link'));
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'githubLinks.defaultAction',
+        value: 'show-choices',
+        apply: { kind: 'redux-action', action: 'userPreferences/setGithubLinkDefaultAction' },
+      },
+    ]);
   });
 
   it('falls back to the proposal value when a numeric edit is invalid', async () => {
