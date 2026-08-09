@@ -300,7 +300,11 @@ jobs:
   # intent-manual-windows-build.yml.
   build-windows:
     needs: resolve
-    runs-on: windows-latest
+    # Pinned to windows-2022: the windows-latest (windows-2025) image ships
+    # Visual Studio 2026 (v18), which node-gyp < 12.1.0 cannot detect
+    # (nodejs/node-gyp#3282), breaking native module builds (node-pty).
+    # Un-pin once the Node/npm/node-gyp stack in use supports VS 18.
+    runs-on: windows-2022
     timeout-minutes: 60
 
     steps:
