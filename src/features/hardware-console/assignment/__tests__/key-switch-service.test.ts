@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
-import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 interface MockTab {
   id: string;

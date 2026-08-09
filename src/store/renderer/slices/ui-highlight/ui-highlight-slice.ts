@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import type { UiHighlightState } from './ui-highlight-types';
 
 export const UI_HIGHLIGHT_DURATION_MS = 2000;
@@ -31,8 +31,8 @@ function normalizeDurationMs(durationMs: number | undefined): number | undefined
   return Math.round(durationMs);
 }
 
-export const uiHighlightReducer = createReducer<UiHighlightState>(initialState)
-  .with(requestUiHighlight, (state, { payload: [highlightId, options] }) => {
+export const uiHighlightReducer = createReducer<UiHighlightState>(initialState);
+uiHighlightReducer.with(requestUiHighlight, (state, { payload: [highlightId, options] }) => {
     const id = normalizeHighlightId(highlightId);
     if (!id) return state;
     const durationMs = normalizeDurationMs(options?.durationMs);
@@ -53,8 +53,8 @@ export const uiHighlightReducer = createReducer<UiHighlightState>(initialState)
               [id]: durationMs,
             },
     };
-  })
-  .with(clearUiHighlight, (state, { payload: [highlightId, token] }) => {
+  });
+uiHighlightReducer.with(clearUiHighlight, (state, { payload: [highlightId, token] }) => {
     const id = normalizeHighlightId(highlightId);
     if (!id || state.activeById[id] === undefined) return state;
     if (token !== undefined && state.activeById[id] !== token) return state;

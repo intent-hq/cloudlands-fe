@@ -9,8 +9,8 @@
  * backend reconnect by the provider-models seeder (RESUB-1 idiom — a daemon
  * restart may have changed adapters/catalogs).
  */
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   ProviderModelsCacheEntry,
   ProviderModelsFetchResult,
@@ -50,8 +50,11 @@ export const providerModelsLoaded = createAction<
  */
 export const providerModelsCacheCleared = createAction('providerModels/providerModelsCacheCleared');
 
-export const providerModelsReducer = createReducer<ProviderModelsState>(initialState)
-  .with(providerModelsLoaded, (state, { payload: [providerId, entry, epoch] }) =>
+export const providerModelsReducer = createReducer<ProviderModelsState>(initialState);
+
+providerModelsReducer.with(
+  providerModelsLoaded,
+  (state, { payload: [providerId, entry, epoch] }) =>
     epoch !== state.clearEpoch
       ? state
       : {
@@ -61,8 +64,8 @@ export const providerModelsReducer = createReducer<ProviderModelsState>(initialS
             [providerId]: entry,
           },
         },
-  )
-  .with(providerModelsCacheCleared, (state) => ({
-    byProviderId: {},
-    clearEpoch: state.clearEpoch + 1,
-  }));
+);
+providerModelsReducer.with(providerModelsCacheCleared, (state) => ({
+  byProviderId: {},
+  clearEpoch: state.clearEpoch + 1,
+}));

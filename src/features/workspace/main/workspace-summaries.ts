@@ -20,16 +20,13 @@ import type {
 } from '../../../shared/types';
 import { getSpecTaskNotes } from '../../../shared/utils/task-stats';
 import { getBackendClient } from '../../backend/main/backend.ipc';
-import { DiffSummaryRepository } from './diff-summary.repository';
 
 const logger = new Logger('WorkspaceSummaries');
 
-const diffSummaryRepository = new DiffSummaryRepository();
-
 /**
- * Compute the current diff summary for a workspace from git, falling back to
- * the persisted diff summary when git is unavailable. Returns undefined when
- * there are no changes.
+ * Compute the current diff summary for a workspace from git. Returns
+ * undefined when there are no changes, the worktree path is unknown, or git
+ * is unavailable.
  */
 export async function computeWorkspaceDiffSummary(
   workspaceId: WorkspaceId,
@@ -86,12 +83,11 @@ export async function computeWorkspaceDiffSummary(
         // Git reports 0 changes
         return undefined;
       } catch {
-        // Git command failed, fall back to persisted summary
+        // Git command failed; no summary available
       }
     }
 
-    const summary = await diffSummaryRepository.load(workspaceId);
-    return summary ?? undefined;
+    return undefined;
   } catch (error) {
     logger.error('Error computing diff summary', error as Error, { workspaceId });
     return undefined;

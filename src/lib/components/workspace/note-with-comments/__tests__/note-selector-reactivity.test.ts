@@ -19,10 +19,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/svelte";
-import { Store } from "$lib/store-shim/svelte-store";
-import {
-  get,
-} from "svelte/store";
+import { Store } from "@augmentcode/themis/svelte-store";
 import { reducers } from "$store/renderer/reducer";
 import { selectNoteById } from "$store/renderer/slices/workspace-notes/workspace-notes-selectors";
 import {
@@ -84,10 +81,7 @@ describe("selectNoteById reactivity with writable store args", () => {
     expect(screen.getByTestId("selected-from-state-id").textContent).toBe("note-a");
     expect(screen.getByTestId("readable-note-count").textContent).toBe("2");
     expect(selectNoteById.select(store.state, WS_1, "note-a")?.id).toBe("note-a");
-    expect(get(store.getReadableState()).workspaceNotes.byWorkspaceId[WS_1]?.notes.ids).toEqual([
-      "note-a",
-      "note-b",
-    ]);
+    expect(selectNoteById.select(store.state, WS_1, "note-b")?.id).toBe("note-b");
 
     // Switch noteId — simulates navigating to a different note without remounting
     await rerender({

@@ -5,7 +5,7 @@
  * Actions: source:*
  */
 
-import { createAction } from "$lib/store-shim/utils/store/create-action";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import type {
   DomainEvent,
   DomainEventPayloads,

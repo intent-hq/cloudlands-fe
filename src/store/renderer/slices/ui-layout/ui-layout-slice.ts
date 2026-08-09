@@ -1,6 +1,6 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
-import { createBooleanPreference } from "$lib/store-shim/utils/store/boolean-preference";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createBooleanPreference } from "@augmentcode/themis/utils/store/boolean-preference";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 
@@ -263,22 +263,18 @@ export const setWorkspaceSidebarPanelLayout = createAction<[layout: WorkspaceSid
   "uiLayout/setWorkspaceSidebarPanelLayout"
 );
 
-export const uiLayoutReducer = tabbedSidebarPinnedPreference.register(
-  spacesSidebarCollapsedPreference.register(
-    diffIndicatorsPreference.register(
-      diffSideBySidePreference.register(
-        foldUnchangedPreference.register(
-          lineWrappingPreference.register(createReducer<UiLayoutState>(initialState))
-        )
-      )
-    )
-  )
-)
-  .with(loadEditorSettings, (state, { payload: [settings] }) => ({
+export const uiLayoutReducer = createReducer<UiLayoutState>(initialState);
+lineWrappingPreference.register(uiLayoutReducer);
+foldUnchangedPreference.register(uiLayoutReducer);
+diffSideBySidePreference.register(uiLayoutReducer);
+diffIndicatorsPreference.register(uiLayoutReducer);
+spacesSidebarCollapsedPreference.register(uiLayoutReducer);
+tabbedSidebarPinnedPreference.register(uiLayoutReducer);
+uiLayoutReducer.with(loadEditorSettings, (state, { payload: [settings] }) => ({
     ...state,
     ...settings,
-  }))
-  .with(setWidth, (state, { payload: [pixels] }) => {
+  }));
+uiLayoutReducer.with(setWidth, (state, { payload: [pixels] }) => {
     const newWidth = Math.round(Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, pixels)));
     return {
       ...state,
@@ -287,13 +283,13 @@ export const uiLayoutReducer = tabbedSidebarPinnedPreference.register(
         ? state.sidebarWidthBeforeCollapse
         : newWidth,
     };
-  })
-  .with(setSidebarExpandedWidth, (state, { payload: [pixels] }) => {
+  });
+uiLayoutReducer.with(setSidebarExpandedWidth, (state, { payload: [pixels] }) => {
     const newWidth = Math.round(Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, pixels)));
     if (newWidth === state.sidebarExpandedWidth) return state;
     return { ...state, sidebarExpandedWidth: newWidth };
-  })
-  .with(toggleSidebar, (state) => {
+  });
+uiLayoutReducer.with(toggleSidebar, (state) => {
     if (state.sidebarCollapsed) {
       return { ...state, sidebarCollapsed: false };
     }
@@ -303,8 +299,8 @@ export const uiLayoutReducer = tabbedSidebarPinnedPreference.register(
       sidebarWidthBeforeCollapse: state.sidebarWidth,
       sidebarCollapsed: true,
     };
-  })
-  .with(setCollapsed, (state, { payload: [collapsed] }) => {
+  });
+uiLayoutReducer.with(setCollapsed, (state, { payload: [collapsed] }) => {
     if (collapsed === state.sidebarCollapsed) {
       return state;
     }
@@ -318,8 +314,8 @@ export const uiLayoutReducer = tabbedSidebarPinnedPreference.register(
     }
 
     return { ...state, sidebarCollapsed: false };
-  })
-  .with(setPanelVisibility, (state, { payload: [wsId, key, value] }) => {
+  });
+uiLayoutReducer.with(setPanelVisibility, (state, { payload: [wsId, key, value] }) => {
     const current = getPanelVisibility(state.panelVisibility, wsId);
     if (current[key] === value) return state;
 
@@ -330,8 +326,8 @@ export const uiLayoutReducer = tabbedSidebarPinnedPreference.register(
         [key]: value,
       }),
     };
-  })
-  .with(setPanelVisibilityBulk, (state, { payload: [wsId, updates] }) => {
+  });
+uiLayoutReducer.with(setPanelVisibilityBulk, (state, { payload: [wsId, updates] }) => {
     const current = getPanelVisibility(state.panelVisibility, wsId);
     let changed = false;
     const updated = { ...current };
@@ -350,92 +346,92 @@ export const uiLayoutReducer = tabbedSidebarPinnedPreference.register(
       ...state,
       panelVisibility: setPanelVisibilityState(state.panelVisibility, wsId, updated),
     };
-  })
-  .with(workspaceUnmounted, (state, { payload: [wsId] }) => {
+  });
+uiLayoutReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) => {
     const next = clearPanelVisibilityState(state.panelVisibility, wsId);
     if (next === state.panelVisibility) return state;
     return { ...state, panelVisibility: next };
-  })
-  .with(loadSidebarState, (state, { payload: [width, collapsed, expandedWidth] }) => ({
+  });
+uiLayoutReducer.with(loadSidebarState, (state, { payload: [width, collapsed, expandedWidth] }) => ({
     ...state,
     sidebarWidth: width,
     sidebarExpandedWidth: expandedWidth ?? state.sidebarExpandedWidth,
     sidebarWidthBeforeCollapse: width,
     sidebarCollapsed: collapsed,
-  }))
-  .with(hydrateResizablePanelSize, (state, { payload: [key, value] }) => ({
+  }));
+uiLayoutReducer.with(hydrateResizablePanelSize, (state, { payload: [key, value] }) => ({
     ...state,
     resizablePanelSizes: { ...state.resizablePanelSizes, [key]: value },
-  }))
-  .with(setResizablePanelSize, (state, { payload: [key, value] }) => ({
+  }));
+uiLayoutReducer.with(setResizablePanelSize, (state, { payload: [key, value] }) => ({
     ...state,
     resizablePanelSizes: { ...state.resizablePanelSizes, [key]: value },
-  }))
-  .with(hydrateResizablePanelGroupLayout, (state, { payload: [key, layout] }) => ({
+  }));
+uiLayoutReducer.with(hydrateResizablePanelGroupLayout, (state, { payload: [key, layout] }) => ({
     ...state,
     resizablePanelGroupLayouts: { ...state.resizablePanelGroupLayouts, [key]: layout },
-  }))
-  .with(setResizablePanelGroupLayout, (state, { payload: [key, layout] }) => ({
+  }));
+uiLayoutReducer.with(setResizablePanelGroupLayout, (state, { payload: [key, layout] }) => ({
     ...state,
     resizablePanelGroupLayouts: { ...state.resizablePanelGroupLayouts, [key]: layout },
-  }))
-  .with(hydrateCollapsiblePanelCollapsed, (state, { payload: [key, collapsed] }) => ({
+  }));
+uiLayoutReducer.with(hydrateCollapsiblePanelCollapsed, (state, { payload: [key, collapsed] }) => ({
     ...state,
     collapsiblePanelCollapsed: { ...state.collapsiblePanelCollapsed, [key]: collapsed },
-  }))
-  .with(setCollapsiblePanelCollapsed, (state, { payload: [key, collapsed] }) => ({
+  }));
+uiLayoutReducer.with(setCollapsiblePanelCollapsed, (state, { payload: [key, collapsed] }) => ({
     ...state,
     collapsiblePanelCollapsed: { ...state.collapsiblePanelCollapsed, [key]: collapsed },
-  }))
-  .with(loadWorkspaceSidebarPanelLayout, (state, { payload: [layout] }) => ({
+  }));
+uiLayoutReducer.with(loadWorkspaceSidebarPanelLayout, (state, { payload: [layout] }) => ({
     ...state,
     workspaceSidebarPanelLayout: layout,
-  }))
-  .with(setWorkspaceSidebarPanelLayout, (state, { payload: [layout] }) => ({
+  }));
+uiLayoutReducer.with(setWorkspaceSidebarPanelLayout, (state, { payload: [layout] }) => ({
     ...state,
     workspaceSidebarPanelLayout: layout,
-  }))
-  .with(setSpacesSidebarWidth, (state, { payload: [pixels] }) => {
+  }));
+uiLayoutReducer.with(setSpacesSidebarWidth, (state, { payload: [pixels] }) => {
     if (pixels === state.spacesSidebarWidth) return state;
     return { ...state, spacesSidebarWidth: pixels };
-  })
-  .with(setSidebarSide, (state, { payload: [side] }) => {
+  });
+uiLayoutReducer.with(setSidebarSide, (state, { payload: [side] }) => {
     if (side === state.sidebarSide) return state;
     return { ...state, sidebarSide: side };
-  })
-  .with(toggleSidebarSide, (state) => ({
+  });
+uiLayoutReducer.with(toggleSidebarSide, (state) => ({
     ...state,
     sidebarSide: state.sidebarSide === 'left' ? 'right' : 'left',
-  }))
-  .with(loadLayoutSettings, (state, { payload: [settings] }) => ({
+  }));
+uiLayoutReducer.with(loadLayoutSettings, (state, { payload: [settings] }) => ({
     ...state,
     ...settings,
-  }))
-  .with(resetLayoutSettings, (state) => ({
+  }));
+uiLayoutReducer.with(resetLayoutSettings, (state) => ({
     ...state,
     spacesSidebarWidth: SPACES_SIDEBAR_DEFAULT_WIDTH,
     spacesSidebarCollapsed: false,
     tabbedSidebarPinned: true,
     sidebarSide: 'left' as SidebarSide,
-  }))
-  // Bottom dock reducers
-  .with(toggleBottomDock, (state) => ({
+  }));
+// Bottom dock reducers
+uiLayoutReducer.with(toggleBottomDock, (state) => ({
     ...state,
     bottomDock: { ...state.bottomDock, isExpanded: !state.bottomDock.isExpanded },
-  }))
-  .with(expandBottomDock, (state) => {
+  }));
+uiLayoutReducer.with(expandBottomDock, (state) => {
     if (state.bottomDock.isExpanded) return state;
     return { ...state, bottomDock: { ...state.bottomDock, isExpanded: true } };
-  })
-  .with(collapseBottomDock, (state) => {
+  });
+uiLayoutReducer.with(collapseBottomDock, (state) => {
     if (!state.bottomDock.isExpanded) return state;
     return { ...state, bottomDock: { ...state.bottomDock, isExpanded: false } };
-  })
-  .with(setBottomDockViewMode, (state, { payload: [mode] }) => {
+  });
+uiLayoutReducer.with(setBottomDockViewMode, (state, { payload: [mode] }) => {
     if (mode === state.bottomDock.viewMode) return state;
     return { ...state, bottomDock: { ...state.bottomDock, viewMode: mode } };
-  })
-  .with(selectBottomDockTerminal, (state, { payload: [terminalId] }) => ({
+  });
+uiLayoutReducer.with(selectBottomDockTerminal, (state, { payload: [terminalId] }) => ({
     ...state,
     bottomDock: {
       ...state.bottomDock,
@@ -443,21 +439,21 @@ export const uiLayoutReducer = tabbedSidebarPinnedPreference.register(
       viewMode: 'terminal' as DockViewMode,
       isExpanded: true,
     },
-  }))
-  .with(showBottomDockAgents, (state) => ({
+  }));
+uiLayoutReducer.with(showBottomDockAgents, (state) => ({
     ...state,
     bottomDock: {
       ...state.bottomDock,
       viewMode: 'agents' as DockViewMode,
       isExpanded: true,
     },
-  }))
-  .with(setBottomDockHeight, (state, { payload: [height] }) => {
+  }));
+uiLayoutReducer.with(setBottomDockHeight, (state, { payload: [height] }) => {
     const clamped = Math.max(MIN_DOCK_HEIGHT, Math.min(MAX_DOCK_HEIGHT, height));
     if (clamped === state.bottomDock.height) return state;
     return { ...state, bottomDock: { ...state.bottomDock, height: clamped } };
-  })
-  .with(loadBottomDockState, (state, { payload: [loaded] }) => ({
+  });
+uiLayoutReducer.with(loadBottomDockState, (state, { payload: [loaded] }) => ({
     ...state,
     bottomDock: {
       // Always start collapsed on load

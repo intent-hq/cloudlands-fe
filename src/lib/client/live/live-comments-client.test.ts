@@ -5,16 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // note-scoped mutations resolve deterministically; `runMutation` /
 // `newIdempotencyKey` stay real so the asserted method + params and the
 // success/error folding are the genuine code paths. The notification /
-// reconnect handlers and the liveState capability are captured so the typed
-// §6.9 channel tests can drive `subscription.push` frames deterministically.
+// reconnect handlers are captured so the typed §6.9 channel tests can drive
+// `subscription.push` frames deterministically.
 let notifyHandler: ((n: { method: string; params?: unknown }) => void) | null = null;
 let reconnectHandler: (() => void) | null = null;
-let liveStateCapability = false;
 
 vi.mock("./backend-transport", () => ({
   backendRequest: vi.fn(),
-  backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: "sub-1" })),
-  backendUnsubscribe: vi.fn(() => Promise.resolve()),
   onBackendNotification: vi.fn((handler: (n: { method: string; params?: unknown }) => void) => {
     notifyHandler = handler;
     return () => {
@@ -27,7 +24,6 @@ vi.mock("./backend-transport", () => ({
       reconnectHandler = null;
     };
   }),
-  detectLiveStateCapability: vi.fn(() => Promise.resolve(liveStateCapability)),
 }));
 
 vi.mock("./live-support", async (importActual) => {
@@ -144,38 +140,40 @@ describe("LiveCommentsClient mutations (fake transport)", () => {
     );
   });
 
-  // monorepo#621 (Round 7d): `subscribe`'s refetch loop must pin to the
+  // monorepo#621 (Round 7d): `subscribe`'s typed channel must pin to the
   // caller's workspaceId too — otherwise a poisoned resolver cache routes the
-  // refetch at another workspace's same-id note (e.g. `spec`).
-  it("subscribe's refetch uses the caller's explicit workspaceId over the resolver cache", async () => {
-    mockedRequest.mockResolvedValue({ threads: [] });
+  // channel at another workspace's same-id note (e.g. `spec`).
+  it("subscribe's channel uses the caller's explicit workspaceId over the resolver cache", async () => {
+    mockedRequest.mockResolvedValue({ subscriptionId: "chan-1" });
     mockedResolve.mockResolvedValue("other-workspace");
     const client = new LiveCommentsClient();
 
     const unsubscribe = client.subscribe("spec", () => {}, "comment-add");
-    // The initial one-shot refetch fires asynchronously on subscription setup.
+    // The channel registers asynchronously on subscription setup.
     await vi.waitFor(() => {
-      expect(mockedRequest).toHaveBeenCalledWith(
-        "comment.list",
-        expect.objectContaining({ workspaceId: "comment-add", noteId: "spec" }),
-      );
+      expect(mockedRequest).toHaveBeenCalledWith("comment.subscribe", {
+        workspaceId: "comment-add",
+        noteId: "spec",
+      });
     });
     expect(mockedResolve).not.toHaveBeenCalled();
     unsubscribe();
   });
 
   it("subscribe falls back to the resolver when no workspaceId is supplied", async () => {
-    mockedRequest.mockResolvedValue({ threads: [] });
+    mockedRequest.mockResolvedValue({ subscriptionId: "chan-1" });
     const client = new LiveCommentsClient();
 
     const unsubscribe = client.subscribe("note-1", () => {});
     await vi.waitFor(() => {
-      expect(mockedRequest).toHaveBeenCalledWith(
-        "comment.list",
-        expect.objectContaining({ workspaceId: "ws-1", noteId: "note-1" }),
-      );
+      expect(mockedResolve).toHaveBeenCalledWith("note-1");
     });
-    expect(mockedResolve).toHaveBeenCalledWith("note-1");
+    await vi.waitFor(() => {
+      expect(mockedRequest).toHaveBeenCalledWith("comment.subscribe", {
+        workspaceId: "ws-1",
+        noteId: "note-1",
+      });
+    });
     unsubscribe();
   });
 
@@ -539,12 +537,11 @@ describe("LiveCommentsClient.list (PROTOCOL §5.3 {threads} envelope)", () => {
 });
 
 
-// Typed per-note comment channel (PROTOCOL §6.9, monorepo#775 remainder):
-// `subscribe` registers `comment.subscribe { workspaceId, noteId }` on
-// liveState daemons — statically when the caller pins the workspace,
-// resolver-backed otherwise — and its snapshot/delta `subscription.push`
-// frames flip the subscription live. When no workspace claims the note, the
-// typed registration is skipped entirely and legacy refetches keep serving.
+// Typed per-note comment channel (PROTOCOL §6.9, monorepo#1697): `subscribe`
+// registers `comment.subscribe { workspaceId, noteId }` — statically when the
+// caller pins the workspace, resolver-backed otherwise — as the sole data
+// path; its snapshot/delta `subscription.push` frames reconcile directly.
+// When no workspace claims the note, the channel simply never registers.
 describe("LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)", () => {
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
   const requestsFor = (method: string) =>
@@ -580,7 +577,6 @@ describe("LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)", 
   let chanSeq = 0;
 
   beforeEach(() => {
-    liveStateCapability = true;
     chanSeq = 0;
     mockedResolve.mockResolvedValue("ws-1");
     mockedRequest.mockImplementation((method: string) => {
@@ -594,7 +590,6 @@ describe("LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)", 
   });
 
   afterEach(() => {
-    liveStateCapability = false;
     notifyHandler = null;
     reconnectHandler = null;
     mockedRequest.mockReset();
@@ -636,26 +631,19 @@ describe("LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)", 
     unsubscribe();
   });
 
-  it("skips typed registration when the workspace is unresolvable — legacy refetches keep serving", async () => {
+  it("never registers the channel when the workspace is unresolvable", async () => {
     mockedResolve.mockResolvedValue(null);
     const handler = vi.fn();
     const client = new LiveCommentsClient();
     const unsubscribe = client.subscribe("ghost", handler);
 
-    // Initial one-shot refetch serves (empty — no workspace claims the note).
-    await vi.waitFor(() => expect(handler).toHaveBeenCalledTimes(1));
-    expect(handler).toHaveBeenLastCalledWith([]);
     await flush();
-    expect(requestsFor("comment.subscribe")).toEqual([]);
-
-    // Legacy `comment:*` events still drive the refetch loop (#775 safety net).
-    notifyHandler?.({ method: "events.event", params: { event: { type: "comment:added" } } });
-    await vi.waitFor(() => expect(handler).toHaveBeenCalledTimes(2));
+    expect(handler).not.toHaveBeenCalled();
     expect(requestsFor("comment.subscribe")).toEqual([]);
     unsubscribe();
   });
 
-  it("reconciles the seq-0 snapshot and comment:added deltas once live", async () => {
+  it("reconciles the seq-0 snapshot and comment:added deltas", async () => {
     const handler = vi.fn();
     const client = new LiveCommentsClient();
     const unsubscribe = client.subscribe("note-1", handler, "ws-A");
@@ -675,15 +663,9 @@ describe("LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)", 
       status: "open",
     });
 
-    const listCallsBefore = requestsFor("comment.list").length;
     pushDelta("chan-1", 1, { added: [wireComment("c-2", "second")] });
     const afterDelta = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
     expect(afterDelta.map((c) => c.id)).toEqual(["c-1", "c-2"]);
-
-    // Live: a legacy comment event no longer triggers a refetch.
-    notifyHandler?.({ method: "events.event", params: { event: { type: "comment:added" } } });
-    await flush();
-    expect(requestsFor("comment.list")).toHaveLength(listCallsBefore);
     unsubscribe();
   });
 
@@ -726,7 +708,7 @@ describe("LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)", 
       noteId: "note-1",
     });
 
-    // The recovery seq-0 snapshot re-enters live mode.
+    // The recovery seq-0 snapshot re-populates the collection.
     pushSnapshot("chan-2", 0, [wireComment("c-1", "hello"), wireComment("c-2", "second")]);
     const recovered = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
     expect(recovered.map((c) => c.id)).toEqual(["c-1", "c-2"]);

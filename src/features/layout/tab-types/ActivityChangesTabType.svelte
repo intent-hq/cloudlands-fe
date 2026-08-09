@@ -63,6 +63,7 @@
 
   const headerContext = getPanelHeaderContext();
 
+  // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
   const repoPath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || undefined);
 

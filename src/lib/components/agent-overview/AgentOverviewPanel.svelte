@@ -29,6 +29,7 @@
   const graphState$ = selectGraphState(workspaceId);
 
   // Request events from the saga (handles IPC query + real-time listeners)
+  // svelte-ignore state_referenced_locally - one-shot init-time dispatch; workspaceId doesn't change during component lifecycle
   appStore.dispatch(loadEventsRequested(workspaceId));
 
   // Handle agent click - open agent panel using workspace:open-agent event

@@ -5,7 +5,7 @@
   Appears on hover for both user and assistant messages.
 -->
 <script lang="ts">
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import Button from '$lib/components/ui/button/button.svelte';
   import {
   Tooltip,
@@ -160,11 +160,11 @@
           aria-label={m.chat_messageActions_copyMessage_ariaLabel()}
         >
           {#if copied || copiedSessionId}
-            <div in:slide={{ axis: 'x', duration: 150 }}>
+            <div in:safeSlide={{ axis: 'x', duration: 150 }}>
               <Fa icon={faCheck} class="w-2.5! h-2.5! text-green-500" />
             </div>
           {:else}
-            <div in:slide={{ axis: 'x', duration: 150 }}>
+            <div in:safeSlide={{ axis: 'x', duration: 150 }}>
               <Fa icon={faCopy} class="w-2.5! h-2.5!" />
             </div>
           {/if}

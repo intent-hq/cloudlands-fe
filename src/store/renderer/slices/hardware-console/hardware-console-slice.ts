@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   AGENT_KEY_COUNT,
   keyPinsEqual,
@@ -182,33 +182,33 @@ function isValidSlot(slot: number): boolean {
   return Number.isInteger(slot) && slot >= 0 && slot < AGENT_KEY_COUNT;
 }
 
-export const hardwareConsoleReducer = createReducer<HardwareConsoleState>(initialState)
-  .with(hydrateHardwareConsoleKeyPins, (state, { payload: [keyPins, excludedWorkspaceIds] }) => {
+export const hardwareConsoleReducer = createReducer<HardwareConsoleState>(initialState);
+hardwareConsoleReducer.with(hydrateHardwareConsoleKeyPins, (state, { payload: [keyPins, excludedWorkspaceIds] }) => {
     return {
       ...state,
       keyPins: normalizeKeyPins(keyPins),
       excludedWorkspaceIds: normalizeExcludedWorkspaceIds(excludedWorkspaceIds),
       hydrated: true,
     };
-  })
-  .with(keyPinsReconciled, (state, { payload: [keyPins] }) => {
+  });
+hardwareConsoleReducer.with(keyPinsReconciled, (state, { payload: [keyPins] }) => {
     const normalized = normalizeKeyPins(keyPins);
     if (keyPinsEqual(state.keyPins, normalized)) return state;
     return { ...state, keyPins: normalized };
-  })
-  .with(hydrateHardwareConsoleEnabled, (state, { payload: [enabled] }) => {
+  });
+hardwareConsoleReducer.with(hydrateHardwareConsoleEnabled, (state, { payload: [enabled] }) => {
     return { ...state, enabled: enabled !== false, enabledHydrated: true };
-  })
-  .with(setHardwareConsoleEnabled, (state, { payload: [enabled] }) => {
+  });
+hardwareConsoleReducer.with(setHardwareConsoleEnabled, (state, { payload: [enabled] }) => {
     if (state.enabled === enabled) return state;
     return { ...state, enabled };
-  })
-  .with(setPromptPickerLimit, (state, { payload: [limit] }) => {
+  });
+hardwareConsoleReducer.with(setPromptPickerLimit, (state, { payload: [limit] }) => {
     const promptPickerLimit = clampPromptPickerLimit(limit);
     if (state.promptPickerLimit === promptPickerLimit) return state;
     return { ...state, promptPickerLimit };
-  })
-  .with(pinWorkspaceToKey, (state, { payload: [slot, workspaceId] }) => {
+  });
+hardwareConsoleReducer.with(pinWorkspaceToKey, (state, { payload: [slot, workspaceId] }) => {
     if (!isValidSlot(slot) || !workspaceId) return state;
     const excludedWorkspaceIds = state.excludedWorkspaceIds.includes(workspaceId)
       ? state.excludedWorkspaceIds.filter((id) => id !== workspaceId)
@@ -220,8 +220,8 @@ export const hardwareConsoleReducer = createReducer<HardwareConsoleState>(initia
     const keyPins = state.keyPins.map((pin) => (pin === workspaceId ? null : pin));
     keyPins[slot] = workspaceId;
     return { ...state, keyPins, excludedWorkspaceIds };
-  })
-  .with(unpinWorkspaceFromKeys, (state, { payload: [workspaceId] }) => {
+  });
+hardwareConsoleReducer.with(unpinWorkspaceFromKeys, (state, { payload: [workspaceId] }) => {
     if (!workspaceId) return state;
     const pinned = state.keyPins.includes(workspaceId);
     const excluded = state.excludedWorkspaceIds.includes(workspaceId);
@@ -233,8 +233,8 @@ export const hardwareConsoleReducer = createReducer<HardwareConsoleState>(initia
       ? state.excludedWorkspaceIds
       : [...state.excludedWorkspaceIds, workspaceId];
     return { ...state, keyPins, excludedWorkspaceIds };
-  })
-  .with(markKeySlotUnassigned, (state, { payload: [slot] }) => {
+  });
+hardwareConsoleReducer.with(markKeySlotUnassigned, (state, { payload: [slot] }) => {
     if (!isValidSlot(slot) || state.keyPins[slot] === UNASSIGNED_KEY_PIN) return state;
     const evicted = state.keyPins[slot];
     const keyPins = state.keyPins.slice();
@@ -244,70 +244,70 @@ export const hardwareConsoleReducer = createReducer<HardwareConsoleState>(initia
         ? [...state.excludedWorkspaceIds, evicted]
         : state.excludedWorkspaceIds;
     return { ...state, keyPins, excludedWorkspaceIds };
-  })
-  .with(hydrateHardwareConsolePrompts, (state, { payload: [promptUsage, promptPickerLimit] }) => {
+  });
+hardwareConsoleReducer.with(hydrateHardwareConsolePrompts, (state, { payload: [promptUsage, promptPickerLimit] }) => {
     return {
       ...state,
       promptUsage,
       promptPickerLimit: clampPromptPickerLimit(promptPickerLimit),
       promptsHydrated: true,
     };
-  })
-  .with(promptUsageRecorded, (state, { payload: { text, atIso } }) => {
+  });
+hardwareConsoleReducer.with(promptUsageRecorded, (state, { payload: { text, atIso } }) => {
     const promptUsage = applyPromptUsage(state.promptUsage, text, atIso);
     return promptUsage === null ? state : { ...state, promptUsage };
-  })
-  .with(radialPromptPickerOpened, (state, { payload: [prompts, sector] }) => {
+  });
+hardwareConsoleReducer.with(radialPromptPickerOpened, (state, { payload: [prompts, sector] }) => {
     return { ...state, radialPrompt: { open: true, prompts, sector } };
-  })
-  .with(radialPromptPickerSectorChanged, (state, { payload: [sector] }) => {
+  });
+hardwareConsoleReducer.with(radialPromptPickerSectorChanged, (state, { payload: [sector] }) => {
     if (!state.radialPrompt.open || state.radialPrompt.sector === sector) return state;
     return { ...state, radialPrompt: { ...state.radialPrompt, sector } };
-  })
-  .with(radialPromptPickerClosed, (state) => {
+  });
+hardwareConsoleReducer.with(radialPromptPickerClosed, (state) => {
     if (!state.radialPrompt.open) return state;
     return { ...state, radialPrompt: closedRadialPrompt };
-  })
-  .with(encoderHudShown, (state, { payload: [workspaceId] }) => {
+  });
+hardwareConsoleReducer.with(encoderHudShown, (state, { payload: [workspaceId] }) => {
     if (!workspaceId || state.encoderHudWorkspaceId === workspaceId) return state;
     return { ...state, encoderHudWorkspaceId: workspaceId };
-  })
-  .with(encoderHudHidden, (state) => {
+  });
+hardwareConsoleReducer.with(encoderHudHidden, (state) => {
     if (state.encoderHudWorkspaceId === null) return state;
     return { ...state, encoderHudWorkspaceId: null };
-  })
-  .with(actionHudShown, (state, { payload: [label] }) => {
+  });
+hardwareConsoleReducer.with(actionHudShown, (state, { payload: [label] }) => {
     if (!label || state.actionHudLabel === label) return state;
     return { ...state, actionHudLabel: label };
-  })
-  .with(actionHudHidden, (state) => {
+  });
+hardwareConsoleReducer.with(actionHudHidden, (state) => {
     if (state.actionHudLabel === null) return state;
     return { ...state, actionHudLabel: null };
-  })
-  .with(pttRecordingStarted, (state) => {
+  });
+hardwareConsoleReducer.with(pttRecordingStarted, (state) => {
     if (state.pttRecording) return state;
     return { ...state, pttRecording: true };
-  })
-  .with(pttRecordingStopped, (state) => {
+  });
+hardwareConsoleReducer.with(pttRecordingStopped, (state) => {
     if (!state.pttRecording) return state;
     return { ...state, pttRecording: false };
-  })
-  .with(voiceTranscriptionStarted, (state) => {
+  });
+hardwareConsoleReducer.with(voiceTranscriptionStarted, (state) => {
     if (state.voiceTranscribing) return state;
     return { ...state, voiceTranscribing: true };
-  })
-  .with(voiceTranscriptionFinished, (state) => {
+  });
+hardwareConsoleReducer.with(voiceTranscriptionFinished, (state) => {
     if (!state.voiceTranscribing) return state;
     return { ...state, voiceTranscribing: false };
-  })
-  .with(hydrateHardwareConsoleActionMapping, (state, { payload: [actionMappingByModel] }) => {
+  });
+hardwareConsoleReducer.with(hydrateHardwareConsoleActionMapping, (state, { payload: [actionMappingByModel] }) => {
     return {
       ...state,
       actionMappingByModel: normalizeActionMappingsByModel(actionMappingByModel),
       actionMappingHydrated: true,
     };
-  })
-  .with(setActionKeyMapping, (state, { payload: [model, slot, actionId] }) => {
+  });
+hardwareConsoleReducer.with(setActionKeyMapping, (state, { payload: [model, slot, actionId] }) => {
     const current = state.actionMappingByModel[model];
     if (!current) return state;
     if (!Number.isInteger(slot) || slot < 0 || slot >= current.length) return state;
@@ -320,11 +320,11 @@ export const hardwareConsoleReducer = createReducer<HardwareConsoleState>(initia
       ...state,
       actionMappingByModel: { ...state.actionMappingByModel, [model]: normalized },
     };
-  })
-  .with(hydrateHardwareConsoleCycleScopes, (state, { payload: [cycleScopeByFamily] }) => {
+  });
+hardwareConsoleReducer.with(hydrateHardwareConsoleCycleScopes, (state, { payload: [cycleScopeByFamily] }) => {
     return { ...state, cycleScopeByFamily: normalizeCycleScopeByFamily(cycleScopeByFamily) };
-  })
-  .with(setCycleScope, (state, { payload: [familyId, scope] }) => {
+  });
+hardwareConsoleReducer.with(setCycleScope, (state, { payload: [familyId, scope] }) => {
     if (state.cycleScopeByFamily[familyId] === undefined) return state;
     if (state.cycleScopeByFamily[familyId] === scope) return state;
     return {

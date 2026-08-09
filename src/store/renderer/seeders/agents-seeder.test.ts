@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../slices/agent-session/agent-session-types";
-import { Store } from "$lib/store-shim/svelte-store";
+import { StreamingStore } from "@augmentcode/themis/streaming-store";
 import { reducers } from "../reducer";
 
 // Mock the AppClient seam
@@ -38,7 +38,7 @@ import { setActiveWorkspaceId } from "../slices/workspace/workspace-slice";
 const mockedClient = vi.mocked(appClient);
 
 describe("agents-seeder", () => {
-  let store: Store<any, any>;
+  let store: StreamingStore<any, any>;
 
   beforeAll(async () => {
     // Import the seeder to register it
@@ -47,7 +47,7 @@ describe("agents-seeder", () => {
 
   beforeEach(() => {
     // Create a fresh store for each test
-    store = new Store(reducers, []);
+    store = new StreamingStore(reducers, []);
     store.init();
   });
 

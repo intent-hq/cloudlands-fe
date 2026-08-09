@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 
 // ============================================================================
 // Types
@@ -73,8 +73,8 @@ export const closeAllPip = createAction("pip/closeAllPip");
 // Reducer
 // ============================================================================
 
-export const pipReducer = createReducer<PipState>(initialState)
-  .with(pipWindowOpened, (state, { payload: [data] }) => {
+export const pipReducer = createReducer<PipState>(initialState);
+pipReducer.with(pipWindowOpened, (state, { payload: [data] }) => {
     const key = getPipKey(data.workspaceId, data.tabId);
     const existing = state.openPipWindows[key];
     if (existing) {
@@ -101,8 +101,8 @@ export const pipReducer = createReducer<PipState>(initialState)
         },
       },
     };
-  })
-  .with(pipWindowClosed, (state, { payload: [data] }) => {
+  });
+pipReducer.with(pipWindowClosed, (state, { payload: [data] }) => {
     const key = getPipKey(data.workspaceId, data.tabId);
     if (!(key in state.openPipWindows)) return state;
      

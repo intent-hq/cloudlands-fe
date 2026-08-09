@@ -8,7 +8,7 @@
  * `src/store/renderer/AGENTS.md` §8 a trigger-only slice deliberately omits
  * its reducer entry to keep the state tree free of empty branches.
  */
-import { createAction } from "$lib/store-shim/utils/store/create-action";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import type { AppliedSettingChange } from "$lib/client/app-client";
 
 /**
@@ -20,4 +20,9 @@ import type { AppliedSettingChange } from "$lib/client/app-client";
  */
 export const settingsChanged = createAction<[changes: AppliedSettingChange[]]>(
   "settings/changed",
+);
+
+/** Raw daemon notification routed by daemonEventsSaga and consumed in order. */
+export const settingsChangesReceived = createAction<[changes: AppliedSettingChange[]]>(
+  "settings/changesReceived",
 );

@@ -2,12 +2,10 @@
  * Live agents domain backed by the intentd daemon.
  *
  * Reads resolve via `agent.list({ workspaceId })` / `agent.get({ agentId })`.
- * `subscribe` aggregates agents across workspaces — converging via one typed
- * per-workspace `agent.subscribe` channel per workspace (PROTOCOL §6.9) on
- * liveState daemons, and refetching on agent LIFECYCLE events otherwise —
- * `agent:stream:*` and `agent:message` are high-volume, so the legacy path
- * intentionally narrows to start/complete/idle/status-changed rather than
- * blanket-subscribing `agent:*`.
+ * `subscribe` aggregates agents across workspaces, converging via one typed
+ * per-workspace `agent.subscribe` channel per workspace (PROTOCOL §6.9) —
+ * the sole data path (intent-hq/monorepo#1697); there is no legacy
+ * events-driven `agent.list` refetch.
  */
 import { AgentStatus } from "$shared/types";
 import { AgentId, WorkspaceId } from "$shared/types/branded-ids";
@@ -25,14 +23,7 @@ import type {
 } from "../app-client";
 import { backendRequest } from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
-import {
-  isEventOneOf,
-  listWorkspaceIds,
-  mutationErrorMessage,
-  newIdempotencyKey,
-  runMutation,
-  subscribeWorkspaceIds,
-} from "./live-support";
+import { mutationErrorMessage, newIdempotencyKey, runMutation, subscribeWorkspaceIds } from "./live-support";
 
 /**
  * agentId → workspaceId cache populated by every `normalizeAgent` call (so any
@@ -46,18 +37,6 @@ const agentWorkspaceIndex = new Map<string, string>();
 function rememberAgentWorkspace(agentId: string, workspaceId: string): void {
   if (agentId && workspaceId) agentWorkspaceIndex.set(agentId, workspaceId);
 }
-
-/** Lifecycle events that warrant an agent-list refresh (NOT stream/message). */
-const AGENT_LIFECYCLE_EVENTS = [
-  "agent:started",
-  "agent:completed",
-  "agent:failed",
-  "agent:created",
-  "agent:deleted",
-  "agent:idle",
-  "agent:status-changed",
-  "agent:renamed",
-] as const;
 
 /** Coerce a raw daemon agent object into the renderer `AgentSession` shape. */
 function normalizeAgent(raw: Record<string, unknown>): AgentSession {
@@ -586,24 +565,20 @@ export class LiveAgentsClient implements AgentsClient {
   /**
    * Subscribe to agents across every workspace.
    *
-   * Typed §6.9 channel: on liveState daemons one per-workspace
-   * `agent.subscribe` (bare `{ workspaceId }` — the params shape that routes
-   * to the collection channel rather than the deprecated `eventTypes` service
-   * alias) is registered per id yielded by `subscribeWorkspaceIds` — the same
-   * enumeration `fetchAll` flattens over. The channel carries `AgentLite`
+   * Typed §6.9 channel: one per-workspace `agent.subscribe` (bare
+   * `{ workspaceId }` — the params shape that routes to the collection
+   * channel rather than the deprecated `eventTypes` service alias) is
+   * registered per id yielded by `subscribeWorkspaceIds` — the sole data
+   * path (intent-hq/monorepo#1697). The channel carries `AgentLite`
    * entities; `agent:deleted` (the soft-hide-then-commit deletion flow's
    * convergence signal) arrives as a `removedIds` delta, which the reconciler
    * drops. Workspace add → a new channel registers and its snapshot merges
    * in; workspace delete → the channel unsubscribes and its agents are
-   * evicted. While ANY workspace channel lacks a push-confirmed registration
-   * the subscription stays legacy and refetches keep serving (the #775
-   * safety net); daemons without liveState never register channels at all.
-   * Every push entity flows through `normalizeAgent`, so the
+   * evicted. Every push entity flows through `normalizeAgent`, so the
    * `agentWorkspaceIndex` cache is primed exactly like the list/get paths.
    */
   subscribe(handler: SubscriptionHandler<AgentSession[]>): Unsubscribe {
     return createDeltaSubscription<AgentSession>({
-      eventTypes: [...AGENT_LIFECYCLE_EVENTS],
       channel: {
         subscribeMethod: "agent.subscribe",
         unsubscribeMethod: "agent.unsubscribe",
@@ -611,12 +586,6 @@ export class LiveAgentsClient implements AgentsClient {
           subscribeIds: subscribeWorkspaceIds,
           paramsForId: (id) => ({ workspaceId: id }),
         },
-      },
-      matchLegacyEvent: (method, params) => isEventOneOf(method, params, AGENT_LIFECYCLE_EVENTS),
-      fetchAll: async () => {
-        const ids = await listWorkspaceIds();
-        const perWorkspace = await Promise.all(ids.map((id) => this.list(id)));
-        return perWorkspace.flat();
       },
       getId: (raw) => String(raw.id ?? ""),
       normalize: (raw) => normalizeAgent(raw),

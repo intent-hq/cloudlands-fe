@@ -40,6 +40,7 @@
   let layout = $state<ComputedLayout | null>(null);
 
   // Current state - default to first state if not set
+  // svelte-ignore state_referenced_locally - intentional: prop seeds the initial step; changeState() owns it afterwards and persists via onUpdate
   let currentStateId = $state(
     diagram.currentStateId ??
       (diagram.states && diagram.states.length > 0 ? diagram.states[0].id : undefined),

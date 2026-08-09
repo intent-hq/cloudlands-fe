@@ -406,9 +406,24 @@ describe('integrations-bridge-seeder', () => {
         ],
       });
 
-      mockedRequest.mockResolvedValueOnce({ repos: [] });
-      await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_REPOS, { query: 'hello' });
+      mockedRequest.mockResolvedValueOnce({ repos: [wireRepo] });
+      const searchResponse = await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_REPOS, {
+        query: 'hello',
+      });
       expect(mockedRequest).toHaveBeenCalledWith('github.repos.search', { query: 'hello' });
+      expect(searchResponse).toEqual({
+        success: true,
+        data: [
+          {
+            owner: 'octocat',
+            name: 'hello',
+            html_url: 'https://github.com/octocat/hello',
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-02T00:00:00Z',
+            default_branch: 'main',
+          },
+        ],
+      });
     });
   });
 

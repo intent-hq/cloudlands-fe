@@ -8,10 +8,7 @@
 
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import { requestAgentLineStats } from '$store/renderer/slices/changes/changes-slice';
-  import {
-  getAgentPeekData,
-  truncateToLines,
-} from '$lib/utils/agent-peek-utils';
+  import { getAgentPeekData, truncateToLines } from '$lib/utils/agent-peek-utils';
 
   import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -27,12 +24,12 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-  faArrowRight,
-  faSpinner,
-  faExclamationTriangle,
-} from '@fortawesome/free-solid-svg-icons';
+    faArrowRight,
+    faSpinner,
+    faExclamationTriangle,
+  } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
-import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { writable } from 'svelte/store';
 
@@ -68,10 +65,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   const agent$ = selectAgentSession(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
   const agentData = $derived(getAgentPeekData($agent$));
-
+  console.log('LOAD');
   $effect(() => {
     const workspace = $activeWorkspace;
     if (!workspace?.id) return;
+    console.log('LOAD');
     appStore.dispatch(ensureAgentSessionLoaded(String(workspace.id), agentId));
   });
 
@@ -199,7 +197,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           {:else}
             <div class="font-medium text-sm truncate">
               {agentData.name}<span class="text-xs text-subtle"
-                >{$agentIsResponding$ ? m.tiptap_agentPeek_active_label() : m.tiptap_agentPeek_idle_label()}</span
+                >{$agentIsResponding$
+                  ? m.tiptap_agentPeek_active_label()
+                  : m.tiptap_agentPeek_idle_label()}</span
               >
             </div>
           {/if}
@@ -281,7 +281,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             <Fa icon={faSpinner} class="h-4 w-4 animate-spin text-ghost" />
             <div class="flex-1">
               <div class="text-sm font-medium">{m.tiptap_agentPeek_waitingLaunch_label()}</div>
-              <div class="text-xs text-subtle mt-0.5">{m.tiptap_agentPeek_appearOnceReady_label()}</div>
+              <div class="text-xs text-subtle mt-0.5">
+                {m.tiptap_agentPeek_appearOnceReady_label()}
+              </div>
             </div>
           </div>
         {:else}

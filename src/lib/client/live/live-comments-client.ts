@@ -6,8 +6,8 @@
  * otherwise it is resolved as a fallback (see `resolveNoteWorkspaceId`).
  * Results are normalized into the renderer `CommentV2` shape. `subscribe`
  * converges via the typed per-note `comment.subscribe` channel (PROTOCOL
- * §6.9) on liveState daemons and refetches on legacy `comment:*` events
- * otherwise.
+ * §6.9) — the sole data path (intent-hq/monorepo#1697); there is no legacy
+ * `comment:*` events-driven refetch.
  */
 import type {
   CommentAnchor,
@@ -27,12 +27,7 @@ import type {
 import { backendRequest } from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
 import type { TypedChannelDescriptor } from "./delta-subscription";
-import {
-  isEventInFamily,
-  newIdempotencyKey,
-  resolveNoteWorkspaceId,
-  runMutation,
-} from "./live-support";
+import { newIdempotencyKey, resolveNoteWorkspaceId, runMutation } from "./live-support";
 
 /** Coerce the daemon's §8.7 reaction map into the renderer `Record<string, string[]>`. */
 function normalizeReactions(raw: unknown): Record<string, string[]> | undefined {
@@ -170,8 +165,8 @@ export class LiveCommentsClient implements CommentsClient {
 
   // ---- Mutations ----------------------------------------------------------
   // Each forwards to the daemon (§7) and folds the outcome into a
-  // MutationResult; the subscribe→refetch loop reconciles store state from the
-  // resulting `comment:*` events. Comments are note-scoped; the workspace is
+  // MutationResult; the `comment.subscribe` channel reconciles store state
+  // from the resulting push. Comments are note-scoped; the workspace is
   // the caller-supplied `workspaceId` when provided, otherwise resolved via
   // `resolveNoteWorkspaceId`. The explicit id matters because note ids are not
   // globally unique (every workspace holds a `spec` note) and the resolver's
@@ -245,14 +240,14 @@ export class LiveCommentsClient implements CommentsClient {
    * unique and the resolver cache is last-writer-wins across workspaces
    * (monorepo#621) — otherwise the resolver fallback applies as before.
    *
-   * Typed §6.9 channel: on liveState daemons the per-note `comment.subscribe`
-   * (`{ workspaceId, noteId }` — the optional noteId narrowing) is registered
-   * alongside the legacy firehose. A caller-supplied workspaceId registers
+   * Typed §6.9 channel: the per-note `comment.subscribe` (`{ workspaceId,
+   * noteId }` — the optional noteId narrowing) is the sole data path
+   * (intent-hq/monorepo#1697). A caller-supplied workspaceId registers
    * statically; otherwise the workspace is resolved the same way
    * `fetchComments` does, through the descriptor's dynamic scope so the
    * asynchronous resolution completes before registration. When no workspace
-   * claims the note the id source never yields, typed registration is skipped
-   * entirely, and legacy refetches keep serving (the #775 safety net).
+   * claims the note the id source never yields, so the channel simply never
+   * registers.
    */
   subscribe(
     noteId: string,
@@ -279,8 +274,8 @@ export class LiveCommentsClient implements CommentsClient {
                     listener([resolved]);
                   })
                   .catch(() => {
-                    // Unresolvable workspace: typed registration is skipped;
-                    // legacy refetches keep serving.
+                    // Unresolvable workspace: the channel never registers, so
+                    // the subscription simply yields no entities for this note.
                   });
                 return () => {
                   cancelled = true;
@@ -291,10 +286,7 @@ export class LiveCommentsClient implements CommentsClient {
           }),
     };
     return createDeltaSubscription<CommentV2>({
-      eventTypes: ["comment:added"],
       channel,
-      matchLegacyEvent: (method, params) => isEventInFamily(method, params, "comment"),
-      fetchAll: () => fetchComments(noteId, workspaceId),
       getId: (raw) => String(raw.id ?? ""),
       normalize: (raw) => normalizeComment(raw, noteId, channelWorkspaceId),
       handler,

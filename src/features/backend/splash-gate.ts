@@ -113,3 +113,23 @@ export function startSplashGate(
     }
   };
 }
+
+/**
+ * Wires the `#splash` DOM element's fade-out/removal to {@link startSplashGate}.
+ *
+ * Extracted from `+layout.svelte`'s `onMount` so the exact dismissal wiring —
+ * add `.mounted`, remove the element once its fade transition ends — has unit
+ * coverage independent of rendering the full root layout. Returns a no-op
+ * cleanup if `splash` is `null` (element missing from the DOM).
+ */
+export function wireSplashGate(
+  splash: HTMLElement | null,
+  options?: StartSplashGateOptions,
+): () => void {
+  if (!splash) return () => {};
+  return startSplashGate(() => {
+    splash.classList.add('mounted');
+    // Remove from DOM after fade-out transition completes
+    splash.addEventListener('transitionend', () => splash.remove(), { once: true });
+  }, options);
+}

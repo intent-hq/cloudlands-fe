@@ -3,21 +3,20 @@
  *
  * Consumers (the `MonitoredPrsRow` chip row, the sidebar PR list, the
  * workspace cards) dispatch `prMonitorsSubscribeRequested` on mount and
- * `prMonitorsUnsubscribeRequested` on teardown. The companion service
- * middleware (`$features/pr-monitor/pr-monitor-read-service`,
- * `createPrMonitorMiddleware`) owns the `prMonitor:*` events.subscribe +
+ * `prMonitorsUnsubscribeRequested` on teardown. The companion
+ * `prMonitorSaga` owns the `prMonitor:*` events.subscribe +
  * `prMonitor.list` seed round-trip and writes every fold result back via
  * `prMonitorsUpdated`, so components render purely from selectors and never
  * touch the live backend transport. Cancel/flush triggers
  * (`cancelPrMonitorRequested` / `flushPrMonitorRequested`) have no reducer
  * case — the daemon's `prMonitor:*` events converge the list.
  */
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   createCollection,
   type Collection,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { removeWorkspaceEntity } from "../workspace/workspace-slice";
 import type { PrMonitorRow } from "$features/pr-monitor/pr-monitor-service";
@@ -78,15 +77,18 @@ export const cancelPrMonitorRequested = createAction<
 
 // ── Reducer ──
 
-export const prMonitorReducer = createReducer<PrMonitorState>(initialState)
-  .with(prMonitorsUpdated, (state, { payload: [workspaceId, monitors] }) =>
-    setWorkspaceState(state, workspaceId, {
-      monitors: createCollection<PrMonitorRow, "monitorId">("monitorId", monitors),
-    }),
-  )
-  .with(prMonitorsCleared, (state, { payload: [workspaceId] }) =>
-    clearWorkspaceState(state, workspaceId),
-  )
-  .with(removeWorkspaceEntity, (state, { payload: [wsId] }) =>
-    clearWorkspaceState(state, wsId),
-  );
+export const prMonitorReducer = createReducer<PrMonitorState>(initialState);
+
+prMonitorReducer.with(prMonitorsUpdated, (state, { payload: [workspaceId, monitors] }) =>
+  setWorkspaceState(state, workspaceId, {
+    monitors: createCollection<PrMonitorRow, "monitorId">("monitorId", monitors),
+  }),
+);
+
+prMonitorReducer.with(prMonitorsCleared, (state, { payload: [workspaceId] }) =>
+  clearWorkspaceState(state, workspaceId),
+);
+
+prMonitorReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) =>
+  clearWorkspaceState(state, wsId),
+);

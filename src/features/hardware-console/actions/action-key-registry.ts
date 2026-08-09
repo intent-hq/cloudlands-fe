@@ -34,7 +34,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { type Workspace } from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
-import { getItems, type Collection } from '$lib/store-shim/utils/collections/collection-utils';
+import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { agentSessionStopChatRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';

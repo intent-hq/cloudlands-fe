@@ -2,11 +2,12 @@
  * @vitest-environment jsdom
  *
  * BackgroundHooksRow rendering: "Running Hooks:" label after the bolt icon,
- * pointer-cursor chips, and the "View script" affordances (hover-card link +
- * dropdown item) that open the HookScriptModal.
+ * pointer-cursor chips, hover-card timing durations (next-run-in, elapsed,
+ * expires-in — monorepo#1756), and the "View script" affordances (hover-card
+ * link + dropdown item) that open the HookScriptModal.
  */
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
 
 const { dispatchMock, hooksState } = vi.hoisted(() => ({
@@ -54,9 +55,17 @@ function makeHook(overrides: Partial<BackgroundHook> = {}): BackgroundHook {
 }
 
 describe('BackgroundHooksRow', () => {
+  beforeEach(() => {
+    // Freeze only Date so hover-card durations are deterministic; real
+    // timers keep waitFor/bits-ui polling functional.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-07-31T10:03:00Z'));
+  });
+
   afterEach(() => {
     cleanup();
     dispatchMock.mockClear();
+    vi.useRealTimers();
   });
 
   it('renders the "Running Hooks:" label after the bolt icon', () => {
@@ -106,7 +115,38 @@ describe('BackgroundHooksRow', () => {
     expect(hoverCard.textContent).not.toContain('const status');
   });
 
-  it('hover card shows the TTL duration and deadline when expiresAt is set', async () => {
+  it('hover card shows next-run and elapsed as durations with absolute-time titles', async () => {
+    hooksState.hooks = [makeHook()];
+    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
+    await fireEvent.focus(trigger);
+
+    const hoverCard = await waitFor(() => screen.getByTestId('background-hook-hover-card'));
+    // now 10:03:00Z, nextRunAt 10:06:00Z, createdAt 10:00:00Z
+    expect(hoverCard.textContent).toContain('Next run: in 3m');
+    expect(hoverCard.textContent).toContain('Elapsed: 3m');
+    // Absolute wall-clock times survive as secondary native titles
+    const nextRunSpan = Array.from(hoverCard.querySelectorAll('span[title]')).find((el) =>
+      el.textContent?.includes('Next run'),
+    );
+    expect(nextRunSpan?.getAttribute('title')).toBe(
+      formatTime('2026-07-31T10:06:00Z', { seconds: true }),
+    );
+  });
+
+  it('hover card elapsed counts from lastRunAt when the hook has already run', async () => {
+    hooksState.hooks = [makeHook({ lastRunAt: '2026-07-31T10:02:00Z' })];
+    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
+    await fireEvent.focus(trigger);
+
+    const hoverCard = await waitFor(() => screen.getByTestId('background-hook-hover-card'));
+    expect(hoverCard.textContent).toContain('Elapsed: 1m');
+  });
+
+  it('hover card shows the TTL as an expires-in duration when expiresAt is set', async () => {
     hooksState.hooks = [makeHook({ expiresAt: '2026-07-31T11:00:00Z' })];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
@@ -114,12 +154,17 @@ describe('BackgroundHooksRow', () => {
     await fireEvent.focus(trigger);
 
     const hoverCard = await waitFor(() => screen.getByTestId('background-hook-hover-card'));
-    // createdAt 10:00:00Z → expiresAt 11:00:00Z = 60m (seconds part omitted)
-    expect(hoverCard.textContent).toContain('TTL: 60m');
-    expect(hoverCard.textContent).toContain(formatTime('2026-07-31T11:00:00Z', { seconds: true }));
+    // now 10:03:00Z → expiresAt 11:00:00Z = 57m remaining
+    expect(hoverCard.textContent).toContain('TTL: expires in 57m');
+    const ttlSpan = Array.from(hoverCard.querySelectorAll('span[title]')).find((el) =>
+      el.textContent?.includes('TTL'),
+    );
+    expect(ttlSpan?.getAttribute('title')).toBe(
+      formatTime('2026-07-31T11:00:00Z', { seconds: true }),
+    );
   });
 
-  it('hover card shows a minutes-and-seconds TTL duration when not whole minutes', async () => {
+  it('hover card shows a minutes-and-seconds expires-in duration when not whole minutes', async () => {
     hooksState.hooks = [makeHook({ expiresAt: '2026-07-31T10:12:30Z' })];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
@@ -127,7 +172,7 @@ describe('BackgroundHooksRow', () => {
     await fireEvent.focus(trigger);
 
     const hoverCard = await waitFor(() => screen.getByTestId('background-hook-hover-card'));
-    expect(hoverCard.textContent).toContain('TTL: 12m 30s');
+    expect(hoverCard.textContent).toContain('TTL: expires in 9m 30s');
   });
 
   it('omits the TTL line when expiresAt is missing (legacy hook)', async () => {

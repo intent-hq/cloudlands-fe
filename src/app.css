@@ -1,4 +1,11 @@
 @import 'tailwindcss';
+/* Tailwind v4 ignores the legacy tailwind.config.js, so the typography plugin
+   must be loaded here for the `prose` classes (markdown rendering) to exist. */
+@plugin '@tailwindcss/typography';
+/* The legacy `darkMode: 'class'` is likewise ignored under v4; the app toggles
+   `.dark`/`.light` on the root element (src/lib/utils/theme.ts), so `dark:`
+   variants must key off the class, not the OS `prefers-color-scheme` query. */
+@custom-variant dark (&:where(.dark, .dark *));
 @import '$lib/styles/tiptap-editor.css';
 @import '$lib/styles/chat-messages.css';
 @import '$lib/styles/comments.css';

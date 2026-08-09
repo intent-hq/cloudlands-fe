@@ -10,13 +10,14 @@
  * FE-local unread feed this slice used to keep has been retired.
  */
 
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { UnreadTrackingState } from "./unread-tracking-types";
 
 export const initialState: UnreadTrackingState = {
   currentlyViewedAgentId: null,
   dividerSessionByAgentId: {},
+  watchedStreamingTailByAgentId: {},
 };
 
 // ── Actions ──
@@ -57,38 +58,67 @@ export const endAllDividerSessions = createAction(
   "unreadTracking/endAllDividerSessions"
 );
 
+/**
+ * Record that, at a stop-looking boundary, an agent's transcript tail was a
+ * streaming (not yet persisted) reply the user was watching. `messageId` is
+ * the newest PERSISTED message id at that moment — the same id
+ * `markAgentSeenAtBoundary` targets. Consumed (cleared) the next time
+ * `startDividerSession` fires for that agent.
+ */
+export const recordWatchedStreamingTail = createAction<[agentId: string, messageId: string]>(
+  "unreadTracking/recordWatchedStreamingTail"
+);
+
 // ── Reducer ──
 
-export const unreadTrackingReducer = createReducer<UnreadTrackingState>(initialState)
-  .with(markAgentAsViewed, (state, { payload: [agentId] }) => {
+export const unreadTrackingReducer = createReducer<UnreadTrackingState>(initialState);
+unreadTrackingReducer.with(markAgentAsViewed, (state, { payload: [agentId] }) => {
     if (!agentId) return state;
     if (state.currentlyViewedAgentId === agentId) return state;
     return { ...state, currentlyViewedAgentId: agentId };
-  })
-  .with(clearCurrentlyViewedAgent, (state, { payload: [agentId] }) => {
+  });
+unreadTrackingReducer.with(clearCurrentlyViewedAgent, (state, { payload: [agentId] }) => {
     if (state.currentlyViewedAgentId === null) return state;
     if (agentId !== undefined && state.currentlyViewedAgentId !== agentId) return state;
     return { ...state, currentlyViewedAgentId: null };
-  })
-  .with(startDividerSession, (state, { payload: [agentId, anchorId] }) => {
+  });
+unreadTrackingReducer.with(startDividerSession, (state, { payload: [agentId, anchorId] }) => {
     if (!agentId) return state;
     if (state.dividerSessionByAgentId[agentId] !== undefined) return state;
+    const watchedTail = state.watchedStreamingTailByAgentId[agentId];
+    const suppress = watchedTail !== undefined && watchedTail === (anchorId ?? null);
+    let watchedStreamingTailByAgentId = state.watchedStreamingTailByAgentId;
+    if (watchedTail !== undefined) {
+      watchedStreamingTailByAgentId = { ...state.watchedStreamingTailByAgentId };
+      delete watchedStreamingTailByAgentId[agentId];
+    }
     return {
       ...state,
       dividerSessionByAgentId: {
         ...state.dividerSessionByAgentId,
-        [agentId]: { anchorId: anchorId ?? null },
+        [agentId]: { anchorId: suppress ? null : anchorId ?? null },
       },
+      watchedStreamingTailByAgentId,
     };
-  })
-  .with(endDividerSession, (state, { payload: [agentId] }) => {
+  });
+unreadTrackingReducer.with(endDividerSession, (state, { payload: [agentId] }) => {
     if (state.dividerSessionByAgentId[agentId] === undefined) return state;
     const dividerSessionByAgentId = { ...state.dividerSessionByAgentId };
     delete dividerSessionByAgentId[agentId];
     return { ...state, dividerSessionByAgentId };
-  })
-  .with(endAllDividerSessions, (state) => {
+  });
+unreadTrackingReducer.with(endAllDividerSessions, (state) => {
     if (Object.keys(state.dividerSessionByAgentId).length === 0) return state;
     return { ...state, dividerSessionByAgentId: {} };
   });
-
+unreadTrackingReducer.with(recordWatchedStreamingTail, (state, { payload: [agentId, messageId] }) => {
+    if (!agentId || !messageId) return state;
+    if (state.watchedStreamingTailByAgentId[agentId] === messageId) return state;
+    return {
+      ...state,
+      watchedStreamingTailByAgentId: {
+        ...state.watchedStreamingTailByAgentId,
+        [agentId]: messageId,
+      },
+    };
+  });

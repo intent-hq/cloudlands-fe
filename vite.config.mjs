@@ -426,6 +426,7 @@ export default defineConfig(({ mode }) => {
 
     define: {
       'process.env.IS_ELECTRON': JSON.stringify(!isWebBuild),
+      'process.env.VITE_INTENTD_WS_URL': JSON.stringify(env.VITE_INTENTD_WS_URL ?? ''),
       ...webDefines,
       __APP_VERSION__: JSON.stringify(packageJson.version),
       __DEV_GIT_BRANCH__: JSON.stringify(

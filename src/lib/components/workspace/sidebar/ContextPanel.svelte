@@ -72,8 +72,15 @@
     }
   });
 
+  // Reactive writable store that mirrors workspaceId for Redux selectors
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
+
   // Get context items that aren't linked to any note
-  const topLevelItems$ = selectTopLevelContextItems(workspaceId);
+  const topLevelItems$ = selectTopLevelContextItems(workspaceIdStore);
 
   /**
    * Helper to create a fully-formed ContextItem with id + timestamps,
@@ -92,12 +99,6 @@
     appStore.dispatch(addContextItem(workspaceId, newItem));
     return newItem;
   }
-
-  // Reactive writable store that mirrors workspaceId for Redux selectors
-  const workspaceIdStore = writable(workspaceId);
-  $effect(() => {
-    workspaceIdStore.set(workspaceId);
-  });
 
   // Use reactive selector subscription for focused tab to track which context item is open
   const activeTab$ = selectActiveTab(workspaceIdStore);

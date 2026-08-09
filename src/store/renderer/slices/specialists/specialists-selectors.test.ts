@@ -1,23 +1,4 @@
-import {
-  beforeAll,
-  describe,
-  it,
-  expect,
-  vi,
-} from "vitest";
-
-// FAKE seam: `$lib/client` is stubbed so importing `dispatchSpecialistList`
-// (which imports the AppClient singleton) never constructs the live client.
-vi.mock("$lib/client", () => ({
-  appClient: {
-    specialists: {
-      create: vi.fn(),
-      edit: vi.fn(),
-      delete: vi.fn(),
-      list: vi.fn(() => Promise.resolve([])),
-    },
-  },
-}));
+import { describe, it, expect } from 'vitest';
 
 import {
   filterSpecialistsByGitHubAuth,
@@ -36,34 +17,25 @@ import {
   selectEffectiveModel,
   selectExplicitModel,
   selectSpecialistSourceLabel,
-} from "./specialists-selectors";
-import { createCollection } from "$lib/store-shim/utils/collections/collection-utils";
-import { initialState, type FileSpecialist } from "./specialists-slice";
-import type { StoreState } from "../../types";
-import type { ProviderStatus } from "../agent-availability/agent-availability-types";
-import { SPECIALISTS } from "$lib/constants/specialists";
-import { seedProviderCatalog } from "../../../../test/fixtures/provider-catalog.fixture";
-import { store as appStore } from "$store/renderer/store";
-import { dispatchSpecialistList } from "../../../../features/specialists/specialists-mutation-service";
-import type { SpecialistDef } from "$lib/client/app-client";
+} from './specialists-selectors';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { initialState } from './specialists-slice';
+import type { StoreState } from '../../types';
+import { SPECIALISTS } from '$lib/constants/specialists';
 
 /**
  * Create a minimal mock StoreState with specialists slice populated.
  */
-function mockState(
-  overrides: Partial<typeof initialState> = {},
-  activeProviderId = "auggie",
-  providerStatusMap: Record<string, ProviderStatus> = {},
-): StoreState {
+function mockState(overrides: Partial<typeof initialState> = {}): StoreState {
   return {
     specialists: { ...initialState, ...overrides },
     featureCodes: { activeFeatures: [], initialized: true },
-    providerSettings: { activeProviderId, enabledProviders: {} },
+    providerSettings: { activeProviderId: 'auggie', enabledProviders: {} },
     agentAvailability: {
-      providerStatusMap,
+      providerStatusMap: { auggie: { available: true } },
       providerLoadingMap: {},
       providerUserInfoLoadingMap: {},
-      hasCheckedOnce: false,
+      hasCheckedOnce: true,
       watchedTerminalIds: [],
       npxStatus: null,
     },
@@ -71,31 +43,31 @@ function mockState(
   } as unknown as StoreState;
 }
 
-describe("specialists selectors", () => {
-  describe("selectProviderModelOverrides", () => {
-    it("should return empty object from initial state", () => {
+describe('specialists selectors', () => {
+  describe('selectProviderModelOverrides', () => {
+    it('should return empty object from initial state', () => {
       const state = mockState();
       expect(selectProviderModelOverrides.select(state)).toEqual({});
     });
 
-    it("should return provider model overrides", () => {
+    it('should return provider model overrides', () => {
       const overrides = {
-        "claude-code": { implementor: "opus", verifier: "sonnet" },
-        auggie: { implementor: "gpt-4" },
+        'claude-code': { implementor: 'opus', verifier: 'sonnet' },
+        auggie: { implementor: 'gpt-4' },
       };
       const state = mockState({ providerModelOverrides: overrides });
       expect(selectProviderModelOverrides.select(state)).toEqual(overrides);
     });
 
-    it("should return the exact reference (no copy)", () => {
-      const overrides = { "claude-code": { implementor: "opus" } };
+    it('should return the exact reference (no copy)', () => {
+      const overrides = { 'claude-code': { implementor: 'opus' } };
       const state = mockState({ providerModelOverrides: overrides });
       expect(selectProviderModelOverrides.select(state)).toBe(overrides);
     });
   });
 
-  describe("selectUserOverrides", () => {
-    it("should return initial user overrides", () => {
+  describe('selectUserOverrides', () => {
+    it('should return initial user overrides', () => {
       const state = mockState();
       expect(selectUserOverrides.select(state)).toEqual({
         codingAgentOverrides: {},
@@ -104,325 +76,270 @@ describe("specialists selectors", () => {
       });
     });
 
-    it("should return modified overrides", () => {
+    it('should return modified overrides', () => {
       const userOverrides = {
-        modelOverrides: { implementor: "gpt-4" },
-        behaviorPromptOverrides: { "spec-writer": "Be concise" },
+        modelOverrides: { implementor: 'gpt-4' },
+        behaviorPromptOverrides: { 'spec-writer': 'Be concise' },
       };
       const state = mockState({ userOverrides });
       expect(selectUserOverrides.select(state)).toEqual(userOverrides);
     });
   });
 
-  describe("selectBundledSpecialists", () => {
-    it("should return empty array from initial state", () => {
+  describe('selectBundledSpecialists', () => {
+    it('should return empty array from initial state', () => {
       const state = mockState();
       expect(selectBundledSpecialists.select(state)).toEqual([]);
     });
   });
 
-  describe("visibility gating", () => {
-    it("should include ralph without any feature flag", () => {
+  describe('visibility gating', () => {
+    it('should include ralph without any feature flag', () => {
       const state = mockState();
       const ids = selectSpecialists.select(state).map((specialist) => specialist.id);
 
-      expect(ids).toContain("ralph");
+      expect(ids).toContain('ralph');
     });
 
-    it("should hide GitHub-dependent specialists when GitHub is not authenticated", () => {
-      const ids = filterSpecialistsByGitHubAuth(SPECIALISTS, false).map((specialist) => specialist.id);
+    it('should hide GitHub-dependent specialists when GitHub is not authenticated', () => {
+      const ids = filterSpecialistsByGitHubAuth(SPECIALISTS, false).map(
+        (specialist) => specialist.id,
+      );
 
-      expect(ids).not.toContain("pr-reviewer");
-      expect(ids).not.toContain("pr-shepherd");
+      expect(ids).not.toContain('pr-reviewer');
+      expect(ids).not.toContain('pr-shepherd');
     });
 
-    it("should keep GitHub-dependent specialists when GitHub is authenticated", () => {
-      const ids = filterSpecialistsByGitHubAuth(SPECIALISTS, true).map((specialist) => specialist.id);
+    it('should keep GitHub-dependent specialists when GitHub is authenticated', () => {
+      const ids = filterSpecialistsByGitHubAuth(SPECIALISTS, true).map(
+        (specialist) => specialist.id,
+      );
 
-      expect(ids).toContain("pr-reviewer");
-      expect(ids).toContain("pr-shepherd");
+      expect(ids).toContain('pr-reviewer');
+      expect(ids).toContain('pr-shepherd');
     });
 
-    it("filterSpecialistsByGitHubAuth should keep hidden specialists (Settings surface)", () => {
-      const ids = filterSpecialistsByGitHubAuth(SPECIALISTS, true).map((specialist) => specialist.id);
+    it('filterSpecialistsByGitHubAuth should keep hidden specialists (Settings surface)', () => {
+      const ids = filterSpecialistsByGitHubAuth(SPECIALISTS, true).map(
+        (specialist) => specialist.id,
+      );
 
-      expect(ids).toContain("chief-of-staff");
+      expect(ids).toContain('chief-of-staff');
     });
 
-    it("filterPickableSpecialists should drop hidden specialists (chief-of-staff)", () => {
+    it('filterPickableSpecialists should drop hidden specialists (chief-of-staff)', () => {
       const ids = filterPickableSpecialists(SPECIALISTS, true).map((specialist) => specialist.id);
 
-      expect(ids).not.toContain("chief-of-staff");
-      expect(ids).toContain("spec-writer");
+      expect(ids).not.toContain('chief-of-staff');
+      expect(ids).toContain('spec-writer');
     });
 
-    it("filterPickableSpecialists should also apply GitHub gating when not authenticated", () => {
+    it('filterPickableSpecialists should also apply GitHub gating when not authenticated', () => {
       const ids = filterPickableSpecialists(SPECIALISTS, false).map((specialist) => specialist.id);
 
-      expect(ids).not.toContain("chief-of-staff");
-      expect(ids).not.toContain("pr-reviewer");
-      expect(ids).not.toContain("pr-shepherd");
+      expect(ids).not.toContain('chief-of-staff');
+      expect(ids).not.toContain('pr-reviewer');
+      expect(ids).not.toContain('pr-shepherd');
     });
 
-    it("filterPickableSpecialists should drop file specialists flagged hidden", () => {
+    it('filterPickableSpecialists should drop file specialists flagged hidden', () => {
       const specialists = [
-        { ...SPECIALISTS[0], id: "visible-custom", hidden: undefined },
-        { ...SPECIALISTS[0], id: "hidden-custom", hidden: true },
+        { ...SPECIALISTS[0], id: 'visible-custom', hidden: undefined },
+        { ...SPECIALISTS[0], id: 'hidden-custom', hidden: true },
       ];
       const ids = filterPickableSpecialists(specialists, true).map((specialist) => specialist.id);
 
-      expect(ids).toContain("visible-custom");
-      expect(ids).not.toContain("hidden-custom");
+      expect(ids).toContain('visible-custom');
+      expect(ids).not.toContain('hidden-custom');
     });
   });
 
-  describe("hidden flag propagation through selectSpecialists", () => {
-    it("should carry hidden from a file specialist into the merged list", () => {
+  describe('hidden flag propagation through selectSpecialists', () => {
+    it('should carry hidden from a file specialist into the merged list', () => {
       const state = mockState({
         bundledSpecialists: SPECIALISTS,
-        fileSpecialists: createCollection("id", [
+        fileSpecialists: createCollection('id', [
           {
-            id: "chief-of-staff",
-            name: "Chief of Staff",
-            description: "overridden",
-            model: "gpt-4",
-            behaviorPrompt: "custom prompt",
-            filePath: "/Users/test/.intent/specialists/chief-of-staff.md",
-            source: "user" as const,
+            id: 'chief-of-staff',
+            name: 'Chief of Staff',
+            description: 'overridden',
+            model: 'gpt-4',
+            behaviorPrompt: 'custom prompt',
+            filePath: '/Users/test/.intent/specialists/chief-of-staff.md',
+            source: 'user' as const,
             hidden: true,
           },
         ]),
       });
 
       const merged = selectSpecialists.select(state);
-      const chief = merged.find((s) => s.id === "chief-of-staff");
+      const chief = merged.find((s) => s.id === 'chief-of-staff');
       expect(chief?.hidden).toBe(true);
       // And the pickable filter drops it from the merged list too.
       const pickableIds = filterPickableSpecialists(merged, true).map((s) => s.id);
-      expect(pickableIds).not.toContain("chief-of-staff");
+      expect(pickableIds).not.toContain('chief-of-staff');
     });
   });
 
-  describe("source labels", () => {
-    it("should label project and user file specialists distinctly", () => {
+  describe('source labels', () => {
+    it('should label project and user file specialists distinctly', () => {
       const state = mockState({
-        fileSpecialists: createCollection("id", [
+        fileSpecialists: createCollection('id', [
           {
-            id: "repo-spec",
-            name: "Repo Specialist",
-            description: "project-level",
-            model: "",
-            behaviorPrompt: "prompt",
-            filePath: "/repo/.intent/specialists/repo-spec.md",
-            source: "project",
+            id: 'repo-spec',
+            name: 'Repo Specialist',
+            description: 'project-level',
+            model: '',
+            behaviorPrompt: 'prompt',
+            filePath: '/repo/.intent/specialists/repo-spec.md',
+            source: 'project',
           },
           {
-            id: "user-spec",
-            name: "User Specialist",
-            description: "user-level",
-            model: "",
-            behaviorPrompt: "prompt",
-            filePath: "/Users/test/.intent/specialists/user-spec.md",
-            source: "user",
+            id: 'user-spec',
+            name: 'User Specialist',
+            description: 'user-level',
+            model: '',
+            behaviorPrompt: 'prompt',
+            filePath: '/Users/test/.intent/specialists/user-spec.md',
+            source: 'user',
           },
         ]),
       });
 
-      expect(selectSpecialistSourceLabel.select(state, "repo-spec")).toBe("Project");
-      expect(selectSpecialistSourceLabel.select(state, "user-spec")).toBe("User");
+      expect(selectSpecialistSourceLabel.select(state, 'repo-spec')).toBe('Project');
+      expect(selectSpecialistSourceLabel.select(state, 'user-spec')).toBe('User');
     });
 
-    it("should fall back to built-in label (legacy custom no longer tracked)", () => {
+    it('should fall back to built-in label (legacy custom no longer tracked)', () => {
       const state = mockState({
         bundledSpecialists: [SPECIALISTS[0]],
-        customSpecialists: createCollection("id", [
+        customSpecialists: createCollection('id', [
           {
-            id: "legacy-custom",
-            name: "Legacy Custom",
-            description: "legacy",
-            model: "gpt-4",
-            behaviorPrompt: "prompt",
+            id: 'legacy-custom',
+            name: 'Legacy Custom',
+            description: 'legacy',
+            model: 'gpt-4',
+            behaviorPrompt: 'prompt',
           },
         ]),
       });
 
-      expect(selectSpecialistSourceLabel.select(state, SPECIALISTS[0].id)).toBe("Built-in");
+      expect(selectSpecialistSourceLabel.select(state, SPECIALISTS[0].id)).toBe('Built-in');
       // Wave 2: legacy custom specialists are no longer given a source label
       // They should have been migrated to files on startup
-      expect(selectSpecialistSourceLabel.select(state, "legacy-custom")).toBe(null);
+      expect(selectSpecialistSourceLabel.select(state, 'legacy-custom')).toBe(null);
     });
   });
 
-  describe("loaded flag selectors", () => {
-    it("selectOverridesLoaded should return false initially", () => {
+  describe('loaded flag selectors', () => {
+    it('selectOverridesLoaded should return false initially', () => {
       expect(selectOverridesLoaded.select(mockState())).toBe(false);
     });
 
-    it("selectOverridesLoaded should return true when set", () => {
+    it('selectOverridesLoaded should return true when set', () => {
       expect(selectOverridesLoaded.select(mockState({ overridesLoaded: true }))).toBe(true);
     });
 
-    it("selectCustomSpecialistsLoaded should return false initially", () => {
+    it('selectCustomSpecialistsLoaded should return false initially', () => {
       expect(selectCustomSpecialistsLoaded.select(mockState())).toBe(false);
     });
 
-    it("selectFileSpecialistsLoaded should return false initially", () => {
+    it('selectFileSpecialistsLoaded should return false initially', () => {
       expect(selectFileSpecialistsLoaded.select(mockState())).toBe(false);
     });
 
-    it("selectBundledSpecialistsLoaded should return false initially", () => {
+    it('selectBundledSpecialistsLoaded should return false initially', () => {
       expect(selectBundledSpecialistsLoaded.select(mockState())).toBe(false);
     });
   });
 
-  describe("selectSpecialistsFolderPath", () => {
-    it("should return null from initial state", () => {
+  describe('selectSpecialistsFolderPath', () => {
+    it('should return null from initial state', () => {
       expect(selectSpecialistsFolderPath.select(mockState())).toBeNull();
     });
 
-    it("should return path when set", () => {
-      const state = mockState({ specialistsFolderPath: "/path/to/specialists" });
-      expect(selectSpecialistsFolderPath.select(state)).toBe("/path/to/specialists");
+    it('should return path when set', () => {
+      const state = mockState({ specialistsFolderPath: '/path/to/specialists' });
+      expect(selectSpecialistsFolderPath.select(state)).toBe('/path/to/specialists');
     });
   });
 
-  describe("selectSpecialists sort order", () => {
-    it("should place bundled specialists first in their original order, then custom alphabetically", () => {
+  describe('selectSpecialists sort order', () => {
+    it('should place bundled specialists first in their original order, then custom alphabetically', () => {
       // Use ALL bundled specialists so the SPECIALISTS fallback doesn't add extras
       const bundled = SPECIALISTS;
       const state = mockState({
         bundledSpecialists: bundled,
-        fileSpecialists: createCollection("id", [
+        fileSpecialists: createCollection('id', [
           {
-            id: "zebra-custom",
-            name: "Zebra Custom",
-            description: "Z specialist",
-            model: "gpt-4",
-            behaviorPrompt: "prompt",
-            filePath: "/Users/test/.intent/specialists/zebra-custom.md",
-            source: "user" as const,
+            id: 'zebra-custom',
+            name: 'Zebra Custom',
+            description: 'Z specialist',
+            model: 'gpt-4',
+            behaviorPrompt: 'prompt',
+            filePath: '/Users/test/.intent/specialists/zebra-custom.md',
+            source: 'user' as const,
           },
           {
-            id: "alpha-custom",
-            name: "Alpha Custom",
-            description: "A specialist",
-            model: "gpt-4",
-            behaviorPrompt: "prompt",
-            filePath: "/Users/test/.intent/specialists/alpha-custom.md",
-            source: "user" as const,
+            id: 'alpha-custom',
+            name: 'Alpha Custom',
+            description: 'A specialist',
+            model: 'gpt-4',
+            behaviorPrompt: 'prompt',
+            filePath: '/Users/test/.intent/specialists/alpha-custom.md',
+            source: 'user' as const,
           },
         ]),
       });
 
       const ids = selectSpecialists.select(state).map((s) => s.id);
       // Bundled first in original order (spec-writer, implementor, verifier, ...)
-      expect(ids[0]).toBe("spec-writer");
-      expect(ids[1]).toBe("implementor");
-      expect(ids[2]).toBe("verifier");
+      expect(ids[0]).toBe('spec-writer');
+      expect(ids[1]).toBe('implementor');
+      expect(ids[2]).toBe('verifier');
       // Custom at the end, sorted alphabetically by name
-      const customIds = ids.filter((id) => id === "alpha-custom" || id === "zebra-custom");
-      expect(customIds).toEqual(["alpha-custom", "zebra-custom"]);
+      const customIds = ids.filter((id) => id === 'alpha-custom' || id === 'zebra-custom');
+      expect(customIds).toEqual(['alpha-custom', 'zebra-custom']);
     });
 
-    it("should keep bundled order stable when a file overrides a bundled specialist", () => {
+    it('should keep bundled order stable when a file overrides a bundled specialist', () => {
       const bundled = SPECIALISTS;
       const state = mockState({
         bundledSpecialists: bundled,
-        fileSpecialists: createCollection("id", [
+        fileSpecialists: createCollection('id', [
           // Override implementor (bundled) + add a custom one
           {
-            id: "implementor",
-            name: "Implementor",
-            description: "overridden",
-            model: "gpt-4",
-            behaviorPrompt: "custom prompt",
-            filePath: "/Users/test/.intent/specialists/implementor.md",
-            source: "user" as const,
+            id: 'implementor',
+            name: 'Implementor',
+            description: 'overridden',
+            model: 'gpt-4',
+            behaviorPrompt: 'custom prompt',
+            filePath: '/Users/test/.intent/specialists/implementor.md',
+            source: 'user' as const,
           },
           {
-            id: "my-custom",
-            name: "My Custom",
-            description: "custom",
-            model: "gpt-4",
-            behaviorPrompt: "prompt",
-            filePath: "/Users/test/.intent/specialists/my-custom.md",
-            source: "user" as const,
+            id: 'my-custom',
+            name: 'My Custom',
+            description: 'custom',
+            model: 'gpt-4',
+            behaviorPrompt: 'prompt',
+            filePath: '/Users/test/.intent/specialists/my-custom.md',
+            source: 'user' as const,
           },
         ]),
       });
 
       const ids = selectSpecialists.select(state).map((s) => s.id);
       // Bundled order preserved even though implementor was overridden by file
-      expect(ids[0]).toBe("spec-writer");
-      expect(ids[1]).toBe("implementor");
-      expect(ids[2]).toBe("verifier");
+      expect(ids[0]).toBe('spec-writer');
+      expect(ids[1]).toBe('implementor');
+      expect(ids[2]).toBe('verifier');
       // Custom at the very end (after all bundled/hardcoded)
-      expect(ids[ids.length - 1]).toBe("my-custom");
+      expect(ids[ids.length - 1]).toBe('my-custom');
     });
   });
 
-  describe("selectHasOverrides (diff-based Modified state, monorepo#1450)", () => {
-    const implementor = SPECIALISTS.find((s) => s.id === "implementor")!;
-
-    function overrideFile(overrides: Partial<FileSpecialist> = {}): FileSpecialist {
-      return {
-        id: "implementor",
-        name: implementor.name,
-        description: implementor.description,
-        model: "",
-        behaviorPrompt: implementor.defaultBehaviorPrompt,
-        roleReminder: implementor.roleReminder,
-        filePath: "/Users/test/.intent/specialists/implementor.md",
-        source: "user" as const,
-        ...overrides,
-      };
-    }
-
-    it("is false when the user override file is identical to the bundled defaults", () => {
-      const state = mockState({
-        bundledSpecialists: SPECIALISTS,
-        fileSpecialists: createCollection("id", [overrideFile()]),
-      });
-      expect(selectHasOverrides.select(state, "implementor")).toBe(false);
-    });
-
-    it("is true when the override pins an explicit model", () => {
-      const state = mockState({
-        bundledSpecialists: SPECIALISTS,
-        fileSpecialists: createCollection("id", [
-          overrideFile({ model: "claude-code:opus4.5" }),
-        ]),
-      });
-      expect(selectHasOverrides.select(state, "implementor")).toBe(true);
-    });
-
-    it("is true when the override customizes the prompt", () => {
-      const state = mockState({
-        bundledSpecialists: SPECIALISTS,
-        fileSpecialists: createCollection("id", [
-          overrideFile({ behaviorPrompt: "Custom prompt." }),
-        ]),
-      });
-      expect(selectHasOverrides.select(state, "implementor")).toBe(true);
-    });
-
-    it("is false when no override file exists", () => {
-      const state = mockState({ bundledSpecialists: SPECIALISTS });
-      expect(selectHasOverrides.select(state, "implementor")).toBe(false);
-    });
-
-    it("is false for non-built-in specialists", () => {
-      const state = mockState({
-        bundledSpecialists: SPECIALISTS,
-        fileSpecialists: createCollection("id", [
-          overrideFile({ id: "my-custom", model: "gpt-4" }),
-        ]),
-      });
-      expect(selectHasOverrides.select(state, "my-custom")).toBe(false);
-    });
-  });
-
-  describe("selectors with missing codingAgentOverrides (legacy electron-store data)", () => {
+  describe('selectors with missing codingAgentOverrides (legacy electron-store data)', () => {
     /** Simulate old persisted data where codingAgentOverrides didn't exist yet */
     function legacyState() {
       return mockState({
@@ -433,168 +350,120 @@ describe("specialists selectors", () => {
       });
     }
 
-    it("selectHasOverrides should return false without throwing", () => {
+    it('selectHasOverrides should return false without throwing', () => {
       const state = legacyState();
-      expect(() => selectHasOverrides.select(state, "ui-designer")).not.toThrow();
-      expect(selectHasOverrides.select(state, "ui-designer")).toBe(false);
+      expect(() => selectHasOverrides.select(state, 'ui-designer')).not.toThrow();
+      expect(selectHasOverrides.select(state, 'ui-designer')).toBe(false);
     });
 
-    it("selectEffectiveCodingAgent should return a fallback without throwing", () => {
+    it('selectEffectiveCodingAgent should return a fallback without throwing', () => {
       const state = {
         ...legacyState(),
-        providerSettings: { activeProviderId: "auggie", enabledProviders: {} },
+        providerSettings: { activeProviderId: 'auggie', enabledProviders: {} },
       } as StoreState;
-      expect(() => selectEffectiveCodingAgent.select(state, "nonexistent-specialist")).not.toThrow();
-      // The active provider ("auggie") has no reported availability in this
-      // state, so per D1(B) it must NOT be silently handed back.
-      const result = selectEffectiveCodingAgent.select(state, "nonexistent-specialist");
-      expect(result).toBe("");
+      expect(() =>
+        selectEffectiveCodingAgent.select(state, 'nonexistent-specialist'),
+      ).not.toThrow();
+      const result = selectEffectiveCodingAgent.select(state, 'nonexistent-specialist');
+      expect(result).toBe('auggie');
     });
   });
 
-  describe("availability-gated coding agent resolution (D1-B)", () => {
-    it("selectEffectiveCodingAgent honors an explicit specialist codingAgent regardless of availability", () => {
-      const state = mockState(
-        {
-          fileSpecialists: createCollection("id", [
-            {
-              id: "custom-spec",
-              name: "Custom",
-              description: "d",
-              codingAgent: "codex",
-              model: "",
-              behaviorPrompt: "prompt",
-              filePath: "/Users/test/.intent/specialists/custom-spec.md",
-              source: "user" as const,
-            },
-          ]),
-        },
-        "auggie",
-        {},
-      );
-      expect(selectEffectiveCodingAgent.select(state, "custom-spec")).toBe("codex");
+  describe('selectEffectiveModel precedence (explicit model before daemon preview)', () => {
+    it('returns the explicit model when a user def carries a model pin', () => {
+      const userDef = {
+        id: 'implementor',
+        name: 'Implementor',
+        description: 'Executes implementation tasks, writes code',
+        model: 'claude-code:opus-custom',
+        behaviorPrompt: 'You implement.',
+        source: 'user',
+        filePath: '/Users/test/.intent/specialists/implementor.md',
+        resolvedModel: 'opus4.7',
+        resolvedProvider: 'auggie',
+      };
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection('id', [userDef]),
+      });
+
+      expect(selectEffectiveModel.select(state, 'implementor')).toBe('claude-code:opus-custom');
     });
 
-    it("selectEffectiveCodingAgent returns the active provider when it is available", () => {
-      const state = mockState({}, "auggie", { auggie: { available: true } });
-      expect(selectEffectiveCodingAgent.select(state, "implementor")).toBe("auggie");
+    it('surfaces the daemon resolvedModel preview for inheriting specialists', () => {
+      const inheritingDef = {
+        id: 'inheriting-custom',
+        name: 'Inheriting',
+        description: 'custom inheriting specialist',
+        behaviorPrompt: 'prompt',
+        source: 'user',
+        filePath: '/Users/test/.intent/specialists/inheriting-custom.md',
+        resolvedModel: 'opus4.7',
+        resolvedProvider: 'auggie',
+      };
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection('id', [inheritingDef]),
+      });
+
+      expect(selectEffectiveModel.select(state, 'inheriting-custom')).toBe('opus4.7');
     });
 
-    it("selectEffectiveCodingAgent returns '' (not a silent switch) when the active provider is unavailable", () => {
-      const state = mockState({}, "auggie", { auggie: { available: false } });
-      expect(selectEffectiveCodingAgent.select(state, "implementor")).toBe("");
-    });
+    it('returns empty string when resolvedModel is omitted from the wire', () => {
+      const cliDefaultDef = {
+        id: 'cli-default-custom',
+        name: 'CLI Default',
+        description: 'custom provider-default specialist',
+        behaviorPrompt: 'prompt',
+        source: 'user',
+        filePath: '/Users/test/.intent/specialists/cli-default-custom.md',
+      };
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection('id', [cliDefaultDef]),
+      });
 
-    it("selectEffectiveCodingAgent returns '' when nothing has been checked yet (none available)", () => {
-      const state = mockState({}, "auggie", {});
-      expect(selectEffectiveCodingAgent.select(state, "implementor")).toBe("");
+      expect(selectEffectiveModel.select(state, 'cli-default-custom')).toBe('');
     });
   });
 
-  describe("selectEffectiveModel precedence (explicit model before daemon preview)", () => {
-    // These tests ingest PROTOCOL §5.11-shaped `specialist.list` defs through
-    // the REAL configured store via `dispatchSpecialistList`, mirroring the
-    // daemon's model-first precedence (`resolve_model`).
-    beforeAll(() => appStore.init());
-
-    it("returns the explicit model when a user def carries a model pin", () => {
-      const userDef: SpecialistDef = {
-        id: "implementor",
-        name: "Implementor",
-        description: "Executes implementation tasks, writes code",
-        model: "claude-code:opus-custom",
-        behaviorPrompt: "You implement.",
-        source: "user",
-        path: "/Users/test/.intent/specialists/implementor.md",
+  describe('selectExplicitModel', () => {
+    it('returns only the explicit frontmatter model', () => {
+      const pinnedDef = {
+        id: 'implementor',
+        name: 'Implementor',
+        description: 'Executes implementation tasks, writes code',
+        model: 'claude-code:opus-custom',
+        behaviorPrompt: 'You implement.',
+        source: 'user',
+        filePath: '/Users/test/.intent/specialists/implementor.md',
       };
-      dispatchSpecialistList([userDef]);
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection('id', [pinnedDef]),
+      });
 
-      expect(selectEffectiveModel.select(appStore.state, "implementor")).toBe(
-        "claude-code:opus-custom",
-      );
+      expect(selectExplicitModel.select(state, 'implementor')).toBe('claude-code:opus-custom');
     });
 
-    it("surfaces the daemon resolvedModel preview for inheriting specialists (no client resolution)", () => {
-      seedProviderCatalog(appStore);
-      const inheritingDef: SpecialistDef = {
-        id: "inheriting-custom",
-        name: "Inheriting",
-        description: "custom inheriting specialist",
-        behaviorPrompt: "prompt",
-        source: "user",
-        path: "/Users/test/.intent/specialists/inheriting-custom.md",
-        resolvedModel: "opus4.7",
-        resolvedProvider: "auggie",
+    it('returns undefined when only the daemon preview is present', () => {
+      const inheritingDef = {
+        id: 'implementor',
+        name: 'Implementor',
+        description: 'Executes implementation tasks, writes code',
+        behaviorPrompt: 'You implement.',
+        source: 'user',
+        filePath: '/Users/test/.intent/specialists/implementor.md',
+        resolvedModel: 'opus4.7',
+        resolvedProvider: 'auggie',
       };
-      dispatchSpecialistList([inheritingDef]);
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection('id', [inheritingDef]),
+      });
 
-      // The wire's daemon-computed preview is surfaced verbatim — the client
-      // never resolves the default against the catalog tables itself.
-      expect(selectEffectiveModel.select(appStore.state, "inheriting-custom")).toBe(
-        "opus4.7",
-      );
-    });
-
-    it("returns empty string (provider CLI default) when resolvedModel is omitted from the wire", () => {
-      seedProviderCatalog(appStore);
-      const cliDefaultDef: SpecialistDef = {
-        id: "cli-default-custom",
-        name: "CLI Default",
-        description: "custom specialist without a resolvable model",
-        behaviorPrompt: "prompt",
-        source: "user",
-        path: "/Users/test/.intent/specialists/cli-default-custom.md",
-      };
-      dispatchSpecialistList([cliDefaultDef]);
-
-      // Omitted resolvedModel means the daemon resolution fell through to the
-      // provider CLI default; consumers render "Provider default".
-      expect(selectEffectiveModel.select(appStore.state, "cli-default-custom")).toBe("");
-    });
-  });
-
-  describe("selectExplicitModel (explicit frontmatter model only, no resolved preview)", () => {
-    beforeAll(() => appStore.init());
-
-    it("returns the explicit model when the wire def carries a model key (pinned)", () => {
-      const pinnedDef: SpecialistDef = {
-        id: "implementor",
-        name: "Implementor",
-        description: "Executes implementation tasks, writes code",
-        model: "claude-code:opus-custom",
-        behaviorPrompt: "You implement.",
-        source: "user",
-        path: "/Users/test/.intent/specialists/implementor.md",
-      };
-      dispatchSpecialistList([pinnedDef]);
-
-      expect(selectExplicitModel.select(appStore.state, "implementor")).toBe(
-        "claude-code:opus-custom",
-      );
-    });
-
-    it("returns undefined when the model key is omitted, even with a resolvedModel preview (inheriting)", () => {
-      const inheritingDef: SpecialistDef = {
-        id: "implementor",
-        name: "Implementor",
-        description: "Executes implementation tasks, writes code",
-        behaviorPrompt: "You implement.",
-        source: "user",
-        path: "/Users/test/.intent/specialists/implementor.md",
-        resolvedModel: "opus4.7",
-        resolvedProvider: "auggie",
-      };
-      dispatchSpecialistList([inheritingDef]);
-
-      // The daemon preview must never leak into the explicit value —
-      // selectEffectiveModel is the preview-aware counterpart.
-      expect(selectExplicitModel.select(appStore.state, "implementor")).toBeUndefined();
-      expect(selectEffectiveModel.select(appStore.state, "implementor")).toBe("opus4.7");
-    });
-
-    it("returns undefined for an unknown specialist", () => {
-      expect(selectExplicitModel.select(appStore.state, "no-such-specialist")).toBeUndefined();
+      expect(selectExplicitModel.select(state, 'implementor')).toBeUndefined();
+      expect(selectEffectiveModel.select(state, 'implementor')).toBe('opus4.7');
     });
   });
 });
-

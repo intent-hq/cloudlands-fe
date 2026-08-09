@@ -2,18 +2,15 @@
  * App Events Slice
  *
  * Saga-only slice (no reducer) for app-level lifecycle/system events.
- * Actions: app:*, auth:*, system:*, log:events-updated
+ * Actions: app:*, auth:*, system:*
  *
  * These are NOT workspace-scoped — they affect global UI elements.
  * Zod validation is intentionally dropped: Redux actions are already typed
  * at compile time, and runtime validation added overhead with no consumers.
  */
 
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import type {
-  DomainEvent,
-  DomainEventPayloads,
-} from "../../../../features/events/types";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import type { DomainEvent } from "../../../../features/events/types";
 
 // ---------------------------------------------------------------------------
 // Payload types
@@ -126,22 +123,12 @@ export const systemError = createAction<[data: SystemErrorPayload]>(
 );
 
 // ---------------------------------------------------------------------------
-// Log events (merged here — single action, not worth its own slice)
-// ---------------------------------------------------------------------------
-
-export const logEventsUpdated = createAction<
-  [data: DomainEventPayloads["log:events-updated"]]
->("domainEvents/logEventsUpdated");
-
-// ---------------------------------------------------------------------------
 // Domain event → action mapping (for broadcast saga)
 // ---------------------------------------------------------------------------
 
 export const APP_EVENT_ACTION_MAP: Partial<{
   [E in DomainEvent]: { actionCreator: { type: string; (...args: any[]): any }; ipcChannel: E };
-}> = {
-  "log:events-updated": { actionCreator: logEventsUpdated, ipcChannel: "log:events-updated" },
-};
+}> = {};
 
 // ---------------------------------------------------------------------------
 // All action types (for takeEvery matching)

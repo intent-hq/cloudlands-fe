@@ -4,8 +4,8 @@
  * Actions and reducer for MCP server management.
  */
 
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { omitKey } from "../../utils/utils";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
@@ -185,97 +185,104 @@ export const setAdvancedSaveStatus = createAction<
 // Reducer
 // ============================================================================
 
-export const mcpSettingsReducer = createReducer<McpSettingsState>(initialState)
-  .with(setServers, (state, { payload: [servers] }) => ({
+export const mcpSettingsReducer = createReducer<McpSettingsState>(initialState);
+
+
+mcpSettingsReducer.with(setServers, (state, { payload: [servers] }) => ({
+  ...state,
+  servers,
+}));
+mcpSettingsReducer.with(setLoading, (state, { payload: [loading] }) => ({
+  ...state,
+  loading,
+}));
+mcpSettingsReducer.with(setError, (state, { payload: [error] }) => ({
+  ...state,
+  error,
+}));
+mcpSettingsReducer.with(setEnabled, (state, { payload: [enabled] }) => ({
+  ...state,
+  enabled,
+}));
+mcpSettingsReducer.with(setServerStatus, (state, { payload: [name, status] }) => ({
+  ...state,
+  statusMap: { ...state.statusMap, [name]: status },
+}));
+mcpSettingsReducer.with(setServerErrorMessage, (state, { payload: [name, message] }) => ({
+  ...state,
+  errorMessages: { ...state.errorMessages, [name]: message },
+}));
+mcpSettingsReducer.with(clearServerErrorMessage, (state, { payload: [name] }) => {
+  const { [name]: _, ...rest } = state.errorMessages;
+  return { ...state, errorMessages: rest };
+});
+mcpSettingsReducer.with(clearAllErrorMessages, (state) => ({
+  ...state,
+  errorMessages: {},
+}));
+mcpSettingsReducer.with(setDisabledServers, (state, { payload: [disabled] }) => ({
+  ...state,
+  disabledServers: disabled,
+}));
+mcpSettingsReducer.with(toggleServerDisabled, (state, { payload: [name] }) => {
+  const isDisabled = name in state.disabledServers;
+  if (isDisabled) {
+    const { [name]: _, ...rest } = state.disabledServers;
+    return { ...state, disabledServers: rest };
+  }
+  return { ...state, disabledServers: { ...state.disabledServers, [name]: true as const } };
+});
+mcpSettingsReducer.with(removeServerFromState, (state, { payload: [name] }) => {
+  const { [name]: _s, ...restStatus } = state.statusMap;
+
+  const { [name]: _t, ...restTools } = state.toolsMap;
+
+  const { [name]: _e, ...restErrors } = state.errorMessages;
+
+  const { [name]: _d, ...restDisabled } = state.disabledServers;
+  return {
     ...state,
-    servers,
-  }))
-  .with(setLoading, (state, { payload: [loading] }) => ({
-    ...state,
-    loading,
-  }))
-  .with(setError, (state, { payload: [error] }) => ({
-    ...state,
-    error,
-  }))
-  .with(setEnabled, (state, { payload: [enabled] }) => ({
-    ...state,
-    enabled,
-  }))
-  .with(setServerStatus, (state, { payload: [name, status] }) => ({
-    ...state,
-    statusMap: { ...state.statusMap, [name]: status },
-  }))
-  .with(setServerErrorMessage, (state, { payload: [name, message] }) => ({
-    ...state,
-    errorMessages: { ...state.errorMessages, [name]: message },
-  }))
-  .with(clearServerErrorMessage, (state, { payload: [name] }) => {
-     
-    const { [name]: _, ...rest } = state.errorMessages;
-    return { ...state, errorMessages: rest };
-  })
-  .with(clearAllErrorMessages, (state) => ({
-    ...state,
-    errorMessages: {},
-  }))
-  .with(setDisabledServers, (state, { payload: [disabled] }) => ({
-    ...state,
-    disabledServers: disabled,
-  }))
-  .with(toggleServerDisabled, (state, { payload: [name] }) => {
-    const isDisabled = name in state.disabledServers;
-    if (isDisabled) {
-       
-      const { [name]: _, ...rest } = state.disabledServers;
-      return { ...state, disabledServers: rest };
-    }
-    return { ...state, disabledServers: { ...state.disabledServers, [name]: true as const } };
-  })
-  .with(removeServerFromState, (state, { payload: [name] }) => {
-     
-    const { [name]: _s, ...restStatus } = state.statusMap;
-     
-    const { [name]: _t, ...restTools } = state.toolsMap;
-     
-    const { [name]: _e, ...restErrors } = state.errorMessages;
-     
-    const { [name]: _d, ...restDisabled } = state.disabledServers;
-    return {
-      ...state,
-      servers: state.servers.filter((s) => s.name !== name),
-      statusMap: restStatus,
-      toolsMap: restTools,
-      errorMessages: restErrors,
-      disabledServers: restDisabled,
-    };
-  })
-  .with(bulkSetServerStatus, (state, { payload: [statusMap] }) => ({
-    ...state,
-    statusMap: { ...state.statusMap, ...statusMap },
-  }))
-  .with(importFromJsonCompleted, (state, { payload: [count] }) => ({
-    ...state,
-    lastImportedCount: count,
-  }))
-  .with(setAdvancedSaveStatus, (state, { payload: [status, error] }) => ({
-    ...state,
-    advancedSaveStatus: status,
-    advancedSaveError: error ?? null,
-  }))
-  .with(setWorkspaceDisabledServers, (state, { payload: [workspaceId, disabledServers] }) => {
+    servers: state.servers.filter((s) => s.name !== name),
+    statusMap: restStatus,
+    toolsMap: restTools,
+    errorMessages: restErrors,
+    disabledServers: restDisabled,
+  };
+});
+mcpSettingsReducer.with(bulkSetServerStatus, (state, { payload: [statusMap] }) => ({
+  ...state,
+  statusMap: { ...state.statusMap, ...statusMap },
+}));
+mcpSettingsReducer.with(importFromJsonCompleted, (state, { payload: [count] }) => ({
+  ...state,
+  lastImportedCount: count,
+}));
+mcpSettingsReducer.with(setAdvancedSaveStatus, (state, { payload: [status, error] }) => ({
+  ...state,
+  advancedSaveStatus: status,
+  advancedSaveError: error ?? null,
+}));
+mcpSettingsReducer.with(
+  setWorkspaceDisabledServers,
+  (state, { payload: [workspaceId, disabledServers] }) => {
     if (!workspaceId) return state;
     return setWorkspaceState(state, workspaceId, { disabledServers });
-  })
-  .with(applyWorkspaceDisabledServers, (state, { payload: [workspaceId, disabledNames] }) => {
+  },
+);
+mcpSettingsReducer.with(
+  applyWorkspaceDisabledServers,
+  (state, { payload: [workspaceId, disabledNames] }) => {
     if (!workspaceId) return state;
     const disabledServers: Record<string, true> = {};
     for (const name of disabledNames) {
       disabledServers[name] = true;
     }
     return setWorkspaceState(state, workspaceId, { disabledServers });
-  })
-  .with(toggleWorkspaceMcpServer, (state, { payload: [workspaceId, serverName, enabled] }) => {
+  },
+);
+mcpSettingsReducer.with(
+  toggleWorkspaceMcpServer,
+  (state, { payload: [workspaceId, serverName, enabled] }) => {
     if (!workspaceId) return state;
     const wsState = getWorkspaceState(state, workspaceId);
     const currentlyDisabled = serverName in wsState.disabledServers;
@@ -288,8 +295,8 @@ export const mcpSettingsReducer = createReducer<McpSettingsState>(initialState)
       : { ...wsState.disabledServers, [serverName]: true as const };
 
     return setWorkspaceState(state, workspaceId, { disabledServers });
-  })
-  .with(workspaceUnmounted, (state, { payload: [workspaceId] }) => {
-    return clearWorkspaceState(state, workspaceId);
-  });
-
+  },
+);
+mcpSettingsReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) => {
+  return clearWorkspaceState(state, workspaceId);
+});

@@ -55,6 +55,14 @@ describe('FirstVisitState IPC Validation Schemas', () => {
       const result = FirstVisitStateLoadSchema.safeParse({});
       expect(result.success).toBe(false);
     });
+
+    it('should accept an optional backendId', () => {
+      const result = FirstVisitStateLoadSchema.safeParse({
+        workspaceId: validUuid,
+        backendId: 'remote-abc',
+      });
+      expect(result.success).toBe(true);
+    });
   });
 
   describe('FirstVisitStateSaveSchema', () => {
@@ -81,6 +89,15 @@ describe('FirstVisitState IPC Validation Schemas', () => {
       const result = FirstVisitStateSaveSchema.safeParse({
         workspaceId: validSlug,
         state: stateWithSlug,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('should accept an optional backendId', () => {
+      const result = FirstVisitStateSaveSchema.safeParse({
+        workspaceId: validUuid,
+        backendId: 'remote-abc',
+        state: validState,
       });
       expect(result.success).toBe(true);
     });

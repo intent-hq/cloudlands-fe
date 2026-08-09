@@ -1,5 +1,5 @@
 import { store } from "../../store";
-import { getItems } from "$lib/store-shim/utils/collections/collection-utils";
+import { getItems } from "@augmentcode/themis/utils/collections/collection-utils";
 import { emptyWorkspaceContextState } from "./context-slice";
 import type { ContextItem } from "$features/context/types";
 import type { ContextWorkspaceState } from "./context-types";

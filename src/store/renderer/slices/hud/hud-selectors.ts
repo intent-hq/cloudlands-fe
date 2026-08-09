@@ -11,7 +11,7 @@
  */
 
 import { store } from '../../store';
-import { getItem, getItems } from '$lib/store-shim/utils/collections/collection-utils';
+import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '../../types';
 import { sumHudUsageTotals, type HudFeedEntry } from './hud-slice';
 import {
@@ -460,9 +460,11 @@ export interface HudCardAgent {
   hasQuestion: boolean;
   /**
    * The agent parents pending completion watches (session
-   * `isWaitingForOtherAgents` / non-empty `waitingForAgentIds`, §5.5 — folded
-   * in by the HUD's per-workspace `agent.list` hydration). A waiting
-   * coordinator stays VISIBLE on the card (idle bucket) between turns.
+   * `isWaitingForOtherAgents` / non-empty `waitingForAgentIds`, §5.5), OR
+   * owns active background hooks (`waitingOnHooks`, §3.1) OR active PR
+   * monitors (`waitingOnPrMonitors`, §5.42) — folded in by the HUD's
+   * per-workspace `agent.list` hydration. A waiting agent stays VISIBLE on
+   * the card (idle bucket) between turns.
    */
   isWaitingForAgents: boolean;
   /**
@@ -655,11 +657,14 @@ interface HudAgentBucketInfo {
  * tracks the agent (the daemon-events-bridge folds `agent:status-changed`
  * live, while the workspace entity's `agentSummary` only refreshes with the
  * next workspace snapshot), else the summary's wire status. Waiting on OTHER
- * AGENTS wins first (`isWaitingForOtherAgents`/`waitingForAgentIds`, §5.5): a
- * coordinator between turns holding completion watches buckets `idle` even
- * when its status/`isResponding` flags lag at active — it is not running
- * work, merely parked on children (visibility on the card is handled
- * separately by `keepLiveWithAncestors`, never by inflating the bucket).
+ * AGENTS wins first (`isWaitingForOtherAgents`/`waitingForAgentIds`, §5.5) —
+ * and identically, waiting on active background hooks (`waitingOnHooks`,
+ * §3.1) or active PR monitors (`waitingOnPrMonitors`, §5.42): a coordinator
+ * between turns holding completion watches (or hooks/monitors) buckets
+ * `idle` even when its status/`isResponding` flags lag at active — it is not
+ * running work, merely parked on children/hooks/monitors (visibility on the
+ * card is handled separately by `keepLiveWithAncestors`, never by inflating
+ * the bucket).
  * Genuine turn work still buckets running — a coordinator can take a turn
  * while its watches pend: the daemon's `turnInFlight` (§5.5 STAB-125, the
  * emit-time "a worker is draining a turn NOW" signal, refreshed by the
@@ -692,12 +697,18 @@ function agentBucketOf(state: StoreState, info: WorkspaceAgentInfo): HudAgentBuc
   const sessionStatusBucket = session
     ? toHudAgentStateBucket(typeof session.status === 'string' ? session.status : info.status)
     : null;
+  // Also parked on active background hooks (§3.1) or active PR monitors
+  // (§5.42): an idle-visibility signal treated identically to waiting on
+  // other agents — the agent will run again when a hook dispatches/expires
+  // or a monitor condition fires, so it is not genuinely idle either.
   const waitsOnOtherAgents =
     !!session &&
     sessionStatusBucket !== 'failed' &&
     sessionStatusBucket !== 'done' &&
     (session.isWaitingForOtherAgents === true ||
-      (Array.isArray(session.waitingForAgentIds) && session.waitingForAgentIds.length > 0));
+      (Array.isArray(session.waitingForAgentIds) && session.waitingForAgentIds.length > 0) ||
+      (Array.isArray(session.waitingOnHooks) && session.waitingOnHooks.length > 0) ||
+      (Array.isArray(session.waitingOnPrMonitors) && session.waitingOnPrMonitors.length > 0));
   // STAB-125 turn-liveness (§5.5, additive AgentLite field — structural read,
   // same convention as chat-read-service): `turnInFlight: true` is the
   // daemon's authoritative "an active worker is draining a turn NOW" signal,
@@ -819,7 +830,11 @@ function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
       isBackground: session?.isBackground === true || metadata.isBackground === true,
       attentionKind,
       hasQuestion,
-      isWaitingForAgents: session?.isWaitingForOtherAgents === true || waitingForAgentIds.length > 0,
+      isWaitingForAgents:
+        session?.isWaitingForOtherAgents === true ||
+        waitingForAgentIds.length > 0 ||
+        (Array.isArray(session?.waitingOnHooks) && session.waitingOnHooks.length > 0) ||
+        (Array.isArray(session?.waitingOnPrMonitors) && session.waitingOnPrMonitors.length > 0),
       waitingForAgentIds,
     };
   });

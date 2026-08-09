@@ -12,19 +12,21 @@ import {
   afterEach,
   vi,
 } from 'vitest';
-import {
-  combineReducers,
-  createStoreCore as createStore,
-  type StoreCore as Store,
-} from '$lib/store-shim/internal/store-core';
+import { Store } from '@augmentcode/themis/svelte-store';
+
+vi.mock('svelte', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('svelte')>()),
+  getContext: () => undefined,
+}));
+
 import { messageAccumulatorReducer } from '../../../store/main/slices/message-accumulator/message-accumulator-slice';
 
 // Create per-test store for the API
-let testStore: Store;
+let testStore: Store<any, any>;
 
 const getTestBridgeStore = () => ({
   get state() {
-    return testStore.getState();
+    return testStore.state;
   },
   dispatch: (action: any) => testStore.dispatch(action),
 });
@@ -366,7 +368,8 @@ describe('Memory Leak Prevention', () => {
 
   describe('Message Accumulator Redux State Cleanup', () => {
     beforeEach(() => {
-      testStore = createStore(combineReducers({ messageAccumulator: messageAccumulatorReducer }));
+      testStore = new Store({ messageAccumulator: messageAccumulatorReducer });
+      testStore.init();
     });
 
     it('should clear all accumulators via clearAll', () => {

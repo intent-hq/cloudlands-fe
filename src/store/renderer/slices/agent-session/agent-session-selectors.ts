@@ -261,7 +261,7 @@ export const selectAgentSessionStreamingContent = store.createSelector(
  * surface the last PERSISTED assistant message's text while a non-viewed
  * agent streams a new turn (its transcript never grows mid-turn). The
  * message-level flag stays accurate across navigate-away because
- * `closeChatSubscription` normalizes stale `isStreaming` /
+ * The chat-subscribe saga normalizes stale `isStreaming` /
  * `streamingComplete` flags when it tears down a mid-turn subscription.
  */
 export const selectAgentSessionHasStreamOwnedMessage = store.createSelector(
@@ -272,6 +272,25 @@ export const selectAgentSessionHasStreamOwnedMessage = store.createSelector(
       if (message.role === 'assistant' && isStreamingMessage(message)) return true;
     }
     return false;
+  },
+);
+
+/**
+ * Select whether the transcript's actual TAIL entry is a stream-owned
+ * assistant message — stricter than `selectAgentSessionHasStreamOwnedMessage`,
+ * which reports true for a streaming assistant row ANYWHERE in the array. An
+ * interrupt-priority send can persist a new user message immediately after a
+ * still-streaming assistant row, so "some streaming assistant message
+ * exists" is too broad a signal for latching a watched-streaming-tail
+ * suppression marker: it would suppress the divider for a newer reply the
+ * user never actually saw. This selector only answers true when the
+ * streaming assistant message is genuinely the last thing in the transcript.
+ */
+export const selectAgentSessionHasStreamingTailMessage = store.createSelector(
+  (state, agentId: string): boolean => {
+    const messages = state.agentSessions?.byAgentId[agentId]?.messages ?? [];
+    const lastMessage = messages[messages.length - 1];
+    return lastMessage?.role === 'assistant' && isStreamingMessage(lastMessage);
   },
 );
 

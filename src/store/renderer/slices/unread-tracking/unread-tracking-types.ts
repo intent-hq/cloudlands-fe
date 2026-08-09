@@ -1,8 +1,8 @@
 /**
  * Types for the unread-tracking Redux slice.
  *
- * Only the currently viewed agent is tracked here (it gates the chat stream
- * lifecycle). Unread state is backend-owned via `workspace.attention`.
+ * Tracks the currently viewed agent for chat-stream lifecycle and transient
+ * divider viewing sessions. Canonical unread state lives on workspace.attention.
  */
 
 /** A latched "New messages" divider viewing session for one agent conversation. */
@@ -26,5 +26,15 @@ export type UnreadTrackingState = {
    * panel destroy. Transient renderer state: app relaunch clears it.
    */
   dividerSessionByAgentId: Record<string, DividerSession>;
+  /**
+   * Per-agent record that the user was watching a streaming (not yet
+   * persisted) reply at the moment a stop-looking boundary fired for them.
+   * Value is the newest PERSISTED message id at boundary time — the same id
+   * `markAgentSeenAtBoundary` targets, and thus the id the seen marker will
+   * converge to. Consumed (and cleared) the next time a divider session
+   * starts for that agent: if the freshly derived anchor matches, the
+   * session latches `null` instead of anchoring at the stale marker, so
+   * returning to a watched streaming tail never shows a spurious divider.
+   */
+  watchedStreamingTailByAgentId: Record<string, string>;
 };
-

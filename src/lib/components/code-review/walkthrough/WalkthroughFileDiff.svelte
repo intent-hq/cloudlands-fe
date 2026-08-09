@@ -125,6 +125,7 @@
   });
 
   // File-level collapsed state (header toggle)
+  // svelte-ignore state_referenced_locally - intentional: prop seeds the initial collapsed state; the header toggle owns it afterwards
   let isFileCollapsed = $state(initialCollapsed);
 
   // Track expanded ranges: Set of "hunkIndex-startLine-endLine"

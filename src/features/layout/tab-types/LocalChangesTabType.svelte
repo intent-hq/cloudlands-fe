@@ -55,11 +55,16 @@
   let { workspaceId, isActive }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
+  // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
+  // svelte-ignore state_referenced_locally
   const ftChanges$ = selectFileTrackingChanges(workspaceId);
+  // svelte-ignore state_referenced_locally
   const ftCommits$ = selectFileTrackingCommits(workspaceId);
+  // svelte-ignore state_referenced_locally
   const ftBoundarySha$ = selectFileTrackingBoundarySha(workspaceId);
+  // svelte-ignore state_referenced_locally
   const ftLoading$ = selectFileTrackingLoading(workspaceId);
   const allCommits = $derived($ftCommits$ || []);
 

@@ -133,6 +133,20 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
       digest = agent.digest;
     }
   }
+  // The daemon's in-flight activity overlay is fresher than the loaded
+  // transcript. It is cleared at turn boundaries, so only use it while the
+  // session is actively streaming; an idle leftover must not displace the
+  // persisted final response.
+  if (agent.isStreaming && agent.lastToolUse?.name) {
+    lastToolUse = {
+      type: 'tool_use',
+      id: `live-tool:${agent.id}`,
+      name: agent.lastToolUse.name,
+      input: {},
+    };
+    lastResponse = '';
+  }
+
   if (!foundUserMessage && agent.lastUserMessage) {
     lastUserMessage = agent.lastUserMessage;
   }

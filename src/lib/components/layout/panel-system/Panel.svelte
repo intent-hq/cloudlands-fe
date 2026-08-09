@@ -99,6 +99,8 @@
 
   // Set panel context so child components can access the panel ID
   // This is more reliable than DOM traversal for navigation events
+  // (context must be set at init; a panel's ID is stable for its lifetime)
+  // svelte-ignore state_referenced_locally
   setPanelContext(panel.id);
 
   // Get the active tab - use optional chaining to handle workspace transitions

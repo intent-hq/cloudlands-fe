@@ -17,12 +17,23 @@ interface DebugFile {
   relativePath: string;
 }
 
+export interface DebugFilesResult {
+  files: DebugFile[];
+  /**
+   * Sections that could not be collected (e.g. workspace files when no local
+   * checkout is known). Recorded in the export manifest so a bundle without
+   * workspace files is explainable rather than silently incomplete.
+   */
+  omissions: string[];
+}
+
 /**
  * Collect all debug files from various locations
  * @param workspaceId Optional workspace ID to collect workspace-specific files
  */
-export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile[]> {
+export async function collectDebugFiles(workspaceId?: string): Promise<DebugFilesResult> {
   const files: DebugFile[] = [];
+  const omissions: string[] = [];
   const userDataPath = app.getPath('userData');
   const homeDir = os.homedir();
 
@@ -121,46 +132,59 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
     'logs/tracked-errors.json',
   );
 
-  // Workspace-specific files
+  // Workspace-specific files — the checkout directory comes from the daemon
+  // only (monorepo#1759); when no local checkout is known (virtual/unknown
+  // workspace or remote backend), the section is skipped and the omission is
+  // recorded for the export manifest.
   if (workspaceId) {
     try {
-      const { WorkspaceConfig } = await import('../../../shared/main/config');
-      const workspacePath = WorkspaceConfig.paths.workspace(workspaceId);
+      const { getWorkspacePath } = await import('../../workspace/main/workspace-path.service');
+      const workspacePath = await getWorkspacePath(workspaceId);
 
-      // Collect workspace events
-      await addFile(
-        path.join(workspacePath, '.workspace', 'events.jsonl'),
-        'workspace/events.jsonl',
-      );
+      if (!workspacePath) {
+        logger.info('Skipping workspace files: no local checkout known', { workspaceId });
+        // i18n-ignore (manifest entry inside a diagnostic zip, not UI)
+        omissions.push(
+          `workspace/: skipped — no local checkout directory is known for workspace "${workspaceId}" (virtual/unknown workspace or remote backend)`,
+        );
+      } else {
+        // Collect workspace events
+        await addFile(
+          path.join(workspacePath, '.workspace', 'events.jsonl'),
+          'workspace/events.jsonl',
+        );
 
-      // Collect workspace agents
-      await addDirectoryRecursive(
-        path.join(workspacePath, '.workspace', 'agents'),
-        'workspace/agents',
-      );
+        // Collect workspace agents
+        await addDirectoryRecursive(
+          path.join(workspacePath, '.workspace', 'agents'),
+          'workspace/agents',
+        );
 
-      // Collect workspace notes
-      await addDirectoryRecursive(
-        path.join(workspacePath, '.workspace', 'notes'),
-        'workspace/notes',
-      );
+        // Collect workspace notes
+        await addDirectoryRecursive(
+          path.join(workspacePath, '.workspace', 'notes'),
+          'workspace/notes',
+        );
 
-      // Collect workspace logs (agent stderr logs)
-      await addDirectoryRecursive(
-        path.join(workspacePath, '.workspace', 'logs'),
-        'workspace/logs',
-      );
+        // Collect workspace logs (agent stderr logs)
+        await addDirectoryRecursive(
+          path.join(workspacePath, '.workspace', 'logs'),
+          'workspace/logs',
+        );
 
-      logger.info('Collected workspace-specific files', { workspaceId });
+        logger.info('Collected workspace-specific files', { workspaceId });
+      }
     } catch (error) {
-      logger.warn('Failed to collect workspace files', {
-        workspaceId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Failed to collect workspace files', { workspaceId, error: message });
+      // i18n-ignore (manifest entry inside a diagnostic zip, not UI)
+      omissions.push(
+        `workspace/: collection failed for workspace "${workspaceId}" — ${message}`,
+      );
     }
   }
 
   logger.info('Collected debug files', { count: files.length, workspaceId });
-  return files;
+  return { files, omissions };
 }
 

@@ -1,12 +1,12 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   addItem,
   addItems,
   createCollection,
   removeItem,
   type Collection,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 
 // ============================================================================
 // Types
@@ -84,8 +84,8 @@ export const selectPermissionOption = createAction<[requestId: string, optionId:
 // Reducer
 // ============================================================================
 
-export const permissionReducer = createReducer<PermissionState>(initialState)
-  .with(permissionRequestReceived, (state, { payload: [request] }) => {
+export const permissionReducer = createReducer<PermissionState>(initialState);
+permissionReducer.with(permissionRequestReceived, (state, { payload: [request] }) => {
     const requests = addItem(state.requests, request);
     if (requests === state.requests) {
       return state;
@@ -95,8 +95,8 @@ export const permissionReducer = createReducer<PermissionState>(initialState)
       ...state,
       requests,
     };
-  })
-  .with(setPendingRequests, (state, { payload: [requests] }) => {
+  });
+permissionReducer.with(setPendingRequests, (state, { payload: [requests] }) => {
     const nextRequests = addItems(state.requests, requests);
     if (nextRequests === state.requests) {
       return state;
@@ -106,8 +106,8 @@ export const permissionReducer = createReducer<PermissionState>(initialState)
       ...state,
       requests: nextRequests,
     };
-  })
-  .with(removePermissionRequest, (state, { payload: [requestId] }) => {
+  });
+permissionReducer.with(removePermissionRequest, (state, { payload: [requestId] }) => {
     const requests = removeItem(state.requests, requestId);
     if (requests === state.requests) {
       return state;
