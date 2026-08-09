@@ -19,6 +19,7 @@ export const {
   formatBytesBinary,
   formatRelativeTime,
   formatCompactRelativeTime,
+  formatCompactDuration,
   formatTime,
   formatDate,
   formatShortDate,
