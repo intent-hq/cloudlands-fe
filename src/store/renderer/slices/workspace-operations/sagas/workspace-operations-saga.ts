@@ -478,6 +478,8 @@ function* performBulkDelete(repoKey: string): SagaGenerator<void> {
       if (result.ok) {
         deleteCount++;
         yield* put(removeWorkspaceEntity(workspace.id));
+        yield* put(markWorkspacePendingDeletion(workspace.id));
+        yield* spawn(clearTombstoneAfterGrace, workspace.id);
       } else if (result.error?.includes('timed out')) timeoutCount++;
       else failCount++;
     } catch {
@@ -664,6 +666,8 @@ function* applyBulkProposal(payload: WorkspaceProposalApplyPayload): SagaGenerat
       if (result.ok) {
         deleted++;
         yield* put(removeWorkspaceEntity(id as WorkspaceId));
+        yield* put(markWorkspacePendingDeletion(id as WorkspaceId));
+        yield* spawn(clearTombstoneAfterGrace, id as WorkspaceId);
       } else if (result.error?.includes('timed out')) timedOut++;
       else failed++;
     } catch {
