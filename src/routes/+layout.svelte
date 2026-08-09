@@ -767,8 +767,10 @@
     // Mouse X buttons (back/forward) navigate app history, same as Cmd+Left/Right
     const cleanupMouseHistoryNavigation = attachMouseHistoryNavigation(window);
 
-    // Windows: X-button presses arrive as an `app-command` on the BrowserWindow
-    // and never reach the renderer as mouse events; main forwards them over IPC
+    // Main-process gesture paths: Windows X-button presses arrive as an
+    // `app-command` and macOS swipe gestures (incl. Logi Options+ synthesized
+    // swipes for mouse side buttons) as a `swipe` event on the BrowserWindow,
+    // never reaching the renderer as mouse events; main forwards both over IPC
     // ('back' | 'forward') so behavior matches the mouse path above.
     let historyNavigateListenerId: string | null = null;
     if (window.electronAPI?.on) {

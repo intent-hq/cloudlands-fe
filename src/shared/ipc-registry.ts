@@ -936,7 +936,7 @@ export const EVENT_CHANNELS = [
   'app:ready',
   'app:ui:navigate',
   'app:ui:highlight',
-  'app:history-navigate', // Windows app-command X buttons → renderer history back/forward
+  'app:history-navigate', // Windows app-command X buttons / macOS swipe gestures → renderer history back/forward
   'window:ready',
   'window:focus',
   'window:blur',

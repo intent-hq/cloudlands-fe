@@ -4730,6 +4730,7 @@
   "lib_commandPalette_terminal_pill": "터미널",
   "lib_commandPalette_note_pill": "노트",
   "lib_commandPalette_file_pill": "파일",
+  "lib_commandPalette_archivedWorkspace_pill": "보관된 작업 공간",
   "events_activity_file_fallback": "파일",
   "events_activity_note_fallback": "노트",
   "events_activity_agent_fallback": "에이전트",
