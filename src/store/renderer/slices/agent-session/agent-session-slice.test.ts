@@ -2244,6 +2244,9 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].status).toBe('active');
       expect(state.byAgentId['a1'].stopReason).toBeNull();
       expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+      // The live running edge stamps its daemon timestamp as the ordering
+      // signal the guard compares the snapshot's failure against.
+      expect(state.byAgentId['a1'].liveTurnOpenedAt).toBe('2026-08-09T13:33:15.377Z');
 
       // The stale agents.list snapshot lands after the recovery edges
       // (hydrateAgents dispatches bulkUpsertSessions with default options).
@@ -2289,6 +2292,55 @@ describe('agent-session-slice reducer', () => {
       );
 
       state = agentSessionReducer(state, bulkUpsertSessions([staleErrorSnapshot()]));
+
+      expect(state.byAgentId['a1'].status).toBe('error');
+      expect(state.byAgentId['a1'].stopReason).toBe(CRASH_ERROR);
+    });
+
+    // monorepo#1250 convergence path: a daemon crash mid-turn emits NO
+    // terminal edge, so the parked error reaches the FE only via snapshot
+    // (agents.list hydrate after restart). Its stopReasonTimestamp is
+    // recorded AFTER the live running edge, so the ordering signal proves it
+    // is not stale — the guard must let it through.
+    it('applies a genuine post-edge failure snapshot when the terminal event was never emitted (daemon crash)', () => {
+      let state = replayCrashRecovery();
+      expect(state.byAgentId['a1'].status).toBe('active');
+      expect(state.byAgentId['a1'].liveTurnOpenedAt).toBe('2026-08-09T13:33:15.377Z');
+
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions([
+          makeSession('a1', 'ws-1', {
+            status: 'error' as any,
+            activationState: 'error' as any,
+            isActive: false,
+            stopReason: CRASH_ERROR,
+            // Recorded after the live edge that opened the turn.
+            stopReasonTimestamp: '2026-08-09T13:35:00.000Z',
+          }),
+        ]),
+      );
+
+      expect(state.byAgentId['a1'].status).toBe('error');
+      expect(state.byAgentId['a1'].stopReason).toBe(CRASH_ERROR);
+      expect(state.byAgentId['a1'].stopReasonTimestamp).toBe('2026-08-09T13:35:00.000Z');
+    });
+
+    it('applies a failure snapshot when the ordering signal is absent (cannot be proven stale)', () => {
+      let state = replayCrashRecovery();
+
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions([
+          makeSession('a1', 'ws-1', {
+            status: 'error' as any,
+            activationState: 'error' as any,
+            isActive: false,
+            stopReason: CRASH_ERROR,
+            // No stopReasonTimestamp: staleness unprovable → snapshot wins.
+          }),
+        ]),
+      );
 
       expect(state.byAgentId['a1'].status).toBe('error');
       expect(state.byAgentId['a1'].stopReason).toBe(CRASH_ERROR);
