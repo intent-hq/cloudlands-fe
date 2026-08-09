@@ -3719,6 +3719,7 @@
   "terminal_ipc_disposed_error": "Terminal is disposed",
   "terminal_ipc_unknown_error": "Unknown error",
   "terminal_ipc_workspaceNotReady_error": "WORKSPACE_NOT_READY: The workspace directory does not exist yet. Please wait for workspace initialization to complete.",
+  "terminal_ipc_workspacePathUnknown_error": "No local folder is known for this workspace, so a terminal cannot be opened here. This can happen for remote backends or workspaces without a checkout.",
   "terminal_ipc_commandTitle_label": "Command: {command}",
   "terminal_quakeOverlay_terminalNumber_label": "Terminal {number}",
   "terminal_ipc_workingDirInaccessible_error": "WORKSPACE_NOT_READY: could not access working directory {workingDir}",

@@ -3718,6 +3718,7 @@
   "terminal_ipc_disposed_error": "ターミナルは破棄されています",
   "terminal_ipc_unknown_error": "不明なエラー",
   "terminal_ipc_workspaceNotReady_error": "WORKSPACE_NOT_READY: ワークスペースディレクトリがまだ存在しません。ワークスペースの初期化が完了するまでお待ちください。",
+  "terminal_ipc_workspacePathUnknown_error": "このワークスペースのローカルフォルダーが不明なため、ここでターミナルを開くことができません。リモートバックエンドやチェックアウトのないワークスペースで発生することがあります。",
   "terminal_ipc_commandTitle_label": "コマンド: {command}",
   "terminal_quakeOverlay_terminalNumber_label": "ターミナル {number}",
   "terminal_ipc_workingDirInaccessible_error": "WORKSPACE_NOT_READY: 作業ディレクトリ {workingDir} にアクセスできませんでした",

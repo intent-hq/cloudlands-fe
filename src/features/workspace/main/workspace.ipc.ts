@@ -14,7 +14,7 @@ import { protocolAdapter } from '../../protocol/main/protocol-adapter';
 
 import { Logger } from '../../../shared/logger';
 
-import { WorkspaceConfig } from '../../../shared/main/config.js';
+import { getWorkspacePath } from './workspace-path.service';
 import { InstructionService } from '../../agent/main/instruction-service';
 import { execFileAsync } from '../../../shared/git/git-env';
 import { getBackendClient } from '../../backend/main/backend.ipc';
@@ -283,14 +283,16 @@ export function setupWorkspaceIPC(): void {
     ),
   );
 
-  // Get workspace root path
+  // Get workspace root path — daemon-reported checkout directory only
+  // (monorepo#1759). Returns null for virtual/unknown workspaces and remote
+  // backends; renderer callers must handle null without fabricating a path.
   ipcMain.handle(
     WORKSPACE_CHANNELS.GET_ROOT,
     createSafeValidatedHandler(
       WorkspaceGetRootSchema,
       async (_, validated) => {
         try {
-          return WorkspaceConfig.paths.workspace(validated.workspaceId);
+          return await getWorkspacePath(validated.workspaceId);
         } catch (error) {
           logger.error('Failed to get workspace root', error as Error, {
             workspaceId: validated.workspaceId,

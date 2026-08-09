@@ -4,7 +4,8 @@
  * Exposes user activity service to the renderer process via IPC.
  */
 
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
+import * as path from 'path';
 import { z } from 'zod';
 import { Logger } from '../../../shared/logger';
 import { m } from '$shared/paraglide/messages.js';
@@ -13,9 +14,24 @@ import { USER_ACTIVITY_CHANNELS } from '../../../shared/ipc/channels';
 import { UserActivityService } from './user-activity.service';
 import { FileSystemUserActivityRepository } from './user-activity.repository';
 import { WorkspaceId, NoteId } from '../../../shared/types/branded-ids';
-import { WorkspaceConfig } from '../../../shared/main/config';
+import { getActiveId } from '../../backend/main/connections-store';
 
 const logger = new Logger('UserActivityIPC');
+
+const USER_ACTIVITY_DIR = 'user-activity';
+
+/**
+ * Base directory for user-activity persistence, keyed by the active backend
+ * id so two backends surfacing a workspace with the SAME id never clobber
+ * each other's read-state (monorepo#1759 — re-homed to userData; this data
+ * never needed the workspace checkout dir). The backend id is sanitized to a
+ * filesystem-safe token, mirroring panelLayoutHistoryFileName.
+ */
+async function resolveUserActivityBase(): Promise<string> {
+  const backendId = await getActiveId();
+  const safe = backendId.replace(/[^A-Za-z0-9._-]/g, '_');
+  return path.join(app.getPath('userData'), USER_ACTIVITY_DIR, safe);
+}
 
 // Zod schemas for validation
 const MarkNoteReadSchema = z.object({
@@ -44,10 +60,7 @@ let service: UserActivityService | null = null;
 
 function getService(): UserActivityService {
   if (!service) {
-    // Pass a resolver so the repository finds workspaces in both ~/intent and legacy ~/.workspaces
-    const repository = new FileSystemUserActivityRepository((workspaceId) =>
-      WorkspaceConfig.resolveWorkspaceRoot(workspaceId),
-    );
+    const repository = new FileSystemUserActivityRepository(() => resolveUserActivityBase());
     service = new UserActivityService(repository);
   }
   return service;
