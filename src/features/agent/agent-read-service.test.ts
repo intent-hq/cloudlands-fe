@@ -104,6 +104,8 @@ describe('agentReadService (fake seam, real store)', () => {
     await ensureAgentSession(agentId);
     expect(selectAgentSession.select(appStore.state, agentId)?.name).toBe('prior');
 
+    // Legacy/lossy shape without the structured data.code: pins the
+    // rpcCode + message fallback branch of the classifier.
     const notFound = Object.assign(new Error('Agent not found'), {
       name: 'BackendError',
       code: 'INVALID_PARAMS',

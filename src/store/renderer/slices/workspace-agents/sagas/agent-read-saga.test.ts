@@ -134,10 +134,13 @@ describe('agentReadSaga', () => {
   // condition: one WARN (no ERROR) and the stale agent tabs are closed so the
   // workspace falls back to its home view.
   it('logs a single WARN and closes stale tabs when the daemon reports the agent missing', async () => {
+    // Real live-transport shape: both transports prefer the daemon's
+    // data.code ("not-found", monorepo#1320) when resolving BackendError.code.
     const notFound = Object.assign(new Error('Agent not found'), {
       name: 'BackendError',
-      code: 'INVALID_PARAMS',
+      code: 'not-found',
       rpcCode: -32602,
+      data: { code: 'not-found' },
     });
     mocks.get.mockRejectedValue(notFound);
     const channel = stdChannel();
