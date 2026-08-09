@@ -12,10 +12,8 @@
   faCodeCommit,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import {
-  fly,
-  slide,
-} from 'svelte/transition';
+  import { fly } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { parseToolResult } from './tool-result-parser';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
@@ -58,7 +56,7 @@
   }
 
   function expand(node: Element) {
-    return slide(node, { duration: 150 });
+    return safeSlide(node, { duration: 150 });
   }
 
   // Determine the source type (codebase vs commit history)

@@ -14,7 +14,8 @@
    * agent-subscription-ui read middleware). No IPC listeners, polling, or
    * timers in this component.
    */
-  import { fade, slide } from 'svelte/transition';
+  import { fade } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { flip } from 'svelte/animate';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import {
@@ -308,7 +309,7 @@
   <!-- Standalone woken-up indicator: shown only when no subscription row is active -->
   <div
     class="flex items-end gap-2 px-4.5 py-1.5 text-ui text-subtle font-family-child"
-    transition:slide={{ axis: 'y', duration: 200 }}
+    transition:safeSlide={{ axis: 'y', duration: 200 }}
   >
     <Tooltip.Provider delayDuration={0}>
       <Tooltip.Root delayDuration={0}>
@@ -390,7 +391,7 @@
 
     <!-- One-shot watch rows: individual agent cards, no group chrome -->
     {#if oneShotWatchedIds.length > 0}
-      <div class="w-full" data-testid="one-shot-watches" transition:slide={{ duration: 150 }}>
+      <div class="w-full" data-testid="one-shot-watches" transition:safeSlide={{ duration: 150 }}>
         <!-- Section header: waiting label, collapse toggle, avatar strip when collapsed -->
         <div
           class="flex items-center gap-2 px-3 py-1.5 text-sm text-subtle"
@@ -456,13 +457,13 @@
         {#if !oneShotCollapsed}
           <div
             class="flex flex-col gap-0.5 w-full pl-4.5 pr-2"
-            transition:slide={{ duration: 150 }}
+            transition:safeSlide={{ duration: 150 }}
           >
             {#each oneShotWatchedIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
               <div
                 class="w-full"
                 animate:flip={{ duration: 200 }}
-                transition:slide={{ axis: 'y', duration: 200 }}
+                transition:safeSlide={{ axis: 'y', duration: 200 }}
               >
                 {#snippet oneShotActions()}
                   {#if !isCompleted}
@@ -524,7 +525,7 @@
 
     <!-- One collapsible section per after_all delegation group -->
     {#each delegationGroups as group (group.groupId)}
-      <div transition:slide={{ axis: 'y', duration: 200 }}>
+      <div transition:safeSlide={{ axis: 'y', duration: 200 }}>
         <DelegationGroupSection
           {group}
           workspace={resolvedWorkspace}
