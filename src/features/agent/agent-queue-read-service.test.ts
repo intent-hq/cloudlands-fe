@@ -34,6 +34,7 @@ import {
 import type { AgentQueueEntryState } from '$store/renderer/slices/agent-queue/agent-queue-types';
 import {
   hydrateAgentQueue,
+  noteAgentQueueEventSnapshotApplied,
   __resetAgentQueueReadServiceForTests,
 } from './agent-queue-read-service';
 import {
@@ -166,5 +167,21 @@ describe('hydrateAgentQueue', () => {
     await hydrateAgentQueue(AGENT);
 
     expect(messagesOf(AGENT).map((m) => m.id)).toEqual(['m1']);
+  });
+
+  it('discards the fetched snapshot when a live event snapshot arrived mid-flight', async () => {
+    appStore.dispatch(replaceAgentQueue(AGENT, [queued('stale', 0)]));
+    // The RPC response still contains the row, but while it was in flight a
+    // live agent:queue:updated drained the queue. The event snapshot must win
+    // — folding the older RPC response would re-add the drained row.
+    getQueueMock.mockImplementationOnce(async () => {
+      appStore.dispatch(replaceAgentQueue(AGENT, []));
+      noteAgentQueueEventSnapshotApplied(AGENT);
+      return [queued('stale', 0)];
+    });
+
+    await hydrateAgentQueue(AGENT);
+
+    expect(messagesOf(AGENT)).toEqual([]);
   });
 });

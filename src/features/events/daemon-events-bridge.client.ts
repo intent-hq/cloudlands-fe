@@ -209,7 +209,10 @@ import {
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
-import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
+import {
+  hydrateAgentQueue,
+  noteAgentQueueEventSnapshotApplied,
+} from '$features/agent/agent-queue-read-service';
 import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { WorkspaceEvent } from '$features/events/types';
 import { createLogger } from '$lib/utils/client-logger';
@@ -1246,6 +1249,9 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
   const queue = data.queue;
   if (typeof agentId !== 'string' || !Array.isArray(queue)) return;
   appStore.dispatch(replaceAgentQueue(agentId, queue as QueuedMessage[]));
+  // Mark the snapshot so an in-flight hydrate fetch that started before this
+  // event discards its (now stale) response instead of overwriting it.
+  noteAgentQueueEventSnapshotApplied(agentId);
 }
 
 /**

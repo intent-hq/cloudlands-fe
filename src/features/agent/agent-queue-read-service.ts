@@ -45,15 +45,33 @@ const logger = createLogger('AgentQueueReadService');
 const hydrateInFlightByAgent = new Set<string>();
 /** Agents whose in-flight fetch should be followed by exactly one re-fetch. */
 const hydrateFollowUpWantedByAgent = new Set<string>();
+/** Per-agent counter of live `agent:queue:updated` snapshots applied. */
+const eventSnapshotSeqByAgent = new Map<string, number>();
+
+/**
+ * Record that a live `agent:queue:updated` snapshot was folded into the
+ * mirror. Called by the daemon-events-bridge alongside its
+ * `replaceAgentQueue` dispatch. An in-flight hydrate fetch that started
+ * before this event discards its response: queue changes always emit an
+ * event, so a live snapshot applied mid-flight is at least as fresh as the
+ * RPC response — folding the older response afterward could re-add a
+ * just-drained row or drop a just-queued one.
+ */
+export function noteAgentQueueEventSnapshotApplied(agentId: string): void {
+  eventSnapshotSeqByAgent.set(agentId, (eventSnapshotSeqByAgent.get(agentId) ?? 0) + 1);
+}
 
 async function runHydrateAgentQueueFetch(agentId: string): Promise<void> {
   appStore.dispatch(hydrateAgentQueueRequested(agentId));
+  const seqAtFetchStart = eventSnapshotSeqByAgent.get(agentId) ?? 0;
   try {
     const queue = await appClient.agents.getQueue(agentId);
     // Re-check after the fetch: a deletion may have become pending while
-    // `agent.getQueue` was in flight; folding the response now would
-    // resurrect rows for a soft-hidden session.
-    if (!isAgentDeletionPending(agentId)) {
+    // `agent.getQueue` was in flight (folding the response would resurrect
+    // rows for a soft-hidden session), or a live event snapshot may have
+    // superseded the response (see noteAgentQueueEventSnapshotApplied).
+    const supersededByEvent = (eventSnapshotSeqByAgent.get(agentId) ?? 0) !== seqAtFetchStart;
+    if (!isAgentDeletionPending(agentId) && !supersededByEvent) {
       appStore.dispatch(replaceAgentQueue(agentId, queue));
     }
   } catch (error) {
@@ -99,4 +117,5 @@ export function hydrateAgentQueue(agentId: string): Promise<void> {
 export function __resetAgentQueueReadServiceForTests(): void {
   hydrateInFlightByAgent.clear();
   hydrateFollowUpWantedByAgent.clear();
+  eventSnapshotSeqByAgent.clear();
 }
