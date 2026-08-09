@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Fake the live backend transport so `agent.completeOnce` routes through an
 // in-memory stub (no Electron). `vi.hoisted` keeps the spy visible to the
@@ -98,6 +98,11 @@ describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)"
     prepareContextSpy.mockResolvedValue("PREPARED PROMPT");
   });
 
+  afterEach(() => {
+    appStore.dispatch(setTypeOverride({ type: "commit", model: "" }));
+    appStore.dispatch(setDefaultModel(""));
+  });
+
   it("sends the §5.32 request and lands the tagged result as success", async () => {
     completeOnceSpy.mockResolvedValueOnce({
       text: "preamble <<<COMMIT_MESSAGE>>>feat: add thing<<</COMMIT_MESSAGE>>> trailer",
@@ -143,8 +148,6 @@ describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)"
     const [params] = completeOnceSpy.mock.calls[0];
     expect(params).not.toHaveProperty("model");
     expect(params).toMatchObject({ type: "commit" });
-    appStore.dispatch(setTypeOverride({ type: "commit", model: "" }));
-    appStore.dispatch(setDefaultModel(""));
   });
 
   it.each([
