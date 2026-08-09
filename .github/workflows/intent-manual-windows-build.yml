@@ -15,15 +15,18 @@ permissions:
 jobs:
   test-windows-build:
     name: Test Windows Build
-    runs-on: [self-hosted, Windows, X64]
+    # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
+    # group as gh-linux-16x), fixed at the runner level to the Windows Server
+    # 2022 image (see release-beta.yml build-windows for why Server 2022).
+    runs-on: gh-windows-16x
     timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # On the self-hosted Windows runner C:\WINDOWS\system32\bash.EXE (the
-      # WSL stub) shadows Git Bash in PATH, and WSL bash can't execute the
+      # On Windows runners C:\WINDOWS\system32\bash.EXE (the WSL stub)
+      # shadows Git Bash in PATH, and WSL bash can't execute the
       # runner's Windows-path step scripts. Prepend Git's bin dir so every
       # later `shell: bash` step resolves Git Bash instead (same workaround
       # as intentd's ci.yml build job).
@@ -35,15 +38,20 @@ jobs:
         uses: pnpm/action-setup@v6
         with:
           version: 10.30.3
-          # Per-runner-instance dest: concurrent self-hosted slots share $HOME
-          # and race on the default ~/setup-pnpm (monorepo#1239). The action
-          # expands ~ via os.homedir(), so this is safe on Windows too.
-          dest: ~/setup-pnpm-${{ runner.name }}
+          # Space-free per-run dest: hosted Windows runner names can contain
+          # spaces and pnpm/action-setup@v6 breaks on space-containing paths
+          # on Windows (pnpm/action-setup#261), so runner.name cannot be
+          # used here (same as release-beta.yml build-windows). run_id +
+          # run_attempt keeps the dest unique per run.
+          dest: ~/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Setup Node.js
-        # No cache: 'pnpm' — the self-hosted runner is non-ephemeral, so the
-        # local pnpm store persists between runs and the GH Actions cache
-        # tarball round-trip would only add network time.
+        # No cache: 'pnpm' — this job previously ran on a non-ephemeral
+        # self-hosted runner with a persistent pnpm store, making the GH
+        # Actions cache tarball round-trip redundant. On the hosted
+        # gh-windows-16x runner each job is a fresh VM with no persistent
+        # store, so this is a candidate for cache: 'pnpm' — left as-is here
+        # since only the runner target was migrated by this change.
         uses: actions/setup-node@v7
         with:
           node-version: '22'
@@ -88,8 +96,9 @@ jobs:
           INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}
           INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
 
-      # The GH-hosted image had a D: scratch drive for the decoded cert; the
-      # self-hosted runner doesn't, so it lives in the per-run temp dir.
+      # The decoded cert lives in the per-run temp dir; a D: scratch drive
+      # (used by an older GH-hosted variant of this job) isn't guaranteed on
+      # every runner image.
       - name: Decode DigiCert client certificate
         if: ${{ steps.integrated_signing.outputs.enabled == 'true' }}
         shell: bash

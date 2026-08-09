@@ -300,11 +300,14 @@ jobs:
   # intent-manual-windows-build.yml.
   build-windows:
     needs: resolve
-    # Pinned to windows-2022: the windows-latest (windows-2025) image ships
-    # Visual Studio 2026 (v18), which node-gyp < 12.1.0 cannot detect
-    # (nodejs/node-gyp#3282), breaking native module builds (node-pty).
-    # Un-pin once the Node/npm/node-gyp stack in use supports VS 18.
-    runs-on: windows-2022
+    # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
+    # group as gh-linux-16x), fixed at the runner level to the Windows Server
+    # 2022 image. Server 2022 (not 2025) still matters: the windows-2025
+    # image ships Visual Studio 2026 (v18), which node-gyp < 12.1.0 cannot
+    # detect (nodejs/node-gyp#3282), breaking native module builds
+    # (node-pty). Move the runner to a newer image once the Node/npm/node-gyp
+    # stack in use supports VS 18.
+    runs-on: gh-windows-16x
     # 120 min: the hosted Windows runner is far slower than the old
     # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
     # and the job was cancelled at the previous 60-min cap before
@@ -321,8 +324,8 @@ jobs:
       # shadows Git Bash in PATH, and WSL bash can't execute the runner's
       # Windows-path step scripts. Prepend Git's bin dir so every later
       # `shell: bash` step resolves Git Bash instead (same workaround as
-      # intent-manual-windows-build.yml). Still required on the hosted
-      # windows-2022 runner, which ships the same WSL stub.
+      # intent-manual-windows-build.yml). Still required on gh-windows-16x,
+      # whose Windows Server 2022 image ships the same WSL stub.
       - name: Put Git Bash first on PATH
         shell: cmd
         run: echo C:\Program Files\Git\bin>>"%GITHUB_PATH%"
@@ -342,7 +345,7 @@ jobs:
         # No cache: 'pnpm' — this job previously ran on a non-ephemeral
         # self-hosted runner with a persistent pnpm store, making the GH
         # Actions cache tarball round-trip redundant. On the hosted
-        # windows-2022 runner each job is a fresh VM with no persistent
+        # gh-windows-16x runner each job is a fresh VM with no persistent
         # store, so this is a candidate for cache: 'pnpm' — left as-is here
         # since only the runner target was migrated by this change.
         uses: actions/setup-node@v7
@@ -396,16 +399,16 @@ jobs:
       # shell: powershell (Windows PowerShell 5.1, present on every Windows
       # host) rather than pwsh — the old self-hosted runner had no
       # PowerShell Core ("pwsh: command not found", intent-hq/monorepo#1282
-      # follow-up run). The hosted windows-2022 image ships PowerShell 5.1
-      # too, so this stays valid on the hosted runner.
+      # follow-up run). The gh-windows-16x runner's Windows Server 2022 image
+      # ships PowerShell 5.1 too, so this stays valid on the hosted runner.
       - name: Build and package Windows app
         shell: powershell
         env:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here.
           # This leg passed at 12288 in the v2.13.0 rebuild, run 30764745052.
-          # windows-2022 is 4 vCPU / 16 GB RAM — if the hosted runner OOMs,
-          # drop to 10240 like the hosted Linux x64 leg.
+          # gh-windows-16x is 16 vCPU / 64 GB RAM, so the 12288 cap has
+          # ample headroom there.
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
           # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
