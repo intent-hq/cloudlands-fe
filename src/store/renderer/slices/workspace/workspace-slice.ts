@@ -397,6 +397,7 @@ workspaceReducer.with(clearPendingCreation, (state, { payload: [wsId] }) => {
     return { ...state, pendingCreations: next };
   });
 workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace] }) => {
+    if (state.pendingDeletions[workspace.id]) return state;
     const existing = getWorkspaceById(state.workspaces, workspace.id);
     const merged = mergeWorkspaceEnrichment(existing, workspace);
     return {
@@ -409,6 +410,7 @@ workspaceReducer.with(bulkUpdateWorkspaceEntities, (state, { payload: [actions] 
 
     for (const action of actions) {
       const [wsId, changes] = action.payload;
+      if (state.pendingDeletions[wsId]) continue;
       const existing = getWorkspaceById(workspaces, wsId);
       if (!existing) continue;
 
@@ -445,16 +447,17 @@ workspaceReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) => {
 workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
     const existsInCollection = !!getWorkspaceById(state.workspaces, wsId);
     const hasPendingState =
-      state.pendingDeletions[wsId] ||
       state.pendingArchives[wsId] ||
       state.pendingCreations[wsId] ||
       state.recency.lastViewedAt[wsId] !== undefined ||
       state.activeWorkspaceId === wsId;
 
-    // No-op if workspace has no trace in state
+    // No-op if workspace has no trace in state. The pendingDeletions tombstone
+    // is deliberately NOT cleared here: a stale workspace.get/workspace.list
+    // response can land after this event, so only the saga grace timer (or an
+    // explicit undo, which never reaches commit) lifts the tombstone.
     if (!existsInCollection && !hasPendingState) return state;
 
-    const { [wsId]: _removedDeletion, ...nextPendingDeletions } = state.pendingDeletions;
     const { [wsId]: _removedArchive, ...nextPendingArchives } = state.pendingArchives;
     const { [wsId]: _removedCreation, ...nextPendingCreations } = state.pendingCreations;
     const { [wsId]: _removedRecency, ...nextLastViewedAt } = state.recency.lastViewedAt;
@@ -462,7 +465,6 @@ workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
       ...state,
       activeWorkspaceId: state.activeWorkspaceId === wsId ? null : state.activeWorkspaceId,
       workspaces: existsInCollection ? removeItem(state.workspaces, wsId as Workspace["id"]) : state.workspaces,
-      pendingDeletions: nextPendingDeletions,
       pendingArchives: nextPendingArchives,
       pendingCreations: nextPendingCreations,
       recency: {

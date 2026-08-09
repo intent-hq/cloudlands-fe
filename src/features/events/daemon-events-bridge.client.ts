@@ -169,6 +169,7 @@ import {
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
 import {
   bulkUpdateWorkspaceEntities,
+  clearWorkspacePendingDeletion,
   updateWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
@@ -2028,8 +2029,11 @@ function handleWorkspaceDeletedEvent(workspaceId: string): void {
  * `hydrateAgentsRequested` so the lifecycle-read-service refetches the
  * daemon's canonical agent list for the new workspace. A create for an ID
  * with no local state is a no-op here (mount-time hydration covers it).
+ * Either way, lift any deletion tombstone first: a recycled ID must not stay
+ * blocked from the store for the remainder of the post-delete grace window.
  */
 function handleWorkspaceCreatedEvent(workspaceId: string): void {
+  appStore.dispatch(clearWorkspacePendingDeletion(workspaceId));
   const state = appStore.state as {
     agentSessions?: { agentIdsByWorkspace: Record<string, string[]> };
     workspaceAgents?: { byWorkspaceId: Record<string, unknown> };
