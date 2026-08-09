@@ -19,9 +19,13 @@
 
   // Track direction for animation styling
   let direction: 'up' | 'down' | null = $state(null);
+  // Intentional initial capture; the $effect below tracks subsequent changes.
+  // svelte-ignore state_referenced_locally
   let previousValue = $state(value);
 
-  // Create tweened store for smooth interpolation
+  // Create tweened store for smooth interpolation. Initial value and duration
+  // are intentionally captured at init; the $effect drives later updates.
+  // svelte-ignore state_referenced_locally
   const displayValue = tweened(value, {
     duration,
     easing: cubicOut,

@@ -37,9 +37,13 @@
     status,
   }: Props = $props();
 
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   let hasError = $state(initialError ? true : false);
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   let errorMessage = $state(initialError?.message || '');
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   let errorDetails = $state<Error | null>(initialError || null);
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   let errorInfo = $state(initialError?.stack || '');
   let showDetails = $state(false);
   let copyFeedback = $state(false);

@@ -61,9 +61,13 @@
 
 
 
-  // Reactive state from Redux store
+  // Reactive state from Redux store. Selector readables must be created at
+  // component init; scriptId is stable for the lifetime of this viewer.
+  // svelte-ignore state_referenced_locally
   const script$ = selectScriptById(scriptId);
+  // svelte-ignore state_referenced_locally
   const runtime$ = selectScriptRuntime(scriptId);
+  // svelte-ignore state_referenced_locally
   const output$ = selectScriptOutput(scriptId);
   // Canonical code-font preference: used to construct the read-only xterm
   // and to update its font option later without disposing/replaying output.

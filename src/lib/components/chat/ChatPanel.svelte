@@ -334,7 +334,9 @@
   const isChiefWorkspace = $derived(workspace?.id === CHIEF_WORKSPACE_ID);
 
   // Writable store mirroring workspace.id so Redux selectors re-evaluate reactively
+  // svelte-ignore state_referenced_locally -- store is seeded with the current value; the effects below mirror prop changes.
   const workspaceIdStore = writable(workspace?.id ?? '');
+  // svelte-ignore state_referenced_locally -- store is seeded with the current value; the effects below mirror prop changes.
   const agentIdStore = writable(agentId ?? '');
   $effect(() => {
     workspaceIdStore.set(workspace?.id ?? '');
@@ -413,6 +415,7 @@
 
   // DEBUG: Unique instance ID to detect duplicate ChatPanel mounts
   const instanceId = Math.random().toString(36).substring(2, 8);
+  // svelte-ignore state_referenced_locally -- one-shot creation log; only the initial agentId is relevant.
   logger.debug('[ChatPanel] INSTANCE CREATED', { instanceId, agentId });
 
   let scrollContainer = $state<HTMLDivElement>();

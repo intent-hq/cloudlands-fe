@@ -545,7 +545,9 @@
 
   // Writable stores mirror prop values so the Redux selector re-evaluates
   // when workspace.id or noteId changes (same pattern as file-tree-view / AgentSubscriptions).
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const workspaceIdStore = writable(workspace?.id ?? '');
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const noteIdStore = writable(noteId ?? '');
   $effect(() => {
     workspaceIdStore.set(workspace?.id ?? '');

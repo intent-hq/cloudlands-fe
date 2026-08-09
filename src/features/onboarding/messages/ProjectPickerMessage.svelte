@@ -295,10 +295,12 @@
         activeTab = 'local';
       } else if (data.githubUrl) {
         githubUrl = data.githubUrl;
+        // svelte-ignore state_referenced_locally - intentional one-shot init-time read of the current default
         clonePath = data.clonePath || clonePath;
         activeTab = 'github';
       } else if (data.projectName) {
         projectName = data.projectName;
+        // svelte-ignore state_referenced_locally - intentional one-shot init-time read of the current default
         parentPath = data.parentPath || parentPath;
         activeTab = 'new';
       }

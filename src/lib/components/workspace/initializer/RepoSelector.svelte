@@ -177,7 +177,9 @@
   }
 
   // State
+  // svelte-ignore state_referenced_locally - intentional initial capture; prop only seeds the selection
   let selectedValue = $state(value);
+  // svelte-ignore state_referenced_locally - intentional initial capture; prop only seeds the input
   let inputValue = $state(value);
   let searchTerm = $state(''); // Separate search term that starts empty
   let inputElement: any;
@@ -191,6 +193,7 @@
   let isNewRepo = $state(false); // Track if this is a new repo creation
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let isValidPath = $state(false); // Track if the input is a valid path
+  // svelte-ignore state_referenced_locally - intentional initial capture; prop only seeds the tab
   let selectedRepoType = $state<'local' | 'github' | 'new'>(repoTypeForValue(value)); // Track the type/tab of the selected repo
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let validationMessage = $state(''); // Message to show when path is invalid

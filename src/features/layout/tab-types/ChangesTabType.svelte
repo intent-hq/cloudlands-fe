@@ -51,14 +51,18 @@
   let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
+  // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
 
   // Get commit data from tab
   const commitHash = $derived((tab.data?.commitHash as string) || '');
   const commitMessage = $derived((tab.data?.commitMessage as string) || '');
+  // svelte-ignore state_referenced_locally
   const ftCommits$ = selectFileTrackingCommits(workspaceId);
+  // svelte-ignore state_referenced_locally
   const ftOlderCommits$ = selectFileTrackingOlderCommits(workspaceId);
+  // svelte-ignore state_referenced_locally
   const ftLoading$ = selectFileTrackingLoading(workspaceId);
   const allCommits = $derived($ftCommits$ || []);
   const olderCommits = $derived($ftOlderCommits$ || []);
