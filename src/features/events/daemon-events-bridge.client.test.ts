@@ -7291,6 +7291,7 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
     }
 
     let resolveFirstFetch: ((value: unknown) => void) | undefined;
+    let resolveSecondFetch: ((value: unknown) => void) | undefined;
     let workspaceGetCalls = 0;
     backendRequestSpy.mockImplementation(async (method: string) => {
       if (method === 'agent.list') return { agents: [] };
@@ -7303,7 +7304,15 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
           resolveFirstFetch = resolve;
         });
       }
-      // Trailing fetch: freshest daemon state — all agents idle.
+      if (workspaceGetCalls === 2) {
+        // The trailing fetch also stays pending, so we can assert that
+        // events arriving during it keep coalescing (the in-flight marker
+        // must survive into the trailing fetch).
+        return new Promise((resolve) => {
+          resolveSecondFetch = resolve;
+        });
+      }
+      // Post-trailing follow-up: freshest daemon state — all agents idle.
       return workspaceResponse('idle', '2026-01-02T00:00:00.000Z');
     });
 
@@ -7323,13 +7332,27 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
     expect(workspaceGetCalls).toBe(1);
 
     // Settle the leading-edge fetch with a (now-stale) agent_running
-    // snapshot; the trailing fetch should fire immediately after and its
-    // fresher idle result must be what lands in the store.
+    // snapshot; the trailing fetch should fire immediately after.
     resolveFirstFetch?.(workspaceResponse('agent_running', '2026-01-01T00:00:01.000Z'));
 
     await new Promise((resolve) => setTimeout(resolve, 10));
-
     expect(workspaceGetCalls).toBe(2);
+
+    // Events arriving while the TRAILING fetch is in flight must also
+    // coalesce (into one more follow-up) instead of starting a parallel
+    // fetch — the in-flight marker survives into the trailing fetch.
+    handler(agentIdleNotification());
+    handler(agentIdleNotification());
+    expect(workspaceGetCalls).toBe(2);
+
+    resolveSecondFetch?.(workspaceResponse('agent_running', '2026-01-01T00:00:02.000Z'));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // One follow-up for the two triggers above; its fresher idle result is
+    // what lands in the store even though stale agent_running responses
+    // resolved before it.
+    expect(workspaceGetCalls).toBe(3);
     const ws = await readWorkspace();
     expect(ws.activity).toBe('idle');
   });
