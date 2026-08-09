@@ -57,10 +57,10 @@
   });
 </script>
 
-<div class="rounded-lg border border-border bg-muted overflow-hidden {className}">
+<div class="rounded-lg border border-border/40 overflow-hidden {className}">
   <button
     type="button"
-    class="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none cursor-pointer text-left text-muted-foreground text-xs transition-colors duration-150 hover:bg-muted"
+    class="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none cursor-pointer text-left text-muted-foreground text-xs transition-colors duration-150 hover:bg-muted/30"
     onclick={toggle}
     aria-expanded={isExpanded}
   >
@@ -71,7 +71,7 @@
     >
       <Fa icon={faBrain} class="w-3.5 h-3.5" />
     </div>
-    <span class="font-medium text-foreground shrink-0">
+    <span class="font-medium text-muted-foreground shrink-0">
       {isStreaming ? m.chat_thinkingBlock_thinking_label() : m.chat_thinkingBlock_reasoning_label()}
     </span>
     <div
@@ -90,7 +90,7 @@
 
   {#if isExpanded}
     <div
-      class="px-3 pb-3 text-xs leading-relaxed text-subtle [&_p]:my-2 [&_p:first-child]:mt-0"
+      class="px-3 pb-3 text-xs leading-relaxed text-subtle [&_.markdown-viewer]:text-xs! [&_.markdown-viewer]:text-subtle! [&_p]:my-2 [&_p:first-child]:mt-0"
       transition:safeSlide={{ duration: 200, easing: cubicOut }}
     >
       <MarkdownViewer {content} {isStreaming} />

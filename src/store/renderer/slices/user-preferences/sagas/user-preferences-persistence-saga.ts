@@ -16,6 +16,7 @@ import {
   selectLanguagePreference,
   selectNoteFontStyle,
   selectShowArchived,
+  selectShowReasoningBlocks,
   selectSpellcheckEnabled,
 } from '../user-preferences-selectors';
 import {
@@ -32,11 +33,13 @@ import {
   setLanguagePreference,
   setNoteFontStyle,
   setShowArchived,
+  setShowReasoningBlocks,
   setSpellcheckEnabled,
   setSystemFonts,
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleShowArchived,
+  toggleShowReasoningBlocks,
   toggleSpellcheck,
   type ActivityLogPresetPreference,
   type FontStyle,
@@ -46,6 +49,7 @@ const SPELLCHECK_STORAGE_KEY = 'note-spellcheck-settings';
 const SHOW_ARCHIVED_STORAGE_KEY = 'workspace-list:showArchived';
 const GROUP_BY_REPO_STORAGE_KEY = 'workspace-list:groupByRepo';
 const COMPLETED_PROVIDER_SETUP_STORAGE_KEY = 'workspace-list:completedProviderSetup';
+const SHOW_REASONING_BLOCKS_STORAGE_KEY = 'chat:showReasoningBlocks';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
@@ -106,6 +110,13 @@ export function* hydrateUserPreferencesWorker() {
     yield* put(setHasCompletedProviderSetup(providerSetup));
   }
 
+  const showReasoningBlocks = yield* getLocalStorageJSON<boolean>(
+    SHOW_REASONING_BLOCKS_STORAGE_KEY,
+  );
+  if (typeof showReasoningBlocks === 'boolean') {
+    yield* put(setShowReasoningBlocks(showReasoningBlocks));
+  }
+
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
   if (validFont(agentFont)) yield* put(setAgentFontStyle(agentFont.fontStyle));
 
@@ -154,6 +165,13 @@ export function* persistProviderSetupWorker() {
   yield* setLocalStorageJSON(
     COMPLETED_PROVIDER_SETUP_STORAGE_KEY,
     yield* selectHasCompletedProviderSetup.effect(),
+  );
+}
+
+export function* persistShowReasoningBlocksWorker() {
+  yield* setLocalStorageJSON(
+    SHOW_REASONING_BLOCKS_STORAGE_KEY,
+    yield* selectShowReasoningBlocks.effect(),
   );
 }
 
@@ -206,6 +224,10 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setHasCompletedProviderSetup, toggleHasCompletedProviderSetup],
     persistProviderSetupWorker,
+  );
+  yield* takeEvery(
+    [setShowReasoningBlocks, toggleShowReasoningBlocks],
+    persistShowReasoningBlocksWorker,
   );
   yield* takeEvery([setAgentFontStyle, cycleFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);

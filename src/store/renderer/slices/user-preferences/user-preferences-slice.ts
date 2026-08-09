@@ -40,6 +40,8 @@ export type UserPreferencesState = {
   showArchived: boolean;
   groupByRepo: boolean;
   hasCompletedProviderSetup: boolean;
+  /** Whether reasoning (thinking) dropdowns are shown in chat transcripts. */
+  showReasoningBlocks: boolean;
   agentFontStyle: AgentFontStyle;
   noteFontStyle: NoteFontStyle;
   codeFontFamily: string;
@@ -84,6 +86,7 @@ export const initialState: UserPreferencesState = {
   showArchived: false,
   groupByRepo: true,
   hasCompletedProviderSetup: false,
+  showReasoningBlocks: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
   activityLogPresets: [],
@@ -207,12 +210,24 @@ export const setHasCompletedProviderSetup = hasCompletedProviderSetupPreference.
 
 export const toggleHasCompletedProviderSetup = hasCompletedProviderSetupPreference.toggleAction;
 
+const showReasoningBlocksPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: "userPreferences",
+  field: "showReasoningBlocks",
+  setActionName: "setShowReasoningBlocks",
+  toggleActionName: "toggleShowReasoningBlocks",
+});
+
+export const setShowReasoningBlocks = showReasoningBlocksPreference.setAction;
+
+export const toggleShowReasoningBlocks = showReasoningBlocksPreference.toggleAction;
+
 export const userPreferencesReducer = createReducer<UserPreferencesState>(initialState);
 betaUpdatesPreference.register(userPreferencesReducer);
 spellcheckPreference.register(userPreferencesReducer);
 showArchivedPreference.register(userPreferencesReducer);
 groupByRepoPreference.register(userPreferencesReducer);
 hasCompletedProviderSetupPreference.register(userPreferencesReducer);
+showReasoningBlocksPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(loadBetaUpdatesSettings, (state, { payload: [enabled] }) => ({
     ...state,
     betaUpdatesEnabled: enabled,
