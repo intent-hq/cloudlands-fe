@@ -66,6 +66,7 @@
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
+  import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectAllTabs as selectPanelLayoutAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -1802,6 +1803,12 @@
         workspaceId: workspace.id,
       });
 
+      // Reconcile the queued-messages mirror from the daemon — a missed
+      // `agent:queue:updated` (e.g. while this panel was unmounted or during a
+      // reconnect gap) would otherwise leave stale drained rows rendered
+      // forever (monorepo#1749).
+      void hydrateAgentQueue(agentId);
+
       // Reconstruct onboarding context entirely from workspace + agent session.
       // No external storage needed — all essential data lives on the workspace object.
       const repoName =
@@ -1922,6 +1929,10 @@
         },
       }),
     );
+
+    // Reconcile the queued-messages mirror alongside the transcript re-init
+    // (monorepo#1749).
+    void hydrateAgentQueue(agentId);
 
     // The saga is fire-and-forget from the component's perspective.
     // End rebind tracking immediately — the saga handles its own cancellation.

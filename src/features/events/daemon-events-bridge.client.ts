@@ -209,6 +209,7 @@ import {
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
+import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
 import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { WorkspaceEvent } from '$features/events/types';
 import { createLogger } from '$lib/utils/client-logger';
@@ -2932,6 +2933,10 @@ export async function refreshDaemonEventsAfterReconnect(): Promise<void> {
       state.workspaceAgents?.byWorkspaceId[activeWorkspaceId]?.activeAgentId ?? null;
     if (activeAgentId) {
       void loadChatTranscript(activeAgentId);
+      // Queue rows drained while the connection was down never re-emit
+      // `agent:queue:updated`; reconcile the mirror from `agent.getQueue`
+      // (monorepo#1749).
+      void hydrateAgentQueue(activeAgentId);
     }
   }
 }
