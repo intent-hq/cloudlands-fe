@@ -10,22 +10,41 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const { mockGetBranches, mockGithubBranches } = vi.hoisted(() => ({
-  mockGetBranches: vi.fn(),
-  mockGithubBranches: vi.fn(),
-}));
+const { mockGetBranches, mockGithubBranches, mockGithubBranchesCached, debugFlags, savedBranchByRepo } =
+  vi.hoisted(() => ({
+    mockGetBranches: vi.fn(),
+    mockGithubBranches: vi.fn(),
+    mockGithubBranchesCached: vi.fn(),
+    // Mutable knobs for the module-level mocks below. Tests arm form
+    // persistence + a saved branch; both are reset in beforeEach.
+    debugFlags: {} as Record<string, boolean>,
+    savedBranchByRepo: {} as Record<string, string>,
+  }));
 
 vi.mock('$lib/client', () => ({
   appClient: {
     git: { getBranches: mockGetBranches, branchStatus: vi.fn(async () => null) },
-    integrations: { githubBranches: mockGithubBranches },
+    integrations: {
+      githubBranches: mockGithubBranches,
+      githubBranchesCached: mockGithubBranchesCached,
+    },
   },
 }));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: {} });
+  return createAppStoreMockModule({
+    state: {},
+    // Mirror the real reducer: persisting a branch updates the saved map
+    // (this is exactly the clobbering the reconciliation fix guards against).
+    dispatch: (action: { type?: string; payload?: [string, string] }) => {
+      if (action?.type === 'workspaceInitializer/setBranchForRepo' && action.payload) {
+        const [repoPath, branch] = action.payload;
+        savedBranchByRepo[repoPath] = branch;
+      }
+    },
+  });
 });
 
 vi.mock(
@@ -34,7 +53,9 @@ vi.mock(
     const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
     const store = createAppStoreMock({ state: {} });
     return {
-      selectWorkspaceInitializerBranchByRepo: store.createSelector(() => ({})),
+      // Return the shared mutable map so dispatched saves are visible to the
+      // component's `$branchByRepo$` reads without a store re-emit.
+      selectWorkspaceInitializerBranchByRepo: store.createSelector(() => savedBranchByRepo),
     };
   },
 );
@@ -54,8 +75,11 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slic
   }),
 }));
 
-// Disable debug toggles (branch caching, form persistence, simulated delays).
-vi.mock('$lib/config/debug', () => ({ debugConfig: { get: () => false } }));
+// Debug toggles (branch caching, form persistence, simulated delays) default
+// off; tests opt in via `debugFlags`.
+vi.mock('$lib/config/debug', () => ({
+  debugConfig: { get: (key: string) => debugFlags[key] ?? false },
+}));
 vi.mock('$lib/utils/performance', () => ({
   performanceMonitor: { start: vi.fn(), end: vi.fn() },
 }));
@@ -69,10 +93,24 @@ async function openDropdown(container: HTMLElement) {
   await fireEvent.click(trigger!);
 }
 
+/** A promise the test resolves manually (to hold the fresh GitHub API list open). */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)', () => {
   beforeEach(() => {
     mockGetBranches.mockReset();
     mockGithubBranches.mockReset();
+    mockGithubBranchesCached.mockReset();
+    for (const key of Object.keys(debugFlags)) delete debugFlags[key];
+    for (const key of Object.keys(savedBranchByRepo)) delete savedBranchByRepo[key];
+    // Default: cold cache — the cached-first path is a no-op unless a test arms it.
+    mockGithubBranchesCached.mockResolvedValue({ cached: false, branches: [] });
   });
 
   it('local repo: renders an error state and no fake branches when git.getBranches fails', async () => {
@@ -181,5 +219,157 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     await waitFor(() => expect(mockGithubBranches).toHaveBeenCalled());
     // The trigger itself surfaces the auth hint (no dropdown needed).
     await waitFor(() => expect(screen.getByText('Connect GitHub')).toBeTruthy());
+  });
+});
+
+describe('BranchSelector (cached-first GitHub load, github.branches.listCached §5.27)', () => {
+  beforeEach(() => {
+    mockGetBranches.mockReset();
+    mockGithubBranches.mockReset();
+    mockGithubBranchesCached.mockReset();
+    for (const key of Object.keys(debugFlags)) delete debugFlags[key];
+    for (const key of Object.keys(savedBranchByRepo)) delete savedBranchByRepo[key];
+  });
+
+  const githubProps = {
+    repoPath: 'octo/intent',
+    repoType: 'github' as const,
+    githubUrl: 'https://github.com/octo/intent',
+  };
+
+  it('warm cache: renders cached branches and selects the default before the fresh list arrives', async () => {
+    mockGithubBranchesCached.mockResolvedValue({
+      cached: true,
+      branches: ['dev', 'feat/x'],
+      defaultBranch: 'dev',
+    });
+    const fresh = deferred<{ branches: string[]; defaultBranch?: string }>();
+    mockGithubBranches.mockReturnValue(fresh.promise);
+    const onchange = vi.fn();
+    const { container } = render(BranchSelector, { props: { ...githubProps, onchange } });
+
+    await waitFor(() =>
+      expect(mockGithubBranchesCached).toHaveBeenCalledWith('octo', 'intent'),
+    );
+    // Cached hit paints instantly: default branch selected, trigger spinner gone —
+    // all while the authoritative GitHub API request is still in flight.
+    await waitFor(() => expect(onchange).toHaveBeenCalled());
+    expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'dev' });
+    expect(container.querySelector('.animate-spin')).toBeNull();
+
+    // Fresh list arrives with an extra branch: the list reconciles and the
+    // still-existing selection is kept (no second onchange).
+    fresh.resolve({ branches: ['dev', 'feat/x', 'extra'], defaultBranch: 'dev' });
+    await openDropdown(container);
+    await waitFor(() => expect(screen.getByText('extra')).toBeTruthy());
+    expect(onchange).toHaveBeenCalledTimes(1);
+  });
+
+  it('cold cache: keeps the loading skeleton until the GitHub API responds (behavior unchanged)', async () => {
+    mockGithubBranchesCached.mockResolvedValue({ cached: false, branches: [] });
+    const fresh = deferred<{ branches: string[]; defaultBranch?: string }>();
+    mockGithubBranches.mockReturnValue(fresh.promise);
+    const onchange = vi.fn();
+    const { container } = render(BranchSelector, { props: { ...githubProps, onchange } });
+
+    await waitFor(() =>
+      expect(mockGithubBranchesCached).toHaveBeenCalledWith('octo', 'intent'),
+    );
+    // Cold cache: still loading (inline trigger spinner), nothing selected.
+    await waitFor(() => expect(container.querySelector('.animate-spin')).toBeTruthy());
+    expect(onchange).not.toHaveBeenCalled();
+
+    fresh.resolve({ branches: ['dev', 'feat/x'], defaultBranch: 'dev' });
+    await waitFor(() => expect(onchange).toHaveBeenCalled());
+    expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'dev' });
+    await waitFor(() => expect(container.querySelector('.animate-spin')).toBeNull());
+  });
+
+  it('vanished branch: a cached selection missing from the fresh list switches to the default branch', async () => {
+    // Cached default 'old' gets selected first; the fresh list no longer has it.
+    mockGithubBranchesCached.mockResolvedValue({
+      cached: true,
+      branches: ['old', 'dev'],
+      defaultBranch: 'old',
+    });
+    const fresh = deferred<{ branches: string[]; defaultBranch?: string }>();
+    mockGithubBranches.mockReturnValue(fresh.promise);
+    const onchange = vi.fn();
+    render(BranchSelector, { props: { ...githubProps, onchange } });
+
+    await waitFor(() => expect(onchange).toHaveBeenCalled());
+    expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'old' });
+
+    fresh.resolve({ branches: ['dev', 'feat/x'], defaultBranch: 'dev' });
+    // Never leave a vanished branch selected: selection flips to the fresh
+    // default branch and the parent is notified.
+    await waitFor(() => expect(onchange).toHaveBeenCalledTimes(2));
+    expect(onchange.mock.calls[1][0].detail).toEqual({ branch: 'dev' });
+  });
+
+  it('refresh during in-flight fetch: the superseded fetch cannot surface its error or clobber the refresh results', async () => {
+    mockGithubBranchesCached.mockResolvedValue({
+      cached: true,
+      branches: ['dev', 'feat/x'],
+      defaultBranch: 'dev',
+    });
+    const fresh1 = deferred<{ branches: string[]; defaultBranch?: string }>();
+    const fresh2 = deferred<{ branches: string[]; defaultBranch?: string }>();
+    const rejectable = fresh1.promise.then((v) => {
+      if (v === null) throw new Error('rate limit exceeded');
+      return v;
+    });
+    mockGithubBranches.mockReturnValueOnce(rejectable).mockReturnValueOnce(fresh2.promise);
+    const onchange = vi.fn();
+    const { container } = render(BranchSelector, { props: { ...githubProps, onchange } });
+
+    // Warm cache paints instantly, re-enabling the refresh button while the
+    // authoritative request is still in flight.
+    await waitFor(() => expect(onchange).toHaveBeenCalled());
+    await openDropdown(container);
+    // The dropdown content is portaled to document.body; the refresh button
+    // sits next to the search input in the dropdown header.
+    const searchInput = await screen.findByPlaceholderText('Search or enter branch name...');
+    const refreshButton = searchInput.closest('.flex.gap-2')?.querySelector('button');
+    expect(refreshButton).toBeTruthy();
+    await fireEvent.click(refreshButton!);
+    await waitFor(() => expect(mockGithubBranches).toHaveBeenCalledTimes(2));
+
+    // The superseded first fetch fails — its error must never render because
+    // the refresh's fetch owns the state now.
+    fresh1.resolve(null as never);
+    fresh2.resolve({ branches: ['dev', 'feat/x', 'extra'], defaultBranch: 'dev' });
+    await waitFor(() => expect(screen.getByText('extra')).toBeTruthy());
+    expect(
+      screen.queryByText('GitHub API rate limit exceeded. Please wait or enter branch manually.'),
+    ).toBeNull();
+  });
+
+  it('stale cache: the saved branch missing from the cache is re-selected once the fresh list has it', async () => {
+    // The user's saved branch exists on GitHub but is absent from the stale
+    // local cache. The cached paint auto-selects the default (persisting it,
+    // which clobbers the live saved value) — reconciliation must still find
+    // the pre-paint saved branch and switch back to it.
+    debugFlags.enableFormPersistence = true;
+    savedBranchByRepo['octo/intent'] = 'feat/saved';
+    mockGithubBranchesCached.mockResolvedValue({
+      cached: true,
+      branches: ['dev', 'feat/x'],
+      defaultBranch: 'dev',
+    });
+    const fresh = deferred<{ branches: string[]; defaultBranch?: string }>();
+    mockGithubBranches.mockReturnValue(fresh.promise);
+    const onchange = vi.fn();
+    render(BranchSelector, { props: { ...githubProps, onchange } });
+
+    // Cached paint: saved branch not in the cached list → default selected
+    // (and persisted, overwriting the saved map entry).
+    await waitFor(() => expect(onchange).toHaveBeenCalled());
+    expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'dev' });
+    expect(savedBranchByRepo['octo/intent']).toBe('dev');
+
+    fresh.resolve({ branches: ['dev', 'feat/x', 'feat/saved'], defaultBranch: 'dev' });
+    await waitFor(() => expect(onchange).toHaveBeenCalledTimes(2));
+    expect(onchange.mock.calls[1][0].detail).toEqual({ branch: 'feat/saved' });
   });
 });

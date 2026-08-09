@@ -190,6 +190,50 @@ describe('LiveIntegrationsClient.githubBranches (github.branches.list + github.r
   });
 });
 
+describe('LiveIntegrationsClient.githubBranchesCached (github.branches.listCached, §5.27)', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it('sends owner/repo and surfaces a warm-cache listing', async () => {
+    // PROTOCOL §5.27: { cached: boolean, branches: string[], defaultBranch? }.
+    mockedRequest.mockResolvedValueOnce({
+      cached: true,
+      branches: ['main', 'feat/x'],
+      defaultBranch: 'main',
+    });
+    const client = new LiveIntegrationsClient();
+
+    const listing = await client.githubBranchesCached('octo', 'intent');
+
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    expect(mockedRequest).toHaveBeenCalledWith('github.branches.listCached', {
+      owner: 'octo',
+      repo: 'intent',
+    });
+    expect(listing).toEqual({ cached: true, branches: ['main', 'feat/x'], defaultBranch: 'main' });
+  });
+
+  it('surfaces a cold-cache miss ({ cached: false, branches: [] }) unchanged', async () => {
+    mockedRequest.mockResolvedValueOnce({ cached: false, branches: [] });
+    const client = new LiveIntegrationsClient();
+
+    expect(await client.githubBranchesCached('octo', 'intent')).toEqual({
+      cached: false,
+      branches: [],
+      defaultBranch: undefined,
+    });
+  });
+
+  it('folds a transport/daemon failure to a cold-cache miss (never throws)', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('GitHub is not configured.'));
+    const client = new LiveIntegrationsClient();
+
+    expect(await client.githubBranchesCached('octo', 'intent')).toEqual({
+      cached: false,
+      branches: [],
+    });
+  });
+});
+
 describe('LiveIntegrationsClient.githubRepoConfig (github.repoConfig.get, §5.27 v2.4)', () => {
   afterEach(() => vi.clearAllMocks());
 
