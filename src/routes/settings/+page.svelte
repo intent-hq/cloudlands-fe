@@ -369,10 +369,9 @@
   }
 </script>
 
-<div class="h-full grid grid-rows-[min-content_1fr_min-content]">
-  <!-- Sticky header with back button -->
-  <div class="bg-sidebar px-6 pt-8 pb-6">
-    <div class="max-w-6xl mx-auto px-6">
+<div class="flex h-full min-w-0">
+  <aside class="flex h-full w-60 shrink-0 flex-col border-r border-border bg-sidebar">
+    <div class="px-5 pt-8 pb-3">
       <!-- Back button with keyboard shortcut -->
       <button
         onclick={navigateBackFromSettings}
@@ -386,19 +385,22 @@
           {isMac ? '⌘' : 'Ctrl'},
         </kbd>
       </button>
-
-      <h1 class="mt-3 text-3xl font-semibold tracking-[-0.02em] text-foreground">
-        {m.settings_page_title()}
-      </h1>
     </div>
-  </div>
 
-  <div class="overflow-auto h-full">
-    <div
-      class="min-h-[calc(100%-2rem)] grid grid-cols-[9rem_minmax(0,1fr)] gap-6 lg:grid-cols-[11rem_minmax(0,1fr)] lg:gap-8 max-w-6xl mx-auto mt-6 px-6 pb-8"
-    >
-      <SettingsSidebarNav {activeTab} onSelect={setActiveTab} />
-      <main class="min-w-0 flex flex-col">
+    <SettingsSidebarNav {activeTab} onSelect={setActiveTab} />
+  </aside>
+
+  <div class="flex min-w-0 flex-1 flex-col">
+    <header class="shrink-0 bg-sidebar px-8 pt-8 pb-6">
+      <div class="mx-auto max-w-4xl">
+        <h1 class="text-3xl font-semibold tracking-[-0.02em] text-foreground">
+          {m.settings_page_title()}
+        </h1>
+      </div>
+    </header>
+
+    <div class="min-h-0 flex-1 overflow-auto">
+      <main class="mx-auto flex min-h-full max-w-4xl flex-col px-8 pt-6 pb-8">
         <!-- Providers -->
         {#if activeTab === 'providers'}
           <div id="providers" class="mb-12 scroll-mt-20">
@@ -867,38 +869,38 @@
         {/if}
       </main>
     </div>
-  </div>
 
-  <!-- Global Footer -->
-  <div class="px-6 py-4 border-t border-border bg-sidebar">
-    <div class="max-w-6xl mx-auto px-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-      <div class="text-sm text-subtle">
-        <!-- i18n-ignore (brand name) -->
-        <strong class="text-foreground">Intent</strong>
-        <span class="ml-2">
-          v{appVersion || '...'}
-          {#if $isReadyToInstall$}
-            <span class="mx-2">·</span>
-            <button
-              class="font-medium underline text-primary hover:text-primary/80 cursor-pointer bg-transparent border-none p-0"
-              onclick={() => appStore.dispatch(installUpdate())}
-            >
-              {m.settings_footer_updateAvailable()}
-            </button>
-          {:else if $autoUpdateStatus$ === 'not-available' || $autoUpdateStatus$ === 'idle'}
-            <span class="mx-2">·</span>
-            <span class="text-subtle">{m.settings_footer_upToDate()}</span>
-          {/if}
-        </span>
-      </div>
-      <div class="flex flex-wrap items-center gap-x-1 gap-y-2">
-        <a
-          href="https://www.intentapp.dev/docs"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          >{m.settings_footer_support()}</a
-        >
+    <!-- Global Footer -->
+    <div class="shrink-0 border-t border-border bg-sidebar px-8 py-4">
+      <div class="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div class="text-sm text-subtle">
+          <!-- i18n-ignore (brand name) -->
+          <strong class="text-foreground">Intent</strong>
+          <span class="ml-2">
+            v{appVersion || '...'}
+            {#if $isReadyToInstall$}
+              <span class="mx-2">·</span>
+              <button
+                class="font-medium underline text-primary hover:text-primary/80 cursor-pointer bg-transparent border-none p-0"
+                onclick={() => appStore.dispatch(installUpdate())}
+              >
+                {m.settings_footer_updateAvailable()}
+              </button>
+            {:else if $autoUpdateStatus$ === 'not-available' || $autoUpdateStatus$ === 'idle'}
+              <span class="mx-2">·</span>
+              <span class="text-subtle">{m.settings_footer_upToDate()}</span>
+            {/if}
+          </span>
+        </div>
+        <div class="flex flex-wrap items-center gap-x-1 gap-y-2">
+          <a
+            href="https://www.intentapp.dev/docs"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            >{m.settings_footer_support()}</a
+          >
+        </div>
       </div>
     </div>
   </div>

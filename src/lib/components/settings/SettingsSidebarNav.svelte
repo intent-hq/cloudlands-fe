@@ -118,7 +118,7 @@
 </script>
 
 <nav
-  class="sticky top-6 flex w-full shrink-0 flex-col gap-5 self-start"
+  class="flex min-h-0 w-full flex-1 flex-col gap-5 overflow-y-auto px-3 py-4"
   aria-label={m.settings_page_title()}
 >
   {#each groups as group (group.label)}
