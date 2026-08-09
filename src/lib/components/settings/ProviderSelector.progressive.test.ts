@@ -37,10 +37,6 @@ vi.mock('svelte-sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-vi.mock('./ProviderPathConfig.svelte', async () => ({
-  default: (await import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
-}));
-
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
@@ -126,6 +122,17 @@ describe('ProviderSelector progressive rendering', () => {
     }
     expect(result.queryByText('Mock (E2E)')).toBeNull();
     expect(result.queryByText('Snowflake Cortex')).toBeNull();
+
+    expect(result.queryByTitle('Configure Anthropic Claude Code path')).toBeNull();
+    await fireEvent.click(
+      result.getByRole('button', { name: 'Provider actions for Anthropic Claude Code' }),
+    );
+    await fireEvent.click(
+      result.getByRole('menuitem', { name: 'Configure Anthropic Claude Code path' }),
+    );
+    await waitFor(() => {
+      expect(result.getByText('Anthropic Claude Code CLI Path')).toBeTruthy();
+    });
   });
 
   it('shows a settled row while a slower row is still pending', async () => {
@@ -136,10 +143,26 @@ describe('ProviderSelector progressive rendering', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
 
-    // Codex settled → terminal status; OpenCode settled → its login action.
+    // Codex settled → inline enable action; login status/actions stay in menus.
     await waitFor(() => {
-      expect(result.getByText('Logged in')).toBeTruthy();
+      expect(result.getByRole('button', { name: 'Enable' })).toBeTruthy();
     });
+    expect(result.queryByText('Logged in')).toBeNull();
+
+    await fireEvent.click(result.getByRole('button', { name: 'Enable' }));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'providerSettings/setProviderEnabled',
+        payload: [{ providerId: 'codex', enabled: true }],
+      }),
+    );
+
+    await fireEvent.click(
+      result.getByRole('button', { name: 'Provider actions for OpenAI Codex' }),
+    );
+    expect(result.getByRole('menuitem', { name: 'Logged in' })).toBeTruthy();
+    expect(result.queryByRole('menuitem', { name: 'Enable' })).toBeNull();
+
     await fireEvent.click(result.getByRole('button', { name: 'Provider actions for OpenCode' }));
     expect(result.getByRole('menuitem', { name: 'Log in' })).toBeTruthy();
     // Providers whose probe has not landed keep a per-row pending indicator.

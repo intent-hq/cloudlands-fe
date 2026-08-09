@@ -94,6 +94,8 @@
   let resolvedPaths = $state<Record<string, string>>({});
   // Secondary-binary resolved paths for dual-binary providers (unsloth CLI)
   let secondaryResolvedPaths = $state<Record<string, string>>({});
+  // Path dropdowns are controlled from each provider's overflow menu.
+  let pathConfigOpen = $state<Record<string, boolean>>({});
 
   // Provider metadata for docs URLs and auth requirements
   const PROVIDER_METADATA: Record<string, { docsUrl: string; requiresAuth: boolean }> = {
@@ -442,38 +444,12 @@
       provider.available && provider.authenticated === false && provider.loginDocsUrl}
     {@const canSetDefault = provider.available && !isActive && isReady}
     {@const canInstall = !provider.available}
-    {@const hasActions = canDisable || canEnable || canLogIn || canSetDefault || canInstall}
     <div class="px-6 py-4">
       <div class="flex items-start justify-between gap-4">
         <div class="space-y-1">
           <div class="flex items-center gap-2 h-7">
             {@render providerIcon(provider.id)}
             <span class="text-sm text-foreground">{provider.name}</span>
-            <!-- Path configuration. Unsloth is dual-binary: the daemon
-                   applies the providers.paths.unsloth override to the
-                   `unsloth` CLI, while the `opencode` ACP runtime it spawns
-                   follows the opencode provider's own configuration
-                   (providers.paths.opencode). The overridable primary
-                   cliCommand/resolvedPath pair therefore carries the
-                   `unsloth` CLI (discovery's secondary path) and opencode is
-                   shown as the read-only labeled runtime row. -->
-            <div class="-my-1">
-              <ProviderPathConfig
-                providerId={provider.id}
-                providerName={provider.name}
-                cliCommand={provider.id === 'unsloth' ? 'unsloth' : provider.command}
-                configuredPath={providerPaths[provider.id]}
-                resolvedPath={provider.id === 'unsloth'
-                  ? secondaryResolvedPaths[provider.id]
-                  : resolvedPaths[provider.id]}
-                runtimeCliCommand={provider.id === 'unsloth' ? provider.command : undefined}
-                runtimeResolvedPath={provider.id === 'unsloth'
-                  ? resolvedPaths[provider.id]
-                  : undefined}
-                isInstalled={provider.available}
-                onPathChange={(path) => handlePathChange(provider.id, path)}
-              />
-            </div>
           </div>
           {#if provider.id === 'pi' && provider.available && piMcpAdapterInstalled === false}
             <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
@@ -541,13 +517,6 @@
               aria-label={m.settings_providers_loading()}
             ></div>
           {:else}
-            {#if provider.available && provider.authenticated === true}
-              <span class="text-xs text-subtle flex items-center gap-1">
-                <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
-                {m.settings_providers_loggedInStatus()}
-              </span>
-            {/if}
-
             {#if isActive}
               {#if provider.available}
                 <span class="rounded-full bg-muted px-2 py-0.5 text-xs text-subtle">
@@ -562,7 +531,39 @@
             {/if}
           {/if}
 
-          {#if hasActions && !provider.statusPending}
+          {#if canEnable && !provider.statusPending}
+            <Button size="xs" onclick={() => handleToggleProvider(provider.id, true)}>
+              {m.settings_providers_enable()}
+            </Button>
+          {/if}
+
+          <div class="relative">
+            <!-- The path panel is anchored beside the overflow trigger and
+                 opened by its menu item. Unsloth remains dual-binary: its
+                 overridable CLI uses the secondary discovery path while the
+                 opencode runtime is shown as a read-only row. -->
+            {#if pathConfigOpen[provider.id]}
+              <div class="absolute right-0 top-0">
+                <ProviderPathConfig
+                  providerId={provider.id}
+                  providerName={provider.name}
+                  cliCommand={provider.id === 'unsloth' ? 'unsloth' : provider.command}
+                  configuredPath={providerPaths[provider.id]}
+                  resolvedPath={provider.id === 'unsloth'
+                    ? secondaryResolvedPaths[provider.id]
+                    : resolvedPaths[provider.id]}
+                  runtimeCliCommand={provider.id === 'unsloth' ? provider.command : undefined}
+                  runtimeResolvedPath={provider.id === 'unsloth'
+                    ? resolvedPaths[provider.id]
+                    : undefined}
+                  isInstalled={provider.available}
+                  onPathChange={(path) => handlePathChange(provider.id, path)}
+                  bind:open={pathConfigOpen[provider.id]}
+                  showTrigger={false}
+                />
+              </div>
+            {/if}
+
             <DropdownMenu align="end" contentClass="p-0!">
               {#snippet trigger({ toggle }: { toggle: () => void })}
                 <Button
@@ -577,6 +578,29 @@
 
               {#snippet content({ close }: { close: () => void })}
                 <div class="w-44 py-1">
+                  {#if provider.available && provider.authenticated === true}
+                    <div
+                      role="menuitem"
+                      aria-disabled="true"
+                      class="flex items-center gap-1.5 px-3 py-1.5 text-sm text-subtle"
+                    >
+                      <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
+                      {m.settings_providers_loggedInStatus()}
+                    </div>
+                  {/if}
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
+                    onclick={() => {
+                      close();
+                      pathConfigOpen = { [provider.id]: true };
+                    }}
+                  >
+                    {m.settings_providerPath_configureTitle({ name: provider.name })}
+                  </button>
+
                   {#if canSetDefault}
                     <button
                       type="button"
@@ -607,18 +631,6 @@
                       }}
                     >
                       {m.settings_providers_disable()}
-                    </button>
-                  {:else if canEnable}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                      onclick={() => {
-                        handleToggleProvider(provider.id, true);
-                        close();
-                      }}
-                    >
-                      {m.settings_providers_enable()}
                     </button>
                   {/if}
 
@@ -652,7 +664,7 @@
                 </div>
               {/snippet}
             </DropdownMenu>
-          {/if}
+          </div>
         </div>
       </div>
     </div>

@@ -2,8 +2,8 @@
   /**
    * ProviderPathConfig
    *
-   * A compact folder icon button that opens a dropdown portal for configuring
-   * a provider's CLI executable path. Designed for the Integrations > Providers section.
+   * A dropdown panel for configuring a provider's CLI executable path. It can
+   * render its default folder trigger or be controlled by a parent menu.
    */
   import { appClient } from '$lib/client';
   import { faFolder, faCheck } from '@fortawesome/free-solid-svg-icons';
@@ -55,6 +55,10 @@
     isInstalled?: boolean;
     /** Callback when path changes */
     onPathChange?: (path: string) => void;
+    /** Whether the path dropdown is open */
+    open?: boolean;
+    /** Whether to render the default folder trigger */
+    showTrigger?: boolean;
   }
 
   let {
@@ -67,9 +71,9 @@
     runtimeResolvedPath,
     isInstalled = false,
     onPathChange,
+    open = $bindable(false),
+    showTrigger = true,
   }: Props = $props();
-
-  let dropdownOpen = $state(false);
 
   async function savePath(path: string) {
     try {
@@ -101,16 +105,18 @@
   );
 </script>
 
-<DropdownMenu bind:open={dropdownOpen} align="end" side="bottom" portal={true}>
+<DropdownMenu bind:open align="end" side="bottom" portal={true}>
   {#snippet trigger({ toggle }: { toggle: () => void })}
-    <button
-      type="button"
-      onclick={toggle}
-      class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors cursor-pointer"
-      title={m.settings_providerPath_configureTitle({ name: providerName })}
-    >
-      <Fa icon={faFolder} size={11} />
-    </button>
+    {#if showTrigger}
+      <button
+        type="button"
+        onclick={toggle}
+        class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors cursor-pointer"
+        title={m.settings_providerPath_configureTitle({ name: providerName })}
+      >
+        <Fa icon={faFolder} size={11} />
+      </button>
+    {/if}
   {/snippet}
 
   {#snippet content()}
