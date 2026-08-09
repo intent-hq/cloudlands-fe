@@ -20,6 +20,45 @@ describe('app UI targets registry', () => {
     }
   });
 
+  it('uses the canonical grouped settings tabs', () => {
+    const expectedTabs = {
+      providers: 'providers',
+      integrations: 'connections',
+      'mcp-servers': 'tools',
+      'git-workspace': 'git-workspace',
+      'cli-optimization': 'tools',
+      'utility-default-model': 'tools',
+      notifications: 'general',
+      'open-in': 'general',
+      appearance: 'appearance',
+      'color-theme': 'appearance',
+      'note-font': 'appearance',
+      'agent-chat-font': 'appearance',
+      'code-font': 'appearance',
+      general: 'advanced',
+    } as const;
+
+    const targets = getAppUiTargets();
+    for (const [id, tab] of Object.entries(expectedTabs)) {
+      expect(
+        targets.find((target) => target.id === id),
+        id,
+      ).toMatchObject({ tab });
+    }
+  });
+
+  it.each([
+    '/settings?tab=accounts#providers',
+    '/settings?tab=accounts#integrations',
+    '/settings?tab=setup#mcp-servers',
+    '/settings?tab=setup#git-workspace',
+    '/settings?tab=setup#notifications',
+    '/settings?tab=fonts-colors#theme',
+    '/settings?tab=interface-system#color-theme',
+  ])('keeps legacy settings URLs resolvable: %s', (route) => {
+    expect(isResolvableNavTarget(route)).toBe(true);
+  });
+
   it('preserves agents sub-view query parameters', () => {
     const targets = getAppUiTargets();
 

@@ -49,13 +49,13 @@ function getToast() {
  *  here (even dynamically). */
 const SETTINGS_PREV_PATH_KEY = 'settings-previous-path';
 
-/** Open Settings → General scrolled to the Hardware section via the
+/** Open Settings → Advanced scrolled to the Hardware section via the
  *  main-safe navigation seam (same pattern as menu-ipc-service). */
 function openHardwareSettings(): void {
   if (typeof sessionStorage !== 'undefined' && typeof window !== 'undefined') {
     sessionStorage.setItem(SETTINGS_PREV_PATH_KEY, window.location.pathname);
   }
-  navigateToRoute('/settings?tab=general#hardware').catch((error: unknown) => {
+  navigateToRoute('/settings?tab=advanced#hardware').catch((error: unknown) => {
     logger.error('Failed to open hardware settings from connect toast', error);
   });
 }

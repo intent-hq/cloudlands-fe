@@ -85,51 +85,51 @@ export const APP_UI_TARGETS: AppUiTarget[] = [
   }),
   settingsTarget({
     id: 'providers',
-    tab: 'accounts',
+    tab: 'providers',
     hashAliases: ['providers'],
     scrollSelector: '#providers',
     highlightSelector: '[data-highlight-id="providers"]',
     label: 'Settings: AI coding CLIs',
-    route: '/settings?tab=accounts#providers',
+    route: '/settings?tab=providers#providers',
     description: 'Provider/account selector settings.',
   }),
   settingsTarget({
     id: 'integrations',
-    tab: 'accounts',
+    tab: 'connections',
     hashAliases: ['integrations'],
     scrollSelector: '#integrations',
     highlightSelector: '[data-highlight-id="integrations"]',
     label: 'Settings: Connections',
-    route: '/settings?tab=accounts#integrations',
+    route: '/settings?tab=connections#integrations',
     description: 'Connected integrations settings.',
   }),
   ...[
-    ['mcp-servers', 'MCP Servers', 'MCP server configuration.'],
-    ['git-workspace', 'Git & Workspace', 'Git and workspace defaults.'],
-    ['cli-optimization', 'CLI Optimization', 'RTK/CLI optimization settings.'],
-    ['utility-default-model', 'Quick Actions', 'Utility/default model settings.'],
-    ['notifications', 'Notifications', 'Notification preferences.'],
-    ['open-in', 'Open In', 'External editor/app launch preferences.'],
-  ].map(([id, label, description]) =>
+    ['mcp-servers', 'MCP Servers', 'MCP server configuration.', 'tools'],
+    ['git-workspace', 'Git & Workspace', 'Git and workspace defaults.', 'git-workspace'],
+    ['cli-optimization', 'CLI Optimization', 'RTK/CLI optimization settings.', 'tools'],
+    ['utility-default-model', 'Quick Actions', 'Utility/default model settings.', 'tools'],
+    ['notifications', 'Notifications', 'Notification preferences.', 'general'],
+    ['open-in', 'Open In', 'External editor/app launch preferences.', 'general'],
+  ].map(([id, label, description, tab]) =>
     settingsTarget({
       id,
-      tab: 'setup',
+      tab,
       hashAliases: [id],
       scrollSelector: `#${id}`,
       highlightSelector: `[data-highlight-id="${id}"]`,
       label: `Settings: ${label}`,
-      route: `/settings?tab=setup#${id}`,
+      route: `/settings?tab=${tab}#${id}`,
       description,
     }),
   ),
   settingsTarget({
     id: 'appearance',
-    tab: 'fonts-colors',
+    tab: 'appearance',
     hashAliases: ['appearance', 'theme'],
     scrollSelector: '#theme',
     highlightSelector: '[data-highlight-id="theme"]',
     label: 'Settings: Appearance',
-    route: '/settings?tab=fonts-colors#theme',
+    route: '/settings?tab=appearance#theme',
     description: 'Theme mode controls.',
   }),
   ...[
@@ -140,24 +140,24 @@ export const APP_UI_TARGETS: AppUiTarget[] = [
   ].map(([id, label, description]) =>
     settingsTarget({
       id,
-      tab: 'fonts-colors',
+      tab: 'appearance',
       hashAliases: [id],
       scrollSelector: `#${id}`,
       highlightSelector: `[data-highlight-id="${id}"]`,
       label: `Settings: ${label}`,
-      route: `/settings?tab=fonts-colors#${id}`,
+      route: `/settings?tab=appearance#${id}`,
       description,
     }),
   ),
   settingsTarget({
     id: 'general',
-    tab: 'general',
+    tab: 'advanced',
     hashAliases: ['general', 'reset'],
     scrollSelector: '#reset',
     highlightSelector: '[data-highlight-id="reset"]',
-    label: 'Settings: General',
-    route: '/settings?tab=general#reset',
-    description: 'General settings and reset controls.',
+    label: 'Settings: Advanced',
+    route: '/settings?tab=advanced#reset',
+    description: 'Advanced settings and reset controls.',
   }),
   {
     id: 'workspace-card',
@@ -239,10 +239,7 @@ const KNOWN_ROUTE_PATHS: ReadonlySet<string> = new Set(
 );
 
 // SvelteKit dynamic routes that accept an arbitrary id segment.
-const DYNAMIC_PATH_PATTERNS: readonly RegExp[] = [
-  /^\/workspace\/[^/]+$/,
-  /^\/agent\/[^/]+$/,
-];
+const DYNAMIC_PATH_PATTERNS: readonly RegExp[] = [/^\/workspace\/[^/]+$/, /^\/agent\/[^/]+$/];
 
 /**
  * Returns true when a NavLink target points at a real app surface.

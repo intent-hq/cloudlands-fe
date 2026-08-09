@@ -3,7 +3,7 @@
  * dictation trigger is gated because the effective engine is `unavailable`
  * (daemon selected, provider key missing, no OS engine — see
  * $features/voice/effective-voice-engine). The Open Settings action jumps
- * to Settings → Accounts scrolled to the Voice dictation section, where
+ * to Settings → Connections scrolled to the Voice dictation section, where
  * the key can be added or the engine switched.
  *
  * Dependency-light per AGENTS.md middleware conventions (reachable from
@@ -34,12 +34,12 @@ function getToast() {
  *  here (even dynamically). */
 const SETTINGS_PREV_PATH_KEY = 'settings-previous-path';
 
-/** Open Settings → Accounts scrolled to the Voice dictation section. */
+/** Open Settings → Connections scrolled to the Voice dictation section. */
 function openVoiceSettings(): void {
   if (typeof sessionStorage !== 'undefined' && typeof window !== 'undefined') {
     sessionStorage.setItem(SETTINGS_PREV_PATH_KEY, window.location.pathname);
   }
-  navigateToRoute('/settings?tab=accounts#voice').catch((error: unknown) => {
+  navigateToRoute('/settings?tab=connections#voice').catch((error: unknown) => {
     logger.error('Failed to open voice settings from setup toast', error);
   });
 }
