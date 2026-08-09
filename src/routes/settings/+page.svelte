@@ -390,12 +390,12 @@
     <SettingsSidebarNav {activeTab} onSelect={setActiveTab} />
 
     <div class="shrink-0 border-t border-border px-5 py-4 text-xs text-subtle">
-      <div class="flex items-baseline gap-1.5">
-        <!-- i18n-ignore (brand name) -->
-        <strong class="text-foreground">Intent</strong>
-        <span>v{appVersion || '...'}</span>
-      </div>
-      <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+      <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <div class="flex items-baseline gap-1.5">
+          <!-- i18n-ignore (brand name) -->
+          <strong class="text-foreground">Intent</strong>
+          <span>v{appVersion || '...'}</span>
+        </div>
         {#if $isReadyToInstall$}
           <button
             class="cursor-pointer border-none bg-transparent p-0 font-medium text-primary underline hover:text-primary/80"
@@ -406,24 +406,22 @@
         {:else if $autoUpdateStatus$ === 'not-available' || $autoUpdateStatus$ === 'idle'}
           <span>{m.settings_footer_upToDate()}</span>
         {/if}
-        <a
-          href="https://www.intentapp.dev/docs"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
-          >{m.settings_footer_support()}</a
-        >
       </div>
+      <a
+        href="https://www.intentapp.dev/docs"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="mt-1.5 block cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
+        >{m.settings_footer_support()}</a
+      >
     </div>
   </aside>
 
   <div class="flex min-w-0 flex-1 flex-col">
     <header class="shrink-0 bg-sidebar pr-8 pl-6 pt-8 pb-6">
-      <div class="mx-auto max-w-4xl">
-        <h1 class="text-xl font-semibold tracking-[-0.02em] text-foreground">
-          {m.settings_page_title()}
-        </h1>
-      </div>
+      <h1 class="text-xl font-semibold tracking-[-0.02em] text-foreground">
+        {m.settings_page_title()}
+      </h1>
     </header>
 
     <div class="min-h-0 flex-1 overflow-auto">
