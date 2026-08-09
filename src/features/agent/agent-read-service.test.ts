@@ -14,6 +14,17 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
+const loggerMocks = vi.hoisted(() => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+vi.mock('$lib/utils/client-logger', () => ({
+  createLogger: () => loggerMocks,
+  logger: loggerMocks,
+}));
+
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 
@@ -82,6 +93,32 @@ describe('agentReadService (fake seam, real store)', () => {
     await ensureAgentSession(agentId);
 
     expect(selectAgentSession.select(appStore.state, agentId)?.name).toBe('prior');
+  });
+
+  // Regression (monorepo#1753): a speculative load (hover card, avatar, peek
+  // card) referencing an agent deleted on the daemon rejects with -32602
+  // "Agent not found" — an expected condition that logs one WARN, never ERROR.
+  it('logs WARN (not ERROR) and leaves prior session intact on agent-not-found', async () => {
+    const agentId = 'agent-read-not-found';
+    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId, name: 'prior' }) as never);
+    await ensureAgentSession(agentId);
+    expect(selectAgentSession.select(appStore.state, agentId)?.name).toBe('prior');
+
+    // Legacy/lossy shape without the structured data.code: pins the
+    // rpcCode + message fallback branch of the classifier.
+    const notFound = Object.assign(new Error('Agent not found'), {
+      name: 'BackendError',
+      code: 'INVALID_PARAMS',
+      rpcCode: -32602,
+    });
+    agentsApi.get.mockRejectedValueOnce(notFound as never);
+    loggerMocks.warn.mockClear();
+    loggerMocks.error.mockClear();
+    await ensureAgentSession(agentId);
+
+    expect(selectAgentSession.select(appStore.state, agentId)?.name).toBe('prior');
+    expect(loggerMocks.warn).toHaveBeenCalledTimes(1);
+    expect(loggerMocks.error).not.toHaveBeenCalled();
   });
 
   // Regression: with a soft-hidden deletion pending, the daemon still returns

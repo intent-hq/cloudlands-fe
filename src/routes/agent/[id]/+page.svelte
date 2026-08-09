@@ -3,6 +3,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { logger } from '$shared/logger';
 
   import { page } from '$app/state';
+  import { goto } from '$app/navigation';
+  import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import MessageContent from '$lib/components/chat/MessageContent.svelte';
   import { sendMessage as sendAgentMessage } from '$features/agent/agent-send';
@@ -121,6 +123,15 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         isStreaming = false;
       }
     } catch (err) {
+      if (isAgentNotFoundError(err)) {
+        // Expected: the route references an agent deleted on the daemon
+        // (monorepo#1753). WARN and leave the dead view for home.
+        logger.warn('Agent no longer exists on daemon; navigating home', {
+          agentId: requestedAgentId,
+        });
+        if (agentId === requestedAgentId) await goto('/');
+        return;
+      }
       logger.error('Failed to load agent:', err);
       if (agentId !== requestedAgentId) return;
       // Create a minimal agent object on error

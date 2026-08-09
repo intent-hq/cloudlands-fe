@@ -2,14 +2,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn() }));
+const loggerMocks = vi.hoisted(() => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
 
 vi.mock('$lib/client', () => ({ appClient: { agents: { get: mocks.get } } }));
+vi.mock('$lib/utils/client-logger', () => ({
+  createLogger: () => loggerMocks,
+  logger: loggerMocks,
+}));
 
 import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { ensureAgentSessionLoaded } from '../workspace-agents-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
+import { closeTabsByAgentId } from '../../panel-layout/panel-layout-slice';
 import {
   clearPendingAgentDeletions,
   removePendingAgentDeletion,
@@ -118,6 +129,38 @@ describe('agentReadSaga', () => {
     await task.toPromise();
   });
 
+  // Regression (monorepo#1753): a stale tab/route referencing a deleted agent
+  // makes agent.get reject with -32602 "Agent not found". That is an expected
+  // condition: one WARN (no ERROR) and the stale agent tabs are closed so the
+  // workspace falls back to its home view.
+  it('logs a single WARN and closes stale tabs when the daemon reports the agent missing', async () => {
+    // Real live-transport shape: both transports prefer the daemon's
+    // data.code ("not-found", monorepo#1320) when resolving BackendError.code.
+    const notFound = Object.assign(new Error('Agent not found'), {
+      name: 'BackendError',
+      code: 'not-found',
+      rpcCode: -32602,
+      data: { code: 'not-found' },
+    });
+    mocks.get.mockRejectedValue(notFound);
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel, dispatch, getState: () => ({ agentSessions: { byAgentId: {} } }) },
+      agentReadSaga,
+    );
+    channel.put(ensureAgentSessionLoaded(WS, AGENT));
+    await settle();
+
+    expect(loggerMocks.warn).toHaveBeenCalledTimes(1);
+    expect(loggerMocks.error).not.toHaveBeenCalled();
+    const close = dispatch.mock.calls.find(([action]) => action.type === closeTabsByAgentId.type)?.[0];
+    expect(close?.payload).toMatchObject({ wsId: WS, agentId: AGENT });
+    expect(dispatch.mock.calls.some(([action]) => action.type === bulkUpsertSessions.type)).toBe(false);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('leaves prior state intact when agents.get fails', async () => {
     mocks.get.mockRejectedValue(new Error('read failed'));
     const channel = stdChannel();
@@ -134,6 +177,8 @@ describe('agentReadSaga', () => {
     await settle();
 
     expect(dispatch).not.toHaveBeenCalled();
+    expect(loggerMocks.error).toHaveBeenCalledTimes(1);
+    expect(loggerMocks.warn).not.toHaveBeenCalled();
     task.cancel();
     await task.toPromise();
   });
