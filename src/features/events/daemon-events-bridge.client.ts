@@ -1759,6 +1759,67 @@ function handleAttentionChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId:
  * `workspace.get` and merge the fresh activity value. On `agent:idle` we
  * always refetch — the daemon knows if other agents remain busy.
  */
+/**
+ * Single-flight + trailing-coalesce state for
+ * {@link reconcileWorkspaceActivity}, keyed per workspaceId (AGENTS.md
+ * "Event-driven refetches — single-flight and coalesced"). An N-event agent
+ * burst for one workspace (e.g. an `agent:idle` burst when a multi-agent
+ * delegation group settles, or per-agent `agent:stream:*` liveness pings
+ * while the entity is stale) must produce at most one immediate
+ * `workspace.get` plus at most one trailing follow-up — never one
+ * independent fetch per event, since unordered resolution could let a stale
+ * response that resolves last overwrite a newer `activity` value.
+ */
+const activityFetchInFlightByWorkspace = new Set<string>();
+const activityFetchFollowUpWantedByWorkspace = new Set<string>();
+
+async function runReconcileWorkspaceActivityFetch(workspaceId: string): Promise<void> {
+  const { backendRequest } = await import('$lib/client/live/backend-transport');
+  try {
+    const response = (await backendRequest('workspace.get', { workspaceId })) as
+      { workspace?: Workspace } | undefined;
+    const workspace = response?.workspace;
+    if (!workspace) return;
+
+    const fetchedActivity = workspace.activity;
+    if (fetchedActivity !== 'idle' && fetchedActivity !== 'agent_running') return;
+    // Type narrowing: fetchedActivity is now 'idle' | 'agent_running'
+    const activity: 'idle' | 'agent_running' = fetchedActivity;
+
+    // If the entity already exists, use bulkUpdateWorkspaceEntities for a
+    // partial merge. Otherwise, seed the full workspace entity with
+    // setWorkspaceEntity so future events can merge into it. Re-read the
+    // store here (not at trigger time) so the trailing fetch sees the
+    // current entity state.
+    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    const current = getItem(state.workspace.workspaces as never, workspaceId as never);
+    if (current) {
+      appStore.dispatch(
+        bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { activity })]),
+      );
+    } else {
+      const { setWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(setWorkspaceEntity(workspace));
+    }
+  } catch (_error) {
+    // Workspace might have been deleted or transport error; no-op is safe.
+  } finally {
+    // Trailing coalesce: one or more triggers arrived while this fetch was in
+    // flight — run exactly one follow-up fetch to pick up the latest state,
+    // regardless of how many triggers piled up. The in-flight marker stays
+    // set across the trailing fetch so triggers arriving during it keep
+    // coalescing instead of starting a parallel fetch; it is only cleared
+    // when no follow-up is pending.
+    if (activityFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
+      void runReconcileWorkspaceActivityFetch(workspaceId);
+    } else {
+      activityFetchInFlightByWorkspace.delete(workspaceId);
+    }
+  }
+}
+
 async function reconcileWorkspaceActivity(
   workspaceId: string,
   impliesBusy: boolean,
@@ -1771,35 +1832,17 @@ async function reconcileWorkspaceActivity(
   // If the entity doesn't exist yet, or if we see a busy signal and activity
   // isn't already agent_running, or if we see an idle signal (always refetch
   // on idle — the daemon's live count is authoritative), fetch workspace.get
-  // and merge the fresh activity.
+  // and merge the fresh activity. Single-flighted with trailing coalesce per
+  // workspaceId (see {@link activityFetchInFlightByWorkspace}): the leading
+  // edge fetches immediately, and any triggers that arrive while that fetch
+  // is in flight collapse into at most one trailing follow-up.
   if (!current || (impliesBusy && current.activity !== 'agent_running') || !impliesBusy) {
-    const { backendRequest } = await import('$lib/client/live/backend-transport');
-    try {
-      const response = (await backendRequest('workspace.get', { workspaceId })) as
-        { workspace?: Workspace } | undefined;
-      const workspace = response?.workspace;
-      if (!workspace) return;
-
-      const fetchedActivity = workspace.activity;
-      if (fetchedActivity !== 'idle' && fetchedActivity !== 'agent_running') return;
-      // Type narrowing: fetchedActivity is now 'idle' | 'agent_running'
-      const activity: 'idle' | 'agent_running' = fetchedActivity;
-
-      // If the entity already exists, use bulkUpdateWorkspaceEntities for a
-      // partial merge. Otherwise, seed the full workspace entity with
-      // setWorkspaceEntity so future events can merge into it.
-      if (current) {
-        appStore.dispatch(
-          bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { activity })]),
-        );
-      } else {
-        const { setWorkspaceEntity } =
-          await import('$store/renderer/slices/workspace/workspace-slice');
-        appStore.dispatch(setWorkspaceEntity(workspace));
-      }
-    } catch (_error) {
-      // Workspace might have been deleted or transport error; no-op is safe.
+    if (activityFetchInFlightByWorkspace.has(workspaceId)) {
+      activityFetchFollowUpWantedByWorkspace.add(workspaceId);
+      return;
     }
+    activityFetchInFlightByWorkspace.add(workspaceId);
+    await runReconcileWorkspaceActivityFetch(workspaceId);
   }
 }
 
@@ -2907,6 +2950,8 @@ export function disposeDaemonEventsRoutingState(): void {
   scriptOutputDecoders.clear();
   agentSummaryFetchInFlightByWorkspace.clear();
   agentSummaryFetchFollowUpWantedByWorkspace.clear();
+  activityFetchInFlightByWorkspace.clear();
+  activityFetchFollowUpWantedByWorkspace.clear();
 }
 
 /** Test-only — reset stream accumulators and debounce state. */
