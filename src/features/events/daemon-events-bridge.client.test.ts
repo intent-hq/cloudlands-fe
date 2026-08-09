@@ -7290,69 +7290,68 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
       };
     }
 
-    let resolveFirstFetch: ((value: unknown) => void) | undefined;
-    let resolveSecondFetch: ((value: unknown) => void) | undefined;
-    let workspaceGetCalls = 0;
+    // Every workspace.get stays pending until explicitly resolved below, so
+    // the extra fetches a regressed implementation would start are counted
+    // deterministically instead of slipping past a wall-clock sampling
+    // window (they'd otherwise land behind awaited dynamic imports).
+    const pendingFetches: Array<(value: unknown) => void> = [];
     backendRequestSpy.mockImplementation(async (method: string) => {
       if (method === 'agent.list') return { agents: [] };
       if (method !== 'workspace.get') return { subscriptionId: 'sub-1' };
-      workspaceGetCalls += 1;
-      if (workspaceGetCalls === 1) {
-        // The leading-edge fetch stays pending until we explicitly resolve
-        // it below, so every burst event below fires while it's in flight.
-        return new Promise((resolve) => {
-          resolveFirstFetch = resolve;
-        });
-      }
-      if (workspaceGetCalls === 2) {
-        // The trailing fetch also stays pending, so we can assert that
-        // events arriving during it keep coalescing (the in-flight marker
-        // must survive into the trailing fetch).
-        return new Promise((resolve) => {
-          resolveSecondFetch = resolve;
-        });
-      }
-      // Post-trailing follow-up: freshest daemon state — all agents idle.
-      return workspaceResponse('idle', '2026-01-02T00:00:00.000Z');
+      return new Promise((resolve) => {
+        pendingFetches.push(resolve);
+      });
     });
 
-    // Leading edge: starts the first (still-pending) fetch immediately. The
-    // in-flight flag is set synchronously inside the handler, but the mocked
-    // `backendRequest` call itself lands after a microtask (dynamic import),
-    // so give it a tick to actually fire before asserting the count.
-    handler(agentIdleNotification());
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(workspaceGetCalls).toBe(1);
+    // Drain the microtask/macrotask chains behind the handlers' awaited
+    // dynamic imports, so any fetch the implementation would start has
+    // actually reached the mock before each count assertion.
+    async function settle(): Promise<void> {
+      for (let i = 0; i < 20; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
 
-    // Burst of further agent events while the fetch is in flight — must
-    // collapse into at most one trailing fetch, not one per event.
+    // Leading edge: exactly one immediate fetch.
+    handler(agentIdleNotification());
+    await settle();
+    expect(pendingFetches.length).toBe(1);
+
+    // Burst of further agent events while that fetch is in flight — they
+    // must collapse into the trailing-follow-up flag, never start parallel
+    // fetches (unfixed code fans out one fetch per event here).
     handler(agentIdleNotification());
     handler(agentStreamActivityNotification());
     handler(agentIdleNotification());
-    expect(workspaceGetCalls).toBe(1);
+    await settle();
+    expect(pendingFetches.length).toBe(1);
 
     // Settle the leading-edge fetch with a (now-stale) agent_running
-    // snapshot; the trailing fetch should fire immediately after.
-    resolveFirstFetch?.(workspaceResponse('agent_running', '2026-01-01T00:00:01.000Z'));
+    // snapshot; exactly one trailing fetch fires for the whole burst.
+    pendingFetches[0]!(workspaceResponse('agent_running', '2026-01-01T00:00:01.000Z'));
+    await settle();
+    expect(pendingFetches.length).toBe(2);
 
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(workspaceGetCalls).toBe(2);
-
-    // Events arriving while the TRAILING fetch is in flight must also
-    // coalesce (into one more follow-up) instead of starting a parallel
-    // fetch — the in-flight marker survives into the trailing fetch.
+    // Events arriving while the TRAILING fetch is in flight must also keep
+    // coalescing — the in-flight marker survives into the trailing fetch —
+    // instead of starting a parallel fetch.
     handler(agentIdleNotification());
     handler(agentIdleNotification());
-    expect(workspaceGetCalls).toBe(2);
+    await settle();
+    expect(pendingFetches.length).toBe(2);
 
-    resolveSecondFetch?.(workspaceResponse('agent_running', '2026-01-01T00:00:02.000Z'));
+    // The trailing fetch also resolves stale; the two triggers above
+    // collapse into exactly one post-trailing follow-up.
+    pendingFetches[1]!(workspaceResponse('agent_running', '2026-01-01T00:00:02.000Z'));
+    await settle();
+    expect(pendingFetches.length).toBe(3);
 
-    await new Promise((resolve) => setTimeout(resolve, 10));
-
-    // One follow-up for the two triggers above; its fresher idle result is
-    // what lands in the store even though stale agent_running responses
-    // resolved before it.
-    expect(workspaceGetCalls).toBe(3);
+    // The follow-up resolves last with the freshest daemon state; its idle
+    // result is what lands in the store even though stale agent_running
+    // responses resolved before it.
+    pendingFetches[2]!(workspaceResponse('idle', '2026-01-02T00:00:00.000Z'));
+    await settle();
+    expect(pendingFetches.length).toBe(3);
     const ws = await readWorkspace();
     expect(ws.activity).toBe('idle');
   });
