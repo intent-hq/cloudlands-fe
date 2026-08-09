@@ -3,6 +3,7 @@ import { call, fork, put, takeEvery } from 'typed-redux-saga';
 import { isElectron } from '$lib/electron-bridge';
 import { applyLanguagePreference } from '$lib/i18n/locale';
 import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
+import { isGithubLinkDefaultAction } from '$shared/utils/link-helpers';
 import {
   getLocalStorageJSON,
   setLocalStorageJSON,
@@ -12,6 +13,7 @@ import {
   selectAgentFontStyle,
   selectCodeFontFamily,
   selectGroupByRepo,
+  selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
   selectLanguagePreference,
   selectNoteFontStyle,
@@ -29,6 +31,7 @@ import {
   setAgentFontStyle,
   setCodeFontFamily,
   setGroupByRepo,
+  setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setLanguagePreference,
   setNoteFontStyle,
@@ -55,6 +58,7 @@ const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
 const ACTIVITY_LOG_PRESETS_STORAGE_KEY = 'activityLogPresets';
 const LANGUAGE_PREFERENCE_STORAGE_KEY = 'language-preference';
+const GITHUB_LINK_DEFAULT_ACTION_STORAGE_KEY = 'github-links:defaultAction';
 
 type ListSystemFontsResponse = {
   success?: boolean;
@@ -146,6 +150,13 @@ export function* hydrateUserPreferencesWorker() {
 
   const language = yield* getLocalStorageJSON<string>(LANGUAGE_PREFERENCE_STORAGE_KEY);
   if (typeof language === 'string' && language.trim()) yield* put(setLanguagePreference(language));
+
+  const githubLinkDefaultAction = yield* getLocalStorageJSON<unknown>(
+    GITHUB_LINK_DEFAULT_ACTION_STORAGE_KEY,
+  );
+  if (isGithubLinkDefaultAction(githubLinkDefaultAction)) {
+    yield* put(setGithubLinkDefaultAction(githubLinkDefaultAction));
+  }
 }
 
 export function* persistSpellcheckWorker() {
@@ -217,6 +228,13 @@ export function* persistLanguagePreferenceWorker(action: ReturnType<typeof setLa
   yield* call(syncLanguagePreference, storedPreference);
 }
 
+export function* persistGithubLinkDefaultActionWorker() {
+  yield* setLocalStorageJSON(
+    GITHUB_LINK_DEFAULT_ACTION_STORAGE_KEY,
+    yield* selectGithubLinkDefaultAction.effect(),
+  );
+}
+
 function* watchUserPreferenceWrites() {
   yield* takeEvery([setSpellcheckEnabled, toggleSpellcheck], persistSpellcheckWorker);
   yield* takeEvery([setShowArchived, toggleShowArchived], persistShowArchivedWorker);
@@ -237,6 +255,7 @@ function* watchUserPreferenceWrites() {
     persistActivityLogPresetsWorker,
   );
   yield* takeEvery(setLanguagePreference, persistLanguagePreferenceWorker);
+  yield* takeEvery(setGithubLinkDefaultAction, persistGithubLinkDefaultActionWorker);
 }
 
 /** Unregistered until the S20 middleware cutover. */

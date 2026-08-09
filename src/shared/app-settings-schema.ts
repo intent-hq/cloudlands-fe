@@ -1,6 +1,7 @@
 import { THEME_PRESET_IDS, THEME_PRESET_MANIFEST } from './theme-presets-manifest';
 import { locales } from './paraglide/runtime.js';
 import { SYSTEM_LANGUAGE_PREFERENCE } from './i18n/locale-matcher';
+import { GITHUB_LINK_DEFAULT_ACTIONS } from './utils/link-helpers';
 
 export type AppSettingValueType =
   | 'string'
@@ -617,6 +618,25 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     storageKey: 'open-combo-button-last-action',
     defaultValue: 'vscode',
     apply: { kind: 'redux-action', action: 'externalEditors/setOpenAction' },
+  },
+  {
+    path: 'githubLinks.defaultAction',
+    label: 'GitHub link default action',
+    description: 'Default action for plain clicks on GitHub issue and pull request links.',
+    category: 'per-feature',
+    type: 'enum',
+    enumValues: GITHUB_LINK_DEFAULT_ACTIONS,
+    enumLabels: {
+      'show-choices': 'Show choices',
+      'open-in-browser': 'Open in browser',
+      'open-in-app': 'Open in app',
+      'copy-link': 'Copy link',
+      'start-workspace': 'Start workspace',
+    },
+    source: 'local-storage',
+    storageKey: 'github-links:defaultAction',
+    defaultValue: 'show-choices',
+    apply: { kind: 'redux-action', action: 'userPreferences/setGithubLinkDefaultAction' },
   },
   {
     path: 'openIn.hiddenEditors',

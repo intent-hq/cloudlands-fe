@@ -1,5 +1,19 @@
 import type { WorkspaceId } from '$shared/types/branded-ids';
 
+export const GITHUB_LINK_DEFAULT_ACTIONS = [
+  'show-choices',
+  'open-in-browser',
+  'open-in-app',
+  'copy-link',
+  'start-workspace',
+] as const;
+
+export type GithubLinkDefaultAction = (typeof GITHUB_LINK_DEFAULT_ACTIONS)[number];
+
+export function isGithubLinkDefaultAction(value: unknown): value is GithubLinkDefaultAction {
+  return GITHUB_LINK_DEFAULT_ACTIONS.includes(value as GithubLinkDefaultAction);
+}
+
 /** Modifier key flags extracted from a MouseEvent */
 export interface ModifierFlags {
   metaKey?: boolean;
@@ -18,6 +32,8 @@ export interface LinkHandlerOptions {
   modifiers?: ModifierFlags;
   /** Force external browser even for HTTP/HTTPS links */
   forceExternal?: boolean;
+  /** Override the persisted plain-click action for GitHub issue and PR links. */
+  githubLinkDefaultAction?: GithubLinkDefaultAction;
   /** Custom handler for specific link types */
   customHandler?: (url: string) => Promise<boolean> | boolean;
 }
@@ -72,8 +88,7 @@ export function parseGitHubIssueOrPrUrl(url: string): GitHubIssueOrPrRef | null 
     const segments = parsed.pathname.split('/').filter(Boolean);
     if (segments.length < 4) return null;
     const [owner, repo, kindSegment, numberSegment] = segments;
-    const kind =
-      kindSegment === 'issues' ? 'issue' : kindSegment === 'pull' ? 'pr' : null;
+    const kind = kindSegment === 'issues' ? 'issue' : kindSegment === 'pull' ? 'pr' : null;
     if (!kind) return null;
     if (!/^\d+$/.test(numberSegment)) return null;
     return { owner, repo, number: Number.parseInt(numberSegment, 10), kind };

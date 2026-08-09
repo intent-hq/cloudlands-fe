@@ -155,7 +155,7 @@ describe('installHardwareConsoleConnectionToasts', () => {
     expect(navigateToRouteMock).not.toHaveBeenCalled();
     options.action.onClick();
     await flushMicrotasks(20);
-    expect(navigateToRouteMock).toHaveBeenCalledWith('/settings?tab=general#hardware');
+    expect(navigateToRouteMock).toHaveBeenCalledWith('/settings?tab=advanced#hardware');
   });
 
   it('shows the connect toast with the action on hotplug too', async () => {

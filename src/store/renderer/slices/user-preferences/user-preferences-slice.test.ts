@@ -15,6 +15,7 @@ import {
   setAgentFontStyle,
   setCodeFontFamily,
   setGroupByRepo,
+  setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -47,6 +48,7 @@ import {
   selectCodeFontFamilyLabel,
   selectCodeFontOptions,
   selectGroupByRepo,
+  selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
   selectIsAgentMonospace,
   selectIsNoteMonospace,
@@ -356,6 +358,17 @@ describe("userPreferencesReducer", () => {
     });
   });
 
+  describe("GitHub link default action", () => {
+    it("defaults to showing choices", () => {
+      expect(initialState.githubLinkDefaultAction).toBe("show-choices");
+    });
+
+    it("sets the default action", () => {
+      const state = userPreferencesReducer(initialState, setGithubLinkDefaultAction("copy-link"));
+      expect(state.githubLinkDefaultAction).toBe("copy-link");
+    });
+  });
+
   describe("selectors", () => {
     const state = {
       userPreferences: {
@@ -457,6 +470,15 @@ describe("userPreferencesReducer", () => {
       } as any;
 
       expect(selectLanguagePreference.select(preferenceState)).toBe("zh-CN");
+    });
+
+    it("selects the GitHub link default action with a safe fallback", () => {
+      expect(
+        selectGithubLinkDefaultAction.select({
+          userPreferences: { ...initialState, githubLinkDefaultAction: "start-workspace" },
+        } as any)
+      ).toBe("start-workspace");
+      expect(selectGithubLinkDefaultAction.select({} as any)).toBe("show-choices");
     });
 
   });

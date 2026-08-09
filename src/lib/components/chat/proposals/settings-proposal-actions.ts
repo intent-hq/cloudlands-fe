@@ -2,6 +2,7 @@ import type { AppSettingApplyPlan, AppSettingDefinition } from '$shared/app-sett
 import { findAppSettingDefinition } from '$shared/app-settings-schema';
 import { m } from '$shared/paraglide/messages.js';
 import type { ProposalActionDetail, SettingsChangeProposal } from '$shared/types/proposal';
+import { isGithubLinkDefaultAction } from '$shared/utils/link-helpers';
 import { appClient } from '$lib/client';
 import { store as appStore } from "$store/renderer/store";
 import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
@@ -33,6 +34,7 @@ import {
   selectBetaUpdatesEnabled,
   selectCodeFontFamily,
   selectGroupByRepo,
+  selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
   selectLanguagePreference,
   selectNotificationEnabled,
@@ -77,6 +79,7 @@ import {
   setBetaUpdatesEnabled,
   setCodeFontFamily,
   setGroupByRepo,
+  setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setLanguagePreference,
   setNotificationEnabled,
@@ -299,6 +302,8 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectIsCollapsed.select(state);
     case 'openIn.defaultAction':
       return selectOpenAction.select(state);
+    case 'githubLinks.defaultAction':
+      return selectGithubLinkDefaultAction.select(state);
     case 'openIn.hiddenEditors':
       return selectHiddenEditorIds.select(state);
     case 'mcp.enableUserServers':
@@ -438,6 +443,10 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       return true;
     case 'openIn.defaultAction':
       appStore.dispatch(setOpenAction(String(value ?? '')));
+      return true;
+    case 'githubLinks.defaultAction':
+      if (!isGithubLinkDefaultAction(value)) return false;
+      appStore.dispatch(setGithubLinkDefaultAction(value));
       return true;
     default:
       return false;
