@@ -5004,6 +5004,37 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
       workspaceId: FRESH_WS,
     });
   });
+
+  it('lifts the deletion tombstone so the recycled ID can be stored again', async () => {
+    const TOMBSTONED_WS = 'ws-bridge-tombstoned';
+    const { markWorkspacePendingDeletion } = await import(
+      '$store/renderer/slices/workspace/workspace-slice'
+    );
+    // Simulate a committed delete whose post-delete grace tombstone is still
+    // active when the id is recycled by a new create.
+    appStore.dispatch(markWorkspacePendingDeletion(TOMBSTONED_WS));
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-workspace-created-tombstoned',
+          workspaceId: TOMBSTONED_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:created',
+          actor: { type: 'user', id: 'u1' },
+          data: { workspaceId: TOMBSTONED_WS },
+        },
+      },
+    });
+    await flush();
+
+    const state = appStore.state as { workspace: { pendingDeletions: Record<string, boolean> } };
+    expect(state.workspace.pendingDeletions[TOMBSTONED_WS]).toBeUndefined();
+  });
 });
 
 describe('daemonEventsBridge (task:status-changed → applyTaskStatusChanged)', () => {

@@ -710,13 +710,19 @@ describe("workspace selectors", () => {
       expect(state.activeWorkspaceId).toBe("ws-2");
     });
 
-    it("clears the workspace from pendingDeletions map", () => {
+    it("preserves the deletion tombstone so late refetches stay blocked", () => {
       const ws = makeWorkspace({ id: "ws-1" as WorkspaceId });
       let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
       state = workspaceReducer(state, markWorkspacePendingDeletion("ws-1"));
       expect(state.pendingDeletions["ws-1"]).toBe(true);
       state = workspaceReducer(state, workspaceDeleted("ws-1", []));
-      expect(state.pendingDeletions["ws-1"]).toBeUndefined();
+      expect(state.pendingDeletions["ws-1"]).toBe(true);
+    });
+
+    it("is a no-op when only the deletion tombstone remains", () => {
+      const state = workspaceReducer(initialState, markWorkspacePendingDeletion("ws-1"));
+      const next = workspaceReducer(state, workspaceDeleted("ws-1", []));
+      expect(next).toBe(state);
     });
 
     it("clears the workspace from recency.lastViewedAt map", () => {
@@ -758,9 +764,13 @@ describe("workspace selectors", () => {
       // Now actual delete event arrives
       state = workspaceReducer(state, workspaceDeleted("ws-1", []));
 
-      // ws-1 should be permanently gone and pendingDeletions cleared
+      // ws-1 should be permanently gone; the tombstone survives the event so a
+      // stale response landing after it still cannot resurrect the workspace
       expect(getItem(state.workspaces, "ws-1")).toBeUndefined();
-      expect(state.pendingDeletions["ws-1"]).toBeUndefined();
+      expect(state.pendingDeletions["ws-1"]).toBe(true);
+
+      state = workspaceReducer(state, replaceWorkspaceList([ws1, ws2]));
+      expect(getItem(state.workspaces, "ws-1")).toBeUndefined();
     });
 
     it("is a no-op when the workspace does not exist", () => {
@@ -768,6 +778,62 @@ describe("workspace selectors", () => {
       const state = workspaceReducer(initialState, setWorkspaceEntity(ws));
       const next = workspaceReducer(state, workspaceDeleted("ws-missing", []));
       expect(next).toBe(state);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Regression: deletion tombstone blocks post-delete re-insertion
+  // -----------------------------------------------------------------------
+
+  describe("deletion tombstone", () => {
+    /** State right after a delete: entity removed, tombstone set. */
+    function tombstonedState() {
+      const ws = makeWorkspace({ id: "ws-1" });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+      state = workspaceReducer(state, removeWorkspaceEntity("ws-1"));
+      state = workspaceReducer(state, markWorkspacePendingDeletion("ws-1"));
+      return { ws, state };
+    }
+
+    it("blocks setWorkspaceEntity re-insertion while the id is tombstoned", () => {
+      const { ws, state } = tombstonedState();
+      const next = workspaceReducer(state, setWorkspaceEntity(ws));
+      expect(next).toBe(state);
+      expect(getItem(next.workspaces, "ws-1")).toBeUndefined();
+    });
+
+    it("blocks replaceWorkspaceList re-admission while the id is tombstoned", () => {
+      const { ws, state } = tombstonedState();
+      const next = workspaceReducer(state, replaceWorkspaceList([ws]));
+      expect(getItem(next.workspaces, "ws-1")).toBeUndefined();
+    });
+
+    it("blocks bulkUpdateWorkspaceEntities from touching a tombstoned id", () => {
+      const ws = makeWorkspace({ id: "ws-1", title: "Original" });
+      const base = workspaceReducer(initialState, setWorkspaceEntity(ws));
+      const state = { ...base, pendingDeletions: { "ws-1": true } };
+      const next = workspaceReducer(
+        state,
+        bulkUpdateWorkspaceEntities([updateWorkspaceEntity("ws-1", { title: "Changed" })])
+      );
+      expect(next).toBe(state);
+      expect(getItem(next.workspaces, "ws-1")?.title).toBe("Original");
+    });
+
+    it("clearWorkspacePendingDeletion lifts the tombstone so undo can restore", () => {
+      const { ws, state } = tombstonedState();
+      let next = workspaceReducer(state, clearWorkspacePendingDeletion("ws-1"));
+      next = workspaceReducer(next, setWorkspaceEntity(ws));
+      expect(getItem(next.workspaces, "ws-1")).toEqual(ws);
+    });
+
+    it("keeps blocking re-insertion after workspaceDeleted arrives mid-grace", () => {
+      const { ws, state } = tombstonedState();
+      let next = workspaceReducer(state, workspaceDeleted("ws-1", []));
+      next = workspaceReducer(next, setWorkspaceEntity(ws));
+      expect(getItem(next.workspaces, "ws-1")).toBeUndefined();
+      next = workspaceReducer(next, replaceWorkspaceList([ws]));
+      expect(getItem(next.workspaces, "ws-1")).toBeUndefined();
     });
   });
 
