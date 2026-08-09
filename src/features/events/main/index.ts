@@ -5,10 +5,7 @@
  * EventBus singletons removed during Redux migration (Wave 6).
  */
 
-export { EventStore } from './event-store';
 export { EventFilterEngine, EventFilterBuilder } from '../event-filter-engine';
-export { EventQueryEngine } from './event-query-engine';
-export { AgentEventTools, workspaceEventTools } from './agent-event-tools';
 export {
   agentSubscribe,
   agentSubscribeToGroup,

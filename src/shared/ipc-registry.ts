@@ -514,9 +514,6 @@ export const IPC_CHANNELS = {
     TRACK_FILE_CHANGE: 'log:track-file-change',
     TRACK_AGENT_EVENT: 'log:track-agent-event',
     TRACK_MCP_CALL: 'log:track-mcp-call',
-    GET_EVENTS: 'log:get-events',
-    CLEAR_EVENTS: 'log:clear-events',
-    EVENTS_UPDATED: 'log:events-updated',
     PATHS: 'log:paths',
     READ: 'log:read',
     CLEAR: 'log:clear',
@@ -794,19 +791,6 @@ export const IPC_CHANNELS = {
     SET_DISCOVERY: 'websocket-api:set-discovery',
   },
 
-  // Workspace Scripts
-  SCRIPTS: {
-    LIST: 'scripts:list',
-    CREATE: 'scripts:create',
-    UPDATE: 'scripts:update',
-    REMOVE: 'scripts:remove',
-    START: 'scripts:start',
-    STOP: 'scripts:stop',
-    RESTART: 'scripts:restart',
-    GET_STATUS: 'scripts:get-status',
-    GET_OUTPUT: 'scripts:get-output',
-  },
-
   // Workspace Token Usage (aggregated agent token consumption)
   TOKEN_USAGE: {
     GET: 'token-usage:get',
@@ -951,7 +935,6 @@ export const EVENT_CHANNELS = [
   'terminal:professional:cwd:changed',
   'terminal:disposed', // Terminal disposed event (from workspace cleanup)
   'events:new',
-  'events:cleared',
   'app:ready',
   'app:ui:navigate',
   'app:ui:highlight',
@@ -1023,12 +1006,6 @@ export const EVENT_CHANNELS = [
   'browser:list-tabs-request',
   // Browser tab open request from main process (agent wants to open a browser tab)
   'browser:open-tab',
-  // Script events (main → renderer)
-  'script:started',
-  'script:stopped',
-  'script:output',
-  'script:error',
-  'script:url-detected',
   // WebSocket API events (main → renderer)
   'websocket-api:discovery-auto-disabled',
   // Workspace token usage changed (main → renderer)

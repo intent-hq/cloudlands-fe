@@ -1681,15 +1681,7 @@ export type DomainEvent =
   | 'git:op-started'
   | 'git:op-progress'
   | 'git:op-completed'
-  | 'git:op-failed'
-  // Log events
-  | 'log:events-updated'
-  // Script events
-  | 'script:started'
-  | 'script:stopped'
-  | 'script:output'
-  | 'script:error'
-  | 'script:url-detected';
+  | 'git:op-failed';
 
 /**
  * Domain event data payloads
@@ -1880,40 +1872,5 @@ export interface DomainEventPayloads {
     operationType: 'commit' | 'push' | 'create-pr' | 'auto-commit';
     error: string;
     metadata?: { message?: string; prTitle?: string; agentId?: string; agentName?: string };
-  };
-
-  'log:events-updated': { workspaceId: WorkspaceId; events: any };
-
-  'script:started': {
-    workspaceId: WorkspaceId;
-    scriptId: string;
-    scriptName: string;
-    pid?: number;
-    startedAt?: string;
-  };
-  'script:stopped': {
-    workspaceId: WorkspaceId;
-    scriptId: string;
-    scriptName: string;
-    exitCode?: number | null;
-    signal?: string | null;
-    stoppedAt?: string;
-  };
-  'script:output': {
-    workspaceId: WorkspaceId;
-    scriptId: string;
-    lines: Array<{ text: string; stream: 'stdout' | 'stderr'; timestamp: string }>;
-  };
-  'script:error': {
-    workspaceId: WorkspaceId;
-    scriptId: string;
-    scriptName: string;
-    error: string;
-  };
-  'script:url-detected': {
-    workspaceId: WorkspaceId;
-    scriptId: string;
-    scriptName: string;
-    url: string;
   };
 }
