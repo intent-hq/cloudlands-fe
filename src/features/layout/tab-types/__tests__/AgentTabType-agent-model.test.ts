@@ -145,6 +145,9 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', ()
   selectIsAgentMonospace: () => ({
     subscribe: (run: (value: boolean) => void) => (run(false), () => {}),
   }),
+  selectShowReasoningBlocks: () => ({
+    subscribe: (run: (value: boolean) => void) => (run(false), () => {}),
+  }),
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-slice', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$store/renderer/slices/user-preferences/user-preferences-slice')>()),

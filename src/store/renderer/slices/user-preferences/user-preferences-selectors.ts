@@ -46,6 +46,10 @@ export const selectHasCompletedProviderSetup = store.createSelector((state) => {
   return state.userPreferences.hasCompletedProviderSetup;
 });
 
+export const selectShowReasoningBlocks = store.createSelector((state) => {
+  return state.userPreferences?.showReasoningBlocks ?? false;
+});
+
 export const selectCounterScale = store.createSelector((state) => {
   return 1 / state.userPreferences.zoomFactor;
 });
