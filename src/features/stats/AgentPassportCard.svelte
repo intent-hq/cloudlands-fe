@@ -3,9 +3,11 @@
    * Agent Passport card (design card 1, 360×640).
    *
    * Pixel recreation of `Agent Stats Share.dc.html` card 1 with the design's
-   * in/out row extended to all 4 separate token counters (Spec D6). Every
-   * number comes from the fetched `stats.getUsage` result; `null` (not yet
-   * loaded) and zero-data periods render the same zeroed layout.
+   * in/out row extended to all separate token counters (Spec D6). Reasoning
+   * `thoughtTokens` (optional-when-zero, §5.23) get a fifth counter rendered
+   * only when reported, so the breakdown always reconciles to the hero total.
+   * Every number comes from the fetched `stats.getUsage` result; `null` (not
+   * yet loaded) and zero-data periods render the same zeroed layout.
    */
   import Logo from '$lib/components/Logo.svelte';
   import type { UsageStatsResult } from '$lib/client/app-client';
@@ -33,10 +35,29 @@
     <div class="hero-label">{m.stats_passportCard_tokensProcessed_label()}</div>
     <div class="hero-value">{formatTokens(totalTokens(totals))}</div>
     <div class="counters">
-      <span class="counter-in">{m.stats_passportCard_input_label({ amount: formatTokens(totals.inputTokens) })}</span>
-      <span class="counter-out">{m.stats_passportCard_output_label({ amount: formatTokens(totals.outputTokens) })}</span>
-      <span class="counter-cread">{m.stats_passportCard_cacheRead_label({ amount: formatTokens(totals.cacheReadTokens) })}</span>
-      <span class="counter-cwrite">{m.stats_passportCard_cacheWrite_label({ amount: formatTokens(totals.cacheCreationTokens) })}</span>
+      <span class="counter-in"
+        >{m.stats_passportCard_input_label({ amount: formatTokens(totals.inputTokens) })}</span
+      >
+      <span class="counter-out"
+        >{m.stats_passportCard_output_label({ amount: formatTokens(totals.outputTokens) })}</span
+      >
+      <span class="counter-cread"
+        >{m.stats_passportCard_cacheRead_label({
+          amount: formatTokens(totals.cacheReadTokens),
+        })}</span
+      >
+      <span class="counter-cwrite"
+        >{m.stats_passportCard_cacheWrite_label({
+          amount: formatTokens(totals.cacheCreationTokens),
+        })}</span
+      >
+      {#if totals.thoughtTokens}
+        <span class="counter-thoughts"
+          >{m.stats_passportCard_thoughts_label({
+            amount: formatTokens(totals.thoughtTokens),
+          })}</span
+        >
+      {/if}
     </div>
   </div>
   <div class="grid">
@@ -140,6 +161,9 @@
   }
   .counter-cwrite {
     color: hsl(240 5% 58%);
+  }
+  .counter-thoughts {
+    color: hsl(38 90% 55%);
   }
   .grid {
     display: grid;

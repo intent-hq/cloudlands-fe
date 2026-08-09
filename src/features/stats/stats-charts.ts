@@ -4,8 +4,11 @@
  * Ports the design's `grids()` gridline helper (Agent Stats Share design)
  * and derives the histogram bar geometry + hero stats from real
  * `stats.getUsage` cells. Cache counters fold into the "input" bar segment;
- * the 4 separate counters live on the passport card (Spec D6, assumption in
- * the workspace spec). Token formatting comes from `stats-format.ts`.
+ * reasoning `thoughtTokens` (optional-when-zero, §5.23) get a dedicated
+ * segment stacked above output, mirroring the HUD's in/out/thoughts order
+ * (§5.39); the separate counters live on the passport card (Spec D6,
+ * assumption in the workspace spec). Token formatting comes from
+ * `stats-format.ts`.
  */
 import type { UsageHourStats, UsageMonthStats } from '$lib/client/app-client';
 import { formatDatePattern } from '$lib/i18n/format';
@@ -56,6 +59,8 @@ export const pad2 = (n: number) => String(n).padStart(2, '0');
 export interface HourBar {
   heightPct: number;
   outPct: number;
+  /** Reasoning tokens' share of the bar; 0 when the cell reported none. */
+  thoughtPct: number;
   peak: boolean;
 }
 
@@ -92,6 +97,8 @@ export interface HourCardModel {
   workingHours: string;
   workingHoursPct: number;
   overnight: string;
+  /** Any cell reported reasoning tokens — gates the THOUGHTS legend entry. */
+  hasThoughts: boolean;
 }
 
 /**
@@ -127,6 +134,7 @@ export function hourCardModel(
   const bars: HourBar[] = cells.map((c, i) => ({
     heightPct: max > 0 ? +((totals[i] / max) * 100).toFixed(1) : 0,
     outPct: totals[i] > 0 ? +((c.outputTokens / totals[i]) * 100).toFixed(1) : 0,
+    thoughtPct: totals[i] > 0 ? +(((c.thoughtTokens ?? 0) / totals[i]) * 100).toFixed(1) : 0,
     peak: i === peakIdx,
   }));
 
@@ -153,12 +161,15 @@ export function hourCardModel(
     workingHours: `${pad2(workingWindow.start)}–${pad2(workingWindow.end)} · ${workingHoursPct}%`,
     workingHoursPct,
     overnight: `${pct(inRange(0, 6))}%`,
+    hasThoughts: cells.some((c) => (c.thoughtTokens ?? 0) > 0),
   };
 }
 
 export interface MonthBar {
   heightPct: number;
   outPct: number;
+  /** Reasoning tokens' share of the bar; 0 when the cell reported none. */
+  thoughtPct: number;
   letter: string;
   /** Month is inside the elapsed part of the year (real bar vs grey stub). */
   active: boolean;
@@ -174,6 +185,8 @@ export interface MonthCardModel {
   bestLabel: string;
   deltaLabel: string;
   deltaValue: string;
+  /** Any cell reported reasoning tokens — gates the THOUGHTS legend entry. */
+  hasThoughts: boolean;
 }
 
 /**
@@ -208,6 +221,8 @@ export function monthCardModel(byMonth: UsageMonthStats[], monthsElapsed: number
     return {
       heightPct: active ? (max > 0 ? +((totals[i] / max) * 100).toFixed(1) : 0) : 2,
       outPct: active && totals[i] > 0 ? +((c.outputTokens / totals[i]) * 100).toFixed(1) : 0,
+      thoughtPct:
+        active && totals[i] > 0 ? +(((c.thoughtTokens ?? 0) / totals[i]) * 100).toFixed(1) : 0,
       letter: monthName(i)[0],
       active,
       best: i === bestIdx,
@@ -218,7 +233,8 @@ export function monthCardModel(byMonth: UsageMonthStats[], monthsElapsed: number
   const hasDelta = bestIdx > 0 && prev > 0;
 
   return {
-    heroLabel: elapsed === 12 ? m.stats_monthCard_fullYear_label() : m.stats_monthCard_yearToDate_label(),
+    heroLabel:
+      elapsed === 12 ? m.stats_monthCard_fullYear_label() : m.stats_monthCard_yearToDate_label(),
     heroValue: formatTokens(sum),
     avgSub: m.stats_monthCard_avgSub_label({ amount: formatTokens(sum / elapsed) }),
     grid: gridLines(max),
@@ -234,5 +250,6 @@ export function monthCardModel(byMonth: UsageMonthStats[], monthsElapsed: number
       ? m.stats_monthCard_deltaVs_label({ month: monthName(bestIdx - 1).toUpperCase() })
       : m.stats_monthCard_trend_label(),
     deltaValue: hasDelta ? `+${Math.round(((max - prev) / prev) * 100)}%` : '—',
+    hasThoughts: cells.some((c) => (c.thoughtTokens ?? 0) > 0),
   };
 }
