@@ -32,6 +32,9 @@
   const workspaceIdStore = writable(workspace.id);
   $effect(() => {
     workspaceIdStore.set(workspace.id);
+    // Reset any local selection when the workspace changes so displayContent
+    // never indexes the new workspace's versions with a stale selection.
+    selectedVersionIndex = null;
   });
   const noteVersionsState = selectNoteVersions(workspaceIdStore);
 
