@@ -37,6 +37,7 @@ import {
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import {
   initialState as workspaceInitialState,
+  replaceWorkspaceList,
   setWorkspaceEntity,
   workspaceReducer,
 } from '../../workspace/workspace-slice';
@@ -57,7 +58,11 @@ import {
   requestUnarchiveWorkspace,
   workspaceOperationsReducer,
 } from '../workspace-operations-slice';
-import { workspaceOperationsSaga } from './workspace-operations-saga';
+import {
+  WORKSPACE_DELETION_TOMBSTONE_TTL_MS,
+  WORKSPACE_OPERATION_UNDO_DURATION_MS,
+  workspaceOperationsSaga,
+} from './workspace-operations-saga';
 
 const settle = async () => {
   await Promise.resolve();
@@ -211,6 +216,35 @@ describe('workspaceOperationsSaga', () => {
     run.send(applyWorkspaceProposal({ proposal }));
     await settle();
     expect(mocks.archive).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps the tombstone after a committed delete so stale refetches cannot resurrect the workspace', async () => {
+    vi.useFakeTimers();
+    mocks.deleteWorkspace.mockResolvedValue({ ok: true, data: undefined });
+    const run = harness([workspace('ws-1')]);
+    run.send(requestDeleteWorkspace('ws-1'));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
+    expect(run.state().workspace.pendingDeletions['ws-1']).toBe(true);
+
+    // Undo window elapses and the delete commits successfully
+    await vi.advanceTimersByTimeAsync(WORKSPACE_OPERATION_UNDO_DURATION_MS);
+    expect(mocks.deleteWorkspace).toHaveBeenCalledExactlyOnceWith('ws-1');
+    // Tombstone must survive the successful commit for the grace window
+    expect(run.state().workspace.pendingDeletions['ws-1']).toBe(true);
+
+    // Stale responses computed before the daemon committed the delete land now
+    run.send(setWorkspaceEntity(workspace('ws-1')));
+    run.send(replaceWorkspaceList([workspace('ws-1')]));
+    expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
+
+    // Grace window elapses: tombstone is cleared and state stays clean
+    await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
+    expect(run.state().workspace.pendingDeletions['ws-1']).toBeUndefined();
+    expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
+
     run.task.cancel();
     await run.task.toPromise();
   });
