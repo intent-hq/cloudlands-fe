@@ -162,7 +162,7 @@ Each release ships four platform builds, produced by parallel jobs in `release-b
 | Platform      | Runner                                                     | Artifacts                                           | Feed file                |
 | ------------- | ---------------------------------------------------------- | --------------------------------------------------- | ------------------------ |
 | macOS (arm64) | `macos-14` (GitHub-hosted)                                 | `.dmg`, `.zip` (+ blockmaps)                        | `latest-mac.yml`         |
-| Windows (x64) | `windows-latest` (GitHub-hosted)                           | NSIS installer `.exe`, portable `.exe` (+ blockmap) | `latest.yml`             |
+| Windows (x64) | `windows-2022` (GitHub-hosted)                             | NSIS installer `.exe`, portable `.exe` (+ blockmap) | `latest.yml`             |
 | Linux (x64)   | `ubuntu-latest` (GitHub-hosted)                            | AppImage, `.deb`                                    | `latest-linux.yml`       |
 | Linux (arm64) | self-hosted `comfy` (`[self-hosted, Linux, ARM64, comfy]`) | AppImage, `.deb`                                    | `latest-linux-arm64.yml` |
 
