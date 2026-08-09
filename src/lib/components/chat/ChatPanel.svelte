@@ -542,8 +542,8 @@
     const showingPendingUserMessage = !!pendingMessage && !hasUserMessage;
     // Reading $agentIsResponding$ keeps this $derived reactive to gate flips
     // that do not change the transcript; the dismissal marker read keeps it
-    // reactive to metadata-only session updates (optimistic dismiss /
-    // agent:updated); the shared helper re-reads both from store state.
+    // reactive to metadata-only session updates (agent:updated); the shared
+    // helper re-reads both from store state.
     void $agentIsResponding$;
     void $agentSession$?.metadata?.dismissedQuestionsMessageId;
     return deriveWizardPendingQuestions(
@@ -583,12 +583,13 @@
     }),
   );
 
-  // Dismiss = persistent, unlike Ignore: the mutation middleware stamps
-  // `dismissedQuestionsMessageId` into session metadata optimistically (the
-  // wizard-gate reads it, so the wizard hides immediately) and forwards
-  // `agent.dismissQuestions` — the daemon persists the marker (survives
-  // reload) and releases the question hold. On failure the middleware rolls
-  // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
+  // Dismiss = persistent, unlike Ignore: the dismiss saga forwards
+  // `agent.dismissQuestions` — the daemon persists
+  // `dismissedQuestionsMessageId` in session metadata (survives reload),
+  // releases the question hold, and pushes the marker back via
+  // `agent:updated` (the wizard-gate reads it, so the wizard hides). On
+  // failure no marker lands, so the wizard stays pending and the saga
+  // surfaces the error toast.
   function handleQuestionWizardDismiss() {
     if (!workspace || !pendingQuestions) return;
     appStore.dispatch(

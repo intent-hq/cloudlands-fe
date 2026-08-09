@@ -254,9 +254,9 @@ function* dismissQuestions(
     yield* put(action.success(undefined as never));
     settled = true;
   } catch (error) {
-    yield* put(
-      action.failure(mutationError(error, m.agent_mutation_dismissQuestionsFailed_error())),
-    );
+    const failure = mutationError(error, m.agent_mutation_dismissQuestionsFailed_error());
+    yield* call(showError, failure.message);
+    yield* put(action.failure(failure));
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {

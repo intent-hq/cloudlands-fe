@@ -5,12 +5,18 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   rename: vi.fn(),
   deleteAgent: vi.fn(),
+  dismissQuestions: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
-    agents: { get: mocks.get, rename: mocks.rename, delete: mocks.deleteAgent },
+    agents: {
+      get: mocks.get,
+      rename: mocks.rename,
+      delete: mocks.deleteAgent,
+      dismissQuestions: mocks.dismissQuestions,
+    },
   },
 }));
 vi.mock('svelte-sonner', () => ({
@@ -37,7 +43,7 @@ import {
   restoreAgentSessionRequested,
   undoAgentDeletionRequested,
 } from '../../workspace-agents/workspace-agents-slice';
-import { bulkUpsertSessions } from '../agent-session-slice';
+import { agentSessionDismissQuestionsRequested, bulkUpsertSessions } from '../agent-session-slice';
 import { agentMutationSaga } from './agent-mutation-saga';
 
 const WS = 'ws-mutation';
@@ -161,6 +167,44 @@ describe('agentMutationSaga', () => {
     expect(dispatched.filter((candidate) => candidate.type === bulkUpsertSessions.type)).toEqual([
       bulkUpsertSessions([session()]),
     ]);
+    await stop(task);
+  });
+
+  it('surfaces a daemon dismiss-questions failure as an error toast and rejects', async () => {
+    mocks.dismissQuestions.mockResolvedValue({ success: false, error: 'dismiss rejected' });
+    const { channel, task } = start();
+    const action = agentSessionDismissQuestionsRequested(A1, WS, 'msg-q1');
+    channel.put(action);
+
+    await expect(action.promise).rejects.toThrow('dismiss rejected');
+    expect(mocks.dismissQuestions).toHaveBeenCalledWith({
+      agentId: A1,
+      workspaceId: WS,
+      messageId: 'msg-q1',
+    });
+    expect(mocks.error).toHaveBeenCalledWith('dismiss rejected');
+    await stop(task);
+  });
+
+  it('surfaces a dismiss-questions RPC error as an error toast and rejects', async () => {
+    mocks.dismissQuestions.mockRejectedValue(new Error('socket closed'));
+    const { channel, task } = start();
+    const action = agentSessionDismissQuestionsRequested(A1, WS, 'msg-q1');
+    channel.put(action);
+
+    await expect(action.promise).rejects.toThrow('socket closed');
+    expect(mocks.error).toHaveBeenCalledWith('socket closed');
+    await stop(task);
+  });
+
+  it('shows no error toast when dismiss-questions succeeds', async () => {
+    mocks.dismissQuestions.mockResolvedValue({ success: true });
+    const { channel, task } = start();
+    const action = agentSessionDismissQuestionsRequested(A1, WS, 'msg-q1');
+    channel.put(action);
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.error).not.toHaveBeenCalled();
     await stop(task);
   });
 
