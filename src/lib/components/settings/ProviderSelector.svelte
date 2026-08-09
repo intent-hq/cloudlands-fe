@@ -447,6 +447,31 @@
       provider.available && provider.authenticated === false && provider.loginDocsUrl}
     {@const canSetDefault = provider.available && !isActive && isReady}
     {@const canInstall = !provider.available}
+    {@const hasPiAdapterWarning =
+      !provider.statusPending &&
+      provider.id === 'pi' &&
+      provider.available &&
+      piMcpAdapterInstalled === false}
+    {@const hasNodeMissing =
+      !provider.statusPending &&
+      provider.hasNpxFallback &&
+      !provider.available &&
+      $npxStatus$?.resolvedPath === null}
+    {@const hasNpmOld =
+      !provider.statusPending &&
+      provider.hasNpxFallback &&
+      !provider.available &&
+      $npxStatus$?.resolvedPath !== null &&
+      $npxStatus$?.versionOk === false}
+    {@const hasProviderWarning = !provider.statusPending && !!provider.warning}
+    {@const hasWarning = hasPiAdapterWarning || hasNodeMissing || hasNpmOld || hasProviderWarning}
+    {@const warningLabel = hasPiAdapterWarning
+      ? m.settings_providers_piAdapterNeeded()
+      : hasNodeMissing
+        ? m.settings_providers_requiresNodejs()
+        : hasNpmOld
+          ? m.settings_providers_npmTooOld()
+          : provider.warning}
     <div class="px-6 py-4">
       <div class="flex items-start justify-between gap-4">
         <div class="space-y-1">
@@ -460,61 +485,6 @@
               {provider.name}
             </span>
           </div>
-          {#if provider.id === 'pi' && provider.available && piMcpAdapterInstalled === false}
-            <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
-              <Fa icon={faTriangleExclamation} class="w-3 h-3" />
-              <span>{m.settings_providers_piAdapterNeeded()}</span>
-              <Button
-                onclick={handleInstallPiMcpAdapter}
-                disabled={setupInProgress.pi}
-                size="xs"
-                variant="outline"
-                class="flex items-center gap-1"
-              >
-                {#if setupInProgress.pi}
-                  <Fa icon={faCircleNotch} class="w-3 h-3 text-ghost animate-spin" />
-                  <span>{m.settings_providers_installing()}</span>
-                {:else}
-                  <span>{m.settings_providers_install()}</span>
-                {/if}
-              </Button>
-            </div>
-          {/if}
-          {#if provider.hasNpxFallback && !provider.available && $npxStatus$?.resolvedPath === null}
-            <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
-              <Fa icon={faTriangleExclamation} class="w-3 h-3" />
-              <span>
-                {m.settings_providers_requiresNodejs()}
-                <button
-                  type="button"
-                  class="underline hover:no-underline"
-                  onclick={() => shell.open('https://nodejs.org')}
-                  >{m.settings_providers_installFromNodejs()}</button
-                >
-              </span>
-            </div>
-          {:else if provider.hasNpxFallback && !provider.available && $npxStatus$?.resolvedPath !== null && $npxStatus$?.versionOk === false}
-            <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
-              <Fa icon={faTriangleExclamation} class="w-3 h-3" />
-              <span>{m.settings_providers_npmTooOld()}</span>
-            </div>
-          {/if}
-          <!-- Provider status warning (e.g. claude-code installed but npx missing) -->
-          {#if provider.warning}
-            <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
-              <Fa icon={faTriangleExclamation} class="w-3 h-3" />
-              <span>
-                {provider.warning}{#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
-                  — <button
-                    type="button"
-                    class="underline hover:no-underline"
-                    onclick={() => void shell.open('https://nodejs.org')}
-                    ><!-- i18n-ignore (URL) -->nodejs.org</button
-                  >
-                {/if}
-              </span>
-            </div>
-          {/if}
         </div>
 
         <div class="flex min-h-7 shrink-0 items-center gap-2 text-xs">
@@ -548,6 +518,17 @@
             >
               {m.settings_providers_enable()}
             </Button>
+          {/if}
+
+          {#if hasWarning}
+            <span
+              role="img"
+              aria-label={warningLabel}
+              title={warningLabel}
+              class="flex size-4 items-center justify-center text-yellow-600 dark:text-yellow-500"
+            >
+              <Fa icon={faTriangleExclamation} class="size-3.5" />
+            </span>
           {/if}
 
           <div class="relative">
@@ -590,7 +571,77 @@
               {/snippet}
 
               {#snippet content({ close }: { close: () => void })}
-                <div class="w-44 py-1">
+                <div class={hasWarning ? 'w-64 py-1' : 'w-44 py-1'}>
+                  {#if hasWarning}
+                    <div class="border-b border-border/50 pb-1">
+                      {#if hasPiAdapterWarning}
+                        <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                          {m.settings_providers_piAdapterNeeded()}
+                        </p>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          disabled={setupInProgress.pi}
+                          class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                          onclick={() => void handleInstallPiMcpAdapter()}
+                        >
+                          {#if setupInProgress.pi}
+                            <Fa
+                              icon={faCircleNotch}
+                              class="size-3.5 animate-spin text-muted-foreground"
+                            />
+                            {m.settings_providers_installing()}
+                          {:else}
+                            <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
+                            {m.settings_providers_install()}
+                          {/if}
+                        </button>
+                      {/if}
+
+                      {#if hasNodeMissing}
+                        <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                          {m.settings_providers_requiresNodejs()}
+                        </p>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
+                          onclick={() => {
+                            void shell.open('https://nodejs.org');
+                            close();
+                          }}
+                        >
+                          {m.settings_providers_installFromNodejs()}
+                        </button>
+                      {/if}
+
+                      {#if hasNpmOld}
+                        <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                          {m.settings_providers_npmTooOld()}
+                        </p>
+                      {/if}
+
+                      {#if hasProviderWarning}
+                        <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                          {provider.warning}
+                        </p>
+                        {#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
+                          <button
+                            type="button"
+                            role="menuitem"
+                            class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
+                            onclick={() => {
+                              void shell.open('https://nodejs.org');
+                              close();
+                            }}
+                          >
+                            {m.settings_providers_installFromNodejs()}
+                          </button>
+                        {/if}
+                      {/if}
+                    </div>
+                  {/if}
+
                   {#if provider.available && provider.authenticated === true}
                     <div
                       role="menuitem"
