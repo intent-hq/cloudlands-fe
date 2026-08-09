@@ -251,11 +251,11 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
     await waitFor(() =>
       expect(mockGithubBranchesCached).toHaveBeenCalledWith('octo', 'intent'),
     );
-    // Cached hit paints instantly: default branch selected, loading skeleton gone â€”
+    // Cached hit paints instantly: default branch selected, trigger spinner gone â€”
     // all while the authoritative GitHub API request is still in flight.
     await waitFor(() => expect(onchange).toHaveBeenCalled());
     expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'dev' });
-    expect(container.querySelector('.animate-pulse')).toBeNull();
+    expect(container.querySelector('.animate-spin')).toBeNull();
 
     // Fresh list arrives with an extra branch: the list reconciles and the
     // still-existing selection is kept (no second onchange).
@@ -275,14 +275,14 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
     await waitFor(() =>
       expect(mockGithubBranchesCached).toHaveBeenCalledWith('octo', 'intent'),
     );
-    // Cold cache: still loading, nothing selected.
-    await waitFor(() => expect(container.querySelector('.animate-pulse')).toBeTruthy());
+    // Cold cache: still loading (inline trigger spinner), nothing selected.
+    await waitFor(() => expect(container.querySelector('.animate-spin')).toBeTruthy());
     expect(onchange).not.toHaveBeenCalled();
 
     fresh.resolve({ branches: ['dev', 'feat/x'], defaultBranch: 'dev' });
     await waitFor(() => expect(onchange).toHaveBeenCalled());
     expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'dev' });
-    await waitFor(() => expect(container.querySelector('.animate-pulse')).toBeNull());
+    await waitFor(() => expect(container.querySelector('.animate-spin')).toBeNull());
   });
 
   it('vanished branch: a cached selection missing from the fresh list switches to the default branch', async () => {
