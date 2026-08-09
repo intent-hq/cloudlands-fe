@@ -7260,6 +7260,79 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
     const ws = await readWorkspace();
     expect(ws.activity).toBe('idle');
   });
+
+  // monorepo#1771 / AGENTS.md "Event-driven refetches — single-flight and
+  // coalesced": a burst of agent events for one workspace (e.g. an N-agent
+  // idle burst when a delegation group settles, plus stream liveness pings)
+  // must not fan out one independent workspace.get per event — an unordered
+  // resolution could let a stale response landing last overwrite a newer
+  // activity value.
+  it('a burst of agent:idle / agent:stream:activity events collapses to one immediate fetch plus at most one trailing fetch', async () => {
+    await seedWorkspace('idle');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const { WorkspaceStatus } = await import('$shared/types');
+    function workspaceResponse(activity: 'idle' | 'agent_running', updatedAt: string) {
+      return {
+        workspace: {
+          id: WS_RECON,
+          title: 'Reconcile ws',
+          branch: 'main',
+          status: WorkspaceStatus.Active,
+          changesets: [],
+          timeline: [],
+          conversationInfo: [],
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt,
+          activity,
+        },
+      };
+    }
+
+    let resolveFirstFetch: ((value: unknown) => void) | undefined;
+    let workspaceGetCalls = 0;
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method === 'agent.list') return { agents: [] };
+      if (method !== 'workspace.get') return { subscriptionId: 'sub-1' };
+      workspaceGetCalls += 1;
+      if (workspaceGetCalls === 1) {
+        // The leading-edge fetch stays pending until we explicitly resolve
+        // it below, so every burst event below fires while it's in flight.
+        return new Promise((resolve) => {
+          resolveFirstFetch = resolve;
+        });
+      }
+      // Trailing fetch: freshest daemon state — all agents idle.
+      return workspaceResponse('idle', '2026-01-02T00:00:00.000Z');
+    });
+
+    // Leading edge: starts the first (still-pending) fetch immediately. The
+    // in-flight flag is set synchronously inside the handler, but the mocked
+    // `backendRequest` call itself lands after a microtask (dynamic import),
+    // so give it a tick to actually fire before asserting the count.
+    handler(agentIdleNotification());
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(workspaceGetCalls).toBe(1);
+
+    // Burst of further agent events while the fetch is in flight — must
+    // collapse into at most one trailing fetch, not one per event.
+    handler(agentIdleNotification());
+    handler(agentStreamActivityNotification());
+    handler(agentIdleNotification());
+    expect(workspaceGetCalls).toBe(1);
+
+    // Settle the leading-edge fetch with a (now-stale) agent_running
+    // snapshot; the trailing fetch should fire immediately after and its
+    // fresher idle result must be what lands in the store.
+    resolveFirstFetch?.(workspaceResponse('agent_running', '2026-01-01T00:00:01.000Z'));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(workspaceGetCalls).toBe(2);
+    const ws = await readWorkspace();
+    expect(ws.activity).toBe('idle');
+  });
 });
 
 // monorepo#1712: the HUD card's agent rows are built from
