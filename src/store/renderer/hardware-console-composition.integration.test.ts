@@ -164,22 +164,28 @@ describe('hardware-console production composition', () => {
     appStore.dispatch(setActionKeyMapping('creator-micro-2', 0, 'new-workspace'));
     appStore.dispatch(setPromptPickerLimit(2));
     appStore.dispatch(sendMessage('agent-a', { text: 'Persist this prompt', wsId: 'ws-1' }));
-    await vi.waitFor(() => expect(settingsUpdate).toHaveBeenCalled());
-    expect(settingsUpdate.mock.calls.flat(2)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ value: expect.objectContaining({ keyPins: expect.any(Array) }) }),
-        expect.objectContaining({
-          value: expect.objectContaining({ actionMappingByModel: expect.any(Object) }),
-        }),
-        expect.objectContaining({ value: expect.objectContaining({ promptPickerLimit: 2 }) }),
-        expect.objectContaining({
-          value: expect.objectContaining({
-            promptUsage: expect.arrayContaining([
-              expect.objectContaining({ text: 'Persist this prompt' }),
-            ]),
+    // Other boot-time sagas can persist earlier (e.g. the setup-prompt saga's
+    // workspace refresh triggers a key-pin reconcile persist), so wait for the
+    // four dispatched persists specifically rather than the first call.
+    await vi.waitFor(() =>
+      expect(settingsUpdate.mock.calls.flat(2)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            value: expect.objectContaining({ keyPins: expect.any(Array) }),
           }),
-        }),
-      ]),
+          expect.objectContaining({
+            value: expect.objectContaining({ actionMappingByModel: expect.any(Object) }),
+          }),
+          expect.objectContaining({ value: expect.objectContaining({ promptPickerLimit: 2 }) }),
+          expect.objectContaining({
+            value: expect.objectContaining({
+              promptUsage: expect.arrayContaining([
+                expect.objectContaining({ text: 'Persist this prompt' }),
+              ]),
+            }),
+          }),
+        ]),
+      ),
     );
 
     hardware.emitIpc(IPC_CHANNELS.HARDWARE_CONSOLE.CLEAR_LIGHTING);
