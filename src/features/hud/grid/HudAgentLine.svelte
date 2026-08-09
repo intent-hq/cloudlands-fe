@@ -9,6 +9,7 @@
   // The stack renders [prevLine, shownLine]; resting position shows the
   // bottom row (slid), so the very first line renders without animation.
   let prevLine = $state('');
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   let shownLine = $state(line);
   let sliding = $state(true);
 

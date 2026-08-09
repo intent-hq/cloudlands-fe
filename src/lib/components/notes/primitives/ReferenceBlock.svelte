@@ -61,6 +61,7 @@
 
   // Get workspaceId from extension options
   let workspaceId = $derived(extension?.options?.workspaceId as string | undefined);
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const workspaceIdStore = writable(workspaceId ?? '');
   $effect(() => {
     workspaceIdStore.set(workspaceId ?? '');

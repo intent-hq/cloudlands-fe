@@ -71,6 +71,7 @@
 
   let selectedIndex = $state(0);
   let breadcrumbs: BreadcrumbItem[] = $state([]);
+  // svelte-ignore state_referenced_locally -- initial seed only; the items-change effect below keeps it in sync.
   let currentItems: (MentionCandidate | MentionGroup)[] = $state(items);
   let breadcrumbController: BreadcrumbController;
   let listElement: HTMLDivElement;

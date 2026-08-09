@@ -108,9 +108,15 @@
   const sidebarIsCollapsed = selectIsCollapsed();
   const sidebarWidth = selectSidebarWidth();
   const sidebarExpandedWidth = selectSidebarExpandedWidth();
+  // Storage keys are captured at init: selector readables must be created at
+  // component init, and the keys are not expected to change during the lifecycle.
+  // svelte-ignore state_referenced_locally
   const storedPanelSize = selectResizablePanelSize(storageKey ?? '');
+  // svelte-ignore state_referenced_locally
   const storedExpandedPanelSize = selectResizablePanelSize(expandedStorageKey ?? '');
+  // svelte-ignore state_referenced_locally
   const isWorkspaceLeftPanel = storageKey === 'workspace-left-panel-width';
+  // svelte-ignore state_referenced_locally
   const isWorkspaceExpandedPanel = expandedStorageKey === 'workspace-left-panel-expanded-width';
   let appliedStoredPanelSize = $state<number | undefined>(undefined);
   let appliedStoredExpandedPanelSize = $state<number | undefined>(undefined);
@@ -219,6 +225,7 @@
   let expandedWidth = $state(
     orientation === 'horizontal' ? getInitialExpandedWidth() : defaultExpandedWidth,
   );
+  // svelte-ignore state_referenced_locally
   let isCollapsed = $state(initiallyCollapsed);
 
   // State for vertical orientation - initialize with saved values

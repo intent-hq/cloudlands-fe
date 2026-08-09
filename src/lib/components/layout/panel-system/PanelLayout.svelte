@@ -95,6 +95,7 @@
 
   // Reactive writable store that mirrors workspaceId so Redux selectors
   // re-evaluate whenever the prop changes (called at component init time).
+  // svelte-ignore state_referenced_locally
   const workspaceIdStore = writable(workspaceId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);

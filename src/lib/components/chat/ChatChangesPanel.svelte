@@ -341,6 +341,7 @@
   }: Props = $props();
 
   // Group-by-commit toggle state (default: combined view)
+  // svelte-ignore state_referenced_locally -- initial-value prop seeds the local toggle; later changes are user-driven.
   let groupByCommit = $state(initialGroupByCommit);
 
   // File tracking state from Redux

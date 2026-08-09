@@ -32,12 +32,16 @@
 
   let { agentId, workspace = null, isCompleted = false }: Props = $props();
 
+  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by agentId.
   const permissionCount = selectPendingCount(agentId);
 
   // Reactive agent session from Redux; the ensure saga handles the
   // disk restore.
+  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by agentId.
   const agent$ = selectAgentSession(agentId);
+  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by agentId.
   const agentIsResponding$ = selectAgentIsResponding(agentId);
+  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by agentId.
   const agentIsWaiting$ = selectAgentIsWaiting(agentId);
   const agentData = $derived(getAgentPeekData($agent$));
 

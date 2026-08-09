@@ -349,11 +349,13 @@
   }: Props = $props();
 
   // Panel state
+  // svelte-ignore state_referenced_locally - intentional initial capture; prop only seeds the open state
   let isOpen = $state(initiallyExpanded);
   let searchQuery = $state('');
   let searchInputEl = $state<HTMLInputElement | null>(null);
   // Last source the user actually selected an item from (persisted preference)
   let lastUsedSource = $state(loadLastUsedSource());
+  // svelte-ignore state_referenced_locally - intentional initial capture; initialSource/lastUsedSource only seed the active tab
   let activeSource = $state<ContextSource>(
     initialSource ??
       resolveActiveSource({ github: false, linear: false, sentry: false }, lastUsedSource),
@@ -413,6 +415,7 @@
   let _isRefreshingGitHubPRs = $state(false);
 
   // GitHub PR filter - uses GitHub search API @me filter
+  // svelte-ignore state_referenced_locally - intentional initial capture; prop only seeds the filter default
   let githubPRFilter = $state<'all' | 'assigned' | 'created' | 'review-requested' | 'involves'>(
     prFilter ?? 'all',
   );
