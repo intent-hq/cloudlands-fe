@@ -5,7 +5,10 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 
-const { dispatchMock } = vi.hoisted(() => ({ dispatchMock: vi.fn() }));
+const { dispatchMock, handleLinkMock } = vi.hoisted(() => ({
+  dispatchMock: vi.fn(),
+  handleLinkMock: vi.fn(),
+}));
 
 // Mock Redux store and selectors
 vi.mock('$store/renderer/store', async () => {
@@ -28,6 +31,19 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     }),
     { select: () => 'ws-1' },
   ),
+  selectWorkspaceById: Object.assign(
+    () => ({
+      subscribe: (run: (value: unknown) => void) => {
+        run(undefined);
+        return () => {};
+      },
+    }),
+    { select: () => ({ repositoryOwner: 'intent-hq', repositoryName: 'monorepo' }) },
+  ),
+}));
+
+vi.mock('$features/navigation/link-handler', () => ({
+  handleLink: handleLinkMock,
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -400,5 +416,133 @@ describe('ChatMessage hook wake attribution', () => {
 
     expect(screen.getByText('woke the agent and is now retired')).toBeTruthy();
     expect(screen.queryByText(/\[This hook/)).toBeNull();
+  });
+});
+
+describe('ChatMessage PR-monitor wake attribution', () => {
+  beforeEach(() => {
+    handleLinkMock.mockClear();
+  });
+
+  const prMonitorWakeMetadata = {
+    type: 'pr_monitor_wake',
+    monitorId: 'mon-1',
+    repo: 'intent-hq/monorepo',
+    prNumber: 42,
+    reason: 'checks_failed',
+  };
+
+  function prMonitorWakeMessage(opts: {
+    rowMetadata?: boolean;
+    blockMetadata?: boolean;
+    metadata?: Record<string, unknown>;
+  }): AgentMessage {
+    const metadata = opts.metadata ?? prMonitorWakeMetadata;
+    return {
+      id: 'msg-1',
+      role: 'user',
+      contentBlocks: [
+        {
+          type: 'text',
+          text: '[PR monitor intent-hq/monorepo#42] Checks failed',
+          ...(opts.blockMetadata ? { messageMetadata: metadata } : {}),
+        },
+      ],
+      timestamp: new Date('2026-01-01T12:00:00Z'),
+      ...(opts.rowMetadata ? { metadata } : {}),
+    };
+  }
+
+  it('renders the PR wake header with the chip and strips the prefix (row-level metadata)', () => {
+    render(ChatMessage, { props: { message: prMonitorWakeMessage({ rowMetadata: true }) } });
+
+    const header = screen.getByTestId('pr-monitor-wake-attribution');
+    expect(header).toBeTruthy();
+    // Workspace repo matches → plain #N chip
+    expect(screen.getByTestId('pr-monitor-wake-chip').textContent?.trim()).toBe('#42');
+    expect(screen.getByText('woke the agent')).toBeTruthy();
+    expect(screen.getByText('Checks failed')).toBeTruthy();
+    expect(screen.queryByText(/\[PR monitor/)).toBeNull();
+  });
+
+  it('detects PR wake from block-level messageMetadata', () => {
+    render(ChatMessage, { props: { message: prMonitorWakeMessage({ blockMetadata: true }) } });
+
+    expect(screen.getByTestId('pr-monitor-wake-attribution')).toBeTruthy();
+    expect(screen.getByText('Checks failed')).toBeTruthy();
+    expect(screen.queryByText(/\[PR monitor/)).toBeNull();
+  });
+
+  it('prefixes the chip label for a cross-repo PR', () => {
+    render(ChatMessage, {
+      props: {
+        message: prMonitorWakeMessage({
+          rowMetadata: true,
+          metadata: { ...prMonitorWakeMetadata, repo: 'intent-hq/intentd' },
+        }),
+      },
+    });
+
+    expect(screen.getByTestId('pr-monitor-wake-chip').textContent?.trim()).toBe(
+      'intent-hq/intentd: #42',
+    );
+  });
+
+  it('opens the PR externally on chip click (metadata url preferred)', async () => {
+    render(ChatMessage, {
+      props: {
+        message: prMonitorWakeMessage({
+          rowMetadata: true,
+          metadata: { ...prMonitorWakeMetadata, url: 'https://github.example/pr/42' },
+        }),
+      },
+    });
+
+    await fireEvent.click(screen.getByTestId('pr-monitor-wake-chip'));
+
+    expect(handleLinkMock).toHaveBeenCalledTimes(1);
+    expect(handleLinkMock.mock.calls[0][0]).toBe('https://github.example/pr/42');
+    expect(handleLinkMock.mock.calls[0][1]).toMatchObject({ forceExternal: true });
+  });
+
+  it('falls back to the GitHub PR URL when metadata has no url', async () => {
+    render(ChatMessage, { props: { message: prMonitorWakeMessage({ rowMetadata: true }) } });
+
+    await fireEvent.click(screen.getByTestId('pr-monitor-wake-chip'));
+
+    expect(handleLinkMock).toHaveBeenCalledTimes(1);
+    expect(handleLinkMock.mock.calls[0][0]).toBe('https://github.com/intent-hq/monorepo/pull/42');
+  });
+
+  it('renders untagged prefixed text unchanged (no metadata, no strip)', () => {
+    render(ChatMessage, { props: { message: prMonitorWakeMessage({}) } });
+
+    expect(screen.queryByTestId('pr-monitor-wake-attribution')).toBeNull();
+    expect(screen.getByText('[PR monitor intent-hq/monorepo#42] Checks failed')).toBeTruthy();
+  });
+
+  it('ignores malformed metadata (missing prNumber)', () => {
+    render(ChatMessage, {
+      props: {
+        message: prMonitorWakeMessage({
+          rowMetadata: true,
+          metadata: { type: 'pr_monitor_wake', monitorId: 'mon-1', repo: 'intent-hq/monorepo' },
+        }),
+      },
+    });
+
+    expect(screen.queryByTestId('pr-monitor-wake-attribution')).toBeNull();
+  });
+
+  it('does not enter edit mode when clicking a PR wake message body', async () => {
+    const onEditSubmit = vi.fn();
+    render(ChatMessage, {
+      props: { message: prMonitorWakeMessage({ rowMetadata: true }), onEditSubmit },
+    });
+
+    await fireEvent.click(screen.getByText('Checks failed'));
+
+    expect(screen.getByText('Checks failed')).toBeTruthy();
+    expect(screen.getByTestId('pr-monitor-wake-attribution')).toBeTruthy();
   });
 });
