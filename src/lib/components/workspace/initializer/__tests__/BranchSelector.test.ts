@@ -148,11 +148,19 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
       props: { repoPath: '/tmp/repo', repoType: 'local' },
     });
 
-    await waitFor(() => expect(mockGetBranches).toHaveBeenCalled());
     const trigger = container.querySelector('button');
     expect(trigger).toBeTruthy();
-    // Spinner replaces the old pulse skeleton in the trigger.
+    // Spinner appears as soon as the (debounced) fetch is scheduled — it must
+    // cover the debounce delay before git.getBranches is actually called.
     await waitFor(() => expect(trigger!.querySelector('.animate-spin')).toBeTruthy());
+    if (mockGetBranches.mock.calls.length === 0) {
+      // Still inside the debounce window: the spinner is already visible.
+      expect(trigger!.querySelector('.animate-spin')).toBeTruthy();
+    }
+
+    // Spinner replaces the old pulse skeleton and persists while the fetch is in flight.
+    await waitFor(() => expect(mockGetBranches).toHaveBeenCalled());
+    expect(trigger!.querySelector('.animate-spin')).toBeTruthy();
     expect(trigger!.querySelector('.animate-pulse')).toBeNull();
     // Accessible loading label.
     expect(screen.getByText('Waiting for branch selection...')).toBeTruthy();

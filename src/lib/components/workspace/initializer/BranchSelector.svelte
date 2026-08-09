@@ -339,6 +339,11 @@
       currentFetchAbortController = null;
     }
 
+    // Surface the loading state for the entire waiting window, including the
+    // debounce delay before the fetch actually starts.
+    isLoading = true;
+    error = null;
+
     fetchBranchesDebounceTimer = setTimeout(() => {
       fetchBranchesDebounceTimer = null;
       fetchBranches();
@@ -395,6 +400,7 @@
         branches = [];
         internalSelectedBranch = '';
         defaultBranch = '';
+        isLoading = false;
       }
     }
   });
@@ -414,7 +420,10 @@
   }
 
   async function fetchBranches() {
-    if (!repoPath) return;
+    if (!repoPath) {
+      isLoading = false;
+      return;
+    }
 
     // Create a new abort controller for this fetch
     const abortController = new AbortController();
@@ -459,6 +468,7 @@
           }
         }
         notifyBranchesLoaded();
+        isLoading = false;
         return;
       }
     }
@@ -704,10 +714,11 @@
       // the user can still type a branch name manually.
       branches = [];
     } finally {
-      isLoading = false;
       performanceMonitor.end(`fetchBranches-${repoPath}`);
-      // Clear the abort controller if this was the current fetch
+      // Only clear the loading state if this was the current fetch — a stale
+      // aborted fetch must not clear the loading state of a newer scheduled one
       if (currentFetchAbortController === abortController) {
+        isLoading = false;
         currentFetchAbortController = null;
       }
     }
