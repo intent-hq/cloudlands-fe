@@ -45,6 +45,7 @@
   import {
     faCheck,
     faCircleNotch,
+    faDownload,
     faEllipsisVertical,
     faFolder,
     faStar,
@@ -666,12 +667,13 @@
                     <button
                       type="button"
                       role="menuitem"
-                      class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
+                      class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
                       onclick={() => {
                         openDocs(provider.docsUrl);
                         close();
                       }}
                     >
+                      <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
                       {m.settings_providers_install()}
                     </button>
                   {/if}
