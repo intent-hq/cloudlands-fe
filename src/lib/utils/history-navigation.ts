@@ -18,11 +18,12 @@ export const MOUSE_BUTTON_FORWARD = 4;
 export type HistoryDirection = 'back' | 'forward';
 
 /**
- * Same-direction suppression window for `navigateHistory`. On Windows the X
- * buttons can reach us twice per press — as renderer mouse events (buttons
- * 3/4, see electron#17134) AND as an `app-command` forwarded over IPC — so
- * the shared dispatch point dedupes same-direction calls landing within this
- * window to a single history step.
+ * Same-direction suppression window for `navigateHistory`. The X buttons can
+ * reach us twice per press — as renderer mouse events (buttons 3/4, see
+ * electron#17134) AND as a main-process gesture forwarded over IPC (Windows
+ * `app-command`; macOS `swipe` for mice whose driver both passes the button
+ * through and synthesizes a swipe) — so the shared dispatch point dedupes
+ * same-direction calls landing within this window to a single history step.
  */
 export const NAVIGATION_DEDUPE_WINDOW_MS = 100;
 
@@ -51,15 +52,28 @@ export function navigateHistory(direction: HistoryDirection): void {
 }
 
 /**
- * IPC listener for the Windows path: main forwards `app-command`
- * `browser-backward` / `browser-forward` as 'back' / 'forward' over the
- * `app:history-navigate` channel (IPC_CHANNELS.APP.HISTORY_NAVIGATE). The
- * payload is untyped at the IPC boundary, so anything else is ignored.
+ * True when the pointer is currently over an embedded browser `<webview>`.
+ * The main-process gesture paths (Windows `app-command`, macOS `swipe`) have
+ * no DOM event target to inspect, so the IPC listener checks the live hover
+ * state instead — matching the mouse path's `isWebviewEvent` semantics so
+ * gestures over the embedded browser never hijack app history.
+ */
+function isWebviewHovered(): boolean {
+  return document.querySelector('webview:hover') !== null;
+}
+
+/**
+ * IPC listener for the main-process gesture paths: main forwards Windows
+ * `app-command` `browser-backward` / `browser-forward` and macOS `swipe`
+ * gestures as 'back' / 'forward' over the `app:history-navigate` channel
+ * (IPC_CHANNELS.APP.HISTORY_NAVIGATE). The payload is untyped at the IPC
+ * boundary, so anything else is ignored. Skipped while the pointer is over a
+ * `<webview>` (see isWebviewHovered).
  */
 export function handleHistoryNavigateIpc(direction: unknown): void {
-  if (direction === 'back' || direction === 'forward') {
-    navigateHistory(direction);
-  }
+  if (direction !== 'back' && direction !== 'forward') return;
+  if (isWebviewHovered()) return;
+  navigateHistory(direction);
 }
 
 /**
