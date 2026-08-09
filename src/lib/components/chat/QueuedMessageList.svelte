@@ -26,7 +26,11 @@
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
-  import { getHookWakeAttribution, stripHookWakePrefix } from '$lib/utils/hook-wake-attribution';
+  import {
+    getHookWakeAttribution,
+    stripHookWakePrefix,
+    stripHookWakeStateNote,
+  } from '$lib/utils/hook-wake-attribution';
   import { summarizeEventWake } from './event-wake-summary';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -248,6 +252,16 @@
    */
   function queuedHookWakeAttribution(message: QueuedMessage) {
     return getHookWakeAttribution(message.messageMetadata);
+  }
+
+  /**
+   * Display text for a queued hook-wake entry: the daemon's literal
+   * `[Background hook "…"]` prefix and trailing `[This hook …]` state note
+   * are stripped display-only, matching the delivered-row rendering in
+   * ChatMessage. The stored content is never mutated.
+   */
+  function queuedHookWakeDisplayText(message: QueuedMessage): string {
+    return stripHookWakeStateNote(stripHookWakePrefix(message.content));
   }
 
   /**
@@ -498,11 +512,11 @@
                 <div
                   class="flex-1 min-w-0 truncate"
                   transition:safeSlide={{ axis: 'y', duration: 200 }}
-                  title={message.content}
+                  title={queuedHookWakeDisplayText(message)}
                 >
                   <span class="text-foreground font-medium">{hookWakeAttr.displayName}</span>
                   <span class="text-xs opacity-70">
-                    — {stripHookWakePrefix(message.content)}</span
+                    — {queuedHookWakeDisplayText(message)}</span
                   >
                 </div>
                 {#if !disabled}
