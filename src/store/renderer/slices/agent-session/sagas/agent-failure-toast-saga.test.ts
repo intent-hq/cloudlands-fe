@@ -212,6 +212,38 @@ describe('agentFailureToastSaga', () => {
     await task.toPromise();
   });
 
+  it('manual close during an in-flight retry stays hidden after an ok:false retry', async () => {
+    let resolveRetry!: (value: { ok: boolean }) => void;
+    mocks.retry.mockImplementation(
+      () => new Promise<{ ok: boolean }>((resolve) => (resolveRetry = resolve)),
+    );
+    const task = runSaga({ dispatch: vi.fn(), getState: state }, agentFailureToastSaga);
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom', at: 1000 });
+    await settle();
+
+    lastToast('agent-failure:agent-1').componentProps.onRetry();
+    await settle();
+    lastToast('agent-failure:agent-1').componentProps.onClose();
+    await settle();
+    expect(mocks.dismiss).toHaveBeenCalledWith('agent-failure:agent-1');
+
+    const callsAfterClose = mocks.custom.mock.calls.length;
+    resolveRetry({ ok: false });
+    await settle();
+    // The failed retry must NOT resurrect the manually dismissed toast.
+    expect(mocks.custom).toHaveBeenCalledTimes(callsAfterClose);
+    expect(getAgentFailureEntry('agent-1')).toBeDefined();
+
+    // A NEWER failure during/after that window still re-shows the toast.
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom again', at: 2000 });
+    await settle();
+    expect(lastToast('agent-failure:agent-1').componentProps).toEqual(
+      expect.objectContaining({ errorSummary: 'boom again' }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('manual close hides the toast until a NEWER failure lands for that agent', async () => {
     const task = runSaga({ dispatch: vi.fn(), getState: state }, agentFailureToastSaga);
     recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom', at: 1000 });

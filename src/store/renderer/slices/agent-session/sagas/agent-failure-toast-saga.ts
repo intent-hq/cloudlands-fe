@@ -298,7 +298,14 @@ function* retryAgent(
     }
     if (!removed) {
       const current = getAgentFailureEntry(agentId);
-      if (current) yield* call(renderEntry, current, state, emit);
+      if (!current) return;
+      // Respect a manual close that happened while the retry was in flight:
+      // stay hidden unless a NEWER failure landed (mirrors renderSnapshot).
+      if (state.dismissedThroughAt !== undefined) {
+        if (current.at <= state.dismissedThroughAt) return;
+        state.dismissedThroughAt = undefined;
+      }
+      yield* call(renderEntry, current, state, emit);
     }
   } finally {
     if (yield* cancelled()) state.retrying = false;
