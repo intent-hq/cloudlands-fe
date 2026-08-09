@@ -1314,19 +1314,26 @@ export const DeepLinkValidateWorkspaceSchema = z.object({
 
 export const FirstVisitStateLoadSchema = z.object({
   workspaceId: WorkspaceIdSchema,
+  // Active backend id — keys the on-disk state dir under userData so two
+  // backends sharing a workspace id keep separate first-visit state
+  // (intent-hq/monorepo#1760). Absent → the local sidecar.
+  backendId: z.string().optional(),
 });
 
 export const FirstVisitStateSaveSchema = z.object({
   workspaceId: WorkspaceIdSchema,
+  backendId: z.string().optional(),
   state: FirstVisitStateSchema,
 });
 
 export const FirstVisitStateDeleteSchema = z.object({
   workspaceId: WorkspaceIdSchema,
+  backendId: z.string().optional(),
 });
 
 export const FirstVisitStateExistsSchema = z.object({
   workspaceId: WorkspaceIdSchema,
+  backendId: z.string().optional(),
 });
 
 // ============================================================================
