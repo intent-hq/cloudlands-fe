@@ -1670,6 +1670,17 @@ export interface GitHubBranchListing {
 }
 
 /**
+ * Cached-refs branch listing (`github.branches.listCached`, §5.27): branch
+ * names read from the daemon's local repo cache with zero network I/O.
+ * `cached: false` means the repo has no usable cache entry (cold cache).
+ */
+export interface GitHubCachedBranchListing {
+  cached: boolean;
+  branches: string[];
+  defaultBranch?: string;
+}
+
+/**
  * Remote repo-config read (`github.repoConfig.get`, §5.27 v2.4) for a GitHub
  * repo with no local checkout: the committed `.intent/config.json` fetched
  * via the contents API. `config` is null when the file (or repo/ref) is
@@ -1690,6 +1701,14 @@ export interface IntegrationsClient {
    * explicit error/auth state — never a fabricated branch list.
    */
   githubBranches(owner: string, repo: string): Promise<GitHubBranchListing>;
+  /**
+   * Branch names from the daemon's local repo cache
+   * (`github.branches.listCached`, §5.27) — zero network I/O, purely a fast
+   * first paint for the BranchSelector. NEVER throws: failures fold to a
+   * cold-cache miss (`{ cached: false, branches: [] }`) so `githubBranches`
+   * stays the only error authority.
+   */
+  githubBranchesCached(owner: string, repo: string): Promise<GitHubCachedBranchListing>;
   /**
    * The repo's committed `.intent/config.json` (`github.repoConfig.get`,
    * §5.27 v2.4) for a GitHub repo without a local checkout. `ref` defaults to
