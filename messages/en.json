@@ -4722,7 +4722,7 @@
   "lib_commandPalette_terminal_pill": "Terminal",
   "lib_commandPalette_note_pill": "Note",
   "lib_commandPalette_file_pill": "File",
-  "lib_commandPalette_archivedWorkspace_pill_label": "Archived workspace",
+  "lib_commandPalette_archivedWorkspace_pill": "Archived workspace",
   "events_activity_file_fallback": "file",
   "events_activity_note_fallback": "note",
   "events_activity_agent_fallback": "Agent",

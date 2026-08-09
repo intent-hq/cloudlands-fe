@@ -14,6 +14,7 @@ import {
   it,
   vi,
 } from 'vitest';
+import { WorkspaceStatus } from '$shared/types';
 
 const {
   gotoMock,
@@ -404,7 +405,7 @@ describe('CommandPalette chat message rows', () => {
         id: 'ws-noowner',
         title: 'Local space',
         repositoryName: 'tools',
-        status: 'Archived',
+        status: WorkspaceStatus.Archived,
         createdAt: '2025-01-01T00:00:00.000Z',
         updatedAt: '2025-01-01T00:00:00.000Z',
       },

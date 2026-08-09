@@ -4721,7 +4721,7 @@
   "lib_commandPalette_terminal_pill": "Terminal",
   "lib_commandPalette_note_pill": "Nota",
   "lib_commandPalette_file_pill": "Archivo",
-  "lib_commandPalette_archivedWorkspace_pill_label": "Espacio de trabajo archivado",
+  "lib_commandPalette_archivedWorkspace_pill": "Espacio de trabajo archivado",
   "events_activity_file_fallback": "archivo",
   "events_activity_note_fallback": "nota",
   "events_activity_agent_fallback": "Agente",
