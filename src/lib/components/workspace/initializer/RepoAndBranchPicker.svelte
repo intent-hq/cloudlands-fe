@@ -357,9 +357,9 @@
       triggerChevronClass={metadataChevronClass}
     />
     {#if isMetadataPresentation ? repoOffBranchParts[1] : cloneRepoParts[1]}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">
-        {isMetadataPresentation ? repoOffBranchParts[1] : cloneRepoParts[1]}
-      </span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2"
+        >{isMetadataPresentation ? repoOffBranchParts[1] : cloneRepoParts[1]}</span
+      >
     {/if}
     <BranchSelector
       variant="ghost"
@@ -383,9 +383,9 @@
       onchange={handleBranchChange}
     />
     {#if isMetadataPresentation ? repoOffBranchParts[2] : cloneRepoParts[2]}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1">
-        {isMetadataPresentation ? repoOffBranchParts[2] : cloneRepoParts[2]}
-      </span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1"
+        >{isMetadataPresentation ? repoOffBranchParts[2] : cloneRepoParts[2]}</span
+      >
     {/if}
   {:else if repoType === 'remote' && remoteSetup && isMetadataPresentation}
     <RepoSelector
