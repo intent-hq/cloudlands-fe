@@ -390,7 +390,7 @@
     <SettingsSidebarNav {activeTab} onSelect={setActiveTab} />
 
     <div class="shrink-0 border-t border-border px-5 py-4 text-xs text-subtle">
-      <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      <div class="flex w-full items-baseline justify-between gap-2">
         <div class="flex items-baseline gap-1.5">
           <!-- i18n-ignore (brand name) -->
           <strong class="text-foreground">Intent</strong>
