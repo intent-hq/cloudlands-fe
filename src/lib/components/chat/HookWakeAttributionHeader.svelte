@@ -22,8 +22,13 @@
 
   // Post-fire state suffix: on dispatched wakes carrying the additive
   // `hookStillActive` metadata field (PROTOCOL §5.40), say whether the hook
-  // re-armed or retired; otherwise fall back to the plain "woke the agent".
+  // re-armed or retired; an eviction always retires the hook, so its wake
+  // shows the retired suffix unconditionally (the body's state note is
+  // display-stripped). Otherwise fall back to the plain "woke the agent".
   let stateLabel = $derived.by(() => {
+    if (attribution.reason === 'evicted') {
+      return m.chat_hookWakeAttribution_wokeAgentRetired_after();
+    }
     if (attribution.reason === 'dispatched' && attribution.hookStillActive !== undefined) {
       return attribution.hookStillActive
         ? m.chat_hookWakeAttribution_wokeAgentStillActive_after()

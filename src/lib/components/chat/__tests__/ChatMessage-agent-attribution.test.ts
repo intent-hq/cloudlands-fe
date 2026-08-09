@@ -383,4 +383,22 @@ describe('ChatMessage hook wake attribution', () => {
 
     expect(screen.getByText('woke the agent')).toBeTruthy();
   });
+
+  it('shows the retired suffix for evicted wakes without needing hookStillActive', () => {
+    render(ChatMessage, {
+      props: {
+        message: hookWakeMessage({
+          rowMetadata: true,
+          metadata: { ...hookWakeMetadata, reason: 'evicted' },
+          text:
+            '[Background hook "ci-watch"] Hook failed\n\n' +
+            '[This hook will not run again. Schedule a new hook via ' +
+            'ws.hook.schedule if the condition is still worth watching.]',
+        }),
+      },
+    });
+
+    expect(screen.getByText('woke the agent and is now retired')).toBeTruthy();
+    expect(screen.queryByText(/\[This hook/)).toBeNull();
+  });
 });

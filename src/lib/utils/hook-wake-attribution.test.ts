@@ -129,6 +129,17 @@ describe('stripHookWakeStateNote', () => {
     ).toBe('CI is red\n\n[hook logs]\nchecked 3 runs');
   });
 
+  it('strips a note constituting the whole string (empty dispatch message)', () => {
+    expect(
+      stripHookWakeStateNote(
+        stripHookWakePrefix(
+          '[Background hook "x"] \n\n[This hook is now retired and will not run again — ' +
+            'reschedule via ws.hook.schedule if still needed.]',
+        ),
+      ),
+    ).toBe('');
+  });
+
   it('returns text without a trailing state note unchanged', () => {
     expect(stripHookWakeStateNote('CI is red')).toBe('CI is red');
     expect(stripHookWakeStateNote('CI is red\n\nall good now')).toBe('CI is red\n\nall good now');
