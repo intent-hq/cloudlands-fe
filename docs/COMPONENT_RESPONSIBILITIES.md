@@ -45,7 +45,7 @@ Per `docs/STATE_MANAGEMENT.md`, Redux in `src/store/renderer/` is the canonical 
 ┌─────────────────────────────────────────────────────────────────┐
 │ Change Detection + Persistence                                  │
 │ ChangeDetectorRefactored, change-detection/*, provenance/*,     │
-│ FileTrackingStorage, EventStore                                 │
+│ FileTrackingStorage                                             │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -102,8 +102,6 @@ Selector readable calls (`selectFoo()`) use Svelte context internally, so create
 | workspace-events slice | src/store/main/slices/workspace-events/ | Redux slice for workspace event state, deduplication, and emission via `emitWorkspaceEvent`. |
 | domain-events actions | src/store/main/slices/domain-events/ | Redux actions + broadcast sagas for domain events (terminal, notes, git, etc.). |
 | agent-subscriptions slice | src/store/main/slices/agent-subscriptions/ | Agent event filter state and subscription management. |
-| EventStore | src/features/events/main/event-store.ts | Append-only JSONL persistence for workspace events (used by persistence saga). |
-| EventQueryEngine | src/features/events/main/event-query-engine.ts | Filtering, sorting, pagination, and aggregation over stored events. |
 | EventFilterEngine | src/features/events/event-filter-engine.ts | Pure filter matching logic for event subscriptions. |
 | broadcast-saga | src/store/main/slices/workspace-events/sagas/broadcast-saga.ts | Broadcasts accepted workspace events to renderer windows and STDIO. |
 | renderer-subscription-saga | src/store/main/slices/workspace-events/sagas/renderer-subscription-saga.ts | Delivers accepted events to matching renderer subscriptions. |
@@ -164,14 +162,14 @@ Selector readable calls (`selectFoo()`) use Svelte context internally, so create
 4. `src/features/file-tracking/main/file-tracking.service.ts` performs the git write and updates tracked-change state.
 5. `src/features/file-tracking/main/git-integration.service.ts` re-syncs git and tracked-change state after completion.
 
-### Event persistence
+### Event flow
 
 1. Change detection emits `activity-log-event` which is bridged into Redux via `workspace.ipc.ts` → `mainDispatch(emitWorkspaceEvent(...))`.
 2. The `workspace-events` slice accepts and deduplicates the event.
-3. The persistence saga writes to `EventStore` (append-only JSONL).
-4. The broadcast saga sends the event to renderer windows and STDIO.
-5. The renderer-subscription saga delivers to matching subscriptions.
-6. `EventQueryEngine` serves filtered historical reads via IPC.
+3. The broadcast saga sends the event to renderer windows and STDIO.
+4. The renderer-subscription saga delivers to matching subscriptions.
+
+Event persistence and historical queries are daemon-owned (intentd); the frontend keeps no local event store.
 
 ### ID lifecycle in file tracking
 

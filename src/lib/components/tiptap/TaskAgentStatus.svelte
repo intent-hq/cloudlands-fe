@@ -49,7 +49,9 @@
   } = $props();
 
   const activeWorkspaceId$ = selectActiveWorkspaceId();
+  // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
   const serviceAgent$ = selectAgentSession(agentId);
+  // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
   const agentIsResponding$ = selectAgentIsResponding(agentId);
 
   // Force reactivity with a version counter that updates when we detect changes
@@ -80,6 +82,7 @@
   let isStreamActive = $state(false);
 
   // Streaming text is derived from Redux-owned agent-session messages.
+  // svelte-ignore state_referenced_locally - selector readables must be created at component init; component is mounted per-agent
   const streamingContent$ = selectAgentSessionStreamingContent(agentId);
 
   async function tryLoadAgent() {

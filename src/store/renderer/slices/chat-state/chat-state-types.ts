@@ -137,7 +137,7 @@ export interface ChatAgentState {
   /**
    * Current standing `chat.subscribe` lifecycle phase for this agent, or
    * null when no subscription is open (teardown resets it). Written by
-   * chat-subscribe-service from the live client's onPhase reports.
+   * chat-subscribe saga from the live client's onPhase reports.
    */
   liveStreamPhase: LiveStreamPhase | null;
 }

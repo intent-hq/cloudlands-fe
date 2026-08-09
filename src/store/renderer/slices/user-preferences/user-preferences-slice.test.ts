@@ -384,6 +384,22 @@ describe("userPreferencesReducer", () => {
       ]);
     });
 
+    it("includes every loaded system font after System Default", () => {
+      const fontState = {
+        userPreferences: {
+          ...initialState,
+          systemFonts: ["Helvetica Neue", "JetBrains Mono", "Cascadia Code"],
+        },
+      } as any;
+
+      expect(selectCodeFontOptions.select(fontState).map((option) => option.value)).toEqual([
+        "system-default",
+        "Helvetica Neue",
+        "JetBrains Mono",
+        "Cascadia Code",
+      ]);
+    });
+
     it("selects notification settings from userPreferences", () => {
       expect(selectNotificationEnabled.select(state)).toBe(false);
       expect(selectSoundEnabled.select(state)).toBe(false);

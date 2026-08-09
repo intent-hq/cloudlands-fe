@@ -58,7 +58,9 @@
   // PERF: Start invisible with placeholder - this prevents rendering ALL turns on initial load
   // The IntersectionObserver will mark visible turns when they enter the viewport
   // CRITICAL FIX: Previously this started visible when no cache, causing all turns to render initially
+  // svelte-ignore state_referenced_locally -- intentional one-shot cache read for the initial turnKey.
   const initialCachedHeight = heightCache.get(turnKey);
+  // svelte-ignore state_referenced_locally -- initial seed only; shouldRenderContent tracks forceVisible reactively.
   let isVisible = $state(forceVisible); // Only start visible if forceVisible
   let hasBeenMeasured = $state(initialCachedHeight !== undefined);
 

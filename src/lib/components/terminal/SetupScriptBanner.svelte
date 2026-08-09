@@ -51,6 +51,8 @@
   }
 
   let { workspaceId }: Props = $props();
+  // Initial value only; the $effect below keeps the store in sync.
+  // svelte-ignore state_referenced_locally
   const workspaceIdStore = writable(workspaceId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);

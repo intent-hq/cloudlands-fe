@@ -3,10 +3,11 @@
  */
 
 import { store } from '../../store';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { ConnectionRecord } from './connections-types';
 
 /** Full ordered connections list (local first, then remotes). */
-export const selectConnections = store.createSelector((state) => state.connections.connections);
+export const selectConnections = store.createSelector((state) => getItems(state.connections.connections));
 
 /** id of the active connection (`LOCAL_CONNECTION_ID` for the local sidecar). */
 export const selectActiveConnectionId = store.createSelector((state) => state.connections.activeId);
@@ -14,7 +15,7 @@ export const selectActiveConnectionId = store.createSelector((state) => state.co
 /** The active connection record, or null before the list has loaded. */
 export const selectActiveConnection = store.createSelector((state): ConnectionRecord | null => {
   const { connections, activeId } = state.connections;
-  return connections.find((c) => c.id === activeId) ?? null;
+  return getItems(connections).find((c) => c.id === activeId) ?? null;
 });
 
 /** Status of the in-flight add/switch operation. */

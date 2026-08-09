@@ -1,4 +1,4 @@
-import type { Store } from "$lib/store-shim/svelte-store";
+import type { Store } from "@augmentcode/themis/svelte-store";
 
 import {
   REDUX_DEBUG_LS_KEY,

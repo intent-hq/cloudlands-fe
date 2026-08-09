@@ -2,21 +2,32 @@
  * ConnectBackendModal Component Tests
  *
  * Covers the two-step add flow: enter host/port/token → capture fingerprint →
- * confirm → store + switch. The connect thunks are mocked so the flow is
- * observable without real IPC.
+ * confirm → store + switch. The saga-owned request actions are mocked so the
+ * flow is observable without real IPC.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
+const mocks = vi.hoisted(() => ({
+  dispatch: vi.fn(),
+  captureFingerprintRequested: vi.fn(),
+  addConnectionRequested: vi.fn(),
+  switchConnectionRequested: vi.fn(),
+}));
+
 vi.mock('svelte-fa', () => ({
   default: () => null,
 }));
 
-vi.mock('$store/renderer/middlewares/connections-service', () => ({
-  captureFingerprint: vi.fn(),
-  addConnection: vi.fn(),
-  switchConnection: vi.fn(() => Promise.resolve()),
+vi.mock('$store/renderer/store', () => ({
+  store: { dispatch: mocks.dispatch },
+}));
+
+vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
+  captureFingerprintRequested: mocks.captureFingerprintRequested,
+  addConnectionRequested: mocks.addConnectionRequested,
+  switchConnectionRequested: mocks.switchConnectionRequested,
 }));
 
 async function fillDetails() {
@@ -30,19 +41,35 @@ async function fillDetails() {
 describe('ConnectBackendModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.captureFingerprintRequested.mockImplementation((params) => ({
+      payload: [params],
+      promise: Promise.resolve({ fingerprint: 'AA:BB:CC:DD' }),
+    }));
+    mocks.addConnectionRequested.mockImplementation((params) => ({
+      payload: [params],
+      promise: Promise.resolve({
+        id: 'r1',
+        label: '10.0.0.2:4180',
+        host: '10.0.0.2',
+        port: 4180,
+        fingerprint: 'AA:BB:CC:DD',
+        isLocal: false,
+      }),
+    }));
+    mocks.switchConnectionRequested.mockImplementation((id) => ({
+      payload: [id],
+      promise: Promise.resolve(),
+    }));
   });
 
   it('captures the fingerprint on Continue and shows the confirm step', async () => {
-    const { captureFingerprint } = await import('$store/renderer/middlewares/connections-service');
-    vi.mocked(captureFingerprint).mockResolvedValue({ fingerprint: 'AA:BB:CC:DD' });
-
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });
 
     await fillDetails();
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-    expect(vi.mocked(captureFingerprint)).toHaveBeenCalledWith({
+    expect(mocks.captureFingerprintRequested).toHaveBeenCalledWith({
       host: '10.0.0.2',
       port: 4180,
       token: 'secret-token',
@@ -54,18 +81,6 @@ describe('ConnectBackendModal', () => {
   });
 
   it('stores and switches to the connection on confirm', async () => {
-    const { captureFingerprint, addConnection, switchConnection } =
-      await import('$store/renderer/middlewares/connections-service');
-    vi.mocked(captureFingerprint).mockResolvedValue({ fingerprint: 'AA:BB:CC:DD' });
-    vi.mocked(addConnection).mockResolvedValue({
-      id: 'r1',
-      label: '10.0.0.2:4180',
-      host: '10.0.0.2',
-      port: 4180,
-      fingerprint: 'AA:BB:CC:DD',
-      isLocal: false,
-    });
-
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });
 
@@ -74,20 +89,21 @@ describe('ConnectBackendModal', () => {
     await screen.findByText('AA:BB:CC:DD');
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
-    expect(vi.mocked(addConnection)).toHaveBeenCalledWith({
+    expect(mocks.addConnectionRequested).toHaveBeenCalledWith({
       label: '10.0.0.2:4180',
       host: '10.0.0.2',
       port: 4180,
       fingerprint: 'AA:BB:CC:DD',
       token: 'secret-token',
     });
-    await vi.waitFor(() => expect(vi.mocked(switchConnection)).toHaveBeenCalledWith('r1'));
+    await vi.waitFor(() => expect(mocks.switchConnectionRequested).toHaveBeenCalledWith('r1'));
   });
 
   it('surfaces a capture error inline and stays on the details step', async () => {
-    const { captureFingerprint, addConnection } =
-      await import('$store/renderer/middlewares/connections-service');
-    vi.mocked(captureFingerprint).mockRejectedValue(new Error('unreachable host'));
+    mocks.captureFingerprintRequested.mockImplementationOnce((params) => ({
+      payload: [params],
+      promise: Promise.reject(new Error('unreachable host')),
+    }));
 
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });
@@ -96,7 +112,7 @@ describe('ConnectBackendModal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(await screen.findByText('unreachable host')).toBeTruthy();
-    expect(vi.mocked(addConnection)).not.toHaveBeenCalled();
+    expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
     // Still on details: the Host field is present.
     expect(screen.getByLabelText('Host')).toBeTruthy();
   });

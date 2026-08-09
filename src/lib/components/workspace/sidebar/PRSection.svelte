@@ -222,6 +222,7 @@
   // an in-flight fetch (cleared on failure so a later expand retries); the
   // cache resets on workspace switch so it can't leak across workspaces.
   let prCommitFileCache = $state<Partial<Record<string, CommitFile[] | null>>>({});
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below tracks later changes
   let prCacheWorkspaceId = workspaceId;
   $effect(() => {
     if (workspaceId !== prCacheWorkspaceId) {

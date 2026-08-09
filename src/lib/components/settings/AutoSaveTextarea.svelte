@@ -46,6 +46,7 @@
   }: Props = $props();
 
   // Local editable copy of the value
+  // svelte-ignore state_referenced_locally - intentional initial capture; the sync $effect below handles external changes
   let localValue = $state(value);
   let saveStatus = $state<'idle' | 'saving' | 'saved'>('idle');
   let isFocused = $state(false);

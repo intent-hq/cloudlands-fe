@@ -1,8 +1,11 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import { writable } from "svelte/store";
-  import type { Store } from "$lib/store-shim/svelte-store";
-  import { selectNoteById } from "$store/renderer/slices/workspace-notes/workspace-notes-selectors";
+  import type { Store } from "@augmentcode/themis/svelte-store";
+  import {
+    selectAllNotes,
+    selectNoteById,
+  } from "$store/renderer/slices/workspace-notes/workspace-notes-selectors";
   import { loadWorkspaceNotesSucceeded } from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
   import type { Note } from "$shared/types";
 
@@ -29,17 +32,17 @@
     return selectNoteById.withStore(store)(workspaceId$, noteId$);
   }
 
+  function createAllNotesReadable() {
+    return selectAllNotes.withStore(store)(workspaceId$);
+  }
+
   function dispatchNotes() {
     store.dispatch(loadWorkspaceNotesSucceeded(Object.keys(notesByWorkspace), notesByWorkspace));
   }
 
-  function getReadableState() {
-    return store.getReadableState();
-  }
-
   const dispose = initStore();
   const selectedNote$ = createSelectedNoteReadable();
-  const readableState$ = getReadableState();
+  const allNotes$ = createAllNotesReadable();
 
   $effect(() => {
     dispatchNotes();
@@ -47,10 +50,8 @@
     noteId$.set(noteId);
   });
 
-  const selectedFromState = $derived(selectNoteById.select($readableState$, workspaceId, noteId));
-  const noteCount = $derived(
-    workspaceId ? ($readableState$.workspaceNotes.byWorkspaceId[workspaceId]?.notes.ids.length ?? 0) : 0,
-  );
+  const selectedFromState = $derived($selectedNote$);
+  const noteCount = $derived($allNotes$.length);
 
   onDestroy(() => {
     dispose();

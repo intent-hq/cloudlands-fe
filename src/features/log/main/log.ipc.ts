@@ -17,7 +17,6 @@ import {
 import path from 'path';
 import { z } from 'zod';
 import { mainLogger } from './main-logger';
-import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import type { CommandResponse } from '../../../shared/types';
 import {
   WorkspaceEvent,
@@ -28,7 +27,6 @@ import { FileSystemLogRepository } from './log.repository';
 import type { LogRepository } from './log.repository';
 import { m } from '../../../shared/paraglide/messages.js';
 
-import { EventStore } from '../../events/main/event-store';
 import { LOG_CHANNELS } from '../../../shared/ipc/channels';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
@@ -321,49 +319,6 @@ export function setupLogIPC() {
       },
       LOG_CHANNELS.TRACK_MCP_CALL,
     ),
-  );
-
-  // Get all events for a workspace - delegate to activity log
-  ipcMain.handle(
-    LOG_CHANNELS.GET_EVENTS,
-    async (_, workspaceId: string): Promise<CommandResponse<WorkspaceEvent[]>> => {
-      try {
-        // Query events from the EventStore
-        const eventStore = new EventStore(workspaceId);
-        const events = eventStore.getAll();
-
-        // Return the events directly - they're already in WorkspaceEvent format
-        return { success: true, data: events };
-      } catch (error) {
-        mainLogger.error('[LOG] Failed to get events', error as Error);
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : m.log_ipc_unknown_error(),
-        };
-      }
-    },
-  );
-
-  // Clear events for a workspace
-  ipcMain.handle(
-    LOG_CHANNELS.CLEAR_EVENTS,
-    async (_, workspaceId: string): Promise<CommandResponse<void>> => {
-      try {
-        // Clear events from the EventStore
-        const clearEventStore = new EventStore(workspaceId);
-        await clearEventStore.clear();
-
-        // Broadcast the clear event to workspace windows
-        sendToWorkspaceWindows(workspaceId, 'events:cleared', workspaceId);
-        return { success: true, data: undefined };
-      } catch (error) {
-        mainLogger.error('[LOG] Failed to clear events', error as Error);
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : m.log_ipc_unknown_error(),
-        };
-      }
-    },
   );
 
   // ========================================================================

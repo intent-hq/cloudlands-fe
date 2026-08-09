@@ -26,7 +26,7 @@ import {
   providerCatalogReducer,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
-import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$lib/store/types';
 
 const providerCatalog = providerCatalogReducer(
@@ -78,7 +78,7 @@ function makeState(overrides: Partial<StoreState> = {}): StoreState {
 }
 
 function makeProposal(
-  path = 'backgroundAgents.defaultModel',
+  path = 'quickActions.defaultModel',
   value: unknown = 'claude-sonnet',
 ): Proposal {
   return {
@@ -126,7 +126,7 @@ describe('settings-proposal-actions', () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(setDefaultModel('claude-sonnet'));
     expect(result.reverseChanges).toEqual([
       {
-        path: 'backgroundAgents.defaultModel',
+        path: 'quickActions.defaultModel',
         value: 'old-model',
         apply: { kind: 'redux-action', action: 'backgroundAgentSettings/setDefaultModel' },
       },
@@ -158,7 +158,7 @@ describe('settings-proposal-actions', () => {
       applyToolCallId: 'tool-settings',
       payload: {
         changes: [
-          { path: 'backgroundAgents.defaultModel', value: 'new-model' },
+          { path: 'quickActions.defaultModel', value: 'new-model' },
           { path: 'mcp.enableUserServers', value: true },
         ],
       },
@@ -180,7 +180,7 @@ describe('settings-proposal-actions', () => {
   it('undo work reapplies reverse changes through the injected dispatch', async () => {
     await undoSettingsProposalWork([
       {
-        path: 'backgroundAgents.defaultModel',
+        path: 'quickActions.defaultModel',
         value: 'old-model',
         apply: { kind: 'redux-action', action: 'backgroundAgentSettings/setDefaultModel' },
       },
@@ -207,7 +207,7 @@ describe('settings-proposal-actions', () => {
     await expect(
       undoSettingsProposalWork([
         {
-          path: 'backgroundAgents.defaultModel',
+          path: 'quickActions.defaultModel',
           value: 'old-model',
           apply: { kind: 'redux-action', action: 'backgroundAgentSettings/setDefaultModel' },
         },

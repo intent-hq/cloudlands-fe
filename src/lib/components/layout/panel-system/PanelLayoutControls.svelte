@@ -34,6 +34,8 @@
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('PanelLayoutControls');
+  // `fast` stays client-resolved: §5.31 `agent.enhancePrompt` has no `type`
+  // param and no daemon-side quickActions chain (unlike §5.32, monorepo#1743).
   const fastModel$ = selectModelForType('fast');
   const effectiveProviderId$ = selectEffectiveDefaultProviderId();
 

@@ -14,7 +14,7 @@
  *    leaves the set pending — including session-restore rehydration in both
  *    states. Questions are wizard-only: they never render in the transcript.
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { backendRequestMock } = vi.hoisted(() => ({
   backendRequestMock: vi.fn(),
@@ -37,7 +37,9 @@ import {
   bulkUpsertSessions,
   clearAllSessions,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
 import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
+import { chatSendSaga } from '$store/renderer/slices/chat-state/sagas/chat-send-saga';
 import QuestionWizard from '../QuestionWizard.svelte';
 import {
   buildAnswerMessageMetadata,
@@ -211,8 +213,19 @@ function workspace(): Workspace {
 }
 
 describe('wizard completion → agent.sendMessage wire shape', () => {
+  let stopChatSendSaga: (() => void) | undefined;
+  let stopAgentMutationSaga: (() => void) | undefined;
+
   beforeAll(() => {
     appStore.init();
+    stopAgentMutationSaga = appStore.runSaga(agentMutationSaga);
+    stopChatSendSaga = appStore.runSaga(chatSendSaga);
+  });
+  afterAll(() => {
+    stopChatSendSaga?.();
+    stopAgentMutationSaga?.();
+    stopChatSendSaga = undefined;
+    stopAgentMutationSaga = undefined;
   });
   beforeEach(() => {
     backendRequestMock.mockReset();
@@ -232,7 +245,7 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
           workspaceId: WS,
           name: 'Coordinator',
           status: AgentStatus.Pending,
-          messages: [],
+          messages: [assistantMessage([questionBlock(SINGLE), questionBlock(MULTI), questionBlock(LAST)])],
           createdAt: '2026-07-03T14:35:35.924Z',
           updatedAt: '2026-07-03T14:35:35.924Z',
         } as unknown as AgentSession,
@@ -281,9 +294,15 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
     // Q3: explicit Skip completes the wizard.
     await fireEvent.click(screen.getByRole('button', { name: /skip/i }));
 
-    await vi.waitFor(() => {
-      expect(backendRequestMock.mock.calls.map((c) => c[0])).toContain('agent.sendMessage');
-    });
+    // The send path is a fire-and-forget middleware chain (dynamic imports +
+    // pre-send transcript hydration) that can exceed the 1s default timeout
+    // under CI load — see intent-hq/monorepo#1619.
+    await vi.waitFor(
+      () => {
+        expect(backendRequestMock.mock.calls.map((c) => c[0])).toContain('agent.sendMessage');
+      },
+      { timeout: 15000, interval: 50 },
+    );
 
     const sendCall = backendRequestMock.mock.calls.find((c) => c[0] === 'agent.sendMessage')!;
     const params = sendCall[1] as Record<string, unknown>;

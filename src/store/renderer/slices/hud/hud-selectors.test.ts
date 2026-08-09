@@ -26,7 +26,7 @@ import {
   selectHudWorkspaceCards,
   selectHudWorkspaceStateBars,
 } from './hud-selectors';
-import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { WorkspaceTask } from '$shared/types';
 import {
   agentSessionReducer,
@@ -1055,6 +1055,72 @@ describe('selectHudWorkspaceCards', () => {
     expect(card.agents.find((a) => a.id === 'coord')?.waitingForAgentIds).toEqual([
       'impl',
       'reviewer',
+    ]);
+  });
+
+  it('an agent waiting on active hooks buckets idle and stays visible (waitingOnHooks, §3.1)', () => {
+    const state = cardState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 1,
+            agentIds: ['a1'],
+            agents: [{ id: 'a1', name: 'Agent', status: 'active', isResponding: true }],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      {
+        agentSessions: {
+          byAgentId: {
+            a1: {
+              status: 'active',
+              waitingOnHooks: [{ hookId: 'hook-1', name: 'Watch CI' }],
+              messages: [],
+            },
+          },
+          agentIdsByWorkspace: {},
+        },
+      },
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.map((a) => [a.id, a.bucket, a.isWaitingForAgents])).toEqual([
+      ['a1', 'idle', true],
+    ]);
+  });
+
+  it('an agent waiting on active PR monitors buckets idle and stays visible (waitingOnPrMonitors, §5.42)', () => {
+    const state = cardState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 1,
+            agentIds: ['a1'],
+            agents: [{ id: 'a1', name: 'Agent', status: 'active', isResponding: true }],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      {
+        agentSessions: {
+          byAgentId: {
+            a1: {
+              status: 'active',
+              waitingOnPrMonitors: [
+                { monitorId: 'mon-1', repo: 'intent-hq/intentd', prNumber: 42 },
+              ],
+              messages: [],
+            },
+          },
+          agentIdsByWorkspace: {},
+        },
+      },
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.map((a) => [a.id, a.bucket, a.isWaitingForAgents])).toEqual([
+      ['a1', 'idle', true],
     ]);
   });
 

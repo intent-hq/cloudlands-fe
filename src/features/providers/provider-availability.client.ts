@@ -49,90 +49,85 @@ export interface ProviderAvailabilityResult {
   hiddenProviders?: string[];
 }
 
-// Cache for provider availability to avoid repeated IPC calls
-let cachedResult: ProviderAvailabilityResult | null = null;
-let cacheTimestamp = 0;
-const CACHE_TTL_MS = 30000; // 30 seconds cache
+// In-flight request coalescing only — NOT a result cache. Concurrent callers
+// share one IPC round-trip; once it settles the slot clears so the very next
+// call always hits the daemon again. The daemon owns result caching (its own
+// TTL + single-flight cache mirrors the auth-status pattern), so the renderer
+// must never store — and therefore never resurface — a stale or degraded
+// answer on its own.
+let inFlight: Promise<ProviderAvailabilityResult> | null = null;
 
 /**
- * Get aggregated availability status for all providers
- * @param forceRefresh - If true, bypass the cache and fetch fresh data
+ * Get aggregated availability status for all providers. Every call reaches
+ * the daemon (via IPC) except when a call is already in flight, in which
+ * case it is joined instead of firing a duplicate request.
+ *
+ * Throws when the daemon RPC fails, so callers get an honest "unknown"
+ * signal instead of a silently fabricated all-unavailable result — never
+ * cached, so the very next call retries against the daemon.
  */
-export async function getProviderAvailability(
-  forceRefresh = false,
-): Promise<ProviderAvailabilityResult> {
+export async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   // Skip in Node.js environment (backend)
   if (typeof window === 'undefined') {
     logger.debug('Skipping provider availability check - not in browser environment');
     return getDefaultResult();
   }
 
-  // Return cached result if still valid
-  const now = Date.now();
-  if (!forceRefresh && cachedResult && now - cacheTimestamp < CACHE_TTL_MS) {
-    logger.debug('Returning cached provider availability');
-    return cachedResult;
+  if (inFlight) {
+    logger.debug('Joining in-flight provider availability request');
+    return inFlight;
   }
 
-  try {
-    logger.debug('Checking provider availability via IPC');
+  inFlight = (async () => {
+    try {
+      logger.debug('Checking provider availability via IPC');
 
-    const result = await invoke<{
-      success: boolean;
-      data?: ProviderAvailabilityResult;
-      error?: string;
-    }>(PROVIDERS_CHANNELS.GET_AVAILABILITY);
+      const result = await invoke<{
+        success: boolean;
+        data?: ProviderAvailabilityResult;
+        error?: string;
+      }>(PROVIDERS_CHANNELS.GET_AVAILABILITY);
 
-    if (!result.success) {
-      logger.error('Failed to get provider availability', { error: result.error });
-      return getDefaultResult();
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to get provider availability');
+      }
+
+      const data = result.data ?? getDefaultResult();
+
+      // Per decision D1(B), the active provider is never silently switched
+      // based on availability — the agent-availability slice (populated
+      // elsewhere from this same result) is the source of truth for
+      // `selectIsActiveProviderAvailable` / `selectAvailableEnabledProviderIds`,
+      // which the UI uses to surface a failure state instead.
+
+      logger.debug('Provider availability fetched', {
+        hasAnyProvider: data.hasAnyProvider,
+        auggie: data.providers.auggie.available,
+        claudeCode: data.providers.claudeCode.available,
+        codex: data.providers.codex.available,
+        cortex: data.providers.cortex.available,
+        mock: data.providers.mock?.available ?? false,
+        opencode: data.providers.opencode.available,
+        droid: data.providers.droid?.available ?? false,
+        grok: data.providers.grok?.available ?? false,
+        unsloth: data.providers.unsloth?.available ?? false,
+      });
+
+      return data;
+    } finally {
+      inFlight = null;
     }
+  })();
 
-    // Update cache
-    cachedResult = result.data || getDefaultResult();
-    cacheTimestamp = now;
-
-    // Per decision D1(B), the active provider is never silently switched
-    // based on availability — the agent-availability slice (populated
-    // elsewhere from this same result) is the source of truth for
-    // `selectIsActiveProviderAvailable` / `selectAvailableEnabledProviderIds`,
-    // which the UI uses to surface a failure state instead.
-
-    logger.debug('Provider availability fetched', {
-      hasAnyProvider: cachedResult.hasAnyProvider,
-      auggie: cachedResult.providers.auggie.available,
-      claudeCode: cachedResult.providers.claudeCode.available,
-      codex: cachedResult.providers.codex.available,
-      cortex: cachedResult.providers.cortex.available,
-      mock: cachedResult.providers.mock?.available ?? false,
-      opencode: cachedResult.providers.opencode.available,
-      droid: cachedResult.providers.droid?.available ?? false,
-      grok: cachedResult.providers.grok?.available ?? false,
-      unsloth: cachedResult.providers.unsloth?.available ?? false,
-    });
-
-    return cachedResult;
-  } catch (error) {
-    logger.error('Error checking provider availability', { error });
-    return getDefaultResult();
-  }
+  return inFlight;
 }
 
 /**
  * Get a list of available provider IDs
  */
-export async function getAvailableProviderIds(forceRefresh = false): Promise<string[]> {
-  const result = await getProviderAvailability(forceRefresh);
+export async function getAvailableProviderIds(): Promise<string[]> {
+  const result = await getProviderAvailability();
   return getAvailableIdsFromResult(result.providers);
-}
-
-/**
- * Clear the cached result (useful when user installs a new provider)
- */
-export function clearProviderAvailabilityCache(): void {
-  cachedResult = null;
-  cacheTimestamp = 0;
-  logger.debug('Provider availability cache cleared');
 }
 
 /**

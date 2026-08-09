@@ -475,12 +475,12 @@ describe('Chief of Staff smoke scenarios', () => {
     const { applySettingsProposal } = await import('./settings-proposal-actions');
     const proposal: Proposal = {
       kind: 'settings-change',
-      payload: { changes: [{ path: 'backgroundAgents.defaultModel', value: 'claude-3-5-sonnet' }] },
+      payload: { changes: [{ path: 'quickActions.defaultModel', value: 'claude-3-5-sonnet' }] },
       preview: {
         title: 'Change default model to Sonnet',
         fields: [
           {
-            key: 'backgroundAgents.defaultModel',
+            key: 'quickActions.defaultModel',
             label: 'Default model',
             before: '',
             after: 'claude-3-5-sonnet',
@@ -515,16 +515,16 @@ describe('Chief of Staff smoke scenarios', () => {
     const NavLink = (await import('../NavLink.svelte')).default;
 
     render(NavLink, {
-      props: { target: '/settings#backgroundAgents.defaultModel', label: 'Open Sonnet setting' },
+      props: { target: '/settings#quickActions.defaultModel', label: 'Open Sonnet setting' },
     });
 
     await fireEvent.click(screen.getByRole('link', { name: /Open Sonnet setting/ }));
 
-    expect(mocks.goto).toHaveBeenCalledWith('/settings#backgroundAgents.defaultModel');
+    expect(mocks.goto).toHaveBeenCalledWith('/settings#quickActions.defaultModel');
     await waitFor(() =>
       expect(mocks.dispatch).toHaveBeenCalledWith({
         type: 'uiHighlight/requestUiHighlight',
-        payload: ['backgroundAgents.defaultModel'],
+        payload: ['quickActions.defaultModel'],
       }),
     );
   });

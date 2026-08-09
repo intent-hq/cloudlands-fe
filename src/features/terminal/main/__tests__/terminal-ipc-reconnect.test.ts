@@ -33,14 +33,14 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
   // forwarder now; these tests don't exercise event delivery, so a no-op
   // disposer suffices.
   onBackendNotification: vi.fn(() => () => {}),
+  isRemoteBackendActive: () => false,
 }));
 
-vi.mock('$features/workspace/main/workspace.service', () => ({
-  workspaceService: { getWorkspace: vi.fn(async () => ({ ok: false })) },
-}));
-
-vi.mock('$shared/main/config', () => ({
-  WorkspaceConfig: { paths: { workspace: (id: string) => `/tmp/${id}` } },
+// These tests always pass an explicit cwd, so the daemon-backed path seam
+// (monorepo#1759) is never consulted; a null resolution keeps that honest.
+vi.mock('$features/workspace/main/workspace-path.service', () => ({
+  getWorkspacePathInfo: vi.fn(async () => null),
+  getWorkspacePath: vi.fn(async () => null),
 }));
 
 vi.mock('../../../../store/main/redux-store-bridge', () => ({

@@ -41,7 +41,7 @@ function provider(id: string, tokens: Partial<UsageProviderStats> = {}): UsagePr
 }
 
 describe('totalTokens', () => {
-  it('sums all 4 counters (Spec D6)', () => {
+  it('sums all 4 counters when thoughtTokens is absent (Spec D6)', () => {
     expect(
       totalTokens({
         inputTokens: 1,
@@ -50,6 +50,18 @@ describe('totalTokens', () => {
         cacheCreationTokens: 4,
       }),
     ).toBe(10);
+  });
+
+  it('includes thoughtTokens when reported', () => {
+    expect(
+      totalTokens({
+        inputTokens: 1,
+        outputTokens: 2,
+        cacheReadTokens: 3,
+        cacheCreationTokens: 4,
+        thoughtTokens: 5,
+      }),
+    ).toBe(15);
   });
 });
 

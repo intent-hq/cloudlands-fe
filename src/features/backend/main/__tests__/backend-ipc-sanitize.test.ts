@@ -126,7 +126,7 @@ describe('BACKEND.GET_STATUS IPC contract', () => {
     // - status: ConnectionStatus ('connecting' | 'connected' | 'disconnected')
     // - transport?: { mode: 'sidecar-uds' | 'external-uds' | 'external-ws', target?: string }
     // This is a type/shape assertion - the actual implementation is tested functionally
-    // in daemon-health-service.test.ts and transport-info.test.ts
+    // in daemon-health-saga.test.ts and transport-info.test.ts
 
     type ExpectedResponse = {
       status: string;

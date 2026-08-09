@@ -28,6 +28,7 @@
 
   let { workspaceId = '', initialFile }: Props = $props();
 
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const workspaceIdStore = writable(workspaceId);
   const fileExplorerWorkspacePath = selectEffectiveFileExplorerWorkspacePath(workspaceIdStore);
 
@@ -37,6 +38,7 @@
 
   // State for open files
   let openFiles = $state<Map<string, { content: string; modified: boolean }>>(new Map());
+  // svelte-ignore state_referenced_locally - intentional: prop seeds the initial selection; user selection owns it afterwards
   let selectedFile: string = $state(initialFile || '');
   let currentFileContent: string = $state('');
   let isLoading = $state(false);

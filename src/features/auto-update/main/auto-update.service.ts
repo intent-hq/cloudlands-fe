@@ -58,6 +58,12 @@ class AutoUpdateService {
   private updateCheckInterval: NodeJS.Timeout | null = null;
   private checkTimeoutId: NodeJS.Timeout | null = null;
   private lastCheckAt: number | null = null;
+  // Per-check watchdog session token (intent-hq/monorepo#1698). Set when a
+  // check starts, cleared by any terminal event (available / not-available /
+  // error). The timeout callback checks this token instead of
+  // `state.status === 'checking'` so it still fires when electron-updater
+  // dedups onto a hung earlier check and never re-emits 'checking-for-update'.
+  private checkSessionActive = false;
   private onWindowFocus: (() => void) | null = null;
   private onResume: (() => void) | null = null;
 
@@ -166,6 +172,12 @@ class AutoUpdateService {
 
     autoUpdater.on('update-available', (info: ElectronUpdateInfo) => {
       this.clearCheckTimeout();
+      this.checkSessionActive = false;
+      // Reset the manual-check flag here too (like the other terminal
+      // handlers below), otherwise a later automatic check's
+      // 'update-not-available' would incorrectly show the manual "up to
+      // date" toast because `isManualCheck` stayed latched from this check.
+      this.isManualCheck = false;
       logger.info('Update available', { version: info.version });
       this.state.updateInfo = {
         version: info.version,
@@ -177,6 +189,7 @@ class AutoUpdateService {
 
     autoUpdater.on('update-not-available', (info: ElectronUpdateInfo) => {
       this.clearCheckTimeout();
+      this.checkSessionActive = false;
       logger.info('No update available', {
         currentVersion: info.version,
         isManualCheck: this.isManualCheck,
@@ -209,9 +222,11 @@ class AutoUpdateService {
 
     autoUpdater.on('error', (error: Error) => {
       this.clearCheckTimeout();
+      this.checkSessionActive = false;
       logger.error('Auto-update error', error);
       this.state.error = error.message;
       this.updateStatus('error');
+      this.isManualCheck = false;
     });
   }
 
@@ -270,13 +285,30 @@ class AutoUpdateService {
 
     try {
       this.lastCheckAt = Date.now();
+      this.checkSessionActive = true;
       this.startCheckTimeout();
-      await autoUpdater.checkForUpdates();
+      const result = await autoUpdater.checkForUpdates();
+      // checkForUpdates() resolving null/undefined means the updater is not
+      // active (e.g. dev config, unsupported platform) and no further event
+      // will ever arrive for this check — without an explicit terminal state
+      // here, the manual-check watchdog would be the only thing preventing an
+      // infinite spinner. Only terminal if the session wasn't already closed
+      // by another event (e.g. a fast update-not-available import race).
+      if (!result && this.checkSessionActive) {
+        this.clearCheckTimeout();
+        this.checkSessionActive = false;
+        logger.warn('checkForUpdates() resolved with no result; treating as error');
+        this.state.error = m.autoUpdate_service_unknown_error();
+        this.updateStatus('error');
+        this.isManualCheck = false;
+      }
     } catch (error) {
       this.clearCheckTimeout();
+      this.checkSessionActive = false;
       logger.error('Failed to check for updates', error as Error);
       this.state.error = (error as Error).message;
       this.updateStatus('error');
+      this.isManualCheck = false;
     }
     return this.state;
   }
@@ -422,10 +454,17 @@ class AutoUpdateService {
   private startCheckTimeout() {
     this.clearCheckTimeout();
     this.checkTimeoutId = setTimeout(() => {
-      if (this.state.status === 'checking') {
+      // Gate on the per-check session token (intent-hq/monorepo#1698), not
+      // `state.status === 'checking'`: electron-updater can dedup a manual
+      // check onto an earlier hung request without ever re-firing
+      // 'checking-for-update', in which case `state.status` never becomes
+      // 'checking' and the old gate would never fire.
+      if (this.checkSessionActive) {
         logger.warn('Update check timed out after ' + UPDATE_CHECK_TIMEOUT_MS + 'ms');
+        this.checkSessionActive = false;
         this.state.error = m.autoUpdate_check_timeout_error();
         this.updateStatus('error');
+        this.isManualCheck = false;
       }
     }, UPDATE_CHECK_TIMEOUT_MS);
   }

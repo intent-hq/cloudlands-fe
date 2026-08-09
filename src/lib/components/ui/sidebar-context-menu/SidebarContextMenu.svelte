@@ -21,8 +21,12 @@
 
   let menuElement: HTMLElement | null = $state(null);
 
-  // Adjust position if menu would go off screen
+  // Adjust position if menu would go off screen. Initial capture is safe:
+  // the menu is unmounted/remounted per open (outside mousedown/contextmenu
+  // listeners close it first), and adjustPosition() re-reads x/y on mount.
+  // svelte-ignore state_referenced_locally
   let adjustedX = $state(x);
+  // svelte-ignore state_referenced_locally
   let adjustedY = $state(y);
 
   function adjustPosition() {

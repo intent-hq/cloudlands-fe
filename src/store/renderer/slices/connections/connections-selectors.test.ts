@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { StoreState } from '../../types';
 import type {
@@ -42,7 +43,10 @@ const REMOTE: ConnectionRecord = {
 };
 
 function stateWith(overrides: Partial<ConnectionsState>): StoreState {
-  return { connections: { ...initialState, ...overrides } } as unknown as StoreState;
+  const connections = Array.isArray(overrides.connections)
+    ? createCollection<ConnectionRecord, 'id'>('id', overrides.connections)
+    : overrides.connections;
+  return { connections: { ...initialState, ...overrides, ...(connections ? { connections } : {}) } } as unknown as StoreState;
 }
 
 describe('connections selectors', () => {

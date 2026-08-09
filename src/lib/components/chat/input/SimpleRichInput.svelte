@@ -213,7 +213,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   let tiptap: any = $state(null);
   let modelPickerRef: { open: () => void; clearFallbackWarning: () => void; clearPendingUpdate: () => void } | null =
     $state(null);
+  // svelte-ignore state_referenced_locally -- previous-value tracker seeded once; the effects below keep it in sync.
   let previousDisabled = $state(disabled);
+  // svelte-ignore state_referenced_locally -- previous-value tracker seeded once; the effects below keep it in sync.
   let previousInputLocked = $state(inputLocked);
   let hasInlineImages = $state(false);
 
@@ -516,9 +518,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   let isAutoExpand = $derived(containerHeight === null);
 
   // Model selection
+  // svelte-ignore state_referenced_locally -- local editable copy seeded from the prop; the effect below mirrors prop changes.
   let selectedModel = $state<string | null | undefined>(propSelectedModel);
 
   // Track the last notified model to prevent infinite loops
+  // svelte-ignore state_referenced_locally -- non-reactive tracker seeded once; updated by the effects below.
   let lastNotifiedModel: string | null | undefined = propSelectedModel;
 
   // Track if user has made a local change that should take precedence over props

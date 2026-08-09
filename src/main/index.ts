@@ -262,7 +262,6 @@ import { setupUnslothIPC } from '../features/unsloth/main/unsloth.ipc';
 import { setupFeatureCodesIPC } from '../features/feature-codes/main/feature-codes.ipc';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
-import { setupDiffsIPC } from '../features/diffs/main/diffs.ipc';
 
 import { setupEventsIPC } from '../features/events/main/events.ipc';
 import { registerExternalEditorsHandlers } from '../features/external-editors/main/external-editors.ipc';
@@ -288,8 +287,6 @@ import { getActiveId } from '../features/backend/main/connections-store';
 import { startIntentdSidecar, stopIntentdSidecar } from '../features/backend/main/intentd-sidecar';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 
-import { registerScriptsHandlers } from '../features/scripts/main/scripts.ipc';
-import { disposeAllScriptProcessManagers } from '../features/scripts/main/script-process-manager';
 import { registerSetupScriptsHandlers } from '../features/setup-scripts/main/setup-scripts.ipc';
 import {
   setupSystemIPC,
@@ -428,18 +425,6 @@ async function performGracefulShutdown() {
     // if the environment is torn down too quickly, the assertion at conpty.cc:110
     // fires. This delay gives those threads time to finish.
     await new Promise((resolve) => setTimeout(resolve, 300));
-
-    // Stop all running workspace scripts (spawned via child_process.spawn)
-    try {
-      await disposeAllScriptProcessManagers();
-      logger.info('All script process managers disposed');
-    } catch (error) {
-      logger.error(
-        // i18n-ignore (developer log message)
-        'Error disposing script process managers:',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
 
     // Dispose the live backend JSON-RPC client (closes the UDS/TCP socket).
     try {
@@ -1399,7 +1384,6 @@ app.whenReady().then(async () => {
   setupProviderAvailabilityIPC(); // Needed for providers:get-availability
   setupEventsIPC(); // Needed for events:query
   registerSetupScriptsHandlers(); // Needed for onboarding setup scripts
-  registerScriptsHandlers(); // Needed for workspace script management (CRUD, lifecycle, output)
   registerAcceptChangesHandlers(); // Needed for AcceptChangesPanel on workspace open
 
   setupTerminalIPC(); // Needed for CLI blocks in notes (includes get-buffer handler)
@@ -1454,7 +1438,6 @@ app.whenReady().then(async () => {
     registerAgentContextHandlers();
 
     // setupTerminalIPC(); // Already called in critical IPC setup
-    setupDiffsIPC();
     setupLogIPC();
     // setupAuggieIPC(); // Already called in critical IPC setup
     // setupEventsIPC(); // Already called in critical IPC setup
@@ -1520,15 +1503,8 @@ app.whenReady().then(async () => {
     // Event-triggered handlers (message delivery, auto-commit) are now sagas
     // forked from workspaceEventsSaga — no manual registration needed.
 
-    // Migrate workspaces from ~/intent/{id} to ~/intent/workspaces/{id}
-    try {
-      const migrationResult = await protocolAdapter.migrateWorkspacesToCanonicalLocation();
-      if (migrationResult.migrated > 0 || migrationResult.errors > 0) {
-        logger.info('Workspace migration on startup', migrationResult);
-      }
-    } catch (error) {
-      logger.warn('Error migrating workspaces on startup', { error });
-    }
+    // Legacy workspace-location migration removed — the daemon owns workspace
+    // directories (PROTOCOL.md §5.1); the FE no longer moves data on disk.
 
     // Clean up stale temp files from ~/.intent/tmp (from crashed/killed agents)
     try {
@@ -1765,7 +1741,7 @@ app.on('window-all-closed', async () => {
     // isShuttingDown=true internally (so any subsequent before-quit is a
     // no-op), runs the full cleanup ordering — including the items only it
     // performs (cleanupTerminals + settling delay,
-    // disposeAllScriptProcessManagers, cleanupAutoUpdater) — and
+    // cleanupAutoUpdater) — and
     // then calls app.exit(0). Delegating here (instead of running a bespoke
     // partial teardown and calling app.quit()) prevents before-quit re-entry
     // that otherwise showed a second running-agent prompt and ran a duplicate

@@ -78,7 +78,7 @@ let handlersRegistered = false;
 
 /**
  * Stable/persistent reconnect forwarder (T8). Main-process services
- * (terminal registry, script-process-manager, notification.service,
+ * (terminal registry, notification.service,
  * app-settings, ACP terminal) attach their reconnect/resubscribe handlers via
  * {@link onBackendReconnected} exactly ONCE at registration time. Historically
  * those handlers were attached directly to the live JsonRpcClient instance — so
@@ -103,7 +103,7 @@ backendReconnectForwarder.setMaxListeners(50);
  * Stable/persistent notification forwarder (T9). Same rationale as
  * {@link backendReconnectForwarder}, applied to the daemon `notification`
  * stream: long-lived main-process services (terminal registry,
- * script-process-manager, notification.service, app-settings, ACP terminal)
+ * notification.service, app-settings, ACP terminal)
  * attach their notification listener exactly ONCE via
  * {@link onBackendNotification}. Historically each attached directly to the
  * live JsonRpcClient instance, so after a {@link switchBackend} disposed that

@@ -313,21 +313,19 @@ describe('DaemonWorkspaceRepository', () => {
       expect(result).toBe('');
     });
 
-    it('should not call RPC when workspaceId not provided', async () => {
-      // When no workspaceId, the DaemonWorkspaceRepository will not call the backend
-      // and will fall back to filesystem (which throws if no .git/config exists)
+    it('should throw when workspaceId not provided (no RPC)', async () => {
       await expect(repository.readGitConfig('/path/to/repo')).rejects.toThrow();
 
       // Should not have called the backend
       expect(mockBackendClient.request).not.toHaveBeenCalled();
     });
 
-    it('should fallback to filesystem when RPC fails', async () => {
+    it('should propagate RPC errors (no filesystem fallback)', async () => {
       mockBackendClient.request.mockRejectedValue(new Error('RPC failed'));
 
-      // DaemonWorkspaceRepository catches RPC errors and falls back to filesystem
-      // (which throws if no .git/config exists)
-      await expect(repository.readGitConfig('/path/to/repo', 'ws-123' as any)).rejects.toThrow();
+      await expect(repository.readGitConfig('/path/to/repo', 'ws-123' as any)).rejects.toThrow(
+        'RPC failed',
+      );
     });
   });
 
@@ -377,21 +375,14 @@ describe('DaemonWorkspaceRepository', () => {
       });
     });
 
-    it('should fallback to filesystem when RPC fails', async () => {
+    it('should propagate RPC errors (no filesystem fallback)', async () => {
       mockBackendClient.request.mockRejectedValue(new Error('RPC failed'));
 
       const testContext = { workspaceId: 'ws-123', mainContentType: 'file' as const };
 
-      // Mock filesystem fallback
-      const mockFsSaveContext = vi.fn().mockResolvedValue(undefined);
-      (repository as any).filesystemFallback = {
-        saveContext: mockFsSaveContext,
-      };
-
-      await repository.saveContext('ws-123' as any, testContext);
-
-      // Should have fallen back to filesystem
-      expect(mockFsSaveContext).toHaveBeenCalledWith('ws-123', testContext);
+      await expect(repository.saveContext('ws-123' as any, testContext)).rejects.toThrow(
+        'RPC failed',
+      );
     });
   });
 
@@ -414,81 +405,25 @@ describe('DaemonWorkspaceRepository', () => {
       expect(result).toEqual(testContext);
     });
 
-    it('should return null when daemon returns null (no coercion, no migration)', async () => {
+    it('should return null when daemon returns null (no coercion)', async () => {
       mockBackendClient.request.mockResolvedValue({ uiContext: null });
-
-      // Mock filesystem fallback - should NOT be called since null is a valid stored value
-      const mockFsReadContext = vi.fn();
-      (repository as any).filesystemFallback = {
-        readContext: mockFsReadContext,
-      };
 
       const result = await repository.readContext('ws-123' as any);
 
-      // Should NOT check filesystem since null is a valid value, not missing context
-      expect(mockFsReadContext).not.toHaveBeenCalled();
       expect(result).toBeNull();
     });
 
     it('should return null when daemon returns undefined (field absent, no FS migration)', async () => {
       mockBackendClient.request.mockResolvedValue({});
 
-      // Mock filesystem fallback to return null (no FS context to migrate)
-      const mockFsReadContext = vi.fn().mockResolvedValue(null);
-      (repository as any).filesystemFallback = {
-        readContext: mockFsReadContext,
-      };
-
       const result = await repository.readContext('ws-123' as any);
 
-      // Should check filesystem for migration when field is absent/undefined
-      expect(mockFsReadContext).toHaveBeenCalledWith('ws-123');
+      // Only the single getUiContext RPC — no filesystem probe, no migration
+      expect(mockBackendClient.request).toHaveBeenCalledTimes(1);
       expect(result).toBeNull();
     });
 
-    it('should perform one-time migration from filesystem to daemon', async () => {
-      const fsContext = {
-        workspaceId: 'ws-123',
-        mainContentType: 'file' as const,
-        mainContentPath: '/legacy/file.ts',
-        lastUpdated: '2026-07-14T00:00:00.000Z',
-      };
-
-      // First call: daemon returns undefined (field absent, no context stored)
-      // Second call: migration write-through
-      mockBackendClient.request
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({ uiContext: fsContext });
-
-      // Mock filesystem fallback to return FS context
-      const mockFsReadContext = vi.fn().mockResolvedValue(fsContext);
-      (repository as any).filesystemFallback = {
-        readContext: mockFsReadContext,
-        saveContext: vi.fn(),
-        readGitConfig: vi.fn(),
-      };
-
-      const result = await repository.readContext('ws-123' as any);
-
-      // Should have called daemon getUiContext
-      expect(mockBackendClient.request).toHaveBeenNthCalledWith(1, 'workspace.getUiContext', {
-        workspaceId: 'ws-123',
-      });
-
-      // Should have read from filesystem fallback
-      expect(mockFsReadContext).toHaveBeenCalledWith('ws-123');
-
-      // Should have migrated to daemon with updateUiContext
-      expect(mockBackendClient.request).toHaveBeenNthCalledWith(2, 'workspace.updateUiContext', {
-        workspaceId: 'ws-123',
-        uiContext: fsContext,
-      });
-
-      // Should return the FS context
-      expect(result).toEqual(fsContext);
-    });
-
-    it('should not migrate if daemon already has context', async () => {
+    it('should not issue extra RPCs when daemon already has context', async () => {
       const daemonContext = {
         workspaceId: 'ws-123',
         mainContentType: 'file' as const,
@@ -509,46 +444,12 @@ describe('DaemonWorkspaceRepository', () => {
       expect(result).toEqual(daemonContext);
     });
 
-    it('should return FS context if migration write-through fails', async () => {
-      const fsContext = {
-        workspaceId: 'ws-123',
-        mainContentType: 'file' as const,
-        lastUpdated: '2026-07-14T00:00:00.000Z',
-      };
-
-      // First call: daemon returns undefined (field absent)
-      // Second call: migration fails
-      mockBackendClient.request
-        .mockResolvedValueOnce({})
-        .mockRejectedValueOnce(new Error('Migration failed'));
-
-      const mockFsReadContext = vi.fn().mockResolvedValue(fsContext);
-      (repository as any).filesystemFallback = {
-        readContext: mockFsReadContext,
-      };
-
-      const result = await repository.readContext('ws-123' as any);
-
-      // Should still return FS context even though migration failed
-      expect(result).toEqual(fsContext);
-    });
-
-    it('should fallback to filesystem when RPC fails', async () => {
+    it('should return null when RPC fails (no filesystem fallback)', async () => {
       mockBackendClient.request.mockRejectedValue(new Error('RPC failed'));
 
-      const fsContext = { workspaceId: 'ws-123', mainContentType: 'file' as const };
-
-      // Mock filesystem fallback to return context
-      const mockFsReadContext = vi.fn().mockResolvedValue(fsContext);
-      (repository as any).filesystemFallback = {
-        readContext: mockFsReadContext,
-      };
-
       const result = await repository.readContext('ws-123' as any);
 
-      // Should have fallen back to filesystem
-      expect(mockFsReadContext).toHaveBeenCalledWith('ws-123');
-      expect(result).toEqual(fsContext);
+      expect(result).toBeNull();
     });
   });
 });

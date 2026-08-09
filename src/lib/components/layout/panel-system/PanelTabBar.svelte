@@ -191,6 +191,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   // Mirror the workspaceId prop into a writable so the Redux selector
   // re-evaluates when the prop changes while the component stays mounted.
+  // svelte-ignore state_referenced_locally
   const workspaceIdStore = writable(workspaceId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);

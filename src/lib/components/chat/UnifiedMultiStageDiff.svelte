@@ -53,6 +53,7 @@
   }: Props = $props();
 
   // Silence unused variable warnings (onOpenCommit not yet implemented for merged view)
+  // svelte-ignore state_referenced_locally -- one-shot read purely to silence the unused-variable lint.
   void _onOpenCommit;
 
   const sideBySide = selectDiffSideBySide();

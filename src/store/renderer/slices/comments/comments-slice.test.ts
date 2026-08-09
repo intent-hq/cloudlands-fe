@@ -6,7 +6,7 @@ import {
 import {
   getItem,
   getItems,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 import {
   commentsReducer,
   initialState,

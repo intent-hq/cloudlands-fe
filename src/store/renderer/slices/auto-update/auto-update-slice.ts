@@ -1,5 +1,5 @@
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { AutoUpdateState } from './auto-update-types';
 import type { UpdateChannel, UpdateProgress, UpdateState } from '$features/auto-update/types';
 import { m } from '$shared/paraglide/messages.js';
@@ -77,61 +77,62 @@ export const initAutoUpdate = createAction('autoUpdate/initAutoUpdate');
 
 // --- Reducer ---
 
-export const autoUpdateReducer = createReducer<AutoUpdateState>(initialState)
-  .with(setUpdateState, (state, { payload: [updateState] }) => ({
-    ...state,
-    status: updateState.status,
-    currentVersion: updateState.currentVersion,
-    updateInfo: updateState.updateInfo,
-    progress: updateState.progress,
-    error: updateState.error,
-    channel: updateState.channel,
-  }))
-  .with(setProgress, (state, { payload: [progress] }) => ({
-    ...state,
-    progress,
-  }))
-  .with(setUpdateError, (state, { payload: [error] }) => ({
+export const autoUpdateReducer = createReducer<AutoUpdateState>(initialState);
+
+autoUpdateReducer.with(setUpdateState, (state, { payload: [updateState] }) => ({
+  ...state,
+  status: updateState.status,
+  currentVersion: updateState.currentVersion,
+  updateInfo: updateState.updateInfo,
+  progress: updateState.progress,
+  error: updateState.error,
+  channel: updateState.channel,
+}));
+autoUpdateReducer.with(setProgress, (state, { payload: [progress] }) => ({
+  ...state,
+  progress,
+}));
+autoUpdateReducer.with(setUpdateError, (state, { payload: [error] }) => ({
+  ...state,
+  status: 'error' as const,
+  error,
+}));
+autoUpdateReducer.with(setChannel, (state, { payload: [channel] }) => ({
+  ...state,
+  channel,
+}));
+autoUpdateReducer.with(showToast, (state) => ({
+  ...state,
+  toastVisible: true,
+}));
+autoUpdateReducer.with(hideToast, (state) => ({
+  ...state,
+  toastVisible: false,
+}));
+autoUpdateReducer.with(dismissDownloadedToast, (state, { payload: [dismissedAt] }) => ({
+  ...state,
+  toastVisible: false,
+  downloadedToastDismissedAt: dismissedAt,
+}));
+autoUpdateReducer.with(showToastChecking, (state) => ({
+  ...state,
+  toastVisible: true,
+  status: 'checking' as const,
+}));
+autoUpdateReducer.with(setUpToDate, (state, { payload: [version] }) => ({
+  ...state,
+  status: 'not-available' as const,
+  currentVersion: version || state.currentVersion,
+}));
+autoUpdateReducer.with(setCheckTimedOut, (state) => {
+  if (state.status !== 'checking') return state;
+  return {
     ...state,
     status: 'error' as const,
-    error,
-  }))
-  .with(setChannel, (state, { payload: [channel] }) => ({
-    ...state,
-    channel,
-  }))
-  .with(showToast, (state) => ({
-    ...state,
-    toastVisible: true,
-  }))
-  .with(hideToast, (state) => ({
-    ...state,
-    toastVisible: false,
-  }))
-  .with(dismissDownloadedToast, (state, { payload: [dismissedAt] }) => ({
-    ...state,
-    toastVisible: false,
-    downloadedToastDismissedAt: dismissedAt,
-  }))
-  .with(showToastChecking, (state) => ({
-    ...state,
-    toastVisible: true,
-    status: 'checking' as const,
-  }))
-  .with(setUpToDate, (state, { payload: [version] }) => ({
-    ...state,
-    status: 'not-available' as const,
-    currentVersion: version || state.currentVersion,
-  }))
-  .with(setCheckTimedOut, (state) => {
-    if (state.status !== 'checking') return state;
-    return {
-      ...state,
-      status: 'error' as const,
-      error: m.autoUpdate_check_timeout_error(),
-    };
-  })
-  .with(simulateSetState, (state, action) => ({
-    ...state,
-    ...action.payload,
-  }));
+    error: m.autoUpdate_check_timeout_error(),
+  };
+});
+autoUpdateReducer.with(simulateSetState, (state, action) => ({
+  ...state,
+  ...action.payload,
+}));

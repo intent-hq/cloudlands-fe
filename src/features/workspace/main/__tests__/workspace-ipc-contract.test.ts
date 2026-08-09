@@ -60,12 +60,7 @@ vi.mock('../../../../store/main/slices/agent-events/agent-events-slice', () => (
 vi.mock('../../../../store/main/slices/workspace-events/workspace-events-slice', () => ({
   emitWorkspaceEvent: vi.fn((payload) => ({ type: 'workspace/emitEvent', payload })),
 }));
-vi.mock('../../../../store/main/slices/workspace-events/sagas/persistence-saga', () => ({
-  deleteEventStoreForWorkspace: vi.fn(),
-}));
 vi.mock('../../../terminal/main/terminal.ipc', () => ({ cleanupWorkspaceTerminals: vi.fn() }));
-vi.mock('../../../scripts/main/script-process-manager', () => ({ disposeScriptProcessManager: vi.fn() }));
-vi.mock('../../../scripts/main/scripts-persistence', () => ({ readScripts: vi.fn(() => []) }));
 vi.mock('../../../agent/main/instruction-service', () => ({
   InstructionService: { getInstance: vi.fn(() => ({ warmCache: vi.fn() })) },
 }));

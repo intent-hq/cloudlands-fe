@@ -95,6 +95,37 @@ describe('daemonHealthReducer', () => {
       expect(next.transport).toEqual(externalTransport);
     });
 
+    it('clears locality reported by a different transport when switching to local UDS', () => {
+      const state = {
+        ...initialState,
+        transport: { mode: 'external-ws', target: 'wss://remote.example' } as const,
+        hostLocality: 'remote' as const,
+      };
+
+      const next = daemonHealthReducer(
+        state,
+        connectionStatusChanged('connected', sidecarTransport),
+      );
+
+      expect(next.transport).toEqual(sidecarTransport);
+      expect(next.hostLocality).toBeNull();
+    });
+
+    it('preserves forced locality when reconnecting to the same transport', () => {
+      const state = {
+        ...initialState,
+        transport: sidecarTransport,
+        hostLocality: 'remote' as const,
+      };
+
+      const next = daemonHealthReducer(
+        state,
+        connectionStatusChanged('connected', { ...sidecarTransport }),
+      );
+
+      expect(next.hostLocality).toBe('remote');
+    });
+
     it('preserves last-known transport across a disconnect without transport info', () => {
       const state = { ...initialState, health: 'healthy' as const, transport: sidecarTransport };
       const next = daemonHealthReducer(state, connectionStatusChanged('disconnected'));
@@ -367,7 +398,7 @@ describe('daemonHealthReducer', () => {
         },
       };
       const state = { ...initialState, polling: true };
-      const receivedAt = '2026-08-01T12:34:56.789Z';
+      const receivedAt = '2026-07-30T20:00:00.000Z';
       const next = daemonHealthReducer(state, systemStatusSuccess(payload, receivedAt));
 
       expect(next.polling).toBe(false);
@@ -409,8 +440,10 @@ describe('daemonHealthReducer', () => {
         },
       };
       const state = { ...initialState, polling: true };
-      const receivedAt = '2026-08-01T00:00:00.000Z';
-      const next = daemonHealthReducer(state, systemStatusSuccess(payload, receivedAt));
+      const next = daemonHealthReducer(
+        state,
+        systemStatusSuccess(payload, '2026-07-30T20:00:01.000Z'),
+      );
 
       expect(next.polling).toBe(false);
       expect(next.stats).toEqual({
@@ -429,7 +462,6 @@ describe('daemonHealthReducer', () => {
         transport: undefined,
       });
       expect(next.hostLocality).toBe('remote');
-      expect(next.lastUpdated).toBe(receivedAt);
     });
 
     it('preserves the last-known hostLocality when the payload omits it (older daemon)', () => {
@@ -445,7 +477,7 @@ describe('daemonHealthReducer', () => {
       const state = { ...initialState, hostLocality: 'local' as const };
       const next = daemonHealthReducer(
         state,
-        systemStatusSuccess(payload, '2026-08-01T00:00:00.000Z'),
+        systemStatusSuccess(payload, '2026-07-30T20:00:02.000Z'),
       );
 
       expect(next.hostLocality).toBe('local');

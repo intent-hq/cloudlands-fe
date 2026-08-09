@@ -35,4 +35,21 @@ describe('agentAvailabilityReducer status retention during re-checks', () => {
       expect(next.providerStatusMap).toEqual(checkedState.providerStatusMap);
     }
   });
+
+  it('checkSingleProviderFailure is a no-op: it does not clear the loading flag', () => {
+    // A probe failure (unreachable daemon / RPC error) must not fabricate a
+    // terminal "not installed" render. Leaving providerLoadingMap untouched
+    // keeps the card in its existing indeterminate state until a fresh
+    // probe actually succeeds.
+    const loadingState: AgentAvailabilityState = {
+      ...initialState,
+      providerStatusMap: { auggie: { available: true, authenticated: true } },
+      providerLoadingMap: { auggie: true },
+    };
+    const next = agentAvailabilityReducer(loadingState, checkSingleProviderFailure('auggie'));
+    expect(next).toBe(loadingState);
+    expect(next.providerLoadingMap.auggie).toBe(true);
+    expect(next.providerStatusMap).toBe(loadingState.providerStatusMap);
+    expect(next.providerStatusMap.auggie).toEqual({ available: true, authenticated: true });
+  });
 });

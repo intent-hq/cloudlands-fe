@@ -11,36 +11,36 @@
  *   `release-notes:get`, and resolves into content
  * - an unavailable fetch still opens the modal (fallback state)
  */
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock backend transport so unrelated middlewares resolve quietly
-vi.mock("$lib/client/live/backend-transport", () => ({
+vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: () => Promise.resolve(undefined),
-  backendSubscribe: () => Promise.resolve({ subscriptionId: "sub-rn-1" }),
+  backendSubscribe: () => Promise.resolve({ subscriptionId: 'sub-rn-1' }),
   backendUnsubscribe: () => Promise.resolve(),
   onBackendNotification: () => () => {},
   onBackendReconnected: () => () => {},
 }));
 
-import { RELEASE_NOTES_CHANNELS } from "$features/release-notes/types";
-import { __resetReleaseNotesMiddlewareForTests } from "$features/release-notes/release-notes-mutation-service";
-import { store as appStore } from "$store/renderer/store";
+import { RELEASE_NOTES_CHANNELS } from '$features/release-notes/types';
+import { store as appStore } from '$store/renderer/store';
+import { releaseNotesSaga } from '$store/renderer/slices/release-notes/sagas/release-notes-saga';
 import {
   closeReleaseNotesModal,
   initializeReleaseNotes,
-} from "$store/renderer/slices/release-notes/release-notes-slice";
+} from '$store/renderer/slices/release-notes/release-notes-slice';
 import {
   addMockIpcListener,
   emitMockIpcEvent,
   mockIpcListenerCount,
   registerMockIpcHandler,
   resetMockIpcRouter,
-} from "$shared/ipc-mock-router";
+} from '$shared/ipc-mock-router';
 
 const NOTES = {
-  version: "2.1.0",
-  notes: "## What changed\n\n- Everything",
-  url: "https://github.com/intent-hq/cloudlands-releases/releases/tag/v2.1.0",
+  version: '2.1.0',
+  notes: '## What changed\n\n- Everything',
+  url: 'https://github.com/intent-hq/cloudlands-releases/releases/tag/v2.1.0',
 };
 
 const flush = async () => {
@@ -61,14 +61,14 @@ beforeAll(() => {
   };
 });
 
-describe("release-notes-mutation-service", () => {
+describe('release-notes-mutation-service', () => {
+  let cancelSaga: (() => void) | undefined;
   beforeAll(() => {
     appStore.init();
   });
 
   beforeEach(async () => {
     await flush();
-    __resetReleaseNotesMiddlewareForTests();
     resetMockIpcRouter();
     // Nothing parked by default; individual tests override this.
     registerMockIpcHandler(RELEASE_NOTES_CHANNELS.GET_PENDING, async () => ({
@@ -76,9 +76,12 @@ describe("release-notes-mutation-service", () => {
       data: null,
     }));
     appStore.dispatch(closeReleaseNotesModal());
+    cancelSaga = appStore.runSaga(releaseNotesSaga);
   });
 
-  it("subscribes to the show push exactly once", async () => {
+  afterEach(() => cancelSaga?.());
+
+  it('subscribes to the show push exactly once', async () => {
     appStore.dispatch(initializeReleaseNotes());
     appStore.dispatch(initializeReleaseNotes());
     await flush();
@@ -87,7 +90,7 @@ describe("release-notes-mutation-service", () => {
     expect(appStore.state.releaseNotes.initialized).toBe(true);
   });
 
-  it("opens the modal with the notes carried by the startup push", async () => {
+  it('opens the modal with the notes carried by the startup push', async () => {
     appStore.dispatch(initializeReleaseNotes());
     await flush();
 
@@ -99,7 +102,7 @@ describe("release-notes-mutation-service", () => {
     expect(appStore.state.releaseNotes.loading).toBe(false);
   });
 
-  it("claims startup notes parked before the listener existed", async () => {
+  it('claims startup notes parked before the listener existed', async () => {
     registerMockIpcHandler(RELEASE_NOTES_CHANNELS.GET_PENDING, async () => ({
       success: true,
       data: NOTES,
@@ -112,7 +115,7 @@ describe("release-notes-mutation-service", () => {
     expect(appStore.state.releaseNotes.releaseNotes).toEqual(NOTES);
   });
 
-  it("does not re-open the modal when the push and the pending claim overlap", async () => {
+  it('does not re-open the modal when the push and the pending claim overlap', async () => {
     registerMockIpcHandler(RELEASE_NOTES_CHANNELS.GET_PENDING, async () => ({
       success: true,
       data: NOTES,
@@ -128,7 +131,7 @@ describe("release-notes-mutation-service", () => {
     expect(appStore.state.releaseNotes.showModal).toBe(false);
   });
 
-  it("fetches over release-notes:get when the menu push carries no notes", async () => {
+  it('fetches over release-notes:get when the menu push carries no notes', async () => {
     const getSpy = vi.fn(async () => ({ success: true, data: NOTES }));
     registerMockIpcHandler(RELEASE_NOTES_CHANNELS.GET, getSpy);
 
@@ -144,10 +147,10 @@ describe("release-notes-mutation-service", () => {
     expect(appStore.state.releaseNotes.loading).toBe(false);
   });
 
-  it("still opens the modal (fallback state) when no notes are available", async () => {
+  it('still opens the modal (fallback state) when no notes are available', async () => {
     registerMockIpcHandler(RELEASE_NOTES_CHANNELS.GET, async () => ({
       success: false,
-      error: { message: "Release notes are not available in this build" },
+      error: { message: 'Release notes are not available in this build' },
     }));
 
     appStore.dispatch(initializeReleaseNotes());

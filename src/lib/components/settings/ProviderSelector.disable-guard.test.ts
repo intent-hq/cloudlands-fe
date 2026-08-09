@@ -49,7 +49,8 @@ async function buildState(fileSpecialists: object[]) {
     await import('$store/renderer/slices/specialists/specialists-slice');
   const { initialState: modelInitialState } =
     await import('$store/renderer/slices/model/model-slice');
-  const { createCollection } = await import('$lib/store-shim/utils/collections/collection-utils');
+  const { createCollection } =
+    await import('@augmentcode/themis/utils/collections/collection-utils');
   const {
     initialState: providerCatalogInitialState,
     providerCatalogLoaded,
@@ -224,7 +225,13 @@ describe('ProviderSelector default-unavailable honesty', () => {
         };
       }
       if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
-        return { success: true, data: { auggie: null, 'claude-code': null, codex: null } };
+        return {
+          success: true,
+          data: {
+            paths: { auggie: null, 'claude-code': null, codex: null },
+            secondaryPaths: {},
+          },
+        };
       }
       return { success: true, data: {} };
     });
@@ -258,7 +265,13 @@ describe('ProviderSelector default-unavailable honesty', () => {
         return { success: true, data: availability };
       }
       if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
-        return { success: true, data: { auggie: null, 'claude-code': null, codex: null } };
+        return {
+          success: true,
+          data: {
+            paths: { auggie: null, 'claude-code': null, codex: null },
+            secondaryPaths: {},
+          },
+        };
       }
       return { success: true, data: {} };
     });

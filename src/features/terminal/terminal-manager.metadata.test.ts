@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { TerminalTab } from '$store/renderer/slices/terminals/terminals-slice';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 // The mock also backs the relative `../../store` import inside
 // terminals-selectors.ts (same resolved module): `createSelector` runs at that
 // module's init, so the mock must provide it. `.select(state, ...)` mirrors
-// the store-shim contract of evaluating against the explicitly passed state.
+// Themis behavior of evaluating against the explicitly passed state.
 vi.mock('$store/renderer/store', () => ({
   store: {
     dispatch: mocks.dispatch,

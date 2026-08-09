@@ -137,6 +137,7 @@
   // cleared on failure so a later expand retries. Reset on workspace switch so
   // the cache doesn't grow unbounded or leak across workspaces.
   let commitFileCache = $state<Record<string, CommitFile[] | null>>({});
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below tracks later changes
   let cacheWorkspaceId = workspaceId;
   $effect(() => {
     if (workspaceId !== cacheWorkspaceId) {

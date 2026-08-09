@@ -141,14 +141,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     groupFilesByAgent(unstagedChanges.map((c) => toUIFileChange(c, false))),
   );
 
-  const unstagedFilePaths = $derived(new Set(unstagedChanges.map((c) => c.relativePath)));
-
   const stagedByAgent = $derived<AgentChangeGroup[]>(
-    groupFilesByAgent(
-      stagedChanges
-        .filter((c) => !unstagedFilePaths.has(c.relativePath))
-        .map((c) => toUIFileChange(c, true)),
-    ),
+    groupFilesByAgent(stagedChanges.map((c) => toUIFileChange(c, true))),
   );
 
   const hasAnyAgentAttribution = $derived(

@@ -15,8 +15,6 @@ export class WorkspaceConfigConstants {
 
   // File names
   static readonly WORKSPACE_METADATA_FILE = 'workspace.json';
-  static readonly FIRST_VISIT_STATE_FILE = 'first-visit-state.json';
-  static readonly PANEL_LAYOUT_HISTORY_FILE = 'panel-layout-history.json';
   static readonly NOTE_FILE_EXTENSION = '.md';
   /** @deprecated Legacy notes used .json, now use .md */
   static readonly LEGACY_NOTE_FILE_EXTENSION = '.json';

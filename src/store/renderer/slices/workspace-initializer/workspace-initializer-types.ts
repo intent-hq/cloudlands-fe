@@ -1,4 +1,4 @@
-import type { Collection } from '$lib/store-shim/utils/collections/collection-utils';
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { OnboardingStep } from '../onboarding/onboarding-types';
 
 export type WorkspaceInitializerRepoType = 'local' | 'github' | 'remote';

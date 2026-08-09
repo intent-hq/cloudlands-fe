@@ -63,7 +63,9 @@
 
   let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
 
+  // svelte-ignore state_referenced_locally
   const ftChanges$ = selectFileTrackingChanges(workspaceId);
+  // svelte-ignore state_referenced_locally
   const ftCommits$ = selectFileTrackingCommits(workspaceId);
 
   const committedStageSet = new Set<ChangeStage>([
@@ -76,6 +78,7 @@
 
   const headerContext = getPanelHeaderContext();
 
+  // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
   const repoPath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || undefined);
 

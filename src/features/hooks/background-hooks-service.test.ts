@@ -3,40 +3,25 @@
  * §6.5, v2.10).
  *
  * FAKE transport only: the backend-transport seam is mocked. Asserts the
- * exact `hook.list` / `hook.runNow` / `hook.cancel` request shapes, the
- * `hook:*` events.subscribe registration, and the pure fold of each hook
- * lifecycle event into the chip list.
+ * exact `hook.list` / `hook.runNow` / `hook.cancel` request shapes and the
+ * pure fold of each hook lifecycle event into the chip list.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
-  backendSubscribe: vi.fn(),
-  backendUnsubscribe: vi.fn().mockResolvedValue(undefined),
-  onBackendNotification: vi.fn(() => () => {}),
-  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
-import {
-  backendRequest,
-  backendSubscribe,
-  backendUnsubscribe,
-  onBackendNotification,
-  type BackendNotification,
-} from '$lib/client/live/backend-transport';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import {
   cancelHook,
   foldHookEvent,
   listHooks,
   runHookNow,
-  subscribeBackgroundHooks,
   type BackgroundHook,
 } from './background-hooks-service';
 
 const mockedRequest = vi.mocked(backendRequest);
-const mockedSubscribe = vi.mocked(backendSubscribe);
-const mockedUnsubscribe = vi.mocked(backendUnsubscribe);
-const mockedOnNotification = vi.mocked(onBackendNotification);
 
 /** PROTOCOL §5.40 Hook wire shape (`code`/`lastLogs` arrive from hook.list only). */
 function makeHook(overrides: Partial<BackgroundHook> = {}): BackgroundHook {
@@ -67,11 +52,10 @@ describe('foldHookEvent (§6.5 hook:* lifecycle)', () => {
   });
 
   it('hook:run-completed reschedules with the event nextRunAt', () => {
-    const { hooks } = foldHookEvent(
-      [makeHook({ state: 'running' })],
-      'hook:run-completed',
-      { hookId: 'hook-1', nextRunAt: '2026-07-31T10:07:00Z' },
-    );
+    const { hooks } = foldHookEvent([makeHook({ state: 'running' })], 'hook:run-completed', {
+      hookId: 'hook-1',
+      nextRunAt: '2026-07-31T10:07:00Z',
+    });
     expect(hooks[0].state).toBe('scheduled');
     expect(hooks[0].nextRunAt).toBe('2026-07-31T10:07:00Z');
   });
@@ -84,17 +68,14 @@ describe('foldHookEvent (§6.5 hook:* lifecycle)', () => {
     expect(hooks[0].nextRunAt).toBeUndefined();
   });
 
-  it.each(['hook:dispatched', 'hook:evicted', 'hook:cancelled'])(
-    '%s removes the hook',
-    (type) => {
-      const other = makeHook({ hookId: 'hook-2' });
-      const { hooks, needsRefetch } = foldHookEvent([makeHook(), other], type, {
-        hookId: 'hook-1',
-      });
-      expect(hooks).toEqual([other]);
-      expect(needsRefetch).toBe(false);
-    },
-  );
+  it.each(['hook:dispatched', 'hook:evicted', 'hook:cancelled'])('%s removes the hook', (type) => {
+    const other = makeHook({ hookId: 'hook-2' });
+    const { hooks, needsRefetch } = foldHookEvent([makeHook(), other], type, {
+      hookId: 'hook-1',
+    });
+    expect(hooks).toEqual([other]);
+    expect(needsRefetch).toBe(false);
+  });
 
   it('hook:scheduled updates a known hook nextRunAt', () => {
     const { hooks, needsRefetch } = foldHookEvent([makeHook()], 'hook:scheduled', {
@@ -156,125 +137,5 @@ describe('wire requests (§5.40, fake transport)', () => {
       workspaceId: 'ws-1',
       hookId: 'hook-1',
     });
-  });
-});
-
-describe('subscribeBackgroundHooks (hook:* events.subscribe + fold)', () => {
-  let notify: ((n: BackendNotification) => void) | undefined;
-
-  beforeEach(() => {
-    mockedOnNotification.mockImplementation((handler) => {
-      notify = handler;
-      return () => {};
-    });
-    mockedSubscribe.mockResolvedValue({ subscriptionId: 'ws-sub-7' });
-  });
-
-  afterEach(() => {
-    notify = undefined;
-    vi.clearAllMocks();
-  });
-
-  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-  it('registers a workspace-scoped hook:* subscription, seeds from hook.list, folds events', async () => {
-    mockedRequest.mockResolvedValue({ hooks: [makeHook()] });
-    const seen: BackgroundHook[][] = [];
-    const { dispose } = subscribeBackgroundHooks('ws-1', (hooks) => seen.push(hooks));
-    await flush();
-
-    expect(mockedSubscribe).toHaveBeenCalledWith({ eventTypes: ['hook:*'], workspaceId: 'ws-1' });
-    expect(mockedRequest).toHaveBeenCalledWith('hook.list', { workspaceId: 'ws-1' });
-    expect(seen.at(-1)).toEqual([makeHook()]);
-
-    notify?.({
-      method: 'events.event',
-      params: {
-        subscriptionId: 'ws-sub-7',
-        event: { type: 'hook:run-started', workspaceId: 'ws-1', data: { hookId: 'hook-1' } },
-      },
-    });
-    expect(seen.at(-1)?.[0].state).toBe('running');
-
-    notify?.({
-      method: 'events.event',
-      params: {
-        subscriptionId: 'ws-sub-7',
-        event: { type: 'hook:cancelled', workspaceId: 'ws-1', data: { hookId: 'hook-1' } },
-      },
-    });
-    expect(seen.at(-1)).toEqual([]);
-
-    dispose();
-    expect(mockedUnsubscribe).toHaveBeenCalledWith('ws-sub-7');
-  });
-
-  it('ignores foreign-workspace and foreign-subscription events', async () => {
-    mockedRequest.mockResolvedValue({ hooks: [makeHook()] });
-    const seen: BackgroundHook[][] = [];
-    const { dispose } = subscribeBackgroundHooks('ws-1', (hooks) => seen.push(hooks));
-    await flush();
-    const baseline = seen.length;
-
-    notify?.({
-      method: 'events.event',
-      params: {
-        subscriptionId: 'ws-sub-7',
-        event: { type: 'hook:cancelled', workspaceId: 'ws-2', data: { hookId: 'hook-1' } },
-      },
-    });
-    notify?.({
-      method: 'events.event',
-      params: {
-        subscriptionId: 'ws-sub-other',
-        event: { type: 'hook:cancelled', workspaceId: 'ws-1', data: { hookId: 'hook-1' } },
-      },
-    });
-    expect(seen.length).toBe(baseline);
-    dispose();
-  });
-
-  it('refetches when an event references an unseen hook', async () => {
-    mockedRequest
-      .mockResolvedValueOnce({ hooks: [] })
-      .mockResolvedValueOnce({ hooks: [makeHook({ hookId: 'hook-9' })] });
-    const seen: BackgroundHook[][] = [];
-    const { dispose } = subscribeBackgroundHooks('ws-1', (hooks) => seen.push(hooks));
-    await flush();
-
-    notify?.({
-      method: 'events.event',
-      params: {
-        subscriptionId: 'ws-sub-7',
-        event: { type: 'hook:scheduled', workspaceId: 'ws-1', data: { hookId: 'hook-9' } },
-      },
-    });
-    await flush();
-
-    expect(mockedRequest).toHaveBeenCalledTimes(2);
-    expect(seen.at(-1)).toEqual([makeHook({ hookId: 'hook-9' })]);
-    dispose();
-  });
-
-  it('refetch() re-runs hook.list and emits the fresh list (lastLogs arrives on hook.list only)', async () => {
-    mockedRequest
-      .mockResolvedValueOnce({ hooks: [makeHook()] })
-      .mockResolvedValueOnce({
-        hooks: [makeHook({ runCount: 7, lastLogs: 'run 7: rechecked CI\nstill green' })],
-      });
-    const seen: BackgroundHook[][] = [];
-    const { refetch, dispose } = subscribeBackgroundHooks('ws-1', (hooks) => seen.push(hooks));
-    await flush();
-    expect(seen.at(-1)?.[0].lastLogs).toBe('checking CI\nall green');
-
-    refetch();
-    await flush();
-
-    expect(mockedRequest).toHaveBeenCalledTimes(2);
-    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'hook.list', { workspaceId: 'ws-1' });
-    expect(seen.at(-1)).toEqual([
-      makeHook({ runCount: 7, lastLogs: 'run 7: rechecked CI\nstill green' }),
-    ]);
-    dispose();
   });
 });

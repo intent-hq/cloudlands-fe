@@ -126,7 +126,7 @@ jobs:
   # dist-electron release assets as a workflow artifact for the publish job.
   build-macos:
     needs: resolve
-    runs-on: [self-hosted, macOS, ARM64, m1mac]
+    runs-on: macos-15-xlarge
     timeout-minutes: 90
 
     steps:
@@ -139,15 +139,19 @@ jobs:
         uses: pnpm/action-setup@v6
         with:
           version: 10.30.3
-          # Per-runner-instance dest: concurrent self-hosted slots share $HOME
-          # and race on the default ~/setup-pnpm (monorepo#1239). The action
-          # expands ~ via os.homedir(), so this is safe on Windows too.
+          # Per-runner-instance dest: on the old self-hosted pool, concurrent
+          # slots shared $HOME and raced on the default ~/setup-pnpm
+          # (monorepo#1239). Hosted macos-15-xlarge runners are one VM per
+          # job so the race can't recur, but the dest is harmless to keep.
           dest: ~/setup-pnpm-${{ runner.name }}
 
       - name: Setup Node.js
-        # No cache: 'pnpm' — persistent pnpm store on the non-ephemeral
-        # self-hosted runner makes the GH Actions cache redundant (same as
-        # the intent-pr.yml jobs).
+        # No cache: 'pnpm' — this job previously ran on a non-ephemeral
+        # self-hosted runner with a persistent pnpm store (same as the
+        # intent-pr.yml jobs). On the hosted macos-15-xlarge runner each job
+        # is a fresh VM with no persistent store, so this is a candidate for
+        # cache: 'pnpm' — left as-is here since only the runner target was
+        # migrated by this change.
         uses: actions/setup-node@v7
         with:
           node-version: '22'
@@ -187,8 +191,10 @@ jobs:
           KEYCHAIN_PASSWORD: ${{ secrets.CLOUDLANDS_KEYCHAIN_PASSWORD }}
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
-          # Idempotency on the non-ephemeral runner: drop any stale keychain
-          # left by a crashed run before creating a fresh one
+          # Idempotency: drop any stale keychain left by a crashed run
+          # before creating a fresh one. No-op on the ephemeral
+          # macos-15-xlarge runner (each job gets a clean VM) but harmless
+          # to keep.
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -207,8 +213,8 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH" "${KEYCHAINS[@]}"
 
       # Drop build output left by a previous run so the artifact upload can't
-      # pick up stale files on a non-ephemeral self-hosted runner (same as the
-      # Windows and Linux jobs; no-op on an ephemeral hosted runner).
+      # pick up stale files (no-op on this ephemeral hosted runner; kept for
+      # parity with the Windows job and the still self-hosted Linux legs).
       - name: Clean previous build output
         run: rm -rf dist-electron
 
@@ -225,7 +231,8 @@ jobs:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here
           # (this leg passed at 12288 on m1mac in the v2.13.0 rebuild, run
-          # 30764745052 — don't drop below ~10240).
+          # 30764745052 — don't drop below ~10240). macos-15-xlarge provides
+          # 14 GB RAM, comfortably covering the ~8.2 GB committed heap peak.
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
           # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
@@ -267,10 +274,11 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-      # The self-hosted runner is non-ephemeral: always delete the temporary
-      # signing keychain, restore the pre-job keychain search list, and shred
-      # the decoded certificate so no signing material outlives the job (runs
-      # on failure and cancellation too).
+      # Always delete the temporary signing keychain, restore the pre-job
+      # keychain search list, and shred the decoded certificate so no
+      # signing material outlives the job (runs on failure and cancellation
+      # too). Ephemeral-safe by design (#553): a no-op cleanup here is
+      # harmless on this hosted macos-15-xlarge runner.
       - name: Clean up signing keychain
         if: always()
         run: |
@@ -292,8 +300,19 @@ jobs:
   # intent-manual-windows-build.yml.
   build-windows:
     needs: resolve
-    runs-on: [self-hosted, Windows, X64]
-    timeout-minutes: 60
+    # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
+    # group as gh-linux-16x), fixed at the runner level to the Windows Server
+    # 2022 image. Server 2022 (not 2025) still matters: the windows-2025
+    # image ships Visual Studio 2026 (v18), which node-gyp < 12.1.0 cannot
+    # detect (nodejs/node-gyp#3282), breaking native module builds
+    # (node-pty). Move the runner to a newer image once the Node/npm/node-gyp
+    # stack in use supports VS 18.
+    runs-on: gh-windows-16x
+    # 120 min: the hosted Windows runner is far slower than the old
+    # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
+    # and the job was cancelled at the previous 60-min cap before
+    # electron-builder packaging even started (run 31302887167).
+    timeout-minutes: 120
 
     steps:
       - name: Checkout release tag
@@ -301,11 +320,12 @@ jobs:
         with:
           ref: refs/tags/${{ needs.resolve.outputs.tag }}
 
-      # On the self-hosted Windows runner C:\WINDOWS\system32\bash.EXE (the
-      # WSL stub) shadows Git Bash in PATH, and WSL bash can't execute the
-      # runner's Windows-path step scripts. Prepend Git's bin dir so every
-      # later `shell: bash` step resolves Git Bash instead (same workaround
-      # as intent-manual-windows-build.yml).
+      # On Windows runners C:\WINDOWS\system32\bash.EXE (the WSL stub)
+      # shadows Git Bash in PATH, and WSL bash can't execute the runner's
+      # Windows-path step scripts. Prepend Git's bin dir so every later
+      # `shell: bash` step resolves Git Bash instead (same workaround as
+      # intent-manual-windows-build.yml). Still required on gh-windows-16x,
+      # whose Windows Server 2022 image ships the same WSL stub.
       - name: Put Git Bash first on PATH
         shell: cmd
         run: echo C:\Program Files\Git\bin>>"%GITHUB_PATH%"
@@ -314,13 +334,20 @@ jobs:
         uses: pnpm/action-setup@v6
         with:
           version: 10.30.3
-          # Per-runner-instance dest (see build-macos).
-          dest: ~/setup-pnpm-${{ runner.name }}
+          # Space-free per-run dest: hosted Windows runner names contain
+          # spaces ("GitHub Actions NNN") and pnpm/action-setup@v6 breaks on
+          # space-containing paths on Windows (pnpm/action-setup#261), so
+          # runner.name (see build-macos) cannot be used here. run_id +
+          # run_attempt keeps the dest unique per run.
+          dest: ~/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Setup Node.js
-        # No cache: 'pnpm' — the self-hosted runner is non-ephemeral, so the
-        # local pnpm store persists between runs and the GH Actions cache
-        # tarball round-trip would only add network time.
+        # No cache: 'pnpm' — this job previously ran on a non-ephemeral
+        # self-hosted runner with a persistent pnpm store, making the GH
+        # Actions cache tarball round-trip redundant. On the hosted
+        # gh-windows-16x runner each job is a fresh VM with no persistent
+        # store, so this is a candidate for cache: 'pnpm' — left as-is here
+        # since only the runner target was migrated by this change.
         uses: actions/setup-node@v7
         with:
           node-version: '22'
@@ -355,8 +382,10 @@ jobs:
           INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
         run: PATH="/c/Windows/System32:$PATH" node scripts/fetch-sidecar.cjs
 
-      # The self-hosted runner is non-ephemeral; drop build output left by a
-      # previous run so the artifact upload can't pick up stale files.
+      # Drop build output left by a previous run so the artifact upload
+      # can't pick up stale files (no-op on this ephemeral hosted runner;
+      # kept for parity with the macOS job and the still self-hosted Linux
+      # legs).
       - name: Clean previous build output
         shell: bash
         run: rm -rf dist-electron
@@ -368,17 +397,18 @@ jobs:
         run: pnpm run generate:i18n
 
       # shell: powershell (Windows PowerShell 5.1, present on every Windows
-      # host) rather than pwsh — the self-hosted runner has no PowerShell Core
-      # ("pwsh: command not found", intent-hq/monorepo#1282 follow-up run).
+      # host) rather than pwsh — the old self-hosted runner had no
+      # PowerShell Core ("pwsh: command not found", intent-hq/monorepo#1282
+      # follow-up run). The gh-windows-16x runner's Windows Server 2022 image
+      # ships PowerShell 5.1 too, so this stays valid on the hosted runner.
       - name: Build and package Windows app
         shell: powershell
         env:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here.
-          # Assumes the self-hosted Windows runner has enough RAM for a 12288
-          # heap plus node overhead (this leg passed at 12288 in the v2.13.0
-          # rebuild, run 30764745052). Drop to 10240 like the hosted Linux
-          # x64 leg if the OS ever kills the build.
+          # This leg passed at 12288 in the v2.13.0 rebuild, run 30764745052.
+          # gh-windows-16x is 16 vCPU / 64 GB RAM, so the 12288 cap has
+          # ample headroom there.
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
           # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux

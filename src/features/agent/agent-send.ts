@@ -4,7 +4,7 @@
  * Module-level `sendMessage()` — session restore/activation, the optimistic
  * user message, and the single PROTOCOL.md §5.5 `agent.sendMessage` wire call.
  * Streaming and terminal state arrive via the standing `chat.subscribe` delta
- * stream (chat-subscribe-service) and the daemon events bridge — this module
+ * stream (chat-subscribe saga) and the daemon events bridge — this module
  * assembles no transcript state and owns no stream lifecycle.
  */
 
@@ -283,7 +283,7 @@ export async function sendMessage(
                 async () => {
                   // Streaming and terminal state for this turn arrive via the
                   // standing chat.subscribe delta stream (PROTOCOL §7.1,
-                  // chat-subscribe-service) and the daemon events bridge
+                  // chat-subscribe saga) and the daemon events bridge
                   // (events.subscribe → agent:stream:* / agent:idle, §7) —
                   // no transcript state is assembled here.
                   //

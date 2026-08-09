@@ -6,7 +6,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   faExclamationTriangle,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import ToolDetails from './ToolDetails.svelte';
   import { parseToolResult } from './tool-result-parser';
   import {
@@ -112,7 +112,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   // Transition function for expand/collapse animation
   function expand(node: Element) {
-    return slide(node, { duration: 150 });
+    return safeSlide(node, { duration: 150 });
   }
 
 

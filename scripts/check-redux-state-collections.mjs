@@ -564,6 +564,11 @@ const BASELINE = new Set([
   'src/store/renderer/slices/changes/changes-types.ts::FileTrackingWorkspaceState.olderCommits::CommitInfo[]',
   'src/store/renderer/slices/chat-state/chat-state-types.ts::ChatAgentState.statusEvents::StatusEvent[]',
   'src/store/renderer/slices/git/git-types.ts::GitWorkspaceState.diffs::DiffChunk[]',
+  'src/store/renderer/slices/hardware-console/hardware-console-types.ts::HardwareConsoleState.promptUsage::PromptUsageEntry[]',
+  'src/store/renderer/slices/hardware-console/hardware-console-types.ts::HardwareConsoleState.actionMappingByModel::ActionKeyActionId[]',
+  'src/store/renderer/slices/hud/hud-slice.ts::HudUsageState.rateSamples::HudRateSample[]',
+  'src/store/renderer/slices/hud/hud-slice.ts::HudRateHistoryState.samples::HudRateHistorySample[]',
+  'src/store/renderer/slices/hud/hud-slice.ts::HudState.feed::HudFeedEntry[]',
   'src/store/renderer/slices/linear-auth/linear-auth-types.ts::LinearAuthSliceState.issues::LinearIssueResult[]',
   'src/store/renderer/slices/mcp-servers/mcp-servers-types.ts::McpServersState.servers::McpServerInfo[]',
   'src/store/renderer/slices/mcp-settings/mcp-settings-types.ts::McpSettingsState.servers::McpServerConfig[]',
@@ -584,6 +589,7 @@ const BASELINE = new Set([
   'src/store/renderer/slices/workspace-navigation/workspace-navigation-slice.ts::WorkspaceNavigationNavigationState.history::WorkspaceNavigationHistoryEntry[]',
   'src/store/renderer/slices/workspace-notes/workspace-notes-types.ts::NoteVersionsState.versions::NoteVersion[]',
   'src/store/renderer/slices/workspace-notes/workspace-notes-types.ts::ReadyTasksState.tasks::Note[]',
+  'src/store/renderer/slices/voice-settings/voice-settings-types.ts::VoiceSettingsSliceState.inputDevices::VoiceInputDevice[]',
 ]);
 
 function findViolations(src, sliceStateTypeNames) {

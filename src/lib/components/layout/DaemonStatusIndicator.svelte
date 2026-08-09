@@ -49,6 +49,7 @@
 
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
+  import { formatTransportLabel } from '$lib/utils/daemon-status-format';
   import Fa from 'svelte-fa';
   import { faPlus, faCheck, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -83,9 +84,9 @@
     protocolMismatchModalDismissed,
   } from '$store/renderer/slices/connections/connections-slice';
   import {
-    switchConnection,
-    forgetConnection,
-  } from '$store/renderer/middlewares/connections-service';
+    switchConnectionRequested,
+    forgetConnectionRequested,
+  } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import { store as appStore } from '$store/renderer/store';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
@@ -225,7 +226,9 @@
   async function handleSwitchConnection(id: string) {
     dropdownOpen = false;
     try {
-      await switchConnection(id);
+      const action = switchConnectionRequested(id);
+      appStore.dispatch(action);
+      await action.promise;
     } catch {
       // The failure is surfaced via the slice's op-status/error; nothing more
       // to do here (the list/active refresh arrives via connections:changed).
@@ -234,7 +237,9 @@
 
   async function handleForgetConnection(id: string) {
     try {
-      await forgetConnection(id);
+      const action = forgetConnectionRequested(id);
+      appStore.dispatch(action);
+      await action.promise;
     } catch {
       // Refresh + any error surface via the connections service; no-op here.
     }
@@ -249,7 +254,9 @@
   async function switchBackToLocal() {
     dismissCertMismatch();
     try {
-      await switchConnection(LOCAL_CONNECTION_ID);
+      const action = switchConnectionRequested(LOCAL_CONNECTION_ID);
+      appStore.dispatch(action);
+      await action.promise;
     } catch {
       // no-op; op-status/error surface via the slice.
     }
@@ -258,7 +265,9 @@
   async function forgetMismatchedConnection(id: string) {
     dismissCertMismatch();
     try {
-      await forgetConnection(id);
+      const action = forgetConnectionRequested(id);
+      appStore.dispatch(action);
+      await action.promise;
     } catch {
       // no-op; refresh via connections:changed.
     }
@@ -275,7 +284,9 @@
   async function switchBackFromProtocolMismatch() {
     continueWithProtocolMismatch();
     try {
-      await switchConnection(LOCAL_CONNECTION_ID);
+      const action = switchConnectionRequested(LOCAL_CONNECTION_ID);
+      appStore.dispatch(action);
+      await action.promise;
     } catch {
       // no-op; op-status/error surface via the slice.
     }
@@ -410,24 +421,16 @@
 
             <!-- FE connection mode -->
             {#if $stats$.transport}
-              <div class="flex justify-between text-xs">
-                <span class="text-subtle">{m.layout_daemonStatus_connection_label()}</span>
-                <span class="font-mono text-xs">
-                  {#if $stats$.transport.mode === 'sidecar-uds'}
-                    <!-- i18n-ignore (transport mode identifier, not translatable UI copy) -->
-                    sidecar (UDS)
-                  {:else if $stats$.transport.target}
-                    <!-- i18n-ignore (transport mode identifier, not translatable UI copy) -->
-                    external ({$stats$.transport.target})
-                  {:else}
-                    <!-- i18n-ignore (transport mode identifier, not translatable UI copy) -->
-                    external (WebSocket)
-                  {/if}
-                </span>
+              {@const transportLabel = formatTransportLabel($stats$.transport)}
+              <div class="flex justify-between gap-2 text-xs">
+                <span class="text-subtle shrink-0">{m.layout_daemonStatus_connection_label()}</span>
+                <span class="font-mono text-xs min-w-0 truncate" title={transportLabel}
+                  >{transportLabel}</span
+                >
               </div>
             {:else}
-              <div class="flex justify-between text-xs">
-                <span class="text-subtle">{m.layout_daemonStatus_connection_label()}</span>
+              <div class="flex justify-between gap-2 text-xs">
+                <span class="text-subtle shrink-0">{m.layout_daemonStatus_connection_label()}</span>
                 <!-- i18n-ignore (transport mode identifier) -->
                 <span class="font-mono text-xs text-subtle">unknown</span>
               </div>

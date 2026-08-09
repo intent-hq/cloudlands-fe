@@ -52,11 +52,13 @@ export const APP_UI_TARGETS: AppUiTarget[] = [
     description: 'Create-workspace flow.',
   },
   settingsTarget({
-    id: 'backgroundAgents.defaultModel',
+    id: 'quickActions.defaultModel',
     tab: 'agents',
-    hashAliases: ['default-model', 'backgroundAgents.defaultModel'],
+    // The hash is UI-only, so the pre-rename alias stays resolvable for chat
+    // NavLinks and bookmarks minted before monorepo#1729.
+    hashAliases: ['default-model', 'quickActions.defaultModel', 'backgroundAgents.defaultModel'],
     scrollSelector: '#default-model',
-    highlightSelector: '[data-highlight-id="backgroundAgents.defaultModel"]',
+    highlightSelector: '[data-highlight-id="quickActions.defaultModel"]',
     label: 'Settings: Default model',
     route: '/settings?tab=agents#default-model',
     description: 'Default AI behavior model selection.',

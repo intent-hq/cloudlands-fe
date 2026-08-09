@@ -127,6 +127,7 @@
   });
 
   // Animation for position changes
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const position = spring(
     { x: offset, y: 0 },
     {

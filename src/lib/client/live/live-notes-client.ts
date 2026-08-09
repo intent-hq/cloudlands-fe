@@ -5,9 +5,10 @@
  * `workspaceId` when supplied (daemon `note.get` requires one), falling back
  * to resolving the note's workspace via the cache. Every listed note's
  * workspace is cached so note-scoped clients (tasks, comments) can resolve it.
- * `subscribe` aggregates notes across workspaces — converging via one typed
- * per-workspace `note.subscribe` channel per workspace (PROTOCOL §6.9) on
- * liveState daemons, and refetching on legacy `note:*` events otherwise.
+ * `subscribe` aggregates notes across workspaces, converging via one typed
+ * per-workspace `note.subscribe` channel per workspace (PROTOCOL §6.9) — the
+ * sole data path (intent-hq/monorepo#1697); there is no legacy `note:*`
+ * events-driven refetch.
  */
 import { AuthorType, ContentType, NoteVisibility } from "$shared/types";
 import { NoteId, WorkspaceId } from "$shared/types/branded-ids";
@@ -26,8 +27,6 @@ import type {
 import { backendRequest } from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
 import {
-  isEventInFamily,
-  listWorkspaceIds,
   newIdempotencyKey,
   rememberNoteWorkspace,
   resolveNoteWorkspaceId,
@@ -367,18 +366,14 @@ export class LiveNotesClient implements NotesClient {
   /**
    * Subscribe to notes across every workspace.
    *
-   * Typed §6.9 channel: on liveState daemons one per-workspace
-   * `note.subscribe` (`{ workspaceId }`) is registered per id yielded by
-   * `subscribeWorkspaceIds` — the same enumeration `fetchAll` flattens over.
+   * Typed §6.9 channel: one per-workspace `note.subscribe`
+   * (`{ workspaceId }`) is registered per id yielded by
+   * `subscribeWorkspaceIds` — the sole data path (intent-hq/monorepo#1697).
    * Workspace add → a new channel registers and its snapshot merges in;
    * workspace delete → the channel unsubscribes and its notes are evicted.
-   * While ANY workspace channel lacks a push-confirmed registration the
-   * subscription stays legacy and refetches keep serving (the #775 safety
-   * net); daemons without liveState never register channels at all.
    */
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe {
     return createDeltaSubscription<Note>({
-      eventTypes: ["note:created", "note:updated", "note:deleted"],
       channel: {
         subscribeMethod: "note.subscribe",
         unsubscribeMethod: "note.unsubscribe",
@@ -386,12 +381,6 @@ export class LiveNotesClient implements NotesClient {
           subscribeIds: subscribeWorkspaceIds,
           paramsForId: (id) => ({ workspaceId: id }),
         },
-      },
-      matchLegacyEvent: (method, params) => isEventInFamily(method, params, "note"),
-      fetchAll: async () => {
-        const ids = await listWorkspaceIds();
-        const perWorkspace = await Promise.all(ids.map((id) => this.list(id)));
-        return perWorkspace.flat();
       },
       getId: (raw) => String(raw.id ?? ""),
       // Push-path entities are the daemon's wire `Note` (§9.1), which always

@@ -6,8 +6,12 @@
  */
 
 import { promises as fs } from 'fs';
+import * as path from 'path';
 import type { WorkspaceId } from '../../../shared/types';
-import { WorkspaceConfig } from '../../../shared/main/config';
+import {
+  workspaceStateBackendKey,
+  workspaceStateDir,
+} from '../../../shared/main/workspace-state-paths';
 import * as Errors from '../../../shared/errors';
 import { Logger } from '../../../shared/logger';
 import { fsyncFile } from '../../../shared/main/file-sync-utils';
@@ -18,6 +22,17 @@ const logger = new Logger('PanelLayoutHistoryRepository');
 
 const CURRENT_VERSION = 1;
 const MAX_HISTORY_SNAPSHOTS = 50;
+
+const HISTORY_FILE = 'panel-layout-history.json';
+
+/**
+ * History file under `<userData>/workspace-state/<backendKey>/<workspaceId>/`.
+ * The backend id namespacing that used to live in the filename suffix
+ * (cloudlands-fe#823) is carried by the directory key instead.
+ */
+function historyFilePath(workspaceId: WorkspaceId, backendId?: string): string {
+  return path.join(workspaceStateDir(workspaceId, backendId), HISTORY_FILE);
+}
 
 /**
  * A snapshot of the panel layout state at a point in time
@@ -54,7 +69,7 @@ export interface PanelLayoutHistoryRepository {
 export class FileSystemPanelLayoutHistoryRepository implements PanelLayoutHistoryRepository {
   async load(workspaceId: WorkspaceId, backendId?: string): Promise<PanelLayoutHistoryData | null> {
     try {
-      const filePath = WorkspaceConfig.paths.panelLayoutHistory(workspaceId, backendId);
+      const filePath = historyFilePath(workspaceId, backendId);
 
       try {
         await fs.access(filePath);
@@ -88,10 +103,7 @@ export class FileSystemPanelLayoutHistoryRepository implements PanelLayoutHistor
         return null;
       }
       logger.error(`Failed to load panel layout history for workspace: ${workspaceId}`, error as Error);
-      throw new FileReadError(
-        WorkspaceConfig.paths.panelLayoutHistory(workspaceId, backendId),
-        error as Error,
-      );
+      throw new FileReadError(historyFilePath(workspaceId, backendId), error as Error);
     }
   }
 
@@ -113,11 +125,10 @@ export class FileSystemPanelLayoutHistoryRepository implements PanelLayoutHistor
         lastUpdated: new Date().toISOString(),
       };
 
-      // Ensure metadata directory exists
-      const metadataDir = WorkspaceConfig.paths.metadata(workspaceId);
-      await fs.mkdir(metadataDir, { recursive: true });
+      // Ensure the per-workspace state directory exists
+      await fs.mkdir(workspaceStateDir(workspaceId, backendId), { recursive: true });
 
-      const filePath = WorkspaceConfig.paths.panelLayoutHistory(workspaceId, backendId);
+      const filePath = historyFilePath(workspaceId, backendId);
       await fs.writeFile(filePath, JSON.stringify(toSave, null, 2), 'utf-8');
 
       // Sync to disk
@@ -130,10 +141,7 @@ export class FileSystemPanelLayoutHistoryRepository implements PanelLayoutHistor
     } catch (error) {
       logger.error(`Failed to save panel layout history for workspace: ${workspaceId}`, error as Error);
       if (error instanceof Error) {
-        throw new FileWriteError(
-          WorkspaceConfig.paths.panelLayoutHistory(workspaceId, backendId),
-          error,
-        );
+        throw new FileWriteError(historyFilePath(workspaceId, backendId), error);
       }
       throw error;
     }
@@ -147,7 +155,7 @@ export class InMemoryPanelLayoutHistoryRepository implements PanelLayoutHistoryR
   private data = new Map<string, PanelLayoutHistoryData>();
 
   private key(workspaceId: WorkspaceId, backendId?: string): string {
-    return `${WorkspaceConfig.panelLayoutHistoryFileName(backendId)}:${workspaceId}`;
+    return `${workspaceStateBackendKey(backendId)}:${workspaceId}`;
   }
 
   async load(workspaceId: WorkspaceId, backendId?: string): Promise<PanelLayoutHistoryData | null> {

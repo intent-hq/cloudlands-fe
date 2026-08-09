@@ -39,12 +39,11 @@ The Intent app uses a **Redux-based event system** for all workspace events. Eve
 │  │  • agent-subscriptions slice — agent event filters      │    │
 │  └────────────────────────┬────────────────────────────────┘    │
 │                           │                                      │
-│           ┌───────────────┼───────────────┐                     │
-│           ▼               ▼               ▼                     │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐            │
-│  │ EventStore   │ │ QueryEngine  │ │ Sagas        │            │
-│  │ (JSONL I/O)  │ │ (pure query) │ │ (side fx)    │            │
-│  └──────────────┘ └──────────────┘ └──────────────┘            │
+│                           ▼                                     │
+│                  ┌──────────────┐                               │
+│                  │ Sagas        │                               │
+│                  │ (side fx)    │                               │
+│                  └──────────────┘                               │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -57,8 +56,8 @@ Used for file changes, agent actions, git operations. Features:
 - Unique ID and timestamp
 - Actor attribution (user, agent, system)
 - Workspace scoping
-- Persistence to disk (via sagas + EventStore)
-- Filterable queries (via EventQueryEngine)
+
+Persistence and historical queries are daemon-owned (intentd); the frontend keeps no local event store.
 
 ```typescript
 interface WorkspaceEvent {
@@ -91,10 +90,7 @@ mainDispatch(domainEventEmitted({ name: 'terminal:data', data: { terminalId, dat
 | workspace-events slice | `store/main/slices/workspace-events/` | Event state management |
 | domain-events actions | `store/main/slices/domain-events/` | Broadcast event actions + sagas |
 | agent-subscriptions slice | `store/main/slices/agent-subscriptions/` | Agent event filter state |
-| EventStore | `features/events/main/event-store.ts` | Pure JSONL I/O (used by persistence saga) |
-| EventQueryEngine | `features/events/main/event-query-engine.ts` | Pure query logic (used by IPC handler) |
 | EventFilterEngine | `features/events/event-filter-engine.ts` | Pure filter matching logic |
-| agent-event-tools | `features/events/main/agent-event-tools.ts` | MCP tool definitions |
 | agent-subscription-ops | `features/events/main/agent-subscription-ops.ts` | Agent subscription operations |
 
 ## Emitting Events
@@ -138,7 +134,6 @@ All event IPC channels are defined in `src/shared/ipc-registry.ts`:
    workspace.ipc.ts listener dispatches mainDispatch(emitWorkspaceEvent())
    ↓
 6. workspace-events slice accepts event (with deduplication)
-   ├── Persistence saga writes to EventStore (JSONL)
    ├── Renderer subscription saga delivers to matching subscriptions
    ├── Broadcast saga sends to renderer windows + STDIO
    └── Agent subscription saga checks agent filters
@@ -148,9 +143,9 @@ All event IPC channels are defined in `src/shared/ipc-registry.ts`:
 
 ## Best Practices
 
-1. **Use `emitWorkspaceEvent` for full events**: When you need persistence, filtering, query support
+1. **Use `emitWorkspaceEvent` for full events**: When you need actor attribution and subscription filtering
 2. **Use `domainEventEmitted` for simple broadcasts**: Terminal output, real-time updates
-3. **Import pure utilities from features/events/main**: EventStore, EventQueryEngine, EventFilterEngine
+3. **Import pure utilities from features/events**: EventFilterEngine
 4. **Use EventFilterBuilder**: For type-safe filter construction
 5. **Dispatch via `mainDispatch`**: All event emission goes through Redux
 
@@ -160,12 +155,10 @@ All event system timing is centralized in `src/features/file-tracking/tracking.c
 
 | Setting | Value | Purpose |
 |---------|-------|---------|
-| `events.persistEvents` | true | Whether to save events to disk |
-| `events.maxEventsPerWorkspace` | 10000 | Maximum events before compaction |
-| `events.maxEventAge` | 7 days | Events older than this are compacted |
 | `events.batchInterval` | 100ms | Batching interval for event emission |
 | `events.deduplicationWindow` | 1000ms | Window for detecting duplicate events |
-| `events.saveDebounce` | 1000ms | Debounce time for disk saves |
+
+Event persistence settings were removed along with the local event store — persistence is daemon-owned.
 
 ## Deprecated Channels
 

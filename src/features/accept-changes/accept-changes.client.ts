@@ -30,12 +30,50 @@ function toFailureResult(error: unknown, fallbackMessage: string): AcceptChanges
   };
 }
 
+/**
+ * Per-workspace single-flight for `getStatus`. Concurrent callers for the same
+ * workspace share one in-flight `backendRequest`; the entry is cleared as soon
+ * as it settles (resolve or reject), so this coalesces duplicate concurrent
+ * calls without introducing any TTL/caching of the result.
+ */
+const inFlightGetStatus = new Map<WorkspaceId, Promise<WorkspaceGitStatus>>();
+
 export class AcceptChangesClient {
   /**
-   * Get the current git status for accept changes workflow
+   * Get the current git status for accept changes workflow.
+   *
+   * By default, concurrent calls for the same workspace are coalesced into
+   * one in-flight request (see `inFlightGetStatus`). Pass
+   * `forceRefresh: true` when the caller needs a status that reflects state
+   * as of *now* (e.g. right after a commit/push/reset) and must not receive
+   * a response from a request that started before that mutation. A forced
+   * call always issues a fresh `backendRequest` and republishes it as the
+   * shared in-flight entry, so subsequent non-forced callers join the fresh
+   * request instead of a stale one.
    */
-  static async getStatus(workspaceId: WorkspaceId): Promise<WorkspaceGitStatus> {
-    return backendRequest<WorkspaceGitStatus>('accept-changes.getStatus', { workspaceId });
+  static async getStatus(
+    workspaceId: WorkspaceId,
+    options?: { forceRefresh?: boolean },
+  ): Promise<WorkspaceGitStatus> {
+    if (!options?.forceRefresh) {
+      const existing = inFlightGetStatus.get(workspaceId);
+      if (existing) {
+        return existing;
+      }
+    }
+
+    const request: Promise<WorkspaceGitStatus> = backendRequest<WorkspaceGitStatus>(
+      'accept-changes.getStatus',
+      { workspaceId },
+    ).finally(() => {
+      // Only clear the entry if it still points at this request - a forced
+      // refresh may have already replaced it with a newer in-flight request.
+      if (inFlightGetStatus.get(workspaceId) === request) {
+        inFlightGetStatus.delete(workspaceId);
+      }
+    });
+    inFlightGetStatus.set(workspaceId, request);
+    return request;
   }
 
   /**

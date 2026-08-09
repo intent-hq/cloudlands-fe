@@ -30,6 +30,7 @@
 
   let { workspaceId, onSelect, onClose }: Props = $props();
 
+  // svelte-ignore state_referenced_locally - intentional initial capture; the picker is modal-scoped so workspaceId never changes during its lifetime
   const recentUrls$ = selectBrowserRecentUrls(workspaceId);
 
   let urlInput = $state('');
