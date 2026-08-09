@@ -30,6 +30,7 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { createLogger } from '$lib/utils/client-logger';
 import { isAgentDeletionPending } from './utils/pending-agent-deletions';
+import { isAgentNotFoundError } from './utils/agent-not-found-error';
 import { staleRuntimeFlagClearUpsertOptions } from './utils/stale-runtime-flag-clear';
 
 const logger = createLogger('AgentReadService');
@@ -82,7 +83,14 @@ export async function ensureAgentSession(agentId: string): Promise<void> {
         appStore.dispatch(upsertSession(merged));
       }
     } catch (error) {
-      logger.error('Failed to load agent session', error);
+      if (isAgentNotFoundError(error)) {
+        // Expected: speculative loads (hover cards, avatars, peek cards) may
+        // reference an agent deleted on the daemon (monorepo#1753). WARN only
+        // — no navigation or cleanup from this read seam.
+        logger.warn('Agent no longer exists on daemon; skipping session load', { agentId });
+      } else {
+        logger.error('Failed to load agent session', error);
+      }
     } finally {
       inFlight.delete(agentId);
     }

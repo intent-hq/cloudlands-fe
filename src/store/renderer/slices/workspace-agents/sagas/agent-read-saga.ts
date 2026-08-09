@@ -5,6 +5,7 @@ import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import type { AgentSession } from '$shared/types';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
+import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
 import {
   bulkUpsertSessions,
   upsertSession,
@@ -14,6 +15,7 @@ import {
   workspaceDeleted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { closeTabsByAgentId } from '../../panel-layout/panel-layout-slice';
 import { ensureAgentSessionLoaded } from '../workspace-agents-slice';
 
 const logger = createLogger('AgentReadSaga');
@@ -33,6 +35,15 @@ function* loadAgentSessionSaga(wsId: string, agentId: string) {
     yield* put(bulkUpsertSessions([merged]));
     yield* put(upsertSession(merged));
   } catch (error) {
+    if (isAgentNotFoundError(error)) {
+      // Expected after deletion: a stale tab/route still references the
+      // agent (monorepo#1753). WARN once and close any panel tabs pointing at
+      // it so the workspace falls back to its home view; with no referencing
+      // tab (speculative load) the close is a no-op.
+      logger.warn('Agent no longer exists on daemon; closing stale tabs', { wsId, agentId });
+      yield* put(closeTabsByAgentId(wsId, agentId));
+      return;
+    }
     logger.error('Failed to load agent session', error);
   }
 }
