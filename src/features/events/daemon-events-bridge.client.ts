@@ -209,6 +209,10 @@ import {
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
+import {
+  hydrateAgentQueue,
+  noteAgentQueueEventSnapshotApplied,
+} from '$features/agent/agent-queue-read-service';
 import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { WorkspaceEvent } from '$features/events/types';
 import { createLogger } from '$lib/utils/client-logger';
@@ -1245,6 +1249,9 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
   const queue = data.queue;
   if (typeof agentId !== 'string' || !Array.isArray(queue)) return;
   appStore.dispatch(replaceAgentQueue(agentId, queue as QueuedMessage[]));
+  // Mark the snapshot so an in-flight hydrate fetch that started before this
+  // event discards its (now stale) response instead of overwriting it.
+  noteAgentQueueEventSnapshotApplied(agentId);
 }
 
 /**
@@ -2932,6 +2939,10 @@ export async function refreshDaemonEventsAfterReconnect(): Promise<void> {
       state.workspaceAgents?.byWorkspaceId[activeWorkspaceId]?.activeAgentId ?? null;
     if (activeAgentId) {
       void loadChatTranscript(activeAgentId);
+      // Queue rows drained while the connection was down never re-emit
+      // `agent:queue:updated`; reconcile the mirror from `agent.getQueue`
+      // (monorepo#1749).
+      void hydrateAgentQueue(activeAgentId);
     }
   }
 }
