@@ -1,5 +1,5 @@
 import { buffers } from 'redux-saga';
-import { actionChannel, call, put, take, takeEvery } from 'typed-redux-saga';
+import { actionChannel, all, call, put, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -7,8 +7,13 @@ import { splitCompoundModelId } from '$shared/utils/compound-model-id';
 import { selectProviderCatalogEntry } from '../../provider-catalog/provider-catalog-selectors';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
 import { setActiveProvider } from '../../provider-settings/provider-settings-slice';
-import { selectProviderModels } from '../model-selectors';
-import { reloadModelsForProvider, selectModel, setSelectedModel } from '../model-slice';
+import { selectDefaultReasoningEffort, selectProviderModels } from '../model-selectors';
+import {
+  reloadModelsForProvider,
+  selectModel,
+  setDefaultReasoningEffort,
+  setSelectedModel,
+} from '../model-slice';
 
 const logger = createLogger('ModelSelectionSaga');
 
@@ -57,8 +62,41 @@ function* watchSelectedModelPersistence() {
   }
 }
 
-/** Unregistered until the S20 middleware cutover. */
+/**
+ * Persist the current default reasoning-effort snapshot to the daemon settings
+ * catalog (PROTOCOL §5.12). Fire-and-forget like `model.providerDefaults`; the
+ * daemon echoes the write back via `settings:changed`, which hydration applies
+ * through `loadDefaultReasoningEffortFromStorage` — deliberately NOT observed
+ * here, so there is no write loop.
+ */
+export function* persistDefaultReasoningEffortWorker() {
+  const effort = yield* selectDefaultReasoningEffort.effect();
+  try {
+    yield* call(
+      [appClient.settings, appClient.settings.update],
+      [{ path: 'model.defaultReasoningEffort', value: effort }],
+    );
+  } catch (error) {
+    logger.error('Failed to persist model.defaultReasoningEffort', { error });
+  }
+}
+
+function* watchDefaultReasoningEffortPersistence() {
+  const channel = yield* actionChannel(setDefaultReasoningEffort, buffers.sliding(1));
+  try {
+    while (true) {
+      yield* take(channel);
+      yield* call(persistDefaultReasoningEffortWorker);
+    }
+  } finally {
+    channel.close();
+  }
+}
+
 export function* modelSelectionSaga() {
   yield* takeEvery(selectModel, handleSelectModel);
-  yield* call(watchSelectedModelPersistence);
+  yield* all([
+    call(watchSelectedModelPersistence),
+    call(watchDefaultReasoningEffortPersistence),
+  ]);
 }

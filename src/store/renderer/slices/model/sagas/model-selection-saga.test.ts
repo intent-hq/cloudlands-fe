@@ -5,9 +5,15 @@ import { createCollection } from '@augmentcode/themis/utils/collections/collecti
 const mocks = vi.hoisted(() => ({ update: vi.fn() }));
 vi.mock('$lib/client', () => ({ appClient: { settings: { update: mocks.update } } }));
 
-import { selectModel, setSelectedModel } from '../model-slice';
+import {
+  loadDefaultReasoningEffortFromStorage,
+  selectModel,
+  setDefaultReasoningEffort,
+  setSelectedModel,
+} from '../model-slice';
 import {
   modelSelectionSaga,
+  persistDefaultReasoningEffortWorker,
   persistSelectedModelsWorker,
   handleSelectModel,
 } from './model-selection-saga';
@@ -24,7 +30,7 @@ function state() {
     providerCatalog: {
       providers: createCollection('id', [{ id: 'codex', canBeDisabled: true }]),
     },
-    model: { providerModels: { auggie: 'sonnet4.5' } },
+    model: { providerModels: { auggie: 'sonnet4.5' }, defaultReasoningEffort: 'high' },
   };
 }
 
@@ -105,6 +111,62 @@ describe('modelSelectionSaga', () => {
       [[{ path: 'model.providerDefaults', value: { auggie: 'one' } }]],
       [[{ path: 'model.providerDefaults', value: { auggie: 'three' } }]],
     ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('persists the exact daemon settings path and current effort snapshot', async () => {
+    mocks.update.mockResolvedValue([]);
+    await runSaga(
+      { dispatch: vi.fn(), getState: state },
+      persistDefaultReasoningEffortWorker,
+    ).toPromise();
+
+    expect(mocks.update.mock.calls).toEqual([
+      [[{ path: 'model.defaultReasoningEffort', value: 'high' }]],
+    ]);
+  });
+
+  it('persists effort picks including clearing to Default (empty string)', async () => {
+    mocks.update.mockResolvedValue([]);
+    const current = state();
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => current },
+      modelSelectionSaga,
+    );
+    await settle();
+
+    current.model.defaultReasoningEffort = 'low';
+    channel.put(setDefaultReasoningEffort('low'));
+    await settle();
+    current.model.defaultReasoningEffort = '';
+    channel.put(setDefaultReasoningEffort(''));
+    await settle();
+
+    expect(mocks.update.mock.calls).toEqual([
+      [[{ path: 'model.defaultReasoningEffort', value: 'low' }]],
+      [[{ path: 'model.defaultReasoningEffort', value: '' }]],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not persist the hydration echo (no write loop)', async () => {
+    mocks.update.mockResolvedValue([]);
+    const current = state();
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => current },
+      modelSelectionSaga,
+    );
+    await settle();
+
+    current.model.defaultReasoningEffort = 'medium';
+    channel.put(loadDefaultReasoningEffortFromStorage('medium'));
+    await settle();
+
+    expect(mocks.update).not.toHaveBeenCalled();
     task.cancel();
     await task.toPromise();
   });
