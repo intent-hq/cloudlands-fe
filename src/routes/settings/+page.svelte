@@ -102,32 +102,84 @@
       : null,
   );
 
-  // Tab types
-  type SettingsTab = 'accounts' | 'agents' | 'setup' | 'fonts-colors' | 'general';
+  type SettingsTab =
+    | 'general'
+    | 'appearance'
+    | 'providers'
+    | 'agents'
+    | 'connections'
+    | 'git-workspace'
+    | 'tools'
+    | 'advanced';
 
-  // Valid tab IDs for validation
-  const validTabs: SettingsTab[] = ['accounts', 'agents', 'setup', 'fonts-colors', 'general'];
+  const validTabs: SettingsTab[] = [
+    'general',
+    'appearance',
+    'providers',
+    'agents',
+    'connections',
+    'git-workspace',
+    'tools',
+    'advanced',
+  ];
 
-  // Legacy tab mapping for backwards compatibility with old URLs
-  const legacyTabMap: Record<string, SettingsTab> = {
-    connections: 'accounts',
-    'interface-system': 'fonts-colors',
+  const hashToTab: Record<string, SettingsTab> = {
+    'default-model': 'agents',
+    specialists: 'agents',
+    agents: 'agents',
+    'all-agents': 'agents',
+    'create-specialist': 'agents',
+    'quickActions.defaultModel': 'agents',
+    'backgroundAgents.defaultModel': 'agents',
+    providers: 'providers',
+    integrations: 'connections',
+    voice: 'connections',
+    'git-workspace': 'git-workspace',
+    notifications: 'general',
+    theme: 'appearance',
+    appearance: 'appearance',
+    'font-style': 'appearance',
+    'color-theme': 'appearance',
+    'note-font': 'appearance',
+    'agent-chat-font': 'appearance',
+    'code-font': 'appearance',
+    'open-in': 'general',
+    'mcp-servers': 'tools',
+    'cli-optimization': 'tools',
+    'workspace-api': 'tools',
+    'agent-features': 'tools',
+    'agent-backend': 'tools',
+    'utility-default-model': 'tools',
+    hardware: 'advanced',
+    'websocket-api': 'advanced',
+    connection: 'advanced',
+    data: 'advanced',
+    reset: 'advanced',
+    general: 'advanced',
+    developer: 'advanced',
   };
 
-  // Get initial tab from URL or default to Accounts
+  function resolveLegacyTab(tabParam: string, targetId: string): SettingsTab | undefined {
+    if (tabParam === 'accounts') {
+      return targetId === 'integrations' || targetId === 'voice' ? 'connections' : 'providers';
+    }
+    if (tabParam === 'fonts-colors' || tabParam === 'interface-system') return 'appearance';
+    if (tabParam === 'setup') {
+      const targetTab = hashToTab[targetId];
+      return targetTab === 'git-workspace' || targetTab === 'general' ? targetTab : 'tools';
+    }
+  }
+
   function getInitialTab(): SettingsTab {
     const tabParam = page.url.searchParams.get('tab');
     if (tabParam && validTabs.includes(tabParam as SettingsTab)) {
       return tabParam as SettingsTab;
     }
-    // Handle legacy tab IDs
-    if (tabParam && legacyTabMap[tabParam]) {
-      return legacyTabMap[tabParam];
-    }
-    return 'accounts';
+    const targetId = page.url.hash.slice(1);
+    if (tabParam) return resolveLegacyTab(tabParam, targetId) ?? hashToTab[targetId] ?? 'general';
+    return hashToTab[targetId] ?? 'general';
   }
 
-  // Current active tab - initialized from URL or default to Agents
   let activeTab = $state<SettingsTab>(getInitialTab());
 
   // Update URL when tab changes
@@ -233,21 +285,6 @@
 
   // App version from Electron
   let appVersion = $state('');
-
-  // Map hash targets to their respective tabs
-  const hashToTab: Record<string, SettingsTab> = {
-    'default-model': 'agents',
-    specialists: 'agents',
-    providers: 'accounts',
-    integrations: 'accounts',
-    voice: 'accounts',
-    'mcp-servers': 'setup',
-    'git-workspace': 'setup',
-    'agent-features': 'setup',
-    'utility-default-model': 'setup',
-    notifications: 'setup',
-    'websocket-api': 'general',
-  };
 
   onMount(() => {
     // Build-time constant — the app version is FE-only (audit row 11), not a
@@ -362,8 +399,8 @@
     >
       <SettingsSidebarNav {activeTab} onSelect={setActiveTab} />
       <main class="min-w-0 flex flex-col">
-        <!-- Accounts Tab -->
-        {#if activeTab === 'accounts'}
+        <!-- Providers -->
+        {#if activeTab === 'providers'}
           <div id="providers" class="mb-12 scroll-mt-20">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_aiCodingClis()}
@@ -377,8 +414,10 @@
               {m.settings_section_aiCodingClis_hint()}
             </p>
           </div>
+        {/if}
 
-          <!-- Connections -->
+        <!-- Connections -->
+        {#if activeTab === 'connections'}
           <div id="integrations" class="mb-6 scroll-mt-20">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_connections()}
@@ -419,30 +458,29 @@
           </div>
         {/if}
 
-        <!-- Setup Tab -->
-        {#if activeTab === 'setup'}
+        <!-- Git & Workspace -->
+        {#if activeTab === 'git-workspace'}
           <!-- Git & Workspace -->
-          <div class="mb-12">
+          <div id="git-workspace" class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_gitWorkspace()}
             </h2>
             <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef} />
           </div>
+        {/if}
 
-          <!-- Notifications -->
-          <div id="notifications" class="mb-12">
+        <!-- Tools -->
+        {#if activeTab === 'tools'}
+          <!-- MCP Servers -->
+          <div id="mcp-servers" class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_notifications()}
+              {m.settings_section_mcpServers()}
             </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
-                <NotificationSettings />
-              </section>
-            </div>
+            <McpServersSettings isAuggieProvider={$isAuggieProvider$} />
           </div>
 
           <!-- RTK -->
-          <div class="mb-12">
+          <div id="cli-optimization" class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_cliOptimization()}
             </h2>
@@ -451,14 +489,6 @@
                 <RtkSettings />
               </section>
             </div>
-          </div>
-
-          <!-- MCP Servers -->
-          <div id="mcp-servers" class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_mcpServers()}
-            </h2>
-            <McpServersSettings isAuggieProvider={$isAuggieProvider$} />
           </div>
 
           <!-- Workspace API Output -->
@@ -502,10 +532,10 @@
           </div>
         {/if}
 
-        <!-- Fonts & Colors Tab -->
-        {#if activeTab === 'fonts-colors'}
+        <!-- Appearance -->
+        {#if activeTab === 'appearance'}
           <!-- Theme -->
-          <div class="mb-12">
+          <div id="theme" class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_appearance()}
             </h2>
@@ -522,19 +552,19 @@
                   />
                 </div>
               </section>
-              <section class="px-6 py-5">
+              <section id="color-theme" class="px-6 py-5">
                 <ColorThemeSettings bind:this={colorThemeSettingsRef} />
               </section>
             </div>
           </div>
 
           <!-- Font Style -->
-          <div class="mb-12">
+          <div id="font-style" class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_fontStyle()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
+              <section id="note-font" class="px-6 py-5">
                 <div class="flex items-center justify-between">
                   <div>
                     <p class="text-sm font-medium text-foreground">
@@ -556,7 +586,7 @@
                   />
                 </div>
               </section>
-              <section class="px-6 py-5">
+              <section id="agent-chat-font" class="px-6 py-5">
                 <div class="flex items-center justify-between">
                   <div>
                     <p class="text-sm font-medium text-foreground">
@@ -578,7 +608,7 @@
                   />
                 </div>
               </section>
-              <section class="px-6 py-5">
+              <section id="code-font" class="px-6 py-5">
                 <div class="flex items-center justify-between">
                   <div>
                     <p class="text-sm font-medium text-foreground">
@@ -615,7 +645,7 @@
         <!-- General Tab -->
         {#if activeTab === 'general'}
           <!-- Language -->
-          <div class="mb-12">
+          <div id="language" class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_language_section_title()}
             </h2>
@@ -627,7 +657,7 @@
           </div>
 
           <!-- Open In Apps -->
-          <div class="mb-12">
+          <div id="open-in" class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_openIn()}
             </h2>
@@ -639,7 +669,7 @@
           </div>
 
           <!-- Updates -->
-          <div class="mb-12">
+          <div id="updates" class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_updates()}
             </h2>
@@ -666,16 +696,21 @@
             </div>
           </div>
 
-          <!-- Hardware / Creator Micro (only when a supported device is detectable) -->
-          {#if showHardwareSection}
-            <div id="hardware" class="mb-12">
-              <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-                {m.settings_section_hardware()}
-              </h2>
-              <HardwareConsoleSettings />
+          <!-- Notifications -->
+          <div id="notifications" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_notifications()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <NotificationSettings />
+              </section>
             </div>
-          {/if}
+          </div>
+        {/if}
 
+        <!-- Advanced -->
+        {#if activeTab === 'advanced'}
           <!-- WebSocket API -->
           <div id="websocket-api" class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
@@ -686,7 +721,7 @@
 
           <!-- Connection (UDS only; hidden for WS/unknown transports) -->
           {#if udsSocketPath}
-            <div class="mb-12">
+            <div id="connection" class="mb-12">
               <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
                 {m.settings_section_connection()}
               </h2>
@@ -708,8 +743,18 @@
             </div>
           {/if}
 
+          <!-- Hardware / Creator Micro (only when a supported device is detectable) -->
+          {#if showHardwareSection}
+            <div id="hardware" class="mb-12">
+              <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                {m.settings_section_hardware()}
+              </h2>
+              <HardwareConsoleSettings />
+            </div>
+          {/if}
+
           <!-- Data -->
-          <div class="mb-12">
+          <div id="data" class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_data()}
             </h2>
@@ -717,7 +762,7 @@
           </div>
 
           <!-- Reset -->
-          <div class="mb-12">
+          <div id="reset" class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_reset()}
             </h2>
@@ -742,7 +787,7 @@
 
           <!-- Developer Section (only in dev mode; dev-only UI is not translated) -->
           {#if isDevMode}
-            <div class="mb-12">
+            <div id="developer" class="mb-12">
               <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
                 <!-- i18n-ignore (dev-only) -->
                 Developer
@@ -826,7 +871,7 @@
 
   <!-- Global Footer -->
   <div class="px-6 py-4 border-t border-border bg-sidebar">
-    <div class="max-w-5xl mx-auto px-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+    <div class="max-w-6xl mx-auto px-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
       <div class="text-sm text-subtle">
         <!-- i18n-ignore (brand name) -->
         <strong class="text-foreground">Intent</strong>

@@ -9,21 +9,28 @@ describe('SettingsSidebarNav', () => {
   afterEach(cleanup);
 
   it('renders all settings categories and marks the active category', () => {
-    render(SettingsSidebarNav, { activeTab: 'setup', onSelect: vi.fn() });
+    render(SettingsSidebarNav, { activeTab: 'tools', onSelect: vi.fn() });
 
-    expect(screen.getAllByRole('button')).toHaveLength(5);
-    expect(screen.getByRole('button', { name: 'Accounts' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Agents' })).toBeTruthy();
-    expect(
-      screen.getByRole('button', { name: 'Workspace Setup' }).getAttribute('aria-current'),
-    ).toBe('page');
-    expect(screen.getByRole('button', { name: 'Fonts & Colors' })).toBeTruthy();
+    expect(screen.getAllByRole('heading')).toHaveLength(4);
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'AI' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Workspace' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Advanced' })).toBeTruthy();
+
+    expect(screen.getAllByRole('button')).toHaveLength(8);
     expect(screen.getByRole('button', { name: 'General' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Appearance' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Providers' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Agents' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Connections' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Git & Workspace' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Tools' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('button', { name: 'Advanced' })).toBeTruthy();
   });
 
   it('selects a category when clicked', async () => {
     const onSelect = vi.fn();
-    render(SettingsSidebarNav, { activeTab: 'accounts', onSelect });
+    render(SettingsSidebarNav, { activeTab: 'providers', onSelect });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Agents' }));
 
