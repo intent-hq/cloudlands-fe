@@ -842,7 +842,7 @@ describe('DaemonStatusIndicator', () => {
     });
 
     it('formatTransportLabel maps transport shapes to display strings', async () => {
-      const { formatTransportLabel } = await import('./DaemonStatusIndicator.svelte');
+      const { formatTransportLabel } = await import('$lib/utils/daemon-status-format');
       expect(formatTransportLabel({ mode: 'sidecar-uds' })).toBe('sidecar (UDS)');
       expect(formatTransportLabel({ mode: 'external-ws', target: longTarget })).toBe(
         `external (${longTarget})`,
