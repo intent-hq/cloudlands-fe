@@ -9,7 +9,7 @@
   removal do not jar the message list.
 -->
 <script lang="ts">
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { cubicOut } from 'svelte/easing';
   import { onDestroy } from 'svelte';
   import { Spinner } from '$lib/components/ui/indicators';
@@ -73,7 +73,7 @@
   <div
     class="flex items-center gap-2 text-subtle py-1 pl-2 {className}"
     data-testid="live-stream-phase-indicator"
-    transition:slide={{ duration: 200, easing: cubicOut }}
+    transition:safeSlide={{ duration: 200, easing: cubicOut }}
   >
     <Spinner {seed} size={4} />
     <span class="text-xs text-subtle font-medium" data-testid="live-stream-phase-message"

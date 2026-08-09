@@ -23,7 +23,7 @@
   import { getModelChangeNotice } from './model-change-notice';
   import { getAttentionNotice } from './attention-notice';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import type { ContextItem } from './input/context-api';
   import { navigateToFile, navigateToNote, navigateToSpec } from '$lib/utils/workspace-navigation';
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
@@ -1019,7 +1019,7 @@
       <!-- Layer 2: Full expanded version - in normal flow, scrolls away, covers sticky when in view -->
       {#if isEditing}
         <!-- Edit mode - use SimpleRichInput for rich editing experience -->
-        <div class="rounded-xs" transition:slide={{ axis: 'y', duration: 200 }}>
+        <div class="rounded-xs" transition:safeSlide={{ axis: 'y', duration: 200 }}>
           <SimpleRichInput
             bind:value={editValue}
             bind:contextItems={editContextItems}
