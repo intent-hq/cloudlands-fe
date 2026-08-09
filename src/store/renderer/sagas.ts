@@ -64,6 +64,7 @@ import { prMonitorSaga } from './slices/pr-monitor/sagas/pr-monitor-saga';
 import { releaseNotesSaga } from './slices/release-notes/sagas/release-notes-saga';
 import { sentryAuthSaga } from './slices/sentry-auth/sagas/sentry-auth-saga';
 import { settingsHydrationSaga } from './slices/settings-events/sagas/settings-hydration-saga';
+import { setupPromptSaga } from './slices/setup-prompt/sagas/setup-prompt-saga';
 import { sidebarNavSaga } from './slices/sidebar-nav/sagas/sidebar-nav-saga';
 import { specialistsSaga } from './slices/specialists/sagas/specialists-saga';
 import { statsReadSaga } from './slices/stats/sagas/stats-read-saga';
@@ -144,6 +145,7 @@ export const sagas = [
   modelBootSaga,
   modelReloadSaga,
   providerAvailabilitySaga,
+  setupPromptSaga,
   hostRequirementsSaga,
   backgroundHooksSaga,
   hardwareConsoleSaga,
