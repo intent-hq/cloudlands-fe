@@ -62,6 +62,11 @@ function getCallCount(): number {
   return requestSpy.mock.calls.filter(([method]) => method === 'workspace.get').length;
 }
 
+/** Let fire-and-forget subscribe promises settle before emitting events. */
+function flush(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   notificationHandlers.length = 0;
@@ -152,5 +157,68 @@ describe('workspace-path.service', () => {
     mockDaemon({ 'ws-late': { worktreePath: '/other-backend/late' } });
     for (const handler of reconnectHandlers) handler();
     expect(await getWorkspacePath('ws-late')).toBe('/other-backend/late');
+  });
+
+  it('retries a failed initial events.subscribe on the next lookup', async () => {
+    let subscribeAttempt = 0;
+    requestSpy.mockImplementation(async (method: string) => {
+      if (method === 'events.subscribe') {
+        subscribeAttempt += 1;
+        if (subscribeAttempt === 1) throw new Error('transient subscribe failure');
+        return { subscriptionId: SUB_ID };
+      }
+      return { workspace: { worktreePath: '/checkouts/a' } };
+    });
+
+    await getWorkspacePath('ws-1');
+    await flush();
+    expect(subscribeAttempt).toBe(1);
+    // While the subscription is down, events are ignored (no invalidation)…
+    emitWorkspaceEvent('workspace:updated', 'ws-1');
+    // …but the next lookup retries the subscription (cache hit, no RPC).
+    await getWorkspacePath('ws-1');
+    await flush();
+    expect(subscribeAttempt).toBe(2);
+    expect(getCallCount()).toBe(1);
+    // Now live: events invalidate again.
+    emitWorkspaceEvent('workspace:updated', 'ws-1');
+    await getWorkspacePath('ws-1');
+    expect(getCallCount()).toBe(2);
+    // Once live, no further subscribe attempts are made.
+    await getWorkspacePath('ws-1');
+    await flush();
+    expect(subscribeAttempt).toBe(2);
+  });
+
+  it('ignores a stale pre-reconnect events.subscribe result', async () => {
+    let resolveStale: ((v: { subscriptionId: string }) => void) | undefined;
+    let subscribeAttempt = 0;
+    requestSpy.mockImplementation((method: string) => {
+      if (method === 'events.subscribe') {
+        subscribeAttempt += 1;
+        if (subscribeAttempt === 1) {
+          return new Promise((resolve) => {
+            resolveStale = resolve;
+          });
+        }
+        return Promise.resolve({ subscriptionId: SUB_ID });
+      }
+      return Promise.resolve({ workspace: { worktreePath: '/checkouts/a' } });
+    });
+
+    // First lookup starts the (hanging) pre-reconnect subscribe.
+    await getWorkspacePath('ws-1');
+    // Reconnect issues the replacement subscription (SUB_ID)…
+    for (const handler of reconnectHandlers) handler();
+    await flush();
+    // …then the stale pre-reconnect response resolves late.
+    resolveStale?.({ subscriptionId: 'stale-old-connection-sub' });
+    await flush();
+
+    // Events on the CURRENT subscription must still invalidate the cache.
+    await getWorkspacePath('ws-1');
+    emitWorkspaceEvent('workspace:updated', 'ws-1');
+    await getWorkspacePath('ws-1');
+    expect(getCallCount()).toBe(3);
   });
 });

@@ -50,6 +50,11 @@ export interface WorkspacePathInfo {
 const cache = new Map<string, WorkspacePathInfo>();
 let listenersAttached = false;
 let subscriptionId: string | undefined;
+// Epoch guard: bumped on reconnect so a pre-reconnect `events.subscribe`
+// response resolving late can never overwrite the current connection's
+// subscription id (it would silently break event invalidation).
+let subscribeEpoch = 0;
+let subscribeInFlight = false;
 
 function handleBackendNotification(n: JsonRpcNotification): void {
   if (n.method !== 'events.event') return;
@@ -68,20 +73,28 @@ function handleBackendNotification(n: JsonRpcNotification): void {
 }
 
 async function subscribeToWorkspaceEvents(): Promise<void> {
+  if (subscriptionId !== undefined || subscribeInFlight) return;
+  subscribeInFlight = true;
+  const epoch = subscribeEpoch;
   try {
     const result = (await getBackendClient().request('events.subscribe', {
       eventTypes: ['workspace:updated', 'workspace:deleted'],
     })) as { subscriptionId?: string } | undefined;
+    // A reconnect happened while this request was in flight: the result
+    // belongs to the previous connection — drop it.
+    if (epoch !== subscribeEpoch) return;
     subscriptionId = result?.subscriptionId;
     if (!subscriptionId) {
       logger.warn('events.subscribe for workspace events returned no subscriptionId');
     }
   } catch (error) {
-    // Best-effort: without a live subscription the cache still self-heals on
-    // reconnect (full clear), and unknown workspaces are never cached.
+    // Best-effort: retried on the next lookup (see getWorkspacePathInfo), and
+    // the cache still self-heals on reconnect (full clear).
     logger.warn('events.subscribe for workspace events failed', {
       error: (error as Error).message,
     });
+  } finally {
+    if (epoch === subscribeEpoch) subscribeInFlight = false;
   }
 }
 
@@ -93,7 +106,9 @@ function attachListeners(): void {
     // The daemon dropped in-memory subscriptions and the backend may have
     // been switched — drop every cached path and re-subscribe.
     cache.clear();
+    subscribeEpoch += 1;
     subscriptionId = undefined;
+    subscribeInFlight = false;
     void subscribeToWorkspaceEvents();
   });
   void subscribeToWorkspaceEvents();
@@ -111,6 +126,10 @@ export async function getWorkspacePathInfo(workspaceId: string): Promise<Workspa
   if (isRemoteBackendActive()) return null;
 
   attachListeners();
+  // Retry a failed/absent subscription (no-op when live or in flight) so a
+  // transient initial failure does not leave lookups cached without any
+  // event-driven invalidation until the next reconnect.
+  void subscribeToWorkspaceEvents();
 
   const cached = cache.get(workspaceId);
   if (cached !== undefined) return cached;
@@ -175,4 +194,6 @@ export function __resetWorkspacePathServiceForTesting(): void {
   cache.clear();
   listenersAttached = false;
   subscriptionId = undefined;
+  subscribeEpoch = 0;
+  subscribeInFlight = false;
 }

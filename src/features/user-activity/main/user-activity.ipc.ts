@@ -15,6 +15,7 @@ import { UserActivityService } from './user-activity.service';
 import { FileSystemUserActivityRepository } from './user-activity.repository';
 import { WorkspaceId, NoteId } from '../../../shared/types/branded-ids';
 import { getActiveId } from '../../backend/main/connections-store';
+import { onBackendReconnected } from '../../backend/main/backend.ipc';
 
 const logger = new Logger('UserActivityIPC');
 
@@ -62,6 +63,11 @@ function getService(): UserActivityService {
   if (!service) {
     const repository = new FileSystemUserActivityRepository(() => resolveUserActivityBase());
     service = new UserActivityService(repository);
+    // The in-memory cache is keyed by workspaceId only, while persistence is
+    // partitioned per backend id. A backend switch (surfaced as a reconnect)
+    // must drop the cache so a workspace with the SAME id on another backend
+    // never reads — or persists — the previous backend's read-state.
+    onBackendReconnected(() => service?.clearCache());
   }
   return service;
 }
