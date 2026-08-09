@@ -99,12 +99,6 @@ export class WorkspaceConfig extends WorkspaceConfigConstants {
       return `${base}/${id}/${folderName}`;
     },
 
-    firstVisitState: (id: string) =>
-      `${WorkspaceConfig.WORKSPACE_ROOT}/${id}/${WorkspaceConfig.METADATA_FOLDER}/${WorkspaceConfig.FIRST_VISIT_STATE_FILE}`,
-
-    panelLayoutHistory: (id: string) =>
-      `${WorkspaceConfig.WORKSPACE_ROOT}/${id}/${WorkspaceConfig.METADATA_FOLDER}/${WorkspaceConfig.PANEL_LAYOUT_HISTORY_FILE}`,
-
     diffs: (id: string) =>
       `${WorkspaceConfig.WORKSPACE_ROOT}/${id}/${WorkspaceConfig.METADATA_FOLDER}/${WorkspaceConfig.DIFFS_FOLDER}`,
 
