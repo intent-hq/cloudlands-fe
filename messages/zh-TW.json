@@ -1969,6 +1969,8 @@
   "chat_backgroundHooks_modal_noLogs_description": "尚無日誌——此鉤子尚未完成執行。",
   "chat_backgroundHooks_modal_lastError_label": "上次錯誤",
   "chat_hookWakeAttribution_wokeAgent_after": "喚醒了智慧體",
+  "chat_hookWakeAttribution_wokeAgentRetired_after": "喚醒了智慧體，現已停用",
+  "chat_hookWakeAttribution_wokeAgentStillActive_after": "喚醒了智慧體，並將繼續執行",
   "chat_hookWakeAttribution_fallbackName_label": "鉤子",
   "chat_regularAgentWelcome_generalDescription_label": "此智慧體擁有完整的工作區上下文。可以問我任何關於你程式碼的問題，或告訴我你想做什麼。",
   "chat_shared_general_fallback": "通用",
