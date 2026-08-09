@@ -32,7 +32,10 @@ import {
   TerminalProfessionalGetBufferSchema,
   TerminalCreateWithCommandSchema,
 } from '../../../main/ipc-schemas';
-import { getWorkspacePathInfo } from '$features/workspace/main/workspace-path.service';
+import {
+  getWorkspacePathInfo,
+  isWorkspacePathDeterministicallyNull,
+} from '$features/workspace/main/workspace-path.service';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import {
   terminalProfessionalData,
@@ -84,6 +87,9 @@ async function getWorkspaceInfo(
     try {
       const info = await getWorkspacePathInfo(workspaceId);
       if (!info) {
+        // Deterministic null (virtual workspace / remote backend): retrying
+        // cannot change the answer — surface the refusal immediately.
+        if (isWorkspacePathDeterministicallyNull(workspaceId)) return {};
         if (attempt < WORKSPACE_INFO_MAX_RETRIES) {
           await delay(WORKSPACE_INFO_RETRY_DELAY_MS);
           continue;

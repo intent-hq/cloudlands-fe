@@ -221,4 +221,37 @@ describe('workspace-path.service', () => {
     await getWorkspacePath('ws-1');
     expect(getCallCount()).toBe(3);
   });
+
+  it('deduplicates concurrent lookups for the same workspace (single-flight)', async () => {
+    mockDaemon({ 'ws-1': { worktreePath: '/checkouts/a' } });
+    const results = await Promise.all([
+      getWorkspacePath('ws-1'),
+      getWorkspacePath('ws-1'),
+      getWorkspacePath('ws-1'),
+    ]);
+    expect(results).toEqual(['/checkouts/a', '/checkouts/a', '/checkouts/a']);
+    expect(getCallCount()).toBe(1);
+  });
+
+  it('does not cache a workspace.get response that raced an invalidation', async () => {
+    let resolveGet: ((v: unknown) => void) | undefined;
+    requestSpy.mockImplementation((method: string) => {
+      if (method === 'events.subscribe') return Promise.resolve({ subscriptionId: SUB_ID });
+      return new Promise((resolve) => {
+        resolveGet = resolve;
+      });
+    });
+
+    const lookup = getWorkspacePath('ws-1');
+    await flush();
+    // Invalidation arrives while workspace.get is in flight…
+    emitWorkspaceEvent('workspace:updated', 'ws-1');
+    // …then the (possibly pre-update) response resolves.
+    resolveGet?.({ workspace: { worktreePath: '/checkouts/stale' } });
+    expect(await lookup).toBe('/checkouts/stale');
+
+    // The stale value must not have been cached: the next lookup re-fetches.
+    mockDaemon({ 'ws-1': { worktreePath: '/checkouts/fresh' } });
+    expect(await getWorkspacePath('ws-1')).toBe('/checkouts/fresh');
+  });
 });

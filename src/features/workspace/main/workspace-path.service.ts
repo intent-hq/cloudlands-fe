@@ -48,6 +48,13 @@ export interface WorkspacePathInfo {
 }
 
 const cache = new Map<string, WorkspacePathInfo>();
+// Single-flight: concurrent lookups for the same workspace share one RPC.
+const inFlight = new Map<string, Promise<WorkspacePathInfo | null>>();
+// Invalidation generations: bumped per workspace on workspace:updated /
+// workspace:deleted (and globally via cacheEpoch on reconnect) so a
+// `workspace.get` response that raced an invalidation is never cached.
+const invalidationGenerations = new Map<string, number>();
+let cacheEpoch = 0;
 let listenersAttached = false;
 let subscriptionId: string | undefined;
 // Epoch guard: bumped on reconnect so a pre-reconnect `events.subscribe`
@@ -69,6 +76,7 @@ function handleBackendNotification(n: JsonRpcNotification): void {
   const workspaceId = (event.data as { workspaceId?: unknown } | undefined)?.workspaceId;
   if (typeof workspaceId === 'string') {
     cache.delete(workspaceId);
+    invalidationGenerations.set(workspaceId, (invalidationGenerations.get(workspaceId) ?? 0) + 1);
   }
 }
 
@@ -104,8 +112,12 @@ function attachListeners(): void {
   onBackendNotification(handleBackendNotification);
   onBackendReconnected(() => {
     // The daemon dropped in-memory subscriptions and the backend may have
-    // been switched — drop every cached path and re-subscribe.
+    // been switched — drop every cached path and re-subscribe. cacheEpoch
+    // ensures in-flight workspace.get responses from the old connection are
+    // not cached.
     cache.clear();
+    cacheEpoch += 1;
+    invalidationGenerations.clear();
     subscribeEpoch += 1;
     subscriptionId = undefined;
     subscribeInFlight = false;
@@ -134,6 +146,20 @@ export async function getWorkspacePathInfo(workspaceId: string): Promise<Workspa
   const cached = cache.get(workspaceId);
   if (cached !== undefined) return cached;
 
+  // Single-flight: concurrent lookups for the same workspace share one RPC.
+  const pending = inFlight.get(workspaceId);
+  if (pending) return pending;
+
+  const lookup = fetchWorkspacePathInfo(workspaceId).finally(() => {
+    inFlight.delete(workspaceId);
+  });
+  inFlight.set(workspaceId, lookup);
+  return lookup;
+}
+
+async function fetchWorkspacePathInfo(workspaceId: string): Promise<WorkspacePathInfo | null> {
+  const epochAtStart = cacheEpoch;
+  const generationAtStart = invalidationGenerations.get(workspaceId) ?? 0;
   try {
     const response = (await getBackendClient().request('workspace.get', { workspaceId })) as
       | { workspace?: unknown }
@@ -164,7 +190,15 @@ export async function getWorkspacePathInfo(workspaceId: string): Promise<Workspa
       path,
       ...(typeof ws.scope === 'string' && ws.scope.length > 0 ? { scope: ws.scope } : {}),
     };
-    cache.set(workspaceId, info);
+    // Do not cache a response that raced an invalidation or a reconnect: it
+    // may predate the change that triggered the invalidation. Still return
+    // it — the next lookup re-fetches.
+    if (
+      epochAtStart === cacheEpoch &&
+      generationAtStart === (invalidationGenerations.get(workspaceId) ?? 0)
+    ) {
+      cache.set(workspaceId, info);
+    }
     return info;
   } catch (error) {
     const message = (error as Error).message ?? String(error);
@@ -189,9 +223,21 @@ export async function getWorkspacePath(workspaceId: string): Promise<string | nu
   return info?.path ?? null;
 }
 
+/**
+ * True when `getWorkspacePathInfo(workspaceId)` returns `null` deterministically
+ * (virtual workspace or remote backend) — callers with retry loops for the
+ * workspace-creation race can skip retrying these.
+ */
+export function isWorkspacePathDeterministicallyNull(workspaceId: string): boolean {
+  return !workspaceId || VIRTUAL_WORKSPACE_IDS.has(workspaceId) || isRemoteBackendActive();
+}
+
 /** Test-only: reset module state (cache, listeners, subscription). */
 export function __resetWorkspacePathServiceForTesting(): void {
   cache.clear();
+  inFlight.clear();
+  invalidationGenerations.clear();
+  cacheEpoch = 0;
   listenersAttached = false;
   subscriptionId = undefined;
   subscribeEpoch = 0;

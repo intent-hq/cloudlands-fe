@@ -175,10 +175,12 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
         logger.info('Collected workspace-specific files', { workspaceId });
       }
     } catch (error) {
-      logger.warn('Failed to collect workspace files', {
-        workspaceId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Failed to collect workspace files', { workspaceId, error: message });
+      // i18n-ignore (manifest entry inside a diagnostic zip, not UI)
+      omissions.push(
+        `workspace/: collection failed for workspace "${workspaceId}" — ${message}`,
+      );
     }
   }
 
