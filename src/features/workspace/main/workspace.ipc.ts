@@ -19,7 +19,6 @@ import { InstructionService } from '../../agent/main/instruction-service';
 import { execFileAsync } from '../../../shared/git/git-env';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
-import { disposeScriptProcessManager } from '../../scripts/main/script-process-manager';
 import {
   initRepoRegistry,
   getAllRepos,
@@ -31,7 +30,6 @@ import {
 import { initChangeHistory } from './change-history-persistence';
 
 import { clearMetadataFSCache } from '../../metadata-fs/main/metadata-fs-factory';
-import { deleteEventStoreForWorkspace } from '../../../store/main/slices/workspace-events/sagas/persistence-saga';
 
 const require = createRequire(import.meta.url);
 import { validateIPCString } from '../../ipc/ipc-validation';
@@ -319,16 +317,6 @@ export function setupWorkspaceIPC(): void {
           // Clear MetadataFS cache so it's re-created on next open
           clearMetadataFSCache();
 
-          // Stop all running scripts and dispose ScriptProcessManager
-          try {
-            await disposeScriptProcessManager(id);
-            logger.info('[WorkspaceIPC] Script process manager disposed', { workspaceId: id });
-          } catch (error) {
-            logger.warn('[WorkspaceIPC] Failed to dispose script process manager', error as Error, {
-              workspaceId: id,
-            });
-          }
-
           // Clean up agent context registry to prevent memory leaks
           try {
             const { getAgentContextRegistry } = await import('../../agent/agent-context-registry');
@@ -342,16 +330,6 @@ export function setupWorkspaceIPC(): void {
             }
           } catch (error) {
             logger.debug('[WorkspaceIPC] Agent context registry cleanup not available', { error });
-          }
-
-          // Clean up cached EventStore (flush pending writes, free events + indexes)
-          try {
-            await deleteEventStoreForWorkspace(id);
-            logger.debug('[WorkspaceIPC] EventStore cache cleanup', { workspaceId: id });
-          } catch (error) {
-            logger.warn('[WorkspaceIPC] Failed to cleanup EventStore cache', error as Error, {
-              workspaceId: id,
-            });
           }
 
           return resultToCommandResponse({ ok: true, data: null });
@@ -517,28 +495,6 @@ export function setupWorkspaceIPC(): void {
           logger.debug('Agent context registry cleanup not available before delete', { error });
         }
 
-        // Stop all running scripts and dispose ScriptProcessManager before delete
-        try {
-          await disposeScriptProcessManager(validatedId);
-          logger.debug('Script process manager disposed before delete', {
-            workspaceId: validatedId,
-          });
-        } catch (error) {
-          logger.warn('Failed to dispose script process manager before delete', error as Error, {
-            workspaceId: validatedId,
-          });
-        }
-
-        // Clean up cached EventStore (flush pending writes, free events + indexes)
-        try {
-          await deleteEventStoreForWorkspace(validatedId);
-          logger.debug('EventStore cache cleanup before delete', { workspaceId: validatedId });
-        } catch (error) {
-          logger.warn('Failed to cleanup EventStore cache before delete', error as Error, {
-            workspaceId: validatedId,
-          });
-        }
-
         const result = await protocolAdapter.deleteWorkspace(validatedId);
         logger.debug('Delete result', { workspaceId: validatedId, result });
 
@@ -590,18 +546,6 @@ export function setupWorkspaceIPC(): void {
       async (_, validated) => {
         const validatedId = validated.id;
         logger.info('Archiving workspace', { workspaceId: validatedId });
-
-        // Clean up cached EventStore (flush pending writes, free events + indexes)
-        try {
-          await deleteEventStoreForWorkspace(validatedId);
-          logger.debug('EventStore cache cleanup for archived workspace', {
-            workspaceId: validatedId,
-          });
-        } catch (error) {
-          logger.warn('Failed to cleanup EventStore cache during archive', error as Error, {
-            workspaceId: validatedId,
-          });
-        }
 
         const result = await protocolAdapter.archiveWorkspace(validatedId);
 

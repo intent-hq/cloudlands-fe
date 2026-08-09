@@ -2,7 +2,7 @@
  * Events IPC Handlers
  *
  * Thin Redux dispatch bridge: every IPC call either dispatches an action
- * or reads from the main-process Redux store / EventStore (I/O utility).
+ * or reads from the main-process Redux store.
  *
  * No EventBus imports — persistence, broadcast, and dedup are handled by sagas.
  */
