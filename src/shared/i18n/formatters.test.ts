@@ -144,6 +144,45 @@ describe('formatCompactRelativeTime', () => {
   });
 });
 
+describe('formatCompactDuration', () => {
+  it('formats sub-minute durations in seconds', () => {
+    expect(en.formatCompactDuration(0)).toBe('0s');
+    expect(en.formatCompactDuration(42_000)).toBe('42s');
+  });
+
+  it('formats minutes, omitting a zero seconds part', () => {
+    expect(en.formatCompactDuration(12 * 60_000)).toBe('12m');
+    expect(en.formatCompactDuration(12 * 60_000 + 30_000)).toBe('12m 30s');
+  });
+
+  it('formats hours with minutes, dropping seconds', () => {
+    expect(en.formatCompactDuration(3_600_000)).toBe('1h');
+    expect(en.formatCompactDuration(3_600_000 + 5 * 60_000)).toBe('1h 5m');
+    expect(en.formatCompactDuration(3_600_000 + 5 * 60_000 + 30_000)).toBe('1h 5m');
+  });
+
+  it('formats days with hours, dropping smaller units', () => {
+    expect(en.formatCompactDuration(2 * 86_400_000)).toBe('2d');
+    expect(en.formatCompactDuration(2 * 86_400_000 + 3 * 3_600_000)).toBe('2d 3h');
+  });
+
+  it('rounds to the nearest second and carries into minutes', () => {
+    expect(en.formatCompactDuration(59_600)).toBe('1m');
+  });
+
+  it('clamps negative durations to zero', () => {
+    expect(en.formatCompactDuration(-5_000)).toBe('0s');
+  });
+
+  it('returns empty string for invalid input', () => {
+    expect(en.formatCompactDuration(Number.NaN)).toBe('');
+  });
+
+  it('uses localized narrow units', () => {
+    expect(de.formatCompactDuration(5 * 60_000)).toBe('5 Min.');
+  });
+});
+
 describe('absolute date/time formatting', () => {
   const date = new Date('2024-01-15T14:30:00');
 
