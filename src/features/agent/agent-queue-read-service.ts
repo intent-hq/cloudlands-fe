@@ -35,14 +35,15 @@ import {
   hydrateAgentQueueRequested,
   replaceAgentQueue,
   setAgentQueueError,
+  setAgentQueueHydrating,
 } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import { createLogger } from '$lib/utils/client-logger';
 import { isAgentDeletionPending } from './utils/pending-agent-deletions';
 
 const logger = createLogger('AgentQueueReadService');
 
-/** Agents with a hydrate fetch currently in flight (leading edge). */
-const hydrateInFlightByAgent = new Set<string>();
+/** Shared in-flight hydrate chain per agent (leading fetch + any trailing follow-up). */
+const hydrateInFlightByAgent = new Map<string, Promise<void>>();
 /** Agents whose in-flight fetch should be followed by exactly one re-fetch. */
 const hydrateFollowUpWantedByAgent = new Set<string>();
 /** Per-agent counter of live `agent:queue:updated` snapshots applied. */
@@ -62,6 +63,13 @@ export function noteAgentQueueEventSnapshotApplied(agentId: string): void {
 }
 
 async function runHydrateAgentQueueFetch(agentId: string): Promise<void> {
+  // Trailing follow-ups re-enter here without passing the public entry
+  // point's guard: skip the RPC (and the slice-entry-creating dispatch) when
+  // a deletion became pending while the leading fetch was in flight.
+  if (isAgentDeletionPending(agentId)) {
+    hydrateFollowUpWantedByAgent.delete(agentId);
+    return;
+  }
   appStore.dispatch(hydrateAgentQueueRequested(agentId));
   const seqAtFetchStart = eventSnapshotSeqByAgent.get(agentId) ?? 0;
   try {
@@ -70,26 +78,32 @@ async function runHydrateAgentQueueFetch(agentId: string): Promise<void> {
     // `agent.getQueue` was in flight (folding the response would resurrect
     // rows for a soft-hidden session), or a live event snapshot may have
     // superseded the response (see noteAgentQueueEventSnapshotApplied).
-    const supersededByEvent = (eventSnapshotSeqByAgent.get(agentId) ?? 0) !== seqAtFetchStart;
-    if (!isAgentDeletionPending(agentId) && !supersededByEvent) {
+    if (isAgentDeletionPending(agentId)) {
+      // Clear the isHydrating flag hydrateAgentQueueRequested set — nothing
+      // else terminates this cycle when the fold is skipped. (In the
+      // superseded case the event's replaceAgentQueue already cleared it.)
+      appStore.dispatch(setAgentQueueHydrating(agentId, false));
+    } else if ((eventSnapshotSeqByAgent.get(agentId) ?? 0) === seqAtFetchStart) {
       appStore.dispatch(replaceAgentQueue(agentId, queue));
     }
   } catch (error) {
     logger.error(`Failed to hydrate agent queue for ${agentId}`, error);
-    appStore.dispatch(
-      setAgentQueueError(agentId, error instanceof Error ? error.message : String(error)),
-    );
+    if (isAgentDeletionPending(agentId)) {
+      // Don't create/keep an error entry for a soft-hidden session.
+      appStore.dispatch(setAgentQueueHydrating(agentId, false));
+    } else {
+      appStore.dispatch(
+        setAgentQueueError(agentId, error instanceof Error ? error.message : String(error)),
+      );
+    }
   } finally {
     // Trailing coalesce: one or more triggers arrived while this fetch was in
     // flight — run exactly one follow-up fetch to pick up the latest state,
-    // regardless of how many triggers piled up. The in-flight marker stays
-    // set across the trailing fetch so triggers arriving during it keep
-    // coalescing instead of starting a parallel fetch; it is only cleared
-    // when no follow-up is pending.
+    // regardless of how many triggers piled up. Awaited so the shared
+    // in-flight promise settles only when the whole chain (including
+    // follow-ups queued during the trailing fetch) has finished.
     if (hydrateFollowUpWantedByAgent.delete(agentId)) {
-      void runHydrateAgentQueueFetch(agentId);
-    } else {
-      hydrateInFlightByAgent.delete(agentId);
+      await runHydrateAgentQueueFetch(agentId);
     }
   }
 }
@@ -99,18 +113,24 @@ async function runHydrateAgentQueueFetch(agentId: string): Promise<void> {
  * authoritative `agent.getQueue`. Single-flighted with trailing coalesce per
  * agentId: the leading edge fetches immediately, and any triggers that arrive
  * while that fetch is in flight collapse into at most one trailing follow-up.
+ * All coalesced callers share the in-flight chain promise, which resolves
+ * once the leading fetch and any trailing follow-up have settled.
  */
 export function hydrateAgentQueue(agentId: string): Promise<void> {
   // A soft-hidden deletion is pending (undo window still open): the daemon
   // still returns the agent, so hydrating would re-mirror rows for the
   // deleted session. Skip entirely.
   if (!agentId || isAgentDeletionPending(agentId)) return Promise.resolve();
-  if (hydrateInFlightByAgent.has(agentId)) {
+  const inFlight = hydrateInFlightByAgent.get(agentId);
+  if (inFlight) {
     hydrateFollowUpWantedByAgent.add(agentId);
-    return Promise.resolve();
+    return inFlight;
   }
-  hydrateInFlightByAgent.add(agentId);
-  return runHydrateAgentQueueFetch(agentId);
+  const chain = runHydrateAgentQueueFetch(agentId).finally(() => {
+    hydrateInFlightByAgent.delete(agentId);
+  });
+  hydrateInFlightByAgent.set(agentId, chain);
+  return chain;
 }
 
 /** @internal Reset module-level single-flight state between tests. */

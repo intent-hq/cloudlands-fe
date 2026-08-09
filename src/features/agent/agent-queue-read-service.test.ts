@@ -128,16 +128,39 @@ describe('hydrateAgentQueue', () => {
 
     const first = hydrateAgentQueue(AGENT);
     // Burst of triggers while the leading fetch is in flight — must collapse
-    // into exactly ONE trailing follow-up.
-    void hydrateAgentQueue(AGENT);
-    void hydrateAgentQueue(AGENT);
+    // into exactly ONE trailing follow-up, and every coalesced caller shares
+    // the same in-flight chain promise.
+    const second = hydrateAgentQueue(AGENT);
+    const third = hydrateAgentQueue(AGENT);
+    expect(second).toBe(first);
+    expect(third).toBe(first);
     expect(getQueueMock).toHaveBeenCalledTimes(1);
 
     resolveFirst([queued('m1', 0)]);
+    // The shared promise settles only after the trailing follow-up too.
     await first;
-    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(getQueueMock).toHaveBeenCalledTimes(2);
+    expect(messagesOf(AGENT)).toEqual([]);
+  });
+
+  it('skips the trailing follow-up when a deletion became pending during the leading fetch', async () => {
+    let resolveFirst!: (queue: QueuedMessage[]) => void;
+    getQueueMock.mockImplementationOnce(
+      () => new Promise<QueuedMessage[]>((resolve) => (resolveFirst = resolve)),
+    );
+
+    const first = hydrateAgentQueue(AGENT);
+    void hydrateAgentQueue(AGENT);
+    markDeletionPending(AGENT);
+
+    resolveFirst([queued('m1', 0)]);
+    await first;
+
+    // Leading fetch's fold was discarded and the follow-up never issued.
+    expect(getQueueMock).toHaveBeenCalledTimes(1);
+    expect(messagesOf(AGENT)).toEqual([]);
+    expect(entryOf(AGENT)?.isHydrating).toBe(false);
   });
 
   it('keeps the prior mirror and records the error when the fetch fails', async () => {
@@ -167,6 +190,7 @@ describe('hydrateAgentQueue', () => {
     await hydrateAgentQueue(AGENT);
 
     expect(messagesOf(AGENT).map((m) => m.id)).toEqual(['m1']);
+    expect(entryOf(AGENT)?.isHydrating).toBe(false);
   });
 
   it('discards the fetched snapshot when a live event snapshot arrived mid-flight', async () => {
