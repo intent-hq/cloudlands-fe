@@ -135,6 +135,7 @@
   import {
     installInterruptedAgentsService,
     notifyInterruptedAgentsModalClosed,
+    resolveInterruptedAgents,
   } from '$features/agent/interrupted-agents-service';
   import InterruptedAgentsModal from '$lib/components/modals/InterruptedAgentsModal.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
@@ -801,50 +802,14 @@
     };
   });
 
+  // Both modal actions go through the service so it stops the cross-window
+  // watcher (the modal closed locally) before sending the resolve.
   async function handleResumeSelectedAgents(resumeIds: string[], abandonIds: string[]) {
-    const appClient = new LiveAppClient();
-    try {
-      // Omit empty arrays per intentd router contract (PROTOCOL.md)
-      const params: { resume?: string[]; abandon?: string[] } = {};
-      if (resumeIds.length > 0) params.resume = resumeIds;
-      if (abandonIds.length > 0) params.abandon = abandonIds;
-
-      const result = await appClient.agents.resolveInterrupted(params);
-      logger.info('Resolved interrupted agents', { result });
-      // Import toast lazily
-      import('svelte-sonner').then(({ toast }) => {
-        const resumed = result.resumed.length;
-        const failed = result.failed.length;
-        if (resumed > 0) toast.success(resumed === 1 ? m.layout_appShell_resumedAgents_one({ count: resumed }) : m.layout_appShell_resumedAgents_many({ count: resumed }));
-        if (failed > 0) toast.error(failed === 1 ? m.layout_appShell_resolveFailedCount_one({ count: failed }) : m.layout_appShell_resolveFailedCount_many({ count: failed }));
-      }).catch(() => {});
-    } catch (error) {
-      logger.error('Failed to resolve interrupted agents', { error });
-      import('svelte-sonner').then(({ toast }) => {
-        toast.error(m.layout_appShell_resolveInterruptedFailed_error());
-      }).catch(() => {});
-    }
+    await resolveInterruptedAgents(new LiveAppClient(), resumeIds, abandonIds);
   }
 
   async function handleAbandonAllAgents(abandonIds: string[]) {
-    const appClient = new LiveAppClient();
-    try {
-      // Omit empty arrays per intentd router contract (PROTOCOL.md)
-      const params: { abandon?: string[] } = {};
-      if (abandonIds.length > 0) params.abandon = abandonIds;
-
-      const result = await appClient.agents.resolveInterrupted(params);
-      logger.info('Abandoned all interrupted agents', { result });
-      import('svelte-sonner').then(({ toast }) => {
-        const abandoned = result.abandoned.length;
-        toast.info(abandoned === 1 ? m.layout_appShell_abandonedAgents_one({ count: abandoned }) : m.layout_appShell_abandonedAgents_many({ count: abandoned }));
-      }).catch(() => {});
-    } catch (error) {
-      logger.error('Failed to abandon interrupted agents', { error });
-      import('svelte-sonner').then(({ toast }) => {
-        toast.error(m.layout_appShell_abandonInterruptedFailed_error());
-      }).catch(() => {});
-    }
+    await resolveInterruptedAgents(new LiveAppClient(), [], abandonIds);
   }
 
   function handleGitHubAuthSuccess() {

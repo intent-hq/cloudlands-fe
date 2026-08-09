@@ -361,4 +361,79 @@ describe("interrupted-agents-service", () => {
       expect(resolveInterrupted).not.toHaveBeenCalled();
     });
   });
+
+  // Resolving locally must stop the cross-window watcher on both arms, so a
+  // later agent:updated cannot re-open the modal for agents just resolved.
+  describe("resolveInterruptedAgents stops the cross-window watcher", () => {
+    function interrupted(agentId: string): InterruptedAgent {
+      return {
+        agentId,
+        workspaceId: "ws-1",
+        workspaceName: "Workspace One",
+        agentName: `Agent ${agentId}`,
+        prevStatus: "active",
+        interruptedAt: "2026-08-01T00:00:00Z",
+      };
+    }
+
+    async function installWithOpenModal(agents: InterruptedAgent[]): Promise<void> {
+      mockElectronAPI.invoke.mockResolvedValueOnce({ status: "connected" });
+      mockAppClient.agents.listInterrupted.mockResolvedValueOnce(agents);
+      dispose = installInterruptedAgentsService(mockAppClient, showHandler);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      // Confirm the catch-up really opened the modal for these agents, so the
+      // watcher state under test is actually populated before we clear.
+      expect(showHandler).toHaveBeenCalledWith(agents);
+      showHandler.mockClear();
+      mockAppClient.agents.listInterrupted.mockClear();
+    }
+
+    async function flushDebounce(): Promise<void> {
+      await new Promise((resolve) =>
+        setTimeout(resolve, INTERRUPTED_RECONCILE_DEBOUNCE_MS + 30),
+      );
+    }
+
+    it("resume arm: a later agent:updated cannot re-open the modal", async () => {
+      await installWithOpenModal([interrupted("agent-1")]);
+      const resolveInterrupted = vi.fn().mockResolvedValue({
+        resumed: ["agent-1"],
+        abandoned: [],
+        failed: [],
+      });
+
+      await resolveInterruptedAgents(
+        { agents: { resolveInterrupted, listInterrupted: mockAppClient.agents.listInterrupted } },
+        ["agent-1"],
+        [],
+      );
+      notifyInterruptedAgentUpdated("agent-1");
+      await flushDebounce();
+
+      expect(resolveInterrupted).toHaveBeenCalledWith({ resume: ["agent-1"] });
+      expect(mockAppClient.agents.listInterrupted).not.toHaveBeenCalled();
+      expect(showHandler).not.toHaveBeenCalled();
+    });
+
+    it("abandon arm: a later agent:updated cannot re-open the modal", async () => {
+      await installWithOpenModal([interrupted("agent-1")]);
+      const resolveInterrupted = vi.fn().mockResolvedValue({
+        resumed: [],
+        abandoned: ["agent-1"],
+        failed: [],
+      });
+
+      await resolveInterruptedAgents(
+        { agents: { resolveInterrupted, listInterrupted: mockAppClient.agents.listInterrupted } },
+        [],
+        ["agent-1"],
+      );
+      notifyInterruptedAgentUpdated("agent-1");
+      await flushDebounce();
+
+      expect(resolveInterrupted).toHaveBeenCalledWith({ abandon: ["agent-1"] });
+      expect(mockAppClient.agents.listInterrupted).not.toHaveBeenCalled();
+      expect(showHandler).not.toHaveBeenCalled();
+    });
+  });
 });
