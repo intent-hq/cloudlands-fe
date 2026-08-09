@@ -43,6 +43,7 @@
   import { orderProviderEntries } from '$lib/utils/provider-list-order';
   import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
+    faBan,
     faCheck,
     faCircleNotch,
     faDownload,
@@ -688,7 +689,7 @@
                     <button
                       type="button"
                       role="menuitem"
-                      class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                      class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
                       disabled={!!inUseReason}
                       title={inUseReason ?? undefined}
                       onclick={() => {
@@ -696,6 +697,7 @@
                         close();
                       }}
                     >
+                      <Fa icon={faBan} class="size-3.5 text-muted-foreground" />
                       {m.settings_providers_disable()}
                     </button>
                   {/if}
