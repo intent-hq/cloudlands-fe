@@ -250,6 +250,6 @@ export function monthCardModel(byMonth: UsageMonthStats[], monthsElapsed: number
       ? m.stats_monthCard_deltaVs_label({ month: monthName(bestIdx - 1).toUpperCase() })
       : m.stats_monthCard_trend_label(),
     deltaValue: hasDelta ? `+${Math.round(((max - prev) / prev) * 100)}%` : '—',
-    hasThoughts: cells.some((c) => (c.thoughtTokens ?? 0) > 0),
+    hasThoughts: cells.some((c, i) => i < elapsed && (c.thoughtTokens ?? 0) > 0),
   };
 }

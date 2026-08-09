@@ -244,6 +244,12 @@ describe('monthCardModel', () => {
     expect(m.bars.map((b) => b.letter).join('')).toBe('JFMAMJJASOND');
   });
 
+  it('ignores thoughtTokens in future-month stubs when gating the legend', () => {
+    // Only a stub month (Mar, beyond monthsElapsed=2) carries thoughts.
+    const stubOnly = [monthCell(1, 300, 100), monthCell(2, 200, 50), monthCell(3, 0, 0, 100)];
+    expect(monthCardModel(stubOnly, 2).hasThoughts).toBe(false);
+  });
+
   it('carves a dedicated thoughts segment when thoughtTokens is reported (monorepo#1688)', () => {
     // Jan: 300 in + 100 out + 100 thoughts = 500 total.
     const withThoughts = [monthCell(1, 300, 100, 100), monthCell(2, 200, 50)];
