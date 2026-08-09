@@ -743,6 +743,31 @@ function applySessionUpsert(
         (typeof session.status === 'string' && TERMINAL_STATUSES.has(session.status));
       if (!incomingClosed) finalSession.liveTurnOpen = true;
     }
+
+    // Guard (monorepo#1815): an agents.list snapshot fetched while the daemon
+    // still reported a failure can land AFTER the live crash-recovery edges
+    // (error→pending→active, stopReason:null) already converged the session
+    // onto the redriven turn. When a live running edge opened a turn
+    // (liveTurnOpen) and the existing status is running, an incoming
+    // failure-status snapshot is stale — keep the recovered live fields
+    // instead of regressing status/stopReason (which re-arms the "Response
+    // failed" banner over the streaming turn). A genuine new failure arrives
+    // as a live terminal edge, which clears liveTurnOpen before any snapshot
+    // could be blocked by this guard.
+    const incomingStatus = finalSession.status as string;
+    if (
+      existing.liveTurnOpen === true &&
+      RUNNING_STATUSES.has(existing.status as string) &&
+      (incomingStatus === 'error' || incomingStatus === 'failed')
+    ) {
+      finalSession.status = existing.status;
+      finalSession.activationState = existing.activationState;
+      finalSession.isActive = existing.isActive;
+      finalSession.stopReason = existing.stopReason;
+      finalSession.stopReasonTimestamp = existing.stopReasonTimestamp;
+      finalSession.sessionCorrupted = existing.sessionCorrupted;
+      finalSession.liveTurnOpen = true;
+    }
   }
 
   const alreadyIndexed = (state.agentIdsByWorkspace[wsId] ?? []).includes(agentId);
