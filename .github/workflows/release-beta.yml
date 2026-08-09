@@ -323,8 +323,12 @@ jobs:
         uses: pnpm/action-setup@v6
         with:
           version: 10.30.3
-          # Per-runner-instance dest (see build-macos).
-          dest: ~/setup-pnpm-${{ runner.name }}
+          # Space-free per-run dest: hosted windows-latest runner names contain
+          # spaces ("GitHub Actions NNN") and pnpm/action-setup@v6 breaks on
+          # space-containing paths on Windows (pnpm/action-setup#261), so
+          # runner.name (see build-macos) cannot be used here. run_id +
+          # run_attempt keeps the dest unique per run.
+          dest: ~/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Setup Node.js
         # No cache: 'pnpm' — this job previously ran on a non-ephemeral
