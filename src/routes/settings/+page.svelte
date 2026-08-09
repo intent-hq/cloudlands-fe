@@ -76,7 +76,7 @@
     navigateBackFromSettings,
   } from '$lib/utils/workspace-navigation';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
 
@@ -172,14 +172,16 @@
     }
   }
 
-  function getInitialTab(): SettingsTab {
-    const tabParam = page.url.searchParams.get('tab');
+  function resolveTabFromUrl(tabParam: string | null, targetId: string): SettingsTab {
     if (tabParam && validTabs.includes(tabParam as SettingsTab)) {
       return tabParam as SettingsTab;
     }
-    const targetId = page.url.hash.slice(1);
     if (tabParam) return resolveLegacyTab(tabParam, targetId) ?? hashToTab[targetId] ?? 'general';
     return hashToTab[targetId] ?? 'general';
+  }
+
+  function getInitialTab(): SettingsTab {
+    return resolveTabFromUrl(page.url.searchParams.get('tab'), page.url.hash.slice(1));
   }
 
   let activeTab = $state<SettingsTab>(getInitialTab());
@@ -194,6 +196,18 @@
       window.history.replaceState({}, '', url.toString());
     }
   }
+
+  // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
+  $effect(() => {
+    const tabParam = page.url.searchParams.get('tab');
+    const targetId = page.url.hash.slice(1);
+    const nextTab = resolveTabFromUrl(tabParam, targetId);
+
+    untrack(() => {
+      if (nextTab !== activeTab) activeTab = nextTab;
+      handleHashNavigation();
+    });
+  });
 
   // Get specialist ID from URL query parameter for auto-selecting
   const initialSpecialistId = $derived(page.url.searchParams.get('specialist'));
@@ -292,9 +306,6 @@
     // Build-time constant — the app version is FE-only (audit row 11), not a
     // daemon surface.
     appVersion = __APP_VERSION__;
-
-    // Handle hash-based navigation on initial load
-    handleHashNavigation();
   });
 
   // Track supported-device presence for the Hardware section gate.
@@ -322,7 +333,7 @@
     // Switch to the correct tab if needed
     const targetTab = hashToTab[targetId];
     if (targetTab && targetTab !== activeTab) {
-      setActiveTab(targetTab);
+      activeTab = targetTab;
     }
 
     // Scroll to hash target after tab switch
