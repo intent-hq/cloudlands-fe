@@ -15,6 +15,7 @@ import {
 } from 'vitest';
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
 } from '@testing-library/svelte';
@@ -203,6 +204,7 @@ vi.mock('svelte-fa', async () => {
 });
 
 import MockTabTypeHeaderHarness from './mocks/MockTabTypeHeaderHarness.svelte';
+import { stageFiles, unstageFiles, discardFiles } from '$features/git/git-write-service';
 import ActivityChangesTabType from '../ActivityChangesTabType.svelte';
 import DiffTabType from '../DiffTabType.svelte';
 import LocalChangesTabType from '../LocalChangesTabType.svelte';
@@ -214,6 +216,14 @@ function setWindowsWorkspace() {
     id: 'ws-1',
     worktreePath: 'C:/repo',
     repositoryPath: 'C:/repo',
+  };
+}
+
+function setUncWorkspace() {
+  mockReduxState.workspace = {
+    id: 'ws-1',
+    worktreePath: '//server/share/repo',
+    repositoryPath: '//server/share/repo',
   };
 }
 
@@ -278,6 +288,14 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       const openButton = await screen.findByTestId('open-combo-button');
       expect(openButton.getAttribute('data-file-path')).toBe('/repo/src/x.ts');
     });
+
+    it('passes a UNC in-root path through without double-joining', async () => {
+      setUncWorkspace();
+      renderActivity('\\\\server\\share\\repo\\src\\x.ts');
+
+      const openButton = await screen.findByTestId('open-combo-button');
+      expect(openButton.getAttribute('data-file-path')).toBe('\\\\server\\share\\repo\\src\\x.ts');
+    });
   });
 
   describe('DiffTabType', () => {
@@ -310,6 +328,14 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       renderDiff('src/x.ts');
       const openButton = await screen.findByTestId('open-combo-button');
       expect(openButton.getAttribute('data-file-path')).toBe('/repo/src/x.ts');
+    });
+
+    it('passes a UNC in-root path through without double-joining', async () => {
+      setUncWorkspace();
+      renderDiff('\\\\server\\share\\repo\\src\\x.ts');
+
+      const openButton = await screen.findByTestId('open-combo-button');
+      expect(openButton.getAttribute('data-file-path')).toBe('\\\\server\\share\\repo\\src\\x.ts');
     });
   });
 
@@ -356,6 +382,51 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
         '/repo/src/c.ts',
       ]);
     });
+
+    it('passes UNC in-root paths through at all three join sites', async () => {
+      setUncWorkspace();
+      renderLocalChanges(
+        '\\\\server\\share\\repo\\src\\a.ts',
+        '\\\\server\\share\\repo\\src\\b.ts',
+        '\\\\server\\share\\repo\\src\\c.ts',
+      );
+
+      expect(await findChangePaths()).toEqual([
+        '\\\\server\\share\\repo\\src\\a.ts',
+        '\\\\server\\share\\repo\\src\\b.ts',
+        '\\\\server\\share\\repo\\src\\c.ts',
+      ]);
+    });
+
+    it('sends repo-relative paths on the wire for backslash-form Windows absolutes', async () => {
+      setWindowsWorkspace();
+      renderLocalChanges('C:\\repo\\src\\a.ts', 'C:\\repo\\src\\b.ts', 'C:\\repo\\src\\c.ts');
+
+      await screen.findByTestId('chat-changes-panel');
+      const [stageButton] = screen.getAllByTestId('stage-button');
+      const [, unstageButton] = screen.getAllByTestId('unstage-button');
+      const [revertButton] = screen.getAllByTestId('revert-button');
+
+      await fireEvent.click(stageButton);
+      expect(stageFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts']);
+
+      await fireEvent.click(unstageButton);
+      expect(unstageFiles).toHaveBeenCalledWith('ws-1', ['src/b.ts']);
+
+      await fireEvent.click(revertButton);
+      expect(discardFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts']);
+    });
+
+    it('sends repo-relative paths on the wire for forward-slash Windows absolutes', async () => {
+      setWindowsWorkspace();
+      renderLocalChanges('C:/repo/src/a.ts', 'C:/repo/src/b.ts', 'C:/repo/src/c.ts');
+
+      await screen.findByTestId('chat-changes-panel');
+      const [stageButton] = screen.getAllByTestId('stage-button');
+
+      await fireEvent.click(stageButton);
+      expect(stageFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts']);
+    });
   });
 
   describe('ChatChangesTabType', () => {
@@ -386,6 +457,13 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
     it('still joins relative paths under the workspace root', async () => {
       renderChatChanges('src/x.ts');
       expect(await findChangePaths()).toEqual(['/repo/src/x.ts']);
+    });
+
+    it('passes a UNC in-root path through without double-joining', async () => {
+      setUncWorkspace();
+      renderChatChanges('\\\\server\\share\\repo\\src\\x.ts');
+
+      expect(await findChangePaths()).toEqual(['\\\\server\\share\\repo\\src\\x.ts']);
     });
   });
 
@@ -424,6 +502,13 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
     it('still joins relative paths under the workspace root', async () => {
       renderChanges('src/x.ts');
       expect(await findChangePaths()).toEqual(['/repo/src/x.ts']);
+    });
+
+    it('passes a UNC in-root path through without double-joining', async () => {
+      setUncWorkspace();
+      renderChanges('\\\\server\\share\\repo\\src\\x.ts');
+
+      expect(await findChangePaths()).toEqual(['\\\\server\\share\\repo\\src\\x.ts']);
     });
   });
 });

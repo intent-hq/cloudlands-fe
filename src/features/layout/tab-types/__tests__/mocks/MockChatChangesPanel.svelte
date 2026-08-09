@@ -1,9 +1,26 @@
 <script lang="ts">
-  let { changes = [] }: { changes?: Array<{ filePath: string; toolCallId: string }> } = $props();
+  let {
+    changes = [],
+    onStage,
+    onUnstage,
+    onRevert,
+  }: {
+    changes?: Array<{ filePath: string; toolCallId: string }>;
+    onStage?: (path: string) => void;
+    onUnstage?: (path: string) => void;
+    onRevert?: (path: string) => void;
+  } = $props();
 </script>
 
 <div data-testid="chat-changes-panel">
   {#each changes as change (change.toolCallId)}
-    <div data-testid="chat-change" data-file-path={change.filePath}></div>
+    <div data-testid="chat-change" data-file-path={change.filePath}>
+      <!-- i18n-ignore (test mock) -->
+      <button data-testid="stage-button" aria-label="stage" onclick={() => onStage?.(change.filePath)}></button>
+      <!-- i18n-ignore (test mock) -->
+      <button data-testid="unstage-button" aria-label="unstage" onclick={() => onUnstage?.(change.filePath)}></button>
+      <!-- i18n-ignore (test mock) -->
+      <button data-testid="revert-button" aria-label="revert" onclick={() => onRevert?.(change.filePath)}></button>
+    </div>
   {/each}
 </div>

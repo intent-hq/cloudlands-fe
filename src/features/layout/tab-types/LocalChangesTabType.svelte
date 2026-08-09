@@ -43,7 +43,7 @@
   faCompressAlt,
 } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
-  import { isAbsolutePath } from '$lib/utils/path-utils';
+  import { isAbsolutePath, normalizePath } from '$lib/utils/path-utils';
   import { store as appStore } from '$store/renderer/store';
 
   const lineWrapping = selectLineWrapping();
@@ -139,11 +139,14 @@
 
   // The panel rows carry absolutized paths (workspacePath-prefixed above);
   // the git.* wire contract takes repo-relative paths, so strip the prefix
-  // before handing them to the write-service seam.
+  // before handing them to the write-service seam. Separators are normalized
+  // on both sides first so backslash-form Windows absolutes (C:\repo\src\a.ts)
+  // relativize against a forward-slash workspace root too.
   function toRepoRelative(path: string): string {
-    return workspacePath && path.startsWith(`${workspacePath}/`)
-      ? path.slice(workspacePath.length + 1)
-      : path;
+    if (!workspacePath) return path;
+    const normalized = normalizePath(path);
+    const root = normalizePath(workspacePath);
+    return normalized.startsWith(`${root}/`) ? normalized.slice(root.length + 1) : path;
   }
 
   // Stage/unstage/revert route through the git-write-service seam
