@@ -33,6 +33,8 @@ import {
   unmarkWorkspaceTabOptimistic,
   WORKSPACE_TABS_STORAGE_KEY,
 } from '../tab-state-slice';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { connectionsListReceived } from '../../connections/connections-slice';
 import { tabStateSaga } from './tab-state-saga';
 
 const persistedTabs = {
@@ -55,7 +57,13 @@ const state = {
     tabOrder: ['ws-1'],
   },
   workspace: { hasLoaded: true },
+  connections: { activeId: LOCAL_CONNECTION_ID },
 };
+
+const REMOTE_ID = 'remote-1';
+const REMOTE_TABS_KEY = `backend:${REMOTE_ID}:${WORKSPACE_TABS_STORAGE_KEY}`;
+const REMOTE_SCROLL_KEY = `backend:${REMOTE_ID}:${TAB_SCROLL_POSITIONS_STORAGE_KEY}`;
+const remoteState = { ...state, connections: { activeId: REMOTE_ID } };
 
 const settle = async () => {
   await Promise.resolve();
@@ -162,5 +170,51 @@ describe('tabStateSaga', () => {
     task.cancel();
     await task.toPromise();
     expect(task.isCancelled()).toBe(true);
+  });
+
+  describe('multi-backend namespacing', () => {
+    it('namespaces hydration and persistence reads/writes for a remote backend', async () => {
+      storage.getJSON.mockImplementation((key: string) =>
+        key === REMOTE_SCROLL_KEY ? { 'ws-1-note': 42 } : persistedTabs,
+      );
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => remoteState }, tabStateSaga);
+      await settle();
+      channel.put(openWorkspaceTab('ws-1'));
+      channel.put(saveScrollPosition('ws-1-note', 42));
+      await settle();
+
+      expect(storage.getJSON.mock.calls).toEqual([[REMOTE_SCROLL_KEY], [REMOTE_TABS_KEY]]);
+      expect(storage.setJSON.mock.calls).toEqual([
+        [REMOTE_TABS_KEY, persistedTabs],
+        [REMOTE_SCROLL_KEY, { 'ws-1-note': 42 }],
+      ]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('re-hydrates from the incoming backend namespace on switch, resetting when empty', async () => {
+      storage.getJSON.mockImplementation((key: string) =>
+        key === REMOTE_TABS_KEY ? persistedTabs : undefined,
+      );
+      let current = state;
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => current }, tabStateSaga);
+      await settle();
+      dispatch.mockClear();
+
+      current = remoteState;
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      await settle();
+
+      expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        loadScrollPositions({}),
+        loadWorkspaceTabsState(persistedTabs),
+      ]);
+      task.cancel();
+      await task.toPromise();
+    });
   });
 });
