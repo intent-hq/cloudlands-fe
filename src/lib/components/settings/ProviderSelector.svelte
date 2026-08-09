@@ -414,7 +414,7 @@
   }
 </script>
 
-<div class="flex flex-col divide-y divide-border">
+<div class="flex flex-col divide-y divide-border/50">
   {#if checkError}
     <div class="flex items-center justify-between gap-4 px-6 py-4">
       <p class="text-sm text-destructive-foreground">{checkError}</p>
