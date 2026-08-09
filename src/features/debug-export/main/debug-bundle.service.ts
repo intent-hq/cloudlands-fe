@@ -27,8 +27,12 @@ export async function createDebugBundle(workspaceId?: string): Promise<string> {
     await fs.mkdir(tempDir, { recursive: true });
 
     // Collect all debug files (including workspace-specific if provided)
-    const debugFiles = await collectDebugFiles(workspaceId);
-    logger.info('Collected debug files', { count: debugFiles.length, workspaceId });
+    const { files: debugFiles, omissions } = await collectDebugFiles(workspaceId);
+    logger.info('Collected debug files', {
+      count: debugFiles.length,
+      omissions: omissions.length,
+      workspaceId,
+    });
 
     // Copy files to temp directory
     for (const file of debugFiles) {
@@ -53,6 +57,12 @@ export async function createDebugBundle(workspaceId?: string): Promise<string> {
     const systemInfo = generateSystemInfo();
     const systemInfoPath = path.join(tempDir, 'system-info.json');
     await fs.writeFile(systemInfoPath, JSON.stringify(systemInfo, null, 2));
+
+    // Record skipped sections so an incomplete bundle is explainable
+    if (omissions.length > 0) {
+      const manifestPath = path.join(tempDir, 'export-manifest.json');
+      await fs.writeFile(manifestPath, JSON.stringify({ omissions }, null, 2));
+    }
 
     // Create zip file
     const zipPath = path.join(app.getPath('temp'), `intent-debug-${Date.now()}.zip`);

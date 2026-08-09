@@ -3718,6 +3718,7 @@
   "terminal_ipc_disposed_error": "终端已被销毁",
   "terminal_ipc_unknown_error": "未知错误",
   "terminal_ipc_workspaceNotReady_error": "WORKSPACE_NOT_READY: 工作区目录尚不存在。请等待工作区初始化完成。",
+  "terminal_ipc_workspacePathUnknown_error": "此工作区没有已知的本地文件夹，因此无法在此处打开终端。这可能发生在远程后端或没有检出目录的工作区中。",
   "terminal_ipc_commandTitle_label": "命令：{command}",
   "terminal_quakeOverlay_terminalNumber_label": "终端 {number}",
   "terminal_ipc_workingDirInaccessible_error": "WORKSPACE_NOT_READY: 无法访问工作目录 {workingDir}",

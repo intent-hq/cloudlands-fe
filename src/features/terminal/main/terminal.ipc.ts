@@ -32,9 +32,10 @@ import {
   TerminalProfessionalGetBufferSchema,
   TerminalCreateWithCommandSchema,
 } from '../../../main/ipc-schemas';
-import { workspaceService } from '$features/workspace/main/workspace.service';
-import { WorkspaceConfig } from '$shared/main/config';
-import { createWorkspaceId } from '$shared/types/branded-ids';
+import {
+  getWorkspacePathInfo,
+  isWorkspacePathDeterministicallyNull,
+} from '$features/workspace/main/workspace-path.service';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import {
   terminalProfessionalData,
@@ -72,27 +73,30 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Minimal workspace lookup for cwd resolution; SSH branch is gone. */
+/**
+ * Minimal workspace lookup for cwd resolution, backed by the daemon-only
+ * workspace-path seam (monorepo#1759). Retries briefly to cover the
+ * workspace-creation race; an unresolved path after the retries means no
+ * local checkout is known (virtual/unknown/remote) and the caller must
+ * refuse the spawn rather than guess a directory.
+ */
 async function getWorkspaceInfo(
   workspaceId: string,
 ): Promise<{ workspacePath?: string; scope?: string }> {
   for (let attempt = 0; attempt <= WORKSPACE_INFO_MAX_RETRIES; attempt++) {
     try {
-      const workspace = await workspaceService.getWorkspace(createWorkspaceId(workspaceId));
-      if (!workspace.ok) {
+      const info = await getWorkspacePathInfo(workspaceId);
+      if (!info) {
+        // Deterministic null (virtual workspace / remote backend): retrying
+        // cannot change the answer — surface the refusal immediately.
+        if (isWorkspacePathDeterministicallyNull(workspaceId)) return {};
         if (attempt < WORKSPACE_INFO_MAX_RETRIES) {
           await delay(WORKSPACE_INFO_RETRY_DELAY_MS);
           continue;
         }
         return {};
       }
-      const data = workspace.data;
-      const workspacePath = data.worktreePath || data.repositoryPath || data.path;
-      if (!workspacePath && attempt < WORKSPACE_INFO_MAX_RETRIES) {
-        await delay(WORKSPACE_INFO_RETRY_DELAY_MS);
-        continue;
-      }
-      return { workspacePath, scope: data.scope };
+      return { workspacePath: info.path, scope: info.scope };
     } catch (error) {
       if (attempt < WORKSPACE_INFO_MAX_RETRIES) {
         await delay(WORKSPACE_INFO_RETRY_DELAY_MS);
@@ -495,7 +499,13 @@ export function registerTerminalHandlers() {
           }
         }
         if (!workingDir) {
-          workingDir = WorkspaceConfig.paths.workspace(workspaceId);
+          // No daemon-known checkout (virtual/unknown workspace or remote
+          // backend): refuse the spawn instead of guessing a local path
+          // (monorepo#1759).
+          return {
+            success: false,
+            error: m.terminal_ipc_workspacePathUnknown_error(),
+          };
         }
         const validatedCwd = ensureDirectoryExists(workingDir);
         if (!validatedCwd) {
@@ -698,8 +708,16 @@ export function registerTerminalHandlers() {
                   ? path.join(info.workspacePath, info.scope)
                   : info.workspacePath;
               }
-              if (!workingDir) workingDir = WorkspaceConfig.paths.workspace(workspaceId);
             }
+          }
+          if (!workingDir) {
+            // No daemon-known checkout (virtual/unknown workspace or remote
+            // backend): refuse the spawn instead of guessing a local path
+            // (monorepo#1759).
+            return {
+              ok: false,
+              error: m.terminal_ipc_workspacePathUnknown_error(),
+            };
           }
           const validatedCwd = ensureDirectoryExists(workingDir);
           if (!validatedCwd) {

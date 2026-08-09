@@ -3718,6 +3718,7 @@
   "terminal_ipc_disposed_error": "Le terminal a été détruit",
   "terminal_ipc_unknown_error": "Erreur inconnue",
   "terminal_ipc_workspaceNotReady_error": "WORKSPACE_NOT_READY : le répertoire de l'espace de travail n'existe pas encore. Veuillez attendre la fin de l'initialisation de l'espace de travail.",
+  "terminal_ipc_workspacePathUnknown_error": "Aucun dossier local n'est connu pour cet espace de travail, un terminal ne peut donc pas être ouvert ici. Cela peut se produire avec des backends distants ou des espaces de travail sans checkout.",
   "terminal_ipc_commandTitle_label": "Commande : {command}",
   "terminal_quakeOverlay_terminalNumber_label": "Terminal {number}",
   "terminal_ipc_workingDirInaccessible_error": "WORKSPACE_NOT_READY : impossible d'accéder au répertoire de travail {workingDir}",
