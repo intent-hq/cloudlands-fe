@@ -40,7 +40,7 @@ export type ScriptSource = 'auto-detected' | 'user';
 export type ScriptStatus = 'idle' | 'running' | 'restarting' | 'exited';
 
 /**
- * A workspace script definition — persisted to .workspace/scripts.json.
+ * A workspace script definition — persisted by the intentd daemon.
  */
 export interface WorkspaceScript {
   id: string;
