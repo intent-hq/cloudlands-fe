@@ -3,8 +3,7 @@
  *
  * Collects `agent:failed` events across ALL workspaces (the daemon-events
  * bridge subscribes `agent:*` with no workspace filter), one entry per failed
- * agent. The toast layer can also read a grouped snapshot for stable
- * same-error retry/dismiss UI without changing the agent-keyed registry.
+ * agent.
  *
  * Lifecycle (wired in `daemon-events-bridge.client.ts`):
  *   - `agent:failed`         → `recordAgentFailure` (same agentId replaces its
@@ -31,12 +30,6 @@ export interface AgentFailureEntry {
 }
 
 export type AgentFailureListener = (entries: AgentFailureEntry[]) => void;
-
-export interface AgentFailureGroup {
-  groupKey: string;
-  error: string;
-  entries: AgentFailureEntry[];
-}
 
 const failuresByAgent = new Map<string, AgentFailureEntry>();
 const listeners = new Set<AgentFailureListener>();
@@ -96,22 +89,6 @@ export function getAgentFailureEntry(agentId: string): AgentFailureEntry | undef
 /** Snapshot of current failure entries, ordered oldest-first by `at`. */
 export function listAgentFailureEntries(): AgentFailureEntry[] {
   return [...failuresByAgent.values()].sort((a, b) => a.at - b.at);
-}
-
-function normalizeFailureGroupKey(error: string): string {
-  return error.trim().replace(/\s+/g, ' ').toLowerCase();
-}
-
-/** Snapshot of current failure entries grouped by normalized error text. */
-export function listAgentFailureGroups(): AgentFailureGroup[] {
-  const groups = new Map<string, AgentFailureGroup>();
-  for (const entry of listAgentFailureEntries()) {
-    const groupKey = normalizeFailureGroupKey(entry.error);
-    const group = groups.get(groupKey) ?? { groupKey, error: entry.error, entries: [] };
-    group.entries.push(entry);
-    groups.set(groupKey, group);
-  }
-  return [...groups.values()].sort((a, b) => (a.entries[0]?.at ?? 0) - (b.entries[0]?.at ?? 0));
 }
 
 /**

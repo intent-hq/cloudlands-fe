@@ -22,6 +22,7 @@ import {
   setShowArchived,
   setBetaUpdatesEnabled,
   setSpellcheckEnabled,
+  setShowReasoningBlocks,
   setSoundEnabled,
   setSoundOnlyWhenUnfocused,
   setSystemFonts,
@@ -31,6 +32,7 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleShowArchived,
+  toggleShowReasoningBlocks,
   toggleBetaUpdates,
   toggleSpellcheck,
   type UserPreferencesState,
@@ -54,6 +56,7 @@ import {
   selectNotificationEnabled,
   selectNotificationVolume,
   selectShowArchived,
+  selectShowReasoningBlocks,
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
 } from "./user-preferences-selectors";
@@ -316,6 +319,24 @@ describe("userPreferencesReducer", () => {
 
   });
 
+  describe("showReasoningBlocks actions", () => {
+    it("defaults to false (reasoning hidden)", () => {
+      expect(initialState.showReasoningBlocks).toBe(false);
+    });
+
+    it("sets showReasoningBlocks", () => {
+      const state = userPreferencesReducer(initialState, setShowReasoningBlocks(true));
+      expect(state.showReasoningBlocks).toBe(true);
+    });
+
+    it("toggles showReasoningBlocks", () => {
+      const on = userPreferencesReducer(initialState, toggleShowReasoningBlocks());
+      const off = userPreferencesReducer(on, toggleShowReasoningBlocks());
+      expect(on.showReasoningBlocks).toBe(true);
+      expect(off.showReasoningBlocks).toBe(false);
+    });
+  });
+
   describe("language preference actions", () => {
     it("defaults to the system preference", () => {
       expect(initialState.languagePreference).toBe("system");
@@ -357,6 +378,16 @@ describe("userPreferencesReducer", () => {
       expect(selectShowArchived.select(state)).toBe(true);
       expect(selectGroupByRepo.select(state)).toBe(false);
       expect(selectHasCompletedProviderSetup.select(state)).toBe(true);
+    });
+
+    it("selects showReasoningBlocks (default false, missing slice safe)", () => {
+      expect(selectShowReasoningBlocks.select(state)).toBe(false);
+      expect(
+        selectShowReasoningBlocks.select({
+          userPreferences: { ...initialState, showReasoningBlocks: true },
+        } as any)
+      ).toBe(true);
+      expect(selectShowReasoningBlocks.select({} as any)).toBe(false);
     });
 
     it("selects font settings from userPreferences", () => {

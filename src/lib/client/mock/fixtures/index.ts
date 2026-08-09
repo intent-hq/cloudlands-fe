@@ -256,6 +256,7 @@ export const mockUserPreferences: UserPreferencesState = {
   showArchived: false,
   groupByRepo: true,
   hasCompletedProviderSetup: true,
+  showReasoningBlocks: false,
   agentFontStyle: "sans",
   noteFontStyle: "sans",
   codeFontFamily: "JetBrains Mono",

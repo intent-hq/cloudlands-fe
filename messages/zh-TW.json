@@ -2684,6 +2684,8 @@
   "layout_activityChanges_eventType_label": "事件型別：{type}",
   "layout_agentTab_goToTaskNote_tooltip": "轉到任務筆記",
   "layout_agentTab_font_tooltip": "字型：{font}",
+  "layout_agentTab_reasoningShow_tooltip": "顯示推理",
+  "layout_agentTab_reasoningHide_tooltip": "隱藏推理",
   "layout_agentTab_fontSample_label": "Aa",
   "layout_agentTab_copyConversation_tooltip": "複製對話",
   "layout_agentTab_copied_label": "已複製！",

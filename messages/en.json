@@ -2685,6 +2685,8 @@
   "layout_activityChanges_eventType_label": "Event type: {type}",
   "layout_agentTab_goToTaskNote_tooltip": "Go to task note",
   "layout_agentTab_font_tooltip": "Font: {font}",
+  "layout_agentTab_reasoningShow_tooltip": "Show reasoning",
+  "layout_agentTab_reasoningHide_tooltip": "Hide reasoning",
   "layout_agentTab_fontSample_label": "Aa",
   "layout_agentTab_copyConversation_tooltip": "Copy conversation",
   "layout_agentTab_copied_label": "Copied!",

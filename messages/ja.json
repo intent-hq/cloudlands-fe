@@ -2684,6 +2684,8 @@
   "layout_activityChanges_eventType_label": "イベントタイプ: {type}",
   "layout_agentTab_goToTaskNote_tooltip": "タスクノートへ移動",
   "layout_agentTab_font_tooltip": "フォント: {font}",
+  "layout_agentTab_reasoningShow_tooltip": "推論を表示",
+  "layout_agentTab_reasoningHide_tooltip": "推論を非表示",
   "layout_agentTab_fontSample_label": "Aa",
   "layout_agentTab_copyConversation_tooltip": "会話をコピー",
   "layout_agentTab_copied_label": "コピーしました！",

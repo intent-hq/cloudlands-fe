@@ -2684,6 +2684,8 @@
   "layout_activityChanges_eventType_label": "Ereignistyp: {type}",
   "layout_agentTab_goToTaskNote_tooltip": "Zur Aufgabennotiz gehen",
   "layout_agentTab_font_tooltip": "Schriftart: {font}",
+  "layout_agentTab_reasoningShow_tooltip": "Denkprozess anzeigen",
+  "layout_agentTab_reasoningHide_tooltip": "Denkprozess ausblenden",
   "layout_agentTab_fontSample_label": "Aa",
   "layout_agentTab_copyConversation_tooltip": "Konversation kopieren",
   "layout_agentTab_copied_label": "Kopiert!",
