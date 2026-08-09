@@ -388,19 +388,46 @@
     </div>
 
     <SettingsSidebarNav {activeTab} onSelect={setActiveTab} />
+
+    <div class="shrink-0 border-t border-border px-5 py-4 text-xs text-subtle">
+      <div class="flex items-baseline gap-1.5">
+        <!-- i18n-ignore (brand name) -->
+        <strong class="text-foreground">Intent</strong>
+        <span>v{appVersion || '...'}</span>
+      </div>
+      <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+        {#if $isReadyToInstall$}
+          <button
+            class="cursor-pointer border-none bg-transparent p-0 font-medium text-primary underline hover:text-primary/80"
+            onclick={() => appStore.dispatch(installUpdate())}
+          >
+            {m.settings_footer_updateAvailable()}
+          </button>
+        {:else if $autoUpdateStatus$ === 'not-available' || $autoUpdateStatus$ === 'idle'}
+          <span>{m.settings_footer_upToDate()}</span>
+        {/if}
+        <a
+          href="https://www.intentapp.dev/docs"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
+          >{m.settings_footer_support()}</a
+        >
+      </div>
+    </div>
   </aside>
 
   <div class="flex min-w-0 flex-1 flex-col">
-    <header class="shrink-0 bg-sidebar px-8 pt-8 pb-6">
+    <header class="shrink-0 bg-sidebar pr-8 pl-6 pt-8 pb-6">
       <div class="mx-auto max-w-4xl">
-        <h1 class="text-3xl font-semibold tracking-[-0.02em] text-foreground">
+        <h1 class="text-xl font-semibold tracking-[-0.02em] text-foreground">
           {m.settings_page_title()}
         </h1>
       </div>
     </header>
 
     <div class="min-h-0 flex-1 overflow-auto">
-      <main class="mx-auto flex min-h-full max-w-4xl flex-col px-8 pt-6 pb-8">
+      <main class="mx-auto flex min-h-full max-w-4xl flex-col pr-8 pl-6 pt-6 pb-8">
         <!-- Providers -->
         {#if activeTab === 'providers'}
           <div id="providers" class="mb-12 scroll-mt-20">
@@ -868,40 +895,6 @@
           {/if}
         {/if}
       </main>
-    </div>
-
-    <!-- Global Footer -->
-    <div class="shrink-0 border-t border-border bg-sidebar px-8 py-4">
-      <div class="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div class="text-sm text-subtle">
-          <!-- i18n-ignore (brand name) -->
-          <strong class="text-foreground">Intent</strong>
-          <span class="ml-2">
-            v{appVersion || '...'}
-            {#if $isReadyToInstall$}
-              <span class="mx-2">·</span>
-              <button
-                class="font-medium underline text-primary hover:text-primary/80 cursor-pointer bg-transparent border-none p-0"
-                onclick={() => appStore.dispatch(installUpdate())}
-              >
-                {m.settings_footer_updateAvailable()}
-              </button>
-            {:else if $autoUpdateStatus$ === 'not-available' || $autoUpdateStatus$ === 'idle'}
-              <span class="mx-2">·</span>
-              <span class="text-subtle">{m.settings_footer_upToDate()}</span>
-            {/if}
-          </span>
-        </div>
-        <div class="flex flex-wrap items-center gap-x-1 gap-y-2">
-          <a
-            href="https://www.intentapp.dev/docs"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            >{m.settings_footer_support()}</a
-          >
-        </div>
-      </div>
     </div>
   </div>
 </div>

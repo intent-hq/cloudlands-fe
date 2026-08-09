@@ -11,13 +11,17 @@ describe('SettingsSidebarNav', () => {
   it('renders all settings categories and marks the active category', () => {
     render(SettingsSidebarNav, { activeTab: 'tools', onSelect: vi.fn() });
 
-    expect(screen.getAllByRole('heading')).toHaveLength(4);
-    expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'AI' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Workspace' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Advanced' })).toBeTruthy();
-
-    expect(screen.getAllByRole('button')).toHaveLength(8);
+    expect(screen.queryAllByRole('heading')).toHaveLength(0);
+    expect(screen.getAllByRole('button').map((button) => button.textContent?.trim())).toEqual([
+      'General',
+      'Appearance',
+      'Providers',
+      'Agents',
+      'Connections',
+      'Git & Workspace',
+      'Tools',
+      'Advanced',
+    ]);
     expect(screen.getByRole('button', { name: 'General' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Appearance' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Providers' })).toBeTruthy();
