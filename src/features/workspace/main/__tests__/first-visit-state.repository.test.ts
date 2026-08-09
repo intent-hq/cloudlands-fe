@@ -103,6 +103,18 @@ describe('FileSystemFirstVisitStateRepository', () => {
     await expect(repo.delete(wsId)).resolves.toBeUndefined();
   });
 
+  it('neutralizes all-dot backend ids instead of escaping the state root', async () => {
+    const mod = await loadRepositoryModule();
+    const repo = new mod.FileSystemFirstVisitStateRepository();
+    await repo.save(wsId, mod.createDefaultFirstVisitState(wsId), '..');
+
+    // '..' must not resolve one level above workspace-state/.
+    await expect(fs.access(path.join(tmpDir, wsId, 'first-visit-state.json'))).rejects.toThrow();
+    const contained = path.join(tmpDir, 'workspace-state', '__', wsId, 'first-visit-state.json');
+    await expect(fs.access(contained)).resolves.toBeUndefined();
+    expect(await repo.exists(wsId, '..')).toBe(true);
+  });
+
   it('returns null when no state has been saved', async () => {
     const mod = await loadRepositoryModule();
     expect(await new mod.FileSystemFirstVisitStateRepository().load(wsId)).toBeNull();

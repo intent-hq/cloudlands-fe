@@ -17,15 +17,26 @@ import { LOCAL_CONNECTION_ID } from '../types/connections';
 /** Root folder name inside `app.getPath('userData')`. */
 export const WORKSPACE_STATE_FOLDER = 'workspace-state';
 
-/** Sanitize an id to a filesystem-safe token (host/port punctuation → `_`). */
+/**
+ * Sanitize an id to a filesystem-safe token (host/port punctuation → `_`).
+ * All-dot tokens (`.`, `..`) are rewritten to underscores so an id arriving
+ * over IPC can never resolve to a path segment that escapes the state root.
+ */
 function sanitizeToken(id: string): string {
-  return id.replace(/[^A-Za-z0-9._-]/g, '_');
+  const token = id.replace(/[^A-Za-z0-9._-]/g, '_');
+  return /^\.+$/.test(token) ? token.replace(/\./g, '_') : token;
 }
 
 /**
  * Directory key for a backend. The local sidecar (or an unspecified backend)
  * maps to the reserved `local` key; remote backend ids are sanitized so an id
  * carrying host/port punctuation never yields an invalid directory name.
+ *
+ * Invariants relied on (real backend ids are `LOCAL_CONNECTION_ID` or
+ * `randomUUID()`, so both hold today): sanitization is not injective —
+ * distinct ids differing only in punctuation collapse to the same key — and
+ * a remote id that sanitizes to the literal `local` would share the reserved
+ * local key.
  */
 export function workspaceStateBackendKey(backendId?: string): string {
   if (!backendId || backendId.trim().length === 0) {

@@ -103,6 +103,26 @@ describe('FileSystemPanelLayoutHistoryRepository', () => {
     await expect(fs.access(remotePath)).resolves.toBeUndefined();
   });
 
+  it('neutralizes all-dot backend ids instead of escaping the state root', async () => {
+    const mod = await loadRepositoryModule();
+    const repo = new mod.FileSystemPanelLayoutHistoryRepository();
+    await repo.save(wsId, makeData(), '..');
+
+    // '..' must not resolve one level above workspace-state/.
+    await expect(
+      fs.access(path.join(tmpDir, wsId, 'panel-layout-history.json')),
+    ).rejects.toThrow();
+    const contained = path.join(
+      tmpDir,
+      'workspace-state',
+      '__',
+      wsId,
+      'panel-layout-history.json',
+    );
+    await expect(fs.access(contained)).resolves.toBeUndefined();
+    expect((await repo.load(wsId, '..'))!.history).toHaveLength(1);
+  });
+
   it('returns null when no history has been saved', async () => {
     const mod = await loadRepositoryModule();
     const repo = new mod.FileSystemPanelLayoutHistoryRepository();
