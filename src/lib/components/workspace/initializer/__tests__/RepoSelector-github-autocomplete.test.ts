@@ -305,6 +305,51 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
     expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy();
   });
 
+  // The detected-repo row appears after the 300ms detection debounce.
+  const detectedSelectRow = () => screen.queryByText('Select');
+  const flushDetection = () => new Promise((resolve) => setTimeout(resolve, 400));
+
+  it('hides the detected-repo Select row when the repo already appears as a suggestion', async () => {
+    const onchange = vi.fn();
+    const { input } = await openGithubTab({ onchange });
+
+    await fireEvent.input(input, { target: { value: 'octo/alpha' } });
+    await flushDetection();
+
+    expect(suggestions().map(rowText)).toEqual(['octo /alpha']);
+    expect(detectedSelectRow()).toBeNull();
+
+    // Enter without a highlighted suggestion still confirms the typed repo.
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onchange.mock.calls[0][0].detail).toEqual({
+      path: 'octo/alpha',
+      type: 'github',
+      githubUrl: 'https://github.com/octo/alpha',
+      isNewRepo: false,
+      isValidPath: true,
+    });
+  });
+
+  it('hides the detected-repo Select row on a case-insensitive suggestion match', async () => {
+    const { input } = await openGithubTab();
+
+    await fireEvent.input(input, { target: { value: 'OCTO/Alpha' } });
+    await flushDetection();
+
+    expect(suggestions().map(rowText)).toEqual(['octo /alpha']);
+    expect(detectedSelectRow()).toBeNull();
+  });
+
+  it('keeps the detected-repo Select row when the repo is absent from the suggestions', async () => {
+    const { input } = await openGithubTab();
+
+    await fireEvent.input(input, { target: { value: 'someone/elsewhere' } });
+
+    await waitFor(() => expect(detectedSelectRow()).toBeTruthy());
+    expect(suggestions()).toHaveLength(0);
+    expect(screen.getByText('someone/elsewhere')).toBeTruthy();
+  });
+
   it('errored repo load: shows a retry action that re-dispatches the load', async () => {
     mocks.reposError = 'boom';
     await openGithubTab();
