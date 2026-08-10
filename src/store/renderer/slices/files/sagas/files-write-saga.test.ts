@@ -60,9 +60,9 @@ describe('filesWriteSaga', () => {
     await task.toPromise();
   });
 
-  it('uses one global debounce across file payload keys', async () => {
+  it('persists updates for distinct paths inside the debounce window', async () => {
     vi.useFakeTimers();
-    vi.spyOn(appClient.files, 'write').mockResolvedValue({ success: true });
+    const write = vi.spyOn(appClient.files, 'write').mockResolvedValue({ success: true });
     const channel = stdChannel();
     const actions: unknown[] = [];
     let files = filesReducer(
@@ -80,16 +80,22 @@ describe('filesWriteSaga', () => {
     const first = updateFileContent('ws-1', 'a.ts', 'first');
     files = filesReducer(files, first);
     channel.put(first);
-    const latest = updateFileContent('ws-1', 'b.ts', 'latest');
-    files = filesReducer(files, latest);
-    channel.put(latest);
+    await vi.advanceTimersByTimeAsync(FILE_CONTENT_SAVE_DEBOUNCE_MS / 2);
+    const second = updateFileContent('ws-1', 'b.ts', 'second');
+    files = filesReducer(files, second);
+    channel.put(second);
     await vi.advanceTimersByTimeAsync(FILE_CONTENT_SAVE_DEBOUNCE_MS);
     await settle();
 
-    expect(appClient.files.write).toHaveBeenCalledWith('ws-1', 'b.ts', 'latest');
+    expect(write.mock.calls).toEqual([
+      ['ws-1', 'a.ts', 'first'],
+      ['ws-1', 'b.ts', 'second'],
+    ]);
     expect(actions).toEqual([
-      saveFileContentRequested('ws-1', 'b.ts', '/repo/b.ts', 'latest'),
-      saveFileContentSucceeded('ws-1', 'b.ts', 'latest'),
+      saveFileContentRequested('ws-1', 'a.ts', '/repo/a.ts', 'first'),
+      saveFileContentSucceeded('ws-1', 'a.ts', 'first'),
+      saveFileContentRequested('ws-1', 'b.ts', '/repo/b.ts', 'second'),
+      saveFileContentSucceeded('ws-1', 'b.ts', 'second'),
     ]);
     task.cancel();
     await task.toPromise();
