@@ -1522,6 +1522,8 @@ export const ConnectionsAddSchema = z.object({
   port: z.number().int().positive('Port must be a positive integer'),
   fingerprint: z.string().min(1, 'Fingerprint is required'),
   token: z.string().min(1, 'Token is required'),
+  /** "Detect all backend IPs" option (#1746); absent = enabled. */
+  detectHosts: z.boolean().optional(),
 });
 
 export const ConnectionsForgetSchema = z.object({

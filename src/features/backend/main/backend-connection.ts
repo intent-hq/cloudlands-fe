@@ -53,6 +53,15 @@ export interface BackendConnectionConfig {
   socketPath?: string;
   /** Host (when `transport === 'tcp'` or `'wss'`). */
   host?: string;
+  /**
+   * Candidate hosts for the `wss` transport (#1746): the primary `host` plus
+   * any additional IPs the backend reported at pairing time. When more than
+   * one distinct candidate is present, every connect races them all in
+   * parallel (mirroring iOS `raceHosts`) and keeps whichever pin-verified
+   * connection succeeds first. Optional — absent or single-entry behaves
+   * exactly like the plain single-host connect.
+   */
+  hosts?: string[];
   /** Port (when `transport === 'tcp'` or `'wss'`). */
   port?: number;
   /** Use TLS for the TCP transport (remote). Defaults to true for TCP. */
@@ -192,6 +201,10 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
     return new WebSocketDuplex(new NodeWebSocket(config.wsUrl));
   }
   if (config.transport === 'wss') {
+    const hosts = candidateWssHosts(config);
+    if (hosts.length > 1) {
+      return raceWssSockets(config, hosts);
+    }
     return createWssSocket(config);
   }
   if (!config.host || !config.port) {
@@ -213,8 +226,28 @@ export function describeBackendConfig(config: BackendConnectionConfig): string {
   if (config.transport === 'uds') return `uds:${config.socketPath}`;
   if (config.transport === 'ws') return `ws:${config.wsUrl}`;
   // Deliberately omit the token and fingerprint — this string reaches logs.
-  if (config.transport === 'wss') return `wss:${config.host}:${config.port}`;
+  if (config.transport === 'wss') {
+    const extra = candidateWssHosts(config).length - 1;
+    const suffix = extra > 0 ? ` (+${extra} candidate${extra === 1 ? '' : 's'})` : '';
+    return `wss:${config.host}:${config.port}${suffix}`;
+  }
   return `tcp:${config.host}:${config.port}${config.tls ? ' (tls)' : ''}`;
+}
+
+/**
+ * Distinct candidate hosts for a `wss` config: the primary `host` first, then
+ * the `hosts` extras, trimmed and deduplicated in order.
+ */
+export function candidateWssHosts(config: BackendConnectionConfig): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of [config.host ?? '', ...(config.hosts ?? [])]) {
+    const host = raw.trim();
+    if (!host || seen.has(host)) continue;
+    seen.add(host);
+    out.push(host);
+  }
+  return out;
 }
 
 /**
@@ -302,6 +335,164 @@ function createWssSocket(config: BackendConnectionConfig): Duplex {
     }
   });
   return duplex;
+}
+
+/** One racing attempt: a candidate host plus a factory for its socket. */
+export interface RaceAttempt {
+  host: string;
+  create: () => Duplex;
+}
+
+/** Overall bound on the multi-host race; matches the capture timeout. */
+const RACE_TIMEOUT_MS = 10_000;
+
+/**
+ * Race the pinned `wss` transport across all candidate hosts (#1746),
+ * mirroring iOS `ConnectionManager.raceHosts`: one socket per candidate, the
+ * first to complete the pin-verified connect wins and the losers are torn
+ * down. Returns a facade `Duplex` the JSON-RPC client drives exactly like a
+ * single-host socket.
+ */
+function raceWssSockets(config: BackendConnectionConfig, hosts: string[]): Duplex {
+  return raceDuplexSockets(
+    hosts.map((host) => ({ host, create: () => createWssSocket({ ...config, host }) })),
+  );
+}
+
+/**
+ * Generic first-connect-wins race over candidate socket attempts. Exported
+ * (with an injectable per-attempt factory) so unit tests can drive it with
+ * in-memory fake sockets.
+ *
+ * Semantics (see #1746 acceptance criteria):
+ * - The first candidate to emit `connect` wins; all others are destroyed.
+ * - A {@link PinMismatchError} on ANY candidate fails the whole race with that
+ *   error — a cert mismatch is surfaced as a cert error, never silently
+ *   skipped as "unreachable" (no fallback onto other candidates).
+ * - If every candidate fails without a pin mismatch, the facade errors with
+ *   the last candidate failure.
+ * - A race-wide timeout bounds the whole attempt so a black-hole candidate
+ *   set cannot hang the client's connect (the reconnect loop retries).
+ */
+export function raceDuplexSockets(
+  attempts: RaceAttempt[],
+  options: { timeoutMs?: number } = {},
+): Duplex {
+  const timeoutMs = options.timeoutMs ?? RACE_TIMEOUT_MS;
+  let winner: Duplex | null = null;
+  let settled = false;
+  let pendingCount = attempts.length;
+  let lastError: Error | null = null;
+  const candidates: Duplex[] = [];
+
+  const facade = new Duplex({
+    allowHalfOpen: false,
+    read() {
+      // Inbound data is pushed from the winning socket's `data` events.
+    },
+    write(chunk, encoding, callback) {
+      if (winner) {
+        winner.write(chunk, encoding, callback);
+        return;
+      }
+      // The JSON-RPC client only writes after `connect`, so a pre-win write is
+      // unexpected — fail it like a not-yet-open socket.
+      callback(new Error('Socket is not connected'));
+    },
+    destroy(error, callback) {
+      settled = true;
+      clearTimeout(timer);
+      for (const candidate of candidates) {
+        candidate.removeAllListeners();
+        candidate.destroy();
+      }
+      callback(error);
+    },
+  });
+
+  const failRace = (error: Error): void => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    for (const candidate of candidates) {
+      candidate.removeAllListeners();
+      candidate.destroy();
+    }
+    facade.destroy(error);
+  };
+
+  const timer = setTimeout(
+    () => failRace(new Error(`connection race timed out after ${timeoutMs}ms`)),
+    timeoutMs,
+  );
+  timer.unref?.();
+
+  const onCandidateFailure = (error: Error): void => {
+    if (settled) return;
+    // A pinned-cert mismatch on ANY candidate fails the whole race — never
+    // silently skipped (#1746 acceptance).
+    if (error instanceof PinMismatchError) {
+      failRace(error);
+      return;
+    }
+    lastError = error;
+    pendingCount -= 1;
+    if (pendingCount <= 0) {
+      failRace(lastError);
+    }
+  };
+
+  const onCandidateWin = (candidate: Duplex): void => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    winner = candidate;
+    for (const other of candidates) {
+      if (other === candidate) continue;
+      other.removeAllListeners();
+      other.destroy();
+    }
+    candidate.removeAllListeners();
+    // Forward the winning socket through the facade: data, error, and close
+    // all surface exactly as they would on a single-host socket.
+    candidate.on('data', (chunk: Buffer | string) => facade.push(chunk));
+    candidate.on('error', (error: Error) => {
+      if (!facade.destroyed) facade.destroy(error);
+    });
+    candidate.on('close', () => facade.push(null));
+    facade.emit('connect');
+  };
+
+  for (const attempt of attempts) {
+    let candidate: Duplex;
+    try {
+      candidate = attempt.create();
+    } catch (error) {
+      onCandidateFailure(error instanceof Error ? error : new Error(String(error)));
+      continue;
+    }
+    candidates.push(candidate);
+    // A failing candidate can emit `error` AND `close`; count it out only once.
+    let counted = false;
+    const failOnce = (error: Error): void => {
+      if (counted) return;
+      counted = true;
+      onCandidateFailure(error);
+    };
+    const onConnect = (): void => onCandidateWin(candidate);
+    candidate.once('connect', onConnect);
+    candidate.once('secureConnect', onConnect);
+    candidate.once('error', failOnce);
+    candidate.once('close', () => {
+      failOnce(new Error(`connection to ${attempt.host} closed before connecting`));
+    });
+  }
+  // Every attempt threw synchronously (or the list was empty).
+  if (candidates.length === 0 && !settled) {
+    failRace(lastError ?? new Error('no candidate hosts to connect'));
+  }
+
+  return facade;
 }
 
 /** Successful trust-on-first-use capture: the presented cert's fingerprint. */

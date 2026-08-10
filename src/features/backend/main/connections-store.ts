@@ -66,6 +66,18 @@ export interface StoredConnection {
    * "unavailable" (the UI falls back to `host:port`).
    */
   hostname?: string | null;
+  /**
+   * Candidate hosts (#1746): the primary `host` first, then any additional IPs
+   * the backend reported via `server.pairingInfo`. Absent on records written
+   * before this field existed — treated as `[host]` (single-host behavior).
+   */
+  hosts?: string[];
+  /**
+   * "Detect all backend IPs" option (#1746). Absent on older records — treated
+   * as enabled so existing connections gain the resilience benefit. When
+   * `false`, the host list is never refreshed from the backend.
+   */
+  detectHosts?: boolean;
   encToken: EncryptedToken;
 }
 
@@ -76,6 +88,8 @@ export interface NewConnection {
   port: number;
   fingerprint: string;
   token: string;
+  /** "Detect all backend IPs" option (#1746); absent = enabled. */
+  detectHosts?: boolean;
 }
 
 interface PersistedState {
@@ -95,10 +109,33 @@ function localRecord(): ConnectionRecord {
     id: LOCAL_CONNECTION_ID,
     label: LOCAL_CONNECTION_LABEL,
     host: null,
+    hosts: null,
     port: null,
     fingerprint: null,
     isLocal: true,
   };
+}
+
+/**
+ * Candidate-host list for a stored record: the primary `host` first, then the
+ * stored extras (deduplicated). Records written before `hosts` existed migrate
+ * to the one-element `[host]` list.
+ */
+function candidateHosts(stored: Pick<StoredConnection, 'host' | 'hosts'>): string[] {
+  return dedupeHosts([stored.host, ...(stored.hosts ?? [])]);
+}
+
+/** Trim, drop empties, and deduplicate while preserving order. */
+function dedupeHosts(hosts: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of hosts) {
+    const host = raw.trim();
+    if (!host || seen.has(host)) continue;
+    seen.add(host);
+    out.push(host);
+  }
+  return out;
 }
 
 function toRecord(stored: StoredConnection): ConnectionRecord {
@@ -106,6 +143,7 @@ function toRecord(stored: StoredConnection): ConnectionRecord {
     id: stored.id,
     label: stored.label,
     host: stored.host,
+    hosts: candidateHosts(stored),
     port: stored.port,
     fingerprint: stored.fingerprint,
     hostname: stored.hostname ?? null,
@@ -126,6 +164,11 @@ function isStoredConnection(value: unknown): value is StoredConnection {
     // `hostname` is an optional late addition: absent on older records, a string
     // once captured. Accept missing/null/string; reject any other type.
     (c.hostname === undefined || c.hostname === null || typeof c.hostname === 'string') &&
+    // `hosts` / `detectHosts` are optional late additions (#1746): absent on
+    // older records. Accept missing or well-typed; reject any other type.
+    (c.hosts === undefined ||
+      (Array.isArray(c.hosts) && c.hosts.every((h) => typeof h === 'string'))) &&
+    (c.detectHosts === undefined || typeof c.detectHosts === 'boolean') &&
     !!tok &&
     typeof tok === 'object' &&
     typeof tok.encrypted === 'boolean' &&
@@ -214,6 +257,7 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
     host: conn.host,
     port: conn.port,
     fingerprint: conn.fingerprint,
+    detectHosts: conn.detectHosts ?? true,
     encToken: encryptToken(conn.token),
   };
   await mutate((state) => {
@@ -221,6 +265,38 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
     return writeState(state);
   });
   return toRecord(stored);
+}
+
+/**
+ * Replace the candidate-host list for a remote connection (#1746), e.g. from a
+ * post-connect `server.pairingInfo` refresh. The primary `host` always stays
+ * first; `hosts` persists only the deduplicated extras. A no-op for unknown
+ * ids and for records whose `detectHosts` is `false` (the user opted out of
+ * IP detection at add time). Fail-soft by design: candidate hosts are a
+ * resilience nicety, never a hard requirement.
+ */
+export async function setHosts(id: string, hosts: string[]): Promise<void> {
+  await mutate((state) => {
+    const conn = state.connections.find((c) => c.id === id);
+    if (!conn) return; // unknown id: nothing to update
+    if (conn.detectHosts === false) return; // user opted out of IP detection
+    conn.hosts = dedupeHosts([conn.host, ...hosts]).filter((h) => h !== conn.host.trim());
+    return writeState(state);
+  });
+}
+
+/**
+ * Whether the "detect all backend IPs" option is enabled for a remote
+ * connection (#1746). Records written before the option existed default to
+ * enabled. Returns `false` for the local entry and unknown ids (nothing to
+ * refresh).
+ */
+export async function getDetectHosts(id: string): Promise<boolean> {
+  if (id === LOCAL_CONNECTION_ID) return false;
+  const state = await readState();
+  const conn = state.connections.find((c) => c.id === id);
+  if (!conn) return false;
+  return conn.detectHosts !== false;
 }
 
 /**

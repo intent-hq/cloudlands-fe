@@ -25,6 +25,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 /** Global lifecycle log so tests can assert construct/start/dispose ordering. */
 const lifecycle = vi.hoisted(() => ({ events: [] as Array<{ type: string; seq: number }> }));
 
+/** Steerable per-method RPC responder for the fake client (tests override). */
+const rpc = vi.hoisted(() => ({
+  handler: (async () => ({})) as (method: string) => Promise<unknown>,
+  calls: [] as string[],
+}));
+
 vi.mock('../json-rpc-client', () => {
   let seq = 0;
   class FakeJsonRpcClient {
@@ -53,7 +59,10 @@ vi.mock('../json-rpc-client', () => {
     dispose(): void {
       lifecycle.events.push({ type: 'dispose', seq: this.id });
     }
-    request = vi.fn(async () => ({}));
+    request = vi.fn(async (method: string) => {
+      rpc.calls.push(method);
+      return rpc.handler(method);
+    });
     registerMethod(): () => void {
       return () => {};
     }
@@ -102,6 +111,9 @@ const store = vi.hoisted(() => ({
   add: vi.fn(),
   forget: vi.fn(),
   getDecryptedToken: vi.fn(),
+  setHostname: vi.fn(),
+  setHosts: vi.fn(),
+  getDetectHosts: vi.fn(),
 }));
 vi.mock('../connections-store', () => ({
   LOCAL_CONNECTION_ID: 'local',
@@ -111,6 +123,9 @@ vi.mock('../connections-store', () => ({
   add: store.add,
   forget: store.forget,
   getDecryptedToken: store.getDecryptedToken,
+  setHostname: store.setHostname,
+  setHosts: store.setHosts,
+  getDetectHosts: store.getDetectHosts,
 }));
 
 // ---------------------------------------------------------------------------
@@ -167,11 +182,16 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   lifecycle.events = [];
+  rpc.handler = async () => ({});
+  rpc.calls = [];
   // Sensible defaults; individual tests override.
   store.getActiveId.mockResolvedValue('local');
   store.list.mockResolvedValue([LOCAL, REMOTE]);
   store.setActiveId.mockResolvedValue(undefined);
   store.getDecryptedToken.mockResolvedValue('secret-token');
+  store.setHostname.mockResolvedValue(undefined);
+  store.setHosts.mockResolvedValue(undefined);
+  store.getDetectHosts.mockResolvedValue(true);
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
 });
 
@@ -355,6 +375,25 @@ describe('connections:* IPC handlers', () => {
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
   });
 
+  it('connections:add passes the detectHosts option through to the store (#1746)', async () => {
+    store.add.mockResolvedValue(REMOTE);
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:add');
+
+    const params = {
+      label: 'Studio Mac',
+      host: '10.0.0.5',
+      port: 8443,
+      fingerprint: 'AA:BB:CC:DD',
+      token: 'secret-token',
+      detectHosts: false,
+    };
+    await expect(handler!({}, params)).resolves.toEqual({ connection: REMOTE });
+    expect(store.add).toHaveBeenCalledWith(expect.objectContaining({ detectHosts: false }));
+  });
+
   it('connections:forget of a non-active connection just broadcasts', async () => {
     store.getActiveId.mockResolvedValue('local');
     store.forget.mockResolvedValue(undefined);
@@ -414,5 +453,79 @@ describe('connections:* IPC handlers', () => {
     const handler = findHandler('connections:switch');
 
     await expect(handler!({}, {})).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Multi-host candidates + post-connect refresh (#1746)
+// ---------------------------------------------------------------------------
+
+describe('multi-host candidates (#1746)', () => {
+  it('switchBackend builds the wss config with the stored candidate hosts', async () => {
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, hosts: ['10.0.0.5', '192.168.1.5'] }]);
+    const { mod } = await loadModule();
+    await mod.switchBackend('remote-1');
+    const config = mod.getBackendClient().getConfig() as { host?: string; hosts?: string[] };
+    expect(config.host).toBe('10.0.0.5');
+    expect(config.hosts).toEqual(['10.0.0.5', '192.168.1.5']);
+  });
+
+  it('switchBackend falls back to a one-element host list for records without hosts', async () => {
+    const { mod } = await loadModule();
+    await mod.switchBackend('remote-1');
+    const config = mod.getBackendClient().getConfig() as { hosts?: string[] };
+    expect(config.hosts).toEqual(['10.0.0.5']);
+  });
+
+  it('persists refreshed candidate hosts from server.pairingInfo after a switch', async () => {
+    installWindow();
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') {
+        return { localIps: ['10.0.0.5', '192.168.1.5'], hostname: 'studio' };
+      }
+      return {};
+    };
+    const { mod } = await loadModule();
+    await mod.switchBackend('remote-1');
+
+    await vi.waitFor(() =>
+      expect(store.setHosts).toHaveBeenCalledWith('remote-1', ['10.0.0.5', '192.168.1.5']),
+    );
+  });
+
+  it('skips the pairingInfo refresh when the record opted out of IP detection', async () => {
+    store.getDetectHosts.mockResolvedValue(false);
+    const { mod } = await loadModule();
+    await mod.switchBackend('remote-1');
+
+    // The hostname capture still runs, but no pairingInfo call and no setHosts.
+    await vi.waitFor(() => expect(rpc.calls).toContain('host.status'));
+    expect(rpc.calls).not.toContain('server.pairingInfo');
+    expect(store.setHosts).not.toHaveBeenCalled();
+  });
+
+  it('fails soft when the daemon rejects server.pairingInfo (local-only gating)', async () => {
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') {
+        throw new Error('server.* methods are local-only');
+      }
+      return {};
+    };
+    const { mod } = await loadModule();
+    // Must not reject the switch, and the stored hosts stay untouched.
+    await expect(mod.switchBackend('remote-1')).resolves.toEqual({ activeId: 'remote-1' });
+    await vi.waitFor(() => expect(rpc.calls).toContain('server.pairingInfo'));
+    expect(store.setHosts).not.toHaveBeenCalled();
+  });
+
+  it('ignores a malformed pairingInfo result (no localIps)', async () => {
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') return { hostname: 'studio' };
+      return {};
+    };
+    const { mod } = await loadModule();
+    await mod.switchBackend('remote-1');
+    await vi.waitFor(() => expect(rpc.calls).toContain('server.pairingInfo'));
+    expect(store.setHosts).not.toHaveBeenCalled();
   });
 });

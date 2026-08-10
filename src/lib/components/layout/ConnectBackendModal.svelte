@@ -41,6 +41,7 @@
   let host = $state('');
   let port = $state(DEFAULT_WS_PORT);
   let token = $state('');
+  let detectHosts = $state(true);
   let fingerprint = $state('');
   let busy = $state(false);
   let error = $state<string | null>(null);
@@ -61,6 +62,7 @@
     host = '';
     port = DEFAULT_WS_PORT;
     token = '';
+    detectHosts = true;
     fingerprint = '';
     busy = false;
     error = null;
@@ -107,6 +109,7 @@
         port: portNumber,
         fingerprint,
         token: token.trim(),
+        detectHosts,
       });
       appStore.dispatch(addAction);
       const connection = await addAction.promise;
@@ -228,6 +231,14 @@
               autocapitalize="off"
               spellcheck="false"
             />
+          </div>
+
+          <div class="space-y-1">
+            <label class="flex items-center gap-2 text-sm">
+              <input type="checkbox" bind:checked={detectHosts} />
+              {m.modals_connect_detectHosts_label()}
+            </label>
+            <p class="text-xs text-subtle">{m.modals_connect_detectHosts_description()}</p>
           </div>
 
           <p class="text-xs text-subtle">{m.modals_connect_whereToFind_help()}</p>

@@ -244,4 +244,64 @@ describe('connections-store', () => {
     expect(list[0].id).toBe(store.LOCAL_CONNECTION_ID);
     expect(await store.getActiveId()).toBe(store.LOCAL_CONNECTION_ID);
   });
+
+  it('new records default to a single-host candidate list and detectHosts enabled (#1746)', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    expect(rec.hosts).toEqual(['192.168.1.10']);
+    expect(await store.getDetectHosts(rec.id)).toBe(true);
+  });
+
+  it('pre-#1746 records (no hosts field) migrate to a one-element list', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.__drainWriteChainForTesting();
+
+    // Simulate a record written before the hosts/detectHosts fields existed.
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    delete parsed.connections[0].hosts;
+    delete parsed.connections[0].detectHosts;
+    await fs.writeFile(file, JSON.stringify(parsed), 'utf8');
+
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../connections-store');
+    const remote = (await reloaded.list()).find((c) => c.id === rec.id);
+    expect(remote?.hosts).toEqual(['192.168.1.10']);
+    // Old records default to detection enabled.
+    expect(await reloaded.getDetectHosts(rec.id)).toBe(true);
+  });
+
+  it('setHosts persists deduplicated extras with the primary host first', async () => {
+    const store = await import('../connections-store');
+    const rec = await store.add(sampleConn);
+    await store.setHosts(rec.id, ['10.0.0.5', '192.168.1.10', ' 10.0.0.5 ', 'fe80::1', '']);
+    await store.__drainWriteChainForTesting();
+
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../connections-store');
+    const remote = (await reloaded.list()).find((c) => c.id === rec.id);
+    expect(remote?.hosts).toEqual(['192.168.1.10', '10.0.0.5', 'fe80::1']);
+    // The primary host stays untouched.
+    expect(remote?.host).toBe('192.168.1.10');
+  });
+
+  it('setHosts is a no-op for unknown ids and detectHosts=false records', async () => {
+    const store = await import('../connections-store');
+    await expect(store.setHosts('does-not-exist', ['10.0.0.5'])).resolves.toBeUndefined();
+
+    const optedOut = await store.add({ ...sampleConn, detectHosts: false });
+    expect(await store.getDetectHosts(optedOut.id)).toBe(false);
+    await store.setHosts(optedOut.id, ['10.0.0.5']);
+    const remote = (await store.list()).find((c) => c.id === optedOut.id);
+    expect(remote?.hosts).toEqual(['192.168.1.10']);
+  });
+
+  it('getDetectHosts is false for local and unknown ids', async () => {
+    const store = await import('../connections-store');
+    expect(await store.getDetectHosts(store.LOCAL_CONNECTION_ID)).toBe(false);
+    expect(await store.getDetectHosts('does-not-exist')).toBe(false);
+  });
 });

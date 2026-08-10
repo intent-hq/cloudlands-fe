@@ -95,8 +95,24 @@ describe('ConnectBackendModal', () => {
       port: 4180,
       fingerprint: 'AA:BB:CC:DD',
       token: 'secret-token',
+      detectHosts: true,
     });
     await vi.waitFor(() => expect(mocks.switchConnectionRequested).toHaveBeenCalledWith('r1'));
+  });
+
+  it('passes detectHosts: false when the detect-all-IPs option is unticked', async () => {
+    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+    render(ConnectBackendModal, { props: { open: true } });
+
+    await fillDetails();
+    await fireEvent.click(screen.getByLabelText('Detect all backend IPs'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByText('AA:BB:CC:DD');
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+
+    expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
+      expect.objectContaining({ detectHosts: false }),
+    );
   });
 
   it('surfaces a capture error inline and stays on the details step', async () => {
