@@ -442,12 +442,7 @@
         <!-- Providers -->
         {#if activeTab === 'providers'}
           <div id="providers" class="mb-12 scroll-mt-20">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_aiCodingClis()}
-            </h2>
-            <div class="bg-card rounded-xl overflow-hidden">
-              <ProviderSelector />
-            </div>
+            <ProviderSelector />
             <p class="text-xs text-subtle mt-2">
               {m.settings_section_aiCodingClis_hint()}
             </p>

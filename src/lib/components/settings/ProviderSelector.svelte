@@ -435,9 +435,9 @@
   }
 </script>
 
-<div class="flex flex-col">
+<div class="flex flex-col gap-6">
   {#if checkError}
-    <div class="flex items-center justify-between gap-4 px-6 py-4">
+    <div class="flex items-center justify-between gap-4 rounded-xl bg-card px-6 py-4">
       <p class="text-sm text-destructive-foreground">{checkError}</p>
       <button
         type="button"
@@ -452,7 +452,7 @@
   {#each providerGroups as group (group.id)}
     {#if group.providers.length > 0}
       <section
-        class="border-t border-border/50 first:border-t-0"
+        class="overflow-hidden rounded-xl bg-card"
         aria-labelledby={`provider-group-${group.id}`}
       >
         <h3
@@ -467,7 +467,7 @@
             {m.settings_providers_groupSupported_label()}
           {/if}
         </h3>
-        <div class="divide-y divide-border/50">
+        <div class="divide-y divide-border/50 border-t border-border/50">
           <!-- Rows render immediately from the catalog; each row's status area fills
                in independently as its own probe settles. -->
           {#each group.providers as provider (provider.id)}

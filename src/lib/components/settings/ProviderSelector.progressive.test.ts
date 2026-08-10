@@ -139,8 +139,11 @@ describe('ProviderSelector progressive rendering', () => {
 
     expect(
       result.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent?.trim()),
-    ).toEqual(['Enabled', 'Supported']);
-    expect(result.queryByRole('heading', { name: 'Discovered' })).toBeNull();
+    ).toEqual(['Enabled', 'Not Detected']);
+    expect(result.queryByRole('heading', { name: 'Available' })).toBeNull();
+    expect(
+      result.container.querySelector('section[aria-labelledby="provider-group-discovered"]'),
+    ).toBeNull();
 
     expect(result.queryByTitle('Configure Anthropic Claude Code path')).toBeNull();
     await fireEvent.click(
@@ -163,11 +166,14 @@ describe('ProviderSelector progressive rendering', () => {
     const groupHeadings = result.getAllByRole('heading', { level: 3 });
     expect(groupHeadings.map((heading) => heading.textContent?.trim())).toEqual([
       'Enabled',
-      'Discovered',
-      'Supported',
+      'Available',
+      'Not Detected',
     ]);
-    const discoveredText = groupHeadings[1]?.closest('section')?.textContent ?? '';
-    expect(discoveredText.indexOf('OpenAI Codex')).toBeLessThan(discoveredText.indexOf('OpenCode'));
+    const providerCards = groupHeadings.map((heading) => heading.closest('section'));
+    expect(providerCards).toHaveLength(3);
+    expect(providerCards.every((card) => card?.classList.contains('bg-card'))).toBe(true);
+    const availableText = providerCards[1]?.textContent ?? '';
+    expect(availableText.indexOf('OpenAI Codex')).toBeLessThan(availableText.indexOf('OpenCode'));
 
     // Codex settled → inline enable action; login status/actions stay in menus.
     await waitFor(() => {
