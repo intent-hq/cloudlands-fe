@@ -416,6 +416,18 @@
       : [],
   );
 
+  /** True when the detected repo already appears in the suggestion list, so
+   *  the detected-repo Select row would duplicate a suggestion. */
+  const detectedGitHubIsDuplicate = $derived.by(() => {
+    const detected = detectedGitHub;
+    if (!detected) return false;
+    const owner = detected.owner.toLowerCase();
+    const repo = detected.repo.toLowerCase();
+    return githubSuggestions.some(
+      (r) => r.owner.toLowerCase() === owner && r.name.toLowerCase() === repo,
+    );
+  });
+
   /** Keyboard highlight within the suggestion list (-1 = nothing highlighted). */
   let suggestionIndex = $state(-1);
 
@@ -1520,8 +1532,9 @@
               <span>{m.workspace_repoSelector_searchingGithub_label({ query: githubQuery })}</span>
             </div>
           {/if}
-          <!-- Detected repo + select button -->
-          {#if detectedGitHub}
+          <!-- Detected repo + select button (hidden when it would duplicate a
+               suggestion row; Enter-to-confirm still works via handleConfirmGitHubPick) -->
+          {#if detectedGitHub && !detectedGitHubIsDuplicate}
             <div class="flex items-center justify-between gap-2 mt-2 px-1">
               <span class="text-sm text-subtle truncate flex-1">
                 {detectedGitHub.owner}/{detectedGitHub.repo}
