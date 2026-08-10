@@ -83,7 +83,7 @@ async function buildState(
     ),
     providerSettings: {
       activeProviderId: 'auggie',
-      enabledProviders: {},
+      enabledProviders: { auggie: true },
       defaultProviderId: MOCK_PROVIDER_CATALOG.defaultProviderId,
       nonDisableableProviderIds: [],
     },
@@ -137,6 +137,11 @@ describe('ProviderSelector progressive rendering', () => {
     expect(result.queryByText('Mock (E2E)')).toBeNull();
     expect(result.queryByText('Snowflake Cortex')).toBeNull();
 
+    expect(
+      result.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent?.trim()),
+    ).toEqual(['Enabled', 'Supported']);
+    expect(result.queryByRole('heading', { name: 'Discovered' })).toBeNull();
+
     expect(result.queryByTitle('Configure Anthropic Claude Code path')).toBeNull();
     await fireEvent.click(
       result.getByRole('button', { name: 'Provider actions for Anthropic Claude Code' }),
@@ -154,6 +159,15 @@ describe('ProviderSelector progressive rendering', () => {
     });
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
+
+    const groupHeadings = result.getAllByRole('heading', { level: 3 });
+    expect(groupHeadings.map((heading) => heading.textContent?.trim())).toEqual([
+      'Enabled',
+      'Discovered',
+      'Supported',
+    ]);
+    const discoveredText = groupHeadings[1]?.closest('section')?.textContent ?? '';
+    expect(discoveredText.indexOf('OpenAI Codex')).toBeLessThan(discoveredText.indexOf('OpenCode'));
 
     // Codex settled → inline enable action; login status/actions stay in menus.
     await waitFor(() => {

@@ -40,7 +40,7 @@
   import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
   import { createLogger } from '$lib/utils/client-logger';
-  import { orderProviderEntries } from '$lib/utils/provider-list-order';
+  import { groupProviderEntries, orderProviderEntries } from '$lib/utils/provider-list-order';
   import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
     faBan,
@@ -156,6 +156,7 @@
       return {
         id: provider.id,
         name: provider.displayName,
+        displayName: provider.displayName,
         command: provider.command,
         available: getProviderAvailable(provider.id),
         authenticated: getProviderAuthenticated(provider.id),
@@ -168,6 +169,20 @@
       };
     }),
   );
+
+  const groupedProviderOptions = $derived.by(() =>
+    groupProviderEntries(providerOptions, {
+      isProviderEnabled,
+      availabilityByProviderId: $providerStatusMap$,
+      hiddenProviderIds: providerAvailability?.hiddenProviders,
+    }),
+  );
+
+  const providerGroups = $derived.by(() => [
+    { id: 'enabled', providers: groupedProviderOptions.enabled },
+    { id: 'discovered', providers: groupedProviderOptions.discovered },
+    { id: 'supported', providers: groupedProviderOptions.supported },
+  ]);
 
   const piProviderAvailable = $derived.by(() => {
     return providerOptions.find((provider) => provider.id === 'pi')?.available ?? false;
@@ -420,7 +435,7 @@
   }
 </script>
 
-<div class="flex flex-col divide-y divide-border/50">
+<div class="flex flex-col">
   {#if checkError}
     <div class="flex items-center justify-between gap-4 px-6 py-4">
       <p class="text-sm text-destructive-foreground">{checkError}</p>
@@ -434,309 +449,339 @@
     </div>
   {/if}
 
-  <!-- Rows render immediately from the catalog; each row's status area fills
-       in independently as its own probe settles. -->
-  {#each providerOptions as provider (provider.id)}
-    {@const isActive = $activeProviderId === provider.id}
-    {@const isEnabled = isProviderEnabled(provider.id)}
-    {@const isReady = isProviderReadyForUse(provider.id)}
-    {@const canManageEnablement = canManageProviderEnablement(provider.id)}
-    {@const inUseReason = $providerInUseReasons$[provider.id] ?? null}
-    {@const canDisable = canManageEnablement && !isActive && isEnabled}
-    {@const canEnable = canManageEnablement && !isActive && !isEnabled && isReady}
-    {@const canLogIn =
-      provider.available && provider.authenticated === false && provider.loginDocsUrl}
-    {@const canSetDefault = provider.available && !isActive && isReady}
-    {@const canInstall = !provider.available}
-    {@const hasPiAdapterWarning =
-      !provider.statusPending &&
-      provider.id === 'pi' &&
-      provider.available &&
-      piMcpAdapterInstalled === false}
-    {@const hasNodeMissing =
-      !provider.statusPending &&
-      provider.hasNpxFallback &&
-      !provider.available &&
-      $npxStatus$?.resolvedPath === null}
-    {@const hasNpmOld =
-      !provider.statusPending &&
-      provider.hasNpxFallback &&
-      !provider.available &&
-      $npxStatus$?.resolvedPath !== null &&
-      $npxStatus$?.versionOk === false}
-    {@const hasProviderWarning = !provider.statusPending && !!provider.warning}
-    {@const hasWarning = hasPiAdapterWarning || hasNodeMissing || hasNpmOld || hasProviderWarning}
-    {@const warningLabel = hasPiAdapterWarning
-      ? m.settings_providers_piAdapterNeeded()
-      : hasNodeMissing
-        ? m.settings_providers_requiresNodejs()
-        : hasNpmOld
-          ? m.settings_providers_npmTooOld()
-          : provider.warning}
-    <div class="px-6 py-4">
-      <div class="flex items-start justify-between gap-4">
-        <div class="space-y-1">
-          <div class="flex items-center gap-2 h-7">
-            {@render providerIcon(provider.id)}
-            <span
-              class="text-sm {provider.available || provider.statusPending
-                ? 'text-foreground'
-                : 'text-muted-foreground opacity-60'}"
-            >
-              {provider.name}
-            </span>
-          </div>
-        </div>
-
-        <div class="flex min-h-7 shrink-0 items-center gap-2 text-xs">
-          {#if provider.statusPending}
-            <!-- This row's own probe has not settled yet; the rest of the
-                     row is already rendered from the catalog. -->
-            <div
-              class="h-4 w-20 bg-muted/50 rounded animate-pulse"
-              aria-label={m.settings_providers_loading()}
-            ></div>
+  {#each providerGroups as group (group.id)}
+    {#if group.providers.length > 0}
+      <section
+        class="border-t border-border/50 first:border-t-0"
+        aria-labelledby={`provider-group-${group.id}`}
+      >
+        <h3
+          id={`provider-group-${group.id}`}
+          class="px-6 pt-4 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+        >
+          {#if group.id === 'enabled'}
+            {m.settings_providers_groupEnabled_label()}
+          {:else if group.id === 'discovered'}
+            {m.settings_providers_groupDiscovered_label()}
           {:else}
-            {#if isActive}
-              {#if provider.available}
-                <span class="rounded-full bg-muted px-2 py-0.5 text-xs text-subtle">
-                  {m.settings_providers_default()}
-                </span>
-              {:else}
-                <span class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1">
-                  <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
-                  {m.settings_providers_defaultUnavailable_label()}
-                </span>
-              {/if}
-            {/if}
+            {m.settings_providers_groupSupported_label()}
           {/if}
+        </h3>
+        <div class="divide-y divide-border/50">
+          <!-- Rows render immediately from the catalog; each row's status area fills
+               in independently as its own probe settles. -->
+          {#each group.providers as provider (provider.id)}
+            {@const isActive = $activeProviderId === provider.id}
+            {@const isEnabled = isProviderEnabled(provider.id)}
+            {@const isReady = isProviderReadyForUse(provider.id)}
+            {@const canManageEnablement = canManageProviderEnablement(provider.id)}
+            {@const inUseReason = $providerInUseReasons$[provider.id] ?? null}
+            {@const canDisable = canManageEnablement && !isActive && isEnabled}
+            {@const canEnable = canManageEnablement && !isActive && !isEnabled && isReady}
+            {@const canLogIn =
+              provider.available && provider.authenticated === false && provider.loginDocsUrl}
+            {@const canSetDefault = provider.available && !isActive && isReady}
+            {@const canInstall = !provider.available}
+            {@const hasPiAdapterWarning =
+              !provider.statusPending &&
+              provider.id === 'pi' &&
+              provider.available &&
+              piMcpAdapterInstalled === false}
+            {@const hasNodeMissing =
+              !provider.statusPending &&
+              provider.hasNpxFallback &&
+              !provider.available &&
+              $npxStatus$?.resolvedPath === null}
+            {@const hasNpmOld =
+              !provider.statusPending &&
+              provider.hasNpxFallback &&
+              !provider.available &&
+              $npxStatus$?.resolvedPath !== null &&
+              $npxStatus$?.versionOk === false}
+            {@const hasProviderWarning = !provider.statusPending && !!provider.warning}
+            {@const hasWarning =
+              hasPiAdapterWarning || hasNodeMissing || hasNpmOld || hasProviderWarning}
+            {@const warningLabel = hasPiAdapterWarning
+              ? m.settings_providers_piAdapterNeeded()
+              : hasNodeMissing
+                ? m.settings_providers_requiresNodejs()
+                : hasNpmOld
+                  ? m.settings_providers_npmTooOld()
+                  : provider.warning}
+            <div class="px-6 py-4">
+              <div class="flex items-start justify-between gap-4">
+                <div class="space-y-1">
+                  <div class="flex items-center gap-2 h-7">
+                    {@render providerIcon(provider.id)}
+                    <span
+                      class="text-sm {provider.available || provider.statusPending
+                        ? 'text-foreground'
+                        : 'text-muted-foreground opacity-60'}"
+                    >
+                      {provider.name}
+                    </span>
+                  </div>
+                </div>
 
-          {#if canEnable && !provider.statusPending}
-            <Button
-              size="xs"
-              variant="secondary"
-              onclick={() => handleToggleProvider(provider.id, true)}
-            >
-              {m.settings_providers_enable()}
-            </Button>
-          {/if}
+                <div class="flex min-h-7 shrink-0 items-center gap-2 text-xs">
+                  {#if provider.statusPending}
+                    <!-- This row's own probe has not settled yet; the rest of the
+                     row is already rendered from the catalog. -->
+                    <div
+                      class="h-4 w-20 bg-muted/50 rounded animate-pulse"
+                      aria-label={m.settings_providers_loading()}
+                    ></div>
+                  {:else}
+                    {#if isActive}
+                      {#if provider.available}
+                        <span class="rounded-full bg-muted px-2 py-0.5 text-xs text-subtle">
+                          {m.settings_providers_default()}
+                        </span>
+                      {:else}
+                        <span
+                          class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1"
+                        >
+                          <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
+                          {m.settings_providers_defaultUnavailable_label()}
+                        </span>
+                      {/if}
+                    {/if}
+                  {/if}
 
-          {#if hasWarning}
-            <span
-              role="img"
-              aria-label={warningLabel}
-              title={warningLabel}
-              class="flex size-4 items-center justify-center text-yellow-600 dark:text-yellow-500"
-            >
-              <Fa icon={faTriangleExclamation} class="size-3.5" />
-            </span>
-          {/if}
+                  {#if canEnable && !provider.statusPending}
+                    <Button
+                      size="xs"
+                      variant="secondary"
+                      onclick={() => handleToggleProvider(provider.id, true)}
+                    >
+                      {m.settings_providers_enable()}
+                    </Button>
+                  {/if}
 
-          <div class="relative">
-            <!-- The path panel is anchored beside the overflow trigger and
+                  {#if hasWarning}
+                    <span
+                      role="img"
+                      aria-label={warningLabel}
+                      title={warningLabel}
+                      class="flex size-4 items-center justify-center text-yellow-600 dark:text-yellow-500"
+                    >
+                      <Fa icon={faTriangleExclamation} class="size-3.5" />
+                    </span>
+                  {/if}
+
+                  <div class="relative">
+                    <!-- The path panel is anchored beside the overflow trigger and
                  opened by its menu item. Unsloth remains dual-binary: its
                  overridable CLI uses the secondary discovery path while the
                  opencode runtime is shown as a read-only row. -->
-            {#if pathConfigOpen[provider.id]}
-              <div class="absolute right-0 top-0">
-                <ProviderPathConfig
-                  providerId={provider.id}
-                  providerName={provider.name}
-                  cliCommand={provider.id === 'unsloth' ? 'unsloth' : provider.command}
-                  configuredPath={providerPaths[provider.id]}
-                  resolvedPath={provider.id === 'unsloth'
-                    ? secondaryResolvedPaths[provider.id]
-                    : resolvedPaths[provider.id]}
-                  runtimeCliCommand={provider.id === 'unsloth' ? provider.command : undefined}
-                  runtimeResolvedPath={provider.id === 'unsloth'
-                    ? resolvedPaths[provider.id]
-                    : undefined}
-                  isInstalled={provider.available}
-                  onPathChange={(path) => handlePathChange(provider.id, path)}
-                  bind:open={pathConfigOpen[provider.id]}
-                  showTrigger={false}
-                />
-              </div>
-            {/if}
+                    {#if pathConfigOpen[provider.id]}
+                      <div class="absolute right-0 top-0">
+                        <ProviderPathConfig
+                          providerId={provider.id}
+                          providerName={provider.name}
+                          cliCommand={provider.id === 'unsloth' ? 'unsloth' : provider.command}
+                          configuredPath={providerPaths[provider.id]}
+                          resolvedPath={provider.id === 'unsloth'
+                            ? secondaryResolvedPaths[provider.id]
+                            : resolvedPaths[provider.id]}
+                          runtimeCliCommand={provider.id === 'unsloth'
+                            ? provider.command
+                            : undefined}
+                          runtimeResolvedPath={provider.id === 'unsloth'
+                            ? resolvedPaths[provider.id]
+                            : undefined}
+                          isInstalled={provider.available}
+                          onPathChange={(path) => handlePathChange(provider.id, path)}
+                          bind:open={pathConfigOpen[provider.id]}
+                          showTrigger={false}
+                        />
+                      </div>
+                    {/if}
 
-            <DropdownMenu align="end" contentClass="p-0!">
-              {#snippet trigger({ toggle }: { toggle: () => void })}
-                <Button
-                  variant="ghost-light"
-                  size="icon-xs"
-                  onclick={toggle}
-                  aria-label={m.settings_providers_actionsFor_ariaLabel({ name: provider.name })}
-                >
-                  <Fa icon={faEllipsisVertical} />
-                </Button>
-              {/snippet}
-
-              {#snippet content({ close }: { close: () => void })}
-                <div class={hasWarning ? 'w-64 py-1' : 'w-44 py-1'}>
-                  {#if hasWarning}
-                    <div class="border-b border-border/50 pb-1">
-                      {#if hasPiAdapterWarning}
-                        <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
-                          {m.settings_providers_piAdapterNeeded()}
-                        </p>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          disabled={setupInProgress.pi}
-                          class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
-                          onclick={() => void handleInstallPiMcpAdapter()}
+                    <DropdownMenu align="end" contentClass="p-0!">
+                      {#snippet trigger({ toggle }: { toggle: () => void })}
+                        <Button
+                          variant="ghost-light"
+                          size="icon-xs"
+                          onclick={toggle}
+                          aria-label={m.settings_providers_actionsFor_ariaLabel({
+                            name: provider.name,
+                          })}
                         >
-                          {#if setupInProgress.pi}
-                            <Fa
-                              icon={faCircleNotch}
-                              class="size-3.5 animate-spin text-muted-foreground"
-                            />
-                            {m.settings_providers_installing()}
-                          {:else}
-                            <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
-                            {m.settings_providers_install()}
+                          <Fa icon={faEllipsisVertical} />
+                        </Button>
+                      {/snippet}
+
+                      {#snippet content({ close }: { close: () => void })}
+                        <div class={hasWarning ? 'w-64 py-1' : 'w-44 py-1'}>
+                          {#if hasWarning}
+                            <div class="border-b border-border/50 pb-1">
+                              {#if hasPiAdapterWarning}
+                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                  {m.settings_providers_piAdapterNeeded()}
+                                </p>
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  disabled={setupInProgress.pi}
+                                  class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                                  onclick={() => void handleInstallPiMcpAdapter()}
+                                >
+                                  {#if setupInProgress.pi}
+                                    <Fa
+                                      icon={faCircleNotch}
+                                      class="size-3.5 animate-spin text-muted-foreground"
+                                    />
+                                    {m.settings_providers_installing()}
+                                  {:else}
+                                    <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
+                                    {m.settings_providers_install()}
+                                  {/if}
+                                </button>
+                              {/if}
+
+                              {#if hasNodeMissing}
+                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                  {m.settings_providers_requiresNodejs()}
+                                </p>
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
+                                  onclick={() => {
+                                    void shell.open('https://nodejs.org');
+                                    close();
+                                  }}
+                                >
+                                  {m.settings_providers_installFromNodejs()}
+                                </button>
+                              {/if}
+
+                              {#if hasNpmOld}
+                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                  {m.settings_providers_npmTooOld()}
+                                </p>
+                              {/if}
+
+                              {#if hasProviderWarning}
+                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                  {provider.warning}
+                                </p>
+                                {#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
+                                    onclick={() => {
+                                      void shell.open('https://nodejs.org');
+                                      close();
+                                    }}
+                                  >
+                                    {m.settings_providers_installFromNodejs()}
+                                  </button>
+                                {/if}
+                              {/if}
+                            </div>
                           {/if}
-                        </button>
-                      {/if}
 
-                      {#if hasNodeMissing}
-                        <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
-                          {m.settings_providers_requiresNodejs()}
-                        </p>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                          onclick={() => {
-                            void shell.open('https://nodejs.org');
-                            close();
-                          }}
-                        >
-                          {m.settings_providers_installFromNodejs()}
-                        </button>
-                      {/if}
+                          {#if provider.available && provider.authenticated === true}
+                            <div
+                              role="menuitem"
+                              aria-disabled="true"
+                              class="flex items-center gap-1.5 px-3 py-1.5 text-sm text-subtle"
+                            >
+                              <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
+                              {m.settings_providers_loggedInStatus()}
+                            </div>
+                          {/if}
 
-                      {#if hasNpmOld}
-                        <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
-                          {m.settings_providers_npmTooOld()}
-                        </p>
-                      {/if}
-
-                      {#if hasProviderWarning}
-                        <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
-                          {provider.warning}
-                        </p>
-                        {#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
                           <button
                             type="button"
                             role="menuitem"
-                            class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
+                            class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
                             onclick={() => {
-                              void shell.open('https://nodejs.org');
                               close();
+                              pathConfigOpen = { [provider.id]: true };
                             }}
                           >
-                            {m.settings_providers_installFromNodejs()}
+                            <Fa icon={faFolder} class="size-3.5 text-muted-foreground" />
+                            {m.settings_providerPath_setCustomPath_label()}
                           </button>
-                        {/if}
-                      {/if}
-                    </div>
-                  {/if}
 
-                  {#if provider.available && provider.authenticated === true}
-                    <div
-                      role="menuitem"
-                      aria-disabled="true"
-                      class="flex items-center gap-1.5 px-3 py-1.5 text-sm text-subtle"
-                    >
-                      <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
-                      {m.settings_providers_loggedInStatus()}
-                    </div>
-                  {/if}
+                          {#if canSetDefault}
+                            <button
+                              type="button"
+                              role="menuitem"
+                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={selectingProviderId !== null}
+                              onclick={() => {
+                                void handleSelectProvider(provider.id);
+                                close();
+                              }}
+                            >
+                              <Fa icon={faStar} class="size-3.5 text-muted-foreground" />
+                              {selectingProviderId === provider.id
+                                ? m.settings_providers_switching()
+                                : m.settings_providers_setAsDefault()}
+                            </button>
+                          {/if}
 
-                  <button
-                    type="button"
-                    role="menuitem"
-                    class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                    onclick={() => {
-                      close();
-                      pathConfigOpen = { [provider.id]: true };
-                    }}
-                  >
-                    <Fa icon={faFolder} class="size-3.5 text-muted-foreground" />
-                    {m.settings_providerPath_setCustomPath_label()}
-                  </button>
+                          {#if canDisable}
+                            <button
+                              type="button"
+                              role="menuitem"
+                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={!!inUseReason}
+                              title={inUseReason ?? undefined}
+                              onclick={() => {
+                                handleToggleProvider(provider.id, false);
+                                close();
+                              }}
+                            >
+                              <Fa icon={faBan} class="size-3.5 text-muted-foreground" />
+                              {m.settings_providers_disable()}
+                            </button>
+                          {/if}
 
-                  {#if canSetDefault}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
-                      disabled={selectingProviderId !== null}
-                      onclick={() => {
-                        void handleSelectProvider(provider.id);
-                        close();
-                      }}
-                    >
-                      <Fa icon={faStar} class="size-3.5 text-muted-foreground" />
-                      {selectingProviderId === provider.id
-                        ? m.settings_providers_switching()
-                        : m.settings_providers_setAsDefault()}
-                    </button>
-                  {/if}
+                          {#if canLogIn}
+                            <button
+                              type="button"
+                              role="menuitem"
+                              class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
+                              onclick={() => {
+                                openDocs(provider.loginDocsUrl!);
+                                close();
+                              }}
+                            >
+                              {m.settings_providers_logIn()}
+                            </button>
+                          {/if}
 
-                  {#if canDisable}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
-                      disabled={!!inUseReason}
-                      title={inUseReason ?? undefined}
-                      onclick={() => {
-                        handleToggleProvider(provider.id, false);
-                        close();
-                      }}
-                    >
-                      <Fa icon={faBan} class="size-3.5 text-muted-foreground" />
-                      {m.settings_providers_disable()}
-                    </button>
-                  {/if}
-
-                  {#if canLogIn}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                      onclick={() => {
-                        openDocs(provider.loginDocsUrl!);
-                        close();
-                      }}
-                    >
-                      {m.settings_providers_logIn()}
-                    </button>
-                  {/if}
-
-                  {#if canInstall}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                      onclick={() => {
-                        openDocs(provider.docsUrl);
-                        close();
-                      }}
-                    >
-                      <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
-                      {m.settings_providers_install()}
-                    </button>
-                  {/if}
+                          {#if canInstall}
+                            <button
+                              type="button"
+                              role="menuitem"
+                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
+                              onclick={() => {
+                                openDocs(provider.docsUrl);
+                                close();
+                              }}
+                            >
+                              <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
+                              {m.settings_providers_install()}
+                            </button>
+                          {/if}
+                        </div>
+                      {/snippet}
+                    </DropdownMenu>
+                  </div>
                 </div>
-              {/snippet}
-            </DropdownMenu>
-          </div>
+              </div>
+            </div>
+          {/each}
         </div>
-      </div>
-    </div>
+      </section>
+    {/if}
   {/each}
 </div>
 
