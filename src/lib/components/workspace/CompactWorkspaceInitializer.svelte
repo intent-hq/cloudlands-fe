@@ -29,6 +29,10 @@
   setWorkspaceInitializerLastSubmittedAgent,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import {
+  beginWorkspaceCreateProgress,
+  clearWorkspaceCreateProgress,
+} from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
+  import {
   selectCompactWorkspaceInitializerFormState,
   selectWorkspaceInitializerDefaultParentPath,
   selectWorkspaceInitializerHydrated,
@@ -1562,6 +1566,14 @@
     isCreating = true;
     error = null;
 
+    // FE-minted correlation id for this create's provisioning progress: the
+    // daemon echoes it on git:clone:progress/done frames (PROTOCOL §5.1), and
+    // the bridge folds them into the workspaceCreateProgress slice. Registered
+    // BEFORE the request so mid-flight frames always find their entry; cleared
+    // in the finally below once the create settles.
+    const createProgressId = uuidv4();
+    appStore.dispatch(beginWorkspaceCreateProgress(createProgressId));
+
     try {
       // Validate
       if (!isNewRepo && repoType !== 'remote') {
@@ -1954,6 +1966,7 @@
         skipIsolation: skipIsolation || undefined,
         scope: scope || undefined, // Scope for subdirectories of git repos
         initialAgent,
+        progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
       });
 
       if (!result.ok) throw new Error(result.error || 'Failed to create workspace');
@@ -2113,6 +2126,9 @@
       error = err instanceof Error ? getGitErrorMessage(err.message) : m.workspace_compactInitializer_createFailed_error();
     } finally {
       isCreating = false;
+      // The create settled (success, failure, or early return) — drop the
+      // transient progress entry so the slice never accumulates stale ids.
+      appStore.dispatch(clearWorkspaceCreateProgress(createProgressId));
     }
   }
 

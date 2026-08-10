@@ -1441,6 +1441,7 @@ export interface CreateWorkspaceRequest {
   environmentConfig?: EnvironmentConfig; // Remote environment configuration
   isNewRepo?: boolean; // If true, initialize a new git repository at repositoryPath
   skipIsolation?: boolean; // If true, skip the isolated checkout (worktree or CoW clone) and work directly in the repo folder (wire: canonical for the deprecated skipWorktree alias)
+  progressId?: string; // FE-minted correlation id echoed on git:clone:progress/done frames emitted during this create (PROTOCOL §5.1)
   initialAgent?: {
     /**
      * DEPRECATED: the daemon assigns the initial agent's id and returns it on

@@ -227,6 +227,11 @@ import { disposeScripts, upsertScript } from '$store/renderer/slices/scripts/scr
 import type { ScriptOutputBuffer } from '$store/renderer/slices/scripts/scripts-types';
 import { addTerminal } from '$store/renderer/slices/terminals/terminals-slice';
 import { selectTerminalsForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
+import {
+  beginWorkspaceCreateProgress,
+  clearWorkspaceCreateProgress,
+} from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
+import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
 import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
 import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/question-resource';
@@ -7832,6 +7837,161 @@ describe('DaemonEventsBridge — app-UI events', () => {
         route: '/workspace/ws-success-false',
       });
       expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-success-false');
+    });
+  });
+});
+
+describe('daemonEventsBridge (create-progress wire contract — git:clone:progress/done → workspaceCreateProgress slice)', () => {
+  const PROGRESS_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+  /**
+   * PROTOCOL §5.1/§6.5 create-scoped clone frame: the envelope `workspaceId`
+   * is the server-minted id the FE does not know mid-create, so the bridge
+   * must correlate by `data.progressId` alone. An empty workspaceId (the
+   * standalone `git.clone` shape) exercises the pre-gate routing.
+   */
+  function cloneNotification(
+    eventType: 'git:clone:progress' | 'git:clone:done',
+    data: Record<string, unknown>,
+    workspaceId = '',
+  ) {
+    return {
+      method: 'events.event' as const,
+      params: {
+        event: {
+          id: `evt-${eventType}-${Math.random().toString(36).slice(2, 8)}`,
+          workspaceId,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: eventType,
+          actor: { type: 'system' },
+          data,
+        },
+      },
+    };
+  }
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(() => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    appStore.dispatch(clearWorkspaceCreateProgress(PROGRESS_ID));
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it('folds a progress frame into the registered entry despite an empty envelope workspaceId', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    appStore.dispatch(beginWorkspaceCreateProgress(PROGRESS_ID));
+
+    handler(
+      cloneNotification('git:clone:progress', {
+        progressId: PROGRESS_ID,
+        phase: 'receiving',
+        percent: 45,
+        message: 'Receiving objects: 45%',
+      }),
+    );
+
+    expect(selectWorkspaceCreateProgress.select(appStore.state, PROGRESS_ID)).toEqual({
+      phase: 'receiving',
+      percent: 45,
+      message: 'Receiving objects: 45%',
+      done: false,
+    });
+  });
+
+  it('folds a progress frame scoped to the server-minted workspaceId too', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    appStore.dispatch(beginWorkspaceCreateProgress(PROGRESS_ID));
+
+    handler(
+      cloneNotification(
+        'git:clone:progress',
+        { progressId: PROGRESS_ID, phase: 'submodules', percent: 72 },
+        'ws-server-minted',
+      ),
+    );
+
+    expect(selectWorkspaceCreateProgress.select(appStore.state, PROGRESS_ID)).toMatchObject({
+      phase: 'submodules',
+      percent: 72,
+    });
+  });
+
+  it('marks the entry terminal on git:clone:done with ok', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    appStore.dispatch(beginWorkspaceCreateProgress(PROGRESS_ID));
+
+    handler(cloneNotification('git:clone:done', { progressId: PROGRESS_ID, ok: true }));
+
+    expect(selectWorkspaceCreateProgress.select(appStore.state, PROGRESS_ID)).toMatchObject({
+      done: true,
+      ok: true,
+    });
+  });
+
+  it('carries error + errorCode on a failed done frame', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    appStore.dispatch(beginWorkspaceCreateProgress(PROGRESS_ID));
+
+    handler(
+      cloneNotification('git:clone:done', {
+        progressId: PROGRESS_ID,
+        ok: false,
+        error: 'fatal: could not read Username',
+        errorCode: 'auth-required',
+      }),
+    );
+
+    expect(selectWorkspaceCreateProgress.select(appStore.state, PROGRESS_ID)).toMatchObject({
+      done: true,
+      ok: false,
+      error: 'fatal: could not read Username',
+      errorCode: 'auth-required',
+    });
+  });
+
+  it('ignores frames whose progressId was never registered (no create in flight)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      cloneNotification('git:clone:progress', {
+        progressId: 'never-registered',
+        phase: 'receiving',
+        percent: 10,
+      }),
+    );
+
+    expect(selectWorkspaceCreateProgress.select(appStore.state, 'never-registered')).toBeNull();
+  });
+
+  it('leaves frames without a progressId (plain git.clone / older daemon) to the legacy path', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    appStore.dispatch(beginWorkspaceCreateProgress(PROGRESS_ID));
+
+    handler(
+      cloneNotification('git:clone:progress', {
+        requestId: 'clone-1',
+        phase: 'receiving',
+        percent: 45,
+      }),
+    );
+
+    expect(selectWorkspaceCreateProgress.select(appStore.state, PROGRESS_ID)).toEqual({
+      phase: 'starting',
+      percent: 0,
+      done: false,
     });
   });
 });
