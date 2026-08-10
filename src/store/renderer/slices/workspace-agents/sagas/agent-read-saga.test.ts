@@ -88,31 +88,50 @@ describe('agentReadSaga', () => {
     await task.toPromise();
   });
 
-  it('globally suppresses a different-agent trigger while the leading read is active', async () => {
-    let resolve!: (value: AgentSession) => void;
-    mocks.get.mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+  it('loads a different agent while the first read remains blocked', async () => {
+    const otherAgent = 'agent-other';
+    let resolveFirst!: (value: AgentSession) => void;
+    mocks.get.mockImplementation((agentId: string) => {
+      if (agentId === otherAgent) {
+        return Promise.resolve(session({ id: otherAgent, name: 'Other Agent' }));
+      }
+      return new Promise((done) => {
+        resolveFirst = done;
+      });
+    });
     const channel = stdChannel();
+    const dispatch = vi.fn();
     const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => ({ agentSessions: { byAgentId: {} } }) },
+      { channel, dispatch, getState: () => ({ agentSessions: { byAgentId: {} } }) },
       agentReadSaga,
     );
 
     channel.put(ensureAgentSessionLoaded(WS, AGENT));
-    channel.put(ensureAgentSessionLoaded('ws-other', 'agent-other'));
+    channel.put(ensureAgentSessionLoaded(WS, otherAgent));
     await settle();
-    expect(mocks.get).toHaveBeenCalledTimes(1);
+    expect(mocks.get).toHaveBeenNthCalledWith(1, AGENT);
+    expect(mocks.get).toHaveBeenNthCalledWith(2, otherAgent);
+    const completedUpserts = dispatch.mock.calls.filter(
+      ([action]) => action.type === bulkUpsertSessions.type,
+    );
+    expect(completedUpserts).toHaveLength(1);
+    expect(completedUpserts[0][0].payload[0][0]).toMatchObject({
+      id: otherAgent,
+      name: 'Other Agent',
+    });
 
-    resolve(session());
+    resolveFirst(session());
     await settle();
+    const allUpserts = dispatch.mock.calls.filter(
+      ([action]) => action.type === bulkUpsertSessions.type,
+    );
+    expect(allUpserts).toHaveLength(2);
+    expect(allUpserts.map(([action]) => action.payload[0][0].id)).toEqual([otherAgent, AGENT]);
     task.cancel();
     await task.toPromise();
   });
 
-  it('loads after a pending deletion clears without retaining a stale single-flight entry', async () => {
+  it('loads after a pending deletion clears', async () => {
     setPendingAgentDeletion({ wsId: WS, agentId: AGENT, snapshot: session(), timer: null });
     const channel = stdChannel();
     const dispatch = vi.fn();

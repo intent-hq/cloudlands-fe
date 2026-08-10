@@ -334,13 +334,10 @@ export const agentStreamResetStreamingMessagesRequested = createAction<
 >('workspaceAgents/agentStreamResetStreamingMessagesRequested');
 
 /**
- * Saga-only trigger: ensure a single agent session is loaded into Redux.
- * If the session already exists with a usable backend identity it is a no-op;
- * otherwise the saga resolves the workspace and loads persisted session/config
- * through the saga-owned persistence utility, replacing stale same-ID shells.
- * Idempotent and debounced
- * per `(wsId, agentId)` — rapid re-dispatches while a load is in flight
- * are ignored. Handled in sagas/ensure-agent-session-saga.ts.
+ * Saga-only trigger: load a single agent session's latest metadata into Redux.
+ * Every dispatch is processed independently so unrelated agent loads can run
+ * concurrently. Existing transcript messages are preserved, and workspace
+ * cleanup cancels any matching in-flight load. Handled in sagas/agent-read-saga.ts.
  */
 export const ensureAgentSessionLoaded = createAction<[wsId: string, agentId: string]>(
   'workspaceAgents/ensureAgentSessionLoaded', (...args) => {

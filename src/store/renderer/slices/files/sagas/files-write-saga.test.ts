@@ -95,7 +95,7 @@ describe('filesWriteSaga', () => {
     await task.toPromise();
   });
 
-  it('serializes writes globally and keeps only the newest queued payload', async () => {
+  it('starts every concurrent critical save without dropping payloads', async () => {
     let resolveFirst!: (value: { success: boolean }) => void;
     const write = vi
       .spyOn(appClient.files, 'write')
@@ -113,18 +113,22 @@ describe('filesWriteSaga', () => {
     channel.put(saveFileContentRequested('ws-2', 'b.ts', '/repo/b.ts', 'second'));
     channel.put(saveFileContentRequested('ws-3', 'c.ts', '/repo/c.ts', 'latest'));
     await settle();
-    expect(write.mock.calls).toEqual([['ws-1', 'a.ts', 'first']]);
-
-    resolveFirst({ success: true });
-    await settle();
-    await settle();
     expect(write.mock.calls).toEqual([
       ['ws-1', 'a.ts', 'first'],
+      ['ws-2', 'b.ts', 'second'],
       ['ws-3', 'c.ts', 'latest'],
     ]);
     expect(actions).toEqual([
-      saveFileContentSucceeded('ws-1', 'a.ts', 'first'),
+      saveFileContentSucceeded('ws-2', 'b.ts', 'second'),
       saveFileContentSucceeded('ws-3', 'c.ts', 'latest'),
+    ]);
+
+    resolveFirst({ success: true });
+    await settle();
+    expect(actions).toEqual([
+      saveFileContentSucceeded('ws-2', 'b.ts', 'second'),
+      saveFileContentSucceeded('ws-3', 'c.ts', 'latest'),
+      saveFileContentSucceeded('ws-1', 'a.ts', 'first'),
     ]);
     task.cancel();
     await task.toPromise();

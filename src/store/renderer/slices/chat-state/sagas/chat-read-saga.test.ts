@@ -107,7 +107,7 @@ describe('chatReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('globally cancels an older refresh when a different agent refresh arrives', async () => {
+  it('hydrates different agents concurrently and settles both reads', async () => {
     let resolveFirst!: (value: AgentSession) => void;
     mocks.get
       .mockReturnValueOnce(
@@ -116,10 +116,10 @@ describe('chatReadSaga', () => {
         }),
       )
       .mockResolvedValue(session({ id: 'agent-other', workspaceId: 'ws-other' }));
-    mocks.getConversation.mockResolvedValue({
-      messages: [message('fresh', 'fresh')],
+    mocks.getConversation.mockImplementation(async (agentId: string) => ({
+      messages: [message(`${agentId}-message`, 'fresh')],
       nextToken: null,
-    });
+    }));
     mocks.subscribeSnapshot.mockResolvedValue({ messages: [] });
     const run = harness();
     run.channel.put(refreshChatTranscriptRequested(WS, AGENT));
@@ -130,11 +130,22 @@ describe('chatReadSaga', () => {
     await settle();
 
     expect(mocks.get).toHaveBeenCalledTimes(2);
-    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
-    expect(run.sessions().byAgentId[AGENT]).toBeUndefined();
-    expect(run.sessions().byAgentId['agent-other']?.messages.map((item) => item.id)).toEqual([
-      'fresh',
+    expect(mocks.getConversation.mock.calls).toEqual([
+      ['agent-other', 200, undefined],
+      [AGENT, 200, undefined],
     ]);
+    expect(run.sessions().byAgentId[AGENT]?.messages.map((item) => item.id)).toEqual([
+      `${AGENT}-message`,
+    ]);
+    expect(run.sessions().byAgentId['agent-other']?.messages.map((item) => item.id)).toEqual([
+      'agent-other-message',
+    ]);
+    const settledAgentIds = run.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action.type === transcriptHydrationSettled.type)
+      .map((action) => action.payload[0]);
+    expect(settledAgentIds).toEqual(expect.arrayContaining([AGENT, 'agent-other']));
+    expect(settledAgentIds).toHaveLength(2);
     run.task.cancel();
     await run.task.toPromise();
   });

@@ -1,9 +1,6 @@
-import { buffers, type Channel } from 'redux-saga';
 import {
-  actionChannel,
   call,
   delay,
-  flush,
   put,
   race,
   take,
@@ -41,8 +38,6 @@ type SaveRequest = {
   content: string;
 };
 type SaveAction = ReturnType<typeof saveFileContentRequested>;
-type WorkspaceCleanupAction =
-  ReturnType<typeof workspaceDeleted> | ReturnType<typeof workspaceUnmounted>;
 type ObservedAction = { type: string; payload?: unknown };
 
 function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
@@ -141,25 +136,8 @@ function* saveFileContentActionWorker(action: SaveAction) {
   });
 }
 
-function* clearQueuedWorkspaceSaves(saves: Channel<SaveAction>, action: WorkspaceCleanupAction) {
-  const [workspaceId] = action.payload;
-  const queued = yield* flush(saves);
-  for (const save of queued) {
-    if (save.payload[0] !== workspaceId) yield* put(saves, save);
-  }
-}
-
 export function* filesWriteSaga() {
-  const saves = yield* actionChannel(saveFileContentRequested, buffers.sliding(1));
-  try {
-    yield* takeEvery(createFileRequested, createFileActionWorker);
-    yield* takeLatest(updateFileContent, updateFileContentWorker);
-    yield* takeEvery([workspaceDeleted, workspaceUnmounted], clearQueuedWorkspaceSaves, saves);
-    while (true) {
-      const action = yield* take(saves);
-      yield* call(saveFileContentActionWorker, action);
-    }
-  } finally {
-    saves.close();
-  }
+  yield* takeEvery(createFileRequested, createFileActionWorker);
+  yield* takeLatest(updateFileContent, updateFileContentWorker);
+  yield* takeEvery(saveFileContentRequested, saveFileContentActionWorker);
 }
