@@ -289,7 +289,10 @@ describe('workspaceOperationsSaga', () => {
 
   it('shows the archive warning for active hooks and archives after confirmation', async () => {
     mocks.getActiveWorkNames.mockResolvedValue({ agentNames: [], hookNames: ['pr-watch'] });
-    mocks.archive.mockResolvedValue({ ok: true, data: workspace('ws-1', WorkspaceStatusEnum.Archived) });
+    mocks.archive.mockResolvedValue({
+      ok: true,
+      data: workspace('ws-1', WorkspaceStatusEnum.Archived),
+    });
     const run = harness([workspace('ws-1')]);
 
     run.send(requestArchiveWorkspace('ws-1'));
@@ -341,6 +344,44 @@ describe('workspaceOperationsSaga', () => {
     await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
     expect(run.state().workspace.pendingDeletions['ws-1']).toBeUndefined();
     removeListener.mockRestore();
+  });
+
+  it('runs deletion undo windows concurrently for different workspaces', async () => {
+    mocks.getActiveWorkNames.mockReturnValue({ agentNames: [], hookNames: [] });
+    mocks.navigate.mockReturnValue(undefined);
+    const run = harness([workspace('ws-1'), workspace('ws-2')]);
+    run.send(requestDeleteWorkspace('ws-1'));
+    await settle();
+    run.send(requestDeleteWorkspace('ws-2'));
+    await settle();
+
+    expect(mocks.toast.warning).toHaveBeenCalledTimes(2);
+    for (const [, options] of mocks.toast.warning.mock.calls) {
+      (options as { action: { onClick: () => void } }).action.onClick();
+    }
+    await settle();
+    expect(getItem(run.state().workspace.workspaces, 'ws-1')).toMatchObject({ id: 'ws-1' });
+    expect(getItem(run.state().workspace.workspaces, 'ws-2')).toMatchObject({ id: 'ws-2' });
+    expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('ignores repeated delete requests for the same soft-hidden workspace', async () => {
+    vi.useFakeTimers();
+    mocks.getActiveWorkNames.mockReturnValue({ agentNames: [], hookNames: [] });
+    mocks.navigate.mockReturnValue(undefined);
+    mocks.deleteWorkspace.mockResolvedValue({ ok: true, data: undefined });
+    const run = harness([workspace('ws-1')]);
+    run.send(requestDeleteWorkspace('ws-1'));
+    run.send(requestDeleteWorkspace('ws-1'));
+    await vi.advanceTimersByTimeAsync(WORKSPACE_OPERATION_UNDO_DURATION_MS);
+
+    expect(mocks.deleteWorkspace).toHaveBeenCalledExactlyOnceWith('ws-1');
+    run.task.cancel();
+    await run.task.toPromise();
+    expect(mocks.deleteWorkspace).toHaveBeenCalledExactlyOnceWith('ws-1');
+    await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
   });
 
   it('undoes archive and handles direct unarchive success and failure', async () => {

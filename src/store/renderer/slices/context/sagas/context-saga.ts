@@ -1,4 +1,4 @@
-import { call, fork, take, type SagaGenerator } from 'typed-redux-saga';
+import { call, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -12,41 +12,17 @@ type ContextMutationAction =
   | ReturnType<typeof removeContextItem>
   | ReturnType<typeof updateContextItem>;
 
-function* syncWorkspace(
-  workspaceId: string,
-  queued: Set<string>,
-  running: Set<string>,
-): SagaGenerator<void> {
+function* syncWorkspace(action: ContextMutationAction): SagaGenerator<void> {
+  const workspaceId = action.payload[0];
+  if (!workspaceId) return;
+  const items = yield* selectContextItems.effect(workspaceId);
   try {
-    do {
-      queued.delete(workspaceId);
-      const items = yield* selectContextItems.effect(workspaceId);
-      try {
-        yield* call([appClient.workspaces, appClient.workspaces.updateContext], workspaceId, items);
-      } catch (error) {
-        logger.error('workspace.updateContext failed', { workspaceId, error });
-      }
-    } while (queued.has(workspaceId));
-  } finally {
-    running.delete(workspaceId);
+    yield* call([appClient.workspaces, appClient.workspaces.updateContext], workspaceId, items);
+  } catch (error) {
+    logger.error('workspace.updateContext failed', { workspaceId, error });
   }
 }
 
 export function* contextSaga(): SagaGenerator<void> {
-  const queued = new Set<string>();
-  const running = new Set<string>();
-
-  while (true) {
-    const action: ContextMutationAction = yield* take([
-      addContextItem,
-      removeContextItem,
-      updateContextItem,
-    ]);
-    const workspaceId = action.payload[0];
-    if (!workspaceId) continue;
-    queued.add(workspaceId);
-    if (running.has(workspaceId)) continue;
-    running.add(workspaceId);
-    yield* fork(syncWorkspace, workspaceId, queued, running);
-  }
+  yield* takeLatest([addContextItem, removeContextItem, updateContextItem], syncWorkspace);
 }

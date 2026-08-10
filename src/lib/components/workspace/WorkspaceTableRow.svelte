@@ -5,20 +5,10 @@
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { cn } from '$lib/utils';
   import type { Workspace } from '$shared/types';
-  import {
-  PullRequestStatus,
-  WorkspaceStatusEnum,
-} from '$shared/types';
-  import {
-  isPRMergeable as checkPRMergeable,
-  getPRTooltipContent,
-} from '$lib/utils/pr-status';
+  import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
+  import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
-  import {
-  faBoxArchive,
-  faBoxOpen,
-  faTrash,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faBoxArchive, faBoxOpen, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { writable } from 'svelte/store';
   import Button from '../ui/button/button.svelte';
@@ -27,12 +17,7 @@
   import { selectWorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { selectActivePrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
-  import {
-    prMonitorsSubscribeRequested,
-    prMonitorsUnsubscribeRequested,
-  } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
   import { countOtherActiveMonitors } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
-  import { untrack } from 'svelte';
   import { formatInteger } from '$lib/i18n/format';
 
   import AgentCard from '$lib/components/chat/AgentCard.svelte';
@@ -98,17 +83,8 @@
   });
 
   // Agent PR monitors (PROTOCOL §6.9): feed the primary-PR fallback and the
-  // "+N" other-active-PRs indicator. Refcounted subscription shared with the
-  // other pr-monitor surfaces.
+  // "+N" other-active-PRs indicator.
   const activePrMonitors$ = selectActivePrMonitors(workspaceIdStore);
-  $effect(() => {
-    const workspaceId = ws.id;
-    if (!workspaceId) return;
-    untrack(() => appStore.dispatch(prMonitorsSubscribeRequested(String(workspaceId))));
-    return () => {
-      appStore.dispatch(prMonitorsUnsubscribeRequested(String(workspaceId)));
-    };
-  });
 
   // PR status
   const prDisplayStatus = $derived.by(() => {

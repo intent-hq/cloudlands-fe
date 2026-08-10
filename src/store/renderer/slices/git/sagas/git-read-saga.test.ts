@@ -57,7 +57,7 @@ describe('gitReadSaga', () => {
     await task.toPromise();
   });
 
-  it('coalesces reads and suppresses a late result after workspace cleanup', async () => {
+  it('globally cancels an older workspace read and suppresses late cleanup results', async () => {
     let resolve!: (status: GitStatus) => void;
     vi.spyOn(appClient.git, 'status').mockReturnValue(
       new Promise<GitStatus>((done) => {
@@ -69,9 +69,9 @@ describe('gitReadSaga', () => {
     const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
 
     channel.put(loadGitStatus('ws-1'));
-    channel.put(loadGitStatus('ws-1'));
+    channel.put(loadGitStatus('ws-2'));
     await settle();
-    channel.put(workspaceUnmounted('ws-1'));
+    channel.put(workspaceUnmounted('ws-2'));
     resolve({
       branch: 'main',
       ahead: 0,
@@ -83,13 +83,13 @@ describe('gitReadSaga', () => {
     });
     await settle();
 
-    expect(appClient.git.status).toHaveBeenCalledTimes(1);
+    expect(appClient.git.status).toHaveBeenCalledTimes(2);
     expect(actions).toEqual([]);
     task.cancel();
     await task.toPromise();
   });
 
-  it('trailing-coalesces a loadGitStatus that arrives while a read is in flight', async () => {
+  it('applies only the latest globally-arbitrated git status read', async () => {
     const results: GitStatus[] = [
       {
         branch: 'main',
@@ -111,32 +111,31 @@ describe('gitReadSaga', () => {
       },
     ];
     let resolveFirst!: (status: GitStatus) => void;
-    vi.spyOn(appClient.git, 'status').mockImplementationOnce(
-      () =>
-        new Promise<GitStatus>((done) => {
-          resolveFirst = done;
-        }),
-    );
+    vi.spyOn(appClient.git, 'status')
+      .mockImplementationOnce(
+        () =>
+          new Promise<GitStatus>((done) => {
+            resolveFirst = done;
+          }),
+      )
+      .mockResolvedValueOnce(results[1]!);
     const channel = stdChannel();
     const actions: unknown[] = [];
     const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
 
-    // Second trigger arrives while the first read is still in flight: it must
-    // not start a concurrent read, but must not be dropped either.
     channel.put(loadGitStatus('ws-1'));
     await settle();
-    channel.put(loadGitStatus('ws-1'));
+    channel.put(loadGitStatus('ws-2'));
     await settle();
 
-    expect(appClient.git.status).toHaveBeenCalledTimes(1);
+    expect(appClient.git.status).toHaveBeenCalledTimes(2);
 
-    vi.spyOn(appClient.git, 'status').mockResolvedValueOnce(results[1]!);
     resolveFirst(results[0]!);
     await settle();
     await settle();
 
     expect(appClient.git.status).toHaveBeenCalledTimes(2);
-    expect(actions).toEqual([setGitStatus('ws-1', results[0]!), setGitStatus('ws-1', results[1]!)]);
+    expect(actions).toEqual([setGitStatus('ws-2', results[1]!)]);
     task.cancel();
     await task.toPromise();
   });

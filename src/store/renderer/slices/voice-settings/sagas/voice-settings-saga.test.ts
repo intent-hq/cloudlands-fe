@@ -285,7 +285,7 @@ describe('voiceSettingsSaga', () => {
     await task.toPromise();
   });
 
-  it('serializes vocabulary writes and ignores a stale failure rollback', async () => {
+  it('uses global latest vocabulary writes and ignores a cancelled failure rollback', async () => {
     const first = deferred<void>();
     const second = deferred<void>();
     mocks.setVocabulary.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
@@ -297,10 +297,9 @@ describe('voiceSettingsSaga', () => {
     await vi.waitFor(() => expect(mocks.setVocabulary).toHaveBeenCalledWith(['Intent']));
     dispatch(addVoiceVocabularyTerm('Cloudlands'));
     expect(getState().vocabulary).toEqual(['Intent', 'Cloudlands']);
-    expect(mocks.setVocabulary).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(mocks.setVocabulary).toHaveBeenCalledTimes(2));
 
     first.reject(new Error('stale failure'));
-    await vi.waitFor(() => expect(mocks.setVocabulary).toHaveBeenCalledTimes(2));
     expect(mocks.setVocabulary).toHaveBeenNthCalledWith(2, ['Intent', 'Cloudlands']);
     expect(getState().vocabulary).toEqual(['Intent', 'Cloudlands']);
     expect(getState().error).toBeNull();
@@ -310,7 +309,7 @@ describe('voiceSettingsSaga', () => {
     await task.toPromise();
   });
 
-  it('serializes cap writes, protects newer optimism, and invalidates after success', async () => {
+  it('uses global latest cap writes, protects newer optimism, and invalidates after success', async () => {
     const first = deferred<void>();
     const second = deferred<void>();
     mocks.setMaxTerms.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
@@ -322,10 +321,9 @@ describe('voiceSettingsSaga', () => {
     await vi.waitFor(() => expect(mocks.setMaxTerms).toHaveBeenCalledWith(75));
     dispatch(changeVoiceWorkspaceVocabularyMaxTerms(25));
     expect(getState().workspaceVocabularyMaxTerms).toBe(25);
-    expect(mocks.setMaxTerms).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(mocks.setMaxTerms).toHaveBeenCalledTimes(2));
 
     first.reject(new Error('stale failure'));
-    await vi.waitFor(() => expect(mocks.setMaxTerms).toHaveBeenCalledTimes(2));
     expect(mocks.setMaxTerms).toHaveBeenNthCalledWith(2, 25);
     expect(getState().workspaceVocabularyMaxTerms).toBe(25);
     expect(getState().error).toBeNull();

@@ -265,6 +265,31 @@ describe('agentMutationSaga', () => {
     await stop(task);
   });
 
+  it('commits once when the undo window times out', async () => {
+    const { channel, task } = start();
+    const deletion = deleteAgentWithUndoRequested(WS, A1);
+    channel.put(deletion);
+    await deletion.promise;
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(mocks.deleteAgent).toHaveBeenCalledExactlyOnceWith(A1, WS);
+    expect(listPendingAgentDeletions()).toEqual([]);
+    await stop(task);
+  });
+
+  it('commits repeated same-agent soft deletes only once', async () => {
+    const { channel, task } = start();
+    const first = deleteAgentWithUndoRequested(WS, A1);
+    const second = deleteAgentWithUndoRequested(WS, A1);
+    channel.put(first);
+    channel.put(second);
+    await Promise.all([first.promise, second.promise]);
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(mocks.deleteAgent).toHaveBeenCalledExactlyOnceWith(A1, WS);
+    await stop(task);
+  });
+
   it('flushes every pending deletion in one workspace and settles', async () => {
     const { channel, task } = start({ [A1]: session(A1), [A2]: session(A2) });
     const first = deleteAgentWithUndoRequested(WS, A1);

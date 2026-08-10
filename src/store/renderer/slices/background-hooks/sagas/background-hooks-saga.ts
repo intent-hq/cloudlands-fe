@@ -1,13 +1,13 @@
+import { END, buffers, channel as createChannel, type Channel } from 'redux-saga';
 import {
-  END,
-  buffers,
-  channel as createChannel,
-  eventChannel,
-  type Channel,
-  type EventChannel,
-  type Task,
-} from 'redux-saga';
-import { call, cancel, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
+  actionChannel,
+  call,
+  put,
+  take,
+  takeEvery,
+  takeLeading,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import {
   backendSubscribe,
@@ -50,32 +50,45 @@ interface SubscriptionLease {
   cancelled: boolean;
 }
 
-interface WorkspaceRuntimeState {
+interface ActiveWorkspace {
+  count: number;
+  generation: number;
+  lease?: SubscriptionLease;
   hooks: BackgroundHook[];
 }
 
-interface ActiveWorkspace {
-  count: number;
-  task: Task;
-  refetchChannel: Channel<true>;
+interface TransportRuntime {
+  unsubscribe?: () => void;
 }
 
-type BackgroundHooksAction = { type: string; payload?: unknown };
+function openTransport(
+  runtime: TransportRuntime,
+  events: Channel<TransportMessage>,
+  active: Map<string, ActiveWorkspace>,
+): void {
+  if (runtime.unsubscribe) return;
+  const offNotification = onBackendNotification((notification) => {
+    events.put({ kind: 'notification', notification });
+  });
+  const offReconnect = onBackendReconnected(() => {
+    for (const entry of active.values()) {
+      entry.generation += 1;
+      if (entry.lease) {
+        entry.lease.cancelled = true;
+        entry.lease.subscriptionId = undefined;
+      }
+    }
+    events.put({ kind: 'reconnected' });
+  });
+  runtime.unsubscribe = () => {
+    offNotification();
+    offReconnect();
+    runtime.unsubscribe = undefined;
+  };
+}
 
-function createTransportChannel(markDisconnected: () => void): EventChannel<TransportMessage> {
-  return eventChannel<TransportMessage>((emit) => {
-    const offNotification = onBackendNotification((notification) => {
-      emit({ kind: 'notification', notification });
-    });
-    const offReconnect = onBackendReconnected(() => {
-      markDisconnected();
-      emit({ kind: 'reconnected' });
-    });
-    return () => {
-      offNotification();
-      offReconnect();
-    };
-  }, buffers.expanding<TransportMessage>());
+function closeTransport(runtime: TransportRuntime): void {
+  runtime.unsubscribe?.();
 }
 
 async function releaseSubscription(workspaceId: string, subscriptionId: string): Promise<void> {
@@ -119,101 +132,109 @@ async function unsubscribeWorkspace(workspaceId: string, lease: SubscriptionLeas
   if (subscriptionId) await releaseSubscription(workspaceId, subscriptionId);
 }
 
+function* subscribeActiveWorkspace(
+  active: Map<string, ActiveWorkspace>,
+  workspaceId: string,
+  entry: ActiveWorkspace,
+): SagaGenerator<void> {
+  const generation = ++entry.generation;
+  const lease: SubscriptionLease = { cancelled: false };
+  entry.lease = lease;
+  if (yield* call(subscribeWorkspace, workspaceId, lease)) {
+    if (
+      active.get(workspaceId) === entry &&
+      entry.generation === generation &&
+      entry.lease === lease
+    ) {
+      yield* put(backgroundHooksRefetchRequested(workspaceId));
+    }
+  }
+}
+
 function* refetchWorkspace(
-  workspaceId: string,
-  refetchChannel: Channel<true>,
-  runtime: WorkspaceRuntimeState,
+  active: Map<string, ActiveWorkspace>,
+  action: ReturnType<typeof backgroundHooksRefetchRequested>,
 ): SagaGenerator<void> {
-  while (true) {
-    const signal = yield* take(refetchChannel);
-    if (signal === (END as unknown as true)) return;
-    try {
-      runtime.hooks = yield* call(listHooks, workspaceId);
-      yield* put(backgroundHooksUpdated(workspaceId, runtime.hooks));
-    } catch (error) {
-      logger.warn('hook.list failed', { workspaceId, error });
-    }
-  }
-}
-
-function* runWorkspaceSubscription(
-  workspaceId: string,
-  refetchChannel: Channel<true>,
-): SagaGenerator<void> {
-  const runtime: WorkspaceRuntimeState = { hooks: [] };
-  let lease: SubscriptionLease = { cancelled: false };
-  const transportChannel = createTransportChannel(() => {
-    lease.cancelled = true;
-  });
-  const refetchTask = yield* fork(refetchWorkspace, workspaceId, refetchChannel, runtime);
-
+  const [workspaceId] = action.payload;
+  const entry = active.get(workspaceId);
+  if (!entry) return;
+  const generation = entry.generation;
   try {
-    if (yield* call(subscribeWorkspace, workspaceId, lease)) {
-      yield* put(refetchChannel, true);
+    const hooks = yield* call(listHooks, workspaceId);
+    if (active.get(workspaceId) === entry && entry.generation === generation) {
+      entry.hooks = hooks;
+      yield* put(backgroundHooksUpdated(workspaceId, hooks));
     }
-
-    while (true) {
-      const message: TransportMessage = yield* take(transportChannel);
-      if (message === (END as unknown as TransportMessage)) return;
-      if (message.kind === 'reconnected') {
-        lease.subscriptionId = undefined;
-        lease = { cancelled: false };
-        if (yield* call(subscribeWorkspace, workspaceId, lease)) {
-          yield* put(refetchChannel, true);
-        }
-        continue;
-      }
-
-      if (message.notification.method !== 'events.event') continue;
-      const params = message.notification.params as HookEventNotification | undefined;
-      const event = params?.event;
-      if (!event?.type?.startsWith('hook:') || event.workspaceId !== workspaceId) continue;
-      if (
-        lease.subscriptionId &&
-        params?.subscriptionId &&
-        params.subscriptionId !== lease.subscriptionId
-      ) {
-        continue;
-      }
-      const folded = foldHookEvent(runtime.hooks, event.type, event.data ?? {});
-      runtime.hooks = folded.hooks;
-      yield* put(backgroundHooksUpdated(workspaceId, runtime.hooks));
-      if (folded.needsRefetch) yield* put(refetchChannel, true);
-    }
-  } finally {
-    transportChannel.close();
-    refetchChannel.close();
-    yield* cancel(refetchTask);
-    yield* call(unsubscribeWorkspace, workspaceId, lease);
+  } catch (error) {
+    logger.warn('hook.list failed', { workspaceId, error });
   }
-}
-
-function workspaceIdOf(action: BackgroundHooksAction): string | undefined {
-  if (!Array.isArray(action.payload)) return undefined;
-  const workspaceId = action.payload[0];
-  return typeof workspaceId === 'string' && workspaceId.length > 0 ? workspaceId : undefined;
-}
-
-function hookRefOf(action: BackgroundHooksAction): [string, string] | undefined {
-  if (!Array.isArray(action.payload)) return undefined;
-  const [workspaceId, hookId] = action.payload;
-  return typeof workspaceId === 'string' && typeof hookId === 'string'
-    ? [workspaceId, hookId]
-    : undefined;
 }
 
 function* closeWorkspace(
   active: Map<string, ActiveWorkspace>,
+  transport: TransportRuntime,
   workspaceId: string,
 ): SagaGenerator<void> {
   const entry = active.get(workspaceId);
   if (!entry) return;
   active.delete(workspaceId);
-  yield* cancel(entry.task);
+  entry.generation += 1;
+  if (entry.lease) entry.lease.cancelled = true;
   yield* put(backgroundHooksCleared(workspaceId));
+  if (active.size === 0) yield* call(closeTransport, transport);
+  if (entry.lease) yield* call(unsubscribeWorkspace, workspaceId, entry.lease);
 }
 
-function* runHookWorker(workspaceId: string, hookId: string): SagaGenerator<void> {
+function* handleSubscribe(
+  active: Map<string, ActiveWorkspace>,
+  transport: TransportRuntime,
+  events: Channel<TransportMessage>,
+  action: ReturnType<typeof backgroundHooksSubscribeRequested>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  const current = active.get(workspaceId);
+  if (current) {
+    current.count += 1;
+    return;
+  }
+  yield* call(openTransport, transport, events, active);
+  const entry: ActiveWorkspace = { count: 1, generation: 0, hooks: [] };
+  active.set(workspaceId, entry);
+  yield* call(subscribeActiveWorkspace, active, workspaceId, entry);
+}
+
+function* handleUnsubscribe(
+  active: Map<string, ActiveWorkspace>,
+  transport: TransportRuntime,
+  action: ReturnType<typeof backgroundHooksUnsubscribeRequested>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  const entry = active.get(workspaceId);
+  if (entry && --entry.count <= 0) yield* closeWorkspace(active, transport, workspaceId);
+}
+
+function* handleNotification(
+  active: Map<string, ActiveWorkspace>,
+  notification: BackendNotification,
+): SagaGenerator<void> {
+  if (notification.method !== 'events.event') return;
+  const params = notification.params as HookEventNotification | undefined;
+  const event = params?.event;
+  if (!event?.type?.startsWith('hook:') || !event.workspaceId) return;
+  const entry = active.get(event.workspaceId);
+  if (!entry) return;
+  const subscriptionId = entry.lease?.subscriptionId;
+  if (subscriptionId && params?.subscriptionId && params.subscriptionId !== subscriptionId) return;
+  const folded = foldHookEvent(entry.hooks, event.type, event.data ?? {});
+  entry.hooks = folded.hooks;
+  yield* put(backgroundHooksUpdated(event.workspaceId, entry.hooks));
+  if (folded.needsRefetch) yield* put(backgroundHooksRefetchRequested(event.workspaceId));
+}
+
+function* runHookWorker(
+  action: ReturnType<typeof runBackgroundHookRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, hookId] = action.payload;
   try {
     yield* call(runHookNow, workspaceId, hookId);
   } catch (error) {
@@ -221,7 +242,10 @@ function* runHookWorker(workspaceId: string, hookId: string): SagaGenerator<void
   }
 }
 
-function* cancelHookWorker(workspaceId: string, hookId: string): SagaGenerator<void> {
+function* cancelHookWorker(
+  action: ReturnType<typeof cancelBackgroundHookRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, hookId] = action.payload;
   try {
     yield* call(cancelHook, workspaceId, hookId);
   } catch (error) {
@@ -231,46 +255,42 @@ function* cancelHookWorker(workspaceId: string, hookId: string): SagaGenerator<v
 
 export function* backgroundHooksSaga(): SagaGenerator<void> {
   const active = new Map<string, ActiveWorkspace>();
+  const transport: TransportRuntime = {};
+  const transportEvents = createChannel(buffers.expanding<TransportMessage>());
+  const refetchActions = yield* actionChannel(
+    backgroundHooksRefetchRequested,
+    buffers.sliding<ReturnType<typeof backgroundHooksRefetchRequested>>(1),
+  );
+  yield* takeEvery(
+    backgroundHooksSubscribeRequested,
+    handleSubscribe,
+    active,
+    transport,
+    transportEvents,
+  );
+  yield* takeEvery(backgroundHooksUnsubscribeRequested, handleUnsubscribe, active, transport);
+  yield* takeLeading(refetchActions, refetchWorkspace, active);
+  yield* takeEvery(runBackgroundHookRequested, runHookWorker);
+  yield* takeEvery(cancelBackgroundHookRequested, cancelHookWorker);
   try {
     while (true) {
-      const action: BackgroundHooksAction = yield* take([
-        backgroundHooksSubscribeRequested,
-        backgroundHooksUnsubscribeRequested,
-        backgroundHooksRefetchRequested,
-        runBackgroundHookRequested,
-        cancelBackgroundHookRequested,
-      ]);
-      const workspaceId = workspaceIdOf(action);
-      if (!workspaceId) continue;
-
-      if (action.type === backgroundHooksSubscribeRequested.type) {
-        const entry = active.get(workspaceId);
-        if (entry) {
-          entry.count += 1;
-        } else {
-          const refetchChannel = createChannel<true>(buffers.sliding<true>(1));
-          const task = yield* fork(runWorkspaceSubscription, workspaceId, refetchChannel);
-          active.set(workspaceId, { count: 1, task, refetchChannel });
+      const message: TransportMessage = yield* take(transportEvents);
+      if (message === (END as unknown as TransportMessage)) return;
+      if (message.kind === 'reconnected') {
+        for (const [workspaceId, entry] of active) {
+          yield* call(subscribeActiveWorkspace, active, workspaceId, entry);
         }
-      } else if (action.type === backgroundHooksUnsubscribeRequested.type) {
-        const entry = active.get(workspaceId);
-        if (entry && --entry.count <= 0) yield* closeWorkspace(active, workspaceId);
-      } else if (action.type === backgroundHooksRefetchRequested.type) {
-        const entry = active.get(workspaceId);
-        if (entry) yield* put(entry.refetchChannel, true);
       } else {
-        const ref = hookRefOf(action);
-        if (!ref) continue;
-        if (action.type === runBackgroundHookRequested.type) {
-          yield* fork(runHookWorker, ...ref);
-        } else if (action.type === cancelBackgroundHookRequested.type) {
-          yield* fork(cancelHookWorker, ...ref);
-        }
+        yield* handleNotification(active, message.notification);
       }
     }
   } finally {
+    refetchActions.close();
+    transportEvents.close();
     for (const workspaceId of [...active.keys()]) {
-      yield* closeWorkspace(active, workspaceId);
+      yield* closeWorkspace(active, transport, workspaceId);
     }
+    closeTransport(transport);
+    active.clear();
   }
 }

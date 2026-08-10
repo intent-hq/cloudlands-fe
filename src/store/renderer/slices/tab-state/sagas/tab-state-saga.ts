@@ -1,13 +1,10 @@
-import { call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, takeEvery, takeLeading, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   namespaceBackendKey,
   selectActiveBackendId,
 } from '../../../utils/backend-storage-namespace';
-import {
-  getLocalStorageJSON,
-  setLocalStorageJSON,
-} from '../../../utils/safe-local-storage-saga';
+import { getLocalStorageJSON, setLocalStorageJSON } from '../../../utils/safe-local-storage-saga';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import { selectWorkspaceHasLoaded } from '../../workspace/workspace-selectors';
 import {
@@ -42,7 +39,6 @@ const TAB_PERSIST_ACTIONS = [
   openWorkspaceTab,
   closeWorkspaceTab,
   clearCurrentWorkspaceTab,
-  cleanupInvalidWorkspaceTabs,
   toggleWorkspaceTabPin,
   markWorkspaceTabUnsaved,
   reorderWorkspaceTabs,
@@ -55,8 +51,6 @@ const TAB_PERSIST_ACTIONS = [
 ];
 
 const SCROLL_PERSIST_ACTIONS = [saveScrollPosition, removeScrollPosition, clearForWorkspace];
-const ALL_PERSIST_ACTIONS = [...TAB_PERSIST_ACTIONS, ...SCROLL_PERSIST_ACTIONS];
-const TAB_PERSIST_ACTION_TYPES = new Set(TAB_PERSIST_ACTIONS.map((action) => action.type));
 
 /** Empty persisted tab strip — used to reset when a backend has none stored. */
 const EMPTY_WORKSPACE_TABS: PersistedWorkspaceTabsState = {
@@ -120,21 +114,32 @@ export function* hydrateTabState(): SagaGenerator<void> {
   }
 }
 
-export function* persistTabState(action: { type: string }): SagaGenerator<void> {
+function* persistWorkspaceTabs(): SagaGenerator<void> {
   try {
     const backendId = yield* selectActiveBackendId();
-    if (TAB_PERSIST_ACTION_TYPES.has(action.type)) {
-      if (action.type === cleanupInvalidWorkspaceTabs.type) {
-        const hasLoaded = yield* selectWorkspaceHasLoaded.effect();
-        if (!hasLoaded) return;
-      }
-      const workspaceTabs = yield* selectPersistedWorkspaceTabsState.effect();
-      yield* call(setLocalStorageJSON, tabsKey(backendId), workspaceTabs);
-      return;
-    }
+    yield* call(
+      setLocalStorageJSON,
+      tabsKey(backendId),
+      yield* selectPersistedWorkspaceTabsState.effect(),
+    );
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
 
-    const scrollPositions = yield* selectAllScrollPositions.effect();
-    yield* call(setLocalStorageJSON, scrollKey(backendId), scrollPositions);
+function* persistCleanedWorkspaceTabs(): SagaGenerator<void> {
+  if (!(yield* selectWorkspaceHasLoaded.effect())) return;
+  yield* call(persistWorkspaceTabs);
+}
+
+function* persistScrollPositions(): SagaGenerator<void> {
+  try {
+    const backendId = yield* selectActiveBackendId();
+    yield* call(
+      setLocalStorageJSON,
+      scrollKey(backendId),
+      yield* selectAllScrollPositions.effect(),
+    );
   } catch {
     // Storage failures are non-fatal and must not terminate the watcher.
   }
@@ -146,29 +151,31 @@ export function* persistTabState(action: { type: string }): SagaGenerator<void> 
  * positions, resetting to empty when it has none so the previous backend's
  * tabs don't linger.
  */
-export function* watchBackendSwitch(): SagaGenerator<void> {
-  let lastBackendId = yield* selectActiveBackendId();
-  while (true) {
-    yield* take(connectionsListReceived);
-    const backendId = yield* selectActiveBackendId();
-    if (backendId === lastBackendId) continue;
-    lastBackendId = backendId;
+function* handleBackendSwitch(lastBackend: { id: string }): SagaGenerator<void> {
+  const backendId = yield* selectActiveBackendId();
+  if (backendId === lastBackend.id) return;
+  lastBackend.id = backendId;
+  try {
     const scrollPositions = yield* call(getLocalStorageJSON<unknown>, scrollKey(backendId));
-    yield* put(
-      loadScrollPositions(isScrollPositionsMap(scrollPositions) ? scrollPositions : {}),
-    );
+    yield* put(loadScrollPositions(isScrollPositionsMap(scrollPositions) ? scrollPositions : {}));
     const workspaceTabs = yield* call(getLocalStorageJSON<unknown>, tabsKey(backendId));
     yield* put(
       loadWorkspaceTabsState(
         isPersistedWorkspaceTabsState(workspaceTabs) ? workspaceTabs : EMPTY_WORKSPACE_TABS,
       ),
     );
+  } catch {
+    // Backend-specific hydration is best-effort.
   }
 }
 
 /** Unregistered until the S20 middleware cutover. */
 export function* tabStateSaga(): SagaGenerator<void> {
   yield* call(hydrateTabState);
-  yield* fork(watchBackendSwitch);
-  yield* takeEvery(ALL_PERSIST_ACTIONS, persistTabState);
+  yield* takeLeading(connectionsListReceived, handleBackendSwitch, {
+    id: yield* selectActiveBackendId(),
+  });
+  yield* takeEvery(TAB_PERSIST_ACTIONS, persistWorkspaceTabs);
+  yield* takeEvery(cleanupInvalidWorkspaceTabs, persistCleanedWorkspaceTabs);
+  yield* takeEvery(SCROLL_PERSIST_ACTIONS, persistScrollPositions);
 }

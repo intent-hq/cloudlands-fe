@@ -59,41 +59,47 @@
  * The root-owned saga takes each lifecycle action after reducers have applied
  * it, preserving the former post-action state-read semantics.
  */
-import { END, buffers, eventChannel, type EventChannel, type Task } from "redux-saga";
-import { call, cancel, fork, put, take, type SagaGenerator } from "typed-redux-saga";
-import type {
-  ChatLiveStreamPhase,
-  ChatTranscript,
-} from "$lib/client/app-client";
-import { appClient } from "$lib/client";
+import { buffers, channel as createChannel, type Channel } from 'redux-saga';
+import {
+  call,
+  join,
+  put,
+  takeEvery,
+  takeLatest,
+  takeLeading,
+  type SagaGenerator,
+} from 'typed-redux-saga';
+import type { ChatLiveStreamPhase, ChatTranscript } from '$lib/client/app-client';
+import { appClient } from '$lib/client';
 import {
   chatLiveStreamPhaseChanged,
   initializeChatRequested,
   transcriptHydrationSettled,
-} from "$store/renderer/slices/chat-state/chat-state-slice";
+} from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
   clearAllSessions,
   removeSession,
   removeWorkspaceSessions,
   replaceMessages,
   updateSession,
-} from "$store/renderer/slices/agent-session/agent-session-slice";
-import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   clearCurrentlyViewedAgent,
   markAgentAsViewed,
-} from "$store/renderer/slices/unread-tracking/unread-tracking-slice";
-import { deduplicateAgentMessages } from "$shared/utils/message-dedup";
-import { CHIEF_WORKSPACE_ID } from "$shared/types/branded-ids";
-import { createLogger } from "$lib/utils/client-logger";
-import { isAgentDeletionPending } from "$features/agent/utils/pending-agent-deletions";
-import { selectAgentSession } from "$store/renderer/slices/agent-session/agent-session-selectors";
-import { selectCurrentlyViewedAgentId } from "$store/renderer/slices/unread-tracking/unread-tracking-selectors";
+} from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
+import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { createLogger } from '$lib/utils/client-logger';
+import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+import { selectCurrentlyViewedAgentId } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
 
-const logger = createLogger("ChatSubscribeSaga");
+const logger = createLogger('ChatSubscribeSaga');
 
 interface SubscriptionEntry {
-  task?: Task;
+  unsubscribe: () => void;
+  token: object;
   /** Workspace the chat was opened under (for removeWorkspaceSessions teardown). */
   wsId?: string;
   /** True once the reconciler has emitted (seq-0 snapshot applied). */
@@ -105,18 +111,8 @@ interface SubscriptionEntry {
 }
 
 type ChatSubscriptionEvent =
-  | { kind: "transcript"; transcript: ChatTranscript }
-  | { kind: "phase"; phase: ChatLiveStreamPhase };
-
-function createChatSubscriptionChannel(agentId: string): EventChannel<ChatSubscriptionEvent> {
-  return eventChannel<ChatSubscriptionEvent>((emit) => {
-    return appClient.chat.subscribe(
-      agentId,
-      (transcript) => emit({ kind: "transcript", transcript }),
-      (phase) => emit({ kind: "phase", phase }),
-    );
-  }, buffers.expanding<ChatSubscriptionEvent>());
-}
+  | { kind: 'transcript'; agentId: string; token: object; transcript: ChatTranscript }
+  | { kind: 'phase'; agentId: string; token: object; phase: ChatLiveStreamPhase };
 
 /**
  * Merge one emitted transcript into the agent-session slice. The transcript
@@ -137,13 +133,13 @@ function* applyTranscript(
   if (session) {
     const transcriptIds = new Set<string>();
     for (const message of transcript.messages) {
-      if (typeof message.id === "string") transcriptIds.add(message.id);
-      if (typeof message.appMessageId === "string") transcriptIds.add(message.appMessageId);
+      if (typeof message.id === 'string') transcriptIds.add(message.id);
+      if (typeof message.appMessageId === 'string') transcriptIds.add(message.appMessageId);
     }
     const storeOnly = (session.messages ?? []).filter(
       (message) =>
-        !(typeof message.id === "string" && transcriptIds.has(message.id)) &&
-        !(typeof message.appMessageId === "string" && transcriptIds.has(message.appMessageId)),
+        !(typeof message.id === 'string' && transcriptIds.has(message.id)) &&
+        !(typeof message.appMessageId === 'string' && transcriptIds.has(message.appMessageId)),
     );
     const merged =
       storeOnly.length === 0
@@ -190,67 +186,60 @@ function* clearStaleStreamingMessageFlags(agentId: string): SagaGenerator<void> 
   yield* put(replaceMessages(agentId, normalized));
 }
 
-function* runChatSubscription(
+function* handleSubscriptionEvent(
   subscriptions: Map<string, SubscriptionEntry>,
-  agentId: string,
-  entry: SubscriptionEntry,
+  event: ChatSubscriptionEvent,
 ): SagaGenerator<void> {
-  let channel: EventChannel<ChatSubscriptionEvent>;
+  const entry = subscriptions.get(event.agentId);
+  if (!entry || entry.token !== event.token) return;
   try {
-    channel = yield* call(createChatSubscriptionChannel, agentId);
+    if (event.kind === 'phase') {
+      yield* put(chatLiveStreamPhaseChanged(event.agentId, event.phase));
+      return;
+    }
+    if (yield* call(isAgentDeletionPending, event.agentId)) return;
+    entry.hasEmitted = true;
+    entry.lastTranscript = event.transcript;
+    yield* applyTranscript(event.agentId, entry, event.transcript);
   } catch (error) {
-    if (subscriptions.get(agentId) === entry) subscriptions.delete(agentId);
-    logger.error("Failed to open chat subscription", error);
-    return;
-  }
-
-  try {
-    while (true) {
-      const event: ChatSubscriptionEvent = yield* take(channel);
-      if (event === (END as unknown as ChatSubscriptionEvent)) break;
-      try {
-        if (event.kind === "phase") {
-          yield* put(chatLiveStreamPhaseChanged(agentId, event.phase));
-          continue;
-        }
-        if (yield* call(isAgentDeletionPending, agentId)) return;
-        entry.hasEmitted = true;
-        entry.lastTranscript = event.transcript;
-        yield* applyTranscript(agentId, entry, event.transcript);
-      } catch (error) {
-        logger.error("Failed to process chat subscription event", error);
-      }
-    }
-  } finally {
-    try {
-      channel.close();
-    } catch (error) {
-      logger.error("Failed to close chat subscription", error);
-    }
-    if (subscriptions.get(agentId) === entry) subscriptions.delete(agentId);
-    try {
-      yield* put(chatLiveStreamPhaseChanged(agentId, null));
-    } catch (error) {
-      logger.error("Failed to reset live stream phase", error);
-    }
-    try {
-      yield* clearStaleStreamingMessageFlags(agentId);
-    } catch (error) {
-      logger.error("Failed to clear stale streaming message flags", error);
-    }
+    logger.error('Failed to process chat subscription event', error);
   }
 }
 
 function* openSubscription(
   subscriptions: Map<string, SubscriptionEntry>,
+  events: Channel<ChatSubscriptionEvent>,
   agentId: string,
   wsId?: string,
 ): SagaGenerator<void> {
   if (subscriptions.has(agentId)) return;
   if (yield* call(isAgentDeletionPending, agentId)) return;
-  const entry: SubscriptionEntry = { wsId, hasEmitted: false, wasStreaming: false };
-  subscriptions.set(agentId, entry);
-  entry.task = yield* fork(runChatSubscription, subscriptions, agentId, entry);
+  const token = {};
+  const pending: ChatSubscriptionEvent[] = [];
+  let ready = false;
+  const emit = (event: ChatSubscriptionEvent) => {
+    if (ready) events.put(event);
+    else pending.push(event);
+  };
+  try {
+    const unsubscribe = yield* call(
+      [appClient.chat, appClient.chat.subscribe],
+      agentId,
+      (transcript: ChatTranscript) => emit({ kind: 'transcript', agentId, token, transcript }),
+      (phase: ChatLiveStreamPhase) => emit({ kind: 'phase', agentId, token, phase }),
+    );
+    subscriptions.set(agentId, {
+      unsubscribe,
+      token,
+      wsId,
+      hasEmitted: false,
+      wasStreaming: false,
+    });
+    ready = true;
+    for (const event of pending) events.put(event);
+  } catch (error) {
+    logger.error('Failed to open chat subscription', error);
+  }
 }
 
 function* closeSubscription(
@@ -260,7 +249,21 @@ function* closeSubscription(
   const entry = subscriptions.get(agentId);
   if (!entry) return;
   subscriptions.delete(agentId);
-  if (entry.task) yield* cancel(entry.task);
+  try {
+    yield* call(entry.unsubscribe);
+  } catch (error) {
+    logger.error('Failed to close chat subscription', error);
+  }
+  try {
+    yield* put(chatLiveStreamPhaseChanged(agentId, null));
+  } catch (error) {
+    logger.error('Failed to reset live stream phase', error);
+  }
+  try {
+    yield* clearStaleStreamingMessageFlags(agentId);
+  } catch (error) {
+    logger.error('Failed to clear stale streaming message flags', error);
+  }
 }
 
 function* closeAllSubscriptions(
@@ -328,100 +331,164 @@ function* closeNonChiefSubscriptions(
   }
 }
 
-type ChatSubscribeAction = { type: string; payload?: unknown };
-
-function* handleChatSubscribeAction(
+function* handleInitialize(
   subscriptions: Map<string, SubscriptionEntry>,
-  action: ChatSubscribeAction,
+  events: Channel<ChatSubscriptionEvent>,
+  action: ReturnType<typeof initializeChatRequested>,
 ): SagaGenerator<void> {
-  if (action.type === initializeChatRequested.type) {
-    const payload = action.payload as { agentId?: unknown; wsId?: unknown } | undefined;
-    const agentId = payload?.agentId;
-    const wsId = payload?.wsId;
-    if (typeof agentId === "string" && agentId.length > 0) {
-      yield* openSubscription(
-        subscriptions,
-        agentId,
-        typeof wsId === "string" ? wsId : undefined,
-      );
-    }
-  } else if (action.type === markAgentAsViewed.type) {
-    const [agentId] = action.payload as [string];
-    if (typeof agentId === "string" && agentId.length > 0) {
-      yield* closeOtherSubscriptions(subscriptions, agentId);
-      // (Re)open for the newly viewed agent when its session is already
-      // known — ChatPanel's initializeChatRequested covers first-open.
-      const session = yield* selectAgentSession.effect(agentId);
-      if (session) {
-        yield* openSubscription(subscriptions, agentId, session.workspaceId);
-      }
-    }
-  } else if (action.type === transcriptHydrationSettled.type) {
-    // A slower full-history hydrate (chat-read saga) may have landed a paged
-    // fetch that predates a row this stream already finalized — clobbering it.
-    // Re-assert the canonical transcript against the post-hydrate store.
-    const [agentId] = action.payload as [string];
-    if (typeof agentId === "string") {
-      const entry = subscriptions.get(agentId);
-      if (entry?.hasEmitted && entry.lastTranscript) {
-        yield* applyTranscript(agentId, entry, entry.lastTranscript);
-      }
-    }
-  } else if (action.type === clearCurrentlyViewedAgent.type) {
-    const [scopeAgentId] = (action.payload as [string?] | undefined) ?? [];
-    if (
-      typeof scopeAgentId === "string" &&
-      (yield* isChiefChatAgent(subscriptions, scopeAgentId))
-    ) {
-      yield* closeSubscription(subscriptions, scopeAgentId);
-    } else if ((yield* selectCurrentlyViewedAgentId.effect()) === null) {
-      // Post-reducer: an ignored scoped clear leaves an agent viewed, so keep
-      // its subscription. Chief subscriptions have an independent lifecycle.
-      yield* closeNonChiefSubscriptions(subscriptions);
-    }
-  } else if (action.type === removeSession.type) {
-    const [agentId] = action.payload as [string];
-    if (typeof agentId === "string") yield* closeSubscription(subscriptions, agentId);
-  } else if (action.type === removeWorkspaceSessions.type) {
-    const [wsId] = action.payload as [string];
-    if (typeof wsId === "string") yield* closeWorkspaceSubscriptions(subscriptions, wsId);
-  } else if (action.type === workspaceDeleted.type) {
-    const [wsId, agentIds] = action.payload as [string, string[]];
-    if (typeof wsId === "string") yield* closeWorkspaceSubscriptions(subscriptions, wsId);
-    if (Array.isArray(agentIds)) {
-      for (const agentId of agentIds) {
-        if (typeof agentId === "string") {
-          yield* closeSubscription(subscriptions, agentId);
-        }
-      }
-    }
-  } else if (action.type === clearAllSessions.type) {
-    yield* closeAllSubscriptions(subscriptions);
+  const { agentId, wsId } = action.payload;
+  if (agentId) yield* openSubscription(subscriptions, events, agentId, wsId);
+}
+
+function* handleViewed(
+  subscriptions: Map<string, SubscriptionEntry>,
+  events: Channel<ChatSubscriptionEvent>,
+  action: ReturnType<typeof markAgentAsViewed>,
+): SagaGenerator<void> {
+  const [agentId] = action.payload;
+  yield* closeOtherSubscriptions(subscriptions, agentId);
+  const session = yield* selectAgentSession.effect(agentId);
+  if (session) yield* openSubscription(subscriptions, events, agentId, session.workspaceId);
+}
+
+function* handleHydrationSettled(
+  subscriptions: Map<string, SubscriptionEntry>,
+  action: ReturnType<typeof transcriptHydrationSettled>,
+): SagaGenerator<void> {
+  const [agentId] = action.payload;
+  const entry = subscriptions.get(agentId);
+  if (entry?.hasEmitted && entry.lastTranscript) {
+    yield* applyTranscript(agentId, entry, entry.lastTranscript);
   }
+}
+
+function* handleClearViewed(
+  subscriptions: Map<string, SubscriptionEntry>,
+  action: ReturnType<typeof clearCurrentlyViewedAgent>,
+): SagaGenerator<void> {
+  const [scopeAgentId] = action.payload;
+  if (scopeAgentId && (yield* isChiefChatAgent(subscriptions, scopeAgentId))) {
+    yield* closeSubscription(subscriptions, scopeAgentId);
+  } else if ((yield* selectCurrentlyViewedAgentId.effect()) === null) {
+    yield* closeNonChiefSubscriptions(subscriptions);
+  }
+}
+
+function* handleRemoveSession(
+  subscriptions: Map<string, SubscriptionEntry>,
+  action: ReturnType<typeof removeSession>,
+): SagaGenerator<void> {
+  yield* closeSubscription(subscriptions, action.payload[0]);
+}
+
+function* handleRemoveWorkspaceSessions(
+  subscriptions: Map<string, SubscriptionEntry>,
+  action: ReturnType<typeof removeWorkspaceSessions>,
+): SagaGenerator<void> {
+  yield* closeWorkspaceSubscriptions(subscriptions, action.payload[0]);
+}
+
+function* handleWorkspaceDeleted(
+  subscriptions: Map<string, SubscriptionEntry>,
+  action: ReturnType<typeof workspaceDeleted>,
+): SagaGenerator<void> {
+  const [wsId, agentIds] = action.payload;
+  yield* closeWorkspaceSubscriptions(subscriptions, wsId);
+  for (const agentId of agentIds) {
+    yield* closeSubscription(subscriptions, agentId);
+  }
+}
+
+function* handleClearAll(
+  subscriptions: Map<string, SubscriptionEntry>,
+  _action: ReturnType<typeof clearAllSessions>,
+): SagaGenerator<void> {
+  try {
+    yield* closeAllSubscriptions(subscriptions);
+  } catch (error) {
+    logger.error('chat-subscribe saga action failed', error);
+  }
+}
+
+function* safely<T extends unknown[]>(
+  worker: (...args: T) => Generator,
+  ...args: T
+): SagaGenerator<void> {
+  try {
+    yield* call(worker, ...args);
+  } catch (error) {
+    logger.error('chat-subscribe saga action failed', error);
+  }
+}
+
+function* watchInitialize(
+  subscriptions: Map<string, SubscriptionEntry>,
+  events: Channel<ChatSubscriptionEvent>,
+  action: ReturnType<typeof initializeChatRequested>,
+): SagaGenerator<void> {
+  yield* safely(handleInitialize, subscriptions, events, action);
+}
+
+function* watchViewed(
+  subscriptions: Map<string, SubscriptionEntry>,
+  events: Channel<ChatSubscriptionEvent>,
+  action: ReturnType<typeof markAgentAsViewed>,
+): SagaGenerator<void> {
+  yield* safely(handleViewed, subscriptions, events, action);
+}
+
+function* watchHydrationSettled(
+  subscriptions: Map<string, SubscriptionEntry>,
+  action: ReturnType<typeof transcriptHydrationSettled>,
+): SagaGenerator<void> {
+  yield* safely(handleHydrationSettled, subscriptions, action);
+}
+
+function* watchClearViewed(
+  subscriptions: Map<string, SubscriptionEntry>,
+  action: ReturnType<typeof clearCurrentlyViewedAgent>,
+): SagaGenerator<void> {
+  yield* safely(handleClearViewed, subscriptions, action);
+}
+
+function* watchRemoveSession(
+  subscriptions: Map<string, SubscriptionEntry>,
+  action: ReturnType<typeof removeSession>,
+): SagaGenerator<void> {
+  yield* safely(handleRemoveSession, subscriptions, action);
+}
+
+function* watchRemoveWorkspaceSessions(
+  subscriptions: Map<string, SubscriptionEntry>,
+  action: ReturnType<typeof removeWorkspaceSessions>,
+): SagaGenerator<void> {
+  yield* safely(handleRemoveWorkspaceSessions, subscriptions, action);
+}
+
+function* watchWorkspaceDeleted(
+  subscriptions: Map<string, SubscriptionEntry>,
+  action: ReturnType<typeof workspaceDeleted>,
+): SagaGenerator<void> {
+  yield* safely(handleWorkspaceDeleted, subscriptions, action);
 }
 
 /** Root-owned standing chat subscription lifecycle. */
 export function* chatSubscribeSaga(): SagaGenerator<void> {
   const subscriptions = new Map<string, SubscriptionEntry>();
+  const events = createChannel(buffers.expanding<ChatSubscriptionEvent>());
+  const eventWatcher = yield* takeLeading(events, handleSubscriptionEvent, subscriptions);
+  yield* takeLeading(initializeChatRequested, watchInitialize, subscriptions, events);
+  yield* takeLatest(markAgentAsViewed, watchViewed, subscriptions, events);
+  yield* takeLatest(transcriptHydrationSettled, watchHydrationSettled, subscriptions);
+  yield* takeEvery(clearCurrentlyViewedAgent, watchClearViewed, subscriptions);
+  yield* takeEvery(removeSession, watchRemoveSession, subscriptions);
+  yield* takeEvery(removeWorkspaceSessions, watchRemoveWorkspaceSessions, subscriptions);
+  yield* takeEvery(workspaceDeleted, watchWorkspaceDeleted, subscriptions);
+  yield* takeEvery(clearAllSessions, handleClearAll, subscriptions);
   try {
-    while (true) {
-      const action: ChatSubscribeAction = yield* take([
-        initializeChatRequested,
-        markAgentAsViewed,
-        transcriptHydrationSettled,
-        clearCurrentlyViewedAgent,
-        removeSession,
-        removeWorkspaceSessions,
-        workspaceDeleted,
-        clearAllSessions,
-      ]);
-      try {
-        yield* handleChatSubscribeAction(subscriptions, action);
-      } catch (error) {
-        logger.error("chat-subscribe saga action failed", error);
-      }
-    }
+    yield* join(eventWatcher);
   } finally {
+    events.close();
     yield* closeAllSubscriptions(subscriptions);
     subscriptions.clear();
   }

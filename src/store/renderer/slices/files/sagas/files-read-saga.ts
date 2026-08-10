@@ -1,5 +1,4 @@
-import type { Task } from 'redux-saga';
-import { call, cancel, fork, put, take } from 'typed-redux-saga';
+import { call, put, race, take, takeLeading } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -15,10 +14,6 @@ import {
 } from '../files-slice';
 
 const logger = createLogger('FilesReadSaga');
-
-function readKey(workspaceId: string, path: string): string {
-  return `${workspaceId}::${path}`;
-}
 
 function* loadFileContentWorker(workspaceId: string, path: string, absolutePath: string) {
   try {
@@ -50,47 +45,22 @@ function* loadFileContentWorker(workspaceId: string, path: string, absolutePath:
   }
 }
 
-type RunningRead = { workspaceId: string; task?: Task; token: symbol };
+function matchesWorkspaceCleanup(workspaceId: string) {
+  return (action: { type: string; payload?: unknown }) =>
+    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === workspaceId;
+}
+
+function* loadFileContentRequestWorker(action: ReturnType<typeof loadFileContentRequested>) {
+  const [workspaceId, path, absolutePath] = action.payload;
+  if (!workspaceId || !path || typeof absolutePath !== 'string') return;
+  yield* race({
+    read: call(loadFileContentWorker, workspaceId, path, absolutePath),
+    cleanup: take(matchesWorkspaceCleanup(workspaceId)),
+  });
+}
 
 export function* filesReadSaga() {
-  const running = new Map<string, RunningRead>();
-  try {
-    while (true) {
-      const action: ReturnType<
-        typeof loadFileContentRequested | typeof workspaceDeleted | typeof workspaceUnmounted
-      > = yield* take([loadFileContentRequested, workspaceDeleted, workspaceUnmounted]);
-
-      if (action.type === loadFileContentRequested.type) {
-        const [workspaceId, path, absolutePath] = action.payload as [string, string, string];
-        if (!workspaceId || !path || typeof absolutePath !== 'string') continue;
-        const key = readKey(workspaceId, path);
-        if (running.has(key)) continue;
-        const token = Symbol(key);
-        running.set(key, { workspaceId, token });
-        const task = yield* fork(function* () {
-          try {
-            yield* call(loadFileContentWorker, workspaceId, path, absolutePath);
-          } finally {
-            if (running.get(key)?.token === token) running.delete(key);
-          }
-        });
-        if (running.get(key)?.token === token) {
-          running.set(key, { workspaceId, task, token });
-        }
-        continue;
-      }
-
-      const [workspaceId] = action.payload as [string];
-      for (const [key, read] of running) {
-        if (read.workspaceId !== workspaceId) continue;
-        running.delete(key);
-        if (read.task) yield* cancel(read.task);
-      }
-    }
-  } finally {
-    for (const read of running.values()) {
-      if (read.task) yield* cancel(read.task);
-    }
-    running.clear();
-  }
+  yield* takeLeading(loadFileContentRequested, loadFileContentRequestWorker);
 }

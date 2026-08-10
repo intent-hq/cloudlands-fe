@@ -1,13 +1,12 @@
-import type { Task } from 'redux-saga';
 import {
   call,
-  cancel,
   cancelled,
   delay,
-  fork,
+  join,
   put,
-  take,
   takeEvery,
+  takeLatest,
+  takeLeading,
   type SagaGenerator,
 } from 'typed-redux-saga';
 
@@ -144,11 +143,7 @@ const HISTORY_ACTIONS = [
 ];
 
 const restoredWorkspaceIds = new Set<string>();
-const pendingHistoryTasks = new Map<string, Task>();
-const pendingHistoryGenerations = new Map<string, number>();
-const pendingHistoryWorkspaceIds = new Set<string>();
-const historyLoadTasks = new Map<string, Task>();
-const historyLoadGenerations = new Map<string, number>();
+let pendingHistoryWorkspaceId: string | null = null;
 
 // Layout keys hold backend-specific workspace IDs, so two backends surfacing
 // the same workspace id would clobber each other without a per-backend
@@ -158,9 +153,7 @@ function storageKey(wsId: string, backendId: string): string {
 }
 
 function isValidWorkspaceId(wsId: string | null | undefined): wsId is string {
-  return Boolean(
-    wsId && wsId !== 'new' && wsId !== 'undefined' && !wsId.startsWith('optimistic-'),
-  );
+  return Boolean(wsId && wsId !== 'new' && wsId !== 'undefined' && !wsId.startsWith('optimistic-'));
 }
 
 function getWsId(action: { payload?: unknown }): string | undefined {
@@ -207,7 +200,9 @@ export function isStoredLayoutValid(value: unknown): value is WorkspacePanelLayo
     if (layout.focusedPanelId !== null && !panelIds.has(layout.focusedPanelId)) return false;
     for (const [panelId, panel] of Object.entries(layout.panels)) {
       if (!panel || panel.id !== panelId || !Array.isArray(panel.tabs)) return false;
-      if (!panel.tabs.every((tab) => tab && typeof tab === 'object' && typeof tab.id === 'string')) {
+      if (
+        !panel.tabs.every((tab) => tab && typeof tab === 'object' && typeof tab.id === 'string')
+      ) {
         return false;
       }
       if (panel.activeTabId !== null && !panel.tabs.some((tab) => tab.id === panel.activeTabId)) {
@@ -291,41 +286,27 @@ export function* persistHistoryToDisk(wsId: string): SagaGenerator<void> {
   }
 }
 
-function* saveHistoryAfterDelay(wsId: string, generation: number): SagaGenerator<void> {
-  yield* delay(HISTORY_PERSIST_DEBOUNCE_MS);
-  yield* call(persistHistoryToDisk, wsId);
-  if (pendingHistoryGenerations.get(wsId) === generation) {
-    pendingHistoryTasks.delete(wsId);
-    pendingHistoryGenerations.delete(wsId);
-    pendingHistoryWorkspaceIds.delete(wsId);
-  }
-}
-
-function* scheduleHistorySave(action: { payload?: unknown }): SagaGenerator<void> {
+function* saveHistoryAfterDelay(action: { payload?: unknown }): SagaGenerator<void> {
   const wsId = getWsId(action);
+  if (!isValidWorkspaceId(wsId)) {
+    pendingHistoryWorkspaceId = null;
+    return;
+  }
+  pendingHistoryWorkspaceId = wsId;
+  yield* delay(HISTORY_PERSIST_DEBOUNCE_MS);
+  if (pendingHistoryWorkspaceId !== wsId) return;
+  yield* call(persistHistoryToDisk, wsId);
+  if (pendingHistoryWorkspaceId === wsId) pendingHistoryWorkspaceId = null;
+}
+
+function* loadHistoryForWorkspace(
+  action: ReturnType<typeof initializeLayout>,
+): SagaGenerator<void> {
+  const wsId = action.payload.wsId;
   if (!isValidWorkspaceId(wsId)) return;
-  const existing = pendingHistoryTasks.get(wsId);
-  if (existing) yield* cancel(existing);
-  const generation = (pendingHistoryGenerations.get(wsId) ?? 0) + 1;
-  pendingHistoryGenerations.set(wsId, generation);
-  pendingHistoryWorkspaceIds.add(wsId);
-  const task = yield* fork(saveHistoryAfterDelay, wsId, generation);
-  pendingHistoryTasks.set(wsId, task);
-}
-
-function* watchHistoryPersistence(): SagaGenerator<void> {
-  yield* takeEvery(HISTORY_ACTIONS, scheduleHistorySave);
-}
-
-function* loadHistoryForWorkspace(wsId: string, generation: number): SagaGenerator<void> {
   try {
     const data = yield* call(loadPanelLayoutHistory, wsId, yield* selectActiveBackendId());
-    if (
-      historyLoadGenerations.get(wsId) === generation &&
-      data &&
-      Array.isArray(data.history) &&
-      typeof data.historyIndex === 'number'
-    ) {
+    if (data && Array.isArray(data.history) && typeof data.historyIndex === 'number') {
       const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
       if (workspace !== emptyWorkspaceState) {
         yield* put(loadLayoutHistory(wsId, data.history, data.historyIndex));
@@ -334,53 +315,18 @@ function* loadHistoryForWorkspace(wsId: string, generation: number): SagaGenerat
   } catch {
     // History is non-critical and can be rebuilt.
   }
-  if (historyLoadGenerations.get(wsId) === generation) {
-    historyLoadTasks.delete(wsId);
-    historyLoadGenerations.delete(wsId);
-  }
 }
 
-function* watchHistoryLoads(): SagaGenerator<void> {
-  while (true) {
-    const action = yield* take(initializeLayout);
-    const wsId = action.payload.wsId;
-    if (!isValidWorkspaceId(wsId)) continue;
-    const existing = historyLoadTasks.get(wsId);
-    if (existing) yield* cancel(existing);
-    const generation = (historyLoadGenerations.get(wsId) ?? 0) + 1;
-    historyLoadGenerations.set(wsId, generation);
-    const task = yield* fork(loadHistoryForWorkspace, wsId, generation);
-    historyLoadTasks.set(wsId, task);
-  }
-}
-
-function* handleWorkspaceUnmounted(action: ReturnType<typeof workspaceUnmounted>): SagaGenerator<void> {
+function* handleWorkspaceUnmounted(
+  action: ReturnType<typeof workspaceUnmounted>,
+): SagaGenerator<void> {
   const [wsId] = action.payload;
   restoredWorkspaceIds.delete(wsId);
-  const historyTask = pendingHistoryTasks.get(wsId);
-  if (historyTask) yield* cancel(historyTask);
-  pendingHistoryTasks.delete(wsId);
-  pendingHistoryGenerations.delete(wsId);
-  pendingHistoryWorkspaceIds.delete(wsId);
-  const loadTask = historyLoadTasks.get(wsId);
-  if (loadTask) yield* cancel(loadTask);
-  historyLoadTasks.delete(wsId);
-  historyLoadGenerations.delete(wsId);
+  if (pendingHistoryWorkspaceId === wsId) pendingHistoryWorkspaceId = null;
   try {
     yield* call(clearPanelLayoutAdapter, wsId);
   } catch {
     // Adapter cleanup is non-critical in environments without the adapter.
-  }
-}
-
-function* watchWorkspaceLifecycle(): SagaGenerator<void> {
-  while (true) {
-    const action = yield* take([workspaceMounted, workspaceUnmounted]);
-    if (action.type === workspaceMounted.type) {
-      yield* fork(handleWorkspaceMountedRestore, action as ReturnType<typeof workspaceMounted>);
-    } else {
-      yield* call(handleWorkspaceUnmounted, action as ReturnType<typeof workspaceUnmounted>);
-    }
   }
 }
 
@@ -424,20 +370,12 @@ function* restoreAfterBackendSwitch(): SagaGenerator<void> {
  * the window reloads): re-restore the active workspace's layout from the
  * incoming backend's namespace.
  */
-function* watchBackendSwitch(): SagaGenerator<void> {
-  let lastBackendId = yield* selectActiveBackendId();
-  while (true) {
-    yield* take(connectionsListReceived);
-    const backendId = yield* selectActiveBackendId();
-    if (backendId === lastBackendId) continue;
-    lastBackendId = backendId;
-    restoredWorkspaceIds.clear();
-    yield* call(restoreAfterBackendSwitch);
-  }
-}
-
-function* cancelTasks(tasks: Iterable<Task>): SagaGenerator<void> {
-  for (const task of tasks) yield* cancel(task);
+function* handleBackendSwitch(lastBackend: { id: string }): SagaGenerator<void> {
+  const backendId = yield* selectActiveBackendId();
+  if (backendId === lastBackend.id) return;
+  lastBackend.id = backendId;
+  restoredWorkspaceIds.clear();
+  yield* call(restoreAfterBackendSwitch);
 }
 
 /** Unregistered until the S20 middleware cutover. */
@@ -445,26 +383,22 @@ export function* panelLayoutSaga(): SagaGenerator<void> {
   try {
     yield* takeEvery(PERSIST_ACTIONS, persistPanelLayout);
     yield* takeEvery(clearPanelLayout, clearPersistedLayout);
-    yield* fork(watchHistoryPersistence);
-    yield* fork(watchHistoryLoads);
-    yield* fork(watchBackendSwitch);
+    const historyWatcher = yield* takeLatest(HISTORY_ACTIONS, saveHistoryAfterDelay);
+    yield* takeLatest(initializeLayout, loadHistoryForWorkspace);
+    yield* takeLeading(connectionsListReceived, handleBackendSwitch, {
+      id: yield* selectActiveBackendId(),
+    });
+    yield* takeEvery(workspaceMounted, handleWorkspaceMountedRestore);
+    yield* takeEvery(workspaceUnmounted, handleWorkspaceUnmounted);
     yield* call(retroactiveRestore);
-    yield* call(watchWorkspaceLifecycle);
+    yield* join(historyWatcher);
   } finally {
     const flushHistory = yield* cancelled();
-    const pendingWorkspaceIds = [...pendingHistoryWorkspaceIds];
-    yield* call(cancelTasks, pendingHistoryTasks.values());
-    yield* call(cancelTasks, historyLoadTasks.values());
-    if (flushHistory) {
-      for (const wsId of pendingWorkspaceIds) {
-        yield* call(persistHistoryToDisk, wsId);
-      }
+    const pendingWorkspaceId = pendingHistoryWorkspaceId;
+    pendingHistoryWorkspaceId = null;
+    if (flushHistory && pendingWorkspaceId) {
+      yield* call(persistHistoryToDisk, pendingWorkspaceId);
     }
     restoredWorkspaceIds.clear();
-    pendingHistoryTasks.clear();
-    pendingHistoryGenerations.clear();
-    pendingHistoryWorkspaceIds.clear();
-    historyLoadTasks.clear();
-    historyLoadGenerations.clear();
   }
 }

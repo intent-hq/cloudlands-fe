@@ -1,5 +1,13 @@
-import type { Task } from 'redux-saga';
-import { call, cancel, cancelled, put, spawn, take, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  cancelled,
+  put,
+  race,
+  take,
+  takeLatest,
+  takeLeading,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 
 import { appClient } from '$lib/client';
@@ -41,9 +49,18 @@ import {
 
 const logger = createLogger('FileExplorerSaga');
 
-type RunningTask = { wsId: string; task?: Task; token: symbol };
-type TaskWorker = () => SagaGenerator<void>;
-type EditSlot = { wsId: string; task?: Task; pending: boolean };
+type ObservedAction = { type: string; payload?: unknown };
+type EditRefreshAction =
+  | ReturnType<typeof refreshAgentFileEditsRequested>
+  | ReturnType<typeof syncGitStatusFromStoresRequested>;
+
+function isWorkspaceCleanup(action: ObservedAction, wsId: string): boolean {
+  return (
+    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === wsId
+  );
+}
 
 function mapFileNode(node: FileNode, path: string, anchorChildren: boolean): FileNode {
   const mapped: FileNode = { name: node.name, path, type: node.type };
@@ -328,144 +345,88 @@ function* refreshDirectory(action: ReturnType<typeof refreshDirectoryRequested>)
   yield* call(loadDirectoryChildren, wsId, parent);
 }
 
-function* runEditRefresh(slots: Map<string, EditSlot>, slot: EditSlot): SagaGenerator<void> {
-  try {
-    yield* call(loadAgentFileEdits, slot.wsId);
-  } finally {
-    if (slots.get(slot.wsId) !== slot) return;
-    slot.task = undefined;
-    if (!slot.pending) {
-      slots.delete(slot.wsId);
-      return;
-    }
-    slot.pending = false;
-    const task = yield* spawn(runEditRefresh, slots, slot);
-    if (slots.get(slot.wsId) === slot) slot.task = task;
-  }
-}
-
-function* queueEditRefresh(slots: Map<string, EditSlot>, wsId: string) {
+function* initializeExplorerWorker(action: ReturnType<typeof initializeFileExplorer>) {
+  const [wsId] = action.payload;
   if (!wsId) return;
-  const existing = slots.get(wsId);
-  if (existing?.task) {
-    existing.pending = true;
-    return;
-  }
-  const slot: EditSlot = { wsId, pending: false };
-  slots.set(wsId, slot);
-  const task = yield* spawn(runEditRefresh, slots, slot);
-  if (slots.get(wsId) === slot) slot.task = task;
+  yield* race({
+    initialize: call(initializeExplorer, action),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, wsId)),
+  });
 }
 
-function* startTask(
-  tasks: Map<string, RunningTask>,
-  key: string,
-  wsId: string,
-  latest: boolean,
-  worker: TaskWorker,
-) {
-  const existing = tasks.get(key);
-  if (existing) {
-    if (!latest) return;
-    tasks.delete(key);
-    if (existing.task) yield* cancel(existing.task);
-  }
-  const token = Symbol(key);
-  tasks.set(key, { wsId, token });
-  const task = yield* spawn(function* () {
-    try {
-      yield* worker();
-    } finally {
-      if (tasks.get(key)?.token === token) tasks.delete(key);
-    }
+function* toggleDirectoryWorker(action: ReturnType<typeof toggleDirectoryRequested>) {
+  const [wsId] = action.payload;
+  if (!wsId) return;
+  yield* race({
+    toggle: call(toggleDirectory, action),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, wsId)),
   });
-  if (tasks.get(key)?.token === token) tasks.set(key, { wsId, task, token });
+}
+
+function* expandToPathWorker(action: ReturnType<typeof expandToPathRequested>) {
+  const [wsId] = action.payload;
+  if (!wsId) return;
+  yield* race({
+    expand: call(expandToPath, action),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, wsId)),
+  });
+}
+
+function* expandAllWorker(action: ReturnType<typeof expandAllRequested>) {
+  const [wsId] = action.payload;
+  if (!wsId) return;
+  yield* race({
+    expand: call(expandAll, action),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, wsId)),
+  });
+}
+
+function* refreshExplorerWorker(action: ReturnType<typeof refreshFileExplorer>) {
+  const [wsId] = action.payload;
+  if (!wsId) return;
+  yield* race({
+    refresh: call(refreshTree, wsId),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, wsId)),
+  });
+}
+
+function* hydrateExplorerWorker(action: ReturnType<typeof hydrateFileExplorerRequested>) {
+  const [wsId] = action.payload;
+  if (!wsId) return;
+  yield* race({
+    hydrate: call(hydrateExplorer, wsId),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, wsId)),
+  });
+}
+
+function* refreshDirectoryWorker(action: ReturnType<typeof refreshDirectoryRequested>) {
+  const [wsId] = action.payload;
+  if (!wsId) return;
+  yield* race({
+    refresh: call(refreshDirectory, action),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, wsId)),
+  });
+}
+
+function* refreshAgentEditsWorker(action: EditRefreshAction) {
+  const [wsId] = action.payload;
+  if (!wsId) return;
+  yield* race({
+    refresh: call(loadAgentFileEdits, wsId),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, wsId)),
+  });
 }
 
 export function* fileExplorerSaga() {
-  const tasks = new Map<string, RunningTask>();
-  const editSlots = new Map<string, EditSlot>();
-  try {
-    while (true) {
-      const action: { type: string; payload: unknown } = yield* take([
-        initializeFileExplorer,
-        toggleDirectoryRequested,
-        expandToPathRequested,
-        expandAllRequested,
-        refreshFileExplorer,
-        hydrateFileExplorerRequested,
-        refreshDirectoryRequested,
-        refreshAgentFileEditsRequested,
-        syncGitStatusFromStoresRequested,
-        workspaceDeleted,
-        workspaceUnmounted,
-      ]);
-      const [wsId] = action.payload as [string];
-      if (action.type === initializeFileExplorer.type) {
-        const request = action as ReturnType<typeof initializeFileExplorer>;
-        yield* call(startTask, tasks, `initialize:${wsId}`, wsId, false, function* () {
-          yield* call(initializeExplorer, request);
-        });
-      } else if (action.type === toggleDirectoryRequested.type) {
-        const request = action as ReturnType<typeof toggleDirectoryRequested>;
-        const [, path] = request.payload;
-        yield* call(startTask, tasks, `directory:${wsId}:${path}`, wsId, false, function* () {
-          yield* call(toggleDirectory, request);
-        });
-      } else if (action.type === expandToPathRequested.type) {
-        const request = action as ReturnType<typeof expandToPathRequested>;
-        yield* call(startTask, tasks, `expand-to:${wsId}`, wsId, true, function* () {
-          yield* call(expandToPath, request);
-        });
-      } else if (action.type === expandAllRequested.type) {
-        const request = action as ReturnType<typeof expandAllRequested>;
-        yield* call(startTask, tasks, `expand-all:${wsId}`, wsId, true, function* () {
-          yield* call(expandAll, request);
-        });
-      } else if (action.type === refreshFileExplorer.type) {
-        yield* call(startTask, tasks, `refresh:${wsId}`, wsId, false, function* () {
-          yield* call(refreshTree, wsId);
-        });
-      } else if (action.type === hydrateFileExplorerRequested.type) {
-        yield* call(startTask, tasks, `hydrate:${wsId}`, wsId, false, function* () {
-          yield* call(hydrateExplorer, wsId);
-        });
-      } else if (action.type === refreshDirectoryRequested.type) {
-        const request = action as ReturnType<typeof refreshDirectoryRequested>;
-        const [, path] = request.payload;
-        yield* call(
-          startTask,
-          tasks,
-          `directory-refresh:${wsId}:${path}`,
-          wsId,
-          false,
-          function* () {
-            yield* call(refreshDirectory, request);
-          },
-        );
-      } else if (
-        action.type === refreshAgentFileEditsRequested.type ||
-        action.type === syncGitStatusFromStoresRequested.type
-      ) {
-        yield* call(queueEditRefresh, editSlots, wsId);
-      } else {
-        for (const [key, running] of tasks) {
-          if (running.wsId !== wsId) continue;
-          tasks.delete(key);
-          if (running.task) yield* cancel(running.task);
-        }
-        const edits = editSlots.get(wsId);
-        if (edits) {
-          editSlots.delete(wsId);
-          edits.pending = false;
-          if (edits.task) yield* cancel(edits.task);
-        }
-      }
-    }
-  } finally {
-    for (const running of tasks.values()) if (running.task) yield* cancel(running.task);
-    for (const slot of editSlots.values()) if (slot.task) yield* cancel(slot.task);
-    tasks.clear();
-    editSlots.clear();
-  }
+  yield* takeLeading(initializeFileExplorer, initializeExplorerWorker);
+  yield* takeLeading(toggleDirectoryRequested, toggleDirectoryWorker);
+  yield* takeLatest(expandToPathRequested, expandToPathWorker);
+  yield* takeLatest(expandAllRequested, expandAllWorker);
+  yield* takeLeading(refreshFileExplorer, refreshExplorerWorker);
+  yield* takeLeading(hydrateFileExplorerRequested, hydrateExplorerWorker);
+  yield* takeLeading(refreshDirectoryRequested, refreshDirectoryWorker);
+  yield* takeLeading(
+    [refreshAgentFileEditsRequested, syncGitStatusFromStoresRequested],
+    refreshAgentEditsWorker,
+  );
 }

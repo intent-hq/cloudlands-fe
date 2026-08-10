@@ -1,5 +1,15 @@
 import { END, eventChannel, buffers, type EventChannel } from 'redux-saga';
-import { all, call, cancelled, fork, join, put, take, type SagaGenerator } from 'typed-redux-saga';
+import {
+  all,
+  call,
+  cancelled,
+  fork,
+  join,
+  put,
+  take,
+  takeLeading,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
@@ -233,24 +243,13 @@ function* consumeConnectionsEvents(channel: EventChannel<ConnectionsEvent>): Sag
 }
 
 function* watchConnectionsActions(): SagaGenerator<void> {
-  const handlers = [
-    yield* fork(function* () {
-      while (true) yield* call(hydrateConnections, yield* take(loadConnectionsRequested));
-    }),
-    yield* fork(function* () {
-      while (true) yield* call(captureFingerprint, yield* take(captureFingerprintRequested));
-    }),
-    yield* fork(function* () {
-      while (true) yield* call(addConnection, yield* take(addConnectionRequested));
-    }),
-    yield* fork(function* () {
-      while (true) yield* call(forgetConnection, yield* take(forgetConnectionRequested));
-    }),
-    yield* fork(function* () {
-      while (true) yield* call(switchConnection, yield* take(switchConnectionRequested));
-    }),
-  ];
-  yield* all(handlers.map((task) => join(task)));
+  yield* all([
+    takeLeading(loadConnectionsRequested, hydrateConnections),
+    takeLeading(captureFingerprintRequested, captureFingerprint),
+    takeLeading(addConnectionRequested, addConnection),
+    takeLeading(forgetConnectionRequested, forgetConnection),
+    takeLeading(switchConnectionRequested, switchConnection),
+  ]);
 }
 
 export function* connectionsSaga(): SagaGenerator<void> {
