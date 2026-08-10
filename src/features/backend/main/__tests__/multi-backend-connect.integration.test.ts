@@ -59,6 +59,7 @@ vi.mock('electron', () => ({
   app: {
     getPath: () => electronState.userDataDir,
     isPackaged: false,
+    emit: () => {},
   },
   ipcMain: {
     handle: (channel: string, handler: (event: unknown, data: unknown) => unknown) => {

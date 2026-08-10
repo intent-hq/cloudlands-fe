@@ -177,6 +177,7 @@ vi.mock('electron', () => {
     isPackaged: false,
     on: vi.fn(),
     once: vi.fn(),
+    emit: vi.fn(),
     whenReady: vi.fn(() => Promise.resolve()),
   };
 

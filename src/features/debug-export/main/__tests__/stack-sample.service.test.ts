@@ -38,6 +38,7 @@ import {
   SAMPLE_TIMEOUT_MS,
   captureStackSample,
   createStackSampleFile,
+  shouldShowStackSampleMenuItem,
 } from '../stack-sample.service';
 
 /** In-memory fake socket: captures outbound frames, injects daemon responses. */
@@ -168,6 +169,23 @@ describe('stack-sample.service', () => {
       })}\n`,
     );
     await expect(promise).rejects.toThrow('not supported on this platform');
+  });
+
+  describe('shouldShowStackSampleMenuItem (#1889 menu gating)', () => {
+    it('hides the item on a Windows FE with a same-host (UDS) backend', () => {
+      expect(shouldShowStackSampleMenuItem('win32', true)).toBe(false);
+    });
+
+    it('keeps the item on a Windows FE with a possibly-remote backend', () => {
+      expect(shouldShowStackSampleMenuItem('win32', false)).toBe(true);
+    });
+
+    it('keeps the item on non-Windows platforms regardless of backend', () => {
+      expect(shouldShowStackSampleMenuItem('darwin', true)).toBe(true);
+      expect(shouldShowStackSampleMenuItem('darwin', false)).toBe(true);
+      expect(shouldShowStackSampleMenuItem('linux', true)).toBe(true);
+      expect(shouldShowStackSampleMenuItem('linux', false)).toBe(true);
+    });
   });
 
   it('removes the partial temp file when the report write fails', async () => {

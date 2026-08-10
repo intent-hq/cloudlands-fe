@@ -47,6 +47,17 @@ describe('HudHeader after the counter strip moved to the footer', () => {
     expect(container.querySelector('.hud-header-stats')).toBeNull();
   });
 
+  it('marks the header as an app-drag-region so interactive children stay no-drag (#1907)', () => {
+    // The layout no-drag rule is scoped to .app-drag-region descendants; the
+    // header carries the class so its theme button/filters remain clickable
+    // inside the frameless window's drag region.
+    render(HudHeader, { props: { nowMs: NOW_MS } });
+
+    const header = screen.getByTestId('hud-header');
+    expect(header.classList.contains('app-drag-region')).toBe(true);
+    expect(screen.getByTestId('hud-header-theme-btn').closest('.app-drag-region')).toBe(header);
+  });
+
   it('stays counter-free when workspaces enter attention states', () => {
     const { container } = render(HudHeader, { props: { nowMs: NOW_MS } });
 

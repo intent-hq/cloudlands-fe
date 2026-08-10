@@ -162,28 +162,25 @@
                   <span class="truncate">{hook.name}</span>
                   <span class="text-subtle font-normal">{stateLabel(hook)}</span>
                 </div>
-                <div class="text-subtle">
+                <div class="flex flex-col text-subtle">
                   <span
                     >{m.chat_backgroundHooks_hover_delay_label({
                       seconds: formatInteger(Math.round(hook.delayMs / 1000)),
                     })}</span
                   >
                   {#if hook.nextRunAt}
-                    <span class="mx-1" aria-hidden="true">·</span>
                     <span title={formatTime(hook.nextRunAt, { seconds: true })}
                       >{m.chat_backgroundHooks_hover_nextRunIn_label({
                         duration: nextRunIn(hook),
                       })}</span
                     >
                   {/if}
-                  <span class="mx-1" aria-hidden="true">·</span>
                   <span title={formatTime(hook.lastRunAt ?? hook.createdAt, { seconds: true })}
                     >{m.chat_backgroundHooks_hover_elapsed_label({
                       duration: elapsedSince(hook),
                     })}</span
                   >
                   {#if hook.expiresAt}
-                    <span class="mx-1" aria-hidden="true">·</span>
                     <span title={formatTime(hook.expiresAt, { seconds: true })}
                       >{m.chat_backgroundHooks_hover_ttlExpiresIn_label({
                         duration: expiresIn(hook),
