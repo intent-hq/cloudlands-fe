@@ -330,6 +330,21 @@ export function isRemoteBackendActive(): boolean {
   return activeConnectionMeta !== null;
 }
 
+/**
+ * Whether the live client targets a daemon that is guaranteed to run on THIS
+ * host: no saved remote is active AND the resolved transport is UDS (a UDS
+ * socket is same-host by construction). False for saved remotes and for the
+ * env/dev transports (`INTENTD_WS_URL`, `INTENTD_TCP`, dev loopback WS), which
+ * may point at a daemon on another machine — callers gating platform-dependent
+ * daemon capabilities (e.g. the win32 stack-sampling menu gate, #1889) must
+ * not assume those share the FE's platform.
+ */
+export function isSameHostBackendActive(): boolean {
+  if (activeConnectionMeta !== null) return false;
+  const config = currentConfig ?? resolveBackendConfig(process.env, { isDev: !app.isPackaged });
+  return config.transport === 'uds';
+}
+
 /** Liveness heartbeat interval; reconnect-on-close cannot detect half-open sockets. */
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
@@ -719,6 +734,9 @@ export async function reconcileActiveConnectionOnBoot(): Promise<void> {
     logger.info('Restored last-used remote backend at boot', { id: activeId });
     // Post-connect candidate-host refresh (#1746); fire-and-forget/fail-soft.
     void refreshRemoteHosts(activeId);
+    // The initial application menu was built before reconciliation (local
+    // assumed) — rebuild menu items gated on the active backend (#1889).
+    app.emit('backend-connection-changed');
     return;
   }
 
@@ -1016,8 +1034,10 @@ export async function switchBackend(id: string): Promise<SwitchConnectionResult>
   // (5) Restore the incoming backend's windows (now targeting the new daemon).
   await windowHooks.restore(id);
 
-  // (6) Notify the renderer.
+  // (6) Notify the renderer, and the main process (menu items gated on the
+  // active backend, e.g. Help ▸ Sample intentd Process on win32 — #1889).
   await broadcastConnectionsChanged();
+  app.emit('backend-connection-changed');
   return { activeId: id };
 }
 

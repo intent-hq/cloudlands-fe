@@ -44,6 +44,24 @@ export interface StackSampleResult {
   distinctStacks: number;
 }
 
+/**
+ * Whether the Help menu should offer "Sample intentd Process..." (#1889).
+ *
+ * Hidden only on a Windows FE whose daemon is known to run on the same host
+ * (`sameHostBackendActive`, see `isSameHostBackendActive`): that daemon shares
+ * the FE's Windows platform, where stack sampling is never supported (PROTOCOL
+ * §5.43), so the item could only ever fail with an error box. Any backend that
+ * may live on another machine (saved remotes, env/dev transport overrides)
+ * keeps the item — an unsupported daemon still surfaces its own error via the
+ * dialog.
+ */
+export function shouldShowStackSampleMenuItem(
+  platform: NodeJS.Platform,
+  sameHostBackendActive: boolean,
+): boolean {
+  return platform !== 'win32' || !sameHostBackendActive;
+}
+
 /** Minimal request surface of the shared JSON-RPC client (test seam). */
 export interface StackSampleRpcClient {
   request<T = unknown>(

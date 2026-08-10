@@ -133,7 +133,10 @@ import { attachSwipeHistoryNavigation } from './swipe-navigation';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
 import { requestHardwareConsoleLightingClear } from '../features/hardware-console/main/clear-lighting-shutdown';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
-import { createStackSampleFile } from '../features/debug-export/main/stack-sample.service';
+import {
+  createStackSampleFile,
+  shouldShowStackSampleMenuItem,
+} from '../features/debug-export/main/stack-sample.service';
 
 // No custom protocol needed - we'll use file:// protocol
 import { ipcDebugTracker } from '../shared/main/ipc-debug-tracker';
@@ -281,6 +284,7 @@ import {
   registerBackendHandlers,
   disposeBackendClient,
   getBackendClient,
+  isSameHostBackendActive,
   reconcileActiveConnectionOnBoot,
 } from '../features/backend/main/backend.ipc';
 import { getConnectionMode } from '../features/backend/main/connection-mode';
@@ -1091,64 +1095,68 @@ app.whenReady().then(async () => {
       },
     });
 
-    // Add Sample intentd Process (cross-platform; daemon-side capture via
-    // debug.sampleStacks, PROTOCOL §5.43 — an unsupported-platform daemon
-    // surfaces its own error through the dialog below)
-    helpMenuItems.push({
-      label: m.menu_sample_intentd_process(),
-      click: async () => {
-        let samplePath: string | undefined;
-        try {
-          // Capture the sample into a temp file (blocks for the sampling window)
-          ({ filePath: samplePath } = await createStackSampleFile());
-
-          // Generate suggested filename with date
-          const now = new Date();
-          const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
-          const timeStr = now.toTimeString().slice(0, 5).replace(':', ''); // HHmm
-          const suggestedFilename = `intentd-sample-${dateStr}-${timeStr}.txt`;
-
-          // Show save dialog
-          const { filePath, canceled } = await dialog.showSaveDialog({
-            defaultPath: suggestedFilename,
-            filters: [{ name: m.dialog_text_files_filter(), extensions: ['txt'] }],
-          });
-
-          if (canceled || !filePath) {
-            // Clean up temp sample
-            try {
-              await fs.promises.unlink(samplePath);
-            } catch {
-              // Ignore cleanup errors
-            }
-            return;
-          }
-
-          // Move sample to final location
-          await fs.promises.copyFile(samplePath, filePath);
+    // Add Sample intentd Process (daemon-side capture via debug.sampleStacks,
+    // PROTOCOL §5.43). Hidden on a Windows FE whose daemon is same-host (UDS,
+    // no saved remote) — it can never support sampling (#1889); the menu is
+    // rebuilt on 'backend-connection-changed' so the gate tracks switches. Any
+    // other unsupported daemon surfaces its own error through the dialog below.
+    if (shouldShowStackSampleMenuItem(process.platform, isSameHostBackendActive())) {
+      helpMenuItems.push({
+        label: m.menu_sample_intentd_process(),
+        click: async () => {
+          let samplePath: string | undefined;
           try {
-            await fs.promises.unlink(samplePath);
-          } catch {
-            // Ignore cleanup errors — the sample was already saved
-          }
+            // Capture the sample into a temp file (blocks for the sampling window)
+            ({ filePath: samplePath } = await createStackSampleFile());
 
-          logger.info('intentd stack sample exported successfully', { filePath });
-        } catch (error) {
-          logger.error('Failed to sample intentd process', error as Error);
-          if (samplePath) {
+            // Generate suggested filename with date
+            const now = new Date();
+            const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+            const timeStr = now.toTimeString().slice(0, 5).replace(':', ''); // HHmm
+            const suggestedFilename = `intentd-sample-${dateStr}-${timeStr}.txt`;
+
+            // Show save dialog
+            const { filePath, canceled } = await dialog.showSaveDialog({
+              defaultPath: suggestedFilename,
+              filters: [{ name: m.dialog_text_files_filter(), extensions: ['txt'] }],
+            });
+
+            if (canceled || !filePath) {
+              // Clean up temp sample
+              try {
+                await fs.promises.unlink(samplePath);
+              } catch {
+                // Ignore cleanup errors
+              }
+              return;
+            }
+
+            // Move sample to final location
+            await fs.promises.copyFile(samplePath, filePath);
             try {
               await fs.promises.unlink(samplePath);
             } catch {
-              // Ignore cleanup errors
+              // Ignore cleanup errors — the sample was already saved
             }
+
+            logger.info('intentd stack sample exported successfully', { filePath });
+          } catch (error) {
+            logger.error('Failed to sample intentd process', error as Error);
+            if (samplePath) {
+              try {
+                await fs.promises.unlink(samplePath);
+              } catch {
+                // Ignore cleanup errors
+              }
+            }
+            dialog.showErrorBox(
+              m.dialog_sample_intentd_failed_title(),
+              error instanceof Error ? error.message : m.dialog_sample_intentd_failed_message(),
+            );
           }
-          dialog.showErrorBox(
-            m.dialog_sample_intentd_failed_title(),
-            error instanceof Error ? error.message : m.dialog_sample_intentd_failed_message(),
-          );
-        }
-      },
-    });
+        },
+      });
+    }
 
     // Build the template based on platform
     const template: Electron.MenuItemConstructorOptions[] = [];
@@ -1364,6 +1372,13 @@ app.whenReady().then(async () => {
     rebuildMenu();
   });
 
+  // Rebuild menu when the active backend changes (backend switch or boot
+  // restore of a remote) — the Help ▸ Sample intentd Process item is gated on
+  // win32 + local sidecar (#1889)
+  app.on('backend-connection-changed', () => {
+    rebuildMenu();
+  });
+
   // Rebuild menu when workspace state changes (enables/disables tab menu items)
   app.on('window-workspace-state-changed', () => {
     const openWorkspaceIds = getAllOpenWorkspaceIds();
@@ -1529,9 +1544,8 @@ app.whenReady().then(async () => {
     // a later awaited import must not leave boot-time GET_STATE waiters
     // hanging. (auto-update.ipc is statically imported above, so this dynamic
     // import is a cache hit.)
-    const { initializeAutoUpdater, markAutoUpdaterNotInitialized } = await import(
-      '../features/auto-update/main/auto-update.ipc'
-    );
+    const { initializeAutoUpdater, markAutoUpdaterNotInitialized } =
+      await import('../features/auto-update/main/auto-update.ipc');
     const mainWindow = getMainWindow();
     if (process.env.NODE_ENV !== 'development') {
       // Initialize regardless of whether a window exists yet
