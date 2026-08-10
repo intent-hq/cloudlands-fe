@@ -118,7 +118,11 @@ describe('regression guard: no legacy workspace-root probing', () => {
     for (const file of files) {
       const source = readFileSync(file, 'utf-8');
       if (
-        /join\(\s*(os\s*\.\s*)?homedir\(\)\s*,\s*['"]intent['"]\s*\)/.test(source) ||
+        // Any two-arg join(<base>, 'intent') — regardless of how the base was
+        // obtained (homedir(), a variable holding it, process.env.HOME, ...).
+        /\bjoin\(\s*[^,;]{1,80},\s*['"]intent['"]\s*\)/.test(source) ||
+        // Home-derived string building of an .../intent path on one line.
+        /(homedir\(\)|process\.env\.(HOME|USERPROFILE))[^\n]{0,60}[/\\]+intent\b/.test(source) ||
         /['"]system:workspace-root['"]/.test(source)
       ) {
         offenders.push(path.relative(SRC_ROOT, file));
