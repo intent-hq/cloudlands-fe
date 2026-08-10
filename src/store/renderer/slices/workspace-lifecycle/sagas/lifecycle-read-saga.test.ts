@@ -177,7 +177,7 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  it('guards ensure-tasks and gives explicit loads global latest semantics', async () => {
+  it('guards ensure-tasks and gives explicit loads per-workspace latest semantics', async () => {
     const current = state();
     current.workspaceTasks.byWorkspaceId[WS] = { loading: false, initialized: true };
     const run = start(current);
@@ -204,6 +204,56 @@ describe('lifecycleReadSaga', () => {
     ]);
     await settle();
     expect(mocks.tasks.list.mock.calls).toHaveLength(2);
+    await stop(run.task);
+  });
+
+  it('does not cancel concurrent ensure-tasks loads across workspaces (#1934)', async () => {
+    const OTHER = 'ws-lifecycle-other';
+    const resolvers: Record<string, (value: { tasks: unknown[]; stats: { total: number } }) => void> =
+      {};
+    mocks.tasks.list.mockImplementation(
+      (workspaceId: string) =>
+        new Promise((done) => {
+          resolvers[workspaceId] = done;
+        }),
+    );
+    const run = start();
+    run.channel.put(ensureWorkspaceTasksLoaded(WS));
+    run.channel.put(ensureWorkspaceTasksLoaded(OTHER));
+    await settle();
+    expect(mocks.tasks.list.mock.calls).toEqual([[WS], [OTHER]]);
+    resolvers[WS]({ tasks: [], stats: { total: 1 } });
+    resolvers[OTHER]({ tasks: [], stats: { total: 2 } });
+    await settle();
+    expect(run.actions).toEqual([
+      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
+      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [OTHER, [], { total: 2 }] },
+    ]);
+    await stop(run.task);
+  });
+
+  it('does not cancel concurrent explicit task loads across workspaces (#1934)', async () => {
+    const OTHER = 'ws-lifecycle-other';
+    const resolvers: Record<string, (value: { tasks: unknown[]; stats: { total: number } }) => void> =
+      {};
+    mocks.tasks.list.mockImplementation(
+      (workspaceId: string) =>
+        new Promise((done) => {
+          resolvers[workspaceId] = done;
+        }),
+    );
+    const run = start();
+    run.channel.put(loadWorkspaceTasksRequested(WS));
+    run.channel.put(loadWorkspaceTasksRequested(OTHER));
+    await settle();
+    expect(mocks.tasks.list.mock.calls).toEqual([[WS], [OTHER]]);
+    resolvers[WS]({ tasks: [], stats: { total: 1 } });
+    resolvers[OTHER]({ tasks: [], stats: { total: 2 } });
+    await settle();
+    expect(run.actions).toEqual([
+      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
+      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [OTHER, [], { total: 2 }] },
+    ]);
     await stop(run.task);
   });
 
