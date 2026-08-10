@@ -41,8 +41,12 @@ export const selectAllCatalogProviderIds = store.createSelector(
  * The effective default provider id, derived from user settings (the
  * registry carries no default designation): the provider prefix of the
  * global default model when it is a compound id, else the active provider
- * (`providers.active`), else the first catalog row. '' only before any of
- * those resolve (fresh state, catalog not hydrated).
+ * (`providers.active`). '' when neither resolves — an honestly unresolved
+ * state (fresh state, settings not hydrated, or `providers.active` unset).
+ * The FE never fabricates a default from the catalog: falling through to
+ * the first catalog row would functionally reinstate the removed hardcoded
+ * auggie default. Mirrors the daemon's `derived_default_provider`, which
+ * resolves unset settings to None (§5.31 gate closed), not a registry row.
  *
  * Once the catalog is hydrated, a prefix that is not a known catalog
  * provider id (malformed/legacy compound string) is ignored and resolution
@@ -54,8 +58,8 @@ export const selectAllCatalogProviderIds = store.createSelector(
  * - The model lookup is keyed by `activeProviderId`, so when
  *   `providers.active` is unset the persisted global model is never
  *   consulted — a daemon-persisted compound `model.default` without
- *   `providers.active` (older FE / another client) falls through to the
- *   first catalog row rather than the model's provider.
+ *   `providers.active` (older FE / another client) resolves to ''
+ *   (unresolved) rather than the model's provider.
  * - In steady state the compound branch is a legacy/transient-state guard,
  *   not the primary path: `providerModels[activeProviderId]` is
  *   write-normalized to the bare form (the model slice mirrors the active
@@ -73,8 +77,7 @@ export const selectEffectiveDefaultProviderId = store.createSelector((state): st
     const { providerId } = splitCompoundModelId(globalModel);
     if (providerId && (!catalogLoaded || catalogIds.includes(providerId))) return providerId;
   }
-  if (activeProviderId) return activeProviderId;
-  return catalogIds[0] ?? '';
+  return activeProviderId;
 });
 
 /** One registry row by id; `undefined` when unknown or not yet hydrated. */
@@ -86,7 +89,8 @@ export const selectProviderCatalogEntry = store.createSelector(
 /**
  * `getProviderConfig`-equivalent: the row for `providerId`, falling back to
  * the effective default provider's row when the id is unknown. `undefined`
- * only before the first hydration.
+ * before the first hydration, or for an unknown id while the effective
+ * default is unresolved ('').
  */
 export const selectProviderCatalogEntryOrDefault = store.createSelector(
   (state, providerId: string): ProviderCatalogEntry | undefined =>
@@ -113,7 +117,8 @@ export const selectProviderEnabledFromCatalog = store.createSelector(
  * Canonical provider id for a raw/aliased id: the row's own `id` when known,
  * the effective default for unknown ids (mirroring the old
  * `getProviderConfig(id).id` alias healing for `acp` / `default` /
- * `augment`), and the raw id verbatim before hydration.
+ * `augment`), and the raw id verbatim before hydration or while the
+ * effective default is unresolved.
  */
 export const selectNormalizedProviderId = store.createSelector(
   (state, providerId: string): string =>

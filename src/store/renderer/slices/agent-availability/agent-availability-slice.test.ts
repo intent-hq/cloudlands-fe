@@ -5,6 +5,7 @@ import {
 } from 'vitest';
 import {
   agentAvailabilityReducer,
+  checkAllProvidersComplete,
   checkSingleProviderFailure,
   checkSingleProviderRequested,
   initialState,
@@ -36,20 +37,49 @@ describe('agentAvailabilityReducer status retention during re-checks', () => {
     }
   });
 
-  it('checkSingleProviderFailure is a no-op: it does not clear the loading flag', () => {
-    // A probe failure (unreachable daemon / RPC error) must not fabricate a
-    // terminal "not installed" render. Leaving providerLoadingMap untouched
-    // keeps the card in its existing indeterminate state until a fresh
-    // probe actually succeeds.
+  it('checkSingleProviderFailure clears the loading flag without touching statuses', () => {
+    // A probe failure (unreachable daemon / RPC error) must settle the
+    // in-flight flag — a stuck-true flag leaves the card spinner running and
+    // its refresh button disabled forever — but must NOT fabricate a status
+    // or erase a previously successful one.
     const loadingState: AgentAvailabilityState = {
       ...initialState,
       providerStatusMap: { auggie: { available: true, authenticated: true } },
-      providerLoadingMap: { auggie: true },
+      providerLoadingMap: { auggie: true, codex: true },
     };
     const next = agentAvailabilityReducer(loadingState, checkSingleProviderFailure('auggie'));
-    expect(next).toBe(loadingState);
-    expect(next.providerLoadingMap.auggie).toBe(true);
+    expect(next.providerLoadingMap).toEqual({ auggie: false, codex: true });
     expect(next.providerStatusMap).toBe(loadingState.providerStatusMap);
     expect(next.providerStatusMap.auggie).toEqual({ available: true, authenticated: true });
+  });
+});
+
+describe('agentAvailabilityReducer hasCheckedOnce honesty', () => {
+  it('does not flip when the sweep landed no statuses (all probes failed)', () => {
+    // An all-probes-failed sweep (daemon unreachable) proves nothing about
+    // availability — presenting it as "checked" would let ModelPicker read
+    // the empty map as "confirmed nothing available".
+    const next = agentAvailabilityReducer(initialState, checkAllProvidersComplete());
+    expect(next).toBe(initialState);
+    expect(next.hasCheckedOnce).toBe(false);
+  });
+
+  it('flips once at least one probe landed a status', () => {
+    const state: AgentAvailabilityState = {
+      ...initialState,
+      providerStatusMap: { auggie: { available: false } },
+    };
+    const next = agentAvailabilityReducer(state, checkAllProvidersComplete());
+    expect(next.hasCheckedOnce).toBe(true);
+  });
+
+  it('stays true once set', () => {
+    const state: AgentAvailabilityState = {
+      ...initialState,
+      providerStatusMap: { auggie: { available: false } },
+      hasCheckedOnce: true,
+    };
+    const next = agentAvailabilityReducer(state, checkAllProvidersComplete());
+    expect(next).toBe(state);
   });
 });

@@ -61,4 +61,17 @@ describe('resolveOnboardingSelectedProvider', () => {
       }),
     ).toBe('codex');
   });
+
+  it('treats an unresolved default provider ("") as no default — first ready wins', () => {
+    // With providers.active unset the settings-derived default is '' — it
+    // must never match a ready id, so resolution falls through to the first
+    // ready provider (no fabricated auggie preference).
+    expect(
+      resolveOnboardingSelectedProvider({
+        activeProviderId: '',
+        defaultProviderId: '',
+        readyProviderIds: ['claude-code', 'auggie'],
+      }),
+    ).toBe('claude-code');
+  });
 });

@@ -124,13 +124,18 @@ import {
 import { MOCK_PROVIDER_CATALOG } from '../../../test/fixtures/provider-catalog.fixture';
 
 // The resolver reads the default provider + tier tables straight off
-// state.providerCatalog (real selectors, not mocked) — hydrate it.
+// state.providerCatalog (real selectors, not mocked) — hydrate it. The
+// effective default provider is settings-derived (never fabricated from the
+// catalog), so providerSettings mirrors the mocked active provider.
 const fakeState = {
   providerCatalog: providerCatalogReducer(
     providerCatalogInitialState,
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
   ),
-} as StoreState;
+  get providerSettings() {
+    return { activeProviderId: mockState.activeProviderId, enabledProviders: {} };
+  },
+} as unknown as StoreState;
 
 function setAvailability(
   overrides: Partial<Record<keyof ProviderAvailabilityResult['providers'], { available: boolean; authenticated?: boolean }>>,
@@ -221,14 +226,27 @@ describe('resolveOnboardingModel', () => {
     await expect(resolveOnboardingModel(fakeState)).rejects.toThrow(/claude-code/);
   });
 
-  it('falls back gracefully to defaults when nothing is installed + authenticated', async () => {
+  it('falls back to an honest unresolved provider when nothing is installed and nothing was picked', async () => {
+    // No usable provider, no explicit pick (providers.active unset): the
+    // resolver must not fabricate auggie — it returns the settings-derived
+    // default, which is '' (unresolved) here.
     setAvailability({});
-    mockState.activeProviderId = 'auggie';
+    mockState.activeProviderId = '';
 
     const result = await resolveOnboardingModel(fakeState);
 
-    expect(result.provider).toBe('auggie');
+    expect(result.provider).toBe('');
     expect(result.model).toBeUndefined();
+  });
+
+  it('throws when the explicitly picked auggie is not installed (explicit picks are never silently kept alive)', async () => {
+    // providers.active = 'auggie' is an explicit user pick like any other
+    // provider — when unusable it surfaces an error instead of silently
+    // proceeding.
+    setAvailability({});
+    mockState.activeProviderId = 'auggie';
+
+    await expect(resolveOnboardingModel(fakeState)).rejects.toThrow(/auggie/);
   });
 
   it('throws when user-explicit opencode is installed but explicitly not authenticated', async () => {
@@ -374,9 +392,12 @@ describe('resolveOnboardingModel', () => {
         auggie: { available: true, authenticated: true },
         claudeCode: { available: true, authenticated: true },
       });
-      // User explicitly selected claude-code; the stale override belongs to auggie.
+      // User explicitly selected claude-code; the stale compound override
+      // belongs to auggie. (A bare override id would attribute to the
+      // effective default — claude-code here — by design; only an explicit
+      // cross-provider prefix is droppable.)
       mockState.activeProviderId = 'claude-code';
-      mockState.userOverrides = { modelOverrides: { 'spec-writer': 'fable-5' } };
+      mockState.userOverrides = { modelOverrides: { 'spec-writer': 'auggie:fable-5' } };
 
       const result = await resolveOnboardingModel(fakeState);
 

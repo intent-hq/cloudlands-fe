@@ -17,6 +17,14 @@ export type AgentAvailabilityState = {
   providerStatusMap: Record<string, ProviderStatus>;
   /** Per-provider in-flight availability-check flags. */
   providerLoadingMap: Record<string, boolean>;
+  /**
+   * Per-provider check generation, bumped every time a check starts (single
+   * or bulk). The saga captures it when a probe starts and discards the
+   * result if a newer check began meanwhile — so a slow, stale probe (e.g. a
+   * focus-triggered sweep that started before an install finished) can never
+   * overwrite the result of a check that started later.
+   */
+  providerCheckEpochMap: Record<string, number>;
   /** Per-provider in-flight user-info lookup flags. */
   providerUserInfoLoadingMap: Record<string, boolean>;
   /** True once the first bulk check has resolved. */

@@ -95,6 +95,9 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({
     state: () => ({
       providerCatalog,
+      // The effective default provider is settings-derived (never the first
+      // catalog row) — mirror the mocked selectActiveProviderId default.
+      providerSettings: { activeProviderId: 'auggie', enabledProviders: {} },
       providerModels: {
         byProviderId: mockProviderModelsState.byProviderId,
         clearEpoch: mockProviderModelsState.clearEpoch,
@@ -1515,8 +1518,8 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     await waitFor(() => {
       expect(dispatchedTypes()).toContain('agentSession/updateSession');
     });
-    // Bare model id → the effective default provider ('auggie', first catalog
-    // row with no active-provider override) rides along as the explicit
+    // Bare model id → the effective default provider ('auggie', the
+    // settings-designated providers.active) rides along as the explicit
     // providerId on the wire call.
     expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
       'agent-1',

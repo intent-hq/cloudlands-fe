@@ -7,7 +7,8 @@
  * onboarding agent will actually launch with:
  *
  *   1. the currently active provider, if it is ready
- *   2. the app's default provider (Auggie), if it is ready
+ *   2. the settings-derived default provider, if designated and ready
+ *      ('' — unresolved — never matches a ready id)
  *   3. the first ready provider in the caller-supplied order
  *
  * "Ready" here means installed + authenticated (and, for Auggie, on a

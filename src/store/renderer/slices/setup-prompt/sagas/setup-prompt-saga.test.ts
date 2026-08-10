@@ -196,6 +196,41 @@ describe('evaluateSetupStateWorker', () => {
     }
   });
 
+  it('paces re-requests when a sweep settles without flipping hasCheckedOnce (all probes failed)', async () => {
+    // Regression: an all-failed sweep dispatches checkAllProvidersComplete
+    // without flipping hasCheckedOnce (it lands no statuses). The settle must
+    // NOT immediately re-dispatch ensureProvidersChecked — with a fast-failing
+    // provider check that becomes a zero-delay hot loop (the CI OOM in the
+    // hardware-console composition test).
+    vi.useFakeTimers();
+    try {
+      const { channel, dispatched, task, state } = harness({ hasCheckedOnce: false });
+      await settle();
+      channel.put(replaceWorkspaceList([]) as never);
+      await settle();
+      const requests = () =>
+        dispatched.filter((a) => a.type === ensureProvidersChecked.type).length;
+      expect(requests()).toBe(1);
+
+      // Sweep settles all-failed: complete fires, hasCheckedOnce stays false.
+      channel.put(checkAllProvidersComplete() as never);
+      await settle();
+      expect(requests()).toBe(1);
+
+      // Only after the retry pause does the worker re-request.
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(requests()).toBe(2);
+
+      state.agentAvailability.hasCheckedOnce = true;
+      channel.put(checkAllProvidersComplete() as never);
+      await vi.advanceTimersByTimeAsync(3_000);
+      await task.toPromise();
+      expect(completedEvaluations(dispatched)).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('waits out an in-flight provider re-check before evaluating', async () => {
     const h = harness({
       providerLoadingMap: { auggie: true },
@@ -215,21 +250,43 @@ describe('evaluateSetupStateWorker', () => {
 });
 
 describe('requestReevaluation', () => {
-  it('dispatches evaluateSetupStateRequested', async () => {
+  function run(hasCheckedOnce: boolean) {
     const channel = stdChannel();
     const dispatched: { type: string }[] = [];
-    await runSaga(
+    const task = runSaga(
       {
         channel,
         dispatch: (a: { type: string }) => {
           dispatched.push(a);
           return a;
         },
-        getState: () => ({}),
+        getState: () => ({ agentAvailability: { hasCheckedOnce } }),
       },
       requestReevaluation,
-    ).toPromise();
+    );
+    return { dispatched, task };
+  }
+
+  it('dispatches evaluateSetupStateRequested immediately once checked', async () => {
+    const { dispatched, task } = run(true);
+    await task.toPromise();
     expect(dispatched.map((a) => a.type)).toEqual([evaluateSetupStateRequested.type]);
+  });
+
+  it('paces the re-evaluation while hasCheckedOnce is still false', async () => {
+    // A settle without landed statuses (all probes failed) must not re-enter
+    // the evaluate → ensure → sweep cycle with zero delay (hot-loop guard).
+    vi.useFakeTimers();
+    try {
+      const { dispatched, task } = run(false);
+      await Promise.resolve();
+      expect(dispatched).toEqual([]);
+      await vi.advanceTimersByTimeAsync(3_000);
+      await task.toPromise();
+      expect(dispatched.map((a) => a.type)).toEqual([evaluateSetupStateRequested.type]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

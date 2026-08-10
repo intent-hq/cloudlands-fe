@@ -144,7 +144,13 @@ vi.mock('$store/renderer/store', async () => {
   );
 
   return createAppStoreMockModule({
-    state: () => ({ sessions, providerCatalog }),
+    // providers.active designates auggie as the settings-derived effective
+    // default (the catalog never fabricates one from its first row).
+    state: () => ({
+      sessions,
+      providerCatalog,
+      providerSettings: { activeProviderId: 'auggie', enabledProviders: {} },
+    }),
     dispatch: mockReduxDispatch,
   });
 });

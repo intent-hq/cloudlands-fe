@@ -12,7 +12,7 @@
  *   1. provider encoded in a specialist user model override (e.g. 'opencode:x')
  *   2. specialist.codingAgent (if the specialist pins one)
  *   3. the currently active provider from Redux (honors onboarding card click)
- *   4. the app's default provider (Auggie)
+ *   4. the settings-derived effective default provider (when designated)
  *   5. the first usable provider
  *
  * Model selection is daemon-owned (single resolver, PROTOCOL §5.11): the
@@ -194,15 +194,16 @@ export async function resolveOnboardingModel(
     ? getProviderForModel(specialistOverride, defaultProviderId)
     : undefined;
 
-  // When the user explicitly selected a provider different from the default
-  // (i.e. clicked a non-Auggie provider card in onboarding), honor their
-  // choice with a relaxed auth gate: `authenticated === undefined` means the
-  // probe (e.g. `opencode models`) was inconclusive on a slow machine, but
-  // the CLI is installed and the user told us what they want. Only explicit
-  // `authenticated === false` is still a hard rejection. If the explicit
-  // pick fails even the relaxed gate, throw — never silently switch to a
-  // different provider behind the user's back.
-  const userExplicit = activeProvider !== defaultProviderId;
+  // When the user explicitly selected a provider (a non-empty
+  // `providers.active` — the only writers are the user's own picks), honor
+  // their choice with a relaxed auth gate: `authenticated === undefined`
+  // means the probe (e.g. `opencode models`) was inconclusive on a slow
+  // machine, but the CLI is installed and the user told us what they want.
+  // Only explicit `authenticated === false` is still a hard rejection. If
+  // the explicit pick fails even the relaxed gate, throw — never silently
+  // switch to a different provider behind the user's back. An unset active
+  // provider ('') is never explicit and takes the auto-pick chain below.
+  const userExplicit = activeProvider !== '';
   let provider: string | undefined;
 
   if (userExplicit) {
@@ -228,8 +229,9 @@ export async function resolveOnboardingModel(
 
     if (!provider) {
       // No usable provider at all AND the user did not explicitly pick one.
-      // Fall back to the defaults so the caller gets a well-formed object;
-      // this preserves the Auggie-only backwards-compatible path.
+      // Fall back to the specialist's declared pin, else the settings-derived
+      // default — which may be '' (honestly unresolved). Never fabricate a
+      // provider the user/settings did not designate.
       logger.warn('No usable provider found for onboarding, falling back to defaults', {
         activeProvider,
         defaultProviderId,

@@ -37,7 +37,6 @@
 } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
   import {
   selectCompactWorkspaceInitializerFormState,
-  selectWorkspaceInitializerDefaultParentPath,
   selectWorkspaceInitializerHydrated,
   selectWorkspaceInitializerLastSelectedRepo,
   selectWorkspaceInitializerLastSubmittedAgent,
@@ -312,7 +311,6 @@
           repoPath = data.repoPath;
           repoType = 'local';
           githubUrl = '';
-          clonePath = '';
           isNewRepo = false;
           isValidPath = true;
           // Reset scope when changing repos - scope is repo-specific
@@ -434,7 +432,6 @@
   const lastSubmittedAgent$ = selectWorkspaceInitializerLastSubmittedAgent();
   const recentRepos$ = selectWorkspaceInitializerRecentRepos();
   const pendingGitHubPrefill$ = selectWorkspaceInitializerPendingGitHubPrefill();
-  const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
 
   const savedState = $compactFormState$;
   const lastSubmittedAgent = $lastSubmittedAgent$;
@@ -443,7 +440,6 @@
   let repoPath = $state(savedState?.repoPath ?? '');
   let repoType: 'local' | 'github' | 'remote' = $state(savedState?.repoType ?? 'local');
   let githubUrl = $state(savedState?.githubUrl ?? '');
-  let clonePath = $state(savedState?.clonePath ?? ''); // User-selected folder for cloning GitHub repos
   let branch = $state(savedState?.branch ?? '');
   let isNewRepo = $state(savedState?.isNewRepo ?? false);
   let isValidPath = $state(savedState?.isValidPath ?? false);
@@ -491,8 +487,11 @@
     savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? true,
   );
   // Track which provider the user selected for the initial agent
-  // Priority: active provider store takes precedence since it's the user's explicit choice
-  let selectedProvider = $state<string>($activeProviderId$ ?? 'auggie');
+  // Priority: active provider store takes precedence since it's the user's
+  // explicit choice, else the settings-derived effective default. '' when
+  // neither has resolved (honestly unselected — never a fabricated auggie);
+  // the $effect below adopts the provider once settings hydration lands.
+  let selectedProvider = $state<string>($activeProviderId$ || $defaultProviderId$);
   let prefillTitle = $state('');
 
   // Funnel tracking — fires at most once per form session, reset in clearForm()
@@ -595,7 +594,6 @@
     repoPath = formState.repoPath ?? repoPath;
     repoType = formState.repoType ?? repoType;
     githubUrl = formState.githubUrl ?? githubUrl;
-    clonePath = formState.clonePath ?? clonePath;
     branch = formState.branch ?? branch;
     isNewRepo = formState.isNewRepo ?? isNewRepo;
     isValidPath = formState.isValidPath ?? isValidPath;
@@ -611,7 +609,6 @@
     repoPath = data.path || '';
     repoType = data.type || 'local';
     githubUrl = data.githubUrl || '';
-    clonePath = data.clonePath || '';
     isNewRepo = data.isNewRepo || false;
     isValidPath = data.isValidPath ?? false;
     scope = data.scope || '';
@@ -725,7 +722,6 @@
         repoPath,
         repoType,
         githubUrl,
-        clonePath,
         branch,
         isNewRepo,
         isValidPath,
@@ -810,12 +806,11 @@
 
         // Apply repo and branch settings — a repoPath prefill is always a
         // local repo, so set the full selection (clearing any restored
-        // github/clone state) so the picker opens on the Copy local repo tab
+        // github state) so the picker opens on the Copy local repo tab
         if (data.repoPath) {
           repoPath = data.repoPath;
           repoType = 'local';
           githubUrl = '';
-          clonePath = '';
           isNewRepo = false;
           isValidPath = true;
           // Reset scope when changing repos - scope is repo-specific
@@ -954,7 +949,6 @@
       owner: target.owner,
       repo: target.repo,
       candidates,
-      defaultParentPath: $defaultParentPath$,
       probeRemote: async (path) => {
         if (typeof window === 'undefined' || !window.electronAPI) return null;
         const response = await invoke<{
@@ -974,11 +968,12 @@
       const detail = { path: selection.path, type: 'local' as const, isValidPath: true };
       handleRepoChange({ detail } as CustomEvent<typeof detail>);
     } else {
+      // Picked-repo GitHub selection: `path` carries the owner/repo shorthand
+      // (mirroring RepoSelector's path-less GitHub picks), no local path.
       const detail = {
-        path: selection.clonePath,
+        path: selection.path,
         type: 'github' as const,
         githubUrl: selection.githubUrl,
-        clonePath: selection.clonePath,
         isValidPath: true,
       };
       handleRepoChange({ detail } as CustomEvent<typeof detail>);
@@ -1193,7 +1188,9 @@
     }, 200);
   });
 
-  // §5.31 gate — enhance is auggie-only; unset active provider defaults to auggie
+  // §5.31 gate — enhance is auggie-only; an unresolved effective provider
+  // ('') resolves the gate closed (mirrors the daemon: unset never defaults
+  // to auggie).
   const enhanceAvailable = $derived(isEnhancePromptAvailable($defaultProviderId$));
 
   // Enhance prompt state
@@ -1443,7 +1440,6 @@
       path: string;
       type: 'local' | 'github' | 'remote';
       githubUrl?: string;
-      clonePath?: string;
       isNewRepo?: boolean;
       isValidPath?: boolean;
       scope?: string;
@@ -1456,7 +1452,6 @@
     isValidPath = event.detail.isValidPath ?? false;
     scope = event.detail.scope || '';
     githubUrl = event.detail.githubUrl || '';
-    clonePath = event.detail.clonePath || '';
     branch = isNewRepo
       ? 'main'
       : event.detail.type === 'remote'
@@ -1950,11 +1945,11 @@
         logger.debug('Saved branch per repo', { repoPath, branch: baseBranch });
       }
 
-      // Picked repo (GitHub selection with no explicit clone destination):
-      // the daemon hydrates the checkout from its repo cache — send
-      // githubUrl + branch fields ONLY, no clonePath/repositoryPath
-      // (repoPath holds the owner/repo shorthand, not a local path).
-      const isGithubPick = repoType === 'github' && !!githubUrl && !clonePath;
+      // Picked repo (GitHub selection): the daemon hydrates the checkout
+      // from its repo cache — send githubUrl + branch fields ONLY, no
+      // repositoryPath (repoPath holds the owner/repo shorthand, not a
+      // local path).
+      const isGithubPick = repoType === 'github' && !!githubUrl;
 
       // Await any in-flight repo-config probe (bounded, sub-second) so the
       // setup-script decision below sees the committed `.intent/config.json`
@@ -1978,8 +1973,7 @@
         repositoryPath: isGithubPick
           ? undefined
           : String(remoteSetupSnapshot?.workspacePath || repoPath),
-        githubUrl: repoType === 'github' && githubUrl ? githubUrl : undefined, // GitHub URL to clone
-        clonePath: repoType === 'github' && clonePath ? clonePath : undefined, // User-selected clone destination (legacy explicit-clone flow)
+        githubUrl: repoType === 'github' && githubUrl ? githubUrl : undefined, // GitHub URL of the picked repo
         baseRef: String(baseBranch),
         setupScript: setupScriptParam,
         environmentConfig,
@@ -2151,7 +2145,6 @@
       repoPath = '';
       repoType = 'local';
       githubUrl = '';
-      clonePath = '';
       branch = '';
       isNewRepo = false;
       isValidPath = false;
@@ -2204,7 +2197,6 @@
       cleanedState.repoPath = repoPath;
       cleanedState.repoType = repoType;
       cleanedState.githubUrl = githubUrl;
-      cleanedState.clonePath = clonePath;
       cleanedState.branch = branch;
       cleanedState.isNewRepo = isNewRepo;
       cleanedState.isValidPath = isValidPath;

@@ -457,7 +457,6 @@
               branch: selection.branch,
               scope: selection.scope,
               githubUrl: selection.githubUrl,
-              clonePath: selection.clonePath,
               projectName: selection.projectName,
               isValid: selection.isValid,
             }
@@ -887,11 +886,16 @@
         repoConfigScriptRepo,
       });
 
+      // Picked repo (GitHub selection): the daemon hydrates the checkout
+      // from its repo cache — send githubUrl + branch ONLY, no
+      // clonePath/repositoryPath (repoPath holds the owner/repo shorthand,
+      // not a local path). Mirrors CompactWorkspaceInitializer's flow.
+      const isGithubPick = projectSelection.type === 'github' && !!projectSelection.githubUrl;
+
       const result = await workspaceClient.create({
         title: '',
-        repositoryPath: projectSelection.repoPath,
+        repositoryPath: isGithubPick ? undefined : projectSelection.repoPath,
         githubUrl: projectSelection.githubUrl,
-        clonePath: projectSelection.clonePath,
         baseRef: effectiveBranch,
         isNewRepo,
         skipIsolation: onboardingSkipIsolation || undefined,

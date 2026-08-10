@@ -144,8 +144,10 @@ describe('provider-catalog selectors', () => {
     expect(
       selectEffectiveDefaultProviderId.select(storeWith(hydrated, {}, { activeProviderId: 'pi' })),
     ).toBe('pi');
-    // Nothing configured → the first catalog row (neutral positional rule).
-    expect(selectEffectiveDefaultProviderId.select(storeWith(hydrated))).toBe('auggie');
+    // Nothing configured → '' (honestly unresolved). The catalog never
+    // fabricates a default: falling through to the first row would silently
+    // reinstate the removed hardcoded auggie default.
+    expect(selectEffectiveDefaultProviderId.select(storeWith(hydrated))).toBe('');
     // Before hydration with nothing configured → ''.
     expect(selectEffectiveDefaultProviderId.select(storeWith(initialState))).toBe('');
   });
@@ -188,10 +190,10 @@ describe('provider-catalog selectors', () => {
     expect(selectProviderCatalogEntryOrDefault.select(storeWith(hydrated), 'unsloth')?.id).toBe(
       'unsloth',
     );
-    // Nothing configured → the first catalog row is the effective default.
-    expect(selectProviderCatalogEntryOrDefault.select(storeWith(hydrated), 'nope')?.id).toBe(
-      'auggie',
-    );
+    // Nothing configured → no default row to fall back to (unresolved '').
+    expect(
+      selectProviderCatalogEntryOrDefault.select(storeWith(hydrated), 'nope'),
+    ).toBeUndefined();
     // A configured active provider redirects the fallback row.
     expect(
       selectProviderCatalogEntryOrDefault.select(

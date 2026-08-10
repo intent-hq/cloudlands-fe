@@ -121,9 +121,11 @@
     if (providerAvailability && availableProviders.length > 0) {
       const isSelectedAvailable = availableProviders.some((p) => p.id === selectedProvider);
       if (!isSelectedAvailable) {
-        // Check if this is the user's explicit choice from the provider store
+        // Check if this is the user's explicit choice from the provider store.
+        // '' (unresolved — settings not hydrated / providers.active unset) is
+        // never an explicit choice, so it must not block the auto-select.
         const userExplicitChoice = $activeProviderId$;
-        if (selectedProvider === userExplicitChoice) {
+        if (selectedProvider && selectedProvider === userExplicitChoice) {
           // User explicitly selected this provider - don't override even if availability check fails
           logger.debug('Keeping user-selected provider despite availability check:', {
             selectedProvider,

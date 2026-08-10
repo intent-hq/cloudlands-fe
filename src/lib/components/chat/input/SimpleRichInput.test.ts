@@ -286,6 +286,7 @@ describe('SimpleRichInput provider switch sync', () => {
   afterEach(() => {
     cleanup();
     removeMockSession('ws-1', 'agent-1');
+    mockReduxState.providerSettings.activeProviderId = '';
     vi.unstubAllGlobals();
     document.body.innerHTML = '';
   });
@@ -630,6 +631,9 @@ describe('SimpleRichInput provider switch sync', () => {
   });
 
   it('treats default-provider aliases as the same provider during model selection', async () => {
+    // Alias healing ('augment' → the effective default row) requires a
+    // designated default — the unresolved '' state never adopts a row.
+    mockReduxState.providerSettings.activeProviderId = 'auggie';
     const onmodelChange = vi.fn();
     const workspace = {
       id: 'ws-1',
@@ -862,11 +866,13 @@ describe('SimpleRichInput enhance-button provider gate (§5.31)', () => {
     expect(enhanceButton()).not.toBeNull();
   });
 
-  it('shows the enhance button when no active provider is set (daemon default is auggie)', () => {
+  it('hides the enhance button when no active provider is set (unresolved closes the §5.31 gate)', () => {
+    // Mirrors the daemon: unset/undecidable settings resolve the gate
+    // CLOSED — never a silent auggie default.
     mockReduxState.providerSettings.activeProviderId = '';
     render(SimpleRichInput, { props: baseProps() });
 
-    expect(enhanceButton()).not.toBeNull();
+    expect(enhanceButton()).toBeNull();
   });
 
   it('hides the enhance button when the active provider is not auggie', () => {
