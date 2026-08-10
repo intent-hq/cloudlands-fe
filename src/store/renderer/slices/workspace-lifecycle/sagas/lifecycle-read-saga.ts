@@ -1,18 +1,5 @@
-import type { StoreAction, StoreActionCreator } from '@augmentcode/themis/utils/store/create-action';
-import type { Task } from 'redux-saga';
 import type { SagaGenerator } from 'typed-redux-saga';
-import {
-  all,
-  call,
-  cancel,
-  fork,
-  put,
-  race,
-  take,
-  takeEvery,
-  takeLatest,
-  takeLeading,
-} from 'typed-redux-saga';
+import { all, call, put, race, take, takeEvery, takeLeading } from 'typed-redux-saga';
 
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { reconcileGitStatusChanges } from '$features/file-tracking/git-status-reconciliation';
@@ -20,6 +7,12 @@ import { getAgentLineStats } from '$features/line-changes/line-changes.client';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import type { Workspace } from '$shared/types';
+import {
+  takeLatestByWorkspace,
+  takeLeadingByAgent,
+  takeLeadingByWorkspace,
+  takeLeadingInContext,
+} from '../../../utils/context-saga-effects';
 import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import {
@@ -277,33 +270,6 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
 
 type WorkspaceRead = (workspaceId: string) => SagaGenerator<void>;
 
-/**
- * `takeLatest` keyed per workspace: a new action supersedes (cancels) only the
- * in-flight worker for the same workspace. A plain `takeLatest` keys globally,
- * so concurrent loads for different workspaces cancelled each other
- * (intent-hq/monorepo#1934).
- */
-function takeLatestByWorkspace<ARGS extends [workspaceId: string, ...rest: unknown[]]>(
-  actionCreator: StoreActionCreator<ARGS, ARGS>,
-  worker: (action: StoreAction<ARGS>) => Generator,
-) {
-  return fork(function* () {
-    const running: Record<string, Task> = {};
-    while (true) {
-      const action: StoreAction<ARGS> = yield* take(actionCreator);
-      // Lazily prune finished tasks so entries for completed loads and
-      // deleted workspaces don't accumulate for the lifetime of the saga.
-      for (const [id, task] of Object.entries(running)) {
-        if (!task.isRunning()) delete running[id];
-      }
-      const workspaceId = action.payload[0];
-      const previous = running[workspaceId];
-      if (previous?.isRunning()) yield* cancel(previous);
-      running[workspaceId] = yield* fork(worker, action);
-    }
-  });
-}
-
 function* runWorkspaceRead(key: string, workspaceId: string, worker: WorkspaceRead) {
   if (!workspaceId) return;
   try {
@@ -485,23 +451,23 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       takeLeading(loadWorkspacesRequested, loadWorkspacesWorker),
       takeLatestByWorkspace(ensureWorkspaceTasksLoaded, ensureTasksWorker),
       takeLatestByWorkspace(loadWorkspaceTasksRequested, loadTasksWorker),
-      takeLeading(loadEventsRequested, eventsWorker),
-      takeLeading(fetchWorkspaceTokenUsage, tokenUsageWorker),
-      takeLeading(initContextForWorkspace, contextWorker, initializedContexts),
-      takeLeading(hydrateTaskAgentAssociationsRequested, taskAgentLinksWorker),
-      takeLeading(loadSkillsRequested, skillsWorker),
-      takeLeading(refreshScripts, scriptsWorker),
-      takeLeading(refreshPRStatusRequested, prStatusWorker),
-      takeLatest(refreshRequested, refreshChangesWorker),
-      takeLatest(loadWorkspaceDataRequested, loadChangesWorker),
-      takeLeading(loadOlderCommitsRequested, olderCommitsWorker),
-      takeLeading(requestAgentLineStats, agentLineStatsWorker),
-      // Per-workspace latest: the daemon events bridge dispatches this for
-      // whichever workspace an event names (agent:status-changed, agent:idle,
-      // agent:delete-cancelled), so a global takeLatest would let workspace
-      // B's event cancel A's in-flight agents hydrate and discard its result.
+      takeLeadingByWorkspace(loadEventsRequested, eventsWorker),
+      takeLeadingByWorkspace(fetchWorkspaceTokenUsage, tokenUsageWorker),
+      takeLeadingByWorkspace(initContextForWorkspace, contextWorker, initializedContexts),
+      takeLeadingByWorkspace(hydrateTaskAgentAssociationsRequested, taskAgentLinksWorker),
+      takeLeadingByWorkspace(loadSkillsRequested, skillsWorker),
+      takeLeadingByWorkspace(refreshScripts, scriptsWorker),
+      takeLeadingByWorkspace(refreshPRStatusRequested, prStatusWorker),
+      takeLatestByWorkspace(refreshRequested, refreshChangesWorker),
+      takeLatestByWorkspace(loadWorkspaceDataRequested, loadChangesWorker),
+      takeLeadingInContext(
+        loadOlderCommitsRequested,
+        (action) => action.payload.wsId,
+        olderCommitsWorker,
+      ),
+      takeLeadingByAgent(requestAgentLineStats, agentLineStatsWorker),
       takeLatestByWorkspace(hydrateAgentsRequested, agentsWorker),
-      takeLeading(hydrateTerminalsRequested, terminalsWorker),
+      takeLeadingByWorkspace(hydrateTerminalsRequested, terminalsWorker),
       takeEvery(workspaceDeleted, clearDeletedInitializedContext, initializedContexts),
       takeEvery(workspaceUnmounted, clearUnmountedInitializedContext, initializedContexts),
     ]);

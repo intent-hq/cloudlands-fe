@@ -198,6 +198,23 @@ describe('saga watcher ownership guard', () => {
     expect(result.violations).toEqual([expect.stringContaining('wildcard Redux watcher')]);
   });
 
+  it('recognizes workspace and agent contextual delegates as watcher owners', () => {
+    const source = [
+      "import { takeLatestByWorkspace, takeLeadingByAgent as byAgent } from '$store/renderer/utils/context-saga-effects';",
+      "import { load, start } from '../slice';",
+      'export function* badSaga() {',
+      '  yield* takeLatestByWorkspace(load, loadWorker);',
+      '  yield* byAgent(start, startWorker);',
+      '}',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
+      { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
+    ]);
+    expect(result.watcherCount).toBe(2);
+    expect(result.violations).toEqual([]);
+  });
+
   it('detects duplicate ownership shared by native and contextual watchers', () => {
     const first = [
       "import { takeLatestInContext } from '$store/renderer/utils/context-saga-effects';",

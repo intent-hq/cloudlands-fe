@@ -5,7 +5,14 @@ import ts from 'typescript';
 
 const ROOT_SAGAS = 'src/store/renderer/sagas.ts';
 const SAGA_SOURCE = /^src\/store\/renderer\/slices\/.+\/sagas\/.+\.ts$/;
-const CONTEXT_WATCHERS = new Set(['takeLatestInContext', 'takeLeadingInContext']);
+const GENERIC_CONTEXT_WATCHERS = new Set(['takeLatestInContext', 'takeLeadingInContext']);
+const DOMAIN_CONTEXT_WATCHERS = new Set([
+  'takeLatestByWorkspace',
+  'takeLeadingByWorkspace',
+  'takeLatestByAgent',
+  'takeLeadingByAgent',
+]);
+const CONTEXT_WATCHERS = new Set([...GENERIC_CONTEXT_WATCHERS, ...DOMAIN_CONTEXT_WATCHERS]);
 const WATCHERS = new Set([
   'takeEvery',
   'takeLatest',
@@ -205,7 +212,7 @@ function watcherPattern(effect, call) {
 }
 
 function watcherWorker(effect, call) {
-  if (effect === 'throttle' || effect === 'debounce' || CONTEXT_WATCHERS.has(effect)) {
+  if (effect === 'throttle' || effect === 'debounce' || GENERIC_CONTEXT_WATCHERS.has(effect)) {
     return call.arguments[2];
   }
   return call.arguments[1];
