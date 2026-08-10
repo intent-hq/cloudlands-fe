@@ -284,7 +284,7 @@ import {
   registerBackendHandlers,
   disposeBackendClient,
   getBackendClient,
-  isRemoteBackendActive,
+  isSameHostBackendActive,
   reconcileActiveConnectionOnBoot,
 } from '../features/backend/main/backend.ipc';
 import { getConnectionMode } from '../features/backend/main/connection-mode';
@@ -1096,11 +1096,11 @@ app.whenReady().then(async () => {
     });
 
     // Add Sample intentd Process (daemon-side capture via debug.sampleStacks,
-    // PROTOCOL §5.43). Hidden on a Windows FE with the local sidecar active —
-    // that daemon can never support sampling (#1889); the menu is rebuilt on
-    // 'backend-connection-changed' so the gate tracks backend switches. Any
+    // PROTOCOL §5.43). Hidden on a Windows FE whose daemon is same-host (UDS,
+    // no saved remote) — it can never support sampling (#1889); the menu is
+    // rebuilt on 'backend-connection-changed' so the gate tracks switches. Any
     // other unsupported daemon surfaces its own error through the dialog below.
-    if (shouldShowStackSampleMenuItem(process.platform, isRemoteBackendActive())) {
+    if (shouldShowStackSampleMenuItem(process.platform, isSameHostBackendActive())) {
       helpMenuItems.push({
         label: m.menu_sample_intentd_process(),
         click: async () => {

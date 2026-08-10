@@ -330,6 +330,21 @@ export function isRemoteBackendActive(): boolean {
   return activeConnectionMeta !== null;
 }
 
+/**
+ * Whether the live client targets a daemon that is guaranteed to run on THIS
+ * host: no saved remote is active AND the resolved transport is UDS (a UDS
+ * socket is same-host by construction). False for saved remotes and for the
+ * env/dev transports (`INTENTD_WS_URL`, `INTENTD_TCP`, dev loopback WS), which
+ * may point at a daemon on another machine — callers gating platform-dependent
+ * daemon capabilities (e.g. the win32 stack-sampling menu gate, #1889) must
+ * not assume those share the FE's platform.
+ */
+export function isSameHostBackendActive(): boolean {
+  if (activeConnectionMeta !== null) return false;
+  const config = currentConfig ?? resolveBackendConfig(process.env, { isDev: !app.isPackaged });
+  return config.transport === 'uds';
+}
+
 /** Liveness heartbeat interval; reconnect-on-close cannot detect half-open sockets. */
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
