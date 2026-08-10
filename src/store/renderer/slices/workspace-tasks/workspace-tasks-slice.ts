@@ -1,4 +1,4 @@
-import type { TaskStatus, WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
+import type { TaskStatus, Workspace, WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
 import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
@@ -7,7 +7,11 @@ import {
   updateItem,
 } from "@augmentcode/themis/utils/collections/collection-utils";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
-import { removeWorkspaceEntity } from "../workspace/workspace-slice";
+import {
+  removeWorkspaceEntity,
+  replaceWorkspaceList,
+  setWorkspaceEntity,
+} from "../workspace/workspace-slice";
 import type { WorkspaceTasksState, WorkspaceTasksWorkspaceState } from "./workspace-tasks-types";
 
 export type { WorkspaceTasksState, WorkspaceTasksWorkspaceState };
@@ -125,4 +129,37 @@ workspaceTasksReducer.with(clearWorkspaceTasks, (state, { payload: [workspaceId]
     clearWorkspaceState(state, workspaceId)
   );
 workspaceTasksReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
+
+/**
+ * Seed `stats` from a workspace list row's `taskStats` rollup (PROTOCOL §5.1)
+ * so sidebar progress renders before any per-workspace `task.list` load.
+ * `task.list` stays authoritative: a seed never touches an `initialized`
+ * workspace and never marks one `initialized`.
+ */
+function seedStatsFromListRow(state: WorkspaceTasksState, workspace: Workspace): WorkspaceTasksState {
+  const stats = workspace.taskStats;
+  if (!stats) return state;
+
+  const ws = getWorkspaceState(state, workspace.id);
+  if (ws.initialized) return state;
+  if (
+    ws.stats.total === stats.total &&
+    ws.stats.completed === stats.completed &&
+    ws.stats.inProgress === stats.inProgress
+  ) {
+    return state;
+  }
+
+  return setWorkspaceState(state, workspace.id, {
+    ...ws,
+    stats,
+  });
+}
+
+workspaceTasksReducer.with(replaceWorkspaceList, (state, { payload: [workspaces] }) =>
+    workspaces.reduce(seedStatsFromListRow, state)
+  );
+workspaceTasksReducer.with(setWorkspaceEntity, (state, { payload: [workspace] }) =>
+    seedStatsFromListRow(state, workspace)
+  );
 

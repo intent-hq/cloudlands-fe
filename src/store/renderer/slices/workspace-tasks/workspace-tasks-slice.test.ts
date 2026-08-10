@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
+import type { Workspace, WorkspaceId, WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
+import { WorkspaceStatusEnum } from "$shared/types";
 import { getItem, getItems } from "@augmentcode/themis/utils/collections/collection-utils";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
-import { removeWorkspaceEntity } from "../workspace/workspace-slice";
+import {
+  removeWorkspaceEntity,
+  replaceWorkspaceList,
+  setWorkspaceEntity,
+} from "../workspace/workspace-slice";
 import {
   applyTaskStatusChanged,
   clearWorkspaceTasks,
@@ -18,6 +23,21 @@ const WS = "ws-1";
 
 function makeTask(id: string, status: WorkspaceTask["status"] = "not_started"): WorkspaceTask {
   return { id, title: `Task ${id}`, status };
+}
+
+function makeWorkspace(overrides: Partial<Workspace> & { id: string }): Workspace {
+  return {
+    title: "Test Workspace",
+    branch: "main",
+    changesets: [],
+    timeline: [],
+    conversationInfo: [],
+    status: WorkspaceStatusEnum.Active,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+    id: overrides.id as WorkspaceId,
+  };
 }
 
 const ZERO_STATS: WorkspaceTaskStats = emptyWorkspaceTaskStats;
@@ -147,6 +167,122 @@ describe("workspaceTasksReducer", () => {
       );
 
       expect(state.byWorkspaceId[WS]).toBeUndefined();
+    });
+  });
+
+  describe("stats seeding from workspace list rows", () => {
+    const seedStats: WorkspaceTaskStats = { total: 5, completed: 2, inProgress: 1 };
+
+    it("seeds stats for an unknown workspace on replaceWorkspaceList", () => {
+      const state = workspaceTasksReducer(
+        initialState,
+        replaceWorkspaceList([makeWorkspace({ id: WS, taskStats: seedStats })])
+      );
+      const ws = state.byWorkspaceId[WS];
+
+      expect(ws.stats).toEqual(seedStats);
+      expect(ws.initialized).toBe(false);
+      expect(ws.loading).toBe(false);
+      expect(getItems(ws.tasks)).toEqual([]);
+    });
+
+    it("seeds stats for multiple workspaces in one list", () => {
+      const otherStats: WorkspaceTaskStats = { total: 2, completed: 2, inProgress: 0 };
+      const state = workspaceTasksReducer(
+        initialState,
+        replaceWorkspaceList([
+          makeWorkspace({ id: WS, taskStats: seedStats }),
+          makeWorkspace({ id: "ws-2", taskStats: otherStats }),
+        ])
+      );
+
+      expect(state.byWorkspaceId[WS].stats).toEqual(seedStats);
+      expect(state.byWorkspaceId["ws-2"].stats).toEqual(otherStats);
+    });
+
+    it("is a no-op for an initialized workspace (task.list stays authoritative)", () => {
+      const canonical: WorkspaceTaskStats = { total: 3, completed: 1, inProgress: 1 };
+      const loaded = loadedState([makeTask("t1")], canonical);
+      const state = workspaceTasksReducer(
+        loaded,
+        replaceWorkspaceList([makeWorkspace({ id: WS, taskStats: seedStats })])
+      );
+
+      expect(state).toBe(loaded);
+      expect(state.byWorkspaceId[WS].stats).toEqual(canonical);
+    });
+
+    it("is a no-op for rows without taskStats", () => {
+      const state = workspaceTasksReducer(
+        initialState,
+        replaceWorkspaceList([makeWorkspace({ id: WS })])
+      );
+
+      expect(state).toBe(initialState);
+    });
+
+    it("is a no-op when seeded stats are unchanged", () => {
+      const seeded = workspaceTasksReducer(
+        initialState,
+        replaceWorkspaceList([makeWorkspace({ id: WS, taskStats: seedStats })])
+      );
+      const again = workspaceTasksReducer(
+        seeded,
+        replaceWorkspaceList([makeWorkspace({ id: WS, taskStats: { ...seedStats } })])
+      );
+
+      expect(again).toBe(seeded);
+    });
+
+    it("updates a previous seed for a not-yet-initialized workspace", () => {
+      const seeded = workspaceTasksReducer(
+        initialState,
+        replaceWorkspaceList([makeWorkspace({ id: WS, taskStats: seedStats })])
+      );
+      const newer: WorkspaceTaskStats = { total: 5, completed: 3, inProgress: 1 };
+      const state = workspaceTasksReducer(
+        seeded,
+        replaceWorkspaceList([makeWorkspace({ id: WS, taskStats: newer })])
+      );
+
+      expect(state.byWorkspaceId[WS].stats).toEqual(newer);
+      expect(state.byWorkspaceId[WS].initialized).toBe(false);
+    });
+
+    it("seeds stats on setWorkspaceEntity for an unknown workspace", () => {
+      const state = workspaceTasksReducer(
+        initialState,
+        setWorkspaceEntity(makeWorkspace({ id: WS, taskStats: seedStats }))
+      );
+
+      expect(state.byWorkspaceId[WS].stats).toEqual(seedStats);
+      expect(state.byWorkspaceId[WS].initialized).toBe(false);
+    });
+
+    it("does not overwrite an initialized workspace on setWorkspaceEntity", () => {
+      const canonical: WorkspaceTaskStats = { total: 3, completed: 1, inProgress: 1 };
+      const loaded = loadedState([makeTask("t1")], canonical);
+      const state = workspaceTasksReducer(
+        loaded,
+        setWorkspaceEntity(makeWorkspace({ id: WS, taskStats: seedStats }))
+      );
+
+      expect(state).toBe(loaded);
+    });
+
+    it("keeps a pre-seed load flow intact: seed then task.list load still initializes", () => {
+      const seeded = workspaceTasksReducer(
+        initialState,
+        replaceWorkspaceList([makeWorkspace({ id: WS, taskStats: seedStats })])
+      );
+      const canonical: WorkspaceTaskStats = { total: 6, completed: 4, inProgress: 1 };
+      const state = workspaceTasksReducer(
+        seeded,
+        loadWorkspaceTasksSucceeded(WS, [makeTask("t1")], canonical)
+      );
+
+      expect(state.byWorkspaceId[WS].stats).toEqual(canonical);
+      expect(state.byWorkspaceId[WS].initialized).toBe(true);
     });
   });
 });
