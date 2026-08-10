@@ -573,6 +573,22 @@ describe('DaemonStoppedOverlay', () => {
       );
     });
 
+    it('hides the connection-details line and attempt counter in the token-rejected state (#957)', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport, { reconnectAttempts: 3 });
+      activateRemote();
+      // Before the rejection latches, the external posture shows the lost
+      // connection details for the active remote.
+      expect(screen.getByTestId('daemon-stopped-connection-details')).toBeTruthy();
+
+      rejectAuth(401);
+
+      // The auth-rejected copy already names host:port; the generic external
+      // details line and the retrying/attempt counter would be misleading.
+      expect(screen.queryByTestId('daemon-stopped-connection-details')).toBeNull();
+      expect(screen.queryByTestId('daemon-stopped-retrying')).toBeNull();
+    });
+
     it('explains the disabled WS API on 403', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
