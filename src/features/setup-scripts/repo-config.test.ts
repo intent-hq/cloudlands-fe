@@ -21,6 +21,7 @@ import {
   fetchGitHubRepoConfigSetupScript,
   fetchRepoConfigSetupScript,
   parseRepoConfigSetupScript,
+  resolveSetupScriptParam,
   toRepoConfigSubset,
   REPO_CONFIG_SCRIPT_NAME,
 } from './repo-config';
@@ -211,5 +212,86 @@ describe('chooseDefaultSetupScript', () => {
       genericTemplate: undefined,
     });
     expect(choice).toEqual({ content: '', name: 'Custom' });
+  });
+});
+
+describe('resolveSetupScriptParam (monorepo#1862)', () => {
+  const base = {
+    setupScript: 'echo default',
+    setupScriptName: 'Copy config files only',
+    isCustomSetupScript: false,
+    setupScriptUserTouched: false,
+    repoPath: '/repo/a',
+    repoConfigScript: null as string | null,
+    repoConfigScriptRepo: null as string | null,
+  };
+
+  it('omits an auto-restored default the user never touched', () => {
+    expect(resolveSetupScriptParam(base)).toBeUndefined();
+  });
+
+  it('omits an empty/blank script', () => {
+    expect(resolveSetupScriptParam({ ...base, setupScript: '  \n ' })).toBeUndefined();
+    expect(
+      resolveSetupScriptParam({ ...base, setupScript: '', isCustomSetupScript: true }),
+    ).toBeUndefined();
+  });
+
+  it('sends a script the user edited (isCustomSetupScript)', () => {
+    expect(
+      resolveSetupScriptParam({
+        ...base,
+        setupScript: 'echo edited\n',
+        isCustomSetupScript: true,
+      }),
+    ).toBe('echo edited');
+  });
+
+  it('sends a script the user confirmed via the modal (setupScriptUserTouched)', () => {
+    expect(
+      resolveSetupScriptParam({ ...base, setupScriptUserTouched: true }),
+    ).toBe('echo default');
+  });
+
+  it('omits the unedited repo-config script even when confirmed via the modal', () => {
+    expect(
+      resolveSetupScriptParam({
+        ...base,
+        setupScript: 'echo repo-config\n',
+        setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+        setupScriptUserTouched: true,
+        repoConfigScript: 'echo repo-config',
+        repoConfigScriptRepo: '/repo/a',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('sends an edited repo-config script', () => {
+    expect(
+      resolveSetupScriptParam({
+        ...base,
+        setupScript: 'echo repo-config && echo edited',
+        setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+        isCustomSetupScript: true,
+        repoConfigScript: 'echo repo-config',
+        repoConfigScriptRepo: '/repo/a',
+      }),
+    ).toBe('echo repo-config && echo edited');
+  });
+
+  it('does not treat another repo\'s cached config script as the repo-config default', () => {
+    // Same content but cached for a different repo — the "unedited repo
+    // config" carve-out does not apply; the untouched-default rule still
+    // omits it.
+    expect(
+      resolveSetupScriptParam({
+        ...base,
+        setupScript: 'echo repo-config',
+        setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+        setupScriptUserTouched: true,
+        repoConfigScript: 'echo repo-config',
+        repoConfigScriptRepo: '/repo/b',
+      }),
+    ).toBe('echo repo-config');
   });
 });

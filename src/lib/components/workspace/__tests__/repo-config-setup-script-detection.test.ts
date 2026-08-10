@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => {
     fetchGitHubRepoConfig:
       vi.fn<(owner: string, repo: string, ref?: string) => Promise<string | null>>(),
     lastUsedSelect: vi.fn(),
+    create: vi.fn<(params: Record<string, unknown>) => Promise<unknown>>(),
   };
 });
 
@@ -111,7 +112,7 @@ vi.mock('$shared/generated/ipc-client', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
-  workspaceClient: { create: vi.fn(), update: vi.fn() },
+  workspaceClient: { create: mocks.create, update: vi.fn() },
 }));
 
 vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
@@ -362,5 +363,84 @@ describe('CompactWorkspaceInitializer repo-config setup script detection', () =>
     await waitFor(() => {
       expect(result.getByText(REPO_CONFIG_SCRIPT_NAME)).toBeTruthy();
     });
+  });
+});
+
+describe('CompactWorkspaceInitializer setupScript on workspace.create (monorepo#1862)', () => {
+  const PREFILL_KEY = 'workspace-prefill';
+
+  /** Seed the auto-create prefill so the reactive $effect submits the form. */
+  function seedAutoCreatePrefill() {
+    sessionStorage.setItem(
+      PREFILL_KEY,
+      JSON.stringify({
+        repoPath: '/repo/a',
+        branch: 'main',
+        prompt: 'Build the thing',
+        autoCreate: true,
+      }),
+    );
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionStorage.clear();
+    mocks.savedFormState = null;
+    mocks.lastUsedSelect.mockReturnValue(undefined);
+    mocks.fetchRepoConfig.mockResolvedValue(null);
+    mocks.fetchGitHubRepoConfig.mockResolvedValue(null);
+    mocks.create.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+  });
+
+  afterEach(() => {
+    cleanup();
+    sessionStorage.clear();
+  });
+
+  it('omits setupScript for an auto-restored default the user never touched', async () => {
+    // Last-used script restored synchronously on repo selection — untouched,
+    // so it must not be sent (the daemon would persist it into the tracked
+    // .intent/config.json of the fresh worktree).
+    mocks.lastUsedSelect.mockReturnValue({ name: 'My saved script', content: 'echo saved' });
+
+    seedAutoCreatePrefill();
+    const { component } = renderInitializer();
+    await component.applyPrefill();
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    const request = mocks.create.mock.calls[0][0] as Record<string, unknown>;
+    expect(request.setupScript).toBeUndefined();
+  });
+
+  it('omits setupScript for the unedited repo-config script', async () => {
+    mocks.fetchRepoConfig.mockResolvedValue('echo repo-config');
+
+    seedAutoCreatePrefill();
+    const { component, getByText } = renderInitializer();
+    await component.applyPrefill();
+    await waitFor(() => expect(getByText(REPO_CONFIG_SCRIPT_NAME)).toBeTruthy());
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    const request = mocks.create.mock.calls[0][0] as Record<string, unknown>;
+    expect(request.setupScript).toBeUndefined();
+  });
+
+  it('awaits an in-flight probe at submit instead of racing it', async () => {
+    const probe = deferred<string | null>();
+    mocks.fetchRepoConfig.mockReturnValue(probe.promise);
+
+    seedAutoCreatePrefill();
+    const { component } = renderInitializer();
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.fetchRepoConfig).toHaveBeenCalledWith('/repo/a'));
+
+    // Create is gated on the probe settling.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mocks.create).not.toHaveBeenCalled();
+
+    probe.resolve('echo repo-config');
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    const request = mocks.create.mock.calls[0][0] as Record<string, unknown>;
+    expect(request.setupScript).toBeUndefined();
   });
 });

@@ -100,10 +100,13 @@ export interface RepoConfigProbeOptions {
  * synchronous portion runs inside the effect, so state the effect must NOT
  * depend on is read through the untracked getters.
  *
+ * Returns a promise that settles when the probe (if any) has completed and
+ * its result has been applied/cached — never rejects.
+ *
  * Silent degradation: a missing config, auth failure, or transport error
  * folds to "no script" in the fetch helpers — never an error here.
  */
-export function probeRepoConfigSetupScript(options: RepoConfigProbeOptions): void {
+export function probeRepoConfigSetupScript(options: RepoConfigProbeOptions): Promise<void> {
   const { identity, preservedRestoredState } = options;
   const { path, type } = identity;
   const probeKey = probeIdentityKey(identity);
@@ -112,10 +115,10 @@ export function probeRepoConfigSetupScript(options: RepoConfigProbeOptions): voi
   const isLocalProbe = !!path && type === 'local' && path.startsWith('/');
   const github =
     !!path && type === 'github' ? parseGitHubUrl(identity.githubUrl || path) : null;
-  if (!isLocalProbe && !github) return;
+  if (!isLocalProbe && !github) return Promise.resolve();
   const scriptAtFetchStart = untrack(options.getSetupScript);
   options.setLoading(true);
-  void (async () => {
+  return (async () => {
     const script = isLocalProbe
       ? await fetchRepoConfigSetupScript(path)
       : await fetchGitHubRepoConfigSetupScript(
@@ -149,6 +152,13 @@ export function probeRepoConfigSetupScript(options: RepoConfigProbeOptions): voi
  * `github.repoConfig.get` request for the final ref.
  */
 export const BRANCH_REPROBE_DEBOUNCE_MS = 300;
+
+/**
+ * Upper bound for awaiting probe activity at submit time (monorepo#1862):
+ * the probe is a sub-second read, so a bounded wait keeps a wedged transport
+ * from blocking workspace creation indefinitely.
+ */
+export const PROBE_SETTLE_TIMEOUT_MS = 2000;
 
 export interface RepoConfigProbeSelectionOptions
   extends Omit<RepoConfigProbeOptions, 'preservedRestoredState'> {
@@ -186,6 +196,23 @@ export function createRepoConfigProbeScheduler(debounceMs = BRANCH_REPROBE_DEBOU
   let preservedRestoredState = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
+  // Probe activity tracked for `settled()`: the last started probe, plus a
+  // wait handle that resolves when a pending debounced re-probe fires or is
+  // cancelled (so awaiters never hang on the debounce window).
+  let inFlight: Promise<void> = Promise.resolve();
+  let debounceWait: Promise<void> | null = null;
+  let resolveDebounceWait: (() => void) | null = null;
+
+  function clearPendingTimer(): void {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    const resolve = resolveDebounceWait;
+    resolveDebounceWait = null;
+    debounceWait = null;
+    resolve?.();
+  }
 
   return {
     onSelectionChange(options: RepoConfigProbeSelectionOptions): void {
@@ -195,10 +222,7 @@ export function createRepoConfigProbeScheduler(debounceMs = BRANCH_REPROBE_DEBOU
       const probeKey = probeIdentityKey(options.identity);
       if (probeKey === previousProbeKey) return;
       previousProbeKey = probeKey;
-      if (timer !== null) {
-        clearTimeout(timer);
-        timer = null;
-      }
+      clearPendingTimer();
 
       if (repoKey !== previousRepoKey) {
         const isInitialMount = previousRepoKey === null;
@@ -208,17 +232,52 @@ export function createRepoConfigProbeScheduler(debounceMs = BRANCH_REPROBE_DEBOU
         preservedRestoredState =
           isInitialMount && !!untrack(probeOptions.getSetupScript).trim();
         onRepoChange({ isInitialMount, preservedRestoredState });
-        probeRepoConfigSetupScript({ ...probeOptions, preservedRestoredState });
+        inFlight = probeRepoConfigSetupScript({ ...probeOptions, preservedRestoredState });
         return;
       }
 
       // Same repo, new branch/ref — debounced re-probe. The identity
       // snapshot cannot go stale in the timer: any further change re-runs
       // the effect, which reschedules (or cancels via the repo path above).
+      debounceWait = new Promise<void>((r) => (resolveDebounceWait = r));
       timer = setTimeout(() => {
         timer = null;
-        probeRepoConfigSetupScript({ ...probeOptions, preservedRestoredState });
+        inFlight = probeRepoConfigSetupScript({ ...probeOptions, preservedRestoredState });
+        const resolve = resolveDebounceWait;
+        resolveDebounceWait = null;
+        debounceWait = null;
+        resolve?.();
       }, debounceMs);
+    },
+
+    /**
+     * Resolves once no probe activity remains: any pending debounced
+     * re-probe has fired (or been cancelled) and the last started probe has
+     * settled. Gate `workspace.create` on this so the submitted setup-script
+     * state reflects the committed `.intent/config.json` instead of racing
+     * the probe (monorepo#1862). Bounded by `timeoutMs` so a wedged
+     * transport never blocks creation. Never rejects.
+     */
+    async settled(timeoutMs = PROBE_SETTLE_TIMEOUT_MS): Promise<void> {
+      let timedOut = false;
+      let timeoutTimer: ReturnType<typeof setTimeout>;
+      const timeout = new Promise<void>((r) => {
+        timeoutTimer = setTimeout(() => {
+          timedOut = true;
+          r();
+        }, timeoutMs);
+      });
+      try {
+        for (;;) {
+          if (debounceWait) await Promise.race([debounceWait, timeout]);
+          const current = inFlight;
+          await Promise.race([current, timeout]);
+          if (timedOut) return;
+          if (debounceWait === null && inFlight === current) return;
+        }
+      } finally {
+        clearTimeout(timeoutTimer!);
+      }
     },
 
     /**
@@ -227,10 +286,7 @@ export function createRepoConfigProbeScheduler(debounceMs = BRANCH_REPROBE_DEBOU
      */
     dispose(): void {
       disposed = true;
-      if (timer !== null) {
-        clearTimeout(timer);
-        timer = null;
-      }
+      clearPendingTimer();
     },
   };
 }
