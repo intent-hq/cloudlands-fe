@@ -29,6 +29,7 @@ import {
   applySettingsChanges,
   BG_MODEL_MIGRATION_MARKER_KEY,
 } from './settings-hydration-service';
+import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 
 describe('settings-hydration-service (boot read + applySettingsChanges)', () => {
   beforeAll(() => {
@@ -288,6 +289,9 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
     beforeEach(() => {
       catalogSpy.mockResolvedValue(CATALOG);
+      // Reset the slice map so no enablement state bleeds between tests (the
+      // app store is a module singleton).
+      appStore.dispatch(loadEnabledProvidersFromStorage({}));
     });
 
     it('seeds an unset default provider to true and persists the map back (pre-2.17 upgrade)', async () => {
@@ -303,6 +307,23 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       expect(enabledProviders()).toEqual({ codex: true, auggie: true });
       expect(updateSpy).toHaveBeenCalledWith({
         changes: [{ path: 'providers.enabled', value: { codex: true, auggie: true } }],
+      });
+    });
+
+    it('seeds when providers.enabled hydrates as null (never-persisted install)', async () => {
+      // The daemon returns null for the enabled map on installs that never
+      // persisted one — the most common pre-2.17 upgrade shape. The seed gate
+      // is path-keyed, so a null value still triggers it against the slice's
+      // (empty) map even though applyOne skips the null dispatch.
+      applySettingsChanges([
+        { path: 'providers.active', value: 'auggie' },
+        { path: 'providers.enabled', value: null },
+      ]);
+
+      await vi.waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
+      expect(enabledProviders()).toEqual({ auggie: true });
+      expect(updateSpy).toHaveBeenCalledWith({
+        changes: [{ path: 'providers.enabled', value: { auggie: true } }],
       });
     });
 
