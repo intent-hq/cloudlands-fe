@@ -6,10 +6,33 @@ import {
 import type { StoreState } from "../../types";
 import type { ProviderStatus } from "../agent-availability/agent-availability-types";
 import {
+  agentAvailabilityReducer,
+  checkAllProvidersComplete,
+  checkSingleProviderRequested,
+  checkSingleProviderSuccess,
+  initialState as agentAvailabilityInitialState,
+  setAllProvidersLoading,
+} from "../agent-availability/agent-availability-slice";
+import { selectHasCheckedOnce } from "../agent-availability/agent-availability-selectors";
+import {
+  initialState as modelInitialState,
+  modelReducer,
+} from "../model/model-slice";
+import {
   initialState as providerCatalogInitialState,
   providerCatalogLoaded,
   providerCatalogReducer,
 } from "../provider-catalog/provider-catalog-slice";
+import { selectEffectiveDefaultProviderId } from "../provider-catalog/provider-catalog-selectors";
+import {
+  hydrateActiveProvider,
+  initialState as providerSettingsInitialState,
+  loadEnabledProvidersFromStorage,
+  providerSettingsReducer,
+  setActiveProvider,
+  setProviderEnabled,
+} from "./provider-settings-slice";
+import { PROVIDER_AVAILABILITY_KEY_TO_ID } from "$shared/types/provider-availability";
 import { MOCK_PROVIDER_CATALOG } from "../../../../test/fixtures/provider-catalog.fixture";
 import {
   selectActiveProviderId,
@@ -182,5 +205,135 @@ describe("provider-settings selectors", () => {
       const state = mockState({}, "auggie");
       expect(selectIsActiveProviderAvailable.select(state)).toBe(false);
     });
+  });
+});
+
+describe("install-mid-onboarding regression (false 'No provider available' on step 4)", () => {
+  // Reproduces the reported flow against the real reducers: a truthful
+  // all-unavailable first sweep, the user installs claude mid-onboarding, a
+  // recheck detects it, the user picks it on step 3 — ModelPicker's gate on
+  // step 4 must then see claude-code as available+enabled.
+  const providerIds = Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID);
+  const allLoading = Object.fromEntries(providerIds.map((id) => [id, true]));
+
+  function buildState(
+    agentAvailability: typeof agentAvailabilityInitialState,
+    providerSettings: typeof providerSettingsInitialState,
+    model: typeof modelInitialState = modelInitialState,
+  ): StoreState {
+    return {
+      providerCatalog,
+      agentAvailability,
+      providerSettings,
+      model,
+    } as unknown as StoreState;
+  }
+
+  it("keeps the freshly detected pick available through a racing stale sweep", () => {
+    let settings = providerSettingsReducer(
+      providerSettingsInitialState,
+      providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+    );
+    let model = modelReducer(modelInitialState, providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
+    // (a) First bulk sweep: truthful empty machine — every probe lands
+    // available:false at epoch 1.
+    let availability = agentAvailabilityReducer(
+      agentAvailabilityInitialState,
+      setAllProvidersLoading(allLoading),
+    );
+    for (const id of providerIds) {
+      availability = agentAvailabilityReducer(
+        availability,
+        checkSingleProviderSuccess(id, { available: false }, 1),
+      );
+    }
+    availability = agentAvailabilityReducer(availability, checkAllProvidersComplete());
+    expect(selectHasCheckedOnce.select(buildState(availability, settings))).toBe(true);
+    expect(
+      selectAvailableEnabledProviderIds.select(buildState(availability, settings)),
+    ).toEqual([]);
+
+    // (b) User installs claude in a terminal; returning focus starts a bulk
+    // re-check (epoch 2 for every provider) whose probes are slow.
+    availability = agentAvailabilityReducer(availability, setAllProvidersLoading(allLoading));
+
+    // (c) The user hits the card's "Check again" — a manual single check
+    // (epoch 3) that resolves quickly with available:true.
+    availability = agentAvailabilityReducer(
+      availability,
+      checkSingleProviderRequested("claude-code"),
+    );
+    availability = agentAvailabilityReducer(
+      availability,
+      checkSingleProviderSuccess("claude-code", { available: true, authenticated: true }, 3),
+    );
+
+    // (d) The user picks claude-code on step 3 (AgentGrid's
+    // handleSelectProvider dispatch sequence; the model slice mirrors
+    // setActiveProvider into its defaultProviderId/normalization).
+    settings = providerSettingsReducer(
+      settings,
+      setProviderEnabled({ providerId: "claude-code", enabled: true }),
+    );
+    settings = providerSettingsReducer(settings, setActiveProvider("claude-code"));
+    model = modelReducer(model, setActiveProvider("claude-code"));
+
+    // Step 4's gate: claude-code is available+enabled, so ModelPicker's
+    // hasNoAvailableProvider condition is false.
+    let state = buildState(availability, settings, model);
+    expect(selectAvailableEnabledProviderIds.select(state)).toContain("claude-code");
+    expect(selectIsActiveProviderAvailable.select(state)).toBe(true);
+    expect(selectHasCheckedOnce.select(state)).toBe(true);
+    // Enhance-prompt gate (auggie-only): the pick must resolve as the
+    // effective default provider — never the catalogIds[0] ('auggie')
+    // fallback — so isEnhancePromptAvailable is false and the button hides.
+    expect(selectEffectiveDefaultProviderId.select(state)).toBe("claude-code");
+
+    // (d') The daemon echoes the persisted pick back via settings:changed
+    // (providers.active / providers.enabled hydration) — the echo must not
+    // wipe or displace the pick.
+    settings = providerSettingsReducer(settings, hydrateActiveProvider("claude-code"));
+    settings = providerSettingsReducer(
+      settings,
+      loadEnabledProvidersFromStorage({ "claude-code": true }),
+    );
+    model = modelReducer(model, hydrateActiveProvider("claude-code"));
+    state = buildState(availability, settings, model);
+    expect(selectActiveProviderId.select(state)).toBe("claude-code");
+    expect(selectEffectiveDefaultProviderId.select(state)).toBe("claude-code");
+
+    // (e) The focus sweep's slow claude-code probe (epoch 2, started before
+    // the install finished) settles LAST with available:false — it is stale
+    // and must not clobber the fresh detection.
+    availability = agentAvailabilityReducer(
+      availability,
+      checkSingleProviderSuccess("claude-code", { available: false }, 2),
+    );
+    availability = agentAvailabilityReducer(availability, checkAllProvidersComplete());
+    state = buildState(availability, settings, model);
+    expect(selectAvailableEnabledProviderIds.select(state)).toContain("claude-code");
+    expect(selectIsActiveProviderAvailable.select(state)).toBe(true);
+    expect(selectEffectiveDefaultProviderId.select(state)).toBe("claude-code");
+  });
+
+  it("still reports nothing available on a genuinely empty machine", () => {
+    let availability = agentAvailabilityReducer(
+      agentAvailabilityInitialState,
+      setAllProvidersLoading(allLoading),
+    );
+    for (const id of providerIds) {
+      availability = agentAvailabilityReducer(
+        availability,
+        checkSingleProviderSuccess(id, { available: false }, 1),
+      );
+    }
+    availability = agentAvailabilityReducer(availability, checkAllProvidersComplete());
+    const settings = providerSettingsReducer(
+      providerSettingsInitialState,
+      providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+    );
+    const state = buildState(availability, settings);
+    expect(selectHasCheckedOnce.select(state)).toBe(true);
+    expect(selectAvailableEnabledProviderIds.select(state)).toEqual([]);
   });
 });
