@@ -11,9 +11,9 @@
    */
   import { onMount } from 'svelte';
   import {
-  selectEffectiveDefaultProviderId,
-  selectProviderCatalogEntries,
-} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+    selectEffectiveDefaultProviderId,
+    selectProviderCatalogEntries,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import ProviderCard from './ProviderCard.svelte';
   import type { ProviderBrandColors } from './ProviderCard.svelte';
   import { resolveOnboardingSelectedProvider } from '../utils/resolve-onboarding-selected-provider';
@@ -190,6 +190,7 @@
       .map((p) => {
         const meta = PROVIDER_METADATA[p.id];
         const status = statusMap[p.id];
+        const inFlight = loadingMap[p.id];
         return {
           id: p.id,
           name: p.displayName,
@@ -197,10 +198,11 @@
           /** Whether the user is authenticated. undefined = not checked yet. */
           authenticated: status?.authenticated,
           /** Whether the availability check is still in-flight for this provider.
+           *  No loading entry yet → loading until the first sweep has run.
            *  Once we have a cached status for the provider, don't flip back to
            *  "loading" on background refreshes — avoids visual jitter where the
            *  card briefly shows "Checking…" every poll cycle. */
-          statusLoading: (loadingMap[p.id] && !status) ?? !hasCheckedOnce,
+          statusLoading: inFlight === undefined ? !hasCheckedOnce : inFlight && !status,
           /**
            * User identity extracted from the provider's CLI (email / username).
            * Only set when the provider is authenticated AND we could parse
