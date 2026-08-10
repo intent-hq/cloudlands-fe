@@ -13,12 +13,6 @@ import {
   openWorkspaceNote,
 } from '../workspace-navigation-slice';
 
-type NavigationAction =
-  | ReturnType<typeof openWorkspaceCommitChangeset>
-  | ReturnType<typeof openWorkspaceDiff>
-  | ReturnType<typeof openWorkspaceFile>
-  | ReturnType<typeof openWorkspaceNote>;
-
 function* openWorkspaceTab(
   workspaceId: string,
   tab: Omit<PanelTab, 'id'>,
@@ -125,26 +119,9 @@ function* openDiff(action: ReturnType<typeof openWorkspaceDiff>): SagaGenerator<
   );
 }
 
-function* handleNavigation(action: NavigationAction): SagaGenerator<void> {
-  switch (action.type) {
-    case openWorkspaceCommitChangeset.type:
-      yield* openCommit(action as ReturnType<typeof openWorkspaceCommitChangeset>);
-      break;
-    case openWorkspaceFile.type:
-      yield* openFile(action as ReturnType<typeof openWorkspaceFile>);
-      break;
-    case openWorkspaceNote.type:
-      yield* openNote(action as ReturnType<typeof openWorkspaceNote>);
-      break;
-    case openWorkspaceDiff.type:
-      yield* openDiff(action as ReturnType<typeof openWorkspaceDiff>);
-      break;
-  }
-}
-
 export function* workspaceNavigationTabSaga(): SagaGenerator<void> {
-  yield* takeEvery(
-    [openWorkspaceCommitChangeset, openWorkspaceFile, openWorkspaceNote, openWorkspaceDiff],
-    handleNavigation,
-  );
+  yield* takeEvery(openWorkspaceCommitChangeset, openCommit);
+  yield* takeEvery(openWorkspaceFile, openFile);
+  yield* takeEvery(openWorkspaceNote, openNote);
+  yield* takeEvery(openWorkspaceDiff, openDiff);
 }

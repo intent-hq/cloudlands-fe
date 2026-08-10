@@ -1,5 +1,4 @@
-import type { Task } from 'redux-saga';
-import { call, cancel, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, race, take, takeLeading } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -16,23 +15,23 @@ import {
   applyNoteUpdated,
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
+  noteEventReceived,
   selectNote,
+  type NoteEventType,
 } from '../workspace-notes-slice';
 import { toRuntimeNote } from './note-payload-mappers';
 
 const logger = createLogger('NotesReadSaga');
 
-export type NoteEventType = 'note:created' | 'note:updated' | 'note:deleted';
-const NOTE_EVENT_RECEIVED = 'workspaceNotes/noteEventReceived';
-export const noteEventReceived = Object.assign(
-  (workspaceId: string, noteId: string, eventType: NoteEventType) => ({
-    type: NOTE_EVENT_RECEIVED,
-    payload: [workspaceId, noteId, eventType] as const,
-  }),
-  { type: NOTE_EVENT_RECEIVED },
-);
+type ObservedAction = { type: string; payload?: unknown };
 
-type RunningRead = { workspaceId: string; task?: Task; token: symbol };
+function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
+  return (
+    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === workspaceId
+  );
+}
 
 function* hydrateWorkspaceNotes(workspaceId: string) {
   const current = yield* selectWorkspaceNotesState.effect(workspaceId);
@@ -81,80 +80,25 @@ function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEve
   }
 }
 
-function* startRead(
-  running: Map<string, RunningRead>,
-  key: string,
-  workspaceId: string,
-  worker: () => SagaGenerator<void>,
-): SagaGenerator<void> {
-  if (running.has(key)) return;
-  const token = Symbol(key);
-  running.set(key, { workspaceId, token });
-  const task = yield* fork(function* () {
-    try {
-      yield* call(worker);
-    } finally {
-      if (running.get(key)?.token === token) running.delete(key);
-    }
+function* hydrateWorkspaceNotesWorker(action: ReturnType<typeof workspaceMounted>) {
+  const [workspaceId] = action.payload;
+  if (!workspaceId) return;
+  yield* race({
+    hydrate: call(hydrateWorkspaceNotes, workspaceId),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
   });
-  if (running.get(key)?.token === token) running.set(key, { workspaceId, task, token });
 }
 
-function* cancelWorkspaceReads(running: Map<string, RunningRead>, workspaceId: string) {
-  for (const [key, read] of running) {
-    if (read.workspaceId !== workspaceId) continue;
-    running.delete(key);
-    if (read.task) yield* cancel(read.task);
-  }
+function* applyNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
+  const [workspaceId, noteId, eventType] = action.payload;
+  if (!workspaceId || !noteId) return;
+  yield* race({
+    apply: call(applyNoteEvent, workspaceId, noteId, eventType),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
+  });
 }
 
 export function* notesReadSaga() {
-  const running = new Map<string, RunningRead>();
-  try {
-    while (true) {
-      const action: { type: string; payload: unknown } = yield* take([
-        workspaceMounted,
-        workspaceUnmounted,
-        workspaceDeleted,
-        NOTE_EVENT_RECEIVED,
-      ]);
-      if (action.type === workspaceMounted.type) {
-        const [workspaceId] = action.payload as [string];
-        if (!workspaceId) continue;
-        yield* startRead(
-          running,
-          `notes:${workspaceId}`,
-          workspaceId,
-          function* () {
-            yield* call(hydrateWorkspaceNotes, workspaceId);
-          },
-        );
-        continue;
-      }
-      if (action.type === NOTE_EVENT_RECEIVED) {
-        const [workspaceId, noteId, eventType] = action.payload as [
-          string,
-          string,
-          NoteEventType,
-        ];
-        if (!workspaceId || !noteId) continue;
-        yield* startRead(
-          running,
-          `note:${workspaceId}:${noteId}:${eventType}`,
-          workspaceId,
-          function* () {
-            yield* call(applyNoteEvent, workspaceId, noteId, eventType);
-          },
-        );
-        continue;
-      }
-      const [workspaceId] = action.payload as [string];
-      yield* call(cancelWorkspaceReads, running, workspaceId);
-    }
-  } finally {
-    for (const read of running.values()) {
-      if (read.task) yield* cancel(read.task);
-    }
-    running.clear();
-  }
+  yield* takeLeading(workspaceMounted, hydrateWorkspaceNotesWorker);
+  yield* takeLeading(noteEventReceived, applyNoteEventWorker);
 }
