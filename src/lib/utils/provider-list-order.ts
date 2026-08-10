@@ -13,6 +13,18 @@ interface OrderableProviderEntry {
   visible?: boolean;
 }
 
+export interface ProviderEntryGroups<T> {
+  enabled: T[];
+  discovered: T[];
+  supported: T[];
+}
+
+export interface GroupProviderEntriesOptions {
+  isProviderEnabled: (providerId: string) => boolean;
+  availabilityByProviderId: Readonly<Record<string, { readonly available: boolean } | undefined>>;
+  hiddenProviderIds?: readonly string[];
+}
+
 /** Strict alphabetical comparator by display name. */
 export function compareProvidersByDisplayName(
   a: Pick<OrderableProviderEntry, 'displayName'>,
@@ -39,4 +51,28 @@ export function orderProviderEntries<T extends OrderableProviderEntry>(
       hiddenProviderIds ? !hiddenProviderIds.includes(entry.id) : entry.visible !== false,
     )
     .sort(compareProvidersByDisplayName);
+}
+
+/** Partition settings providers by state, alphabetized within each group. */
+export function groupProviderEntries<T extends OrderableProviderEntry>(
+  entries: readonly T[],
+  { isProviderEnabled, availabilityByProviderId, hiddenProviderIds }: GroupProviderEntriesOptions,
+): ProviderEntryGroups<T> {
+  const groups: ProviderEntryGroups<T> = {
+    enabled: [],
+    discovered: [],
+    supported: [],
+  };
+
+  for (const entry of orderProviderEntries(entries, hiddenProviderIds)) {
+    if (isProviderEnabled(entry.id)) {
+      groups.enabled.push(entry);
+    } else if (availabilityByProviderId[entry.id]?.available === true) {
+      groups.discovered.push(entry);
+    } else {
+      groups.supported.push(entry);
+    }
+  }
+
+  return groups;
 }
