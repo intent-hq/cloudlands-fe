@@ -194,7 +194,7 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
     });
   });
 
-  it('appends search results, deduped against own repos and the Recent list', async () => {
+  it('appends search results deduped against own repos, keeping repos from the Recent list', async () => {
     mocks.recentRepos = [
       {
         path: 'facebook/react',
@@ -215,7 +215,30 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
     await fireEvent.input(input, { target: { value: 'alpha' } });
 
     await waitFor(() => {
-      expect(suggestions().map(rowText)).toEqual(['octo /alpha', 'other /alphabet']);
+      expect(suggestions().map(rowText)).toEqual([
+        'octo /alpha',
+        'facebook /react',
+        'other /alphabet',
+      ]);
+    });
+  });
+
+  it('still suggests an owned repo that is also in the Recent list', async () => {
+    mocks.recentRepos = [
+      {
+        path: 'octo/alpha',
+        type: 'github',
+        githubUrl: 'https://github.com/octo/alpha',
+        name: 'alpha',
+        owner: 'octo',
+      },
+    ];
+
+    const { input } = await openGithubTab();
+    await fireEvent.input(input, { target: { value: 'octo/alpha' } });
+
+    await waitFor(() => {
+      expect(suggestions().map(rowText)).toEqual(['octo /alpha']);
     });
   });
 
