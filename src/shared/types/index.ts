@@ -127,10 +127,12 @@ export type {
   SwitchConnectionResult,
   ConnectionsChangedEvent,
   ConnectionCertMismatchEvent,
+  ConnectionAuthRejectedEvent,
 } from './connections';
 export {
   CONNECTION_CHANNELS,
   CONNECTIONS_CHANGED_EVENT,
   CONNECTION_CERT_MISMATCH_EVENT,
+  CONNECTION_AUTH_REJECTED_EVENT,
   LOCAL_CONNECTION_ID,
 } from './connections';

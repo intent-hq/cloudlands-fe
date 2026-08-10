@@ -58,7 +58,7 @@ registerMockIpcHandler(
     let hash = 0;
     for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) & 0xffff;
     const byte = (hash & 0xff).toString(16).padStart(2, '0').toUpperCase();
-    return { fingerprint: Array.from({ length: 32 }, () => byte).join(':') };
+    return { fingerprint: Array.from({ length: 32 }, () => byte).join(':'), tokenValid: true };
   },
 );
 
@@ -75,7 +75,10 @@ registerMockIpcHandler(CONNECTION_CHANNELS.ADD, async (arg): Promise<AddConnecti
     isLocal: false,
   };
   connections = [...connections.filter((c) => c.id !== connection.id), connection];
-  return { connection };
+  // The mock never rebuilds a live client, so an active re-pair is reported as
+  // switched only when the upserted record is already the active selection —
+  // mirroring the main-process add handler's contract.
+  return { connection, switched: connection.id === activeId };
 });
 
 registerMockIpcHandler(CONNECTION_CHANNELS.FORGET, async (arg): Promise<ForgetConnectionResult> => {

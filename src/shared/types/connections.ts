@@ -38,6 +38,7 @@ export const CONNECTION_CHANNELS = IPC_CHANNELS.CONNECTIONS;
 export const CONNECTIONS_CHANGED_EVENT = 'connections:changed';
 export const CONNECTION_CERT_MISMATCH_EVENT = 'connections:cert-mismatch';
 export const CONNECTION_PROTOCOL_MISMATCH_EVENT = 'connections:protocol-mismatch';
+export const CONNECTION_AUTH_REJECTED_EVENT = 'connections:auth-rejected';
 
 /**
  * Reserved id for the always-present, non-forgettable local sidecar entry
@@ -118,6 +119,14 @@ export interface ConnectionsListResult {
    * active backend matches local (or is local itself).
    */
   protocolMismatch?: ConnectionProtocolMismatchEvent | null;
+  /**
+   * Sticky auth rejection for the currently active backend, replayed here so a
+   * renderer created or reloaded after the one-shot `connections:auth-rejected`
+   * broadcast (including the boot path) still surfaces the actionable
+   * "authentication rejected" state. `null`/absent when the active backend's
+   * auth is good (or it is local).
+   */
+  authRejected?: ConnectionAuthRejectedEvent | null;
 }
 
 /**
@@ -130,10 +139,19 @@ export interface CaptureFingerprintParams {
   token: string;
 }
 
-/** `connections:capture-fingerprint` result: the presented cert fingerprint. */
+/**
+ * `connections:capture-fingerprint` result: the presented cert fingerprint
+ * plus whether the daemon accepted the bearer token on the capture upgrade —
+ * a 401/403 rejection (bad token / WS API disabled, PROTOCOL §2.1) is reported
+ * here so the add flow can surface it before the connection is stored.
+ */
 export interface CaptureFingerprintResult {
   /** SHA-256 cert fingerprint, colon-hex uppercase (PROTOCOL §1.2). */
   fingerprint: string;
+  /** `false` when the capture upgrade was rejected with HTTP 401/403. */
+  tokenValid: boolean;
+  /** HTTP status the upgrade was rejected with when `tokenValid` is false (401 or 403). */
+  statusCode?: number;
 }
 
 /**
@@ -159,6 +177,14 @@ export interface AddConnectionParams {
 /** `connections:add` result: the stored, token-free record. */
 export interface AddConnectionResult {
   connection: ConnectionRecord;
+  /**
+   * `true` when the add re-paired the ACTIVE backend and main already rebuilt
+   * the live client (a switch-to-self), so the caller must NOT dispatch a
+   * follow-up switch — it would tear down and reconnect the fresh client a
+   * second time. `false` when the record is not active and a switch is still
+   * the caller's decision.
+   */
+  switched: boolean;
 }
 
 /** `connections:forget` params. */
@@ -206,6 +232,21 @@ export interface ConnectionCertMismatchEvent {
   expectedFingerprint: string;
   /** The fingerprint actually presented on this connect. */
   actualFingerprint: string;
+}
+
+/**
+ * `connections:auth-rejected` — broadcast when a remote backend rejects the
+ * WebSocket upgrade with HTTP 401/403 (bad/rotated token, or the WS API is
+ * disabled — PROTOCOL §2.1). Distinct from a transient transport error so the
+ * renderer can surface "authentication rejected" instead of silently retrying.
+ */
+export interface ConnectionAuthRejectedEvent {
+  /** id of the connection whose auth was rejected. */
+  id: string;
+  host: string;
+  port: number;
+  /** HTTP status the upgrade was rejected with (401 or 403). */
+  statusCode: number;
 }
 
 /**

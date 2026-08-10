@@ -247,22 +247,45 @@ export async function list(): Promise<ConnectionRecord[]> {
 }
 
 /**
- * Register a new remote connection. The plaintext token is encrypted (or
- * marked plaintext) before it hits disk. Returns the token-free record.
+ * Register a remote connection, deduplicating by `host:port` (upsert). If any
+ * stored connections with the same host+port already exist — earlier app
+ * versions allowed repeated `host:port` entries — they are collapsed into ONE
+ * surviving record: the ACTIVE duplicate when one is active (so the caller's
+ * active-reconnect path keys off the right id), else the first. The survivor's
+ * `fingerprint`, `encToken`, and `label` are replaced in place (it keeps its
+ * `id` and captured `hostname`, inheriting a hostname from a dropped duplicate
+ * if it has none), the other duplicates are dropped, and the survivor is
+ * returned; otherwise a new record is appended. The plaintext token is
+ * encrypted (or marked plaintext) before it hits disk. Returns the token-free
+ * record.
  */
 export async function add(conn: NewConnection): Promise<ConnectionRecord> {
-  const stored: StoredConnection = {
-    id: randomUUID(),
-    label: conn.label,
-    host: conn.host,
-    port: conn.port,
-    fingerprint: conn.fingerprint,
-    detectHosts: conn.detectHosts ?? true,
-    encToken: encryptToken(conn.token),
-  };
-  await mutate((state) => {
-    state.connections.push(stored);
-    return writeState(state);
+  const encToken = encryptToken(conn.token);
+  const stored = await mutate(async (state) => {
+    const duplicates = state.connections.filter((c) => c.host === conn.host && c.port === conn.port);
+    if (duplicates.length > 0) {
+      const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
+      survivor.label = conn.label;
+      survivor.fingerprint = conn.fingerprint;
+      survivor.encToken = encToken;
+      survivor.detectHosts = conn.detectHosts ?? true;
+      survivor.hostname ??= duplicates.find((c) => c.hostname != null)?.hostname ?? null;
+      state.connections = state.connections.filter((c) => c === survivor || !duplicates.includes(c));
+      await writeState(state);
+      return survivor;
+    }
+    const record: StoredConnection = {
+      id: randomUUID(),
+      label: conn.label,
+      host: conn.host,
+      port: conn.port,
+      fingerprint: conn.fingerprint,
+      detectHosts: conn.detectHosts ?? true,
+      encToken,
+    };
+    state.connections.push(record);
+    await writeState(state);
+    return record;
   });
   return toRecord(stored);
 }

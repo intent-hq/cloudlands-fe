@@ -587,8 +587,8 @@ export async function processMarkdownToHTML(
     return htmlOut;
   } catch (error) {
     logger.error('[markdown-processor] Failed to parse markdown:', error as Error);
-    // Fallback to wrapping in paragraph
-    const fallback = `<p>${content}</p>`;
+    // Callers inject the result with {@html}, so the fallback must be sanitized too.
+    const fallback = sanitizeMarkdownHTML(`<p>${content}</p>`);
     setCachedMarkdown(cacheKey, fallback);
     return fallback;
   }

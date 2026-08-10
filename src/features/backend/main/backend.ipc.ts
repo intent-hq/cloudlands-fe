@@ -29,6 +29,7 @@ import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { cancelInflightHostExecStreamsForBackendSwitch } from '$shared/main/host-exec-stream';
 import {
+  AuthRejectedError,
   captureFingerprint,
   PinMismatchError,
   resolveBackendConfig,
@@ -51,6 +52,8 @@ import { registerBrowserExecReverseHandler } from '../../browser/main/browser-ex
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import type {
   AddConnectionResult,
+  CaptureFingerprintResult,
+  ConnectionAuthRejectedEvent,
   ConnectionBootFallbackEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
@@ -152,6 +155,15 @@ let activeConnectionMeta: { id: string; host: string; port: number } | null = nu
 let certMismatchNotified = false;
 
 /**
+ * One-shot guard so a WSS auth rejection (HTTP 401/403) surfaces a single
+ * failure event per client — the reconnect loop re-raises
+ * {@link AuthRejectedError} on every retry against an unchanged token, but the
+ * renderer only needs one notice. Reset whenever a fresh client is constructed
+ * (parallels {@link certMismatchNotified}).
+ */
+let authRejectedNotified = false;
+
+/**
  * The LOCAL intentd's `protocolVersion`, learned from the `client.hello`
  * handshake against the local sidecar (`activeConnectionMeta === null`). Used
  * as the baseline for the protocol-compatibility check when the FE later
@@ -189,6 +201,18 @@ let protocolMismatchNotified = false;
  * leaves it null for a matching/local backend.
  */
 let activeProtocolMismatch: ConnectionProtocolMismatchEvent | null = null;
+
+/**
+ * Sticky auth-rejection for the CURRENTLY active backend, or `null` when its
+ * auth is good (or it is local). Persisted here in main and replayed on
+ * {@link listConnections} so a renderer/window created or reloaded AFTER the
+ * one-shot `connections:auth-rejected` broadcast fired (including the boot
+ * path) still surfaces the actionable "authentication rejected" state —
+ * exactly the {@link activeProtocolMismatch} pattern. Cleared whenever a fresh
+ * client is constructed (a re-pair or switch builds a new client whose own
+ * connect re-detects any rejection).
+ */
+let activeAuthRejected: ConnectionAuthRejectedEvent | null = null;
 
 /**
  * Sticky boot-time backend-restore fallback notice (T19), or `null`. Set by
@@ -274,6 +298,15 @@ export function __resetBackendProtocolStateForTesting(): void {
   activeProtocolMismatch = null;
   activeConnectionMeta = null;
   bootFallbackNotice = null;
+  activeAuthRejected = null;
+}
+/** @internal Test seam: read the latched auth-rejection for the active backend. */
+export function __getActiveAuthRejectedForTesting(): ConnectionAuthRejectedEvent | null {
+  return activeAuthRejected;
+}
+/** @internal Test seam: poke the latched auth-rejection directly. */
+export function __setActiveAuthRejectedForTesting(event: ConnectionAuthRejectedEvent | null): void {
+  activeAuthRejected = event;
 }
 /** @internal Test seam: shorten the T19 boot-reconnect timeout. */
 export function __setBootReconnectTimeoutForTesting(ms: number): void {
@@ -308,8 +341,10 @@ export function getBackendClient(): JsonRpcClient {
   // `client.hello` re-detects one for a mismatching remote (and leaves it null
   // for a matching/local backend).
   certMismatchNotified = false;
+  authRejectedNotified = false;
   protocolMismatchNotified = false;
   activeProtocolMismatch = null;
+  activeAuthRejected = null;
   // Dev (unpackaged) builds default to the loopback WebSocket transport; the
   // packaged app stays on UDS. Env overrides (`INTENTD_SOCKET`, `INTENTD_WS_URL`)
   // win either way — see `resolveBackendConfig`. After a switch to a remote
@@ -408,6 +443,33 @@ export function getBackendClient(): JsonRpcClient {
       }
       logger.warn('Backend certificate fingerprint mismatch', {
         host: activeConnectionMeta?.host,
+      });
+      return;
+    }
+    // A 401/403 WebSocket-upgrade rejection (PROTOCOL §2.1: bad/rotated token,
+    // or the WS API is disabled) is NOT a transient transport blip either:
+    // reconnecting with the same token will keep failing. Surface a single
+    // machine-readable auth-rejected event per client instead of a generic
+    // transport error.
+    if (error instanceof AuthRejectedError) {
+      if (!authRejectedNotified && activeConnectionMeta) {
+        authRejectedNotified = true;
+        const payload: ConnectionAuthRejectedEvent = {
+          id: activeConnectionMeta.id,
+          host: activeConnectionMeta.host,
+          port: activeConnectionMeta.port,
+          statusCode: error.statusCode,
+        };
+        // Latch BEFORE broadcasting so a renderer that fetches
+        // `connections:list` between the broadcast and its own listener
+        // registration still replays it (same ordering as the sticky
+        // protocol mismatch).
+        activeAuthRejected = payload;
+        broadcast(CONNECTIONS.AUTH_REJECTED, payload);
+      }
+      logger.warn('Backend rejected WebSocket authentication', {
+        host: activeConnectionMeta?.host,
+        statusCode: error.statusCode,
       });
       return;
     }
@@ -831,11 +893,17 @@ async function listConnections(): Promise<ConnectionsListResult> {
     connectionsStore.list(),
     connectionsStore.getActiveId(),
   ]);
-  // Replay any sticky protocol mismatch for the active backend so a renderer
-  // that missed the one-shot `connections:protocol-mismatch` broadcast (e.g. a
-  // window created by a switch after the remote handshake already fired) still
-  // surfaces the advisory (cloudlands-fe#823).
-  return { connections, activeId, protocolMismatch: activeProtocolMismatch };
+  // Replay any sticky protocol mismatch / auth rejection for the active
+  // backend so a renderer that missed the one-shot broadcast (e.g. a window
+  // created by a switch after the remote handshake already fired, or a boot
+  // into a rejecting remote) still surfaces the advisory / actionable state
+  // (cloudlands-fe#823 pattern).
+  return {
+    connections,
+    activeId,
+    protocolMismatch: activeProtocolMismatch,
+    authRejected: activeAuthRejected,
+  };
 }
 
 /** Broadcast the current list + active selection to every window. */
@@ -1172,7 +1240,9 @@ function registerConnectionsHandlers(): void {
   // Trust-on-first-use: open a `wss` connection, read the presented cert's
   // fingerprint for the user to confirm, then close. On a structured capture
   // failure (timeout / connect-failed / no-certificate) reject so the renderer
-  // surfaces the reason; on success return only the fingerprint (no token).
+  // surfaces the reason; on success return the fingerprint (no token) plus
+  // whether the daemon accepted the token on the capture upgrade, so a bad or
+  // stale token surfaces during pairing instead of after the entry is stored.
   ipcMain.handle(
     CONNECTIONS.CAPTURE_FINGERPRINT,
     createValidatedHandler(
@@ -1182,22 +1252,36 @@ function registerConnectionsHandlers(): void {
         if (!result.ok) {
           throw new Error(result.error);
         }
-        return { fingerprint: result.fingerprint };
+        return {
+          fingerprint: result.fingerprint,
+          tokenValid: result.tokenValid,
+          ...(result.statusCode !== undefined ? { statusCode: result.statusCode } : {}),
+        } satisfies CaptureFingerprintResult;
       },
       CONNECTIONS.CAPTURE_FINGERPRINT,
     ),
   );
 
-  // Add a remote connection (token encrypted at rest by the store). Broadcast
-  // the refreshed list so every window reflects the new entry.
+  // Add a remote connection (token encrypted at rest by the store). The store
+  // upserts by host:port, so re-adding an existing target refreshes its
+  // token/fingerprint/label in place. If the upserted record is the ACTIVE
+  // backend, rebuild the live client via a switch to itself so the refreshed
+  // token takes effect immediately (switchBackend broadcasts the changed
+  // list) and report `switched: true` so the caller skips its own follow-up
+  // switch; otherwise just broadcast so every window reflects the entry.
   ipcMain.handle(
     CONNECTIONS.ADD,
     createValidatedHandler(
       ConnectionsAddSchema,
       async (_event, params) => {
         const connection = await connectionsStore.add(params);
+        const activeId = await connectionsStore.getActiveId();
+        if (connection.id === activeId) {
+          await switchBackend(connection.id);
+          return { connection, switched: true } satisfies AddConnectionResult;
+        }
         await broadcastConnectionsChanged();
-        return { connection } satisfies AddConnectionResult;
+        return { connection, switched: false } satisfies AddConnectionResult;
       },
       CONNECTIONS.ADD,
     ),
