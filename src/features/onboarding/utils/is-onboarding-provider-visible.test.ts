@@ -55,7 +55,7 @@ describe('isOnboardingProviderVisible', () => {
   it('hides feature-code-gated providers when the feature code is not activated', () => {
     expect(
       isOnboardingProviderVisible({
-        provider: { requiresFeatureCode: 'cortex' },
+        provider: { requiresFeatureCode: 'some-feature' },
         isFeatureEnabled: featureDisabled,
         status: { available: true },
       }),
@@ -65,8 +65,8 @@ describe('isOnboardingProviderVisible', () => {
   it('shows feature-code-gated providers when the feature code is activated', () => {
     expect(
       isOnboardingProviderVisible({
-        provider: { requiresFeatureCode: 'cortex' },
-        isFeatureEnabled: (code) => code === 'cortex',
+        provider: { requiresFeatureCode: 'some-feature' },
+        isFeatureEnabled: (code) => code === 'some-feature',
         status: undefined,
       }),
     ).toBe(true);

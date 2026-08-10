@@ -235,7 +235,7 @@
 
   // Absent hidden list = gating verdict unknown — fall back to the catalog
   // row's `visible` flag (same rule as orderProviderEntries) so gated
-  // providers (cortex, mock) don't leak on the degraded path. Default-deny:
+  // providers (e.g. mock) don't leak on the degraded path. Default-deny:
   // a row missing from the (possibly unhydrated) catalog counts as not
   // visible, mirroring orderProviderEntries rendering nothing before the
   // catalog loads.

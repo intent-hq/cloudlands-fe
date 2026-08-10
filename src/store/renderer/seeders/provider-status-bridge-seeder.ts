@@ -28,7 +28,7 @@
  *                 adapter). When the CLI is present but neither a local
  *                 `codex-acp` nor npx (the pinned adapter fallback runner)
  *                 resolves, a warning is attached.
- *  - opencode / pi / droid / grok: binary presence via
+ *  - cortex / opencode / pi / droid / grok: binary presence via
  *                 `host.toolAvailability` / `host.findBinary`.
  *  - unsloth:     rides the opencode binary (the daemon injects the managed
  *                 local server's config via OPENCODE_CONFIG_CONTENT) AND the
@@ -39,9 +39,9 @@
  *  - auth (all):  `host.providerAuthStatus` — `true`/`false` verdicts attach
  *                 to available providers; the wire `null` (unknown) folds to
  *                 undefined so no indicator renders.
- *  - cortex/mock: gated behind a feature code / env var the renderer cannot
- *                 verify — hidden and unavailable, matching main's
- *                 default-deny gating.
+ *  - mock:        gated behind an env var the renderer cannot verify —
+ *                 hidden and unavailable, matching main's default-deny
+ *                 gating.
  *
  * Handlers are registered at import time (host-bridge-seeder idiom) so the
  * AuggieSetupGate's onMount probes resolve against the daemon from the very
@@ -98,6 +98,7 @@ interface HostToolAvailabilityResult {
 const PROVIDER_BINARIES: Record<string, string> = {
   "claude-code": "claude",
   codex: "codex",
+  cortex: "cortex",
   opencode: "opencode",
   pi: "pi",
   droid: "droid",
@@ -194,6 +195,9 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
     claudeCode.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
   }
   const codex: ProviderStatus = { available: tool(PROVIDER_BINARIES.codex).available === true };
+  // cortex: presence of the `cortex` CLI; no auth surface probed (the
+  // daemon's providerAuthStatus sweep does not cover cortex).
+  const cortex: ProviderStatus = { available: tool(PROVIDER_BINARIES.cortex).available === true };
   // codex's ACP adapter is a local codex-acp binary or the pinned npx
   // fallback — warn when the CLI is present but neither can run.
   if (
@@ -217,7 +221,6 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
     available: opencode.available && tool(PROVIDER_BINARIES.unsloth).available === true,
   };
   if (unsloth.available) unsloth.authenticated = true;
-  const cortex: ProviderStatus = { available: false };
   const mock: ProviderStatus = { available: false };
 
   withAuth(auggie, authVerdicts["auggie"]);
@@ -233,6 +236,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       auggie.available ||
       claudeCode.available ||
       codex.available ||
+      cortex.available ||
       opencode.available ||
       pi.available ||
       droid.available ||
@@ -259,9 +263,9 @@ async function checkSingleProvider(providerId: string, force = true): Promise<Pr
     }
     return status;
   }
-  if (providerId === "cortex" || providerId === "mock") {
-    // Feature-code / env-var gated — the renderer cannot verify either, so
-    // they stay unavailable (main's default-deny gating).
+  if (providerId === "mock") {
+    // Env-var gated — the renderer cannot verify it, so it stays
+    // unavailable (main's default-deny gating).
     return { available: false };
   }
   if (providerId === "unsloth") {
@@ -290,6 +294,11 @@ async function checkSingleProvider(providerId: string, force = true): Promise<Pr
   }
   if (!status.available) return status;
 
+  if (providerId === "cortex") {
+    // No auth surface — the daemon's providerAuthStatus sweep does not
+    // cover cortex, so return presence alone.
+    return status;
+  }
   if (providerId === "claude-code") {
     // Adapter runs exclusively via npx — surface the same warning as main
     // when the claude CLI is installed but npx is missing. A failed probe
@@ -402,6 +411,7 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.CHECK_SINGLE, async (arg) => {
 const CHECK_AVAILABILITY_CHANNELS: Record<string, string> = {
   "claude-code": CLAUDE_CODE_CHANNELS.CHECK_AVAILABILITY,
   codex: CODEX_CHANNELS.CHECK_AVAILABILITY,
+  cortex: CORTEX_CHANNELS.CHECK_AVAILABILITY,
   opencode: OPENCODE_CHANNELS.CHECK_AVAILABILITY,
   droid: DROID_CHANNELS.CHECK_AVAILABILITY,
 };
@@ -414,13 +424,6 @@ for (const [providerId, channel] of Object.entries(CHECK_AVAILABILITY_CHANNELS))
     return { success: true, available: found?.available === true };
   });
 }
-
-// Cortex is feature-code gated (renderer cannot verify the gate) — default
-// deny, matching the status probes above.
-registerMockIpcHandler(CORTEX_CHANNELS.CHECK_AVAILABILITY, async () => ({
-  success: true,
-  available: false,
-}));
 
 /** Manual install step surfaced by the INSTALL / AUTHENTICATE instructions. */
 const AUGGIE_INSTALL_COMMAND = "npm install -g @augmentcode/auggie";

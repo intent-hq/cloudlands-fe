@@ -41,20 +41,20 @@ describe('orderProviderEntries', () => {
     const result = orderProviderEntries(
       [
         entry('auggie', 'Augment Auggie'),
-        entry('cortex', 'Snowflake Cortex', false),
+        entry('gated', 'Gated Provider', false),
         entry('mock', 'Mock Provider', false),
       ],
       ['mock'],
     );
-    // Hidden list is authoritative once known: cortex stays despite visible=false.
-    expect(result.map((e) => e.id)).toEqual(['auggie', 'cortex']);
+    // Hidden list is authoritative once known: gated stays despite visible=false.
+    expect(result.map((e) => e.id)).toEqual(['auggie', 'gated']);
   });
 
   it('falls back to the catalog visible flag before availability loads', () => {
     const result = orderProviderEntries(
       [
         entry('auggie', 'Augment Auggie'),
-        entry('cortex', 'Snowflake Cortex', false),
+        entry('mock', 'Mock Provider', false),
         entry('claude-code', 'Anthropic Claude Code'),
       ],
       undefined,

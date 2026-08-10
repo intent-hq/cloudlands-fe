@@ -14,8 +14,8 @@
  * a cache miss or an adapter version-key change), this is the only
  * client-driven way to re-probe a cached provider.
  *
- * An empty `data` with a `warning` is an honest terminal state (e.g. cortex
- * feature-gated, droid not signed in) and resolves to `{ models: [], warning }`;
+ * An empty `data` with a `warning` is an honest terminal state (e.g. droid
+ * not signed in) and resolves to `{ models: [], warning }`;
  * only `success: false` (daemon unreachable) or transport failure throws.
  */
 

@@ -538,6 +538,22 @@ describe('provider availability service', () => {
     );
   });
 
+  it('single recheck probes cortex directly (no feature-code gate)', async () => {
+    routeBackend({});
+    mocks.findBinary.mockImplementation(async (name: string) =>
+      name === 'cortex' ? '/usr/local/bin/cortex' : null,
+    );
+
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE);
+    if (!handler) throw new Error('provider check handler was not registered');
+
+    const result = await handler({}, 'cortex');
+
+    expect(result).toEqual({ success: true, providerId: 'cortex', data: { available: true } });
+  });
+
   describe('hiddenProviders gating verdict', () => {
     /** Schema-valid `providers.catalog` row (PROTOCOL §5.38). */
     const catalogEntry = (
@@ -560,7 +576,7 @@ describe('provider availability service', () => {
         // 'providers.catalog' intentionally unrouted — the fetch fails and
         // there is no cached catalog, so the gating verdict is unknown. The
         // result must NOT fabricate an authoritative "nothing hidden" empty
-        // array, or gated providers (cortex, mock) flash in the renderer.
+        // array, or gated providers (e.g. mock) flash in the renderer.
       });
 
       const { getProviderAvailability } = await import('../provider-availability.service');
@@ -571,7 +587,6 @@ describe('provider availability service', () => {
       // Availability also fails closed for the registry-gated providers, so
       // availability-only consumers (onboarding auto-selection) cannot pick
       // them while the gating verdict is unknown.
-      expect(result.providers.cortex.available).toBe(false);
       expect(result.providers.mock.available).toBe(false);
     });
 
@@ -580,7 +595,7 @@ describe('provider availability service', () => {
         'providers.catalog': {
           providers: [
             catalogEntry('auggie', { canBeDisabled: false }),
-            catalogEntry('cortex', { requiresFeatureCode: 'cortex', visible: false }),
+            catalogEntry('gated-prov', { requiresFeatureCode: 'some-feature', visible: false }),
             catalogEntry('mock', { requiresEnvVar: 'INTENTD_TEST_MOCK_GATE', visible: false }),
           ],
         },
@@ -591,7 +606,30 @@ describe('provider availability service', () => {
       const { getProviderAvailability } = await import('../provider-availability.service');
       const result = await getProviderAvailability();
 
-      expect(result.hiddenProviders).toEqual(['cortex', 'mock']);
+      expect(result.hiddenProviders).toEqual(['gated-prov', 'mock']);
+    });
+
+    it('does not hide cortex — its visibility rides the catalog verdict alone', async () => {
+      routeBackend({
+        'providers.catalog': {
+          providers: [catalogEntry('auggie', { canBeDisabled: false }), catalogEntry('cortex')],
+        },
+        'host.providerDiscovery': {
+          ...EMPTY_DISCOVERY,
+          providers: EMPTY_DISCOVERY.providers.map((p) =>
+            p.id === 'cortex'
+              ? { ...p, installed: true, resolvedPath: '/usr/local/bin/cortex' }
+              : p,
+          ),
+        },
+        'host.providerAuthStatus': authSweep(),
+      });
+
+      const { getProviderAvailability } = await import('../provider-availability.service');
+      const result = await getProviderAvailability();
+
+      expect(result.hiddenProviders).toEqual([]);
+      expect(result.providers.cortex.available).toBe(true);
     });
 
     it('returns an empty hiddenProviders array when the catalog has no gated rows', async () => {

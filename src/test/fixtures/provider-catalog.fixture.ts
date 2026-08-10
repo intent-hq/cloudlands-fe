@@ -47,8 +47,7 @@ export const MOCK_PROVIDER_CATALOG: ProviderCatalogResult = {
       shortName: 'Cortex',
       command: 'cortex-acp',
       canBeDisabled: true,
-      requiresFeatureCode: 'cortex',
-      visible: false,
+      visible: true,
     },
     {
       id: 'opencode',
