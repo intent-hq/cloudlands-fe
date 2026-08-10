@@ -4,6 +4,24 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.25.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.24.0...v2.25.0) (2026-08-10)
+
+
+### 🚀 Features
+
+* **browser:** add closeTab action to the browser.exec CDP action catalog ([#1008](https://github.com/intent-hq/cloudlands-fe/issues/1008)) ([4c32ac3](https://github.com/intent-hq/cloudlands-fe/commit/4c32ac3e54d8854b53eca4483cce7315e6d198ce))
+* execute-only setup scripts — remove the saved-scripts library ([#994](https://github.com/intent-hq/cloudlands-fe/issues/994)) ([72e2bfa](https://github.com/intent-hq/cloudlands-fe/commit/72e2bfafc6e0ca60195bb6a43420a115c17830d0))
+* live provisioning progress on the Create workspace button ([#997](https://github.com/intent-hq/cloudlands-fe/issues/997)) ([3239143](https://github.com/intent-hq/cloudlands-fe/commit/3239143f3742e2464137b9ae6173c89f53a1b3d7))
+* **notifications:** suppress agent:idle notifications for archived workspaces ([#1007](https://github.com/intent-hq/cloudlands-fe/issues/1007)) ([b9f2671](https://github.com/intent-hq/cloudlands-fe/commit/b9f2671bbe703622ebe09858befda5d04bcd4f8a))
+* **onboarding:** picked-repo GitHub flow + honest provider availability ([#1001](https://github.com/intent-hq/cloudlands-fe/issues/1001)) ([289cddb](https://github.com/intent-hq/cloudlands-fe/commit/289cddb83d37800d4b55eb5d708484209f720331))
+* paint ls-remote fallback branches and parallelize authoritative reads ([#1005](https://github.com/intent-hq/cloudlands-fe/issues/1005)) ([b0ecfa3](https://github.com/intent-hq/cloudlands-fe/commit/b0ecfa3df7095e5cbcea1f0f90a62f8842e782d9))
+* un-gate cortex — visibility rides the daemon catalog verdict ([#1002](https://github.com/intent-hq/cloudlands-fe/issues/1002)) ([7fb12f3](https://github.com/intent-hq/cloudlands-fe/commit/7fb12f3be6893f6c80905692eda68738cae1d5c7))
+
+
+### 🐛 Bug Fixes
+
+* onboarding prompt UI — Using-row spacing, provider-default icon, image drag-and-drop ([#1006](https://github.com/intent-hq/cloudlands-fe/issues/1006)) ([e0d8566](https://github.com/intent-hq/cloudlands-fe/commit/e0d8566acb1811d2056d26f0b058bc068f276b8c))
+
 ## [2.24.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.23.0...v2.24.0) (2026-08-10)
 
 
