@@ -102,6 +102,7 @@ import {
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectCurrentlyViewedAgentId } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
+import { takeLatestInContext, takeLeadingByAgent } from '../../../utils/context-saga-effects';
 
 const logger = createLogger('ChatSubscribeSaga');
 
@@ -603,9 +604,14 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
   const subscriptions = new Map<string, SubscriptionEntry>();
   const events = createChannel(buffers.expanding<ChatSubscriptionEvent>());
   const eventWatcher = yield* takeLeading(events, handleSubscriptionEvent, subscriptions);
-  yield* takeLeading(initializeChatRequested, watchInitialize, subscriptions, events);
+  yield* takeLeadingByAgent(initializeChatRequested, watchInitialize, subscriptions, events);
   yield* takeLatest(markAgentAsViewed, watchViewed, subscriptions, events);
-  yield* takeLatest(transcriptHydrationSettled, watchHydrationSettled, subscriptions);
+  yield* takeLatestInContext(
+    transcriptHydrationSettled,
+    (action) => action.payload[0],
+    watchHydrationSettled,
+    subscriptions,
+  );
   yield* takeEvery(clearCurrentlyViewedAgent, watchClearViewed, subscriptions);
   yield* takeEvery(removeSession, watchRemoveSession, subscriptions);
   yield* takeEvery(removeWorkspaceSessions, watchRemoveWorkspaceSessions, subscriptions);
