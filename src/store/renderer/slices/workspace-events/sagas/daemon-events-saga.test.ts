@@ -39,7 +39,6 @@ import {
   FILE_EVENTS_REPLACE_GROUP,
   FILE_EVENTS_SUBSCRIBE_TYPES,
 } from './daemon-events-saga';
-import { setActiveWorkspaceId } from '../../workspace/workspace-slice';
 import { DAEMON_EVENTS_SUBSCRIBE_TYPES } from '$features/events/daemon-events-bridge.client';
 import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
 
@@ -60,21 +59,37 @@ const scopedFileParams = (workspaceId: string) => ({
 });
 
 /**
- * Runs the saga against a stdChannel (so tests can `put` workspace-switch
- * actions) and a minimal state carrying the active workspace id the scoped
- * `file:*` lease reads via `selectActiveWorkspaceId`.
+ * Runs the saga against a minimal mutable store double. The scoped-lease
+ * manager reacts to `selectActiveWorkspaceId` through a selector channel
+ * (subscribed on the saga-context `reduxStore`), so tests drive workspace
+ * selection with `setActive(wsId | null)` — it swaps the state and notifies
+ * store subscribers, exactly like a reducer-applied dispatch would.
  */
 function startSaga(activeWorkspaceId: string | null = null, dispatch = vi.fn()) {
   const input = stdChannel();
+  let state = { workspace: { activeWorkspaceId } };
+  const subscribers = new Set<() => void>();
+  const reduxStore = {
+    getState: () => state,
+    subscribe: (listener: () => void) => {
+      subscribers.add(listener);
+      return () => subscribers.delete(listener);
+    },
+  };
+  const setActive = (wsId: string | null) => {
+    state = { workspace: { activeWorkspaceId: wsId } };
+    for (const listener of subscribers) listener();
+  };
   const task = runSaga(
     {
       channel: input,
       dispatch,
-      getState: () => ({ workspace: { activeWorkspaceId } }),
+      getState: () => state,
+      context: { reduxStore },
     },
     daemonEventsSaga,
   );
-  return { input, task };
+  return { input, task, setActive };
 }
 
 describe('daemonEventsSaga', () => {
@@ -129,13 +144,15 @@ describe('daemonEventsSaga', () => {
   });
 
   it('subscribes the scoped file lease for the already-active workspace at startup', async () => {
+    // The scoped-lease manager forks before the awaited firehose subscribe,
+    // so the scoped subscribe is issued first.
     mocks.subscribe
-      .mockResolvedValueOnce({ subscriptionId: 'sub-fire' })
-      .mockResolvedValueOnce({ subscriptionId: 'sub-file' });
+      .mockResolvedValueOnce({ subscriptionId: 'sub-file' })
+      .mockResolvedValueOnce({ subscriptionId: 'sub-fire' });
     const { task } = startSaga('ws-1');
     await settle();
 
-    expect(mocks.subscribe.mock.calls).toEqual([[firehoseParams], [scopedFileParams('ws-1')]]);
+    expect(mocks.subscribe.mock.calls).toEqual([[scopedFileParams('ws-1')], [firehoseParams]]);
 
     // Scope gate input carries BOTH owned subscription ids, so a file event
     // fanned out on the scoped lease still reaches the routing layer
@@ -158,18 +175,18 @@ describe('daemonEventsSaga', () => {
 
   it('re-issues the scoped subscribe with the same replaceGroup on workspace switch', async () => {
     mocks.subscribe
-      .mockResolvedValueOnce({ subscriptionId: 'sub-fire' })
       .mockResolvedValueOnce({ subscriptionId: 'sub-file-ws1' })
+      .mockResolvedValueOnce({ subscriptionId: 'sub-fire' })
       .mockResolvedValueOnce({ subscriptionId: 'sub-file-ws2' });
-    const { input, task } = startSaga('ws-1');
+    const { setActive, task } = startSaga('ws-1');
     await settle();
 
-    input.put(setActiveWorkspaceId('ws-2'));
+    setActive('ws-2');
     await settle();
 
     expect(mocks.subscribe.mock.calls).toEqual([
-      [firehoseParams],
       [scopedFileParams('ws-1')],
+      [firehoseParams],
       [scopedFileParams('ws-2')],
     ]);
 
@@ -244,8 +261,8 @@ describe('daemonEventsSaga', () => {
 
   it('replays BOTH the firehose and the scoped file lease on reconnect', async () => {
     mocks.subscribe
-      .mockResolvedValueOnce({ subscriptionId: 'sub-fire-old' })
       .mockResolvedValueOnce({ subscriptionId: 'sub-file-old' })
+      .mockResolvedValueOnce({ subscriptionId: 'sub-fire-old' })
       .mockResolvedValueOnce({ subscriptionId: 'sub-fire-new' })
       .mockResolvedValueOnce({ subscriptionId: 'sub-file-new' });
     const { task } = startSaga('ws-1');
@@ -256,8 +273,8 @@ describe('daemonEventsSaga', () => {
 
     expect(mocks.unsubscribe.mock.calls).toEqual([['sub-fire-old'], ['sub-file-old']]);
     expect(mocks.subscribe.mock.calls).toEqual([
-      [firehoseParams],
       [scopedFileParams('ws-1')],
+      [firehoseParams],
       [firehoseParams],
       [scopedFileParams('ws-1')],
     ]);
@@ -284,8 +301,8 @@ describe('daemonEventsSaga', () => {
 
   it('unsubscribes both leases on cancellation when a workspace is active', async () => {
     mocks.subscribe
-      .mockResolvedValueOnce({ subscriptionId: 'sub-fire' })
-      .mockResolvedValueOnce({ subscriptionId: 'sub-file' });
+      .mockResolvedValueOnce({ subscriptionId: 'sub-file' })
+      .mockResolvedValueOnce({ subscriptionId: 'sub-fire' });
     const { task } = startSaga('ws-1');
     await settle();
     task.cancel();
@@ -293,6 +310,104 @@ describe('daemonEventsSaga', () => {
 
     expect(mocks.unsubscribe.mock.calls).toEqual([['sub-fire'], ['sub-file']]);
     expect(mocks.disposeRouting).toHaveBeenCalledTimes(1);
+  });
+
+  it('retires the scoped lease when the active workspace is cleared', async () => {
+    mocks.subscribe
+      .mockResolvedValueOnce({ subscriptionId: 'sub-file' })
+      .mockResolvedValueOnce({ subscriptionId: 'sub-fire' });
+    const { setActive, task } = startSaga('ws-1');
+    await settle();
+
+    setActive(null);
+    await settle();
+
+    // The scoped lease is unsubscribed (no replacing subscribe on a clear)
+    // and the routing gate no longer accepts its id.
+    expect(mocks.unsubscribe.mock.calls).toEqual([['sub-file']]);
+    expect(mocks.subscribe).toHaveBeenCalledTimes(2);
+    mocks.notificationHandler!({ method: 'events.event', params: { sequence: 1 } });
+    await settle();
+    expect(mocks.route).toHaveBeenLastCalledWith(
+      'events.event',
+      { sequence: 1 },
+      ['sub-fire'],
+      expect.anything(),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('converges to the latest workspace when a switch lands during an in-flight scoped subscribe', async () => {
+    let resolveScopedWs1!: (value: { subscriptionId: string }) => void;
+    mocks.subscribe
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveScopedWs1 = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({ subscriptionId: 'sub-fire' })
+      .mockResolvedValueOnce({ subscriptionId: 'sub-file-ws2' });
+    const { setActive, task } = startSaga('ws-1');
+
+    // ws-2 is selected while the ws-1 scoped subscribe is still in flight —
+    // previously this dispatch was dropped (no pending take) and the lease
+    // stayed stranded on ws-1.
+    setActive('ws-2');
+    resolveScopedWs1({ subscriptionId: 'sub-file-ws1' });
+    await settle();
+
+    expect(mocks.subscribe.mock.calls).toEqual([
+      [scopedFileParams('ws-1')],
+      [firehoseParams],
+      [scopedFileParams('ws-2')],
+    ]);
+    // No unsubscribe on the switch path: the ws-2 subscribe atomically
+    // replaced the daemon-side subscription via replaceGroup, and the
+    // retired lease's id simply fell out of the routing gate.
+    expect(mocks.unsubscribe).not.toHaveBeenCalled();
+    mocks.notificationHandler!({ method: 'events.event', params: { sequence: 1 } });
+    await settle();
+    expect(mocks.route).toHaveBeenLastCalledWith(
+      'events.event',
+      { sequence: 1 },
+      ['sub-fire', 'sub-file-ws2'],
+      expect.anything(),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('subscribes the scoped lease for a workspace selected during the initial firehose subscribe', async () => {
+    let resolveFirehose!: (value: { subscriptionId: string }) => void;
+    mocks.subscribe
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirehose = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({ subscriptionId: 'sub-file' });
+    const { setActive, task } = startSaga(null);
+
+    // The first selection lands while the firehose subscribe round-trip is
+    // still pending — previously the watcher was not yet forked, so no scoped
+    // subscription was ever issued.
+    setActive('ws-1');
+    await settle();
+    expect(mocks.subscribe.mock.calls).toEqual([[firehoseParams], [scopedFileParams('ws-1')]]);
+
+    resolveFirehose({ subscriptionId: 'sub-fire' });
+    await settle();
+    mocks.notificationHandler!({ method: 'events.event', params: { sequence: 1 } });
+    await settle();
+    expect(mocks.route).toHaveBeenLastCalledWith(
+      'events.event',
+      { sequence: 1 },
+      ['sub-fire', 'sub-file'],
+      expect.anything(),
+    );
+    task.cancel();
+    await task.toPromise();
   });
 
   it('unsubscribes a subscription that resolves after the saga was cancelled', async () => {
