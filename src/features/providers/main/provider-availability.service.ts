@@ -327,9 +327,15 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     });
   };
 
-  // Check all providers in parallel; for hidden providers skip the check entirely
-  const isCortexHidden = hiddenProviders.includes('cortex');
-  const isMockHidden = hiddenProviders.includes('mock');
+  // Check all providers in parallel; for hidden providers skip the check
+  // entirely. When the gating verdict is unknown (no catalog), fail closed on
+  // the registry-gated providers (cortex: feature code, mock: env var) — the
+  // same pre-hydration default-deny the single-provider recheck path applies —
+  // so availability-only consumers (e.g. onboarding auto-selection) cannot
+  // pick a gated provider on the degraded path.
+  const gatingVerdictUnknown = catalog === undefined;
+  const isCortexHidden = gatingVerdictUnknown || hiddenProviders.includes('cortex');
+  const isMockHidden = gatingVerdictUnknown || hiddenProviders.includes('mock');
   const [
     auggieResult,
     claudeCodeResult,

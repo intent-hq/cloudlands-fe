@@ -568,6 +568,11 @@ describe('provider availability service', () => {
 
       expect('hiddenProviders' in result).toBe(false);
       expect(result.hiddenProviders).toBeUndefined();
+      // Availability also fails closed for the registry-gated providers, so
+      // availability-only consumers (onboarding auto-selection) cannot pick
+      // them while the gating verdict is unknown.
+      expect(result.providers.cortex.available).toBe(false);
+      expect(result.providers.mock.available).toBe(false);
     });
 
     it('computes hiddenProviders from a hydrated catalog (gated rows hidden)', async () => {
