@@ -754,9 +754,11 @@ Some additional notes here.
     it('should cache the sanitized fallback, not the raw input', async () => {
       const payload =
         '<img src=x onerror="alert(1)"><script>alert(2)</script> fallback-cache-test';
-      vi.mocked(renderTaskBlocksAsReadableMarkdown).mockImplementationOnce(() => {
+      const mock = vi.mocked(renderTaskBlocksAsReadableMarkdown);
+      mock.mockImplementationOnce(() => {
         throw new Error('forced processing failure');
       });
+      const callsBefore = mock.mock.calls.length;
 
       await processMarkdownToHTML(payload, {
         skipIfHTML: false,
@@ -768,6 +770,8 @@ Some additional notes here.
         taskBlockRenderMode: 'content',
       });
 
+      // Only one processing attempt — the second call was served from the cache
+      expect(mock.mock.calls.length).toBe(callsBefore + 1);
       expect(cached).not.toContain('<script');
       expect(cached).not.toContain('onerror');
     });
