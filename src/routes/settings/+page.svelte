@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { logger } from '../../shared/logger';
-
   import { page } from '$app/state';
   import {
     selectIsReadyToInstall,
@@ -41,9 +39,6 @@
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
-  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
-  const workspaces = selectWorkspaceItems();
-
   import {
     resetNotificationSettings,
     setAgentFontStyle,
@@ -71,10 +66,7 @@
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
   import { getHardwareConsoleManager } from '$features/hardware-console/instance';
-  import {
-    getSettingsPreviousPath,
-    navigateBackFromSettings,
-  } from '$lib/utils/workspace-navigation';
+  import { navigateBackFromSettings } from '$lib/utils/workspace-navigation';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { onMount, untrack } from 'svelte';
   import Fa from 'svelte-fa';
@@ -248,24 +240,7 @@
     webHidAvailable && (!isElectronPlatform() || hardwareDevicePresent),
   );
 
-  // Get back label - show workspace title if coming from a workspace
-  const backLabel = $derived.by(() => {
-    const prevPath = getSettingsPreviousPath();
-    logger.debug('[Settings] prevPath for back button:', prevPath);
-    if (prevPath === '/' || prevPath === '') return m.settings_back_home();
-    if (prevPath.startsWith('/workspace/')) {
-      // Extract workspace ID from path like /workspace/{id} or /workspace/{id}/...
-      const pathParts = prevPath.split('/');
-      const workspaceId = pathParts[2]; // ['', 'workspace', '{id}', ...]
-      logger.debug('[Settings] Extracted workspaceId:', workspaceId);
-      if (workspaceId) {
-        const workspace = $workspaces.find((item) => item.id === workspaceId);
-        logger.debug('[Settings] Found workspace:', workspace?.title);
-        return workspace?.title || m.settings_back_space();
-      }
-    }
-    return m.settings_back_back();
-  });
+  const backLabel = $derived(m.settings_back_back());
 
   // Component refs for reset functionality
   let gitWorkspaceSettingsRef: GitWorkspaceSettings | undefined = $state();
