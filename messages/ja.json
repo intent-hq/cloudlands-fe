@@ -2101,6 +2101,7 @@
   "chat_toolClassifier_drag_label": "ドラッグ",
   "chat_toolClassifier_hover_label": "ホバー",
   "chat_toolClassifier_page_subject": "ページ",
+  "chat_toolClassifier_tab_subject": "タブ",
   "chat_toolClassifier_renameWorkspace_label": "ワークスペースの名前を変更",
   "chat_toolClassifier_renameAgent_label": "エージェントの名前を変更",
   "chat_toolClassifier_createNote_label": "ノートを作成",

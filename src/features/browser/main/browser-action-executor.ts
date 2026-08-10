@@ -127,6 +127,14 @@ const NavigateActionSchema = z.object({
   tabId: z.string().optional(),
 });
 
+// tabId is deliberately REQUIRED (no fallback to the sequence-level default):
+// closing is destructive, so an explicit id per action avoids accidentally
+// closing the wrong tab (intent-hq/monorepo#1931).
+const CloseTabActionSchema = z.object({
+  action: z.literal('closeTab'),
+  tabId: z.string(),
+});
+
 // Union of all action schemas
 const BrowserActionSchema = z.discriminatedUnion('action', [
   ListTabsActionSchema,
@@ -146,6 +154,7 @@ const BrowserActionSchema = z.discriminatedUnion('action', [
   GetSummaryActionSchema,
   OpenTabActionSchema,
   NavigateActionSchema,
+  CloseTabActionSchema,
 ]);
 
 export type BrowserAction = z.infer<typeof BrowserActionSchema>;
@@ -358,6 +367,12 @@ async function executeAction(
         }
         const result = openTabFn(action.url, action.position);
         return { action: 'openTab', success: result.success, result };
+      }
+
+      case 'closeTab': {
+        // Explicit action.tabId only — never the sequence-level default (see schema note).
+        const result = await embeddedBrowserCdp.closeTab(action.tabId, workspaceId);
+        return { action: 'closeTab', success: true, result };
       }
 
       case 'navigate': {
