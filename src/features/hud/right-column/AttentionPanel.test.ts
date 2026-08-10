@@ -6,19 +6,28 @@
  * through HUD_STATE_COLORS, and the elapsed timer only renders when the
  * raise time is known.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 
 import { store as appStore } from '$store/renderer/store';
-import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  resetWorkspaceState,
+  setWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
 import { hudActivated, hudQuestionCaptured } from '$store/renderer/slices/hud/hud-slice';
-import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+import {
+  bulkUpsertSessions,
+  clearAllSessions,
+} from '$store/renderer/slices/agent-session/agent-session-slice';
 import { HUD_STATE_COLORS } from '../grid/hud-card-meta';
 import type { AgentSession, Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
 
 import AttentionPanel from './AttentionPanel.svelte';
+
+beforeAll(() => appStore.init());
+afterAll(() => appStore.dispose());
 
 function makeWorkspace(
   id: string,
@@ -58,15 +67,15 @@ function chipTexts(row: HTMLElement): string[] {
 
 describe('AttentionPanel row structure (mock parity)', () => {
   beforeEach(() => {
-    appStore.init();
+    appStore.dispatch(resetWorkspaceState());
+    appStore.dispatch(clearAllSessions());
     appStore.dispatch(hudActivated());
   });
   afterEach(() => {
     cleanup();
-    appStore.dispose();
   });
 
-  it('a captured question renders the QUESTION chip and the Q:-prefixed detail line', () => {
+  it('a captured question renders the QUESTION chip and the Q:-prefixed detail line', async () => {
     render(AttentionPanel);
     appStore.dispatch(
       setWorkspaceEntity(
@@ -84,9 +93,13 @@ describe('AttentionPanel row structure (mock parity)', () => {
         ts: '2026-07-30T12:00:00Z',
       }),
     );
-    flushSync();
-
-    const [row] = rows();
+    let row: HTMLElement | undefined;
+    await waitFor(() => {
+      flushSync();
+      [row] = rows();
+      expect(row).toBeTruthy();
+    });
+    if (!row) throw new Error('Expected an attention row');
     expect(chipTexts(row)[1]).toBe('QUESTION');
     expect(row.querySelector('.hud-attention-msg')?.textContent).toBe(
       'Q: Which auth flow should the endpoint use?',
@@ -96,7 +109,7 @@ describe('AttentionPanel row structure (mock parity)', () => {
     expect(chipTexts(row).at(-1)).toMatch(/\d{2}:\d{2}:\d{2}/);
   });
 
-  it('discussion/blocker attention requests render their signal chips and reasons', () => {
+  it('discussion/blocker attention requests render their signal chips and reasons', async () => {
     render(AttentionPanel);
     appStore.dispatch(
       setWorkspaceEntity(
@@ -126,17 +139,19 @@ describe('AttentionPanel row structure (mock parity)', () => {
         } as unknown as AgentSession,
       ]),
     );
-    flushSync();
-
-    const kinds = rows().map((row) => chipTexts(row)[1]);
-    expect(kinds).toContain('DISCUSSION REQUIRED');
-    expect(kinds).toContain('BLOCKED');
+    let kinds: string[] = [];
+    await waitFor(() => {
+      flushSync();
+      kinds = rows().map((row) => chipTexts(row)[1]);
+      expect(kinds).toContain('DISCUSSION REQUIRED');
+      expect(kinds).toContain('BLOCKED');
+    });
     const texts = rows().map((row) => row.querySelector('.hud-attention-msg')?.textContent);
     expect(texts).toContain('Need a call on the rollout order');
     expect(texts).toContain('Blocker: Sandbox network is down');
   });
 
-  it('a failed agent row keeps the FAILED chip and the red accent', () => {
+  it('a failed agent row keeps the FAILED chip and the red accent', async () => {
     render(AttentionPanel);
     appStore.dispatch(
       setWorkspaceEntity(
@@ -145,21 +160,27 @@ describe('AttentionPanel row structure (mock parity)', () => {
         ]),
       ),
     );
-    flushSync();
-
-    const [row] = rows();
-    expect(chipTexts(row)[1]).toBe('FAILED');
+    let row: HTMLElement | undefined;
+    await waitFor(() => {
+      flushSync();
+      [row] = rows();
+      expect(row && chipTexts(row)[1]).toBe('FAILED');
+    });
+    if (!row) throw new Error('Expected a failed-agent row');
     expect(row.style.borderLeftColor).toBe(HUD_STATE_COLORS.failed);
     expect(row.querySelector('.hud-attention-msg')).toBeNull();
   });
 
-  it('a generic needs_attention rollup row shows the fallback chip and no frozen timer', () => {
+  it('a generic needs_attention rollup row shows the fallback chip and no frozen timer', async () => {
     render(AttentionPanel);
     appStore.dispatch(setWorkspaceEntity(makeWorkspace('ws-1', [], 'needs_attention')));
-    flushSync();
-
-    const [row] = rows();
-    expect(chipTexts(row)[1]).toBe('ATTENTION');
+    let row: HTMLElement | undefined;
+    await waitFor(() => {
+      flushSync();
+      [row] = rows();
+      expect(row && chipTexts(row)[1]).toBe('ATTENTION');
+    });
+    if (!row) throw new Error('Expected a generic attention row');
     // Unknown raise time (sinceTs null) → no elapsed timer at all, instead
     // of a frozen 00:00:00 misreading as "just raised".
     expect(chipTexts(row).join(' ')).not.toMatch(/\d{2}:\d{2}:\d{2}/);

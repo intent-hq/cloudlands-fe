@@ -5,13 +5,16 @@
  * against regressions re-introducing the counter strip, plus the macOS-only
  * traffic-light spacer strip above the header row.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 
 import { store as appStore } from '$store/renderer/store';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
-import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
+import {
+  requestThemePreferenceChange,
+  setThemePreference,
+} from '$store/renderer/slices/theme/theme-slice';
 import { themeSaga } from '$store/renderer/slices/theme/sagas/theme-saga';
 import { ThemeManager } from '$lib/utils/theme';
 import type { Workspace, WorkspaceId } from '$shared/types';
@@ -21,6 +24,9 @@ import HudHeader from './HudHeader.svelte';
 
 const NOW_MS = Date.parse('2026-07-30T12:00:00Z');
 
+beforeAll(() => appStore.init());
+afterAll(() => appStore.dispose());
+
 const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
@@ -28,12 +34,8 @@ const settle = async () => {
 };
 
 describe('HudHeader after the counter strip moved to the footer', () => {
-  beforeEach(() => {
-    appStore.init();
-  });
   afterEach(() => {
     cleanup();
-    appStore.dispose();
   });
 
   it('renders the header without any workspace state counters', () => {
@@ -70,12 +72,8 @@ describe('HudHeader after the counter strip moved to the footer', () => {
 });
 
 describe('HudHeader macOS traffic-light spacer', () => {
-  beforeEach(() => {
-    appStore.init();
-  });
   afterEach(() => {
     cleanup();
-    appStore.dispose();
   });
 
   it('renders the drag-region spacer strip above the header on darwin', () => {
@@ -156,7 +154,7 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
   beforeEach(async () => {
     stubControllableMatchMedia();
     ThemeManager.resetInstance();
-    appStore.init();
+    appStore.dispatch(setThemePreference('system'));
     stopThemeSaga = appStore.runSaga(themeSaga);
     await settle();
   });
@@ -165,7 +163,6 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
     stopThemeSaga = null;
     await settle();
     cleanup();
-    appStore.dispose();
     ThemeManager.resetInstance();
   });
 
@@ -178,30 +175,38 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
 
     await fireEvent.click(btn);
     await settle();
-    flushSync();
     expect(themeState().preference).toBe('light');
-    expect(btn.textContent?.trim()).toBe('THEME · LIGHT');
+    await waitFor(() => {
+      flushSync();
+      expect(btn.textContent?.trim()).toBe('THEME · LIGHT');
+    });
 
     await fireEvent.click(btn);
     await settle();
-    flushSync();
     expect(themeState().preference).toBe('dark');
-    expect(btn.textContent?.trim()).toBe('THEME · DARK');
+    await waitFor(() => {
+      flushSync();
+      expect(btn.textContent?.trim()).toBe('THEME · DARK');
+    });
 
     await fireEvent.click(btn);
     await settle();
-    flushSync();
     expect(themeState().preference).toBe('system');
-    expect(btn.textContent?.trim()).toBe('THEME · SYSTEM');
+    await waitFor(() => {
+      flushSync();
+      expect(btn.textContent?.trim()).toBe('THEME · SYSTEM');
+    });
 
     await fireEvent.click(btn);
     await settle();
-    flushSync();
     expect(themeState().preference).toBe('light');
-    expect(btn.textContent?.trim()).toBe('THEME · LIGHT');
+    await waitFor(() => {
+      flushSync();
+      expect(btn.textContent?.trim()).toBe('THEME · LIGHT');
+    });
   });
 
-  it('persists the preference under the main app\'s shared `theme` localStorage key', async () => {
+  it("persists the preference under the main app's shared `theme` localStorage key", async () => {
     render(HudHeader, { props: { nowMs: NOW_MS } });
     const btn = screen.getByTestId('hud-header-theme-btn');
 
