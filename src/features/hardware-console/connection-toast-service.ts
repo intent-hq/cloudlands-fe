@@ -9,6 +9,11 @@
  * cannot work. On disconnect shows a brief, non-sticky toast. All probing is
  * read-only vendor RPC — nothing here can trigger a macOS permission prompt.
  *
+ * Console-owner gate (intent-hq/monorepo#1928): toasts fire only in the
+ * owner window so N open windows do not stack N copies. The connected-device
+ * name is tracked un-gated, so a window that gains ownership after the
+ * connect still toasts a later disconnect.
+ *
  * Dependency-light per AGENTS.md service conventions: no selector
  * imports; the toast lib is imported lazily and settings navigation goes
  * through the main-safe navigation.client seam.
@@ -148,23 +153,35 @@ async function showDisconnectToast(name: string): Promise<void> {
   });
 }
 
+export interface ConnectionToastDeps {
+  /**
+   * Console-owner gate (#1928): toasts fire only in the owner window.
+   * Defaults to always-owner (single window / web build).
+   */
+  isOwner?: () => boolean;
+}
+
 /**
  * Subscribe connection toasts to a manager. Returns the unsubscribe
  * function. Survives reconnects (the status listener outlives connections).
  */
 export function installHardwareConsoleConnectionToasts(
   manager: HardwareConsoleManager,
+  deps: ConnectionToastDeps = {},
 ): () => void {
+  const isOwner = deps.isOwner ?? (() => true);
   let lastConnectedName: string | null = null;
   return manager.onStatusChange((status) => {
     if (status === 'connected') {
       lastConnectedName = manager.connectedDevice?.name ?? null;
+      if (!isOwner()) return;
       handleConnected(manager).catch((error: unknown) => {
         logger.error('Failed to show hardware-console connect toast', error);
       });
     } else if (status === 'disconnected' && lastConnectedName !== null) {
       const name = lastConnectedName;
       lastConnectedName = null;
+      if (!isOwner()) return;
       showDisconnectToast(name).catch((error: unknown) => {
         logger.error('Failed to show hardware-console disconnect toast', error);
       });

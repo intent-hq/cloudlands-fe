@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   manager: {
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn().mockResolvedValue(undefined),
+    status: 'disconnected' as string,
+    client: null as unknown,
   },
   installKeySwitch: vi.fn(),
   installEncoder: vi.fn(),
@@ -14,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   installClear: vi.fn(),
   installToasts: vi.fn(),
   ledUpdate: vi.fn(),
+  ledAttach: vi.fn(),
+  ledDetach: vi.fn(),
   disposers: Array.from({ length: 5 }, () => vi.fn()),
   /** Preload bridge handed to the owner-status wiring; null = bridge-less. */
   ownerBridge: { current: null as unknown },
@@ -38,6 +42,8 @@ vi.mock('$features/hardware-console/led/led-status-service', () => ({
 vi.mock('$features/hardware-console/led/engine', () => ({
   HardwareLedEngine: class {
     update = mocks.ledUpdate;
+    attach = mocks.ledAttach;
+    detach = mocks.ledDetach;
   },
 }));
 vi.mock('$features/hardware-console/led/snapshot', () => ({
@@ -129,6 +135,8 @@ describe('hardwareConsoleDeviceSaga', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.ownerBridge.current = null;
+    mocks.manager.status = 'disconnected';
+    mocks.manager.client = null;
     mocks.settingsGet.mockResolvedValue(enabledSetting(true));
     mocks.installKeySwitch.mockReturnValue(mocks.disposers[0]);
     mocks.installEncoder.mockReturnValue(mocks.disposers[1]);
@@ -146,13 +154,18 @@ describe('hardwareConsoleDeviceSaga', () => {
     expect(mocks.installKeySwitch).toHaveBeenCalledOnce();
     expect(mocks.installEncoder).toHaveBeenCalledOnce();
     expect(mocks.installLed).toHaveBeenCalledOnce();
-    expect(mocks.installLed.mock.calls[0][1]).toEqual({ engine: expect.any(Object) });
+    expect(mocks.installLed.mock.calls[0][1]).toEqual({
+      engine: expect.any(Object),
+      isOwner: expect.any(Function),
+    });
     expect(mocks.ledUpdate).toHaveBeenCalled();
     expect(mocks.installClear).toHaveBeenCalledWith(mocks.manager, {
       disposeLedWiring: mocks.disposers[2],
     });
-    expect(mocks.installToasts).toHaveBeenCalledOnce();
-    expect(getSubscriberCount()).toBe(1);
+    expect(mocks.installToasts).toHaveBeenCalledWith(mocks.manager, {
+      isOwner: expect.any(Function),
+    });
+    expect(getSubscriberCount()).toBe(2);
 
     task.cancel();
     await task.toPromise();
@@ -246,6 +259,75 @@ describe('hardwareConsoleDeviceSaga', () => {
     task.cancel();
     await task.toPromise();
     expect(bridge.listenerCount()).toBe(0);
+  });
+
+  it('does not attach or detach the engine on the initial owner emission', async () => {
+    const { task } = createHarness();
+    await vi.waitFor(() => expect(mocks.manager.start).toHaveBeenCalledTimes(1));
+    expect(mocks.ledAttach).not.toHaveBeenCalled();
+    expect(mocks.ledDetach).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('detaches the engine on ownership loss and re-attaches (snapshot replay) on gain', async () => {
+    const bridge = makeFakeOwnerBridge(true);
+    mocks.ownerBridge.current = bridge;
+    const fakeClient = { call: vi.fn() };
+    mocks.manager.status = 'connected';
+    mocks.manager.client = fakeClient;
+    const { task, getState } = createHarness();
+    await vi.waitFor(() => expect(mocks.manager.start).toHaveBeenCalledTimes(1));
+
+    bridge.pushOwnerChanged(false);
+    await vi.waitFor(() => expect(getState().hardwareConsole.isConsoleOwner).toBe(false));
+    expect(mocks.ledDetach).toHaveBeenCalledTimes(1);
+    expect(mocks.ledAttach).not.toHaveBeenCalled();
+
+    bridge.pushOwnerChanged(true);
+    await vi.waitFor(() => expect(getState().hardwareConsole.isConsoleOwner).toBe(true));
+    expect(mocks.ledAttach).toHaveBeenCalledTimes(1);
+    expect(mocks.ledAttach).toHaveBeenCalledWith(fakeClient);
+
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('skips the re-attach on ownership gain while no device is connected', async () => {
+    const bridge = makeFakeOwnerBridge(true);
+    mocks.ownerBridge.current = bridge;
+    const { task, getState } = createHarness();
+    await vi.waitFor(() => expect(mocks.manager.start).toHaveBeenCalledTimes(1));
+
+    bridge.pushOwnerChanged(false);
+    await vi.waitFor(() => expect(getState().hardwareConsole.isConsoleOwner).toBe(false));
+    bridge.pushOwnerChanged(true);
+    await vi.waitFor(() => expect(getState().hardwareConsole.isConsoleOwner).toBe(true));
+    expect(mocks.ledAttach).not.toHaveBeenCalled();
+
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps the isOwner gate handed to LED wiring and toasts in sync with ownership', async () => {
+    const bridge = makeFakeOwnerBridge(true);
+    mocks.ownerBridge.current = bridge;
+    const { task, getState } = createHarness();
+    await vi.waitFor(() => expect(mocks.installToasts).toHaveBeenCalledTimes(1));
+
+    const ledGate = (mocks.installLed.mock.calls[0][1] as { isOwner: () => boolean }).isOwner;
+    const toastGate = (mocks.installToasts.mock.calls[0][1] as { isOwner: () => boolean }).isOwner;
+    await vi.waitFor(() => expect(getState().hardwareConsole.isConsoleOwner).toBe(true));
+    expect(ledGate()).toBe(true);
+    expect(toastGate()).toBe(true);
+
+    bridge.pushOwnerChanged(false);
+    await vi.waitFor(() => expect(getState().hardwareConsole.isConsoleOwner).toBe(false));
+    expect(ledGate()).toBe(false);
+    expect(toastGate()).toBe(false);
+
+    task.cancel();
+    await task.toPromise();
   });
 
   it('resets and cancels the encoder HUD inactivity timer from actions', async () => {

@@ -35,6 +35,7 @@ import {
 import {
   selectHardwareConsoleEnabled,
   selectHardwareLedSnapshot,
+  selectIsConsoleOwner,
 } from '../hardware-console-selectors';
 
 const logger = createLogger('HardwareConsoleDeviceSaga');
@@ -118,6 +119,40 @@ export function* watchConsoleOwnerStatus() {
   }
 }
 
+/** Mutable owner flag shared with the device services' `isOwner` callbacks. */
+export interface ConsoleOwnerRef {
+  current: boolean;
+}
+
+/**
+ * Single-LED-writer gate (#1928): keeps `ownerRef` in sync with the slice
+ * and flips the engine's transport on ownership changes. Gaining ownership
+ * re-attaches the engine, which replays the current snapshot as a full
+ * repaint; losing it detaches so only the owner window writes frames. The
+ * initial emission (channel subscription) is skipped — boot attachment is
+ * owned by `installHardwareConsoleLedStatus`.
+ */
+export function* watchConsoleOwnerLedGate(
+  manager: HardwareConsoleManager,
+  engine: HardwareLedEngine,
+  ownerRef: ConsoleOwnerRef,
+) {
+  yield* takeLatestFromSelector(
+    selectIsConsoleOwner,
+    function* ({ payload, prevPayload }: SelectorChannelPayload<boolean>) {
+      ownerRef.current = payload;
+      if (prevPayload === null || prevPayload === undefined) return;
+      if (payload) {
+        if (manager.status === 'connected' && manager.client) {
+          yield* call([engine, engine.attach], manager.client);
+        }
+      } else {
+        yield* call([engine, engine.detach]);
+      }
+    },
+  );
+}
+
 function* hideEncoderHudAfterDelay(
   action: ReturnType<typeof encoderHudShown | typeof encoderHudHidden>,
 ) {
@@ -156,20 +191,24 @@ export function* hardwareConsoleDeviceSaga() {
     disposers.push(yield* call(installHardwareConsoleKeySwitching, manager));
     disposers.push(yield* call(installHardwareConsoleEncoder, manager));
     const ledEngine = new HardwareLedEngine();
+    const ownerRef: ConsoleOwnerRef = { current: yield* selectIsConsoleOwner.effect() };
+    const isOwner = () => ownerRef.current;
     const disposeLedWiring = yield* call(installHardwareConsoleLedStatus, manager, {
       engine: ledEngine,
+      isOwner,
     });
     disposers.push(disposeLedWiring);
     disposers.push(
       yield* call(installHardwareConsoleClearLightingListener, manager, { disposeLedWiring }),
     );
-    disposers.push(yield* call(installHardwareConsoleConnectionToasts, manager));
+    disposers.push(yield* call(installHardwareConsoleConnectionToasts, manager, { isOwner }));
 
     const lifecycle: IntegrationLifecycleState = {
       hydrationSettled: false,
       persistQueued: false,
     };
     const toggleTask = yield* fork(watchIntegrationToggle, manager, lifecycle);
+    yield* fork(watchConsoleOwnerLedGate, manager, ledEngine, ownerRef);
     yield* fork(watchConsoleOwnerStatus);
     yield* fork(watchHardwareConsoleEncoderHud);
     yield* call([ledEngine, ledEngine.update], yield* selectHardwareLedSnapshot.effect());

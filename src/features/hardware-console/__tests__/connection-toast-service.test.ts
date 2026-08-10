@@ -99,6 +99,7 @@ function readyHandlers(): RpcHandlers {
 function makeSetup(
   deviceCount = 1,
   primaryCollections?: readonly { usagePage: number; usage: number }[],
+  isOwner?: () => boolean,
 ): {
   hid: FakeWebHidApi;
   manager: HardwareConsoleManager;
@@ -121,7 +122,7 @@ function makeSetup(
   const manager = new HardwareConsoleManager(createWebHidPlatform(hid), {
     requestTimeoutMs: 200,
   });
-  installHardwareConsoleConnectionToasts(manager);
+  installHardwareConsoleConnectionToasts(manager, isOwner ? { isOwner } : undefined);
   return { hid, manager, device };
 }
 
@@ -224,5 +225,31 @@ describe('installHardwareConsoleConnectionToasts', () => {
     hid.emitDisconnect(device);
     await flushMicrotasks(20);
     expect(toastInfoMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('suppresses connect and disconnect toasts in non-owner windows (#1928)', async () => {
+    const { hid, manager, device } = makeSetup(6, undefined, () => false);
+    await manager.start();
+    await flushMicrotasks(20);
+    expect(toastSuccessMock).not.toHaveBeenCalled();
+    expect(toastWarningMock).not.toHaveBeenCalled();
+    hid.emitDisconnect(device);
+    await flushMicrotasks(20);
+    expect(toastInfoMock).not.toHaveBeenCalled();
+  });
+
+  it('toasts a disconnect in a window that became owner after the connect', async () => {
+    let owner = false;
+    const { hid, manager, device } = makeSetup(6, undefined, () => owner);
+    await manager.start();
+    await flushMicrotasks(20);
+    expect(toastSuccessMock).not.toHaveBeenCalled();
+
+    owner = true;
+    hid.emitDisconnect(device);
+    await flushMicrotasks(20);
+    expect(toastInfoMock).toHaveBeenCalledTimes(1);
+    const [title] = toastInfoMock.mock.calls[0] as [string];
+    expect(title).toContain('Creator Micro 2');
   });
 });
