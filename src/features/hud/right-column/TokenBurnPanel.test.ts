@@ -5,8 +5,8 @@
  * last-5-minute average from the hud slice, and the trend arrow renders ▲ for
  * up / ▼ for down / nothing (neutral) on the first load and when flat.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 
 import { store as appStore } from '$store/renderer/store';
@@ -20,6 +20,9 @@ import {
 } from '$store/renderer/slices/hud/hud-slice';
 
 import TokenBurnPanel from './TokenBurnPanel.svelte';
+
+beforeAll(() => appStore.init());
+afterAll(() => appStore.dispose());
 
 /** A §5.36 rollup whose totals carry only the given counters. */
 function usage(counters: Partial<HudUsageTotals>): HudUsageState {
@@ -57,12 +60,10 @@ function panel(): HTMLElement {
 
 describe('TokenBurnPanel', () => {
   beforeEach(() => {
-    appStore.init();
     appStore.dispatch(hudActivated());
   });
   afterEach(() => {
     cleanup();
-    appStore.dispose();
   });
 
   it('preserves the data-testid hook', () => {
@@ -79,7 +80,7 @@ describe('TokenBurnPanel', () => {
     expect(panel().textContent).not.toContain('SESSION');
   });
 
-  it('sums every counter into the 24h total — thoughts and cache included', () => {
+  it('sums every counter into the 24h total — thoughts and cache included', async () => {
     render(TokenBurnPanel);
     appStore.dispatch(
       hudUsageLoaded(
@@ -92,15 +93,19 @@ describe('TokenBurnPanel', () => {
         }),
       ),
     );
-    flushSync();
-    expect(panel().querySelector('.hud-burn-total')?.textContent?.trim()).toBe('1,334');
+    await waitFor(() => {
+      flushSync();
+      expect(panel().querySelector('.hud-burn-total')?.textContent?.trim()).toBe('1,334');
+    });
   });
 
-  it('omits thoughts from the total when the daemon did not report them (§5.23)', () => {
+  it('omits thoughts from the total when the daemon did not report them (§5.23)', async () => {
     render(TokenBurnPanel);
     appStore.dispatch(hudUsageLoaded(usage({ inputTokens: 1000, outputTokens: 200 })));
-    flushSync();
-    expect(panel().querySelector('.hud-burn-total')?.textContent?.trim()).toBe('1,200');
+    await waitFor(() => {
+      flushSync();
+      expect(panel().querySelector('.hud-burn-total')?.textContent?.trim()).toBe('1,200');
+    });
   });
 
   it('keeps the total on its own line above the label/rate row', () => {
@@ -117,12 +122,14 @@ describe('TokenBurnPanel', () => {
     expect(meta.querySelector('.hud-burn-rate')).not.toBeNull();
   });
 
-  it('shows the last-5-minute average as the /min readout', () => {
+  it('shows the last-5-minute average as the /min readout', async () => {
     render(TokenBurnPanel);
     // (100+200+300+400+500)/5 = 300.
     appStore.dispatch(hudRateHistoryLoaded(history([100, 200, 300, 400, 500])));
-    flushSync();
-    expect(panel().querySelector('.hud-burn-rate')?.textContent?.trim()).toBe('300/min');
+    await waitFor(() => {
+      flushSync();
+      expect(panel().querySelector('.hud-burn-rate')?.textContent?.trim()).toBe('300/min');
+    });
   });
 
   it('renders neutral with no arrow on the first load', () => {
@@ -135,25 +142,29 @@ describe('TokenBurnPanel', () => {
     expect(panel().querySelector('[data-testid="hud-burn-arrow"]')).toBeNull();
   });
 
-  it('renders the ▲ up arrow (with the up class) when the average rises', () => {
+  it('renders the ▲ up arrow (with the up class) when the average rises', async () => {
     render(TokenBurnPanel);
     appStore.dispatch(hudRateHistoryLoaded(history([100, 100, 100, 100, 100])));
     appStore.dispatch(hudRateHistoryLoaded(history([100, 100, 100, 100, 600])));
-    flushSync();
-    const rate = panel().querySelector('.hud-burn-rate') as HTMLElement;
+    await waitFor(() => {
+      flushSync();
+      const rate = panel().querySelector('.hud-burn-rate') as HTMLElement;
+      expect(rate.classList.contains('up')).toBe(true);
+    });
     const arrow = panel().querySelector('[data-testid="hud-burn-arrow"]') as HTMLElement;
-    expect(rate.classList.contains('up')).toBe(true);
     expect(arrow?.textContent).toBe('▲');
   });
 
-  it('renders the ▼ down arrow (with the down class) when the average falls', () => {
+  it('renders the ▼ down arrow (with the down class) when the average falls', async () => {
     render(TokenBurnPanel);
     appStore.dispatch(hudRateHistoryLoaded(history([500, 500, 500, 500, 500])));
     appStore.dispatch(hudRateHistoryLoaded(history([100, 100, 100, 100, 100])));
-    flushSync();
-    const rate = panel().querySelector('.hud-burn-rate') as HTMLElement;
+    await waitFor(() => {
+      flushSync();
+      const rate = panel().querySelector('.hud-burn-rate') as HTMLElement;
+      expect(rate.classList.contains('down')).toBe(true);
+    });
     const arrow = panel().querySelector('[data-testid="hud-burn-arrow"]') as HTMLElement;
-    expect(rate.classList.contains('down')).toBe(true);
     expect(arrow?.textContent).toBe('▼');
   });
 

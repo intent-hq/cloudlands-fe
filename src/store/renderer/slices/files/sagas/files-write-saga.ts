@@ -1,5 +1,15 @@
-import type { Task } from 'redux-saga';
-import { call, cancel, delay, fork, put, spawn, take, type SagaGenerator } from 'typed-redux-saga';
+import { buffers, type Channel } from 'redux-saga';
+import {
+  actionChannel,
+  call,
+  delay,
+  flush,
+  put,
+  race,
+  take,
+  takeEvery,
+  takeLatest,
+} from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -30,12 +40,26 @@ type SaveRequest = {
   absolutePath: string;
   content: string;
 };
-type SaveSlot = { workspaceId: string; task?: Task; pending?: SaveRequest; token: symbol };
-type DebounceSlot = { workspaceId: string; task?: Task; token: symbol };
-type CreateSlot = { workspaceId: string; task?: Task };
+type SaveAction = ReturnType<typeof saveFileContentRequested>;
+type WorkspaceCleanupAction =
+  ReturnType<typeof workspaceDeleted> | ReturnType<typeof workspaceUnmounted>;
+type ObservedAction = { type: string; payload?: unknown };
 
-function saveKey(workspaceId: string, path: string): string {
-  return `${workspaceId}::${path}`;
+function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
+  return (
+    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === workspaceId
+  );
+}
+
+function isSaveFor(action: ObservedAction, workspaceId: string, path: string): boolean {
+  return (
+    action.type === saveFileContentRequested.type &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === workspaceId &&
+    action.payload[1] === path
+  );
 }
 
 function* saveFileContentWorker(request: SaveRequest) {
@@ -65,42 +89,6 @@ function* saveFileContentWorker(request: SaveRequest) {
   }
 }
 
-function* runSaveSlot(
-  slots: Map<string, SaveSlot>,
-  key: string,
-  slot: SaveSlot,
-  request: SaveRequest,
-): SagaGenerator<void> {
-  try {
-    yield* call(saveFileContentWorker, request);
-  } finally {
-    if (slots.get(key) !== slot) return;
-    const pending = slot.pending;
-    slot.pending = undefined;
-    if (!pending) {
-      slots.delete(key);
-      return;
-    }
-    const task = yield* spawn(runSaveSlot, slots, key, slot, pending);
-    slot.task = task;
-  }
-}
-
-function* queueSave(slots: Map<string, SaveSlot>, request: SaveRequest) {
-  const key = saveKey(request.workspaceId, request.path);
-  const existing = slots.get(key);
-  if (existing?.task) {
-    existing.pending = request;
-    return;
-  }
-  const slot: SaveSlot = {
-    workspaceId: request.workspaceId,
-    token: Symbol(key),
-  };
-  slots.set(key, slot);
-  slot.task = yield* spawn(runSaveSlot, slots, key, slot, request);
-}
-
 function* createFileWorker(workspaceId: string, folderPath: string, fileName: string) {
   const absoluteFilePath = `${folderPath}/${fileName}`;
   const explorer = yield* selectFileExplorerState.effect(workspaceId);
@@ -123,115 +111,55 @@ function* createFileWorker(workspaceId: string, folderPath: string, fileName: st
   }
 }
 
+function* createFileActionWorker(action: ReturnType<typeof createFileRequested>) {
+  const [workspaceId, folderPath, fileName] = action.payload;
+  if (!workspaceId || !folderPath || !fileName) return;
+  yield* race({
+    create: call(createFileWorker, workspaceId, folderPath, fileName),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
+  });
+}
+
+function* updateFileContentWorker(action: ReturnType<typeof updateFileContent>) {
+  const [workspaceId, path, content] = action.payload;
+  const entry = yield* selectFileContentEntry.effect(workspaceId, path);
+  const absolutePath = entry?.absolutePath;
+  if (!absolutePath) return;
+  const { elapsed } = yield* race({
+    elapsed: delay(FILE_CONTENT_SAVE_DEBOUNCE_MS, true),
+    directSave: take((save: ObservedAction) => isSaveFor(save, workspaceId, path)),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
+  });
+  if (elapsed) yield* put(saveFileContentRequested(workspaceId, path, absolutePath, content));
+}
+
+function* saveFileContentActionWorker(action: SaveAction) {
+  const [workspaceId, path, absolutePath, content] = action.payload;
+  yield* race({
+    save: call(saveFileContentWorker, { workspaceId, path, absolutePath, content }),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
+  });
+}
+
+function* clearQueuedWorkspaceSaves(saves: Channel<SaveAction>, action: WorkspaceCleanupAction) {
+  const [workspaceId] = action.payload;
+  const queued = yield* flush(saves);
+  for (const save of queued) {
+    if (save.payload[0] !== workspaceId) yield* put(saves, save);
+  }
+}
+
 export function* filesWriteSaga() {
-  const debounces = new Map<string, DebounceSlot>();
-  const saves = new Map<string, SaveSlot>();
-  const creates = new Map<symbol, CreateSlot>();
+  const saves = yield* actionChannel(saveFileContentRequested, buffers.sliding(1));
   try {
+    yield* takeEvery(createFileRequested, createFileActionWorker);
+    yield* takeLatest(updateFileContent, updateFileContentWorker);
+    yield* takeEvery([workspaceDeleted, workspaceUnmounted], clearQueuedWorkspaceSaves, saves);
     while (true) {
-      const action: ReturnType<
-        | typeof createFileRequested
-        | typeof saveFileContentRequested
-        | typeof updateFileContent
-        | typeof workspaceDeleted
-        | typeof workspaceUnmounted
-      > = yield* take([
-        createFileRequested,
-        saveFileContentRequested,
-        updateFileContent,
-        workspaceDeleted,
-        workspaceUnmounted,
-      ]);
-
-      if (action.type === createFileRequested.type) {
-        const [workspaceId, folderPath, fileName] = action.payload as [string, string, string];
-        if (workspaceId && folderPath && fileName) {
-          const key = Symbol(`${workspaceId}:${folderPath}/${fileName}`);
-          creates.set(key, { workspaceId });
-          const task = yield* spawn(function* () {
-            try {
-              yield* call(createFileWorker, workspaceId, folderPath, fileName);
-            } finally {
-              creates.delete(key);
-            }
-          });
-          if (creates.has(key)) creates.set(key, { workspaceId, task });
-        }
-        continue;
-      }
-
-      if (action.type === updateFileContent.type) {
-        const [workspaceId, path, content] = action.payload as [string, string, string];
-        const entry = yield* selectFileContentEntry.effect(workspaceId, path);
-        const absolutePath = entry?.absolutePath;
-        if (!absolutePath) continue;
-        const key = saveKey(workspaceId, path);
-        const existing = debounces.get(key);
-        if (existing?.task) yield* cancel(existing.task);
-        const token = Symbol(key);
-        debounces.set(key, { workspaceId, token });
-        const task = yield* fork(function* () {
-          try {
-            yield* delay(FILE_CONTENT_SAVE_DEBOUNCE_MS);
-            if (debounces.get(key)?.token !== token) return;
-            debounces.delete(key);
-            yield* put(saveFileContentRequested(workspaceId, path, absolutePath, content));
-          } finally {
-            if (debounces.get(key)?.token === token) debounces.delete(key);
-          }
-        });
-        if (debounces.get(key)?.token === token) {
-          debounces.set(key, { workspaceId, task, token });
-        }
-        continue;
-      }
-
-      if (action.type === saveFileContentRequested.type) {
-        const [workspaceId, path, absolutePath, content] = action.payload as [
-          string,
-          string,
-          string,
-          string,
-        ];
-        const key = saveKey(workspaceId, path);
-        const debounce = debounces.get(key);
-        debounces.delete(key);
-        if (debounce?.task) yield* cancel(debounce.task);
-        yield* call(queueSave, saves, { workspaceId, path, absolutePath, content });
-        continue;
-      }
-
-      const [workspaceId] = action.payload as [string];
-      for (const [key, debounce] of debounces) {
-        if (debounce.workspaceId !== workspaceId) continue;
-        debounces.delete(key);
-        if (debounce.task) yield* cancel(debounce.task);
-      }
-      for (const [key, save] of saves) {
-        if (save.workspaceId !== workspaceId) continue;
-        saves.delete(key);
-        save.pending = undefined;
-        if (save.task) yield* cancel(save.task);
-      }
-      for (const [key, create] of creates) {
-        if (create.workspaceId !== workspaceId) continue;
-        creates.delete(key);
-        if (create.task) yield* cancel(create.task);
-      }
+      const action = yield* take(saves);
+      yield* call(saveFileContentActionWorker, action);
     }
   } finally {
-    for (const debounce of debounces.values()) {
-      if (debounce.task) yield* cancel(debounce.task);
-    }
-    for (const save of saves.values()) {
-      save.pending = undefined;
-      if (save.task) yield* cancel(save.task);
-    }
-    for (const create of creates.values()) {
-      if (create.task) yield* cancel(create.task);
-    }
-    debounces.clear();
-    saves.clear();
-    creates.clear();
+    saves.close();
   }
 }

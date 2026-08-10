@@ -133,7 +133,13 @@ function isToolResultContentError(content: any): boolean {
  * Special handling: When a tool_result has is_error=true but an empty tool_use_id,
  * we look at the immediately preceding tool_use block to find the ID.
  */
+const failedToolIdsWeakMap = new WeakMap<AgentMessage, Set<string>>();
 function getFailedToolIds(message: AgentMessage): Set<string> {
+  const existingReult = failedToolIdsWeakMap.get(message);
+  if (existingReult) {
+    return existingReult;
+  }
+
   const failedToolIds = new Set<string>();
 
   // Check toolResults array
@@ -186,6 +192,8 @@ function getFailedToolIds(message: AgentMessage): Set<string> {
       }
     }
   }
+
+  failedToolIdsWeakMap.set(message, failedToolIds);
 
   return failedToolIds;
 }

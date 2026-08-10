@@ -8,7 +8,12 @@ const mocks = vi.hoisted(() => ({
   events: { list: vi.fn() },
   skills: { list: vi.fn() },
   scripts: { list: vi.fn() },
-  git: { prRefresh: vi.fn(), status: vi.fn(), trackedChanges: vi.fn(), commitsWithBoundary: vi.fn() },
+  git: {
+    prRefresh: vi.fn(),
+    status: vi.fn(),
+    trackedChanges: vi.fn(),
+    commitsWithBoundary: vi.fn(),
+  },
   agents: { list: vi.fn() },
   terminals: { list: vi.fn() },
   getAgentLineStats: vi.fn(),
@@ -51,7 +56,10 @@ import { loadSkillsRequested } from '../../skills/skills-slice';
 import { hydrateTaskAgentAssociationsRequested } from '../../task-agent-associations/task-agent-associations-slice';
 import { hydrateTerminalsRequested } from '../../terminals/terminals-slice';
 import { fetchWorkspaceTokenUsage } from '../../token-usage/token-usage-slice';
-import { hydrateAgentsRequested } from '../../workspace-agents/workspace-agents-slice';
+import {
+  hydrateAgentsRequested,
+  setAgentsLoaded,
+} from '../../workspace-agents/workspace-agents-slice';
 import { loadEventsRequested } from '../../workspace-events/workspace-events-slice';
 import {
   ensureWorkspaceTasksLoaded,
@@ -85,7 +93,10 @@ function state() {
 function start(current = state()) {
   const channel = stdChannel();
   const actions: unknown[] = [];
-  const task = runSaga({ channel, dispatch: (action) => actions.push(action), getState: () => current }, lifecycleReadSaga);
+  const task = runSaga(
+    { channel, dispatch: (action) => actions.push(action), getState: () => current },
+    lifecycleReadSaga,
+  );
   return { channel, actions, task };
 }
 
@@ -132,7 +143,11 @@ describe('lifecycleReadSaga', () => {
       hasUntrackedFiles: false,
     });
     mocks.git.trackedChanges.mockResolvedValue([]);
-    mocks.git.commitsWithBoundary.mockResolvedValue({ commits: [], boundarySha: null, nextToken: null });
+    mocks.git.commitsWithBoundary.mockResolvedValue({
+      commits: [],
+      boundarySha: null,
+      nextToken: null,
+    });
     mocks.agents.list.mockResolvedValue([]);
     mocks.terminals.list.mockResolvedValue([]);
     mocks.getAgentLineStats.mockResolvedValue(null);
@@ -162,7 +177,7 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  it('guards ensure-tasks, force-loads the explicit trigger, and coalesces one key', async () => {
+  it('guards ensure-tasks and gives explicit loads global latest semantics', async () => {
     const current = state();
     current.workspaceTasks.byWorkspaceId[WS] = { loading: false, initialized: true };
     const run = start(current);
@@ -172,18 +187,19 @@ describe('lifecycleReadSaga', () => {
     expect(run.actions).toEqual([]);
 
     let resolve!: (value: { tasks: unknown[]; stats: { total: number } }) => void;
-    mocks.tasks.list.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    mocks.tasks.list.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
     run.channel.put(loadWorkspaceTasksRequested(WS));
     run.channel.put(loadWorkspaceTasksRequested(WS));
     await settle();
-    expect(mocks.tasks.list.mock.calls).toEqual([[WS]]);
+    expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
     resolve({ tasks: [], stats: { total: 0 } });
     await settle();
-    // Trailing coalesce: the trigger that arrived in flight runs exactly once
-    // afterwards, so a task change made after the first response is not lost.
     expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
     ]);
     await settle();
@@ -248,9 +264,13 @@ describe('lifecycleReadSaga', () => {
 
   it('stores the exact token-usage protocol payload', async () => {
     const usage = {
-      byAgentId: { a: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheCreationTokens: 4 } },
+      byAgentId: {
+        a: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheCreationTokens: 4 },
+      },
       totals: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheCreationTokens: 4 },
-      byModel: { opus: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheCreationTokens: 4 } },
+      byModel: {
+        opus: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheCreationTokens: 4 },
+      },
       lastScanAt: '2026-07-30T00:00:00.000Z',
       wire_only: 'preserved',
     };
@@ -258,9 +278,7 @@ describe('lifecycleReadSaga', () => {
     const run = start();
     run.channel.put(fetchWorkspaceTokenUsage(WS));
     await settle();
-    expect(run.actions).toEqual([
-      { type: 'tokenUsage/tokenUsageReceived', payload: [WS, usage] },
-    ]);
+    expect(run.actions).toEqual([{ type: 'tokenUsage/tokenUsageReceived', payload: [WS, usage] }]);
     await stop(run.task);
   });
 
@@ -284,12 +302,14 @@ describe('lifecycleReadSaga', () => {
 
   it('reports PR refresh success and maps only the branch lookup payload', async () => {
     const current = state();
-    current.workspace.workspaces = createCollection('id', [{
-      id: WS,
-      branch: 'feature',
-      repositoryOwner: 'acme',
-      repositoryName: 'repo',
-    }]);
+    current.workspace.workspaces = createCollection('id', [
+      {
+        id: WS,
+        branch: 'feature',
+        repositoryOwner: 'acme',
+        repositoryName: 'repo',
+      },
+    ]);
     mocks.git.prRefresh.mockResolvedValue({ prNumber: 7, outcome: 'linked', wire_only: 'drop' });
     const run = start(current);
     run.channel.put(refreshPRStatusRequested(WS, true, true));
@@ -298,7 +318,10 @@ describe('lifecycleReadSaga', () => {
     expect(mocks.git.prRefresh.mock.calls).toEqual([[WS]]);
     expect(run.actions).toEqual([
       { type: 'prStatus/refreshStarted', payload: [WS] },
-      { type: 'prStatus/refreshCompleted', payload: { wsId: WS, success: true, error: undefined, timestamp: NOW.getTime() } },
+      {
+        type: 'prStatus/refreshCompleted',
+        payload: { wsId: WS, success: true, error: undefined, timestamp: NOW.getTime() },
+      },
       { type: 'prBranchLookup/succeeded', payload: { key: 'acme/repo#7', branch: 'feature' } },
     ]);
     await stop(run.task);
@@ -315,9 +338,15 @@ describe('lifecycleReadSaga', () => {
 
     expect(run.actions).toEqual([
       { type: 'prStatus/refreshStarted', payload: [WS] },
-      { type: 'prStatus/refreshCompleted', payload: { wsId: WS, success: false, error: 'pr.refresh failed', timestamp: NOW.getTime() } },
+      {
+        type: 'prStatus/refreshCompleted',
+        payload: { wsId: WS, success: false, error: 'pr.refresh failed', timestamp: NOW.getTime() },
+      },
       { type: 'prStatus/refreshStarted', payload: [WS] },
-      { type: 'prStatus/refreshCompleted', payload: { wsId: WS, success: false, error: 'refresh failed', timestamp: NOW.getTime() } },
+      {
+        type: 'prStatus/refreshCompleted',
+        payload: { wsId: WS, success: false, error: 'refresh failed', timestamp: NOW.getTime() },
+      },
     ]);
     await stop(run.task);
   });
@@ -352,7 +381,10 @@ describe('lifecycleReadSaga', () => {
     expect(mocks.git.prRefresh.mock.calls).toEqual([[WS]]);
     expect(run.actions).toEqual([
       { type: 'prStatus/refreshStarted', payload: [WS] },
-      { type: 'prStatus/refreshCompleted', payload: { wsId: WS, success: true, error: undefined, timestamp: NOW.getTime() } },
+      {
+        type: 'prStatus/refreshCompleted',
+        payload: { wsId: WS, success: true, error: undefined, timestamp: NOW.getTime() },
+      },
     ]);
     await stop(run.task);
   });
@@ -371,7 +403,10 @@ describe('lifecycleReadSaga', () => {
     expect(mocks.git.prRefresh.mock.calls).toEqual([[WS]]);
     expect(run.actions).toEqual([
       { type: 'prStatus/refreshStarted', payload: [WS] },
-      { type: 'prStatus/refreshCompleted', payload: { wsId: WS, success: true, error: undefined, timestamp: NOW.getTime() } },
+      {
+        type: 'prStatus/refreshCompleted',
+        payload: { wsId: WS, success: true, error: undefined, timestamp: NOW.getTime() },
+      },
     ]);
     await stop(run.task);
   });
@@ -386,7 +421,12 @@ describe('lifecycleReadSaga', () => {
       stats: { additions: 4, deletions: 1 },
       attribution: { manual: true, timestamp: 1_750_000_000_000 },
     };
-    const stale = { ...change, id: 'change-stale', file: '/repo/src/stale.ts', relativePath: 'src/stale.ts' };
+    const stale = {
+      ...change,
+      id: 'change-stale',
+      file: '/repo/src/stale.ts',
+      relativePath: 'src/stale.ts',
+    };
     const commit = { hash: 'abc', message: 'change', wire_only: true };
     mocks.git.status.mockResolvedValue({
       branch: 'main',
@@ -401,7 +441,11 @@ describe('lifecycleReadSaga', () => {
       hasUntrackedFiles: false,
     });
     mocks.git.trackedChanges.mockResolvedValue([change, stale]);
-    mocks.git.commitsWithBoundary.mockResolvedValue({ commits: [commit], boundarySha: 'abc', nextToken: 'wire-token' });
+    mocks.git.commitsWithBoundary.mockResolvedValue({
+      commits: [commit],
+      boundarySha: 'abc',
+      nextToken: 'wire-token',
+    });
     const run = start();
     run.channel.put(refreshRequested(WS));
     await settle();
@@ -424,11 +468,23 @@ describe('lifecycleReadSaga', () => {
       }),
     ];
     expect(run.actions).toEqual([
-      { type: 'changes/setChangesData', payload: { wsId: WS, changes: reconciled, truncated: false, totalCount: 2 } },
-      { type: 'changes/setCommitsData', payload: { wsId: WS, commits: [commit], boundarySha: 'abc' } },
+      {
+        type: 'changes/setChangesData',
+        payload: { wsId: WS, changes: reconciled, truncated: false, totalCount: 2 },
+      },
+      {
+        type: 'changes/setCommitsData',
+        payload: { wsId: WS, commits: [commit], boundarySha: 'abc' },
+      },
       { type: 'changes/setHasLoadedInitialData', payload: [WS, true] },
-      { type: 'changes/setChangesData', payload: { wsId: WS, changes: reconciled, truncated: false, totalCount: 2 } },
-      { type: 'changes/setCommitsData', payload: { wsId: WS, commits: [commit], boundarySha: 'abc' } },
+      {
+        type: 'changes/setChangesData',
+        payload: { wsId: WS, changes: reconciled, truncated: false, totalCount: 2 },
+      },
+      {
+        type: 'changes/setCommitsData',
+        payload: { wsId: WS, commits: [commit], boundarySha: 'abc' },
+      },
       { type: 'changes/setHasLoadedInitialData', payload: [WS, true] },
     ]);
     await stop(run.task);
@@ -459,11 +515,13 @@ describe('lifecycleReadSaga', () => {
         type: 'changes/setChangesData',
         payload: {
           wsId: WS,
-          changes: [expect.objectContaining({
-            relativePath: 'src/status-only.ts',
-            stats: { additions: 0, deletions: 0 },
-            attribution: { manual: true, timestamp: 0 },
-          })],
+          changes: [
+            expect.objectContaining({
+              relativePath: 'src/status-only.ts',
+              stats: { additions: 0, deletions: 0 },
+              attribution: { manual: true, timestamp: 0 },
+            }),
+          ],
           truncated: false,
           totalCount: 1,
         },
@@ -474,21 +532,24 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  it('coalesces many in-flight changes triggers into one non-concurrent trailing refresh', async () => {
+  it('globally cancels an older changes refresh for a newer workspace', async () => {
     let resolveStatus!: (value: Awaited<ReturnType<typeof mocks.git.status>>) => void;
-    mocks.git.status.mockReturnValueOnce(new Promise((resolve) => { resolveStatus = resolve; }));
+    mocks.git.status.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStatus = resolve;
+      }),
+    );
     const run = start();
+    const otherWorkspaceId = 'ws-other';
 
     run.channel.put(refreshRequested(WS));
     await settle();
-    run.channel.put(loadWorkspaceDataRequested(WS));
-    run.channel.put(refreshRequested(WS));
-    run.channel.put(loadWorkspaceDataRequested(WS));
+    run.channel.put(refreshRequested(otherWorkspaceId));
     await settle();
 
-    expect(mocks.git.status).toHaveBeenCalledTimes(1);
-    expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(1);
-    expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+    expect(mocks.git.status).toHaveBeenCalledTimes(2);
+    expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(2);
+    expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
 
     resolveStatus({
       branch: 'main',
@@ -502,16 +563,24 @@ describe('lifecycleReadSaga', () => {
     await settle();
 
     expect(mocks.git.status).toHaveBeenCalledTimes(2);
-    expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(2);
-    expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
-    await settle();
-    expect(mocks.git.status).toHaveBeenCalledTimes(2);
+    expect(run.actions).toContainEqual({
+      type: 'changes/setHasLoadedInitialData',
+      payload: [otherWorkspaceId, true],
+    });
+    expect(run.actions).not.toContainEqual({
+      type: 'changes/setHasLoadedInitialData',
+      payload: [WS, true],
+    });
     await stop(run.task);
   });
 
   it('loads older commits and always clears loading on failure and cancellation', async () => {
     const commit = { hash: 'old', message: 'old', wire_only: true };
-    mocks.git.commitsWithBoundary.mockResolvedValueOnce({ commits: [commit], boundarySha: null, nextToken: null });
+    mocks.git.commitsWithBoundary.mockResolvedValueOnce({
+      commits: [commit],
+      boundarySha: null,
+      nextToken: null,
+    });
     const run = start();
     run.channel.put(loadOlderCommitsRequested(WS, 'boundary', 25));
     await settle();
@@ -520,7 +589,11 @@ describe('lifecycleReadSaga', () => {
     await settle();
 
     let pending!: () => void;
-    mocks.git.commitsWithBoundary.mockReturnValueOnce(new Promise((resolve) => { pending = () => resolve({ commits: [], boundarySha: null, nextToken: null }); }));
+    mocks.git.commitsWithBoundary.mockReturnValueOnce(
+      new Promise((resolve) => {
+        pending = () => resolve({ commits: [], boundarySha: null, nextToken: null });
+      }),
+    );
     run.channel.put(loadOlderCommitsRequested(WS, 'boundary', 25));
     await settle();
     run.channel.put(workspaceUnmounted(WS));
@@ -545,7 +618,11 @@ describe('lifecycleReadSaga', () => {
     const run = start(current);
     run.channel.put(requestAgentLineStats('agent-1'));
     await settle();
-    current.changes.agentStats['agent-1'] = { additions: 8, deletions: 3, timestamp: NOW.toISOString() };
+    current.changes.agentStats['agent-1'] = {
+      additions: 8,
+      deletions: 3,
+      timestamp: NOW.toISOString(),
+    };
     run.channel.put(requestAgentLineStats('agent-1'));
     await settle();
     mocks.getAgentLineStats.mockRejectedValueOnce(new Error('metrics failed'));
@@ -554,17 +631,37 @@ describe('lifecycleReadSaga', () => {
 
     expect(mocks.getAgentLineStats.mock.calls).toEqual([['agent-1'], ['agent-1']]);
     expect(run.actions).toEqual([
-      { type: 'changes/agentLineStatsRequestStarted', payload: { agentId: 'agent-1', requestedAt: NOW.toISOString() } },
-      { type: 'changes/updateAgentStats', payload: { agentId: 'agent-1', stats: { additions: 8, deletions: 3, timestamp: NOW.toISOString() } } },
-      { type: 'changes/agentLineStatsRequestSucceeded', payload: { agentId: 'agent-1', finishedAt: NOW.toISOString() } },
-      { type: 'changes/agentLineStatsRequestStarted', payload: { agentId: 'agent-1', requestedAt: NOW.toISOString() } },
-      { type: 'changes/agentLineStatsRequestFailed', payload: { agentId: 'agent-1', error: 'metrics failed', finishedAt: NOW.toISOString() } },
+      {
+        type: 'changes/agentLineStatsRequestStarted',
+        payload: { agentId: 'agent-1', requestedAt: NOW.toISOString() },
+      },
+      {
+        type: 'changes/updateAgentStats',
+        payload: {
+          agentId: 'agent-1',
+          stats: { additions: 8, deletions: 3, timestamp: NOW.toISOString() },
+        },
+      },
+      {
+        type: 'changes/agentLineStatsRequestSucceeded',
+        payload: { agentId: 'agent-1', finishedAt: NOW.toISOString() },
+      },
+      {
+        type: 'changes/agentLineStatsRequestStarted',
+        payload: { agentId: 'agent-1', requestedAt: NOW.toISOString() },
+      },
+      {
+        type: 'changes/agentLineStatsRequestFailed',
+        payload: { agentId: 'agent-1', error: 'metrics failed', finishedAt: NOW.toISOString() },
+      },
     ]);
     await stop(run.task);
   });
 
   it('hydrates agents, preserves transcripts, filters pending deletion, and selects foreground', async () => {
-    const existing = agent('agent-keep', { messages: [{ id: 'm1', role: 'user', timestamp: NOW.toISOString() }] as never });
+    const existing = agent('agent-keep', {
+      messages: [{ id: 'm1', role: 'user', timestamp: NOW.toISOString() }] as never,
+    });
     const current = state();
     current.agentSessions.byAgentId['agent-keep'] = existing;
     mocks.isAgentDeletionPending.mockImplementation((id: string) => id === 'agent-drop');
@@ -590,36 +687,39 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  // monorepo#1815 — a hydrate trigger arriving while an agents.list read is
-  // in flight (e.g. the crash-recovery redrive's lifecycle edges right after
-  // the failure-triggered hydrate) must schedule exactly one trailing re-read
-  // so the stale in-flight snapshot is never the last word.
-  it('coalesces in-flight agent hydrate triggers into one trailing refetch (monorepo#1815)', async () => {
+  it('globally cancels an older agent hydrate for a newer workspace', async () => {
     let resolveList!: (value: AgentSession[]) => void;
-    mocks.agents.list.mockReturnValueOnce(new Promise((resolve) => { resolveList = resolve; }));
+    mocks.agents.list.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveList = resolve;
+      }),
+    );
     const run = start();
+    const otherWorkspaceId = 'ws-other';
 
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
-    run.channel.put(hydrateAgentsRequested(WS));
-    run.channel.put(hydrateAgentsRequested(WS));
-    run.channel.put(hydrateAgentsRequested(WS));
+    run.channel.put(hydrateAgentsRequested(otherWorkspaceId));
     await settle();
 
-    expect(mocks.agents.list).toHaveBeenCalledTimes(1);
+    expect(mocks.agents.list).toHaveBeenCalledTimes(2);
 
     resolveList([agent('agent-stale', { status: 'error' as never })]);
     await settle();
 
     expect(mocks.agents.list).toHaveBeenCalledTimes(2);
-    await settle();
-    expect(mocks.agents.list).toHaveBeenCalledTimes(2);
+    expect(run.actions).toContainEqual(setAgentsLoaded(otherWorkspaceId, true));
+    expect(run.actions).not.toContainEqual(setAgentsLoaded(WS, true));
     await stop(run.task);
   });
 
   it('cancels workspace reads on delete and suppresses late results', async () => {
     let resolve!: (value: unknown[]) => void;
-    mocks.events.list.mockReturnValue(new Promise((done) => { resolve = done; }));
+    mocks.events.list.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
     const run = start();
     run.channel.put(loadEventsRequested(WS));
     await settle();

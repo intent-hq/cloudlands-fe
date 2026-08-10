@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { channel as createChannel, runSaga, stdChannel } from 'redux-saga';
+import { runSaga, stdChannel } from 'redux-saga';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({
@@ -14,13 +14,15 @@ const mocks = vi.hoisted(() => ({
 vi.mock('$features/agent/agent-send', () => ({ sendMessage: mocks.send }));
 vi.mock('svelte-sonner', () => ({ toast: { info: mocks.toastInfo } }));
 vi.mock('$lib/client', () => ({
-  appClient: { agents: {
-    queue: mocks.queue,
-    sendQueuedNow: mocks.sendQueuedNow,
-    removeQueued: mocks.removeQueued,
-    stop: mocks.stop,
-    rename: mocks.rename,
-  } },
+  appClient: {
+    agents: {
+      queue: mocks.queue,
+      sendQueuedNow: mocks.sendQueuedNow,
+      removeQueued: mocks.removeQueued,
+      stop: mocks.stop,
+      rename: mocks.rename,
+    },
+  },
 }));
 
 import type { AgentSession, Workspace } from '$shared/types';
@@ -65,10 +67,14 @@ function session(overrides: Partial<AgentSession> = {}): AgentSession {
     backendSessionId: AGENT,
     name: 'Agent',
     status: AgentStatus.Idle,
-    messages: [{
-      id: 'seed', role: 'user', timestamp: '2026-01-01T00:00:00.000Z',
-      contentBlocks: [{ type: 'text', text: 'seed' }],
-    }],
+    messages: [
+      {
+        id: 'seed',
+        role: 'user',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        contentBlocks: [{ type: 'text', text: 'seed' }],
+      },
+    ],
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -84,7 +90,8 @@ function harness(
   let agentSessions = agentSessionReducer(sessionInitialState, bulkUpsertSessions([seedSession]));
   let chatState = chatInitialState;
   let agentQueue = queueInitialState;
-  const workspaceEntity = workspaceRecord ?? ({ id: WS, name: 'Workspace', path: '/repo' } as Workspace);
+  const workspaceEntity =
+    workspaceRecord ?? ({ id: WS, name: 'Workspace', path: '/repo' } as Workspace);
   const workspace = {
     ...workspaceInitialState,
     workspaces: createCollection('id', [workspaceEntity]),
@@ -120,31 +127,49 @@ function harness(
 describe('chatSendSaga', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it('sends exact lifecycle options, uses interrupt priority, and serializes work per agent', async () => {
+  it('sends exact lifecycle options while global takeEvery processes same-agent work concurrently', async () => {
     let resolveFirst!: () => void;
     mocks.send
-      .mockReturnValueOnce(new Promise<void>((resolve) => { resolveFirst = resolve; }))
+      .mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
       .mockResolvedValue(undefined);
     const run = harness();
-    run.channel.put(sendMessage(AGENT, {
-      wsId: WS, text: ' first ', forceSubmit: true,
-      imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }], noteIds: ['note-1'],
-    }));
+    run.channel.put(
+      sendMessage(AGENT, {
+        wsId: WS,
+        text: ' first ',
+        forceSubmit: true,
+        imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
+        noteIds: ['note-1'],
+      }),
+    );
     run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'second', forceSubmit: true }));
     await settle();
 
-    expect(mocks.send).toHaveBeenCalledTimes(1);
-    expect(mocks.send).toHaveBeenCalledWith(AGENT, 'first', expect.objectContaining({ id: WS }), {
-      imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
-      noteIds: ['note-1'],
-      priority: 'interrupt',
-    });
-    resolveFirst();
-    await settle();
+    expect(mocks.send).toHaveBeenCalledTimes(2);
     expect(mocks.send).toHaveBeenNthCalledWith(
-      2, AGENT, 'second', expect.objectContaining({ id: WS }),
+      1,
+      AGENT,
+      'first',
+      expect.objectContaining({ id: WS }),
+      {
+        imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
+        noteIds: ['note-1'],
+        priority: 'interrupt',
+      },
+    );
+    expect(mocks.send).toHaveBeenNthCalledWith(
+      2,
+      AGENT,
+      'second',
+      expect.objectContaining({ id: WS }),
       { imageBlocks: undefined, noteIds: undefined, priority: 'interrupt' },
     );
+    resolveFirst();
+    await settle();
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -158,12 +183,16 @@ describe('chatSendSaga', () => {
     await settle();
 
     expect(mocks.sendQueuedNow).toHaveBeenCalledWith({
-      agentId: AGENT, workspaceId: WS, messageId: 'queued-1',
+      agentId: AGENT,
+      workspaceId: WS,
+      messageId: 'queued-1',
     });
     expect(run.dispatch).toHaveBeenCalledWith(chatQueueProcessingReceived(AGENT, 'turn-1'));
     expect(mocks.send).not.toHaveBeenCalled();
     expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-2');
-    expect(run.dispatch.mock.calls.some(([action]) => action.type === 'agentQueue/removeQueuedMessage')).toBe(true);
+    expect(
+      run.dispatch.mock.calls.some(([action]) => action.type === 'agentQueue/removeQueuedMessage'),
+    ).toBe(true);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -174,38 +203,45 @@ describe('chatSendSaga', () => {
       turnId: 'turn-queued',
       queuedMessage: { id: 'queued-1', content: 'later', timestamp: 1 },
     });
-    const run = harness(session({
-      status: AgentStatus.Active,
-      isStreaming: true,
-      isProcessing: true,
-    }));
-    run.channel.put(sendMessage(AGENT, {
-      wsId: WS,
-      text: 'later',
-      imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
-    }));
+    const run = harness(
+      session({
+        status: AgentStatus.Active,
+        isStreaming: true,
+        isProcessing: true,
+      }),
+    );
+    run.channel.put(
+      sendMessage(AGENT, {
+        wsId: WS,
+        text: 'later',
+        imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
+      }),
+    );
     await settle();
 
     expect(mocks.queue).toHaveBeenCalledWith(AGENT, 'later', {
       imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
     });
     expect(mocks.send).not.toHaveBeenCalled();
-    expect(run.dispatch).toHaveBeenCalledWith(chatQueuedRetryRecordSet(
-      AGENT,
-      'queued-1',
-      {
-        text: 'later',
-        options: { imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }] },
-      },
-      'turn-queued',
-    ));
+    expect(run.dispatch).toHaveBeenCalledWith(
+      chatQueuedRetryRecordSet(
+        AGENT,
+        'queued-1',
+        {
+          text: 'later',
+          options: { imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }] },
+        },
+        'turn-queued',
+      ),
+    );
     run.task.cancel();
     await run.task.toPromise();
   });
 
   it('retries with the requested model and handles exact stop results and payloads', async () => {
     mocks.send.mockResolvedValue(undefined);
-    mocks.stop.mockResolvedValueOnce({ success: false, error: 'already stopped' })
+    mocks.stop
+      .mockResolvedValueOnce({ success: false, error: 'already stopped' })
       .mockRejectedValueOnce(new Error('stop failed'));
     const run = harness();
     run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'retry me', options: {} }));
@@ -213,7 +249,10 @@ describe('chatSendSaga', () => {
     run.channel.put(retry);
     await expect(retry.promise).resolves.toBeUndefined();
     expect(mocks.send).toHaveBeenCalledWith(
-      AGENT, 'retry me', expect.objectContaining({ id: WS }), expect.objectContaining({ model: 'provider:new-model' }),
+      AGENT,
+      'retry me',
+      expect.objectContaining({ id: WS }),
+      expect.objectContaining({ model: 'provider:new-model' }),
     );
 
     const successfulStop = agentSessionStopChatRequested(AGENT);
@@ -252,18 +291,18 @@ describe('chatSendSaga', () => {
     );
   });
 
-  it('settles active and same-agent queued promise actions once on cancellation', async () => {
+  it('settles concurrent same-agent promise actions once on cancellation', async () => {
     mocks.stop.mockReturnValue(new Promise(() => {}));
     const run = harness();
     run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'retry after stop', options: {} }));
     const activeStop = agentSessionStopChatRequested(AGENT);
-    const queuedRetry = agentSessionRetryLastMessageRequested(AGENT, WS);
+    const concurrentRetry = agentSessionRetryLastMessageRequested(AGENT, WS);
     const stopSettlement = activeStop.promise.catch((error) => error);
-    const retrySettlement = queuedRetry.promise.catch((error) => error);
+    const retrySettlement = concurrentRetry.promise.catch((error) => error);
 
     run.channel.put(activeStop);
     await vi.waitFor(() => expect(mocks.stop).toHaveBeenCalledWith(AGENT));
-    run.channel.put(queuedRetry);
+    run.channel.put(concurrentRetry);
     await settle();
     run.task.cancel();
     await run.task.toPromise();
@@ -274,51 +313,18 @@ describe('chatSendSaga', () => {
     await expect(retrySettlement).resolves.toEqual(
       expect.objectContaining({ message: expect.stringContaining('cancelled') }),
     );
-    expect(run.dispatch.mock.calls.filter(([action]) => action.type === activeStop.failure.type)).toHaveLength(1);
-    expect(run.dispatch.mock.calls.filter(([action]) => action.type === queuedRetry.failure.type)).toHaveLength(1);
-  });
-
-  it('flushes and settles promise actions still buffered at root teardown', async () => {
-    const bufferedStop = agentSessionStopChatRequested(AGENT);
-    const bufferedRetry = agentSessionRetryLastMessageRequested(AGENT, WS);
-    const stopSettlement = bufferedStop.promise.catch((error) => error);
-    const retrySettlement = bufferedRetry.promise.catch((error) => error);
-    const generator = chatSendSaga();
-    generator.next();
-    const bufferedChannel = createChannel();
-    generator.next(bufferedChannel as never);
-    bufferedChannel.put(bufferedStop);
-    bufferedChannel.put(bufferedRetry);
-
-    const cleanup = generator.return(undefined);
-    expect(cleanup.value).toMatchObject({
-      type: 'FLUSH',
-      payload: bufferedChannel,
-    });
-    let buffered: unknown[] = [];
-    bufferedChannel.flush((items) => { buffered = items; });
-    const firstFailure = generator.next(buffered as never);
-    expect(firstFailure.value).toMatchObject({ type: 'PUT' });
-    const secondFailure = generator.next();
-    expect(secondFailure.value).toMatchObject({ type: 'PUT' });
-    expect(generator.next().done).toBe(true);
-
-    await expect(stopSettlement).resolves.toEqual(
-      expect.objectContaining({ message: expect.stringContaining('cancelled') }),
-    );
-    await expect(retrySettlement).resolves.toEqual(
-      expect.objectContaining({ message: expect.stringContaining('cancelled') }),
-    );
-    expect(firstFailure.value).toMatchObject({
-      payload: { action: { type: bufferedStop.failure.type } },
-    });
-    expect(secondFailure.value).toMatchObject({
-      payload: { action: { type: bufferedRetry.failure.type } },
-    });
+    expect(
+      run.dispatch.mock.calls.filter(([action]) => action.type === activeStop.failure.type),
+    ).toHaveLength(1);
+    expect(
+      run.dispatch.mock.calls.filter(([action]) => action.type === concurrentRetry.failure.type),
+    ).toHaveLength(1);
   });
 
   it('awaits and isolates no-retry toast failures before resolving', async () => {
-    mocks.toastInfo.mockImplementationOnce(() => { throw new Error('toast unavailable'); });
+    mocks.toastInfo.mockImplementationOnce(() => {
+      throw new Error('toast unavailable');
+    });
     const run = harness();
     const retry = agentSessionRetryLastMessageRequested(AGENT, WS);
     run.channel.put(retry);
@@ -349,7 +355,10 @@ describe('chatSendSaga', () => {
       expect.any(Object),
     );
     await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
-    const [, options] = mocks.toastInfo.mock.calls[0] as [string, { id?: string; action?: { label?: string } }];
+    const [, options] = mocks.toastInfo.mock.calls[0] as [
+      string,
+      { id?: string; action?: { label?: string } },
+    ];
     expect(options.id).toBe(`chat-send-unarchive-${WS}`);
     expect(options.action?.label).toBeTruthy();
     run.task.cancel();

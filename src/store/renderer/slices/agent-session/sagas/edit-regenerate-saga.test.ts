@@ -22,6 +22,7 @@ import { editRegenerateSaga } from './edit-regenerate-saga';
 
 const WS = 'ws-edit-saga';
 const AGENT = 'agent-edit';
+const OTHER_AGENT = 'agent-edit-other';
 const messages: AgentMessage[] = [
   { id: 'm1', role: 'user', contentBlocks: [], timestamp: '2026-01-01' } as AgentMessage,
   { id: 'm2', role: 'assistant', contentBlocks: [], timestamp: '2026-01-02' } as AgentMessage,
@@ -108,7 +109,7 @@ describe('editRegenerateSaga', () => {
     await task.toPromise();
   });
 
-  it('serializes edits for the same agent', async () => {
+  it('runs repeated edits for the same agent independently', async () => {
     let releaseFirst!: (value: { success: true }) => void;
     mocks.editAndRegenerate
       .mockReturnValueOnce(new Promise((resolve) => (releaseFirst = resolve)))
@@ -119,17 +120,36 @@ describe('editRegenerateSaga', () => {
     channel.put(first);
     channel.put(second);
     await settle();
-    expect(mocks.editAndRegenerate).toHaveBeenCalledTimes(1);
+    expect(mocks.editAndRegenerate).toHaveBeenCalledTimes(2);
+    await expect(second.promise).resolves.toBeUndefined();
 
     releaseFirst({ success: true });
     await expect(first.promise).resolves.toBeUndefined();
-    await expect(second.promise).resolves.toBeUndefined();
-    expect(mocks.editAndRegenerate).toHaveBeenCalledTimes(2);
     task.cancel();
     await task.toPromise();
   });
 
-  it('rejects active and queued edits on cancellation', async () => {
+  it('runs edits for different agents concurrently', async () => {
+    let releaseFirst!: (value: { success: true }) => void;
+    mocks.editAndRegenerate
+      .mockReturnValueOnce(new Promise((resolve) => (releaseFirst = resolve)))
+      .mockResolvedValueOnce({ success: true });
+    const { channel, task } = start();
+    const first = agentSessionEditAndRegenerateRequested(AGENT, WS, 'm1', 'first');
+    const second = agentSessionEditAndRegenerateRequested(OTHER_AGENT, WS, 'm2', 'second');
+    channel.put(first);
+    channel.put(second);
+    await settle();
+
+    expect(mocks.editAndRegenerate).toHaveBeenCalledTimes(2);
+    await expect(second.promise).resolves.toBeUndefined();
+    releaseFirst({ success: true });
+    await expect(first.promise).resolves.toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('rejects all active edits on cancellation', async () => {
     mocks.editAndRegenerate.mockReturnValue(new Promise(() => {}));
     const { channel, task } = start();
     const first = agentSessionEditAndRegenerateRequested(AGENT, WS, 'm1', 'first');

@@ -8,56 +8,49 @@
 
   import { recomputeAgentLocks } from '$store/renderer/slices/agent-lock/agent-lock-slice';
   import {
-  selectStagedWorkingChanges as selectFtStagedChanges,
-  selectUnstagedWorkingChanges as selectFtUnstagedChanges,
-  selectFileTrackingCommits as selectFtCommits,
-  selectFileTrackingLoading as selectFtLoading,
-  selectFileTrackingChangesTruncated as selectFtChangesTruncated,
-  selectFileTrackingTotalChangesCount as selectFtTotalChangesCount,
-  selectPendingAutoAction,
-  selectAcceptChangesState,
-} from '$store/renderer/slices/changes/changes-selectors';
+    selectStagedWorkingChanges as selectFtStagedChanges,
+    selectUnstagedWorkingChanges as selectFtUnstagedChanges,
+    selectFileTrackingCommits as selectFtCommits,
+    selectFileTrackingLoading as selectFtLoading,
+    selectFileTrackingChangesTruncated as selectFtChangesTruncated,
+    selectFileTrackingTotalChangesCount as selectFtTotalChangesCount,
+    selectPendingAutoAction,
+    selectAcceptChangesState,
+  } from '$store/renderer/slices/changes/changes-selectors';
   import {
-  refreshRequested,
-  refreshAcceptChangesStatus,
-  setPendingAutoAction,
-} from '$store/renderer/slices/changes/changes-slice';
+    refreshRequested,
+    refreshAcceptChangesStatus,
+    setPendingAutoAction,
+  } from '$store/renderer/slices/changes/changes-slice';
   import { refreshPRStatusRequested } from '$store/renderer/slices/pr-status/pr-status-slice';
   import { type TrackedChange } from '$features/file-tracking/types';
   import { gitCache } from '$features/git/git-cache';
   import {
-  loadGitStatus,
-  setPostMergeState,
-  setGitOperationFlag,
-} from '$store/renderer/slices/git/git-slice';
+    loadGitStatus,
+    setPostMergeState,
+    setGitOperationFlag,
+  } from '$store/renderer/slices/git/git-slice';
   import {
-  selectGitStatus,
-  selectGitAhead,
-  selectGitBehind,
-  selectPostMergeState,
-  selectGitOperationFlags,
-} from '$store/renderer/slices/git/git-selectors';
+    selectGitStatus,
+    selectGitAhead,
+    selectGitBehind,
+    selectPostMergeState,
+    selectGitOperationFlags,
+  } from '$store/renderer/slices/git/git-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import {
-  addTerminal,
-  openTerminalOverlay,
-} from '$store/renderer/slices/terminals/terminals-slice';
-
-
-
-
-
+    addTerminal,
+    openTerminalOverlay,
+  } from '$store/renderer/slices/terminals/terminals-slice';
 
   import {
-  selectActiveWorkspaceId,
-  selectWorkspaceById,
-  selectWorkspaceActivePullRequest,
-} from '$store/renderer/slices/workspace/workspace-selectors';
+    selectActiveWorkspaceId,
+    selectWorkspaceById,
+    selectWorkspaceActivePullRequest,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getPRDisplayTitle } from '$lib/utils/pull-request-utils';
   import { openWorkspaceLocalChanges } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-
-
 
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { toast } from '$lib/components/ui/toast';
@@ -77,7 +70,6 @@
     mergeMonitoredPRs,
   } from './sidebar-changes-utils';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
-  import { prMonitorsSubscribeRequested, prMonitorsUnsubscribeRequested } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
   import BranchDisplay from './BranchDisplay.svelte';
   import CommitDrawer from './CommitDrawer.svelte';
   import CommitsTimeline from './CommitsTimeline.svelte';
@@ -86,7 +78,6 @@
   import PostMergeActions from './PostMergeActions.svelte';
   import PRSection from './PRSection.svelte';
   import { store as appStore } from '$store/renderer/store';
-
 
   interface Props {
     workspaceId: string;
@@ -172,16 +163,7 @@
   const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
 
   // Agent PR monitors (PROTOCOL §6.9): live rows join the PR list below.
-  // Refcounted live subscription, shared with the chat chip row.
   const prMonitors$ = selectPrMonitors(workspaceIdStore);
-  $effect(() => {
-    if (!workspaceId) return;
-    const currentWorkspaceId = workspaceId;
-    untrack(() => appStore.dispatch(prMonitorsSubscribeRequested(currentWorkspaceId)));
-    return () => {
-      appStore.dispatch(prMonitorsUnsubscribeRequested(currentWorkspaceId));
-    };
-  });
 
   const workspaceRepo = $derived(
     $workspace?.repositoryOwner && $workspace?.repositoryName
@@ -190,7 +172,12 @@
   );
   const pullRequests = $derived(
     mergeMonitoredPRs(
-      mapWorkspacePRs($workspace?.pullRequests, $activePullRequest$, constructPrUrl, getPRDisplayTitle),
+      mapWorkspacePRs(
+        $workspace?.pullRequests,
+        $activePullRequest$,
+        constructPrUrl,
+        getPRDisplayTitle,
+      ),
       $prMonitors$,
       workspaceRepo,
     ),
@@ -982,8 +969,12 @@
         onkeydown={handleChangesKeydown}
       >
         <div class="branch-labels w-full flex justify-between mb-1 mt-1">
-          <p class="text-subtle leading-snug text-ui">{m.workspace_sidebarChanges_codeLivesIn_label()}</p>
-          <p class="text-subtle leading-snug text-ui">{m.workspace_sidebarChanges_mergedInto_label()}</p>
+          <p class="text-subtle leading-snug text-ui">
+            {m.workspace_sidebarChanges_codeLivesIn_label()}
+          </p>
+          <p class="text-subtle leading-snug text-ui">
+            {m.workspace_sidebarChanges_mergedInto_label()}
+          </p>
         </div>
 
         <BranchDisplay {workspaceId} {trunkBranch} {repoPath} {repoType} {canChangeTrunk} />
@@ -1029,7 +1020,9 @@
             <div
               class="flex flex-1 items-center gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0"
             >
-              <span class="text-ui truncate min-w-0 text-left flex-1">{m.workspace_sidebarChanges_noChangesYet_label()}</span>
+              <span class="text-ui truncate min-w-0 text-left flex-1"
+                >{m.workspace_sidebarChanges_noChangesYet_label()}</span
+              >
             </div>
           {/if}
 

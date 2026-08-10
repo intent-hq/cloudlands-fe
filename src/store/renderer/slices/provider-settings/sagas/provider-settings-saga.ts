@@ -1,5 +1,5 @@
-import { buffers } from 'redux-saga';
-import { actionChannel, call, take } from 'typed-redux-saga';
+import { buffers, channel, type Channel } from 'redux-saga';
+import { all, call, put, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -9,52 +9,62 @@ import { setActiveProvider, setProviderEnabled, toggleProvider } from '../provid
 
 const logger = createLogger('ProviderSettingsSaga');
 
-type ProviderSettingsAction =
-  | ReturnType<typeof setActiveProvider>
-  | ReturnType<typeof toggleProvider>
-  | ReturnType<typeof setProviderEnabled>;
+type ProviderSettingsUpdate = Parameters<typeof appClient.settings.setProviderSettings>[0];
 
-export function* persistProviderSettingsWorker(action: ProviderSettingsAction) {
-  try {
-    if (action.type === setActiveProvider.type) {
-      const providerId = (action as ReturnType<typeof setActiveProvider>).payload[0];
-      if (!providerId) return;
+function* queueActiveProviderWorker(
+  updates: Channel<ProviderSettingsUpdate>,
+  action: ReturnType<typeof setActiveProvider>,
+) {
+  const providerId = action.payload[0];
+  if (providerId) yield* put(updates, { activeProviderId: providerId });
+}
+
+function* queueEnabledProviders(updates: Channel<ProviderSettingsUpdate>, providerId: string) {
+  const provider = yield* selectProviderCatalogEntry.effect(providerId);
+  if (provider && !provider.canBeDisabled) return;
+  const enabledProviders = yield* selectEnabledProviders.effect();
+  yield* put(updates, { enabledProviders: { ...enabledProviders } });
+}
+
+function* queueToggleProviderWorker(
+  updates: Channel<ProviderSettingsUpdate>,
+  action: ReturnType<typeof toggleProvider>,
+) {
+  yield* call(queueEnabledProviders, updates, action.payload[0]);
+}
+
+function* queueSetProviderEnabledWorker(
+  updates: Channel<ProviderSettingsUpdate>,
+  action: ReturnType<typeof setProviderEnabled>,
+) {
+  yield* call(queueEnabledProviders, updates, action.payload[0].providerId);
+}
+
+function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>) {
+  while (true) {
+    const update = yield* take(updates);
+    try {
       const result = yield* call([appClient.settings, appClient.settings.setProviderSettings], {
-        activeProviderId: providerId,
+        ...update,
       });
-      if (!result.success) logger.warn('Failed to persist active provider:', result.error);
-      return;
+      if (!result.success) logger.warn('Failed to persist provider settings:', result.error);
+    } catch (error) {
+      logger.error('Failed to persist provider settings:', error);
     }
-
-    const providerId =
-      action.type === toggleProvider.type
-        ? (action as ReturnType<typeof toggleProvider>).payload[0]
-        : (action as ReturnType<typeof setProviderEnabled>).payload[0].providerId;
-    const provider = yield* selectProviderCatalogEntry.effect(providerId);
-    if (provider && !provider.canBeDisabled) return;
-
-    const enabledProviders = yield* selectEnabledProviders.effect();
-    const result = yield* call([appClient.settings, appClient.settings.setProviderSettings], {
-      enabledProviders: { ...enabledProviders },
-    });
-    if (!result.success) logger.warn('Failed to persist enabled providers:', result.error);
-  } catch (error) {
-    logger.error('Failed to persist provider settings:', error);
   }
 }
 
 /** Unregistered until the S20 middleware cutover. */
 export function* providerSettingsSaga() {
-  const channel = yield* actionChannel(
-    [setActiveProvider, toggleProvider, setProviderEnabled],
-    buffers.expanding(),
-  );
+  const updates = channel<ProviderSettingsUpdate>(buffers.expanding());
   try {
-    while (true) {
-      const action = (yield* take(channel)) as ProviderSettingsAction;
-      yield* call(persistProviderSettingsWorker, action);
-    }
+    yield* all([
+      call(persistProviderSettingsQueue, updates),
+      takeEvery(setActiveProvider, queueActiveProviderWorker, updates),
+      takeEvery(toggleProvider, queueToggleProviderWorker, updates),
+      takeEvery(setProviderEnabled, queueSetProviderEnabledWorker, updates),
+    ]);
   } finally {
-    channel.close();
+    updates.close();
   }
 }
