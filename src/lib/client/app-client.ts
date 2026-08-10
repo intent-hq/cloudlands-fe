@@ -1668,13 +1668,18 @@ export interface GitHubBranchListing {
 
 /**
  * Cached-refs branch listing (`github.branches.listCached`, §5.27): branch
- * names read from the daemon's local repo cache with zero network I/O.
- * `cached: false` means the repo has no usable cache entry (cold cache).
+ * names read from the daemon's local repo cache (`source: "cache"`) — or,
+ * on a cache miss, from the daemon's one-round-trip `git ls-remote`
+ * fallback (`source: "ls-remote"` with `cached: false`). A failed fallback
+ * folds to the plain miss — `{ cached: false, branches: [] }` with `source`
+ * omitted — the same shape pre-fallback daemons always return (`source` is
+ * absent on older daemons).
  */
 export interface GitHubCachedBranchListing {
   cached: boolean;
   branches: string[];
   defaultBranch?: string;
+  source?: 'cache' | 'ls-remote';
 }
 
 /**
@@ -1699,11 +1704,11 @@ export interface IntegrationsClient {
    */
   githubBranches(owner: string, repo: string): Promise<GitHubBranchListing>;
   /**
-   * Branch names from the daemon's local repo cache
-   * (`github.branches.listCached`, §5.27) — zero network I/O, purely a fast
-   * first paint for the BranchSelector. NEVER throws: failures fold to a
-   * cold-cache miss (`{ cached: false, branches: [] }`) so `githubBranches`
-   * stays the only error authority.
+   * Branch names from the daemon's local repo cache — or its `git ls-remote`
+   * fallback on a cache miss (`github.branches.listCached`, §5.27) — purely
+   * a fast first paint for the BranchSelector. NEVER throws: failures fold
+   * to a cold-cache miss (`{ cached: false, branches: [] }`) so
+   * `githubBranches` stays the only error authority.
    */
   githubBranchesCached(owner: string, repo: string): Promise<GitHubCachedBranchListing>;
   /**

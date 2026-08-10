@@ -265,7 +265,39 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached �
     expect(onchange).toHaveBeenCalledTimes(1);
   });
 
-  it('cold cache: keeps the loading skeleton until the GitHub API responds (behavior unchanged)', async () => {
+  it('ls-remote fallback: a cache miss with populated branches paints before the fresh list arrives', async () => {
+    // PROTOCOL §5.27: on a cache miss the daemon falls back to one
+    // `git ls-remote` round trip — cached: false but branches populated.
+    mockGithubBranchesCached.mockResolvedValue({
+      cached: false,
+      branches: ['dev', 'feat/x'],
+      defaultBranch: 'dev',
+      source: 'ls-remote',
+    });
+    const fresh = deferred<{ branches: string[]; defaultBranch?: string }>();
+    mockGithubBranches.mockReturnValue(fresh.promise);
+    const onchange = vi.fn();
+    const { container } = render(BranchSelector, { props: { ...githubProps, onchange } });
+
+    await waitFor(() =>
+      expect(mockGithubBranchesCached).toHaveBeenCalledWith('octo', 'intent'),
+    );
+    // Fallback paints like a warm cache: default branch selected, trigger
+    // spinner gone — all while the authoritative GitHub API request is still
+    // in flight.
+    await waitFor(() => expect(onchange).toHaveBeenCalled());
+    expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'dev' });
+    expect(container.querySelector('.animate-spin')).toBeNull();
+
+    // The authoritative list still wins when it settles: the extra branch
+    // appears and the still-existing selection is kept (no second onchange).
+    fresh.resolve({ branches: ['dev', 'feat/x', 'extra'], defaultBranch: 'dev' });
+    await openDropdown(container);
+    await waitFor(() => expect(screen.getByText('extra')).toBeTruthy());
+    expect(onchange).toHaveBeenCalledTimes(1);
+  });
+
+  it('empty cold cache: keeps the loading skeleton until the GitHub API responds (behavior unchanged)', async () => {
     mockGithubBranchesCached.mockResolvedValue({ cached: false, branches: [] });
     const fresh = deferred<{ branches: string[]; defaultBranch?: string }>();
     mockGithubBranches.mockReturnValue(fresh.promise);
