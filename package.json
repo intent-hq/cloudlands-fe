@@ -282,7 +282,7 @@
     "d3": "^7.9.0",
     "date-fns": "^4.4.0",
     "diff": "^9.0.0",
-    "dompurify": "^3.4.12",
+    "dompurify": "^3.4.13",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.9",
     "express": "^5.1.0",
