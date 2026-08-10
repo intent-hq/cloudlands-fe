@@ -1,5 +1,5 @@
-import { END, buffers, eventChannel, type EventChannel, type Task } from 'redux-saga';
-import { call, cancel, fork, put, take } from 'typed-redux-saga';
+import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
+import { all, call, fork, put, race, take, takeLatest } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -41,8 +41,6 @@ function* loadGitStatusWorker(workspaceId: string) {
   }
 }
 
-type RunningRead = { task?: Task; token: symbol; pending?: boolean };
-
 /**
  * Bridges daemon-pushed git-change notifications (`appClient.git.subscribe`)
  * into the saga world. In live mode `LiveGitClient.subscribe` is the only
@@ -80,59 +78,25 @@ function* watchGitStatusSubscription() {
   }
 }
 
-/**
- * Single-flight git-status read with trailing coalesce: a `loadGitStatus`
- * that arrives while `workspaceId`'s read is already in flight is never
- * dropped — it flips `entry.pending`, and once the in-flight read settles
- * the loop below re-reads once more (clearing `pending` first) before
- * releasing the single-flight slot, so at most one trailing read follows
- * any burst of triggers.
- */
-function* runRead(running: Map<string, RunningRead>, workspaceId: string, entry: RunningRead) {
-  try {
-    while (running.get(workspaceId) === entry) {
-      entry.pending = false;
-      yield* call(loadGitStatusWorker, workspaceId);
-      if (!entry.pending) break;
-    }
-  } finally {
-    if (running.get(workspaceId) === entry) running.delete(workspaceId);
-  }
+function matchesWorkspaceCleanup(workspaceId: string) {
+  return (action: { type: string; payload?: unknown }) =>
+    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === workspaceId;
+}
+
+function* loadGitStatusRequestWorker(action: ReturnType<typeof loadGitStatus>) {
+  const [workspaceId] = action.payload;
+  if (!workspaceId) return;
+  yield* race({
+    read: call(loadGitStatusWorker, workspaceId),
+    cleanup: take(matchesWorkspaceCleanup(workspaceId)),
+  });
 }
 
 export function* gitReadSaga() {
-  const running = new Map<string, RunningRead>();
-  yield* fork(watchGitStatusSubscription);
-  try {
-    while (true) {
-      const action: ReturnType<
-        typeof loadGitStatus | typeof workspaceDeleted | typeof workspaceUnmounted
-      > = yield* take([loadGitStatus, workspaceDeleted, workspaceUnmounted]);
-
-      if (action.type === loadGitStatus.type) {
-        const [workspaceId] = action.payload as [string];
-        if (!workspaceId) continue;
-        const existing = running.get(workspaceId);
-        if (existing) {
-          existing.pending = true;
-          continue;
-        }
-        const entry: RunningRead = { token: Symbol(workspaceId) };
-        running.set(workspaceId, entry);
-        entry.task = yield* fork(runRead, running, workspaceId, entry);
-        continue;
-      }
-
-      const [workspaceId] = action.payload as [string];
-      const read = running.get(workspaceId);
-      if (!read) continue;
-      running.delete(workspaceId);
-      if (read.task) yield* cancel(read.task);
-    }
-  } finally {
-    for (const read of running.values()) {
-      if (read.task) yield* cancel(read.task);
-    }
-    running.clear();
-  }
+  yield* all([
+    fork(watchGitStatusSubscription),
+    takeLatest(loadGitStatus, loadGitStatusRequestWorker),
+  ]);
 }

@@ -153,7 +153,7 @@ describe('taskAgentAssociationsSaga', () => {
     await run.task.toPromise();
   });
 
-  it('cancels an in-flight task-key queue without starting buffered wire work', async () => {
+  it('starts same-key wire work independently with native takeEvery semantics', async () => {
     let resolveFirst!: () => void;
     mocks.linkAgent.mockReturnValue(
       new Promise<void>((resolve) => {
@@ -168,11 +168,14 @@ describe('taskAgentAssociationsSaga', () => {
     await settle();
     run.send(addTaskAgentAssociation('ws-1', 'note-1', second));
     await settle();
-    expect(mocks.linkAgent).toHaveBeenCalledTimes(1);
+    expect(mocks.linkAgent.mock.calls).toEqual([
+      ['ws-1', 'note-1', first],
+      ['ws-1', 'note-1', second],
+    ]);
     run.task.cancel();
     await run.task.toPromise();
     resolveFirst();
     await settle();
-    expect(mocks.linkAgent).toHaveBeenCalledTimes(1);
+    expect(mocks.linkAgent).toHaveBeenCalledTimes(2);
   });
 });

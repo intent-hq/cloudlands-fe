@@ -64,7 +64,10 @@ function state() {
 function start(current = state()) {
   const channel = stdChannel();
   const actions: unknown[] = [];
-  const task = runSaga({ channel, dispatch: (action) => actions.push(action), getState: () => current }, lifecycleIpcReadSaga);
+  const task = runSaga(
+    { channel, dispatch: (action) => actions.push(action), getState: () => current },
+    lifecycleIpcReadSaga,
+  );
   return { channel, actions, task };
 }
 
@@ -95,12 +98,14 @@ describe('lifecycleIpcReadSaga', () => {
   });
 
   it('maps GitHub wire repos exactly and drops snake_case and wire-only fields', async () => {
-    mocks.listRepos.mockResolvedValue([{
-      owner: 'acme',
-      name: 'web',
-      default_branch: 'main',
-      wire_only: 'drop',
-    }]);
+    mocks.listRepos.mockResolvedValue([
+      {
+        owner: 'acme',
+        name: 'web',
+        default_branch: 'main',
+        wire_only: 'drop',
+      },
+    ]);
     const run = start();
     run.channel.put(loadGithubRepos());
     await settle();
@@ -118,7 +123,11 @@ describe('lifecycleIpcReadSaga', () => {
 
   it('surfaces GitHub failure, coalesces duplicates, and cancels a pending read', async () => {
     let resolve!: (value: unknown[]) => void;
-    mocks.listRepos.mockReturnValue(new Promise((done) => { resolve = done; }));
+    mocks.listRepos.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
     const run = start();
     run.channel.put(loadGithubRepos());
     run.channel.put(loadGithubRepos());
@@ -174,7 +183,9 @@ describe('lifecycleIpcReadSaga', () => {
     await stop(loading.task);
 
     current.externalEditors.loading = false;
-    current.externalEditors.editors = createCollection('id', [{ id: 'vscode', name: 'Code', installed: true }]);
+    current.externalEditors.editors = createCollection('id', [
+      { id: 'vscode', name: 'Code', installed: true },
+    ]);
     current.externalEditors.lastFetched = NOW.getTime() - CACHE_TTL_MS + 1;
     const cached = start(current);
     cached.channel.put(fetchEditors());
@@ -240,9 +251,7 @@ describe('lifecycleIpcReadSaga', () => {
       ['workspace:get-recent-repositories', {}],
       ['workspace:get-recent-repositories', {}],
     ]);
-    expect(run.actions).toEqual([
-      { type: 'knownRepos/setRepos', payload: [[repo]] },
-    ]);
+    expect(run.actions).toEqual([{ type: 'knownRepos/setRepos', payload: [[repo]] }]);
     await stop(run.task);
   });
 
@@ -274,24 +283,30 @@ describe('lifecycleIpcReadSaga', () => {
     expect(run.actions).toEqual([
       {
         type: 'git/setPostMergeState',
-        payload: [WS, {
-          ...preserved,
-          aheadOfTrunk: 5,
-          behindTrunk: 2,
-          hasConflicts: true,
-          hasRemote: false,
-          isContentMergedToTrunk: true,
-        }],
+        payload: [
+          WS,
+          {
+            ...preserved,
+            aheadOfTrunk: 5,
+            behindTrunk: 2,
+            hasConflicts: true,
+            hasRemote: false,
+            isContentMergedToTrunk: true,
+          },
+        ],
       },
       {
         type: 'git/setPostMergeState',
-        payload: [WS, {
-          ...preserved,
-          aheadOfTrunk: null,
-          behindTrunk: 0,
-          hasConflicts: false,
-          isContentMergedToTrunk: false,
-        }],
+        payload: [
+          WS,
+          {
+            ...preserved,
+            aheadOfTrunk: null,
+            behindTrunk: 0,
+            hasConflicts: false,
+            isContentMergedToTrunk: false,
+          },
+        ],
       },
     ]);
     await stop(run.task);

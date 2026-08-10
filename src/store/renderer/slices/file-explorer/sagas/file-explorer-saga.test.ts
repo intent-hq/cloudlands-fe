@@ -146,7 +146,7 @@ describe('fileExplorerSaga', () => {
     await task.toPromise();
   });
 
-  it('clears a cancelled directory load and settles the superseding expand request', async () => {
+  it('globally cancels a directory load when a different expand payload arrives', async () => {
     vi.spyOn(appClient.files, 'listDirectory')
       .mockReturnValueOnce(new Promise(() => undefined))
       .mockResolvedValueOnce([{ name: 'a.ts', path: 'a.ts', type: 'file' }]);
@@ -154,7 +154,16 @@ describe('fileExplorerSaga', () => {
       undefined,
       setFileExplorerWorkspacePath('ws-1', '/repo'),
     );
-    fileExplorer = fileExplorerReducer(fileExplorer, setRootNode('ws-1', root));
+    fileExplorer = fileExplorerReducer(
+      fileExplorer,
+      setRootNode('ws-1', {
+        ...root,
+        children: [
+          ...root.children,
+          { name: 'other', path: '/repo/other', type: 'directory', children: [] },
+        ],
+      }),
+    );
     const channel = stdChannel();
     const actions: Parameters<typeof fileExplorerReducer>[1][] = [];
     const dispatch = (action: Parameters<typeof fileExplorerReducer>[1]) => {
@@ -168,14 +177,14 @@ describe('fileExplorerSaga', () => {
 
     channel.put(expandToPathRequested('ws-1', '/repo/src/'));
     await settle();
-    channel.put(expandToPathRequested('ws-1', '/repo/src/'));
+    channel.put(expandToPathRequested('ws-1', '/repo/other/'));
     await settle();
     await settle();
 
     const workspace = fileExplorer.byWorkspaceId['ws-1'];
     expect(appClient.files.listDirectory.mock.calls).toEqual([
       ['ws-1', 'src'],
-      ['ws-1', 'src'],
+      ['ws-1', 'other'],
     ]);
     expect(
       actions.filter(
@@ -184,15 +193,15 @@ describe('fileExplorerSaga', () => {
     ).toEqual([
       addLoadingPath('ws-1', '/repo/src'),
       removeLoadingPath('ws-1', '/repo/src'),
-      addLoadingPath('ws-1', '/repo/src'),
-      removeLoadingPath('ws-1', '/repo/src'),
+      addLoadingPath('ws-1', '/repo/other'),
+      removeLoadingPath('ws-1', '/repo/other'),
     ]);
     expect(workspace.loadingPaths).toEqual([]);
     expect(workspace.isBulkOperation).toBe(false);
-    expect(getItem(workspace.nodes, '/repo/src')?.children).toEqual(['/repo/src/a.ts']);
-    expect(getItem(workspace.nodes, '/repo/src/a.ts')).toEqual({
+    expect(getItem(workspace.nodes, '/repo/other')?.children).toEqual(['/repo/other/a.ts']);
+    expect(getItem(workspace.nodes, '/repo/other/a.ts')).toEqual({
       name: 'a.ts',
-      path: '/repo/src/a.ts',
+      path: '/repo/other/a.ts',
       type: 'file',
       children: [],
     });

@@ -14,9 +14,8 @@
    * Hidden entirely when the agent has no active monitors.
    *
    * All wire traffic lives in the `prMonitor` slice + its companion read
-   * saga (`pr-monitor-saga`): this component only dispatches
-   * the subscribe/unsubscribe + flush/cancel triggers and renders from the
-   * selector.
+   * saga (`pr-monitor-saga`): this component only dispatches flush/cancel
+   * triggers and renders from the selector.
    */
 
   import Fa from 'svelte-fa';
@@ -27,7 +26,6 @@
     faXmark,
   } from '@fortawesome/free-solid-svg-icons';
   import { safeSlide } from '$lib/utils/animations';
-  import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -42,8 +40,6 @@
   import {
     cancelPrMonitorRequested,
     flushPrMonitorRequested,
-    prMonitorsSubscribeRequested,
-    prMonitorsUnsubscribeRequested,
   } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
   import { store as appStore } from '$store/renderer/store';
 
@@ -65,18 +61,6 @@
 
   const monitors$ = selectAgentPrMonitors(workspaceIdStore, agentIdStore);
   const workspace$ = selectWorkspaceById(workspaceIdStore);
-
-  // Refcounted live subscription: the read middleware opens the
-  // `prMonitor:*` events.subscribe on the first subscriber and disposes on
-  // the last.
-  $effect(() => {
-    if (!workspaceId) return;
-    const currentWorkspaceId = workspaceId;
-    untrack(() => appStore.dispatch(prMonitorsSubscribeRequested(currentWorkspaceId)));
-    return () => {
-      appStore.dispatch(prMonitorsUnsubscribeRequested(currentWorkspaceId));
-    };
-  });
 
   // Only ACTIVE monitors get chips; completed rows live on the PR-list
   // surface, cancelled rows are excluded server-side.

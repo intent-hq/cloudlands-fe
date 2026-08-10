@@ -76,14 +76,15 @@ export function* checkAllProvidersWorker() {
   }
 }
 
-export function* handleBulkProviderRequest(
-  action: ReturnType<typeof ensureProvidersChecked> | ReturnType<typeof checkAllProvidersRequested>,
+export function* handleCheckAllProvidersRequest(
+  _action: ReturnType<typeof checkAllProvidersRequested>,
 ) {
-  if (action.type === ensureProvidersChecked.type) {
-    const hasCheckedOnce = yield* selectHasCheckedOnce.effect();
-    if (hasCheckedOnce) return;
-  }
   yield* call(checkAllProvidersWorker);
+}
+
+function* handleEnsureProvidersChecked(_action: ReturnType<typeof ensureProvidersChecked>) {
+  const hasCheckedOnce = yield* selectHasCheckedOnce.effect();
+  if (!hasCheckedOnce) yield* put(checkAllProvidersRequested());
 }
 
 function* handleBackendStatus(payload: { status?: string }) {
@@ -101,8 +102,6 @@ export function* providerAvailabilitySaga() {
   yield* call(hydrateProviderCatalog);
   yield* takeEveryFromElectronChannel(IPC_CHANNELS.BACKEND.STATUS, handleBackendStatus);
   yield* takeEvery(checkSingleProviderRequested, handleSingleProviderRequest);
-  yield* takeLeading(
-    [ensureProvidersChecked, checkAllProvidersRequested],
-    handleBulkProviderRequest,
-  );
+  yield* takeEvery(ensureProvidersChecked, handleEnsureProvidersChecked);
+  yield* takeLeading(checkAllProvidersRequested, handleCheckAllProvidersRequest);
 }

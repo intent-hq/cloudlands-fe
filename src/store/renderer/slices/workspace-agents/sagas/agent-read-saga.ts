@@ -1,15 +1,11 @@
-import type { Task } from 'redux-saga';
-import { call, cancel, fork, put, take } from 'typed-redux-saga';
+import { call, put, race, take, takeLeading } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import type { AgentSession } from '$shared/types';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
-import {
-  bulkUpsertSessions,
-  upsertSession,
-} from '../../agent-session/agent-session-slice';
+import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import {
   workspaceDeleted,
@@ -48,49 +44,22 @@ function* loadAgentSessionSaga(wsId: string, agentId: string) {
   }
 }
 
-type RunningRead = { wsId: string; task?: Task; token: symbol };
+function matchesWorkspaceCleanup(wsId: string) {
+  return (action: { type: string; payload?: unknown }) =>
+    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === wsId;
+}
+
+function* loadAgentSessionWorker(action: ReturnType<typeof ensureAgentSessionLoaded>) {
+  const [wsId, agentId] = action.payload;
+  if (!wsId || !agentId) return;
+  yield* race({
+    read: call(loadAgentSessionSaga, wsId, agentId),
+    cleanup: take(matchesWorkspaceCleanup(wsId)),
+  });
+}
 
 export function* agentReadSaga() {
-  const running = new Map<string, RunningRead>();
-  try {
-    while (true) {
-      const action: ReturnType<
-        | typeof ensureAgentSessionLoaded
-        | typeof workspaceDeleted
-        | typeof workspaceUnmounted
-      > = yield* take([
-        ensureAgentSessionLoaded,
-        workspaceDeleted,
-        workspaceUnmounted,
-      ]);
-
-      if (action.type === ensureAgentSessionLoaded.type) {
-        const [wsId, agentId] = action.payload as [string, string];
-        if (!wsId || !agentId || running.has(agentId)) continue;
-        const token = Symbol(agentId);
-        running.set(agentId, { wsId, token });
-        const task = yield* fork(function* () {
-          try {
-            yield* call(loadAgentSessionSaga, wsId, agentId);
-          } finally {
-            if (running.get(agentId)?.token === token) running.delete(agentId);
-          }
-        });
-        if (running.get(agentId)?.token === token) running.set(agentId, { wsId, task, token });
-        continue;
-      }
-
-      const [wsId] = action.payload as [string];
-      for (const [agentId, read] of running) {
-        if (read.wsId !== wsId) continue;
-        running.delete(agentId);
-        if (read.task) yield* cancel(read.task);
-      }
-    }
-  } finally {
-    for (const read of running.values()) {
-      if (read.task) yield* cancel(read.task);
-    }
-    running.clear();
-  }
+  yield* takeLeading(ensureAgentSessionLoaded, loadAgentSessionWorker);
 }

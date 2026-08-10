@@ -33,8 +33,7 @@
  * Selector access uses selector `.effect()` inside the saga, and all state
  * updates are dispatched through saga effects. The toast lib remains lazy.
  */
-import type { Task } from 'redux-saga';
-import { call, cancel, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
+import { all, call, fork, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import {
@@ -247,43 +246,23 @@ function executionErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-type ExecutorTrigger =
-  ReturnType<typeof executeBackgroundAgent> | ReturnType<typeof cancelExecution>;
+function* executeBackgroundAgentWorker(
+  action: ReturnType<typeof executeBackgroundAgent>,
+): SagaGenerator<void> {
+  const [workspaceId, executorType, context] = action.payload;
+  yield* call(handleExecute, workspaceId, executorType, context);
+}
+
+function* cancelExecutionWorker(action: ReturnType<typeof cancelExecution>): SagaGenerator<void> {
+  const [workspaceId, executorType] = action.payload;
+  bumpGeneration(workspaceId, executorType);
+  yield* put(setExecutorState(workspaceId, executorType, { status: 'cancelled' }));
+}
 
 /** Owns background executor work under the app saga lifecycle. */
 export function* backgroundExecutorSaga(): SagaGenerator<void> {
-  const running = new Map<string, { task?: Task; token: symbol }>();
-
-  try {
-    while (true) {
-      const action: ExecutorTrigger = yield* take([executeBackgroundAgent, cancelExecution]);
-      const [workspaceId, executorType] = action.payload;
-      const key = generationKey(workspaceId, executorType);
-
-      if (action.type === executeBackgroundAgent.type) {
-        const [, , context] = action.payload;
-        const token = Symbol(key);
-        const task = yield* fork(function* (): SagaGenerator<void> {
-          try {
-            yield* call(handleExecute, workspaceId, executorType, context);
-          } finally {
-            if (running.get(key)?.token === token) running.delete(key);
-          }
-        });
-        running.set(key, { task, token });
-        continue;
-      }
-
-      bumpGeneration(workspaceId, executorType);
-      yield* put(setExecutorState(workspaceId, executorType, { status: 'cancelled' }));
-      const active = running.get(key);
-      if (active?.task) yield* cancel(active.task);
-      running.delete(key);
-    }
-  } finally {
-    for (const active of running.values()) {
-      if (active.task) yield* cancel(active.task);
-    }
-    running.clear();
-  }
+  yield* all([
+    takeLatest(executeBackgroundAgent, executeBackgroundAgentWorker),
+    takeEvery(cancelExecution, cancelExecutionWorker),
+  ]);
 }

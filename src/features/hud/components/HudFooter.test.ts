@@ -8,13 +8,19 @@
  * FAILED counters blink (hud-stat-blink) only when their count is > 0; zero
  * counts render static/dimmed (hud-stat-zero) like the other counters.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 
 import { store as appStore } from '$store/renderer/store';
-import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
-import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+import {
+  resetWorkspaceState,
+  setWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  bulkUpsertSessions,
+  clearAllSessions,
+} from '$store/renderer/slices/agent-session/agent-session-slice';
 import {
   connectionStatusChanged,
   heartbeatFailed,
@@ -26,8 +32,13 @@ import { WorkspaceStatus } from '$shared/types';
 
 import HudFooter from './HudFooter.svelte';
 
+beforeAll(() => appStore.init());
+afterAll(() => appStore.dispose());
+
 /** PROTOCOL §5.7-shaped system.status payload the health poll folds. */
-function systemStatusPayload(overrides: Partial<SystemStatusWirePayload> = {}): SystemStatusWirePayload {
+function systemStatusPayload(
+  overrides: Partial<SystemStatusWirePayload> = {},
+): SystemStatusWirePayload {
   return {
     running: true,
     listenMode: 'uds',
@@ -100,11 +111,12 @@ function failCounter(): HTMLElement {
 }
 
 beforeEach(() => {
-  appStore.init();
+  appStore.dispatch(resetWorkspaceState());
+  appStore.dispatch(clearAllSessions());
+  appStore.dispatch(connectionStatusChanged('disconnected'));
 });
 afterEach(() => {
   cleanup();
-  appStore.dispose();
 });
 
 describe('HudFooter zones', () => {
@@ -115,40 +127,48 @@ describe('HudFooter zones', () => {
     expect(screen.getByTestId('hud-footer-versions')).toBeTruthy();
   });
 
-  it('shows OFFLINE until the daemon-health slice reports a live connection', () => {
+  it('shows OFFLINE until the daemon-health slice reports a live connection', async () => {
     render(HudFooter);
     const system = screen.getByTestId('hud-footer-system');
     expect(system.textContent).toContain('OFFLINE');
 
     appStore.dispatch(connectionStatusChanged('connected'));
-    flushSync();
-    expect(system.textContent).toContain('ONLINE');
+    await waitFor(() => {
+      flushSync();
+      expect(system.textContent).toContain('ONLINE');
+    });
   });
 
-  it('flips ONLINE→OFFLINE live when daemon health transitions to down', () => {
+  it('flips ONLINE→OFFLINE live when daemon health transitions to down', async () => {
     render(HudFooter);
     const system = screen.getByTestId('hud-footer-system');
 
     appStore.dispatch(connectionStatusChanged('connected'));
-    flushSync();
-    expect(system.textContent).toContain('ONLINE');
+    await waitFor(() => {
+      flushSync();
+      expect(system.textContent).toContain('ONLINE');
+    });
 
     appStore.dispatch(connectionStatusChanged('disconnected'));
-    flushSync();
-    expect(system.textContent).toContain('OFFLINE');
+    await waitFor(() => {
+      flushSync();
+      expect(system.textContent).toContain('OFFLINE');
+    });
   });
 
-  it("keeps ONLINE while health is only 'degraded' (poll failed but still connected)", () => {
+  it("keeps ONLINE while health is only 'degraded' (poll failed but still connected)", async () => {
     render(HudFooter);
     const system = screen.getByTestId('hud-footer-system');
 
     appStore.dispatch(connectionStatusChanged('connected'));
     appStore.dispatch(heartbeatFailed());
-    flushSync();
-    expect(system.textContent).toContain('ONLINE');
+    await waitFor(() => {
+      flushSync();
+      expect(system.textContent).toContain('ONLINE');
+    });
   });
 
-  it('renders the platform product label + app version and, once known, the daemon version', () => {
+  it('renders the platform product label + app version and, once known, the daemon version', async () => {
     (window as any).electronAPI.platform = 'darwin';
     render(HudFooter);
     const versions = screen.getByTestId('hud-footer-versions');
@@ -159,8 +179,10 @@ describe('HudFooter zones', () => {
     appStore.dispatch(
       systemStatusSuccess(systemStatusPayload({ version: 'v0.9.1' }), '2026-08-03T00:00:00.000Z'),
     );
-    flushSync();
-    expect(versions.textContent).toContain('intentd v0.9.1');
+    await waitFor(() => {
+      flushSync();
+      expect(versions.textContent).toContain('intentd v0.9.1');
+    });
   });
 
   it.each([
@@ -187,13 +209,14 @@ describe('HudFooter ATTENTION/FAILED counter blink gating', () => {
     }
   });
 
-  it('blinks only ATTENTION when a workspace shows the needs_attention banner', () => {
+  it('blinks only ATTENTION when a workspace shows the needs_attention banner', async () => {
     render(HudFooter);
 
     appStore.dispatch(setWorkspaceEntity(makeWorkspace('ws-1', 'needs_attention')));
-    flushSync();
-
-    expect(attnCounter().textContent).toBe('1');
+    await waitFor(() => {
+      flushSync();
+      expect(attnCounter().textContent).toBe('1');
+    });
     expect(attnCounter().classList.contains('hud-stat-blink')).toBe(true);
     expect(attnCounter().classList.contains('hud-stat-zero')).toBe(false);
     expect(failCounter().textContent).toBe('0');
@@ -201,29 +224,33 @@ describe('HudFooter ATTENTION/FAILED counter blink gating', () => {
     expect(failCounter().classList.contains('hud-stat-zero')).toBe(true);
   });
 
-  it('drops the ATTENTION count and stops blinking when the banner clears', () => {
+  it('drops the ATTENTION count and stops blinking when the banner clears', async () => {
     render(HudFooter);
 
     appStore.dispatch(setWorkspaceEntity(makeWorkspace('ws-1', 'needs_attention')));
-    flushSync();
-    expect(attnCounter().textContent).toBe('1');
+    await waitFor(() => {
+      flushSync();
+      expect(attnCounter().textContent).toBe('1');
+    });
     expect(attnCounter().classList.contains('hud-stat-blink')).toBe(true);
 
     appStore.dispatch(setWorkspaceEntity(makeWorkspace('ws-1', 'in_progress')));
-    flushSync();
-
-    expect(attnCounter().textContent).toBe('0');
+    await waitFor(() => {
+      flushSync();
+      expect(attnCounter().textContent).toBe('0');
+    });
     expect(attnCounter().classList.contains('hud-stat-blink')).toBe(false);
     expect(attnCounter().classList.contains('hud-stat-zero')).toBe(true);
   });
 
-  it('blinks FAILED (not ATTENTION) on the wire failed rollup', () => {
+  it('blinks FAILED (not ATTENTION) on the wire failed rollup', async () => {
     render(HudFooter);
 
     appStore.dispatch(setWorkspaceEntity(makeWorkspace('ws-1', 'failed', ['failed'])));
-    flushSync();
-
-    expect(failCounter().textContent).toBe('1');
+    await waitFor(() => {
+      flushSync();
+      expect(failCounter().textContent).toBe('1');
+    });
     expect(failCounter().classList.contains('hud-stat-blink')).toBe(true);
     expect(failCounter().classList.contains('hud-stat-zero')).toBe(false);
     expect(attnCounter().textContent).toBe('0');
@@ -231,14 +258,15 @@ describe('HudFooter ATTENTION/FAILED counter blink gating', () => {
     expect(attnCounter().classList.contains('hud-stat-zero')).toBe(true);
   });
 
-  it('blinks ATTENTION on the wire blocked rollup without counting FAILED', () => {
+  it('blinks ATTENTION on the wire blocked rollup without counting FAILED', async () => {
     render(HudFooter);
 
     appStore.dispatch(setWorkspaceEntity(makeWorkspace('ws-1', 'blocked', ['active'])));
     trackSession('ws-1-a-0', { attentionRequestKind: 'blocker' });
-    flushSync();
-
-    expect(attnCounter().textContent).toBe('1');
+    await waitFor(() => {
+      flushSync();
+      expect(attnCounter().textContent).toBe('1');
+    });
     expect(attnCounter().classList.contains('hud-stat-blink')).toBe(true);
     expect(failCounter().textContent).toBe('0');
     expect(failCounter().classList.contains('hud-stat-zero')).toBe(true);
@@ -254,18 +282,21 @@ describe('HudFooter ATTENTION/FAILED counter blink gating', () => {
     expect(failCounter().textContent).toBe('0');
   });
 
-  it('stops blinking when the counts drop back to zero', () => {
+  it('stops blinking when the counts drop back to zero', async () => {
     render(HudFooter);
 
     appStore.dispatch(setWorkspaceEntity(makeWorkspace('ws-1', 'failed', ['failed'])));
-    flushSync();
-    expect(failCounter().classList.contains('hud-stat-blink')).toBe(true);
+    await waitFor(() => {
+      flushSync();
+      expect(failCounter().classList.contains('hud-stat-blink')).toBe(true);
+    });
 
     appStore.dispatch(setWorkspaceEntity(makeWorkspace('ws-1', 'in_progress', ['active'])));
-    flushSync();
-
-    expect(attnCounter().textContent).toBe('0');
-    expect(failCounter().textContent).toBe('0');
+    await waitFor(() => {
+      flushSync();
+      expect(attnCounter().textContent).toBe('0');
+      expect(failCounter().textContent).toBe('0');
+    });
     for (const counter of [attnCounter(), failCounter()]) {
       expect(counter.classList.contains('hud-stat-blink')).toBe(false);
       expect(counter.classList.contains('hud-stat-zero')).toBe(true);

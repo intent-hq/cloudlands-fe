@@ -7,8 +7,8 @@
  * the §5.39 per-kind counters (in / out / thoughts / cached = read + creation)
  * with a legend, and zero-count kinds render no segment.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 
 import { store as appStore } from '$store/renderer/store';
@@ -20,6 +20,9 @@ import {
 } from '$store/renderer/slices/hud/hud-slice';
 
 import TokRatePanel from './TokRatePanel.svelte';
+
+beforeAll(() => appStore.init());
+afterAll(() => appStore.dispose());
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -61,12 +64,10 @@ function tickTexts(): string[] {
 
 describe('TokRatePanel', () => {
   beforeEach(() => {
-    appStore.init();
     appStore.dispatch(hudActivated());
   });
   afterEach(() => {
     cleanup();
-    appStore.dispose();
   });
 
   it('preserves the data-testid hook', () => {
@@ -86,7 +87,7 @@ describe('TokRatePanel', () => {
     expect(panel().textContent).not.toContain('−40M');
   });
 
-  it('renders an on-the-hour tick plus a right-edge now label in local time', () => {
+  it('renders an on-the-hour tick plus a right-edge now label in local time', async () => {
     render(TokRatePanel);
     const buckets = [
       '2026-07-30T14:58:00Z',
@@ -96,33 +97,40 @@ describe('TokRatePanel', () => {
       '2026-07-30T15:02:00Z',
     ];
     appStore.dispatch(hudRateHistoryLoaded(history(buckets)));
-    flushSync();
-    const texts = tickTexts();
+    let texts: string[] = [];
+    await waitFor(() => {
+      flushSync();
+      texts = tickTexts();
+      expect(texts).toContain(hourLabel('2026-07-30T15:00:00Z'));
+      expect(texts).toContain(nowLabel('2026-07-30T15:02:00Z'));
+    });
     // One hour-boundary tick (15:00 bucket) + the right-edge newest label.
-    expect(texts).toContain(hourLabel('2026-07-30T15:00:00Z'));
-    expect(texts).toContain(nowLabel('2026-07-30T15:02:00Z'));
     const rightEdge = panel().querySelector('.hud-tokrate-tick.right-edge') as HTMLElement;
     expect(rightEdge.textContent?.trim()).toBe(nowLabel('2026-07-30T15:02:00Z'));
   });
 
-  it('shows only the right-edge label when no bucket falls on the hour', () => {
+  it('shows only the right-edge label when no bucket falls on the hour', async () => {
     render(TokRatePanel);
     appStore.dispatch(
       hudRateHistoryLoaded(
         history(['2026-07-30T14:58:00Z', '2026-07-30T14:59:00Z', '2026-07-30T15:01:00Z']),
       ),
     );
-    flushSync();
-    expect(tickTexts()).toEqual([nowLabel('2026-07-30T15:01:00Z')]);
+    await waitFor(() => {
+      flushSync();
+      expect(tickTexts()).toEqual([nowLabel('2026-07-30T15:01:00Z')]);
+    });
   });
 
-  it('does not duplicate the hour tick when the newest bucket is on the hour', () => {
+  it('does not duplicate the hour tick when the newest bucket is on the hour', async () => {
     render(TokRatePanel);
     const buckets = ['2026-07-30T14:58:00Z', '2026-07-30T14:59:00Z', '2026-07-30T15:00:00Z'];
     appStore.dispatch(hudRateHistoryLoaded(history(buckets)));
-    flushSync();
     // The newest bucket's hour tick is dropped; only the right-edge label shows.
-    expect(tickTexts()).toEqual([nowLabel('2026-07-30T15:00:00Z')]);
+    await waitFor(() => {
+      flushSync();
+      expect(tickTexts()).toEqual([nowLabel('2026-07-30T15:00:00Z')]);
+    });
     expect(panel().querySelectorAll('.hud-tokrate-tick.right-edge')).toHaveLength(1);
   });
 
@@ -157,7 +165,7 @@ describe('TokRatePanel', () => {
       }));
     }
 
-    it('stacks in / out / thoughts / cached sized by their token counts', () => {
+    it('stacks in / out / thoughts / cached sized by their token counts', async () => {
       render(TokRatePanel);
       appStore.dispatch(
         hudRateHistoryLoaded(
@@ -170,21 +178,25 @@ describe('TokRatePanel', () => {
           }),
         ),
       );
-      flushSync();
       // cached folds cacheRead + cacheCreation into one segment (20 + 5).
-      expect(segments()).toEqual([
-        { kind: 'in', grow: '100' },
-        { kind: 'out', grow: '40' },
-        { kind: 'thoughts', grow: '30' },
-        { kind: 'cached', grow: '25' },
-      ]);
+      await waitFor(() => {
+        flushSync();
+        expect(segments()).toEqual([
+          { kind: 'in', grow: '100' },
+          { kind: 'out', grow: '40' },
+          { kind: 'thoughts', grow: '30' },
+          { kind: 'cached', grow: '25' },
+        ]);
+      });
     });
 
-    it('drops zero-count kinds — an absent thoughtTokens renders no segment', () => {
+    it('drops zero-count kinds — an absent thoughtTokens renders no segment', async () => {
       render(TokRatePanel);
       appStore.dispatch(hudRateHistoryLoaded(bucket({ inputTokens: 100, outputTokens: 40 })));
-      flushSync();
-      expect(segments().map((segment) => segment.kind)).toEqual(['in', 'out']);
+      await waitFor(() => {
+        flushSync();
+        expect(segments().map((segment) => segment.kind)).toEqual(['in', 'out']);
+      });
     });
 
     it('renders the four-kind legend once the panel mounts', () => {
@@ -196,7 +208,7 @@ describe('TokRatePanel', () => {
       expect(labels).toEqual(['IN', 'OUT', 'THOUGHTS', 'CACHED']);
     });
 
-    it('normalizes bar height on the summed bucket total, thoughts included', () => {
+    it('normalizes bar height on the summed bucket total, thoughts included', async () => {
       render(TokRatePanel);
       appStore.dispatch(
         hudRateHistoryLoaded({
@@ -220,12 +232,14 @@ describe('TokRatePanel', () => {
           fetchedAtMs: 1,
         }),
       );
-      flushSync();
-      const heights = Array.from(panel().querySelectorAll('.hud-tokrate-bar')).map(
-        (el) => (el as HTMLElement).style.height,
-      );
       // Max total is 100 (50 + 25 + 25), so the 50-token bucket is half height.
-      expect(heights).toEqual(['50%', '100%']);
+      await waitFor(() => {
+        flushSync();
+        const heights = Array.from(panel().querySelectorAll('.hud-tokrate-bar')).map(
+          (el) => (el as HTMLElement).style.height,
+        );
+        expect(heights).toEqual(['50%', '100%']);
+      });
     });
   });
 });

@@ -12,7 +12,7 @@ import {
   setActiveProvider,
   toggleProvider,
 } from '../provider-settings-slice';
-import { persistProviderSettingsWorker, providerSettingsSaga } from './provider-settings-saga';
+import { providerSettingsSaga } from './provider-settings-saga';
 
 const settle = async () => {
   await Promise.resolve();
@@ -67,13 +67,17 @@ describe('providerSettingsSaga', () => {
   });
 
   it('skips enabled persistence when the catalog says the reducer mutation is a no-op', async () => {
-    await runSaga(
-      { dispatch: vi.fn(), getState: () => state(false) },
-      persistProviderSettingsWorker,
-      toggleProvider('codex'),
-    ).toPromise();
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => state(false) },
+      providerSettingsSaga,
+    );
+    channel.put(toggleProvider('codex'));
+    await settle();
 
     expect(mocks.setProviderSettings.mock.calls).toEqual([]);
+    task.cancel();
+    await task.toPromise();
   });
 
   it('does not echo provider hydration actions', async () => {
@@ -83,6 +87,29 @@ describe('providerSettingsSaga', () => {
     await settle();
 
     expect(mocks.setProviderSettings.mock.calls).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('continues the serialized queue after a persistence rejection', async () => {
+    mocks.setProviderSettings
+      .mockRejectedValueOnce(new Error('settings unavailable'))
+      .mockResolvedValueOnce({ success: true });
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => state() },
+      providerSettingsSaga,
+    );
+
+    channel.put(setActiveProvider('codex'));
+    await settle();
+    channel.put(toggleProvider('codex'));
+    await settle();
+
+    expect(mocks.setProviderSettings.mock.calls).toEqual([
+      [{ activeProviderId: 'codex' }],
+      [{ enabledProviders: { codex: true } }],
+    ]);
     task.cancel();
     await task.toPromise();
   });

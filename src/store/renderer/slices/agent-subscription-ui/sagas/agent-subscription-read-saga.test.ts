@@ -23,23 +23,27 @@ const AGENT = 'agent-parent';
 const CHILD = 'agent-child';
 const empty = () => ({ subscriptions: [], delegationGroups: [], agentStatuses: {} });
 const active = () => ({
-  subscriptions: [{
-    id: 'watch-1',
-    agentId: AGENT,
-    eventTypes: ['agent:idle'],
-    actorIds: [CHILD],
-    createdAt: '2026-01-01T00:00:00.000Z',
-    description: 'Waiting',
-  }],
-  delegationGroups: [{
-    groupId: 'group-1',
-    parentAgentId: AGENT,
-    awaitMode: 'all',
-    expectedAgentIds: [CHILD],
-    completedAgentIds: [],
-    deletedAgentIds: [],
-    delivered: false,
-  }],
+  subscriptions: [
+    {
+      id: 'watch-1',
+      agentId: AGENT,
+      eventTypes: ['agent:idle'],
+      actorIds: [CHILD],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      description: 'Waiting',
+    },
+  ],
+  delegationGroups: [
+    {
+      groupId: 'group-1',
+      parentAgentId: AGENT,
+      awaitMode: 'all',
+      expectedAgentIds: [CHILD],
+      completedAgentIds: [],
+      deletedAgentIds: [],
+      delivered: false,
+    },
+  ],
   agentStatuses: { [AGENT]: 'waiting', [CHILD]: 'responding' },
 });
 const settle = async () => {
@@ -51,7 +55,9 @@ const settle = async () => {
 function harness(seed = initialState) {
   const channel = stdChannel();
   let state = seed;
-  const dispatch = vi.fn((action) => { state = agentSubscriptionUIReducer(state, action); });
+  const dispatch = vi.fn((action) => {
+    state = agentSubscriptionUIReducer(state, action);
+  });
   const task = runSaga(
     { channel, dispatch, getState: () => ({ agentSubscriptionUI: state }) },
     agentSubscriptionReadSaga,
@@ -76,47 +82,62 @@ describe('agentSubscriptionReadSaga', () => {
       agentId: AGENT,
     });
     expect(run.state().entries[makeKey(WS, AGENT)]).toEqual({
-      subscriptions: [{
-        id: 'watch-1',
-        agentId: AGENT,
-        eventTypes: ['agent:idle'],
-        actorIds: [CHILD],
-        createdAt: '2026-01-01T00:00:00.000Z',
-        description: 'Waiting',
-      }],
+      subscriptions: [
+        {
+          id: 'watch-1',
+          agentId: AGENT,
+          eventTypes: ['agent:idle'],
+          actorIds: [CHILD],
+          createdAt: '2026-01-01T00:00:00.000Z',
+          description: 'Waiting',
+        },
+      ],
       waitingState: 'waiting',
       agentStatuses: { [AGENT]: 'waiting', [CHILD]: 'responding' },
-      delegationGroups: [{
-        groupId: 'group-1',
-        awaitMode: 'all',
-        expectedAgentIds: [CHILD],
-        completedAgentIds: [],
-        deletedAgentIds: [],
-        agentStatuses: { [CHILD]: 'responding' },
-        delivered: false,
-      }],
+      delegationGroups: [
+        {
+          groupId: 'group-1',
+          awaitMode: 'all',
+          expectedAgentIds: [CHILD],
+          completedAgentIds: [],
+          deletedAgentIds: [],
+          agentStatuses: { [CHILD]: 'responding' },
+          delivered: false,
+        },
+      ],
       wokenUpInfo: null,
     });
     run.task.cancel();
     await run.task.toPromise();
   });
 
-  it('coalesces duplicate fetches and refreshes every tracked workspace entry', async () => {
+  it('globally suppresses a different direct fetch and refreshes every tracked entry', async () => {
     let resolve!: (value: ReturnType<typeof active>) => void;
-    mocks.request.mockReturnValue(new Promise((done) => { resolve = done; }));
+    mocks.request.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
     const seeded = agentSubscriptionUIReducer(
       initialState,
       setSubscriptionSnapshot(WS, AGENT, {
-        subscriptions: [], delegationGroups: [], agentStatuses: {}, waitingState: 'idle',
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'idle',
       }),
     );
     const run = harness(seeded);
     run.channel.put(requestSubscriptionFetch(WS, AGENT));
-    run.channel.put(refreshWorkspaceSubscriptionEntriesRequested(WS));
+    run.channel.put(requestSubscriptionFetch('ws-other', 'agent-other'));
     await settle();
     expect(mocks.request).toHaveBeenCalledTimes(1);
     resolve(active());
     await settle();
+    mocks.request.mockResolvedValue(active());
+    run.channel.put(refreshWorkspaceSubscriptionEntriesRequested(WS));
+    await settle();
+    expect(mocks.request).toHaveBeenCalledTimes(2);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -126,7 +147,10 @@ describe('agentSubscriptionReadSaga', () => {
     const seeded = agentSubscriptionUIReducer(
       initialState,
       setSubscriptionSnapshot(WS, AGENT, {
-        subscriptions: [], delegationGroups: [], agentStatuses: {}, waitingState: 'waiting',
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'waiting',
       }),
     );
     const run = harness(seeded);
@@ -144,7 +168,10 @@ describe('agentSubscriptionReadSaga', () => {
     const seeded = agentSubscriptionUIReducer(
       initialState,
       setSubscriptionSnapshot(WS, AGENT, {
-        subscriptions: [], delegationGroups: [], agentStatuses: {}, waitingState: 'waiting',
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'waiting',
       }),
     );
     const run = harness(seeded);
@@ -160,11 +187,18 @@ describe('agentSubscriptionReadSaga', () => {
 
   it('cancels late reads and deletes tracked entries on workspace deletion', async () => {
     let resolve!: (value: ReturnType<typeof active>) => void;
-    mocks.request.mockReturnValue(new Promise((done) => { resolve = done; }));
+    mocks.request.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
     const seeded = agentSubscriptionUIReducer(
       initialState,
       setSubscriptionSnapshot(WS, AGENT, {
-        subscriptions: [], delegationGroups: [], agentStatuses: {}, waitingState: 'idle',
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'idle',
       }),
     );
     const run = harness(seeded);

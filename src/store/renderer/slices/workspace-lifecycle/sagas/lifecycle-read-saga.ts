@@ -1,6 +1,5 @@
-import type { Task } from 'redux-saga';
 import type { SagaGenerator } from 'typed-redux-saga';
-import { all, call, cancel, fork, put, take } from 'typed-redux-saga';
+import { all, call, put, race, take, takeEvery, takeLatest, takeLeading } from 'typed-redux-saga';
 
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { reconcileGitStatusChanges } from '$features/file-tracking/git-status-reconciliation';
@@ -85,86 +84,11 @@ const logger = createLogger('LifecycleReadSaga');
  */
 const PR_STATUS_REFRESH_TTL_MS = 60_000;
 
-const triggers = [
-  loadWorkspacesRequested,
-  ensureWorkspaceTasksLoaded,
-  loadWorkspaceTasksRequested,
-  loadEventsRequested,
-  fetchWorkspaceTokenUsage,
-  initContextForWorkspace,
-  hydrateTaskAgentAssociationsRequested,
-  loadSkillsRequested,
-  refreshScripts,
-  refreshPRStatusRequested,
-  refreshRequested,
-  loadWorkspaceDataRequested,
-  loadOlderCommitsRequested,
-  requestAgentLineStats,
-  hydrateAgentsRequested,
-  hydrateTerminalsRequested,
-  workspaceDeleted,
-  workspaceUnmounted,
-];
-
-type LifecycleAction = ReturnType<(typeof triggers)[number]>;
-type ReadDescriptor = { key: string; workspaceId?: string };
-type RunningRead = ReadDescriptor & {
-  task?: Task;
-  token: symbol;
-  trailingAction?: LifecycleAction;
-};
-
-/**
- * Read keys whose triggers are daemon-event-driven and therefore must be
- * single-flight *with* trailing coalesce: an event arriving while the read is
- * in flight collapses into exactly one follow-up read once it settles, rather
- * than being dropped (the in-flight response can predate the change).
- * `agents:` is included so a lifecycle edge arriving while an agents.list
- * hydrate is in flight (e.g. crash-recovery redrive right after a failure,
- * monorepo#1815) always schedules one trailing re-read instead of leaving the
- * stale in-flight snapshot as the last word.
- */
-const TRAILING_COALESCE_PREFIXES = ['changes:', 'tasks:', 'agents:'];
-
-function tupleString(action: { payload?: unknown }): string | undefined {
-  const value = Array.isArray(action.payload) ? action.payload[0] : undefined;
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-function descriptorFor(action: LifecycleAction): ReadDescriptor | undefined {
-  if (action.type === loadWorkspacesRequested.type) return { key: 'workspaces' };
-  if (action.type === loadOlderCommitsRequested.type) {
-    const workspaceId = (action.payload as { wsId?: unknown }).wsId;
-    return typeof workspaceId === 'string' && workspaceId.length > 0
-      ? { key: `olderCommits:${workspaceId}`, workspaceId }
-      : undefined;
-  }
-  if (action.type === requestAgentLineStats.type) {
-    const agentId = (action.payload as { agentId?: unknown }).agentId;
-    return typeof agentId === 'string' && agentId.length > 0
-      ? { key: `agentLineStats:${agentId}` }
-      : undefined;
-  }
-
-  const workspaceId = tupleString(action);
-  if (!workspaceId) return undefined;
-  if (
-    action.type === ensureWorkspaceTasksLoaded.type ||
-    action.type === loadWorkspaceTasksRequested.type
-  ) return { key: `tasks:${workspaceId}`, workspaceId };
-  if (action.type === loadEventsRequested.type) return { key: `events:${workspaceId}`, workspaceId };
-  if (action.type === fetchWorkspaceTokenUsage.type) return { key: `tokenUsage:${workspaceId}`, workspaceId };
-  if (action.type === initContextForWorkspace.type) return { key: `context:${workspaceId}`, workspaceId };
-  if (action.type === hydrateTaskAgentAssociationsRequested.type) return { key: `taskAgentLinks:${workspaceId}`, workspaceId };
-  if (action.type === loadSkillsRequested.type) return { key: `skills:${workspaceId}`, workspaceId };
-  if (action.type === refreshScripts.type) return { key: `scripts:${workspaceId}`, workspaceId };
-  if (action.type === refreshPRStatusRequested.type) return { key: `prStatus:${workspaceId}`, workspaceId };
-  if (action.type === refreshRequested.type || action.type === loadWorkspaceDataRequested.type) {
-    return { key: `changes:${workspaceId}`, workspaceId };
-  }
-  if (action.type === hydrateAgentsRequested.type) return { key: `agents:${workspaceId}`, workspaceId };
-  if (action.type === hydrateTerminalsRequested.type) return { key: `terminals:${workspaceId}`, workspaceId };
-  return undefined;
+function matchesWorkspaceCleanup(workspaceId: string) {
+  return (action: { type: string; payload?: unknown }) =>
+    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === workspaceId;
 }
 
 function* refreshWorkspaces(): SagaGenerator<void> {
@@ -174,9 +98,10 @@ function* refreshWorkspaces(): SagaGenerator<void> {
   );
   yield* put(replaceWorkspaceList(workspaces));
   yield* put(setWorkspaceHasLoaded(true));
-  const recentViews: Awaited<ReturnType<typeof appClient.workspaces.recentViews>> = yield* call(
-    [appClient.workspaces, appClient.workspaces.recentViews],
-  );
+  const recentViews: Awaited<ReturnType<typeof appClient.workspaces.recentViews>> = yield* call([
+    appClient.workspaces,
+    appClient.workspaces.recentViews,
+  ]);
   yield* put(loadRecencyData({ lastViewedAt: recentViews }));
 }
 
@@ -281,19 +206,23 @@ function* refreshAgentStats(agentId: string, forceRefresh: boolean): SagaGenerat
       agentId,
     );
     if (metrics) {
-      yield* put(updateAgentStats(agentId, {
-        additions: metrics.additions,
-        deletions: metrics.deletions,
-        timestamp: new Date().toISOString(),
-      }));
+      yield* put(
+        updateAgentStats(agentId, {
+          additions: metrics.additions,
+          deletions: metrics.deletions,
+          timestamp: new Date().toISOString(),
+        }),
+      );
     }
     yield* put(agentLineStatsRequestSucceeded(agentId, new Date().toISOString()));
   } catch (error) {
-    yield* put(agentLineStatsRequestFailed(
-      agentId,
-      error instanceof Error ? error.message : String(error),
-      new Date().toISOString(),
-    ));
+    yield* put(
+      agentLineStatsRequestFailed(
+        agentId,
+        error instanceof Error ? error.message : String(error),
+        new Date().toISOString(),
+      ),
+    );
   }
 }
 
@@ -329,138 +258,206 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   yield* put(setActiveAgentId(workspaceId, String(firstForeground.id)));
 }
 
-function* lifecycleReadWorker(
-  action: LifecycleAction,
-  initializedContexts: Set<string>,
-): SagaGenerator<void> {
-  if (action.type === loadWorkspacesRequested.type) return yield* call(refreshWorkspaces);
-  if (action.type === requestAgentLineStats.type) {
-    const { agentId, forceRefresh } = action.payload as { agentId: string; forceRefresh: boolean };
-    return yield* call(refreshAgentStats, agentId, forceRefresh);
-  }
-  if (action.type === loadOlderCommitsRequested.type) {
-    return yield* call(refreshOlderCommits, (action.payload as { wsId: string }).wsId);
-  }
+type WorkspaceRead = (workspaceId: string) => SagaGenerator<void>;
 
-  const workspaceId = tupleString(action);
+function* runWorkspaceRead(key: string, workspaceId: string, worker: WorkspaceRead) {
   if (!workspaceId) return;
-  if (action.type === ensureWorkspaceTasksLoaded.type) return yield* call(refreshTasks, workspaceId, true);
-  if (action.type === loadWorkspaceTasksRequested.type) return yield* call(refreshTasks, workspaceId, false);
-  if (action.type === loadEventsRequested.type) {
-    const events: Awaited<ReturnType<typeof appClient.events.list>> = yield* call(
-      [appClient.events, appClient.events.list], workspaceId,
-    );
-    yield* put(eventsLoaded(workspaceId, events));
-    return;
-  }
-  if (action.type === fetchWorkspaceTokenUsage.type) return yield* call(refreshTokenUsage, workspaceId);
-  if (action.type === initContextForWorkspace.type) {
-    const items: Awaited<ReturnType<typeof appClient.workspaces.getContext>> = yield* call(
-      [appClient.workspaces, appClient.workspaces.getContext], workspaceId,
-    );
-    yield* put(hydrateContextItems(workspaceId, Array.isArray(items) ? items : []));
-    initializedContexts.add(workspaceId);
-    return;
-  }
-  if (action.type === hydrateTaskAgentAssociationsRequested.type) {
-    const byNoteId: Awaited<ReturnType<typeof appClient.tasks.listAgentLinks>> = yield* call(
-      [appClient.tasks, appClient.tasks.listAgentLinks], workspaceId,
-    );
-    yield* put(hydrateTaskAgentAssociations(workspaceId, byNoteId));
-    return;
-  }
-  if (action.type === loadSkillsRequested.type) {
-    const skills: Awaited<ReturnType<typeof appClient.skills.list>> = yield* call(
-      [appClient.skills, appClient.skills.list], workspaceId,
-    );
-    yield* put(setSkills(workspaceId, skills));
-    return;
-  }
-  if (action.type === refreshScripts.type) {
-    const scripts: Awaited<ReturnType<typeof appClient.scripts.list>> = yield* call(
-      [appClient.scripts, appClient.scripts.list], workspaceId,
-    );
-    yield* put(setScriptsData(workspaceId, scripts));
-    yield* put(setScriptsInitialized(workspaceId, true));
-    return;
-  }
-  if (action.type === refreshPRStatusRequested.type) {
-    const [, force] = action.payload as [string, boolean, boolean];
-    return yield* call(refreshPrStatus, workspaceId, force);
-  }
-  if (action.type === refreshRequested.type || action.type === loadWorkspaceDataRequested.type) {
-    return yield* call(refreshChanges, workspaceId);
-  }
-  if (action.type === hydrateAgentsRequested.type) return yield* call(hydrateAgents, workspaceId);
-  if (action.type === hydrateTerminalsRequested.type) {
-		const result: Awaited<ReturnType<typeof appClient.terminals.list>> = yield* call(
-      [appClient.terminals, appClient.terminals.list], workspaceId,
-    );
-      yield* put(
-        Array.isArray(result)
-          ? loadWorkspaceTerminals(workspaceId, result)
-          : loadWorkspaceTerminals(workspaceId, result.terminals, null, result.daemonBootId),
-      );
+  try {
+    yield* race({
+      read: call(worker, workspaceId),
+      cleanup: take(matchesWorkspaceCleanup(workspaceId)),
+    });
+  } catch (error) {
+    logger.error(`Refresh failed for ${key}:${workspaceId}`, error);
   }
 }
 
+function* refreshEvents(workspaceId: string): SagaGenerator<void> {
+  const events: Awaited<ReturnType<typeof appClient.events.list>> = yield* call(
+    [appClient.events, appClient.events.list],
+    workspaceId,
+  );
+  yield* put(eventsLoaded(workspaceId, events));
+}
+
+function* refreshTaskAgentLinks(workspaceId: string): SagaGenerator<void> {
+  const byNoteId: Awaited<ReturnType<typeof appClient.tasks.listAgentLinks>> = yield* call(
+    [appClient.tasks, appClient.tasks.listAgentLinks],
+    workspaceId,
+  );
+  yield* put(hydrateTaskAgentAssociations(workspaceId, byNoteId));
+}
+
+function* refreshSkills(workspaceId: string): SagaGenerator<void> {
+  const skills: Awaited<ReturnType<typeof appClient.skills.list>> = yield* call(
+    [appClient.skills, appClient.skills.list],
+    workspaceId,
+  );
+  yield* put(setSkills(workspaceId, skills));
+}
+
+function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
+  const scripts: Awaited<ReturnType<typeof appClient.scripts.list>> = yield* call(
+    [appClient.scripts, appClient.scripts.list],
+    workspaceId,
+  );
+  yield* put(setScriptsData(workspaceId, scripts));
+  yield* put(setScriptsInitialized(workspaceId, true));
+}
+
+function* refreshTerminals(workspaceId: string): SagaGenerator<void> {
+  const result: Awaited<ReturnType<typeof appClient.terminals.list>> = yield* call(
+    [appClient.terminals, appClient.terminals.list],
+    workspaceId,
+  );
+  yield* put(
+    Array.isArray(result)
+      ? loadWorkspaceTerminals(workspaceId, result)
+      : loadWorkspaceTerminals(workspaceId, result.terminals, null, result.daemonBootId),
+  );
+}
+
+function* loadWorkspacesWorker() {
+  try {
+    yield* refreshWorkspaces();
+  } catch (error) {
+    logger.error('Refresh failed for workspaces', error);
+  }
+}
+
+function* ensureTasksWorker(action: ReturnType<typeof ensureWorkspaceTasksLoaded>) {
+  const [workspaceId] = action.payload;
+  yield* runWorkspaceRead('tasks', workspaceId, function* (id) {
+    yield* refreshTasks(id, true);
+  });
+}
+
+function* loadTasksWorker(action: ReturnType<typeof loadWorkspaceTasksRequested>) {
+  const [workspaceId] = action.payload;
+  yield* runWorkspaceRead('tasks', workspaceId, function* (id) {
+    yield* refreshTasks(id, false);
+  });
+}
+
+function* eventsWorker(action: ReturnType<typeof loadEventsRequested>) {
+  yield* runWorkspaceRead('events', action.payload[0], refreshEvents);
+}
+
+function* tokenUsageWorker(action: ReturnType<typeof fetchWorkspaceTokenUsage>) {
+  yield* runWorkspaceRead('tokenUsage', action.payload[0], refreshTokenUsage);
+}
+
+function* taskAgentLinksWorker(action: ReturnType<typeof hydrateTaskAgentAssociationsRequested>) {
+  yield* runWorkspaceRead('taskAgentLinks', action.payload[0], refreshTaskAgentLinks);
+}
+
+function* skillsWorker(action: ReturnType<typeof loadSkillsRequested>) {
+  yield* runWorkspaceRead('skills', action.payload[0], refreshSkills);
+}
+
+function* scriptsWorker(action: ReturnType<typeof refreshScripts>) {
+  yield* runWorkspaceRead('scripts', action.payload[0], refreshWorkspaceScripts);
+}
+
+function* refreshChangesWorker(action: ReturnType<typeof refreshRequested>) {
+  yield* runWorkspaceRead('changes', action.payload[0], refreshChanges);
+}
+
+function* loadChangesWorker(action: ReturnType<typeof loadWorkspaceDataRequested>) {
+  yield* runWorkspaceRead('changes', action.payload[0], refreshChanges);
+}
+
+function* agentsWorker(action: ReturnType<typeof hydrateAgentsRequested>) {
+  yield* runWorkspaceRead('agents', action.payload[0], hydrateAgents);
+}
+
+function* terminalsWorker(action: ReturnType<typeof hydrateTerminalsRequested>) {
+  yield* runWorkspaceRead('terminals', action.payload[0], refreshTerminals);
+}
+
+function* prStatusWorker(action: ReturnType<typeof refreshPRStatusRequested>) {
+  const [workspaceId, force] = action.payload;
+  if (!workspaceId) return;
+  try {
+    yield* race({
+      read: call(refreshPrStatus, workspaceId, force),
+      cleanup: take(matchesWorkspaceCleanup(workspaceId)),
+    });
+  } catch (error) {
+    logger.error(`Refresh failed for prStatus:${workspaceId}`, error);
+  }
+}
+
+function* olderCommitsWorker(action: ReturnType<typeof loadOlderCommitsRequested>) {
+  yield* runWorkspaceRead('olderCommits', action.payload.wsId, refreshOlderCommits);
+}
+
+function* agentLineStatsWorker(action: ReturnType<typeof requestAgentLineStats>) {
+  const { agentId, forceRefresh } = action.payload;
+  if (agentId) yield* refreshAgentStats(agentId, forceRefresh);
+}
+
+function* contextWorker(
+  initializedContexts: Set<string>,
+  action: ReturnType<typeof initContextForWorkspace>,
+) {
+  const [workspaceId] = action.payload;
+  if (!workspaceId || initializedContexts.has(workspaceId)) return;
+  try {
+    yield* race({
+      read: call(function* () {
+        const items: Awaited<ReturnType<typeof appClient.workspaces.getContext>> = yield* call(
+          [appClient.workspaces, appClient.workspaces.getContext],
+          workspaceId,
+        );
+        yield* put(hydrateContextItems(workspaceId, Array.isArray(items) ? items : []));
+        initializedContexts.add(workspaceId);
+      }),
+      cleanup: take(matchesWorkspaceCleanup(workspaceId)),
+    });
+  } catch (error) {
+    logger.error(`Refresh failed for context:${workspaceId}`, error);
+  }
+}
+
+function* clearDeletedInitializedContext(
+  initializedContexts: Set<string>,
+  action: ReturnType<typeof workspaceDeleted>,
+) {
+  initializedContexts.delete(action.payload[0]);
+}
+
+function* clearUnmountedInitializedContext(
+  initializedContexts: Set<string>,
+  action: ReturnType<typeof workspaceUnmounted>,
+) {
+  initializedContexts.delete(action.payload[0]);
+}
+
 export function* lifecycleReadSaga(): SagaGenerator<void> {
-  const running = new Map<string, RunningRead>();
   const initializedContexts = new Set<string>();
   try {
-    while (true) {
-      const action: LifecycleAction = yield* take(triggers);
-      if (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) {
-        const workspaceId = tupleString(action);
-        if (!workspaceId) continue;
-        initializedContexts.delete(workspaceId);
-        for (const [key, read] of running) {
-          if (read.workspaceId !== workspaceId) continue;
-          running.delete(key);
-          if (read.task) yield* cancel(read.task);
-        }
-        continue;
-      }
-
-      const descriptor = descriptorFor(action);
-      if (!descriptor) continue;
-      const activeRead = running.get(descriptor.key);
-      if (activeRead) {
-        if (TRAILING_COALESCE_PREFIXES.some((prefix) => descriptor.key.startsWith(prefix))) {
-          activeRead.trailingAction = action;
-        }
-        continue;
-      }
-      if (descriptor.key.startsWith('context:') && initializedContexts.has(descriptor.workspaceId ?? '')) {
-        continue;
-      }
-      const token = Symbol(descriptor.key);
-      running.set(descriptor.key, { ...descriptor, token });
-      const task = yield* fork(function* () {
-        try {
-          let nextAction: LifecycleAction | undefined = action;
-          while (nextAction) {
-            try {
-              yield* call(lifecycleReadWorker, nextAction, initializedContexts);
-            } catch (error) {
-              logger.error(`Refresh failed for ${descriptor.key}`, error);
-            }
-            const active = running.get(descriptor.key);
-            if (!active || active.token !== token) break;
-            nextAction = active.trailingAction;
-            active.trailingAction = undefined;
-          }
-        } finally {
-          if (running.get(descriptor.key)?.token === token) running.delete(descriptor.key);
-        }
-      });
-      if (running.get(descriptor.key)?.token === token) {
-        running.set(descriptor.key, { ...descriptor, task, token });
-      }
-    }
+    yield* all([
+      takeLeading(loadWorkspacesRequested, loadWorkspacesWorker),
+      takeLatest(ensureWorkspaceTasksLoaded, ensureTasksWorker),
+      takeLatest(loadWorkspaceTasksRequested, loadTasksWorker),
+      takeLeading(loadEventsRequested, eventsWorker),
+      takeLeading(fetchWorkspaceTokenUsage, tokenUsageWorker),
+      takeLeading(initContextForWorkspace, contextWorker, initializedContexts),
+      takeLeading(hydrateTaskAgentAssociationsRequested, taskAgentLinksWorker),
+      takeLeading(loadSkillsRequested, skillsWorker),
+      takeLeading(refreshScripts, scriptsWorker),
+      takeLeading(refreshPRStatusRequested, prStatusWorker),
+      takeLatest(refreshRequested, refreshChangesWorker),
+      takeLatest(loadWorkspaceDataRequested, loadChangesWorker),
+      takeLeading(loadOlderCommitsRequested, olderCommitsWorker),
+      takeLeading(requestAgentLineStats, agentLineStatsWorker),
+      takeLatest(hydrateAgentsRequested, agentsWorker),
+      takeLeading(hydrateTerminalsRequested, terminalsWorker),
+      takeEvery(workspaceDeleted, clearDeletedInitializedContext, initializedContexts),
+      takeEvery(workspaceUnmounted, clearUnmountedInitializedContext, initializedContexts),
+    ]);
   } finally {
-    for (const read of running.values()) if (read.task) yield* cancel(read.task);
-    running.clear();
     initializedContexts.clear();
   }
 }

@@ -1,5 +1,5 @@
 import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
-import { call, fork, put, take } from 'typed-redux-saga';
+import { all, call, fork, put, take, takeEvery, takeLatest } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import type { SpecialistDef } from '$lib/client/app-client';
@@ -23,13 +23,6 @@ import {
 } from '../specialists-slice';
 
 const logger = createLogger('SpecialistsSaga');
-
-type SpecialistAction = ReturnType<
-  | typeof saveFileSpecialist
-  | typeof deleteFileSpecialist
-  | typeof exportBuiltinToFile
-  | typeof loadFileSpecialists
->;
 
 interface ListContext {
   generation: number;
@@ -134,7 +127,7 @@ function* showMutationError(error: unknown, fallback: string) {
   yield* call([toast, toast.error], errorMessage(error, fallback));
 }
 
-function* handleSave(action: ReturnType<typeof saveFileSpecialist>, context: ListContext) {
+function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpecialist>) {
   const [payload] = action.payload;
   try {
     const existing = yield* selectGetFileSpecialist.effect(payload.id);
@@ -180,7 +173,7 @@ function* handleSave(action: ReturnType<typeof saveFileSpecialist>, context: Lis
   }
 }
 
-function* handleDelete(action: ReturnType<typeof deleteFileSpecialist>, context: ListContext) {
+function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFileSpecialist>) {
   const [ref] = action.payload;
   try {
     yield* call(
@@ -196,7 +189,7 @@ function* handleDelete(action: ReturnType<typeof deleteFileSpecialist>, context:
   }
 }
 
-function* handleExport(action: ReturnType<typeof exportBuiltinToFile>, context: ListContext) {
+function* handleExport(context: ListContext, action: ReturnType<typeof exportBuiltinToFile>) {
   const [id] = action.payload;
   try {
     const bundledSpecialists = yield* selectBundledSpecialists.effect();
@@ -231,27 +224,8 @@ function* handleExport(action: ReturnType<typeof exportBuiltinToFile>, context: 
   }
 }
 
-function* handleAction(action: SpecialistAction, context: ListContext) {
-  switch (action.type) {
-    case saveFileSpecialist.type:
-      yield* call(handleSave, action as ReturnType<typeof saveFileSpecialist>, context);
-      break;
-    case deleteFileSpecialist.type:
-      yield* call(handleDelete, action as ReturnType<typeof deleteFileSpecialist>, context);
-      break;
-    case exportBuiltinToFile.type:
-      yield* call(handleExport, action as ReturnType<typeof exportBuiltinToFile>, context);
-      break;
-    case loadFileSpecialists.type:
-      yield* call(refetchSpecialists, context);
-      break;
-  }
-}
-
-function actionKey(action: SpecialistAction): string {
-  if (action.type === loadFileSpecialists.type) return '$list';
-  const [payload] = action.payload as [{ id: string } | string];
-  return typeof payload === 'string' ? payload : payload.id;
+function* handleLoad(context: ListContext, _action: ReturnType<typeof loadFileSpecialists>) {
+  yield* call(refetchSpecialists, context);
 }
 
 export function createSpecialistsChannel(): EventChannel<SpecialistDef[]> {
@@ -277,37 +251,11 @@ function* watchSpecialistsSubscription(context: ListContext) {
 
 export function* specialistsSaga() {
   const context: ListContext = { generation: 0 };
-  const queues = new Map<string, SpecialistAction[]>();
-  const running = new Set<string>();
   yield* fork(watchSpecialistsSubscription, context);
-  try {
-    while (true) {
-      const action: SpecialistAction = yield* take([
-        saveFileSpecialist,
-        deleteFileSpecialist,
-        exportBuiltinToFile,
-        loadFileSpecialists,
-      ]);
-      const key = actionKey(action);
-      const queue = queues.get(key) ?? [];
-      queue.push(action);
-      queues.set(key, queue);
-      if (running.has(key)) continue;
-      running.add(key);
-      yield* fork(function* () {
-        try {
-          while (queue.length > 0) {
-            const next = queue.shift();
-            if (next) yield* call(handleAction, next, context);
-          }
-        } finally {
-          running.delete(key);
-          queues.delete(key);
-        }
-      });
-    }
-  } finally {
-    queues.clear();
-    running.clear();
-  }
+  yield* all([
+    takeEvery(saveFileSpecialist, handleSave, context),
+    takeEvery(deleteFileSpecialist, handleDelete, context),
+    takeEvery(exportBuiltinToFile, handleExport, context),
+    takeLatest(loadFileSpecialists, handleLoad, context),
+  ]);
 }

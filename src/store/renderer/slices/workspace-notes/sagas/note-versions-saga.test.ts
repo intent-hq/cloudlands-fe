@@ -84,6 +84,35 @@ describe('noteVersionsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('uses global latest fetch semantics across note and workspace payload keys', async () => {
+    let resolveFirst!: (versions: NoteVersion[]) => void;
+    const latest = [version(2)];
+    const listVersions = vi
+      .spyOn(appClient.notes, 'listVersions')
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          resolveFirst = done;
+        }),
+      )
+      .mockResolvedValueOnce(latest);
+    const run = harness();
+
+    run.channel.put(fetchNoteVersions(WS, 'note-stale'));
+    await settle();
+    run.channel.put(fetchNoteVersions('ws-latest', 'note-latest'));
+    await settle();
+    resolveFirst([version(1)]);
+    await settle();
+
+    expect(listVersions.mock.calls).toEqual([
+      [WS, 'note-stale'],
+      ['ws-latest', 'note-latest'],
+    ]);
+    expect(run.actions).toEqual([applyNoteVersions('ws-latest', 'note-latest', latest)]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('maps a thrown fetch to the workspace error action', async () => {
     vi.spyOn(appClient.notes, 'listVersions').mockRejectedValue(new Error('offline'));
     const run = harness();

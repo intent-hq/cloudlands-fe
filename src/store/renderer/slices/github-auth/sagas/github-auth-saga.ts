@@ -1,15 +1,15 @@
-import type { Task } from 'redux-saga';
 import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
 import type { GitHubDeviceFlow, GitHubUser } from '$features/github-auth/types';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
   call,
-  cancel,
   delay,
-  fork,
   put,
+  race,
   take,
+  takeEvery,
+  takeLatest,
   type SagaGenerator,
 } from 'typed-redux-saga';
 
@@ -35,7 +35,6 @@ import {
 const logger = createLogger('GitHubAuthSaga');
 export const AUTH_POLL_INTERVAL_MS = 5_000;
 export const AUTH_POLL_TIMEOUT_MS = 900_000;
-type PollSlot = { task?: Task; token?: symbol };
 
 function validPendingFlow(value: GitHubDeviceFlow | null | undefined): value is GitHubDeviceFlow {
   return value?.status === 'pending' && Boolean(value.userCode) && Boolean(value.verificationUri)
@@ -80,31 +79,21 @@ function* pollForCompletion(intervalMs: number): SagaGenerator<void> {
   }
 }
 
-function* cancelPoll(slot: PollSlot): SagaGenerator<void> {
-  const task = slot.task;
-  slot.task = undefined;
-  slot.token = undefined;
-  if (task) yield* cancel(task);
-}
-
-function* startPoll(slot: PollSlot, intervalMs: number): SagaGenerator<void> {
-  yield* call(cancelPoll, slot);
-  const token = Symbol('github-auth-poll');
-  slot.token = token;
-  const task = yield* fork(function* () {
-    try {
-      yield* call(pollForCompletion, intervalMs);
-    } finally {
-      if (slot.token === token) {
-        slot.task = undefined;
-        slot.token = undefined;
-      }
-    }
+function* pollDeviceFlowWorker(
+  action: ReturnType<typeof setDeviceFlowInfo>,
+): SagaGenerator<void> {
+  const [flow] = action.payload;
+  if (flow === null) return;
+  yield* race({
+    completed: call(
+      pollForCompletion,
+      Math.max(flow.interval * 1_000, AUTH_POLL_INTERVAL_MS),
+    ),
+    cancelled: take([cancelGitHubAuth, logoutGitHub, githubAuthChanged]),
   });
-  if (slot.token === token) slot.task = task;
 }
 
-function* initialize(slot: PollSlot): SagaGenerator<void> {
+function* initialize(): SagaGenerator<void> {
   try {
     const state: Awaited<ReturnType<typeof githubAuthClient.getAuthState>> = yield* call(
       [githubAuthClient, githubAuthClient.getAuthState],
@@ -124,16 +113,10 @@ function* initialize(slot: PollSlot): SagaGenerator<void> {
         expiresIn: state.deviceFlow.expiresIn,
         interval: state.deviceFlow.interval,
       }));
-      yield* call(
-        startPoll,
-        slot,
-        Math.max(state.deviceFlow.interval * 1_000, AUTH_POLL_INTERVAL_MS),
-      );
       return;
     }
     const currentFlow = yield* selectGitHubAuthDeviceFlow.effect();
     if (currentFlow !== null) {
-      yield* call(cancelPoll, slot);
       yield* put(setDeviceFlowInfo(null));
       yield* put(setAuthenticating(false));
     }
@@ -142,7 +125,7 @@ function* initialize(slot: PollSlot): SagaGenerator<void> {
   }
 }
 
-function* start(slot: PollSlot): SagaGenerator<void> {
+function* start(): SagaGenerator<void> {
   yield* put(setAuthenticating(true));
   try {
     const result: Awaited<ReturnType<typeof githubAuthClient.startAuth>> = yield* call(
@@ -164,7 +147,6 @@ function* start(slot: PollSlot): SagaGenerator<void> {
     }
     yield* put(setOAuthInfo(result.oauthUrl ?? null, result.needsScopeUpdate ?? false));
     yield* put(setDeviceFlowInfo({ userCode, verificationUri, expiresIn, interval }));
-    yield* call(startPoll, slot, Math.max(interval * 1_000, AUTH_POLL_INTERVAL_MS));
   } catch (error) {
     const message = error instanceof Error ? error.message : m.githubAuth_service_unknown_error();
     yield* put(setGitHubAuthError(message.includes('Unauthorized channel')
@@ -200,7 +182,6 @@ function* logout(): SagaGenerator<void> {
 }
 
 function* authChanged(
-  slot: PollSlot,
   status: ReturnType<typeof githubAuthChanged>['payload'][0],
 ): SagaGenerator<void> {
   if (status === 'authorized') {
@@ -212,7 +193,7 @@ function* authChanged(
       logger.error('Failed to read GitHub user after authorization', error);
     }
     yield* put(authCompleted(user));
-    if (user === null) yield* call(initialize, slot);
+    if (user === null) yield* call(initialize);
     return;
   }
   if (status === 'revoked') yield* put(logoutCompleted());
@@ -221,50 +202,55 @@ function* authChanged(
   else yield* put(setGitHubAuthError(m.githubAuth_service_failed_error()));
 }
 
-function* handleAuthChanged(slot: PollSlot, action: ReturnType<typeof githubAuthChanged>): SagaGenerator<void> {
-  const [status] = action.payload;
-  yield* call(authChanged, slot, status);
+function* initializeGitHubAuthWorker(
+  _action: ReturnType<typeof initializeGitHubAuth>,
+): SagaGenerator<void> {
+  yield* call(initialize);
 }
 
-function* command(slot: PollSlot, action: { type: string; payload: unknown }): SagaGenerator<void> {
-  if (action.type === initializeGitHubAuth.type || action.type === refreshGitHubAuth.type) {
-    yield* call(initialize, slot);
-  } else if (action.type === startGitHubAuth.type) {
-    yield* call(start, slot);
-  } else if (action.type === checkGitHubAuthStatus.type) {
-    yield* call(checkAuthComplete);
-  } else if (action.type === cancelGitHubAuth.type) {
-    yield* call(cancelAuth);
-  } else if (action.type === logoutGitHub.type) {
-    yield* call(logout);
-  } else {
-    yield* call(handleAuthChanged, slot, action as ReturnType<typeof githubAuthChanged>);
-  }
+function* refreshGitHubAuthWorker(
+  _action: ReturnType<typeof refreshGitHubAuth>,
+): SagaGenerator<void> {
+  yield* call(initialize);
+}
+
+function* startGitHubAuthWorker(
+  _action: ReturnType<typeof startGitHubAuth>,
+): SagaGenerator<void> {
+  yield* call(start);
+}
+
+function* checkGitHubAuthStatusWorker(
+  _action: ReturnType<typeof checkGitHubAuthStatus>,
+): SagaGenerator<void> {
+  yield* call(checkAuthComplete);
+}
+
+function* cancelGitHubAuthWorker(
+  _action: ReturnType<typeof cancelGitHubAuth>,
+): SagaGenerator<void> {
+  yield* call(cancelAuth);
+}
+
+function* logoutGitHubWorker(
+  _action: ReturnType<typeof logoutGitHub>,
+): SagaGenerator<void> {
+  yield* call(logout);
+}
+
+function* githubAuthChangedWorker(
+  action: ReturnType<typeof githubAuthChanged>,
+): SagaGenerator<void> {
+  yield* call(authChanged, action.payload[0]);
 }
 
 export function* githubAuthSaga(): SagaGenerator<void> {
-  const slot: PollSlot = {};
-  try {
-    while (true) {
-      const action: { type: string; payload: unknown } = yield* take([
-        initializeGitHubAuth,
-        refreshGitHubAuth,
-        startGitHubAuth,
-        checkGitHubAuthStatus,
-        cancelGitHubAuth,
-        logoutGitHub,
-        githubAuthChanged,
-      ]);
-      if (
-        action.type === cancelGitHubAuth.type
-        || action.type === logoutGitHub.type
-        || action.type === githubAuthChanged.type
-      ) {
-        yield* call(cancelPoll, slot);
-      }
-      yield* fork(command, slot, action);
-    }
-  } finally {
-    yield* call(cancelPoll, slot);
-  }
+  yield* takeEvery(initializeGitHubAuth, initializeGitHubAuthWorker);
+  yield* takeEvery(refreshGitHubAuth, refreshGitHubAuthWorker);
+  yield* takeEvery(startGitHubAuth, startGitHubAuthWorker);
+  yield* takeEvery(checkGitHubAuthStatus, checkGitHubAuthStatusWorker);
+  yield* takeEvery(cancelGitHubAuth, cancelGitHubAuthWorker);
+  yield* takeEvery(logoutGitHub, logoutGitHubWorker);
+  yield* takeEvery(githubAuthChanged, githubAuthChangedWorker);
+  yield* takeLatest(setDeviceFlowInfo, pollDeviceFlowWorker);
 }
