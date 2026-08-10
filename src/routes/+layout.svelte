@@ -400,22 +400,22 @@
         });
     }
 
-    // Always load workspaces - the Header needs them for tabs regardless of current page
-    const loadData = async () => {
-      // Use requestIdleCallback to load workspaces when browser is idle
-      if (typeof requestIdleCallback !== 'undefined') {
-        requestIdleCallback(() => {
-          appStore.dispatch(loadWorkspacesRequested());
-        });
-      } else {
-        // Fallback to setTimeout for browsers without requestIdleCallback
-        setTimeout(() => {
-          appStore.dispatch(loadWorkspacesRequested());
-        }, 100);
-      }
-    };
-
-    loadData();
+    // Always load workspaces - the Header needs them for tabs regardless of current page.
+    // Capture the deferral handle so cleanup can cancel it: an uncancelled
+    // callback dispatches into a disposed store after unmount (intent-hq/monorepo#1865).
+    let workspacesLoadIdleHandle: number | null = null;
+    let workspacesLoadTimerHandle: ReturnType<typeof setTimeout> | null = null;
+    // Use requestIdleCallback to load workspaces when browser is idle
+    if (typeof requestIdleCallback !== 'undefined') {
+      workspacesLoadIdleHandle = requestIdleCallback(() => {
+        appStore.dispatch(loadWorkspacesRequested());
+      });
+    } else {
+      // Fallback to setTimeout for browsers without requestIdleCallback
+      workspacesLoadTimerHandle = setTimeout(() => {
+        appStore.dispatch(loadWorkspacesRequested());
+      }, 100);
+    }
 
     // Ensure current workspace is set on initial load (direct navigation)
     try {
@@ -785,6 +785,14 @@
       if (cmdHoldTimer) {
         clearTimeout(cmdHoldTimer);
         cmdHoldTimer = null;
+      }
+      if (workspacesLoadIdleHandle !== null && typeof cancelIdleCallback !== 'undefined') {
+        cancelIdleCallback(workspacesLoadIdleHandle);
+        workspacesLoadIdleHandle = null;
+      }
+      if (workspacesLoadTimerHandle !== null) {
+        clearTimeout(workspacesLoadTimerHandle);
+        workspacesLoadTimerHandle = null;
       }
       document.removeEventListener(
         'sveltekit:navigation-error',

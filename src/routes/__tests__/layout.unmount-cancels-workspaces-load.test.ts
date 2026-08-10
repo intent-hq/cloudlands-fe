@@ -1,23 +1,22 @@
 /**
- * Regression test for intent-hq/monorepo#1727: the layout's interrupted-agents
- * resume/abandon handlers must go through `resolveInterruptedAgents()` so the
- * service's cross-window watcher is stopped (pre-#584 behaviour). Mounts the
- * real root `+layout.svelte` with a probe standing in for
- * `InterruptedAgentsModal` that publishes the handler props the layout wires
- * up, stubbing the same heavy children/side effects as the HUD gating suite.
+ * Regression test for intent-hq/monorepo#1865: the root `+layout.svelte`
+ * onMount defers the initial workspaces load via requestIdleCallback
+ * (setTimeout(...,100) fallback under jsdom). The deferral handle must be
+ * cancelled by the onMount cleanup, so unmounting before the callback fires
+ * must NOT dispatch `loadWorkspacesRequested()` into the (disposed) store —
+ * the origin of the onUserConsoleLog teardown flake class (#1774).
+ *
+ * Mounts the real root layout with the same heavy-child/side-effect stubs as
+ * the other layout suites; under jsdom the setTimeout fallback branch is the
+ * one exercised natively, and a stubbed requestIdleCallback/cancelIdleCallback
+ * pair covers the idle-callback branch production Electron runs.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { installConsoleTeardownGuard } from './helpers/console-teardown-guard';
 
-// Guard against layout onMount deferred work logging after the last test and
-// racing worker teardown (intent-hq/monorepo#1774).
 installConsoleTeardownGuard();
-
-const interruptedService = vi.hoisted(() => ({
-  resolveInterruptedAgents: vi.fn(async () => {}),
-}));
 
 vi.mock('$app/navigation', () => ({
   goto: vi.fn(),
@@ -46,13 +45,9 @@ vi.mock('$lib/utils/monaco-workers', () => ({ configureMonacoWorkers: async () =
 vi.mock('$features/agent/interrupted-agents-service', () => ({
   installInterruptedAgentsService: () => () => {},
   notifyInterruptedAgentsModalClosed: () => {},
-  resolveInterruptedAgents: interruptedService.resolveInterruptedAgents,
+  resolveInterruptedAgents: async () => {},
 }));
 vi.mock('$lib/client/live/live-app-client', () => ({ LiveAppClient: class {} }));
-
-vi.mock('$lib/components/modals/InterruptedAgentsModal.svelte', async () => ({
-  default: (await import('./mocks/InterruptedAgentsModalProbe.svelte')).default,
-}));
 
 vi.mock('$lib/components/layout/sidebar-nav', async () => ({
   SidebarNav: (await import('./mocks/Marker.svelte')).default,
@@ -118,6 +113,9 @@ vi.mock('$lib/components/modals/FeatureCodeDialog.svelte', async () => ({
 vi.mock('$lib/components/modals/NewSpaceModal.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
+vi.mock('$lib/components/modals/InterruptedAgentsModal.svelte', async () => ({
+  default: (await import('./mocks/Marker.svelte')).default,
+}));
 vi.mock('$features/navigation/LinkActionMenu.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
@@ -126,54 +124,90 @@ vi.mock('$lib/components/ui/tooltip/LinkTooltip.svelte', async () => ({
 }));
 
 import { store as appStore } from '$store/renderer/store';
+import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
 import Layout from '../+layout.svelte';
 
 const childrenSnippet = createRawSnippet(() => ({
-  render: () => '<div data-testid="interrupted-children">content</div>',
+  render: () => '<div data-testid="unmount-cancel-children">content</div>',
 }));
 
-type ModalProps = {
-  onResumeSelected?: (resumeIds: string[], abandonIds: string[]) => Promise<void> | void;
-  onAbandonAll?: (abandonIds: string[]) => Promise<void> | void;
-};
+/** Past the 100ms setTimeout fallback delay (and any idle deadline). */
+const AFTER_DEFERRAL_MS = 250;
 
-function modalProps(): ModalProps {
-  return (globalThis as Record<string, unknown>).__interruptedAgentsModalProps as ModalProps;
-}
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-describe('+layout.svelte interrupted-agents resolve handlers', () => {
+const loadWorkspacesDispatches = (dispatchSpy: ReturnType<typeof vi.spyOn>) =>
+  dispatchSpy.mock.calls.filter(
+    ([action]) => (action as { type?: string })?.type === loadWorkspacesRequested.type,
+  );
+
+describe('+layout.svelte deferred workspaces load cancellation (intent-hq/monorepo#1865)', () => {
   beforeEach(() => {
     appStore.init();
-    interruptedService.resolveInterruptedAgents.mockClear();
   });
 
   afterEach(() => {
     cleanup();
     appStore.dispose();
-    delete (globalThis as Record<string, unknown>).__interruptedAgentsModalProps;
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
-  it('routes resume-selected through resolveInterruptedAgents (stops the watcher)', async () => {
-    render(Layout, { props: { children: childrenSnippet } });
+  it('does not dispatch loadWorkspacesRequested when unmounted before the deferred callback fires', async () => {
+    const dispatchSpy = vi.spyOn(appStore, 'dispatch');
 
-    await modalProps().onResumeSelected?.(['agent-1'], ['agent-2']);
+    const { unmount } = render(Layout, { props: { children: childrenSnippet } });
+    unmount();
 
-    expect(interruptedService.resolveInterruptedAgents).toHaveBeenCalledWith(
-      expect.anything(),
-      ['agent-1'],
-      ['agent-2'],
-    );
+    await wait(AFTER_DEFERRAL_MS);
+
+    expect(loadWorkspacesDispatches(dispatchSpy)).toHaveLength(0);
   });
 
-  it('routes abandon-all through resolveInterruptedAgents (stops the watcher)', async () => {
+  it('still dispatches loadWorkspacesRequested when the layout stays mounted', async () => {
+    const dispatchSpy = vi.spyOn(appStore, 'dispatch');
+
     render(Layout, { props: { children: childrenSnippet } });
 
-    await modalProps().onAbandonAll?.(['agent-1', 'agent-2']);
+    await wait(AFTER_DEFERRAL_MS);
 
-    expect(interruptedService.resolveInterruptedAgents).toHaveBeenCalledWith(
-      expect.anything(),
-      [],
-      ['agent-1', 'agent-2'],
-    );
+    expect(loadWorkspacesDispatches(dispatchSpy)).toHaveLength(1);
+  });
+
+  it('cancels the requestIdleCallback handle on unmount (production Electron branch)', async () => {
+    // jsdom has no requestIdleCallback, so stub the pair to cover the branch
+    // production Electron actually runs. Back the stubs with real timers so an
+    // uncancelled callback would genuinely fire and fail the assertion.
+    const idleTimers = new Map<number, ReturnType<typeof setTimeout>>();
+    let nextIdleHandle = 1;
+    vi.stubGlobal('requestIdleCallback', (cb: IdleRequestCallback): number => {
+      const handle = nextIdleHandle++;
+      idleTimers.set(
+        handle,
+        setTimeout(() => {
+          idleTimers.delete(handle);
+          cb({ didTimeout: false, timeRemaining: () => 50 } as IdleDeadline);
+        }, 0),
+      );
+      return handle;
+    });
+    const cancelSpy = vi.fn((handle: number) => {
+      const timer = idleTimers.get(handle);
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        idleTimers.delete(handle);
+      }
+    });
+    vi.stubGlobal('cancelIdleCallback', cancelSpy);
+
+    const dispatchSpy = vi.spyOn(appStore, 'dispatch');
+
+    const { unmount } = render(Layout, { props: { children: childrenSnippet } });
+    unmount();
+
+    await wait(AFTER_DEFERRAL_MS);
+
+    expect(cancelSpy).toHaveBeenCalledTimes(1);
+    expect(loadWorkspacesDispatches(dispatchSpy)).toHaveLength(0);
   });
 });

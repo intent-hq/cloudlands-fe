@@ -299,6 +299,131 @@ describe('autoUpdateSaga', () => {
     }
   });
 
+  // intent-hq/monorepo#1857: a manual check started before the saga's
+  // listeners existed loses its show-toast event; init must recover it from
+  // the initial-state snapshot.
+  it('recovers an in-flight check on init: shows the toast and arms the watchdog', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.getState.mockResolvedValue({ ...state('initial'), status: 'checking' });
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ autoUpdate: { status: 'idle' } }) },
+        autoUpdateSaga,
+      );
+      channel.put(initAutoUpdate());
+      await settleFake();
+      expect(dispatch).toHaveBeenCalledWith(showToastChecking());
+      dispatch.mockClear();
+
+      await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS - 1);
+      await settleFake();
+      expect(dispatch).not.toHaveBeenCalledWith(setCheckTimedOut());
+
+      await vi.advanceTimersByTimeAsync(1);
+      await settleFake();
+      expect(dispatch).toHaveBeenCalledWith(setCheckTimedOut());
+
+      task.cancel();
+      await task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels the init-armed watchdog when a terminal status event lands', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.getState.mockResolvedValue({ ...state('initial'), status: 'checking' });
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ autoUpdate: { status: 'idle' } }) },
+        autoUpdateSaga,
+      );
+      channel.put(initAutoUpdate());
+      await settleFake();
+      expect(dispatch).toHaveBeenCalledWith(showToastChecking());
+      dispatch.mockClear();
+
+      mocks.callbacks.status(state('available-event'));
+      await settleFake();
+      await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS);
+      await settleFake();
+      expect(dispatch).not.toHaveBeenCalledWith(setCheckTimedOut());
+
+      task.cancel();
+      await task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('discards a stale checking snapshot when a live event was handled first', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveInitial!: (value: any) => void;
+      mocks.getState.mockReturnValue(
+        new Promise((resolve) => {
+          resolveInitial = resolve;
+        }),
+      );
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ autoUpdate: { status: 'idle' } }) },
+        autoUpdateSaga,
+      );
+      channel.put(initAutoUpdate());
+      await settleFake();
+
+      mocks.callbacks.status(state('available-event'));
+      await settleFake();
+      dispatch.mockClear();
+
+      resolveInitial({ ...state('stale'), status: 'checking' });
+      await settleFake();
+      expect(dispatch).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS);
+      await settleFake();
+      expect(dispatch).not.toHaveBeenCalledWith(setCheckTimedOut());
+
+      task.cancel();
+      await task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not show a toast when the initial state is terminal', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.getState.mockResolvedValue({ ...state('initial'), status: 'not-available' });
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ autoUpdate: { status: 'idle' } }) },
+        autoUpdateSaga,
+      );
+      channel.put(initAutoUpdate());
+      await settleFake();
+      const dispatchedTypes = dispatch.mock.calls.map(([action]) => action.type);
+      expect(dispatchedTypes).not.toContain(showToastChecking.type);
+      expect(dispatchedTypes).not.toContain(showToast.type);
+
+      await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS);
+      await settleFake();
+      expect(dispatch).not.toHaveBeenCalledWith(setCheckTimedOut());
+
+      task.cancel();
+      await task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('re-arms the watchdog on a repeated manual check with no leaked prior timer', async () => {
     vi.useFakeTimers();
     try {
