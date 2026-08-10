@@ -1,12 +1,4 @@
-import {
-  all,
-  call,
-  put,
-  race,
-  take,
-  takeEvery,
-  type SagaGenerator,
-} from 'typed-redux-saga';
+import { all, call, put, race, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';

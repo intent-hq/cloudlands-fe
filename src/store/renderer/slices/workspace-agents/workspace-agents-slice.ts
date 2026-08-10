@@ -342,9 +342,10 @@ export const agentStreamResetStreamingMessagesRequested = createAction<
  * any matching in-flight load. Handled in sagas/agent-read-saga.ts.
  */
 export const ensureAgentSessionLoaded = createAction<[wsId: string, agentId: string]>(
-  'workspaceAgents/ensureAgentSessionLoaded', (...args) => {
+  'workspaceAgents/ensureAgentSessionLoaded',
+  (...args) => {
     return args;
-  }
+  },
 );
 
 export const activateAgentRequested = createAsyncAction<
@@ -359,82 +360,84 @@ export const restoreAgentSessionRequested = createAsyncAction<
 
 export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initialState);
 workspaceAgentsReducer.with(setAgents, (state, { payload: [wsId, agents] }) => {
-    const workspaceState = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, reconcileWorkspaceAgentSnapshot(workspaceState, agents));
-  });
+  const workspaceState = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, reconcileWorkspaceAgentSnapshot(workspaceState, agents));
+});
 workspaceAgentsReducer.with(addAgent, (state, { payload: [wsId, agent] }) => {
-    const workspaceState = getWorkspaceState(state, wsId);
-    const agentId = String(agent.id);
-    const foregroundAgentIds = syncForegroundAgentId(workspaceState.foregroundAgentIds, agent);
-    if (workspaceState.agentIds.includes(agentId)) {
-      if (foregroundAgentIds !== workspaceState.foregroundAgentIds) {
-        return setWorkspaceState(state, wsId, {
-          ...workspaceState,
-          foregroundAgentIds,
-        });
-      }
-      return state;
+  const workspaceState = getWorkspaceState(state, wsId);
+  const agentId = String(agent.id);
+  const foregroundAgentIds = syncForegroundAgentId(workspaceState.foregroundAgentIds, agent);
+  if (workspaceState.agentIds.includes(agentId)) {
+    if (foregroundAgentIds !== workspaceState.foregroundAgentIds) {
+      return setWorkspaceState(state, wsId, {
+        ...workspaceState,
+        foregroundAgentIds,
+      });
     }
-    return setWorkspaceState(state, wsId, {
-      ...workspaceState,
-      agentIds: [...workspaceState.agentIds, agentId],
-      foregroundAgentIds,
-    });
+    return state;
+  }
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    agentIds: [...workspaceState.agentIds, agentId],
+    foregroundAgentIds,
   });
+});
 workspaceAgentsReducer.with(removeAgent, (state, { payload: [wsId, agentId] }) => {
-    const workspaceState = getWorkspaceState(state, wsId);
-    const foregroundAgentIds = removeAgentId(workspaceState.foregroundAgentIds, agentId);
-    if (
-      !workspaceState.agentIds.includes(agentId) &&
-      foregroundAgentIds === workspaceState.foregroundAgentIds
-    ) {
-      return state;
-    }
+  const workspaceState = getWorkspaceState(state, wsId);
+  const foregroundAgentIds = removeAgentId(workspaceState.foregroundAgentIds, agentId);
+  if (
+    !workspaceState.agentIds.includes(agentId) &&
+    foregroundAgentIds === workspaceState.foregroundAgentIds
+  ) {
+    return state;
+  }
 
-    return setWorkspaceState(state, wsId, {
-      ...workspaceState,
-      agentIds: workspaceState.agentIds.filter((id) => id !== agentId),
-      foregroundAgentIds,
-      initialAgentId:
-        workspaceState.initialAgentId === agentId ? null : workspaceState.initialAgentId,
-      recentlyCreatedAgents: workspaceState.recentlyCreatedAgents.filter(
-        (recentAgentId) => recentAgentId !== agentId,
-      ),
-      isWaitingForFirstMessage: omitKey(workspaceState.isWaitingForFirstMessage, agentId),
-    });
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    agentIds: workspaceState.agentIds.filter((id) => id !== agentId),
+    foregroundAgentIds,
+    initialAgentId:
+      workspaceState.initialAgentId === agentId ? null : workspaceState.initialAgentId,
+    recentlyCreatedAgents: workspaceState.recentlyCreatedAgents.filter(
+      (recentAgentId) => recentAgentId !== agentId,
+    ),
+    isWaitingForFirstMessage: omitKey(workspaceState.isWaitingForFirstMessage, agentId),
   });
+});
 workspaceAgentsReducer.with(markAgentRecentlyCreated, (state, { payload: [wsId, agentId] }) => {
-    const workspaceState = getWorkspaceState(state, wsId);
-    if (workspaceState.recentlyCreatedAgents.includes(agentId)) {
-      return state;
-    }
-    return setWorkspaceState(state, wsId, {
-      ...workspaceState,
-      recentlyCreatedAgents: [...workspaceState.recentlyCreatedAgents, agentId],
-    });
+  const workspaceState = getWorkspaceState(state, wsId);
+  if (workspaceState.recentlyCreatedAgents.includes(agentId)) {
+    return state;
+  }
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    recentlyCreatedAgents: [...workspaceState.recentlyCreatedAgents, agentId],
   });
+});
 workspaceAgentsReducer.with(setInitialAgentId, (state, { payload: [wsId, initialAgentId] }) => {
-    const workspaceState = getWorkspaceState(state, wsId);
-    if (workspaceState.initialAgentId === initialAgentId) {
-      return state;
-    }
-    return setWorkspaceState(state, wsId, { ...workspaceState, initialAgentId });
-  });
+  const workspaceState = getWorkspaceState(state, wsId);
+  if (workspaceState.initialAgentId === initialAgentId) {
+    return state;
+  }
+  return setWorkspaceState(state, wsId, { ...workspaceState, initialAgentId });
+});
 workspaceAgentsReducer.with(setAgentsLoaded, (state, { payload: [wsId, agentsLoaded] }) => {
-    const workspaceState = getWorkspaceState(state, wsId);
-    if (workspaceState.agentsLoaded === agentsLoaded) {
-      return state;
-    }
-    return setWorkspaceState(state, wsId, { ...workspaceState, agentsLoaded });
-  });
+  const workspaceState = getWorkspaceState(state, wsId);
+  if (workspaceState.agentsLoaded === agentsLoaded) {
+    return state;
+  }
+  return setWorkspaceState(state, wsId, { ...workspaceState, agentsLoaded });
+});
 workspaceAgentsReducer.with(setIsLoadingAgents, (state, { payload: [wsId, isLoadingAgents] }) => {
-    const workspaceState = getWorkspaceState(state, wsId);
-    if (workspaceState.isLoadingAgents === isLoadingAgents) {
-      return state;
-    }
-    return setWorkspaceState(state, wsId, { ...workspaceState, isLoadingAgents });
-  });
-workspaceAgentsReducer.with(setWaitingForFirstMessage, (state, { payload: [wsId, agentId, waiting] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  if (workspaceState.isLoadingAgents === isLoadingAgents) {
+    return state;
+  }
+  return setWorkspaceState(state, wsId, { ...workspaceState, isLoadingAgents });
+});
+workspaceAgentsReducer.with(
+  setWaitingForFirstMessage,
+  (state, { payload: [wsId, agentId, waiting] }) => {
     const workspaceState = getWorkspaceState(state, wsId);
     const currentWaiting = workspaceState.isWaitingForFirstMessage[agentId] ?? false;
     if (currentWaiting === waiting) {
@@ -450,65 +453,71 @@ workspaceAgentsReducer.with(setWaitingForFirstMessage, (state, { payload: [wsId,
           }
         : omitKey(workspaceState.isWaitingForFirstMessage, agentId),
     });
-  });
-  // --------------------------------------------------------------------------
-  // Unified-state-store migration — session data delegated to agent-session slice
-  // --------------------------------------------------------------------------
+  },
+);
+// --------------------------------------------------------------------------
+// Unified-state-store migration — session data delegated to agent-session slice
+// --------------------------------------------------------------------------
 workspaceAgentsReducer.with(setActiveAgentId, (state, { payload: [wsId, agentId] }) => {
-    const workspaceState = getWorkspaceState(state, wsId);
-    if (workspaceState.activeAgentId === agentId) return state;
-    return setWorkspaceState(state, wsId, { ...workspaceState, activeAgentId: agentId });
-  });
+  const workspaceState = getWorkspaceState(state, wsId);
+  if (workspaceState.activeAgentId === agentId) return state;
+  return setWorkspaceState(state, wsId, { ...workspaceState, activeAgentId: agentId });
+});
 workspaceAgentsReducer.with(upsertSession, (state, { payload: [session] }) => {
-    // Only track the agent ID — session data lives in agent-session slice
-    const wsId = String(session.workspaceId);
-    const workspaceState = getWorkspaceState(state, wsId);
-    const agentId = String(session.id);
-    const foregroundAgentIds = syncForegroundAgentId(workspaceState.foregroundAgentIds, session);
-    const diskMessageCounts =
-      workspaceState.diskMessageCounts[agentId] !== undefined
-        ? workspaceState.diskMessageCounts
-        : { ...workspaceState.diskMessageCounts, [agentId]: session.messages?.length ?? 0 };
-    if (workspaceState.agentIds.includes(agentId)) {
-      if (
-        foregroundAgentIds !== workspaceState.foregroundAgentIds ||
-        diskMessageCounts !== workspaceState.diskMessageCounts
-      ) {
-        return setWorkspaceState(state, wsId, {
-          ...workspaceState,
-          foregroundAgentIds,
-          diskMessageCounts,
-        });
-      }
-      return state;
+  // Only track the agent ID — session data lives in agent-session slice
+  const wsId = String(session.workspaceId);
+  const workspaceState = getWorkspaceState(state, wsId);
+  const agentId = String(session.id);
+  const foregroundAgentIds = syncForegroundAgentId(workspaceState.foregroundAgentIds, session);
+  const diskMessageCounts =
+    workspaceState.diskMessageCounts[agentId] !== undefined
+      ? workspaceState.diskMessageCounts
+      : { ...workspaceState.diskMessageCounts, [agentId]: session.messages?.length ?? 0 };
+  if (workspaceState.agentIds.includes(agentId)) {
+    if (
+      foregroundAgentIds !== workspaceState.foregroundAgentIds ||
+      diskMessageCounts !== workspaceState.diskMessageCounts
+    ) {
+      return setWorkspaceState(state, wsId, {
+        ...workspaceState,
+        foregroundAgentIds,
+        diskMessageCounts,
+      });
     }
-    return setWorkspaceState(state, wsId, {
-      ...workspaceState,
-      agentIds: [...workspaceState.agentIds, agentId],
-      foregroundAgentIds,
-      diskMessageCounts,
-    });
+    return state;
+  }
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    agentIds: [...workspaceState.agentIds, agentId],
+    foregroundAgentIds,
+    diskMessageCounts,
   });
-workspaceAgentsReducer.with(setInitialSpecWriteInProgress, (state, { payload: [wsId, isWriting] }) => {
+});
+workspaceAgentsReducer.with(
+  setInitialSpecWriteInProgress,
+  (state, { payload: [wsId, isWriting] }) => {
     const workspaceState = getWorkspaceState(state, wsId);
     if (workspaceState.isInitialSpecWriteInProgress === isWriting) return state;
     return setWorkspaceState(state, wsId, {
       ...workspaceState,
       isInitialSpecWriteInProgress: isWriting,
     });
-  });
+  },
+);
 workspaceAgentsReducer.with(removeWorkspaceAgentState, (state, { payload: [wsId] }) => {
-    if (!state.byWorkspaceId[wsId]) return state;
-    return { byWorkspaceId: omitKey(state.byWorkspaceId, wsId) };
-  });
+  if (!state.byWorkspaceId[wsId]) return state;
+  return { byWorkspaceId: omitKey(state.byWorkspaceId, wsId) };
+});
 workspaceAgentsReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
-    if (!state.byWorkspaceId[wsId]) return state;
-    return { byWorkspaceId: omitKey(state.byWorkspaceId, wsId) };
-  });
-  // --------------------------------------------------------------------------
-  // AgentService serializable state (6a migration)
-  // --------------------------------------------------------------------------
-workspaceAgentsReducer.with(recordAgentCreatedEvent, (state, { payload: [wsId, agentId, timestamp] }) => {
+  if (!state.byWorkspaceId[wsId]) return state;
+  return { byWorkspaceId: omitKey(state.byWorkspaceId, wsId) };
+});
+// --------------------------------------------------------------------------
+// AgentService serializable state (6a migration)
+// --------------------------------------------------------------------------
+workspaceAgentsReducer.with(
+  recordAgentCreatedEvent,
+  (state, { payload: [wsId, agentId, timestamp] }) => {
     const workspaceState = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, {
       ...workspaceState,
@@ -517,8 +526,11 @@ workspaceAgentsReducer.with(recordAgentCreatedEvent, (state, { payload: [wsId, a
         [agentId]: timestamp,
       },
     });
-  });
-workspaceAgentsReducer.with(cleanupAgentCreatedEvents, (state, { payload: [wsId, cutoffTimestamp] }) => {
+  },
+);
+workspaceAgentsReducer.with(
+  cleanupAgentCreatedEvents,
+  (state, { payload: [wsId, cutoffTimestamp] }) => {
     const workspaceState = getWorkspaceState(state, wsId);
     const filtered: Record<string, number> = {};
     let changed = false;
@@ -534,4 +546,5 @@ workspaceAgentsReducer.with(cleanupAgentCreatedEvents, (state, { payload: [wsId,
       ...workspaceState,
       recentAgentCreatedEvents: filtered,
     });
-  });
+  },
+);
