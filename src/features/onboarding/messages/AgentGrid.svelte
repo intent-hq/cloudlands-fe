@@ -19,6 +19,7 @@
   import { resolveOnboardingSelectedProvider } from '../utils/resolve-onboarding-selected-provider';
   import { isOnboardingProviderVisible } from '../utils/is-onboarding-provider-visible';
   import { orderOnboardingProviders } from '../utils/order-onboarding-providers';
+  import { stableShuffleOrder, type StableShuffleCache } from '../utils/stable-shuffle-order';
 
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -87,16 +88,6 @@
 
   const DEFAULT_BRAND: ProviderBrandColors = { color1: '#555', color2: '#555' };
 
-  /** Fisher-Yates shuffle for provider list randomization */
-  function shuffleArray<T>(array: T[]): T[] {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-  }
-
   /** Short descriptions for each provider */
   const PROVIDER_DESCRIPTIONS: Record<string, string> = {};
 
@@ -160,10 +151,21 @@
   const catalogEntries$ = selectProviderCatalogEntries();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
 
-  /** Randomized provider order — shuffled once when the catalog rows land
-   *  (rows are static per daemon connection, so this is once per mount in
-   *  practice). */
-  const randomizedProviderOrder = $derived.by(() => shuffleArray($catalogEntries$));
+  /** Cache carrying the per-mount shuffled id order across catalog
+   *  re-emissions. Deliberately non-reactive: it is bookkeeping for
+   *  `stableShuffleOrder`, not render state. */
+  let shuffleCache: StableShuffleCache | null = null;
+
+  /** Randomized provider order — shuffled once per catalog id set. The
+   *  catalog selector emits fresh array references (and fully re-hydrates on
+   *  every daemon reconnect), so the shuffle is keyed on the id set: same-id
+   *  re-emissions map the current entry objects into the cached shuffled
+   *  order; only an added/removed provider id draws a new shuffle. */
+  const randomizedProviderOrder = $derived.by(() => {
+    const result = stableShuffleOrder($catalogEntries$, shuffleCache);
+    shuffleCache = result.cache;
+    return result.entries;
+  });
 
   /** Visible providers (not hidden by env var / feature code gates),
    *  tier-ordered (confirmed-logged-in → installed-not-logged-in-or-unknown →
