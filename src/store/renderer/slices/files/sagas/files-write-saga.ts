@@ -5,7 +5,6 @@ import {
   race,
   take,
   takeEvery,
-  takeLatest,
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
@@ -138,6 +137,6 @@ function* saveFileContentActionWorker(action: SaveAction) {
 
 export function* filesWriteSaga() {
   yield* takeEvery(createFileRequested, createFileActionWorker);
-  yield* takeLatest(updateFileContent, updateFileContentWorker);
+  yield* takeEvery(updateFileContent, updateFileContentWorker);
   yield* takeEvery(saveFileContentRequested, saveFileContentActionWorker);
 }
