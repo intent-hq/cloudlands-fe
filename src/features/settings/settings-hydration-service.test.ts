@@ -1,9 +1,13 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { updateSpy } = vi.hoisted(() => ({ updateSpy: vi.fn() }));
+const { updateSpy, catalogSpy } = vi.hoisted(() => ({
+  updateSpy: vi.fn(),
+  catalogSpy: vi.fn(),
+}));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: (method: string, params?: unknown) => {
     if (method === 'settings.update') return updateSpy(params);
+    if (method === 'providers.catalog') return catalogSpy(params);
     return Promise.resolve(undefined);
   },
   backendSubscribe: () => Promise.resolve({ subscriptionId: 'sub-set-1' }),
@@ -25,6 +29,7 @@ import {
   applySettingsChanges,
   BG_MODEL_MIGRATION_MARKER_KEY,
 } from './settings-hydration-service';
+import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 
 describe('settings-hydration-service (boot read + applySettingsChanges)', () => {
   beforeAll(() => {
@@ -34,6 +39,8 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
   beforeEach(() => {
     updateSpy.mockReset();
     updateSpy.mockResolvedValue({ applied: [] });
+    catalogSpy.mockReset();
+    catalogSpy.mockRejectedValue(new Error('no catalog in this test'));
     localStorage.removeItem(BG_MODEL_MIGRATION_MARKER_KEY);
   });
 
@@ -242,6 +249,174 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       const state = appStore.state as BgState;
       expect(state.backgroundAgentSettings.defaultModel).toBe("haiku4.5");
       expect(updateSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('default-provider enablement seeding (monorepo#1947)', () => {
+    type ProviderState = {
+      providerSettings: { enabledProviders: Record<string, boolean> };
+    };
+
+    /** §5.38-shaped catalog: auggie disableable, claude-code not. */
+    const CATALOG = {
+      providers: [
+        {
+          id: 'auggie',
+          displayName: 'Augment Auggie',
+          shortName: 'Auggie',
+          command: 'auggie',
+          canBeDisabled: true,
+          visible: true,
+        },
+        {
+          id: 'claude-code',
+          displayName: 'Claude Code',
+          shortName: 'Claude',
+          command: 'claude',
+          canBeDisabled: false,
+          visible: true,
+        },
+      ],
+    };
+
+    const enabledProviders = () =>
+      (appStore.state as ProviderState).providerSettings.enabledProviders;
+
+    /** Let the fire-and-forget seed promise (if any) settle. */
+    const flushAsync = async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    };
+
+    beforeEach(() => {
+      catalogSpy.mockResolvedValue(CATALOG);
+      // Reset the slice map so no enablement state bleeds between tests (the
+      // app store is a module singleton).
+      appStore.dispatch(loadEnabledProvidersFromStorage({}));
+    });
+
+    it('seeds an unset default provider to true and persists the map back (pre-2.17 upgrade)', async () => {
+      // Existing-machine simulation: active provider auggie, enabled map
+      // without an auggie entry (the pre-fe#759 unset⇒enabled special case
+      // meant it was never written).
+      applySettingsChanges([
+        { path: 'providers.active', value: 'auggie' },
+        { path: 'providers.enabled', value: { codex: true } },
+      ]);
+
+      await vi.waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
+      expect(enabledProviders()).toEqual({ codex: true, auggie: true });
+      expect(updateSpy).toHaveBeenCalledWith({
+        changes: [{ path: 'providers.enabled', value: { codex: true, auggie: true } }],
+      });
+    });
+
+    it('seeds when providers.enabled hydrates as null (never-persisted install)', async () => {
+      // The daemon returns null for the enabled map on installs that never
+      // persisted one — the most common pre-2.17 upgrade shape. The seed gate
+      // is path-keyed, so a null value still triggers it against the slice's
+      // (empty) map even though applyOne skips the null dispatch.
+      applySettingsChanges([
+        { path: 'providers.active', value: 'auggie' },
+        { path: 'providers.enabled', value: null },
+      ]);
+
+      await vi.waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
+      expect(enabledProviders()).toEqual({ auggie: true });
+      expect(updateSpy).toHaveBeenCalledWith({
+        changes: [{ path: 'providers.enabled', value: { auggie: true } }],
+      });
+    });
+
+    it('preserves an explicit persisted false (deliberate disable) without touching the wire', async () => {
+      applySettingsChanges([
+        { path: 'providers.active', value: 'auggie' },
+        { path: 'providers.enabled', value: { auggie: false } },
+      ]);
+
+      await flushAsync();
+      expect(enabledProviders()).toEqual({ auggie: false });
+      expect(catalogSpy).not.toHaveBeenCalled();
+      expect(updateSpy).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent: the seeded entry short-circuits every later hydration', async () => {
+      applySettingsChanges([
+        { path: 'providers.active', value: 'auggie' },
+        { path: 'providers.enabled', value: {} },
+      ]);
+      await vi.waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
+      expect(enabledProviders()).toEqual({ auggie: true });
+      updateSpy.mockClear();
+      catalogSpy.mockClear();
+
+      // The daemon echoes the persisted map back (and later boots re-hydrate it).
+      applySettingsChanges([{ path: 'providers.enabled', value: { auggie: true } }]);
+
+      await flushAsync();
+      expect(catalogSpy).not.toHaveBeenCalled();
+      expect(updateSpy).not.toHaveBeenCalled();
+    });
+
+    it('never seeds a non-disableable provider (always enabled, needs no entry)', async () => {
+      applySettingsChanges([
+        { path: 'providers.active', value: 'claude-code' },
+        { path: 'providers.enabled', value: {} },
+      ]);
+
+      await vi.waitFor(() => expect(catalogSpy).toHaveBeenCalledTimes(1));
+      await flushAsync();
+      expect(enabledProviders()).toEqual({});
+      expect(updateSpy).not.toHaveBeenCalled();
+    });
+
+    it('never seeds a provider unknown to the catalog', async () => {
+      applySettingsChanges([
+        { path: 'providers.active', value: 'removed-provider' },
+        { path: 'providers.enabled', value: {} },
+      ]);
+
+      await vi.waitFor(() => expect(catalogSpy).toHaveBeenCalledTimes(1));
+      await flushAsync();
+      expect(enabledProviders()).toEqual({});
+      expect(updateSpy).not.toHaveBeenCalled();
+    });
+
+    it('skips the seed (and retries next hydration) when the catalog read fails', async () => {
+      catalogSpy.mockRejectedValue(new Error('daemon unavailable'));
+      applySettingsChanges([
+        { path: 'providers.active', value: 'auggie' },
+        { path: 'providers.enabled', value: {} },
+      ]);
+
+      await vi.waitFor(() => expect(catalogSpy).toHaveBeenCalledTimes(1));
+      await flushAsync();
+      expect(enabledProviders()).toEqual({});
+      expect(updateSpy).not.toHaveBeenCalled();
+
+      // The next hydration (e.g. next boot) retries and seeds.
+      catalogSpy.mockResolvedValue(CATALOG);
+      applySettingsChanges([{ path: 'providers.enabled', value: {} }]);
+      await vi.waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
+      expect(enabledProviders()).toEqual({ auggie: true });
+    });
+
+    it('does not mutate renderer state when the daemon write fails (persist-first)', async () => {
+      updateSpy.mockRejectedValue(new Error('write failed'));
+      applySettingsChanges([
+        { path: 'providers.active', value: 'auggie' },
+        { path: 'providers.enabled', value: {} },
+      ]);
+
+      await vi.waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
+      await flushAsync();
+      // Renderer stays faithful to the daemon (no entry ⇒ resolves disabled);
+      // the seed retries on the next hydration.
+      expect(enabledProviders()).toEqual({});
+
+      updateSpy.mockResolvedValue({ applied: [] });
+      applySettingsChanges([{ path: 'providers.enabled', value: {} }]);
+      await vi.waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(2));
+      expect(enabledProviders()).toEqual({ auggie: true });
     });
   });
 });
