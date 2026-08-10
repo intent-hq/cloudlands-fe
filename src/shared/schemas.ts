@@ -204,6 +204,7 @@ export const CreateWorkspaceRequestSchema = z.object({
   environmentConfig: EnvironmentConfigSchema.optional(),
   isNewRepo: z.boolean().optional(),
   skipIsolation: z.boolean().optional(), // Canonical wire name; the daemon still accepts the deprecated skipWorktree alias
+  progressId: z.string().optional(), // FE-minted correlation id echoed on git:clone:progress/done frames (PROTOCOL §5.1)
 });
 
 export const UpdateWorkspaceRequestSchema = z.object({
