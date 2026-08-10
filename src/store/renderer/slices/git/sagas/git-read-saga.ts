@@ -78,13 +78,10 @@ function* watchGitStatusSubscription() {
   }
 }
 
-type WorkspaceCleanupAction =
-  | ReturnType<typeof workspaceDeleted>
-  | ReturnType<typeof workspaceUnmounted>;
-
 function matchesWorkspaceCleanup(workspaceId: string) {
-  return (action: WorkspaceCleanupAction) =>
+  return (action: { type: string; payload?: unknown }) =>
     (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    Array.isArray(action.payload) &&
     action.payload[0] === workspaceId;
 }
 

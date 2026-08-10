@@ -1,4 +1,4 @@
-import { all, call, delay, put, race, take, takeEvery, takeLatest, takeLeading } from 'typed-redux-saga';
+import { all, call, delay, put, race, take, takeEvery, takeLeading } from 'typed-redux-saga';
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
@@ -16,10 +16,7 @@ import {
   resetSubscriptionUI,
   setSubscriptionSnapshot,
 } from '../agent-subscription-ui-slice';
-import {
-  selectTrackedAgentIds,
-  selectWaitingState,
-} from '../agent-subscription-ui-selectors';
+import { selectTrackedAgentIds, selectWaitingState } from '../agent-subscription-ui-selectors';
 import {
   workspaceDeleted,
   workspaceUnmounted,
@@ -42,13 +39,10 @@ interface WireResult {
   agentStatuses?: Record<string, AgentStatus>;
 }
 
-type WorkspaceCleanupAction =
-  | ReturnType<typeof workspaceDeleted>
-  | ReturnType<typeof workspaceUnmounted>;
-
 function matchesWorkspaceCleanup(wsId: string) {
-  return (action: WorkspaceCleanupAction) =>
+  return (action: { type: string; payload?: unknown }) =>
     (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    Array.isArray(action.payload) &&
     action.payload[0] === wsId;
 }
 
@@ -63,19 +57,21 @@ function mapResult(result: WireResult) {
     description: item.description,
     ...(item.delegationGroup ? { delegationGroup: item.delegationGroup } : {}),
   }));
-  const delegationGroups: DelegationGroupStatus[] = (result.delegationGroups ?? []).map((group) => ({
-    groupId: group.groupId,
-    awaitMode: group.awaitMode,
-    expectedAgentIds: group.expectedAgentIds,
-    completedAgentIds: group.completedAgentIds,
-    deletedAgentIds: group.deletedAgentIds,
-    agentStatuses: Object.fromEntries(
-      group.expectedAgentIds
-        .filter((id) => agentStatuses[id] !== undefined)
-        .map((id) => [id, agentStatuses[id]]),
-    ),
-    delivered: group.delivered,
-  }));
+  const delegationGroups: DelegationGroupStatus[] = (result.delegationGroups ?? []).map(
+    (group) => ({
+      groupId: group.groupId,
+      awaitMode: group.awaitMode,
+      expectedAgentIds: group.expectedAgentIds,
+      completedAgentIds: group.completedAgentIds,
+      deletedAgentIds: group.deletedAgentIds,
+      agentStatuses: Object.fromEntries(
+        group.expectedAgentIds
+          .filter((id) => agentStatuses[id] !== undefined)
+          .map((id) => [id, agentStatuses[id]]),
+      ),
+      delivered: group.delivered,
+    }),
+  );
   return { subscriptions, delegationGroups, agentStatuses };
 }
 
@@ -113,6 +109,7 @@ function* fetchSnapshotSaga(wsId: string, agentId: string) {
         waitingState: completed ? 'completed' : hasData ? 'waiting' : 'idle',
       }),
     );
+    if (completed) yield* completedCleanupSaga(wsId, agentId);
   } catch (error) {
     logger.error(`Failed to fetch agent subscriptions for ${key}`, error);
   }
@@ -139,15 +136,6 @@ function* refreshWorkspaceSubscriptionsWorker(
   });
 }
 
-function* completedSnapshotWorker(action: ReturnType<typeof setSubscriptionSnapshot>) {
-  const { workspaceId, agentId, data } = action.payload;
-  if (data.waitingState !== 'completed') return;
-  yield* race({
-    cleanup: call(completedCleanupSaga, workspaceId, agentId),
-    workspaceCleanup: take(matchesWorkspaceCleanup(workspaceId)),
-  });
-}
-
 function* deleteWorkspaceSubscriptionsWorker(action: ReturnType<typeof workspaceDeleted>) {
   const [wsId] = action.payload;
   const agentIds: string[] = yield* selectTrackedAgentIds.effect(wsId);
@@ -157,11 +145,7 @@ function* deleteWorkspaceSubscriptionsWorker(action: ReturnType<typeof workspace
 export function* agentSubscriptionReadSaga() {
   yield* all([
     takeLeading(requestSubscriptionFetch, requestSubscriptionFetchWorker),
-    takeLeading(
-      refreshWorkspaceSubscriptionEntriesRequested,
-      refreshWorkspaceSubscriptionsWorker,
-    ),
-    takeLatest(setSubscriptionSnapshot, completedSnapshotWorker),
+    takeLeading(refreshWorkspaceSubscriptionEntriesRequested, refreshWorkspaceSubscriptionsWorker),
     takeEvery(workspaceDeleted, deleteWorkspaceSubscriptionsWorker),
   ]);
 }

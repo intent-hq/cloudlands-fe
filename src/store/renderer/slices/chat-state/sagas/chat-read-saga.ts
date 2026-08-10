@@ -1,4 +1,13 @@
-import { all, call, cancelled, put, race, take, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import {
+  all,
+  call,
+  cancelled,
+  put,
+  race,
+  take,
+  takeLatest,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -6,10 +15,7 @@ import type { AgentMessage, AgentSession } from '$shared/types';
 import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
 import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
-import {
-  bulkUpsertSessions,
-  upsertSession,
-} from '../../agent-session/agent-session-slice';
+import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
 import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
 import {
   workspaceDeleted,
@@ -26,10 +32,6 @@ const logger = createLogger('ChatReadSaga');
 const PAGE_LIMIT = 200;
 
 type ChatRequest = { wsId: string; agentId: string };
-type WorkspaceCleanupAction =
-  | ReturnType<typeof workspaceDeleted>
-  | ReturnType<typeof workspaceUnmounted>;
-
 function identitySet(messages: AgentMessage[]): Set<string> {
   const ids = new Set<string>();
   for (const message of messages) {
@@ -86,8 +88,10 @@ function* hydrateChatTranscriptSaga(request: ChatRequest) {
     const current: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
     const appendedDuringRead = current.filter(
       (message) =>
-        !(baselineIds.has(message.id) ||
-          (typeof message.appMessageId === 'string' && baselineIds.has(message.appMessageId))),
+        !(
+          baselineIds.has(message.id) ||
+          (typeof message.appMessageId === 'string' && baselineIds.has(message.appMessageId))
+        ),
     );
     const merged =
       appendedDuringRead.length === 0
@@ -104,10 +108,15 @@ function* hydrateChatTranscriptSaga(request: ChatRequest) {
 }
 
 function matchesChatCleanup({ wsId, agentId }: ChatRequest) {
-  return (action: WorkspaceCleanupAction) => {
-    if (action.type !== workspaceDeleted.type && action.type !== workspaceUnmounted.type) return false;
+  return (action: { type: string; payload?: unknown }) => {
+    if (action.type !== workspaceDeleted.type && action.type !== workspaceUnmounted.type)
+      return false;
+    if (!Array.isArray(action.payload)) return false;
     const [cleanupWorkspaceId, deletedAgentIds = []] = action.payload;
-    return cleanupWorkspaceId === wsId || deletedAgentIds.includes(agentId);
+    return (
+      cleanupWorkspaceId === wsId ||
+      (Array.isArray(deletedAgentIds) && deletedAgentIds.includes(agentId))
+    );
   };
 }
 
