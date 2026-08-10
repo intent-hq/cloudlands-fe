@@ -41,6 +41,7 @@
     selectPaletteQuery,
   } from '$store/renderer/slices/palette/palette-selectors';
   import SpacesSwitcherOverlay from '$features/workspace/SpacesSwitcherOverlay.svelte';
+  import { attachWorkspaceSwitcherKeyboard } from '$features/workspace/workspace-switcher-keyboard';
   import RadialPromptPickerOverlay from '$features/hardware-console/prompt-picker/RadialPromptPickerOverlay.svelte';
   import EncoderCycleHud from '$features/hardware-console/encoder/EncoderCycleHud.svelte';
   import ActionKeyHud from '$features/hardware-console/actions/ActionKeyHud.svelte';
@@ -761,6 +762,9 @@
     };
     window.addEventListener('keydown', handleBrowserNavigation);
 
+    // Ctrl+Tab spaces switcher (window-level keydown/keyup controller)
+    const cleanupWorkspaceSwitcherKeyboard = attachWorkspaceSwitcherKeyboard();
+
     // Mouse X buttons (back/forward) navigate app history, same as Cmd+Left/Right
     const cleanupMouseHistoryNavigation = attachMouseHistoryNavigation(window);
 
@@ -801,6 +805,7 @@
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       cleanupLinkTooltip();
       window.removeEventListener('keydown', handleBrowserNavigation);
+      cleanupWorkspaceSwitcherKeyboard();
       cleanupMouseHistoryNavigation();
       if (historyNavigateListenerId) {
         window.electronAPI.offById(IPC_CHANNELS.APP.HISTORY_NAVIGATE, historyNavigateListenerId);
