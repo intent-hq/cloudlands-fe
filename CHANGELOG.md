@@ -4,6 +4,29 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.24.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.23.0...v2.24.0) (2026-08-10)
+
+
+### 🚀 Features
+
+* correlate workspace.create provisioning progress via FE-minted progressId ([#968](https://github.com/intent-hq/cloudlands-fe/issues/968)) ([0615546](https://github.com/intent-hq/cloudlands-fe/commit/06155466dd71d8833648f2b9b14207a17e681ebd))
+* flag untranslated identical-to-English catalog values in i18n lint ([#999](https://github.com/intent-hq/cloudlands-fe/issues/999)) ([a09f570](https://github.com/intent-hq/cloudlands-fe/commit/a09f570a9326cf8ae64cdeb5dc3c3683c46638db))
+* restore Ctrl+Tab workspace switcher keyboard controller ([#990](https://github.com/intent-hq/cloudlands-fe/issues/990)) ([3522ad1](https://github.com/intent-hq/cloudlands-fe/commit/3522ad16c30c0476fc6c82197e98aa0cc162119e))
+
+
+### 🐛 Bug Fixes
+
+* fail closed on unknown provider gating verdict (absent hiddenProviders) ([#985](https://github.com/intent-hq/cloudlands-fe/issues/985)) ([f8db494](https://github.com/intent-hq/cloudlands-fe/commit/f8db4944a0ba1a07b33c9034153980530f6b8a0a))
+* hide Sample intentd Process menu item on Windows with local sidecar ([#983](https://github.com/intent-hq/cloudlands-fe/issues/983)) ([76a9ac8](https://github.com/intent-hq/cloudlands-fe/commit/76a9ac8e77850d35434d6845d61f1fb123bfc689))
+* keep app.css $lib [@imports](https://github.com/imports) first so editor styles ship in production builds ([#993](https://github.com/intent-hq/cloudlands-fe/issues/993)) ([17b2448](https://github.com/intent-hq/cloudlands-fe/commit/17b2448ec6f42755c863f891f6142d84bfe71a1c))
+* remove FE binary caching; use uncached host.checkNode / host.checkGh ([#979](https://github.com/intent-hq/cloudlands-fe/issues/979)) ([7e1c789](https://github.com/intent-hq/cloudlands-fe/commit/7e1c789e709230c40229938b64a2e4d77de9e5ac))
+* remove hardcoded '~/intent' WORKSPACE_ROOT config-browser module ([#984](https://github.com/intent-hq/cloudlands-fe/issues/984)) ([5670b8a](https://github.com/intent-hq/cloudlands-fe/commit/5670b8a4ab8698e9960781ac671db0b9369edeaf))
+* scope no-drag rule to drag regions so scrolled content cannot carve titlebar holes ([#992](https://github.com/intent-hq/cloudlands-fe/issues/992)) ([ac10c80](https://github.com/intent-hq/cloudlands-fe/commit/ac10c8056859c2dda8f523116d655c0b2b7fe393))
+* stack hook hover-card timing items on separate lines ([#996](https://github.com/intent-hq/cloudlands-fe/issues/996)) ([c1ce1f9](https://github.com/intent-hq/cloudlands-fe/commit/c1ce1f9ebfa786da89b1814d9833445112184c7e))
+* stop monitored-PR hover card rendering literal markup whitespace ([#998](https://github.com/intent-hq/cloudlands-fe/issues/998)) ([625f3dd](https://github.com/intent-hq/cloudlands-fe/commit/625f3dd18716d5881fab4b97fe3c5554f00205cb))
+* translate remaining modals_connect_* strings in non-English catalogs ([#977](https://github.com/intent-hq/cloudlands-fe/issues/977)) ([9e5d308](https://github.com/intent-hq/cloudlands-fe/commit/9e5d308aecb915011469a051937484387309cf75))
+* translate untranslated i18n catalog values across all locales ([#995](https://github.com/intent-hq/cloudlands-fe/issues/995)) ([68e7015](https://github.com/intent-hq/cloudlands-fe/commit/68e701537751667da24dc6d881ff1146c326a70c))
+
 ## [2.23.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.22.0...v2.23.0) (2026-08-10)
 
 
