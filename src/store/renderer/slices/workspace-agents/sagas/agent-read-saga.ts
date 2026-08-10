@@ -16,6 +16,21 @@ import { ensureAgentSessionLoaded } from '../workspace-agents-slice';
 
 const logger = createLogger('AgentReadSaga');
 
+function timestampMs(value: AgentSession['updatedAt']): number | null {
+  const timestamp = value instanceof Date ? value.getTime() : Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isOlderSessionSnapshot(incoming: AgentSession, existing: AgentSession): boolean {
+  const incomingUpdatedAt = timestampMs(incoming.updatedAt);
+  const existingUpdatedAt = timestampMs(existing.updatedAt);
+  return (
+    incomingUpdatedAt !== null &&
+    existingUpdatedAt !== null &&
+    incomingUpdatedAt < existingUpdatedAt
+  );
+}
+
 function* loadAgentSessionSaga(wsId: string, agentId: string) {
   if (yield* call(isAgentDeletionPending, agentId)) return;
   try {
@@ -27,6 +42,9 @@ function* loadAgentSessionSaga(wsId: string, agentId: string) {
     if (yield* call(isAgentDeletionPending, agentId)) return;
 
     const existing: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
+    // Same-agent reads may overlap under takeEvery. Only daemon timestamps can
+    // prove response ordering without a keyed channel or execution registry.
+    if (existing && isOlderSessionSnapshot(session, existing)) return;
     const merged = existing ? { ...session, messages: existing.messages } : session;
     yield* put(bulkUpsertSessions([merged]));
     yield* put(upsertSession(merged));

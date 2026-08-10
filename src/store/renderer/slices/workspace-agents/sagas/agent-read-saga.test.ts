@@ -19,7 +19,11 @@ import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { ensureAgentSessionLoaded } from '../workspace-agents-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
+import {
+  agentSessionReducer,
+  bulkUpsertSessions,
+  initialState as initialAgentSessionState,
+} from '../../agent-session/agent-session-slice';
 import { closeTabsByAgentId } from '../../panel-layout/panel-layout-slice';
 import {
   clearPendingAgentDeletions,
@@ -127,6 +131,42 @@ describe('agentReadSaga', () => {
     );
     expect(allUpserts).toHaveLength(2);
     expect(allUpserts.map(([action]) => action.payload[0][0].id)).toEqual([otherAgent, AGENT]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not let an older same-agent response overwrite newer metadata', async () => {
+    let resolveOlder!: (value: AgentSession) => void;
+    mocks.get
+      .mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolveOlder = done;
+          }),
+      )
+      .mockResolvedValueOnce(session({ name: 'newer', updatedAt: '2026-01-02T00:00:00.000Z' }));
+    const channel = stdChannel();
+    let agentSessions = initialAgentSessionState;
+    const dispatch = vi.fn((action) => {
+      agentSessions = agentSessionReducer(agentSessions, action);
+    });
+    const task = runSaga({ channel, dispatch, getState: () => ({ agentSessions }) }, agentReadSaga);
+
+    channel.put(ensureAgentSessionLoaded(WS, AGENT));
+    channel.put(ensureAgentSessionLoaded(WS, AGENT));
+    await settle();
+
+    expect(mocks.get).toHaveBeenCalledTimes(2);
+    expect(agentSessions.byAgentId[AGENT]?.name).toBe('newer');
+
+    resolveOlder(session({ name: 'older', updatedAt: '2026-01-01T00:00:00.000Z' }));
+    await settle();
+
+    const upserts = dispatch.mock.calls.filter(
+      ([action]) => action.type === bulkUpsertSessions.type,
+    );
+    expect(upserts).toHaveLength(1);
+    expect(agentSessions.byAgentId[AGENT]?.name).toBe('newer');
     task.cancel();
     await task.toPromise();
   });
