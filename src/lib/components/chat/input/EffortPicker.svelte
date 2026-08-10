@@ -184,7 +184,7 @@
           max={steps.length - 1}
           step="1"
           value={sliderIndex}
-          class="w-full mt-2.5"
+          class="w-full mt-2.5 h-1.5 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
           aria-label={m.chat_effortPicker_slider_ariaLabel()}
           aria-valuetext={steps[sliderIndex]?.label}
           oninput={(event) => {
