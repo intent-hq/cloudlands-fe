@@ -124,10 +124,13 @@ export function setupAutoUpdateIPC(): void {
 }
 
 /**
- * Initialize the auto-updater with the main window
- * Call this after the main window is created
+ * Initialize the auto-updater. The window is optional
+ * (intent-hq/monorepo#1848): the deferred secondary-startup task can run
+ * before any window exists, and initialization must not depend on
+ * window-creation timing. When no window exists yet, the ref attaches later
+ * via the updateAutoUpdaterWindow() calls in window.ts.
  */
-export function initializeAutoUpdater(mainWindow: BrowserWindow): void {
+export function initializeAutoUpdater(mainWindow: BrowserWindow | null = null): void {
   void autoUpdateService
     .initialize(mainWindow)
     .catch((error) => {
@@ -139,9 +142,9 @@ export function initializeAutoUpdater(mainWindow: BrowserWindow): void {
 }
 
 /**
- * Declare that the auto-updater will not be initialized this run (dev mode or
- * no main window). Unblocks boot-time GET_STATE waiters so they answer the
- * default state instead of waiting on an initialization that never comes.
+ * Declare that the auto-updater will not be initialized this run (dev mode).
+ * Unblocks boot-time GET_STATE waiters so they answer the default state
+ * instead of waiting on an initialization that never comes.
  */
 export function markAutoUpdaterNotInitialized(): void {
   settleChannelLoaded();
