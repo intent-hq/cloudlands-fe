@@ -1,16 +1,13 @@
-import type { Task } from 'redux-saga';
-import { buffers } from 'redux-saga';
 import {
-  actionChannel,
+  all,
   call,
-  cancel,
   cancelled,
   delay,
-  flush,
   fork,
   put,
   race,
   take,
+  takeEvery,
   type SagaGenerator,
 } from 'typed-redux-saga';
 
@@ -73,15 +70,6 @@ type RemoveAction = ReturnType<typeof removeQueuedMessageRequested>;
 type StopAction = ReturnType<typeof agentSessionStopChatRequested>;
 type RetryAction = ReturnType<typeof agentSessionRetryLastMessageRequested>;
 type RetryModelAction = ReturnType<typeof agentSessionRetryWithModelRequested>;
-type ChatWork = SendAction | RemoveAction | StopAction | RetryAction | RetryModelAction;
-
-const CHAT_WORK_TYPES = new Set([
-  sendMessage.type,
-  removeQueuedMessageRequested.type,
-  agentSessionStopChatRequested.type,
-  agentSessionRetryLastMessageRequested.type,
-  agentSessionRetryWithModelRequested.type,
-]);
 
 type LifecycleSendOptions = {
   imageBlocks?: SendMessagePayload['imageBlocks'];
@@ -90,22 +78,6 @@ type LifecycleSendOptions = {
   model?: string;
   priority?: 'interrupt';
 };
-
-function getAgentId(action: ChatWork): string {
-  return action.type === sendMessage.type
-    ? (action as SendAction).payload.agentId
-    : (action as RemoveAction).payload[0];
-}
-
-function isChatWork(action: unknown): action is ChatWork {
-  return (
-    !!action &&
-    typeof action === 'object' &&
-    'type' in action &&
-    typeof action.type === 'string' &&
-    CHAT_WORK_TYPES.has(action.type)
-  );
-}
 
 function* waitForTranscriptRefresh(agentId: string, wsId: string): SagaGenerator<void> {
   while (true) {
@@ -355,12 +327,11 @@ async function showNothingToRetry(): Promise<void> {
   }
 }
 
-function* handleRetry(action: RetryAction | RetryModelAction): SagaGenerator<void> {
+function* retryLastMessage(
+  action: RetryAction | RetryModelAction,
+  model?: string,
+): SagaGenerator<void> {
   const [agentId, wsId] = action.payload;
-  const model =
-    action.type === agentSessionRetryWithModelRequested.type
-      ? (action as RetryModelAction).payload[2]
-      : undefined;
   let settled = false;
   try {
     const lastAttempted = yield* selectChatLastAttemptedMessage.effect(agentId);
@@ -396,84 +367,20 @@ function* handleRetry(action: RetryAction | RetryModelAction): SagaGenerator<voi
   }
 }
 
-function* handleWork(action: ChatWork): SagaGenerator<void> {
-  if (action.type === sendMessage.type) return yield* call(handleSend, action as SendAction);
-  if (action.type === removeQueuedMessageRequested.type)
-    return yield* call(handleRemove, action as RemoveAction);
-  if (action.type === agentSessionStopChatRequested.type)
-    return yield* call(handleStop, action as StopAction);
-  return yield* call(handleRetry, action as RetryAction | RetryModelAction);
+function* handleRetry(action: RetryAction): SagaGenerator<void> {
+  yield* call(retryLastMessage, action);
 }
 
-function settlePendingCancellation(
-  action: ChatWork,
-): ReturnType<StopAction['failure']> | ReturnType<RetryAction['failure']> | undefined {
-  if (action.type === agentSessionStopChatRequested.type) {
-    return (action as StopAction).failure(new Error(CANCELLED_ERROR));
-  }
-  if (
-    action.type === agentSessionRetryLastMessageRequested.type ||
-    action.type === agentSessionRetryWithModelRequested.type
-  ) {
-    return (action as RetryAction).failure(new Error(CANCELLED_ERROR));
-  }
-  return undefined;
-}
-
-function* runAgentQueue(
-  agentId: string,
-  queues: Map<string, ChatWork[]>,
-  workers: Map<string, Task | symbol>,
-): SagaGenerator<void> {
-  try {
-    const queue = queues.get(agentId);
-    while (queue && queue.length > 0) {
-      const action = queue.shift();
-      if (action) yield* call(handleWork, action);
-    }
-  } finally {
-    workers.delete(agentId);
-    if (!(yield* cancelled())) queues.delete(agentId);
-  }
+function* handleRetryWithModel(action: RetryModelAction): SagaGenerator<void> {
+  yield* call(retryLastMessage, action, action.payload[2]);
 }
 
 export function* chatSendSaga(): SagaGenerator<void> {
-  const channel = yield* actionChannel(isChatWork, buffers.expanding<ChatWork>());
-  const queues = new Map<string, ChatWork[]>();
-  const workers = new Map<string, Task | symbol>();
-  try {
-    while (true) {
-      const action: ChatWork = yield* take(channel);
-      const agentId = getAgentId(action);
-      if (!agentId) continue;
-      const queue = queues.get(agentId) ?? [];
-      if (!queues.has(agentId)) queues.set(agentId, queue);
-      queue.push(action);
-      if (!workers.has(agentId)) {
-        const starting = Symbol(agentId);
-        workers.set(agentId, starting);
-        const task = yield* fork(runAgentQueue, agentId, queues, workers);
-        if (workers.get(agentId) === starting) workers.set(agentId, task);
-      }
-    }
-  } finally {
-    const buffered: ChatWork[] = yield* flush(channel);
-    channel.close();
-    for (const task of [...workers.values()]) {
-      if (typeof task !== 'symbol') yield* cancel(task);
-    }
-    for (const queue of queues.values()) {
-      for (const action of queue) {
-        const failure = settlePendingCancellation(action);
-        if (failure) yield* put(failure);
-      }
-      queue.length = 0;
-    }
-    for (const action of buffered) {
-      const failure = settlePendingCancellation(action);
-      if (failure) yield* put(failure);
-    }
-    workers.clear();
-    queues.clear();
-  }
+  yield* all([
+    takeEvery(sendMessage, handleSend),
+    takeEvery(removeQueuedMessageRequested, handleRemove),
+    takeEvery(agentSessionStopChatRequested, handleStop),
+    takeEvery(agentSessionRetryLastMessageRequested, handleRetry),
+    takeEvery(agentSessionRetryWithModelRequested, handleRetryWithModel),
+  ]);
 }
