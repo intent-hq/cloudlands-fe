@@ -1668,12 +1668,12 @@ export interface GitHubBranchListing {
 
 /**
  * Cached-refs branch listing (`github.branches.listCached`, §5.27): branch
- * names read from the daemon's local repo cache — or, on a cache miss, from
- * the daemon's one-round-trip `git ls-remote` fallback (`source:
- * "ls-remote"` with `cached: false`). `cached: false` with empty `branches`
- * means neither the cache nor the fallback produced anything (cold cache on
- * an older daemon, or an unreachable remote). `source` is absent on older
- * daemons.
+ * names read from the daemon's local repo cache (`source: "cache"`) — or,
+ * on a cache miss, from the daemon's one-round-trip `git ls-remote`
+ * fallback (`source: "ls-remote"` with `cached: false`). A failed fallback
+ * folds to the plain miss — `{ cached: false, branches: [] }` with `source`
+ * omitted — the same shape pre-fallback daemons always return (`source` is
+ * absent on older daemons).
  */
 export interface GitHubCachedBranchListing {
   cached: boolean;
