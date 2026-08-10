@@ -12,6 +12,10 @@ export const selectProviderLoadingMap = store.createSelector(
   (state) => state.agentAvailability.providerLoadingMap,
 );
 
+export const selectProviderCheckEpochMap = store.createSelector(
+  (state) => state.agentAvailability.providerCheckEpochMap,
+);
+
 export const selectHasCheckedOnce = store.createSelector(
   (state) => state.agentAvailability.hasCheckedOnce,
 );

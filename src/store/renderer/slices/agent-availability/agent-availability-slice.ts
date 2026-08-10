@@ -19,6 +19,7 @@ import type { NpxStatus } from '$shared/types/provider-availability';
 export const initialState: AgentAvailabilityState = {
   providerStatusMap: {},
   providerLoadingMap: {},
+  providerCheckEpochMap: {},
   providerUserInfoLoadingMap: {},
   hasCheckedOnce: false,
   watchedTerminalIds: [],
@@ -34,11 +35,17 @@ export const checkSingleProviderRequested = createAction<[providerId: string]>(
   'agentAvailability/checkSingleProviderRequested',
 );
 
-export const checkSingleProviderSuccess = createAction<[providerId: string, status: ProviderStatus]>(
-  'agentAvailability/checkSingleProviderSuccess',
-);
+/**
+ * `epoch` is the provider's check generation captured when the probe started
+ * (see `providerCheckEpochMap`). The reducer drops the result when a newer
+ * check has started since, so a slow stale probe can never overwrite a
+ * fresher one. `undefined` skips the guard (direct dispatches in tests).
+ */
+export const checkSingleProviderSuccess = createAction<
+  [providerId: string, status: ProviderStatus, epoch?: number]
+>('agentAvailability/checkSingleProviderSuccess');
 
-export const checkSingleProviderFailure = createAction<[providerId: string]>(
+export const checkSingleProviderFailure = createAction<[providerId: string, epoch?: number]>(
   'agentAvailability/checkSingleProviderFailure',
 );
 
@@ -95,27 +102,73 @@ export const setNpxStatus = createAction<[npxStatus: NpxStatus | null]>(
 
 export const agentAvailabilityReducer = createReducer<AgentAvailabilityState>(initialState);
 
-agentAvailabilityReducer.with(setAllProvidersLoading, (state, { payload: [loadingMap] }) => ({
-  ...state,
-  providerLoadingMap: loadingMap,
-}));
+/** Whether a result carrying `epoch` is stale (a newer check started since). */
+function isStaleResult(
+  state: AgentAvailabilityState,
+  providerId: string,
+  epoch: number | undefined,
+): boolean {
+  return epoch !== undefined && epoch !== (state.providerCheckEpochMap[providerId] ?? 0);
+}
+
+agentAvailabilityReducer.with(setAllProvidersLoading, (state, { payload: [loadingMap] }) => {
+  const providerCheckEpochMap = { ...state.providerCheckEpochMap };
+  for (const providerId of Object.keys(loadingMap)) {
+    providerCheckEpochMap[providerId] = (providerCheckEpochMap[providerId] ?? 0) + 1;
+  }
+  return {
+    ...state,
+    providerLoadingMap: loadingMap,
+    providerCheckEpochMap,
+  };
+});
 agentAvailabilityReducer.with(checkSingleProviderRequested, (state, { payload: [providerId] }) => ({
   ...state,
   providerLoadingMap: { ...state.providerLoadingMap, [providerId]: true },
+  providerCheckEpochMap: {
+    ...state.providerCheckEpochMap,
+    [providerId]: (state.providerCheckEpochMap[providerId] ?? 0) + 1,
+  },
 }));
 agentAvailabilityReducer.with(
   checkSingleProviderSuccess,
-  (state, { payload: [providerId, status] }) => ({
-    ...state,
-    providerStatusMap: { ...state.providerStatusMap, [providerId]: status },
-    providerLoadingMap: { ...state.providerLoadingMap, [providerId]: false },
-  }),
+  (state, { payload: [providerId, status, epoch] }) => {
+    // A newer check started while this probe was in flight — its result is
+    // stale (e.g. a pre-install focus sweep landing after a successful
+    // post-install recheck) and must not overwrite the fresher one. The
+    // newer check's own terminal action settles the loading flag.
+    if (isStaleResult(state, providerId, epoch)) return state;
+    return {
+      ...state,
+      providerStatusMap: { ...state.providerStatusMap, [providerId]: status },
+      providerLoadingMap: { ...state.providerLoadingMap, [providerId]: false },
+    };
+  },
 );
-agentAvailabilityReducer.with(checkSingleProviderFailure, (state) => state);
-agentAvailabilityReducer.with(checkAllProvidersComplete, (state) => ({
-  ...state,
-  hasCheckedOnce: true,
-}));
+agentAvailabilityReducer.with(
+  checkSingleProviderFailure,
+  (state, { payload: [providerId, epoch] }) => {
+    if (isStaleResult(state, providerId, epoch)) return state;
+    // Settle the in-flight flag but never fabricate a status or erase a
+    // previously successful one — a failed probe proves nothing about
+    // availability.
+    return {
+      ...state,
+      providerLoadingMap: { ...state.providerLoadingMap, [providerId]: false },
+    };
+  },
+);
+agentAvailabilityReducer.with(checkAllProvidersComplete, (state) => {
+  // A sweep where every probe failed lands no statuses — presenting it as
+  // "checked" would let consumers read the empty map as "confirmed nothing
+  // available" instead of "unknown".
+  if (state.hasCheckedOnce) return state;
+  if (Object.keys(state.providerStatusMap).length === 0) return state;
+  return {
+    ...state,
+    hasCheckedOnce: true,
+  };
+});
 agentAvailabilityReducer.with(
   fetchProviderUserInfoRequested,
   (state, { payload: [providerId] }) => ({

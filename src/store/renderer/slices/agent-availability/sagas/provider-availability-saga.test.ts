@@ -9,9 +9,11 @@ import { PROVIDER_AVAILABILITY_KEY_TO_ID } from '$shared/types/provider-availabi
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
 import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-slice';
 import {
+  agentAvailabilityReducer,
   checkAllProvidersRequested,
   checkSingleProviderRequested,
   ensureProvidersChecked,
+  initialState,
 } from '../agent-availability-slice';
 import {
   checkAllProvidersWorker,
@@ -46,13 +48,17 @@ describe('providerAvailabilitySaga', () => {
       diagnostics: { elapsedMs: 12 },
     });
     const dispatch = vi.fn();
-    await runSaga({ dispatch }, checkSingleProviderWorker, 'codex').toPromise();
+    await runSaga(
+      { dispatch, getState: () => ({ agentAvailability: initialState }) },
+      checkSingleProviderWorker,
+      'codex',
+    ).toPromise();
 
     expect(mocks.invoke.mock.calls).toEqual([['providers:check-single', 'codex']]);
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       {
         type: 'agentAvailability/checkSingleProviderSuccess',
-        payload: ['codex', { available: true, authenticated: true }],
+        payload: ['codex', { available: true, authenticated: true }, 0],
       },
     ]);
   });
@@ -60,10 +66,14 @@ describe('providerAvailabilitySaga', () => {
   it('dispatches the exact failure action when a single probe rejects', async () => {
     mocks.invoke.mockRejectedValue(new Error('probe failed'));
     const dispatch = vi.fn();
-    await runSaga({ dispatch }, checkSingleProviderWorker, 'codex').toPromise();
+    await runSaga(
+      { dispatch, getState: () => ({ agentAvailability: initialState }) },
+      checkSingleProviderWorker,
+      'codex',
+    ).toPromise();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      { type: 'agentAvailability/checkSingleProviderFailure', payload: ['codex'] },
+      { type: 'agentAvailability/checkSingleProviderFailure', payload: ['codex', 0] },
     ]);
   });
 
@@ -79,8 +89,15 @@ describe('providerAvailabilitySaga', () => {
         resolvers.set(providerId!, resolve);
       });
     });
-    const dispatch = vi.fn();
-    const task = runSaga({ dispatch }, checkAllProvidersWorker);
+    let sliceState = initialState;
+    const dispatch = vi.fn((action) => {
+      sliceState = agentAvailabilityReducer(sliceState, action);
+      return action;
+    });
+    const task = runSaga(
+      { dispatch, getState: () => ({ agentAvailability: sliceState }) },
+      checkAllProvidersWorker,
+    );
     await settle();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
@@ -97,13 +114,13 @@ describe('providerAvailabilitySaga', () => {
     await settle();
     expect(dispatch.mock.calls.at(-1)?.[0]).toEqual({
       type: 'agentAvailability/checkSingleProviderSuccess',
-      payload: ['codex', { available: true }],
+      payload: ['codex', { available: true }, 1],
     });
     resolvers.get('auggie')!({ success: true, data: { available: false } });
     await settle();
     expect(dispatch.mock.calls.at(-1)?.[0]).toEqual({
       type: 'agentAvailability/checkSingleProviderSuccess',
-      payload: ['auggie', { available: false }],
+      payload: ['auggie', { available: false }, 1],
     });
     for (const id of ids.filter((id) => id !== 'codex' && id !== 'auggie')) {
       resolvers.get(id)!({ success: false });
@@ -118,6 +135,54 @@ describe('providerAvailabilitySaga', () => {
       type: 'agentAvailability/checkAllProvidersComplete',
       payload: [],
     });
+  });
+
+  it('discards a stale in-flight probe result superseded by a newer successful check', async () => {
+    // Install-mid-onboarding regression (false "No provider available" on
+    // step 4): a slow probe from a sweep that started BEFORE the install
+    // finished must not overwrite the available:true landed by a manual
+    // recheck that started (and resolved) after it.
+    const pendingBySequence: Array<(value: unknown) => void> = [];
+    mocks.invoke.mockImplementation((channel: string) => {
+      if (channel !== 'providers:check-single') {
+        return Promise.resolve({ success: true, data: {} });
+      }
+      return new Promise((resolve) => {
+        pendingBySequence.push(resolve);
+      });
+    });
+    let sliceState = initialState;
+    const dispatch = vi.fn((action) => {
+      sliceState = agentAvailabilityReducer(sliceState, action);
+      return action;
+    });
+    const options = { dispatch, getState: () => ({ agentAvailability: sliceState }) };
+
+    // Stale probe: starts while claude is not yet installed.
+    sliceState = agentAvailabilityReducer(sliceState, checkSingleProviderRequested('claude-code'));
+    const staleProbe = runSaga(options, checkSingleProviderWorker, 'claude-code');
+    await settle();
+
+    // Fresh probe: user finished the install and hit "Check again".
+    sliceState = agentAvailabilityReducer(sliceState, checkSingleProviderRequested('claude-code'));
+    const freshProbe = runSaga(options, checkSingleProviderWorker, 'claude-code');
+    await settle();
+    pendingBySequence[1]!({ success: true, data: { available: true, authenticated: true } });
+    await freshProbe.toPromise();
+    expect(sliceState.providerStatusMap['claude-code']).toEqual({
+      available: true,
+      authenticated: true,
+    });
+
+    // The stale probe settles LAST with its pre-install result — it must be
+    // dropped, keeping the fresh available:true and the settled loading flag.
+    pendingBySequence[0]!({ success: true, data: { available: false } });
+    await staleProbe.toPromise();
+    expect(sliceState.providerStatusMap['claude-code']).toEqual({
+      available: true,
+      authenticated: true,
+    });
+    expect(sliceState.providerLoadingMap['claude-code']).toBe(false);
   });
 
   it('coalesces connected/manual bulk requests and cleans up on cancellation', async () => {
@@ -135,7 +200,7 @@ describe('providerAvailabilitySaga', () => {
     const channel = stdChannel();
     const dispatch = vi.fn((action) => channel.put(action));
     const task = runSaga(
-      { channel, dispatch, getState: () => ({ agentAvailability: { hasCheckedOnce: false } }) },
+      { channel, dispatch, getState: () => ({ agentAvailability: { hasCheckedOnce: false, providerCheckEpochMap: {} } }) },
       providerAvailabilitySaga,
     );
     await settle();
@@ -169,7 +234,7 @@ describe('providerAvailabilitySaga', () => {
     const channel = stdChannel();
     const dispatch = vi.fn((action) => channel.put(action));
     const task = runSaga(
-      { channel, dispatch, getState: () => ({ agentAvailability: { hasCheckedOnce: false } }) },
+      { channel, dispatch, getState: () => ({ agentAvailability: { hasCheckedOnce: false, providerCheckEpochMap: {} } }) },
       providerAvailabilitySaga,
     );
     await settle();
@@ -204,7 +269,7 @@ describe('providerAvailabilitySaga', () => {
     const channel = stdChannel();
     const dispatch = vi.fn((action) => channel.put(action));
     const task = runSaga(
-      { channel, dispatch, getState: () => ({ agentAvailability: { hasCheckedOnce: false } }) },
+      { channel, dispatch, getState: () => ({ agentAvailability: { hasCheckedOnce: false, providerCheckEpochMap: {} } }) },
       providerAvailabilitySaga,
     );
     await settle();
@@ -257,7 +322,7 @@ describe('providerAvailabilitySaga', () => {
       {
         channel,
         dispatch: vi.fn(),
-        getState: () => ({ agentAvailability: { hasCheckedOnce: true } }),
+        getState: () => ({ agentAvailability: { hasCheckedOnce: true, providerCheckEpochMap: {} } }),
       },
       providerAvailabilitySaga,
     );

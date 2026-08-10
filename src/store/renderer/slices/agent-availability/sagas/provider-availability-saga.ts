@@ -8,7 +8,10 @@ import {
   type ProviderAvailabilityResult,
 } from '$shared/types/provider-availability';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
-import { selectHasCheckedOnce } from '../agent-availability-selectors';
+import {
+  selectHasCheckedOnce,
+  selectProviderCheckEpochMap,
+} from '../agent-availability-selectors';
 import {
   checkAllProvidersComplete,
   checkAllProvidersRequested,
@@ -35,6 +38,11 @@ interface SingleProviderResult extends IpcResult<ProviderStatus> {
 }
 
 export function* checkSingleProviderWorker(providerId: string) {
+  // Snapshot the provider's check generation before the probe: the reducer
+  // discards the terminal action when a newer check started meanwhile, so a
+  // slow stale probe (e.g. a focus-triggered sweep that started before an
+  // install finished) can never overwrite a fresher result.
+  const epoch = (yield* selectProviderCheckEpochMap.effect())[providerId] ?? 0;
   try {
     const result: SingleProviderResult = yield* call(
       invoke<SingleProviderResult>,
@@ -42,13 +50,13 @@ export function* checkSingleProviderWorker(providerId: string) {
       providerId,
     );
     if (result?.success && result.data) {
-      yield* put(checkSingleProviderSuccess(providerId, result.data));
+      yield* put(checkSingleProviderSuccess(providerId, result.data, epoch));
       return;
     }
-    yield* put(checkSingleProviderFailure(providerId));
+    yield* put(checkSingleProviderFailure(providerId, epoch));
   } catch (error) {
     logger.error(`Provider availability check failed for ${providerId}`, { error });
-    yield* put(checkSingleProviderFailure(providerId));
+    yield* put(checkSingleProviderFailure(providerId, epoch));
   }
 }
 
