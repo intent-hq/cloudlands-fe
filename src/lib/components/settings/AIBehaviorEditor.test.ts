@@ -210,6 +210,13 @@ describe('AIBehaviorEditor default reasoning-effort dropdown', () => {
     const wrapper = screen.getByTestId('default-effort');
     expect(wrapper.textContent).toContain('Default');
 
+    // Visible "Effort" label next to the dropdown, styled like the adjacent
+    // "Default model" span (not sr-only).
+    const label = wrapper.querySelector('label')!;
+    expect(label.textContent!.trim()).toBe('Effort');
+    expect(label.classList.contains('sr-only')).toBe(false);
+    expect(label.className).toContain('text-sm font-medium text-foreground shrink-0');
+
     await fireEvent.click(wrapper.querySelector('button')!);
     for (const level of ['low', 'medium', 'high']) {
       expect(screen.getByText(level)).toBeTruthy();
@@ -355,6 +362,13 @@ describe('AIBehaviorEditor reasoning-effort dropdown', () => {
     const wrapper = screen.getByTestId('specialist-effort');
     // Collapsed trigger shows the unset state.
     expect(wrapper.textContent).toContain('Default');
+
+    // Visible "Effort" label next to the dropdown, styled like the adjacent
+    // "Model" span (not sr-only).
+    const label = wrapper.querySelector('label')!;
+    expect(label.textContent!.trim()).toBe('Effort');
+    expect(label.classList.contains('sr-only')).toBe(false);
+    expect(label.className).toContain('text-sm font-medium text-foreground shrink-0');
 
     await fireEvent.click(wrapper.querySelector('button')!);
     for (const level of ['low', 'medium', 'high']) {
