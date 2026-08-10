@@ -1537,6 +1537,30 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
     expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
     expect(mockNotificationInstances.length).toBe(1);
   });
+
+  it('suppresses via the workspaceArchived fast path without consulting agent.list', async () => {
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent({ workspaceArchived: true }));
+
+    expect(requestMock).not.toHaveBeenCalledWith('agent.list', expect.anything());
+    expect(mockNotificationInstances.length).toBe(0);
+  });
+
+  it('does not suppress when workspaceArchived is false', async () => {
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent({ workspaceArchived: false }));
+
+    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(mockNotificationInstances.length).toBe(1);
+  });
+
+  it('does not suppress when workspaceArchived is absent (older daemons)', async () => {
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(mockNotificationInstances.length).toBe(1);
+  });
 });
 
 describe('NotificationService fallbacks for workspaces with no open window', () => {

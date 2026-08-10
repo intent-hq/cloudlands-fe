@@ -141,10 +141,16 @@ function* handleWebIdle(event: AgentIdleEvent) {
     } catch (error) {
       logger.warn('Failed to fetch notifications.* settings from daemon', { error });
     }
-    // Fast path: skip when the agent is waiting on other agents (§5.5),
-    // active background hooks (§3.1), or active PR monitors (§5.42) — it
-    // will run again on its own, so the workspace isn't truly quiet yet.
-    // Both hook/monitor fields are absent on older daemons.
+    // Fast path: skip when the workspace is archived (archived workspaces
+    // never notify; field absent on older daemons), when the agent is
+    // waiting on other agents (§5.5), active background hooks (§3.1), or
+    // active PR monitors (§5.42) — it will run again on its own, so the
+    // workspace isn't truly quiet yet. Both hook/monitor fields are absent
+    // on older daemons.
+    if (event.data.workspaceArchived === true) {
+      logger.debug('Skipping notification for archived workspace', { workspaceId });
+      return;
+    }
     if (
       !enabled ||
       event.data.isBackground ||

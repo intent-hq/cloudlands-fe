@@ -12,6 +12,7 @@
  *   - `notifications.enabled` off → skip (read from the renderer store, which
  *     the settings saga keeps in sync with the daemon catalog).
  *   - background agents (event fast path or `agent.list` metadata) → skip.
+ *   - archived workspace (`workspaceArchived` event fast path) → skip.
  *   - agent idle while waiting on other agents, active background hooks
  *     (§3.1), or active PR monitors (§5.42) → skip (event fast path).
  *   - other agents still streaming/responding in the workspace → skip.
@@ -257,6 +258,16 @@ export async function handleWebAgentIdle(event: AgentIdleEvent): Promise<void> {
     // Fast path: explicit background flag on the event payload.
     if (event.data.isBackground === true) {
       logger.debug('Skipping notification for background agent', {
+        workspaceId,
+        agentName: event.data.agentName,
+      });
+      return;
+    }
+
+    // Fast path: the event's workspace is archived — archived workspaces
+    // never notify. Absent on older daemons (treated as not archived).
+    if (event.data.workspaceArchived === true) {
+      logger.debug('Skipping notification for archived workspace', {
         workspaceId,
         agentName: event.data.agentName,
       });
