@@ -3454,6 +3454,7 @@
   "terminal_scriptOutput_run_label": "執行",
   "terminal_setupBanner_defaultName_label": "工作區安裝設定",
   "terminal_setupBanner_emptyScript_error": "指令碼為空",
+  "terminal_setupBanner_noRepo_error": "無法儲存：此工作區沒有儲存庫路徑",
   "terminal_setupBanner_saved_success": "安裝指令碼「{name}」已儲存！建立新工作區時可以使用。",
   "terminal_setupBanner_headline_label": "加速未來的工作區",
   "terminal_setupBanner_headline_suffix": "——將你的安裝命令儲存為可複用的指令碼",

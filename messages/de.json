@@ -3454,6 +3454,7 @@
   "terminal_scriptOutput_run_label": "Ausführen",
   "terminal_setupBanner_defaultName_label": "Arbeitsbereich-Einrichtung",
   "terminal_setupBanner_emptyScript_error": "Skript ist leer",
+  "terminal_setupBanner_noRepo_error": "Speichern nicht möglich: Dieser Workspace hat keinen Repository-Pfad",
   "terminal_setupBanner_saved_success": "Setup-Skript \"{name}\" gespeichert! Es steht beim Erstellen neuer Arbeitsbereiche zur Verfügung.",
   "terminal_setupBanner_headline_label": "Beschleunigen Sie zukünftige Arbeitsbereiche",
   "terminal_setupBanner_headline_suffix": "— speichern Sie Ihre Setup-Befehle als wiederverwendbares Skript",

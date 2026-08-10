@@ -184,6 +184,12 @@
       toast.error(m.terminal_setupBanner_emptyScript_error());
       return;
     }
+    // recordLastUsedSetupScript is a no-op without a repo path — don't claim
+    // success (and drop the script) when the workspace has no repositoryPath.
+    if (!repoPath) {
+      toast.error(m.terminal_setupBanner_noRepo_error());
+      return;
+    }
 
     recordLastUsedSetupScript(repoPath, {
       name: scriptName || m.terminal_setupBanner_defaultName_label(),

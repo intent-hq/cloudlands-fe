@@ -3455,6 +3455,7 @@
   "terminal_scriptOutput_run_label": "Run",
   "terminal_setupBanner_defaultName_label": "Workspace setup",
   "terminal_setupBanner_emptyScript_error": "Script is empty",
+  "terminal_setupBanner_noRepo_error": "Cannot save: this workspace has no repository path",
   "terminal_setupBanner_saved_success": "Setup script \"{name}\" saved! It will be available when creating new workspaces.",
   "terminal_setupBanner_headline_label": "Speed up future workspaces",
   "terminal_setupBanner_headline_suffix": "— save your setup commands as a reusable script",

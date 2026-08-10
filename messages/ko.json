@@ -3454,6 +3454,7 @@
   "terminal_scriptOutput_run_label": "실행",
   "terminal_setupBanner_defaultName_label": "작업 공간 설정",
   "terminal_setupBanner_emptyScript_error": "스크립트가 비어 있습니다",
+  "terminal_setupBanner_noRepo_error": "저장할 수 없음: 이 워크스페이스에는 리포지토리 경로가 없습니다",
   "terminal_setupBanner_saved_success": "설정 스크립트 \"{name}\"이(가) 저장되었습니다! 새 작업 공간을 만들 때 사용할 수 있습니다.",
   "terminal_setupBanner_headline_label": "향후 작업 공간 속도 높이기",
   "terminal_setupBanner_headline_suffix": "— 설정 명령을 재사용 가능한 스크립트로 저장하세요",

@@ -3454,6 +3454,7 @@
   "terminal_scriptOutput_run_label": "运行",
   "terminal_setupBanner_defaultName_label": "工作区安装配置",
   "terminal_setupBanner_emptyScript_error": "脚本为空",
+  "terminal_setupBanner_noRepo_error": "无法保存：此工作区没有仓库路径",
   "terminal_setupBanner_saved_success": "安装脚本“{name}”已保存！创建新工作区时可以使用。",
   "terminal_setupBanner_headline_label": "加速未来的工作区",
   "terminal_setupBanner_headline_suffix": "——将你的安装命令保存为可复用的脚本",

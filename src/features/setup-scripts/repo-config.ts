@@ -120,12 +120,10 @@ export async function fetchGitHubRepoConfigSetupScript(
  * Resolve the `setupScript` param for `workspace.create` (monorepo#1862).
  *
  * The script shown in the form is what runs: any trimmed non-empty script is
- * sent, EXCEPT the unedited repo-config script — the daemon persists an
- * explicitly supplied `setupScript` into the fresh worktree's tracked
- * `.intent/config.json` (PROTOCOL §5.1), and the committed file already
- * holds that script (re-sending would write it into a different branch's
- * checkout on a non-default baseRef); it still executes via the daemon's
- * worktree-first read.
+ * sent, EXCEPT the unedited repo-config script — the daemon executes the
+ * param without persisting it (intentd#1066), and the committed
+ * `.intent/config.json` already holds this script, so sending it is
+ * redundant; it executes identically via the daemon's worktree-first read.
  *
  * Returns the trimmed script to send, or undefined to omit the param.
  */

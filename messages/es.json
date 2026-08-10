@@ -3454,6 +3454,7 @@
   "terminal_scriptOutput_run_label": "Ejecutar",
   "terminal_setupBanner_defaultName_label": "Configuración del espacio de trabajo",
   "terminal_setupBanner_emptyScript_error": "El script está vacío",
+  "terminal_setupBanner_noRepo_error": "No se puede guardar: este espacio de trabajo no tiene ruta de repositorio",
   "terminal_setupBanner_saved_success": "¡Script de configuración \"{name}\" guardado! Estará disponible al crear espacios de trabajo nuevos.",
   "terminal_setupBanner_headline_label": "Acelere los espacios de trabajo futuros",
   "terminal_setupBanner_headline_suffix": "— guarde sus comandos de configuración como un script reutilizable",

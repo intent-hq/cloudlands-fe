@@ -3454,6 +3454,7 @@
   "terminal_scriptOutput_run_label": "Exécuter",
   "terminal_setupBanner_defaultName_label": "Configuration de l'espace de travail",
   "terminal_setupBanner_emptyScript_error": "Le script est vide",
+  "terminal_setupBanner_noRepo_error": "Impossible d’enregistrer : cet espace de travail n’a pas de chemin de dépôt",
   "terminal_setupBanner_saved_success": "Script de configuration \"{name}\" enregistré ! Il sera disponible lors de la création de nouveaux espaces de travail.",
   "terminal_setupBanner_headline_label": "Accélérez les futurs espaces de travail",
   "terminal_setupBanner_headline_suffix": "— enregistrez vos commandes de configuration comme script réutilisable",

@@ -3454,6 +3454,7 @@
   "terminal_scriptOutput_run_label": "実行",
   "terminal_setupBanner_defaultName_label": "ワークスペースのセットアップ",
   "terminal_setupBanner_emptyScript_error": "スクリプトが空です",
+  "terminal_setupBanner_noRepo_error": "保存できません：このワークスペースにはリポジトリパスがありません",
   "terminal_setupBanner_saved_success": "セットアップスクリプト「{name}」を保存しました！新しいワークスペースの作成時に利用できます。",
   "terminal_setupBanner_headline_label": "今後のワークスペースを高速化",
   "terminal_setupBanner_headline_suffix": "— セットアップコマンドを再利用可能なスクリプトとして保存",
