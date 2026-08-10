@@ -141,6 +141,34 @@ describe('TokRatePanel', () => {
       });
     });
 
+    it('promotes the unit when rounding crosses a boundary', async () => {
+      render(TokRatePanel);
+      // 60,000 tokens/min → exactly 1,000 tok/s → "1k".
+      appStore.dispatch(hudRateHistoryLoaded(totals([60_000])));
+      await waitFor(() => {
+        flushSync();
+        expect(peak()?.textContent).toBe('1k');
+      });
+      // 60,000,000 tokens/min → exactly 1,000,000 tok/s → "1M".
+      appStore.dispatch(hudRateHistoryLoaded(totals([60_000_000])));
+      await waitFor(() => {
+        flushSync();
+        expect(peak()?.textContent).toBe('1M');
+      });
+      // 59,999,970 tokens/min → 999,999.5 tok/s → promotes to "1M", not "1000k".
+      appStore.dispatch(hudRateHistoryLoaded(totals([59_999_970])));
+      await waitFor(() => {
+        flushSync();
+        expect(peak()?.textContent).toBe('1M');
+      });
+      // 59,970 tokens/min → 999.5 tok/s → promotes to "1k", not "1000".
+      appStore.dispatch(hudRateHistoryLoaded(totals([59_970])));
+      await waitFor(() => {
+        flushSync();
+        expect(peak()?.textContent).toBe('1k');
+      });
+    });
+
     it('is hidden when there are no samples', () => {
       render(TokRatePanel);
       flushSync();

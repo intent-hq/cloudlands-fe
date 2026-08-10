@@ -72,17 +72,23 @@
   /** TOK/S NOW — the newest minute sample's tokens over its 60s span. */
   const tokRate = $derived(bars.length > 0 ? Math.round(bars[bars.length - 1].total / 60) : 0);
 
-  /** Compact digit-only count (`40k`, `50M`); rounded to nearest, no decimals. */
+  /**
+   * Compact digit-only count (`40k`, `50M`); rounded to nearest, no decimals.
+   * Rounds before picking the unit so boundary values promote (999,999.5 →
+   * `1M`, not `1000k`; 999.5 → `1k`, not `1000`).
+   */
   function compact(n: number): string {
-    if (n >= 1_000_000) return `${Math.round(n / 1_000_000)}M`;
-    if (n >= 1000) return `${Math.round(n / 1000)}k`;
+    if (Math.round(n / 1000) >= 1000) return `${Math.round(n / 1_000_000)}M`;
+    if (Math.round(n) >= 1000) return `${Math.round(n / 1000)}k`;
     return String(Math.round(n));
   }
 
-  /** Peak Y-scale — the window's max minute total as a per-second rate (÷60). */
-  const peakLabel = $derived(
-    bars.length > 0 ? compact(Math.max(...bars.map((bar) => bar.total)) / 60) : '',
-  );
+  /**
+   * Peak Y-scale — the window's max minute total as a per-second rate (÷60).
+   * Only rendered when bars exist (template-guarded); the 0 base just keeps
+   * `Math.max()` → -Infinity out of the empty case.
+   */
+  const peakLabel = $derived(compact(Math.max(0, ...bars.map((bar) => bar.total)) / 60));
 
   /** One x-axis time tick, positioned by the bar it sits under. */
   interface AxisTick {
