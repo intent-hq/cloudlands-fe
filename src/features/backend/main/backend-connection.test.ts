@@ -12,7 +12,7 @@ import https from 'node:https';
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
-import type { Duplex } from 'node:stream';
+import { Duplex } from 'node:stream';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -21,12 +21,14 @@ import {
 } from '../../../main/utils/resolve-dev-instance';
 import {
   AuthRejectedError,
+  candidateWssHosts,
   captureFingerprint,
   DEFAULT_DEV_WS_URL,
   defaultSocketPath,
   describeBackendConfig,
   normalizeFingerprint,
   PinMismatchError,
+  raceDuplexSockets,
   resolveBackendConfig,
   WebSocketDuplex,
 } from './backend-connection';
@@ -925,5 +927,253 @@ describe('normalizeFingerprint', () => {
     expect(normalizeFingerprint('abcdef01')).toBe('AB:CD:EF:01');
     expect(normalizeFingerprint('AB CD ef 01')).toBe('AB:CD:EF:01');
     expect(normalizeFingerprint('')).toBe('');
+  });
+});
+
+describe('candidateWssHosts', () => {
+  it('keeps the primary host first and deduplicates the extras', () => {
+    expect(
+      candidateWssHosts({
+        transport: 'wss',
+        host: '192.168.1.10',
+        hosts: [' 10.0.0.5 ', '192.168.1.10', 'fe80::1', '', '10.0.0.5'],
+        port: 5181,
+      }),
+    ).toEqual(['192.168.1.10', '10.0.0.5', 'fe80::1']);
+  });
+
+  it('falls back to just the primary host when hosts is absent', () => {
+    expect(candidateWssHosts({ transport: 'wss', host: 'h', port: 1 })).toEqual(['h']);
+  });
+});
+
+describe('describeBackendConfig with candidate hosts', () => {
+  it('mentions extra candidates without leaking the token or fingerprint', () => {
+    const description = describeBackendConfig({
+      transport: 'wss',
+      host: '10.0.0.9',
+      hosts: ['10.0.0.9', '192.168.1.9'],
+      port: 5181,
+      token: 'super-secret',
+      fingerprint: 'AB:CD',
+    });
+    expect(description).toBe('wss:10.0.0.9:5181 (+1 candidate)');
+    expect(description).not.toContain('super-secret');
+    expect(description).not.toContain('AB:CD');
+  });
+});
+
+/** In-memory fake candidate socket for raceDuplexSockets tests. */
+class FakeCandidate extends Duplex {
+  written: string[] = [];
+  destroyedByRace = false;
+  constructor() {
+    super({ allowHalfOpen: false });
+  }
+  override _read(): void {}
+  override _write(chunk: unknown, _enc: BufferEncoding, cb: (error?: Error | null) => void): void {
+    this.written.push(String(chunk));
+    cb();
+  }
+  override _destroy(error: Error | null, cb: (err: Error | null) => void): void {
+    this.destroyedByRace = true;
+    cb(error);
+  }
+}
+
+describe('raceDuplexSockets (multi-host racing, #1746)', () => {
+  it('first candidate to connect wins; losers are destroyed', async () => {
+    const a = new FakeCandidate();
+    const b = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'a', create: () => a },
+      { host: 'b', create: () => b },
+    ]);
+    const connected = new Promise<void>((res) => facade.once('connect', () => res()));
+    b.emit('connect');
+    await connected;
+    expect(a.destroyedByRace).toBe(true);
+    expect(b.destroyedByRace).toBe(false);
+
+    // Writes route to the winner; inbound data flows back through the facade.
+    facade.write('ping\n');
+    expect(b.written).toEqual(['ping\n']);
+    const received = new Promise<string>((res) =>
+      facade.once('data', (chunk: Buffer) => res(chunk.toString('utf8'))),
+    );
+    b.push('pong\n');
+    expect(await received).toBe('pong\n');
+    facade.destroy();
+  });
+
+  it('a candidate failure does not lose the race while another connects', async () => {
+    const a = new FakeCandidate();
+    const b = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'a', create: () => a },
+      { host: 'b', create: () => b },
+    ]);
+    const errors: Error[] = [];
+    facade.on('error', (e) => errors.push(e));
+    const connected = new Promise<void>((res) => facade.once('connect', () => res()));
+    a.emit('error', new Error('ECONNREFUSED'));
+    b.emit('connect');
+    await connected;
+    expect(errors).toHaveLength(0);
+    facade.destroy();
+  });
+
+  it('fails with the last candidate error when every candidate fails', async () => {
+    const a = new FakeCandidate();
+    const b = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'a', create: () => a },
+      { host: 'b', create: () => b },
+    ]);
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    a.emit('error', new Error('ECONNREFUSED a'));
+    b.emit('error', new Error('ECONNREFUSED b'));
+    expect((await failed).message).toBe('ECONNREFUSED b');
+  });
+
+  it('a PinMismatchError on ANY candidate fails the whole race immediately', async () => {
+    const a = new FakeCandidate();
+    const b = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'a', create: () => a },
+      { host: 'b', create: () => b },
+    ]);
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    a.emit('error', new PinMismatchError('AA', 'BB'));
+    const error = await failed;
+    expect(error).toBeInstanceOf(PinMismatchError);
+    // The other candidate is torn down — no silent fallback past a bad cert.
+    expect(b.destroyedByRace).toBe(true);
+    // A late connect on the other candidate must not resurrect the race.
+    b.emit('connect');
+    expect(facade.destroyed).toBe(true);
+  });
+
+  it('a pin mismatch AFTER a valid winner settles is discarded — winner takes precedence', async () => {
+    const good = new FakeCandidate();
+    const stale = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'good', create: () => good },
+      { host: 'stale', create: () => stale },
+    ]);
+    const errors: Error[] = [];
+    facade.on('error', (e) => errors.push(e));
+    const connected = new Promise<void>((res) => facade.once('connect', () => res()));
+    good.emit('connect');
+    await connected;
+    // A stale IP now owned by a foreign pinned daemon reports a mismatch late:
+    // the established pin-verified winner must not be torn down by it.
+    stale.emit('error', new PinMismatchError('AA', 'BB'));
+    expect(errors).toHaveLength(0);
+    expect(facade.destroyed).toBe(false);
+    // The facade still proxies the winner.
+    facade.write('ping\n');
+    expect(good.written).toEqual(['ping\n']);
+    facade.destroy();
+  });
+
+  it('destroys a failed candidate immediately and absorbs its later async errors', async () => {
+    const failing = new FakeCandidate();
+    const other = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'failing', create: () => failing },
+      { host: 'other', create: () => other },
+    ]);
+    const errors: Error[] = [];
+    facade.on('error', (e) => errors.push(e));
+    failing.emit('error', new Error('ECONNREFUSED'));
+    // The failed candidate is torn down right away, not left until settle.
+    expect(failing.destroyedByRace).toBe(true);
+    // A second async 'error' from the dead candidate must not become an
+    // uncaught exception (zero-listener EventEmitter) nor fail the race.
+    failing.emit('error', new Error('late async failure'));
+    const connected = new Promise<void>((res) => facade.once('connect', () => res()));
+    other.emit('connect');
+    await connected;
+    expect(errors).toHaveLength(0);
+    facade.destroy();
+  });
+
+  it('times out when no candidate ever connects', async () => {
+    const a = new FakeCandidate();
+    const facade = raceDuplexSockets([{ host: 'a', create: () => a }], { timeoutMs: 50 });
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    expect((await failed).message).toContain('timed out');
+    expect(a.destroyedByRace).toBe(true);
+  });
+
+  it('fails when every attempt factory throws synchronously', async () => {
+    const facade = raceDuplexSockets([
+      {
+        host: 'a',
+        create: () => {
+          throw new Error('boom');
+        },
+      },
+    ]);
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    expect((await failed).message).toBe('boom');
+  });
+});
+
+describe('multi-host wss connect through JsonRpcClient (#1746)', () => {
+  let daemon: FakeWssDaemon;
+  const TOKEN = 'b'.repeat(64);
+
+  beforeAll(async () => {
+    daemon = new FakeWssDaemon();
+    await daemon.start();
+  });
+
+  afterAll(async () => {
+    await daemon.stop();
+  });
+
+  it('connects via a secondary candidate when the primary host is unreachable', async () => {
+    daemon.handler = () => ({ result: 'ok' });
+    const client = new JsonRpcClient({
+      config: {
+        transport: 'wss',
+        // Primary host is a blackhole (RFC 5737 TEST-NET-1) — only the
+        // secondary candidate (the real daemon) can answer.
+        host: '192.0.2.1',
+        hosts: ['192.0.2.1', daemon.host],
+        port: daemon.port,
+        token: TOKEN,
+        fingerprint: daemon.fingerprint,
+      },
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 5000,
+    });
+    client.on('error', () => {});
+    await expect(client.request('system.status')).resolves.toBe('ok');
+    client.dispose();
+  });
+
+  it('a fingerprint mismatch on a candidate surfaces as PinMismatchError, not a skip', async () => {
+    const wrong = Array.from({ length: 32 }, () => 'FF').join(':');
+    const client = new JsonRpcClient({
+      config: {
+        transport: 'wss',
+        host: '192.0.2.1',
+        hosts: ['192.0.2.1', daemon.host],
+        port: daemon.port,
+        token: TOKEN,
+        fingerprint: wrong,
+      },
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 5000,
+      reconnectDelayMs: 10_000,
+    });
+    const errors: Error[] = [];
+    client.on('error', (e) => errors.push(e));
+    await expect(client.request('system.status')).rejects.toBeInstanceOf(PinMismatchError);
+    expect(errors.some((e) => e instanceof PinMismatchError)).toBe(true);
+    client.dispose();
   });
 });

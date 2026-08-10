@@ -5469,6 +5469,8 @@
   "modals_connect_confirm_label": "确认并连接",
   "modals_connect_back_label": "返回",
   "modals_connect_whereToFind_help": "在目标机器上的设置 → 通用 → WebSocket API 中查找主机、端口和访问令牌。",
+  "modals_connect_detectHosts_label": "Detect all backend IPs",
+  "modals_connect_detectHosts_description": "Also store the backend's other IP addresses so the connection keeps working when its network changes.",
   "modals_connect_tokenRejected_error": "守护进程拒绝了此访问令牌。请检查是否复制了当前令牌，然后重试。",
   "modals_connect_wsApiDisabled_error": "目标机器上的 WebSocket API 已禁用。请在设置 → 通用 → WebSocket API 中启用它，然后重试。",
   "modals_certMismatch_title": "Certificate changed",

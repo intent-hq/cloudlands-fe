@@ -5469,6 +5469,8 @@
   "modals_connect_confirm_label": "확인 및 연결",
   "modals_connect_back_label": "뒤로",
   "modals_connect_whereToFind_help": "호스트, 포트, 액세스 토큰은 대상 컴퓨터의 설정 → 일반 → WebSocket API에서 확인할 수 있습니다.",
+  "modals_connect_detectHosts_label": "Detect all backend IPs",
+  "modals_connect_detectHosts_description": "Also store the backend's other IP addresses so the connection keeps working when its network changes.",
   "modals_connect_tokenRejected_error": "데몬이 이 액세스 토큰을 거부했습니다. 현재 토큰을 복사했는지 확인하고 다시 시도하세요.",
   "modals_connect_wsApiDisabled_error": "대상 컴퓨터에서 WebSocket API가 비활성화되어 있습니다. 설정 → 일반 → WebSocket API에서 활성화한 후 다시 시도하세요.",
   "modals_certMismatch_title": "Certificate changed",
