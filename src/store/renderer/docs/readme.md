@@ -19,4 +19,4 @@ current and fix or remove the stale companion text.
 
 ## Related architecture notes
 
-- [Agent Message Deduplication and Stream Saga Architecture](../../../../docs/agent-message-dedup-and-stream-sagas.md) — concrete example of thin service/lifecycle adapters, canonical reducer safety nets, and saga-owned stream reconciliation.
+- [Agent Message Deduplication and Stream Saga Architecture](../../../../../../docs/fe/agent-message-dedup-and-stream-sagas.md) — concrete example of thin service/lifecycle adapters, canonical reducer safety nets, and saga-owned stream reconciliation.

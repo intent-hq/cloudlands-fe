@@ -9,6 +9,7 @@ import {
   getLastIdleTime,
   isSessionIdle,
   isSessionInProgress,
+  pickLastActivePerWorkspace,
   sessionHasFailed,
   sessionNeedsAttention,
   type AgentCycleState,
@@ -155,6 +156,34 @@ describe('ordering', () => {
     const older = makeSession('a', { stopReasonTimestamp: '2026-08-01T08:00:00.000Z' });
     const newer = makeSession('b', { stopReasonTimestamp: '2026-08-01T10:00:00.000Z' });
     expect([older, newer].sort(compareLastIdleDesc).map((s) => s.id)).toEqual(['b', 'a']);
+  });
+});
+
+describe('pickLastActivePerWorkspace', () => {
+  it('keeps one entry per workspace — the most recently active — in first-seen order', () => {
+    const state = makeState(
+      { 'ws-1': ['a-1', 'a-2'], 'ws-2': ['b-1', 'b-2'] },
+      {
+        'a-1': makeSession('a-1', { lastActivity: '2026-08-01T08:00:00.000Z' }),
+        'a-2': makeSession('a-2', { stopReasonTimestamp: '2026-08-01T10:00:00.000Z' }),
+        'b-1': makeSession('b-1', { lastActivity: '2026-08-01T09:00:00.000Z' }),
+        'b-2': makeSession('b-2', { lastActivity: '2026-08-01T07:00:00.000Z' }),
+      },
+    );
+    expect(pickLastActivePerWorkspace(state, collectCycleAgents(state, () => true))).toEqual([
+      { wsId: 'ws-1', agentId: 'a-2' },
+      { wsId: 'ws-2', agentId: 'b-1' },
+    ]);
+  });
+
+  it('falls back to the first entry of a workspace when no recency signal exists', () => {
+    const state = makeState(
+      { 'ws-1': ['a-1', 'a-2'] },
+      { 'a-1': makeSession('a-1'), 'a-2': makeSession('a-2') },
+    );
+    expect(pickLastActivePerWorkspace(state, collectCycleAgents(state, () => true))).toEqual([
+      { wsId: 'ws-1', agentId: 'a-1' },
+    ]);
   });
 });
 

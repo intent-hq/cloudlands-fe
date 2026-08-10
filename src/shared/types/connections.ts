@@ -65,6 +65,15 @@ export interface ConnectionRecord {
   label: string;
   /** Remote host/IP; `null` for the local UDS entry. */
   host: string | null;
+  /**
+   * Candidate hosts for the remote (primary/user-entered host first, then any
+   * additional IPs reported by the backend via `server.pairingInfo`). Every
+   * (re)connect tries all candidates so a backend whose IP changed stays
+   * reachable (#1746). Always contains `host` when populated; `null` for the
+   * local UDS entry. Optional so pre-existing fixtures/records remain valid —
+   * absent is equivalent to `[host]`.
+   */
+  hosts?: string[] | null;
   /** Remote port; `null` for the local UDS entry. */
   port: number | null;
   /** Pinned self-signed cert fingerprint, SHA-256 colon-hex (PROTOCOL §1.2); `null` for local. */
@@ -156,6 +165,13 @@ export interface AddConnectionParams {
   port: number;
   fingerprint: string;
   token: string;
+  /**
+   * "Detect all backend IPs" option (#1746), default ON. When enabled, the
+   * connection refreshes its candidate-host list from the backend's
+   * `server.pairingInfo` after each successful connect; when disabled, only
+   * the user-entered host is ever stored (single-host behavior).
+   */
+  detectHosts?: boolean;
 }
 
 /** `connections:add` result: the stored, token-free record. */

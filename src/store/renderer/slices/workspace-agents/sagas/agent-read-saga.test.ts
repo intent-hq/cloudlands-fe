@@ -19,7 +19,11 @@ import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { ensureAgentSessionLoaded } from '../workspace-agents-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
+import {
+  agentSessionReducer,
+  bulkUpsertSessions,
+  initialState as initialAgentSessionState,
+} from '../../agent-session/agent-session-slice';
 import { closeTabsByAgentId } from '../../panel-layout/panel-layout-slice';
 import {
   clearPendingAgentDeletions,
@@ -88,31 +92,95 @@ describe('agentReadSaga', () => {
     await task.toPromise();
   });
 
-  it('globally suppresses a different-agent trigger while the leading read is active', async () => {
-    let resolve!: (value: AgentSession) => void;
-    mocks.get.mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+  it('loads a different agent while the first read remains blocked', async () => {
+    const otherAgent = 'agent-other';
+    let resolveFirst!: (value: AgentSession) => void;
+    mocks.get.mockImplementation((agentId: string) => {
+      if (agentId === otherAgent) {
+        return Promise.resolve(session({ id: otherAgent, name: 'Other Agent' }));
+      }
+      return new Promise((done) => {
+        resolveFirst = done;
+      });
+    });
     const channel = stdChannel();
+    const dispatch = vi.fn();
     const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => ({ agentSessions: { byAgentId: {} } }) },
+      { channel, dispatch, getState: () => ({ agentSessions: { byAgentId: {} } }) },
       agentReadSaga,
     );
 
     channel.put(ensureAgentSessionLoaded(WS, AGENT));
-    channel.put(ensureAgentSessionLoaded('ws-other', 'agent-other'));
+    channel.put(ensureAgentSessionLoaded(WS, otherAgent));
     await settle();
-    expect(mocks.get).toHaveBeenCalledTimes(1);
+    expect(mocks.get).toHaveBeenNthCalledWith(1, AGENT);
+    expect(mocks.get).toHaveBeenNthCalledWith(2, otherAgent);
+    const completedUpserts = dispatch.mock.calls.filter(
+      ([action]) => action.type === bulkUpsertSessions.type,
+    );
+    expect(completedUpserts).toHaveLength(1);
+    expect(completedUpserts[0][0].payload[0][0]).toMatchObject({
+      id: otherAgent,
+      name: 'Other Agent',
+    });
 
-    resolve(session());
+    resolveFirst(session());
     await settle();
+    const allUpserts = dispatch.mock.calls.filter(
+      ([action]) => action.type === bulkUpsertSessions.type,
+    );
+    expect(allUpserts).toHaveLength(2);
+    expect(allUpserts.map(([action]) => action.payload[0][0].id)).toEqual([otherAgent, AGENT]);
     task.cancel();
     await task.toPromise();
   });
 
-  it('loads after a pending deletion clears without retaining a stale single-flight entry', async () => {
+  it.each([
+    ['equal', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'],
+    ['invalid', 'older-invalid', 'newer-invalid'],
+  ])(
+    'does not let a superseded same-agent response overwrite newer metadata with %s timestamps',
+    async (_label, olderUpdatedAt, newerUpdatedAt) => {
+      let resolveOlder!: (value: AgentSession) => void;
+      mocks.get
+        .mockImplementationOnce(
+          () =>
+            new Promise((done) => {
+              resolveOlder = done;
+            }),
+        )
+        .mockResolvedValueOnce(session({ name: 'newer', updatedAt: newerUpdatedAt }));
+      const channel = stdChannel();
+      let agentSessions = initialAgentSessionState;
+      const dispatch = vi.fn((action) => {
+        agentSessions = agentSessionReducer(agentSessions, action);
+      });
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ agentSessions }) },
+        agentReadSaga,
+      );
+
+      channel.put(ensureAgentSessionLoaded(WS, AGENT));
+      channel.put(ensureAgentSessionLoaded(WS, AGENT));
+      await settle();
+
+      expect(mocks.get).toHaveBeenCalledTimes(2);
+      expect(agentSessions.byAgentId[AGENT]?.name).toBe('newer');
+
+      resolveOlder(session({ name: 'older', updatedAt: olderUpdatedAt }));
+      await settle();
+
+      const upserts = dispatch.mock.calls.filter(
+        ([action]) => action.type === bulkUpsertSessions.type,
+      );
+      expect(upserts).toHaveLength(1);
+      expect(agentSessions.byAgentId[AGENT]?.name).toBe('newer');
+      task.cancel();
+      await task.toPromise();
+    },
+  );
+
+  it('loads after a pending deletion clears', async () => {
     setPendingAgentDeletion({ wsId: WS, agentId: AGENT, snapshot: session(), timer: null });
     const channel = stdChannel();
     const dispatch = vi.fn();
