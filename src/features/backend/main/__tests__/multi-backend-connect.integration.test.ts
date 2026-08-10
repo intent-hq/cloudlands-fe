@@ -320,6 +320,50 @@ describe('multi-backend connect — end-to-end journey', () => {
     await expect(invoke('connections:list')).resolves.toMatchObject({ activeId: 'local' });
   });
 
+  it('re-pairing a pre-existing ACTIVE duplicate collapses the duplicates and reconnects (switched: true)', async () => {
+    // Earlier app versions allowed repeated host:port entries. Seed such a file
+    // where a NON-first duplicate is the active backend, then re-pair the same
+    // host:port: the collapse must keep the ACTIVE record's id so the add
+    // handler takes the active-reconnect path (full switch, switched: true)
+    // instead of treating it as a non-active upsert.
+    await fs.writeFile(
+      path.join(tmpDir, 'backend-connections.json'),
+      JSON.stringify({
+        connections: [
+          { id: 'dup-1', label: 'Old pairing', host: REMOTE_INPUT.host, port: REMOTE_INPUT.port, fingerprint: 'OLD:FP', encToken: { encrypted: false, value: 'stale-token' } },
+          { id: 'dup-2', label: 'Active pairing', host: REMOTE_INPUT.host, port: REMOTE_INPUT.port, fingerprint: 'OLD:FP', encToken: { encrypted: false, value: 'stale-token' } },
+        ],
+        activeId: 'dup-2',
+      }),
+      'utf8',
+    );
+
+    const { mod, captureAndClose, restore } = await loadModule();
+    mod.registerBackendHandlers();
+    openWindow();
+    mod.getBackendClient();
+
+    const result = await invoke<{ connection: { id: string }; switched: boolean }>(
+      'connections:add',
+      { ...REMOTE_INPUT, token: 'rotated-token', fingerprint: FINGERPRINT },
+    );
+
+    // The ACTIVE duplicate's id survived the collapse and the live client was
+    // rebuilt via a switch to itself (windows closed + restored on the same id).
+    expect(result).toMatchObject({ connection: { id: 'dup-2' }, switched: true });
+    expect(captureAndClose).toHaveBeenCalledWith('dup-2');
+    expect(restore).toHaveBeenCalledWith('dup-2');
+
+    // The rebuilt client carries the rotated token, and only one record remains.
+    const config = mod.getBackendClient().getConfig() as Record<string, unknown>;
+    expect(config).toMatchObject({ transport: 'wss', token: 'rotated-token' });
+    const listed = await invoke<{ connections: Array<{ id: string }>; activeId: string }>(
+      'connections:list',
+    );
+    expect(listed.connections.map((c) => c.id)).toEqual(['local', 'dup-2']);
+    expect(listed.activeId).toBe('dup-2');
+  });
+
   it('surfaces a single cert-mismatch failure modal when the pinned remote presents a changed cert', async () => {
     const { mod } = await loadModule();
     mod.registerBackendHandlers();

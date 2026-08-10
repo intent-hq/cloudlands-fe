@@ -228,6 +228,63 @@ describe('connections-store', () => {
     expect(await store.getDecryptedToken(original.id)).toBe('fresh-token');
   });
 
+  it('collapses pre-existing host:port duplicates on add (keeps the first, drops the rest)', async () => {
+    // Earlier app versions allowed repeated host:port entries — seed such a
+    // file directly (add() itself can no longer produce duplicates).
+    await fs.writeFile(
+      path.join(tmpDir, 'backend-connections.json'),
+      JSON.stringify({
+        connections: [
+          { id: 'dup-1', label: 'First', host: '192.168.1.10', port: 8443, fingerprint: 'AA', encToken: { encrypted: false, value: 'tok-1' } },
+          { id: 'dup-2', label: 'Second', host: '192.168.1.10', port: 8443, fingerprint: 'BB', hostname: 'studio.local', encToken: { encrypted: false, value: 'tok-2' } },
+          { id: 'other', label: 'Other', host: '192.168.1.11', port: 8443, fingerprint: 'CC', encToken: { encrypted: false, value: 'tok-3' } },
+        ],
+        activeId: 'local',
+      }),
+      'utf8',
+    );
+    const store = await import('../connections-store');
+
+    const updated = await store.add(sampleConn);
+
+    // No duplicate is active → the FIRST match survives, refreshed in place,
+    // inheriting the captured hostname from the dropped duplicate.
+    expect(updated).toMatchObject({ id: 'dup-1', label: 'Studio Mac', hostname: 'studio.local' });
+
+    // All host:port duplicates collapsed into one; the unrelated record survives.
+    const remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes.map((c) => c.id).sort()).toEqual(['dup-1', 'other']);
+    expect(await store.getDecryptedToken('dup-1')).toBe('secret-token');
+    expect(await store.getDecryptedToken('dup-2')).toBeNull();
+  });
+
+  it('collapsing duplicates prefers the ACTIVE duplicate\u2019s id (active re-pair keeps its id)', async () => {
+    await fs.writeFile(
+      path.join(tmpDir, 'backend-connections.json'),
+      JSON.stringify({
+        connections: [
+          { id: 'dup-1', label: 'First', host: '192.168.1.10', port: 8443, fingerprint: 'AA', encToken: { encrypted: false, value: 'tok-1' } },
+          { id: 'dup-2', label: 'Second', host: '192.168.1.10', port: 8443, fingerprint: 'BB', encToken: { encrypted: false, value: 'tok-2' } },
+        ],
+        activeId: 'dup-2',
+      }),
+      'utf8',
+    );
+    const store = await import('../connections-store');
+
+    const updated = await store.add(sampleConn);
+
+    // The ACTIVE duplicate survives (not the first), so a re-pair of the live
+    // backend returns the active id and the caller's active-reconnect path fires.
+    expect(updated.id).toBe('dup-2');
+    expect(await store.getActiveId()).toBe('dup-2');
+
+    const remotes = (await store.list()).filter((c) => !c.isLocal);
+    expect(remotes).toHaveLength(1);
+    expect(remotes[0]).toMatchObject({ id: 'dup-2', label: 'Studio Mac', fingerprint: 'AA:BB:CC' });
+    expect(await store.getDecryptedToken('dup-2')).toBe('secret-token');
+  });
+
   it('adding a different host:port still appends a new record', async () => {
     const store = await import('../connections-store');
     const first = await store.add(sampleConn);
