@@ -9,6 +9,7 @@ import type { StoreState } from '../../types';
 import type {
   ConnectionsState,
   ConnectionRecord,
+  ConnectionAuthRejectedEvent,
   ConnectionProtocolMismatchEvent,
 } from './connections-types';
 import { initialState } from './connections-slice';
@@ -20,6 +21,7 @@ import {
   selectIsConnecting,
   selectConnectionError,
   selectConnectionCertMismatch,
+  selectActiveAuthRejected,
   selectActiveProtocolMismatch,
   selectProtocolMismatchModal,
 } from './connections-selectors';
@@ -82,6 +84,31 @@ describe('connections selectors', () => {
       expect(selectIsConnecting.select(stateWith({ status: 'connecting' }))).toBe(true);
       expect(selectIsConnecting.select(stateWith({ status: 'idle' }))).toBe(false);
       expect(selectIsConnecting.select(stateWith({ status: 'error' }))).toBe(false);
+    });
+  });
+
+  describe('selectActiveAuthRejected', () => {
+    const AUTH_REJECTED: ConnectionAuthRejectedEvent = {
+      id: 'remote-1',
+      host: '10.0.0.5',
+      port: 8443,
+      statusCode: 401,
+    };
+
+    it('surfaces the rejection only while the affected backend is active', () => {
+      const active = stateWith({ authRejected: AUTH_REJECTED, activeId: 'remote-1' });
+      expect(selectActiveAuthRejected.select(active)).toEqual(AUTH_REJECTED);
+
+      // Switched back to local: same latched rejection, but no longer active → hidden.
+      const inactive = stateWith({
+        authRejected: AUTH_REJECTED,
+        activeId: LOCAL_CONNECTION_ID,
+      });
+      expect(selectActiveAuthRejected.select(inactive)).toBeNull();
+    });
+
+    it('returns null when nothing is latched', () => {
+      expect(selectActiveAuthRejected.select(stateWith({ activeId: 'remote-1' }))).toBeNull();
     });
   });
 
