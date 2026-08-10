@@ -106,6 +106,28 @@ function enclosingFunction(node) {
   return undefined;
 }
 
+function enclosingWhile(node) {
+  for (let current = node.parent; current; current = current.parent) {
+    if (ts.isWhileStatement(current)) return current;
+    if (isFunction(current)) return undefined;
+  }
+  return undefined;
+}
+
+function enclosingWorkerCall(node, effectNames) {
+  for (let current = node.parent; current; current = current.parent) {
+    if (
+      ts.isCallExpression(current) &&
+      current !== node &&
+      ts.isIdentifier(current.expression) &&
+      effectNames.get(current.expression.text) === 'call'
+    )
+      return current;
+    if (ts.isWhileStatement(current) || isFunction(current)) return undefined;
+  }
+  return undefined;
+}
+
 function declarationFor(source, call) {
   for (let current = call.parent; current && current !== source; current = current.parent) {
     if (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name)) return current;
@@ -323,6 +345,21 @@ export function inspectSagaWatcherOwnership(files) {
 
       const pattern = WATCHERS.has(effect) ? watcherPattern(effect, node) : first;
       const actions = pattern ? localArray(source, pattern) : [];
+      if (
+        (effect === 'take' || effect === 'takeMaybe') &&
+        pattern &&
+        enclosingWhile(node) &&
+        enclosingWorkerCall(node, effectNames)
+      ) {
+        const importedPattern =
+          ts.isStringLiteralLike(pattern) ||
+          actions.some((action) => ts.isIdentifier(action) && imports.has(action.text)) ||
+          (ts.isIdentifier(pattern) && imports.has(pattern.text));
+        if (importedPattern)
+          violations.push(
+            `${filePath}:${lineFor(source, node)}: manual Redux watcher loop; use a native watcher effect`,
+          );
+      }
       if ((effect === 'take' || effect === 'takeMaybe') && actions.length > 1) {
         const declaration = declarationFor(source, node);
         const owner = enclosingFunction(node);

@@ -66,6 +66,24 @@ describe('saga watcher ownership guard', () => {
     expect(result.violations).toHaveLength(1);
   });
 
+  it('rejects a manual Redux watcher loop while allowing channel loops', () => {
+    const source = [
+      "import { call, take } from 'typed-redux-saga';",
+      "import { start } from '../slice';",
+      'function* consumeExternal(channel: unknown) {',
+      '  while (true) { const event = yield* take(channel); yield* call(forward, event); }',
+      '}',
+      'export function* badSaga() {',
+      '  while (true) yield* call(worker, yield* take(start));',
+      '}',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
+      { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
+    ]);
+    expect(result.violations).toEqual([expect.stringContaining('manual Redux watcher loop')]);
+  });
+
   it.each([
     'runningTasks',
     'workerRegistry',
@@ -85,9 +103,7 @@ describe('saga watcher ownership guard', () => {
       root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
       { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
     ]);
-    expect(result.violations).toEqual([
-      expect.stringContaining(`execution registry ${name}`),
-    ]);
+    expect(result.violations).toEqual([expect.stringContaining(`execution registry ${name}`)]);
   });
 
   it('rejects module-scope Task and custom-helper execution registries', () => {
@@ -117,10 +133,7 @@ describe('saga watcher ownership guard', () => {
   });
 
   it.each([
-    [
-      'if/else',
-      'if (action.type === "start") { yield* call(run); } else { yield* call(halt); }',
-    ],
+    ['if/else', 'if (action.type === "start") { yield* call(run); } else { yield* call(halt); }'],
     [
       'literal switch',
       'switch (action.type) { case "start": yield* call(run); break; case "stop": yield* call(halt); break; }',
@@ -158,9 +171,7 @@ describe('saga watcher ownership guard', () => {
       root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
       { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
     ]);
-    expect(result.violations).toEqual([
-      expect.stringContaining('duplicate watcher ownership'),
-    ]);
+    expect(result.violations).toEqual([expect.stringContaining('duplicate watcher ownership')]);
   });
 
   it('follows directly composed child sagas outside the saga directory', () => {
@@ -174,7 +185,8 @@ describe('saga watcher ownership guard', () => {
       { path: 'src/store/renderer/slices/parent/sagas/parent-saga.ts', content: parent },
       {
         path: 'src/features/example/external-child.ts',
-        content: "import { takeMaybe } from 'typed-redux-saga'; export function* externalChild() { yield* takeMaybe('*'); }",
+        content:
+          "import { takeMaybe } from 'typed-redux-saga'; export function* externalChild() { yield* takeMaybe('*'); }",
       },
     ]);
     expect(result.auditedFiles).toContain('src/features/example/external-child.ts');
