@@ -24,6 +24,15 @@ import { LiveIntegrationsClient } from './live-integrations-client';
 
 const mockedRequest = vi.mocked(backendRequest);
 
+/** A promise the test resolves manually (to assert in-flight concurrency). */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 /** PROTOCOL §5.27 `github.getUser` result — derived identity only. */
 const GITHUB_USER_WIRE = {
   user: {
@@ -149,7 +158,7 @@ describe('LiveIntegrationsClient.githubBranches (github.branches.list + github.r
   afterEach(() => vi.clearAllMocks());
 
   it("lists remote branch names and the repo's default branch", async () => {
-    // PROTOCOL §5.27: { branches: string[], nextToken? } then { repo: GithubRepo | null }.
+    // PROTOCOL §5.27: { branches: string[], nextToken? } and { repo: GithubRepo | null }.
     mockedRequest
       .mockResolvedValueOnce({ branches: ['main', 'feat/x'], nextToken: null })
       .mockResolvedValueOnce({ repo: { name: 'intent', defaultBranch: 'main' } });
@@ -168,6 +177,30 @@ describe('LiveIntegrationsClient.githubBranches (github.branches.list + github.r
     expect(listing).toEqual({ branches: ['main', 'feat/x'], defaultBranch: 'main' });
   });
 
+  it('issues the branch-list and default-branch requests concurrently (both REST-backed)', async () => {
+    // Neither response has settled yet — both requests must already be on the
+    // wire (sequential awaits would hold repos.get behind branches.list).
+    const list = deferred<unknown>();
+    const repoGet = deferred<unknown>();
+    mockedRequest.mockReturnValueOnce(list.promise).mockReturnValueOnce(repoGet.promise);
+    const client = new LiveIntegrationsClient();
+
+    const pending = client.githubBranches('octo', 'intent');
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'github.branches.list', {
+      owner: 'octo',
+      repo: 'intent',
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'github.repos.get', {
+      owner: 'octo',
+      repo: 'intent',
+    });
+
+    list.resolve({ branches: ['main'], nextToken: null });
+    repoGet.resolve({ repo: { name: 'intent', defaultBranch: 'main' } });
+    expect(await pending).toEqual({ branches: ['main'], defaultBranch: 'main' });
+  });
+
   it('degrades the default branch to undefined when github.repos.get fails', async () => {
     mockedRequest
       .mockResolvedValueOnce({ branches: ['main'] })
@@ -181,7 +214,9 @@ describe('LiveIntegrationsClient.githubBranches (github.branches.list + github.r
   });
 
   it('propagates a branch-list failure so the caller renders an error/auth state', async () => {
-    mockedRequest.mockRejectedValueOnce(new Error('GitHub is not configured.'));
+    mockedRequest
+      .mockRejectedValueOnce(new Error('GitHub is not configured.'))
+      .mockResolvedValueOnce({ repo: null });
     const client = new LiveIntegrationsClient();
 
     await expect(client.githubBranches('octo', 'intent')).rejects.toThrow(
@@ -194,11 +229,12 @@ describe('LiveIntegrationsClient.githubBranchesCached (github.branches.listCache
   afterEach(() => vi.clearAllMocks());
 
   it('sends owner/repo and surfaces a warm-cache listing', async () => {
-    // PROTOCOL §5.27: { cached: boolean, branches: string[], defaultBranch? }.
+    // PROTOCOL §5.27: { cached: boolean, branches: string[], defaultBranch?, source? }.
     mockedRequest.mockResolvedValueOnce({
       cached: true,
       branches: ['main', 'feat/x'],
       defaultBranch: 'main',
+      source: 'cache',
     });
     const client = new LiveIntegrationsClient();
 
@@ -209,10 +245,35 @@ describe('LiveIntegrationsClient.githubBranchesCached (github.branches.listCache
       owner: 'octo',
       repo: 'intent',
     });
-    expect(listing).toEqual({ cached: true, branches: ['main', 'feat/x'], defaultBranch: 'main' });
+    expect(listing).toEqual({
+      cached: true,
+      branches: ['main', 'feat/x'],
+      defaultBranch: 'main',
+      source: 'cache',
+    });
+  });
+
+  it('surfaces the ls-remote fallback listing (cache miss with populated branches)', async () => {
+    // PROTOCOL §5.27: on a cache miss the daemon falls back to one
+    // `git ls-remote` round trip — { cached: false, branches, defaultBranch?, source: "ls-remote" }.
+    mockedRequest.mockResolvedValueOnce({
+      cached: false,
+      branches: ['dev', 'main'],
+      defaultBranch: 'main',
+      source: 'ls-remote',
+    });
+    const client = new LiveIntegrationsClient();
+
+    expect(await client.githubBranchesCached('octo', 'intent')).toEqual({
+      cached: false,
+      branches: ['dev', 'main'],
+      defaultBranch: 'main',
+      source: 'ls-remote',
+    });
   });
 
   it('surfaces a cold-cache miss ({ cached: false, branches: [] }) unchanged', async () => {
+    // Pre-fallback daemons (and failed fallbacks) omit source entirely.
     mockedRequest.mockResolvedValueOnce({ cached: false, branches: [] });
     const client = new LiveIntegrationsClient();
 
@@ -220,6 +281,7 @@ describe('LiveIntegrationsClient.githubBranchesCached (github.branches.listCache
       cached: false,
       branches: [],
       defaultBranch: undefined,
+      source: undefined,
     });
   });
 

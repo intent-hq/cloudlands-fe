@@ -607,15 +607,19 @@
         const [, owner, repo] = match;
 
         // Cached-first paint (`github.branches.listCached`, PROTOCOL §5.27):
-        // refs from the daemon's local repo cache render instantly while the
-        // authoritative GitHub API list loads in parallel. The seam folds
-        // failures to a cold-cache miss, so this never surfaces an error.
+        // refs from the daemon's local repo cache — or its one-round-trip
+        // `git ls-remote` fallback on a cache miss (`source: "ls-remote"`) —
+        // render instantly while the authoritative GitHub API list loads in
+        // parallel. The seam folds failures to a cold-cache miss, so this
+        // never surfaces an error.
         void appClient.integrations.githubBranchesCached(owner, repo).then((cachedListing) => {
           // A superseded fetch must not clobber a newer repo's state, and the
           // authoritative list wins once it has settled (either way).
           if (abortController.signal.aborted || freshListingSettled) return;
-          // Cold cache keeps today's behavior (skeleton until the API responds).
-          if (!cachedListing.cached || cachedListing.branches.length === 0) return;
+          // Paint whatever branches came back (warm cache OR ls-remote
+          // fallback); an empty listing keeps today's behavior (skeleton
+          // until the API responds).
+          if (cachedListing.branches.length === 0) return;
           branches = cachedListing.branches;
           defaultBranch = cachedListing.defaultBranch || '';
           isLoading = false;
@@ -628,6 +632,7 @@
             owner,
             repo,
             count: cachedListing.branches.length,
+            source: cachedListing.source,
           });
         });
 
