@@ -15,12 +15,14 @@
   import AIBehaviorSidebar, {
     type AIBehaviorView,
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
+  import SettingsSidebarNav from '$lib/components/settings/SettingsSidebarNav.svelte';
   import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
   import LegacyImportSettings from '$lib/components/settings/LegacyImportSettings.svelte';
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
   import LanguageSettings from '$lib/components/settings/LanguageSettings.svelte';
+  import GitHubLinkSettings from '$lib/components/settings/GitHubLinkSettings.svelte';
   import McpServersSettings from '$lib/components/settings/McpServersSettings.svelte';
   import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
@@ -74,7 +76,7 @@
     navigateBackFromSettings,
   } from '$lib/utils/workspace-navigation';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
 
@@ -101,32 +103,87 @@
       : null,
   );
 
-  // Tab types
-  type SettingsTab = 'accounts' | 'agents' | 'setup' | 'fonts-colors' | 'general';
+  type SettingsTab =
+    | 'general'
+    | 'appearance'
+    | 'providers'
+    | 'agents'
+    | 'connections'
+    | 'git-workspace'
+    | 'tools'
+    | 'advanced';
 
-  // Valid tab IDs for validation
-  const validTabs: SettingsTab[] = ['accounts', 'agents', 'setup', 'fonts-colors', 'general'];
+  const validTabs: SettingsTab[] = [
+    'general',
+    'appearance',
+    'providers',
+    'agents',
+    'connections',
+    'git-workspace',
+    'tools',
+    'advanced',
+  ];
 
-  // Legacy tab mapping for backwards compatibility with old URLs
-  const legacyTabMap: Record<string, SettingsTab> = {
-    connections: 'accounts',
-    'interface-system': 'fonts-colors',
+  const hashToTab: Record<string, SettingsTab> = {
+    'default-model': 'agents',
+    specialists: 'agents',
+    agents: 'agents',
+    'all-agents': 'agents',
+    'create-specialist': 'agents',
+    'quickActions.defaultModel': 'agents',
+    'backgroundAgents.defaultModel': 'agents',
+    providers: 'providers',
+    integrations: 'connections',
+    voice: 'connections',
+    'git-workspace': 'git-workspace',
+    notifications: 'general',
+    theme: 'appearance',
+    appearance: 'appearance',
+    'font-style': 'appearance',
+    'color-theme': 'appearance',
+    'note-font': 'appearance',
+    'agent-chat-font': 'appearance',
+    'code-font': 'appearance',
+    'open-in': 'general',
+    'github-link-action': 'general',
+    'mcp-servers': 'tools',
+    'cli-optimization': 'tools',
+    'workspace-api': 'tools',
+    'agent-features': 'tools',
+    'agent-backend': 'tools',
+    'utility-default-model': 'tools',
+    hardware: 'advanced',
+    'websocket-api': 'advanced',
+    connection: 'advanced',
+    data: 'advanced',
+    reset: 'advanced',
+    general: 'advanced',
+    developer: 'advanced',
   };
 
-  // Get initial tab from URL or default to Accounts
-  function getInitialTab(): SettingsTab {
-    const tabParam = page.url.searchParams.get('tab');
+  function resolveLegacyTab(tabParam: string, targetId: string): SettingsTab | undefined {
+    if (tabParam === 'accounts') {
+      return targetId === 'integrations' || targetId === 'voice' ? 'connections' : 'providers';
+    }
+    if (tabParam === 'fonts-colors' || tabParam === 'interface-system') return 'appearance';
+    if (tabParam === 'setup') {
+      const targetTab = hashToTab[targetId];
+      return targetTab === 'git-workspace' || targetTab === 'general' ? targetTab : 'tools';
+    }
+  }
+
+  function resolveTabFromUrl(tabParam: string | null, targetId: string): SettingsTab {
     if (tabParam && validTabs.includes(tabParam as SettingsTab)) {
       return tabParam as SettingsTab;
     }
-    // Handle legacy tab IDs
-    if (tabParam && legacyTabMap[tabParam]) {
-      return legacyTabMap[tabParam];
-    }
-    return 'accounts';
+    if (tabParam) return resolveLegacyTab(tabParam, targetId) ?? hashToTab[targetId] ?? 'general';
+    return hashToTab[targetId] ?? 'general';
   }
 
-  // Current active tab - initialized from URL or default to Agents
+  function getInitialTab(): SettingsTab {
+    return resolveTabFromUrl(page.url.searchParams.get('tab'), page.url.hash.slice(1));
+  }
+
   let activeTab = $state<SettingsTab>(getInitialTab());
 
   // Update URL when tab changes
@@ -140,14 +197,17 @@
     }
   }
 
-  // Tab definitions
-  const tabs: { id: SettingsTab; label: string }[] = [
-    { id: 'accounts', label: m.settings_tab_accounts() },
-    { id: 'agents', label: m.settings_tab_agents() },
-    { id: 'setup', label: m.settings_tab_setup() },
-    { id: 'fonts-colors', label: m.settings_tab_fontsColors() },
-    { id: 'general', label: m.settings_tab_general() },
-  ];
+  // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
+  $effect(() => {
+    const tabParam = page.url.searchParams.get('tab');
+    const targetId = page.url.hash.slice(1);
+    const nextTab = resolveTabFromUrl(tabParam, targetId);
+
+    untrack(() => {
+      if (nextTab !== activeTab) activeTab = nextTab;
+      handleHashNavigation();
+    });
+  });
 
   // Get specialist ID from URL query parameter for auto-selecting
   const initialSpecialistId = $derived(page.url.searchParams.get('specialist'));
@@ -242,28 +302,10 @@
   // App version from Electron
   let appVersion = $state('');
 
-  // Map hash targets to their respective tabs
-  const hashToTab: Record<string, SettingsTab> = {
-    'default-model': 'agents',
-    specialists: 'agents',
-    providers: 'accounts',
-    integrations: 'accounts',
-    voice: 'accounts',
-    'mcp-servers': 'setup',
-    'git-workspace': 'setup',
-    'agent-features': 'setup',
-    'utility-default-model': 'setup',
-    notifications: 'setup',
-    'websocket-api': 'general',
-  };
-
   onMount(() => {
     // Build-time constant — the app version is FE-only (audit row 11), not a
     // daemon surface.
     appVersion = __APP_VERSION__;
-
-    // Handle hash-based navigation on initial load
-    handleHashNavigation();
   });
 
   // Track supported-device presence for the Hardware section gate.
@@ -291,7 +333,7 @@
     // Switch to the correct tab if needed
     const targetTab = hashToTab[targetId];
     if (targetTab && targetTab !== activeTab) {
-      setActiveTab(targetTab);
+      activeTab = targetTab;
     }
 
     // Scroll to hash target after tab switch
@@ -340,10 +382,9 @@
   }
 </script>
 
-<div class="h-full grid grid-rows-[min-content_1fr_min-content]">
-  <!-- Sticky header with back button and tabs -->
-  <div class="bg-sidebar px-6 pt-8 pb-0">
-    <div class="max-w-5xl mx-auto px-6">
+<div class="flex h-full min-w-0">
+  <aside class="flex h-full w-60 shrink-0 flex-col border-r border-border bg-sidebar">
+    <div class="px-5 pt-8 pb-3">
       <!-- Back button with keyboard shortcut -->
       <button
         onclick={navigateBackFromSettings}
@@ -357,522 +398,524 @@
           {isMac ? '⌘' : 'Ctrl'},
         </kbd>
       </button>
+    </div>
 
-      <h1 class="mt-3 mb-4 text-3xl font-semibold tracking-[-0.02em] text-foreground">
+    <SettingsSidebarNav {activeTab} onSelect={setActiveTab} />
+
+    <div class="shrink-0 border-t border-border px-5 py-4 text-xs text-subtle">
+      <div class="flex w-full items-baseline justify-between gap-2">
+        <div class="flex items-baseline gap-1.5">
+          <!-- i18n-ignore (brand name) -->
+          <strong class="text-foreground">Intent</strong>
+          <span>v{appVersion || '...'}</span>
+        </div>
+        {#if $isReadyToInstall$}
+          <button
+            class="cursor-pointer border-none bg-transparent p-0 font-medium text-primary underline hover:text-primary/80"
+            onclick={() => appStore.dispatch(installUpdate())}
+          >
+            {m.settings_footer_updateAvailable()}
+          </button>
+        {:else if $autoUpdateStatus$ === 'not-available' || $autoUpdateStatus$ === 'idle'}
+          <span>{m.settings_footer_upToDate()}</span>
+        {/if}
+      </div>
+      <a
+        href="https://www.intentapp.dev/docs"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="mt-1.5 block cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
+        >{m.settings_footer_support()}</a
+      >
+    </div>
+  </aside>
+
+  <div class="flex min-w-0 flex-1 flex-col">
+    <header class="shrink-0 bg-sidebar pr-8 pl-6 pt-8 pb-6">
+      <h1 class="text-xl font-semibold tracking-[-0.02em] text-foreground">
         {m.settings_page_title()}
       </h1>
+    </header>
 
-      <!-- Tab Bar -->
-      <div class="flex gap-1 border-b border-border -mx-6 px-6">
-        {#each tabs as tab (tab.id)}
-          <button
-            type="button"
-            onclick={() => setActiveTab(tab.id)}
-            class="px-4 py-2.5 text-sm font-medium transition-colors relative cursor-pointer
-              {activeTab === tab.id
-              ? 'text-foreground'
-              : 'text-muted-foreground hover:text-foreground'}"
-          >
-            {tab.label}
-            {#if activeTab === tab.id}
-              <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-full"></span>
-            {/if}
-          </button>
-        {/each}
-      </div>
-    </div>
-  </div>
-
-  <div class="overflow-auto h-full">
-    <div class="min-h-[calc(100%-2rem)] flex flex-col max-w-5xl mx-auto mt-6 px-6 pb-8">
-      <!-- Accounts Tab -->
-      {#if activeTab === 'accounts'}
-        <div id="providers" class="mb-12 scroll-mt-20">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_aiCodingClis()}
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
+    <div class="min-h-0 flex-1 overflow-auto">
+      <main class="mx-auto flex min-h-full max-w-4xl flex-col pr-8 pl-6 pt-6 pb-8">
+        <!-- Providers -->
+        {#if activeTab === 'providers'}
+          <div id="providers" class="mb-12 scroll-mt-20">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_aiCodingClis()}
+            </h2>
+            <div class="bg-card rounded-xl overflow-hidden">
               <ProviderSelector />
-            </section>
+            </div>
+            <p class="text-xs text-subtle mt-2">
+              {m.settings_section_aiCodingClis_hint()}
+            </p>
           </div>
-          <p class="text-xs text-subtle mt-2">
-            {m.settings_section_aiCodingClis_hint()}
-          </p>
-        </div>
+        {/if}
 
         <!-- Connections -->
-        <div id="integrations" class="mb-6 scroll-mt-20">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_connections()}
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <ConnectionsSettings />
-            </section>
+        {#if activeTab === 'connections'}
+          <div id="integrations" class="mb-6 scroll-mt-20">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_connections()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <ConnectionsSettings />
+              </section>
+            </div>
           </div>
-        </div>
 
-        <!-- Voice dictation -->
-        <div id="voice" class="mb-6 scroll-mt-20">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_voice()}
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <VoiceSettings />
-            </section>
+          <!-- Voice dictation -->
+          <div id="voice" class="mb-6 scroll-mt-20">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_voice()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <VoiceSettings />
+              </section>
+            </div>
           </div>
-        </div>
-      {/if}
+        {/if}
 
-      <!-- Agents Tab -->
-      {#if activeTab === 'agents'}
-        <div class="grid grid-cols-[min-content_1fr] gap-6 grow">
-          <AIBehaviorSidebar
-            activeView={aiBehaviorView}
-            onSelect={(view) => (aiBehaviorView = view)}
-          />
-          <AIBehaviorEditor
-            activeView={aiBehaviorView}
-            onSpecialistCreated={(id) => (aiBehaviorView = { type: 'specialist', id })}
-            onSpecialistDeleted={() => (aiBehaviorView = { type: 'system-prompt' })}
-            onDiscard={() => (aiBehaviorView = { type: 'system-prompt' })}
-          />
-        </div>
-      {/if}
+        <!-- Agents Tab -->
+        {#if activeTab === 'agents'}
+          <div class="grid min-w-0 grow grid-cols-[13rem_minmax(0,1fr)] gap-4 xl:gap-6">
+            <AIBehaviorSidebar
+              activeView={aiBehaviorView}
+              onSelect={(view) => (aiBehaviorView = view)}
+            />
+            <AIBehaviorEditor
+              activeView={aiBehaviorView}
+              onSpecialistCreated={(id) => (aiBehaviorView = { type: 'specialist', id })}
+              onSpecialistDeleted={() => (aiBehaviorView = { type: 'system-prompt' })}
+              onDiscard={() => (aiBehaviorView = { type: 'system-prompt' })}
+            />
+          </div>
+        {/if}
 
-      <!-- Setup Tab -->
-      {#if activeTab === 'setup'}
         <!-- Git & Workspace -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_gitWorkspace()}
-          </h2>
-          <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef} />
-        </div>
-
-        <!-- Notifications -->
-        <div id="notifications" class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_notifications()}
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <NotificationSettings />
-            </section>
-          </div>
-        </div>
-
-        <!-- RTK -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_cliOptimization()}
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <RtkSettings />
-            </section>
-          </div>
-        </div>
-
-        <!-- MCP Servers -->
-        <div id="mcp-servers" class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_mcpServers()}
-          </h2>
-          <McpServersSettings isAuggieProvider={$isAuggieProvider$} />
-        </div>
-
-        <!-- Workspace API Output -->
-        <div id="workspace-api" class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_workspaceApi()}
-          </h2>
-          <WorkspaceApiSettings />
-        </div>
-
-        <!-- Agent Features -->
-        <div id="agent-features" class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_agentFeatures()}
-          </h2>
-          <AgentFeaturesSettings />
-        </div>
-
-        <!-- Agent Backend -->
-        <div id="agent-backend" class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_agentBackend()}
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <AgentBackendSettings />
-            </section>
-          </div>
-        </div>
-
-        <!-- Quick Actions -->
-        <div id="utility-default-model" class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_quickActions()}
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <BackgroundAgentSettings />
-            </section>
-          </div>
-        </div>
-      {/if}
-
-      <!-- Fonts & Colors Tab -->
-      {#if activeTab === 'fonts-colors'}
-        <!-- Theme -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_appearance()}
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <div class="flex items-center justify-between">
-                <p class="text-sm font-medium text-foreground">{m.settings_theme_label()}</p>
-                <Toggle
-                  variant="group"
-                  options={themeOptions}
-                  value={$themePreference}
-                  onChange={handleThemeChange}
-                  size="sm"
-                />
-              </div>
-            </section>
-            <section class="px-6 py-5">
-              <ColorThemeSettings bind:this={colorThemeSettingsRef} />
-            </section>
-          </div>
-        </div>
-
-        <!-- Font Style -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_fontStyle()}
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <div class="flex items-center justify-between">
-                <div>
-                  <p class="text-sm font-medium text-foreground">{m.settings_font_notes_label()}</p>
-                  <p
-                    class="text-xs text-subtle mt-0.5 transition-all duration-200"
-                    class:font-mono={$isNoteMonospace}
-                  >
-                    {m.settings_font_notes_description()}
-                  </p>
-                </div>
-                <Toggle
-                  variant="group"
-                  options={fontStyleOptions}
-                  value={$noteFontStyle}
-                  onChange={handleNoteFontChange}
-                  size="sm"
-                />
-              </div>
-            </section>
-            <section class="px-6 py-5">
-              <div class="flex items-center justify-between">
-                <div>
-                  <p class="text-sm font-medium text-foreground">
-                    {m.settings_font_agentChat_label()}
-                  </p>
-                  <p
-                    class="text-xs text-subtle mt-0.5 transition-all duration-200"
-                    class:font-mono={$agentFontStyle === 'monospace'}
-                  >
-                    {m.settings_font_agentChat_description()}
-                  </p>
-                </div>
-                <Toggle
-                  variant="group"
-                  options={fontStyleOptions}
-                  value={$agentFontStyle}
-                  onChange={handleAgentFontChange}
-                  size="sm"
-                />
-              </div>
-            </section>
-            <section class="px-6 py-5">
-              <div class="flex items-center justify-between">
-                <div>
-                  <p class="text-sm font-medium text-foreground">{m.settings_font_code_label()}</p>
-                  <p class="text-xs text-subtle mt-0.5">
-                    {m.settings_font_code_description()}
-                  </p>
-                </div>
-                <div class="w-[180px] flex-shrink-0">
-                  <Select.Root value={$codeFontFamily} onchange={handleCodeFontChange}>
-                    <Select.Trigger>
-                      <span class="truncate" style:font-family={$codeFontFamilyCSS}>
-                        {$codeFontFamilyLabel}
-                      </span>
-                    </Select.Trigger>
-                    <Select.Content portal class="max-h-[300px] w-[180px]">
-                      {#each $codeFontOptions as option}
-                        <Select.Item value={option.value}>
-                          <span class="truncate" style:font-family={option.fontFamily}>
-                            {option.label}
-                          </span>
-                        </Select.Item>
-                      {/each}
-                    </Select.Content>
-                  </Select.Root>
-                </div>
-              </div>
-            </section>
-          </div>
-        </div>
-      {/if}
-
-      <!-- General Tab -->
-      {#if activeTab === 'general'}
-        <!-- Language -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_language_section_title()}
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <LanguageSettings />
-            </section>
-          </div>
-        </div>
-
-        <!-- Open In Apps -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_openIn()}
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <OpenInAppsSettings />
-            </section>
-          </div>
-        </div>
-
-        <!-- Updates -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_updates()}
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <div class="flex items-center justify-between">
-                <div>
-                  <p class="text-sm font-medium text-foreground">
-                    {m.settings_betaUpdates_label()}
-                  </p>
-                  <p class="text-xs text-subtle mt-0.5">
-                    {m.settings_betaUpdates_description()}
-                  </p>
-                </div>
-                <Toggle
-                  variant="indicator"
-                  pressed={$betaUpdatesEnabled$}
-                  onChange={handleBetaUpdatesToggle}
-                  size="xs"
-                  ariaLabel={m.settings_betaUpdates_ariaLabel()}
-                />
-              </div>
-            </section>
-          </div>
-        </div>
-
-        <!-- Hardware / Creator Micro (only when a supported device is detectable) -->
-        {#if showHardwareSection}
-          <div id="hardware" class="mb-12">
+        {#if activeTab === 'git-workspace'}
+          <!-- Git & Workspace -->
+          <div id="git-workspace" class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_hardware()}
+              {m.settings_section_gitWorkspace()}
             </h2>
-            <HardwareConsoleSettings />
+            <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef} />
           </div>
         {/if}
 
-        <!-- WebSocket API -->
-        <div id="websocket-api" class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_websocketApi()}
-          </h2>
-          <WebSocketApiSettings />
-        </div>
-
-        <!-- Connection (UDS only; hidden for WS/unknown transports) -->
-        {#if udsSocketPath}
-          <div class="mb-12">
+        <!-- Tools -->
+        {#if activeTab === 'tools'}
+          <!-- MCP Servers -->
+          <div id="mcp-servers" class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_connection()}
+              {m.settings_section_mcpServers()}
+            </h2>
+            <McpServersSettings isAuggieProvider={$isAuggieProvider$} />
+          </div>
+
+          <!-- RTK -->
+          <div id="cli-optimization" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_cliOptimization()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section class="px-6 py-5">
-                <div class="flex items-center justify-between gap-4">
-                  <div class="min-w-0">
+                <RtkSettings />
+              </section>
+            </div>
+          </div>
+
+          <!-- Workspace API Output -->
+          <div id="workspace-api" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_workspaceApi()}
+            </h2>
+            <WorkspaceApiSettings />
+          </div>
+
+          <!-- Agent Features -->
+          <div id="agent-features" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_agentFeatures()}
+            </h2>
+            <AgentFeaturesSettings />
+          </div>
+
+          <!-- Agent Backend -->
+          <div id="agent-backend" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_agentBackend()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <AgentBackendSettings />
+              </section>
+            </div>
+          </div>
+
+          <!-- Quick Actions -->
+          <div id="utility-default-model" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_quickActions()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <BackgroundAgentSettings />
+              </section>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Appearance -->
+        {#if activeTab === 'appearance'}
+          <!-- Theme -->
+          <div id="theme" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_appearance()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <div class="flex items-center justify-between">
+                  <p class="text-sm font-medium text-foreground">{m.settings_theme_label()}</p>
+                  <Toggle
+                    variant="group"
+                    options={themeOptions}
+                    value={$themePreference}
+                    onChange={handleThemeChange}
+                    size="sm"
+                  />
+                </div>
+              </section>
+              <section id="color-theme" class="px-6 py-5">
+                <ColorThemeSettings bind:this={colorThemeSettingsRef} />
+              </section>
+            </div>
+          </div>
+
+          <!-- Font Style -->
+          <div id="font-style" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_fontStyle()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section id="note-font" class="px-6 py-5">
+                <div class="flex items-center justify-between">
+                  <div>
                     <p class="text-sm font-medium text-foreground">
-                      {m.settings_connection_socket_label()}
+                      {m.settings_font_notes_label()}
                     </p>
-                    <p class="text-xs text-subtle mt-0.5 font-mono select-text break-all">
-                      {udsSocketPath}
+                    <p
+                      class="text-xs text-subtle mt-0.5 transition-all duration-200"
+                      class:font-mono={$isNoteMonospace}
+                    >
+                      {m.settings_font_notes_description()}
                     </p>
                   </div>
-                  <CopyButton text={udsSocketPath} class="shrink-0" />
+                  <Toggle
+                    variant="group"
+                    options={fontStyleOptions}
+                    value={$noteFontStyle}
+                    onChange={handleNoteFontChange}
+                    size="sm"
+                  />
+                </div>
+              </section>
+              <section id="agent-chat-font" class="px-6 py-5">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-sm font-medium text-foreground">
+                      {m.settings_font_agentChat_label()}
+                    </p>
+                    <p
+                      class="text-xs text-subtle mt-0.5 transition-all duration-200"
+                      class:font-mono={$agentFontStyle === 'monospace'}
+                    >
+                      {m.settings_font_agentChat_description()}
+                    </p>
+                  </div>
+                  <Toggle
+                    variant="group"
+                    options={fontStyleOptions}
+                    value={$agentFontStyle}
+                    onChange={handleAgentFontChange}
+                    size="sm"
+                  />
+                </div>
+              </section>
+              <section id="code-font" class="px-6 py-5">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-sm font-medium text-foreground">
+                      {m.settings_font_code_label()}
+                    </p>
+                    <p class="text-xs text-subtle mt-0.5">
+                      {m.settings_font_code_description()}
+                    </p>
+                  </div>
+                  <div class="w-[180px] flex-shrink-0">
+                    <Select.Root value={$codeFontFamily} onchange={handleCodeFontChange}>
+                      <Select.Trigger>
+                        <span class="truncate" style:font-family={$codeFontFamilyCSS}>
+                          {$codeFontFamilyLabel}
+                        </span>
+                      </Select.Trigger>
+                      <Select.Content portal class="max-h-[300px] w-[180px]">
+                        {#each $codeFontOptions as option}
+                          <Select.Item value={option.value}>
+                            <span class="truncate" style:font-family={option.fontFamily}>
+                              {option.label}
+                            </span>
+                          </Select.Item>
+                        {/each}
+                      </Select.Content>
+                    </Select.Root>
+                  </div>
                 </div>
               </section>
             </div>
           </div>
         {/if}
 
-        <!-- Data -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_data()}
-          </h2>
-          <LegacyImportSettings />
-        </div>
-
-        <!-- Reset -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_reset()}
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <div class="flex items-center justify-between">
-                <div>
-                  <p class="text-sm font-medium text-foreground">
-                    {m.settings_reset_label()}
-                  </p>
-                  <p class="text-xs text-subtle">
-                    {m.settings_reset_description()}
-                  </p>
-                </div>
-                <Button variant="outline" size="sm" onclick={handleResetInterfaceSystem}>
-                  {m.settings_reset_button()}
-                </Button>
-              </div>
-            </section>
-          </div>
-        </div>
-
-        <!-- Developer Section (only in dev mode; dev-only UI is not translated) -->
-        {#if isDevMode}
-          <div class="mb-12">
+        <!-- General Tab -->
+        {#if activeTab === 'general'}
+          <!-- Language -->
+          <div id="language" class="mb-12">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              <!-- i18n-ignore (dev-only) -->
-              Developer
+              {m.settings_language_section_title()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section class="px-6 py-5">
-                <div class="flex flex-col gap-2">
-                  <!-- i18n-ignore (dev-only) -->
-                  <span class="text-sm font-medium">Update Toast Simulation</span>
-                  <div class="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onclick={() =>
-                        appStore.dispatch(
-                          simulateSetState({
-                            toastVisible: true,
-                            status: 'downloading',
-                            updateInfo: {
-                              version: '99.0.0',
-                              releaseDate: new Date().toISOString(),
-                              releaseNotes: 'Simulated',
-                            },
-                            progress: {
-                              percent: 50,
-                              bytesPerSecond: 2500000,
-                              transferred: 25000000,
-                              total: 50000000,
-                            },
-                            error: null,
-                          }),
-                        )}
-                    >
-                      <!-- i18n-ignore (dev-only) -->
-                      Simulate Update Flow
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onclick={() =>
-                        appStore.dispatch(
-                          simulateSetState({
-                            toastVisible: true,
-                            status: 'not-available',
-                            currentVersion: '1.0.0-dev',
-                          }),
-                        )}
-                    >
-                      <!-- i18n-ignore (dev-only) -->
-                      Simulate No Update
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onclick={() =>
-                        appStore.dispatch(
-                          simulateSetState({
-                            toastVisible: false,
-                            status: 'idle',
-                            currentVersion: '1.0.0-dev',
-                            updateInfo: null,
-                            progress: null,
-                            error: null,
-                            channel: 'stable',
-                          }),
-                        )}
-                    >
-                      <!-- i18n-ignore (dev-only) -->
-                      Reset
-                    </Button>
+                <LanguageSettings />
+              </section>
+            </div>
+          </div>
+
+          <!-- Updates -->
+          <div id="updates" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_updates()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-sm font-medium text-foreground">
+                      {m.settings_betaUpdates_label()}
+                    </p>
+                    <p class="text-xs text-subtle mt-0.5">
+                      {m.settings_betaUpdates_description()}
+                    </p>
                   </div>
+                  <Toggle
+                    variant="indicator"
+                    pressed={$betaUpdatesEnabled$}
+                    onChange={handleBetaUpdatesToggle}
+                    size="xs"
+                    ariaLabel={m.settings_betaUpdates_ariaLabel()}
+                  />
                 </div>
               </section>
             </div>
           </div>
-        {/if}
-      {/if}
-    </div>
-  </div>
 
-  <!-- Global Footer -->
-  <div class="px-6 py-4 border-t border-border bg-sidebar">
-    <div class="max-w-5xl mx-auto px-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-      <div class="text-sm text-subtle">
-        <!-- i18n-ignore (brand name) -->
-        <strong class="text-foreground">Intent</strong>
-        <span class="ml-2">
-          v{appVersion || '...'}
-          {#if $isReadyToInstall$}
-            <span class="mx-2">·</span>
-            <button
-              class="font-medium underline text-primary hover:text-primary/80 cursor-pointer bg-transparent border-none p-0"
-              onclick={() => appStore.dispatch(installUpdate())}
-            >
-              {m.settings_footer_updateAvailable()}
-            </button>
-          {:else if $autoUpdateStatus$ === 'not-available' || $autoUpdateStatus$ === 'idle'}
-            <span class="mx-2">·</span>
-            <span class="text-subtle">{m.settings_footer_upToDate()}</span>
+          <!-- Notifications -->
+          <div id="notifications" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_notifications()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <NotificationSettings />
+              </section>
+            </div>
+          </div>
+
+          <!-- Open In Apps -->
+          <div id="open-in" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_openIn()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <OpenInAppsSettings />
+              </section>
+            </div>
+          </div>
+
+          <!-- GitHub links -->
+          <div id="github-link-action" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_githubLinks_section_title()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <GitHubLinkSettings />
+              </section>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Advanced -->
+        {#if activeTab === 'advanced'}
+          <!-- WebSocket API -->
+          <div id="websocket-api" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_websocketApi()}
+            </h2>
+            <WebSocketApiSettings />
+          </div>
+
+          <!-- Connection (UDS only; hidden for WS/unknown transports) -->
+          {#if udsSocketPath}
+            <div id="connection" class="mb-12">
+              <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                {m.settings_section_connection()}
+              </h2>
+              <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+                <section class="px-6 py-5">
+                  <div class="flex items-center justify-between gap-4">
+                    <div class="min-w-0">
+                      <p class="text-sm font-medium text-foreground">
+                        {m.settings_connection_socket_label()}
+                      </p>
+                      <p class="text-xs text-subtle mt-0.5 font-mono select-text break-all">
+                        {udsSocketPath}
+                      </p>
+                    </div>
+                    <CopyButton text={udsSocketPath} class="shrink-0" />
+                  </div>
+                </section>
+              </div>
+            </div>
           {/if}
-        </span>
-      </div>
-      <div class="flex flex-wrap items-center gap-x-1 gap-y-2">
-        <a
-          href="https://www.intentapp.dev/docs"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          >{m.settings_footer_support()}</a
-        >
-      </div>
+
+          <!-- Hardware / Creator Micro (only when a supported device is detectable) -->
+          {#if showHardwareSection}
+            <div id="hardware" class="mb-12">
+              <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                {m.settings_section_hardware()}
+              </h2>
+              <HardwareConsoleSettings />
+            </div>
+          {/if}
+
+          <!-- Data -->
+          <div id="data" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_data()}
+            </h2>
+            <LegacyImportSettings />
+          </div>
+
+          <!-- Reset -->
+          <div id="reset" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_reset()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-sm font-medium text-foreground">
+                      {m.settings_reset_label()}
+                    </p>
+                    <p class="text-xs text-subtle">
+                      {m.settings_reset_description()}
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" onclick={handleResetInterfaceSystem}>
+                    {m.settings_reset_button()}
+                  </Button>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <!-- Developer Section (only in dev mode; dev-only UI is not translated) -->
+          {#if isDevMode}
+            <div id="developer" class="mb-12">
+              <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                <!-- i18n-ignore (dev-only) -->
+                Developer
+              </h2>
+              <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+                <section class="px-6 py-5">
+                  <div class="flex flex-col gap-2">
+                    <!-- i18n-ignore (dev-only) -->
+                    <span class="text-sm font-medium">Update Toast Simulation</span>
+                    <div class="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onclick={() =>
+                          appStore.dispatch(
+                            simulateSetState({
+                              toastVisible: true,
+                              status: 'downloading',
+                              updateInfo: {
+                                version: '99.0.0',
+                                releaseDate: new Date().toISOString(),
+                                releaseNotes: 'Simulated',
+                              },
+                              progress: {
+                                percent: 50,
+                                bytesPerSecond: 2500000,
+                                transferred: 25000000,
+                                total: 50000000,
+                              },
+                              error: null,
+                            }),
+                          )}
+                      >
+                        <!-- i18n-ignore (dev-only) -->
+                        Simulate Update Flow
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onclick={() =>
+                          appStore.dispatch(
+                            simulateSetState({
+                              toastVisible: true,
+                              status: 'not-available',
+                              currentVersion: '1.0.0-dev',
+                            }),
+                          )}
+                      >
+                        <!-- i18n-ignore (dev-only) -->
+                        Simulate No Update
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onclick={() =>
+                          appStore.dispatch(
+                            simulateSetState({
+                              toastVisible: false,
+                              status: 'idle',
+                              currentVersion: '1.0.0-dev',
+                              updateInfo: null,
+                              progress: null,
+                              error: null,
+                              channel: 'stable',
+                            }),
+                          )}
+                      >
+                        <!-- i18n-ignore (dev-only) -->
+                        Reset
+                      </Button>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          {/if}
+        {/if}
+      </main>
     </div>
   </div>
 </div>

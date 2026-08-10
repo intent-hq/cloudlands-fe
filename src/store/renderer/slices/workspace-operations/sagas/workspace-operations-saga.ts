@@ -15,6 +15,7 @@ import {
   fork,
   put,
   race,
+  spawn,
   take,
   takeEvery,
   type SagaGenerator,
@@ -88,6 +89,13 @@ import { buildCreateWorkspaceRequestFromProposal } from '../utils/workspace-crea
 
 const logger = createLogger('WorkspaceOperationsSaga');
 export const WORKSPACE_OPERATION_UNDO_DURATION_MS = 15_000;
+/**
+ * How long the pendingDeletions tombstone outlives a successful workspace
+ * delete. Stale workspace.get/workspace.list responses (background polls,
+ * bulk refetches) computed before the daemon committed the delete can land
+ * after it; the reducers reject tombstoned ids until this grace window ends.
+ */
+export const WORKSPACE_DELETION_TOMBSTONE_TTL_MS = 60_000;
 type Toast = Awaited<ReturnType<typeof getToast>>;
 type RemoveRepoResponse = { success: boolean; data?: { removed: boolean }; error?: string };
 
@@ -162,6 +170,11 @@ function createUnloadChannel(): EventChannel<Event> {
   }, buffers.sliding(1));
 }
 
+function* clearTombstoneAfterGrace(workspaceId: string): SagaGenerator<void> {
+  yield* delay(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
+  yield* put(clearWorkspacePendingDeletion(workspaceId));
+}
+
 function* commitDeletion(workspace: Workspace, toast: Toast): SagaGenerator<void> {
   try {
     const result = yield* call([workspaceClient, workspaceClient.delete], workspace.id);
@@ -171,7 +184,9 @@ function* commitDeletion(workspace: Workspace, toast: Toast): SagaGenerator<void
       toast.error(m.workspace_ops_deleteFailed_error());
       return;
     }
-    yield* put(clearWorkspacePendingDeletion(workspace.id));
+    // Keep the tombstone for a grace window so stale refetch responses cannot
+    // resurrect the deleted workspace. Detached so it survives task teardown.
+    yield* spawn(clearTombstoneAfterGrace, workspace.id);
   } catch (error) {
     logger.error('workspace.delete failed', { workspaceId: workspace.id, error });
     yield* put(clearWorkspacePendingDeletion(workspace.id));
@@ -463,6 +478,8 @@ function* performBulkDelete(repoKey: string): SagaGenerator<void> {
       if (result.ok) {
         deleteCount++;
         yield* put(removeWorkspaceEntity(workspace.id));
+        yield* put(markWorkspacePendingDeletion(workspace.id));
+        yield* spawn(clearTombstoneAfterGrace, workspace.id);
       } else if (result.error?.includes('timed out')) timeoutCount++;
       else failCount++;
     } catch {
@@ -649,6 +666,8 @@ function* applyBulkProposal(payload: WorkspaceProposalApplyPayload): SagaGenerat
       if (result.ok) {
         deleted++;
         yield* put(removeWorkspaceEntity(id as WorkspaceId));
+        yield* put(markWorkspacePendingDeletion(id as WorkspaceId));
+        yield* spawn(clearTombstoneAfterGrace, id as WorkspaceId);
       } else if (result.error?.includes('timed out')) timedOut++;
       else failed++;
     } catch {

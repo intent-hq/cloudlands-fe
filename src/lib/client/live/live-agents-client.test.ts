@@ -1080,6 +1080,78 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(agent?.lastMessageRole).toBeUndefined();
   });
 
+  it('carries lastMessageId verbatim and derives hasUnread when the marker lags (monorepo#1597)', async () => {
+    backend.onRequest('agent.list', () => ({
+      agents: [
+        {
+          id: 'agent-1',
+          workspaceId: 'ws-1',
+          name: 'A1',
+          status: 'idle',
+          lastMessageRole: 'assistant',
+          lastMessageId: 'm-9',
+          metadata: { lastSeenMessageId: 'm-5' },
+        },
+      ],
+    }));
+    const client = new LiveAgentsClient();
+
+    const [agent] = await client.list('ws-1');
+    expect(agent).toMatchObject({ lastMessageId: 'm-9', hasUnread: true });
+  });
+
+  it('derives hasUnread: false when the seen marker converges (agent:updated re-ingest)', async () => {
+    backend.onRequest('agent.get', () => ({
+      agent: {
+        id: 'agent-1',
+        workspaceId: 'ws-1',
+        name: 'A1',
+        status: 'idle',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'm-9',
+        metadata: { lastSeenMessageId: 'm-9' },
+      },
+    }));
+    const client = new LiveAgentsClient();
+
+    const agent = await client.get('agent-1');
+    expect(agent?.hasUnread).toBe(false);
+  });
+
+  it('derives hasUnread: true when the seen marker is absent (never marked seen)', async () => {
+    backend.onRequest('agent.get', () => ({
+      agent: {
+        id: 'agent-1',
+        workspaceId: 'ws-1',
+        name: 'A1',
+        status: 'idle',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'm-1',
+      },
+    }));
+    const client = new LiveAgentsClient();
+
+    const agent = await client.get('agent-1');
+    expect(agent?.hasUnread).toBe(true);
+  });
+
+  it('derives hasUnread: false when the daemon omits lastMessageId (older daemon)', async () => {
+    backend.onRequest('agent.get', () => ({
+      agent: {
+        id: 'agent-1',
+        workspaceId: 'ws-1',
+        name: 'A1',
+        status: 'idle',
+        lastMessageRole: 'assistant',
+      },
+    }));
+    const client = new LiveAgentsClient();
+
+    const agent = await client.get('agent-1');
+    expect(agent?.lastMessageId).toBeUndefined();
+    expect(agent?.hasUnread).toBe(false);
+  });
+
   it('list and get carry session-advertised effortLevels verbatim (§5.5 additive field)', async () => {
     // The daemon serves the levels its `thought_level` discovery captured at
     // the most recent session open (claude-code case) — pass-through, no

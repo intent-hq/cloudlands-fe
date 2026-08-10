@@ -28,9 +28,7 @@ vi.mock('svelte-sonner', () => ({
 }));
 
 vi.mock('svelte-fa', async () => ({
-  default: (
-    await import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte')
-  ).default,
+  default: (await import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 
 vi.mock('$lib/directory-picker-service', () => ({
@@ -62,7 +60,9 @@ async function openPopup(providerName: string) {
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
-warmImport(() => import('$features/onboarding/messages/__tests__/mocks/MockDirectoryPickerModal.svelte'));
+warmImport(
+  () => import('$features/onboarding/messages/__tests__/mocks/MockDirectoryPickerModal.svelte'),
+);
 
 describe('ProviderPathConfig', () => {
   beforeEach(() => {
@@ -73,6 +73,21 @@ describe('ProviderPathConfig', () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('supports a controlled open state without rendering the folder trigger', () => {
+    render(ProviderPathConfig, {
+      props: {
+        providerId: 'claude-code',
+        providerName: 'Claude Code',
+        cliCommand: 'claude-agent-acp',
+        open: true,
+        showTrigger: false,
+      },
+    });
+
+    expect(screen.queryByTitle('Configure Claude Code path')).toBeNull();
+    expect(screen.getByText('Claude Code CLI Path')).toBeTruthy();
   });
 
   it('renders the full auto-detected path wrapped, not truncated', async () => {

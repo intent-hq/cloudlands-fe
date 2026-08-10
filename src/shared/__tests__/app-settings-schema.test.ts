@@ -7,6 +7,23 @@ import {
 import { THEME_PRESET_IDS, THEME_PRESET_MANIFEST } from '../theme-presets-manifest';
 
 describe('app settings schema', () => {
+  it('defines the persisted GitHub link default action choices', () => {
+    expect(findAppSettingDefinition('githubLinks.defaultAction')).toMatchObject({
+      type: 'enum',
+      source: 'local-storage',
+      storageKey: 'github-links:defaultAction',
+      defaultValue: 'show-choices',
+      enumValues: [
+        'show-choices',
+        'open-in-browser',
+        'open-in-app',
+        'copy-link',
+        'start-workspace',
+      ],
+      apply: { kind: 'redux-action', action: 'userPreferences/setGithubLinkDefaultAction' },
+    });
+  });
+
   it('exposes theme preset IDs as enum values', () => {
     const definition = findAppSettingDefinition('theme.activePresetId');
 

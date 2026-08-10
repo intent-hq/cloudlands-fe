@@ -128,7 +128,8 @@ export const loadProviderModelsFromStorage = createAction<[models: Record<string
 
 /**
  * User pick of the default reasoning-effort level ('' clears it). Persisted to
- * `model.defaultReasoningEffort` by the model-selection persistence middleware.
+ * `model.defaultReasoningEffort` by the model-selection saga's persistence
+ * watcher.
  */
 export const setDefaultReasoningEffort = createAction<[effort: string]>(
   'model/setDefaultReasoningEffort',

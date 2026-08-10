@@ -87,6 +87,7 @@ import { daemonHealthReducer } from './slices/daemon-health/daemon-health-slice'
 import { connectionsReducer } from './slices/connections/connections-slice';
 import { hostRequirementsReducer } from './slices/host-requirements/host-requirements-slice';
 import { hudReducer } from './slices/hud/hud-slice';
+import { setupPromptReducer } from './slices/setup-prompt/setup-prompt-slice';
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
@@ -178,4 +179,5 @@ export const reducers = {
   connections: connectionsReducer,
   hostRequirements: hostRequirementsReducer,
   hud: hudReducer,
+  setupPrompt: setupPromptReducer,
 } as const;

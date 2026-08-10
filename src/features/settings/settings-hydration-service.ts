@@ -35,7 +35,10 @@ import {
   setServers as setMcpServers,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import type { McpServerConfig } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
-import { loadProviderModelsFromStorage } from '$store/renderer/slices/model/model-slice';
+import {
+  loadDefaultReasoningEffortFromStorage,
+  loadProviderModelsFromStorage,
+} from '$store/renderer/slices/model/model-slice';
 
 const logger = createLogger('SettingsHydrationService');
 
@@ -74,6 +77,12 @@ function applyOne(change: AppliedSettingChange): void {
     case 'model.providerDefaults': {
       if (value && typeof value === 'object') {
         appStore.dispatch(loadProviderModelsFromStorage(value as Record<string, string>));
+      }
+      return;
+    }
+    case 'model.defaultReasoningEffort': {
+      if (typeof value === 'string') {
+        appStore.dispatch(loadDefaultReasoningEffortFromStorage(value));
       }
       return;
     }
