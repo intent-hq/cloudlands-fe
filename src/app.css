@@ -1,11 +1,15 @@
 @import 'tailwindcss';
+/* CSS requires all @import rules to precede every other statement — anything
+   else before them makes the later imports invalid and Vite drops them from
+   the production bundle (intent-hq/monorepo#1909). Keep these imports first. */
+@import '$lib/styles/tiptap-editor.css';
+@import '$lib/styles/chat-messages.css';
+@import '$lib/styles/comments.css';
+
 /* The legacy `darkMode: 'class'` is ignored under Tailwind v4; the app toggles
    `.dark`/`.light` on the root element (src/lib/utils/theme.ts), so `dark:`
    variants must key off the class, not the OS `prefers-color-scheme` query. */
 @custom-variant dark (&:where(.dark, .dark *));
-@import '$lib/styles/tiptap-editor.css';
-@import '$lib/styles/chat-messages.css';
-@import '$lib/styles/comments.css';
 
 @keyframes ui-highlight-pulse-ring {
   0% {
