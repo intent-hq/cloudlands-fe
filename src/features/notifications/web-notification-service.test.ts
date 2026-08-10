@@ -396,6 +396,29 @@ describe('web-notification-service', () => {
       expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
     });
 
+    it('skips when the workspace is archived (event fast path, no agent.list read)', async () => {
+      await handleWebAgentIdle(makeIdleEvent({ workspaceArchived: true }));
+
+      expect(MockNotification.instances).toHaveLength(0);
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+      );
+    });
+
+    it('does not skip when workspaceArchived is false', async () => {
+      await handleWebAgentIdle(makeIdleEvent({ workspaceArchived: false }));
+
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
+    });
+
+    it('does not skip when workspaceArchived is absent (older daemons)', async () => {
+      await handleWebAgentIdle(makeIdleEvent());
+
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
+    });
+
     it('skips when other agents are still active in the workspace', async () => {
       stubBackendWire({
         agentListResult: {

@@ -374,6 +374,16 @@ export class NotificationService {
         return;
       }
 
+      // Fast path: the event's workspace is archived — archived workspaces
+      // never notify. Absent on older daemons (treated as not archived).
+      if (event.data.workspaceArchived === true) {
+        logger.debug('Skipping notification for archived workspace', {
+          workspaceId,
+          agentName: event.data.agentName,
+        });
+        return;
+      }
+
       // Fast path: the agent ended its turn while awaiting delegated
       // sub-agents (pending completion watches) — the workspace isn't truly
       // quiet even if the children haven't started responding yet. Absent on

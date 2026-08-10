@@ -127,15 +127,17 @@ describe('notification sagas', () => {
     emitMockIpcEvent('agent:idle', idle()); await flush();
     expect(MockNotification.instances).toEqual([]);
 
-    // waitingOnHooks / waitingOnPrMonitors (individually and combined) skip
-    // via the same fast path as isWaitingForOtherAgents — no `agent.list`
-    // read at all (proves the check runs before the wire-read gate, not
-    // just that some other suppression happens to also apply).
+    // workspaceArchived / waitingOnHooks / waitingOnPrMonitors (individually
+    // and combined) skip via the same fast path as isWaitingForOtherAgents —
+    // no `agent.list` read at all (proves the check runs before the
+    // wire-read gate, not just that some other suppression happens to also
+    // apply).
     mocks.backend.mockClear();
     mocks.backend.mockImplementation(async (method, params) => {
       if (method === 'settings.get') return { value: params.path === 'notifications.enabled' ? true : false };
       throw new Error(`unexpected ${method}`);
     });
+    emitMockIpcEvent('agent:idle', idle({ workspaceArchived: true }));
     emitMockIpcEvent('agent:idle', idle({ waitingOnHooks: [{ hookId: 'h1', name: 'watch-ci' }] }));
     emitMockIpcEvent('agent:idle', idle({ waitingOnPrMonitors: [{ monitorId: 'm1', repo: 'o/r', prNumber: 1 }] }));
     emitMockIpcEvent(
