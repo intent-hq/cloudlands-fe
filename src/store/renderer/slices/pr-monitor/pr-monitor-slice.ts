@@ -18,6 +18,7 @@ import {
   type Collection,
 } from "@augmentcode/themis/utils/collections/collection-utils";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
+import { omitKey } from "../../utils/utils";
 import { removeWorkspaceEntity } from "../workspace/workspace-slice";
 import type { PrMonitorRow } from "$features/pr-monitor/pr-monitor-service";
 
@@ -29,6 +30,7 @@ export interface PrMonitorWorkspaceState {
 /** Root pr-monitor state, keyed by workspace ID. */
 export interface PrMonitorState {
   byWorkspaceId: Record<string, PrMonitorWorkspaceState>;
+  subscriptionDemandByWorkspaceId: Record<string, number>;
 }
 
 export const emptyPrMonitorWorkspaceState: PrMonitorWorkspaceState = {
@@ -37,6 +39,7 @@ export const emptyPrMonitorWorkspaceState: PrMonitorWorkspaceState = {
 
 export const initialState: PrMonitorState = {
   byWorkspaceId: {},
+  subscriptionDemandByWorkspaceId: {},
 };
 
 const { setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
@@ -79,6 +82,32 @@ export const cancelPrMonitorRequested = createAction<
 
 export const prMonitorReducer = createReducer<PrMonitorState>(initialState);
 
+prMonitorReducer.with(prMonitorsSubscribeRequested, (state, { payload: [workspaceId] }) => {
+  if (!workspaceId) return state;
+  return {
+    ...state,
+    subscriptionDemandByWorkspaceId: {
+      ...state.subscriptionDemandByWorkspaceId,
+      [workspaceId]: (state.subscriptionDemandByWorkspaceId[workspaceId] ?? 0) + 1,
+    },
+  };
+});
+
+prMonitorReducer.with(prMonitorsUnsubscribeRequested, (state, { payload: [workspaceId] }) => {
+  const currentDemand = state.subscriptionDemandByWorkspaceId[workspaceId];
+  if (!workspaceId || !currentDemand) return state;
+  return {
+    ...state,
+    subscriptionDemandByWorkspaceId:
+      currentDemand === 1
+        ? omitKey(state.subscriptionDemandByWorkspaceId, workspaceId)
+        : {
+            ...state.subscriptionDemandByWorkspaceId,
+            [workspaceId]: currentDemand - 1,
+          },
+  };
+});
+
 prMonitorReducer.with(prMonitorsUpdated, (state, { payload: [workspaceId, monitors] }) =>
   setWorkspaceState(state, workspaceId, {
     monitors: createCollection<PrMonitorRow, "monitorId">("monitorId", monitors),
@@ -89,6 +118,11 @@ prMonitorReducer.with(prMonitorsCleared, (state, { payload: [workspaceId] }) =>
   clearWorkspaceState(state, workspaceId),
 );
 
-prMonitorReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) =>
-  clearWorkspaceState(state, wsId),
-);
+prMonitorReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) => {
+  const stateWithoutMonitors = clearWorkspaceState(state, wsId);
+  const subscriptionDemandByWorkspaceId = omitKey(state.subscriptionDemandByWorkspaceId, wsId);
+  if (subscriptionDemandByWorkspaceId === state.subscriptionDemandByWorkspaceId) {
+    return stateWithoutMonitors;
+  }
+  return { ...stateWithoutMonitors, subscriptionDemandByWorkspaceId };
+});
