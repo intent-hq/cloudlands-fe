@@ -257,6 +257,34 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('keeps per-workspace latest semantics after an earlier load completed (pruned handle)', async () => {
+    const resolvers: Array<(value: { tasks: unknown[]; stats: { total: number } }) => void> = [];
+    mocks.tasks.list.mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolvers.push(done);
+        }),
+    );
+    const run = start();
+    run.channel.put(loadWorkspaceTasksRequested(WS));
+    await settle();
+    resolvers[0]({ tasks: [], stats: { total: 1 } });
+    await settle();
+
+    run.channel.put(loadWorkspaceTasksRequested(WS));
+    run.channel.put(loadWorkspaceTasksRequested(WS));
+    await settle();
+    expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS], [WS]]);
+    resolvers[1]({ tasks: [], stats: { total: 2 } });
+    resolvers[2]({ tasks: [], stats: { total: 3 } });
+    await settle();
+    expect(run.actions).toEqual([
+      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
+      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 3 }] },
+    ]);
+    await stop(run.task);
+  });
+
   it('routes event, context, task-link, skill, script, and terminal reads exactly', async () => {
     const event = { id: 'event-1', type: 'agent:created', wire_only: true };
     const item = { id: 'context-1', type: 'note', title: 'Context', provider: 'internal' };

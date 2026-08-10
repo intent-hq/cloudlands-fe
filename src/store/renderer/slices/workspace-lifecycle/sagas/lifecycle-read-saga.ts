@@ -287,6 +287,11 @@ function takeLatestByWorkspace<ARGS extends [workspaceId: string, ...rest: unkno
     const running: Record<string, Task> = {};
     while (true) {
       const action: StoreAction<ARGS> = yield* take(actionCreator);
+      // Lazily prune finished tasks so entries for completed loads and
+      // deleted workspaces don't accumulate for the lifetime of the saga.
+      for (const [id, task] of Object.entries(running)) {
+        if (!task.isRunning()) delete running[id];
+      }
       const workspaceId = action.payload[0];
       const previous = running[workspaceId];
       if (previous?.isRunning()) yield* cancel(previous);

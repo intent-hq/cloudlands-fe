@@ -234,6 +234,24 @@ describe("workspaceTasksReducer", () => {
       expect(again).toBe(seeded);
     });
 
+    it("applies a seed when the rollup carries fields beyond the numeric trio", () => {
+      const seeded = workspaceTasksReducer(
+        initialState,
+        replaceWorkspaceList([makeWorkspace({ id: WS, taskStats: seedStats })])
+      );
+      const withTasks: WorkspaceTaskStats = {
+        ...seedStats,
+        tasks: [{ title: "Task a", status: "in_progress" }],
+      };
+      const state = workspaceTasksReducer(
+        seeded,
+        replaceWorkspaceList([makeWorkspace({ id: WS, taskStats: withTasks })])
+      );
+
+      expect(state.byWorkspaceId[WS].stats).toEqual(withTasks);
+      expect(state.byWorkspaceId[WS].initialized).toBe(false);
+    });
+
     it("updates a previous seed for a not-yet-initialized workspace", () => {
       const seeded = workspaceTasksReducer(
         initialState,

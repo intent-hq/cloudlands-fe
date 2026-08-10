@@ -142,13 +142,10 @@ function seedStatsFromListRow(state: WorkspaceTasksState, workspace: Workspace):
 
   const ws = getWorkspaceState(state, workspace.id);
   if (ws.initialized) return state;
-  if (
-    ws.stats.total === stats.total &&
-    ws.stats.completed === stats.completed &&
-    ws.stats.inProgress === stats.inProgress
-  ) {
-    return state;
-  }
+  // Shallow-compare every field present on the incoming rollup so the no-op
+  // check stays correct if the wire shape grows beyond the current trio.
+  const keys = Object.keys(stats) as (keyof WorkspaceTaskStats)[];
+  if (keys.every((key) => ws.stats[key] === stats[key])) return state;
 
   return setWorkspaceState(state, workspace.id, {
     ...ws,
