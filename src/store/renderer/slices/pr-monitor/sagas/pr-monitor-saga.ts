@@ -1,4 +1,4 @@
-import { END, buffers, channel, eventChannel, type Channel, type EventChannel } from 'redux-saga';
+import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
 import type { Task } from 'redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
 import {
@@ -6,8 +6,8 @@ import {
   call,
   cancel,
   delay,
-  fork,
   put,
+  spawn,
   take,
   takeEvery,
   type SagaGenerator,
@@ -19,7 +19,6 @@ import {
   flushPrMonitorRequested,
   prMonitorsCleared,
   prMonitorsUpdated,
-  type PrMonitorState,
 } from '../pr-monitor-slice';
 import { selectPrMonitorSubscriptionDemand } from '../pr-monitor-selectors';
 import {
@@ -36,7 +35,7 @@ type SubscriptionEntry = {
   task: Task;
 };
 
-type SubscriptionDemand = PrMonitorState['subscriptionDemandByWorkspaceId'];
+type SubscriptionDemand = Record<string, number>;
 
 const SUBSCRIPTION_RECONCILIATION_DELAY_MS = 100;
 
@@ -77,7 +76,7 @@ function* reconcilePrMonitorSubscriptions(
     if (count <= 0 || active.has(workspaceId)) continue;
     try {
       const channel = createMonitorChannel(workspaceId);
-      const task = yield* fork(forwardMonitorUpdates, workspaceId, channel);
+      const task = yield* spawn(forwardMonitorUpdates, workspaceId, channel);
       active.set(workspaceId, { channel, task });
     } catch (error) {
       logger.error('Failed to subscribe to prMonitor events', { workspaceId, error });
@@ -85,26 +84,14 @@ function* reconcilePrMonitorSubscriptions(
   }
 }
 
-function* watchSubscriptionDemand(
-  reconciliationChannel: Channel<SubscriptionDemand>,
-): SagaGenerator<void> {
+function* watchSubscriptionDemand(active: Map<string, SubscriptionEntry>): SagaGenerator<void> {
   yield* takeLatestFromSelector(
     selectPrMonitorSubscriptionDemand,
     function* ({ payload }: SelectorChannelPayload<SubscriptionDemand>) {
       yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
-      yield* put(reconciliationChannel, payload);
+      yield* reconcilePrMonitorSubscriptions(active, payload);
     },
   );
-}
-
-function* manageSubscriptions(
-  active: Map<string, SubscriptionEntry>,
-  reconciliationChannel: Channel<SubscriptionDemand>,
-): SagaGenerator<void> {
-  while (true) {
-    const demand = yield* take(reconciliationChannel);
-    yield* reconcilePrMonitorSubscriptions(active, demand);
-  }
 }
 
 export function* flushPrMonitorWorker(
@@ -139,16 +126,9 @@ function* watchCancel(): SagaGenerator<void> {
 
 export function* prMonitorSaga(): SagaGenerator<void> {
   const active = new Map<string, SubscriptionEntry>();
-  const reconciliationChannel = channel<SubscriptionDemand>(buffers.sliding(1));
   try {
-    yield* all([
-      call(watchSubscriptionDemand, reconciliationChannel),
-      call(manageSubscriptions, active, reconciliationChannel),
-      call(watchFlush),
-      call(watchCancel),
-    ]);
+    yield* all([call(watchSubscriptionDemand, active), call(watchFlush), call(watchCancel)]);
   } finally {
-    reconciliationChannel.close();
     for (const entry of active.values()) yield* cancel(entry.task);
     active.clear();
   }
