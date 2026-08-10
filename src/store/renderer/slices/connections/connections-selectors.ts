@@ -35,6 +35,18 @@ export const selectConnectionCertMismatch = store.createSelector(
 );
 
 /**
+ * Auth rejection for the CURRENTLY-ACTIVE backend, or null. The backend
+ * rejected the WebSocket upgrade with HTTP 401/403 (bad/rotated token, or the
+ * WS API is disabled). Gated on the active connection id so switching backends
+ * hides the state without an explicit clear. Drives the actionable "token
+ * rejected — re-pair" posture of the daemon-loss overlay.
+ */
+export const selectActiveAuthRejected = store.createSelector((state) => {
+  const { authRejected, activeId } = state.connections;
+  return authRejected && authRejected.id === activeId ? authRejected : null;
+});
+
+/**
  * Protocol mismatch for the CURRENTLY-ACTIVE backend, or null. Gated on the
  * active connection id so switching back to local (or to a compatible remote)
  * hides the warning without an explicit clear. Drives the persistent

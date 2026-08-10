@@ -239,6 +239,23 @@ export class PinMismatchError extends Error {
 }
 
 /**
+ * Raised when a `wss` upgrade is rejected by the daemon's bearer-token check
+ * (PROTOCOL §2.1): HTTP 401 on a bad/rotated token, 403 when the WS API is
+ * disabled. Distinct from a generic transport error so the switch/UI layer can
+ * surface "authentication rejected" instead of a transient reconnect.
+ */
+export class AuthRejectedError extends Error {
+  /** HTTP status the upgrade was rejected with (401 or 403). */
+  readonly statusCode: number;
+  constructor(statusCode: number) {
+    // i18n-ignore (main-process error message for logs, not renderer copy)
+    super(`WebSocket upgrade rejected with HTTP ${statusCode} (authentication rejected)`);
+    this.name = 'AuthRejectedError';
+    this.statusCode = statusCode;
+  }
+}
+
+/**
  * Normalize a certificate SHA-256 fingerprint to the daemon's canonical form
  * (PROTOCOL §1.2): colon-separated **uppercase** hex byte pairs. Accepts any
  * mix of case and separators (Node's `fingerprint256` is already colon-hex
@@ -279,7 +296,9 @@ function peerFingerprint(response: IncomingMessage): string {
  * mismatch destroys the stream with a {@link PinMismatchError}; a match hands
  * the connection to the shared {@link WebSocketDuplex} newline framing adapter.
  * The bearer token is sent via the `Authorization` header (PROTOCOL §2.1) with
- * a `?token=` query fallback.
+ * a `?token=` query fallback. An upgrade rejected with HTTP 401/403 (bad token
+ * / WS API disabled, PROTOCOL §2.1) destroys the stream with a distinct
+ * {@link AuthRejectedError} instead of a generic transport error.
  */
 function createWssSocket(config: BackendConnectionConfig): Duplex {
   const { host, port, token, fingerprint } = config;
@@ -301,6 +320,27 @@ function createWssSocket(config: BackendConnectionConfig): Duplex {
       duplex.destroy(new PinMismatchError(expected, actual));
     }
   });
+  ws.on('unexpected-response', (_req, response: IncomingMessage) => {
+    // Attaching this listener suppresses ws's own generic error, so every
+    // status must be handled here. Verify the pinned fingerprint FIRST: a
+    // changed or intercepted endpoint can also answer 401/403, and classifying
+    // that as an auth rejection would steer the user into re-pairing (typing a
+    // fresh secret) against an untrusted certificate. The pin decides trust
+    // before any status-code interpretation.
+    const actual = peerFingerprint(response);
+    if (actual !== expected) {
+      duplex.destroy(new PinMismatchError(expected, actual));
+      return;
+    }
+    // 401/403 are the daemon's auth rejections (PROTOCOL §2.1); anything else
+    // keeps the generic failure shape.
+    const statusCode = response.statusCode ?? 0;
+    if (statusCode === 401 || statusCode === 403) {
+      duplex.destroy(new AuthRejectedError(statusCode));
+      return;
+    }
+    duplex.destroy(new Error(`Unexpected server response: ${statusCode}`));
+  });
   return duplex;
 }
 
@@ -309,6 +349,16 @@ export interface CaptureFingerprintOk {
   ok: true;
   /** Presented cert SHA-256 fingerprint, colon-hex uppercase (PROTOCOL §1.2). */
   fingerprint: string;
+  /**
+   * `false` when the daemon rejected the upgrade with HTTP 401/403 (bad token
+   * / WS API disabled, PROTOCOL §2.1) — the cert was still captured from the
+   * TLS layer, but pairing with this token would fail. `true` for an accepted
+   * upgrade (and for non-auth upgrade statuses, which say nothing about the
+   * token).
+   */
+  tokenValid: boolean;
+  /** HTTP status the upgrade was rejected with when `tokenValid` is false (401 or 403). */
+  statusCode?: number;
 }
 
 /** Failed trust-on-first-use capture, with a machine-readable reason. */
@@ -326,9 +376,10 @@ export type CaptureFingerprintResult = CaptureFingerprintOk | CaptureFingerprint
  * fingerprint (PROTOCOL §1.2), then close. Returns the normalized fingerprint
  * for the user to confirm, or a structured error. The bearer token is sent so
  * the capture exercises the real upgrade path; the fingerprint is still read
- * from the TLS layer even when the token is rejected (401 → unexpected
- * response), so a bad token surfaces at pinned-connect time rather than hiding
- * the cert here.
+ * from the TLS layer even when the token is rejected (401/403 → unexpected
+ * response), and the rejection is reported as `tokenValid: false` (with the
+ * status code) so a bad or stale token surfaces during pairing rather than
+ * only at pinned-connect time.
  */
 export function captureFingerprint(
   target: { host: string; port: number; token: string },
@@ -363,16 +414,25 @@ export function captureFingerprint(
       timeoutMs,
     );
     timer.unref?.();
-    const readCert = (response: IncomingMessage): void => {
+    const readCert = (response: IncomingMessage, authRejectedStatus?: number): void => {
       const fingerprint = peerFingerprint(response);
       if (!fingerprint) {
         finish({ ok: false, code: 'no-certificate', error: 'server presented no certificate' });
         return;
       }
-      finish({ ok: true, fingerprint });
+      if (authRejectedStatus !== undefined) {
+        finish({ ok: true, fingerprint, tokenValid: false, statusCode: authRejectedStatus });
+        return;
+      }
+      finish({ ok: true, fingerprint, tokenValid: true });
     };
-    ws.on('upgrade', readCert);
-    ws.on('unexpected-response', (_req, response: IncomingMessage) => readCert(response));
+    ws.on('upgrade', (response: IncomingMessage) => readCert(response));
+    ws.on('unexpected-response', (_req, response: IncomingMessage) => {
+      // 401/403 are the daemon's auth rejections (PROTOCOL §2.1); any other
+      // status says nothing about the token, so tokenValid stays true.
+      const statusCode = response.statusCode ?? 0;
+      readCert(response, statusCode === 401 || statusCode === 403 ? statusCode : undefined);
+    });
     ws.on('error', (err: Error) =>
       finish({ ok: false, code: 'connect-failed', error: err.message }),
     );
