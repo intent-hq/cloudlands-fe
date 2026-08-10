@@ -29,6 +29,7 @@ import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { cancelInflightHostExecStreamsForBackendSwitch } from '$shared/main/host-exec-stream';
 import {
+  AuthRejectedError,
   captureFingerprint,
   PinMismatchError,
   resolveBackendConfig,
@@ -51,6 +52,8 @@ import { registerBrowserExecReverseHandler } from '../../browser/main/browser-ex
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import type {
   AddConnectionResult,
+  CaptureFingerprintResult,
+  ConnectionAuthRejectedEvent,
   ConnectionBootFallbackEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
@@ -150,6 +153,15 @@ let activeConnectionMeta: { id: string; host: string; port: number } | null = nu
  * Reset whenever a fresh client is constructed.
  */
 let certMismatchNotified = false;
+
+/**
+ * One-shot guard so a WSS auth rejection (HTTP 401/403) surfaces a single
+ * failure event per client — the reconnect loop re-raises
+ * {@link AuthRejectedError} on every retry against an unchanged token, but the
+ * renderer only needs one notice. Reset whenever a fresh client is constructed
+ * (parallels {@link certMismatchNotified}).
+ */
+let authRejectedNotified = false;
 
 /**
  * The LOCAL intentd's `protocolVersion`, learned from the `client.hello`
@@ -308,6 +320,7 @@ export function getBackendClient(): JsonRpcClient {
   // `client.hello` re-detects one for a mismatching remote (and leaves it null
   // for a matching/local backend).
   certMismatchNotified = false;
+  authRejectedNotified = false;
   protocolMismatchNotified = false;
   activeProtocolMismatch = null;
   // Dev (unpackaged) builds default to the loopback WebSocket transport; the
@@ -408,6 +421,28 @@ export function getBackendClient(): JsonRpcClient {
       }
       logger.warn('Backend certificate fingerprint mismatch', {
         host: activeConnectionMeta?.host,
+      });
+      return;
+    }
+    // A 401/403 WebSocket-upgrade rejection (PROTOCOL §2.1: bad/rotated token,
+    // or the WS API is disabled) is NOT a transient transport blip either:
+    // reconnecting with the same token will keep failing. Surface a single
+    // machine-readable auth-rejected event per client instead of a generic
+    // transport error.
+    if (error instanceof AuthRejectedError) {
+      if (!authRejectedNotified && activeConnectionMeta) {
+        authRejectedNotified = true;
+        const payload: ConnectionAuthRejectedEvent = {
+          id: activeConnectionMeta.id,
+          host: activeConnectionMeta.host,
+          port: activeConnectionMeta.port,
+          statusCode: error.statusCode,
+        };
+        broadcast(CONNECTIONS.AUTH_REJECTED, payload);
+      }
+      logger.warn('Backend rejected WebSocket authentication', {
+        host: activeConnectionMeta?.host,
+        statusCode: error.statusCode,
       });
       return;
     }
@@ -1121,7 +1156,9 @@ function registerConnectionsHandlers(): void {
   // Trust-on-first-use: open a `wss` connection, read the presented cert's
   // fingerprint for the user to confirm, then close. On a structured capture
   // failure (timeout / connect-failed / no-certificate) reject so the renderer
-  // surfaces the reason; on success return only the fingerprint (no token).
+  // surfaces the reason; on success return the fingerprint (no token) plus
+  // whether the daemon accepted the token on the capture upgrade, so a bad or
+  // stale token surfaces during pairing instead of after the entry is stored.
   ipcMain.handle(
     CONNECTIONS.CAPTURE_FINGERPRINT,
     createValidatedHandler(
@@ -1131,21 +1168,34 @@ function registerConnectionsHandlers(): void {
         if (!result.ok) {
           throw new Error(result.error);
         }
-        return { fingerprint: result.fingerprint };
+        return {
+          fingerprint: result.fingerprint,
+          tokenValid: result.tokenValid,
+          ...(result.statusCode !== undefined ? { statusCode: result.statusCode } : {}),
+        } satisfies CaptureFingerprintResult;
       },
       CONNECTIONS.CAPTURE_FINGERPRINT,
     ),
   );
 
-  // Add a remote connection (token encrypted at rest by the store). Broadcast
-  // the refreshed list so every window reflects the new entry.
+  // Add a remote connection (token encrypted at rest by the store). The store
+  // upserts by host:port, so re-adding an existing target refreshes its
+  // token/fingerprint/label in place. If the upserted record is the ACTIVE
+  // backend, rebuild the live client via a switch to itself so the refreshed
+  // token takes effect immediately (switchBackend broadcasts the changed
+  // list); otherwise just broadcast so every window reflects the entry.
   ipcMain.handle(
     CONNECTIONS.ADD,
     createValidatedHandler(
       ConnectionsAddSchema,
       async (_event, params) => {
         const connection = await connectionsStore.add(params);
-        await broadcastConnectionsChanged();
+        const activeId = await connectionsStore.getActiveId();
+        if (connection.id === activeId) {
+          await switchBackend(connection.id);
+        } else {
+          await broadcastConnectionsChanged();
+        }
         return { connection } satisfies AddConnectionResult;
       },
       CONNECTIONS.ADD,

@@ -204,21 +204,35 @@ export async function list(): Promise<ConnectionRecord[]> {
 }
 
 /**
- * Register a new remote connection. The plaintext token is encrypted (or
- * marked plaintext) before it hits disk. Returns the token-free record.
+ * Register a remote connection, deduplicating by `host:port` (upsert). If a
+ * stored connection with the same host+port already exists, its `fingerprint`,
+ * `encToken`, and `label` are replaced in place (the record keeps its `id` and
+ * captured `hostname`) and that record is returned; otherwise a new record is
+ * appended. The plaintext token is encrypted (or marked plaintext) before it
+ * hits disk. Returns the token-free record.
  */
 export async function add(conn: NewConnection): Promise<ConnectionRecord> {
-  const stored: StoredConnection = {
-    id: randomUUID(),
-    label: conn.label,
-    host: conn.host,
-    port: conn.port,
-    fingerprint: conn.fingerprint,
-    encToken: encryptToken(conn.token),
-  };
-  await mutate((state) => {
-    state.connections.push(stored);
-    return writeState(state);
+  const encToken = encryptToken(conn.token);
+  const stored = await mutate(async (state) => {
+    const existing = state.connections.find((c) => c.host === conn.host && c.port === conn.port);
+    if (existing) {
+      existing.label = conn.label;
+      existing.fingerprint = conn.fingerprint;
+      existing.encToken = encToken;
+      await writeState(state);
+      return existing;
+    }
+    const record: StoredConnection = {
+      id: randomUUID(),
+      label: conn.label,
+      host: conn.host,
+      port: conn.port,
+      fingerprint: conn.fingerprint,
+      encToken,
+    };
+    state.connections.push(record);
+    await writeState(state);
+    return record;
   });
   return toRecord(stored);
 }

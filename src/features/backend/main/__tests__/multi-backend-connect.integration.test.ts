@@ -221,7 +221,7 @@ beforeEach(async () => {
   electronState.handlers = new Map();
   vi.resetModules();
   vi.clearAllMocks();
-  mockCaptureFingerprint.mockResolvedValue({ ok: true, fingerprint: FINGERPRINT });
+  mockCaptureFingerprint.mockResolvedValue({ ok: true, fingerprint: FINGERPRINT, tokenValid: true });
 });
 
 afterEach(async () => {
@@ -255,7 +255,7 @@ describe('multi-backend connect — end-to-end journey', () => {
         port: REMOTE_INPUT.port,
         token: REMOTE_INPUT.token,
       }),
-    ).resolves.toEqual({ fingerprint: FINGERPRINT });
+    ).resolves.toEqual({ fingerprint: FINGERPRINT, tokenValid: true });
 
     // Add the confirmed remote (token encrypted at rest by the real store).
     const added = await invoke<{ connection: { id: string; label: string; fingerprint: string } }>(

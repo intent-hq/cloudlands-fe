@@ -43,7 +43,7 @@ describe('ConnectBackendModal', () => {
     vi.clearAllMocks();
     mocks.captureFingerprintRequested.mockImplementation((params) => ({
       payload: [params],
-      promise: Promise.resolve({ fingerprint: 'AA:BB:CC:DD' }),
+      promise: Promise.resolve({ fingerprint: 'AA:BB:CC:DD', tokenValid: true }),
     }));
     mocks.addConnectionRequested.mockImplementation((params) => ({
       payload: [params],
@@ -114,6 +114,42 @@ describe('ConnectBackendModal', () => {
     expect(await screen.findByText('unreachable host')).toBeTruthy();
     expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
     // Still on details: the Host field is present.
+    expect(screen.getByLabelText('Host')).toBeTruthy();
+  });
+
+  it('surfaces a 401 token rejection inline and blocks the confirm step', async () => {
+    mocks.captureFingerprintRequested.mockImplementationOnce((params) => ({
+      payload: [params],
+      promise: Promise.resolve({ fingerprint: 'AA:BB:CC:DD', tokenValid: false, statusCode: 401 }),
+    }));
+
+    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+    render(ConnectBackendModal, { props: { open: true } });
+
+    await fillDetails();
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByText(/rejected this access token/i)).toBeTruthy();
+    expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
+    // Still on details: the Host field is present, no confirm button.
+    expect(screen.getByLabelText('Host')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Confirm & connect' })).toBeNull();
+  });
+
+  it('surfaces a 403 rejection (WS API disabled) with its dedicated message', async () => {
+    mocks.captureFingerprintRequested.mockImplementationOnce((params) => ({
+      payload: [params],
+      promise: Promise.resolve({ fingerprint: 'AA:BB:CC:DD', tokenValid: false, statusCode: 403 }),
+    }));
+
+    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+    render(ConnectBackendModal, { props: { open: true } });
+
+    await fillDetails();
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByText(/WebSocket API is disabled/i)).toBeTruthy();
+    expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Host')).toBeTruthy();
   });
 

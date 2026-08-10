@@ -27,9 +27,17 @@
 
   interface Props {
     open?: boolean;
+    /**
+     * Prefill for the re-pair flow (token-rejected recovery): the host/port of
+     * the connection being re-paired. Applied when the modal opens with empty
+     * fields; the user still enters a fresh token. Re-adding the same
+     * host:port replaces the stored connection (and its encrypted token).
+     */
+    prefillHost?: string | null;
+    prefillPort?: number | null;
   }
 
-  let { open = $bindable(false) }: Props = $props();
+  let { open = $bindable(false), prefillHost = null, prefillPort = null }: Props = $props();
 
   type Step = 'details' | 'confirm';
 
@@ -87,6 +95,16 @@
       });
       appStore.dispatch(action);
       const result = await action.promise;
+      if (!result.tokenValid) {
+        // The daemon rejected the token on the capture upgrade (PROTOCOL §2.1:
+        // 401 bad token, 403 WS API disabled) — stay on the details step so the
+        // user can correct it instead of storing a connection that cannot auth.
+        error =
+          result.statusCode === 403
+            ? m.modals_connect_wsApiDisabled_error()
+            : m.modals_connect_tokenRejected_error();
+        return;
+      }
       fingerprint = result.fingerprint;
       step = 'confirm';
     } catch (e) {
@@ -142,6 +160,15 @@
     if (open && step === 'details' && firstInput) {
       const el = firstInput;
       requestAnimationFrame(() => el.focus());
+    }
+  });
+
+  // Apply the re-pair prefill when the modal opens on pristine fields (reset()
+  // empties them on close, so a reopen re-applies the current prefill).
+  $effect(() => {
+    if (open) {
+      if (prefillHost && host === '') host = prefillHost;
+      if (prefillPort != null && port === DEFAULT_WS_PORT) port = String(prefillPort);
     }
   });
 </script>

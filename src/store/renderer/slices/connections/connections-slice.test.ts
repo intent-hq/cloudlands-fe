@@ -15,12 +15,15 @@ import {
   connectOperationFailed,
   certMismatchReceived,
   certMismatchCleared,
+  authRejectedReceived,
+  authRejectedCleared,
   protocolMismatchReceived,
   protocolMismatchModalDismissed,
 } from './connections-slice';
 import type {
   ConnectionRecord,
   ConnectionsListResult,
+  ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
 } from './connections-types';
@@ -50,6 +53,13 @@ const CERT_MISMATCH: ConnectionCertMismatchEvent = {
   port: 8443,
   expectedFingerprint: 'AB:CD',
   actualFingerprint: 'EF:01',
+};
+
+const AUTH_REJECTED: ConnectionAuthRejectedEvent = {
+  id: 'remote-1',
+  host: '10.0.0.5',
+  port: 8443,
+  statusCode: 401,
 };
 
 const PROTOCOL_MISMATCH: ConnectionProtocolMismatchEvent = {
@@ -121,6 +131,35 @@ describe('connectionsReducer', () => {
       const state = { ...initialState, certMismatch: CERT_MISMATCH };
       const next = connectionsReducer(state, certMismatchCleared());
       expect(next.certMismatch).toBeNull();
+    });
+  });
+
+  describe('auth rejected', () => {
+    it('authRejectedReceived latches the event', () => {
+      const next = connectionsReducer(initialState, authRejectedReceived(AUTH_REJECTED));
+      expect(next.authRejected).toEqual(AUTH_REJECTED);
+    });
+
+    it('authRejectedCleared drops the latched event', () => {
+      const state = { ...initialState, authRejected: AUTH_REJECTED };
+      const next = connectionsReducer(state, authRejectedCleared());
+      expect(next.authRejected).toBeNull();
+    });
+
+    it('connectOperationStarted clears the latch (re-pair or switch supersedes it)', () => {
+      const state = { ...initialState, authRejected: AUTH_REJECTED };
+      const next = connectionsReducer(state, connectOperationStarted());
+      expect(next.authRejected).toBeNull();
+      expect(next.status).toBe('connecting');
+    });
+
+    it('connectionsListReceived leaves the latch untouched', () => {
+      const state = { ...initialState, authRejected: AUTH_REJECTED };
+      const next = connectionsReducer(
+        state,
+        connectionsListReceived({ connections: [LOCAL, REMOTE], activeId: 'remote-1' }),
+      );
+      expect(next.authRejected).toEqual(AUTH_REJECTED);
     });
   });
 
