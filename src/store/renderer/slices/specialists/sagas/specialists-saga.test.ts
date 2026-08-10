@@ -434,6 +434,43 @@ describe('specialistsSaga', () => {
       await task.toPromise();
     });
 
+    it('serializes refetches: deltas arriving mid-flight coalesce into one trailing refetch', async () => {
+      vi.useFakeTimers();
+      const resolvers: Array<(defs: any[]) => void> = [];
+      mocks.list.mockImplementation(() => new Promise((resolve) => resolvers.push(resolve)));
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => sagaState() }, specialistsSaga);
+
+      channel.put(settingsChanged([{ path: 'model.default', value: 'fable-5' }]));
+      await vi.advanceTimersByTimeAsync(100);
+      expect(mocks.list).toHaveBeenCalledTimes(1); // refetch in flight
+
+      // Relevant deltas spaced past the debounce window while the RPC hangs
+      // must NOT start concurrent specialist.list calls (single-flight).
+      channel.put(settingsChanged([{ path: 'providers.active', value: 'codex' }]));
+      await vi.advanceTimersByTimeAsync(150);
+      channel.put(settingsChanged([{ path: 'model.providerDefaults', value: {} }]));
+      await vi.advanceTimersByTimeAsync(300);
+      expect(mocks.list).toHaveBeenCalledTimes(1);
+
+      resolvers[0]!([fileDef('first')]);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(mocks.list).toHaveBeenCalledTimes(2); // ONE trailing refetch, not two
+      resolvers[1]!([fileDef('second')]);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const fileActions = dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === setFileSpecialists.type);
+      expect(fileActions).toEqual([
+        setFileSpecialists([mappedFileDef('first')]),
+        setFileSpecialists([mappedFileDef('second')]),
+      ]);
+      task.cancel();
+      await task.toPromise();
+    });
+
     it('does not refetch for settings deltas that do not touch model resolution', async () => {
       vi.useFakeTimers();
       const channel = stdChannel();

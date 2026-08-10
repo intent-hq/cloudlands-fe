@@ -1,5 +1,16 @@
 import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
-import { all, call, debounce, fork, put, take, takeEvery, takeLatest } from 'typed-redux-saga';
+import {
+  actionChannel,
+  all,
+  call,
+  delay,
+  flush,
+  fork,
+  put,
+  take,
+  takeEvery,
+  takeLatest,
+} from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import type { AppliedSettingChange, SpecialistDef } from '$lib/client/app-client';
@@ -52,8 +63,8 @@ const SETTINGS_REFETCH_DEBOUNCE_MS = 100;
 
 /**
  * Predicate pattern (not the action creator) so unrelated settings deltas
- * neither trigger a refetch nor swallow a pending one via debounce's
- * take-latest semantics.
+ * never enter the refetch channel — they neither trigger a refetch nor
+ * displace a buffered relevant delta.
  */
 function touchesModelResolutionSettings(action: { type: string; payload?: unknown }): boolean {
   if (action.type !== settingsChanged.type) return false;
@@ -266,8 +277,23 @@ function* handleLoad(context: ListContext, _action: ReturnType<typeof loadFileSp
   yield* call(refetchSpecialists, context);
 }
 
-function* handleModelResolutionSettingsChanged(context: ListContext) {
-  yield* call(refetchSpecialists, context);
+/**
+ * Single-flight, trailing-coalesced settings-driven refetch loop (per the
+ * event-driven refetch rule in AGENTS.md). A sliding(1) action channel
+ * buffers relevant deltas: the debounce window folds a burst into one
+ * `specialist.list` call, the blocking `call` guarantees no concurrent
+ * refetches, and deltas arriving mid-flight collapse into at most one
+ * trailing refetch after the current one settles.
+ */
+function* watchModelResolutionSettings(context: ListContext) {
+  const channel = yield* actionChannel(touchesModelResolutionSettings, buffers.sliding(1));
+  while (true) {
+    yield* take(channel);
+    yield* delay(SETTINGS_REFETCH_DEBOUNCE_MS);
+    // Deltas that arrived during the window are served by this refetch.
+    yield* flush(channel);
+    yield* call(refetchSpecialists, context);
+  }
 }
 
 export function createSpecialistsChannel(): EventChannel<SpecialistDef[]> {
@@ -299,11 +325,6 @@ export function* specialistsSaga() {
     takeEvery(deleteFileSpecialist, handleDelete, context),
     takeEvery(exportBuiltinToFile, handleExport, context),
     takeLatest(loadFileSpecialists, handleLoad, context),
-    debounce(
-      SETTINGS_REFETCH_DEBOUNCE_MS,
-      touchesModelResolutionSettings,
-      handleModelResolutionSettingsChanged,
-      context,
-    ),
+    fork(watchModelResolutionSettings, context),
   ]);
 }
