@@ -12,7 +12,10 @@ import {
   setActiveProvider,
   toggleProvider,
 } from '../provider-settings-slice';
-import { providerSettingsSaga } from './provider-settings-saga';
+import {
+  PROVIDER_SETTINGS_RETRY_DELAYS_MS,
+  providerSettingsSaga,
+} from './provider-settings-saga';
 
 const settle = async () => {
   await Promise.resolve();
@@ -91,10 +94,41 @@ describe('providerSettingsSaga', () => {
     await task.toPromise();
   });
 
-  it('continues the serialized queue after a persistence rejection', async () => {
-    mocks.setProviderSettings
-      .mockRejectedValueOnce(new Error('settings unavailable'))
-      .mockResolvedValueOnce({ success: true });
+  it('retries a transport-rejected write until it lands, then drains the queue in order', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.setProviderSettings
+        .mockRejectedValueOnce(new Error('settings unavailable'))
+        .mockResolvedValue({ success: true });
+      const channel = stdChannel();
+      const task = runSaga(
+        { channel, dispatch: vi.fn(), getState: () => state() },
+        providerSettingsSaga,
+      );
+
+      channel.put(setActiveProvider('codex'));
+      await vi.advanceTimersByTimeAsync(0);
+      channel.put(toggleProvider('codex'));
+      await vi.advanceTimersByTimeAsync(0);
+      // The failed active-provider write is retried before the queued
+      // enabled-providers write — order is preserved.
+      expect(mocks.setProviderSettings.mock.calls).toEqual([[{ activeProviderId: 'codex' }]]);
+
+      await vi.advanceTimersByTimeAsync(PROVIDER_SETTINGS_RETRY_DELAYS_MS[0]);
+      expect(mocks.setProviderSettings.mock.calls).toEqual([
+        [{ activeProviderId: 'codex' }],
+        [{ activeProviderId: 'codex' }],
+        [{ enabledProviders: { codex: true } }],
+      ]);
+      task.cancel();
+      await task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not retry a structured daemon-side rejection', async () => {
+    mocks.setProviderSettings.mockResolvedValue({ success: false, error: 'invalid' });
     const channel = stdChannel();
     const task = runSaga(
       { channel, dispatch: vi.fn(), getState: () => state() },
@@ -103,13 +137,8 @@ describe('providerSettingsSaga', () => {
 
     channel.put(setActiveProvider('codex'));
     await settle();
-    channel.put(toggleProvider('codex'));
-    await settle();
 
-    expect(mocks.setProviderSettings.mock.calls).toEqual([
-      [{ activeProviderId: 'codex' }],
-      [{ enabledProviders: { codex: true } }],
-    ]);
+    expect(mocks.setProviderSettings.mock.calls).toEqual([[{ activeProviderId: 'codex' }]]);
     task.cancel();
     await task.toPromise();
   });
