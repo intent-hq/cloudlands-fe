@@ -86,10 +86,18 @@ export function createAutoUpdateChannel(): EventChannel<AutoUpdateEvent> {
   }, buffers.expanding<AutoUpdateEvent>());
 }
 
-function* loadInitialState() {
+function* loadInitialState(watchdog: CheckWatchdog) {
   try {
     const state: UpdateState = yield* call([autoUpdateClient, autoUpdateClient.getState]);
     yield* put(setUpdateState(mapUpdateState(state)));
+    if (state.status === 'checking') {
+      // A check started before this saga's listeners existed (e.g. manual
+      // "Check for Updates" during startup, intent-hq/monorepo#1857): the
+      // show-toast event was lost, so surface the toast now and arm the
+      // watchdog to guarantee a terminal state.
+      yield* armCheckTimeout(watchdog);
+      yield* put(showToastChecking());
+    }
   } catch (error) {
     logger.error('Failed to initialize auto-update', error);
   }
@@ -143,7 +151,7 @@ function* runAutoUpdateSession() {
   const channel = createAutoUpdateChannel();
   const watchdog: CheckWatchdog = {};
   try {
-    yield* fork(loadInitialState);
+    yield* fork(loadInitialState, watchdog);
     while (true) {
       const event: AutoUpdateEvent = yield* take(channel);
       if (event === (END as unknown as AutoUpdateEvent)) break;
