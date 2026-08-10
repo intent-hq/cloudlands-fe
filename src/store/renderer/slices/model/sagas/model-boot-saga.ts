@@ -1,6 +1,8 @@
-import { call, put } from 'typed-redux-saga';
+import { buffers, eventChannel, type EventChannel } from 'redux-saga';
+import { call, put, take } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { onBackendReconnected } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
 import { setAvailableModels, setLoadingStateForProvider } from '../model-slice';
@@ -49,7 +51,32 @@ export function* loadModelsOnBootWorker() {
   }
 }
 
-/** One-shot boot-time load of the active provider's model catalog. */
+/**
+ * Backend-reconnect signals as a saga channel. The sliding(1) buffer keeps at
+ * most one pending signal, so a reconnect burst arriving while a load is in
+ * flight coalesces into a single trailing re-run.
+ */
+function createReconnectChannel(): EventChannel<true> {
+  return eventChannel<true>((emit) => onBackendReconnected(() => emit(true)), buffers.sliding(1));
+}
+
+/**
+ * Boot-time load of the active provider's model catalog, re-run on every
+ * backend reconnect (RESUB-1): a boot-time `models.list` that timed out while
+ * the daemon was still coming up would otherwise leave `availableModels`
+ * empty until the first explicit provider switch. Loads are single-flight —
+ * the sequential take/call loop never overlaps two fetches — with reconnects
+ * during a fetch coalesced by the channel's sliding buffer.
+ */
 export function* modelBootSaga() {
-  yield* call(loadModelsOnBootWorker);
+  const reconnectChannel = yield* call(createReconnectChannel);
+  try {
+    yield* call(loadModelsOnBootWorker);
+    while (true) {
+      yield* take(reconnectChannel);
+      yield* call(loadModelsOnBootWorker);
+    }
+  } finally {
+    reconnectChannel.close();
+  }
 }

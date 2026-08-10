@@ -1,15 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga } from 'redux-saga';
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), getProviderSettings: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  list: vi.fn(),
+  getProviderSettings: vi.fn(),
+  onBackendReconnected: vi.fn(),
+}));
 vi.mock('$lib/client', () => ({
   appClient: {
     models: { list: mocks.list },
     settings: { getProviderSettings: mocks.getProviderSettings },
   },
 }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  onBackendReconnected: mocks.onBackendReconnected,
+}));
 
-import { loadModelsOnBootWorker } from './model-boot-saga';
+import { loadModelsOnBootWorker, modelBootSaga } from './model-boot-saga';
 
 const MODELS = [{ value: 'gpt-5', label: 'GPT-5', effortLevels: ['low', 'medium', 'high'] }];
 
@@ -105,5 +112,101 @@ describe('loadModelsOnBootWorker', () => {
     ).toPromise();
 
     expect(dispatch).not.toHaveBeenCalled();
+  });
+});
+
+describe('modelBootSaga', () => {
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  let reconnect: () => void;
+  const dispose = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.onBackendReconnected.mockImplementation((handler: () => void) => {
+      reconnect = handler;
+      return dispose;
+    });
+  });
+
+  const start = () =>
+    runSaga(
+      {
+        dispatch: vi.fn(),
+        getState: () => ({ providerSettings: { activeProviderId: 'codex' } }),
+      },
+      modelBootSaga,
+    );
+
+  it('runs the boot load once and re-runs it on each backend reconnect', async () => {
+    mocks.list.mockResolvedValue(MODELS);
+    const task = start();
+    await flush();
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+
+    reconnect();
+    await flush();
+    expect(mocks.list).toHaveBeenCalledTimes(2);
+
+    reconnect();
+    await flush();
+    expect(mocks.list).toHaveBeenCalledTimes(3);
+
+    task.cancel();
+  });
+
+  it('coalesces a reconnect burst during an in-flight load into one trailing re-run', async () => {
+    let resolveFirst: (models: typeof MODELS) => void;
+    mocks.list
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
+      .mockResolvedValue(MODELS);
+    const task = start();
+    await flush();
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+
+    reconnect();
+    reconnect();
+    reconnect();
+    await flush();
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+
+    resolveFirst!(MODELS);
+    await flush();
+    expect(mocks.list).toHaveBeenCalledTimes(2);
+
+    await flush();
+    expect(mocks.list).toHaveBeenCalledTimes(2);
+
+    task.cancel();
+  });
+
+  it('keeps re-running after a failed reconnect load (worker swallows the error)', async () => {
+    mocks.list
+      .mockResolvedValueOnce(MODELS)
+      .mockRejectedValueOnce(new Error('uds boom'))
+      .mockResolvedValue(MODELS);
+    const task = start();
+    await flush();
+
+    reconnect();
+    await flush();
+    expect(mocks.list).toHaveBeenCalledTimes(2);
+
+    reconnect();
+    await flush();
+    expect(mocks.list).toHaveBeenCalledTimes(3);
+
+    task.cancel();
+  });
+
+  it('disposes the reconnect listener when the saga is cancelled', async () => {
+    mocks.list.mockResolvedValue(MODELS);
+    const task = start();
+    await flush();
+    expect(dispose).not.toHaveBeenCalled();
+
+    task.cancel();
+    await flush();
+    expect(dispose).toHaveBeenCalledTimes(1);
   });
 });
