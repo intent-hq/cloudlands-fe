@@ -5,6 +5,7 @@
 
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import type { PullRequestInfo } from '$shared/types';
+import { PullRequestStatus } from '$shared/types';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type {
   AgentChangeGroup,
@@ -330,7 +331,9 @@ export function mapWorkspacePRs(
 
 /** Display status for a monitored PR row (PROTOCOL §6.9): active monitors
  * read the live snapshot state; completed ones ended merged or closed. */
-function monitorDisplayStatus(monitor: PrMonitorRow): 'open' | 'merged' | 'closed' | 'draft' {
+export function monitorDisplayStatus(
+  monitor: PrMonitorRow,
+): 'open' | 'merged' | 'closed' | 'draft' {
   const snapshotState = monitor.lastSnapshot?.state?.toLowerCase();
   if (snapshotState === 'merged') return 'merged';
   if (snapshotState === 'closed') return 'closed';
@@ -460,13 +463,25 @@ export function getPRStatusTooltip(pr: PRInfo): string {
   return lines.join('\n');
 }
 
+/** `PullRequestStatus` pill value for a monitor-backed PR pill (the
+ * WorkspaceCard/WorkspaceTableRow fallback) — the enum projection of
+ * {@link monitorDisplayStatus}. */
+export function monitorPillStatus(monitor: PrMonitorRow): PullRequestStatus {
+  const status = monitorDisplayStatus(monitor);
+  if (status === 'merged') return PullRequestStatus.Merged;
+  if (status === 'closed') return PullRequestStatus.Closed;
+  if (status === 'draft') return PullRequestStatus.Draft;
+  return PullRequestStatus.Open;
+}
+
 /**
- * Count active monitored PRs beyond the primary PR pill/badge (PROTOCOL
- * §6.9) — the "+N" indicator on the workspace card surfaces. A monitor is
- * excluded only when it matches the primary PR by number in the workspace
+ * Count monitored PRs in the displayed pool (active monitors, or the
+ * merged-completed fallback pool — PROTOCOL §6.9) beyond the primary PR
+ * pill/badge — the "+N" indicator on the workspace card surfaces. A monitor
+ * is excluded only when it matches the primary PR by number in the workspace
  * repo (an unknown workspace repo treats all monitors as same-repo).
  */
-export function countOtherActiveMonitors(
+export function countOtherMonitors(
   monitors: PrMonitorRow[],
   primaryPrNumber: number | undefined,
   repositoryOwner: string | undefined,

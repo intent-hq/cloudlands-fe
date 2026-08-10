@@ -16,8 +16,11 @@
   import { m } from '$shared/paraglide/messages.js';
   import { selectWorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
-  import { selectActivePrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
-  import { countOtherActiveMonitors } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
+  import { selectDisplayPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import {
+    countOtherMonitors,
+    monitorPillStatus,
+  } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
   import { formatInteger } from '$lib/i18n/format';
 
   import AgentCard from '$lib/components/chat/AgentCard.svelte';
@@ -83,8 +86,9 @@
   });
 
   // Agent PR monitors (PROTOCOL §6.9): feed the primary-PR fallback and the
-  // "+N" other-active-PRs indicator.
-  const activePrMonitors$ = selectActivePrMonitors(workspaceIdStore);
+  // "+N" other-monitored-PRs indicator. Active monitors when any exist, else
+  // merged completed monitors (last merged first).
+  const displayPrMonitors$ = selectDisplayPrMonitors(workspaceIdStore);
 
   // PR status
   const prDisplayStatus = $derived.by(() => {
@@ -93,22 +97,23 @@
     if (ws.prStatus) return ws.prStatus;
     const prs = ws.pullRequests ?? [];
     if (prs.length > 0) return prs[0].status;
-    // No branch-linked PR: fall back to the first active agent-monitored PR
-    // (PROTOCOL §6.9) so the pill still surfaces it.
-    if ($activePrMonitors$.length > 0) return PullRequestStatus.Open;
+    // No branch-linked PR: fall back to the first displayed agent-monitored
+    // PR (PROTOCOL §6.9), deriving the pill status from the monitor.
+    if ($displayPrMonitors$.length > 0) return monitorPillStatus($displayPrMonitors$[0]);
     return null;
   });
   const prDisplayNumber = $derived(
     ws.activePullRequest?.number ??
       ws.prNumber ??
       ws.pullRequests?.[0]?.number ??
-      $activePrMonitors$[0]?.prNumber,
+      $displayPrMonitors$[0]?.prNumber,
   );
 
-  // "+N" indicator: other active monitored PRs beyond the primary pill.
-  const otherActivePrCount = $derived(
-    countOtherActiveMonitors(
-      $activePrMonitors$,
+  // "+N" indicator: other monitored PRs in the displayed pool beyond the
+  // primary pill.
+  const otherMonitoredPrCount = $derived(
+    countOtherMonitors(
+      $displayPrMonitors$,
       prDisplayNumber,
       ws.repositoryOwner,
       ws.repositoryName,
@@ -251,12 +256,12 @@
                 })}
               </span>
             </Tooltip>
-            {#if otherActivePrCount > 0}
+            {#if otherMonitoredPrCount > 0}
               <Tooltip
-                content={otherActivePrCount === 1
+                content={otherMonitoredPrCount === 1
                   ? m.workspace_card_morePrs_tooltip_one()
                   : m.workspace_card_morePrs_tooltip_many({
-                      count: formatInteger(otherActivePrCount),
+                      count: formatInteger(otherMonitoredPrCount),
                     })}
                 side="bottom"
                 sideOffset={4}
@@ -265,7 +270,7 @@
                   class="text-ui font-medium px-1.5 py-0.5 rounded-full shrink-0 bg-muted-foreground/10 text-muted-foreground"
                   data-testid="workspace-row-more-prs"
                 >
-                  {m.workspace_card_morePrs_label({ count: formatInteger(otherActivePrCount) })}
+                  {m.workspace_card_morePrs_label({ count: formatInteger(otherMonitoredPrCount) })}
                 </span>
               </Tooltip>
             {/if}
