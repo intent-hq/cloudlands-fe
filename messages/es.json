@@ -5474,7 +5474,7 @@
   "modals_connect_tokenRejected_error": "El daemon rechazó este token de acceso. Comprueba que copiaste el token actual y vuelve a intentarlo.",
   "modals_connect_wsApiDisabled_error": "La API WebSocket está deshabilitada en la máquina de destino. Habilítala en Configuración → General → API WebSocket y vuelve a intentarlo.",
   "modals_certMismatch_title": "El certificado ha cambiado",
-  "modals_certMismatch_description": "El certificado presentado por esta conexión no coincide con el que usted confió. La conexión fue rechazada y no se volvió a confiar en ella. Esto puede ocurrir si el daemon se reinstaló — o puede indicar un riesgo de seguridad.",
+  "modals_certMismatch_description": "El certificado presentado por esta conexión no coincide con aquel en el que usted confió. La conexión fue rechazada y no se volvió a confiar en ella. Esto puede ocurrir si el daemon se reinstaló — o puede indicar un riesgo de seguridad.",
   "modals_certMismatch_connection_label": "Conexión",
   "modals_certMismatch_expected_label": "Esperado (de confianza)",
   "modals_certMismatch_presented_label": "Presentado",

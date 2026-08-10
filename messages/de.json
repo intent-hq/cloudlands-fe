@@ -5474,7 +5474,7 @@
   "modals_connect_tokenRejected_error": "Der Daemon hat dieses Zugriffstoken abgelehnt. Prüfen Sie, ob Sie das aktuelle Token kopiert haben, und versuchen Sie es erneut.",
   "modals_connect_wsApiDisabled_error": "Die WebSocket-API ist auf dem Zielrechner deaktiviert. Aktivieren Sie sie unter Einstellungen → Allgemein → WebSocket-API und versuchen Sie es dann erneut.",
   "modals_certMismatch_title": "Zertifikat geändert",
-  "modals_certMismatch_description": "Das von dieser Verbindung vorgelegte Zertifikat stimmt nicht mit dem überein, dem Sie vertraut haben. Die Verbindung wurde abgelehnt und nicht erneut vertraut. Das kann passieren, wenn der Daemon neu installiert wurde — oder es kann auf ein Sicherheitsrisiko hinweisen.",
+  "modals_certMismatch_description": "Das von dieser Verbindung vorgelegte Zertifikat stimmt nicht mit dem überein, dem Sie vertraut haben. Die Verbindung wurde abgelehnt und nicht erneut als vertrauenswürdig eingestuft. Das kann passieren, wenn der Daemon neu installiert wurde — oder es kann auf ein Sicherheitsrisiko hinweisen.",
   "modals_certMismatch_connection_label": "Verbindung",
   "modals_certMismatch_expected_label": "Erwartet (vertraut)",
   "modals_certMismatch_presented_label": "Vorgelegt",
