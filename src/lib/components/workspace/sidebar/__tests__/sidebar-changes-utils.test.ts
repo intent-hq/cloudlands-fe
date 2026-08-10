@@ -10,6 +10,7 @@ import {
 } from '$features/file-tracking/types';
 import type { AgentChangeGroup, PRInfo } from '$lib/components/file-tracking/accept-changes/types';
 import type { PullRequestInfo } from '$shared/types';
+import { PullRequestStatus } from '$shared/types';
 import type { PrMonitorRow, PrMonitorSnapshot } from '$features/pr-monitor/pr-monitor-service';
 import {
   getBranchNameValidationError,
@@ -33,7 +34,9 @@ import {
   mapWorkspacePRs,
   mergeMonitoredPRs,
   getPRStatusTooltip,
-  countOtherActiveMonitors,
+  countOtherMonitors,
+  monitorDisplayStatus,
+  monitorPillStatus,
 } from '../sidebar-changes-utils';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1060,9 +1063,9 @@ describe('getPRStatusTooltip', () => {
   });
 });
 
-// ─── countOtherActiveMonitors (PROTOCOL §6.9 "+N" indicator) ───────────────────
+// ─── countOtherMonitors (PROTOCOL §6.9 "+N" indicator) ─────────────────────────
 
-describe('countOtherActiveMonitors', () => {
+describe('countOtherMonitors', () => {
   function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
     return {
       monitorId: 'mon-1',
@@ -1081,25 +1084,108 @@ describe('countOtherActiveMonitors', () => {
 
   it('excludes the monitor matching the primary PR in the workspace repo', () => {
     const monitors = [makeMonitor(), makeMonitor({ monitorId: 'mon-2', prNumber: 7 })];
-    expect(countOtherActiveMonitors(monitors, 42, 'acme', 'widgets')).toBe(1);
+    expect(countOtherMonitors(monitors, 42, 'acme', 'widgets')).toBe(1);
   });
 
   it('counts a same-number cross-repo monitor as "other"', () => {
     const monitors = [makeMonitor({ repo: 'other/repo' })];
-    expect(countOtherActiveMonitors(monitors, 42, 'acme', 'widgets')).toBe(1);
+    expect(countOtherMonitors(monitors, 42, 'acme', 'widgets')).toBe(1);
   });
 
   it('counts all monitors when there is no primary PR', () => {
     const monitors = [makeMonitor(), makeMonitor({ monitorId: 'mon-2', prNumber: 7 })];
-    expect(countOtherActiveMonitors(monitors, undefined, 'acme', 'widgets')).toBe(2);
+    expect(countOtherMonitors(monitors, undefined, 'acme', 'widgets')).toBe(2);
   });
 
   it('matches by number alone when the workspace repo is unknown', () => {
     const monitors = [makeMonitor({ repo: 'other/repo' })];
-    expect(countOtherActiveMonitors(monitors, 42, undefined, undefined)).toBe(0);
+    expect(countOtherMonitors(monitors, 42, undefined, undefined)).toBe(0);
   });
 
   it('returns 0 for no monitors', () => {
-    expect(countOtherActiveMonitors([], 42, 'acme', 'widgets')).toBe(0);
+    expect(countOtherMonitors([], 42, 'acme', 'widgets')).toBe(0);
+  });
+
+  it('counts other monitors in a merged-completed fallback pool', () => {
+    const merged = makeSnapshot({ state: 'merged' });
+    const monitors = [
+      makeMonitor({ state: 'completed', lastSnapshot: merged }),
+      makeMonitor({ monitorId: 'mon-2', prNumber: 7, state: 'completed', lastSnapshot: merged }),
+    ];
+    expect(countOtherMonitors(monitors, 42, 'acme', 'widgets')).toBe(1);
+  });
+});
+
+// ─── monitorDisplayStatus / monitorPillStatus (pill status fallback) ───────────
+
+describe('monitorDisplayStatus', () => {
+  function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
+    return {
+      monitorId: 'mon-1',
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      repo: 'acme/widgets',
+      prNumber: 42,
+      state: 'active',
+      pendingChanges: [],
+      hasPendingChanges: false,
+      createdAt: '2026-08-07T10:00:00Z',
+      updatedAt: '2026-08-07T10:05:00Z',
+      ...overrides,
+    };
+  }
+
+  it('reads the last-snapshot state case-insensitively', () => {
+    expect(monitorDisplayStatus(makeMonitor({ lastSnapshot: makeSnapshot({ state: 'MERGED' }) })))
+      .toBe('merged');
+    expect(monitorDisplayStatus(makeMonitor({ lastSnapshot: makeSnapshot({ state: 'Closed' }) })))
+      .toBe('closed');
+  });
+
+  it('reports draft from the snapshot flag', () => {
+    expect(
+      monitorDisplayStatus(makeMonitor({ lastSnapshot: makeSnapshot({ isDraft: true }) })),
+    ).toBe('draft');
+  });
+
+  it('defaults active monitors to open and completed ones to closed without a verdict', () => {
+    expect(monitorDisplayStatus(makeMonitor())).toBe('open');
+    expect(monitorDisplayStatus(makeMonitor({ state: 'completed' }))).toBe('closed');
+  });
+});
+
+describe('monitorPillStatus', () => {
+  function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
+    return {
+      monitorId: 'mon-1',
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      repo: 'acme/widgets',
+      prNumber: 42,
+      state: 'active',
+      pendingChanges: [],
+      hasPendingChanges: false,
+      createdAt: '2026-08-07T10:00:00Z',
+      updatedAt: '2026-08-07T10:05:00Z',
+      ...overrides,
+    };
+  }
+
+  it('maps a merged completed monitor to PullRequestStatus.Merged', () => {
+    const monitor = makeMonitor({
+      state: 'completed',
+      lastSnapshot: makeSnapshot({ state: 'merged' }),
+    });
+    expect(monitorPillStatus(monitor)).toBe(PullRequestStatus.Merged);
+  });
+
+  it('maps closed, draft, and open display states to the matching enum values', () => {
+    expect(
+      monitorPillStatus(makeMonitor({ lastSnapshot: makeSnapshot({ state: 'closed' }) })),
+    ).toBe(PullRequestStatus.Closed);
+    expect(
+      monitorPillStatus(makeMonitor({ lastSnapshot: makeSnapshot({ isDraft: true }) })),
+    ).toBe(PullRequestStatus.Draft);
+    expect(monitorPillStatus(makeMonitor())).toBe(PullRequestStatus.Open);
   });
 });

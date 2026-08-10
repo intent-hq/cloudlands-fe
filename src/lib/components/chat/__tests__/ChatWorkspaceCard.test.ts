@@ -74,6 +74,9 @@ vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
   selectActivePrMonitors: Object.assign(() => mocks.readable(() => []), {
     select: () => [],
   }),
+  selectDisplayPrMonitors: Object.assign(() => mocks.readable(() => []), {
+    select: () => [],
+  }),
 }));
 vi.mock('$lib/components/workspace/WorkspacePhaseIndicator.svelte', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
