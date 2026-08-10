@@ -119,7 +119,9 @@
  * `subscriptionId`: notifications carrying a foreign id are dropped, and
  * legacy/flat envelopes (no id) are still accepted for back-compat. This
  * mirrors the same fan-out dedupe `live-terminals-client.ts` applies to
- * `terminal:*` deliveries.
+ * `terminal:*` deliveries. The gate accepts a SET of expected ids because the
+ * daemon-events-saga owns two subscriptions on the socket: the global
+ * firehose plus the active-workspace-scoped `file:*` lease (monorepo#1853).
  */
 import { m } from '$shared/paraglide/messages.js';
 import type {
@@ -2463,17 +2465,23 @@ export interface DaemonEventsRoutingOverrides {
 export function routeDaemonEventsNotification(
   method: string,
   params: unknown,
-  expectedSubscriptionId: string | undefined = undefined,
+  expectedSubscriptionIds: string | readonly string[] | undefined = undefined,
   overrides?: DaemonEventsRoutingOverrides,
 ): void {
   if (method !== 'events.event') return;
   // Fan-out scope gate (see file header): drop notifications delivered through
   // a different subscription on the same socket so chunk-append/queue/idle
-  // handlers never apply the same event twice. Flat/legacy envelopes (no
-  // `subscriptionId` on params) are still accepted for back-compat.
+  // handlers never apply the same event twice. The saga owns two leases
+  // (firehose + scoped file:*), so the gate accepts a set of expected ids; a
+  // bare string is still accepted for back-compat with older call sites.
+  // Flat/legacy envelopes (no `subscriptionId` on params) always pass.
   const envelopeSubscriptionId = extractSubscriptionId(params);
-  if (envelopeSubscriptionId !== undefined && envelopeSubscriptionId !== expectedSubscriptionId) {
-    return;
+  if (envelopeSubscriptionId !== undefined) {
+    const expected =
+      typeof expectedSubscriptionIds === 'string'
+        ? [expectedSubscriptionIds]
+        : (expectedSubscriptionIds ?? []);
+    if (!expected.includes(envelopeSubscriptionId)) return;
   }
   const event = extractEvent(params);
   if (!event || typeof event !== 'object') return;
@@ -2871,7 +2879,10 @@ export function routeDaemonEventsNotification(
  */
 export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'agent:*',
-  'file:*',
+  // `file:*` is deliberately ABSENT: system-actor watcher bursts from every
+  // open workspace would otherwise reach every window. The daemon-events-saga
+  // carries file events on a separate subscription scoped to the active
+  // workspace (`workspaceId` + `replaceGroup`, §6.1 — monorepo#1853).
   'note:*',
   'comment:*',
   'script:*',
