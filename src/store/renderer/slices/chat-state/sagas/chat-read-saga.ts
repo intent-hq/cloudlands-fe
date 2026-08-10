@@ -32,6 +32,8 @@ const logger = createLogger('ChatReadSaga');
 const PAGE_LIMIT = 200;
 
 type ChatRequest = { wsId: string; agentId: string };
+type HydrationTails = Map<string, Promise<void>>;
+
 function identitySet(messages: AgentMessage[]): Set<string> {
   const ids = new Set<string>();
   for (const message of messages) {
@@ -39,6 +41,11 @@ function identitySet(messages: AgentMessage[]): Set<string> {
     if (typeof message.appMessageId === 'string') ids.add(message.appMessageId);
   }
   return ids;
+}
+
+function* hydrateAfterPrevious(request: ChatRequest, previous: Promise<void>) {
+  yield* call(() => previous);
+  yield* call(hydrateChatTranscriptSaga, request);
 }
 
 function* hydrateChatTranscriptSaga(request: ChatRequest) {
@@ -120,26 +127,56 @@ function matchesChatCleanup({ wsId, agentId }: ChatRequest) {
   };
 }
 
-function* hydrateChatWorker(request: ChatRequest): SagaGenerator<void> {
+function* hydrateChatWorker(
+  request: ChatRequest,
+  hydrationTails: HydrationTails,
+): SagaGenerator<void> {
   if (!request.wsId || !request.agentId) return;
-  yield* race({
-    read: call(hydrateChatTranscriptSaga, request),
-    cleanup: take(matchesChatCleanup(request)),
+
+  const previous = hydrationTails.get(request.agentId) ?? Promise.resolve();
+  let release!: () => void;
+  const completion = new Promise<void>((resolve) => {
+    release = resolve;
   });
+  const tail = previous.then(() => completion);
+  hydrationTails.set(request.agentId, tail);
+  void tail.then(() => {
+    if (hydrationTails.get(request.agentId) === tail) hydrationTails.delete(request.agentId);
+  });
+
+  try {
+    yield* race({
+      read: call(hydrateAfterPrevious, request, previous),
+      cleanup: take(matchesChatCleanup(request)),
+    });
+  } finally {
+    release();
+  }
 }
 
-function* initializeChatWorker(action: ReturnType<typeof initializeChatRequested>) {
-  yield* hydrateChatWorker(action.payload);
+function* initializeChatWorker(
+  hydrationTails: HydrationTails,
+  action: ReturnType<typeof initializeChatRequested>,
+) {
+  yield* hydrateChatWorker(action.payload, hydrationTails);
 }
 
-function* refreshChatWorker(action: ReturnType<typeof refreshChatTranscriptRequested>) {
+function* refreshChatWorker(
+  hydrationTails: HydrationTails,
+  action: ReturnType<typeof refreshChatTranscriptRequested>,
+) {
   const [wsId, agentId] = action.payload;
-  yield* hydrateChatWorker({ wsId, agentId });
+  yield* hydrateChatWorker({ wsId, agentId }, hydrationTails);
 }
 
 export function* chatReadSaga() {
-  yield* all([
-    takeEvery(initializeChatRequested, initializeChatWorker),
-    takeEvery(refreshChatTranscriptRequested, refreshChatWorker),
-  ]);
+  const hydrationTails: HydrationTails = new Map();
+  try {
+    yield* all([
+      takeEvery(initializeChatRequested, initializeChatWorker, hydrationTails),
+      takeEvery(refreshChatTranscriptRequested, refreshChatWorker, hydrationTails),
+    ]);
+  } finally {
+    hydrationTails.clear();
+  }
 }
