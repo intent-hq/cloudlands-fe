@@ -929,7 +929,7 @@
   "workspace_compactInitializer_progressResolving_label": "デルタを解決しています…",
   "workspace_compactInitializer_progressSubmodulesCounted_label": "サブモジュールをクローンしています ({current}/{total})…",
   "workspace_compactInitializer_progressSubmodules_label": "サブモジュールをクローンしています…",
-  "workspace_compactInitializer_progressWithPercent_label": "{label} {percent}",
+  "workspace_compactInitializer_progressWithPercent_label": "{label}{percent}",
   "workspace_compactInitializer_progressWorktree_label": "ワークツリーを作成しています…",
   "workspace_compactInitializer_promptEnhanced_toast": "プロンプトを強化しました",
   "workspace_compactInitializer_prompt_placeholder": "何に取り組みますか？",
