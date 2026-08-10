@@ -115,6 +115,7 @@
   import Button from '../ui/button/button.svelte';
   import { Checkbox } from '../ui/checkbox';
   import Tooltip from '../ui/tooltip/Tooltip.svelte';
+  import CreateButtonProgress from './initializer/CreateButtonProgress.svelte';
   import InitialAgentPicker from './initializer/InitialAgentPicker.svelte';
   import IssueSuggestions, {
     preloadIssues,
@@ -1210,6 +1211,9 @@
   // UI state
   let isCreating = $state(false);
   let creationStage = $state(0); // 0-3 for progress stages
+  // progressId of the in-flight create — drives the live progress label/bar
+  // on the Create button; null when no create is running.
+  let activeCreateProgressId: string | null = $state(null);
   let error: string | null = $state(null);
   let controlsContainer: HTMLDivElement | null = $state(null);
   let richTextarea: RichTextarea | null = $state(null);
@@ -1580,6 +1584,7 @@
     // in the finally below once the create settles.
     const createProgressId = uuidv4();
     appStore.dispatch(beginWorkspaceCreateProgress(createProgressId));
+    activeCreateProgressId = createProgressId;
 
     try {
       // Validate
@@ -2154,6 +2159,7 @@
       isCreating = false;
       // The create settled (success, failure, or early return) — drop the
       // transient progress entry so the slice never accumulates stale ids.
+      activeCreateProgressId = null;
       appStore.dispatch(clearWorkspaceCreateProgress(createProgressId));
     }
   }
@@ -2930,12 +2936,21 @@
 
         <!-- Create button -->
         <div class="shrink-0">
-          <Button class="text-white" onclick={handleSubmit} disabled={!isValid || isCreating || isEnhancing}>
+          <Button class="text-white relative overflow-hidden" onclick={handleSubmit} disabled={!isValid || isCreating || isEnhancing}>
             {#if isCreating}
               <Fa icon={faSpinner} class="animate-spin" size="sm" />
               <span class="min-w-[160px] text-left">
                 {#if isPulling}
                   {m.workspace_compactInitializer_pullingLatest_label()}
+                {:else if activeCreateProgressId}
+                  <!-- Key on the progressId: the component binds its selector at
+                       init, so a new create must destroy/recreate it. -->
+                  {#key activeCreateProgressId}
+                    <CreateButtonProgress
+                      progressId={activeCreateProgressId}
+                      fallbackLabel={CREATION_STAGES[creationStage]}
+                    />
+                  {/key}
                 {:else}
                   {CREATION_STAGES[creationStage]}
                 {/if}

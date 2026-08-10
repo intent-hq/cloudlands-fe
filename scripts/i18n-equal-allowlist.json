@@ -1226,6 +1226,12 @@
     "fr",
     "es"
   ],
+  "workspace_compactInitializer_progressWithPercent_label": [
+    "ko",
+    "de",
+    "fr",
+    "es"
+  ],
   "workspace_compactInitializer_setupDevEnvWith_after": [
     "fr",
     "es"
