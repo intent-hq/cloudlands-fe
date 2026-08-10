@@ -5,7 +5,7 @@ import {
   put,
   race,
   take,
-  takeLatest,
+  takeEvery,
   type SagaGenerator,
 } from 'typed-redux-saga';
 
@@ -139,7 +139,7 @@ function* refreshChatWorker(action: ReturnType<typeof refreshChatTranscriptReque
 
 export function* chatReadSaga() {
   yield* all([
-    takeLatest(initializeChatRequested, initializeChatWorker),
-    takeLatest(refreshChatTranscriptRequested, refreshChatWorker),
+    takeEvery(initializeChatRequested, initializeChatWorker),
+    takeEvery(refreshChatTranscriptRequested, refreshChatWorker),
   ]);
 }
