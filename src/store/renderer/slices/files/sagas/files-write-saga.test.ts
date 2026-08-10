@@ -101,6 +101,41 @@ describe('filesWriteSaga', () => {
     await task.toPromise();
   });
 
+  it('persists the latest content for rapid updates to the same path', async () => {
+    vi.useFakeTimers();
+    const write = vi.spyOn(appClient.files, 'write').mockResolvedValue({ success: true });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    let files = filesReducer(
+      undefined,
+      loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', 'old'),
+    );
+    const dispatch = (action: Parameters<typeof filesReducer>[1]) => {
+      files = filesReducer(files, action);
+      actions.push(action);
+      channel.put(action);
+    };
+    const task = runSaga({ channel, getState: () => ({ files }), dispatch }, filesWriteSaga);
+
+    const first = updateFileContent('ws-1', 'a.ts', 'first');
+    files = filesReducer(files, first);
+    channel.put(first);
+    await vi.advanceTimersByTimeAsync(FILE_CONTENT_SAVE_DEBOUNCE_MS / 2);
+    const latest = updateFileContent('ws-1', 'a.ts', 'latest');
+    files = filesReducer(files, latest);
+    channel.put(latest);
+    await vi.advanceTimersByTimeAsync(FILE_CONTENT_SAVE_DEBOUNCE_MS / 2);
+    await settle();
+
+    expect(write.mock.calls).toEqual([['ws-1', 'a.ts', 'latest']]);
+    expect(actions).toEqual([
+      saveFileContentRequested('ws-1', 'a.ts', '/repo/a.ts', 'latest'),
+      saveFileContentSucceeded('ws-1', 'a.ts', 'latest'),
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('starts every concurrent critical save without dropping payloads', async () => {
     let resolveFirst!: (value: { success: boolean }) => void;
     const write = vi

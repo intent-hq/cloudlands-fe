@@ -24,12 +24,15 @@ import { AgentStatus } from '$shared/types';
 import {
   agentSessionReducer,
   bulkUpsertSessions,
-  initialState,
+  initialState as agentSessionInitialState,
 } from '../../agent-session/agent-session-slice';
 import {
+  chatStateReducer,
   initializeChatRequested,
+  initialState as chatStateInitialState,
   refreshChatTranscriptRequested,
   transcriptHydrationSettled,
+  transcriptHydrationStarted,
 } from '../chat-state-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { chatReadSaga } from './chat-read-saga';
@@ -69,12 +72,17 @@ function message(id: string, text: string, overrides: Partial<AgentMessage> = {}
 
 function harness() {
   const channel = stdChannel();
-  let agentSessions = initialState;
+  let agentSessions = agentSessionInitialState;
+  let chatState = chatStateInitialState;
   const dispatch = vi.fn((action) => {
     agentSessions = agentSessionReducer(agentSessions, action);
+    chatState = chatStateReducer(chatState, action);
   });
-  const task = runSaga({ channel, dispatch, getState: () => ({ agentSessions }) }, chatReadSaga);
-  return { channel, dispatch, task, sessions: () => agentSessions };
+  const task = runSaga(
+    { channel, dispatch, getState: () => ({ agentSessions, chatState }) },
+    chatReadSaga,
+  );
+  return { channel, dispatch, task, sessions: () => agentSessions, chat: () => chatState };
 }
 
 describe('chatReadSaga', () => {
@@ -146,6 +154,57 @@ describe('chatReadSaga', () => {
       .map((action) => action.payload[0]);
     expect(settledAgentIds).toEqual(expect.arrayContaining([AGENT, 'agent-other']));
     expect(settledAgentIds).toHaveLength(2);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps readiness loading while the latest same-agent read is pending', async () => {
+    let resolveFirst!: (value: { messages: AgentMessage[]; nextToken: null }) => void;
+    let resolveSecond!: (value: { messages: AgentMessage[]; nextToken: null }) => void;
+    mocks.get.mockResolvedValue(session());
+    mocks.getConversation
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          resolveFirst = done;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          resolveSecond = done;
+        }),
+      );
+    mocks.subscribeSnapshot.mockResolvedValue({ messages: [] });
+    const run = harness();
+
+    run.channel.put(refreshChatTranscriptRequested(WS, AGENT));
+    await settle();
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    await settle();
+
+    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
+    resolveFirst({ messages: [message('stale', 'stale')], nextToken: null });
+    await vi.waitFor(() => expect(mocks.getConversation).toHaveBeenCalledTimes(2));
+
+    const hydrationTransitions = run.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter(
+        (action) =>
+          action.type === transcriptHydrationStarted.type ||
+          action.type === transcriptHydrationSettled.type,
+      )
+      .map((action) => action.type);
+    expect(hydrationTransitions).toEqual([
+      transcriptHydrationStarted.type,
+      transcriptHydrationSettled.type,
+      transcriptHydrationStarted.type,
+    ]);
+    expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
+
+    resolveSecond({ messages: [message('fresh', 'fresh')], nextToken: null });
+    await vi.waitFor(() =>
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled'),
+    );
+    expect(run.sessions().byAgentId[AGENT]?.messages.map((item) => item.id)).toEqual(['fresh']);
     run.task.cancel();
     await run.task.toPromise();
   });
