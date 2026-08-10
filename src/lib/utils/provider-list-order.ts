@@ -40,8 +40,8 @@ export function compareProvidersByDisplayName(
  * When `hiddenProviderIds` is known (provider availability has loaded), rows
  * on that list are dropped — matching the loaded state's existing behavior.
  * Before availability loads (`hiddenProviderIds === undefined`), the
- * catalog's own `visible` flag stands in so gated providers (e.g. mock,
- * cortex) do not flash in the skeleton.
+ * catalog's own `visible` flag stands in so gated providers (e.g. mock) do
+ * not flash in the skeleton.
  */
 export function orderProviderEntries<T extends OrderableProviderEntry>(
   entries: readonly T[],

@@ -19,8 +19,6 @@ const logger = new Logger('FeatureCodesService');
  * and add the hash here.
  */
 const CODE_REGISTRY: ReadonlyMap<string, string> = new Map([
-  // SHA-256 of the cortex activation code
-  ['4c408969f8eddd59bad9e52c7680e7f787738d7cf368edb93048b21d86c83b70', 'cortex'],
   // SHA-256 of the remote-workspaces activation code
   ['ab86e93de0fec19bf005cbdcc44f55f8ae844bc173dd323b42c6e16de7b58e2d', 'remote-workspaces'],
   // SHA-256 of the enable_figma_mcp activation code

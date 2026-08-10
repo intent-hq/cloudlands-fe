@@ -11,7 +11,6 @@ import { PROVIDERS_CHANNELS } from '../../../shared/ipc/channels';
 import {
   fetchProviderCatalog,
   getCachedProviderCatalog,
-  getCachedProviderCatalogEntry,
 } from '../../../main/utils/provider-catalog-accessor';
 import { Logger } from '../../../shared/logger';
 import {
@@ -264,7 +263,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     // gating verdict is UNKNOWN — `hiddenProviders` is omitted from the
     // result (never an empty array, which would read as an authoritative
     // "nothing hidden" verdict) so consumers fall back to the catalog's
-    // `visible` flag and gated providers (cortex, mock) cannot flash.
+    // `visible` flag and gated providers (e.g. mock) cannot flash.
     catalog = getCachedProviderCatalog();
     logger.warn('Provider catalog fetch failed; using cached registry for gating', {
       error,
@@ -327,12 +326,11 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
 
   // Check all providers in parallel; for hidden providers skip the check
   // entirely. When the gating verdict is unknown (no catalog), fail closed on
-  // the registry-gated providers (cortex: feature code, mock: env var) — the
-  // same pre-hydration default-deny the single-provider recheck path applies —
-  // so availability-only consumers (e.g. onboarding auto-selection) cannot
+  // the registry-gated providers (mock: env var) — the same pre-hydration
+  // default-deny the single-provider recheck path applies — so
+  // availability-only consumers (e.g. onboarding auto-selection) cannot
   // pick a gated provider on the degraded path.
   const gatingVerdictUnknown = catalog === undefined;
-  const isCortexHidden = gatingVerdictUnknown || hiddenProviders.includes('cortex');
   const isMockHidden = gatingVerdictUnknown || hiddenProviders.includes('mock');
   const [
     auggieResult,
@@ -350,9 +348,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     makeProviderStatus('auggie', checkAuggieAvailability),
     makeProviderStatus('claude-code', checkClaudeCodeAvailability),
     makeProviderStatus('codex', checkCodexAvailability),
-    isCortexHidden
-      ? Promise.resolve({ available: false } as ProviderStatus)
-      : makeProviderStatus('cortex', checkCortexAvailability),
+    makeProviderStatus('cortex', checkCortexAvailability),
     isMockHidden
       ? Promise.resolve({ available: false } as ProviderStatus)
       : checkMockAvailability(), // mock stays local
@@ -563,22 +559,10 @@ export function setupProviderAvailabilityIPC(): void {
               authenticated = await checkAuth();
             }
             break;
-          case 'cortex': {
-            // Fail closed pre-hydration: cortex is feature-gated in the
-            // registry, so an unhydrated catalog means "hidden", not "open".
-            const cortexEntry = getCachedProviderCatalogEntry('cortex');
-            const cortexFeatureCode = cortexEntry?.requiresFeatureCode;
-            const isHidden =
-              cortexEntry === undefined ||
-              (cortexFeatureCode && !featureCodesService.isFeatureEnabled(cortexFeatureCode));
-            if (isHidden) {
-              status = { available: false };
-            } else {
-              clearCortexCache();
-              status = await checkCortexAvailability();
-            }
+          case 'cortex':
+            clearCortexCache();
+            status = await checkCortexAvailability();
             break;
-          }
           case 'opencode':
             clearOpenCodeCache();
             status = await checkOpenCodeAvailability();

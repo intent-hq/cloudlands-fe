@@ -11,7 +11,6 @@ import { CORTEX_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { getProviderModelsEnvelope } from '../../../main/utils/daemon-model-catalog';
 import { resolveCortexCommand } from './cortex-resolver';
-import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 
 const logger = new Logger('CortexIPC');
 
@@ -19,12 +18,6 @@ export function setupCortexIPC() {
   // Check if cortex-acp is available
   ipcMain.handle(CORTEX_CHANNELS.CHECK_AVAILABILITY, async () => {
     try {
-      // Gate behind feature code
-      if (!featureCodesService.isFeatureEnabled('cortex')) {
-        logger.debug('Cortex disabled (feature code not activated)');
-        return { success: true, available: false };
-      }
-
       logger.debug('Checking cortex-acp availability');
       const resolved = await resolveCortexCommand();
       const isAvailable = !!resolved;

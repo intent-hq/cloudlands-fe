@@ -133,7 +133,7 @@ describe('provider availability client', () => {
   it('default result carries no fabricated hiddenProviders empty list (gating verdict unknown)', async () => {
     // Envelope with success but no data falls back to the default result —
     // an empty hiddenProviders array there would read as an authoritative
-    // "nothing hidden" verdict and let gated providers (cortex, mock) leak.
+    // "nothing hidden" verdict and let gated providers (e.g. mock) leak.
     mocks.invoke.mockResolvedValue({ success: true });
 
     const result = await getProviderAvailability();

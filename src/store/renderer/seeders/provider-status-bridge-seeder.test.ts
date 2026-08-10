@@ -60,6 +60,7 @@ const NO_TOOLS = {
   tools: {
     claude: { available: false },
     codex: { available: false },
+    cortex: { available: false },
     opencode: { available: false },
     pi: { available: false },
     droid: { available: false },
@@ -130,6 +131,7 @@ describe("provider-status-bridge-seeder", () => {
         tools: [
           "claude",
           "codex",
+          "cortex",
           "opencode",
           "pi",
           "droid",
@@ -146,10 +148,9 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.hasAnyProvider).toBe(false);
       expect(response.data?.providers.auggie).toEqual({ available: false });
       expect(response.data?.providers.mock).toEqual({ available: false });
-      // Feature-code / env-var gated providers stay hidden (default-deny).
-      expect(response.data?.hiddenProviders).toEqual(
-        expect.arrayContaining(["cortex", "mock"]),
-      );
+      // Env-var gated providers stay hidden (default-deny).
+      expect(response.data?.hiddenProviders).toEqual(expect.arrayContaining(["mock"]));
+      expect(response.data?.hiddenProviders).not.toContain("cortex");
       // The FE never runs auth-check commands itself.
       expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
     });
@@ -804,6 +805,25 @@ describe("provider-status-bridge-seeder", () => {
       });
     });
 
+    it("resolves cortex presence via host.findBinary without an auth probe (ungated)", async () => {
+      routeDaemon({
+        "host.findBinary": { available: true, path: "/usr/local/bin/cortex" },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "cortex");
+
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "cortex" });
+      expect(mockedRequest).not.toHaveBeenCalledWith(
+        "host.providerAuthStatus",
+        expect.anything(),
+      );
+      expect(response).toEqual({
+        success: true,
+        providerId: "cortex",
+        data: { available: true },
+      });
+    });
+
     it("degrades auth to unknown when the providerAuthStatus RPC fails", async () => {
       routeDaemon({
         "host.findBinary": { available: true, path: "/usr/local/bin/opencode" },
@@ -992,12 +1012,18 @@ describe("provider-status-bridge-seeder", () => {
       expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "claude" });
     });
 
-    it("default-denies cortex (feature-code gated) without touching the daemon", async () => {
+    it("probes the cortex CLI via host.findBinary (no longer feature-code gated)", async () => {
+      routeDaemon({
+        "host.findBinary": (params: unknown) => ({
+          available: (params as { name: string }).name === "cortex",
+          path: "/usr/local/bin/cortex",
+        }),
+      });
       await expect(mockInvoke("cortex:check-availability")).resolves.toEqual({
         success: true,
-        available: false,
+        available: true,
       });
-      expect(mockedRequest).not.toHaveBeenCalled();
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "cortex" });
     });
 
     it("propagates daemon RPC failures (callers fold the rejection to false + warn)", async () => {

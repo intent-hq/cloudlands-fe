@@ -131,12 +131,18 @@ describe('ProviderSelector progressive rendering', () => {
     const result = render(ProviderSelector);
 
     // Visible catalog rows are on screen without any probe having settled;
-    // gated rows (mock, cortex) stay hidden via the catalog's own verdict.
-    for (const name of ['Augment Auggie', 'Anthropic Claude Code', 'OpenAI Codex', 'Grok Build']) {
+    // gated rows (mock) stay hidden via the catalog's own verdict, while
+    // ungated cortex renders like any other visible row.
+    for (const name of [
+      'Augment Auggie',
+      'Anthropic Claude Code',
+      'OpenAI Codex',
+      'Grok Build',
+      'Snowflake Cortex',
+    ]) {
       expect(result.getByText(name)).toBeTruthy();
     }
     expect(result.queryByText('Mock (E2E)')).toBeNull();
-    expect(result.queryByText('Snowflake Cortex')).toBeNull();
 
     expect(
       result.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent?.trim()),

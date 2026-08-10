@@ -1455,7 +1455,7 @@ app.whenReady().then(async () => {
   setupDroidIPC(); // Needed for droid:get-models
   setupGrokIPC(); // Needed for grok:get-models
   setupUnslothIPC(); // Needed for unsloth:get-models
-  setupFeatureCodesIPC(); // Feature codes for gating features like Cortex
+  setupFeatureCodesIPC(); // Feature codes for gating experimental features
   setupProviderAvailabilityIPC(); // Needed for providers:get-availability
   setupEventsIPC(); // Needed for events:query
   registerSetupScriptsHandlers(); // Needed for onboarding setup scripts
