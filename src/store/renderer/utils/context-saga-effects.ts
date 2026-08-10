@@ -18,7 +18,7 @@ function* watchInContext<P extends ActionPattern, PrefixArgs extends unknown[]>(
   const slots = new Map<string, WorkerSlot>();
 
   while (true) {
-    const action: ActionMatchingPattern<P> = yield* take(pattern);
+    const action = (yield* take(pattern)) as ActionMatchingPattern<P>;
     const context = getContext(action);
     const current = slots.get(context);
 
