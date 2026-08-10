@@ -18,7 +18,7 @@
   type DropdownItemProps,
   type DropdownOption,
 } from '$lib/components/ui/dropdown';
-  import ProviderIcon from '$lib/components/ui/ProviderIcon.svelte';
+  import ProviderIcon, { hasProviderIcon } from '$lib/components/ui/ProviderIcon.svelte';
   import { faSettings } from '$lib/icons/faSettings';
   import ModelPickerEmptyState from './ModelPickerEmptyState.svelte';
   import ModelPickerGroupHeader from './ModelPickerGroupHeader.svelte';
@@ -1318,14 +1318,18 @@
       {#if shouldShowLockIconWhenLocked}
         <Fa icon={faLock} class="h-3.5 w-3.5" />
       {/if}
-      <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
+      {#if hasProviderIcon(triggerProviderId)}
+        <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
+      {/if}
       <span class="flex-1 text-left truncate">{currentModelLabel}</span>
     {:else}
       <span class={cn('flex items-center', shouldShowLockIconWhenLocked && 'gap-1.5')}>
         {#if shouldShowLockIconWhenLocked}
           <Fa icon={faLock} class="h-3.5 w-3.5" />
         {/if}
-        <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
+        {#if hasProviderIcon(triggerProviderId)}
+          <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
+        {/if}
         <span class="text-xs truncate">{currentModelLabel}</span>
       </span>
     {/if}
@@ -1391,7 +1395,9 @@
           {:else if showModelWarning}
             <Fa icon={faTriangleExclamation} class="h-3 w-3 text-amber-600 shrink-0" />
           {/if}
-          <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
+          {#if hasProviderIcon(triggerProviderId)}
+            <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
+          {/if}
           <span class="truncate">{currentModelLabel}</span>
         {:else}
           <div class="h-3.5 w-24 bg-muted/50 rounded-sm animate-pulse"></div>

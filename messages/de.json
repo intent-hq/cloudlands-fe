@@ -3009,6 +3009,7 @@
   "onboarding_promptStep_promptSuggestions_ariaLabel": "Prompt-Vorschläge",
   "onboarding_promptStep_enhancePrompt_tooltip": "Prompt verbessern  ⌘E",
   "onboarding_promptStep_addFiles_tooltip": "Dateien hinzufügen",
+  "onboarding_promptStep_dropFiles_label": "Dateien hier ablegen",
   "onboarding_promptStep_branchOffOf_before": "Abzweigen von",
   "onboarding_promptStep_branchOff_label": "Abzweigen",
   "onboarding_promptStep_setupEnvWith_before": "Umgebung einrichten mit",

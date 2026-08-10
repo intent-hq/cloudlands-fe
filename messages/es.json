@@ -3009,6 +3009,7 @@
   "onboarding_promptStep_promptSuggestions_ariaLabel": "Sugerencias de prompts",
   "onboarding_promptStep_enhancePrompt_tooltip": "Mejorar el prompt  ⌘E",
   "onboarding_promptStep_addFiles_tooltip": "Agregar archivos",
+  "onboarding_promptStep_dropFiles_label": "Suelta los archivos aquí",
   "onboarding_promptStep_branchOffOf_before": "Crear rama a partir de",
   "onboarding_promptStep_branchOff_label": "Crear rama",
   "onboarding_promptStep_setupEnvWith_before": "Configurar el entorno con",

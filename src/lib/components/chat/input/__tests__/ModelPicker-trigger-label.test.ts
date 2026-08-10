@@ -99,8 +99,8 @@ vi.mock('$lib/components/ui/dropdown', async () => {
 });
 
 vi.mock('$lib/components/ui/ProviderIcon.svelte', async () => {
-  const ProviderIcon = (await import('../../__tests__/mocks/ProviderIcon.svelte')).default;
-  return { default: ProviderIcon };
+  const mod = await import('../../__tests__/mocks/ProviderIcon.svelte');
+  return { default: mod.default, hasProviderIcon: mod.hasProviderIcon };
 });
 
 vi.mock('$features/agent/agent.client', () => ({
@@ -134,6 +134,24 @@ vi.mock('$store/renderer/store', async () => {
           displayName: 'Anthropic',
           shortName: 'Anthropic',
           command: 'anthropic',
+          isDefault: false,
+          canBeDisabled: true,
+          visible: true,
+        },
+        {
+          id: 'claude-code',
+          displayName: 'Claude Code',
+          shortName: 'Claude',
+          command: 'claude-code',
+          isDefault: false,
+          canBeDisabled: true,
+          visible: true,
+        },
+        {
+          id: 'codex',
+          displayName: 'Codex',
+          shortName: 'Codex',
+          command: 'codex',
           isDefault: false,
           canBeDisabled: true,
           visible: true,
@@ -405,13 +423,13 @@ describe('ModelPicker trigger label regressions', () => {
     render(ModelPicker, {
       props: {
         selectedModel: undefined,
-        defaultModelId: 'anthropic:claude-opus-4-7',
+        defaultModelId: 'claude-code:claude-opus-4-7',
         isLocked: true,
       },
     });
 
     expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
-      'anthropic',
+      'claude-code',
     );
   });
 
@@ -419,19 +437,19 @@ describe('ModelPicker trigger label regressions', () => {
     render(ModelPicker, {
       props: {
         selectedModel: undefined,
-        providerId: 'anthropic',
-        defaultModelId: 'auggie:butler',
+        providerId: 'auggie',
+        defaultModelId: 'claude-code:butler',
         isLocked: true,
       },
     });
 
     expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
-      'anthropic',
+      'auggie',
     );
   });
 
   it('falls back to the active provider when no model or provider is resolvable', () => {
-    activeProviderId$.set('anthropic');
+    activeProviderId$.set('claude-code');
 
     render(ModelPicker, {
       props: {
@@ -441,12 +459,14 @@ describe('ModelPicker trigger label regressions', () => {
     });
 
     expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
-      'anthropic',
+      'claude-code',
     );
   });
 
   it('reacts when the Redux session provider changes without remounting', async () => {
-    sessions.set('agent-1', { id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
+    selectedModel$.set(undefined);
+    activeProviderId$.set('codex');
+    sessions.set('agent-1', { id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
     sessionVersion$.update((value) => value + 1);
 
     render(ModelPicker, {
@@ -458,19 +478,32 @@ describe('ModelPicker trigger label regressions', () => {
       },
     });
 
-    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe('auggie');
+    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe('codex');
 
     appStore.dispatch(
       updateAgentSessionFields('agent-1', {
-        provider: 'anthropic',
-        model: 'anthropic:claude-opus-4-7',
+        provider: 'claude-code',
+        model: 'claude-code:claude-opus-4-7',
       }),
     );
 
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 80));
 
-    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe('anthropic');
-    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('anthropic');
+    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe('claude-code');
+    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
+  });
+
+  it('does not render a provider icon for unknown provider IDs', () => {
+    activeProviderId$.set('anthropic');
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        isLocked: true,
+      },
+    });
+
+    expect(screen.queryByTestId('provider-icon')).toBeNull();
   });
 });
