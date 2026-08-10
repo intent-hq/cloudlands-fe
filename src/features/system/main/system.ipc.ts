@@ -2204,26 +2204,6 @@ export function setupSystemIPC() {
     ),
   );
 
-  // Get workspace root directory
-  ipcMain.handle(
-    SYSTEM_CHANNELS.WORKSPACE_ROOT,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async () => {
-        const os = require('os');
-        const path = require('path');
-        const override =
-          process.env.WORKSPACES_BASE_DIR ||
-          process.env.INTENT_WORKSPACES_ROOT ||
-          process.env.AUGMENT_WORKSPACES_ROOT;
-        const workspaceRoot =
-          override && override.trim().length > 0 ? override : path.join(os.homedir(), 'intent');
-        return { success: true, data: workspaceRoot };
-      },
-      SYSTEM_CHANNELS.WORKSPACE_ROOT,
-    ),
-  );
-
   // Legacy: Get home directory (for backward compatibility)
   ipcMain.handle(
     LEGACY_CHANNELS.GET_HOME_DIRECTORY,

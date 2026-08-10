@@ -229,7 +229,6 @@ const ALLOWED_CHANNELS = [
   'system:show-item-in-folder',
   'system:beep',
   'system:home-directory',
-  'system:workspace-root',
   'system:execute-command',
   'system:execute-command-streaming',
   'system:check-git',
