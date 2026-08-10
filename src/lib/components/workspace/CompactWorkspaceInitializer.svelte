@@ -12,6 +12,7 @@
   mapInitialRepoToFormState,
 } from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
+  import { v4 as uuidv4 } from 'uuid';
   import {
   SETUP_SCRIPT_TEMPLATES,
   getTemplateContent,
