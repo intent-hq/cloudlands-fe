@@ -263,9 +263,10 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
   } catch (error) {
     // Fail closed on the gating decision: fall back to the last cached
     // registry when the fetch fails. When there is no cache either, the
-    // daemon has never answered on this connection — provider discovery
-    // below will fail the same way and report nothing available, so no
-    // gated provider can surface through this path.
+    // gating verdict is UNKNOWN — `hiddenProviders` is omitted from the
+    // result (never an empty array, which would read as an authoritative
+    // "nothing hidden" verdict) so consumers fall back to the catalog's
+    // `visible` flag and gated providers (cortex, mock) cannot flash.
     catalog = getCachedProviderCatalog();
     logger.warn('Provider catalog fetch failed; using cached registry for gating', {
       error,
@@ -418,7 +419,9 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       grok: grokResult,
       unsloth: unslothResult,
     },
-    hiddenProviders,
+    // Absent catalog = unknown gating verdict; only a consulted catalog
+    // yields an authoritative hidden list (empty = nothing hidden).
+    ...(catalog !== undefined ? { hiddenProviders } : {}),
     npx: npxStatus,
   };
 
