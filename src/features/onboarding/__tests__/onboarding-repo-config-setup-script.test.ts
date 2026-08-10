@@ -73,8 +73,9 @@ vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
   selectGitHubAuthIsAuthenticating: { select: vi.fn(() => false) },
 }));
 
-vi.mock('$store/renderer/slices/setup-scripts/setup-scripts-selectors', () => ({
-  selectLastUsedScriptForRepo: { select: mocks.lastUsedSelect },
+vi.mock('$features/setup-scripts/last-used', () => ({
+  getLastUsedSetupScript: mocks.lastUsedSelect,
+  recordLastUsedSetupScript: vi.fn(),
 }));
 
 // Keep the real priority logic (chooseDefaultSetupScript, templates, name
@@ -391,10 +392,9 @@ describe('onboarding repo-config setup script detection', () => {
     expect(request.setupScript).toBeUndefined();
   });
 
-  it('omits setupScript for an auto-restored default the user never touched (monorepo#1862)', async () => {
-    // No repo config — the form falls back to the generic template. That
-    // synchronously-restored default must never be sent: the daemon would
-    // persist it into the fresh worktree's tracked .intent/config.json.
+  it('sends the auto-restored default (the shown script is what runs)', async () => {
+    // No repo config — the form falls back to the generic template. The
+    // shown script is what runs, so it is sent as-is.
     mocks.fetchRepoConfig.mockResolvedValue(null);
     mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
     const generic = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic')!;
@@ -404,7 +404,8 @@ describe('onboarding repo-config setup script detection', () => {
     await waitFor(() => {
       expect(textOf(result, 'setup-script-name')).toBe(generic.name);
     });
-    expect(textOf(result, 'setup-script')).not.toBe('');
+    const shownScript = textOf(result, 'setup-script');
+    expect(shownScript).not.toBe('');
 
     const captured = (
       window as unknown as {
@@ -419,8 +420,7 @@ describe('onboarding repo-config setup script detection', () => {
 
     await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalled());
     const request = mocks.workspaceCreate.mock.calls[0][0];
-    expect(request.setupScript).toBeUndefined();
-    expect('setupScript' in request ? request.setupScript : undefined).toBeUndefined();
+    expect(request.setupScript).toBe(shownScript?.trim());
   });
 
   it('sends setupScript when the user committed an edited script via the modal', async () => {
@@ -507,7 +507,7 @@ describe('onboarding repo-config setup script detection', () => {
   });
 
   it('discards a stale probe result after the user switches repos', async () => {
-    mocks.lastUsedSelect.mockImplementation((_state: unknown, repo: string) =>
+    mocks.lastUsedSelect.mockImplementation((repo: string) =>
       repo === '/repo/b' ? { name: 'B saved script', content: 'echo b-saved' } : undefined,
     );
     const probeA = deferred<string | null>();
@@ -544,7 +544,7 @@ describe('onboarding repo-config setup script detection', () => {
   });
 
   it('discards a stale GitHub probe result after switching to a local repo', async () => {
-    mocks.lastUsedSelect.mockImplementation((_state: unknown, repo: string) =>
+    mocks.lastUsedSelect.mockImplementation((repo: string) =>
       repo === '/repo/local' ? { name: 'Local saved', content: 'echo local-saved' } : undefined,
     );
     const ghProbe = deferred<string | null>();

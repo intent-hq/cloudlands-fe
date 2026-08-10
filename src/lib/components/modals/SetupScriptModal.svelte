@@ -19,7 +19,6 @@
     scriptName?: string;
     isCustomScript?: boolean;
     onClose?: () => void;
-    onchange?: (value: string) => void;
   }
 
   let {
@@ -31,7 +30,6 @@
     scriptName = $bindable('Custom'),
     isCustomScript = $bindable(false),
     onClose,
-    onchange,
   }: Props = $props();
 
   // Local state — edits happen here, only committed on Done
@@ -55,7 +53,6 @@
     value = localValue;
     scriptName = localScriptName;
     isCustomScript = localIsCustomScript;
-    onchange?.(localValue);
     open = false;
     onClose?.();
   }

@@ -20,7 +20,6 @@
     isEnhancePromptAvailable,
   } from '$lib/client/live/live-prompt-enhancement';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { v4 as uuidv4 } from 'uuid';
   import { goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
@@ -75,7 +74,6 @@
     extractSentryIssue,
   } from '$features/onboarding/utils/parse-context-references';
   import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-  import { selectLastUsedScriptForRepo } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
   import {
     SETUP_SCRIPT_TEMPLATES,
     getTemplateContent,
@@ -84,7 +82,10 @@
     resolveSetupScriptParam,
     REPO_CONFIG_SCRIPT_NAME,
   } from '$features/setup-scripts';
-  import { saveScript } from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
+  import {
+    getLastUsedSetupScript,
+    recordLastUsedSetupScript,
+  } from '$features/setup-scripts/last-used';
   import { setHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     cancelWorkspaceInitializerOnboardingFormStateDebounce,
@@ -243,7 +244,6 @@
         // Repo changed — invalidate any cached repo-config script
         repoConfigScript = null;
         repoConfigScriptRepo = null;
-        setupScriptUserTouched = false;
 
         // On initial mount, don't override if there's already a setup script
         // set (e.g., from restored form state). On repo switches, always
@@ -360,16 +360,13 @@
   let setupWorktreePath = $state<string | undefined>(undefined);
   let setupScriptStatus = $state<SetupStepStatus | undefined>(undefined);
 
-  // Setup script state
+  // Setup script state — session-local: the default is restored per repo
+  // from the repo config / localStorage last-used, never from persisted
+  // form state.
   let setupScript = $state('');
   let showSetupScript = $state(false);
   let setupScriptName = $state('Custom');
   let isCustomSetupScript = $state(false);
-  // True once the user committed the setup-script modal (Done) this session.
-  // Gates sending `setupScript` on workspace.create: an auto-restored default
-  // the user never touched must not be persisted into the repo-tracked
-  // `.intent/config.json` (monorepo#1862).
-  let setupScriptUserTouched = $state(false);
 
   // User-picked model for the initial Coordinator agent (step 3 picker).
   // undefined + false means the auto-resolved default applies (behavior
@@ -378,8 +375,7 @@
   let onboardingModelWasOverridden = $state(false);
 
   // One-time restore of a persisted mid-onboarding model pick once the
-  // workspace-initializer state has hydrated (mirrors how the persisted form
-  // state round-trips setupScript et al.).
+  // workspace-initializer state has hydrated.
   let onboardingModelRestoreApplied = false;
   $effect(() => {
     if (!isOnboarding || !$workspaceInitializerHydrated$ || onboardingModelRestoreApplied) return;
@@ -425,7 +421,7 @@
   // Priority: repo-committed `.intent/config.json` setupScript > last used for
   // this repo > generic "Copy config files only" template.
   function restoreLastUsedSetupScript(repo: string) {
-    const lastUsed = repo ? selectLastUsedScriptForRepo.select(appStore.state, repo) : undefined;
+    const lastUsed = repo ? getLastUsedSetupScript(repo) : undefined;
     const genericTemplate = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic');
     const choice = chooseDefaultSetupScript({
       repoConfigScript: repo && repo === repoConfigScriptRepo ? repoConfigScript : null,
@@ -443,15 +439,11 @@
     const selection = projectSelection;
     const skipIso = onboardingSkipIsolation;
     const step = $onboardingStep$;
-    const script = setupScript;
-    const scriptName = setupScriptName;
-    const customScript = isCustomSetupScript;
     const pickedModel = onboardingSelectedModel;
     const modelOverridden = onboardingModelWasOverridden;
 
     if (!isOnboarding || !$workspaceInitializerHydrated$) return;
-    if (!(selection || skipIso || script || (step !== 'requirements' && step !== 'welcome')))
-      return;
+    if (!(selection || skipIso || (step !== 'requirements' && step !== 'welcome'))) return;
     appStore.dispatch(
       debounceWorkspaceInitializerOnboardingFormState({
         projectSelection: selection
@@ -467,9 +459,6 @@
             }
           : null,
         skipIsolation: skipIso,
-        setupScript: script,
-        setupScriptName: scriptName,
-        isCustomSetupScript: customScript,
         selectedModel: pickedModel,
         modelWasOverridden: modelOverridden,
         step,
@@ -882,15 +871,13 @@
       // instead of racing the probe (monorepo#1862).
       await setupScriptProbeScheduler.settled();
 
-      // Only a user-touched script is sent — the daemon persists an explicit
-      // setupScript into the worktree's tracked .intent/config.json (PROTOCOL
-      // §5.1), so an auto-restored default or the unedited repo-config script
-      // must be omitted (the committed script still executes).
+      // The shown script is what runs: send it as-is, EXCEPT the unedited
+      // repo-config script — the daemon persists an explicit setupScript into
+      // the worktree's tracked .intent/config.json (PROTOCOL §5.1) and the
+      // committed file already holds it (it still executes when omitted).
       const setupScriptParam = resolveSetupScriptParam({
         setupScript,
         setupScriptName,
-        isCustomSetupScript,
-        setupScriptUserTouched,
         repoPath: projectSelection.repoPath,
         repoConfigScript,
         repoConfigScriptRepo,
@@ -974,30 +961,18 @@
 
       appStore.dispatch(setWorkspaceEntity(workspace));
 
-      // Save the setup script to the store for future reuse.
+      // Record the script as this repo's last-used default (localStorage).
       // Skip the unedited repo-config script — the committed .intent/config.json
-      // is its source of truth, and saving a copy would both duplicate it in the
-      // saved list and shadow future repo-config changes as the last-used default.
+      // is its source of truth, and recording a copy would shadow future
+      // repo-config changes as the last-used default.
       const isUneditedRepoConfigScript =
         setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
         repoConfigScriptRepo === projectSelection.repoPath &&
         setupScript.trim() === (repoConfigScript ?? '').trim();
       if (setupScript.trim() && projectSelection.repoPath && !isUneditedRepoConfigScript) {
-        const now = new Date().toISOString();
-        const scriptToSave = {
-          id: uuidv4(),
+        recordLastUsedSetupScript(projectSelection.repoPath, {
           name: setupScriptName || m.onboarding_page_customScript_label(),
-          content: setupScript.trim(),
-          repoPath: projectSelection.repoPath,
-          projectType: 'generic' as string,
-          lastUsedAt: now,
-          usageCount: 1,
-          createdAt: now,
-        };
-        appStore.dispatch(saveScript(scriptToSave));
-        logger.info('Saved setup script to store', {
-          name: setupScriptName,
-          repoPath: projectSelection.repoPath,
+          content: setupScript,
         });
       }
 
@@ -1341,7 +1316,6 @@
                           onSkipIsolationChange={(val) => (onboardingSkipIsolation = val)}
                           onBranchBehindChange={(behind) => (onboardingBranchBehind = behind)}
                           onShowSetupScriptChange={(show) => (showSetupScript = show)}
-                          onSetupScriptCommit={() => (setupScriptUserTouched = true)}
                         />
                       {/if}
                     </div>

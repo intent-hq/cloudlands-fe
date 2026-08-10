@@ -20,9 +20,10 @@
   resolveSetupScriptParam,
   REPO_CONFIG_SCRIPT_NAME,
 } from '$features/setup-scripts';
-  import { v4 as uuidv4 } from 'uuid';
-  import { saveScript } from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
-  import { selectLastUsedScriptForRepo } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
+  import {
+  getLastUsedSetupScript,
+  recordLastUsedSetupScript,
+} from '$features/setup-scripts/last-used';
   import {
   setCompactWorkspaceInitializerFormState,
   clearWorkspaceInitializerPendingGitHubPrefill,
@@ -492,16 +493,13 @@
   let hasFiredClick = $state(false);
   let hasFiredType = $state(false);
 
-  // Setup script state
-  let setupScript = $state(savedState?.setupScript ?? '');
+  // Setup script state — session-local: the default is restored per repo
+  // from the repo config / localStorage last-used, never from persisted
+  // form state.
+  let setupScript = $state('');
   let showSetupScript = $state(false); // Always collapsed on mount
-  let setupScriptName = $state(savedState?.setupScriptName ?? 'Custom');
-  let isCustomSetupScript = $state(savedState?.isCustomSetupScript ?? false);
-  // True once the user committed the setup-script modal (Done) this session.
-  // Gates sending `setupScript` on workspace.create: an auto-restored default
-  // the user never touched must not be persisted into the repo-tracked
-  // `.intent/config.json` (monorepo#1862).
-  let setupScriptUserTouched = $state(false);
+  let setupScriptName = $state('Custom');
+  let isCustomSetupScript = $state(false);
 
   // Repo-committed setup script from <repo>/.intent/config.json (local repos
   // read the file over IPC; GitHub repos use `github.repoConfig.get`).
@@ -515,9 +513,7 @@
   // Priority: repo-committed `.intent/config.json` setupScript > last used for
   // this repo > generic "Copy config files only" template.
   function restoreLastUsedSetupScript(repo: string) {
-    const lastUsed = repo
-      ? selectLastUsedScriptForRepo.select(appStore.state, repo)
-      : undefined;
+    const lastUsed = repo ? getLastUsedSetupScript(repo) : undefined;
     const genericTemplate = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic');
     const choice = chooseDefaultSetupScript({
       repoConfigScript: repo && repo === repoConfigScriptRepo ? repoConfigScript : null,
@@ -597,9 +593,6 @@
     scope = formState.scope && formState.repoPath === formState.scopeRepoPath ? formState.scope : scope;
     remoteSetup = formState.remoteSetup ?? remoteSetup;
     selectedProvider = formState.selectedProvider ?? selectedProvider;
-    setupScript = formState.setupScript ?? setupScript;
-    setupScriptName = formState.setupScriptName ?? setupScriptName;
-    isCustomSetupScript = formState.isCustomSetupScript ?? isCustomSetupScript;
     skipIsolation = readSkipIsolation(formState) ?? skipIsolation;
     stayOnHomePage = formState.stayOnHomePage ?? stayOnHomePage;
     applyAgentSettings(formState);
@@ -718,7 +711,7 @@
   $effect(() => {
     if (!$workspaceInitializerHydrated$) return;
     // Only save if there's meaningful state to preserve
-    if (repoPath || selectedSpecialist || selectedModel || setupScript) {
+    if (repoPath || selectedSpecialist || selectedModel) {
       const formState = {
         repoPath,
         repoType,
@@ -735,10 +728,6 @@
         modelWasOverridden,
         isTeamMode,
         selectedProvider,
-        setupScript,
-        showSetupScript,
-        setupScriptName,
-        isCustomSetupScript,
         skipIsolation,
         stayOnHomePage,
       };
@@ -1311,7 +1300,6 @@
         // Repo changed — invalidate any cached repo-config script
         repoConfigScript = null;
         repoConfigScriptRepo = null;
-        setupScriptUserTouched = false;
 
         // On initial mount, don't override if there's already a setup script
         // set (e.g., from restored form state). On repo switches, always
@@ -1952,15 +1940,13 @@
       // instead of racing the probe (monorepo#1862).
       await setupScriptProbeScheduler.settled();
 
-      // Only a user-touched script is sent — the daemon persists an explicit
-      // setupScript into the worktree's tracked .intent/config.json (PROTOCOL
-      // §5.1), so an auto-restored default or the unedited repo-config script
-      // must be omitted (the committed script still executes).
+      // The shown script is what runs: send it as-is, EXCEPT the unedited
+      // repo-config script — the daemon persists an explicit setupScript into
+      // the worktree's tracked .intent/config.json (PROTOCOL §5.1) and the
+      // committed file already holds it (it still executes when omitted).
       const setupScriptParam = resolveSetupScriptParam({
         setupScript,
         setupScriptName,
-        isCustomSetupScript,
-        setupScriptUserTouched,
         repoPath,
         repoConfigScript,
         repoConfigScriptRepo,
@@ -2045,30 +2031,18 @@
       // has data on the very first render frame (before sagas/effects run).
       appStore.dispatch(setWorkspaceEntity(workspace));
 
-      // Save the setup script to the store for future reuse.
+      // Record the script as this repo's last-used default (localStorage).
       // Skip the unedited repo-config script — the committed .intent/config.json
-      // is its source of truth, and saving a copy would both duplicate it in the
-      // saved list and shadow future repo-config changes as the last-used default.
+      // is its source of truth, and recording a copy would shadow future
+      // repo-config changes as the last-used default.
       const isUneditedRepoConfigScript =
         setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
         repoConfigScriptRepo === repoPath &&
         setupScript.trim() === (repoConfigScript ?? '').trim();
       if (setupScript.trim() && !isUneditedRepoConfigScript) {
-        const now = new Date().toISOString();
-        const scriptToSave = {
-          id: uuidv4(),
+        recordLastUsedSetupScript(repoPath, {
           name: setupScriptName || m.workspace_setupScriptEditor_customScript_name(),
-          content: setupScript.trim(),
-          repoPath,
-          projectType: 'generic' as string,
-          lastUsedAt: now,
-          usageCount: 1,
-          createdAt: now,
-        };
-        appStore.dispatch(saveScript(scriptToSave));
-        logger.info('Saved setup script to store', {
-          name: setupScriptName,
-          repoPath,
+          content: setupScript,
         });
       }
 
@@ -2166,7 +2140,6 @@
     showSetupScript = false;
     setupScriptName = 'Custom';
     isCustomSetupScript = false;
-    setupScriptUserTouched = false;
 
     // When preserving repo (stayOnHomePage), restore the last used setup script
     // so the next workspace creation uses the same script
@@ -2195,11 +2168,6 @@
       stayOnHomePage,
       skipIsolation,
       remoteSetup, // null at this point, but keeps parity with $effect's formState
-      // Setup script fields — already cleared above (or restored via restoreLastUsedSetupScript)
-      setupScript,
-      showSetupScript,
-      setupScriptName,
-      isCustomSetupScript,
     };
     if (preserveRepo) {
       // Keep repo fields in persisted form state when staying on the home page
@@ -3036,7 +3004,6 @@
             bind:value={setupScript}
             bind:scriptName={setupScriptName}
             bind:isCustomScript={isCustomSetupScript}
-            onchange={() => (setupScriptUserTouched = true)}
             onClose={() => (showSetupScript = false)}
           />
         </div>

@@ -73,8 +73,9 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectUserOverrides: { select: vi.fn(() => ({ modelOverrides: {} })) },
 }));
 
-vi.mock('$store/renderer/slices/setup-scripts/setup-scripts-selectors', () => ({
-  selectLastUsedScriptForRepo: { select: mocks.lastUsedSelect },
+vi.mock('$features/setup-scripts/last-used', () => ({
+  getLastUsedSetupScript: mocks.lastUsedSelect,
+  recordLastUsedSetupScript: vi.fn(),
 }));
 
 // Keep the real priority logic and the shared probe helper; only the
@@ -273,7 +274,9 @@ describe('CompactWorkspaceInitializer repo-config setup script detection', () =>
     expect(mocks.fetchRepoConfig).toHaveBeenCalledWith('/repo/a');
   });
 
-  it('never clobbers a restored setup script from saved form state', async () => {
+  it('ignores legacy setup-script fields in saved form state (repo config wins)', async () => {
+    // The setup script is session-local now: legacy persisted script fields
+    // must not rehydrate, so the repo-config default applies as usual.
     mocks.fetchRepoConfig.mockResolvedValue('echo repo-config');
     mocks.savedFormState = {
       repoPath: '/repo/a',
@@ -285,12 +288,11 @@ describe('CompactWorkspaceInitializer repo-config setup script detection', () =>
 
     const result = renderInitializer();
     await waitFor(() => expect(mocks.fetchRepoConfig).toHaveBeenCalledWith('/repo/a'));
-    // Probe settles (spinner gone) without overwriting the restored name.
     await waitFor(() => {
       expect(result.queryByText(SPINNER_LABEL)).toBeNull();
     });
-    expect(result.getByText('Restored')).toBeTruthy();
-    expect(result.queryByText(REPO_CONFIG_SCRIPT_NAME)).toBeNull();
+    expect(result.getByText(REPO_CONFIG_SCRIPT_NAME)).toBeTruthy();
+    expect(result.queryByText('Restored')).toBeNull();
   });
 
   it('degrades silently to the last-used script when the repo has no config', async () => {
@@ -397,10 +399,9 @@ describe('CompactWorkspaceInitializer setupScript on workspace.create (monorepo#
     sessionStorage.clear();
   });
 
-  it('omits setupScript for an auto-restored default the user never touched', async () => {
-    // Last-used script restored synchronously on repo selection — untouched,
-    // so it must not be sent (the daemon would persist it into the tracked
-    // .intent/config.json of the fresh worktree).
+  it('sends the auto-restored last-used default (the shown script is what runs)', async () => {
+    // Last-used script restored synchronously on repo selection — it is
+    // shown in the form, so it is sent.
     mocks.lastUsedSelect.mockReturnValue({ name: 'My saved script', content: 'echo saved' });
 
     seedAutoCreatePrefill();
@@ -409,7 +410,7 @@ describe('CompactWorkspaceInitializer setupScript on workspace.create (monorepo#
 
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
     const request = mocks.create.mock.calls[0][0] as Record<string, unknown>;
-    expect(request.setupScript).toBeUndefined();
+    expect(request.setupScript).toBe('echo saved');
   });
 
   it('omits setupScript for the unedited repo-config script', async () => {
