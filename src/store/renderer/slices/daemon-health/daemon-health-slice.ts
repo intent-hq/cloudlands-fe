@@ -27,6 +27,7 @@ export const initialState: DaemonHealthState = {
   lastUpdated: null,
   polling: false,
   transport: null,
+  reconnectAttempts: 0,
   hostLocality: null,
   sidecarGaveUp: false,
   sidecarGaveUpReason: null,
@@ -57,6 +58,8 @@ export interface ConnectionStatusExtras {
   sidecarGaveUp?: boolean;
   sidecarStartupFailed?: boolean;
   reason?: string;
+  /** Reconnect attempts since the last successful connect (#1750). */
+  reconnectAttempts?: number;
 }
 
 /**
@@ -193,6 +196,7 @@ daemonHealthReducer.with(
         health: 'healthy',
         stats: transport && state.stats ? { ...state.stats, transport } : state.stats,
         transport: transport ?? state.transport,
+        reconnectAttempts: 0,
         // A reported locality belongs to the daemon/transport that produced it.
         // Drop it when switching connections so selectors immediately fall back
         // to the new transport until that daemon's next system.status response.
@@ -219,6 +223,7 @@ daemonHealthReducer.with(
         health: 'down',
         transport: transport ?? state.transport,
         hostLocality,
+        reconnectAttempts: extras?.reconnectAttempts ?? state.reconnectAttempts,
         sidecarGaveUp: extras?.sidecarGaveUp ? true : state.sidecarGaveUp,
         sidecarGaveUpReason: extras?.sidecarGaveUp
           ? (extras.reason ?? null)

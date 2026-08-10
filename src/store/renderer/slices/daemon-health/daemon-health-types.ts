@@ -131,6 +131,12 @@ export interface DaemonHealthState {
    */
   transport: BackendTransportInfo | null;
   /**
+   * Reconnect attempts since the last successful connect, from the main
+   * process's backend:status broadcasts (#1750). 0 while connected / before
+   * the first retry; the daemon-loss overlay renders it as retry progress.
+   */
+  reconnectAttempts: number;
+  /**
    * Daemon-reported connection locality from the last system.status poll
    * (`host.locality`, PROTOCOL §5.7/§5.14), or null before the first poll.
    * Authoritative over the FE transport heuristic: it reflects a forced

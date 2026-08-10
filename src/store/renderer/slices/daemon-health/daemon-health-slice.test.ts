@@ -40,6 +40,7 @@ describe('daemonHealthReducer', () => {
       lastUpdated: null,
       polling: false,
       transport: null,
+      reconnectAttempts: 0,
       hostLocality: null,
       sidecarGaveUp: false,
       sidecarGaveUpReason: null,
@@ -139,6 +140,32 @@ describe('daemonHealthReducer', () => {
         connectionStatusChanged('disconnected', externalTransport),
       );
       expect(next.transport).toEqual(externalTransport);
+    });
+
+    it('stores reconnectAttempts from disconnect/connecting extras (#1750)', () => {
+      const down = daemonHealthReducer(
+        initialState,
+        connectionStatusChanged('disconnected', undefined, { reconnectAttempts: 3 }),
+      );
+      expect(down.reconnectAttempts).toBe(3);
+
+      const connecting = daemonHealthReducer(
+        down,
+        connectionStatusChanged('connecting', undefined, { reconnectAttempts: 4 }),
+      );
+      expect(connecting.reconnectAttempts).toBe(4);
+    });
+
+    it('preserves reconnectAttempts on a disconnect without the extra', () => {
+      const state = { ...initialState, reconnectAttempts: 5 };
+      const next = daemonHealthReducer(state, connectionStatusChanged('disconnected'));
+      expect(next.reconnectAttempts).toBe(5);
+    });
+
+    it('resets reconnectAttempts on a successful connect', () => {
+      const state = { ...initialState, reconnectAttempts: 14 };
+      const next = daemonHealthReducer(state, connectionStatusChanged('connected'));
+      expect(next.reconnectAttempts).toBe(0);
     });
 
     it('latches sidecarGaveUp + reason on a give-up disconnect', () => {

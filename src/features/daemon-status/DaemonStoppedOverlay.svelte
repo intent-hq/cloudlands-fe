@@ -27,6 +27,7 @@
   import {
     selectDaemonHealth,
     selectDaemonTransport,
+    selectReconnectAttempts,
     selectSidecarGaveUp,
     selectSidecarGaveUpReason,
     selectSidecarStartupFailed,
@@ -55,6 +56,7 @@
 
   const health$ = selectDaemonHealth();
   const transport$ = selectDaemonTransport();
+  const reconnectAttempts$ = selectReconnectAttempts();
   const sidecarGaveUp$ = selectSidecarGaveUp();
   const sidecarGaveUpReason$ = selectSidecarGaveUpReason();
   const sidecarStartupFailed$ = selectSidecarStartupFailed();
@@ -141,6 +143,19 @@
     }
     return conn.label;
   }
+
+  // Connection details for the lost external daemon (#1750): prefer the active
+  // connection record's `hostname (host:port)` label (captured from host.status
+  // on first connect); fall back to the transport target (sanitized WS URL or
+  // UDS socket path) when the active connection is the local entry (external-uds
+  // adoption) or the record has not loaded.
+  const activeConnection = $derived(
+    $connections$.find((c) => c.id === $activeConnectionId$) ?? null,
+  );
+  const externalTargetLabel = $derived.by(() => {
+    if (activeConnection && !activeConnection.isLocal) return connectionLabel(activeConnection);
+    return $transport$?.target ?? null;
+  });
 
   function handleSpawnSidecar() {
     // In external/remote mode the active target is a remote backend; the
@@ -231,11 +246,29 @@
         {/if}
       </p>
 
+      {#if !isSidecarFailure && isExternalMode && externalTargetLabel}
+        <p
+          class="mt-2 truncate font-mono text-xs text-muted-foreground"
+          title={externalTargetLabel}
+          data-testid="daemon-stopped-connection-details"
+        >
+          {$hasEverConnected$
+            ? m.daemonStatus_overlay_externalLostDetail_label({ target: externalTargetLabel })
+            : m.daemonStatus_overlay_externalNeverConnectedDetail_label({
+                target: externalTargetLabel,
+              })}
+        </p>
+      {/if}
+
       {#if !isSidecarFailure}
         <p class="mt-3 text-sm text-muted-foreground" data-testid="daemon-stopped-retrying">
           <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-500 align-middle"
           ></span>
-          <span class="ml-1.5 align-middle">{m.daemonStatus_overlay_retrying_label()}</span>
+          <span class="ml-1.5 align-middle">
+            {$reconnectAttempts$ > 0
+              ? m.daemonStatus_overlay_retryingWithAttempts_label({ attempt: $reconnectAttempts$ })
+              : m.daemonStatus_overlay_retrying_label()}
+          </span>
         </p>
       {/if}
 
@@ -320,7 +353,9 @@
           {/if}
 
           <p class="mt-2 text-xs text-muted-foreground">
-            {m.daemonStatus_overlay_dataDirNote_label()}
+            {isExternalMode
+              ? m.daemonStatus_overlay_externalDataNote_label()
+              : m.daemonStatus_overlay_dataDirNote_label()}
           </p>
         </div>
       {/if}

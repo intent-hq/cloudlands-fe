@@ -358,7 +358,13 @@ export function getBackendClient(): JsonRpcClient {
   });
   instance.on('status', (status: ConnectionStatus) => {
     const transport = formatTransportInfo(instance.getConfig());
-    broadcast(BACKEND.STATUS, { status, transport });
+    // `reconnectAttempts` counts retries since the last successful connect so
+    // the daemon-loss overlay can show live retry progress (#1750).
+    broadcast(BACKEND.STATUS, {
+      status,
+      transport,
+      reconnectAttempts: instance.getReconnectAttempts(),
+    });
     // Same stable-forwarder pipe for `status`; see `backendStatusForwarder`.
     backendStatusForwarder.emit('status', status);
   });
@@ -370,7 +376,12 @@ export function getBackendClient(): JsonRpcClient {
   // avoid growing the preload allow-list surface. See RESUB-1.
   instance.on('reconnected', () => {
     const transport = formatTransportInfo(instance.getConfig());
-    broadcast(BACKEND.STATUS, { status: 'connected', reconnected: true, transport });
+    broadcast(BACKEND.STATUS, {
+      status: 'connected',
+      reconnected: true,
+      transport,
+      reconnectAttempts: instance.getReconnectAttempts(),
+    });
     // Pipe the live client's reconnect through the stable forwarder so
     // main-process services (attached once via onBackendReconnected) replay
     // their subscriptions — regardless of how many client swaps have happened
@@ -926,6 +937,7 @@ async function performSpawnSidecar(): Promise<{
       broadcast(BACKEND.STATUS, {
         status: client.getStatus(),
         transport: formatTransportInfo(client.getConfig()),
+        reconnectAttempts: client.getReconnectAttempts(),
       });
     }
     return result;
@@ -1030,11 +1042,16 @@ export function registerBackendHandlers(): void {
       return {
         status: client.getStatus(),
         transport,
+        reconnectAttempts: client.getReconnectAttempts(),
         sidecarStartupFailed: true as const,
         sidecarStartupFailedReason: startupFailure.reason,
       };
     }
-    return { status: client.getStatus(), transport };
+    return {
+      status: client.getStatus(),
+      transport,
+      reconnectAttempts: client.getReconnectAttempts(),
+    };
   });
 
   ipcMain.handle(BACKEND.SPAWN_SIDECAR, async () => performSpawnSidecar());
@@ -1059,6 +1076,7 @@ export function registerBackendHandlers(): void {
       sidecarStartupFailed: true,
       reason,
       transport: formatTransportInfo(instance.getConfig()),
+      reconnectAttempts: instance.getReconnectAttempts(),
     });
   });
 
@@ -1077,6 +1095,7 @@ export function registerBackendHandlers(): void {
       sidecarGaveUp: true,
       reason,
       transport: formatTransportInfo(instance.getConfig()),
+      reconnectAttempts: instance.getReconnectAttempts(),
     });
   });
 
