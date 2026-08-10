@@ -86,7 +86,7 @@
   import { slide } from 'svelte/transition';
   import DividerButton from './DividerButton.svelte';
   import DividerPanel from './DividerPanel.svelte';
-  import { aggregatePRFiles } from './sidebar-changes-utils';
+  import { aggregatePRFiles, getPRStatusTooltip } from './sidebar-changes-utils';
   import TimelineDivider from './TimelineDivider.svelte';
   import TimelineSection from './TimelineSection.svelte';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -1066,6 +1066,7 @@
                 <!-- PR header -->
                 <div
                   class="relative flex items-center gap-2 py-0.5 group w-full rounded px-1 -mx-1"
+                  title={getPRStatusTooltip(pr)}
                 >
                   {#if hasPRFiles}
                     <Button
@@ -1100,7 +1101,7 @@
                     onclick={onOpenFullPanel}
                   >
                     <span class="text-ui text-subtle truncate flex-1">
-                      {#if pr.crossRepo}<span class="text-ghost">{pr.crossRepo}:</span>
+                      {#if pr.crossRepo}<span class="text-ghost">{pr.crossRepoDisplay ?? pr.crossRepo}:</span>
                       {/if}{pr.title}{#if monitorAgentName(pr.monitorAgentId)}
                         <span
                           class="text-ghost"

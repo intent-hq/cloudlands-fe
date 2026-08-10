@@ -358,6 +358,7 @@ export function mergeMonitoredPRs(
 ): PRInfo[] {
   if (monitors.length === 0) return basePRs;
 
+  const workspaceOwner = workspaceRepo?.split('/')[0];
   const merged = basePRs.map((pr) => ({ ...pr }));
   for (const monitor of monitors) {
     const sameRepo = !workspaceRepo || monitor.repo === workspaceRepo;
@@ -368,6 +369,9 @@ export function mergeMonitoredPRs(
     );
     if (existing) {
       existing.monitorAgentId = monitor.agentId;
+      // `lastSnapshot` is absent until a monitor's first successful poll —
+      // don't let a snapshotless duplicate monitor clobber a present one.
+      existing.monitorSnapshot = monitor.lastSnapshot ?? existing.monitorSnapshot;
       continue;
     }
     const url = monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`;
@@ -379,10 +383,81 @@ export function mergeMonitoredPRs(
       status: monitorDisplayStatus(monitor),
       monitorAgentId: monitor.agentId,
       crossRepo: sameRepo ? undefined : monitor.repo,
+      // Same-org repos carry no information in the owner segment — show
+      // only the repo name; the full form is kept when the org differs.
+      // GitHub owner names are case-insensitive, so compare lowercased.
+      crossRepoDisplay: sameRepo
+        ? undefined
+        : workspaceOwner &&
+            monitor.repo.toLowerCase().startsWith(`${workspaceOwner.toLowerCase()}/`)
+          ? monitor.repo.slice(workspaceOwner.length + 1)
+          : monitor.repo,
+      monitorSnapshot: monitor.lastSnapshot,
       monitorOnly: true,
     });
   }
   return merged;
+}
+
+/**
+ * Hover tooltip for a sidebar PR row: the PR state, plus the monitor's
+ * last-snapshot merge-requirements summary (checks, approvals, unresolved
+ * threads, merge-blocked reason) when the row carries one (PROTOCOL §6.9).
+ */
+export function getPRStatusTooltip(pr: PRInfo): string {
+  const stateLine =
+    pr.status === 'merged'
+      ? m.workspace_prSection_merged_label()
+      : pr.status === 'closed'
+        ? m.workspace_prSection_closed_label()
+        : pr.status === 'draft'
+          ? m.workspace_prSection_statusDraft_label()
+          : m.workspace_prSection_statusOpen_label();
+  const lines: string[] = [stateLine];
+  // Merged/closed rows no longer have merge requirements — the snapshot
+  // detail lines would just be stale noise on a settled PR.
+  const snapshot =
+    pr.status === 'merged' || pr.status === 'closed' ? undefined : pr.monitorSnapshot;
+  if (snapshot) {
+    if (snapshot.checks.total > 0) {
+      lines.push(
+        m.workspace_prSection_statusChecks_tooltip({
+          passed: formatInteger(snapshot.checks.passed),
+          failed: formatInteger(snapshot.checks.failed),
+          pending: formatInteger(snapshot.checks.pending),
+        }),
+      );
+    }
+    lines.push(
+      snapshot.approvals.needed != null
+        ? m.workspace_prSection_statusApprovalsOfNeeded_tooltip({
+            count: formatInteger(snapshot.approvals.have),
+            needed: formatInteger(snapshot.approvals.needed),
+          })
+        : m.workspace_prSection_statusApprovals_tooltip({
+            count: formatInteger(snapshot.approvals.have),
+          }),
+    );
+    if (snapshot.approvals.changesRequested > 0) {
+      lines.push(
+        m.workspace_prSection_statusChangesRequested_tooltip({
+          count: formatInteger(snapshot.approvals.changesRequested),
+        }),
+      );
+    }
+    if (snapshot.threads.unresolved > 0) {
+      lines.push(
+        m.workspace_prSection_statusUnresolvedThreads_tooltip({
+          count: formatInteger(snapshot.threads.unresolved),
+        }),
+      );
+    }
+    if (snapshot.mergeBlockedReason) {
+      // i18n-ignore (BE-provided human-readable reason)
+      lines.push(snapshot.mergeBlockedReason);
+    }
+  }
+  return lines.join('\n');
 }
 
 /**
