@@ -186,6 +186,23 @@ describe('ConnectBackendModal', () => {
     expect(screen.getByLabelText('Host')).toBeTruthy();
   });
 
+  it('applies the re-pair prefill on open but lets the user clear the field afterwards', async () => {
+    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+    render(ConnectBackendModal, {
+      props: { open: true, prefillHost: '10.0.0.9', prefillPort: 4443 },
+    });
+
+    const hostInput = screen.getByLabelText('Host') as HTMLInputElement;
+    const portInput = screen.getByLabelText('Port') as HTMLInputElement;
+    expect(hostInput.value).toBe('10.0.0.9');
+    expect(portInput.value).toBe('4443');
+
+    // Clearing the field must stick — the prefill only applies on the
+    // closed→open transition, not on every keystroke.
+    await fireEvent.input(hostInput, { target: { value: '' } });
+    expect(hostInput.value).toBe('');
+  });
+
   it('keeps Continue disabled until host, a valid port, and token are provided', async () => {
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });
