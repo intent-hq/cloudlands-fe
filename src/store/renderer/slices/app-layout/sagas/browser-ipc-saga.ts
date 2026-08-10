@@ -5,6 +5,7 @@ import { isElectron } from '$lib/electron-bridge';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import { selectAllTabs } from '../../panel-layout/panel-layout-selectors';
 import {
+  closeTab,
   openTab,
   openTabInAdjacentOrSplit,
   setActiveTab,
@@ -16,6 +17,11 @@ import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
 type BrowserOpenTabEvent = {
   url: string;
   position?: 'adjacent' | 'replace' | 'same';
+  workspaceId?: string;
+};
+
+type BrowserCloseTabEvent = {
+  tabId: string;
   workspaceId?: string;
 };
 
@@ -50,6 +56,19 @@ function* openBrowser(data: BrowserOpenTabEvent | null): SagaGenerator<void> {
   yield* put(openTab(workspaceId, browserTab(data.url)));
 }
 
+function* closeBrowser(data: BrowserCloseTabEvent | null): SagaGenerator<void> {
+  if (typeof data?.tabId !== 'string' || data.tabId.length === 0) return;
+  const activeWorkspaceId = data.workspaceId ? null : yield* selectActiveWorkspaceId.effect();
+  const workspaceId = data.workspaceId || activeWorkspaceId;
+  if (typeof workspaceId !== 'string' || workspaceId.length === 0) return;
+
+  const tabs = yield* selectAllTabs.effect(workspaceId);
+  const existing = tabs.find((tab) => tab.id === data.tabId && tab.type === 'browser');
+  if (!existing || existing.closable === false) return;
+
+  yield* put(closeTab(workspaceId, data.tabId));
+}
+
 export function* browserIpcSaga(): SagaGenerator<void> {
   if (!isElectron() || running) return;
   running = true;
@@ -62,6 +81,16 @@ export function* browserIpcSaga(): SagaGenerator<void> {
           bufferPolicy: {
             kind: 'lossless',
             rationale: 'Every requested browser tab must be opened in arrival order.',
+          },
+        },
+      ),
+      yield* takeEveryFromElectronChannel<BrowserCloseTabEvent | null>(
+        'browser:close-tab',
+        closeBrowser,
+        {
+          bufferPolicy: {
+            kind: 'lossless',
+            rationale: 'Every requested browser tab close must be applied in arrival order.',
           },
         },
       ),

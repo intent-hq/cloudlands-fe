@@ -25,6 +25,7 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     getFirstTab: vi.fn().mockReturnValue(null),
     evaluate: vi.fn().mockResolvedValue(undefined),
     focusTab: vi.fn(),
+    closeTab: vi.fn().mockResolvedValue({ tabId: 'tab-1' }),
     touchLease: vi.fn(),
     releaseLease: vi.fn(),
     listAllTabs: vi.fn().mockResolvedValue([]),
@@ -197,6 +198,73 @@ describe('browser-action-executor', () => {
       );
       expect(result.success).toBe(true);
       expect(result.results).toHaveLength(2);
+    });
+  });
+
+  // =========================================================================
+  // closeTab action (intent-hq/monorepo#1931)
+  // =========================================================================
+  describe('closeTab action', () => {
+    it('should close the tab and return the tabId', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.closeTab).mockResolvedValue({ tabId: 'tab-1' });
+
+      const result = await executeActions(
+        { actions: [{ action: 'closeTab', tabId: 'tab-1' }] },
+        undefined,
+        undefined,
+        'ws-1',
+      );
+      expect(result.success).toBe(true);
+      expect(result.results[0]).toEqual({
+        action: 'closeTab',
+        success: true,
+        result: { tabId: 'tab-1' },
+      });
+      expect(embeddedBrowserCdp.closeTab).toHaveBeenCalledWith('tab-1', 'ws-1');
+    });
+
+    it('should fail schema validation when tabId is missing', async () => {
+      const result = await executeActions({ actions: [{ action: 'closeTab' }] });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid action sequence');
+    });
+
+    it('should not fall back to the sequence-level default tabId', async () => {
+      // tabId is required per-action for closeTab (destructive) — a default
+      // tabId on the sequence must not satisfy the schema.
+      const result = await executeActions({
+        actions: [{ action: 'closeTab' }],
+        tabId: 'tab-default',
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid action sequence');
+    });
+
+    it('should report failure for unknown/already-closed tabs without throwing', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.closeTab).mockRejectedValue(
+        new Error('Tab tab-gone not found. It may already be closed.'),
+      );
+
+      const result = await executeActions({
+        actions: [{ action: 'closeTab', tabId: 'tab-gone' }],
+      });
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('not found');
+    });
+
+    it('should report failure for non-closable tabs', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.closeTab).mockRejectedValue(
+        new Error('Tab tab-pinned is not closable.'),
+      );
+
+      const result = await executeActions({
+        actions: [{ action: 'closeTab', tabId: 'tab-pinned' }],
+      });
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('not closable');
     });
   });
 

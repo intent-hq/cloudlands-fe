@@ -33,6 +33,8 @@ interface PanelBrowserTab {
   tabId: string;
   url: string;
   title: string;
+  /** Whether the tab may be closed by the user/agent (defaults to true when absent) */
+  closable?: boolean;
 }
 
 /** Tracks which agent is actively using a browser tab */
@@ -276,6 +278,45 @@ class EmbeddedBrowserCdpService {
     sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.FOCUS_TAB, { tabId });
     logger.info('Sent focus request for browser tab', { tabId, workspaceId });
     return true;
+  }
+
+  /**
+   * Close a browser tab (remove it from the panel layout in the UI).
+   *
+   * Validates against the panel layout's tab list first so unknown /
+   * already-closed tabs and non-closable tabs fail with a descriptive error
+   * instead of silently no-oping. On success the renderer removes the tab;
+   * unmounting the webview fires the `destroyed` hook from registerTab, which
+   * cleans the registry, debugger attachment, and lease — we also clean up
+   * proactively here for the unmounted-tab case.
+   *
+   * @returns the closed tabId on success; throws on unknown or non-closable tabs
+   */
+  async closeTab(tabId: string, workspaceId?: string): Promise<{ tabId: string }> {
+    const panelTabs = await this.requestPanelBrowserTabs(workspaceId);
+    const tab = panelTabs.find((t) => t.tabId === tabId);
+    if (!tab) {
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      throw new Error(`Tab ${tabId} not found. It may already be closed.`);
+    }
+    if (tab.closable === false) {
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      throw new Error(`Tab ${tabId} is not closable.`);
+    }
+
+    // Send to workspace windows (falls back to all windows if no workspaceId).
+    // Include workspaceId so the renderer closes the tab in the owning
+    // workspace's panel layout, not whichever workspace is currently visible.
+    sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.CLOSE_TAB, { tabId, workspaceId });
+    logger.info('Sent close request for browser tab', { tabId, workspaceId });
+
+    // Proactive CDP cleanup: detach debugger, drop registry entry and lease.
+    // For mounted tabs the webContents `destroyed` hook covers this too, but
+    // unmounted tabs have no webContents to fire it.
+    this.unregisterTab(tabId);
+    this.panelBrowserTabs = this.panelBrowserTabs.filter((t) => t.tabId !== tabId);
+
+    return { tabId };
   }
 
   /**

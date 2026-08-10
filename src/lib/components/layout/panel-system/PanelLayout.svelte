@@ -839,6 +839,7 @@
           tabId: t.id,
           url: t.browserUrl || '',
           title: t.title || m.layout_panelLayout_browser_fallback(),
+          closable: t.closable !== false,
         }));
 
       logger.debug('Responding to browser:list-tabs-request', { count: browserTabs.length });

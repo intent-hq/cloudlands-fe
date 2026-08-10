@@ -2001,6 +2001,10 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
         verb = m.chat_toolClassifier_open_label();
         subject = primaryAction.url ? truncate(primaryAction.url, 50) : 'new tab';
         break;
+      case 'closeTab':
+        verb = m.chat_toolClassifier_close_label();
+        subject = 'tab';
+        break;
       case 'getAccessibilityTree':
         verb = m.chat_toolClassifier_inspect_label();
         subject = 'accessibility tree';
