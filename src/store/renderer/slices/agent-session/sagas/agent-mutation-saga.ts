@@ -1,12 +1,12 @@
-import type { Task } from 'redux-saga';
 import {
   all,
   call,
-  cancel,
   cancelled,
   delay,
   fork,
   put,
+  race,
+  take,
   takeEvery,
   type SagaGenerator,
 } from 'typed-redux-saga';
@@ -48,7 +48,6 @@ import { selectAgentSession } from '../agent-session-selectors';
 
 const logger = createLogger('AgentMutationSaga');
 const UNDO_DURATION_MS = 15_000;
-const pendingCommitTasks = new Map<string, Task>();
 
 function mutationError(error: unknown, fallback: string): Error {
   if (error instanceof Error) return error;
@@ -293,16 +292,9 @@ function* cancelAgentSubscriptions(
   }
 }
 
-function* cancelPendingTimer(agentId: string): SagaGenerator<void> {
-  const task = pendingCommitTasks.get(agentId);
-  pendingCommitTasks.delete(agentId);
-  if (task) yield* cancel(task);
-}
-
-function* commitDeletion(agentId: string, cancelTimer = true): SagaGenerator<void> {
+function* commitDeletion(agentId: string): SagaGenerator<void> {
   const pending = getPendingAgentDeletion(agentId);
   if (!pending) return;
-  if (cancelTimer) yield* call(cancelPendingTimer, agentId);
   removePendingAgentDeletion(agentId);
   try {
     const result = yield* call(
@@ -322,10 +314,22 @@ function* commitDeletion(agentId: string, cancelTimer = true): SagaGenerator<voi
   }
 }
 
-function* commitAfterUndoWindow(agentId: string): SagaGenerator<void> {
-  yield* delay(UNDO_DURATION_MS);
-  pendingCommitTasks.delete(agentId);
-  yield* call(commitDeletion, agentId, false);
+function isDeletionReleaseFor(agentId: string, wsId: string) {
+  return (action: unknown): boolean => {
+    if (!action || typeof action !== 'object' || !('type' in action) || !('payload' in action)) {
+      return false;
+    }
+    const candidate = action as { type: string; payload: unknown };
+    if (!Array.isArray(candidate.payload)) return false;
+    if (candidate.type === flushPendingAgentDeletionsRequested.type) {
+      return candidate.payload[0] === wsId;
+    }
+    return (
+      (candidate.type === undoAgentDeletionRequested.type ||
+        candidate.type === commitPendingAgentDeletionRequested.type) &&
+      candidate.payload[1] === agentId
+    );
+  };
 }
 
 function* deleteWithUndo(
@@ -340,21 +344,25 @@ function* deleteWithUndo(
       settled = true;
       return;
     }
-    yield* call(cancelPendingTimer, agentId);
     yield* call(softHide, wsId, agentId);
-    setPendingAgentDeletion({ wsId, agentId, snapshot, timer: null });
-    const timerTask = yield* fork(commitAfterUndoWindow, agentId);
-    pendingCommitTasks.set(agentId, timerTask);
+    setPendingAgentDeletion({ wsId, agentId, snapshot });
     yield* fork(showUndoToast, wsId, agentId, agentName);
     yield* put(action.success(snapshot));
     settled = true;
+    const outcome = yield* race({
+      release: take(isDeletionReleaseFor(agentId, wsId)),
+      timeout: delay(UNDO_DURATION_MS),
+    });
+    if (outcome.timeout) yield* call(commitDeletion, agentId);
   } catch (error) {
     yield* put(action.failure(mutationError(error, m.agent_mutation_deleteFailed_error())));
     settled = true;
   } finally {
-    if (!settled && (yield* cancelled())) {
+    const wasCancelled = yield* cancelled();
+    if (!settled && wasCancelled) {
       yield* put(action.failure(new Error(m.agent_mutation_deleteFailed_error())));
     }
+    if (wasCancelled) yield* call(commitDeletion, agentId);
   }
 }
 
@@ -366,7 +374,6 @@ function* undoDeletion(action: ReturnType<typeof undoAgentDeletionRequested>): S
     if (!pending) {
       yield* put(action.success(false));
     } else {
-      yield* call(cancelPendingTimer, agentId);
       removePendingAgentDeletion(agentId);
       yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
       yield* put(action.success(true));
@@ -438,30 +445,19 @@ function* flushDeletions(
   }
 }
 
-function* flushAllPendingOnCancellation(): SagaGenerator<void> {
-  for (const task of pendingCommitTasks.values()) yield* cancel(task);
-  pendingCommitTasks.clear();
-  const pending = listPendingAgentDeletions();
-  yield* all(pending.map((entry) => call(commitDeletion, entry.agentId, false)));
-}
-
 export function* agentMutationSaga(): SagaGenerator<void> {
-  try {
-    yield* all([
-      takeEvery(restoreAgentSessionRequested, restoreAgent),
-      takeEvery(activateAgentRequested, activateAgent),
-      takeEvery(saveAgentSessionRequested, saveAgent),
-      takeEvery(renameAgentSessionRequested, renameAgent),
-      takeEvery(stopAgentSessionRequested, stopAgent),
-      takeEvery(agentSessionDismissQuestionsRequested, dismissQuestions),
-      takeEvery(cancelAgentSubscriptionsRequested, cancelAgentSubscriptions),
-      takeEvery(deleteAgentWithUndoRequested, deleteWithUndo),
-      takeEvery(undoAgentDeletionRequested, undoDeletion),
-      takeEvery(deleteAgentSessionRequested, deleteImmediately),
-      takeEvery(commitPendingAgentDeletionRequested, commitRequested),
-      takeEvery(flushPendingAgentDeletionsRequested, flushDeletions),
-    ]);
-  } finally {
-    if (yield* cancelled()) yield* call(flushAllPendingOnCancellation);
-  }
+  yield* all([
+    takeEvery(restoreAgentSessionRequested, restoreAgent),
+    takeEvery(activateAgentRequested, activateAgent),
+    takeEvery(saveAgentSessionRequested, saveAgent),
+    takeEvery(renameAgentSessionRequested, renameAgent),
+    takeEvery(stopAgentSessionRequested, stopAgent),
+    takeEvery(agentSessionDismissQuestionsRequested, dismissQuestions),
+    takeEvery(cancelAgentSubscriptionsRequested, cancelAgentSubscriptions),
+    takeEvery(deleteAgentWithUndoRequested, deleteWithUndo),
+    takeEvery(undoAgentDeletionRequested, undoDeletion),
+    takeEvery(deleteAgentSessionRequested, deleteImmediately),
+    takeEvery(commitPendingAgentDeletionRequested, commitRequested),
+    takeEvery(flushPendingAgentDeletionsRequested, flushDeletions),
+  ]);
 }
