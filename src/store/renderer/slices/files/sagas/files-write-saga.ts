@@ -1,11 +1,4 @@
-import {
-  call,
-  delay,
-  put,
-  race,
-  take,
-  takeEvery,
-} from 'typed-redux-saga';
+import { call, delay, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -29,6 +22,7 @@ import {
 
 const logger = createLogger('FilesWriteSaga');
 export const FILE_CONTENT_SAVE_DEBOUNCE_MS = 1500;
+const pendingFileSaves = new Map<string, Promise<void>>();
 
 type SaveRequest = {
   workspaceId: string;
@@ -133,10 +127,30 @@ function* updateFileContentWorker(action: ReturnType<typeof updateFileContent>) 
 
 function* saveFileContentActionWorker(action: SaveAction) {
   const [workspaceId, path, absolutePath, content] = action.payload;
-  yield* race({
-    save: call(saveFileContentWorker, { workspaceId, path, absolutePath, content }),
-    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
+  const key = JSON.stringify([workspaceId, path]);
+  const previousSave = pendingFileSaves.get(key);
+  let completeSave!: () => void;
+  const currentSave = new Promise<void>((resolve) => {
+    completeSave = resolve;
   });
+  pendingFileSaves.set(key, currentSave);
+
+  try {
+    if (previousSave) {
+      const { ready } = yield* race({
+        ready: call(() => previousSave.then(() => true)),
+        cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
+      });
+      if (!ready) return;
+    }
+    yield* race({
+      save: call(saveFileContentWorker, { workspaceId, path, absolutePath, content }),
+      cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
+    });
+  } finally {
+    completeSave();
+    if (pendingFileSaves.get(key) === currentSave) pendingFileSaves.delete(key);
+  }
 }
 
 export function* filesWriteSaga() {
