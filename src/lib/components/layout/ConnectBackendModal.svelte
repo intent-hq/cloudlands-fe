@@ -168,10 +168,16 @@
     }
   });
 
-  // Apply the re-pair prefill when the modal opens on pristine fields (reset()
-  // empties them on close, so a reopen re-applies the current prefill).
+  // Apply the re-pair prefill only on the closed→open transition (reset()
+  // empties the fields on close, so a reopen re-applies the current prefill).
+  // Gating on the transition — not on `open && host === ''` — keeps the fields
+  // freely editable while the modal is open: re-running on every keystroke
+  // would snap a cleared Host back to the prefill.
+  let wasOpen = false;
   $effect(() => {
-    if (open) {
+    const justOpened = open && !wasOpen;
+    wasOpen = open;
+    if (justOpened) {
       if (prefillHost && host === '') host = prefillHost;
       if (prefillPort != null && port === DEFAULT_WS_PORT) port = String(prefillPort);
     }

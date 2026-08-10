@@ -96,9 +96,6 @@ export const authRejectedReceived = createAction<[event: ConnectionAuthRejectedE
   'connections/authRejectedReceived',
 );
 
-/** User dismissed the auth-rejected state. */
-export const authRejectedCleared = createAction('connections/authRejectedCleared');
-
 /**
  * A `connections:protocol-mismatch` push arrived — a remote's protocolVersion
  * differs in major version from the local intentd's. Stored so the UI can
@@ -183,9 +180,6 @@ connectionsReducer.with(certMismatchCleared, (state) => {
 });
 connectionsReducer.with(authRejectedReceived, (state, { payload: [event] }) => {
   return { ...state, authRejected: event };
-});
-connectionsReducer.with(authRejectedCleared, (state) => {
-  return { ...state, authRejected: null };
 });
 connectionsReducer.with(protocolMismatchReceived, (state, { payload: [event] }) => {
   return { ...state, protocolMismatch: event, protocolMismatchModalDismissed: false };

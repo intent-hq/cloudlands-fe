@@ -16,7 +16,6 @@ import {
   certMismatchReceived,
   certMismatchCleared,
   authRejectedReceived,
-  authRejectedCleared,
   protocolMismatchReceived,
   protocolMismatchModalDismissed,
 } from './connections-slice';
@@ -138,12 +137,6 @@ describe('connectionsReducer', () => {
     it('authRejectedReceived latches the event', () => {
       const next = connectionsReducer(initialState, authRejectedReceived(AUTH_REJECTED));
       expect(next.authRejected).toEqual(AUTH_REJECTED);
-    });
-
-    it('authRejectedCleared drops the latched event', () => {
-      const state = { ...initialState, authRejected: AUTH_REJECTED };
-      const next = connectionsReducer(state, authRejectedCleared());
-      expect(next.authRejected).toBeNull();
     });
 
     it('connectOperationStarted clears the latch (re-pair or switch supersedes it)', () => {
