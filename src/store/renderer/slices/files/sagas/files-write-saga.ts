@@ -115,16 +115,20 @@ function* createFileActionWorker(action: ReturnType<typeof createFileRequested>)
 }
 
 function* updateFileContentWorker(action: ReturnType<typeof updateFileContent>) {
-  const [workspaceId, path, content] = action.payload;
+  const [workspaceId, path] = action.payload;
   const entry = yield* selectFileContentEntry.effect(workspaceId, path);
-  const absolutePath = entry?.absolutePath;
-  if (!absolutePath) return;
+  if (!entry?.absolutePath) return;
   const { elapsed } = yield* race({
     elapsed: delay(FILE_CONTENT_SAVE_DEBOUNCE_MS, true),
     directSave: take((save: ObservedAction) => isSaveFor(save, workspaceId, path)),
     cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
   });
-  if (elapsed) yield* put(saveFileContentRequested(workspaceId, path, absolutePath, content));
+  if (!elapsed) return;
+  const latestEntry = yield* selectFileContentEntry.effect(workspaceId, path);
+  if (!latestEntry?.absolutePath || latestEntry.localContent === null) return;
+  yield* put(
+    saveFileContentRequested(workspaceId, path, latestEntry.absolutePath, latestEntry.localContent),
+  );
 }
 
 function* saveFileContentActionWorker(action: SaveAction) {
