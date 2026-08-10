@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CONNECTION_CHANNELS,
   CONNECTIONS_CHANGED_EVENT,
+  CONNECTION_AUTH_REJECTED_EVENT,
   CONNECTION_CERT_MISMATCH_EVENT,
   CONNECTION_PROTOCOL_MISMATCH_EVENT,
   LOCAL_CONNECTION_ID,
@@ -67,7 +68,8 @@ describe('connectionsSaga', () => {
     invoke = vi.fn(async (channel: string, params?: unknown) => {
       if (channel === CONNECTION_CHANNELS.LIST)
         return { connections: [LOCAL], activeId: LOCAL_CONNECTION_ID };
-      if (channel === CONNECTION_CHANNELS.CAPTURE_FINGERPRINT) return { fingerprint: 'AB:CD' };
+      if (channel === CONNECTION_CHANNELS.CAPTURE_FINGERPRINT)
+        return { fingerprint: 'AB:CD', tokenValid: true };
       if (channel === CONNECTION_CHANNELS.ADD) return { connection: REMOTE };
       if (channel === CONNECTION_CHANNELS.FORGET) return { id: (params as { id: string }).id };
       if (channel === CONNECTION_CHANNELS.SWITCH)
@@ -122,7 +124,7 @@ describe('connectionsSaga', () => {
       token: 'secret',
     });
     run.channel.put(capture);
-    await expect(capture.promise).resolves.toEqual({ fingerprint: 'AB:CD' });
+    await expect(capture.promise).resolves.toEqual({ fingerprint: 'AB:CD', tokenValid: true });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.CAPTURE_FINGERPRINT, {
       host: REMOTE.host,
       port: REMOTE.port,
@@ -165,6 +167,7 @@ describe('connectionsSaga', () => {
     const run = start();
     await settle();
     expect(Object.keys(callbacks).sort()).toEqual([
+      CONNECTION_AUTH_REJECTED_EVENT,
       CONNECTION_CERT_MISMATCH_EVENT,
       CONNECTIONS_CHANGED_EVENT,
       CONNECTION_PROTOCOL_MISMATCH_EVENT,
@@ -185,12 +188,24 @@ describe('connectionsSaga', () => {
       localProtocolVersion: '1',
       remoteProtocolVersion: '2',
     });
+    callbacks[CONNECTION_AUTH_REJECTED_EVENT]!({
+      id: REMOTE.id,
+      host: REMOTE.host,
+      port: REMOTE.port,
+      statusCode: 401,
+    });
     await settle();
 
     expect(getItems(run.getState().connections.connections)).toEqual([LOCAL, REMOTE]);
     expect(run.getState().connections.activeId).toBe(REMOTE.id);
     expect(run.getState().connections.certMismatch?.actualFingerprint).toBe('EF:01');
     expect(run.getState().connections.protocolMismatch?.remoteProtocolVersion).toBe('2');
+    expect(run.getState().connections.authRejected).toEqual({
+      id: REMOTE.id,
+      host: REMOTE.host,
+      port: REMOTE.port,
+      statusCode: 401,
+    });
 
     run.task.cancel();
     await run.task.toPromise();
@@ -198,6 +213,7 @@ describe('connectionsSaga', () => {
       [CONNECTIONS_CHANGED_EVENT, `listener-${CONNECTIONS_CHANGED_EVENT}`],
       [CONNECTION_CERT_MISMATCH_EVENT, `listener-${CONNECTION_CERT_MISMATCH_EVENT}`],
       [CONNECTION_PROTOCOL_MISMATCH_EVENT, `listener-${CONNECTION_PROTOCOL_MISMATCH_EVENT}`],
+      [CONNECTION_AUTH_REJECTED_EVENT, `listener-${CONNECTION_AUTH_REJECTED_EVENT}`],
     ]);
   });
 

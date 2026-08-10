@@ -831,6 +831,7 @@ export const IPC_CHANNELS = {
     CHANGED: 'connections:changed',
     CERT_MISMATCH: 'connections:cert-mismatch',
     PROTOCOL_MISMATCH: 'connections:protocol-mismatch',
+    AUTH_REJECTED: 'connections:auth-rejected',
     // Pull the one-shot boot-restore fallback notice latched in main (T19),
     // consume-once. The renderer fetches this once on mount and surfaces a
     // non-blocking toast; the notice never becomes connections-slice state.
@@ -1020,6 +1021,9 @@ export const EVENT_CHANNELS = [
   'connections:changed',
   'connections:cert-mismatch',
   'connections:protocol-mismatch',
+  // A 401/403 WebSocket-upgrade rejection (bad token / WS API disabled)
+  // surfaced as a distinct auth failure instead of a generic transport error.
+  'connections:auth-rejected',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

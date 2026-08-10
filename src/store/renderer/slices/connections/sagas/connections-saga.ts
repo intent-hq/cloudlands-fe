@@ -4,6 +4,7 @@ import { all, call, cancelled, fork, join, put, take, type SagaGenerator } from 
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   CONNECTIONS_CHANGED_EVENT,
+  CONNECTION_AUTH_REJECTED_EVENT,
   CONNECTION_CERT_MISMATCH_EVENT,
   CONNECTION_PROTOCOL_MISMATCH_EVENT,
 } from '$shared/types/connections';
@@ -12,6 +13,7 @@ import type {
   AddConnectionResult,
   CaptureFingerprintParams,
   CaptureFingerprintResult,
+  ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
   ConnectionsChangedEvent,
@@ -23,6 +25,7 @@ import type {
 } from '$shared/types/connections';
 import {
   addConnectionRequested,
+  authRejectedReceived,
   certMismatchReceived,
   captureFingerprintRequested,
   connectOperationFailed,
@@ -40,7 +43,8 @@ const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 type ConnectionsEvent =
   | { kind: 'changed'; payload: ConnectionsChangedEvent }
   | { kind: 'cert-mismatch'; payload: ConnectionCertMismatchEvent }
-  | { kind: 'protocol-mismatch'; payload: ConnectionProtocolMismatchEvent };
+  | { kind: 'protocol-mismatch'; payload: ConnectionProtocolMismatchEvent }
+  | { kind: 'auth-rejected'; payload: ConnectionAuthRejectedEvent };
 
 function getApi(): Window['electronAPI'] | undefined {
   return typeof window !== 'undefined' ? window.electronAPI : undefined;
@@ -72,6 +76,12 @@ function createConnectionsEventChannel(): EventChannel<ConnectionsEvent> {
         CONNECTION_PROTOCOL_MISMATCH_EVENT,
         api.on(CONNECTION_PROTOCOL_MISMATCH_EVENT, (payload: ConnectionProtocolMismatchEvent) =>
           emit({ kind: 'protocol-mismatch', payload }),
+        ),
+      ],
+      [
+        CONNECTION_AUTH_REJECTED_EVENT,
+        api.on(CONNECTION_AUTH_REJECTED_EVENT, (payload: ConnectionAuthRejectedEvent) =>
+          emit({ kind: 'auth-rejected', payload }),
         ),
       ],
     ];
@@ -225,6 +235,7 @@ function* consumeConnectionsEvents(channel: EventChannel<ConnectionsEvent>): Sag
       if (event === (END as unknown as ConnectionsEvent)) return;
       if (event.kind === 'changed') yield* put(connectionsListReceived(event.payload));
       else if (event.kind === 'cert-mismatch') yield* put(certMismatchReceived(event.payload));
+      else if (event.kind === 'auth-rejected') yield* put(authRejectedReceived(event.payload));
       else yield* put(protocolMismatchReceived(event.payload));
     }
   } finally {

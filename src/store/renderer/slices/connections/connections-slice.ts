@@ -23,6 +23,7 @@ import type {
   ConnectionRecord,
   ConnectionsState,
   ConnectionsListResult,
+  ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
 } from './connections-types';
@@ -37,6 +38,7 @@ export const initialState: ConnectionsState = {
   status: 'idle',
   error: null,
   certMismatch: null,
+  authRejected: null,
   protocolMismatch: null,
   protocolMismatchModalDismissed: false,
 };
@@ -82,6 +84,19 @@ export const certMismatchReceived = createAction<[event: ConnectionCertMismatchE
 
 /** User dismissed the cert-mismatch modal. */
 export const certMismatchCleared = createAction('connections/certMismatchCleared');
+
+/**
+ * A `connections:auth-rejected` push arrived — the remote backend rejected the
+ * WebSocket upgrade with HTTP 401/403 (bad/rotated token, or the WS API is
+ * disabled). Latched so the UI can surface a "re-pair or switch" state instead
+ * of the generic cannot-connect overlay.
+ */
+export const authRejectedReceived = createAction<[event: ConnectionAuthRejectedEvent]>(
+  'connections/authRejectedReceived',
+);
+
+/** User dismissed the auth-rejected state. */
+export const authRejectedCleared = createAction('connections/authRejectedCleared');
 
 /**
  * A `connections:protocol-mismatch` push arrived — a remote's protocolVersion
@@ -144,7 +159,10 @@ connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) 
   };
 });
 connectionsReducer.with(connectOperationStarted, (state) => {
-  return { ...state, status: 'connecting', error: null };
+  // A fresh add/switch clears the auth-rejected latch: a re-add refreshes the
+  // stored token for the same target, and a switch changes the target — either
+  // way the latched rejection no longer describes the operation under way.
+  return { ...state, status: 'connecting', error: null, authRejected: null };
 });
 connectionsReducer.with(connectOperationSettled, (state) => {
   return { ...state, status: 'idle', error: null };
@@ -157,6 +175,12 @@ connectionsReducer.with(certMismatchReceived, (state, { payload: [event] }) => {
 });
 connectionsReducer.with(certMismatchCleared, (state) => {
   return { ...state, certMismatch: null };
+});
+connectionsReducer.with(authRejectedReceived, (state, { payload: [event] }) => {
+  return { ...state, authRejected: event };
+});
+connectionsReducer.with(authRejectedCleared, (state) => {
+  return { ...state, authRejected: null };
 });
 connectionsReducer.with(protocolMismatchReceived, (state, { payload: [event] }) => {
   return { ...state, protocolMismatch: event, protocolMismatchModalDismissed: false };

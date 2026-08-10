@@ -11,6 +11,7 @@
 
 import type {
   ConnectionRecord,
+  ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
 } from '$shared/types/connections';
@@ -22,6 +23,7 @@ export type {
   CaptureFingerprintResult,
   ConnectionRecord,
   ConnectionsListResult,
+  ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
 } from '$shared/types/connections';
@@ -52,6 +54,16 @@ export interface ConnectionsState {
    * (no silent re-trust). Cleared once the user dismisses it.
    */
   certMismatch: ConnectionCertMismatchEvent | null;
+  /**
+   * Last auth-rejected push (`connections:auth-rejected`), or null. The remote
+   * backend rejected the WebSocket upgrade with HTTP 401/403 (bad/rotated
+   * token, or the WS API is disabled) — retrying with the same token cannot
+   * succeed, so the UI surfaces a "re-pair or switch" state instead of the
+   * generic cannot-connect overlay. Latched per connection id: selectors gate
+   * visibility on the active connection, and a new add/switch operation clears
+   * it (a re-pair refreshes the token; a switch changes the target).
+   */
+  authRejected: ConnectionAuthRejectedEvent | null;
   /**
    * Last protocol-mismatch push (`connections:protocol-mismatch`), or null. A
    * remote's `protocolVersion` differs in major version from the local

@@ -47,10 +47,12 @@
     selectConnections,
     selectActiveConnectionId,
     selectIsConnecting,
+    selectActiveAuthRejected,
   } from '$store/renderer/slices/connections/connections-selectors';
   import { switchConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import type { ConnectionRecord } from '$shared/types/connections';
+  import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   const health$ = selectDaemonHealth();
@@ -68,6 +70,7 @@
   const connections$ = selectConnections();
   const activeConnectionId$ = selectActiveConnectionId();
   const isConnecting$ = selectIsConnecting();
+  const authRejected$ = selectActiveAuthRejected();
 
   // Presentational grace-period latch: health 'down' arms a timer; a recovery
   // before it fires cancels the overlay entirely (no flash on quick blips).
@@ -133,6 +136,17 @@
     $connections$.filter((c) => !c.isLocal && c.id !== $activeConnectionId$),
   );
 
+  // Actionable token-rejected posture: the active remote backend rejected the
+  // WebSocket upgrade with HTTP 401/403 (`connections:auth-rejected`), so
+  // retrying with the same stored token cannot succeed. The overlay swaps the
+  // generic cannot-connect copy for a "re-pair or switch" state: no
+  // "Retrying…" indicator (it would be misleading), and a Re-pair button that
+  // opens the add-connection flow with host/port prefilled — re-adding the
+  // same host:port replaces the stored token, and the resulting add/switch
+  // clears the latched rejection (connectOperationStarted).
+  const isAuthRejected = $derived($authRejected$ !== null);
+  let repairModalOpen = $state(false);
+
   /** Display label for a remote connection: `hostname (host:port)`, or its raw label. */
   function connectionLabel(conn: ConnectionRecord): string {
     const hostname = conn.hostname?.trim();
@@ -192,7 +206,9 @@
   >
     <div class="mx-4 w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-2xl">
       <h2 id="daemon-stopped-title" class="text-lg font-semibold text-foreground">
-        {#if isSidecarFailure}
+        {#if isAuthRejected}
+          {m.daemonStatus_overlay_authRejectedTitle_label()}
+        {:else if isSidecarFailure}
           {$sidecarStartupFailed$
             ? m.daemonStatus_overlay_startupFailedTitle_label()
             : m.daemonStatus_overlay_stoppedUnexpectedlyTitle_label()}
@@ -204,7 +220,17 @@
       </h2>
 
       <p id="daemon-stopped-description" class="mt-2 text-sm text-muted-foreground">
-        {#if isSidecarFailure}
+        {#if isAuthRejected && $authRejected$}
+          {$authRejected$.statusCode === 403
+            ? m.daemonStatus_overlay_authRejectedDisabled_description({
+                host: $authRejected$.host,
+                port: $authRejected$.port,
+              })
+            : m.daemonStatus_overlay_authRejectedToken_description({
+                host: $authRejected$.host,
+                port: $authRejected$.port,
+              })}
+        {:else if isSidecarFailure}
           {#if $sidecarStartupFailed$}
             {$sidecarStartupFailedReason$
               ? m.daemonStatus_overlay_startupFailedWithReason_description({
@@ -231,12 +257,26 @@
         {/if}
       </p>
 
-      {#if !isSidecarFailure}
+      {#if !isSidecarFailure && !isAuthRejected}
         <p class="mt-3 text-sm text-muted-foreground" data-testid="daemon-stopped-retrying">
           <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-500 align-middle"
           ></span>
           <span class="ml-1.5 align-middle">{m.daemonStatus_overlay_retrying_label()}</span>
         </p>
+      {/if}
+
+      {#if isAuthRejected}
+        <div class="mt-4 border-t border-border pt-4">
+          <button
+            type="button"
+            class="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={$isConnecting$}
+            onclick={() => (repairModalOpen = true)}
+            data-testid="daemon-stopped-repair"
+          >
+            {m.daemonStatus_overlay_repair_label()}
+          </button>
+        </div>
       {/if}
 
       {#if isSidecarFailure}
@@ -347,4 +387,10 @@
       {/if}
     </div>
   </div>
+
+  <ConnectBackendModal
+    bind:open={repairModalOpen}
+    prefillHost={$authRejected$?.host ?? null}
+    prefillPort={$authRejected$?.port ?? null}
+  />
 {/if}

@@ -20,6 +20,7 @@ import {
   shouldIsolateDevIntentdDataDir,
 } from '../../../main/utils/resolve-dev-instance';
 import {
+  AuthRejectedError,
   captureFingerprint,
   DEFAULT_DEV_WS_URL,
   defaultSocketPath,
@@ -707,7 +708,7 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
       port: daemon.port,
       token: TOKEN,
     });
-    expect(result).toEqual({ ok: true, fingerprint: daemon.fingerprint });
+    expect(result).toEqual({ ok: true, fingerprint: daemon.fingerprint, tokenValid: true });
   });
 
   it('captureFingerprint surfaces a structured error when the host is unreachable', async () => {
@@ -718,6 +719,148 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('connect-failed');
+  });
+});
+
+/**
+ * TLS server that REJECTS every WebSocket upgrade with a fixed HTTP status —
+ * the daemon's auth-rejection shape (PROTOCOL §2.1: 401 bad token, 403 WS API
+ * disabled). Presents the same pinned cert as {@link FakeWssDaemon} so only
+ * the upgrade outcome differs.
+ */
+class RejectingWssDaemon {
+  private server!: https.Server;
+  host = '127.0.0.1';
+  port = 0;
+  fingerprint = '';
+  statusCode = 401;
+
+  async start(): Promise<void> {
+    this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
+    this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
+    this.server.on('upgrade', (_req, socket) => {
+      socket.write(
+        `HTTP/1.1 ${this.statusCode} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+      );
+      socket.destroy();
+    });
+    await new Promise<void>((res) => this.server.listen(0, '127.0.0.1', () => res()));
+    this.port = (this.server.address() as AddressInfo).port;
+  }
+
+  async stop(): Promise<void> {
+    await new Promise<void>((res) => this.server.close(() => res()));
+  }
+}
+
+describe('WSS auth rejection (401/403 upgrade responses)', () => {
+  let daemon: RejectingWssDaemon;
+  const TOKEN = 'b'.repeat(64);
+
+  beforeAll(async () => {
+    daemon = new RejectingWssDaemon();
+    await daemon.start();
+  });
+
+  afterAll(async () => {
+    await daemon.stop();
+  });
+
+  function makeClient() {
+    return new JsonRpcClient({
+      config: {
+        transport: 'wss',
+        host: daemon.host,
+        port: daemon.port,
+        token: TOKEN,
+        fingerprint: daemon.fingerprint,
+      },
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 2000,
+      // Keep the client from re-dialing mid-assertion.
+      reconnectDelayMs: 10_000,
+    });
+  }
+
+  it('surfaces a 401 upgrade rejection as a distinct AuthRejectedError', async () => {
+    daemon.statusCode = 401;
+    const client = makeClient();
+    const errors: Error[] = [];
+    client.on('error', (e) => errors.push(e));
+    await expect(client.request('system.status')).rejects.toBeInstanceOf(AuthRejectedError);
+    const rejection = errors.find((e): e is AuthRejectedError => e instanceof AuthRejectedError);
+    expect(rejection?.statusCode).toBe(401);
+    // Not misreported as a cert-pin failure.
+    expect(errors.some((e) => e instanceof PinMismatchError)).toBe(false);
+    expect(client.getStatus()).toBe('disconnected');
+    client.dispose();
+  });
+
+  it('surfaces a 403 upgrade rejection (WS API disabled) with its statusCode', async () => {
+    daemon.statusCode = 403;
+    const client = makeClient();
+    const errors: Error[] = [];
+    client.on('error', (e) => errors.push(e));
+    await expect(client.request('system.status')).rejects.toBeInstanceOf(AuthRejectedError);
+    const rejection = errors.find((e): e is AuthRejectedError => e instanceof AuthRejectedError);
+    expect(rejection?.statusCode).toBe(403);
+    client.dispose();
+  });
+
+  it('keeps a non-auth upgrade rejection (500) a generic transport error', async () => {
+    daemon.statusCode = 500;
+    const client = makeClient();
+    const errors: Error[] = [];
+    client.on('error', (e) => errors.push(e));
+    await expect(client.request('system.status')).rejects.toThrow();
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.some((e) => e instanceof AuthRejectedError)).toBe(false);
+    expect(errors.some((e) => /unexpected server response: 500/i.test(e.message))).toBe(true);
+    client.dispose();
+  });
+
+  it('captureFingerprint reports tokenValid: false with the status on a 401 rejection', async () => {
+    daemon.statusCode = 401;
+    const result = await captureFingerprint({
+      host: daemon.host,
+      port: daemon.port,
+      token: TOKEN,
+    });
+    expect(result).toEqual({
+      ok: true,
+      fingerprint: normalizeFingerprint(daemon.fingerprint),
+      tokenValid: false,
+      statusCode: 401,
+    });
+  });
+
+  it('captureFingerprint reports tokenValid: false with the status on a 403 rejection', async () => {
+    daemon.statusCode = 403;
+    const result = await captureFingerprint({
+      host: daemon.host,
+      port: daemon.port,
+      token: TOKEN,
+    });
+    expect(result).toEqual({
+      ok: true,
+      fingerprint: normalizeFingerprint(daemon.fingerprint),
+      tokenValid: false,
+      statusCode: 403,
+    });
+  });
+
+  it('captureFingerprint keeps tokenValid: true on a non-auth upgrade rejection (500)', async () => {
+    daemon.statusCode = 500;
+    const result = await captureFingerprint({
+      host: daemon.host,
+      port: daemon.port,
+      token: TOKEN,
+    });
+    expect(result).toEqual({
+      ok: true,
+      fingerprint: normalizeFingerprint(daemon.fingerprint),
+      tokenValid: true,
+    });
   });
 });
 

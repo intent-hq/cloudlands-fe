@@ -58,7 +58,7 @@ registerMockIpcHandler(
     let hash = 0;
     for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) & 0xffff;
     const byte = (hash & 0xff).toString(16).padStart(2, '0').toUpperCase();
-    return { fingerprint: Array.from({ length: 32 }, () => byte).join(':') };
+    return { fingerprint: Array.from({ length: 32 }, () => byte).join(':'), tokenValid: true };
   },
 );
 

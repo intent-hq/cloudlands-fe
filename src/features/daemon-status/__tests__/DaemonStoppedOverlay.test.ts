@@ -17,7 +17,7 @@ vi.mock('$store/renderer/store', async () => {
   const { runSaga, stdChannel } = await import('redux-saga');
   const { daemonHealthReducer, initialState } =
     await import('$store/renderer/slices/daemon-health/daemon-health-slice');
-  const { initialState: connectionsInitialState } =
+  const { connectionsReducer, initialState: connectionsInitialState } =
     await import('$store/renderer/slices/connections/connections-slice');
   let state = { daemonHealth: initialState, connections: connectionsInitialState };
   const listeners = new Set<() => void>();
@@ -37,7 +37,7 @@ vi.mock('$store/renderer/store', async () => {
     dispatch(action: { type: string }) {
       state = {
         daemonHealth: daemonHealthReducer(state.daemonHealth, action as never),
-        connections: state.connections,
+        connections: connectionsReducer(state.connections, action as never),
       };
       channel.put(action);
       listeners.forEach((listener) => listener());
@@ -75,6 +75,12 @@ import { mockInvoke, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
 import { daemonHealthSaga } from '$store/renderer/slices/daemon-health/sagas/daemon-health-saga';
+import {
+  authRejectedReceived,
+  connectionsListReceived,
+  connectOperationStarted,
+} from '$store/renderer/slices/connections/connections-slice';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 
 const route = vi.hoisted(() => ({ pathname: '/' }));
 
@@ -454,6 +460,115 @@ describe('DaemonStoppedOverlay', () => {
     expect((screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement).disabled).toBe(
       false,
     );
+  });
+
+  describe('auth-rejected posture (token rejected by the active remote backend)', () => {
+    const REMOTE = {
+      id: 'remote-1',
+      label: 'Studio Mac',
+      host: '10.0.0.5',
+      port: 8443,
+      fingerprint: 'AB:CD',
+      isLocal: false,
+    };
+    const LOCAL = {
+      id: LOCAL_CONNECTION_ID,
+      label: 'This machine (local)',
+      host: null,
+      port: null,
+      fingerprint: null,
+      isLocal: true,
+    };
+    const wsTransport: BackendTransportInfo = { mode: 'external-ws', target: 'wss://10.0.0.5:8443/ws' };
+
+    function activateRemote() {
+      dispatchAndFlush(connectionsListReceived({ connections: [LOCAL, REMOTE], activeId: REMOTE.id }));
+    }
+
+    function rejectAuth(statusCode: number) {
+      dispatchAndFlush(
+        authRejectedReceived({ id: REMOTE.id, host: REMOTE.host, port: REMOTE.port, statusCode }),
+      );
+    }
+
+    it('swaps the generic overlay for the actionable token-rejected state on 401', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      activateRemote();
+      rejectAuth(401);
+
+      expect(overlay()!.textContent).toContain('Authentication rejected');
+      expect(overlay()!.textContent).toContain('rejected the stored access token (HTTP 401)');
+      expect(overlay()!.textContent).toContain('10.0.0.5:8443');
+      // Retrying with the same token cannot succeed — no misleading spinner.
+      expect(screen.queryByTestId('daemon-stopped-retrying')).toBeNull();
+      expect(screen.getByTestId('daemon-stopped-repair').textContent).toContain(
+        'Re-pair with a new token',
+      );
+    });
+
+    it('explains the disabled WS API on 403', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      activateRemote();
+      rejectAuth(403);
+
+      expect(overlay()!.textContent).toContain('Authentication rejected');
+      expect(overlay()!.textContent).toContain('WebSocket API is disabled');
+      expect(overlay()!.textContent).toContain('(HTTP 403)');
+    });
+
+    it('keeps the switch-backend fail-over list visible in the token-rejected state', async () => {
+      const OTHER = { ...REMOTE, id: 'remote-2', label: 'Other Mac', host: '10.0.0.6' };
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      dispatchAndFlush(
+        connectionsListReceived({ connections: [LOCAL, REMOTE, OTHER], activeId: REMOTE.id }),
+      );
+      rejectAuth(401);
+
+      expect(screen.getByTestId('daemon-stopped-known-backends')).toBeTruthy();
+    });
+
+    it('ignores a rejection latched for a non-active connection', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      dispatchAndFlush(
+        connectionsListReceived({ connections: [LOCAL, REMOTE], activeId: LOCAL_CONNECTION_ID }),
+      );
+      rejectAuth(401);
+
+      expect(overlay()!.textContent).not.toContain('Authentication rejected');
+      expect(screen.queryByTestId('daemon-stopped-repair')).toBeNull();
+      expect(screen.getByTestId('daemon-stopped-retrying')).toBeTruthy();
+    });
+
+    it('returns to the generic posture when a new connect operation clears the latch', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      activateRemote();
+      rejectAuth(401);
+      expect(screen.getByTestId('daemon-stopped-repair')).toBeTruthy();
+
+      dispatchAndFlush(connectOperationStarted());
+
+      expect(overlay()!.textContent).not.toContain('Authentication rejected');
+      expect(screen.queryByTestId('daemon-stopped-repair')).toBeNull();
+    });
+
+    it('opens the re-pair modal with host and port prefilled', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      activateRemote();
+      rejectAuth(401);
+
+      await fireEvent.click(screen.getByTestId('daemon-stopped-repair'));
+
+      const hostInput = (await screen.findByLabelText(/host/i)) as HTMLInputElement;
+      const portInput = screen.getByLabelText(/port/i) as HTMLInputElement;
+      expect(hostInput.value).toBe('10.0.0.5');
+      expect(portInput.value).toBe('8443');
+    });
   });
 
   it('issues no daemon wire requests itself (reconnect resubscription is RESUB-1 main-side)', async () => {
