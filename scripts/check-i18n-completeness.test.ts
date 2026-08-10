@@ -143,6 +143,78 @@ describe('i18n catalog completeness gate', () => {
     );
   });
 
+  it('fails on a value identical to the base catalog that is not allowlisted', () => {
+    withFixture(
+      {
+        'project.inlang/settings.json': SETTINGS(['en', 'zh-CN']),
+        'messages/en.json': JSON.stringify({ a_label: 'Hello {name}', b_label: 'Bye' }),
+        'messages/zh-CN.json': JSON.stringify({ a_label: 'Hello {name}', b_label: '再见' }),
+      },
+      (dir) => {
+        const result = runCheck(dir);
+        expect(result.exitCode).toBe(1);
+        expect(result.output).toContain('zh-CN: 1 value(s) identical to en.json');
+        expect(result.output).toContain('= a_label');
+      },
+    );
+  });
+
+  it('passes when identical values are allowlisted, per-locale or via "*"', () => {
+    withFixture(
+      {
+        'project.inlang/settings.json': SETTINGS(['en', 'de', 'zh-CN']),
+        'messages/en.json': JSON.stringify({ a_label: 'Feedback', b_label: 'OK' }),
+        'messages/de.json': JSON.stringify({ a_label: 'Feedback', b_label: 'OK' }),
+        'messages/zh-CN.json': JSON.stringify({ a_label: '反馈', b_label: 'OK' }),
+        'scripts/i18n-equal-allowlist.json': JSON.stringify({
+          a_label: ['de'],
+          b_label: '*',
+        }),
+      },
+      (dir) => {
+        const result = runCheck(dir);
+        expect(result.output).toContain('passed');
+        expect(result.exitCode).toBe(0);
+      },
+    );
+  });
+
+  it('auto-exempts identical values without letters', () => {
+    withFixture(
+      {
+        'project.inlang/settings.json': SETTINGS(['en', 'zh-CN']),
+        'messages/en.json': JSON.stringify({ a_label: '100%', b_label: '—' }),
+        'messages/zh-CN.json': JSON.stringify({ a_label: '100%', b_label: '—' }),
+      },
+      (dir) => {
+        const result = runCheck(dir);
+        expect(result.output).toContain('passed');
+        expect(result.exitCode).toBe(0);
+      },
+    );
+  });
+
+  it('fails on stale allowlist entries (removed key or no-longer-identical locale)', () => {
+    withFixture(
+      {
+        'project.inlang/settings.json': SETTINGS(['en', 'de']),
+        'messages/en.json': JSON.stringify({ a_label: 'Feedback' }),
+        'messages/de.json': JSON.stringify({ a_label: 'Rückmeldung' }),
+        'scripts/i18n-equal-allowlist.json': JSON.stringify({
+          a_label: ['de'],
+          gone_label: '*',
+        }),
+      },
+      (dir) => {
+        const result = runCheck(dir);
+        expect(result.exitCode).toBe(1);
+        expect(result.output).toContain('scripts/i18n-equal-allowlist.json: 2 stale entries');
+        expect(result.output).toContain('? a_label [de]: no longer identical to en.json');
+        expect(result.output).toContain('? gone_label: key no longer exists in en.json');
+      },
+    );
+  });
+
   it('passes against the real repository catalogs', () => {
     const result = runCheck(repoRoot);
     expect(result.output).toContain('passed');
