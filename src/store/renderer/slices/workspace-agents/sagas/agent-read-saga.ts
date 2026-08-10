@@ -1,4 +1,4 @@
-import { call, put, race, take, takeLeading } from 'typed-redux-saga';
+import { call, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -61,5 +61,5 @@ function* loadAgentSessionWorker(action: ReturnType<typeof ensureAgentSessionLoa
 }
 
 export function* agentReadSaga() {
-  yield* takeLeading(ensureAgentSessionLoaded, loadAgentSessionWorker);
+  yield* takeEvery(ensureAgentSessionLoaded, loadAgentSessionWorker);
 }
