@@ -872,10 +872,16 @@ function extractLocalIps(result: unknown): string[] | null {
  */
 async function refreshRemoteHosts(id: string): Promise<void> {
   try {
+    // Snapshot the live client BEFORE the first await: a concurrent switch
+    // replaces the mutable global client, and querying the NEW backend here
+    // would persist another backend's IPs under this record.
+    const client = getBackendClient();
     if (!(await connectionsStore.getDetectHosts(id))) return;
-    const result = await getBackendClient().request('server.pairingInfo');
+    const result = await client.request('server.pairingInfo');
     const ips = extractLocalIps(result);
-    if (ips) {
+    // Drop the result when the active connection changed mid-flight — the
+    // snapshot client may have answered just before its disposal.
+    if (ips && activeConnectionMeta?.id === id) {
       await connectionsStore.setHosts(id, ips);
       await broadcastConnectionsChanged();
     }

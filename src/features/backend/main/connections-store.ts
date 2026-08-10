@@ -262,7 +262,9 @@ export async function list(): Promise<ConnectionRecord[]> {
 export async function add(conn: NewConnection): Promise<ConnectionRecord> {
   const encToken = encryptToken(conn.token);
   const stored = await mutate(async (state) => {
-    const duplicates = state.connections.filter((c) => c.host === conn.host && c.port === conn.port);
+    const duplicates = state.connections.filter(
+      (c) => c.host === conn.host && c.port === conn.port,
+    );
     if (duplicates.length > 0) {
       const survivor = duplicates.find((c) => c.id === state.activeId) ?? duplicates[0];
       survivor.label = conn.label;
@@ -270,7 +272,9 @@ export async function add(conn: NewConnection): Promise<ConnectionRecord> {
       survivor.encToken = encToken;
       survivor.detectHosts = conn.detectHosts ?? true;
       survivor.hostname ??= duplicates.find((c) => c.hostname != null)?.hostname ?? null;
-      state.connections = state.connections.filter((c) => c === survivor || !duplicates.includes(c));
+      state.connections = state.connections.filter(
+        (c) => c === survivor || !duplicates.includes(c),
+      );
       await writeState(state);
       return survivor;
     }

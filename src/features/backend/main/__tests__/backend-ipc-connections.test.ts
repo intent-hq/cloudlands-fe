@@ -713,4 +713,29 @@ describe('multi-host candidates (#1746)', () => {
     await vi.waitFor(() => expect(rpc.calls).toContain('server.pairingInfo'));
     expect(store.setHosts).not.toHaveBeenCalled();
   });
+
+  it('drops a pairingInfo result that lands after a switch to another backend', async () => {
+    installWindow();
+    // Hold the pairingInfo answer open until the test releases it.
+    let releasePairingInfo!: () => void;
+    const gate = new Promise<void>((resolve) => (releasePairingInfo = resolve));
+    rpc.handler = async (method) => {
+      if (method === 'server.pairingInfo') {
+        await gate;
+        return { localIps: ['10.9.9.9'], hostname: 'other' };
+      }
+      return {};
+    };
+    const { mod } = await loadModule();
+    await mod.switchBackend('remote-1');
+    await vi.waitFor(() => expect(rpc.calls).toContain('server.pairingInfo'));
+
+    // The active backend changes while the refresh is still in flight…
+    await mod.switchBackend('local');
+    releasePairingInfo();
+
+    // …so the stale answer must NOT be persisted under remote-1.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(store.setHosts).not.toHaveBeenCalled();
+  });
 });
