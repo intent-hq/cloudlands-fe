@@ -14,7 +14,8 @@ vi.mock('$lib/client', () => ({
   },
 }));
 vi.mock('$features/events/daemon-events-bridge.client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('$features/events/daemon-events-bridge.client')>();
+  const actual =
+    await importOriginal<typeof import('$features/events/daemon-events-bridge.client')>();
   return { ...actual, seedStreamFromSnapshot: mocks.seed };
 });
 
@@ -69,11 +70,10 @@ function message(id: string, text: string, overrides: Partial<AgentMessage> = {}
 function harness() {
   const channel = stdChannel();
   let agentSessions = initialState;
-  const dispatch = vi.fn((action) => { agentSessions = agentSessionReducer(agentSessions, action); });
-  const task = runSaga(
-    { channel, dispatch, getState: () => ({ agentSessions }) },
-    chatReadSaga,
-  );
+  const dispatch = vi.fn((action) => {
+    agentSessions = agentSessionReducer(agentSessions, action);
+  });
+  const task = runSaga({ channel, dispatch, getState: () => ({ agentSessions }) }, chatReadSaga);
   return { channel, dispatch, task, sessions: () => agentSessions };
 }
 
@@ -99,31 +99,42 @@ describe('chatReadSaga', () => {
     expect(mocks.subscribeSnapshot).toHaveBeenCalledWith(AGENT);
     expect(mocks.seed).toHaveBeenCalledWith(AGENT, live, WS);
     expect(run.sessions().byAgentId[AGENT]?.messages.map((item) => item.id)).toEqual([
-      'old', 'new', 'live',
+      'old',
+      'new',
+      'live',
     ]);
     run.task.cancel();
     await run.task.toPromise();
   });
 
-  it('coalesces rapid requests into one pending rerun and applies only the newest read', async () => {
+  it('globally cancels an older refresh when a different agent refresh arrives', async () => {
     let resolveFirst!: (value: AgentSession) => void;
     mocks.get
-      .mockReturnValueOnce(new Promise((done) => { resolveFirst = done; }))
-      .mockResolvedValue(session());
-    mocks.getConversation.mockResolvedValue({ messages: [message('fresh', 'fresh')], nextToken: null });
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          resolveFirst = done;
+        }),
+      )
+      .mockResolvedValue(session({ id: 'agent-other', workspaceId: 'ws-other' }));
+    mocks.getConversation.mockResolvedValue({
+      messages: [message('fresh', 'fresh')],
+      nextToken: null,
+    });
     mocks.subscribeSnapshot.mockResolvedValue({ messages: [] });
     const run = harness();
-    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    run.channel.put(refreshChatTranscriptRequested(WS, AGENT));
     await settle();
-    run.channel.put(refreshChatTranscriptRequested(WS, AGENT));
-    run.channel.put(refreshChatTranscriptRequested(WS, AGENT));
+    run.channel.put(refreshChatTranscriptRequested('ws-other', 'agent-other'));
     await settle();
     resolveFirst(session());
     await settle();
 
     expect(mocks.get).toHaveBeenCalledTimes(2);
     expect(mocks.getConversation).toHaveBeenCalledTimes(1);
-    expect(run.sessions().byAgentId[AGENT]?.messages.map((item) => item.id)).toEqual(['fresh']);
+    expect(run.sessions().byAgentId[AGENT]).toBeUndefined();
+    expect(run.sessions().byAgentId['agent-other']?.messages.map((item) => item.id)).toEqual([
+      'fresh',
+    ]);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -131,7 +142,11 @@ describe('chatReadSaga', () => {
   it('preserves messages appended while paging is in flight', async () => {
     let resolvePage!: (value: { messages: AgentMessage[]; nextToken: null }) => void;
     mocks.get.mockResolvedValue(session());
-    mocks.getConversation.mockReturnValue(new Promise((done) => { resolvePage = done; }));
+    mocks.getConversation.mockReturnValue(
+      new Promise((done) => {
+        resolvePage = done;
+      }),
+    );
     mocks.subscribeSnapshot.mockResolvedValue({ messages: [] });
     const run = harness();
     run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
@@ -141,7 +156,8 @@ describe('chatReadSaga', () => {
     await settle();
 
     expect(run.sessions().byAgentId[AGENT]?.messages.map((item) => item.id)).toEqual([
-      'persisted', 'during',
+      'persisted',
+      'during',
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -155,14 +171,20 @@ describe('chatReadSaga', () => {
     await settle();
 
     expect(run.sessions().byAgentId[AGENT]?.messages.map((item) => item.id)).toEqual(['prior']);
-    expect(run.dispatch.mock.calls.some(([action]) => action.type === transcriptHydrationSettled.type)).toBe(true);
+    expect(
+      run.dispatch.mock.calls.some(([action]) => action.type === transcriptHydrationSettled.type),
+    ).toBe(true);
     run.task.cancel();
     await run.task.toPromise();
   });
 
   it('cancels an unmounted workspace read without a late upsert or settled ghost action', async () => {
     let resolve!: (value: AgentSession) => void;
-    mocks.get.mockReturnValue(new Promise((done) => { resolve = done; }));
+    mocks.get.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
     const run = harness();
     run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
     await settle();
@@ -172,7 +194,9 @@ describe('chatReadSaga', () => {
     await settle();
 
     expect(run.sessions().byAgentId[AGENT]).toBeUndefined();
-    expect(run.dispatch.mock.calls.some(([action]) => action.type === transcriptHydrationSettled.type)).toBe(false);
+    expect(
+      run.dispatch.mock.calls.some(([action]) => action.type === transcriptHydrationSettled.type),
+    ).toBe(false);
     run.task.cancel();
     await run.task.toPromise();
   });

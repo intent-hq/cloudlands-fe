@@ -5,10 +5,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import type { AgentSession } from '$shared/types';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
-import {
-  bulkUpsertSessions,
-  upsertSession,
-} from '../../agent-session/agent-session-slice';
+import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import {
   workspaceDeleted,
@@ -47,13 +44,10 @@ function* loadAgentSessionSaga(wsId: string, agentId: string) {
   }
 }
 
-type WorkspaceCleanupAction =
-  | ReturnType<typeof workspaceDeleted>
-  | ReturnType<typeof workspaceUnmounted>;
-
 function matchesWorkspaceCleanup(wsId: string) {
-  return (action: WorkspaceCleanupAction) =>
+  return (action: { type: string; payload?: unknown }) =>
     (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    Array.isArray(action.payload) &&
     action.payload[0] === wsId;
 }
 

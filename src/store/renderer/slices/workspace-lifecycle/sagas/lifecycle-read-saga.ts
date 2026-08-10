@@ -84,13 +84,10 @@ const logger = createLogger('LifecycleReadSaga');
  */
 const PR_STATUS_REFRESH_TTL_MS = 60_000;
 
-type WorkspaceCleanupAction =
-  | ReturnType<typeof workspaceDeleted>
-  | ReturnType<typeof workspaceUnmounted>;
-
 function matchesWorkspaceCleanup(workspaceId: string) {
-  return (action: WorkspaceCleanupAction) =>
+  return (action: { type: string; payload?: unknown }) =>
     (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    Array.isArray(action.payload) &&
     action.payload[0] === workspaceId;
 }
 
@@ -101,9 +98,10 @@ function* refreshWorkspaces(): SagaGenerator<void> {
   );
   yield* put(replaceWorkspaceList(workspaces));
   yield* put(setWorkspaceHasLoaded(true));
-  const recentViews: Awaited<ReturnType<typeof appClient.workspaces.recentViews>> = yield* call(
-    [appClient.workspaces, appClient.workspaces.recentViews],
-  );
+  const recentViews: Awaited<ReturnType<typeof appClient.workspaces.recentViews>> = yield* call([
+    appClient.workspaces,
+    appClient.workspaces.recentViews,
+  ]);
   yield* put(loadRecencyData({ lastViewedAt: recentViews }));
 }
 
@@ -208,19 +206,23 @@ function* refreshAgentStats(agentId: string, forceRefresh: boolean): SagaGenerat
       agentId,
     );
     if (metrics) {
-      yield* put(updateAgentStats(agentId, {
-        additions: metrics.additions,
-        deletions: metrics.deletions,
-        timestamp: new Date().toISOString(),
-      }));
+      yield* put(
+        updateAgentStats(agentId, {
+          additions: metrics.additions,
+          deletions: metrics.deletions,
+          timestamp: new Date().toISOString(),
+        }),
+      );
     }
     yield* put(agentLineStatsRequestSucceeded(agentId, new Date().toISOString()));
   } catch (error) {
-    yield* put(agentLineStatsRequestFailed(
-      agentId,
-      error instanceof Error ? error.message : String(error),
-      new Date().toISOString(),
-    ));
+    yield* put(
+      agentLineStatsRequestFailed(
+        agentId,
+        error instanceof Error ? error.message : String(error),
+        new Date().toISOString(),
+      ),
+    );
   }
 }
 
@@ -272,28 +274,32 @@ function* runWorkspaceRead(key: string, workspaceId: string, worker: WorkspaceRe
 
 function* refreshEvents(workspaceId: string): SagaGenerator<void> {
   const events: Awaited<ReturnType<typeof appClient.events.list>> = yield* call(
-    [appClient.events, appClient.events.list], workspaceId,
+    [appClient.events, appClient.events.list],
+    workspaceId,
   );
   yield* put(eventsLoaded(workspaceId, events));
 }
 
 function* refreshTaskAgentLinks(workspaceId: string): SagaGenerator<void> {
   const byNoteId: Awaited<ReturnType<typeof appClient.tasks.listAgentLinks>> = yield* call(
-    [appClient.tasks, appClient.tasks.listAgentLinks], workspaceId,
+    [appClient.tasks, appClient.tasks.listAgentLinks],
+    workspaceId,
   );
   yield* put(hydrateTaskAgentAssociations(workspaceId, byNoteId));
 }
 
 function* refreshSkills(workspaceId: string): SagaGenerator<void> {
   const skills: Awaited<ReturnType<typeof appClient.skills.list>> = yield* call(
-    [appClient.skills, appClient.skills.list], workspaceId,
+    [appClient.skills, appClient.skills.list],
+    workspaceId,
   );
   yield* put(setSkills(workspaceId, skills));
 }
 
 function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
   const scripts: Awaited<ReturnType<typeof appClient.scripts.list>> = yield* call(
-    [appClient.scripts, appClient.scripts.list], workspaceId,
+    [appClient.scripts, appClient.scripts.list],
+    workspaceId,
   );
   yield* put(setScriptsData(workspaceId, scripts));
   yield* put(setScriptsInitialized(workspaceId, true));
@@ -301,7 +307,8 @@ function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
 
 function* refreshTerminals(workspaceId: string): SagaGenerator<void> {
   const result: Awaited<ReturnType<typeof appClient.terminals.list>> = yield* call(
-    [appClient.terminals, appClient.terminals.list], workspaceId,
+    [appClient.terminals, appClient.terminals.list],
+    workspaceId,
   );
   yield* put(
     Array.isArray(result)
@@ -332,12 +339,40 @@ function* loadTasksWorker(action: ReturnType<typeof loadWorkspaceTasksRequested>
   });
 }
 
-function* workspaceActionWorker(
-  key: string,
-  worker: WorkspaceRead,
-  action: { payload: [workspaceId: string, ...unknown[]] },
-) {
-  yield* runWorkspaceRead(key, action.payload[0], worker);
+function* eventsWorker(action: ReturnType<typeof loadEventsRequested>) {
+  yield* runWorkspaceRead('events', action.payload[0], refreshEvents);
+}
+
+function* tokenUsageWorker(action: ReturnType<typeof fetchWorkspaceTokenUsage>) {
+  yield* runWorkspaceRead('tokenUsage', action.payload[0], refreshTokenUsage);
+}
+
+function* taskAgentLinksWorker(action: ReturnType<typeof hydrateTaskAgentAssociationsRequested>) {
+  yield* runWorkspaceRead('taskAgentLinks', action.payload[0], refreshTaskAgentLinks);
+}
+
+function* skillsWorker(action: ReturnType<typeof loadSkillsRequested>) {
+  yield* runWorkspaceRead('skills', action.payload[0], refreshSkills);
+}
+
+function* scriptsWorker(action: ReturnType<typeof refreshScripts>) {
+  yield* runWorkspaceRead('scripts', action.payload[0], refreshWorkspaceScripts);
+}
+
+function* refreshChangesWorker(action: ReturnType<typeof refreshRequested>) {
+  yield* runWorkspaceRead('changes', action.payload[0], refreshChanges);
+}
+
+function* loadChangesWorker(action: ReturnType<typeof loadWorkspaceDataRequested>) {
+  yield* runWorkspaceRead('changes', action.payload[0], refreshChanges);
+}
+
+function* agentsWorker(action: ReturnType<typeof hydrateAgentsRequested>) {
+  yield* runWorkspaceRead('agents', action.payload[0], hydrateAgents);
+}
+
+function* terminalsWorker(action: ReturnType<typeof hydrateTerminalsRequested>) {
+  yield* runWorkspaceRead('terminals', action.payload[0], refreshTerminals);
 }
 
 function* prStatusWorker(action: ReturnType<typeof refreshPRStatusRequested>) {
@@ -372,7 +407,8 @@ function* contextWorker(
     yield* race({
       read: call(function* () {
         const items: Awaited<ReturnType<typeof appClient.workspaces.getContext>> = yield* call(
-          [appClient.workspaces, appClient.workspaces.getContext], workspaceId,
+          [appClient.workspaces, appClient.workspaces.getContext],
+          workspaceId,
         );
         yield* put(hydrateContextItems(workspaceId, Array.isArray(items) ? items : []));
         initializedContexts.add(workspaceId);
@@ -384,9 +420,16 @@ function* contextWorker(
   }
 }
 
-function* clearInitializedContext(
+function* clearDeletedInitializedContext(
   initializedContexts: Set<string>,
-  action: WorkspaceCleanupAction,
+  action: ReturnType<typeof workspaceDeleted>,
+) {
+  initializedContexts.delete(action.payload[0]);
+}
+
+function* clearUnmountedInitializedContext(
+  initializedContexts: Set<string>,
+  action: ReturnType<typeof workspaceUnmounted>,
 ) {
   initializedContexts.delete(action.payload[0]);
 }
@@ -398,26 +441,21 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       takeLeading(loadWorkspacesRequested, loadWorkspacesWorker),
       takeLatest(ensureWorkspaceTasksLoaded, ensureTasksWorker),
       takeLatest(loadWorkspaceTasksRequested, loadTasksWorker),
-      takeLeading(loadEventsRequested, workspaceActionWorker, 'events', refreshEvents),
-      takeLeading(fetchWorkspaceTokenUsage, workspaceActionWorker, 'tokenUsage', refreshTokenUsage),
+      takeLeading(loadEventsRequested, eventsWorker),
+      takeLeading(fetchWorkspaceTokenUsage, tokenUsageWorker),
       takeLeading(initContextForWorkspace, contextWorker, initializedContexts),
-      takeLeading(
-        hydrateTaskAgentAssociationsRequested,
-        workspaceActionWorker,
-        'taskAgentLinks',
-        refreshTaskAgentLinks,
-      ),
-      takeLeading(loadSkillsRequested, workspaceActionWorker, 'skills', refreshSkills),
-      takeLeading(refreshScripts, workspaceActionWorker, 'scripts', refreshWorkspaceScripts),
+      takeLeading(hydrateTaskAgentAssociationsRequested, taskAgentLinksWorker),
+      takeLeading(loadSkillsRequested, skillsWorker),
+      takeLeading(refreshScripts, scriptsWorker),
       takeLeading(refreshPRStatusRequested, prStatusWorker),
-      takeLatest(refreshRequested, workspaceActionWorker, 'changes', refreshChanges),
-      takeLatest(loadWorkspaceDataRequested, workspaceActionWorker, 'changes', refreshChanges),
+      takeLatest(refreshRequested, refreshChangesWorker),
+      takeLatest(loadWorkspaceDataRequested, loadChangesWorker),
       takeLeading(loadOlderCommitsRequested, olderCommitsWorker),
       takeLeading(requestAgentLineStats, agentLineStatsWorker),
-      takeLatest(hydrateAgentsRequested, workspaceActionWorker, 'agents', hydrateAgents),
-      takeLeading(hydrateTerminalsRequested, workspaceActionWorker, 'terminals', refreshTerminals),
-      takeEvery(workspaceDeleted, clearInitializedContext, initializedContexts),
-      takeEvery(workspaceUnmounted, clearInitializedContext, initializedContexts),
+      takeLatest(hydrateAgentsRequested, agentsWorker),
+      takeLeading(hydrateTerminalsRequested, terminalsWorker),
+      takeEvery(workspaceDeleted, clearDeletedInitializedContext, initializedContexts),
+      takeEvery(workspaceUnmounted, clearUnmountedInitializedContext, initializedContexts),
     ]);
   } finally {
     initializedContexts.clear();

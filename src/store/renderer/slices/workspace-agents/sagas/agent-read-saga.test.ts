@@ -57,12 +57,14 @@ describe('agentReadSaga', () => {
   });
 
   it('calls agents.get exactly and preserves an existing transcript on metadata refresh', async () => {
-    const messages = [{
-      id: 'message-1',
-      role: 'user' as const,
-      timestamp: '2026-01-01T00:00:00.000Z',
-      contentBlocks: [{ type: 'text' as const, text: 'hello' }],
-    }];
+    const messages = [
+      {
+        id: 'message-1',
+        role: 'user' as const,
+        timestamp: '2026-01-01T00:00:00.000Z',
+        contentBlocks: [{ type: 'text' as const, text: 'hello' }],
+      },
+    ];
     mocks.get.mockResolvedValue(session({ name: 'refreshed' }));
     const channel = stdChannel();
     const dispatch = vi.fn();
@@ -78,15 +80,21 @@ describe('agentReadSaga', () => {
     await settle();
 
     expect(mocks.get).toHaveBeenCalledWith(AGENT);
-    const upsert = dispatch.mock.calls.find(([action]) => action.type === bulkUpsertSessions.type)?.[0];
+    const upsert = dispatch.mock.calls.find(
+      ([action]) => action.type === bulkUpsertSessions.type,
+    )?.[0];
     expect(upsert.payload[0][0]).toMatchObject({ name: 'refreshed', messages });
     task.cancel();
     await task.toPromise();
   });
 
-  it('coalesces concurrent trigger actions for one agent', async () => {
+  it('globally suppresses a different-agent trigger while the leading read is active', async () => {
     let resolve!: (value: AgentSession) => void;
-    mocks.get.mockReturnValue(new Promise((done) => { resolve = done; }));
+    mocks.get.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
     const channel = stdChannel();
     const task = runSaga(
       { channel, dispatch: vi.fn(), getState: () => ({ agentSessions: { byAgentId: {} } }) },
@@ -94,7 +102,7 @@ describe('agentReadSaga', () => {
     );
 
     channel.put(ensureAgentSessionLoaded(WS, AGENT));
-    channel.put(ensureAgentSessionLoaded(WS, AGENT));
+    channel.put(ensureAgentSessionLoaded('ws-other', 'agent-other'));
     await settle();
     expect(mocks.get).toHaveBeenCalledTimes(1);
 
@@ -123,7 +131,9 @@ describe('agentReadSaga', () => {
     await settle();
 
     expect(mocks.get).toHaveBeenCalledWith(AGENT);
-    const upsert = dispatch.mock.calls.find(([action]) => action.type === bulkUpsertSessions.type)?.[0];
+    const upsert = dispatch.mock.calls.find(
+      ([action]) => action.type === bulkUpsertSessions.type,
+    )?.[0];
     expect(upsert?.payload[0][0]).toMatchObject({ id: AGENT, name: 'revived' });
     task.cancel();
     await task.toPromise();
@@ -154,9 +164,13 @@ describe('agentReadSaga', () => {
 
     expect(loggerMocks.warn).toHaveBeenCalledTimes(1);
     expect(loggerMocks.error).not.toHaveBeenCalled();
-    const close = dispatch.mock.calls.find(([action]) => action.type === closeTabsByAgentId.type)?.[0];
+    const close = dispatch.mock.calls.find(
+      ([action]) => action.type === closeTabsByAgentId.type,
+    )?.[0];
     expect(close?.payload).toMatchObject({ wsId: WS, agentId: AGENT });
-    expect(dispatch.mock.calls.some(([action]) => action.type === bulkUpsertSessions.type)).toBe(false);
+    expect(dispatch.mock.calls.some(([action]) => action.type === bulkUpsertSessions.type)).toBe(
+      false,
+    );
     task.cancel();
     await task.toPromise();
   });
@@ -185,7 +199,11 @@ describe('agentReadSaga', () => {
 
   it('cancels an in-flight read on workspace unmount and suppresses its late response', async () => {
     let resolve!: (value: AgentSession) => void;
-    mocks.get.mockReturnValue(new Promise((done) => { resolve = done; }));
+    mocks.get.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
     const channel = stdChannel();
     const dispatch = vi.fn();
     const task = runSaga(
@@ -199,7 +217,9 @@ describe('agentReadSaga', () => {
     resolve(session());
     await settle();
 
-    expect(dispatch.mock.calls.some(([action]) => action.type === bulkUpsertSessions.type)).toBe(false);
+    expect(dispatch.mock.calls.some(([action]) => action.type === bulkUpsertSessions.type)).toBe(
+      false,
+    );
     task.cancel();
     await task.toPromise();
   });

@@ -10,7 +10,10 @@ import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { KnownRepo } from '$shared/types/known-repo';
-import { loadWorkspaceDataRequested, refreshAcceptChangesStatus } from '../../changes/changes-slice';
+import {
+  loadWorkspaceDataRequested,
+  refreshAcceptChangesStatus,
+} from '../../changes/changes-slice';
 import {
   CACHE_TTL_MS,
   clearError,
@@ -63,9 +66,10 @@ function normalizeRepo(repo: GithubRepo): GithubRepoItem {
 function* refreshGithubRepos(): SagaGenerator<void> {
   yield* put(setGithubReposLoading());
   try {
-    const repos: Awaited<ReturnType<typeof githubAuthClient.listRepos>> = yield* call(
-      [githubAuthClient, githubAuthClient.listRepos],
-    );
+    const repos: Awaited<ReturnType<typeof githubAuthClient.listRepos>> = yield* call([
+      githubAuthClient,
+      githubAuthClient.listRepos,
+    ]);
     yield* put(setGithubRepos(repos.map(normalizeRepo)));
   } catch (error) {
     yield* put(setGithubReposError(error instanceof Error ? error.message : String(error)));
@@ -116,23 +120,27 @@ function* refreshAcceptChanges(workspaceId: string): SagaGenerator<void> {
       [AcceptChangesClient, AcceptChangesClient.getStatus],
       workspaceId as WorkspaceId,
     );
-    yield* put(setPostMergeState(workspaceId, {
-      ...current,
-      aheadOfTrunk: status.aheadOfTrunk,
-      behindTrunk: status.behindTrunk,
-      hasConflicts: status.hasConflicts,
-      hasRemote: status.hasRemote,
-      isContentMergedToTrunk: status.isContentMergedToTrunk ?? false,
-    }));
+    yield* put(
+      setPostMergeState(workspaceId, {
+        ...current,
+        aheadOfTrunk: status.aheadOfTrunk,
+        behindTrunk: status.behindTrunk,
+        hasConflicts: status.hasConflicts,
+        hasRemote: status.hasRemote,
+        isContentMergedToTrunk: status.isContentMergedToTrunk ?? false,
+      }),
+    );
   } catch (error) {
     logger.warn('Failed to fetch accept-changes status', { workspaceId, error });
-    yield* put(setPostMergeState(workspaceId, {
-      ...current,
-      aheadOfTrunk: null,
-      behindTrunk: 0,
-      hasConflicts: false,
-      isContentMergedToTrunk: false,
-    }));
+    yield* put(
+      setPostMergeState(workspaceId, {
+        ...current,
+        aheadOfTrunk: null,
+        behindTrunk: 0,
+        hasConflicts: false,
+        isContentMergedToTrunk: false,
+      }),
+    );
   }
 }
 
@@ -151,16 +159,8 @@ function* fanOutWorkspaceMounted(workspaceId: string): SagaGenerator<void> {
   yield* put(hydrateTaskAgentAssociationsRequested(workspaceId));
 }
 
-function* refreshGithubReposWorker(): SagaGenerator<void> {
-  yield* refreshGithubRepos();
-}
-
 function* refreshEditorsWorker(action: ReturnType<typeof fetchEditors>): SagaGenerator<void> {
   yield* refreshEditors(Boolean(action.payload[0]));
-}
-
-function* refreshKnownReposWorker(): SagaGenerator<void> {
-  yield* refreshKnownRepos();
 }
 
 function* refreshAcceptChangesWorker(
@@ -177,9 +177,9 @@ function* workspaceMountedWorker(action: ReturnType<typeof workspaceMounted>): S
 
 export function* lifecycleIpcReadSaga(): SagaGenerator<void> {
   yield* all([
-    takeLeading(loadGithubRepos, refreshGithubReposWorker),
+    takeLeading(loadGithubRepos, refreshGithubRepos),
     takeLeading(fetchEditors, refreshEditorsWorker),
-    takeLeading(loadKnownRepos, refreshKnownReposWorker),
+    takeLeading(loadKnownRepos, refreshKnownRepos),
     takeLeading(refreshAcceptChangesStatus, refreshAcceptChangesWorker),
     takeLeading(workspaceMounted, workspaceMountedWorker),
   ]);
