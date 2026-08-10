@@ -195,3 +195,89 @@ describe('AutoUpdateService manual-check watchdog', () => {
     );
   });
 });
+
+/**
+ * Windowless initialization + uninitialized-check regression tests
+ * (intent-hq/monorepo#1848).
+ *
+ * The secondary-startup task can run before any window exists, so
+ * initialize() must work without a BrowserWindow (the window ref attaches
+ * later via updateMainWindow()), and a manual check against a service that
+ * was never initialized (no event handlers attached) must fail fast instead
+ * of dying in the misleading 30s watchdog "timed out" error.
+ */
+describe('windowless initialization and uninitialized checks', () => {
+  beforeEach(async () => {
+    testUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'auto-update-windowless-'));
+    vi.clearAllMocks();
+    vi.resetModules();
+    vi.useFakeTimers();
+  });
+
+  afterEach(async () => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    const { __drainLocalPrefsWriteChainForTesting } = await import('../../../../main/local-prefs');
+    await __drainLocalPrefsWriteChainForTesting();
+    await fs.rm(testUserDataPath, { recursive: true, force: true });
+  });
+
+  it('initializes without a window: events are handled, and a later updateMainWindow() attaches renderer notifications', async () => {
+    const svc = await import('../auto-update.service');
+    const { default: electronUpdater } = await import('electron-updater');
+
+    await svc.autoUpdateService.initialize(null);
+    // Drop the 10s startup check + hourly interval scheduled by initialize().
+    vi.clearAllTimers();
+
+    const checkForUpdatesMock = electronUpdater.autoUpdater.checkForUpdates as Mock;
+    checkForUpdatesMock.mockImplementation(async () => {
+      updaterHandlers['checking-for-update']?.();
+      updaterHandlers['update-not-available']?.({ version: '2.0.0' });
+      return { updateInfo: { version: '2.0.0' } } as never;
+    });
+
+    // Windowless manual check: the terminal event is handled (handlers were
+    // attached despite no window) and the watchdog is cleared.
+    await svc.autoUpdateService.checkForUpdatesManual();
+    expect(svc.autoUpdateService.getState().status).toBe('not-available');
+    await vi.advanceTimersByTimeAsync(UPDATE_CHECK_TIMEOUT_MS);
+    expect(svc.autoUpdateService.getState().status).toBe('not-available');
+
+    // Window shows up later (window.ts → updateAutoUpdaterWindow): the same
+    // service instance now notifies the renderer.
+    const mockWindow = {
+      isDestroyed: () => false,
+      webContents: { send: vi.fn() },
+    };
+    svc.autoUpdateService.updateMainWindow(mockWindow as never);
+    await svc.autoUpdateService.checkForUpdatesManual();
+    expect(mockWindow.webContents.send).toHaveBeenCalledWith('auto-update:up-to-date', {
+      version: '2.0.0',
+    });
+  });
+
+  it('a manual check on an uninitialized service fails fast instead of ending in the watchdog timeout', async () => {
+    const svc = await import('../auto-update.service');
+    const { m } = await import('../../../../shared/paraglide/messages.js');
+    const { default: electronUpdater } = await import('electron-updater');
+    const checkForUpdatesMock = electronUpdater.autoUpdater.checkForUpdates as Mock;
+    // The real-world shape of the bug: the underlying check succeeds quickly,
+    // but with no event handlers attached nothing ever closes the watchdog
+    // session — the only possible outcome was the false 30s timeout.
+    checkForUpdatesMock.mockResolvedValue({ updateInfo: { version: '2.0.0' } } as never);
+
+    const state = await svc.autoUpdateService.checkForUpdatesManual();
+
+    expect(state.status).toBe('error');
+    expect(state.error).toBeTruthy();
+    expect(state.error).not.toBe(m.autoUpdate_check_timeout_error());
+    expect(checkForUpdatesMock).not.toHaveBeenCalled();
+
+    // No watchdog was armed: 30s later the error is still the fail-fast one,
+    // not the misleading "timed out / check your network" message.
+    await vi.advanceTimersByTimeAsync(UPDATE_CHECK_TIMEOUT_MS);
+    expect(svc.autoUpdateService.getState().error).toBe(state.error);
+    expect(svc.autoUpdateService.getState().error).not.toBe(m.autoUpdate_check_timeout_error());
+  });
+});

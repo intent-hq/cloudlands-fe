@@ -4932,6 +4932,7 @@
   "acceptChanges_backgroundGit_createPrFailed_error": "풀 리퀘스트를 만들지 못했습니다",
   "autoUpdate_service_urlNotConfigured_error": "자동 업데이트 URL이 구성되지 않았습니다",
   "autoUpdate_service_unknown_error": "알 수 없는 오류",
+  "autoUpdate_service_notInitialized_error": "업데이트 서비스가 초기화되지 않았습니다. 앱을 다시 시작해 주세요.",
   "autoUpdate_mutation_downloadFailed_error": "업데이트를 다운로드하지 못했습니다",
   "autoUpdate_mutation_installFailed_error": "업데이트를 설치하지 못했습니다",
   "mcp_management_saveServersFailed_error": "MCP 서버를 저장하지 못했습니다",
