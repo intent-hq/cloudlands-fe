@@ -102,6 +102,46 @@ describe('groupProviderEntries', () => {
     expect(result.supported.map((provider) => provider.id)).toEqual(['supported-a', 'supported-z']);
   });
 
+  it('groups an available active provider as enabled even when it is not enabled explicitly', () => {
+    const result = groupProviderEntries([entry('auggie', 'Augment Auggie')], {
+      isProviderEnabled: () => false,
+      availabilityByProviderId: { auggie: { available: true } },
+      activeProviderId: 'auggie',
+    });
+
+    expect(result.enabled.map((provider) => provider.id)).toEqual(['auggie']);
+    expect(result.discovered).toEqual([]);
+  });
+
+  it('pins the active provider first while keeping the remaining enabled providers alphabetical', () => {
+    const result = groupProviderEntries(
+      [
+        entry('middle', 'Middle Enabled'),
+        entry('active', 'Zulu Active'),
+        entry('alpha', 'Alpha Enabled'),
+      ],
+      {
+        isProviderEnabled: () => true,
+        availabilityByProviderId: {},
+        activeProviderId: 'active',
+      },
+    );
+
+    expect(result.enabled.map((provider) => provider.id)).toEqual(['active', 'alpha', 'middle']);
+  });
+
+  it('keeps enabled providers purely alphabetical when there is no active provider', () => {
+    const result = groupProviderEntries(
+      [entry('zulu', 'Zulu Enabled'), entry('alpha', 'Alpha Enabled')],
+      {
+        isProviderEnabled: () => true,
+        availabilityByProviderId: {},
+      },
+    );
+
+    expect(result.enabled.map((provider) => provider.id)).toEqual(['alpha', 'zulu']);
+  });
+
   it('filters hidden providers before grouping', () => {
     const result = groupProviderEntries(
       [

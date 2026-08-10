@@ -61,6 +61,7 @@ async function buildState(
     }
   >,
   npxStatus: { resolvedPath: string | null; versionOk: boolean | null } | null = null,
+  enabledProviders: Record<string, boolean> = { auggie: true },
 ) {
   const { initialState: specialistsInitialState } =
     await import('$store/renderer/slices/specialists/specialists-slice');
@@ -83,7 +84,7 @@ async function buildState(
     ),
     providerSettings: {
       activeProviderId: 'auggie',
-      enabledProviders: { auggie: true },
+      enabledProviders,
       defaultProviderId: MOCK_PROVIDER_CATALOG.defaultProviderId,
       nonDisableableProviderIds: [],
     },
@@ -125,7 +126,7 @@ describe('ProviderSelector progressive rendering', () => {
   });
 
   it('renders catalog rows immediately while every probe is still in flight', async () => {
-    mocks.state.current = await buildState({});
+    mocks.state.current = await buildState({}, null, { codex: true });
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
 
@@ -140,6 +141,12 @@ describe('ProviderSelector progressive rendering', () => {
     expect(
       result.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent?.trim()),
     ).toEqual(['Enabled', 'Not Detected']);
+    const enabledCard = result.getByRole('region', { name: 'Enabled' });
+    const enabledText = enabledCard.textContent ?? '';
+    expect(enabledText.indexOf('Augment Auggie')).toBeLessThan(enabledText.indexOf('OpenAI Codex'));
+    expect(result.getByRole('region', { name: 'Not Detected' }).textContent).not.toContain(
+      'Augment Auggie',
+    );
     expect(result.queryByRole('heading', { name: 'Available' })).toBeNull();
     expect(
       result.container.querySelector(

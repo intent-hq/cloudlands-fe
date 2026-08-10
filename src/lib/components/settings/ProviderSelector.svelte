@@ -175,6 +175,7 @@
       isProviderEnabled,
       availabilityByProviderId: $providerStatusMap$,
       hiddenProviderIds: providerAvailability?.hiddenProviders,
+      activeProviderId: $activeProviderId,
     }),
   );
 
