@@ -1,26 +1,27 @@
 import type { ActionMatchingPattern, ActionPattern, Saga } from '@redux-saga/types';
 import type { StoreAction } from '@augmentcode/themis/utils/store/create-action';
-import type { Task } from 'redux-saga';
+import type { TakeableChannel, Task } from 'redux-saga';
 import { cancel, fork, take, type SagaGenerator } from 'typed-redux-saga';
 
-type ContextWorker<PrefixArgs extends unknown[], Action> = Saga<[...PrefixArgs, Action]>;
+type ContextWorker<PrefixArgs extends unknown[], Message> = Saga<[...PrefixArgs, Message]>;
+type ContextSource<Message> = ActionPattern | TakeableChannel<Message>;
 
 type WorkerSlot = {
   task?: Task;
 };
 
-function* watchInContext<P extends ActionPattern, PrefixArgs extends unknown[]>(
+function* watchInContext<Message, PrefixArgs extends unknown[]>(
   mode: 'latest' | 'leading',
-  pattern: P,
-  getContext: (action: ActionMatchingPattern<P>) => string,
-  worker: ContextWorker<PrefixArgs, ActionMatchingPattern<P>>,
+  source: ContextSource<Message>,
+  getContext: (message: Message) => string,
+  worker: ContextWorker<PrefixArgs, Message>,
   args: PrefixArgs,
 ): SagaGenerator<never> {
   const slots = new Map<string, WorkerSlot>();
 
   while (true) {
-    const action = (yield* take(pattern)) as ActionMatchingPattern<P>;
-    const context = getContext(action);
+    const message = yield* take(source as TakeableChannel<Message>);
+    const context = getContext(message);
     const current = slots.get(context);
 
     if (mode === 'leading' && (current?.task?.isRunning() || (current && !current.task))) {
@@ -34,7 +35,7 @@ function* watchInContext<P extends ActionPattern, PrefixArgs extends unknown[]>(
     slots.set(context, slot);
     const task = yield* fork(function* contextWorker() {
       try {
-        yield* worker(...args, action);
+        yield* worker(...args, message);
       } finally {
         if (slots.get(context) === slot) slots.delete(context);
       }
@@ -45,25 +46,49 @@ function* watchInContext<P extends ActionPattern, PrefixArgs extends unknown[]>(
   }
 }
 
-export function* takeLatestInContext<P extends ActionPattern, PrefixArgs extends unknown[]>(
+export function takeLatestInContext<P extends ActionPattern, PrefixArgs extends unknown[]>(
   pattern: P,
   getContext: (action: ActionMatchingPattern<P>) => string,
   worker: ContextWorker<PrefixArgs, ActionMatchingPattern<P>>,
+  ...args: PrefixArgs
+): SagaGenerator<Task>;
+export function takeLatestInContext<Message, PrefixArgs extends unknown[]>(
+  channel: TakeableChannel<Message>,
+  getContext: (message: Message) => string,
+  worker: ContextWorker<PrefixArgs, Message>,
+  ...args: PrefixArgs
+): SagaGenerator<Task>;
+export function* takeLatestInContext<Message, PrefixArgs extends unknown[]>(
+  source: ContextSource<Message>,
+  getContext: (message: Message) => string,
+  worker: ContextWorker<PrefixArgs, Message>,
   ...args: PrefixArgs
 ): SagaGenerator<Task> {
   return yield* fork(function* latestInContextWatcher() {
-    yield* watchInContext('latest', pattern, getContext, worker, args);
+    yield* watchInContext('latest', source, getContext, worker, args);
   });
 }
 
-export function* takeLeadingInContext<P extends ActionPattern, PrefixArgs extends unknown[]>(
+export function takeLeadingInContext<P extends ActionPattern, PrefixArgs extends unknown[]>(
   pattern: P,
   getContext: (action: ActionMatchingPattern<P>) => string,
   worker: ContextWorker<PrefixArgs, ActionMatchingPattern<P>>,
   ...args: PrefixArgs
+): SagaGenerator<Task>;
+export function takeLeadingInContext<Message, PrefixArgs extends unknown[]>(
+  channel: TakeableChannel<Message>,
+  getContext: (message: Message) => string,
+  worker: ContextWorker<PrefixArgs, Message>,
+  ...args: PrefixArgs
+): SagaGenerator<Task>;
+export function* takeLeadingInContext<Message, PrefixArgs extends unknown[]>(
+  source: ContextSource<Message>,
+  getContext: (message: Message) => string,
+  worker: ContextWorker<PrefixArgs, Message>,
+  ...args: PrefixArgs
 ): SagaGenerator<Task> {
   return yield* fork(function* leadingInContextWatcher() {
-    yield* watchInContext('leading', pattern, getContext, worker, args);
+    yield* watchInContext('leading', source, getContext, worker, args);
   });
 }
 
