@@ -717,6 +717,8 @@ export async function reconcileActiveConnectionOnBoot(): Promise<void> {
   const reachable = await probeBackendReachable(getBackendClient(), bootReconnectTimeoutMs);
   if (reachable) {
     logger.info('Restored last-used remote backend at boot', { id: activeId });
+    // Post-connect candidate-host refresh (#1746); fire-and-forget/fail-soft.
+    void refreshRemoteHosts(activeId);
     return;
   }
 
@@ -840,6 +842,57 @@ async function captureRemoteHostname(id: string): Promise<void> {
   }
 }
 
+/**
+ * Pull the local-IP list out of a `server.pairingInfo` result (PROTOCOL §2 —
+ * returns `{ token, certFingerprint, port, path, localIps, hostname }`).
+ * Returns the non-empty string entries, else `null` when the shape is absent
+ * or malformed.
+ */
+function extractLocalIps(result: unknown): string[] | null {
+  if (result && typeof result === 'object') {
+    const value = (result as { localIps?: unknown }).localIps;
+    if (Array.isArray(value)) {
+      const ips = value.filter((ip): ip is string => typeof ip === 'string' && ip.trim() !== '');
+      if (ips.length > 0) return ips;
+    }
+  }
+  return null;
+}
+
+/**
+ * Refresh a remote connection's candidate-host list from the live backend's
+ * `server.pairingInfo` (#1746). Skipped when the record's "detect all backend
+ * IPs" option is off. Fire-and-forget / fail-soft by design — the daemon
+ * currently answers `server.pairingInfo` only on LOCAL (UDS) connections and
+ * rejects remote callers with -32001 ("server.* methods are local-only"), so
+ * until the daemon relaxes that gating this refresh quietly no-ops; the stored
+ * host list keeps whatever candidates it already has, and the multi-host
+ * reconnect racing still applies. When the daemon does answer, the persisted
+ * list tracks the backend's current interfaces on every connect.
+ */
+async function refreshRemoteHosts(id: string): Promise<void> {
+  try {
+    // Snapshot the live client BEFORE the first await: a concurrent switch
+    // replaces the mutable global client, and querying the NEW backend here
+    // would persist another backend's IPs under this record.
+    const client = getBackendClient();
+    if (!(await connectionsStore.getDetectHosts(id))) return;
+    const result = await client.request('server.pairingInfo');
+    const ips = extractLocalIps(result);
+    // Drop the result when the active connection changed mid-flight — the
+    // snapshot client may have answered just before its disposal.
+    if (ips && activeConnectionMeta?.id === id) {
+      await connectionsStore.setHosts(id, ips);
+      await broadcastConnectionsChanged();
+    }
+  } catch (error) {
+    logger.debug('Could not refresh candidate hosts from server.pairingInfo (fail-soft)', {
+      id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /** The connections list + active selection, as surfaced to the renderer. */
 async function listConnections(): Promise<ConnectionsListResult> {
   const [connections, activeId] = await Promise.all([
@@ -891,6 +944,7 @@ async function buildConfigForConnection(id: string): Promise<{
     config: {
       transport: 'wss',
       host: record.host,
+      hosts: record.hosts ?? [record.host],
       port: record.port,
       token,
       fingerprint: record.fingerprint,
@@ -951,9 +1005,12 @@ export async function switchBackend(id: string): Promise<SwitchConnectionResult>
   // live client's `host.status`; fire-and-forget so a slow/unreachable remote
   // never stalls the switch — the label upgrades from `host:port` to
   // `hostname (host:port)` asynchronously. Skipped for the local sidecar (UDS
-  // has no remote hostname to show; its label is fixed).
+  // has no remote hostname to show; its label is fixed). The candidate-host
+  // refresh (#1746) piggybacks on the same post-connect window, equally
+  // fire-and-forget/fail-soft.
   if (meta) {
     void captureRemoteHostname(id);
+    void refreshRemoteHosts(id);
   }
 
   // (5) Restore the incoming backend's windows (now targeting the new daemon).

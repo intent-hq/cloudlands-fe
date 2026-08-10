@@ -5469,6 +5469,8 @@
   "modals_connect_confirm_label": "Confirm & connect",
   "modals_connect_back_label": "Back",
   "modals_connect_whereToFind_help": "Find the host, port, and access token on the target machine under Settings → General → WebSocket API.",
+  "modals_connect_detectHosts_label": "Detect all backend IPs",
+  "modals_connect_detectHosts_description": "Also store the backend's other IP addresses so the connection keeps working when its network changes.",
   "modals_connect_tokenRejected_error": "Der Daemon hat dieses Zugriffstoken abgelehnt. Prüfen Sie, ob Sie das aktuelle Token kopiert haben, und versuchen Sie es erneut.",
   "modals_connect_wsApiDisabled_error": "Die WebSocket-API ist auf dem Zielrechner deaktiviert. Aktivieren Sie sie unter Einstellungen → Allgemein → WebSocket-API und versuchen Sie es dann erneut.",
   "modals_certMismatch_title": "Certificate changed",
