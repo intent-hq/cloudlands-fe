@@ -138,21 +138,19 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_RTK, async () => {
 });
 
 /**
- * `system:check-node` → daemon `host.findBinary` (name `node`).
+ * `system:check-node` → daemon `host.checkNode`.
  *
  * Dedicated lightweight probe for the host-requirements gate.
- * `host.findBinary` best-effort version-probes the resolved
- * binary, so one RPC yields `{ available, version? }`; the version is
- * normalized (leading `v` stripped) and compared against
- * MINIMUM_NODE_VERSION. Mirrors `CHECK_GIT`: a missing node binary — or a
- * failed probe — is never an RPC error; it folds to `{ available:false,
- * versionOk:false }`.
+ * `host.checkNode` is uncached daemon-side (host.checkGit idiom), so a
+ * newly installed node is detected without an app restart; one RPC yields
+ * `{ available, version?, path? }`. The version is normalized (leading `v`
+ * stripped) and compared against MINIMUM_NODE_VERSION. Mirrors `CHECK_GIT`:
+ * a missing node binary — or a failed probe — is never an RPC error; it
+ * folds to `{ available:false, versionOk:false }`.
  */
 registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_NODE, async () => {
   try {
-    const result = await backendRequest<HostFindBinaryResult>("host.findBinary", {
-      name: "node",
-    });
+    const result = await backendRequest<HostCheckGitResult>("host.checkNode");
     if (result?.available !== true) {
       return { success: true, data: { available: false, versionOk: false } };
     }
@@ -171,20 +169,18 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_NODE, async () => {
 });
 
 /**
- * `system:check-gh` → daemon `host.findBinary` (name `gh`).
+ * `system:check-gh` → daemon `host.checkGh`.
  *
  * Informational probe for the host-requirements step: gh presence is
- * surfaced alongside git/node but NEVER gates onboarding. The daemon body
- * folds to `{ available, version? }` under `data` (version forwarded
- * verbatim, CHECK_GIT idiom). Mirrors the sibling probes: a missing gh
- * binary — or a failed probe — is never an RPC error; it folds to
- * `{ available:false }`.
+ * surfaced alongside git/node but NEVER gates onboarding. `host.checkGh`
+ * is uncached daemon-side (host.checkGit idiom); the daemon body folds to
+ * `{ available, version? }` under `data` (version forwarded verbatim).
+ * Mirrors the sibling probes: a missing gh binary — or a failed probe — is
+ * never an RPC error; it folds to `{ available:false }`.
  */
 registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_GH, async () => {
   try {
-    const result = await backendRequest<HostFindBinaryResult>("host.findBinary", {
-      name: "gh",
-    });
+    const result = await backendRequest<HostCheckGitResult>("host.checkGh");
     const available = result?.available === true;
     const version = typeof result?.version === "string" ? result.version : undefined;
     return {

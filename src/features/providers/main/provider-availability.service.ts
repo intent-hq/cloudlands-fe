@@ -60,7 +60,6 @@ async function checkAuggieAvailability(): Promise<ProviderStatus> {
 async function isClaudeCliInstalled(): Promise<boolean> {
   return (
     (await findBinary('claude', {
-      cache: false,
       commonPaths: getCommonNpmPaths('claude'),
     })) !== null
   );
@@ -78,7 +77,6 @@ async function checkClaudeCodeAvailability(): Promise<ProviderStatus> {
     const status: ProviderStatus = { available: installed };
     const npxPath = installed
       ? await findBinary('npx', {
-          cache: false,
           commonPaths: getCommonNpmPaths('npx'),
         })
       : null;
@@ -165,8 +163,8 @@ async function checkDroidAvailability(): Promise<ProviderStatus> {
  */
 async function checkGrokAvailability(): Promise<ProviderStatus> {
   // findBinary never throws (it folds RPC errors to null), so no try/catch;
-  // skip its local cache so a fresh install is picked up on recheck.
-  const grokPath = await findBinary('grok', { cache: false });
+  // every call hits the daemon so a fresh install is picked up on recheck.
+  const grokPath = await findBinary('grok');
   return { available: grokPath !== null };
 }
 
@@ -182,8 +180,8 @@ async function checkGrokAvailability(): Promise<ProviderStatus> {
  */
 async function checkUnslothAvailability(): Promise<ProviderStatus> {
   const [opencodePath, unslothPath] = await Promise.all([
-    findBinary('opencode', { cache: false }),
-    findBinary('unsloth', { cache: false }),
+    findBinary('opencode'),
+    findBinary('unsloth'),
   ]);
   return { available: opencodePath !== null && unslothPath !== null };
 }

@@ -138,7 +138,7 @@ export async function openInVSCode(
     ];
 
     logger.info('[VSCode] Checking shared binary lookup', { commonCodePaths });
-    codeCommand = await findBinary('code', { commonPaths: commonCodePaths, cache: false });
+    codeCommand = await findBinary('code', { commonPaths: commonCodePaths });
 
     if (codeCommand) {
       logger.info('[VSCode] Found code via shared binary lookup', { codeCommand });

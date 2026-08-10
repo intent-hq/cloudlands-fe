@@ -59,11 +59,9 @@ describe('claude-code IPC availability', () => {
     const result = await handler({});
 
     expect(mocks.findBinary).toHaveBeenCalledWith('claude', {
-      cache: false,
       commonPaths: ['/opt/homebrew/bin/claude'],
     });
     expect(mocks.findBinary).toHaveBeenCalledWith('npx', {
-      cache: false,
       commonPaths: ['/opt/homebrew/bin/npx'],
     });
     expect(result).toEqual({ success: true, available: true });
