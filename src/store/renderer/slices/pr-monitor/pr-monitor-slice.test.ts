@@ -89,6 +89,30 @@ describe("prMonitorReducer", () => {
     });
   });
 
+  it("keeps a colliding monitor ID from recreating demand after the final release", () => {
+    let state = prMonitorReducer(initialState, prMonitorsSubscribeRequested("ws-1"));
+    state = prMonitorReducer(
+      state,
+      prMonitorsUpdated("ws-1", [makeMonitor({ monitorId: "ws-1" })]),
+    );
+    expect(selectPrMonitorSubscriptionDemand.select({ prMonitor: state } as StoreState)).toEqual({
+      "ws-1": 1,
+    });
+
+    state = prMonitorReducer(state, prMonitorsUnsubscribeRequested("ws-1"));
+    state = prMonitorReducer(
+      state,
+      prMonitorsUpdated("ws-1", [makeMonitor({ monitorId: "ws-1", state: "completed" })]),
+    );
+
+    expect(getItems(state.byWorkspaceId["ws-1"].monitors)).toEqual([
+      makeMonitor({ monitorId: "ws-1", state: "completed" }),
+    ]);
+    expect(selectPrMonitorSubscriptionDemand.select({ prMonitor: state } as StoreState)).toEqual(
+      {},
+    );
+  });
+
   it("prMonitorsUpdated stores the list as a Collection keyed by monitorId", () => {
     const monitors = [makeMonitor(), makeMonitor({ monitorId: "mon-2", state: "completed" })];
     const state = prMonitorReducer(initialState, prMonitorsUpdated("ws-1", monitors));
