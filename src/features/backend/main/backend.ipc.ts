@@ -719,6 +719,9 @@ export async function reconcileActiveConnectionOnBoot(): Promise<void> {
     logger.info('Restored last-used remote backend at boot', { id: activeId });
     // Post-connect candidate-host refresh (#1746); fire-and-forget/fail-soft.
     void refreshRemoteHosts(activeId);
+    // The initial application menu was built before reconciliation (local
+    // assumed) — rebuild menu items gated on the active backend (#1889).
+    app.emit('backend-connection-changed');
     return;
   }
 
@@ -1016,8 +1019,10 @@ export async function switchBackend(id: string): Promise<SwitchConnectionResult>
   // (5) Restore the incoming backend's windows (now targeting the new daemon).
   await windowHooks.restore(id);
 
-  // (6) Notify the renderer.
+  // (6) Notify the renderer, and the main process (menu items gated on the
+  // active backend, e.g. Help ▸ Sample intentd Process on win32 — #1889).
   await broadcastConnectionsChanged();
+  app.emit('backend-connection-changed');
   return { activeId: id };
 }
 
