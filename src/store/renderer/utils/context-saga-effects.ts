@@ -1,4 +1,5 @@
 import type { ActionMatchingPattern, ActionPattern, Saga } from '@redux-saga/types';
+import type { StoreAction } from '@augmentcode/themis/utils/store/create-action';
 import type { Task } from 'redux-saga';
 import { cancel, fork, take, type SagaGenerator } from 'typed-redux-saga';
 
@@ -64,4 +65,56 @@ export function* takeLeadingInContext<P extends ActionPattern, PrefixArgs extend
   return yield* fork(function* leadingInContextWatcher() {
     yield* watchInContext('leading', pattern, getContext, worker, args);
   });
+}
+
+export function* takeLatestByWorkspace<P extends ActionPattern, PrefixArgs extends unknown[]>(
+  pattern: ActionMatchingPattern<P> extends StoreAction<[string, ...unknown[]]> ? P : never,
+  worker: ContextWorker<PrefixArgs, ActionMatchingPattern<P>>,
+  ...args: PrefixArgs
+): SagaGenerator<Task> {
+  return yield* takeLatestInContext(
+    pattern,
+    (action) => (action as StoreAction<[string, ...unknown[]]>).payload[0],
+    worker,
+    ...args,
+  );
+}
+
+export function* takeLeadingByWorkspace<P extends ActionPattern, PrefixArgs extends unknown[]>(
+  pattern: ActionMatchingPattern<P> extends StoreAction<[string, ...unknown[]]> ? P : never,
+  worker: ContextWorker<PrefixArgs, ActionMatchingPattern<P>>,
+  ...args: PrefixArgs
+): SagaGenerator<Task> {
+  return yield* takeLeadingInContext(
+    pattern,
+    (action) => (action as StoreAction<[string, ...unknown[]]>).payload[0],
+    worker,
+    ...args,
+  );
+}
+
+export function* takeLatestByAgent<P extends ActionPattern, PrefixArgs extends unknown[]>(
+  pattern: ActionMatchingPattern<P> extends StoreAction<{ agentId: string }> ? P : never,
+  worker: ContextWorker<PrefixArgs, ActionMatchingPattern<P>>,
+  ...args: PrefixArgs
+): SagaGenerator<Task> {
+  return yield* takeLatestInContext(
+    pattern,
+    (action) => (action as StoreAction<{ agentId: string }>).payload.agentId,
+    worker,
+    ...args,
+  );
+}
+
+export function* takeLeadingByAgent<P extends ActionPattern, PrefixArgs extends unknown[]>(
+  pattern: ActionMatchingPattern<P> extends StoreAction<{ agentId: string }> ? P : never,
+  worker: ContextWorker<PrefixArgs, ActionMatchingPattern<P>>,
+  ...args: PrefixArgs
+): SagaGenerator<Task> {
+  return yield* takeLeadingInContext(
+    pattern,
+    (action) => (action as StoreAction<{ agentId: string }>).payload.agentId,
+    worker,
+    ...args,
+  );
 }

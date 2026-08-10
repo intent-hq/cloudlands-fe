@@ -209,8 +209,10 @@ describe('lifecycleReadSaga', () => {
 
   it('does not cancel concurrent ensure-tasks loads across workspaces (#1934)', async () => {
     const OTHER = 'ws-lifecycle-other';
-    const resolvers: Record<string, (value: { tasks: unknown[]; stats: { total: number } }) => void> =
-      {};
+    const resolvers: Record<
+      string,
+      (value: { tasks: unknown[]; stats: { total: number } }) => void
+    > = {};
     mocks.tasks.list.mockImplementation(
       (workspaceId: string) =>
         new Promise((done) => {
@@ -234,8 +236,10 @@ describe('lifecycleReadSaga', () => {
 
   it('does not cancel concurrent explicit task loads across workspaces (#1934)', async () => {
     const OTHER = 'ws-lifecycle-other';
-    const resolvers: Record<string, (value: { tasks: unknown[]; stats: { total: number } }) => void> =
-      {};
+    const resolvers: Record<
+      string,
+      (value: { tasks: unknown[]; stats: { total: number } }) => void
+    > = {};
     mocks.tasks.list.mockImplementation(
       (workspaceId: string) =>
         new Promise((done) => {
@@ -357,6 +361,35 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(fetchWorkspaceTokenUsage(WS));
     await settle();
     expect(run.actions).toEqual([{ type: 'tokenUsage/tokenUsageReceived', payload: [WS, usage] }]);
+    await stop(run.task);
+  });
+
+  it('scopes leading workspace reads and reuses completed workspace slots', async () => {
+    const otherWorkspaceId = 'ws-other';
+    const resolvers: Record<string, Array<(value: null) => void>> = {};
+    mocks.workspaces.getTokenUsage.mockImplementation(
+      (workspaceId: string) =>
+        new Promise<null>((resolve) => {
+          (resolvers[workspaceId] ??= []).push(resolve);
+        }),
+    );
+    const run = start();
+
+    run.channel.put(fetchWorkspaceTokenUsage(WS));
+    run.channel.put(fetchWorkspaceTokenUsage(WS));
+    run.channel.put(fetchWorkspaceTokenUsage(otherWorkspaceId));
+    await settle();
+
+    expect(mocks.workspaces.getTokenUsage.mock.calls).toEqual([[WS], [otherWorkspaceId]]);
+    resolvers[WS][0](null);
+    resolvers[otherWorkspaceId][0](null);
+    await settle();
+
+    run.channel.put(fetchWorkspaceTokenUsage(WS));
+    await settle();
+    expect(mocks.workspaces.getTokenUsage.mock.calls).toEqual([[WS], [otherWorkspaceId], [WS]]);
+    resolvers[WS][1](null);
+    await settle();
     await stop(run.task);
   });
 
@@ -610,7 +643,7 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  it('globally cancels an older changes refresh for a newer workspace', async () => {
+  it('keeps changes refreshes for different workspaces concurrent', async () => {
     let resolveStatus!: (value: Awaited<ReturnType<typeof mocks.git.status>>) => void;
     mocks.git.status.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -645,7 +678,7 @@ describe('lifecycleReadSaga', () => {
       type: 'changes/setHasLoadedInitialData',
       payload: [otherWorkspaceId, true],
     });
-    expect(run.actions).not.toContainEqual({
+    expect(run.actions).toContainEqual({
       type: 'changes/setHasLoadedInitialData',
       payload: [WS, true],
     });
@@ -736,6 +769,34 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('scopes leading line-stat reads by agent and reuses completed agent slots', async () => {
+    const resolvers: Record<string, Array<(value: null) => void>> = {};
+    mocks.getAgentLineStats.mockImplementation(
+      (agentId: string) =>
+        new Promise<null>((resolve) => {
+          (resolvers[agentId] ??= []).push(resolve);
+        }),
+    );
+    const run = start();
+
+    run.channel.put(requestAgentLineStats('agent-1'));
+    run.channel.put(requestAgentLineStats('agent-1'));
+    run.channel.put(requestAgentLineStats('agent-2'));
+    await settle();
+
+    expect(mocks.getAgentLineStats.mock.calls).toEqual([['agent-1'], ['agent-2']]);
+    resolvers['agent-1'][0](null);
+    resolvers['agent-2'][0](null);
+    await settle();
+
+    run.channel.put(requestAgentLineStats('agent-1'));
+    await settle();
+    expect(mocks.getAgentLineStats.mock.calls).toEqual([['agent-1'], ['agent-2'], ['agent-1']]);
+    resolvers['agent-1'][1](null);
+    await settle();
+    await stop(run.task);
+  });
+
   it('hydrates agents, preserves transcripts, filters pending deletion, and selects foreground', async () => {
     const existing = agent('agent-keep', {
       messages: [{ id: 'm1', role: 'user', timestamp: NOW.toISOString() }] as never,
@@ -810,7 +871,6 @@ describe('lifecycleReadSaga', () => {
     await settle();
 
     expect(mocks.agents.list).toHaveBeenCalledTimes(2);
-
     resolveFirst([agent('agent-stale', { status: 'error' as never })]);
     await settle();
 
