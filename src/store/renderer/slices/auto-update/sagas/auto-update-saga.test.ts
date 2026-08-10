@@ -360,6 +360,43 @@ describe('autoUpdateSaga', () => {
     }
   });
 
+  it('discards a stale checking snapshot when a live event was handled first', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveInitial!: (value: any) => void;
+      mocks.getState.mockReturnValue(
+        new Promise((resolve) => {
+          resolveInitial = resolve;
+        }),
+      );
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ autoUpdate: { status: 'idle' } }) },
+        autoUpdateSaga,
+      );
+      channel.put(initAutoUpdate());
+      await settleFake();
+
+      mocks.callbacks.status(state('available-event'));
+      await settleFake();
+      dispatch.mockClear();
+
+      resolveInitial({ ...state('stale'), status: 'checking' });
+      await settleFake();
+      expect(dispatch).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS);
+      await settleFake();
+      expect(dispatch).not.toHaveBeenCalledWith(setCheckTimedOut());
+
+      task.cancel();
+      await task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not show a toast when the initial state is terminal', async () => {
     vi.useFakeTimers();
     try {

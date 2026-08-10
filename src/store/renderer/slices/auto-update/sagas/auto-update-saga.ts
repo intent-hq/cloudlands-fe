@@ -31,6 +31,9 @@ export const CHECK_TIMEOUT_MS = 35_000;
 /** Mutable holder for the in-flight check-timeout fork, if any. */
 type CheckWatchdog = { task?: Task };
 
+/** Mutable flag: set once any live channel event has been handled. */
+type SessionFlags = { eventSeen: boolean };
+
 type AutoUpdateEvent =
   | { kind: 'show-toast' }
   | { kind: 'up-to-date'; version: string }
@@ -86,9 +89,12 @@ export function createAutoUpdateChannel(): EventChannel<AutoUpdateEvent> {
   }, buffers.expanding<AutoUpdateEvent>());
 }
 
-function* loadInitialState(watchdog: CheckWatchdog) {
+function* loadInitialState(watchdog: CheckWatchdog, session: SessionFlags) {
   try {
     const state: UpdateState = yield* call([autoUpdateClient, autoUpdateClient.getState]);
+    // A live event handled before this fork resumed supersedes the snapshot;
+    // applying it now could reset a completed check back to 'checking'.
+    if (session.eventSeen) return;
     yield* put(setUpdateState(mapUpdateState(state)));
     if (state.status === 'checking') {
       // A check started before this saga's listeners existed (e.g. manual
@@ -150,11 +156,13 @@ function* handleAutoUpdateEvent(event: AutoUpdateEvent, watchdog: CheckWatchdog)
 function* runAutoUpdateSession() {
   const channel = createAutoUpdateChannel();
   const watchdog: CheckWatchdog = {};
+  const session: SessionFlags = { eventSeen: false };
   try {
-    yield* fork(loadInitialState, watchdog);
+    yield* fork(loadInitialState, watchdog, session);
     while (true) {
       const event: AutoUpdateEvent = yield* take(channel);
       if (event === (END as unknown as AutoUpdateEvent)) break;
+      session.eventSeen = true;
       yield* handleAutoUpdateEvent(event, watchdog);
     }
   } finally {
