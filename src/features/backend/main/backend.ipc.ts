@@ -376,7 +376,12 @@ export function getBackendClient(): JsonRpcClient {
   // avoid growing the preload allow-list surface. See RESUB-1.
   instance.on('reconnected', () => {
     const transport = formatTransportInfo(instance.getConfig());
-    broadcast(BACKEND.STATUS, { status: 'connected', reconnected: true, transport });
+    broadcast(BACKEND.STATUS, {
+      status: 'connected',
+      reconnected: true,
+      transport,
+      reconnectAttempts: instance.getReconnectAttempts(),
+    });
     // Pipe the live client's reconnect through the stable forwarder so
     // main-process services (attached once via onBackendReconnected) replay
     // their subscriptions — regardless of how many client swaps have happened
