@@ -207,8 +207,14 @@
     const prs = workspace.pullRequests ?? [];
     if (prs.length > 0) return prs[0].status;
     // No branch-linked PR: fall back to the first displayed agent-monitored
-    // PR (PROTOCOL §6.9), deriving the pill status from the monitor.
-    if ($displayPrMonitors$.length > 0) return monitorPillStatus($displayPrMonitors$[0]);
+    // PR (PROTOCOL §6.9). Derive the pill status from the monitor only when
+    // the pill number also resolves from it; a workspace-sourced number with
+    // no status keeps the Open default so status/number never mix sources.
+    if ($displayPrMonitors$.length > 0) {
+      return workspace.prNumber == null
+        ? monitorPillStatus($displayPrMonitors$[0])
+        : PullRequestStatus.Open;
+    }
     return null;
   });
   const prNumber = $derived.by(() => {

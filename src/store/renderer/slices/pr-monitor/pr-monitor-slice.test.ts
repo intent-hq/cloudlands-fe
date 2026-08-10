@@ -193,6 +193,24 @@ describe('selectDisplayPrMonitors', () => {
     expect(select([older, newer]).map((m) => m.monitorId)).toEqual(['mon-new', 'mon-old']);
   });
 
+  it('breaks updatedAt ties by PR number desc', () => {
+    const lower = makeMonitor({
+      monitorId: 'mon-lower',
+      prNumber: 7,
+      state: 'completed',
+      updatedAt: '2026-08-08T10:00:00Z',
+      lastSnapshot: makeSnapshot({ state: 'merged' }),
+    });
+    const higher = makeMonitor({
+      monitorId: 'mon-higher',
+      prNumber: 42,
+      state: 'completed',
+      updatedAt: '2026-08-08T10:00:00Z',
+      lastSnapshot: makeSnapshot({ state: 'merged' }),
+    });
+    expect(select([lower, higher]).map((m) => m.monitorId)).toEqual(['mon-higher', 'mon-lower']);
+  });
+
   it('returns an empty list when completions all ended closed', () => {
     const closed = makeMonitor({
       state: 'completed',

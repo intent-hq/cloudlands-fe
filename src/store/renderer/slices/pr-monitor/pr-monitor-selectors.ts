@@ -25,8 +25,9 @@ export const selectActivePrMonitors = store.createSelector(
 
 /** Monitor pool backing the workspace card/row PR pill fallback: active
  * monitors when any exist, otherwise completed monitors whose last snapshot
- * ended merged (case-insensitive), sorted `updatedAt` desc so index 0 is the
- * last merged PR. Completed-but-closed monitors never resurrect a pill. */
+ * ended merged (case-insensitive), sorted `updatedAt` desc (PR number desc as
+ * tiebreak) so index 0 is the last merged PR. Completed-but-closed monitors
+ * never resurrect a pill. */
 export const selectDisplayPrMonitors = store.createSelector(
   (state, workspaceId: string): PrMonitorRow[] => {
     const monitors = selectPrMonitors.select(state, workspaceId);
@@ -36,7 +37,7 @@ export const selectDisplayPrMonitors = store.createSelector(
       .filter(
         (m) => m.state === 'completed' && m.lastSnapshot?.state?.toLowerCase() === 'merged',
       )
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.prNumber - a.prNumber);
   },
 );
 
