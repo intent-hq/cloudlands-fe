@@ -9,6 +9,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
+import { installConsoleTeardownGuard } from './helpers/console-teardown-guard';
+
+// Guard against layout onMount deferred work logging after the last test and
+// racing worker teardown (intent-hq/monorepo#1774).
+installConsoleTeardownGuard();
 
 const interruptedService = vi.hoisted(() => ({
   resolveInterruptedAgents: vi.fn(async () => {}),
