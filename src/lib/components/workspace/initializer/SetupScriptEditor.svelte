@@ -3,11 +3,7 @@
   import {
   faTerminal,
   faWandMagicSparkles,
-  faTrash,
-  faPlus,
-  faPencil,
 } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
   import { Button } from '$lib/components/ui/button';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
@@ -18,32 +14,22 @@
   SETUP_SCRIPT_TEMPLATES,
   SETUP_SCRIPT_VARIABLES,
   getTemplateContent,
+  getLastUsedSetupScript,
   REPO_CONFIG_SCRIPT_ID,
   REPO_CONFIG_SCRIPT_NAME,
   type ProjectType,
 } from '$features/setup-scripts';
-  import { v4 as uuidv4 } from 'uuid';
 
-
-  import {
-  saveScript,
-  renameScript,
-  updateScriptContent,
-  removeScriptFromUI,
-  restoreScriptToUI,
-  deleteScript,
-} from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
-  import {
-  selectScripts,
-  selectScriptById,
-  selectLastUsedScriptForRepo,
-} from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
-  import type { SetupScript } from '$store/renderer/slices/setup-scripts/setup-scripts-types';
-  import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     repoPath?: string;
+    /**
+     * Source URL for GitHub selections — their `repoPath` is only the clone
+     * destination, which two different repos can share, so the last-used
+     * lookup keys on path + URL.
+     */
+    githubUrl?: string | null;
     projectType?: ProjectType;
     /** Setup script committed in the repo's `.intent/config.json`, if any */
     repoConfigScript?: string | null;
@@ -51,34 +37,28 @@
     expanded?: boolean;
     scriptName?: string;
     isCustomScript?: boolean;
-    hasUnsavedChanges?: boolean;
     compact?: boolean;
     triggerClass?: string;
     contentOnly?: boolean;
     contentClass?: string;
     onchange?: (value: string) => void;
-    onSave?: () => void;
   }
 
   let {
     repoPath = '',
+    githubUrl = null,
     projectType = undefined,
     repoConfigScript = null,
     value = $bindable(''),
     expanded = $bindable(false),
     scriptName = $bindable(m.workspace_setupScriptEditor_custom_name()),
     isCustomScript = $bindable(false),
-    hasUnsavedChanges = $bindable(false),
     compact = false,
     triggerClass = '',
     contentOnly = false,
     contentClass = '',
     onchange,
-    onSave,
   }: Props = $props();
-
-  // Redux appStore.dispatch(must be at component init)
-  const allScripts$ = selectScripts();
 
   // Agent panel state
   let showAgentPanel = $state(false);
@@ -87,83 +67,18 @@
   let selectedScriptId = $state('');
   let hasUserEdited = $state(false);
   let customName = $state(scriptName);
-  let editingNameId = $state<string | null>(null);
-  let editingNameValue = $state('');
 
 
   // Track programmatic value changes to avoid false "user edited" detection
   let isProgrammaticChange = $state(false);
 
-  /** Create a new SetupScript object with generated ID and timestamps */
-  function createScriptObject(params: {
-    name?: string;
-    content: string;
-    repoPath?: string;
-    projectType?: string;
-  }): SetupScript {
-    const now = new Date().toISOString();
-    return {
-      id: uuidv4(),
-      name: params.name || m.workspace_setupScriptEditor_customScript_name(),
-      content: params.content,
-      repoPath: params.repoPath,
-      projectType: params.projectType,
-      lastUsedAt: now,
-      usageCount: 1,
-      createdAt: now,
-    };
-  }
+  // Script-list entry id for the localStorage last-used script (not a template)
+  const LAST_USED_SCRIPT_ID = 'last-used';
 
-  /** Save or update a script, handling duplicate detection */
-  function saveOrUpdateScript(params: {
-    name?: string;
-    content: string;
-    repoPath?: string;
-    projectType?: string;
-  }): SetupScript {
-    // Check for existing script with same content for this repo
-    const scripts = $allScripts$;
-    const existing = scripts.find(
-      (s) => s.content === params.content && s.repoPath === params.repoPath,
-    );
-
-    if (existing) {
-      const now = new Date().toISOString();
-      const updated: SetupScript = {
-        ...existing,
-        lastUsedAt: now,
-        usageCount: existing.usageCount + 1,
-        ...(params.name ? { name: params.name } : {}),
-        ...(params.projectType ? { projectType: params.projectType } : {}),
-      };
-      appStore.dispatch(saveScript(updated));
-      return updated;
-    }
-
-    const newScript = createScriptObject(params);
-    appStore.dispatch(saveScript(newScript));
-    return newScript;
-  }
-
-  // Get recent scripts sorted by relevance to current repo
-  const recentScripts = $derived.by(() => {
-    const scripts = [...$allScripts$];
-    scripts.sort((a, b) => {
-      const aRepoMatch = repoPath && a.repoPath === repoPath;
-      const bRepoMatch = repoPath && b.repoPath === repoPath;
-      if (aRepoMatch && !bRepoMatch) return -1;
-      if (!aRepoMatch && bRepoMatch) return 1;
-
-      const aTypeMatch = projectType && a.projectType === projectType;
-      const bTypeMatch = projectType && b.projectType === projectType;
-      if (aTypeMatch && !bTypeMatch) return -1;
-      if (!aTypeMatch && bTypeMatch) return 1;
-
-      if (b.usageCount !== a.usageCount) return b.usageCount - a.usageCount;
-      return new Date(b.lastUsedAt).getTime() - new Date(a.lastUsedAt).getTime();
-    });
-    return scripts;
-  });
+  // Last-used setup script for this repo (localStorage; read on repo change)
+  const lastUsedScript = $derived(
+    repoPath ? getLastUsedSetupScript(repoPath, githubUrl) : undefined,
+  );
 
   // Build a map of script id -> content and label for quick lookup
   const scriptMap = $derived.by(() => {
@@ -173,9 +88,12 @@
       map.set(REPO_CONFIG_SCRIPT_ID, { content: repoConfigScript, label: REPO_CONFIG_SCRIPT_NAME });
     }
 
-    recentScripts.forEach((s) => {
-      map.set(s.id, { content: s.content, label: s.name });
-    });
+    if (lastUsedScript) {
+      map.set(LAST_USED_SCRIPT_ID, {
+        content: lastUsedScript.content,
+        label: lastUsedScript.name,
+      });
+    }
 
     SETUP_SCRIPT_TEMPLATES.forEach((t) => {
       map.set(`template-${t.id}`, { content: getTemplateContent(t), label: t.name });
@@ -183,12 +101,6 @@
 
     return map;
   });
-
-  // Saved scripts for the right column
-  const repoScripts = $derived(recentScripts.filter((s) => s.repoPath === repoPath).slice(0, 5));
-  const otherSavedScripts = $derived(
-    recentScripts.filter((s) => s.repoPath !== repoPath).slice(0, 3),
-  );
 
   // Variables accordion state
   let wordWrap = $state(true);
@@ -222,30 +134,7 @@
     if (selectedScriptId && selectedScriptId !== 'none') {
       const script = scriptMap.get(selectedScriptId);
       if (script) {
-        const contentChanged = newValue !== script.content;
-        if (
-          contentChanged &&
-          (selectedScriptId.startsWith('template-') || selectedScriptId === REPO_CONFIG_SCRIPT_ID)
-        ) {
-          // User edited a template or the repo-config entry — fork into a new
-          // saved script (the repo config stays untouched; the fork gets a
-          // distinct name so it isn't confused with the committed script)
-          const forkName =
-            selectedScriptId === REPO_CONFIG_SCRIPT_ID
-              ? m.workspace_setupScriptEditor_repoConfigEdited_name({ name: REPO_CONFIG_SCRIPT_NAME })
-              : script.label;
-          const savedScript = saveOrUpdateScript({
-            name: forkName,
-            content: newValue,
-            repoPath,
-            projectType: projectType || 'generic',
-          });
-          selectedScriptId = savedScript.id;
-          customName = savedScript.name;
-          hasUserEdited = false;
-          return;
-        }
-        hasUserEdited = contentChanged;
+        hasUserEdited = newValue !== script.content;
       }
     } else if (newValue) {
       // No template selected but has content - treat as custom
@@ -256,40 +145,6 @@
     }
   }
 
-  // Handle deleting a saved script with undo
-  function handleDeleteSavedScript(scriptId: string, name: string) {
-    const scriptData = selectScriptById.select(appStore.state, scriptId);
-    if (!scriptData) return;
-
-    appStore.dispatch(removeScriptFromUI(scriptId));
-
-    if (selectedScriptId === scriptId) {
-      selectedScriptId = '';
-      value = '';
-      customName = m.workspace_setupScriptEditor_custom_name();
-      onchange?.('');
-    }
-
-    let undoClicked = false;
-    const toastId = toast.warning(m.workspace_setupScriptEditor_deleted_toast({ name }), {
-      duration: 15000,
-      action: {
-        label: m.workspace_setupScriptEditor_undo_label(),
-        onClick: () => {
-          undoClicked = true;
-          appStore.dispatch(restoreScriptToUI(scriptId));
-          toast.dismiss(toastId);
-        },
-      },
-    });
-
-    setTimeout(() => {
-      if (!undoClicked) {
-        appStore.dispatch(deleteScript(scriptId));
-      }
-    }, 15000);
-  }
-
   // Clear editor content
   function handleClear() {
     value = '';
@@ -297,69 +152,6 @@
     hasUserEdited = false;
     selectedScriptId = '';
     onchange?.('');
-  }
-
-  // Handle saving the current script — also exposed for parent components
-  export function save() {
-    handleSave();
-  }
-
-  function handleSave() {
-    if (!hasUserEdited || !value.trim()) return;
-
-    // If a non-template saved script is selected, update it in place
-    // (the repo-config entry is not a saved script — edits fork into a new one)
-    const isExistingSaved =
-      selectedScriptId &&
-      !selectedScriptId.startsWith('template-') &&
-      selectedScriptId !== REPO_CONFIG_SCRIPT_ID;
-    if (isExistingSaved) {
-      const now = new Date().toISOString();
-      const fallbackName = m.workspace_setupScriptEditor_customScript_name();
-      appStore.dispatch(updateScriptContent(selectedScriptId, value, now));
-      appStore.dispatch(renameScript(selectedScriptId, customName || fallbackName));
-      customName = (customName || fallbackName).trim() || fallbackName;
-      hasUserEdited = false;
-      toast.success(m.workspace_setupScriptEditor_saved_toast({ name: customName }));
-      onSave?.();
-      return;
-    }
-
-    const savedScript = saveOrUpdateScript({
-      name: customName || m.workspace_setupScriptEditor_customScript_name(),
-      content: value,
-      repoPath,
-      projectType: projectType || 'generic',
-    });
-
-    // Update selection to the saved script
-    selectedScriptId = savedScript.id;
-    customName = savedScript.name;
-    hasUserEdited = false;
-
-    toast.success(m.workspace_setupScriptEditor_saved_toast({ name: savedScript.name }));
-    onSave?.();
-  }
-
-  function startEditingName(scriptId: string, currentName: string) {
-    editingNameId = scriptId;
-    editingNameValue = currentName;
-  }
-
-  function commitNameEdit() {
-    if (editingNameId && editingNameValue.trim()) {
-      appStore.dispatch(renameScript(editingNameId, editingNameValue.trim()));
-      if (selectedScriptId === editingNameId) {
-        customName = editingNameValue.trim();
-      }
-    }
-    editingNameId = null;
-    editingNameValue = '';
-  }
-
-  function cancelNameEdit() {
-    editingNameId = null;
-    editingNameValue = '';
   }
 
   // Find "Copy config files only" template ID (it's the 'generic' template)
@@ -416,7 +208,7 @@
 
     // Priority: repo-committed config script, then last used script for this repo
     const hasRepoConfig = !!repoConfigScript;
-    const lastUsed = currentRepo ? selectLastUsedScriptForRepo.select(appStore.state, currentRepo) : undefined;
+    const lastUsed = currentRepo ? getLastUsedSetupScript(currentRepo, githubUrl) : undefined;
 
     // Use untrack only for internal state mutations to avoid infinite loops
     // But keep value assignment tracked so UI updates
@@ -429,8 +221,8 @@
         selectedScriptId = REPO_CONFIG_SCRIPT_ID;
         customName = REPO_CONFIG_SCRIPT_NAME;
       } else if (lastUsed) {
-        // Use last used script for this repo
-        selectedScriptId = lastUsed.id;
+        // Use last used script for this repo (localStorage)
+        selectedScriptId = LAST_USED_SCRIPT_ID;
         customName = lastUsed.name; // Set to last used script's name
       } else if (COPY_CONFIG_TEMPLATE_ID) {
         // Fallback to "Copy config files only" template
@@ -476,7 +268,6 @@
   $effect(() => {
     scriptName = customName;
     isCustomScript = hasUserEdited;
-    hasUnsavedChanges = hasUserEdited && !!value.trim();
   });
 </script>
 
@@ -485,37 +276,6 @@
   <div class="flex flex-1 min-h-0">
     <!-- Left column: script sources -->
     <div class="flex flex-col flex-[2] min-w-0 overflow-y-auto pl-10 pt-6 pb-6 pr-5">
-      <!-- Create new -->
-      <div class="mb-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          class="w-full justify-start text-subtle"
-          onclick={() => {
-            const newScript = createScriptObject({
-              name: m.workspace_setupScriptEditor_untitledScript_name(),
-              content: '',
-              repoPath,
-              projectType: projectType || 'generic',
-            });
-            appStore.dispatch(saveScript(newScript));
-            selectedScriptId = newScript.id;
-            value = '';
-            customName = newScript.name;
-            hasUserEdited = false;
-            isProgrammaticChange = true;
-            onchange?.('');
-            requestAnimationFrame(() => {
-              codeEditorRef?.focus();
-              startEditingName(newScript.id, newScript.name);
-            });
-          }}
-        >
-          <Fa icon={faPlus} class="mr-1.5" />
-          {m.workspace_setupScriptEditor_newScript_label()}
-        </Button>
-      </div>
-
       <!-- Auto-generate -->
       <div class="mb-4">
         <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">{m.workspace_setupScriptEditor_generate_label()}</h4>
@@ -525,17 +285,11 @@
             <SetupScriptAgent
               {repoPath}
               onScriptGenerated={(script) => {
-                const savedScript = saveOrUpdateScript({
-                  name: script.name,
-                  content: script.content,
-                  repoPath,
-                  projectType: projectType || 'generic',
-                });
                 isProgrammaticChange = true;
-                selectedScriptId = savedScript.id;
-                value = savedScript.content;
-                customName = savedScript.name;
-                hasUserEdited = false;
+                selectedScriptId = '';
+                value = script.content;
+                customName = script.name;
+                hasUserEdited = true;
                 onchange?.(value);
                 showAgentPanel = false;
                 requestAnimationFrame(() => codeEditorRef?.focus());
@@ -571,121 +325,17 @@
         </div>
       {/if}
 
-      <!-- Saved scripts for this repo -->
-      {#if repoScripts.length > 0}
+      <!-- Last-used script for this repo (localStorage) -->
+      {#if lastUsedScript}
         <div class="mb-4">
-          <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">{m.workspace_setupScriptEditor_saved_label()}</h4>
-          {#each repoScripts as script (script.id)}
-            <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-            <div
-              class="group w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors flex items-center justify-between {selectedScriptId === script.id ? 'bg-background text-foreground ring-1 ring-border' : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
-              onclick={() => handleScriptSelect(script.id)}
-            >
-              <div class="min-w-0 flex-1">
-                {#if editingNameId === script.id}
-                  <!-- svelte-ignore a11y_autofocus -->
-                  <input
-                    type="text"
-                    class="text-sm leading-5 h-5 w-full bg-transparent border-none outline-none px-0 py-0"
-                    bind:value={editingNameValue}
-                    autofocus
-                    onclick={(e) => e.stopPropagation()}
-                    onkeydown={(e) => { if (e.key === 'Enter') commitNameEdit(); if (e.key === 'Escape') cancelNameEdit(); }}
-                    onblur={commitNameEdit}
-                  />
-                {:else}
-                  <span
-                    class="text-sm leading-5 h-5 truncate block"
-                    ondblclick={(e) => { e.stopPropagation(); startEditingName(script.id, script.name); }}
-                  >{script.name}</span>
-                {/if}
-                {#if script.repoPath}
-                  <span class="text-ui text-subtle truncate block">{script.repoPath.split('/').pop()}</span>
-                {/if}
-              </div>
-              <div class="flex items-center shrink-0">
-                <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-                <span
-                  role="button"
-                  tabindex="0"
-                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground rounded transition-all cursor-pointer"
-                  onclick={(e) => { e.stopPropagation(); startEditingName(script.id, script.name); }}
-                  title={m.workspace_setupScriptEditor_rename_tooltip()}
-                >
-                  <Fa icon={faPencil} size="xs" />
-                </span>
-                <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-                <span
-                  role="button"
-                  tabindex="0"
-                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive-foreground rounded transition-all cursor-pointer"
-                  onclick={(e) => { e.stopPropagation(); handleDeleteSavedScript(script.id, script.name); }}
-                  title={m.workspace_setupScriptEditor_delete_tooltip()}
-                >
-                  <Fa icon={faTrash} size="xs" />
-                </span>
-              </div>
-            </div>
-          {/each}
-        </div>
-      {/if}
-
-      <!-- Other saved scripts -->
-      {#if otherSavedScripts.length > 0}
-        <div class="mb-4">
-          <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">{m.workspace_setupScriptEditor_otherSaved_label()}</h4>
-          {#each otherSavedScripts as script (script.id)}
-            <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-            <div
-              class="group w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors flex items-center justify-between {selectedScriptId === script.id ? 'bg-background text-foreground ring-1 ring-border' : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
-              onclick={() => handleScriptSelect(script.id)}
-            >
-              <div class="min-w-0 flex-1">
-                {#if editingNameId === script.id}
-                  <!-- svelte-ignore a11y_autofocus -->
-                  <input
-                    type="text"
-                    class="text-sm leading-5 h-5 w-full bg-transparent border-none outline-none px-0 py-0"
-                    bind:value={editingNameValue}
-                    autofocus
-                    onclick={(e) => e.stopPropagation()}
-                    onkeydown={(e) => { if (e.key === 'Enter') commitNameEdit(); if (e.key === 'Escape') cancelNameEdit(); }}
-                    onblur={commitNameEdit}
-                  />
-                {:else}
-                  <span
-                    class="text-sm leading-5 h-5 truncate block"
-                    ondblclick={(e) => { e.stopPropagation(); startEditingName(script.id, script.name); }}
-                  >{script.name}</span>
-                {/if}
-                {#if script.repoPath}
-                  <span class="text-ui text-subtle truncate block">{script.repoPath.split('/').pop()}</span>
-                {/if}
-              </div>
-              <div class="flex items-center shrink-0">
-                <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-                <span
-                  role="button"
-                  tabindex="0"
-                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground rounded transition-all cursor-pointer"
-                  onclick={(e) => { e.stopPropagation(); startEditingName(script.id, script.name); }}
-                  title={m.workspace_setupScriptEditor_rename_tooltip()}
-                >
-                  <Fa icon={faPencil} size="xs" />
-                </span>
-                <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-                <span
-                  role="button"
-                  tabindex="0"
-                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive-foreground rounded transition-all cursor-pointer"
-                  onclick={(e) => { e.stopPropagation(); handleDeleteSavedScript(script.id, script.name); }}
-                  title={m.workspace_setupScriptEditor_delete_tooltip()}
-                >
-                  <Fa icon={faTrash} size="xs" />
-                </span>
-              </div>
-            </div>
-          {/each}
+          <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">{m.workspace_setupScriptEditor_lastUsed_label()}</h4>
+          <button
+            class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId === LAST_USED_SCRIPT_ID ? 'bg-background text-foreground ring-1 ring-border' : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
+            onclick={() => handleScriptSelect(LAST_USED_SCRIPT_ID)}
+          >
+            <span class="text-sm">{lastUsedScript.name}</span>
+            <p class="text-xs text-subtle mt-0.5 line-clamp-1">{m.workspace_setupScriptEditor_lastUsed_description()}</p>
+          </button>
         </div>
       {/if}
 

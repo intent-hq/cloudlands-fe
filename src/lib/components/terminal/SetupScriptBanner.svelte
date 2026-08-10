@@ -26,13 +26,10 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
-  import { v4 as uuidv4 } from 'uuid';
 
-  import {
-  dismissSetupScriptBannerGlobally,
-  saveScript,
-} from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
+  import { dismissSetupScriptBannerGlobally } from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
   import { selectIsSetupScriptBannerDismissed } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
+  import { recordLastUsedSetupScript } from '$features/setup-scripts';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { toast } from 'svelte-sonner';
@@ -187,17 +184,17 @@
       toast.error(m.terminal_setupBanner_emptyScript_error());
       return;
     }
+    // recordLastUsedSetupScript is a no-op without a repo path — don't claim
+    // success (and drop the script) when the workspace has no repositoryPath.
+    if (!repoPath) {
+      toast.error(m.terminal_setupBanner_noRepo_error());
+      return;
+    }
 
-    const now = new Date().toISOString();
-    appStore.dispatch(saveScript({
-      id: uuidv4(),
+    recordLastUsedSetupScript(repoPath, {
       name: scriptName || m.terminal_setupBanner_defaultName_label(),
       content: scriptContent,
-      repoPath: repoPath || undefined,
-      lastUsedAt: now,
-      usageCount: 1,
-      createdAt: now,
-    }));
+    });
 
     toast.success(m.terminal_setupBanner_saved_success({ name: scriptName }));
     logger.info('Setup script saved from terminal banner', { repoPath, scriptName });

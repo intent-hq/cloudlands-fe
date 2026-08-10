@@ -58,10 +58,6 @@ export interface CompactWorkspaceInitializerFormState extends WorkspaceInitializ
   scopeRepoPath?: string;
   remoteSetup?: WorkspaceInitializerRemoteSetup | null;
   selectedProvider?: string;
-  setupScript?: string;
-  showSetupScript?: boolean;
-  setupScriptName?: string;
-  isCustomSetupScript?: boolean;
   skipIsolation?: boolean;
   stayOnHomePage?: boolean;
 }
@@ -78,9 +74,6 @@ export interface WorkspaceInitializerOnboardingFormState {
     isValid?: boolean;
   } | null;
   skipIsolation?: boolean;
-  setupScript?: string;
-  setupScriptName?: string;
-  isCustomSetupScript?: boolean;
   /** User-picked model for the initial Coordinator agent (step 3 picker). */
   selectedModel?: string;
   /** Whether the user explicitly overrode the model (vs the auto-resolved default). */

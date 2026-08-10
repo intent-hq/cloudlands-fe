@@ -95,12 +95,4 @@ describe("LiveSetupScriptsClient (fake transport)", () => {
     expect(await client.detectProjectType("ws-abc")).toBeNull();
   });
 
-  it("list/subscribe resolve empty — the saved-script library is local UI state", async () => {
-    const client = new LiveSetupScriptsClient();
-    expect(await client.list()).toEqual([]);
-    const handler = vi.fn();
-    client.subscribe(handler);
-    expect(handler).toHaveBeenCalledWith([]);
-    expect(mockedRequest).not.toHaveBeenCalled();
-  });
 });

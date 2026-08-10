@@ -98,11 +98,25 @@ describe('workspaceInitializerSaga', () => {
   afterEach(() => vi.useRealTimers());
 
   it('hydrates the exact tolerant daemon bag from workspaceInitializer.state', async () => {
+    // Legacy persisted setup-script fields must be stripped on hydration:
+    // the setup script is session-local now (last-used lives in localStorage).
     mocks.get.mockResolvedValue({
       definition: { path: 'workspaceInitializer.state', type: 'object' },
       value: {
-        compactFormState: { repoPath: '/compact' },
-        onboardingFormState: { projectSelection: null, step: 'project' },
+        compactFormState: {
+          repoPath: '/compact',
+          setupScript: 'echo legacy',
+          setupScriptName: 'Legacy',
+          isCustomSetupScript: true,
+          showSetupScript: true,
+        },
+        onboardingFormState: {
+          projectSelection: null,
+          step: 'project',
+          setupScript: 'echo legacy',
+          setupScriptName: 'Legacy',
+          isCustomSetupScript: true,
+        },
         lastSelectedRepo: { path: '/repo', type: 'local' },
         branchByRepo: { '/repo': 'main', bad: 7 },
         defaultParentPath: '/parent',

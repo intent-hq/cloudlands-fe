@@ -90,6 +90,24 @@ function nonEmptyRecord<T>(value: unknown): T | null {
   return isRecord(value) && Object.keys(value).length > 0 ? (value as T) : null;
 }
 
+/**
+ * Strip legacy setup-script fields from a persisted form-state record. The
+ * setup script is session-local now (last-used per repo lives in
+ * localStorage, `$features/setup-scripts/last-used`), so previously persisted
+ * script fields must not rehydrate into Redux.
+ */
+function stripLegacyScriptFields<T>(record: T | null): T | null {
+  if (!isRecord(record)) return record;
+  const {
+    setupScript: _setupScript,
+    setupScriptName: _setupScriptName,
+    isCustomSetupScript: _isCustomSetupScript,
+    showSetupScript: _showSetupScript,
+    ...rest
+  } = record;
+  return rest as T;
+}
+
 let warnedNonCloneableBag = false;
 
 function cloneableBag(
@@ -151,11 +169,15 @@ export function* persistWorkspaceInitializerWorker() {
 }
 
 function* readLegacyBag() {
-  const compactFormState = nonEmptyRecord<CompactWorkspaceInitializerFormState>(
-    yield* getLocalStorageJSON<unknown>(COMPACT_FORM_STATE_KEY),
+  const compactFormState = stripLegacyScriptFields(
+    nonEmptyRecord<CompactWorkspaceInitializerFormState>(
+      yield* getLocalStorageJSON<unknown>(COMPACT_FORM_STATE_KEY),
+    ),
   );
-  const onboardingFormState = nonEmptyRecord<WorkspaceInitializerOnboardingFormState>(
-    yield* getLocalStorageJSON<unknown>(ONBOARDING_FORM_STATE_KEY),
+  const onboardingFormState = stripLegacyScriptFields(
+    nonEmptyRecord<WorkspaceInitializerOnboardingFormState>(
+      yield* getLocalStorageJSON<unknown>(ONBOARDING_FORM_STATE_KEY),
+    ),
   );
   const lastSelectedRepo = nonEmptyRecord<WorkspaceInitializerRepoSelection>(
     yield* getLocalStorageJSON<unknown>(LAST_SELECTED_REPO_KEY),
@@ -204,10 +226,12 @@ export function* hydrateWorkspaceInitializerWorker() {
 
     const hydrationState: WorkspaceInitializerHydrationState = {
       compactFormState: isRecord(daemonBag.compactFormState)
-        ? (daemonBag.compactFormState as CompactWorkspaceInitializerFormState)
+        ? stripLegacyScriptFields(daemonBag.compactFormState as CompactWorkspaceInitializerFormState)
         : null,
       onboardingFormState: isRecord(daemonBag.onboardingFormState)
-        ? (daemonBag.onboardingFormState as unknown as WorkspaceInitializerOnboardingFormState)
+        ? stripLegacyScriptFields(
+            daemonBag.onboardingFormState as unknown as WorkspaceInitializerOnboardingFormState,
+          )
         : null,
       lastSelectedRepo: isRecord(daemonBag.lastSelectedRepo)
         ? (daemonBag.lastSelectedRepo as unknown as WorkspaceInitializerRepoSelection)

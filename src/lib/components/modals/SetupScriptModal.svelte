@@ -12,6 +12,8 @@
   interface Props {
     open?: boolean;
     repoPath?: string;
+    /** Source URL for GitHub selections (last-used keys on path + URL). */
+    githubUrl?: string | null;
     projectType?: ProjectType;
     /** Setup script committed in the repo's `.intent/config.json`, if any */
     repoConfigScript?: string | null;
@@ -19,26 +21,24 @@
     scriptName?: string;
     isCustomScript?: boolean;
     onClose?: () => void;
-    onchange?: (value: string) => void;
   }
 
   let {
     open = $bindable(false),
     repoPath = '',
+    githubUrl = null,
     projectType = undefined,
     repoConfigScript = null,
     value = $bindable(''),
     scriptName = $bindable('Custom'),
     isCustomScript = $bindable(false),
     onClose,
-    onchange,
   }: Props = $props();
 
   // Local state — edits happen here, only committed on Done
   let localValue = $state('');
   let localScriptName = $state('Custom');
   let localIsCustomScript = $state(false);
-  let localHasUnsavedChanges = $state(false);
   let editorExpanded = $state(true);
 
   // Snapshot parent values when modal opens
@@ -55,16 +55,8 @@
     value = localValue;
     scriptName = localScriptName;
     isCustomScript = localIsCustomScript;
-    onchange?.(localValue);
     open = false;
     onClose?.();
-  }
-
-  let editorRef: SetupScriptEditor | undefined;
-
-  function handleSaveAndDone() {
-    editorRef?.save();
-    handleDone();
   }
 
   function handleCancel() {
@@ -75,25 +67,18 @@
 
 <Modal bind:open title={m.modals_setupScript_title()} contentClass="p-0" onClose={handleCancel}>
   <SetupScriptEditor
-    bind:this={editorRef}
     {repoPath}
+    {githubUrl}
     {projectType}
     {repoConfigScript}
     bind:value={localValue}
     bind:expanded={editorExpanded}
     bind:scriptName={localScriptName}
     bind:isCustomScript={localIsCustomScript}
-    bind:hasUnsavedChanges={localHasUnsavedChanges}
     contentOnly={true}
   />
   <div class="flex items-center justify-end gap-3 px-6 py-3 border-t border-border shrink-0">
     <Button variant="ghost" onclick={handleCancel}>{m.modals_setupScript_cancel_label()}</Button>
-    {#if localHasUnsavedChanges}
-      <Button class="text-white" onclick={handleSaveAndDone}>
-        {m.modals_setupScript_saveAndDone_label()}
-      </Button>
-    {:else}
-      <Button class="text-white" onclick={handleDone}>{m.modals_setupScript_done_label()}</Button>
-    {/if}
+    <Button class="text-white" onclick={handleDone}>{m.modals_setupScript_done_label()}</Button>
   </div>
 </Modal>

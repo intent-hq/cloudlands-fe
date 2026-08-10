@@ -46,7 +46,6 @@ import type {
   WorkspaceScript,
 } from "$store/renderer/slices/scripts/scripts-types";
 import type { ScriptCategory, ScriptMode } from "$features/scripts/types";
-import type { SetupScript } from "$store/renderer/slices/setup-scripts/setup-scripts-types";
 import type { SkillInfo } from "$store/renderer/slices/skills/skills-types";
 import type { AuggieModel } from "$features/auggie/auggie-models.client";
 import type { ProviderCatalogResult } from "$shared/provider-catalog";
@@ -1431,8 +1430,6 @@ export interface WorkspaceSetupScript {
 }
 
 export interface SetupScriptsClient {
-  list(): Promise<SetupScript[]>;
-  subscribe(handler: SubscriptionHandler<SetupScript[]>): Unsubscribe;
   /** `workspace.getSetupScript` (§5.25). */
   get(workspaceId: string): Promise<WorkspaceSetupScript | null>;
   /** `workspace.saveSetupScript` (§5.25) — persists the body; returns the stored record. */

@@ -8,10 +8,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/svelte';
 
 // Mock the backend transport
-const { backendRequestMock, mockWorkspace, mockDismissed } = vi.hoisted(() => ({
-  backendRequestMock: vi.fn(),
-  mockWorkspace: { value: { id: 'ws-test', repositoryPath: '/test/repo' } as any },
-  mockDismissed: { value: false },
+const { backendRequestMock, mockWorkspace, mockDismissed, recordLastUsedMock } = vi.hoisted(
+  () => ({
+    backendRequestMock: vi.fn(),
+    mockWorkspace: { value: { id: 'ws-test', repositoryPath: '/test/repo' } as any },
+    mockDismissed: { value: false },
+    recordLastUsedMock: vi.fn(),
+  }),
+);
+
+vi.mock('$features/setup-scripts', () => ({
+  recordLastUsedSetupScript: recordLastUsedMock,
 }));
 
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -62,10 +69,18 @@ vi.mock('$lib/utils/client-logger', () => ({
 }));
 
 // Mock terminal history tracker
+const { mockHistories } = vi.hoisted(() => ({
+  mockHistories: { value: [] as Array<{ commands: Array<{ command: string; timestamp: number }> }> },
+}));
 vi.mock('$features/terminal/terminal-history-tracker', () => ({
   terminalHistoryTracker: {
-    updateCounter: { subscribe: vi.fn(() => () => {}) },
-    getHistoriesForWorkspace: vi.fn(() => []),
+    updateCounter: {
+      subscribe: vi.fn((fn: (value: number) => void) => {
+        fn(0);
+        return () => {};
+      }),
+    },
+    getHistoriesForWorkspace: vi.fn(() => mockHistories.value),
     getHistory: vi.fn(() => null),
   },
 }));
@@ -121,10 +136,13 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
 
 import SetupScriptBanner from '../SetupScriptBanner.svelte';
 import type { WorkspaceSetupScript } from '$lib/client/app-client';
+import { toast } from 'svelte-sonner';
 
 describe('SetupScriptBanner wire contract', () => {
   beforeEach(() => {
     backendRequestMock.mockReset();
+    mockWorkspace.value = { id: 'ws-test', repositoryPath: '/test/repo' } as any;
+    mockHistories.value = [];
   });
 
   afterEach(() => {
@@ -224,5 +242,49 @@ describe('SetupScriptBanner wire contract', () => {
     await waitFor(() => {
       expect(container.querySelector('.setup-script-banner')).toBeTruthy();
     });
+  });
+
+  /** Expand the editor panel and click Save (the panel auto-fills from history). */
+  async function expandAndSave(result: ReturnType<typeof render>) {
+    await waitFor(() => {
+      expect(result.container.querySelector('.setup-script-banner')).toBeTruthy();
+    });
+    (result.getByText('Create setup script').closest('button') as HTMLButtonElement).click();
+    await waitFor(() => {
+      expect(result.getByText('Save')).toBeTruthy();
+    });
+    (result.getByText('Save').closest('button') as HTMLButtonElement).click();
+  }
+
+  it('records the script as the repo last-used default on Save', async () => {
+    backendRequestMock.mockResolvedValue({ setupScript: null });
+    mockHistories.value = [{ commands: [{ command: 'pnpm install', timestamp: 1 }] }];
+
+    const result = render(SetupScriptBanner, { props: { workspaceId: 'ws-test' } });
+    await expandAndSave(result);
+
+    await waitFor(() => {
+      expect(recordLastUsedMock).toHaveBeenCalledWith(
+        '/test/repo',
+        expect.objectContaining({ content: expect.stringContaining('pnpm install') }),
+      );
+    });
+    expect(toast.success).toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('shows an error and does not claim success when the workspace has no repo path', async () => {
+    backendRequestMock.mockResolvedValue({ setupScript: null });
+    mockWorkspace.value = { id: 'ws-test' } as any;
+    mockHistories.value = [{ commands: [{ command: 'pnpm install', timestamp: 1 }] }];
+
+    const result = render(SetupScriptBanner, { props: { workspaceId: 'ws-test' } });
+    await expandAndSave(result);
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalled();
+    });
+    expect(recordLastUsedMock).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });

@@ -21,7 +21,6 @@
     onModelChange,
     onProjectChange,
     onSubmit,
-    onSetupScriptCommit,
   }: {
     onboardingInputValue?: string;
     onboardingSkipWorktree?: boolean;
@@ -38,7 +37,6 @@
     onModelChange?: (model: string) => void;
     onProjectChange?: (selection: unknown) => void;
     onSubmit?: () => void;
-    onSetupScriptCommit?: () => void;
     [key: string]: unknown;
   } = $props();
 
@@ -58,11 +56,10 @@
         setupScript = value;
       },
       // Simulate the SetupScriptModal's Done: commit an edited script the way
-      // the real modal does (isCustomScript binding + onchange).
+      // the real modal does (isCustomScript binding).
       commitSetupScript: (value: string, isCustom = true) => {
         setupScript = value;
         isCustomSetupScript = isCustom;
-        onSetupScriptCommit?.();
       },
     };
   });
