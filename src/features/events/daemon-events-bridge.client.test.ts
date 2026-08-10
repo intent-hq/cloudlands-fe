@@ -3016,6 +3016,33 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
       text: 'Legacy ok',
     });
   });
+
+  function readWorkspaceEventIds(): string[] {
+    const state = appStore.state as {
+      workspaceEvents: { byWorkspaceId: Record<string, { events: Array<{ id: string }> }> };
+    };
+    return state.workspaceEvents.byWorkspaceId[WS]?.events.map((event) => event.id) ?? [];
+  }
+
+  it('routes a file event tagged with the scoped subscription id when the gate holds a set of ids (monorepo#1853)', async () => {
+    // The daemon-events-saga owns TWO subscriptions: the global firehose and
+    // the active-workspace-scoped `file:*` lease. A file event fans out tagged
+    // with the scoped lease's id and must still reach the activity timeline
+    // (`eventReceived`).
+    const envelope = notificationWithSub('file:changed', { path: 'src/lib.rs' }, 'sub-file');
+    routeDaemonEventsNotification(envelope.method, envelope.params, ['sub-1', 'sub-file']);
+
+    expect(readWorkspaceEventIds()).toContain(envelope.params.event.id);
+  });
+
+  it('drops a file event tagged with a foreign subscription id (inactive-workspace copy)', async () => {
+    // A copy fanned out for another consumer's subscription — e.g. file events
+    // of a NON-active workspace on a foreign lease — must not reach the store.
+    const envelope = notificationWithSub('file:changed', { path: 'src/lib.rs' }, 'sub-foreign');
+    routeDaemonEventsNotification(envelope.method, envelope.params, ['sub-1', 'sub-file']);
+
+    expect(readWorkspaceEventIds()).not.toContain(envelope.params.event.id);
+  });
 });
 
 describe('daemonEventsBridge (usage wire contract — workspace:tokenUsage-changed → tokenUsage slice)', () => {
@@ -5007,9 +5034,8 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
 
   it('lifts the deletion tombstone so the recycled ID can be stored again', async () => {
     const TOMBSTONED_WS = 'ws-bridge-tombstoned';
-    const { markWorkspacePendingDeletion } = await import(
-      '$store/renderer/slices/workspace/workspace-slice'
-    );
+    const { markWorkspacePendingDeletion } =
+      await import('$store/renderer/slices/workspace/workspace-slice');
     // Simulate a committed delete whose post-delete grace tombstone is still
     // active when the id is recycled by a new create.
     appStore.dispatch(markWorkspacePendingDeletion(TOMBSTONED_WS));
