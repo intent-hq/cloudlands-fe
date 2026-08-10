@@ -734,11 +734,14 @@ class RejectingWssDaemon {
   port = 0;
   fingerprint = '';
   statusCode = 401;
+  /** Number of upgrade attempts observed (for reconnect-halt assertions). */
+  upgradeAttempts = 0;
 
   async start(): Promise<void> {
     this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
     this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
     this.server.on('upgrade', (_req, socket) => {
+      this.upgradeAttempts += 1;
       socket.write(
         `HTTP/1.1 ${this.statusCode} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
       );
@@ -816,6 +819,58 @@ describe('WSS auth rejection (401/403 upgrade responses)', () => {
     expect(errors.length).toBeGreaterThan(0);
     expect(errors.some((e) => e instanceof AuthRejectedError)).toBe(false);
     expect(errors.some((e) => /unexpected server response: 500/i.test(e.message))).toBe(true);
+    client.dispose();
+  });
+
+  it('classifies a 401 from a cert that fails the pin as PinMismatchError, not auth rejection', async () => {
+    // A changed/intercepted endpoint can also answer 401/403 — the pin check
+    // must win so the user is never steered into re-pairing (typing a fresh
+    // secret) against an untrusted certificate.
+    daemon.statusCode = 401;
+    const wrongPin = Array.from({ length: 32 }, () => 'FF').join(':');
+    const client = new JsonRpcClient({
+      config: {
+        transport: 'wss',
+        host: daemon.host,
+        port: daemon.port,
+        token: TOKEN,
+        fingerprint: wrongPin,
+      },
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 2000,
+      reconnectDelayMs: 10_000,
+    });
+    const errors: Error[] = [];
+    client.on('error', (e) => errors.push(e));
+    await expect(client.request('system.status')).rejects.toBeInstanceOf(PinMismatchError);
+    expect(errors.some((e) => e instanceof PinMismatchError)).toBe(true);
+    expect(errors.some((e) => e instanceof AuthRejectedError)).toBe(false);
+    client.dispose();
+  });
+
+  it('halts the automatic reconnect loop after an auth rejection', async () => {
+    daemon.statusCode = 401;
+    const client = new JsonRpcClient({
+      config: {
+        transport: 'wss',
+        host: daemon.host,
+        port: daemon.port,
+        token: TOKEN,
+        fingerprint: daemon.fingerprint,
+      },
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 2000,
+      // A short delay so a (buggy) scheduled reconnect would fire within the wait.
+      reconnectDelayMs: 50,
+      maxReconnectDelayMs: 50,
+    });
+    client.on('error', () => {});
+    await expect(client.request('system.status')).rejects.toBeInstanceOf(AuthRejectedError);
+    const attemptsAfterRejection = daemon.upgradeAttempts;
+    await new Promise((res) => setTimeout(res, 300));
+    // No further upgrade attempts: the stale credential is not re-sent.
+    expect(daemon.upgradeAttempts).toBe(attemptsAfterRejection);
+    expect(client.getStatus()).toBe('disconnected');
     client.dispose();
   });
 

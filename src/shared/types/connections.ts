@@ -110,6 +110,14 @@ export interface ConnectionsListResult {
    * active backend matches local (or is local itself).
    */
   protocolMismatch?: ConnectionProtocolMismatchEvent | null;
+  /**
+   * Sticky auth rejection for the currently active backend, replayed here so a
+   * renderer created or reloaded after the one-shot `connections:auth-rejected`
+   * broadcast (including the boot path) still surfaces the actionable
+   * "authentication rejected" state. `null`/absent when the active backend's
+   * auth is good (or it is local).
+   */
+  authRejected?: ConnectionAuthRejectedEvent | null;
 }
 
 /**
@@ -153,6 +161,14 @@ export interface AddConnectionParams {
 /** `connections:add` result: the stored, token-free record. */
 export interface AddConnectionResult {
   connection: ConnectionRecord;
+  /**
+   * `true` when the add re-paired the ACTIVE backend and main already rebuilt
+   * the live client (a switch-to-self), so the caller must NOT dispatch a
+   * follow-up switch — it would tear down and reconnect the fresh client a
+   * second time. `false` when the record is not active and a switch is still
+   * the caller's decision.
+   */
+  switched: boolean;
 }
 
 /** `connections:forget` params. */

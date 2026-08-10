@@ -15,6 +15,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { Logger } from '$shared/logger';
 import { JsonRpcError, type JsonRpcErrorShape } from './json-rpc-errors';
 import {
+  AuthRejectedError,
   type BackendConnectionConfig,
   createBackendSocket,
   describeBackendConfig,
@@ -387,6 +388,18 @@ export class JsonRpcClient extends EventEmitter {
     // instead of hanging across reconnect attempts.
     this.failWaiters(error);
     this.setStatus('disconnected');
+    // A 401/403 auth rejection (PROTOCOL §2.1) is not transient: every retry
+    // would re-present the same stale credential and fail identically, so the
+    // automatic reconnect loop stops here. Recovery paths (re-pair, backend
+    // switch) build a fresh client; a later request() still triggers a single
+    // on-demand connect via ensureConnected().
+    if (error instanceof AuthRejectedError) {
+      logger.warn('Backend rejected authentication; automatic reconnect halted', {
+        target: describeBackendConfig(this.config),
+        statusCode: error.statusCode,
+      });
+      return;
+    }
     this.scheduleReconnect();
   }
 

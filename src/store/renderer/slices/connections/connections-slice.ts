@@ -18,6 +18,7 @@ import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type {
   AddConnectionParams,
+  AddConnectionResult,
   CaptureFingerprintParams,
   CaptureFingerprintResult,
   ConnectionRecord,
@@ -128,10 +129,14 @@ export const captureFingerprintRequested = createAsyncAction<
   CaptureFingerprintResult
 >('connections/captureFingerprint', 'connections/captureFingerprintRequested');
 
-/** Saga-owned connection add request. Resolves with the token-free record. */
+/**
+ * Saga-owned connection add request. Resolves with the token-free record plus
+ * whether main already switched to it (active re-pair rebuilds the live client
+ * in the add handler — the caller must then skip its own follow-up switch).
+ */
 export const addConnectionRequested = createAsyncAction<
   [params: AddConnectionParams],
-  ConnectionRecord
+  AddConnectionResult
 >('connections/add', 'connections/addRequested');
 
 /** Saga-owned stored-connection removal request. */

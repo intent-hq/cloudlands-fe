@@ -136,6 +136,10 @@ function* hydrateConnections(
     const result = yield* call(invokeConnectionsList);
     yield* put(connectionsListReceived(result));
     if (result.protocolMismatch) yield* put(protocolMismatchReceived(result.protocolMismatch));
+    // Replay the latched auth rejection for the active backend so a window
+    // created/reloaded after the one-shot push (including boot) still surfaces
+    // the actionable state.
+    if (result.authRejected) yield* put(authRejectedReceived(result.authRejected));
     yield* put(action.success(undefined as never));
     settled = true;
   } catch (error) {
@@ -171,7 +175,7 @@ function* addConnection(action: ReturnType<typeof addConnectionRequested>): Saga
   try {
     const result = yield* call(invokeAddConnection, action.payload[0]);
     yield* put(connectOperationSettled());
-    yield* put(action.success(result.connection));
+    yield* put(action.success(result));
     settled = true;
   } catch (error) {
     const resolved = toError(error);

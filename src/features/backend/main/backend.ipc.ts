@@ -203,6 +203,18 @@ let protocolMismatchNotified = false;
 let activeProtocolMismatch: ConnectionProtocolMismatchEvent | null = null;
 
 /**
+ * Sticky auth-rejection for the CURRENTLY active backend, or `null` when its
+ * auth is good (or it is local). Persisted here in main and replayed on
+ * {@link listConnections} so a renderer/window created or reloaded AFTER the
+ * one-shot `connections:auth-rejected` broadcast fired (including the boot
+ * path) still surfaces the actionable "authentication rejected" state —
+ * exactly the {@link activeProtocolMismatch} pattern. Cleared whenever a fresh
+ * client is constructed (a re-pair or switch builds a new client whose own
+ * connect re-detects any rejection).
+ */
+let activeAuthRejected: ConnectionAuthRejectedEvent | null = null;
+
+/**
  * Sticky boot-time backend-restore fallback notice (T19), or `null`. Set by
  * {@link reconcileActiveConnectionOnBoot} when a persisted remote `activeId` was
  * unreachable at boot and the FE fell back to local. Replayed on
@@ -286,6 +298,15 @@ export function __resetBackendProtocolStateForTesting(): void {
   activeProtocolMismatch = null;
   activeConnectionMeta = null;
   bootFallbackNotice = null;
+  activeAuthRejected = null;
+}
+/** @internal Test seam: read the latched auth-rejection for the active backend. */
+export function __getActiveAuthRejectedForTesting(): ConnectionAuthRejectedEvent | null {
+  return activeAuthRejected;
+}
+/** @internal Test seam: poke the latched auth-rejection directly. */
+export function __setActiveAuthRejectedForTesting(event: ConnectionAuthRejectedEvent | null): void {
+  activeAuthRejected = event;
 }
 /** @internal Test seam: shorten the T19 boot-reconnect timeout. */
 export function __setBootReconnectTimeoutForTesting(ms: number): void {
@@ -323,6 +344,7 @@ export function getBackendClient(): JsonRpcClient {
   authRejectedNotified = false;
   protocolMismatchNotified = false;
   activeProtocolMismatch = null;
+  activeAuthRejected = null;
   // Dev (unpackaged) builds default to the loopback WebSocket transport; the
   // packaged app stays on UDS. Env overrides (`INTENTD_SOCKET`, `INTENTD_WS_URL`)
   // win either way — see `resolveBackendConfig`. After a switch to a remote
@@ -427,6 +449,11 @@ export function getBackendClient(): JsonRpcClient {
           port: activeConnectionMeta.port,
           statusCode: error.statusCode,
         };
+        // Latch BEFORE broadcasting so a renderer that fetches
+        // `connections:list` between the broadcast and its own listener
+        // registration still replays it (same ordering as the sticky
+        // protocol mismatch).
+        activeAuthRejected = payload;
         broadcast(CONNECTIONS.AUTH_REJECTED, payload);
       }
       logger.warn('Backend rejected WebSocket authentication', {
@@ -808,11 +835,17 @@ async function listConnections(): Promise<ConnectionsListResult> {
     connectionsStore.list(),
     connectionsStore.getActiveId(),
   ]);
-  // Replay any sticky protocol mismatch for the active backend so a renderer
-  // that missed the one-shot `connections:protocol-mismatch` broadcast (e.g. a
-  // window created by a switch after the remote handshake already fired) still
-  // surfaces the advisory (cloudlands-fe#823).
-  return { connections, activeId, protocolMismatch: activeProtocolMismatch };
+  // Replay any sticky protocol mismatch / auth rejection for the active
+  // backend so a renderer that missed the one-shot broadcast (e.g. a window
+  // created by a switch after the remote handshake already fired, or a boot
+  // into a rejecting remote) still surfaces the advisory / actionable state
+  // (cloudlands-fe#823 pattern).
+  return {
+    connections,
+    activeId,
+    protocolMismatch: activeProtocolMismatch,
+    authRejected: activeAuthRejected,
+  };
 }
 
 /** Broadcast the current list + active selection to every window. */
@@ -1164,7 +1197,8 @@ function registerConnectionsHandlers(): void {
   // token/fingerprint/label in place. If the upserted record is the ACTIVE
   // backend, rebuild the live client via a switch to itself so the refreshed
   // token takes effect immediately (switchBackend broadcasts the changed
-  // list); otherwise just broadcast so every window reflects the entry.
+  // list) and report `switched: true` so the caller skips its own follow-up
+  // switch; otherwise just broadcast so every window reflects the entry.
   ipcMain.handle(
     CONNECTIONS.ADD,
     createValidatedHandler(
@@ -1174,10 +1208,10 @@ function registerConnectionsHandlers(): void {
         const activeId = await connectionsStore.getActiveId();
         if (connection.id === activeId) {
           await switchBackend(connection.id);
-        } else {
-          await broadcastConnectionsChanged();
+          return { connection, switched: true } satisfies AddConnectionResult;
         }
-        return { connection } satisfies AddConnectionResult;
+        await broadcastConnectionsChanged();
+        return { connection, switched: false } satisfies AddConnectionResult;
       },
       CONNECTIONS.ADD,
     ),

@@ -243,6 +243,7 @@ describe('multi-backend connect — end-to-end journey', () => {
       connections: [expect.objectContaining({ id: 'local', isLocal: true })],
       activeId: 'local',
       protocolMismatch: null,
+      authRejected: null,
     });
 
     // Trust-on-first-use: capture the remote's presented fingerprint.
