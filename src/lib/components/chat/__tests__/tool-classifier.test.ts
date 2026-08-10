@@ -475,6 +475,18 @@ describe('tool-classifier', () => {
     });
   });
 
+  describe('browser_exec action classification', () => {
+    it('should classify a closeTab action as browser with "Close" verb and "tab" subject', () => {
+      const result = classifyTool('browser_exec', {
+        actions: [{ action: 'closeTab', tabId: 'tab-123' }],
+      });
+
+      expect(result.category).toBe('browser');
+      expect(result.verb).toBe('Close');
+      expect(result.subject).toBe('tab');
+    });
+  });
+
   describe('dot-separated MCP names (mcp.<server>.<tool>)', () => {
     it('should classify mcp.workspace-mcp.workspace_api using the summary as verb', () => {
       const result = classifyTool('mcp.workspace-mcp.workspace_api', {

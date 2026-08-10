@@ -482,6 +482,8 @@ export const IPC_CHANNELS = {
     LIST_TABS_RESPONSE: 'browser:list-tabs-response',
     /** Open a browser tab in a panel - main->renderer event */
     OPEN_TAB: 'browser:open-tab',
+    /** Close a browser tab in a panel - main->renderer event */
+    CLOSE_TAB: 'browser:close-tab',
   },
 
   // File Tracking
@@ -1004,6 +1006,8 @@ export const EVENT_CHANNELS = [
   'browser:list-tabs-request',
   // Browser tab open request from main process (agent wants to open a browser tab)
   'browser:open-tab',
+  // Browser tab close request from main process (agent wants to close a browser tab)
+  'browser:close-tab',
   // WebSocket API events (main → renderer)
   'websocket-api:discovery-auto-disabled',
   // Workspace token usage changed (main → renderer)

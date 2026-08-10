@@ -2101,6 +2101,7 @@
   "chat_toolClassifier_drag_label": "Arrastrar",
   "chat_toolClassifier_hover_label": "Pasar el cursor",
   "chat_toolClassifier_page_subject": "página",
+  "chat_toolClassifier_tab_subject": "pestaña",
   "chat_toolClassifier_renameWorkspace_label": "Cambiar nombre del espacio de trabajo",
   "chat_toolClassifier_renameAgent_label": "Cambiar nombre del agente",
   "chat_toolClassifier_createNote_label": "Crear nota",

@@ -5,10 +5,10 @@
    * at the current minute), normalized to the window's max. Each bar stacks the
    * §5.39 per-kind counters (in / out / thoughts / cached = read + creation);
    * segments carry their own fill PATTERN as well as a color, so the legend
-   * stays readable without relying on hue alone. The "TOK/S NOW" footer
-   * converts the newest minute's total token count to a per-second rate (÷60).
-   * The 15s history poll keeps the samples fresh, so no client-side window
-   * sliding is needed.
+   * stays readable without relying on hue alone. The compact peak Y-scale
+   * label (top-right of the plot) and the "TOK/S NOW" footer both convert
+   * minute token counts to a per-second rate (÷60). The 15s history poll
+   * keeps the samples fresh, so no client-side window sliding is needed.
    */
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -72,6 +72,24 @@
   /** TOK/S NOW — the newest minute sample's tokens over its 60s span. */
   const tokRate = $derived(bars.length > 0 ? Math.round(bars[bars.length - 1].total / 60) : 0);
 
+  /**
+   * Compact digit-only count (`40k`, `50M`); rounded to nearest, no decimals.
+   * Rounds before picking the unit so boundary values promote (999,999.5 →
+   * `1M`, not `1000k`; 999.5 → `1k`, not `1000`).
+   */
+  function compact(n: number): string {
+    if (Math.round(n / 1000) >= 1000) return `${Math.round(n / 1_000_000)}M`;
+    if (Math.round(n) >= 1000) return `${Math.round(n / 1000)}k`;
+    return String(Math.round(n));
+  }
+
+  /**
+   * Peak Y-scale — the window's max minute total as a per-second rate (÷60).
+   * Only rendered when bars exist (template-guarded); the 0 base just keeps
+   * `Math.max()` → -Infinity out of the empty case.
+   */
+  const peakLabel = $derived(compact(Math.max(0, ...bars.map((bar) => bar.total)) / 60));
+
   /** One x-axis time tick, positioned by the bar it sits under. */
   interface AxisTick {
     key: string;
@@ -128,6 +146,9 @@
     <span class="hud-tokrate-window">{m.hud_tokRate_window_label()}</span>
   </header>
   <div class="hud-tokrate-chart">
+    {#if bars.length > 0}
+      <span class="hud-tokrate-peak" data-testid="hud-tokrate-peak">{peakLabel}</span>
+    {/if}
     {#each bars as bar (bar.bucketUtc)}
       <div class="hud-tokrate-bar" style:height={`${Math.round((bar.total / maxTokens) * 100)}%`}>
         {#each bar.segments as segment (segment.kind)}
@@ -204,6 +225,16 @@
     gap: 2px;
     height: 74px;
     padding: 10px 12px 6px;
+  }
+  .hud-tokrate-peak {
+    position: absolute;
+    top: 4px;
+    right: 12px;
+    font:
+      500 9px 'JetBrains Mono',
+      monospace;
+    color: hsl(var(--text-ghost));
+    pointer-events: none;
   }
   .hud-tokrate-axis {
     position: relative;

@@ -2101,6 +2101,7 @@
   "chat_toolClassifier_drag_label": "드래그",
   "chat_toolClassifier_hover_label": "호버",
   "chat_toolClassifier_page_subject": "페이지",
+  "chat_toolClassifier_tab_subject": "탭",
   "chat_toolClassifier_renameWorkspace_label": "작업 공간 이름 바꾸기",
   "chat_toolClassifier_renameAgent_label": "에이전트 이름 바꾸기",
   "chat_toolClassifier_createNote_label": "노트 만들기",
