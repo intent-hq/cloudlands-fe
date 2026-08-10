@@ -122,4 +122,19 @@ describe('Tailwind entry point (monorepo#1748 / monorepo#1875)', () => {
   it('defines the class-based dark variant', () => {
     expect(appCss).toMatch(/@custom-variant\s+dark\s+/);
   });
+
+  // CSS requires all @import rules to precede every other statement. A
+  // directive placed before the `$lib` imports makes them invalid, and Vite
+  // silently drops the imported stylesheets (tiptap-editor/chat-messages/
+  // comments) from the production bundle (monorepo#1909).
+  it('has no non-@import statement before the last @import', () => {
+    const lastImportEnd = appCss.lastIndexOf('@import');
+    expect(lastImportEnd).toBeGreaterThan(-1);
+    const beforeImports = appCss
+      .slice(0, appCss.indexOf(';', lastImportEnd) + 1)
+      // Strip comments and @import statements; only whitespace may remain.
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/@import\s[^;]*;/g, '');
+    expect(beforeImports.trim()).toBe('');
+  });
 });
