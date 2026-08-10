@@ -2413,14 +2413,14 @@ export function setupSystemIPC() {
   });
 
   // Check Node.js availability + minimum version — delegated to the daemon
-  // host (host.findBinary best-effort version-probes the resolved binary) so
-  // detection matches the runtime agents actually use. Mirrors CHECK_GIT: a
-  // missing binary or failed probe folds to available:false, never an error.
+  // host via the uncached host.checkNode probe (host.checkGit idiom) so a
+  // newly installed node is detected without an app restart. Mirrors
+  // CHECK_GIT: a missing binary or failed probe folds to available:false,
+  // never an error.
   ipcMain.handle(SYSTEM_CHANNELS.CHECK_NODE, async () => {
     try {
       const result = await getBackendClient().request<{ available: boolean; version?: string }>(
-        'host.findBinary',
-        { name: 'node' },
+        'host.checkNode',
       );
       if (result?.available !== true) {
         return { success: true, data: { available: false, versionOk: false } };
@@ -2436,22 +2436,21 @@ export function setupSystemIPC() {
         },
       };
     } catch (error) {
-      logger.warn('host.findBinary node failed', {
+      logger.warn('host.checkNode failed', {
         error: error instanceof Error ? error.message : String(error),
       });
       return { success: true, data: { available: false, versionOk: false } };
     }
   });
 
-  // Check GitHub CLI (gh) availability — delegated to the daemon host
-  // (host.findBinary, PROTOCOL §5.14) like CHECK_NODE. Informational only:
-  // the onboarding gate never blocks on gh, and a missing binary or failed
-  // probe folds to available:false, never an error.
+  // Check GitHub CLI (gh) availability — delegated to the daemon host via
+  // the uncached host.checkGh probe (host.checkGit idiom) like CHECK_NODE.
+  // Informational only: the onboarding gate never blocks on gh, and a
+  // missing binary or failed probe folds to available:false, never an error.
   ipcMain.handle(SYSTEM_CHANNELS.CHECK_GH, async () => {
     try {
       const result = await getBackendClient().request<{ available: boolean; version?: string }>(
-        'host.findBinary',
-        { name: 'gh' },
+        'host.checkGh',
       );
       const available = result?.available === true;
       const version = typeof result?.version === 'string' ? result.version : undefined;
@@ -2460,7 +2459,7 @@ export function setupSystemIPC() {
         data: available ? { available: true, version } : { available: false },
       };
     } catch (error) {
-      logger.warn('host.findBinary gh failed', {
+      logger.warn('host.checkGh failed', {
         error: error instanceof Error ? error.message : String(error),
       });
       return { success: true, data: { available: false } };
@@ -2470,7 +2469,7 @@ export function setupSystemIPC() {
   // Check rtk availability
   ipcMain.handle(SYSTEM_CHANNELS.CHECK_RTK, async () => {
     try {
-      const rtkPath = await findBinary('rtk', { cache: false });
+      const rtkPath = await findBinary('rtk');
       return { success: true, data: { available: rtkPath !== null } };
     } catch {
       return { success: true, data: { available: false } };

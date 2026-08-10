@@ -183,7 +183,6 @@ async function findExecutableBinary(editorId: string): Promise<string | null> {
   for (const binary of binaries) {
     const resolvedPath = await findBinary(binary, {
       commonPaths: searchPaths.map((searchPath) => `${searchPath}/${binary}`),
-      cache: false,
       preferExtensions: [],
       useEnhancedPath: false,
       useLoginShell: false,
@@ -240,7 +239,7 @@ async function findWindowsBinary(editorId: string): Promise<string | null> {
   if (!editor?.platforms?.win32?.binaries) return null;
 
   for (const binary of editor.platforms.win32.binaries) {
-    const resolvedPath = await findBinary(binary, { cache: false });
+    const resolvedPath = await findBinary(binary);
     if (resolvedPath) {
       return binary;
     }

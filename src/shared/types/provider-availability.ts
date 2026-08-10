@@ -51,8 +51,15 @@ export interface ProviderAvailabilityResult {
     grok: ProviderStatus;
     unsloth: ProviderStatus;
   };
-  /** Provider IDs that are hidden because their required env var or feature code is not set */
-  hiddenProviders: string[];
+  /**
+   * Provider IDs that are hidden because their required env var or feature
+   * code is not set. Absent = the gating verdict is UNKNOWN (the provider
+   * catalog could not be consulted) — consumers must fall back to the
+   * catalog row's `visible` flag (default-deny), never treat absence as
+   * "nothing hidden". An empty array is authoritative: catalog consulted,
+   * nothing hidden.
+   */
+  hiddenProviders?: string[];
   /** npx availability status for npx-fallback providers */
   npx?: NpxStatus;
 }

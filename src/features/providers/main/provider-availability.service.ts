@@ -60,7 +60,6 @@ async function checkAuggieAvailability(): Promise<ProviderStatus> {
 async function isClaudeCliInstalled(): Promise<boolean> {
   return (
     (await findBinary('claude', {
-      cache: false,
       commonPaths: getCommonNpmPaths('claude'),
     })) !== null
   );
@@ -78,7 +77,6 @@ async function checkClaudeCodeAvailability(): Promise<ProviderStatus> {
     const status: ProviderStatus = { available: installed };
     const npxPath = installed
       ? await findBinary('npx', {
-          cache: false,
           commonPaths: getCommonNpmPaths('npx'),
         })
       : null;
@@ -165,8 +163,8 @@ async function checkDroidAvailability(): Promise<ProviderStatus> {
  */
 async function checkGrokAvailability(): Promise<ProviderStatus> {
   // findBinary never throws (it folds RPC errors to null), so no try/catch;
-  // skip its local cache so a fresh install is picked up on recheck.
-  const grokPath = await findBinary('grok', { cache: false });
+  // every call hits the daemon so a fresh install is picked up on recheck.
+  const grokPath = await findBinary('grok');
   return { available: grokPath !== null };
 }
 
@@ -182,8 +180,8 @@ async function checkGrokAvailability(): Promise<ProviderStatus> {
  */
 async function checkUnslothAvailability(): Promise<ProviderStatus> {
   const [opencodePath, unslothPath] = await Promise.all([
-    findBinary('opencode', { cache: false }),
-    findBinary('unsloth', { cache: false }),
+    findBinary('opencode'),
+    findBinary('unsloth'),
   ]);
   return { available: opencodePath !== null && unslothPath !== null };
 }
@@ -263,9 +261,10 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
   } catch (error) {
     // Fail closed on the gating decision: fall back to the last cached
     // registry when the fetch fails. When there is no cache either, the
-    // daemon has never answered on this connection — provider discovery
-    // below will fail the same way and report nothing available, so no
-    // gated provider can surface through this path.
+    // gating verdict is UNKNOWN — `hiddenProviders` is omitted from the
+    // result (never an empty array, which would read as an authoritative
+    // "nothing hidden" verdict) so consumers fall back to the catalog's
+    // `visible` flag and gated providers (cortex, mock) cannot flash.
     catalog = getCachedProviderCatalog();
     logger.warn('Provider catalog fetch failed; using cached registry for gating', {
       error,
@@ -326,9 +325,15 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     });
   };
 
-  // Check all providers in parallel; for hidden providers skip the check entirely
-  const isCortexHidden = hiddenProviders.includes('cortex');
-  const isMockHidden = hiddenProviders.includes('mock');
+  // Check all providers in parallel; for hidden providers skip the check
+  // entirely. When the gating verdict is unknown (no catalog), fail closed on
+  // the registry-gated providers (cortex: feature code, mock: env var) — the
+  // same pre-hydration default-deny the single-provider recheck path applies —
+  // so availability-only consumers (e.g. onboarding auto-selection) cannot
+  // pick a gated provider on the degraded path.
+  const gatingVerdictUnknown = catalog === undefined;
+  const isCortexHidden = gatingVerdictUnknown || hiddenProviders.includes('cortex');
+  const isMockHidden = gatingVerdictUnknown || hiddenProviders.includes('mock');
   const [
     auggieResult,
     claudeCodeResult,
@@ -418,7 +423,9 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       grok: grokResult,
       unsloth: unslothResult,
     },
-    hiddenProviders,
+    // Absent catalog = unknown gating verdict; only a consulted catalog
+    // yields an authoritative hidden list (empty = nothing hidden).
+    ...(catalog !== undefined ? { hiddenProviders } : {}),
     npx: npxStatus,
   };
 

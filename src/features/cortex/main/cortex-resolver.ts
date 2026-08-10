@@ -53,7 +53,6 @@ async function findCortexPath(): Promise<string | null> {
 
   const result = await findBinary('cortex', {
     commonPaths: [...CORTEX_PATHS, ...getCommonNpmPaths('cortex')],
-    cache: false,
     timeout: 3000,
     useEnhancedPath: false,
     useLoginShell: false,

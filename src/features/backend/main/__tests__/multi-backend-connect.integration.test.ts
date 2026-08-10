@@ -20,7 +20,8 @@
  *
  * FE-only: no daemon/protocol involvement. See PROTOCOL.md §1.1–2.3 for the
  * daemon-side wire contract this rides on (WSS + self-signed-cert fingerprint +
- * bearer token), and docs/MULTI_BACKEND_CONNECT.md for the FE architecture.
+ * bearer token), and the monorepo's docs/fe/MULTI_BACKEND_CONNECT.md for the FE
+ * architecture.
  *
  * The JSON-RPC client is faked (no live socket) but is otherwise driven exactly
  * as production does — constructed by `getBackendClient`, its `notification` /
@@ -58,6 +59,7 @@ vi.mock('electron', () => ({
   app: {
     getPath: () => electronState.userDataDir,
     isPackaged: false,
+    emit: () => {},
   },
   ipcMain: {
     handle: (channel: string, handler: (event: unknown, data: unknown) => unknown) => {

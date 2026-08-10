@@ -45,7 +45,11 @@ export interface ProviderAvailabilityResult {
     grok: ProviderStatus;
     unsloth: ProviderStatus;
   };
-  /** Provider IDs that are hidden because their required env var is not set */
+  /**
+   * Provider IDs hidden by env-var / feature-code gating. Absent = gating
+   * verdict unknown — consumers fall back to the catalog `visible` flag
+   * (see the shared ProviderAvailabilityResult type).
+   */
   hiddenProviders?: string[];
 }
 
@@ -131,7 +135,9 @@ export async function getAvailableProviderIds(): Promise<string[]> {
 }
 
 /**
- * Default result when IPC fails or in non-browser environment
+ * Default result when IPC fails or in non-browser environment.
+ * `hiddenProviders` is deliberately omitted: the gating verdict is unknown
+ * here, and fabricating an empty list would read as "nothing hidden".
  */
 function getDefaultResult(): ProviderAvailabilityResult {
   return {
@@ -148,6 +154,5 @@ function getDefaultResult(): ProviderAvailabilityResult {
       grok: { available: false },
       unsloth: { available: false },
     },
-    hiddenProviders: [],
   };
 }

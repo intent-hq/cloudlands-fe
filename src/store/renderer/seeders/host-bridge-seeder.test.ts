@@ -161,9 +161,9 @@ describe("host-bridge-seeder", () => {
     });
   });
 
-  describe("system:check-node → daemon host.findBinary", () => {
-    it("forwards { name:'node' } and folds a meeting version to {available:true, versionOk:true, version}", async () => {
-      // PROTOCOL host.findBinary: `{ available, path?, version? }` — the
+  describe("system:check-node → daemon host.checkNode", () => {
+    it("calls host.checkNode and folds a meeting version to {available:true, versionOk:true, version}", async () => {
+      // PROTOCOL host.checkNode: `{ available, path?, version? }` — the
       // version is best-effort. Node reports `v22.1.0`; the bridge strips the
       // leading `v` and compares against MINIMUM_NODE_VERSION (22.0.0).
       mockedRequest.mockResolvedValueOnce({
@@ -174,7 +174,7 @@ describe("host-bridge-seeder", () => {
 
       const response = await mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_NODE);
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "node" });
+      expect(mockedRequest).toHaveBeenCalledWith("host.checkNode");
       expect(response).toEqual({
         success: true,
         data: { available: true, version: "22.1.0", versionOk: true },
@@ -232,9 +232,9 @@ describe("host-bridge-seeder", () => {
     });
   });
 
-  describe("system:check-gh → daemon host.findBinary", () => {
-    it("forwards { name:'gh' } and folds a positive probe to {available:true, version}", async () => {
-      // PROTOCOL host.findBinary: `{ available, path?, version? }`. The gh
+  describe("system:check-gh → daemon host.checkGh", () => {
+    it("calls host.checkGh and folds a positive probe to {available:true, version}", async () => {
+      // PROTOCOL host.checkGh: `{ available, path?, version? }`. The gh
       // probe is informational only (never gates onboarding); version is
       // forwarded verbatim when reported.
       mockedRequest.mockResolvedValueOnce({
@@ -245,7 +245,7 @@ describe("host-bridge-seeder", () => {
 
       const response = await mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_GH);
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "gh" });
+      expect(mockedRequest).toHaveBeenCalledWith("host.checkGh");
       expect(response).toEqual({
         success: true,
         data: { available: true, version: "2.62.0" },

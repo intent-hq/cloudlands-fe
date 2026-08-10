@@ -233,8 +233,19 @@
     };
   }
 
+  // Absent hidden list = gating verdict unknown — fall back to the catalog
+  // row's `visible` flag (same rule as orderProviderEntries) so gated
+  // providers (cortex, mock) don't leak on the degraded path. Default-deny:
+  // a row missing from the (possibly unhydrated) catalog counts as not
+  // visible, mirroring orderProviderEntries rendering nothing before the
+  // catalog loads.
+  function catalogRowVisible(providerId: string): boolean {
+    const entry = selectProviderCatalogEntry.select(appStore.state, providerId);
+    return entry !== undefined && entry.visible !== false;
+  }
+
   const providerOptions = $derived.by(() => {
-    const hidden = providerAvailability?.hiddenProviders ?? [];
+    const hidden = providerAvailability?.hiddenProviders;
     return [
       {
         id: 'auggie',
@@ -276,7 +287,7 @@
         requiresAuth: false,
         docsUrl: 'https://docs.snowflake.com/en/developer-guide/cortex',
       },
-    ].filter((p) => !hidden.includes(p.id));
+    ].filter((p) => (hidden ? !hidden.includes(p.id) : catalogRowVisible(p.id)));
   });
 
   function openProviderDocs(url: string) {

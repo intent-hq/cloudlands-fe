@@ -15,7 +15,7 @@
  * orchestration is exercised without a live socket or the Electron window graph.
  */
 
-import { BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
@@ -232,6 +232,9 @@ describe('switchBackend teardown-before-connect', () => {
     expect(store.setActiveId).toHaveBeenCalledWith('remote-1');
     expect(captureAndClose).toHaveBeenCalledWith('local');
     expect(restore).toHaveBeenCalledWith('remote-1');
+
+    // Menu-rebuild trigger fired so backend-gated items track the switch (#1889).
+    expect(vi.mocked(app.emit)).toHaveBeenCalledWith('backend-connection-changed');
   });
 
   it('rejects an unknown target BEFORE any teardown (live client untouched)', async () => {

@@ -21,7 +21,7 @@ export function setupCodexIPC() {
   ipcMain.handle(CODEX_CHANNELS.CHECK_AVAILABILITY, async () => {
     try {
       logger.debug('Checking Codex availability');
-      const codexPath = await findBinary('codex', { cache: false });
+      const codexPath = await findBinary('codex');
       logger.info('Codex availability check', {
         isAvailable: codexPath !== null,
         command: codexPath,

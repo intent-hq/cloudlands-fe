@@ -76,6 +76,7 @@ import { agentAvailabilityReducer } from './slices/agent-availability/agent-avai
 import { appLayoutReducer } from './slices/app-layout/app-layout-slice';
 import { tokenUsageReducer } from './slices/token-usage/token-usage-slice';
 import { workspaceInitializerReducer } from './slices/workspace-initializer/workspace-initializer-slice';
+import { workspaceCreateProgressReducer } from './slices/workspace-create-progress/workspace-create-progress-slice';
 import { themeReducer } from './slices/theme/theme-slice';
 import { websocketApiReducer } from './slices/websocket-api/websocket-api-slice';
 import { uiHighlightReducer } from './slices/ui-highlight/ui-highlight-slice';
@@ -165,6 +166,7 @@ export const reducers = {
   agentSubscriptionUI: agentSubscriptionUIReducer,
   onboarding: onboardingReducer,
   workspaceInitializer: workspaceInitializerReducer,
+  workspaceCreateProgress: workspaceCreateProgressReducer,
   agentAvailability: agentAvailabilityReducer,
   appLayout: appLayoutReducer,
   tokenUsage: tokenUsageReducer,

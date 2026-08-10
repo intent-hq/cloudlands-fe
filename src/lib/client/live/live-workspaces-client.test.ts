@@ -14,6 +14,7 @@ vi.mock("./backend-transport", () => ({
 import { backendRequest } from "./backend-transport";
 import { BackendError } from "./backend-transport-types";
 import { LiveWorkspacesClient } from "./live-workspaces-client";
+import { CreateWorkspaceRequestSchema } from "$shared/schemas";
 
 const mockedRequest = vi.mocked(backendRequest);
 
@@ -39,6 +40,30 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
       }),
       { timeoutMs: 120_000 },
     );
+  });
+
+  it("create forwards the FE-minted progressId on the wire (PROTOCOL §5.1 clone-progress correlation)", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "ws-1" });
+    const client = new LiveWorkspacesClient();
+    const progressId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+    await client.create({
+      title: "With progress",
+      githubUrl: "https://github.com/example/repo",
+      progressId,
+    } as CreateWorkspaceRequest);
+
+    expect(mockedRequest).toHaveBeenCalledWith(
+      "workspace.create",
+      expect.objectContaining({ progressId }),
+      { timeoutMs: 120_000 },
+    );
+    // The wire params (minus the per-call idempotencyKey) must satisfy the
+    // shared request schema, which now admits progressId.
+    const [, params] = mockedRequest.mock.calls[0];
+    const { idempotencyKey: _ignored, ...request } = params as Record<string, unknown>;
+    const parsed = CreateWorkspaceRequestSchema.parse(request);
+    expect(parsed.progressId).toBe(progressId);
   });
 
   it("create surfaces the daemon's { workspace } normalized on the result", async () => {

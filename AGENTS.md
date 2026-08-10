@@ -27,31 +27,33 @@ src/
 
 ## Where to look
 
-| Working on…         | Open                                                                  |
-| ------------------- | --------------------------------------------------------------------- |
-| agents              | docs/AGENT_ARCHITECTURE.md                                            |
-| state/store         | docs/STATE_MANAGEMENT.md, src/store/renderer/docs/                    |
-| UI components       | docs/COMPONENT_RESPONSIBILITIES.md                                    |
-| component design    | docs/COMPONENTS_DESIGN.md                                             |
-| panels/layout       | docs/panel-system-refactoring.md, docs/proposals/PANEL_TAB_UX_SPEC.md |
-| PR descriptions     | docs/PR_DESCRIPTION_GUIDE.md                                          |
-| browser/CDP         | docs/BROWSER_PANEL_SPEC.md, docs/CDP_MCP_TOOLS.md                     |
-| module boundaries   | docs/MODULE_BOUNDARY_GUIDE.md                                         |
-| debugging           | docs/TROUBLESHOOTING_GUIDE.md, docs/IPC_DEBUG_GUIDE.md                |
-| error handling      | docs/ERROR_HANDLING_SYSTEM.md                                         |
-| TypeScript/types    | docs/TYPE_SYSTEM_GUIDE.md                                             |
-| events/IPC          | docs/EVENT_SYSTEM.md                                                  |
-| keybindings         | docs/KEYBINDINGS.md                                                   |
-| deploying/releasing | docs/real/DEPLOYING.md                                                |
+FE docs live in the monorepo's `docs/fe/` — the `../../docs/fe/` paths below resolve
+in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
+
+| Working on…         | Open                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------ |
+| agents              | ../../docs/fe/agent-message-dedup-and-stream-sagas.md, ../../docs/fe/RULES_SYSTEM.md       |
+| state/store         | ../../docs/fe/STATE_MANAGEMENT.md, src/store/renderer/docs/                                |
+| component design    | ../../docs/fe/COMPONENTS_DESIGN.md                                                         |
+| panels/layout       | ../../docs/fe/panel-system-refactoring.md, ../../docs/fe/PANEL_TAB_UX_SPEC.md              |
+| PR descriptions     | ../../docs/fe/PR_DESCRIPTION_GUIDE.md                                                      |
+| browser/CDP         | ../../docs/fe/BROWSER_PANEL_SPEC.md, ../../docs/fe/CDP_MCP_TOOLS.md                        |
+| module boundaries   | ../../docs/fe/MODULE_BOUNDARY_GUIDE.md                                                     |
+| debugging           | ../../docs/fe/TROUBLESHOOTING_GUIDE.md, ../../docs/fe/IPC_DEBUG_GUIDE.md                   |
+| error handling      | ../../docs/fe/ERROR_HANDLING_SYSTEM.md                                                     |
+| TypeScript/types    | ../../docs/fe/TYPE_SYSTEM_GUIDE.md                                                         |
+| events/IPC          | ../../docs/fe/EVENT_SYSTEM.md                                                              |
+| keybindings         | ../../docs/fe/KEYBINDINGS.md                                                               |
+| deploying/releasing | ../../docs/fe/DEPLOYING.md                                                                 |
 
 ## Key conventions
 
-- **Svelte stores are DEPRECATED** — All `.store.svelte.ts` files are migration targets. New shared/domain state MUST use Redux slices + sagas (ephemeral component-local UI state is fine without Redux). If refactoring encounters `.store.svelte.ts` usage, do not expand or entrench it — follow the [Migration Guide](src/store/renderer/docs/MIGRATION_GUIDE.md) to move toward complete store removal. See `docs/STATE_MANAGEMENT.md`.
+- **Svelte stores are DEPRECATED** — All `.store.svelte.ts` files are migration targets. New shared/domain state MUST use Redux slices + sagas (ephemeral component-local UI state is fine without Redux). If refactoring encounters `.store.svelte.ts` usage, do not expand or entrench it — follow the [Migration Guide](src/store/renderer/docs/MIGRATION_GUIDE.md) to move toward complete store removal. See `../../docs/fe/STATE_MANAGEMENT.md`.
 - Use `pnpm`, not `npm`.
 - Put renderer product work in `src/features/`; shared utilities live in `src/lib/`.
 - Create agents via `agentFactory.createAgent()`.
 - Keep shared app state in `src/store/renderer/`, not ad-hoc component state.
-- **Selector readables belong at component init only** — `selector()` uses Svelte context and must not run in event handlers or callbacks. Dispatch actions and perform one-time selector reads through the configured app `Store` instance, e.g. `store.dispatch(action)` and `selector.select(store.state, ...args)`. See `docs/STATE_MANAGEMENT.md` for details.
+- **Selector readables belong at component init only** — `selector()` uses Svelte context and must not run in event handlers or callbacks. Dispatch actions and perform one-time selector reads through the configured app `Store` instance, e.g. `store.dispatch(action)` and `selector.select(store.state, ...args)`. See `../../docs/fe/STATE_MANAGEMENT.md` for details.
 - **Never import from a feature's **`main/`** subtree in renderer code** (or vice-versa).
 - **Don't export utility functions from orchestration modules** — extract to a dedicated `utils/` file.
 - **Keep utilities dependency-light** — no stores, services, or side effects.
@@ -67,7 +69,7 @@ All user-facing strings (labels, aria-labels, placeholders, tooltips, toasts, er
 - **Module-scope constants** holding localized text use property getters (`get description() { return m.…() }`) so strings re-evaluate on locale change; identifier-bearing fields stay literal.
 - **Exemptions** — log lines, wire/IPC constants, agent-generated content, brand names, file paths, URLs, shell commands — mark with `// i18n-ignore (reason)` or `<!-- i18n-ignore (reason) -->` on the same line or the line above.
 - **Enforcement**: `scripts/check-hardcoded-strings.mjs` (chained into `pnpm run lint`) blocks hardcoded strings inside `ENFORCED_DIRS`. New features in enforced dirs must be string-free from day one; when you migrate a directory to messages, add it to `ENFORCED_DIRS`.
-- **Catalog completeness**: `scripts/check-i18n-completeness.mjs` (also chained into `pnpm run lint`) fails CI when any locale catalog diverges from `messages/en.json` — missing keys, extra keys, per-key `{param}` placeholder mismatches, unpaired `_one`/`_many` plurals — or when `messages/*.json` files and the `project.inlang/settings.json` locale registration disagree.
+- **Catalog completeness**: `scripts/check-i18n-completeness.mjs` (also chained into `pnpm run lint`) fails CI when any locale catalog diverges from `messages/en.json` — missing keys, extra keys, per-key `{param}` placeholder mismatches, unpaired `_one`/`_many` plurals — or when `messages/*.json` files and the `project.inlang/settings.json` locale registration disagree. It also flags non-base values byte-identical to the English value when they contain letters (letter-free values are auto-exempt): translate them, or record intentional invariants (brand names, placeholder-only strings, etc.) in `scripts/i18n-equal-allowlist.json` (per key, `"*"` or a locale array); stale allowlist entries fail the check.
 - **Reference example**: `src/lib/components/settings` (the pilot extraction).
 
 ## Common commands

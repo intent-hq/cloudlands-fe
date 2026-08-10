@@ -98,7 +98,11 @@ describe('regression guard: no legacy workspace-root probing', () => {
         /resolveWorkspaceRoot/.test(source) ||
         /LEGACY_WORKSPACE_ROOT/.test(source) ||
         /['"]\.workspaces['"]/.test(source) ||
-        /WorkspaceConfig\.paths\./.test(source)
+        /WorkspaceConfig\.paths\./.test(source) ||
+        // The browser-side WorkspaceConfig.WORKSPACE_ROOT getter (deleted
+        // config-browser.ts, monorepo#1883) returned a hardcoded '~/intent'.
+        /WorkspaceConfig\.WORKSPACE_ROOT/.test(source) ||
+        /from\s+['"][^'"]*config-browser['"]/.test(source)
       ) {
         offenders.push(path.relative(SRC_ROOT, file));
       }

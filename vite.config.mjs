@@ -400,16 +400,6 @@ export default defineConfig(({ mode }) => {
         { find: '$features', replacement: join(__dirname, './src/features') },
         { find: '$shared', replacement: join(__dirname, './src/shared') },
 
-        // Browser-safe config (uses hardcoded values instead of process.env)
-        {
-          find: /^.*\/shared\/config$/,
-          replacement: join(__dirname, './src/shared/config-browser.ts'),
-        },
-        {
-          find: /^.*\/shared\/config\.ts$/,
-          replacement: join(__dirname, './src/shared/config-browser.ts'),
-        },
-
         // Icon library wrapper for Svelte 5 compatibility
         {
           find: /^svelte-fa$/,

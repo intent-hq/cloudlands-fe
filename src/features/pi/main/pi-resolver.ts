@@ -40,7 +40,6 @@ async function findPiPath(): Promise<string | null> {
 
   const result = await findBinary('pi', {
     commonPaths: getCommonNpmPaths('pi'),
-    cache: false,
     timeout: 3000,
     useEnhancedPath: true,
     useLoginShell: true,
