@@ -1464,20 +1464,27 @@ app.whenReady().then(async () => {
     }
 
     // setupAutoUpdateIPC(); // Already called in critical IPC setup
-    // Initialize auto-updater in production (not needed at startup, depends on
-    // mainWindow). Runs BEFORE any awaited step in this task so the GET_STATE
-    // boot gate is always settled — a rejection in a later awaited import must
-    // not leave boot-time GET_STATE waiters hanging. (auto-update.ipc is
-    // statically imported above, so this dynamic import is a cache hit.)
+    // Initialize auto-updater in production. Runs BEFORE any awaited step in
+    // this task so the GET_STATE boot gate is always settled — a rejection in
+    // a later awaited import must not leave boot-time GET_STATE waiters
+    // hanging. (auto-update.ipc is statically imported above, so this dynamic
+    // import is a cache hit.)
     const { initializeAutoUpdater, markAutoUpdaterNotInitialized } = await import(
       '../features/auto-update/main/auto-update.ipc'
     );
     const mainWindow = getMainWindow();
-    if (process.env.NODE_ENV !== 'development' && mainWindow) {
+    if (process.env.NODE_ENV !== 'development') {
+      // Initialize regardless of whether a window exists yet
+      // (intent-hq/monorepo#1848): this setImmediate task can run before
+      // window creation — the outer flow awaits getActiveId() first, which
+      // yields the event loop — and gating on the window used to skip
+      // initialization for the whole session, leaving manual checks to die in
+      // the watchdog timeout. When mainWindow is still null here, the ref
+      // attaches later via the updateAutoUpdaterWindow() calls in window.ts.
       initializeAutoUpdater(mainWindow);
     } else {
-      // Dev mode (or no window): the updater never initializes — unblock
-      // boot-time GET_STATE waiters so they answer the default state.
+      // Dev mode: the updater never initializes — unblock boot-time
+      // GET_STATE waiters so they answer the default state.
       markAutoUpdaterNotInitialized();
     }
 

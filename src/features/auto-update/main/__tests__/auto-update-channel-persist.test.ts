@@ -185,6 +185,27 @@ describe('GET_STATE boot gating (early renderer read)', () => {
     expect(result.data.channel).toBe('beta');
   });
 
+  it('initializeAutoUpdater() with no window (secondary task raced ahead of window creation) still initializes and settles the gate', async () => {
+    // Persisted beta preference — only visible in GET_STATE if initialize()
+    // really ran (intent-hq/monorepo#1848: the pre-window race used to skip
+    // initialization entirely).
+    const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
+    await fs.writeFile(prefsPath, JSON.stringify({ betaUpdatesEnabled: true }), 'utf8');
+
+    const { ipc, getStateHandler } = await registerAndGetStateHandler();
+    const pending = getStateHandler({}, undefined);
+
+    // The deferred secondary-startup task runs before any window exists;
+    // initialization must proceed regardless.
+    ipc.initializeAutoUpdater(null);
+
+    const result = await pending;
+    expect(result.success).toBe(true);
+    expect(result.data.channel).toBe('beta');
+    // Proves initialize() actually ran (currentVersion is set there).
+    expect(result.data.currentVersion).toBe('2.0.0');
+  });
+
   it('markAutoUpdaterNotInitialized() (dev mode) unblocks GET_STATE with the default state', async () => {
     const { ipc, getStateHandler } = await registerAndGetStateHandler();
 
