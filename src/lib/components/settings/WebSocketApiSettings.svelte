@@ -15,13 +15,16 @@
    * rejects them with -32001 on non-local connections), and toggling
    * `server.wsApi.enabled` remotely could sever the FE's own connection. So when
    * the active connection is remote (activeId !== LOCAL_CONNECTION_ID) this
-   * component renders an info-only panel — no daemon calls, no controls.
+   * component renders an info-only panel — no daemon calls, no controls. The
+   * gating is reactive to connection switches while mounted: remote→local
+   * triggers a fresh status load, and loadStatus() re-checks locality after
+   * awaits so a mid-flight local→remote switch never fires server.pairingInfo.
    *
    * This component directly calls appClient methods per the restored pattern from
    * commit 27293564. The WebSocket API settings are transient UI state that do not
    * belong in Redux; the settings themselves are persisted by the daemon.
    */
-  import { onMount, onDestroy } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { Input } from '$lib/components/ui/input';
@@ -65,20 +68,26 @@
     token ? '•'.repeat(Math.max(0, token.length - 8)) + token.slice(-8) : '',
   );
 
-  onMount(async () => {
+  // Reacts to connection switches while mounted (and covers the initial
+  // mount): on remote, skip loadStatus() entirely — server.* methods are
+  // local-only; on local (including a remote→local switch) load fresh status.
+  $effect(() => {
     if (isRemote) {
-      // Info-only panel on remote connections — server.* methods are
-      // local-only, so skip loadStatus() entirely.
       loading = false;
       return;
     }
-    await loadStatus();
+    void loadStatus();
   });
 
   async function loadStatus() {
     try {
       loading = true;
       const settings = await appClient.settings.list();
+      if (isRemote) {
+        // Connection switched to remote mid-flight — server.pairingInfo is
+        // local-only, so drop this stale load entirely.
+        return;
+      }
       const wsApiEnabled = settings.find((s: { path: string; value: unknown }) => s.path === 'server.wsApi.enabled');
       const wsApiPort = settings.find((s: { path: string; value: unknown }) => s.path === 'server.wsApi.port');
 
