@@ -217,4 +217,67 @@ describe('connectionsSaga', () => {
     run.task.cancel();
     await run.task.toPromise();
   });
+
+  it('takes only the leading same-action request while other action owners remain independent', async () => {
+    let resolveAdd: ((value: { connection: ConnectionRecord }) => void) | undefined;
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST) return { connections: [LOCAL], activeId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.ADD)
+        return await new Promise<{ connection: ConnectionRecord }>((resolve) => {
+          resolveAdd = resolve;
+        });
+      if (channel === CONNECTION_CHANNELS.CAPTURE_FINGERPRINT) return { fingerprint: 'AB:CD' };
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const first = addConnectionRequested({
+      label: REMOTE.label,
+      host: REMOTE.host!,
+      port: REMOTE.port!,
+      fingerprint: REMOTE.fingerprint!,
+      token: 'secret',
+    });
+    const ignored = addConnectionRequested({
+      label: 'ignored',
+      host: REMOTE.host!,
+      port: REMOTE.port!,
+      fingerprint: REMOTE.fingerprint!,
+      token: 'secret',
+    });
+    run.channel.put(first);
+    await settle();
+    run.channel.put(ignored);
+
+    const capture = captureFingerprintRequested({ host: REMOTE.host!, port: REMOTE.port! });
+    run.channel.put(capture);
+    await expect(capture.promise).resolves.toEqual({ fingerprint: 'AB:CD' });
+    expect(
+      invoke.mock.calls.filter(([channel]) => channel === CONNECTION_CHANNELS.ADD),
+    ).toHaveLength(1);
+
+    resolveAdd?.({ connection: REMOTE });
+    await expect(first.promise).resolves.toEqual(REMOTE);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('rejects an active awaitable request when the root saga is cancelled', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST) return { connections: [LOCAL], activeId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.SWITCH) return await new Promise(() => {});
+      return {};
+    });
+    const run = start();
+    await settle();
+    const action = switchConnectionRequested(REMOTE.id);
+    run.channel.put(action);
+    await settle();
+
+    run.task.cancel();
+    await run.task.toPromise();
+    await expect(action.promise).rejects.toThrow('Connection switch was cancelled');
+    expect(run.getState().connections.error).toBe('Connection switch was cancelled');
+  });
 });
