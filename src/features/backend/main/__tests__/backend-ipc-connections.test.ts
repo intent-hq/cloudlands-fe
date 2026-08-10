@@ -287,6 +287,111 @@ describe('pinned-cert mismatch propagation', () => {
 });
 
 // ---------------------------------------------------------------------------
+// WSS auth-rejection propagation
+// ---------------------------------------------------------------------------
+
+describe('WSS auth-rejection propagation', () => {
+  it('emits a single connections:auth-rejected failure event on AuthRejectedError', async () => {
+    const send = installWindow();
+    const { mod } = await loadModule();
+    const { AuthRejectedError } = await import('../backend-connection');
+
+    await mod.switchBackend('remote-1'); // now pinned to REMOTE
+    const client = mod.getBackendClient() as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+
+    client.emit('error', new AuthRejectedError(401));
+
+    const rejectedCalls = send.mock.calls.filter(([c]) => c === 'connections:auth-rejected');
+    expect(rejectedCalls).toHaveLength(1);
+    expect(rejectedCalls[0][1]).toEqual({
+      id: 'remote-1',
+      host: '10.0.0.5',
+      port: 8443,
+      statusCode: 401,
+    });
+
+    // The reconnect loop re-raises on every retry — still only one notice.
+    client.emit('error', new AuthRejectedError(401));
+    expect(send.mock.calls.filter(([c]) => c === 'connections:auth-rejected')).toHaveLength(1);
+  });
+
+  it('latches the rejection and replays it on connections:list for late subscribers', async () => {
+    installWindow();
+    const { mod } = await loadModule();
+    const { AuthRejectedError } = await import('../backend-connection');
+    mod.registerBackendHandlers();
+
+    await mod.switchBackend('remote-1');
+    const client = mod.getBackendClient() as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    client.emit('error', new AuthRejectedError(401));
+
+    // A renderer created/reloaded AFTER the one-shot broadcast still learns the
+    // rejection from its initial list fetch (the sticky #823 pattern).
+    const handler = findHandler('connections:list');
+    await expect(handler!({}, undefined)).resolves.toMatchObject({
+      authRejected: { id: 'remote-1', host: '10.0.0.5', port: 8443, statusCode: 401 },
+    });
+
+    // A fresh client (re-pair / switch) clears the latch: the list stops
+    // replaying a rejection that no longer describes the live client.
+    await mod.switchBackend('remote-1');
+    await expect(handler!({}, undefined)).resolves.toMatchObject({ authRejected: null });
+  });
+
+  it('carries the 403 statusCode (WS API disabled) on the payload', async () => {
+    const send = installWindow();
+    const { mod } = await loadModule();
+    const { AuthRejectedError } = await import('../backend-connection');
+
+    await mod.switchBackend('remote-1');
+    const client = mod.getBackendClient() as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+
+    client.emit('error', new AuthRejectedError(403));
+
+    const rejectedCalls = send.mock.calls.filter(([c]) => c === 'connections:auth-rejected');
+    expect(rejectedCalls).toHaveLength(1);
+    expect(rejectedCalls[0][1]).toMatchObject({ statusCode: 403 });
+  });
+
+  it('resets the once-latch when a fresh client is constructed', async () => {
+    const send = installWindow();
+    const { mod } = await loadModule();
+    const { AuthRejectedError } = await import('../backend-connection');
+
+    await mod.switchBackend('remote-1');
+    let client = mod.getBackendClient() as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    client.emit('error', new AuthRejectedError(401));
+    expect(send.mock.calls.filter(([c]) => c === 'connections:auth-rejected')).toHaveLength(1);
+
+    // A switch disposes the old client and builds a fresh one → latch resets.
+    await mod.switchBackend('remote-1');
+    client = mod.getBackendClient() as unknown as { emit(event: string, arg: unknown): void };
+    client.emit('error', new AuthRejectedError(401));
+    expect(send.mock.calls.filter(([c]) => c === 'connections:auth-rejected')).toHaveLength(2);
+  });
+
+  it('does not emit an auth-rejected event for a generic transport error', async () => {
+    const send = installWindow();
+    const { mod } = await loadModule();
+    await mod.switchBackend('remote-1');
+    const client = mod.getBackendClient() as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+
+    client.emit('error', new Error('ECONNRESET'));
+    expect(send.mock.calls.some(([c]) => c === 'connections:auth-rejected')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // IPC channel reachability + validation
 // ---------------------------------------------------------------------------
 
@@ -302,22 +407,47 @@ describe('connections:* IPC handlers', () => {
       activeId: 'local',
       // No remote handshake has mismatched, so there is no sticky mismatch (#823).
       protocolMismatch: null,
+      // No auth rejection has fired, so there is no sticky rejection either.
+      authRejected: null,
     });
   });
 
   it('connections:capture-fingerprint returns the presented fingerprint', async () => {
-    mockCaptureFingerprint.mockResolvedValue({ ok: true, fingerprint: 'AA:BB:CC:DD' });
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: 'AA:BB:CC:DD',
+      tokenValid: true,
+    });
     const { mod } = await loadModule();
     mod.registerBackendHandlers();
     const handler = findHandler('connections:capture-fingerprint');
 
     await expect(handler!({}, { host: '10.0.0.5', port: 8443, token: 'tok' })).resolves.toEqual({
       fingerprint: 'AA:BB:CC:DD',
+      tokenValid: true,
     });
     expect(mockCaptureFingerprint).toHaveBeenCalledWith({
       host: '10.0.0.5',
       port: 8443,
       token: 'tok',
+    });
+  });
+
+  it('connections:capture-fingerprint passes a token rejection through with its status', async () => {
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: 'AA:BB:CC:DD',
+      tokenValid: false,
+      statusCode: 401,
+    });
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:capture-fingerprint');
+
+    await expect(handler!({}, { host: '10.0.0.5', port: 8443, token: 'tok' })).resolves.toEqual({
+      fingerprint: 'AA:BB:CC:DD',
+      tokenValid: false,
+      statusCode: 401,
     });
   });
 
@@ -350,8 +480,63 @@ describe('connections:* IPC handlers', () => {
       fingerprint: 'AA:BB:CC:DD',
       token: 'secret-token',
     };
-    await expect(handler!({}, params)).resolves.toEqual({ connection: REMOTE });
+    await expect(handler!({}, params)).resolves.toEqual({ connection: REMOTE, switched: false });
     expect(store.add).toHaveBeenCalledWith(params);
+    expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
+  });
+
+  it('connections:add upserting a NON-active connection does not reconnect', async () => {
+    store.add.mockResolvedValue(REMOTE);
+    store.getActiveId.mockResolvedValue('local');
+    installWindow();
+    const { mod, captureAndClose, restore } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:add');
+
+    await handler!(
+      {},
+      { label: 'Studio Mac', host: '10.0.0.5', port: 8443, fingerprint: 'AA:BB:CC:DD', token: 't' },
+    );
+    // Not the live backend → no client swap / window teardown.
+    expect(captureAndClose).not.toHaveBeenCalled();
+    expect(restore).not.toHaveBeenCalled();
+  });
+
+  it('connections:add upserting the ACTIVE connection reconnects via switchBackend', async () => {
+    store.add.mockResolvedValue(REMOTE);
+    store.getActiveId.mockResolvedValue('remote-1');
+    const send = installWindow();
+    const { mod, captureAndClose, restore } = await loadModule();
+    mod.getBackendClient(); // client #1 (pinned to whatever was live)
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:add');
+    lifecycle.events = [];
+
+    const params = {
+      label: 'Studio Mac',
+      host: '10.0.0.5',
+      port: 8443,
+      fingerprint: 'AA:BB:CC:DD',
+      token: 'fresh-token',
+    };
+    await expect(handler!({}, params)).resolves.toEqual({ connection: REMOTE, switched: true });
+
+    // Full dispose + rebuild so the refreshed token takes effect immediately.
+    // (The fake client's seq counter is file-global, so assert relative order
+    // plus that the disposed client predates the newly constructed one.)
+    expect(lifecycle.events.map((e) => e.type)).toEqual([
+      'capture',
+      'dispose',
+      'construct',
+      'start',
+      'restore',
+    ]);
+    const disposed = lifecycle.events.find((e) => e.type === 'dispose')!;
+    const constructed = lifecycle.events.find((e) => e.type === 'construct')!;
+    expect(disposed.seq).toBeLessThan(constructed.seq);
+    expect(captureAndClose).toHaveBeenCalledWith('remote-1');
+    expect(restore).toHaveBeenCalledWith('remote-1');
+    expect(store.setActiveId).toHaveBeenCalledWith('remote-1');
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
   });
 

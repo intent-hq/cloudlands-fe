@@ -18,11 +18,13 @@ import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type {
   AddConnectionParams,
+  AddConnectionResult,
   CaptureFingerprintParams,
   CaptureFingerprintResult,
   ConnectionRecord,
   ConnectionsState,
   ConnectionsListResult,
+  ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionProtocolMismatchEvent,
 } from './connections-types';
@@ -37,6 +39,7 @@ export const initialState: ConnectionsState = {
   status: 'idle',
   error: null,
   certMismatch: null,
+  authRejected: null,
   protocolMismatch: null,
   protocolMismatchModalDismissed: false,
 };
@@ -84,6 +87,16 @@ export const certMismatchReceived = createAction<[event: ConnectionCertMismatchE
 export const certMismatchCleared = createAction('connections/certMismatchCleared');
 
 /**
+ * A `connections:auth-rejected` push arrived — the remote backend rejected the
+ * WebSocket upgrade with HTTP 401/403 (bad/rotated token, or the WS API is
+ * disabled). Latched so the UI can surface a "re-pair or switch" state instead
+ * of the generic cannot-connect overlay.
+ */
+export const authRejectedReceived = createAction<[event: ConnectionAuthRejectedEvent]>(
+  'connections/authRejectedReceived',
+);
+
+/**
  * A `connections:protocol-mismatch` push arrived — a remote's protocolVersion
  * differs in major version from the local intentd's. Stored so the UI can
  * surface a non-blocking advisory modal (and a persistent menu warning). Resets
@@ -113,10 +126,14 @@ export const captureFingerprintRequested = createAsyncAction<
   CaptureFingerprintResult
 >('connections/captureFingerprint', 'connections/captureFingerprintRequested');
 
-/** Saga-owned connection add request. Resolves with the token-free record. */
+/**
+ * Saga-owned connection add request. Resolves with the token-free record plus
+ * whether main already switched to it (active re-pair rebuilds the live client
+ * in the add handler — the caller must then skip its own follow-up switch).
+ */
 export const addConnectionRequested = createAsyncAction<
   [params: AddConnectionParams],
-  ConnectionRecord
+  AddConnectionResult
 >('connections/add', 'connections/addRequested');
 
 /** Saga-owned stored-connection removal request. */
@@ -144,7 +161,10 @@ connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) 
   };
 });
 connectionsReducer.with(connectOperationStarted, (state) => {
-  return { ...state, status: 'connecting', error: null };
+  // A fresh add/switch clears the auth-rejected latch: a re-add refreshes the
+  // stored token for the same target, and a switch changes the target — either
+  // way the latched rejection no longer describes the operation under way.
+  return { ...state, status: 'connecting', error: null, authRejected: null };
 });
 connectionsReducer.with(connectOperationSettled, (state) => {
   return { ...state, status: 'idle', error: null };
@@ -157,6 +177,9 @@ connectionsReducer.with(certMismatchReceived, (state, { payload: [event] }) => {
 });
 connectionsReducer.with(certMismatchCleared, (state) => {
   return { ...state, certMismatch: null };
+});
+connectionsReducer.with(authRejectedReceived, (state, { payload: [event] }) => {
+  return { ...state, authRejected: event };
 });
 connectionsReducer.with(protocolMismatchReceived, (state, { payload: [event] }) => {
   return { ...state, protocolMismatch: event, protocolMismatchModalDismissed: false };
