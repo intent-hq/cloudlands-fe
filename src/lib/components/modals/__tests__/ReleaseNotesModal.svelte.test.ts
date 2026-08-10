@@ -2,17 +2,30 @@
  * @vitest-environment jsdom
  *
  * Regression tests for ReleaseNotesModal markdown rendering
- * (intent-hq/monorepo#1748).
+ * (intent-hq/monorepo#1748, intent-hq/monorepo#1875).
  *
  * Mounts the real modal with a markdown release body and asserts the notes
  * render as HTML (headings, lists, links, inline code) — not as escaped plain
- * text — inside the shared `prose` container, and that raw HTML in a release
- * body is sanitized away by the marked + DOMPurify pipeline.
+ * text — via the shared MarkdownViewer (same renderer as notes/chat), and
+ * that raw HTML in a release body is neutralized by the shared pipeline.
  */
 import { render, waitFor } from '@testing-library/svelte';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+
+// MarkdownViewer reads the active workspace id through a store selector at
+// component init; back the store module with the standard mock so the real
+// viewer can render without Store.init().
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({
+    state: { workspace: { activeWorkspaceId: null }, userPreferences: {} },
+    dispatch: vi.fn(),
+  });
+});
+
 import ReleaseNotesModal from '../ReleaseNotesModal.svelte';
 
 const markdownBody = [
@@ -47,60 +60,63 @@ describe('ReleaseNotesModal markdown rendering', () => {
   it('renders the release body as HTML, not escaped plain text', async () => {
     renderModal(markdownBody);
 
-    const prose = await waitFor(() => {
-      const el = document.body.querySelector('.prose');
+    const viewer = await waitFor(() => {
+      const el = document.body.querySelector('.markdown-viewer');
       expect(el).not.toBeNull();
+      expect(el?.querySelector('h2')).not.toBeNull();
       return el as HTMLElement;
     });
 
     // Headings render as heading elements, not literal "##" text
-    const headings = Array.from(prose.querySelectorAll('h2')).map((h) => h.textContent?.trim());
+    const headings = Array.from(viewer.querySelectorAll('h2')).map((h) => h.textContent?.trim());
     expect(headings).toContain('Desktop app (cloudlands-fe)');
-    expect(prose.querySelector('h3')?.textContent?.trim()).toBe('Features');
-    expect(prose.textContent).not.toContain('##');
+    expect(viewer.querySelector('h3')?.textContent?.trim()).toBe('Features');
+    expect(viewer.textContent).not.toContain('##');
 
     // Bullet lists render as list items
-    expect(prose.querySelectorAll('ul li').length).toBeGreaterThanOrEqual(2);
+    expect(viewer.querySelectorAll('ul li').length).toBeGreaterThanOrEqual(2);
 
     // Links render as anchors, not literal [text](url)
-    const link = prose.querySelector(
+    const link = viewer.querySelector(
       'a[href="https://github.com/intent-hq/cloudlands-fe/pull/847"]',
     );
     expect(link).not.toBeNull();
     expect(link?.textContent).toBe('#847');
-    expect(prose.textContent).not.toContain('](');
+    expect(viewer.textContent).not.toContain('](');
 
     // Inline code renders as <code>
-    expect(prose.querySelector('code')?.textContent).toBe('effortLevels');
+    expect(viewer.querySelector('code')?.textContent).toBe('effortLevels');
   });
 
   it('neutralizes raw HTML in the release body', async () => {
     renderModal('## Notes\n\n<img src=x onerror="alert(1)"><script>alert(2)</script>');
 
-    const prose = await waitFor(() => {
-      const el = document.body.querySelector('.prose');
+    const viewer = await waitFor(() => {
+      const el = document.body.querySelector('.markdown-viewer');
       expect(el).not.toBeNull();
+      expect(el?.querySelector('h2')).not.toBeNull();
       return el as HTMLElement;
     });
 
-    expect(prose.querySelector('h2')?.textContent?.trim()).toBe('Notes');
+    expect(viewer.querySelector('h2')?.textContent?.trim()).toBe('Notes');
     // Raw HTML is escaped to inert text by the pipeline: no live elements.
-    expect(prose.querySelector('img')).toBeNull();
-    expect(prose.querySelector('script')).toBeNull();
-    expect(prose.querySelector('[onerror]')).toBeNull();
+    expect(viewer.querySelector('img')).toBeNull();
+    expect(viewer.querySelector('script')).toBeNull();
+    expect(viewer.querySelector('[onerror]')).toBeNull();
   });
 });
 
-describe('Tailwind entry point (monorepo#1748 root cause)', () => {
+describe('Tailwind entry point (monorepo#1748 / monorepo#1875)', () => {
   // Tailwind v4 uses CSS-first config and ignores the legacy
-  // tailwind.config.js, so `prose` styling only exists if app.css loads the
-  // typography plugin itself. The jsdom tests above pass without any CSS, so
-  // guard the directives at the source level: removing either one silently
-  // reverts the app to unstyled markdown / media-query dark variants.
+  // tailwind.config.js. The typography plugin's global `prose` styles broke
+  // note-editor typography (monorepo#1875), so markdown surfaces render via
+  // MarkdownViewer instead and app.css must NOT load the plugin. The
+  // class-based dark variant stays — the app toggles `.dark`/`.light` on the
+  // root element, so `dark:` variants must key off the class.
   const appCss = readFileSync(path.resolve(__dirname, '../../../../app.css'), 'utf8');
 
-  it('loads the typography plugin via @plugin', () => {
-    expect(appCss).toMatch(/@plugin\s+["']@tailwindcss\/typography["'];/);
+  it('does not load the typography plugin', () => {
+    expect(appCss).not.toMatch(/@plugin\s+["']@tailwindcss\/typography["']/);
   });
 
   it('defines the class-based dark variant', () => {

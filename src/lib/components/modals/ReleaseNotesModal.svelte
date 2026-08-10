@@ -4,14 +4,14 @@
    *
    * Opened automatically on the first launch after an update (main-process
    * push) and on demand from Help ▸ Show Release Notes. The markdown body is
-   * rendered with the shared marked + DOMPurify pipeline; when no notes are
-   * available the fallback message renders instead.
+   * rendered with the shared MarkdownViewer (same renderer as notes/chat);
+   * when no notes are available the fallback message renders instead.
    */
 
   import Modal from '$lib/components/modals/Modal.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
+  import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { openExternalUrl } from '$lib/utils/open-external';
-  import { processMarkdownForDisplay } from '$lib/utils/markdown-processor';
   import { m } from '$shared/paraglide/messages.js';
   import type { ReleaseNotes } from '$store/renderer/slices/release-notes/release-notes-types';
 
@@ -23,22 +23,6 @@
   }
 
   let { open = $bindable(false), releaseNotes, loading = false, onClose }: Props = $props();
-
-  let notesHtml = $state('');
-  $effect(() => {
-    const markdown = releaseNotes?.notes ?? '';
-    if (!markdown) {
-      notesHtml = '';
-      return;
-    }
-    let destroyed = false;
-    void processMarkdownForDisplay(markdown).then((html) => {
-      if (!destroyed) notesHtml = html;
-    });
-    return () => {
-      destroyed = true;
-    };
-  });
 
   const title = $derived(
     releaseNotes
@@ -62,11 +46,8 @@
   <div class="overflow-y-auto min-h-0">
     {#if loading}
       <p class="text-sm text-muted-foreground">{m.releaseNotes_modal_loading_message()}</p>
-    {:else if releaseNotes && notesHtml}
-      <div class="prose prose-sm dark:prose-invert max-w-none">
-        <!-- eslint-disable-next-line svelte/no-at-html-tags (sanitized by processMarkdownForDisplay) -->
-        {@html notesHtml}
-      </div>
+    {:else if releaseNotes?.notes}
+      <MarkdownViewer content={releaseNotes.notes} />
     {:else}
       <p class="text-sm text-muted-foreground">{m.releaseNotes_modal_unavailable_message()}</p>
     {/if}
