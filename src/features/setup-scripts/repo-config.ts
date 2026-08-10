@@ -116,6 +116,45 @@ export async function fetchGitHubRepoConfigSetupScript(
   }
 }
 
+/**
+ * Resolve the `setupScript` param for `workspace.create` (monorepo#1862).
+ *
+ * The daemon persists an explicitly supplied `setupScript` into the fresh
+ * worktree's tracked `.intent/config.json` (PROTOCOL §5.1), so an
+ * auto-restored default (last-used / generic template) or the unedited
+ * repo-config script must be OMITTED — the committed file is the source of
+ * truth and still executes via the daemon's worktree-first read. Only a
+ * script the user touched/confirmed this session (edited it, or explicitly
+ * picked/confirmed one in the setup-script modal) is sent.
+ *
+ * Returns the trimmed script to send, or undefined to omit the param.
+ */
+export function resolveSetupScriptParam(options: {
+  setupScript: string;
+  setupScriptName: string;
+  /** User edited the script content (bound from the editor). */
+  isCustomSetupScript: boolean;
+  /** User committed the setup-script modal (Done) this session. */
+  setupScriptUserTouched: boolean;
+  repoPath: string | null;
+  /** Cached repo-config script and the repo it was fetched for. */
+  repoConfigScript: string | null;
+  repoConfigScriptRepo: string | null;
+}): string | undefined {
+  const script = options.setupScript.trim();
+  if (!script) return undefined;
+  // The unedited repo-config script is never sent, even when explicitly
+  // confirmed — the committed file already holds it, and re-sending would
+  // write it into a different branch's checkout on a non-default baseRef.
+  const isUneditedRepoConfigScript =
+    options.setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
+    options.repoConfigScriptRepo === options.repoPath &&
+    script === (options.repoConfigScript ?? '').trim();
+  if (isUneditedRepoConfigScript) return undefined;
+  if (options.isCustomSetupScript || options.setupScriptUserTouched) return script;
+  return undefined;
+}
+
 /** A resolved default setup script selection for the initializer. */
 export interface SetupScriptChoice {
   content: string;
