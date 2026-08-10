@@ -67,6 +67,7 @@ import {
   isSessionCyclable,
   isSessionIdle,
   isSessionInProgress,
+  pickLastActivePerWorkspace,
   sessionHasFailed,
   sessionNeedsAttention,
   type CycleAgentEntry,
@@ -206,13 +207,16 @@ function inProgressAgents(state: ActionKeyState): CycleAgentEntry[] {
 /**
  * The unread-cycle walk: union of two walks, deduped by agent id — each
  * walk is in workspace order, and unread-workspace entries precede
- * attention-only entries: (a) the top-level agents of each unread
- * workspace (unread is workspace-level, BE-owned `workspace.attention`) —
- * a fixed top-level walk; and (b) every attention-requesting agent (the
- * LED attention definition), which follows the `cycle-attention-agents`
- * configured scope so the settings toggle also governs this portion.
- * `attentionAgentIds` records walk (b) membership independent of dedup
- * position, for the remaining-stop count.
+ * attention-only entries: (a) one stop per unread workspace (unread is
+ * workspace-level, BE-owned `workspace.attention`) — its last active
+ * top-level agent (`getLastIdleTime` recency, falling back to the first
+ * foreground agent when no recency signal exists), since visiting the
+ * workspace clears its whole unread flag anyway
+ * (intent-hq/monorepo#1779); and (b) every attention-requesting agent
+ * (the LED attention definition), which follows the
+ * `cycle-attention-agents` configured scope so the settings toggle also
+ * governs this portion. `attentionAgentIds` records walk (b) membership
+ * independent of dedup position, for the remaining-stop count.
  */
 function collectUnreadCycleEntries(state: ActionKeyState): {
   entries: CycleAgentEntry[];
@@ -223,8 +227,11 @@ function collectUnreadCycleEntries(state: ActionKeyState): {
       .filter((workspace) => workspace.attention === 'unread')
       .map((workspace) => workspace.id),
   );
-  const unreadEntries = collectCycleAgents(state, isSessionCyclable).filter((entry) =>
-    unreadWorkspaceIds.has(entry.wsId),
+  const unreadEntries = pickLastActivePerWorkspace(
+    state,
+    collectCycleAgents(state, isSessionCyclable).filter((entry) =>
+      unreadWorkspaceIds.has(entry.wsId),
+    ),
   );
   const attentionEntries = collectCycleAgents(
     state,
@@ -401,9 +408,10 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
           : m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many({ count: remaining }),
     countRemaining: (state, entries, next) => {
       // Stepping to `next` visits its workspace, which clears the whole
-      // workspace's unread flag — every unread-only entry of that workspace
-      // stops being a candidate along with it. Attention entries persist
-      // individually until handled, so they always count as their own stop.
+      // workspace's unread flag — that workspace's unread entry (one per
+      // unread workspace) stops being a candidate along with it. Attention
+      // entries persist individually until handled, so they always count as
+      // their own stop.
       const { attentionAgentIds } = collectUnreadCycleEntries(state);
       return entries.filter(
         (entry) =>
