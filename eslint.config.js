@@ -262,7 +262,7 @@ const componentAsyncDataFetchBaselineIgnorePatterns = componentAsyncDataFetchBas
 // must never import Electron, Node builtins, or main-process (`**/main/**`)
 // subtrees — it has to stay runnable in a plain browser context. Type-only
 // imports are allowed because they are erased at compile time. See
-// docs/MODULE_BOUNDARY_GUIDE.md.
+// the monorepo's docs/fe/MODULE_BOUNDARY_GUIDE.md.
 //
 // Staged rollout: the files below are pre-existing violators — mostly
 // main-process code living at a feature root instead of a `main/` subtree,
@@ -304,7 +304,7 @@ const rendererBrowserSafetyRestrictedImportsOptions = {
     {
       name: 'electron',
       message:
-        'Renderer code must stay browser-safe: Electron is only available in the main process. Route through IPC/preload instead (docs/MODULE_BOUNDARY_GUIDE.md).',
+        'Renderer code must stay browser-safe: Electron is only available in the main process. Route through IPC/preload instead (docs/fe/MODULE_BOUNDARY_GUIDE.md).',
       allowTypeImports: true,
     },
   ],
@@ -312,19 +312,19 @@ const rendererBrowserSafetyRestrictedImportsOptions = {
     {
       regex: '^electron/',
       message:
-        'Renderer code must stay browser-safe: Electron is only available in the main process. Route through IPC/preload instead (docs/MODULE_BOUNDARY_GUIDE.md).',
+        'Renderer code must stay browser-safe: Electron is only available in the main process. Route through IPC/preload instead (docs/fe/MODULE_BOUNDARY_GUIDE.md).',
       allowTypeImports: true,
     },
     {
       regex: `^(node:)?(${nodeBuiltinModules.join('|')})(/|$)`,
       message:
-        'Renderer code must stay browser-safe: Node builtins are not available in the browser. Move the logic to the main process or use a browser-safe alternative (docs/MODULE_BOUNDARY_GUIDE.md).',
+        'Renderer code must stay browser-safe: Node builtins are not available in the browser. Move the logic to the main process or use a browser-safe alternative (docs/fe/MODULE_BOUNDARY_GUIDE.md).',
       allowTypeImports: true,
     },
     {
       regex: '(^|/)main(/|$)',
       message:
-        'Renderer code must never import from a main/ subtree. Extract a shared/browser-safe module or route through IPC instead (docs/MODULE_BOUNDARY_GUIDE.md).',
+        'Renderer code must never import from a main/ subtree. Extract a shared/browser-safe module or route through IPC instead (docs/fe/MODULE_BOUNDARY_GUIDE.md).',
       allowTypeImports: true,
     },
   ],
@@ -532,7 +532,7 @@ export default [
     },
   },
   // Browser safety for renderer code: no Electron, no Node builtins, no
-  // main-process subtrees. See docs/MODULE_BOUNDARY_GUIDE.md and the
+  // main-process subtrees. See the monorepo's docs/fe/MODULE_BOUNDARY_GUIDE.md and the
   // rendererBrowserSafetyBaselineFiles comment above.
   {
     files: [
