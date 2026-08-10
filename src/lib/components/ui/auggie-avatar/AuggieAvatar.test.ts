@@ -61,6 +61,19 @@ vi.mock('./avatar-constants', () => ({
 
 import AuggieAvatar from './AuggieAvatar.svelte';
 
+// CSS attribute selectors lowercase attribute names in HTML documents, so
+// `svg[viewBox=...]` never matches the case-sensitive SVG attribute (jsdom >= 30
+// matches browser behavior here). Query by getAttribute instead.
+function querySvgByViewBox(root: Element, viewBox: string, role?: string) {
+  return (
+    Array.from(root.querySelectorAll('svg')).find(
+      (svg) =>
+        svg.getAttribute('viewBox') === viewBox &&
+        (role === undefined || svg.getAttribute('role') === role),
+    ) ?? null
+  );
+}
+
 function expectReadableAgentArg(mock: ReturnType<typeof vi.fn>, expectedAgentId: string) {
   const agentIdArg = mock.mock.calls[0]?.[0];
   expect(agentIdArg).toHaveProperty('subscribe');
@@ -133,8 +146,8 @@ describe('AuggieAvatar Thinking selector ownership', () => {
     const { container } = render(AuggieAvatar, { props: { agentId: 'codex-agent', size: 20 } });
 
     expectReadableAgentArg(selectAgentProviderMock, 'codex-agent');
-    expect(container.querySelector('svg[role="img"][viewBox="0 0 24 24"]')).not.toBeNull();
-    expect(container.querySelector('svg[viewBox="0 1 20 12.3"]')).toBeNull();
+    expect(querySvgByViewBox(container, '0 0 24 24', 'img')).not.toBeNull();
+    expect(querySvgByViewBox(container, '0 1 20 12.3')).toBeNull();
   });
 
   it('does not re-run provider lookup for unrelated avatar prop updates', async () => {
@@ -153,14 +166,14 @@ describe('AuggieAvatar Thinking selector ownership', () => {
       props: { agentId: 'codex-thinking-agent', size: 20, specialist: 'implementor' },
     });
 
-    expect(container.querySelector('svg[role="img"][viewBox="0 0 24 24"]')).not.toBeNull();
+    expect(querySvgByViewBox(container, '0 0 24 24', 'img')).not.toBeNull();
     expect(container.querySelector('.animate-thinking')).not.toBeNull();
 
     await rerender({ agentId: 'auggie-agent', size: 20, specialist: 'implementor' });
     await tick();
 
-    expect(container.querySelector('svg[role="img"][viewBox="0 0 24 24"]')).toBeNull();
-    expect(container.querySelector('svg[viewBox="0 1 20 12.3"]')).not.toBeNull();
+    expect(querySvgByViewBox(container, '0 0 24 24', 'img')).toBeNull();
+    expect(querySvgByViewBox(container, '0 1 20 12.3')).not.toBeNull();
     expect(container.querySelector('.animate-thinking')).toBeNull();
     expect(selectAgentProviderMock).toHaveBeenCalledTimes(1);
     expect(selectAgentIsThinkingMock).toHaveBeenCalledTimes(1);
@@ -168,10 +181,10 @@ describe('AuggieAvatar Thinking selector ownership', () => {
 
   it('keeps the auggie logo for auggie and providerless avatars', () => {
     const auggie = render(AuggieAvatar, { props: { agentId: 'auggie-agent', size: 20 } });
-    expect(auggie.container.querySelector('svg[viewBox="0 1 20 12.3"]')).not.toBeNull();
+    expect(querySvgByViewBox(auggie.container, '0 1 20 12.3')).not.toBeNull();
     cleanup();
 
     const seedOnly = render(AuggieAvatar, { props: { seed: 'seed-only', size: 20 } });
-    expect(seedOnly.container.querySelector('svg[viewBox="0 1 20 12.3"]')).not.toBeNull();
+    expect(querySvgByViewBox(seedOnly.container, '0 1 20 12.3')).not.toBeNull();
   });
 });
