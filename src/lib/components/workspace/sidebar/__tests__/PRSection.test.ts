@@ -430,4 +430,49 @@ describe('PRSection', () => {
       expect(fileRow?.getAttribute('data-file-path')).toBe('src/a.ts');
     });
   });
+
+  it('renders the short crossRepoDisplay prefix and a hover status tooltip on the PR row', async () => {
+    const { container } = await renderPR({
+      hasPRs: true,
+      pullRequests: [
+        {
+          ...testPR,
+          crossRepo: 'acme/other',
+          crossRepoDisplay: 'other',
+          monitorSnapshot: {
+            state: 'open',
+            isDraft: false,
+            hasConflicts: false,
+            isBehind: false,
+            checks: {
+              total: 2,
+              passed: 1,
+              failed: 1,
+              pending: 0,
+              failingRequired: 0,
+              pendingRequired: 0,
+              requiredKnown: false,
+            },
+            approvals: { decision: 'REVIEW_REQUIRED', have: 0, needed: 1, changesRequested: 0 },
+            threads: { unresolved: 0 },
+            rulesKnown: false,
+          },
+        },
+      ],
+    });
+
+    const prefix = await waitFor(() => {
+      const el = Array.from(container.querySelectorAll('span.text-ghost')).find(
+        (s) => s.textContent === 'other:',
+      );
+      expect(el).toBeDefined();
+      return el as HTMLElement;
+    });
+    expect(prefix.textContent).toBe('other:');
+
+    const rowHeader = container.querySelector('div[title]');
+    expect(rowHeader?.getAttribute('title')).toContain('Open');
+    expect(rowHeader?.getAttribute('title')).toContain('Checks: 1 passed, 1 failed, 0 pending');
+    expect(rowHeader?.getAttribute('title')).toContain('Approvals: 0 of 1');
+  });
 });

@@ -10,7 +10,7 @@ import {
 } from '$features/file-tracking/types';
 import type { AgentChangeGroup, PRInfo } from '$lib/components/file-tracking/accept-changes/types';
 import type { PullRequestInfo } from '$shared/types';
-import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import type { PrMonitorRow, PrMonitorSnapshot } from '$features/pr-monitor/pr-monitor-service';
 import {
   getBranchNameValidationError,
   constructPrUrl,
@@ -32,10 +32,33 @@ import {
   computeTotalStats,
   mapWorkspacePRs,
   mergeMonitoredPRs,
+  getPRStatusTooltip,
   countOtherActiveMonitors,
 } from '../sidebar-changes-utils';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function makeSnapshot(overrides: Partial<PrMonitorSnapshot> = {}): PrMonitorSnapshot {
+  return {
+    state: 'open',
+    isDraft: false,
+    hasConflicts: false,
+    isBehind: false,
+    checks: {
+      total: 0,
+      passed: 0,
+      failed: 0,
+      pending: 0,
+      failingRequired: 0,
+      pendingRequired: 0,
+      requiredKnown: false,
+    },
+    approvals: { decision: '', have: 0, changesRequested: 0 },
+    threads: { unresolved: 0 },
+    rulesKnown: false,
+    ...overrides,
+  };
+}
 
 function makeCommit(overrides: Partial<CommitInfo> = {}): CommitInfo {
   return {
@@ -770,6 +793,69 @@ describe('mergeMonitoredPRs', () => {
     expect(result[1].monitorOnly).toBe(true);
   });
 
+  it('drops the owner segment in crossRepoDisplay when the org matches the workspace repo', () => {
+    const result = mergeMonitoredPRs(
+      [],
+      [makeMonitor({ repo: 'acme/other', url: 'https://github.com/acme/other/pull/42' })],
+      workspaceRepo,
+    );
+    expect(result[0].crossRepo).toBe('acme/other');
+    expect(result[0].crossRepoDisplay).toBe('other');
+  });
+
+  it('shortens crossRepoDisplay case-insensitively on the owner segment', () => {
+    const result = mergeMonitoredPRs(
+      [],
+      [makeMonitor({ repo: 'Acme/other', url: 'https://github.com/Acme/other/pull/42' })],
+      workspaceRepo,
+    );
+    expect(result[0].crossRepo).toBe('Acme/other');
+    expect(result[0].crossRepoDisplay).toBe('other');
+  });
+
+  it('keeps the full owner/name in crossRepoDisplay when the org differs', () => {
+    const result = mergeMonitoredPRs(
+      [],
+      [makeMonitor({ repo: 'other/repo', url: 'https://github.com/other/repo/pull/42' })],
+      workspaceRepo,
+    );
+    expect(result[0].crossRepo).toBe('other/repo');
+    expect(result[0].crossRepoDisplay).toBe('other/repo');
+  });
+
+  it('leaves crossRepoDisplay unset for same-repo monitor rows', () => {
+    const result = mergeMonitoredPRs([makeBasePR({ number: 7 })], [makeMonitor()], workspaceRepo);
+    expect(result[1].crossRepo).toBeUndefined();
+    expect(result[1].crossRepoDisplay).toBeUndefined();
+  });
+
+  it('attaches the monitor last snapshot to both appended and annotated rows', () => {
+    const snapshot = makeSnapshot();
+    const appended = mergeMonitoredPRs([], [makeMonitor({ lastSnapshot: snapshot })], workspaceRepo);
+    expect(appended[0].monitorSnapshot).toBe(snapshot);
+
+    const annotated = mergeMonitoredPRs(
+      [makeBasePR()],
+      [makeMonitor({ lastSnapshot: snapshot })],
+      workspaceRepo,
+    );
+    expect(annotated[0].monitorSnapshot).toBe(snapshot);
+  });
+
+  it('does not let a snapshotless duplicate monitor clobber an earlier snapshot', () => {
+    const snapshot = makeSnapshot();
+    const result = mergeMonitoredPRs(
+      [makeBasePR()],
+      [
+        makeMonitor({ monitorId: 'mon-1', agentId: 'agent-1', lastSnapshot: snapshot }),
+        makeMonitor({ monitorId: 'mon-2', agentId: 'agent-2', lastSnapshot: undefined }),
+      ],
+      workspaceRepo,
+    );
+    expect(result[0].monitorSnapshot).toBe(snapshot);
+    expect(result[0].monitorAgentId).toBe('agent-2');
+  });
+
   it('renders completed monitors without a snapshot verdict as closed (completion covers merged AND closed)', () => {
     const result = mergeMonitoredPRs(
       [],
@@ -876,6 +962,101 @@ describe('mergeMonitoredPRs', () => {
     expect(bareRow?.monitorAgentId).toBe('agent-2');
     const keys = result.map((pr) => (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number)));
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+// ─── getPRStatusTooltip (hover status, PROTOCOL §6.9) ──────────────────────────
+
+describe('getPRStatusTooltip', () => {
+  function makePR(overrides: Partial<PRInfo> = {}): PRInfo {
+    return {
+      number: 42,
+      title: 'PR',
+      url: 'https://github.com/acme/widgets/pull/42',
+      htmlUrl: 'https://github.com/acme/widgets/pull/42',
+      status: 'open',
+      ...overrides,
+    };
+  }
+
+  it('returns just the state line when there is no monitor snapshot', () => {
+    expect(getPRStatusTooltip(makePR({ status: 'open' }))).toBe('Open');
+    expect(getPRStatusTooltip(makePR({ status: 'draft' }))).toBe('Draft');
+    expect(getPRStatusTooltip(makePR({ status: 'merged' }))).toBe('Merged');
+    expect(getPRStatusTooltip(makePR({ status: 'closed' }))).toBe('Closed');
+  });
+
+  it('adds a checks line only when the snapshot has checks', () => {
+    const withChecks = getPRStatusTooltip(
+      makePR({
+        monitorSnapshot: makeSnapshot({
+          checks: {
+            total: 3,
+            passed: 2,
+            failed: 1,
+            pending: 0,
+            failingRequired: 0,
+            pendingRequired: 0,
+            requiredKnown: false,
+          },
+        }),
+      }),
+    );
+    expect(withChecks).toContain('Checks: 2 passed, 1 failed, 0 pending');
+
+    const noChecks = getPRStatusTooltip(makePR({ monitorSnapshot: makeSnapshot() }));
+    expect(noChecks).not.toContain('Checks:');
+  });
+
+  it('renders approvals with a needed count when the snapshot specifies one', () => {
+    const tooltip = getPRStatusTooltip(
+      makePR({
+        monitorSnapshot: makeSnapshot({
+          approvals: { decision: 'REVIEW_REQUIRED', have: 1, needed: 2, changesRequested: 0 },
+        }),
+      }),
+    );
+    expect(tooltip).toContain('Approvals: 1 of 2');
+  });
+
+  it('renders approvals without a needed count when none is specified', () => {
+    const tooltip = getPRStatusTooltip(
+      makePR({
+        monitorSnapshot: makeSnapshot({
+          approvals: { decision: 'APPROVED', have: 2, changesRequested: 0 },
+        }),
+      }),
+    );
+    expect(tooltip).toContain('Approvals: 2');
+    expect(tooltip).not.toContain('of');
+  });
+
+  it('includes changes-requested, unresolved threads, and the merge-blocked reason', () => {
+    const tooltip = getPRStatusTooltip(
+      makePR({
+        monitorSnapshot: makeSnapshot({
+          approvals: { decision: 'CHANGES_REQUESTED', have: 0, changesRequested: 2 },
+          threads: { unresolved: 3 },
+          mergeBlockedReason: 'Merge conflict must be resolved',
+        }),
+      }),
+    );
+    expect(tooltip).toContain('Changes requested: 2');
+    expect(tooltip).toContain('Unresolved threads: 3');
+    expect(tooltip).toContain('Merge conflict must be resolved');
+  });
+
+  it('omits snapshot detail lines on merged and closed rows', () => {
+    const snapshot = makeSnapshot({
+      approvals: { decision: 'REVIEW_REQUIRED', have: 0, needed: 2, changesRequested: 0 },
+      mergeBlockedReason: 'blocked by required checks or reviews',
+    });
+    expect(getPRStatusTooltip(makePR({ status: 'merged', monitorSnapshot: snapshot }))).toBe(
+      'Merged',
+    );
+    expect(getPRStatusTooltip(makePR({ status: 'closed', monitorSnapshot: snapshot }))).toBe(
+      'Closed',
+    );
   });
 });
 

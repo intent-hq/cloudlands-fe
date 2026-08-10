@@ -5,6 +5,7 @@
  */
 
 import type { LocalCommitInfo } from '$features/accept-changes/types';
+import type { PrMonitorSnapshot } from '$features/pr-monitor/pr-monitor-service';
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -126,6 +127,12 @@ export interface PRInfo {
   monitorAgentId?: string;
   /** `<owner>/<name>` when the monitored PR's repo differs from the workspace repo. */
   crossRepo?: string;
+  /** Display-only short form of `crossRepo`: the owner segment is dropped when
+   * it matches the workspace repo owner. `crossRepo` keeps the full identity
+   * for row keys (see intent-hq/monorepo#1699). */
+  crossRepoDisplay?: string;
+  /** Monitor's last merge-requirements snapshot (PROTOCOL §6.9) for hover status. */
+  monitorSnapshot?: PrMonitorSnapshot;
   /** Row exists only as a monitor (no matching workspace PR) — local
    * commit/file data does not apply to it. */
   monitorOnly?: boolean;
