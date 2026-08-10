@@ -7,11 +7,21 @@ import {
   describe,
   it,
   expect,
+  vi,
 } from 'vitest';
 import {
   processMarkdownToHTML,
   processHTMLToMarkdown,
 } from '../markdown-processor';
+import { renderTaskBlocksAsReadableMarkdown } from '../tiptap-task-block-extension';
+
+vi.mock('../tiptap-task-block-extension', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../tiptap-task-block-extension')>();
+  return {
+    ...actual,
+    renderTaskBlocksAsReadableMarkdown: vi.fn(actual.renderTaskBlocksAsReadableMarkdown),
+  };
+});
 
 describe('TipTap Markdown Processor - Round Trip Tests', () => {
   describe('Basic Elements', () => {
@@ -720,6 +730,46 @@ Some additional notes here.
       expect(html).toContain('&lt;br&gt;');
       expect(html).toContain('&lt;sub&gt;');
       expect(html).toContain('&lt;/sub&gt;');
+    });
+  });
+
+  describe('Error Fallback Sanitization', () => {
+    it('should sanitize the fallback when markdown processing throws', async () => {
+      const payload =
+        '<img src=x onerror="alert(1)"><script>alert(2)</script> fallback-sanitize-test';
+      vi.mocked(renderTaskBlocksAsReadableMarkdown).mockImplementationOnce(() => {
+        throw new Error('forced processing failure');
+      });
+
+      const html = await processMarkdownToHTML(payload, {
+        skipIfHTML: false,
+        taskBlockRenderMode: 'content',
+      });
+
+      expect(html).not.toContain('<script');
+      expect(html).not.toContain('onerror');
+      expect(html).toContain('fallback-sanitize-test');
+    });
+
+    it('should cache the sanitized fallback, not the raw input', async () => {
+      const payload =
+        '<img src=x onerror="alert(1)"><script>alert(2)</script> fallback-cache-test';
+      vi.mocked(renderTaskBlocksAsReadableMarkdown).mockImplementationOnce(() => {
+        throw new Error('forced processing failure');
+      });
+
+      await processMarkdownToHTML(payload, {
+        skipIfHTML: false,
+        taskBlockRenderMode: 'content',
+      });
+      // Second call with identical content/options hits the cache
+      const cached = await processMarkdownToHTML(payload, {
+        skipIfHTML: false,
+        taskBlockRenderMode: 'content',
+      });
+
+      expect(cached).not.toContain('<script');
+      expect(cached).not.toContain('onerror');
     });
   });
 });

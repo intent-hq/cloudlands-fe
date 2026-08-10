@@ -153,7 +153,12 @@
       }
     } catch (error) {
       logger.error('Failed to process markdown:', error);
-      processedContent = `<p>${markdown}</p>`;
+      // Escape HTML for safety — processedContent is injected with {@html}
+      const escaped = markdown.replace(
+        /[&<>"']/g,
+        (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m] || m,
+      );
+      processedContent = `<p>${escaped}</p>`;
       lastProcessedContent = markdown;
     }
   }
