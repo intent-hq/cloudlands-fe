@@ -67,7 +67,13 @@ class AutoUpdateService {
   private onWindowFocus: (() => void) | null = null;
   private onResume: (() => void) | null = null;
 
-  async initialize(mainWindow: BrowserWindow) {
+  /**
+   * Initialize the updater. The window is optional (intent-hq/monorepo#1848):
+   * the secondary-startup task can run before any window exists, and the only
+   * window consumer (`sendToRenderer`) null-guards. The window ref attaches
+   * later via `updateMainWindow()` when window.ts creates a window.
+   */
+  async initialize(mainWindow: BrowserWindow | null = null) {
     if (this.initialized) {
       logger.warn('AutoUpdateService already initialized');
       return;
@@ -253,6 +259,19 @@ class AutoUpdateService {
   }
 
   private async checkForUpdates(): Promise<UpdateState> {
+    // Defense in depth (intent-hq/monorepo#1848): an uninitialized service
+    // has no electron-updater event handlers attached, so no terminal event
+    // would ever close the check session — the watchdog's misleading
+    // "timed out / check your network" error would be the only outcome even
+    // when the underlying check succeeds. Fail fast with a clear error.
+    if (!this.initialized) {
+      logger.warn('Update check requested before initialization; failing fast');
+      this.state.error = m.autoUpdate_service_notInitialized_error();
+      this.updateStatus('error');
+      this.isManualCheck = false;
+      return this.state;
+    }
+
     // Skip if downloading or already downloaded
     if (this.state.status === 'downloading' || this.state.status === 'downloaded') {
       logger.debug('Skipping update check - already in progress or complete', {
