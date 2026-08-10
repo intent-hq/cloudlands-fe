@@ -181,6 +181,50 @@ describe('saga watcher ownership guard', () => {
     expect(result.violations).toEqual([expect.stringContaining('duplicate watcher ownership')]);
   });
 
+  it('recognizes contextual watcher aliases for ownership and wildcard checks', () => {
+    const source = [
+      "import { takeLatestInContext, takeLeadingInContext as leading } from '$store/renderer/utils/context-saga-effects';",
+      "import { load, start } from '../slice';",
+      'export function* badSaga() {',
+      '  yield* takeLatestInContext(load, getContext, loadWorker);',
+      "  yield* leading('*', getContext, startWorker);",
+      '}',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
+      { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
+    ]);
+    expect(result.watcherCount).toBe(1);
+    expect(result.violations).toEqual([expect.stringContaining('wildcard Redux watcher')]);
+  });
+
+  it('detects duplicate ownership shared by native and contextual watchers', () => {
+    const first = [
+      "import { takeLatestInContext } from '$store/renderer/utils/context-saga-effects';",
+      "import { start } from '$store/renderer/slices/shared/shared-slice';",
+      'export function* firstSaga() {',
+      '  yield* takeLatestInContext(start, getContext, firstWorker);',
+      '}',
+    ].join('\n');
+    const second = [
+      "import { takeLatest } from 'typed-redux-saga';",
+      "import { start } from '$store/renderer/slices/shared/shared-slice';",
+      'export function* secondSaga() { yield* takeLatest(start, secondWorker); }',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(
+        ['firstSaga', 'secondSaga'],
+        [
+          "import { firstSaga } from './slices/first/sagas/first-saga';",
+          "import { secondSaga } from './slices/second/sagas/second-saga';",
+        ],
+      ),
+      { path: 'src/store/renderer/slices/first/sagas/first-saga.ts', content: first },
+      { path: 'src/store/renderer/slices/second/sagas/second-saga.ts', content: second },
+    ]);
+    expect(result.violations).toEqual([expect.stringContaining('duplicate watcher ownership')]);
+  });
+
   it('follows directly composed child sagas outside the saga directory', () => {
     const parent = [
       "import { call } from 'typed-redux-saga';",

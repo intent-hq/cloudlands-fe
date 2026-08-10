@@ -5,7 +5,15 @@ import ts from 'typescript';
 
 const ROOT_SAGAS = 'src/store/renderer/sagas.ts';
 const SAGA_SOURCE = /^src\/store\/renderer\/slices\/.+\/sagas\/.+\.ts$/;
-const WATCHERS = new Set(['takeEvery', 'takeLatest', 'takeLeading', 'throttle', 'debounce']);
+const CONTEXT_WATCHERS = new Set(['takeLatestInContext', 'takeLeadingInContext']);
+const WATCHERS = new Set([
+  'takeEvery',
+  'takeLatest',
+  'takeLeading',
+  'throttle',
+  'debounce',
+  ...CONTEXT_WATCHERS,
+]);
 const WILDCARD_EFFECTS = new Set([...WATCHERS, 'take', 'takeMaybe', 'actionChannel']);
 const EFFECTS = new Set([...WILDCARD_EFFECTS, 'fork', 'spawn', 'call', 'put', 'cancel']);
 const DUPLICATE_WATCHER_EXCEPTIONS = [
@@ -78,6 +86,18 @@ function importsFor(source) {
     }
   }
   return imports;
+}
+
+function isEffectImport(binding) {
+  if (
+    (binding.specifier === 'typed-redux-saga' || binding.specifier === 'redux-saga/effects') &&
+    EFFECTS.has(binding.imported)
+  )
+    return true;
+  return (
+    CONTEXT_WATCHERS.has(binding.imported) &&
+    /(?:^|\/)context-saga-effects$/.test(binding.specifier)
+  );
 }
 
 function localArray(source, expression) {
@@ -185,7 +205,10 @@ function watcherPattern(effect, call) {
 }
 
 function watcherWorker(effect, call) {
-  return call.arguments[effect === 'throttle' || effect === 'debounce' ? 2 : 1];
+  if (effect === 'throttle' || effect === 'debounce' || CONTEXT_WATCHERS.has(effect)) {
+    return call.arguments[2];
+  }
+  return call.arguments[1];
 }
 
 function resolvedModulePath(sources, fromPath, specifier) {
@@ -252,11 +275,7 @@ export function inspectSagaWatcherOwnership(files) {
     const imports = importsFor(source);
     const effectNames = new Map();
     for (const [local, binding] of imports) {
-      if (
-        (binding.specifier === 'typed-redux-saga' || binding.specifier === 'redux-saga/effects') &&
-        EFFECTS.has(binding.imported)
-      )
-        effectNames.set(local, binding.imported);
+      if (isEffectImport(binding)) effectNames.set(local, binding.imported);
     }
     const composed = new Set();
     visit(source, (node) => {
@@ -288,11 +307,7 @@ export function inspectSagaWatcherOwnership(files) {
     const imports = importsFor(source);
     const effectNames = new Map();
     for (const [local, binding] of imports) {
-      if (
-        (binding.specifier === 'typed-redux-saga' || binding.specifier === 'redux-saga/effects') &&
-        EFFECTS.has(binding.imported)
-      )
-        effectNames.set(local, binding.imported);
+      if (isEffectImport(binding)) effectNames.set(local, binding.imported);
     }
     const typeDeclarations = new Map();
     visit(source, (node) => {
@@ -388,7 +403,9 @@ export function inspectSagaWatcherOwnership(files) {
           const binding = imports.get(action.text);
           if (!binding || binding.specifier.includes('typed-redux-saga')) continue;
           const target = resolvedModulePath(sources, filePath, binding.specifier);
-          const fallback = normalize(path.join(path.dirname(filePath), binding.specifier));
+          const fallback =
+            moduleCandidates(filePath, binding.specifier)[0] ??
+            normalize(path.join(path.dirname(filePath), binding.specifier));
           const origin = `${target ?? fallback}#${binding.imported}`;
           const owners = watcherOwners.get(origin) ?? [];
           owners.push(`${filePath}:${lineFor(source, node)}`);
