@@ -245,6 +245,8 @@
   style:height="{35 / $zoomFactor}px"
   aria-label={m.layout_titleBar_ariaLabel()}
 >
+  <!-- app-drag-region scopes the layout rule in +layout.svelte that marks
+       interactive descendants as no-drag so they stay clickable. -->
   <div
     class={cn(
       'window-title-bar app-drag-region',

@@ -9,8 +9,9 @@
    *
    * The HUD window has no WindowTitleBar, so this header is the frameless
    * window's drag region (-webkit-app-region: drag; interactive children are
-   * no-drag via the global layout rule). It shares the grid's 24px gutter so
-   * the wordmark's left edge aligns with the SYSTEM card below.
+   * no-drag via the layout rule scoped to .app-drag-region). It shares the
+   * grid's 24px gutter so the wordmark's left edge aligns with the SYSTEM
+   * card below.
    *
    * On macOS the window is frameless (titleBarStyle: hiddenInset,
    * trafficLightPosition y:11), so the traffic lights would sit ON TOP of
@@ -80,7 +81,7 @@
   <div class="hud-titlebar-spacer" data-testid="hud-titlebar-spacer" aria-hidden="true"></div>
 {/if}
 
-<header class="hud-header" data-testid="hud-header">
+<header class="hud-header app-drag-region" data-testid="hud-header">
   <div class="hud-header-side hud-header-side-left">
     <!-- i18n-ignore (brand wordmark) -->
     <div class="hud-header-wordmark">INTENT</div>
@@ -122,7 +123,8 @@
     border-bottom: 1px solid hsl(var(--border) / 0.8);
     flex-shrink: 0;
     /* Frameless-window drag region (no WindowTitleBar on the HUD route);
-       interactive children are no-drag via the global layout rule. */
+       interactive children are no-drag via the layout rule scoped to
+       .app-drag-region (which this header carries). */
     -webkit-app-region: drag;
   }
   .hud-header-side {

@@ -964,7 +964,9 @@
     <!-- Title bar + update indicator (suppressed on HUD: its own header is the only top chrome) -->
     {#if !isHudRoute}
       <WindowTitleBar workspaceId={$activeWorkspaceId || undefined} />
-      <div class="absolute top-2 right-3 z-10">
+      <!-- Overlays the titlebar drag region, so it needs an explicit no-drag
+           (the scoped rule below only covers .app-drag-region descendants). -->
+      <div class="absolute top-2 right-3 z-10" style="-webkit-app-region: no-drag">
         <UpdateDownloadIndicator />
       </div>
     {/if}
@@ -1157,17 +1159,22 @@
     pointer-events: none;
   }
 
-  /* Global: Make all interactive elements clickable (no-drag) */
-  :global(button),
-  :global(a),
-  :global(input),
-  :global(select),
-  :global(textarea),
-  :global([role='button']),
-  :global([role='tab']),
-  :global([role='menuitem']),
-  :global([data-interactive]),
-  :global([tabindex]:not([tabindex='-1'])) {
+  /* Interactive elements inside window drag regions (.app-drag-region:
+     WindowTitleBar, HudHeader) must be no-drag to stay clickable. Deliberately
+     scoped instead of app-wide: Chromium computes draggable regions from
+     UNCLIPPED element geometry (ancestor overflow clipping / scroll offsets are
+     ignored), so an app-wide no-drag rule lets content elements scrolled under
+     the titlebar carve holes in its drag region (intent-hq/monorepo#1907). */
+  :global(.app-drag-region button),
+  :global(.app-drag-region a),
+  :global(.app-drag-region input),
+  :global(.app-drag-region select),
+  :global(.app-drag-region textarea),
+  :global(.app-drag-region [role='button']),
+  :global(.app-drag-region [role='tab']),
+  :global(.app-drag-region [role='menuitem']),
+  :global(.app-drag-region [data-interactive]),
+  :global(.app-drag-region [tabindex]:not([tabindex='-1'])) {
     -webkit-app-region: no-drag;
   }
 </style>
