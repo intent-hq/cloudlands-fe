@@ -169,4 +169,19 @@ describe('stack-sample.service', () => {
     );
     await expect(promise).rejects.toThrow('not supported on this platform');
   });
+
+  it('removes the partial temp file when the report write fails', async () => {
+    const writeSpy = vi.spyOn(fs, 'writeFile').mockImplementation(async (file) => {
+      await fs.appendFile(file as string, 'partial');
+      throw new Error('ENOSPC: no space left on device');
+    });
+    try {
+      const promise = createStackSampleFile(client);
+      socket.receive(`${JSON.stringify({ jsonrpc: '2.0', id: 1, result: SAMPLE_RESULT })}\n`);
+      await expect(promise).rejects.toThrow('ENOSPC');
+      await expect(fs.readdir(mocks.tempDir)).resolves.toEqual([]);
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
 });

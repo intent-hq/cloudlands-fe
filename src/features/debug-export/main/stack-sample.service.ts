@@ -73,7 +73,18 @@ export async function createStackSampleFile(
 ): Promise<{ filePath: string; sampleCount: number; distinctStacks: number }> {
   const sample = await captureStackSample(client);
   const filePath = path.join(app.getPath('temp'), `intentd-sample-${Date.now()}.txt`);
-  await fs.writeFile(filePath, sample.report, 'utf8');
+  try {
+    await fs.writeFile(filePath, sample.report, 'utf8');
+  } catch (error) {
+    // Remove any partial file so a failed write never leaks stack data
+    // into the temp directory (the caller never learns filePath on reject).
+    try {
+      await fs.unlink(filePath);
+    } catch {
+      // Ignore cleanup errors
+    }
+    throw error;
+  }
   logger.info('intentd stack sample captured', {
     filePath,
     durationMs: sample.durationMs,
