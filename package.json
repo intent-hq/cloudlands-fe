@@ -297,7 +297,7 @@
     "lowlight": "^3.3.0",
     "marked": "^18.0.7",
     "material-file-icons": "^2.4.0",
-    "mermaid": "^11.16.0",
+    "mermaid": "^11.16.1",
     "monaco-editor": "^0.56.0",
     "node-pty": "1.1.0-beta9",
     "qrcode": "^1.5.4",
