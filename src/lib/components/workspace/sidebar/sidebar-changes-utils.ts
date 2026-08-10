@@ -413,7 +413,7 @@ export function getPRStatusTooltip(pr: PRInfo): string {
         : pr.status === 'draft'
           ? m.workspace_prSection_statusDraft_label()
           : m.workspace_prSection_statusOpen_label();
-  const lines = [stateLine];
+  const lines: string[] = [stateLine];
   // Merged/closed rows no longer have merge requirements — the snapshot
   // detail lines would just be stale noise on a settled PR.
   const snapshot =
