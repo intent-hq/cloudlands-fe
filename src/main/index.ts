@@ -131,6 +131,7 @@ import { setupWebviewSecurity } from './webview-security';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { attachSwipeHistoryNavigation } from './swipe-navigation';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
+import { setupConsoleOwnerTracking } from '../features/hardware-console/main/console-owner';
 import { requestHardwareConsoleLightingClear } from '../features/hardware-console/main/clear-lighting-shutdown';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
 import {
@@ -540,6 +541,11 @@ app.whenReady().then(async () => {
   // WebHID handlers for the hardware console (silent grant for supported
   // Work Louder devices) — must be registered before any windows exist.
   setupHardwareConsoleMain(session.defaultSession);
+
+  // Console-owner tracking (single hardware-input owner, #1928) — must attach
+  // its browser-window-created/focus listeners before any windows exist so the
+  // first boot window becomes the initial owner.
+  setupConsoleOwnerTracking();
 
   // Keep window sessions file up-to-date so it's always available on quit/crash.
   // This debounced saver fires on window move/resize/navigate to ensure the sessions
