@@ -23,7 +23,6 @@ export function setupClaudeCodeIPC() {
     try {
       logger.debug('Checking claude-agent-acp availability');
       const claudePath = await findBinary('claude', {
-        cache: false,
         commonPaths: getCommonNpmPaths('claude'),
       });
       if (!claudePath) {
@@ -31,7 +30,6 @@ export function setupClaudeCodeIPC() {
         return { success: true, available: false };
       }
       const npxPath = await findBinary('npx', {
-        cache: false,
         commonPaths: getCommonNpmPaths('npx'),
       });
       logger.info('Claude Code availability check', {

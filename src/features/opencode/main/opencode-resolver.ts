@@ -77,7 +77,6 @@ async function findNpxPath(): Promise<string | null> {
 
   const result = await findBinary('npx', {
     commonPaths: [...NPX_PATHS, ...getCommonNpmPaths('npx')],
-    cache: false,
     timeout: 3000,
     useEnhancedPath: false,
     useLoginShell: false,
@@ -100,7 +99,6 @@ async function findOpenCodePath(): Promise<string | null> {
 
   const result = await findBinary('opencode', {
     commonPaths: [...OPENCODE_PATHS, ...getCommonNpmPaths('opencode')],
-    cache: false,
     timeout: 3000,
     useEnhancedPath: false,
     useLoginShell: false,

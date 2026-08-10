@@ -48,7 +48,6 @@ async function findDroidPath(): Promise<string | null> {
 
   const result = await findBinary('droid', {
     commonPaths: DROID_PATHS,
-    cache: false,
     timeout: 3000,
     useEnhancedPath: false,
     useLoginShell: false,

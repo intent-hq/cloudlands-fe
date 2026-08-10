@@ -203,7 +203,6 @@ export async function findExecutableAsync(
   const { findBinary } = await import('./find-binary');
   const result = await findBinary(command, {
     commonPaths,
-    cache: false,
     timeout: 5000,
     useEnhancedPath: false,
     useLoginShell: false,

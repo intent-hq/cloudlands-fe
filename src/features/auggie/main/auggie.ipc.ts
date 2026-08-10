@@ -452,7 +452,6 @@ export function setupAuggieIPC() {
         '../../../shared/main/find-binary'
       );
       const claudePath = await findBinary('claude', {
-        cache: false,
         commonPaths: getCommonNpmPaths('claude'),
       });
 

@@ -63,7 +63,7 @@ describe('codex IPC availability', () => {
     const handler = await setupAndGetHandler('codex:check-availability');
     const result = await handler({});
 
-    expect(mocks.findBinary).toHaveBeenCalledWith('codex', { cache: false });
+    expect(mocks.findBinary).toHaveBeenCalledWith('codex');
     expect(result).toEqual({ success: true, available: true });
   });
 

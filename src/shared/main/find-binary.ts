@@ -23,7 +23,6 @@ import { JsonRpcError } from '../../features/backend/main/json-rpc-errors';
 const logger = new Logger('FindBinary');
 
 const SAFE_BINARY_NAME = /^[a-zA-Z0-9._-]+$/;
-const binaryCache = new Map<string, string | null>();
 
 export interface FindBinaryOptions {
   /** Extra OS-host paths to probe verbatim before the OS-common dirs (daemon-side). */
@@ -36,8 +35,6 @@ export interface FindBinaryOptions {
   useEnhancedPath?: boolean;
   /** Accepted for backwards compatibility; the daemon owns lookup timeouts. */
   timeout?: number;
-  /** Cache the resolved path locally to avoid repeating wire calls. */
-  cache?: boolean;
   /** Accepted for backwards compatibility; the daemon owns retry policy. */
   retry?: boolean;
 }
@@ -79,10 +76,6 @@ function isWindows(): boolean {
 
 function uniquePaths(paths: string[]): string[] {
   return Array.from(new Set(paths.filter(Boolean)));
-}
-
-function cacheKey(name: string, commonPaths: string[]): string {
-  return `${name}\0${JSON.stringify(commonPaths)}`;
 }
 
 /**
@@ -201,25 +194,13 @@ export function getCommonNpxPaths(): string[] {
   return getCommonNpmPaths('npx');
 }
 
-export function clearBinaryCache(name?: string): void {
-  if (name) {
-    const prefix = `${name}\0`;
-    for (const key of binaryCache.keys()) {
-      if (key === name || key.startsWith(prefix)) {
-        binaryCache.delete(key);
-      }
-    }
-    return;
-  }
-
-  binaryCache.clear();
-}
-
 /**
  * Resolve a binary path via `host.findBinary`. The daemon performs the actual
  * `which`/`where` + OS-common-dirs walk on the host where workspaces run; the
- * FE never probes the local machine. Returns the resolved path string or
- * `null` when the daemon reports `available:false` or the request fails.
+ * FE never probes the local machine and never caches results — every call
+ * issues a fresh wire request so a newly installed binary is picked up
+ * without an app restart. Returns the resolved path string or `null` when
+ * the daemon reports `available:false` or the request fails.
  */
 export async function findBinary(
   name: string,
@@ -230,13 +211,7 @@ export async function findBinary(
     return null;
   }
 
-  const useCache = options.cache !== false;
   const commonPaths = uniquePaths(options.commonPaths || []);
-  const key = cacheKey(name, commonPaths);
-
-  if (useCache && binaryCache.has(key)) {
-    return binaryCache.get(key) ?? null;
-  }
 
   const params: { name: string; commonPaths?: string[] } = { name };
   if (commonPaths.length > 0) {
@@ -248,22 +223,14 @@ export async function findBinary(
       'host.findBinary',
       params,
     );
-    const resolved =
-      result?.available && typeof result.path === 'string' && result.path.length > 0
-        ? result.path
-        : null;
-    if (useCache) {
-      binaryCache.set(key, resolved);
-    }
-    return resolved;
+    return result?.available && typeof result.path === 'string' && result.path.length > 0
+      ? result.path
+      : null;
   } catch (error) {
     logger.debug('host.findBinary request failed', {
       name,
       error: error instanceof Error ? error.message : String(error),
     });
-    if (useCache) {
-      binaryCache.set(key, null);
-    }
     return null;
   }
 }

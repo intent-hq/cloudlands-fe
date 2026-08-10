@@ -105,7 +105,6 @@ async function findNpxPath(): Promise<string | null> {
 
   const result = await findBinary('npx', {
     commonPaths: [...NPX_PATHS, ...getCommonNpmPaths('npx')],
-    cache: false,
     timeout: 3000,
     useEnhancedPath: false,
     useLoginShell: false,
@@ -128,7 +127,6 @@ async function findCodexCliPath(): Promise<string | null> {
 
   const result = await findBinary('codex', {
     commonPaths: [...CODEX_CLI_PATHS, ...getCommonNpmPaths('codex')],
-    cache: false,
     timeout: 3000,
     useEnhancedPath: false,
     useLoginShell: false,
@@ -151,7 +149,6 @@ async function findCodexMcpServerPath(): Promise<string | null> {
 
   const result = await findBinary('codex-mcp-server', {
     commonPaths: [...CODEX_MCP_SERVER_PATHS, ...getCommonNpmPaths('codex-mcp-server')],
-    cache: false,
     timeout: 3000,
     useEnhancedPath: false,
     useLoginShell: false,

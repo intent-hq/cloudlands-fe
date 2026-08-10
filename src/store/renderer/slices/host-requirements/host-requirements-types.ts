@@ -4,7 +4,7 @@
  * Renderer-side view of the daemon-host tool requirements the onboarding
  * gate cares about: git availability and a Node.js runtime meeting
  * MINIMUM_NODE_VERSION. All probing happens on the daemon host (host.checkGit
- * / host.findBinary via the system:check-git / system:check-node bridges) —
+ * / host.checkNode via the system:check-git / system:check-node bridges) —
  * this state only mirrors those terminal answers.
  */
 
@@ -36,7 +36,7 @@ export interface NodeRequirementStatus {
 export interface GhRequirementStatus {
   /** Whether the gh probe has settled at least once. */
   checked: boolean;
-  /** `host.findBinary { name:"gh" }` availability answer; false until checked. */
+  /** `host.checkGh` availability answer; false until checked. */
   available: boolean;
   /** Probed version string, when the daemon reported one. */
   version?: string;
