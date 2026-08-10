@@ -237,6 +237,7 @@
   "settings_agentRules_placeholder": "為你的智慧體新增自訂指令…\n\n示例：\n# 開發準則\n- 始終為新功能編寫測試\n- 使用 TypeScript 保證型別安全\n- 遵循現有程式碼風格\n\n# 智慧體行為\n- 認真進行程式碼審查\n- 適時提出改進建議\n- 清晰解釋複雜更改",
   "settings_wsApi_enable_label": "啟用 WebSocket API",
   "settings_wsApi_enable_description": "啟用後，外部工具可以透過 WebSocket 連線到 Intent，以程式設計方式與工作區和智慧體互動。",
+  "settings_wsApi_remoteInfo_description": "WebSocket API 設定由執行守護程序的機器管理，僅在本機連線時可用。",
   "settings_wsApi_loadStatusError": "載入 WebSocket API 狀態失敗：{error}",
   "settings_wsApi_startListenerError": "啟動 WebSocket 監聽器失敗；設定已回滾",
   "settings_wsApi_toggleError": "切換 WebSocket API 失敗：{error}",

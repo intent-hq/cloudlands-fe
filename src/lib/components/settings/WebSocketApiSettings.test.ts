@@ -37,9 +37,27 @@ vi.mock('svelte-sonner', () => ({
   toast: mockToast,
 }));
 
+// Mock the store so selectActiveConnectionId resolves; tests flip
+// `connectionState.activeId` and call `connectionState.emit()` to simulate a
+// connection switch while the component stays mounted.
+const connectionState = vi.hoisted(() => ({
+  activeId: 'local',
+  emit: () => {},
+}));
+
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const store = createAppStoreMock({
+    state: () => ({ connections: { activeId: connectionState.activeId } }),
+  });
+  connectionState.emit = () => store.emitState();
+  return { store };
+});
+
 describe('WebSocketApiSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    connectionState.activeId = 'local';
   });
 
   afterEach(() => {
@@ -191,6 +209,133 @@ describe('WebSocketApiSettings', () => {
     // Assert: Save button is hidden again
     await waitFor(() => {
       expect(screen.queryByText('Save')).toBeNull();
+    });
+  });
+
+  describe('remote connection (intent-hq/monorepo#1852)', () => {
+    it('renders info-only panel, never calls the daemon, and shows no error toast', async () => {
+      // Arrange: active connection is remote
+      connectionState.activeId = 'remote-1';
+
+      render(WebSocketApiSettings);
+
+      // Assert: info-only panel is rendered
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.'
+          )
+        ).toBeTruthy();
+      });
+
+      // Assert: no interactive controls (toggle, port input)
+      expect(screen.queryByRole('switch')).toBeNull();
+      expect(screen.queryByText('Port')).toBeNull();
+
+      // Assert: no daemon calls at all — server.pairingInfo is local-only
+      expect(mocks.mockSettingsList).not.toHaveBeenCalled();
+      expect(mocks.mockPairingInfo).not.toHaveBeenCalled();
+
+      // Assert: no error toast
+      expect(mockToast.error).not.toHaveBeenCalled();
+    });
+
+    it('keeps local behavior unchanged: loads settings and pairing info when enabled', async () => {
+      // Arrange: local connection (default), WSS enabled
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'server.wsApi.enabled', value: true },
+        { path: 'server.wsApi.port', value: 5181 },
+      ]);
+      mocks.mockPairingInfo.mockResolvedValue({
+        token: 'tok-1234567890',
+        port: 5181,
+        certFingerprint: 'AA:BB',
+        localIps: ['192.168.1.2'],
+        hostname: 'my-mac',
+      });
+
+      render(WebSocketApiSettings);
+
+      // Assert: toggle rendered and pairing info fetched
+      await waitFor(() => {
+        expect(screen.getByRole('switch')).toBeTruthy();
+        expect(mocks.mockPairingInfo).toHaveBeenCalled();
+      });
+
+      // Assert: no remote info panel, no error toast
+      expect(
+        screen.queryByText(
+          'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.'
+        )
+      ).toBeNull();
+      expect(mockToast.error).not.toHaveBeenCalled();
+    });
+
+    it('remote→local switch while mounted triggers a fresh status load', async () => {
+      // Arrange: start remote — no daemon calls
+      connectionState.activeId = 'remote-1';
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'server.wsApi.enabled', value: false },
+        { path: 'server.wsApi.port', value: 5181 },
+      ]);
+
+      render(WebSocketApiSettings);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.'
+          )
+        ).toBeTruthy();
+      });
+      expect(mocks.mockSettingsList).not.toHaveBeenCalled();
+
+      // Act: switch to local while the component stays mounted
+      connectionState.activeId = 'local';
+      connectionState.emit();
+
+      // Assert: fresh status load ran and the controls rendered
+      await waitFor(() => {
+        expect(mocks.mockSettingsList).toHaveBeenCalled();
+        expect(screen.getByRole('switch')).toBeTruthy();
+      });
+      expect(mockToast.error).not.toHaveBeenCalled();
+    });
+
+    it('local→remote switch mid-loadStatus never calls pairingInfo and shows no toast', async () => {
+      // Arrange: local connection; settings.list resolves only when we say so
+      let resolveSettingsList!: (value: { path: string; value: unknown }[]) => void;
+      mocks.mockSettingsList.mockReturnValue(
+        new Promise<{ path: string; value: unknown }[]>((resolve) => {
+          resolveSettingsList = resolve;
+        })
+      );
+
+      render(WebSocketApiSettings);
+
+      await waitFor(() => {
+        expect(mocks.mockSettingsList).toHaveBeenCalled();
+      });
+
+      // Act: switch to remote while settings.list is still in flight, then
+      // resolve it with wsApi enabled (which would normally fetch pairingInfo)
+      connectionState.activeId = 'remote-1';
+      connectionState.emit();
+      resolveSettingsList([
+        { path: 'server.wsApi.enabled', value: true },
+        { path: 'server.wsApi.port', value: 5181 },
+      ]);
+
+      // Assert: info-only panel rendered; the stale load was dropped
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.'
+          )
+        ).toBeTruthy();
+      });
+      expect(mocks.mockPairingInfo).not.toHaveBeenCalled();
+      expect(mockToast.error).not.toHaveBeenCalled();
     });
   });
 });
