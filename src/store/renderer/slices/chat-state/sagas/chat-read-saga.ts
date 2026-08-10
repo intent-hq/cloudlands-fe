@@ -1,5 +1,4 @@
-import type { Task } from 'redux-saga';
-import { call, cancel, cancelled, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
+import { all, call, cancelled, put, race, take, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -27,13 +26,9 @@ const logger = createLogger('ChatReadSaga');
 const PAGE_LIMIT = 200;
 
 type ChatRequest = { wsId: string; agentId: string };
-type PendingRequest = ChatRequest & { generation: number };
-type ChatSlot = {
-  wsId: string;
-  generation: number;
-  task?: Task;
-  pending?: PendingRequest;
-};
+type WorkspaceCleanupAction =
+  | ReturnType<typeof workspaceDeleted>
+  | ReturnType<typeof workspaceUnmounted>;
 
 function identitySet(messages: AgentMessage[]): Set<string> {
   const ids = new Set<string>();
@@ -44,11 +39,7 @@ function identitySet(messages: AgentMessage[]): Set<string> {
   return ids;
 }
 
-function* hydrateChatTranscriptSaga(
-  request: ChatRequest,
-  slot: ChatSlot,
-  generation: number,
-) {
+function* hydrateChatTranscriptSaga(request: ChatRequest) {
   const { wsId, agentId } = request;
   if (yield* call(isAgentDeletionPending, agentId)) return;
   let started = false;
@@ -61,7 +52,7 @@ function* hydrateChatTranscriptSaga(
       [appClient.agents, appClient.agents.get],
       agentId,
     );
-    if (!session || String(session.workspaceId) !== wsId || slot.generation !== generation) return;
+    if (!session || String(session.workspaceId) !== wsId) return;
     if (yield* call(isAgentDeletionPending, agentId)) return;
 
     const messages: AgentMessage[] = [];
@@ -75,14 +66,13 @@ function* hydrateChatTranscriptSaga(
       );
       messages.unshift(...page.messages);
       nextToken = page.nextToken;
-      if (slot.generation !== generation) return;
     } while (nextToken !== null);
 
     const snapshot: Awaited<ReturnType<typeof appClient.chat.subscribeSnapshot>> = yield* call(
       [appClient.chat, appClient.chat.subscribeSnapshot],
       agentId,
     );
-    if (slot.generation !== generation || (yield* call(isAgentDeletionPending, agentId))) return;
+    if (yield* call(isAgentDeletionPending, agentId)) return;
 
     const inFlight = snapshot.messages.find(
       (message) => message.role === 'assistant' && message.isStreaming === true,
@@ -113,75 +103,34 @@ function* hydrateChatTranscriptSaga(
   }
 }
 
-function* runChatSlot(
-  slots: Map<string, ChatSlot>,
-  slot: ChatSlot,
-  request: ChatRequest,
-  generation: number,
-): SagaGenerator<void> {
-  try {
-    yield* call(hydrateChatTranscriptSaga, request, slot, generation);
-  } finally {
-    if (slots.get(request.agentId) !== slot) return;
-    slot.task = undefined;
-    const pending = slot.pending;
-    slot.pending = undefined;
-    if (!pending) {
-      slots.delete(request.agentId);
-      return;
-    }
-    slot.wsId = pending.wsId;
-    const task = yield* fork(runChatSlot, slots, slot, pending, pending.generation);
-    slot.task = task;
-  }
+function matchesChatCleanup({ wsId, agentId }: ChatRequest) {
+  return (action: WorkspaceCleanupAction) => {
+    if (action.type !== workspaceDeleted.type && action.type !== workspaceUnmounted.type) return false;
+    const [cleanupWorkspaceId, deletedAgentIds = []] = action.payload;
+    return cleanupWorkspaceId === wsId || deletedAgentIds.includes(agentId);
+  };
 }
 
-function* queueChatRead(slots: Map<string, ChatSlot>, request: ChatRequest) {
-  const existing = slots.get(request.agentId);
-  if (existing?.task) {
-    existing.generation += 1;
-    existing.pending = { ...request, generation: existing.generation };
-    return;
-  }
-  const slot: ChatSlot = { wsId: request.wsId, generation: 1 };
-  slots.set(request.agentId, slot);
-  slot.task = yield* fork(runChatSlot, slots, slot, request, slot.generation);
+function* hydrateChatWorker(request: ChatRequest): SagaGenerator<void> {
+  if (!request.wsId || !request.agentId) return;
+  yield* race({
+    read: call(hydrateChatTranscriptSaga, request),
+    cleanup: take(matchesChatCleanup(request)),
+  });
+}
+
+function* initializeChatWorker(action: ReturnType<typeof initializeChatRequested>) {
+  yield* hydrateChatWorker(action.payload);
+}
+
+function* refreshChatWorker(action: ReturnType<typeof refreshChatTranscriptRequested>) {
+  const [wsId, agentId] = action.payload;
+  yield* hydrateChatWorker({ wsId, agentId });
 }
 
 export function* chatReadSaga() {
-  const slots = new Map<string, ChatSlot>();
-  try {
-    while (true) {
-      const action: { type: string; payload: unknown } = yield* take([
-        initializeChatRequested,
-        refreshChatTranscriptRequested,
-        workspaceDeleted,
-        workspaceUnmounted,
-      ]);
-      if (action.type === initializeChatRequested.type) {
-        const payload = action.payload as { wsId: string; agentId: string };
-        yield* fork(queueChatRead, slots, payload);
-        continue;
-      }
-      if (action.type === refreshChatTranscriptRequested.type) {
-        const [wsId, agentId] = action.payload as [string, string];
-        yield* fork(queueChatRead, slots, { wsId, agentId });
-        continue;
-      }
-
-      const [wsId, deletedAgentIds = []] = action.payload as [string, string[]?];
-      for (const [agentId, slot] of slots) {
-        if (slot.wsId !== wsId && !deletedAgentIds.includes(agentId)) continue;
-        slots.delete(agentId);
-        slot.pending = undefined;
-        if (slot.task) yield* cancel(slot.task);
-      }
-    }
-  } finally {
-    for (const slot of slots.values()) {
-      slot.pending = undefined;
-      if (slot.task) yield* cancel(slot.task);
-    }
-    slots.clear();
-  }
+  yield* all([
+    takeLatest(initializeChatRequested, initializeChatWorker),
+    takeLatest(refreshChatTranscriptRequested, refreshChatWorker),
+  ]);
 }

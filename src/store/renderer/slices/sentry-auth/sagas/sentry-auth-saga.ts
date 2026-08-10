@@ -84,19 +84,26 @@ function* logout(): SagaGenerator<void> {
   }
 }
 
-function* command(action: { type: string; payload: unknown }): SagaGenerator<void> {
-  if (action.type === connectSentry.type) {
-    const [organization, apiToken] = action.payload as ReturnType<typeof connectSentry>['payload'];
-    yield* call(connect, organization, apiToken);
-  } else if (action.type === logoutSentry.type) {
-    yield* call(logout);
-  } else {
-    yield* call(initialize);
-  }
+function* initializeSentryWorker(
+  _action: ReturnType<typeof initializeSentryAuth>,
+): SagaGenerator<void> {
+  yield* call(initialize);
+}
+
+function* connectSentryWorker(
+  action: ReturnType<typeof connectSentry>,
+): SagaGenerator<void> {
+  yield* call(connect, action.payload[0], action.payload[1]);
+}
+
+function* logoutSentryWorker(
+  _action: ReturnType<typeof logoutSentry>,
+): SagaGenerator<void> {
+  yield* call(logout);
 }
 
 export function* sentryAuthSaga(): SagaGenerator<void> {
-  yield* takeEvery(initializeSentryAuth, command);
-  yield* takeEvery(connectSentry, command);
-  yield* takeEvery(logoutSentry, command);
+  yield* takeEvery(initializeSentryAuth, initializeSentryWorker);
+  yield* takeEvery(connectSentry, connectSentryWorker);
+  yield* takeEvery(logoutSentry, logoutSentryWorker);
 }

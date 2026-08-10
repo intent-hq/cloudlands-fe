@@ -1,6 +1,5 @@
-import type { Task } from 'redux-saga';
 import type { SagaGenerator } from 'typed-redux-saga';
-import { call, cancel, fork, put, take } from 'typed-redux-saga';
+import { all, call, put, takeLeading } from 'typed-redux-saga';
 
 import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
 import { externalEditorsClient } from '$features/external-editors/external-editors.client';
@@ -50,33 +49,7 @@ import { workspaceMounted } from '../workspace-lifecycle-slice';
 
 const logger = createLogger('LifecycleIpcReadSaga');
 
-const triggers = [
-  loadGithubRepos,
-  fetchEditors,
-  loadKnownRepos,
-  refreshAcceptChangesStatus,
-  workspaceMounted,
-];
-
-type LifecycleIpcAction = ReturnType<(typeof triggers)[number]>;
-type RunningRead = { task?: Task; token: symbol };
 type KnownReposResponse = { success: boolean; data?: KnownRepo[] };
-
-function tupleString(action: { payload?: unknown }): string | undefined {
-  const value = Array.isArray(action.payload) ? action.payload[0] : undefined;
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-function keyFor(action: LifecycleIpcAction): string | undefined {
-  if (action.type === loadGithubRepos.type) return 'githubRepos';
-  if (action.type === fetchEditors.type) return 'editors';
-  if (action.type === loadKnownRepos.type) return 'knownRepos';
-  const workspaceId = tupleString(action);
-  if (!workspaceId) return undefined;
-  if (action.type === refreshAcceptChangesStatus.type) return `acceptChanges:${workspaceId}`;
-  if (action.type === workspaceMounted.type) return `workspaceMount:${workspaceId}`;
-  return undefined;
-}
 
 function normalizeRepo(repo: GithubRepo): GithubRepoItem {
   return {
@@ -178,41 +151,36 @@ function* fanOutWorkspaceMounted(workspaceId: string): SagaGenerator<void> {
   yield* put(hydrateTaskAgentAssociationsRequested(workspaceId));
 }
 
-function* lifecycleIpcReadWorker(action: LifecycleIpcAction): SagaGenerator<void> {
-  if (action.type === loadGithubRepos.type) return yield* call(refreshGithubRepos);
-  if (action.type === fetchEditors.type) {
-    const forceRefresh = Array.isArray(action.payload) ? Boolean(action.payload[0]) : false;
-    return yield* call(refreshEditors, forceRefresh);
-  }
-  if (action.type === loadKnownRepos.type) return yield* call(refreshKnownRepos);
-  const workspaceId = tupleString(action);
-  if (!workspaceId) return;
-  if (action.type === refreshAcceptChangesStatus.type) {
-    return yield* call(refreshAcceptChanges, workspaceId);
-  }
-  if (action.type === workspaceMounted.type) yield* call(fanOutWorkspaceMounted, workspaceId);
+function* refreshGithubReposWorker(): SagaGenerator<void> {
+  yield* refreshGithubRepos();
+}
+
+function* refreshEditorsWorker(action: ReturnType<typeof fetchEditors>): SagaGenerator<void> {
+  yield* refreshEditors(Boolean(action.payload[0]));
+}
+
+function* refreshKnownReposWorker(): SagaGenerator<void> {
+  yield* refreshKnownRepos();
+}
+
+function* refreshAcceptChangesWorker(
+  action: ReturnType<typeof refreshAcceptChangesStatus>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  if (workspaceId) yield* refreshAcceptChanges(workspaceId);
+}
+
+function* workspaceMountedWorker(action: ReturnType<typeof workspaceMounted>): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  if (workspaceId) yield* fanOutWorkspaceMounted(workspaceId);
 }
 
 export function* lifecycleIpcReadSaga(): SagaGenerator<void> {
-  const running = new Map<string, RunningRead>();
-  try {
-    while (true) {
-      const action: LifecycleIpcAction = yield* take(triggers);
-      const key = keyFor(action);
-      if (!key || running.has(key)) continue;
-      const token = Symbol(key);
-      running.set(key, { token });
-      const task = yield* fork(function* () {
-        try {
-          yield* call(lifecycleIpcReadWorker, action);
-        } finally {
-          if (running.get(key)?.token === token) running.delete(key);
-        }
-      });
-      if (running.get(key)?.token === token) running.set(key, { task, token });
-    }
-  } finally {
-    for (const read of running.values()) if (read.task) yield* cancel(read.task);
-    running.clear();
-  }
+  yield* all([
+    takeLeading(loadGithubRepos, refreshGithubReposWorker),
+    takeLeading(fetchEditors, refreshEditorsWorker),
+    takeLeading(loadKnownRepos, refreshKnownReposWorker),
+    takeLeading(refreshAcceptChangesStatus, refreshAcceptChangesWorker),
+    takeLeading(workspaceMounted, workspaceMountedWorker),
+  ]);
 }

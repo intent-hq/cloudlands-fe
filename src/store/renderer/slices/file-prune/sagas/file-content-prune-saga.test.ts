@@ -2,10 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { runSaga } from 'redux-saga';
 
 import type { StoreState } from '../../../types';
-import {
-  cleanupClosedFileContentEntries,
-  fileContentPruneSaga,
-} from './file-content-prune-saga';
+import { cleanupClosedFileContentEntries, fileContentPruneSaga } from './file-content-prune-saga';
 
 const settle = async () => {
   await Promise.resolve();
@@ -47,7 +44,9 @@ function state(
             [workspaceId]: {
               files: {
                 ids: contentPaths,
-                byId: Object.fromEntries(contentPaths.map((path) => [path, { absolutePath: path }])),
+                byId: Object.fromEntries(
+                  contentPaths.map((path) => [path, { absolutePath: path }]),
+                ),
               },
             },
           }
@@ -177,6 +176,23 @@ describe('fileContentPruneSaga', () => {
     expect(harness.actions).toEqual([
       { type: 'files/removeFileContentEntry', payload: ['ws-1', 'src/a.ts'] },
       { type: 'files/removeFileContentEntry', payload: ['ws-1', 'src/a.ts'] },
+    ]);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
+  it('suppresses selector re-entry while pruning multiple stale paths', async () => {
+    const harness = createHarness(
+      state('ws-1', ['src/a.ts', 'src/b.ts'], ['src/a.ts', 'src/b.ts']),
+    );
+    await settle();
+    harness.replaceState(state('ws-1', [], ['src/a.ts', 'src/b.ts']));
+    harness.notify();
+    await settle();
+
+    expect(harness.actions).toEqual([
+      { type: 'files/removeFileContentEntry', payload: ['ws-1', 'src/a.ts'] },
+      { type: 'files/removeFileContentEntry', payload: ['ws-1', 'src/b.ts'] },
     ]);
     harness.task.cancel();
     await harness.task.toPromise();
