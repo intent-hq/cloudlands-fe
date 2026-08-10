@@ -128,19 +128,17 @@ See [`AGENTS.md`](./AGENTS.md) for the full conventions and routing guide.
 
 ## Documentation
 
-Key references under [`docs/`](./docs):
+Frontend documentation lives in the monorepo's [`docs/fe/`](../../docs/fe)
+(the relative links resolve in a monorepo checkout, where this repo mounts at
+`packages/cloudlands-fe/`). Key references:
 
-- [AGENT_ARCHITECTURE.md](./docs/AGENT_ARCHITECTURE.md) — agent system
-  architecture and design.
-- [STATE_MANAGEMENT.md](./docs/STATE_MANAGEMENT.md) — Redux + saga state policy
+- [STATE_MANAGEMENT.md](../../docs/fe/STATE_MANAGEMENT.md) — Redux + saga state policy
   and the Svelte-store migration.
-- [MODULE_BOUNDARY_GUIDE.md](./docs/MODULE_BOUNDARY_GUIDE.md) — renderer↔main
+- [MODULE_BOUNDARY_GUIDE.md](../../docs/fe/MODULE_BOUNDARY_GUIDE.md) — renderer↔main
   and feature boundaries.
-- [COMPONENT_RESPONSIBILITIES.md](./docs/COMPONENT_RESPONSIBILITIES.md) —
-  component structure and ownership.
-- [TYPE_SYSTEM_GUIDE.md](./docs/TYPE_SYSTEM_GUIDE.md) — TypeScript and type
+- [TYPE_SYSTEM_GUIDE.md](../../docs/fe/TYPE_SYSTEM_GUIDE.md) — TypeScript and type
   safety conventions.
-- [EVENT_SYSTEM.md](./docs/EVENT_SYSTEM.md) — the unified event system.
+- [EVENT_SYSTEM.md](../../docs/fe/EVENT_SYSTEM.md) — the unified event system.
 
 ## Reporting issues
 
