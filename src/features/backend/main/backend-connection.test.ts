@@ -1054,6 +1054,51 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     expect(facade.destroyed).toBe(true);
   });
 
+  it('a pin mismatch AFTER a valid winner settles is discarded — winner takes precedence', async () => {
+    const good = new FakeCandidate();
+    const stale = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'good', create: () => good },
+      { host: 'stale', create: () => stale },
+    ]);
+    const errors: Error[] = [];
+    facade.on('error', (e) => errors.push(e));
+    const connected = new Promise<void>((res) => facade.once('connect', () => res()));
+    good.emit('connect');
+    await connected;
+    // A stale IP now owned by a foreign pinned daemon reports a mismatch late:
+    // the established pin-verified winner must not be torn down by it.
+    stale.emit('error', new PinMismatchError('AA', 'BB'));
+    expect(errors).toHaveLength(0);
+    expect(facade.destroyed).toBe(false);
+    // The facade still proxies the winner.
+    facade.write('ping\n');
+    expect(good.written).toEqual(['ping\n']);
+    facade.destroy();
+  });
+
+  it('destroys a failed candidate immediately and absorbs its later async errors', async () => {
+    const failing = new FakeCandidate();
+    const other = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'failing', create: () => failing },
+      { host: 'other', create: () => other },
+    ]);
+    const errors: Error[] = [];
+    facade.on('error', (e) => errors.push(e));
+    failing.emit('error', new Error('ECONNREFUSED'));
+    // The failed candidate is torn down right away, not left until settle.
+    expect(failing.destroyedByRace).toBe(true);
+    // A second async 'error' from the dead candidate must not become an
+    // uncaught exception (zero-listener EventEmitter) nor fail the race.
+    failing.emit('error', new Error('late async failure'));
+    const connected = new Promise<void>((res) => facade.once('connect', () => res()));
+    other.emit('connect');
+    await connected;
+    expect(errors).toHaveLength(0);
+    facade.destroy();
+  });
+
   it('times out when no candidate ever connects', async () => {
     const a = new FakeCandidate();
     const facade = raceDuplexSockets([{ host: 'a', create: () => a }], { timeoutMs: 50 });

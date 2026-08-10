@@ -36,8 +36,11 @@ import { createRequire } from 'node:module';
 import type { IncomingMessage } from 'node:http';
 import type { RawData, WebSocket as WsWebSocket } from 'ws';
 
+import { Logger } from '$shared/logger';
 import { shouldSpawnSidecar } from './intentd-spawn-policy';
 import { defaultWindowsSocketPath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
+
+const raceLogger = new Logger('BackendConnection');
 
 // The `ws` package is CJS and the vitest suite aliases the ESM import to a
 // browser-safe stub (see `vitest.config.ts`); `createRequire` sidesteps both.
@@ -406,9 +409,16 @@ function raceWssSockets(config: BackendConnectionConfig, hosts: string[]): Duple
  *
  * Semantics (see #1746 acceptance criteria):
  * - The first candidate to emit `connect` wins; all others are destroyed.
- * - A {@link PinMismatchError} on ANY candidate fails the whole race with that
- *   error — a cert mismatch is surfaced as a cert error, never silently
- *   skipped as "unreachable" (no fallback onto other candidates).
+ * - Before a winner settles, a {@link PinMismatchError} on ANY candidate fails
+ *   the whole race with that error — a cert mismatch is surfaced as a cert
+ *   error, never silently skipped as "unreachable" (no fallback onto other
+ *   candidates).
+ * - Once a pin-verified winner has settled, the winner takes precedence: a
+ *   late mismatch on a losing candidate is logged and discarded rather than
+ *   tearing down the established (itself pin-verified) connection. This
+ *   mirrors iOS `raceHosts` (first success cancels the task group) and keeps
+ *   one stale IP now owned by a foreign pinned daemon from blocking a
+ *   connection that has a valid candidate.
  * - If every candidate fails without a pin mismatch, the facade errors with
  *   the last candidate failure.
  * - A race-wide timeout bounds the whole attempt so a black-hole candidate
@@ -424,6 +434,22 @@ export function raceDuplexSockets(
   let pendingCount = attempts.length;
   let lastError: Error | null = null;
   const candidates: Duplex[] = [];
+
+  // Tear a losing/failed candidate down without leaving it listener-less: a
+  // destroyed-but-alive socket can still emit async 'error' events, and a
+  // zero-listener 'error' is an uncaught exception in the main process. A
+  // late pin mismatch is logged so it is observed, never fully silent.
+  const teardownCandidate = (candidate: Duplex): void => {
+    candidate.removeAllListeners();
+    candidate.on('error', (error: Error) => {
+      if (error instanceof PinMismatchError) {
+        raceLogger.warn('pin mismatch on a losing race candidate (winner already settled)', {
+          error: error.message,
+        });
+      }
+    });
+    candidate.destroy();
+  };
 
   const facade = new Duplex({
     allowHalfOpen: false,
@@ -443,9 +469,10 @@ export function raceDuplexSockets(
       settled = true;
       clearTimeout(timer);
       for (const candidate of candidates) {
-        candidate.removeAllListeners();
-        candidate.destroy();
+        if (candidate !== winner) teardownCandidate(candidate);
       }
+      winner?.removeAllListeners();
+      winner?.destroy();
       callback(error);
     },
   });
@@ -455,8 +482,7 @@ export function raceDuplexSockets(
     settled = true;
     clearTimeout(timer);
     for (const candidate of candidates) {
-      candidate.removeAllListeners();
-      candidate.destroy();
+      teardownCandidate(candidate);
     }
     facade.destroy(error);
   };
@@ -467,10 +493,11 @@ export function raceDuplexSockets(
   );
   timer.unref?.();
 
-  const onCandidateFailure = (error: Error): void => {
+  const countCandidateFailure = (error: Error): void => {
     if (settled) return;
-    // A pinned-cert mismatch on ANY candidate fails the whole race — never
-    // silently skipped (#1746 acceptance).
+    // A pinned-cert mismatch on any candidate before a winner settles fails
+    // the whole race — never silently skipped as unreachable (#1746
+    // acceptance).
     if (error instanceof PinMismatchError) {
       failRace(error);
       return;
@@ -482,6 +509,14 @@ export function raceDuplexSockets(
     }
   };
 
+  const onCandidateFailure = (candidate: Duplex, error: Error): void => {
+    // A failed candidate is dead to the race either way — destroy it now so
+    // it cannot raise an uncaught 'error' while other racers continue, and so
+    // its socket is freed before the race settles.
+    teardownCandidate(candidate);
+    countCandidateFailure(error);
+  };
+
   const onCandidateWin = (candidate: Duplex): void => {
     if (settled) return;
     settled = true;
@@ -489,8 +524,7 @@ export function raceDuplexSockets(
     winner = candidate;
     for (const other of candidates) {
       if (other === candidate) continue;
-      other.removeAllListeners();
-      other.destroy();
+      teardownCandidate(other);
     }
     candidate.removeAllListeners();
     // Forward the winning socket through the facade: data, error, and close
@@ -508,7 +542,7 @@ export function raceDuplexSockets(
     try {
       candidate = attempt.create();
     } catch (error) {
-      onCandidateFailure(error instanceof Error ? error : new Error(String(error)));
+      countCandidateFailure(error instanceof Error ? error : new Error(String(error)));
       continue;
     }
     candidates.push(candidate);
@@ -517,7 +551,7 @@ export function raceDuplexSockets(
     const failOnce = (error: Error): void => {
       if (counted) return;
       counted = true;
-      onCandidateFailure(error);
+      onCandidateFailure(candidate, error);
     };
     const onConnect = (): void => onCandidateWin(candidate);
     candidate.once('connect', onConnect);
