@@ -1,4 +1,4 @@
-import { call, put, race, take, takeLeading } from 'typed-redux-saga';
+import { call, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -51,15 +51,23 @@ function matchesWorkspaceCleanup(wsId: string) {
     action.payload[0] === wsId;
 }
 
+function matchesLaterAgentEnsure(agentId: string) {
+  return (action: { type: string; payload?: unknown }) =>
+    action.type === ensureAgentSessionLoaded.type &&
+    Array.isArray(action.payload) &&
+    action.payload[1] === agentId;
+}
+
 function* loadAgentSessionWorker(action: ReturnType<typeof ensureAgentSessionLoaded>) {
   const [wsId, agentId] = action.payload;
   if (!wsId || !agentId) return;
   yield* race({
     read: call(loadAgentSessionSaga, wsId, agentId),
     cleanup: take(matchesWorkspaceCleanup(wsId)),
+    superseded: take(matchesLaterAgentEnsure(agentId)),
   });
 }
 
 export function* agentReadSaga() {
-  yield* takeLeading(ensureAgentSessionLoaded, loadAgentSessionWorker);
+  yield* takeEvery(ensureAgentSessionLoaded, loadAgentSessionWorker);
 }

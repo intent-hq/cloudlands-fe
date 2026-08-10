@@ -1,15 +1,4 @@
-import { buffers, type Channel } from 'redux-saga';
-import {
-  actionChannel,
-  call,
-  delay,
-  flush,
-  put,
-  race,
-  take,
-  takeEvery,
-  takeLatest,
-} from 'typed-redux-saga';
+import { call, delay, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -33,6 +22,7 @@ import {
 
 const logger = createLogger('FilesWriteSaga');
 export const FILE_CONTENT_SAVE_DEBOUNCE_MS = 1500;
+const pendingFileSaves = new Map<string, Promise<void>>();
 
 type SaveRequest = {
   workspaceId: string;
@@ -41,8 +31,6 @@ type SaveRequest = {
   content: string;
 };
 type SaveAction = ReturnType<typeof saveFileContentRequested>;
-type WorkspaceCleanupAction =
-  ReturnType<typeof workspaceDeleted> | ReturnType<typeof workspaceUnmounted>;
 type ObservedAction = { type: string; payload?: unknown };
 
 function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
@@ -121,45 +109,52 @@ function* createFileActionWorker(action: ReturnType<typeof createFileRequested>)
 }
 
 function* updateFileContentWorker(action: ReturnType<typeof updateFileContent>) {
-  const [workspaceId, path, content] = action.payload;
+  const [workspaceId, path] = action.payload;
   const entry = yield* selectFileContentEntry.effect(workspaceId, path);
-  const absolutePath = entry?.absolutePath;
-  if (!absolutePath) return;
+  if (!entry?.absolutePath) return;
   const { elapsed } = yield* race({
     elapsed: delay(FILE_CONTENT_SAVE_DEBOUNCE_MS, true),
     directSave: take((save: ObservedAction) => isSaveFor(save, workspaceId, path)),
     cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
   });
-  if (elapsed) yield* put(saveFileContentRequested(workspaceId, path, absolutePath, content));
+  if (!elapsed) return;
+  const latestEntry = yield* selectFileContentEntry.effect(workspaceId, path);
+  if (!latestEntry?.absolutePath || latestEntry.localContent === null) return;
+  yield* put(
+    saveFileContentRequested(workspaceId, path, latestEntry.absolutePath, latestEntry.localContent),
+  );
 }
 
 function* saveFileContentActionWorker(action: SaveAction) {
   const [workspaceId, path, absolutePath, content] = action.payload;
-  yield* race({
-    save: call(saveFileContentWorker, { workspaceId, path, absolutePath, content }),
-    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
+  const key = JSON.stringify([workspaceId, path]);
+  const previousSave = pendingFileSaves.get(key);
+  let completeSave!: () => void;
+  const currentSave = new Promise<void>((resolve) => {
+    completeSave = resolve;
   });
-}
+  pendingFileSaves.set(key, currentSave);
 
-function* clearQueuedWorkspaceSaves(saves: Channel<SaveAction>, action: WorkspaceCleanupAction) {
-  const [workspaceId] = action.payload;
-  const queued = yield* flush(saves);
-  for (const save of queued) {
-    if (save.payload[0] !== workspaceId) yield* put(saves, save);
+  try {
+    if (previousSave) {
+      const { ready } = yield* race({
+        ready: call(() => previousSave.then(() => true)),
+        cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
+      });
+      if (!ready) return;
+    }
+    yield* race({
+      save: call(saveFileContentWorker, { workspaceId, path, absolutePath, content }),
+      cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
+    });
+  } finally {
+    completeSave();
+    if (pendingFileSaves.get(key) === currentSave) pendingFileSaves.delete(key);
   }
 }
 
 export function* filesWriteSaga() {
-  const saves = yield* actionChannel(saveFileContentRequested, buffers.sliding(1));
-  try {
-    yield* takeEvery(createFileRequested, createFileActionWorker);
-    yield* takeLatest(updateFileContent, updateFileContentWorker);
-    yield* takeEvery([workspaceDeleted, workspaceUnmounted], clearQueuedWorkspaceSaves, saves);
-    while (true) {
-      const action = yield* take(saves);
-      yield* call(saveFileContentActionWorker, action);
-    }
-  } finally {
-    saves.close();
-  }
+  yield* takeEvery(createFileRequested, createFileActionWorker);
+  yield* takeEvery(updateFileContent, updateFileContentWorker);
+  yield* takeEvery(saveFileContentRequested, saveFileContentActionWorker);
 }
