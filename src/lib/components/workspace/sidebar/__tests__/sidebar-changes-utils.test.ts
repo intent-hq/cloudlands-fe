@@ -803,6 +803,16 @@ describe('mergeMonitoredPRs', () => {
     expect(result[0].crossRepoDisplay).toBe('other');
   });
 
+  it('shortens crossRepoDisplay case-insensitively on the owner segment', () => {
+    const result = mergeMonitoredPRs(
+      [],
+      [makeMonitor({ repo: 'Acme/other', url: 'https://github.com/Acme/other/pull/42' })],
+      workspaceRepo,
+    );
+    expect(result[0].crossRepo).toBe('Acme/other');
+    expect(result[0].crossRepoDisplay).toBe('other');
+  });
+
   it('keeps the full owner/name in crossRepoDisplay when the org differs', () => {
     const result = mergeMonitoredPRs(
       [],
@@ -1034,6 +1044,19 @@ describe('getPRStatusTooltip', () => {
     expect(tooltip).toContain('Changes requested: 2');
     expect(tooltip).toContain('Unresolved threads: 3');
     expect(tooltip).toContain('Merge conflict must be resolved');
+  });
+
+  it('omits snapshot detail lines on merged and closed rows', () => {
+    const snapshot = makeSnapshot({
+      approvals: { decision: 'REVIEW_REQUIRED', have: 0, needed: 2, changesRequested: 0 },
+      mergeBlockedReason: 'blocked by required checks or reviews',
+    });
+    expect(getPRStatusTooltip(makePR({ status: 'merged', monitorSnapshot: snapshot }))).toBe(
+      'Merged',
+    );
+    expect(getPRStatusTooltip(makePR({ status: 'closed', monitorSnapshot: snapshot }))).toBe(
+      'Closed',
+    );
   });
 });
 

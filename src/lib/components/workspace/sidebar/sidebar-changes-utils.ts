@@ -385,9 +385,11 @@ export function mergeMonitoredPRs(
       crossRepo: sameRepo ? undefined : monitor.repo,
       // Same-org repos carry no information in the owner segment — show
       // only the repo name; the full form is kept when the org differs.
+      // GitHub owner names are case-insensitive, so compare lowercased.
       crossRepoDisplay: sameRepo
         ? undefined
-        : workspaceOwner && monitor.repo.startsWith(`${workspaceOwner}/`)
+        : workspaceOwner &&
+            monitor.repo.toLowerCase().startsWith(`${workspaceOwner.toLowerCase()}/`)
           ? monitor.repo.slice(workspaceOwner.length + 1)
           : monitor.repo,
       monitorSnapshot: monitor.lastSnapshot,
@@ -412,7 +414,10 @@ export function getPRStatusTooltip(pr: PRInfo): string {
           ? m.workspace_prSection_statusDraft_label()
           : m.workspace_prSection_statusOpen_label();
   const lines = [stateLine];
-  const snapshot = pr.monitorSnapshot;
+  // Merged/closed rows no longer have merge requirements — the snapshot
+  // detail lines would just be stale noise on a settled PR.
+  const snapshot =
+    pr.status === 'merged' || pr.status === 'closed' ? undefined : pr.monitorSnapshot;
   if (snapshot) {
     if (snapshot.checks.total > 0) {
       lines.push(
