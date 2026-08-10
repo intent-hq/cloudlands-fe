@@ -24,6 +24,17 @@ export interface LastUsedSetupScript {
 
 type LastUsedMap = Record<string, LastUsedSetupScript>;
 
+/**
+ * Storage key for a repo. Local repos key by path alone; GitHub selections
+ * append the source URL because their `repoPath` is only the clone
+ * destination, which two different repositories can share (mirrors
+ * `repoIdentityKey` in the repo-config probe, which keys on the same
+ * path + URL pair).
+ */
+function storageKey(repoPath: string, githubUrl?: string | null): string {
+  return githubUrl ? `${repoPath}\u0000${githubUrl}` : repoPath;
+}
+
 function isValidEntry(value: unknown): value is LastUsedSetupScript {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const entry = value as Record<string, unknown>;
@@ -55,30 +66,39 @@ function readMap(): LastUsedMap {
 
 /**
  * The last-used setup script for a repo, or undefined when none is recorded.
- * Never throws.
+ * Pass the source `githubUrl` for GitHub selections (their `repoPath` is only
+ * the clone destination). Never throws.
  */
 export function getLastUsedSetupScript(
   repoPath: string,
+  githubUrl?: string | null,
 ): { name: string; content: string } | undefined {
   if (!repoPath) return undefined;
-  const entry = readMap()[repoPath];
+  const entry = readMap()[storageKey(repoPath, githubUrl)];
   return entry ? { name: entry.name, content: entry.content } : undefined;
 }
 
 /**
  * Record the script used for a repo's workspace creation. Blank content is
- * ignored; content is stored trimmed. When the map exceeds {@link MAX_REPOS}
- * repos, the oldest entries (by `usedAt`) are evicted. Never throws.
+ * ignored; content is stored trimmed. Pass the source `githubUrl` for GitHub
+ * selections (their `repoPath` is only the clone destination). When the map
+ * exceeds {@link MAX_REPOS} repos, the oldest entries (by `usedAt`) are
+ * evicted. Never throws.
  */
 export function recordLastUsedSetupScript(
   repoPath: string,
   script: { name: string; content: string },
+  githubUrl?: string | null,
 ): void {
   const content = script.content.trim();
   if (!repoPath || !content) return;
   try {
     const map = readMap();
-    map[repoPath] = { name: script.name, content, usedAt: new Date().toISOString() };
+    map[storageKey(repoPath, githubUrl)] = {
+      name: script.name,
+      content,
+      usedAt: new Date().toISOString(),
+    };
     const entries = Object.entries(map);
     if (entries.length > MAX_REPOS) {
       entries.sort(([, a], [, b]) => b.usedAt.localeCompare(a.usedAt));

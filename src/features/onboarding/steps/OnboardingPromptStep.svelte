@@ -549,6 +549,7 @@
         <SetupScriptModal
           bind:open={showSetupScript}
           repoPath={projectSelection.repoPath}
+          githubUrl={projectSelection.type === 'github' ? projectSelection.githubUrl : null}
           {repoConfigScript}
           bind:value={setupScript}
           bind:scriptName={setupScriptName}

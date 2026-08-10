@@ -24,6 +24,12 @@
 
   interface Props {
     repoPath?: string;
+    /**
+     * Source URL for GitHub selections — their `repoPath` is only the clone
+     * destination, which two different repos can share, so the last-used
+     * lookup keys on path + URL.
+     */
+    githubUrl?: string | null;
     projectType?: ProjectType;
     /** Setup script committed in the repo's `.intent/config.json`, if any */
     repoConfigScript?: string | null;
@@ -40,6 +46,7 @@
 
   let {
     repoPath = '',
+    githubUrl = null,
     projectType = undefined,
     repoConfigScript = null,
     value = $bindable(''),
@@ -69,7 +76,9 @@
   const LAST_USED_SCRIPT_ID = 'last-used';
 
   // Last-used setup script for this repo (localStorage; read on repo change)
-  const lastUsedScript = $derived(repoPath ? getLastUsedSetupScript(repoPath) : undefined);
+  const lastUsedScript = $derived(
+    repoPath ? getLastUsedSetupScript(repoPath, githubUrl) : undefined,
+  );
 
   // Build a map of script id -> content and label for quick lookup
   const scriptMap = $derived.by(() => {
@@ -199,7 +208,7 @@
 
     // Priority: repo-committed config script, then last used script for this repo
     const hasRepoConfig = !!repoConfigScript;
-    const lastUsed = currentRepo ? getLastUsedSetupScript(currentRepo) : undefined;
+    const lastUsed = currentRepo ? getLastUsedSetupScript(currentRepo, githubUrl) : undefined;
 
     // Use untrack only for internal state mutations to avoid infinite loops
     // But keep value assignment tracked so UI updates

@@ -513,7 +513,10 @@
   // Priority: repo-committed `.intent/config.json` setupScript > last used for
   // this repo > generic "Copy config files only" template.
   function restoreLastUsedSetupScript(repo: string) {
-    const lastUsed = repo ? getLastUsedSetupScript(repo) : undefined;
+    // GitHub selections key last-used by path + source URL: the path is only
+    // the clone destination, which two different repos can share.
+    const ghUrl = repoType === 'github' ? githubUrl : undefined;
+    const lastUsed = repo ? getLastUsedSetupScript(repo, ghUrl) : undefined;
     const genericTemplate = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic');
     const choice = chooseDefaultSetupScript({
       repoConfigScript: repo && repo === repoConfigScriptRepo ? repoConfigScript : null,
@@ -2040,10 +2043,14 @@
         repoConfigScriptRepo === repoPath &&
         setupScript.trim() === (repoConfigScript ?? '').trim();
       if (setupScript.trim() && !isUneditedRepoConfigScript) {
-        recordLastUsedSetupScript(repoPath, {
-          name: setupScriptName || m.workspace_setupScriptEditor_customScript_name(),
-          content: setupScript,
-        });
+        recordLastUsedSetupScript(
+          repoPath,
+          {
+            name: setupScriptName || m.workspace_setupScriptEditor_customScript_name(),
+            content: setupScript,
+          },
+          repoType === 'github' ? githubUrl : undefined,
+        );
       }
 
       // Initial-agent delivery (message + sends) is owned by the daemon; the
@@ -3000,6 +3007,7 @@
           <SetupScriptModal
             bind:open={showSetupScript}
             {repoPath}
+            githubUrl={repoType === 'github' ? githubUrl : null}
             repoConfigScript={repoConfigScriptRepo === repoPath ? repoConfigScript : null}
             bind:value={setupScript}
             bind:scriptName={setupScriptName}

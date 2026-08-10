@@ -421,7 +421,11 @@
   // Priority: repo-committed `.intent/config.json` setupScript > last used for
   // this repo > generic "Copy config files only" template.
   function restoreLastUsedSetupScript(repo: string) {
-    const lastUsed = repo ? getLastUsedSetupScript(repo) : undefined;
+    // GitHub selections key last-used by path + source URL: the path is only
+    // the clone destination, which two different repos can share.
+    const ghUrl =
+      projectSelection?.type === 'github' ? projectSelection?.githubUrl : undefined;
+    const lastUsed = repo ? getLastUsedSetupScript(repo, ghUrl) : undefined;
     const genericTemplate = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic');
     const choice = chooseDefaultSetupScript({
       repoConfigScript: repo && repo === repoConfigScriptRepo ? repoConfigScript : null,
@@ -970,10 +974,14 @@
         repoConfigScriptRepo === projectSelection.repoPath &&
         setupScript.trim() === (repoConfigScript ?? '').trim();
       if (setupScript.trim() && projectSelection.repoPath && !isUneditedRepoConfigScript) {
-        recordLastUsedSetupScript(projectSelection.repoPath, {
-          name: setupScriptName || m.onboarding_page_customScript_label(),
-          content: setupScript,
-        });
+        recordLastUsedSetupScript(
+          projectSelection.repoPath,
+          {
+            name: setupScriptName || m.onboarding_page_customScript_label(),
+            content: setupScript,
+          },
+          projectSelection.type === 'github' ? projectSelection.githubUrl : undefined,
+        );
       }
 
       // Initial-agent delivery (message + sends) is owned by the daemon; the

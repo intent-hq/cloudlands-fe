@@ -78,6 +78,29 @@ describe('recordLastUsedSetupScript / getLastUsedSetupScript', () => {
     expect(getLastUsedSetupScript('/repo/a')).toEqual({ name: 'New', content: 'echo new' });
   });
 
+  it('keys GitHub selections by path + URL so repos sharing a clone path stay separate', () => {
+    recordLastUsedSetupScript(
+      '/clones/x',
+      { name: 'A script', content: 'echo a' },
+      'https://github.com/owner-a/x',
+    );
+    recordLastUsedSetupScript(
+      '/clones/x',
+      { name: 'B script', content: 'echo b' },
+      'https://github.com/owner-b/x',
+    );
+    expect(getLastUsedSetupScript('/clones/x', 'https://github.com/owner-a/x')).toEqual({
+      name: 'A script',
+      content: 'echo a',
+    });
+    expect(getLastUsedSetupScript('/clones/x', 'https://github.com/owner-b/x')).toEqual({
+      name: 'B script',
+      content: 'echo b',
+    });
+    // A local repo at the same path is yet another identity.
+    expect(getLastUsedSetupScript('/clones/x')).toBeUndefined();
+  });
+
   it('tolerates corrupt storage (invalid JSON, wrong root, malformed entries)', () => {
     localStorage.setItem(LAST_USED_SETUP_SCRIPTS_STORAGE_KEY, '{ not json');
     expect(getLastUsedSetupScript('/repo/a')).toBeUndefined();

@@ -12,6 +12,8 @@
   interface Props {
     open?: boolean;
     repoPath?: string;
+    /** Source URL for GitHub selections (last-used keys on path + URL). */
+    githubUrl?: string | null;
     projectType?: ProjectType;
     /** Setup script committed in the repo's `.intent/config.json`, if any */
     repoConfigScript?: string | null;
@@ -24,6 +26,7 @@
   let {
     open = $bindable(false),
     repoPath = '',
+    githubUrl = null,
     projectType = undefined,
     repoConfigScript = null,
     value = $bindable(''),
@@ -65,6 +68,7 @@
 <Modal bind:open title={m.modals_setupScript_title()} contentClass="p-0" onClose={handleCancel}>
   <SetupScriptEditor
     {repoPath}
+    {githubUrl}
     {projectType}
     {repoConfigScript}
     bind:value={localValue}
