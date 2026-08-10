@@ -326,12 +326,7 @@ jobs:
       contents: read
     env:
       GIT_TERMINAL_PROMPT: '0'
-      # 16384 (up from 4096): NODE_OPTIONS applies to every vitest worker fork,
-      # and with the full suite (~1084 files) a single fork reproducibly OOMed
-      # at the 4096 cap — and again at 8192 — after all tests passed (same
-      # escalation as build-web above). Only one fork balloons at a time, so
-      # the cap stays safe on tinybox and the 32 GB burst runner.
-      NODE_OPTIONS: '--max-old-space-size=16384'
+      NODE_OPTIONS: '--max-old-space-size=4096'
     steps:
       - name: Checkout
         uses: actions/checkout@v7

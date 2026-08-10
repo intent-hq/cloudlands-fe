@@ -28,7 +28,10 @@ import {
   selectActiveConnection,
   selectActiveConnectionId,
 } from '../../connections/connections-selectors';
-import { selectWorkspaceHasLoaded, selectWorkspaceItems } from '../../workspace/workspace-selectors';
+import {
+  selectWorkspaceHasLoaded,
+  selectWorkspaceItems,
+} from '../../workspace/workspace-selectors';
 import {
   loadWorkspacesRequested,
   replaceWorkspaceList,
@@ -76,10 +79,17 @@ export function* evaluateSetupStateWorker() {
   // once hasCheckedOnce is true and takeLeading dedupes while one is running.
   while (!(yield* selectHasCheckedOnce.effect())) {
     yield* put(ensureProvidersChecked());
-    yield* race({
+    const { settled } = yield* race({
       settled: take(checkAllProvidersComplete),
       retry: delay(PROVIDER_CHECK_RETRY_MS),
     });
+    // An all-failed sweep settles WITHOUT flipping hasCheckedOnce (it lands
+    // no statuses, so the reducer keeps it false). Re-requesting immediately
+    // on such a settle would hot-loop with zero delay when probes fail fast
+    // (e.g. daemon down); pause for the retry cadence before trying again.
+    if (settled && !(yield* selectHasCheckedOnce.effect())) {
+      yield* delay(PROVIDER_CHECK_RETRY_MS);
+    }
   }
 
   // If a re-check is in flight (e.g. the reconnect-triggered one), give it a
@@ -118,6 +128,14 @@ function* handleBackendStatus(payload: { status?: string }) {
 }
 
 export function* requestReevaluation() {
+  // An all-failed sweep settles WITHOUT flipping hasCheckedOnce (it lands no
+  // statuses). Re-evaluating immediately would takeLatest-cancel the worker's
+  // ensure loop and restart it, which requests another sweep right away — a
+  // zero-delay hot loop when probes fail fast (e.g. daemon down). Pace the
+  // re-evaluation until a sweep has actually landed results.
+  if (!(yield* selectHasCheckedOnce.effect())) {
+    yield* delay(PROVIDER_CHECK_RETRY_MS);
+  }
   yield* put(evaluateSetupStateRequested());
 }
 
