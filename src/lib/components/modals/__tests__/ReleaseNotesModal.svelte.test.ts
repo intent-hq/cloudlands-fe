@@ -128,12 +128,16 @@ describe('Tailwind entry point (monorepo#1748 / monorepo#1875)', () => {
   // silently drops the imported stylesheets (tiptap-editor/chat-messages/
   // comments) from the production bundle (monorepo#1909).
   it('has no non-@import statement before the last @import', () => {
-    const lastImportEnd = appCss.lastIndexOf('@import');
-    expect(lastImportEnd).toBeGreaterThan(-1);
-    const beforeImports = appCss
-      .slice(0, appCss.indexOf(';', lastImportEnd) + 1)
-      // Strip comments and @import statements; only whitespace may remain.
-      .replace(/\/\*[\s\S]*?\*\//g, '')
+    // Strip comments first so `@import` inside a comment can't skew the scan.
+    const withoutComments = appCss.replace(/\/\*[\s\S]*?\*\//g, '');
+    // The three `$lib` stylesheets must be imported at all.
+    expect(withoutComments.match(/@import\s[^;]*;/g)?.length).toBeGreaterThanOrEqual(4);
+    const lastImportStart = withoutComments.lastIndexOf('@import');
+    const lastImportEnd = withoutComments.indexOf(';', lastImportStart);
+    expect(lastImportEnd).toBeGreaterThan(lastImportStart);
+    // Everything before the last @import must be @imports and whitespace only.
+    const beforeImports = withoutComments
+      .slice(0, lastImportEnd + 1)
       .replace(/@import\s[^;]*;/g, '');
     expect(beforeImports.trim()).toBe('');
   });
