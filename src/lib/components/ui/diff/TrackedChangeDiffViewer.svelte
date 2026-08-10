@@ -31,6 +31,10 @@
   batchedGitDiff,
   dedupedShowFile,
 } from './diff-ipc-batcher';
+  import {
+  gitlinkSidesFromHunks,
+  isGitlinkDiffChunk,
+} from './gitlink';
   import { appClient } from '$lib/client';
   import { LineType, type DiffChunk } from '$shared/types';
   import { hashContent } from './DiffViewer.svelte';
@@ -134,6 +138,9 @@
   let lastChangeFile = $state<string | undefined>(undefined);
   // Guard against duplicate loadDiffContent calls
   let isLoadingDiff = $state(false);
+  // Set when the loaded diff is a gitlink (submodule) entry — its path is a
+  // directory, so working-tree file reads must be skipped (#1739).
+  let isGitlinkChange = $state(false);
 
   // For partial/snippet diffs, prepend blank lines so pierre's gutter shows
   // real file line numbers. Combined with foldUnchanged, the padding collapses
@@ -352,6 +359,7 @@
     error = null;
     contentTooLarge = false;
     noChangesAtStage = false;
+    isGitlinkChange = false;
     oldContent = '';
     newContent = '';
     committedPatch = '';
@@ -485,6 +493,19 @@
           const diffChunk = await batchedGitDiff(wsIdForDiff, stagedFlag, filePath);
 
           if (diffChunk) {
+            // Gitlink (submodule) entry (intent-hq/monorepo#1739): no blob
+            // content exists for it, so skip the show-file / file:read
+            // fallbacks (they can only fail) and render the pseudo-diff
+            // composed from the `Subproject commit <sha>` hunk lines. One
+            // side may legitimately be empty (added/removed submodule).
+            if (isGitlinkDiffChunk(diffChunk)) {
+              isGitlinkChange = true;
+              const sides = gitlinkSidesFromHunks(diffChunk.chunks ?? []);
+              oldContent = sides.oldContent;
+              newContent = sides.newContent;
+              return true;
+            }
+
             const hasValidOld =
               diffChunk.oldContent !== undefined && diffChunk.oldContent !== '';
             const hasValidNew =
@@ -1011,7 +1032,19 @@
       lastObservedWorkingTreeContent = null;
     }
 
-    if (wsId && filePath && absolutePath && change?.stage !== 'committed' && !useProvidedContent) {
+    // Gitlink (submodule) paths are directories on disk, so the working-tree
+    // file read can only fail (#1739). The diff load is what classifies the
+    // entry, so wait for it (`!loading`) before dispatching — otherwise the
+    // initial run fires the read before `isGitlinkChange` could be set.
+    if (
+      wsId &&
+      filePath &&
+      absolutePath &&
+      change?.stage !== 'committed' &&
+      !useProvidedContent &&
+      !loading &&
+      !isGitlinkChange
+    ) {
       appStore.dispatch(loadFileContentRequested(wsId, filePath, absolutePath));
     }
   });
