@@ -12,6 +12,13 @@ export interface WorkspaceCreateProgressEntry {
   percent: number;
   /** Optional human-readable progress line from the daemon. */
   message?: string;
+  /**
+   * True once at least one daemon frame (progress or done) arrived for this
+   * entry — distinguishes live daemon-driven progress from the placeholder
+   * registered by `beginWorkspaceCreateProgress`, so the UI can fall back to
+   * its timed staged labels when no frames ever arrive.
+   */
+  sawFrame: boolean;
   /** True once the terminal `git:clone:done` frame arrived. */
   done: boolean;
   /** Terminal outcome; only present when `done` is true. */

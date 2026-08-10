@@ -40,7 +40,7 @@ export const workspaceCreateProgressReducer =
 workspaceCreateProgressReducer.with(beginWorkspaceCreateProgress, (state, { payload: [progressId] }) => ({
   byProgressId: {
     ...state.byProgressId,
-    [progressId]: { phase: "starting", percent: 0, done: false },
+    [progressId]: { phase: "starting", percent: 0, sawFrame: false, done: false },
   },
 }));
 workspaceCreateProgressReducer.with(workspaceCreateProgressReceived, (state, { payload: [progressId, progress] }) => {
@@ -56,6 +56,7 @@ workspaceCreateProgressReducer.with(workspaceCreateProgressReceived, (state, { p
         phase: progress.phase,
         percent: progress.percent,
         message: progress.message,
+        sawFrame: true,
       },
     },
   };
@@ -68,6 +69,7 @@ workspaceCreateProgressReducer.with(workspaceCreateProgressDone, (state, { paylo
       ...state.byProgressId,
       [progressId]: {
         ...entry,
+        sawFrame: true,
         done: true,
         ok: outcome.ok,
         error: outcome.error,

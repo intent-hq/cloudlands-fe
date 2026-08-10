@@ -7928,6 +7928,7 @@ describe('daemonEventsBridge (create-progress wire contract — git:clone:progre
       phase: 'receiving',
       percent: 45,
       message: 'Receiving objects: 45%',
+      sawFrame: true,
       done: false,
     });
   });
@@ -8017,6 +8018,7 @@ describe('daemonEventsBridge (create-progress wire contract — git:clone:progre
     expect(selectWorkspaceCreateProgress.select(appStore.state, PROGRESS_ID)).toEqual({
       phase: 'starting',
       percent: 0,
+      sawFrame: false,
       done: false,
     });
   });

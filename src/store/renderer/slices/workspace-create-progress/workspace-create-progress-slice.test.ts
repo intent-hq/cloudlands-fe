@@ -17,7 +17,12 @@ describe("workspaceCreateProgressReducer", () => {
 
   it("begin registers a starting entry for the progressId", () => {
     const state = workspaceCreateProgressReducer(initialState, beginWorkspaceCreateProgress(PID));
-    expect(state.byProgressId[PID]).toEqual({ phase: "starting", percent: 0, done: false });
+    expect(state.byProgressId[PID]).toEqual({
+      phase: "starting",
+      percent: 0,
+      sawFrame: false,
+      done: false,
+    });
   });
 
   it("progressReceived folds phase/percent/message into a registered entry", () => {
@@ -34,6 +39,7 @@ describe("workspaceCreateProgressReducer", () => {
       phase: "receiving",
       percent: 45,
       message: "Receiving objects: 45%",
+      sawFrame: true,
       done: false,
     });
   });
@@ -66,6 +72,7 @@ describe("workspaceCreateProgressReducer", () => {
     expect(state.byProgressId[PID]).toMatchObject({
       phase: "checkout",
       percent: 90,
+      sawFrame: true,
       done: true,
       ok: true,
     });
@@ -82,6 +89,7 @@ describe("workspaceCreateProgressReducer", () => {
       }),
     );
     expect(state.byProgressId[PID]).toMatchObject({
+      sawFrame: true,
       done: true,
       ok: false,
       error: "fatal: could not read Username",
@@ -113,6 +121,11 @@ describe("workspaceCreateProgressReducer", () => {
       workspaceCreateProgressReceived(PID, { phase: "receiving", percent: 45 }),
     );
     expect(state.byProgressId[PID]?.percent).toBe(45);
-    expect(state.byProgressId[other]).toEqual({ phase: "starting", percent: 0, done: false });
+    expect(state.byProgressId[other]).toEqual({
+      phase: "starting",
+      percent: 0,
+      sawFrame: false,
+      done: false,
+    });
   });
 });
