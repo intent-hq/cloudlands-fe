@@ -20,10 +20,9 @@ vi.mock("$lib/client/live/backend-transport", () => ({
 // Context preparation reaches for git status/diffs; stub it so the test
 // asserts the wire call, not the git plumbing.
 const { prepareContextSpy } = vi.hoisted(() => ({ prepareContextSpy: vi.fn() }));
-vi.mock(
-  "$store/renderer/slices/background-agent-executor/utils/context-preparation",
-  () => ({ prepareContext: prepareContextSpy }),
-);
+vi.mock("$store/renderer/slices/background-agent-executor/utils/context-preparation", () => ({
+  prepareContext: prepareContextSpy,
+}));
 
 // The service lazily imports svelte-sonner for error toasts.
 const { toastErrorSpy } = vi.hoisted(() => ({ toastErrorSpy: vi.fn() }));
@@ -298,6 +297,31 @@ describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)"
     expect(readExecutor("commit")).toMatchObject({ status: "success", result: "new" });
   });
 
+  it("uses one global latest execution across different executor payloads", async () => {
+    let resolveCommit: (value: unknown) => void = () => {};
+    completeOnceSpy
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveCommit = resolve)))
+      .mockResolvedValueOnce({
+        text: "<<<PR_DESCRIPTION>>>new pr description<<</PR_DESCRIPTION>>>",
+      });
+
+    appStore.dispatch(executeBackgroundAgent(WS, "commit"));
+    await waitForSettled("commit", ["running"]);
+    appStore.dispatch(executeBackgroundAgent(WS, "pr"));
+    await waitForSettled("pr", ["success"]);
+
+    resolveCommit({ text: "<<<COMMIT_MESSAGE>>>stale commit<<</COMMIT_MESSAGE>>>" });
+    await flush();
+    await flush();
+
+    expect(completeOnceSpy).toHaveBeenCalledTimes(2);
+    expect(readExecutor("commit")).toMatchObject({ status: "running", result: null });
+    expect(readExecutor("pr")).toMatchObject({ status: "success", result: "new pr description" });
+
+    appStore.dispatch(cancelExecution(WS, "commit"));
+    await waitForSettled("commit", ["cancelled"]);
+  });
+
   it("marks the executor error when context preparation fails (e.g. nothing staged)", async () => {
     prepareContextSpy.mockRejectedValueOnce(
       new Error("No files are staged for commit. Please stage some files first."),
@@ -311,5 +335,27 @@ describe("background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)"
       status: "error",
       error: "No files are staged for commit. Please stage some files first.",
     });
+  });
+
+  it("cancels the active execution worker when the root saga is stopped", async () => {
+    let resolveCompletion: (value: unknown) => void = () => {};
+    completeOnceSpy.mockImplementationOnce(
+      () => new Promise((resolve) => (resolveCompletion = resolve)),
+    );
+
+    appStore.dispatch(executeBackgroundAgent(WS, "review"));
+    await waitForSettled("review", ["running"]);
+    stopBackgroundExecutorSaga?.();
+    stopBackgroundExecutorSaga = undefined;
+
+    resolveCompletion({ text: "late review" });
+    await flush();
+    await flush();
+
+    expect(readExecutor("review")).toMatchObject({ status: "running", result: null });
+
+    stopBackgroundExecutorSaga = appStore.runSaga(backgroundExecutorSaga);
+    appStore.dispatch(cancelExecution(WS, "review"));
+    await waitForSettled("review", ["cancelled"]);
   });
 });

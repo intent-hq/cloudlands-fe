@@ -346,6 +346,17 @@
   const dividerSession$ = selectDividerSession(agentIdStore);
   const isDelegatedBackgroundTaskAgent = $derived(isDelegatedBackgroundTaskSession($agentSession$));
 
+  $effect(() => {
+    let old = null;
+    console.error(
+      'CHANGES',
+      agentMessages$.subscribe((val) => {
+        console.error('SUBSCRIBED!!!!', old === val, val);
+        old = val;
+      }),
+    );
+  });
+
   // Derive error state: combine transient chatError with persisted agent status.
   // After a reload, chatError is null but agent status may be Error — use
   // stopReason or a generic message so StreamingStatus shows the failure + Retry button.
@@ -1595,10 +1606,12 @@
 
   // Hide the aggregate file-changes row when it merely duplicates the last
   // turn's per-turn row (same set of changed file paths)
-  const showAggregateFileChangesSummary = $derived(
-    $agentMessages$.filter((message) => message.role === 'assistant').length > 1 &&
-      !isAggregateFileChangesRedundant($agentMessages$),
-  );
+  const showAggregateFileChangesSummary = $derived.by(() => {
+    return (
+      $agentMessages$.filter((message) => message.role === 'assistant').length > 1 &&
+      !isAggregateFileChangesRedundant($agentMessages$)
+    );
+  });
 
   const showEndOfListStreamingStatus = $derived(
     shouldShowEndOfListStreamingStatus({
