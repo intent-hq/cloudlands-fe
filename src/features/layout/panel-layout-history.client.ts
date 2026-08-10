@@ -22,10 +22,12 @@ export interface PanelLayoutHistoryData {
 export async function savePanelLayoutHistory(
   workspaceId: string,
   data: PanelLayoutHistoryData,
+  backendId?: string,
 ): Promise<boolean> {
   try {
     const result = await window.electronAPI.invoke(PANEL_LAYOUT_CHANNELS.SAVE, {
       workspaceId,
+      backendId,
       data,
     });
     return result === true;
@@ -40,10 +42,12 @@ export async function savePanelLayoutHistory(
  */
 export async function loadPanelLayoutHistory(
   workspaceId: string,
+  backendId?: string,
 ): Promise<PanelLayoutHistoryData | null> {
   try {
     const result = await window.electronAPI.invoke(PANEL_LAYOUT_CHANNELS.LOAD, {
       workspaceId,
+      backendId,
     });
     return result ?? null;
   } catch {

@@ -1,12 +1,12 @@
 <script lang="ts">
   /**
    * "+ Add model option" rows for the specialist editor (PROTOCOL §5.11
-   * `modelOptions`): each row is a ModelPicker + free-text hint + remove
-   * button. Rows without a picked model are local drafts — they are never
-   * committed; a commit fires when a row gains a model, a hint blurs on a
-   * committed row, or a committed row is removed. The parent persists the
-   * committed list via `saveFileSpecialist` (empty list ⇒ key omitted on the
-   * wire so inheritance is preserved).
+   * `modelOptions`): each row is a ModelPicker + effort dropdown + free-text
+   * hint + remove button. Rows without a picked model are local drafts — they
+   * are never committed; a commit fires when a row gains a model, a hint blurs
+   * or the effort changes on a committed row, or a committed row is removed.
+   * The parent persists the committed list via `saveFileSpecialist` (empty
+   * list ⇒ key omitted on the wire so inheritance is preserved).
    */
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
@@ -15,6 +15,9 @@
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import type { SpecialistModelOption } from '$shared/specialist-file-types';
   import { m } from '$shared/paraglide/messages.js';
+  import EffortSelect from './EffortSelect.svelte';
+  import { selectModelEffortLevels } from '$store/renderer/slices/model/model-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     /** Saved options from the resolved specialist view (wire `modelOptions`). */
@@ -39,7 +42,24 @@
   function committed(list: Row[]): SpecialistModelOption[] {
     return list
       .filter((row) => row.model !== '')
-      .map(({ model, hint }) => ({ model, hint }));
+      .map(({ model, hint, reasoningEffort }) => ({
+        model,
+        hint,
+        // Omit the key when unset so the wire keeps inherit semantics
+        // (PROTOCOL §5.11 — never null/"" on a modelOptions entry).
+        ...(reasoningEffort ? { reasoningEffort } : {}),
+      }));
+  }
+
+  /**
+   * Drop an effort level the newly picked model does not advertise, so a
+   * model switch resets the row to Default instead of persisting a level the
+   * catalog no longer offers.
+   */
+  function effortForModel(model: string, effort: string | undefined): string | undefined {
+    if (!effort) return undefined;
+    const levels = selectModelEffortLevels.select(appStore.state, model);
+    return levels?.includes(effort) ? effort : undefined;
   }
 
   // Resync from the store only when the saved list diverges from the local
@@ -53,7 +73,12 @@
     const local = untrack(() => committed(rows));
     const inSync =
       saved.length === local.length &&
-      saved.every((opt, i) => opt.model === local[i].model && opt.hint === local[i].hint);
+      saved.every(
+        (opt, i) =>
+          opt.model === local[i].model &&
+          opt.hint === local[i].hint &&
+          (opt.reasoningEffort ?? undefined) === (local[i].reasoningEffort ?? undefined),
+      );
     if (!inSync) {
       rows = saved.map((opt) => ({ key: nextKey++, ...opt }));
     }
@@ -65,8 +90,30 @@
 
   function handleModelChange(index: number, compoundModelId: string) {
     if (!compoundModelId) return;
-    rows = rows.map((row, i) => (i === index ? { ...row, model: compoundModelId } : row));
+    rows = rows.map((row, i) =>
+      i === index
+        ? {
+            ...row,
+            model: compoundModelId,
+            reasoningEffort: effortForModel(compoundModelId, row.reasoningEffort),
+          }
+        : row,
+    );
     onCommit(committed(rows));
+  }
+
+  /**
+   * Per-row effort change. A draft row (no model yet) only updates locally —
+   * it is committed once the row gains a model, mirroring the hint semantics.
+   */
+  function handleEffortChange(index: number, reasoningEffort: string | undefined) {
+    const row = rows[index];
+    if (!row || row.reasoningEffort === reasoningEffort) return;
+    const wasCommitted = row.model !== '';
+    rows = rows.map((r, i) => (i === index ? { ...r, reasoningEffort } : r));
+    if (wasCommitted) {
+      onCommit(committed(rows));
+    }
   }
 
   function handleHintBlur(index: number, hint: string) {
@@ -109,6 +156,12 @@
           size="sm"
         />
       </div>
+      <EffortSelect
+        model={row.model || undefined}
+        value={row.reasoningEffort}
+        onChange={(effort) => handleEffortChange(index, effort)}
+        testId={`option-effort-${index}`}
+      />
       <input
         type="text"
         value={row.hint}

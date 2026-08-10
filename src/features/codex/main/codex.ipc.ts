@@ -1,73 +1,32 @@
 /**
  * Codex IPC Handlers
  *
- * IPC handlers for Codex ACP adapter integration. Model listing is a thin
- * call to the daemon's per-provider catalog (`models.list { providerId }`,
- * PROTOCOL §6.7) — the daemon owns the probe, caching, and static fallback.
+ * IPC handlers for Codex ACP adapter integration. Availability and model
+ * listing are both daemon-owned: the codex CLI resolves through
+ * `host.findBinary` (PROTOCOL §5.14) and models through the per-provider
+ * catalog (`models.list { providerId }`, PROTOCOL §6.7).
  */
 
 import { ipcMain } from 'electron';
 import { CODEX_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { getProviderModelsEnvelope } from '../../../main/utils/daemon-model-catalog';
-import { resolveCodexModelListCommands } from './codex-resolver';
-import {
-  getManagedCodexAcpStatus,
-  type ManagedCodexAcpStatus,
-} from './codex-acp-manager';
+import { findBinary } from '../../../shared/main/find-binary';
 
 const logger = new Logger('CodexIPC');
 
-type CodexManagedInstallState =
-  | 'not_installed'
-  | 'installing'
-  | 'installed'
-  | 'failed'
-  | 'unsupported';
-type CodexManagedInstallStatusPayload = {
-  managedInstallState: CodexManagedInstallState;
-  version?: string;
-  downloadProgress?: number;
-  error?: string;
-  usingFallback?: boolean;
-};
-
-function toManagedInstallStatusPayload(
-  status: ManagedCodexAcpStatus,
-): CodexManagedInstallStatusPayload {
-  const stateMap: Record<ManagedCodexAcpStatus['state'], CodexManagedInstallState> = {
-    not_installed: 'not_installed',
-    installing: 'installing',
-    ready: 'installed',
-    error: 'failed',
-    unsupported: 'unsupported',
-  };
-  return {
-    managedInstallState: stateMap[status.state],
-    version: status.version,
-    error: status.error,
-  };
-}
-
 export function setupCodexIPC() {
-  ipcMain.handle(CODEX_CHANNELS.MANAGED_INSTALL_STATUS, async () => ({
-    success: true,
-    data: toManagedInstallStatusPayload(getManagedCodexAcpStatus()),
-  }));
-
-  // Check if a Codex model-listing path is available
+  // Codex availability keys off the real `codex` CLI on the daemon host —
+  // the ACP adapter is spawned (and pinned) by intentd.
   ipcMain.handle(CODEX_CHANNELS.CHECK_AVAILABILITY, async () => {
     try {
       logger.debug('Checking Codex availability');
-      const candidates = await resolveCodexModelListCommands();
-      const isAvailable = candidates.length > 0;
+      const codexPath = await findBinary('codex', { cache: false });
       logger.info('Codex availability check', {
-        isAvailable,
-        sources: candidates.map((candidate) => candidate.source),
-        command: candidates[0]?.command,
-        usesNpx: candidates[0]?.usesNpx,
+        isAvailable: codexPath !== null,
+        command: codexPath,
       });
-      return { success: true, available: isAvailable };
+      return { success: true, available: codexPath !== null };
     } catch (error) {
       logger.info('Codex not available', { error: (error as Error).message });
       return { success: true, available: false };

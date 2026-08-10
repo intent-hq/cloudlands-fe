@@ -49,7 +49,7 @@ const appStore = {
 // Inline selector helpers.
 //
 // The canonical selector modules (`workspace-selectors`, `agent-session-selectors`)
-// statically import the configured Store which chains to `$lib/store-shim/svelte-store`
+// statically import the configured Store which chains to `@augmentcode/themis/svelte-store`
 // → `svelte`. Since stream-manager.ts is transitively loaded by the main process
 // (where svelte is absent in packaged builds), we cannot import those modules.
 // The logic below mirrors the selectors without the Store dependency.
@@ -175,6 +175,33 @@ export interface StreamCallbacks {
   onContentBlocks?: (blocks: ContentBlock[]) => void;
   onComplete?: (message: any) => void;
   onError?: (error: Error) => void;
+}
+
+/**
+ * Why a stream was cancelled. Only `user_cancel` represents an actual user
+ * action; `manager_disposed` (app shutdown/reload teardown) and
+ * `session_evicted` (session-cap eviction) are internal teardown paths that
+ * must not be reported as user cancellations (intent-hq/monorepo#1741).
+ */
+export type StreamCancellationReason = 'user_cancel' | 'manager_disposed' | 'session_evicted';
+
+const STREAM_CANCELLATION_MESSAGES: Record<StreamCancellationReason, string> = {
+  // i18n-ignore (main-process Error messages for logs/diagnostics, not rendered UI labels)
+  user_cancel: 'Stream cancelled by user',
+  // i18n-ignore (main-process Error messages for logs/diagnostics, not rendered UI labels)
+  manager_disposed: 'Stream cancelled: stream manager disposed (app shutdown or reload)',
+  // i18n-ignore (main-process Error messages for logs/diagnostics, not rendered UI labels)
+  session_evicted: 'Stream cancelled: session evicted after reaching the session limit',
+};
+
+export class StreamCancelledError extends Error {
+  readonly reason: StreamCancellationReason;
+
+  constructor(reason: StreamCancellationReason) {
+    super(STREAM_CANCELLATION_MESSAGES[reason]);
+    this.name = 'StreamCancelledError';
+    this.reason = reason;
+  }
 }
 
 export interface StreamMetrics {
@@ -1000,14 +1027,13 @@ export class StreamManager extends EventEmitter implements IDisposable {
   /**
    * Cancel a stream
    */
-  cancelStream(streamId: string): void {
+  cancelStream(streamId: string, reason: StreamCancellationReason = 'user_cancel'): void {
     const session = this.getSession(streamId);
     if (!session || session.isComplete) {
       return;
     }
 
-    const error = new Error('Stream cancelled by user');
-    this.handleError(streamId, error);
+    this.handleError(streamId, new StreamCancelledError(reason));
   }
 
   /**
@@ -1233,7 +1259,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
 
     if (oldestId) {
       logger.warn('Cleaning up oldest session due to limit', { streamId: oldestId });
-      this.cancelStream(oldestId);
+      this.cancelStream(oldestId, 'session_evicted');
     }
   }
 
@@ -1295,7 +1321,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
 
     // Cancel all active streams
     for (const streamId of this.sessions.keys()) {
-      this.cancelStream(streamId);
+      this.cancelStream(streamId, 'manager_disposed');
     }
 
     this.cleanupAll();

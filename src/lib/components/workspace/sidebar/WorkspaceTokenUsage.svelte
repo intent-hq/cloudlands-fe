@@ -5,7 +5,9 @@
    * Compact token usage row for the workspace sidebar. Shows aggregated
    * input/output/cached token totals with a breakdown tooltip: per-model
    * totals first, then per-agent totals. When the daemon reports provider
-   * cost (PROTOCOL §5.23) the grids gain a Cost column and a total row.
+   * cost (PROTOCOL §5.23) the grids gain a Cost column and a total row; when
+   * it reports reasoning tokens (`thoughtTokens`, omitted when zero) they gain
+   * a Thinking column and the summary a thinking figure.
    * Renders nothing until token data is available (no layout shift).
    */
   import { onMount } from 'svelte';
@@ -60,6 +62,7 @@
         inputTokens: modelTotals.inputTokens,
         outputTokens: modelTotals.outputTokens,
         cachedTokens: modelTotals.cacheReadTokens + modelTotals.cacheCreationTokens,
+        thoughtTokens: modelTotals.thoughtTokens ?? 0,
         cost: costLabel(modelTotals.cost),
       }))
       .filter((row) => row.inputTokens + row.outputTokens + row.cachedTokens !== 0)
@@ -79,6 +82,7 @@
         inputTokens: entry.inputTokens,
         outputTokens: entry.outputTokens,
         cachedTokens: entry.cacheReadTokens + entry.cacheCreationTokens,
+        thoughtTokens: entry.thoughtTokens ?? 0,
         cost: costLabel(entry.cost),
       }))
       .filter((row) => row.inputTokens + row.outputTokens + row.cachedTokens !== 0)
@@ -93,18 +97,39 @@
       modelRows.some((row) => row.cost !== null) ||
       agentRows.some((row) => row.cost !== null),
   );
-  const gridClass = $derived(
-    hasCost
-      ? 'grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-3 gap-y-0.5 text-sm'
-      : 'grid grid-cols-[1fr_auto_auto_auto] gap-x-3 gap-y-0.5 text-sm',
+  // Same for Thinking: `thoughtTokens` is omitted when no provider broke
+  // reasoning tokens out of the output count (PROTOCOL §5.23).
+  const thoughtTokens = $derived(totals.thoughtTokens ?? 0);
+  const hasThinking = $derived(
+    thoughtTokens > 0 ||
+      modelRows.some((row) => row.thoughtTokens > 0) ||
+      agentRows.some((row) => row.thoughtTokens > 0),
   );
+  // Static class strings so Tailwind emits the arbitrary grid templates.
+  const gridClass = $derived.by(() => {
+    const columns = hasThinking
+      ? hasCost
+        ? 'grid-cols-[1fr_auto_auto_auto_auto_auto]'
+        : 'grid-cols-[1fr_auto_auto_auto_auto]'
+      : hasCost
+        ? 'grid-cols-[1fr_auto_auto_auto_auto]'
+        : 'grid-cols-[1fr_auto_auto_auto]';
+    return `grid ${columns} gap-x-3 gap-y-0.5 text-sm`;
+  });
 
   const summaryText = $derived(
-    m.workspace_tokenUsage_summary_label({
-      input: formatCompactNumber(totals.inputTokens),
-      output: formatCompactNumber(totals.outputTokens),
-      cached: formatCompactNumber(cachedTokens),
-    }),
+    hasThinking
+      ? m.workspace_tokenUsage_summaryWithThinking_label({
+          input: formatCompactNumber(totals.inputTokens),
+          output: formatCompactNumber(totals.outputTokens),
+          cached: formatCompactNumber(cachedTokens),
+          thinking: formatCompactNumber(thoughtTokens),
+        })
+      : m.workspace_tokenUsage_summary_label({
+          input: formatCompactNumber(totals.inputTokens),
+          output: formatCompactNumber(totals.outputTokens),
+          cached: formatCompactNumber(cachedTokens),
+        }),
   );
 </script>
 
@@ -124,6 +149,9 @@
             <span class="text-subtle text-right">{m.workspace_tokenUsage_in_label()}</span>
             <span class="text-subtle text-right">{m.workspace_tokenUsage_out_label()}</span>
             <span class="text-subtle text-right">{m.workspace_tokenUsage_cached_label()}</span>
+            {#if hasThinking}
+              <span class="text-subtle text-right">{m.workspace_tokenUsage_thinking_label()}</span>
+            {/if}
             {#if hasCost}
               <span class="text-subtle text-right">{m.workspace_tokenUsage_cost_label()}</span>
             {/if}
@@ -132,6 +160,9 @@
               <span class="text-right font-medium">{formatCompactNumber(row.inputTokens)}</span>
               <span class="text-right font-medium">{formatCompactNumber(row.outputTokens)}</span>
               <span class="text-right text-subtle">{formatCompactNumber(row.cachedTokens)}</span>
+              {#if hasThinking}
+                <span class="text-right text-subtle">{formatCompactNumber(row.thoughtTokens)}</span>
+              {/if}
               {#if hasCost}
                 <span class="text-right font-medium"
                   >{row.cost ?? m.workspace_tokenUsage_costEmpty_label()}</span
@@ -145,6 +176,9 @@
           <span class="text-subtle text-right">{m.workspace_tokenUsage_in_label()}</span>
           <span class="text-subtle text-right">{m.workspace_tokenUsage_out_label()}</span>
           <span class="text-subtle text-right">{m.workspace_tokenUsage_cached_label()}</span>
+          {#if hasThinking}
+            <span class="text-subtle text-right">{m.workspace_tokenUsage_thinking_label()}</span>
+          {/if}
           {#if hasCost}
             <span class="text-subtle text-right">{m.workspace_tokenUsage_cost_label()}</span>
           {/if}
@@ -153,6 +187,9 @@
             <span class="text-right font-medium">{formatCompactNumber(row.inputTokens)}</span>
             <span class="text-right font-medium">{formatCompactNumber(row.outputTokens)}</span>
             <span class="text-right text-subtle">{formatCompactNumber(row.cachedTokens)}</span>
+            {#if hasThinking}
+              <span class="text-right text-subtle">{formatCompactNumber(row.thoughtTokens)}</span>
+            {/if}
             {#if hasCost}
               <span class="text-right font-medium"
                 >{row.cost ?? m.workspace_tokenUsage_costEmpty_label()}</span

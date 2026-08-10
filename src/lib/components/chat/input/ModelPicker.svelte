@@ -37,6 +37,7 @@
   selectIsLoadingModels,
   selectLoadError,
   selectAllProviderWarnings,
+  selectAllProviderStaleFlags,
 } from '$store/renderer/slices/model/model-selectors';
   import {
   clearModelFallbackInfo,
@@ -47,10 +48,7 @@
   setModelPickerGroupCollapsed,
 } from '$store/renderer/slices/model/model-slice';
   import type { ModelFallbackInfo } from '$store/renderer/slices/model/model-types';
-  import {
-  selectHasCheckedOnce,
-  selectManagedInstallStatusByProvider,
-} from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+  import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import { selectDaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { ensureProvidersChecked } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import {
@@ -61,6 +59,12 @@
   getModelsForProvider,
   getModelsForProviderForLoadingState,
 } from '$store/renderer/slices/model/model-utils';
+  import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
+  import {
+  selectProviderModelsCacheEntry,
+  selectProviderModelsCacheMap,
+  selectProviderModelsClearEpoch,
+} from '$store/renderer/slices/provider-models/provider-models-selectors';
 
   import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
   import {
@@ -83,9 +87,9 @@
 } from './model-picker-utils';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
+  import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
-  import { formatInteger } from '$lib/i18n/format';
   import {
   faCheck,
   faChevronDown,
@@ -123,7 +127,7 @@
   const isLoadingModels$ = selectIsLoadingModels();
   const loadError$ = selectLoadError();
   const allProviderWarnings$ = selectAllProviderWarnings();
-  const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
+  const allProviderStaleFlags$ = selectAllProviderStaleFlags();
   const hasCheckedOnce$ = selectHasCheckedOnce();
   const daemonHealth$ = selectDaemonHealth();
 
@@ -181,6 +185,13 @@
     updateGlobalDefault?: boolean;
     silentFallback?: boolean;
     showProviderWarningNotice?: boolean;
+    /**
+     * Extra classes for the provider notice boxes. Callers that render the
+     * picker inside a flex row use this to let the notice break onto its own
+     * full-width line (e.g. `basis-full w-full max-w-full` + `flex-wrap` on
+     * the row) instead of sitting inline next to the trigger.
+     */
+    noticeClass?: string;
   }
 
   let {
@@ -211,7 +222,14 @@
     updateGlobalDefault = false,
     silentFallback = false,
     showProviderWarningNotice,
+    noticeClass,
   }: Props = $props();
+
+  // `default`-variant pickers stack the notice directly under a full-width
+  // trigger, so give it a default top margin; callers can still override it.
+  const resolvedNoticeClass = $derived(
+    variant === 'default' ? cn('mt-2', noticeClass) : noticeClass,
+  );
 
   const agentSession$ = useAgentSession(() => agentId);
 
@@ -241,9 +259,15 @@
   let agentProviderLoading = $state(false);
   let agentProviderError = $state<string | null>(null);
 
-  function setProviderWarningState(providerId: string, warning: string | undefined) {
+  function setProviderWarningState(
+    providerId: string,
+    warning: string | undefined,
+    stale: boolean | undefined,
+  ) {
     const normalizedId = normalizeProviderId(providerId);
-    appStore.dispatch(setLoadingStateForProvider({ providerId: normalizedId, status: 'success', warning }));
+    appStore.dispatch(
+      setLoadingStateForProvider({ providerId: normalizedId, status: 'success', warning, stale }),
+    );
   }
 
   function setProviderErrorState(providerId: string, error: string) {
@@ -259,11 +283,33 @@
     return createProviderWarningNotice(normalizedId, warnings[normalizedId]);
   }
 
-  let allProviderModels = $state<Record<string, DropdownOption[]>>({});
+  // Hydrate from the session-lifetime provider-models cache
+  // (stale-while-revalidate): cached providers render their catalogs — and a
+  // resolved trigger label — synchronously on mount, with no spinner/skeleton
+  // frame, while the debounced background fetch below still revalidates every
+  // provider and writes fresh results back through the cache. Uncached
+  // providers keep the normal loading path.
+  const cachedProviderCatalogs = selectProviderModelsCacheMap.select(appStore.state);
+  const seededProviderModels: Record<string, DropdownOption[]> = {};
+  const seededProviderLoading: Record<string, boolean> = {};
+  for (const [pid, entry] of Object.entries(cachedProviderCatalogs)) {
+    seededProviderModels[pid] = toDropdownOptions(entry.models);
+    seededProviderLoading[pid] = false;
+  }
+  // "All loaded" only when every currently-enabled provider is cache-covered;
+  // otherwise the first fetch pass settles it exactly as before.
+  const seededEnabledIds = $availableEnabledProviderIds$;
+  const seededAllProvidersLoaded =
+    seededEnabledIds.length > 0 &&
+    seededEnabledIds.every((pid) =>
+      Object.prototype.hasOwnProperty.call(seededProviderModels, normalizeProviderId(pid)),
+    );
+
+  let allProviderModels = $state<Record<string, DropdownOption[]>>(seededProviderModels);
   let allProviderErrors = $state<Record<string, ProviderLoadError>>({});
-  let allProviderLoading = $state<Record<string, boolean>>({});
+  let allProviderLoading = $state<Record<string, boolean>>(seededProviderLoading);
   let fetchGeneration = 0;
-  let allProvidersLoaded = $state(false);
+  let allProvidersLoaded = $state(seededAllProvidersLoaded);
   let lastFetchedProviderIds = '';
 
   function hasProviderResult(providerId: string): boolean {
@@ -302,20 +348,32 @@
     allProviderErrors = {};
     allProviderLoading = Object.fromEntries(providerIds.map((providerId) => [providerId, true]));
 
+    // Epoch at fetch start: a reconnect clear that lands while these
+    // responses are in flight makes them stale — the settle-time isStale()
+    // check keeps them out of local state (the epoch effect's generation
+    // bump can run after a pending response settles) and the reducer drops
+    // any pre-clear write-through stamped below as a second line of defense.
+    const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
+    const isStale = () =>
+      fetchGeneration !== currentGen ||
+      selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
+
     await Promise.allSettled(
       providerIds.map(async (providerId) => {
         try {
           const result = await getModelsForProviderForLoadingState(providerId);
-          if (fetchGeneration !== currentGen) return;
+          if (isStale()) return;
           const { [providerId]: _clearedError, ...remainingErrors } = allProviderErrors;
           allProviderErrors = remainingErrors;
           allProviderModels = {
             ...allProviderModels,
             [providerId]: toDropdownOptions(result.models),
           };
-          setProviderWarningState(providerId, result.warning);
+          // Write through to the session cache (providerId is normalized here).
+          appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch));
+          setProviderWarningState(providerId, result.warning, result.stale);
         } catch (err) {
-          if (fetchGeneration !== currentGen) return;
+          if (isStale()) return;
           const providerError = formatProviderLoadError(providerId, err);
           allProviderErrors = {
             ...allProviderErrors,
@@ -323,8 +381,9 @@
           };
           setProviderErrorState(providerId, providerError.displayText);
         } finally {
-          if (fetchGeneration !== currentGen) return;
-          setProviderLoading(providerId, false);
+          if (!isStale()) {
+            setProviderLoading(providerId, false);
+          }
         }
       }),
     );
@@ -346,21 +405,41 @@
   let agentFetchGeneration = 0;
   async function fetchAgentProviderModels(providerId: string) {
     const currentGen = ++agentFetchGeneration;
-    agentProviderLoading = true;
+    // Hydrate from the session cache (stale-while-revalidate): a cached
+    // catalog renders immediately with no loading state — the all-provider
+    // fetch prunes disabled providers from allProviderModels, so this path is
+    // the only cache consumer for a locked/agent picker whose provider is no
+    // longer enabled. The fetch below still revalidates.
+    const cacheId = normalizeProviderId(providerId);
+    const cached = selectProviderModelsCacheEntry.select(appStore.state, cacheId);
+    if (cached) {
+      agentProviderModels = cached.models;
+      agentProviderLoading = false;
+    } else {
+      agentProviderLoading = true;
+    }
     agentProviderError = null;
 
+    // Epoch at fetch start: a reconnect clear mid-flight makes this response
+    // stale for local state too, not just for the reducer write-through.
+    const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
+    const isStale = () =>
+      agentFetchGeneration !== currentGen ||
+      selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
     try {
       const result = await getModelsForProviderForLoadingState(providerId);
-      if (agentFetchGeneration !== currentGen) return;
+      if (isStale()) return;
       agentProviderModels = result.models;
-      setProviderWarningState(providerId, result.warning);
+      // Write through so the next mount of this picker hydrates too.
+      appStore.dispatch(providerModelsLoaded(cacheId, result, cacheEpoch));
+      setProviderWarningState(providerId, result.warning, result.stale);
     } catch (err) {
-      if (agentFetchGeneration !== currentGen) return;
+      if (isStale()) return;
       const providerError = formatProviderLoadError(providerId, err);
       agentProviderError = providerError.displayText;
       setProviderErrorState(providerId, providerError.displayText);
     } finally {
-      if (agentFetchGeneration === currentGen) {
+      if (!isStale()) {
         agentProviderLoading = false;
       }
     }
@@ -384,6 +463,31 @@
     const providerIds = $availableEnabledProviderIds$;
     clearTimeout(fetchDebounceTimer);
     fetchDebounceTimer = setTimeout(() => fetchAllProviderModels(providerIds), 50);
+  });
+
+  // React to the session cache being cleared (backend reconnect, RESUB-1):
+  // a mounted picker has already copied cached rows into local state and
+  // fetchAllProviderModels dedups on unchanged enabled-provider ids, so
+  // without this an open picker would keep the pre-reconnect catalog
+  // indefinitely. Keyed on the clear EPOCH, not the map going empty: the
+  // epoch increments on every providerModelsCacheCleared, so a reconnect
+  // during initial load (cache already empty — an empty→empty map
+  // transition) still triggers the generation bump + refetch. The fresh
+  // fetches read the post-clear epoch at start, so their results land in
+  // both local state and the cache.
+  const providerModelsClearEpoch$ = selectProviderModelsClearEpoch();
+  let lastSeenClearEpoch = selectProviderModelsClearEpoch.select(appStore.state);
+  $effect(() => {
+    const epoch = $providerModelsClearEpoch$;
+    if (epoch === lastSeenClearEpoch) return;
+    lastSeenClearEpoch = epoch;
+    untrack(() => {
+      lastFetchedProviderIds = '';
+      void fetchAllProviderModels($availableEnabledProviderIds$);
+      if (usesAgentProviderFetch) {
+        void fetchAgentProviderModels(effectiveProviderId);
+      }
+    });
   });
 
   // Models for the effective provider: the per-agent fetch result when the
@@ -423,13 +527,19 @@
     if (refreshingProviders.has(providerId)) return;
     refreshingProviders = new Set([...refreshingProviders, providerId]);
     const gen = fetchGeneration;
+    // Epoch at fetch start: a reconnect clear mid-flight makes this response
+    // stale for local state as well as for the reducer write-through.
+    const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
+    const isStale = () =>
+      fetchGeneration !== gen ||
+      selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
     try {
       // True force refresh: the daemon skips its cache and awaits a fresh
       // probe (PROTOCOL §6.7), so the spinner spins for the real probe
       // duration and the returned list replaces the group immediately.
       const result = await getModelsForProviderForLoadingState(providerId, { forceRefresh: true });
-      if (fetchGeneration !== gen) return;
-      setProviderWarningState(providerId, result.warning);
+      if (isStale()) return;
+      setProviderWarningState(providerId, result.warning, result.stale);
       if (providerId === effectiveProviderId && usesAgentProviderFetch) {
         agentProviderModels = result.models;
       }
@@ -439,7 +549,10 @@
         ...allProviderModels,
         [providerId]: toDropdownOptions(result.models),
       };
+      // Write through to the session cache (group keys are normalized ids).
+      appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch));
     } catch (err) {
+      if (isStale()) return;
       const providerError = formatProviderLoadError(providerId, err);
       allProviderErrors = {
         ...allProviderErrors,
@@ -520,7 +633,12 @@
   async function applyBackendModelUpdate(model: string) {
     if (agentId && workspaceId) {
       try {
-        const result = await agentClient.setModel(agentId, model, workspaceId);
+        // Send the picked model's provider explicitly: the parsed compound
+        // prefix, or the effective default provider for bare ids. Without it
+        // the daemon resolves a bare id against the session's current
+        // provider, rejecting cross-provider picks of default-provider models.
+        const pickedProviderId = parseCompoundModelId(model).providerId || undefined;
+        const result = await agentClient.setModel(agentId, model, workspaceId, pickedProviderId);
         if (result.ok && result.data.success) {
           logger.info('Updated agent model via IPC:', { agentId, model });
         } else {
@@ -593,13 +711,31 @@
 
   // Get the label for a model ID from available models list; undefined when
   // the id resolves to no loaded model (callers pick the fallback).
+  // Legacy codex compound ids (`{model}/{effort}`) no longer exist as catalog
+  // rows (the daemon collapses them to one base row + effortLevels), so on an
+  // exact-id miss the base model's label is rendered with the effort suffix
+  // appended — existing sessions with a stored compound id keep a sensible
+  // label instead of the raw id.
   function getModelLabel(modelId: string | undefined): string | undefined {
     if (!modelId) return undefined;
-    for (const models of Object.values(allProviderModels)) {
-      const found = models.find((m) => m.value === modelId);
-      if (found) return found.label;
+    const lookup = (id: string): string | undefined => {
+      for (const models of Object.values(allProviderModels)) {
+        const found = models.find((m) => m.value === id);
+        if (found) return found.label;
+      }
+      return availableModels.find((m) => m.value === id)?.label;
+    };
+    const exact = lookup(modelId);
+    if (exact) return exact;
+    const slashIndex = modelId.indexOf('/');
+    if (slashIndex > 0 && slashIndex < modelId.length - 1) {
+      const baseLabel = lookup(modelId.slice(0, slashIndex));
+      if (baseLabel) {
+        const effort = modelId.slice(slashIndex + 1);
+        return `${baseLabel} (${effort.charAt(0).toUpperCase()}${effort.slice(1)})`;
+      }
     }
-    return availableModels.find((m) => m.value === modelId)?.label;
+    return undefined;
   }
 
   const currentModelLabel = $derived.by(() => {
@@ -709,21 +845,21 @@
       .filter((warning): warning is ProviderWarningNotice => Boolean(warning));
   });
 
+  const hasCodexModels = $derived(
+    (allProviderModels['codex']?.length ?? 0) > 0 ||
+      (normalizeProviderId(effectiveProviderId) === 'codex' &&
+        (agentProviderModels?.length ?? 0) > 0),
+  );
+
+  // A stale warning (PROTOCOL §5.30 `stale: true`) accompanies the daemon's
+  // last-known-good list after a transient probe failure: the models on screen
+  // are real and usable, so the "install Codex CLI" notice would be wrong.
+  // The notice stays for the degraded case (warning with no codex models).
   const codexFallbackWarning = $derived(
-    providerFallbackWarnings.find((warning) => warning.providerId === 'codex') ?? null,
+    $allProviderStaleFlags$['codex'] && hasCodexModels
+      ? null
+      : (providerFallbackWarnings.find((warning) => warning.providerId === 'codex') ?? null),
   );
-
-  const isCodexManagedInstallInstalling = $derived(
-    $codexManagedInstallStatus$?.managedInstallState === 'installing',
-  );
-
-  const codexManagedInstallProgressText = $derived.by(() => {
-    const progress = $codexManagedInstallStatus$?.downloadProgress;
-    if (typeof progress !== 'number') return m.chat_modelPicker_installMoment_label();
-    return m.chat_modelPicker_downloadProgress_label({
-      percent: formatInteger(Math.round(progress * 100)),
-    });
-  });
 
   // D1(B): when no provider is available at all, never fall back to a
   // default provider/model — surface an explicit failure instead.
@@ -753,6 +889,16 @@
         noProviderToastShown = true;
         toast.error(m.chat_modelPicker_noProviderAvailable_toast(), {
           duration: 6000,
+          action: {
+            label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
+            onClick: () => {
+              void navigateToSettings({ tab: 'accounts', hash: 'providers' }).catch(
+                (error: unknown) => {
+                  logger.error('Failed to open provider settings from no-provider toast', error);
+                },
+              );
+            },
+          },
         });
       }
     } else {
@@ -812,14 +958,46 @@
     })),
   );
 
-  const isSelectedModelUnavailable = $derived.by(() => {
-    if (isLoadingModels) return false;
-    if (!allProvidersLoaded) return false;
+  // Provider the explicitly selected model belongs to ('' when inheriting).
+  const selectedModelProviderId = $derived(
+    hasExplicitModel && localModel
+      ? normalizeProviderId(parseCompoundModelId(localModel).providerId)
+      : '',
+  );
+
+  // True while a settled fetch result for the selected model's own provider is
+  // still outstanding but expected. `allProvidersLoaded` is not enough: on boot
+  // the availability list is empty, so fetchAllProviderModels([]) marks
+  // "loaded" with an empty catalog and the model looks unavailable before its
+  // provider was ever queried.
+  const isSelectedModelProviderPending = $derived.by(() => {
+    const modelProvider = selectedModelProviderId;
+    if (!modelProvider) return false;
+    if (hasProviderResult(modelProvider)) return false;
+    if (allProviderLoading[modelProvider]) return true;
+    // Availability hasn't been probed yet — an empty enabled list is "unknown".
+    if (!$hasCheckedOnce$) return true;
+    if (isProviderEnabled($availableEnabledProviderIds$, modelProvider)) return true;
+    // Not enabled: the per-agent fetch is the only source of a result.
+    if (usesAgentProviderFetch && normalizeProviderId(effectiveProviderId) === modelProvider) {
+      return agentProviderLoading || (agentProviderModels === null && agentProviderError === null);
+    }
+    return false;
+  });
+
+  const isSelectedModelMissingFromCatalog = $derived.by(() => {
     if (!hasExplicitModel) return false;
     if (!localModel) return false;
 
     const values = new Set(flatModelOptions.map((opt) => normalizeModelIdForMatch(opt.value)));
     return !values.has(normalizeModelIdForMatch(localModel));
+  });
+
+  const isSelectedModelUnavailable = $derived.by(() => {
+    if (isLoadingModels) return false;
+    if (!allProvidersLoaded) return false;
+    if (isSelectedModelProviderPending) return false;
+    return isSelectedModelMissingFromCatalog;
   });
 
   // --- Per-agent fallback tracking (persisted through Redux sagas so it survives page refresh) ---
@@ -853,6 +1031,22 @@
   // initializer creates new agents and shouldn't display fallback warnings.
   const showModelWarning = $derived(
     !!agentId && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
+  );
+
+  // The selected model isn't in the catalog yet, but its provider hasn't
+  // settled — show a spinner in the trigger rather than a warning that would
+  // flip back to normal a moment later (transient warning on refresh).
+  const showModelLoading = $derived(
+    !!agentId &&
+      $fallbackInfo$ === null &&
+      isSelectedModelMissingFromCatalog &&
+      (isLoadingModels || !allProvidersLoaded || isSelectedModelProviderPending),
+  );
+
+  const modelLoadingTitle = $derived(
+    m.chat_modelPicker_loadingProviderModels_label({
+      provider: providerDisplayName(selectedModelProviderId || effectiveProviderId),
+    }),
   );
 
   // Warning message to display
@@ -1025,14 +1219,20 @@
     silentRetryAttemptedForProvider = currentProvider;
 
     void (async () => {
+      // Epoch at fetch start: a reconnect clear mid-flight makes this
+      // response stale for local state as well as the cache write-through.
+      const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
       try {
         const models = await getModelsForProvider(currentProvider);
+        if (selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch) return;
         if (models.length > 0) {
           const normalizedId = normalizeProviderId(currentProvider);
           allProviderModels = {
             ...allProviderModels,
             [normalizedId]: toDropdownOptions(models),
           };
+          // Write through to the session cache like the other fetch paths.
+          appStore.dispatch(providerModelsLoaded(normalizedId, { models }, cacheEpoch));
           return;
         }
       } catch (err) {
@@ -1177,7 +1377,14 @@
         {#if isCompact}
           <Fa icon={faSettings} class="h-4 w-4" />
         {:else if isTriggerLabelResolved}
-          {#if showModelWarning}
+          {#if showModelLoading}
+            <span
+              class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin shrink-0"
+              role="status"
+              aria-label={modelLoadingTitle}
+              title={modelLoadingTitle}
+            ></span>
+          {:else if showModelWarning}
             <Fa icon={faTriangleExclamation} class="h-3 w-3 text-amber-600 shrink-0" />
           {/if}
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
@@ -1260,7 +1467,7 @@
               </div>
             {/if}
             {#if effortLevels && effortLevels.length > 0}
-              <div class="text-xs text-subtle/60 truncate hidden">
+              <div class="text-xs text-subtle/60 truncate">
                 {m.chat_modelPicker_effort_label({ levels: effortLevels.join(' · ') })}
               </div>
             {/if}
@@ -1306,17 +1513,14 @@
     title={m.chat_modelPicker_noProviderAvailable_title()}
     description={m.chat_modelPicker_noProviderAvailable_description()}
     variant="warning"
+    class={resolvedNoticeClass}
   />
 
   <ModelPickerProviderNotice
-    warning={isCodexManagedInstallInstalling
-      ? m.chat_modelPicker_codexSetupInProgress_label()
-      : codexFallbackWarning?.message}
-    docsUrl={isCodexManagedInstallInstalling ? undefined : codexFallbackWarning?.docsUrl}
-    show={(showProviderWarningNotice ?? variant === 'default') &&
-      (isCodexManagedInstallInstalling || Boolean(codexFallbackWarning))}
-    title={isCodexManagedInstallInstalling ? m.chat_modelPicker_settingUpCodex_title() : undefined}
-    description={isCodexManagedInstallInstalling ? codexManagedInstallProgressText : undefined}
-    variant={isCodexManagedInstallInstalling ? 'progress' : 'warning'}
+    warning={codexFallbackWarning?.message}
+    docsUrl={codexFallbackWarning?.docsUrl}
+    show={(showProviderWarningNotice ?? variant === 'default') && Boolean(codexFallbackWarning)}
+    variant="warning"
+    class={resolvedNoticeClass}
   />
 {/if}

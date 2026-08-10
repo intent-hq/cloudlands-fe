@@ -60,20 +60,11 @@
     selected?: boolean;
     /** npx availability status for npx-fallback hint */
     npxStatus: NpxStatus | null | undefined;
-    /** Whether auggie needs a version update */
-    auggieNeedsUpdate: boolean;
     /** Called when a ready provider is selected */
     onSelect: (providerId: string) => void;
   }
 
-  let {
-    provider,
-    brand,
-    selected = false,
-    npxStatus,
-    auggieNeedsUpdate,
-    onSelect,
-  }: Props = $props();
+  let { provider, brand, selected = false, npxStatus, onSelect }: Props = $props();
 
   // Explicit-refresh feedback: AgentGrid suppresses `statusLoading` once a
   // status is cached (background rechecks stay silent), so a user-initiated
@@ -89,17 +80,11 @@
 
   const installed = $derived(provider.available);
   const needsInstall = $derived(!provider.available && !provider.statusLoading);
-  const needsUpdate = $derived(provider.id === 'auggie' && installed && auggieNeedsUpdate);
   const needsLogin = $derived(
-    provider.available &&
-      !provider.statusLoading &&
-      !needsUpdate &&
-      provider.authenticated === false,
+    provider.available && !provider.statusLoading && provider.authenticated === false,
   );
-  const ready = $derived(installed && !needsLogin && !needsUpdate);
-  const needsAction = $derived(
-    !provider.statusLoading && (needsInstall || needsLogin || needsUpdate),
-  );
+  const ready = $derived(installed && !needsLogin);
+  const needsAction = $derived(!provider.statusLoading && (needsInstall || needsLogin));
   const cardClickable = $derived(
     ready || (!ready && !provider.statusLoading && !!provider.docsUrl),
   );
@@ -153,22 +138,20 @@
     onkeydown={handleKeydown}
     aria-label={checking
       ? m.onboarding_providerCard_checking_ariaLabel({ name: provider.name })
-      : needsUpdate
-        ? m.onboarding_providerCard_updateNeeded_ariaLabel({ name: provider.name })
-        : provider.available && !needsLogin
-          ? selected
-            ? m.onboarding_providerCard_selected_ariaLabel({ name: provider.name })
-            : m.onboarding_providerCard_use_ariaLabel({ name: provider.name })
-          : needsLogin
-            ? m.onboarding_providerCard_notLoggedIn_ariaLabel({ name: provider.name })
-            : m.onboarding_providerCard_notInstalled_ariaLabel({ name: provider.name })}
+      : provider.available && !needsLogin
+        ? selected
+          ? m.onboarding_providerCard_selected_ariaLabel({ name: provider.name })
+          : m.onboarding_providerCard_use_ariaLabel({ name: provider.name })
+        : needsLogin
+          ? m.onboarding_providerCard_notLoggedIn_ariaLabel({ name: provider.name })
+          : m.onboarding_providerCard_notInstalled_ariaLabel({ name: provider.name })}
   >
     <!-- Gradient overlay — always present, opacity animates on install -->
     <div
       class={cn(
         'absolute inset-0 rounded-lg transition-all transform duration-700 ease-out',
         !installed && 'opacity-0 translate-y-full',
-        (needsLogin || needsUpdate) && 'translate-y-[calc(100%_-_13rem)]',
+        needsLogin && 'translate-y-[calc(100%_-_13rem)]',
         installed && 'opacity-100',
       )}
       style="background: linear-gradient(in oklab to bottom, {brand.color1} 10%, {brand.color2} 88%);"
@@ -183,7 +166,7 @@
     >
       <ProviderIcon
         providerId={provider.id}
-        class={cn(installed && (needsLogin || needsUpdate) && 'text-foreground')}
+        class={cn(installed && needsLogin && 'text-foreground')}
         size={32}
       />
     </span>
@@ -240,8 +223,6 @@
       <div class="text-xs flex items-center gap-1.5">
         {#if checking}
           <span class="opacity-50">{m.onboarding_providerCard_checking_label()}</span>
-        {:else if needsUpdate}
-          <span class="opacity-70">{m.onboarding_providerCard_updateNeeded_label()}</span>
         {:else if provider.available && !needsLogin}
           <div class="flex items-center whitespace-nowrap min-w-0">
             <div class="flex items-center -ml-3.5" transition:slide={{ axis: 'x', duration: 200 }}>
@@ -275,7 +256,7 @@
         {/if}
 
         <div class="flex items-center gap-1.5">
-          {#if needsInstall || needsLogin || needsUpdate}
+          {#if needsInstall || needsLogin}
             <button
               type="button"
               class="flex-none opacity-50 hover:opacity-100 transition-colors px-0.5 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"

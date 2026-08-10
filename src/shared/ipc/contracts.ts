@@ -182,6 +182,19 @@ export namespace AgentIpc {
     sessionId?: SessionId; // Optional for session tracking
   }
 
+  export interface SetModelRequest {
+    agentId: AgentId;
+    modelId: string;
+    workspaceId: WorkspaceId;
+    providerId?: string; // Explicit provider the picked model belongs to (daemon agent.setModel, PROTOCOL §5.5) — resolves bare ids on cross-provider picks
+  }
+
+  export interface SetModelResponse {
+    success: boolean;
+    modelId?: string;
+    error?: string;
+  }
+
   export interface ActivateResponse {
     success: boolean;
     backendSessionId?: string;
@@ -294,6 +307,7 @@ export interface IpcContractMap {
   'agent:get': [AgentIpc.GetRequest, AgentIpc.GetResponse];
   'agent:send-message': [AgentIpc.SendMessageRequest, AgentIpc.SendMessageResponse];
   'agent:list': [AgentIpc.ListRequest, AgentIpc.ListResponse];
+  'agent:set-model': [AgentIpc.SetModelRequest, AgentIpc.SetModelResponse];
   'workspace:create': [WorkspaceIpc.CreateRequest, WorkspaceIpc.CreateResponse];
   'workspace:get': [WorkspaceIpc.GetRequest, WorkspaceIpc.GetResponse];
   'file:read': [FileIpc.ReadRequest, FileIpc.ReadResponse];

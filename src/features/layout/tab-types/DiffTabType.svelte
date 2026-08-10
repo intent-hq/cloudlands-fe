@@ -44,6 +44,7 @@
 } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { toast } from '$lib/components/ui/toast';
+  import { isAbsolutePath } from '$lib/utils/path-utils';
   import { m } from '$shared/paraglide/messages.js';
   import Fa from 'svelte-fa';
   import {
@@ -63,7 +64,9 @@
 
   let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
 
+  // svelte-ignore state_referenced_locally
   const ftChanges$ = selectFileTrackingChanges(workspaceId);
+  // svelte-ignore state_referenced_locally
   const ftCommits$ = selectFileTrackingCommits(workspaceId);
 
   const committedStageSet = new Set<ChangeStage>([
@@ -76,13 +79,14 @@
 
   const headerContext = getPanelHeaderContext();
 
+  // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
   const repoPath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || undefined);
 
   // Compute absolute path for diff files
   const diffAbsolutePath = $derived(
     tab.diffPath && repoPath
-      ? tab.diffPath.startsWith('/')
+      ? isAbsolutePath(tab.diffPath)
         ? tab.diffPath
         : `${repoPath}/${tab.diffPath}`
       : null,

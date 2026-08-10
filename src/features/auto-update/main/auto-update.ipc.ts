@@ -21,11 +21,35 @@ const logger = new Logger('AutoUpdateIPC');
 // Validation schemas
 const EmptySchema = z.object({}).optional();
 
+// Gate for boot-time GET_STATE reads. setupAutoUpdateIPC() runs before window
+// creation, but initialize() only starts later in the deferred
+// secondary-startup task — so an early renderer GET_STATE could otherwise see
+// no pending initialization and answer the pre-init default (stable) even
+// when local-prefs.json holds a beta preference. The gate settles when the
+// boot flow decides the updater's fate:
+//   - setupAutoUpdateIPC() settles it at registration in development (the
+//     updater never initializes in dev — the default state is the answer),
+//   - initializeAutoUpdater() completed (channel loaded from local-prefs;
+//     failures settle too and are logged there), or
+//   - markAutoUpdaterNotInitialized() declared the updater will never start
+//     this run (no window) — the default state is the real answer.
+let settleChannelLoaded: () => void = () => {};
+const channelLoaded = new Promise<void>((resolve) => {
+  settleChannelLoaded = resolve;
+});
+
 /**
  * Setup auto-update IPC handlers
  */
 export function setupAutoUpdateIPC(): void {
   logger.info('Setting up auto-update IPC handlers');
+
+  // Dev bypass: the updater is never initialized in development, so settle
+  // the gate at registration — GET_STATE must not wait on the deferred
+  // secondary-startup task for an initialization that will never come.
+  if (process.env.NODE_ENV === 'development') {
+    settleChannelLoaded();
+  }
 
   // Manual check for updates (triggers "up to date" notification if no updates)
   ipcMain.handle(
@@ -71,7 +95,14 @@ export function setupAutoUpdateIPC(): void {
     AUTO_UPDATE_CHANNELS.GET_STATE,
     createSafeValidatedHandler(
       EmptySchema,
-      async () => ({ success: true, data: autoUpdateService.getState() }),
+      async () => {
+        // Answer after the boot flow settles the gate so the read reflects
+        // the channel loaded from local-prefs (or the default state when the
+        // updater is never initialized). Init errors are already logged by
+        // initializeAutoUpdater; fall through to current state.
+        await channelLoaded;
+        return { success: true, data: autoUpdateService.getState() };
+      },
       AUTO_UPDATE_CHANNELS.GET_STATE,
     ),
   );
@@ -93,11 +124,30 @@ export function setupAutoUpdateIPC(): void {
 }
 
 /**
- * Initialize the auto-updater with the main window
- * Call this after the main window is created
+ * Initialize the auto-updater. The window is optional
+ * (intent-hq/monorepo#1848): the deferred secondary-startup task can run
+ * before any window exists, and initialization must not depend on
+ * window-creation timing. When no window exists yet, the ref attaches later
+ * via the updateAutoUpdaterWindow() calls in window.ts.
  */
-export function initializeAutoUpdater(mainWindow: BrowserWindow): void {
-  autoUpdateService.initialize(mainWindow);
+export function initializeAutoUpdater(mainWindow: BrowserWindow | null = null): void {
+  void autoUpdateService
+    .initialize(mainWindow)
+    .catch((error) => {
+      logger.error('AutoUpdateService initialization failed', error as Error);
+    })
+    .finally(() => {
+      settleChannelLoaded();
+    });
+}
+
+/**
+ * Declare that the auto-updater will not be initialized this run (dev mode).
+ * Unblocks boot-time GET_STATE waiters so they answer the default state
+ * instead of waiting on an initialization that never comes.
+ */
+export function markAutoUpdaterNotInitialized(): void {
+  settleChannelLoaded();
 }
 
 /**

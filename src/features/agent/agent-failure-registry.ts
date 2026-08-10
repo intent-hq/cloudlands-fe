@@ -3,9 +3,7 @@
  *
  * Collects `agent:failed` events across ALL workspaces (the daemon-events
  * bridge subscribes `agent:*` with no workspace filter), one entry per failed
- * agent, so the failure toast layer can render one toast per agent. There is
- * deliberately NO error-string grouping: a grouped "Retry All" can
- * accidentally mass-restart agents a coordinator is already recovering.
+ * agent.
  *
  * Lifecycle (wired in `daemon-events-bridge.client.ts`):
  *   - `agent:failed`         → `recordAgentFailure` (same agentId replaces its

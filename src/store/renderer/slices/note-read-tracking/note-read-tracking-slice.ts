@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import type { NoteReadRecord } from "$shared/types/user-activity.types";
 
 // ============================================================================
@@ -111,20 +111,20 @@ export const loadNoteReadStatusSuccess = createAction<[noteId: string, record: N
 // Reducer
 // ============================================================================
 
-export const noteReadTrackingReducer = createReducer<NoteReadTrackingState>(initialState)
-  .with(markAsViewed, (state, { payload: [noteId] }) => {
+export const noteReadTrackingReducer = createReducer<NoteReadTrackingState>(initialState);
+noteReadTrackingReducer.with(markAsViewed, (state, { payload: [noteId] }) => {
     if (!noteId) return state;
     return {
       ...state,
       currentlyViewedNoteId: noteId,
       unreadNoteIds: withoutUnreadNoteId(state.unreadNoteIds, noteId),
     };
-  })
-  .with(clearCurrentlyViewed, (state) => {
+  });
+noteReadTrackingReducer.with(clearCurrentlyViewed, (state) => {
     if (!state.currentlyViewedNoteId) return state;
     return { ...state, currentlyViewedNoteId: null };
-  })
-  .with(markNoteRead, (state, { payload }) => {
+  });
+noteReadTrackingReducer.with(markNoteRead, (state, { payload }) => {
     const { noteId, now } = payload;
     const existing = state.readRecords[noteId];
     return {
@@ -138,20 +138,20 @@ export const noteReadTrackingReducer = createReducer<NoteReadTrackingState>(init
       },
       unreadNoteIds: withoutUnreadNoteId(state.unreadNoteIds, noteId),
     };
-  })
-  .with(computeUnreadNotesSuccess, (state, { payload: [unreadIds] }) => ({
+  });
+noteReadTrackingReducer.with(computeUnreadNotesSuccess, (state, { payload: [unreadIds] }) => ({
     ...state,
     unreadNoteIds: toUnreadNoteIdRecord(unreadIds),
     isLoading: false,
-  }))
-  .with(setLoading, (state, { payload: [isLoading] }) => ({
+  }));
+noteReadTrackingReducer.with(setLoading, (state, { payload: [isLoading] }) => ({
     ...state,
     isLoading,
-  }))
-  .with(clearCache, () => ({ ...initialState }))
+  }));
+noteReadTrackingReducer.with(clearCache, () => ({ ...initialState }));
 
-  .with(loadNoteReadStatusSuccess, (state, { payload: [noteId, record] }) => ({
+noteReadTrackingReducer.with(loadNoteReadStatusSuccess, (state, { payload: [noteId, record] }) => ({
     ...state,
     readRecords: { ...state.readRecords, [noteId]: record },
-  }))
+  }));
 

@@ -16,4 +16,7 @@
   <button type="button" data-testid="pick-model" onclick={() => onModelChange?.('user-picked-model')}>
     pick
   </button>
+  <button type="button" data-testid="pick-default" onclick={() => onModelChange?.('')}>
+    pick default
+  </button>
 </div>

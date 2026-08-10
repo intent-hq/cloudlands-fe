@@ -129,6 +129,7 @@ import { initializeWarningSuppression } from './utils/suppress-warnings';
 import { runWithHardExitTimeout } from './utils/hard-exit-timeout';
 import { setupWebviewSecurity } from './webview-security';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
+import { attachSwipeHistoryNavigation } from './swipe-navigation';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
 import { requestHardwareConsoleLightingClear } from '../features/hardware-console/main/clear-lighting-shutdown';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
@@ -261,7 +262,6 @@ import { setupUnslothIPC } from '../features/unsloth/main/unsloth.ipc';
 import { setupFeatureCodesIPC } from '../features/feature-codes/main/feature-codes.ipc';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
-import { setupDiffsIPC } from '../features/diffs/main/diffs.ipc';
 
 import { setupEventsIPC } from '../features/events/main/events.ipc';
 import { registerExternalEditorsHandlers } from '../features/external-editors/main/external-editors.ipc';
@@ -280,13 +280,13 @@ import {
   registerBackendHandlers,
   disposeBackendClient,
   getBackendClient,
+  reconcileActiveConnectionOnBoot,
 } from '../features/backend/main/backend.ipc';
 import { getConnectionMode } from '../features/backend/main/connection-mode';
+import { getActiveId } from '../features/backend/main/connections-store';
 import { startIntentdSidecar, stopIntentdSidecar } from '../features/backend/main/intentd-sidecar';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 
-import { registerScriptsHandlers } from '../features/scripts/main/scripts.ipc';
-import { disposeAllScriptProcessManagers } from '../features/scripts/main/script-process-manager';
 import { registerSetupScriptsHandlers } from '../features/setup-scripts/main/setup-scripts.ipc';
 import {
   setupSystemIPC,
@@ -426,18 +426,6 @@ async function performGracefulShutdown() {
     // fires. This delay gives those threads time to finish.
     await new Promise((resolve) => setTimeout(resolve, 300));
 
-    // Stop all running workspace scripts (spawned via child_process.spawn)
-    try {
-      await disposeAllScriptProcessManagers();
-      logger.info('All script process managers disposed');
-    } catch (error) {
-      logger.error(
-        // i18n-ignore (developer log message)
-        'Error disposing script process managers:',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
-
     // Dispose the live backend JSON-RPC client (closes the UDS/TCP socket).
     try {
       disposeBackendClient();
@@ -522,6 +510,21 @@ if (process.env.NODE_ENV === 'development' && process.env.ENABLE_CDP_DEBUG) {
   logger.info(`CDP debugging enabled on port ${cdpPort}`);
 }
 
+/**
+ * Persist window sessions under the CURRENTLY-active backend id (T21). Window
+ * sessions are keyed per-backend; saving under the wrong id (previously the
+ * hard-coded `local` default) leaked a remote's windows into local's slot. All
+ * save triggers — the debounced autosave, before-quit, and the non-macOS
+ * last-window-close flush — route through here so they always key off the live
+ * active backend. `getActiveId()` is fail-soft (falls back to `local` only when
+ * the connections store itself is unreadable), so this never defaults silently
+ * on the happy path.
+ */
+async function saveActiveWindowSessions(): Promise<void> {
+  const backendId = await getActiveId();
+  await saveWindowSessions(backendId);
+}
+
 app.whenReady().then(async () => {
   startupMetrics.start('total');
   logger.info('Setting up critical IPC handlers for fast startup');
@@ -540,7 +543,7 @@ app.whenReady().then(async () => {
   let sessionSaveTimeout: NodeJS.Timeout | null = null;
   const debouncedSaveWindowSessions = () => {
     if (sessionSaveTimeout) clearTimeout(sessionSaveTimeout);
-    sessionSaveTimeout = setTimeout(() => saveWindowSessions(), 1000);
+    sessionSaveTimeout = setTimeout(() => void saveActiveWindowSessions(), 1000);
   };
 
   app.on('browser-window-created', (_event: Electron.Event, window: BrowserWindowType) => {
@@ -557,6 +560,9 @@ app.whenReady().then(async () => {
     // Windows: forward mouse X-button app-commands to the renderer as
     // app:history-navigate IPC events (see src/main/app-command-navigation.ts).
     attachAppCommandHistoryNavigation(window);
+    // macOS: forward swipe gestures (incl. Logi Options+ synthesized swipes
+    // for mouse side buttons) the same way (see src/main/swipe-navigation.ts).
+    attachSwipeHistoryNavigation(window);
   });
 
   // Set application menu with correct app name on macOS
@@ -1378,7 +1384,6 @@ app.whenReady().then(async () => {
   setupProviderAvailabilityIPC(); // Needed for providers:get-availability
   setupEventsIPC(); // Needed for events:query
   registerSetupScriptsHandlers(); // Needed for onboarding setup scripts
-  registerScriptsHandlers(); // Needed for workspace script management (CRUD, lifecycle, output)
   registerAcceptChangesHandlers(); // Needed for AcceptChangesPanel on workspace open
 
   setupTerminalIPC(); // Needed for CLI blocks in notes (includes get-buffer handler)
@@ -1401,6 +1406,11 @@ app.whenReady().then(async () => {
   // The daemon owns PATH discovery. Seed only after starting/adopting it, and
   // retry briefly while a newly spawned sidecar creates its socket.
   await seedPathFromHostEnv();
+
+  // Boot reconciliation (T8): the live client is built from the local/env
+  // default, so make the persisted active connection agree with it before any
+  // window queries `connections:list`. Reset a stale remote active-id to local.
+  await reconcileActiveConnectionOnBoot();
 
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
 
@@ -1428,7 +1438,6 @@ app.whenReady().then(async () => {
     registerAgentContextHandlers();
 
     // setupTerminalIPC(); // Already called in critical IPC setup
-    setupDiffsIPC();
     setupLogIPC();
     // setupAuggieIPC(); // Already called in critical IPC setup
     // setupEventsIPC(); // Already called in critical IPC setup
@@ -1454,17 +1463,34 @@ app.whenReady().then(async () => {
       });
     }
 
+    // setupAutoUpdateIPC(); // Already called in critical IPC setup
+    // Initialize auto-updater in production. Runs BEFORE any awaited step in
+    // this task so the GET_STATE boot gate is always settled — a rejection in
+    // a later awaited import must not leave boot-time GET_STATE waiters
+    // hanging. (auto-update.ipc is statically imported above, so this dynamic
+    // import is a cache hit.)
+    const { initializeAutoUpdater, markAutoUpdaterNotInitialized } = await import(
+      '../features/auto-update/main/auto-update.ipc'
+    );
+    const mainWindow = getMainWindow();
+    if (process.env.NODE_ENV !== 'development') {
+      // Initialize regardless of whether a window exists yet
+      // (intent-hq/monorepo#1848): this setImmediate task can run before
+      // window creation — the outer flow awaits getActiveId() first, which
+      // yields the event loop — and gating on the window used to skip
+      // initialization for the whole session, leaving manual checks to die in
+      // the watchdog timeout. When mainWindow is still null here, the ref
+      // attaches later via the updateAutoUpdaterWindow() calls in window.ts.
+      initializeAutoUpdater(mainWindow);
+    } else {
+      // Dev mode: the updater never initializes — unblock boot-time
+      // GET_STATE waiters so they answer the default state.
+      markAutoUpdaterNotInitialized();
+    }
+
     // Setup browser debugger IPC handlers for CDP access to embedded browser tabs
     const { registerBrowserHandlers } = await import('../features/browser/main/browser.ipc');
     registerBrowserHandlers();
-
-    // setupAutoUpdateIPC(); // Already called in critical IPC setup
-    // Initialize auto-updater in production (not needed at startup, depends on mainWindow)
-    const { initializeAutoUpdater } = await import('../features/auto-update/main/auto-update.ipc');
-    const mainWindow = getMainWindow();
-    if (process.env.NODE_ENV !== 'development' && mainWindow) {
-      initializeAutoUpdater(mainWindow);
-    }
 
     // Show this version's release notes on the first launch after an update.
     // Packaged builds only — a dev build's version is never a published tag.
@@ -1484,15 +1510,8 @@ app.whenReady().then(async () => {
     // Event-triggered handlers (message delivery, auto-commit) are now sagas
     // forked from workspaceEventsSaga — no manual registration needed.
 
-    // Migrate workspaces from ~/intent/{id} to ~/intent/workspaces/{id}
-    try {
-      const migrationResult = await protocolAdapter.migrateWorkspacesToCanonicalLocation();
-      if (migrationResult.migrated > 0 || migrationResult.errors > 0) {
-        logger.info('Workspace migration on startup', migrationResult);
-      }
-    } catch (error) {
-      logger.warn('Error migrating workspaces on startup', { error });
-    }
+    // Legacy workspace-location migration removed — the daemon owns workspace
+    // directories (PROTOCOL.md §5.1); the FE no longer moves data on disk.
 
     // Clean up stale temp files from ~/.intent/tmp (from crashed/killed agents)
     try {
@@ -1527,8 +1546,15 @@ app.whenReady().then(async () => {
     // Check for intent:// deep link in process.argv (cold start)
     const intentUrlArg = process.argv.find((arg: string) => arg.startsWith('intent://'));
 
-    // Try to restore saved window sessions (unless we have a deep link to process)
-    const savedSessions = intentUrlArg ? null : loadWindowSessions();
+    // Try to restore saved window sessions (unless we have a deep link to process).
+    // Key off the RESOLVED boot backend (T21): reconcileActiveConnectionOnBoot()
+    // above has already run to completion, so getActiveId() now reflects the
+    // actually-connected backend — the reconnected remote when it was reachable,
+    // otherwise local. Restoring under this id (never the hard-coded local
+    // default) ensures a remote's windows are only restored when we booted back
+    // onto that remote, and local's windows when we fell back to local.
+    const bootBackendId = await getActiveId();
+    const savedSessions = intentUrlArg ? null : loadWindowSessions(bootBackendId);
     if (savedSessions && savedSessions.length > 0) {
       logger.info('Restoring window sessions from previous run', { count: savedSessions.length });
       for (let i = 0; i < savedSessions.length; i++) {
@@ -1640,7 +1666,7 @@ app.on('before-quit', async (event: Electron.Event) => {
     // Save window sessions now that quit is prevented.
     // Must be called AFTER event.preventDefault() because saveWindowSessions is async
     // and preventDefault must be called synchronously within the event handler.
-    await saveWindowSessions();
+    await saveActiveWindowSessions();
 
     // Skip the prompt when quitting to install an update: installUpdate()
     // already ran the confirmation while the windows were still open, so
@@ -1709,7 +1735,7 @@ app.on('window-all-closed', async () => {
     // on next launch. The debounced background saver (1s) is best-effort and
     // may not have captured the final state; always flush synchronously here.
     try {
-      await saveWindowSessions();
+      await saveActiveWindowSessions();
     } catch (err) {
       logger.error(
         // i18n-ignore (developer log message)
@@ -1722,7 +1748,7 @@ app.on('window-all-closed', async () => {
     // isShuttingDown=true internally (so any subsequent before-quit is a
     // no-op), runs the full cleanup ordering — including the items only it
     // performs (cleanupTerminals + settling delay,
-    // disposeAllScriptProcessManagers, cleanupAutoUpdater) — and
+    // cleanupAutoUpdater) — and
     // then calls app.exit(0). Delegating here (instead of running a bespoke
     // partial teardown and calling app.quit()) prevents before-quit re-entry
     // that otherwise showed a second running-agent prompt and ran a duplicate
@@ -1828,7 +1854,7 @@ if (!gotTheLock) {
   });
 }
 
-app.on('activate', () => {
+app.on('activate', async () => {
   if (isSecondInstance) return;
 
   const allWindows = BrowserWindow.getAllWindows().filter(
@@ -1842,8 +1868,11 @@ app.on('activate', () => {
     targetWindow.show();
     targetWindow.focus();
   } else {
-    // No windows at all — restore sessions or create a new one
-    const savedSessions = loadWindowSessions();
+    // No windows at all — restore sessions or create a new one. Key off the
+    // currently-active backend (T21) so a dock-click reopen restores the live
+    // backend's windows, never the hard-coded local default.
+    const backendId = await getActiveId();
+    const savedSessions = loadWindowSessions(backendId);
     if (savedSessions && savedSessions.length > 0) {
       logger.info('Restoring window sessions on activate', { count: savedSessions.length });
       for (let i = 0; i < savedSessions.length; i++) {

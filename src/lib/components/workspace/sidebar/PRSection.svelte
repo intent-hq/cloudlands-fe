@@ -48,6 +48,7 @@
 } from '$store/renderer/slices/changes/changes-selectors';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
@@ -179,6 +180,14 @@
 
   const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const workspace$ = selectWorkspaceById(workspaceIdStore);
+  // Agent attribution for monitored PR rows (PROTOCOL §6.9).
+  const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
+
+  /** Display name of the agent owning a monitored PR row, if resolvable. */
+  function monitorAgentName(agentId: string | undefined): string | undefined {
+    if (!agentId) return undefined;
+    return $workspaceAgents$.find((a) => String(a.id) === agentId)?.name;
+  }
   const gitOps$ = selectGitOperationFlags(workspaceIdStore);
   const createPRWhenReady$ = selectSidebarCreatePRWhenReady(workspaceIdStore);
   const acceptChangesState$ = selectAcceptChangesState(workspaceIdStore);
@@ -213,6 +222,7 @@
   // an in-flight fetch (cleared on failure so a later expand retries); the
   // cache resets on workspace switch so it can't leak across workspaces.
   let prCommitFileCache = $state<Partial<Record<string, CommitFile[] | null>>>({});
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below tracks later changes
   let prCacheWorkspaceId = workspaceId;
   $effect(() => {
     if (workspaceId !== prCacheWorkspaceId) {
@@ -291,7 +301,7 @@
   let prDescription = $state('');
   let isCreatingPR = $state(false);
   let forcePushDrawerOpen = $state(false);
-  let expandedPRs = $state<Set<number>>(new Set());
+  let expandedPRs = $state<Set<string>>(new Set());
   let connectRemote = $state({ drawerOpen: false, url: '', adding: false });
   let pendingActionAfterAuth = $state<'create-pr' | 'refresh-pr' | null>(null);
   let pendingPRWorkspaceId: string | null = null;
@@ -637,12 +647,19 @@
     }
   }
 
-  function togglePRExpanded(prNumber: number) {
+  // Expand-state key: cross-repo monitored rows can share a bare PR number
+  // with the workspace PR, so key by repo-qualified identity (mirrors the
+  // {#each} key).
+  function prKey(pr: PRInfo): string {
+    return pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number);
+  }
+
+  function togglePRExpanded(key: string) {
     const newSet = new Set(expandedPRs);
-    if (newSet.has(prNumber)) {
-      newSet.delete(prNumber);
+    if (newSet.has(key)) {
+      newSet.delete(key);
     } else {
-      newSet.add(prNumber);
+      newSet.add(key);
       fetchPRCommitFilesIfNeeded();
     }
     expandedPRs = newSet;
@@ -1030,7 +1047,7 @@
         {/if}
         {#if hasPRs}
           <div class="space-y-0.5">
-            {#each pullRequests as pr (pr.number)}
+            {#each pullRequests as pr (prKey(pr))}
               {@const statusColor =
                 pr.status === 'open'
                   ? 'text-emerald-500'
@@ -1041,8 +1058,10 @@
                       : 'text-subtle'}
               {@const statusIcon =
                 pr.status === 'merged' ? faCodeMerge : faCodePullRequest}
-              {@const isPRExpanded = expandedPRs.has(pr.number)}
-              {@const hasPRFiles = prFiles.length > 0 || prFilesUnknown}
+              {@const isPRExpanded = expandedPRs.has(prKey(pr))}
+              <!-- prFiles reflects the workspace branch PR only — monitor-only
+                   rows (incl. cross-repo) have no local file data to expand. -->
+              {@const hasPRFiles = !pr.monitorOnly && (prFiles.length > 0 || prFilesUnknown)}
               <div>
                 <!-- PR header -->
                 <div
@@ -1055,7 +1074,7 @@
                       class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
                       onclick={(e: MouseEvent) => {
                         e.stopPropagation();
-                        togglePRExpanded(pr.number);
+                        togglePRExpanded(prKey(pr));
                       }}
                       title={m.workspace_prSection_toggleFileList_tooltip()}
                     >
@@ -1080,7 +1099,20 @@
                     class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
                     onclick={onOpenFullPanel}
                   >
-                    <span class="text-ui text-subtle truncate flex-1">{pr.title}</span>
+                    <span class="text-ui text-subtle truncate flex-1">
+                      {#if pr.crossRepo}<span class="text-ghost">{pr.crossRepo}:</span>
+                      {/if}{pr.title}{#if monitorAgentName(pr.monitorAgentId)}
+                        <span
+                          class="text-ghost"
+                          title={m.workspace_prSection_monitoredBy_tooltip({
+                            agent: monitorAgentName(pr.monitorAgentId) ?? '',
+                          })}
+                          >{m.workspace_prSection_monitoredBy_label({
+                            agent: monitorAgentName(pr.monitorAgentId) ?? '',
+                          })}</span
+                        >
+                      {/if}
+                    </span>
                     <span class="text-ui text-subtle">#{pr.number}</span>
                     {#if pr.status === 'merged'}
                       <span class="text-ui text-purple-500 font-medium">{m.workspace_prSection_merged_label()}</span>

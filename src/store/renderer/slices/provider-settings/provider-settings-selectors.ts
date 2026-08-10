@@ -1,4 +1,4 @@
-import { getItems } from "$lib/store-shim/utils/collections/collection-utils";
+import { getItems } from "@augmentcode/themis/utils/collections/collection-utils";
 import { resolveProviderEnabled } from "$shared/provider-catalog";
 import { store } from "../../store";
 import { selectProviderStatusMap } from "../agent-availability/agent-availability-selectors";

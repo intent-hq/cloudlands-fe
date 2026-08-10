@@ -15,6 +15,7 @@ import {
   setAgentFontStyle,
   setCodeFontFamily,
   setGroupByRepo,
+  setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -22,6 +23,7 @@ import {
   setShowArchived,
   setBetaUpdatesEnabled,
   setSpellcheckEnabled,
+  setShowReasoningBlocks,
   setSoundEnabled,
   setSoundOnlyWhenUnfocused,
   setSystemFonts,
@@ -31,6 +33,7 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleShowArchived,
+  toggleShowReasoningBlocks,
   toggleBetaUpdates,
   toggleSpellcheck,
   type UserPreferencesState,
@@ -45,6 +48,7 @@ import {
   selectCodeFontFamilyLabel,
   selectCodeFontOptions,
   selectGroupByRepo,
+  selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
   selectIsAgentMonospace,
   selectIsNoteMonospace,
@@ -54,6 +58,7 @@ import {
   selectNotificationEnabled,
   selectNotificationVolume,
   selectShowArchived,
+  selectShowReasoningBlocks,
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
 } from "./user-preferences-selectors";
@@ -316,6 +321,24 @@ describe("userPreferencesReducer", () => {
 
   });
 
+  describe("showReasoningBlocks actions", () => {
+    it("defaults to false (reasoning hidden)", () => {
+      expect(initialState.showReasoningBlocks).toBe(false);
+    });
+
+    it("sets showReasoningBlocks", () => {
+      const state = userPreferencesReducer(initialState, setShowReasoningBlocks(true));
+      expect(state.showReasoningBlocks).toBe(true);
+    });
+
+    it("toggles showReasoningBlocks", () => {
+      const on = userPreferencesReducer(initialState, toggleShowReasoningBlocks());
+      const off = userPreferencesReducer(on, toggleShowReasoningBlocks());
+      expect(on.showReasoningBlocks).toBe(true);
+      expect(off.showReasoningBlocks).toBe(false);
+    });
+  });
+
   describe("language preference actions", () => {
     it("defaults to the system preference", () => {
       expect(initialState.languagePreference).toBe("system");
@@ -332,6 +355,17 @@ describe("userPreferencesReducer", () => {
         setLanguagePreference("system")
       );
       expect(state.languagePreference).toBe("system");
+    });
+  });
+
+  describe("GitHub link default action", () => {
+    it("defaults to showing choices", () => {
+      expect(initialState.githubLinkDefaultAction).toBe("show-choices");
+    });
+
+    it("sets the default action", () => {
+      const state = userPreferencesReducer(initialState, setGithubLinkDefaultAction("copy-link"));
+      expect(state.githubLinkDefaultAction).toBe("copy-link");
     });
   });
 
@@ -359,6 +393,16 @@ describe("userPreferencesReducer", () => {
       expect(selectHasCompletedProviderSetup.select(state)).toBe(true);
     });
 
+    it("selects showReasoningBlocks (default false, missing slice safe)", () => {
+      expect(selectShowReasoningBlocks.select(state)).toBe(false);
+      expect(
+        selectShowReasoningBlocks.select({
+          userPreferences: { ...initialState, showReasoningBlocks: true },
+        } as any)
+      ).toBe(true);
+      expect(selectShowReasoningBlocks.select({} as any)).toBe(false);
+    });
+
     it("selects font settings from userPreferences", () => {
       expect(selectAgentFontStyle.select(state)).toBe("monospace");
       expect(selectAgentFontStyleLabel.select(state)).toBe("Monospace");
@@ -381,6 +425,22 @@ describe("userPreferencesReducer", () => {
           label: "JetBrains Mono",
           fontFamily: "'JetBrains Mono', monospace",
         },
+      ]);
+    });
+
+    it("includes every loaded system font after System Default", () => {
+      const fontState = {
+        userPreferences: {
+          ...initialState,
+          systemFonts: ["Helvetica Neue", "JetBrains Mono", "Cascadia Code"],
+        },
+      } as any;
+
+      expect(selectCodeFontOptions.select(fontState).map((option) => option.value)).toEqual([
+        "system-default",
+        "Helvetica Neue",
+        "JetBrains Mono",
+        "Cascadia Code",
       ]);
     });
 
@@ -410,6 +470,15 @@ describe("userPreferencesReducer", () => {
       } as any;
 
       expect(selectLanguagePreference.select(preferenceState)).toBe("zh-CN");
+    });
+
+    it("selects the GitHub link default action with a safe fallback", () => {
+      expect(
+        selectGithubLinkDefaultAction.select({
+          userPreferences: { ...initialState, githubLinkDefaultAction: "start-workspace" },
+        } as any)
+      ).toBe("start-workspace");
+      expect(selectGithubLinkDefaultAction.select({} as any)).toBe("show-choices");
     });
 
   });

@@ -8,7 +8,7 @@
  * `agent.getSubscriptions` request shape (PROTOCOL §5.5 extensions), feed a
  * PROTOCOL-shaped mock response back, and assert the rendered sections.
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 
 const { backendRequestSpy } = vi.hoisted(() => ({
@@ -31,6 +31,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: () => makeReadable(null),
   selectAgentIsResponding: () => makeReadable(false),
   selectAgentIsWaiting: () => makeReadable(false),
+  selectAgentIsBlockedWaiting: () => makeReadable(false),
   selectAgentSessionStreamingContent: () => makeReadable(''),
   selectAgentSessionHasStreamOwnedMessage: () => makeReadable(false),
   selectAgentProvider: () => makeReadable(undefined),
@@ -61,10 +62,13 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 import { store as appStore } from '$store/renderer/store';
 import { __resetAgentSubscriptionReadServiceForTests } from '$features/agent/agent-subscription-read-service';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { agentSubscriptionReadSaga } from '$store/renderer/slices/agent-subscription-ui/sagas/agent-subscription-read-saga';
+import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
 import AgentSubscriptions from '../AgentSubscriptions.svelte';
 
 const PARENT = 'agent-parent-1';
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+const stopSagas: Array<() => void> = [];
 
 /** PROTOCOL §5.5 subscription entry belonging to an after_all group. */
 function groupSubscription(groupId: string, wsId: string, expectedAgentIds: string[]) {
@@ -115,6 +119,12 @@ function delegationGroup(
 describe('AgentSubscriptions sections', () => {
   beforeAll(() => {
     appStore.init();
+    stopSagas.push(appStore.runSaga(agentSubscriptionReadSaga));
+    stopSagas.push(appStore.runSaga(agentMutationSaga));
+  });
+
+  afterAll(() => {
+    while (stopSagas.length > 0) stopSagas.pop()?.();
   });
 
   beforeEach(() => {
@@ -139,7 +149,22 @@ describe('AgentSubscriptions sections', () => {
     });
     await flush();
     await flush();
+    if (hasSubscriptionContent(wire)) {
+      await waitFor(() => {
+        const visibleSections =
+          screen.queryAllByTestId('one-shot-watches').length +
+          screen.queryAllByTestId('delegation-group-section').length;
+        expect(visibleSections).toBeGreaterThan(0);
+      });
+    }
     return utils;
+  }
+
+  function hasSubscriptionContent(wire: unknown) {
+    const snapshot = wire as { subscriptions?: unknown[]; delegationGroups?: unknown[] };
+    return (
+      (snapshot.subscriptions?.length ?? 0) > 0 || (snapshot.delegationGroups?.length ?? 0) > 0
+    );
   }
 
   function resetWorkspace(wsId: string) {
@@ -248,6 +273,21 @@ describe('AgentSubscriptions sections', () => {
     expect(screen.getByTestId('one-shot-header').textContent).toContain(
       'Waiting on each of 2 agents',
     );
+  });
+
+  it('orders one-shot rows by agent id regardless of snapshot iteration order', async () => {
+    const WS = 'ws-sections-row-order';
+    await renderWithSnapshot(WS, {
+      subscriptions: [
+        oneShotSubscription('watch-b', WS, 'child-b'),
+        oneShotSubscription('watch-a', WS, 'child-a'),
+      ],
+      delegationGroups: [],
+      agentStatuses: { [PARENT]: 'waiting', 'child-a': 'responding', 'child-b': 'responding' },
+    });
+
+    const rows = within(screen.getByTestId('one-shot-watches')).getAllByTestId('agent-list-item');
+    expect(rows.map((row) => row.getAttribute('data-agent-id'))).toEqual(['child-a', 'child-b']);
   });
 
   it('renders no one-shot header when there are no one-shot watches', async () => {
@@ -360,9 +400,7 @@ describe('AgentSubscriptions sections', () => {
 
     // Expanding again restores the rows and removes the strip
     await fireEvent.click(screen.getByTestId('one-shot-collapse-toggle'));
-    await waitFor(() =>
-      expect(within(oneShots).getAllByTestId('agent-list-item')).toHaveLength(2),
-    );
+    await waitFor(() => expect(within(oneShots).getAllByTestId('agent-list-item')).toHaveLength(2));
     await waitFor(() => expect(screen.queryByTestId('one-shot-avatar-strip')).toBeNull());
   });
 

@@ -110,12 +110,6 @@ export const mockScripts: ScriptWithState[] = [
 
 export const mockSkills: SkillInfo[] = [
   {
-    name: "store-shim",
-    description: "Local store shim conventions for this codebase.",
-    location: ".agents/skills/store-shim/SKILL.md",
-    scope: "project",
-  },
-  {
     name: "electron",
     description: "Automate Electron desktop apps over the Chrome DevTools Protocol.",
     location: ".agents/skills/electron/SKILL.md",
@@ -262,6 +256,7 @@ export const mockUserPreferences: UserPreferencesState = {
   showArchived: false,
   groupByRepo: true,
   hasCompletedProviderSetup: true,
+  showReasoningBlocks: false,
   agentFontStyle: "sans",
   noteFontStyle: "sans",
   codeFontFamily: "JetBrains Mono",
@@ -272,6 +267,7 @@ export const mockUserPreferences: UserPreferencesState = {
   volume: 0.5,
   activityLogPresets: [],
   languagePreference: "system",
+  githubLinkDefaultAction: "show-choices",
 };
 
 /** Configured MCP servers for the MCP settings panel. */

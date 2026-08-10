@@ -2,15 +2,14 @@
  * Live agents domain backed by the intentd daemon.
  *
  * Reads resolve via `agent.list({ workspaceId })` / `agent.get({ agentId })`.
- * `subscribe` aggregates agents across workspaces — converging via one typed
- * per-workspace `agent.subscribe` channel per workspace (PROTOCOL §6.9) on
- * liveState daemons, and refetching on agent LIFECYCLE events otherwise —
- * `agent:stream:*` and `agent:message` are high-volume, so the legacy path
- * intentionally narrows to start/complete/idle/status-changed rather than
- * blanket-subscribing `agent:*`.
+ * `subscribe` aggregates agents across workspaces, converging via one typed
+ * per-workspace `agent.subscribe` channel per workspace (PROTOCOL §6.9) —
+ * the sole data path (intent-hq/monorepo#1697); there is no legacy
+ * events-driven `agent.list` refetch.
  */
 import { AgentStatus } from "$shared/types";
 import { AgentId, WorkspaceId } from "$shared/types/branded-ids";
+import { deriveAgentHasUnread } from "$shared/utils/agent-unread";
 import type { AgentMessage, AgentSession } from "$shared/types";
 import type { QueuedMessage } from "$shared/types/agent-session";
 import type {
@@ -25,14 +24,7 @@ import type {
 } from "../app-client";
 import { backendRequest } from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
-import {
-  isEventOneOf,
-  listWorkspaceIds,
-  mutationErrorMessage,
-  newIdempotencyKey,
-  runMutation,
-  subscribeWorkspaceIds,
-} from "./live-support";
+import { mutationErrorMessage, newIdempotencyKey, runMutation, subscribeWorkspaceIds } from "./live-support";
 
 /**
  * agentId → workspaceId cache populated by every `normalizeAgent` call (so any
@@ -47,18 +39,6 @@ function rememberAgentWorkspace(agentId: string, workspaceId: string): void {
   if (agentId && workspaceId) agentWorkspaceIndex.set(agentId, workspaceId);
 }
 
-/** Lifecycle events that warrant an agent-list refresh (NOT stream/message). */
-const AGENT_LIFECYCLE_EVENTS = [
-  "agent:started",
-  "agent:completed",
-  "agent:failed",
-  "agent:created",
-  "agent:deleted",
-  "agent:idle",
-  "agent:status-changed",
-  "agent:renamed",
-] as const;
-
 /** Coerce a raw daemon agent object into the renderer `AgentSession` shape. */
 function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   const now = new Date().toISOString();
@@ -66,7 +46,7 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   const acpSessionId = raw.acpSessionId ? String(raw.acpSessionId) : null;
   const workspaceId = String(raw.workspaceId ?? "");
   rememberAgentWorkspace(id, workspaceId);
-  return {
+  const session = {
     ...(raw as Partial<AgentSession>),
     id: AgentId(id),
     backendSessionId: acpSessionId ? AgentId(acpSessionId) : null,
@@ -79,6 +59,11 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
     createdAt: String(raw.createdAt ?? now),
     updatedAt: String(raw.updatedAt ?? now),
   } as AgentSession;
+  // Per-agent unread (monorepo#1597): derived here so every AgentLite ingest
+  // path — list/get reads, new-message pushes, and the agent:updated marker
+  // convergence after agent.markSeen — recomputes it through one seam.
+  session.hasUnread = deriveAgentHasUnread(session);
+  return session;
 }
 
 export class LiveAgentsClient implements AgentsClient {
@@ -162,6 +147,7 @@ export class LiveAgentsClient implements AgentsClient {
       idempotencyKey: newIdempotencyKey(),
     };
     if (request.model !== undefined) params.model = request.model;
+    if (request.reasoningEffort !== undefined) params.reasoningEffort = request.reasoningEffort;
     if (request.specialist !== undefined && request.specialist !== null) {
       params.specialistId = request.specialist;
     }
@@ -409,6 +395,23 @@ export class LiveAgentsClient implements AgentsClient {
       messageId: params.messageId,
     });
   }
+  async setReasoningEffort(params: {
+    agentId: string;
+    workspaceId: string;
+    reasoningEffort: string | null;
+  }): Promise<MutationResult> {
+    // `agent.update` (§5.5) is the partial-mutation writer; `reasoningEffort`
+    // rides the `changes` object (Option B session field). Optional-string
+    // fields accept an explicit JSON `null` to clear, so `null` is forwarded
+    // verbatim — it means "reset to provider default", not "omit". The daemon
+    // persists the field and emits `agent:updated`, which reconciles other
+    // windows; the effort applies on the next prompt send.
+    return runMutation("agent.update", {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      changes: { reasoningEffort: params.reasoningEffort },
+    });
+  }
   async rename(
     agentId: string,
     name: string,
@@ -568,24 +571,20 @@ export class LiveAgentsClient implements AgentsClient {
   /**
    * Subscribe to agents across every workspace.
    *
-   * Typed §6.9 channel: on liveState daemons one per-workspace
-   * `agent.subscribe` (bare `{ workspaceId }` — the params shape that routes
-   * to the collection channel rather than the deprecated `eventTypes` service
-   * alias) is registered per id yielded by `subscribeWorkspaceIds` — the same
-   * enumeration `fetchAll` flattens over. The channel carries `AgentLite`
+   * Typed §6.9 channel: one per-workspace `agent.subscribe` (bare
+   * `{ workspaceId }` — the params shape that routes to the collection
+   * channel rather than the deprecated `eventTypes` service alias) is
+   * registered per id yielded by `subscribeWorkspaceIds` — the sole data
+   * path (intent-hq/monorepo#1697). The channel carries `AgentLite`
    * entities; `agent:deleted` (the soft-hide-then-commit deletion flow's
    * convergence signal) arrives as a `removedIds` delta, which the reconciler
    * drops. Workspace add → a new channel registers and its snapshot merges
    * in; workspace delete → the channel unsubscribes and its agents are
-   * evicted. While ANY workspace channel lacks a push-confirmed registration
-   * the subscription stays legacy and refetches keep serving (the #775
-   * safety net); daemons without liveState never register channels at all.
-   * Every push entity flows through `normalizeAgent`, so the
+   * evicted. Every push entity flows through `normalizeAgent`, so the
    * `agentWorkspaceIndex` cache is primed exactly like the list/get paths.
    */
   subscribe(handler: SubscriptionHandler<AgentSession[]>): Unsubscribe {
     return createDeltaSubscription<AgentSession>({
-      eventTypes: [...AGENT_LIFECYCLE_EVENTS],
       channel: {
         subscribeMethod: "agent.subscribe",
         unsubscribeMethod: "agent.unsubscribe",
@@ -593,12 +592,6 @@ export class LiveAgentsClient implements AgentsClient {
           subscribeIds: subscribeWorkspaceIds,
           paramsForId: (id) => ({ workspaceId: id }),
         },
-      },
-      matchLegacyEvent: (method, params) => isEventOneOf(method, params, AGENT_LIFECYCLE_EVENTS),
-      fetchAll: async () => {
-        const ids = await listWorkspaceIds();
-        const perWorkspace = await Promise.all(ids.map((id) => this.list(id)));
-        return perWorkspace.flat();
       },
       getId: (raw) => String(raw.id ?? ""),
       normalize: (raw) => normalizeAgent(raw),

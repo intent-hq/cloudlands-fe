@@ -2,8 +2,8 @@
   /**
    * Mounted harness wiring createChatDraftManager to a mock composer exactly
    * the way ChatPanel wires the real SimpleRichInput: value binding, deferred
-   * editor hydration via setContent, gate-driven disable, and the
-   * ChatDraftLoadingGate indicator.
+   * editor hydration via setContent, the gate-driven input lock, and the
+   * delayed ChatDraftLoadingGate indicator.
    */
   import type { DraftsClient } from '$lib/client/app-client';
   import ChatDraftLoadingGate from '../../ChatDraftLoadingGate.svelte';
@@ -43,10 +43,14 @@
   });
 </script>
 
-{#if manager.gateActive}
+{#if manager.gateVisible}
   <ChatDraftLoadingGate />
 {/if}
 {#if showComposer}
-  <MockComposerInput bind:this={composer} bind:value={inputValue} disabled={manager.gateActive} />
+  <MockComposerInput
+    bind:this={composer}
+    bind:value={inputValue}
+    inputLocked={manager.gateActive}
+  />
 {/if}
 <div data-testid="context-count">{contextItems.length}</div>

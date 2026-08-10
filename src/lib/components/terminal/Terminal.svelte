@@ -7,6 +7,8 @@
 } from 'svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import type { TerminalAdapter } from '$features/terminal/TerminalAdapter';
+  import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { store as appStore } from '$store/renderer/store';
   import TerminalSearchBar from './TerminalSearchBar.svelte';
 
   interface Props {
@@ -17,6 +19,13 @@
   }
 
   let { terminalId, workspaceId, class: className = '', onStatusChange }: Props = $props();
+
+  // Canonical code-font preference: captured at component init and forwarded
+  // to the adapter after `getOrCreateTerminal` resolves (covers both new and
+  // reattached/cached adapters). Later changes flow through the same readable
+  // to the adapter's imperative `updateFontFamily` — no adapter/xterm/PTY
+  // recreation.
+  const codeFontFamilyCSS = selectCodeFontFamilyCSS();
 
   let container: HTMLDivElement;
   let terminal: TerminalAdapter | null = null;
@@ -44,6 +53,17 @@
     if (previousStatus.isConnected !== isConnected || previousStatus.isExecuting !== isExecuting) {
       previousStatus = { isConnected, isExecuting };
       onStatusChange?.({ isConnected, isExecuting });
+    }
+  });
+
+  // Forward code-font preference changes to the mounted adapter without
+  // recreating the adapter, XTerm instance, or PTY. When no adapter is
+  // attached (yet) the initial value is applied inside `loadTerminal` after
+  // getOrCreateTerminal resolves.
+  $effect(() => {
+    const fontFamily = $codeFontFamilyCSS;
+    if (terminal) {
+      terminal.updateFontFamily(fontFamily);
     }
   });
 
@@ -111,6 +131,11 @@
         },
         false, // Never force new - let the manager decide based on whether it exists
       );
+
+      // Apply the current code-font preference after the adapter resolves.
+      // Covers both freshly created and cached/reattached adapters — the
+      // latter may have been created with a stale value while detached.
+      terminal.updateFontFamily(selectCodeFontFamilyCSS.select(appStore.state));
     } catch (error) {
       logger.error('Failed to load terminal:', error);
     }

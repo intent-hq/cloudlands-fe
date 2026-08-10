@@ -1,7 +1,7 @@
 import { store } from '../../store';
 import type { EnvironmentConfig, PullRequestInfo, Workspace } from '$shared/types';
 import { CHIEF_WORKSPACE_ID, type WorkspaceId } from '$shared/types/branded-ids';
-import { getItem, getItems } from '$lib/store-shim/utils/collections/collection-utils';
+import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { type WorkspaceRecencyState } from './workspace-slice';
 import { selectIsNewlyCreatedWorkspace } from '../workspace-agents/workspace-agents-selectors';
 import {
@@ -10,6 +10,7 @@ import {
   selectFileTrackingCommits,
 } from '../changes/changes-selectors';
 import { selectGitStatus } from '../git/git-selectors';
+import { selectActivePrMonitors } from '../pr-monitor/pr-monitor-selectors';
 import type {
   WorkflowStage,
   WorkspaceProgressAction,
@@ -497,6 +498,38 @@ export const selectWorkspaceProgressActions = store.createSelector<
         iconKey: 'code-branch',
         tooltip: m.workspace_progress_viewPr_tooltip(),
         url: prUrl,
+      },
+    ];
+  }
+
+  // No branch-linked PR: fall back to the FIRST active agent-monitored PR
+  // (PROTOCOL §6.9). Cross-repo monitors surface their org/repo context in
+  // the label and tooltip.
+  const monitors = selectActivePrMonitors.select(state, wsId);
+  if (monitors.length > 0) {
+    const monitor = monitors[0];
+    const workspace = getItem(state.workspace.workspaces, wsId as Workspace['id']);
+    const workspaceRepo =
+      workspace?.repositoryOwner && workspace?.repositoryName
+        ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
+        : undefined;
+    const crossRepo = workspaceRepo !== undefined && monitor.repo !== workspaceRepo;
+    return [
+      {
+        id: 'view-pr',
+        label: crossRepo
+          ? m.workspace_progress_viewMonitoredPrCrossRepo_label({ repo: monitor.repo })
+          : m.workspace_progress_viewPr_label(),
+        iconKey: 'code-branch',
+        tooltip: crossRepo
+          ? m.workspace_progress_viewMonitoredPrCrossRepo_tooltip({
+              repo: monitor.repo,
+              number: String(monitor.prNumber),
+            })
+          : m.workspace_progress_viewMonitoredPr_tooltip({
+              number: String(monitor.prNumber),
+            }),
+        url: monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`,
       },
     ];
   }

@@ -13,6 +13,7 @@
 import type {
   AppClient,
   GitHubBranchListing,
+  GitHubCachedBranchListing,
   GitHubRepoConfigResult,
   IntegrationsClient,
   SubscriptionHandler,
@@ -82,6 +83,33 @@ export class LiveIntegrationsClient implements IntegrationsClient {
       // Default branch is a nicety; the branch list alone is sufficient.
     }
     return { branches, defaultBranch };
+  }
+
+  /**
+   * `github.branches.listCached` (§5.27) — branch names from the daemon's
+   * local repo cache, zero network I/O. Purely a fast first paint for the
+   * BranchSelector: failures fold to a cold-cache miss
+   * (`{ cached: false, branches: [] }`) so the authoritative
+   * `githubBranches` path stays the only error authority.
+   */
+  async githubBranchesCached(owner: string, repo: string): Promise<GitHubCachedBranchListing> {
+    try {
+      const result = await backendRequest<{
+        cached?: unknown;
+        branches?: unknown;
+        defaultBranch?: unknown;
+      }>("github.branches.listCached", { owner, repo });
+      const branches = Array.isArray(result?.branches)
+        ? result.branches.filter((branch): branch is string => typeof branch === "string")
+        : [];
+      const defaultBranch =
+        typeof result?.defaultBranch === "string" && result.defaultBranch.length > 0
+          ? result.defaultBranch
+          : undefined;
+      return { cached: result?.cached === true, branches, defaultBranch };
+    } catch {
+      return { cached: false, branches: [] };
+    }
   }
 
   /**

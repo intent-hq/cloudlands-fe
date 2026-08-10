@@ -7,7 +7,7 @@
   faChevronUp,
   faChevronDown,
 } from '@fortawesome/free-solid-svg-icons';
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { cubicOut } from 'svelte/easing';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -91,7 +91,7 @@
 
 <div
   class="fixed top-4 right-4 z-50 w-96 bg-background/95 backdrop-blur-sm border border-border rounded-lg shadow-xl"
-  transition:slide={{ duration: 200, easing: cubicOut }}
+  transition:safeSlide={{ duration: 200, easing: cubicOut }}
 >
   <!-- Search Header -->
   <div class="flex items-center gap-2 p-3 border-b border-border">
@@ -149,7 +149,7 @@
   {#if showFilters}
     <div
       class="p-3 border-b border-border space-y-2"
-      transition:slide={{ duration: 150, easing: cubicOut }}
+      transition:safeSlide={{ duration: 150, easing: cubicOut }}
     >
       <!-- Role Filter -->
       <div class="flex items-center gap-2">

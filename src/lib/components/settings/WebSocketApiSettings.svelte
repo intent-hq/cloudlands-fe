@@ -9,13 +9,22 @@
    * - server.rotateToken for token regeneration
    *
    * Handles error states (failed start rolls back setting, INTENTD_AUTH_TOKEN
-   * blocks rotation, -32001 on remote calls).
+   * blocks rotation).
+   *
+   * Remote gating: `server.*` methods are local-only by design (the daemon
+   * rejects them with -32001 on non-local connections), and toggling
+   * `server.wsApi.enabled` remotely could sever the FE's own connection. So when
+   * the active connection is remote (activeId !== LOCAL_CONNECTION_ID) this
+   * component renders an info-only panel — no daemon calls, no controls. The
+   * gating is reactive to connection switches while mounted: remote→local
+   * triggers a fresh status load, and loadStatus() re-checks locality after
+   * awaits so a mid-flight local→remote switch never fires server.pairingInfo.
    *
    * This component directly calls appClient methods per the restored pattern from
    * commit 27293564. The WebSocket API settings are transient UI state that do not
    * belong in Redux; the settings themselves are persisted by the daemon.
    */
-  import { onMount, onDestroy } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { Input } from '$lib/components/ui/input';
@@ -30,6 +39,11 @@
   import { toast } from '$lib/components/ui/toast';
   import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
+  import { selectActiveConnectionId } from '$store/renderer/slices/connections/connections-selectors';
+  import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+
+  const activeConnectionId$ = selectActiveConnectionId();
+  const isRemote = $derived($activeConnectionId$ !== LOCAL_CONNECTION_ID);
 
   let enabled = $state(false);
   let token = $state('');
@@ -54,14 +68,26 @@
     token ? '•'.repeat(Math.max(0, token.length - 8)) + token.slice(-8) : '',
   );
 
-  onMount(async () => {
-    await loadStatus();
+  // Reacts to connection switches while mounted (and covers the initial
+  // mount): on remote, skip loadStatus() entirely — server.* methods are
+  // local-only; on local (including a remote→local switch) load fresh status.
+  $effect(() => {
+    if (isRemote) {
+      loading = false;
+      return;
+    }
+    void loadStatus();
   });
 
   async function loadStatus() {
     try {
       loading = true;
       const settings = await appClient.settings.list();
+      if (isRemote) {
+        // Connection switched to remote mid-flight — server.pairingInfo is
+        // local-only, so drop this stale load entirely.
+        return;
+      }
       const wsApiEnabled = settings.find((s: { path: string; value: unknown }) => s.path === 'server.wsApi.enabled');
       const wsApiPort = settings.find((s: { path: string; value: unknown }) => s.path === 'server.wsApi.port');
 
@@ -243,6 +269,15 @@
 </script>
 
 <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+  {#if isRemote}
+  <!-- Remote connection: info-only panel — no toggle/port/token/QR controls -->
+  <section class="px-6 py-5">
+    <p class="text-sm font-medium text-foreground">{m.settings_wsApi_enable_label()}</p>
+    <p class="text-xs text-subtle mt-1">
+      {m.settings_wsApi_remoteInfo_description()}
+    </p>
+  </section>
+  {:else}
   <!-- Enable toggle -->
   <section class="px-6 py-5">
     <div class="flex items-center justify-between">
@@ -385,6 +420,7 @@
         </p>
       </section>
     </div>
+  {/if}
   {/if}
 </div>
 

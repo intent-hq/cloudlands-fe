@@ -26,16 +26,30 @@
   let { reference, onOpenFile }: Props = $props();
 
   const parsedId = $derived(reference.semanticId ? parseSemanticId(reference.semanticId) : null);
-  const filePath = $derived(reference.filePath || parsedId?.filePath || '');
+  // The filePath field may itself carry a trailing "#L<n>" / "#L<n>-<m>" line
+  // anchor. Unlike semanticId, filePath is an unrestricted path, so interpret
+  // ONLY the line anchor (same regex as parseSemanticId's line branch) — other
+  // fragments like "#symbol:" or a literal "#" must pass through untouched so
+  // real paths are not truncated.
+  const parsedFilePath = $derived.by(() => {
+    if (!reference.filePath) return null;
+    const lineMatch = reference.filePath.match(/^(.+)#L(\d+)(?:-(\d+))?$/);
+    if (!lineMatch) return null;
+    const [, path, startLine] = lineMatch;
+    return { filePath: path, startLine: parseInt(startLine, 10) };
+  });
+  const filePath = $derived(
+    parsedFilePath?.filePath || reference.filePath || parsedId?.filePath || '',
+  );
   const fileName = $derived(
     filePath.split('/').pop() || reference.semanticId || m.chat_messageContent_reference_fallback(),
   );
   // Line anchors are 1-based by convention, but ReferenceTargetSchema allows
   // 0-based ranges and getSemanticId() can derive "#L0" from them. Clamp to 1
   // so the jump target survives downstream truthy checks (e.g. FileTabType).
-  const line = $derived(
-    parsedId?.startLine !== undefined ? Math.max(1, parsedId.startLine) : undefined,
-  );
+  // filePath wins over semanticId for the path, so its anchor wins for the line too.
+  const startLine = $derived(parsedFilePath?.startLine ?? parsedId?.startLine);
+  const line = $derived(startLine !== undefined ? Math.max(1, startLine) : undefined);
   const clickable = $derived(Boolean(filePath && onOpenFile));
 
   function handleClick(event: MouseEvent) {

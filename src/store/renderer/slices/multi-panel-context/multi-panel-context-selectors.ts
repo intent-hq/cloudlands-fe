@@ -2,7 +2,7 @@ import { store } from "../../store";
 import {
   getItems,
   type Collection,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 import type { PanelContextItem, SelectionContextItem } from "./multi-panel-context-slice";
 
 const selectPanelsCollection = store.createSelector(

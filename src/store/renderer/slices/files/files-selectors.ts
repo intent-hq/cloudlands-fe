@@ -2,7 +2,7 @@ import { store } from "../../store";
 import {
   getItem,
   getItems,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 import { emptyFilesWorkspaceState } from "./files-slice";
 import type { FileContentEntry, FilesWorkspaceState } from "./files-types";
 

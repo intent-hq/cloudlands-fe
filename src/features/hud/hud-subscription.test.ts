@@ -78,7 +78,7 @@ function makeHudWorkspace(id: string): Workspace {
   } as Workspace;
 }
 
-/** Zeroed §5.36 UsageTotals with overrides. */
+/** Zeroed §5.36 UsageTotals with overrides (`thoughtTokens` omitted at zero). */
 function totals(overrides: Partial<Record<string, number>> = {}) {
   return {
     inputTokens: 0,
@@ -89,10 +89,18 @@ function totals(overrides: Partial<Record<string, number>> = {}) {
   };
 }
 
+/**
+ * Zeroed §5.39 RateSample counters — unlike §5.36 totals these are DENSE, so
+ * `thoughtTokens` is always present (`0` included).
+ */
+function sampleTotals(overrides: Partial<Record<string, number>> = {}) {
+  return { ...totals(), thoughtTokens: 0, ...overrides };
+}
+
 /** PROTOCOL §5.36-shaped stats.getUsage result (arrays elided to shape). */
 function usageResult() {
   return {
-    totals: totals({ inputTokens: 130, outputTokens: 45 }),
+    totals: totals({ inputTokens: 130, outputTokens: 45, thoughtTokens: 20 }),
     runs: 3,
     sessions: 1,
     longestRunMs: 9000,
@@ -104,7 +112,7 @@ function usageResult() {
     ],
     byHourOfDay: Array.from({ length: 24 }, (_, i) => ({
       hour: i,
-      ...totals(i === 23 ? { inputTokens: 130, outputTokens: 45 } : {}),
+      ...totals(i === 23 ? { inputTokens: 130, outputTokens: 45, thoughtTokens: 20 } : {}),
     })),
     byMonth: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, ...totals() })),
     availablePeriods: { months: ['2026-07'], years: ['2026'] },
@@ -116,7 +124,11 @@ function rateHistoryResult() {
   return {
     samples: Array.from({ length: HUD_RATE_HISTORY_LIMIT }, (_, i) => ({
       bucketUtc: `2026-07-30T14:${String(i).padStart(2, '0')}:00Z`,
-      ...totals(i === HUD_RATE_HISTORY_LIMIT - 1 ? { inputTokens: 100, outputTokens: 70 } : {}),
+      ...sampleTotals(
+        i === HUD_RATE_HISTORY_LIMIT - 1
+          ? { inputTokens: 100, outputTokens: 70, thoughtTokens: 15 }
+          : {},
+      ),
     })),
   };
 }
@@ -168,10 +180,11 @@ describe('HUD subscription (mock backend, real store)', () => {
       tzOffsetMinutes: -new Date().getTimezoneOffset(),
     });
     const usage = selectHudUsage.select(appStore.state);
-    expect(usage?.totals).toEqual(totals({ inputTokens: 130, outputTokens: 45 }));
+    expect(usage?.totals).toEqual(totals({ inputTokens: 130, outputTokens: 45, thoughtTokens: 20 }));
     expect(usage?.runs).toBe(3);
     expect(usage?.rateSamples).toHaveLength(24);
-    expect(usage?.rateSamples[23]).toEqual({ hour: 23, tokens: 175 });
+    // 130 + 45 + 20 thoughts — every counter counts toward the hourly bucket.
+    expect(usage?.rateSamples[23]).toEqual({ hour: 23, tokens: 195 });
 
     // The daemon ONLINE signal comes from the daemon-health slice (the
     // middleware's 10s poll) — the HUD adds no system.status fetch of its own.
@@ -242,7 +255,7 @@ describe('HUD subscription (mock backend, real store)', () => {
       expect(history?.samples).toHaveLength(HUD_RATE_HISTORY_LIMIT);
       expect(history?.samples[HUD_RATE_HISTORY_LIMIT - 1]).toEqual({
         bucketUtc: '2026-07-30T14:39:00Z',
-        tokens: 170,
+        ...sampleTotals({ inputTokens: 100, outputTokens: 70, thoughtTokens: 15 }),
       });
 
       await vi.advanceTimersByTimeAsync(HUD_RATE_HISTORY_POLL_MS);
@@ -300,9 +313,9 @@ describe('HUD subscription (mock backend, real store)', () => {
       ts: '2026-07-30T12:00:00.000Z',
     });
 
-    // Supersession (§7.1): a question hold breaks only on a user-origin
-    // delivery, which starts a turn — the running agent:status-changed drops
-    // the captured question so nothing keeps blinking after the answer.
+    // Persistent pendingness: a plain user message — and the turn it starts
+    // — no longer supersede the question, so a running transition leaves the
+    // capture in place.
     backend.pushEvent({
       type: 'agent:status-changed',
       workspaceId: WS_ID,
@@ -312,9 +325,22 @@ describe('HUD subscription (mock backend, real store)', () => {
       data: { agentId: 'agent-1', status: 'active', isActive: true },
     });
     await flush();
+    expect(appStore.state.hud.questionsByAgentId['agent-1']?.question).toBe('Which auth flow?');
+
+    // The daemon's rollup is the release signal: a pending question holds
+    // `needs_attention` up, so leaving it means answered or dismissed.
+    backend.pushEvent({
+      type: 'workspace:displayStatus-changed',
+      workspaceId: WS_ID,
+      id: 'evt-qc2b',
+      subscriptionId: SUB_ID,
+      timestamp: '2026-07-30T12:01:30.000Z',
+      data: { displayStatus: 'in_progress' },
+    });
+    await flush();
     expect(appStore.state.hud.questionsByAgentId['agent-1']).toBeUndefined();
 
-    // A non-running transition (idle turn end) never supersedes.
+    // A fresh capture pends again.
     backend.pushEvent({
       type: 'agent:stream:end',
       workspaceId: WS_ID,
@@ -352,6 +378,70 @@ describe('HUD subscription (mock backend, real store)', () => {
     });
     await flush();
     expect(appStore.state.hud.questionsByAgentId['agent-1']?.question).toBe('Which target?');
+  });
+
+  it('keeps a captured question when the workspace transitions to a status OUTRANKING needs_attention', async () => {
+    scriptHappyBackend(backend);
+    stop = startHudSubscription();
+    await flush();
+
+    backend.pushEvent({
+      type: 'agent:stream:end',
+      workspaceId: WS_ID,
+      id: 'evt-hq1',
+      subscriptionId: SUB_ID,
+      timestamp: '2026-07-30T12:00:00.000Z',
+      data: {
+        agentId: 'agent-1',
+        messageId: 'msg-1',
+        trailingBlocks: [
+          {
+            type: 'resource',
+            resource: {
+              uri: 'intent-question://tar-1',
+              name: 'Auth method',
+              mimeType: 'application/vnd.intent.question+json',
+              text: JSON.stringify({
+                attachmentId: 'tar-1',
+                header: 'Auth method',
+                question: 'Which auth flow?',
+                multiSelect: false,
+              }),
+            },
+          },
+        ],
+      },
+    });
+    await flush();
+    expect(appStore.state.hud.questionsByAgentId['agent-1']?.question).toBe('Which auth flow?');
+
+    // `failed`/`blocked` outrank `needs_attention` in the rollup, so they MASK
+    // a still-pending question rather than resolving it — releasing here would
+    // drop a question the user still owes an answer to.
+    for (const displayStatus of ['failed', 'blocked'] as const) {
+      backend.pushEvent({
+        type: 'workspace:displayStatus-changed',
+        workspaceId: WS_ID,
+        id: `evt-hq-${displayStatus}`,
+        subscriptionId: SUB_ID,
+        timestamp: '2026-07-30T12:01:00.000Z',
+        data: { displayStatus },
+      });
+      await flush();
+      expect(appStore.state.hud.questionsByAgentId['agent-1']?.question).toBe('Which auth flow?');
+    }
+
+    // A status ranking below it still releases.
+    backend.pushEvent({
+      type: 'workspace:displayStatus-changed',
+      workspaceId: WS_ID,
+      id: 'evt-hq-idle',
+      subscriptionId: SUB_ID,
+      timestamp: '2026-07-30T12:02:00.000Z',
+      data: { displayStatus: 'idle' },
+    });
+    await flush();
+    expect(appStore.state.hud.questionsByAgentId['agent-1']).toBeUndefined();
   });
 
   it('maps a PROTOCOL-shaped agent:failed event into an err feed row, newest first', async () => {
@@ -794,6 +884,118 @@ describe('HUD subscription (mock backend, real store)', () => {
     // No HUD-owned system.status refetch — the daemon-health middleware's
     // poll is the single source for the ONLINE/version/uptime signal.
     expect(backend.requests.filter((r) => r.method === 'system.status')).toEqual([]);
+  });
+
+  it('releases a captured question whose displayStatus transition was MISSED during an outage', async () => {
+    // The live `workspace:displayStatus-changed` event is the only release
+    // trigger, so a question answered while the connection was down would stay
+    // captured forever. RESUB-1 refetches the workspace list; the reconnect
+    // sweep replays the same allowlist decision against its `displayStatus`.
+    scriptHappyBackend(backend);
+    appStore.dispatch(setWorkspaceEntity(makeHudWorkspace(WS_ID)));
+    try {
+      stop = startHudSubscription();
+      await flush();
+
+      backend.pushEvent({
+        type: 'agent:stream:end',
+        workspaceId: WS_ID,
+        id: 'evt-rs1',
+        subscriptionId: SUB_ID,
+        timestamp: '2026-07-30T12:00:00.000Z',
+        data: {
+          agentId: 'agent-1',
+          messageId: 'msg-1',
+          trailingBlocks: [
+            {
+              type: 'resource',
+              resource: {
+                uri: 'intent-question://tar-1',
+                name: 'Auth method',
+                mimeType: 'application/vnd.intent.question+json',
+                text: JSON.stringify({
+                  attachmentId: 'tar-1',
+                  header: 'Auth method',
+                  question: 'Which auth flow?',
+                  multiSelect: false,
+                }),
+              },
+            },
+          ],
+        },
+      });
+      await flush();
+      expect(appStore.state.hud.questionsByAgentId['agent-1']?.question).toBe('Which auth flow?');
+
+      // Outage: no displayStatus event arrives. On reconnect the refetched
+      // workspace lands with a releasing status.
+      backend.triggerReconnect();
+      appStore.dispatch(
+        setWorkspaceEntity({ ...makeHudWorkspace(WS_ID), displayStatus: 'idle' } as Workspace),
+      );
+      await flush();
+      await flush();
+      expect(appStore.state.hud.questionsByAgentId['agent-1']).toBeUndefined();
+    } finally {
+      appStore.dispatch(removeWorkspaceEntity(WS_ID));
+    }
+  });
+
+  it('the reconnect sweep never clears a workspace still holding attention', async () => {
+    scriptHappyBackend(backend);
+    appStore.dispatch(
+      setWorkspaceEntity({
+        ...makeHudWorkspace(WS_ID),
+        displayStatus: 'needs_attention',
+      } as Workspace),
+    );
+    try {
+      stop = startHudSubscription();
+      await flush();
+
+      backend.pushEvent({
+        type: 'agent:stream:end',
+        workspaceId: WS_ID,
+        id: 'evt-rs2',
+        subscriptionId: SUB_ID,
+        timestamp: '2026-07-30T12:00:00.000Z',
+        data: {
+          agentId: 'agent-1',
+          messageId: 'msg-1',
+          trailingBlocks: [
+            {
+              type: 'resource',
+              resource: {
+                uri: 'intent-question://tar-1',
+                name: 'Auth method',
+                mimeType: 'application/vnd.intent.question+json',
+                text: JSON.stringify({
+                  attachmentId: 'tar-1',
+                  header: 'Auth method',
+                  question: 'Which auth flow?',
+                  multiSelect: false,
+                }),
+              },
+            },
+          ],
+        },
+      });
+      await flush();
+
+      backend.triggerReconnect();
+      appStore.dispatch(
+        setWorkspaceEntity({
+          ...makeHudWorkspace(WS_ID),
+          displayStatus: 'needs_attention',
+          updatedAt: '2026-07-30T12:05:00Z',
+        } as Workspace),
+      );
+      await flush();
+      await flush();
+      expect(appStore.state.hud.questionsByAgentId['agent-1']?.question).toBe('Which auth flow?');
+    } finally {
+      appStore.dispatch(removeWorkspaceEntity(WS_ID));
+    }
   });
 
   it('stop() unsubscribes, removes listeners, and clears the slice (no leaks)', async () => {

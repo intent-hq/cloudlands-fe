@@ -23,18 +23,41 @@ vi.mock("./live-support", async (importActual) => {
     ...actual,
     isEventInFamily: vi.fn(() => false),
     listWorkspaceIds: vi.fn(() => Promise.resolve([])),
+    // The client holds the shared push-driven id source open while status
+    // subscribers exist; stubbed by default so these suites see only the
+    // client's OWN transport traffic (the real helper seeds itself with a
+    // `workspace.list` and registers its own notification listener).
+    subscribeWorkspaceIds: vi.fn(() => () => {}),
   };
 });
 
-import { backendRequest, backendSubscribe, onBackendNotification } from "./backend-transport";
-import { isEventInFamily, listWorkspaceIds } from "./live-support";
+import {
+  backendRequest,
+  backendSubscribe,
+  onBackendNotification,
+  onBackendReconnected,
+} from "./backend-transport";
+import { isEventInFamily, listWorkspaceIds, subscribeWorkspaceIds } from "./live-support";
 import { LiveGitClient } from "./live-git-client";
 
 const mockedRequest = vi.mocked(backendRequest);
 const mockedSubscribe = vi.mocked(backendSubscribe);
 const mockedIsEventInFamily = vi.mocked(isEventInFamily);
 const mockedListWorkspaceIds = vi.mocked(listWorkspaceIds);
+const mockedSubscribeWorkspaceIds = vi.mocked(subscribeWorkspaceIds);
 const mockedOnBackendNotification = vi.mocked(onBackendNotification);
+const mockedOnBackendReconnected = vi.mocked(onBackendReconnected);
+
+/** Daemon-shaped `git.status` result used by the subscribe suites. */
+const GIT_STATUS_FIXTURE = {
+  branch: "main",
+  ahead: 0,
+  behind: 0,
+  diverged: false,
+  files: [],
+  hasUncommittedChanges: false,
+  hasUntrackedFiles: false,
+};
 
 describe("LiveGitClient reads (fake transport)", () => {
   afterEach(() => vi.clearAllMocks());
@@ -590,11 +613,20 @@ describe("LiveGitClient reads (fake transport)", () => {
     });
   });
 
-  it("trackedChanges resolves [] when the daemon errors", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("changes boom"));
+  it("trackedChanges distinguishes a daemon error from a successful empty result", async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ changes: [], truncated: false, totalCount: 0 })
+      .mockRejectedValueOnce(new Error("changes boom"));
     const client = new LiveGitClient();
 
     expect(await client.trackedChanges("ws-1")).toEqual([]);
+    expect(await client.trackedChanges("ws-1")).toBeNull();
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, "file-tracking.getChanges", {
+      workspaceId: "ws-1",
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, "file-tracking.getChanges", {
+      workspaceId: "ws-1",
+    });
   });
 
   // `git.getBranches` is path-based (not workspace-scoped) and is the new
@@ -984,40 +1016,59 @@ describe("LiveGitClient.pull (fake transport)", () => {
 describe("LiveGitClient.subscribe event-family routing (fake transport)", () => {
   afterEach(() => vi.clearAllMocks());
 
+  // The mocks mirror the production transports
+  // (browser-websocket-transport.ts / electron-ipc-transport.ts), which fan
+  // EVERY notification and reconnect out to ALL registered listeners. Keeping
+  // only the last-registered callback would mask multi-subscriber regressions.
   async function setupWithRealMatcher() {
     const real = await vi.importActual<typeof import("./live-support")>("./live-support");
     mockedIsEventInFamily.mockImplementation(real.isEventInFamily);
     mockedListWorkspaceIds.mockResolvedValue(["ws-1"]);
-    let captured: ((n: { method: string; params: unknown }) => void) | undefined;
+    // Default: the id-source hold is inert (vi.clearAllMocks keeps
+    // implementations, so re-stub it for every test in this suite).
+    mockedSubscribeWorkspaceIds.mockImplementation(() => () => {});
+    const notifyListeners = new Set<(n: { method: string; params: unknown }) => void>();
     mockedOnBackendNotification.mockImplementation((cb) => {
-      captured = cb;
-      return () => {};
+      notifyListeners.add(cb);
+      return () => notifyListeners.delete(cb);
     });
-    mockedRequest.mockResolvedValue({
-      branch: "main",
-      ahead: 0,
-      behind: 0,
-      diverged: false,
-      files: [],
-      hasUncommittedChanges: false,
-      hasUntrackedFiles: false,
+    const reconnectListeners = new Set<() => void>();
+    mockedOnBackendReconnected.mockImplementation((cb) => {
+      reconnectListeners.add(cb);
+      return () => reconnectListeners.delete(cb);
     });
-    return { getNotify: () => captured };
+    mockedRequest.mockResolvedValue(GIT_STATUS_FIXTURE);
+    return {
+      notify: (n: { method: string; params: unknown }) => {
+        for (const listener of [...notifyListeners]) listener(n);
+      },
+      reconnect: () => {
+        for (const listener of [...reconnectListeners]) listener();
+      },
+      notifyListenerCount: () => notifyListeners.size,
+    };
   }
 
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  /**
+   * Wait past the module's trailing-coalesce delay (STATUS_REFETCH_COALESCE_MS
+   * = 250ms) so a scheduled trailing `git.status` has run.
+   */
+  const flushTrailing = () => new Promise((resolve) => setTimeout(resolve, 300));
   const gitStatusCalls = () =>
     mockedRequest.mock.calls.filter(([method]) => method === "git.status").length;
+  const workspaceListCalls = () =>
+    mockedRequest.mock.calls.filter(([method]) => method === "workspace.list").length;
 
   it("does NOT refetch git.status on a wrapped terminal:data notification", async () => {
-    const { getNotify } = await setupWithRealMatcher();
+    const { notify } = await setupWithRealMatcher();
     const client = new LiveGitClient();
 
     const unsubscribe = client.subscribe(() => {});
     await flush();
     const initialCount = gitStatusCalls();
 
-    getNotify()!({
+    notify({
       method: "events.event",
       params: { event: { type: "terminal:data", data: { chunk: "x" } } },
     });
@@ -1028,14 +1079,14 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
   });
 
   it("DOES refetch git.status on a wrapped git:commit notification", async () => {
-    const { getNotify } = await setupWithRealMatcher();
+    const { notify } = await setupWithRealMatcher();
     const client = new LiveGitClient();
 
     const unsubscribe = client.subscribe(() => {});
     await flush();
     const initialCount = gitStatusCalls();
 
-    getNotify()!({
+    notify({
       method: "events.event",
       params: { event: { type: "git:commit" }, subscriptionId: "s-1" },
     });
@@ -1047,14 +1098,14 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
   });
 
   it("DOES refetch git.status on a wrapped changes:git-status notification", async () => {
-    const { getNotify } = await setupWithRealMatcher();
+    const { notify } = await setupWithRealMatcher();
     const client = new LiveGitClient();
 
     const unsubscribe = client.subscribe(() => {});
     await flush();
     const initialCount = gitStatusCalls();
 
-    getNotify()!({
+    notify({
       method: "events.event",
       params: { event: { type: "changes:git-status" } },
     });
@@ -1068,14 +1119,14 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
   // display like `changes:git-status` does — the local file-tracking store is
   // retired, so these events are the only signal that tracked changes moved.
   it("DOES refetch git.status on a wrapped changes:tracked notification", async () => {
-    const { getNotify } = await setupWithRealMatcher();
+    const { notify } = await setupWithRealMatcher();
     const client = new LiveGitClient();
 
     const unsubscribe = client.subscribe(() => {});
     await flush();
     const initialCount = gitStatusCalls();
 
-    getNotify()!({
+    notify({
       method: "events.event",
       params: { event: { type: "changes:tracked" } },
     });
@@ -1104,5 +1155,288 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
       ],
     });
     unsubscribe();
+  });
+
+  // intent-hq/monorepo#1648 (root cause 1): the refetch path is single-flight
+  // with trailing coalesce and the guard is module-level, so a burst of daemon
+  // events across N subscribers costs at most one in-flight fetch plus one
+  // trailing fetch — not one per (event × subscriber).
+  describe("single-flight + trailing coalesce", () => {
+    it("collapses N notifications arriving during an in-flight fetch into 1 trailing git.status", async () => {
+      const { notify } = await setupWithRealMatcher();
+      // Hold every `git.status` open so the burst lands mid-flight.
+      const resolvers: Array<(status: unknown) => void> = [];
+      mockedRequest.mockImplementation((method: string) => {
+        if (method !== "git.status") return Promise.resolve({});
+        return new Promise((resolve) => resolvers.push(() => resolve(GIT_STATUS_FIXTURE)));
+      });
+      const client = new LiveGitClient();
+
+      const unsubscribe = client.subscribe(() => {});
+      await flush();
+      expect(gitStatusCalls()).toBe(1);
+
+      // Five events while the initial fetch is still in flight.
+      for (let i = 0; i < 5; i += 1) {
+        notify({ method: "events.event", params: { event: { type: "git:commit" } } });
+      }
+      await flush();
+      expect(gitStatusCalls()).toBe(1);
+
+      resolvers.shift()!(undefined);
+      // The trailing fetch is delayed by STATUS_REFETCH_COALESCE_MS, so it has
+      // NOT run immediately after the leading one settles.
+      await flush();
+      expect(gitStatusCalls()).toBe(1);
+      await flushTrailing();
+
+      // Exactly one trailing fetch covers all five events.
+      expect(gitStatusCalls()).toBe(2);
+
+      resolvers.forEach((resolve) => resolve(undefined));
+      await flushTrailing();
+      expect(gitStatusCalls()).toBe(2);
+      unsubscribe();
+      await flush();
+    });
+
+    // intent-hq/monorepo#1716: the id comes from the shared cached/push-driven
+    // source, so a sustained git/changes stream costs no `workspace.list`
+    // round-trips — the old code issued one per event.
+    it("issues no per-event workspace.list for a git/changes event burst", async () => {
+      const { notify } = await setupWithRealMatcher();
+      const real = await vi.importActual<typeof import("./live-support")>("./live-support");
+      real.__resetLiveSupportCachesForTests();
+      mockedListWorkspaceIds.mockImplementation(real.listWorkspaceIds);
+      // Real id source: the client's own hold is what keeps it seeded here.
+      mockedSubscribeWorkspaceIds.mockImplementation(real.subscribeWorkspaceIds);
+      mockedRequest.mockImplementation((method: string) => {
+        if (method === "workspace.list") return Promise.resolve({ workspaces: [{ id: "ws-1" }] });
+        return Promise.resolve(GIT_STATUS_FIXTURE);
+      });
+      const client = new LiveGitClient();
+
+      const unsubscribe = client.subscribe(() => {});
+      await flush();
+      expect(workspaceListCalls()).toBe(1);
+
+      // Drop the short TTL snapshot so only the seeded push-driven set can
+      // serve the reads below — this is what the client's hold guarantees.
+      real.__resetLiveSupportCachesForTests();
+
+      for (let i = 0; i < 6; i += 1) {
+        notify({ method: "events.event", params: { event: { type: "changes:git-status" } } });
+      }
+      await flushTrailing();
+
+      // Initial subscribe snapshot + the burst's leading fetch + exactly one
+      // trailing fetch — and still the single seeding `workspace.list`.
+      expect(gitStatusCalls()).toBe(3);
+      expect(workspaceListCalls()).toBe(1);
+      unsubscribe();
+      await flush();
+      real.__resetLiveSupportCachesForTests();
+    });
+
+    // The hold is what keeps the shared id source seeded for this client; it
+    // must be released with the last subscriber so the source can reset.
+    it("holds the shared workspace-id source while subscribers exist", async () => {
+      await setupWithRealMatcher();
+      const release = vi.fn();
+      mockedSubscribeWorkspaceIds.mockReturnValue(release);
+      const client = new LiveGitClient();
+
+      const first = client.subscribe(() => {});
+      const second = client.subscribe(() => {});
+      await flush();
+      expect(mockedSubscribeWorkspaceIds).toHaveBeenCalledTimes(1);
+
+      first();
+      await flush();
+      expect(release).not.toHaveBeenCalled();
+
+      second();
+      await flush();
+      expect(release).toHaveBeenCalledTimes(1);
+    });
+
+    // Without the delay the trailing fetch starts the instant the in-flight
+    // one settles, so a sustained event stream loops with zero gap.
+    it("spaces the trailing fetch from the settled one by the coalesce delay", async () => {
+      const { notify } = await setupWithRealMatcher();
+      const startedAt: number[] = [];
+      const resolvers: Array<() => void> = [];
+      mockedRequest.mockImplementation((method: string) => {
+        if (method !== "git.status") return Promise.resolve({});
+        startedAt.push(Date.now());
+        return new Promise((resolve) => resolvers.push(() => resolve(GIT_STATUS_FIXTURE)));
+      });
+      const client = new LiveGitClient();
+
+      const unsubscribe = client.subscribe(() => {});
+      await flush();
+      expect(startedAt).toHaveLength(1);
+
+      // Event lands while the leading fetch is still open, so it can only be
+      // served by the trailing fetch.
+      notify({ method: "events.event", params: { event: { type: "changes:git-status" } } });
+      await flush();
+      expect(startedAt).toHaveLength(1);
+
+      resolvers.shift()!();
+      const settledAt = Date.now();
+      await flush();
+      expect(startedAt).toHaveLength(1);
+
+      await flushTrailing();
+      expect(startedAt).toHaveLength(2);
+      expect(startedAt[1] - settledAt).toBeGreaterThanOrEqual(200);
+
+      resolvers.forEach((resolve) => resolve());
+      await flush();
+      unsubscribe();
+      await flush();
+    });
+
+    it("serves two concurrent subscribers from one shared fetch per event", async () => {
+      const { notify, notifyListenerCount } = await setupWithRealMatcher();
+      const client = new LiveGitClient();
+      const first = vi.fn();
+      const second = vi.fn();
+
+      const unsubscribeFirst = client.subscribe(first);
+      const unsubscribeSecond = client.subscribe(second);
+      // The second subscribe lands mid-flight, arming a delayed trailing
+      // fetch; let it run so the burst assertion below starts from rest.
+      await flushTrailing();
+      const afterSnapshot = gitStatusCalls();
+      first.mockClear();
+      second.mockClear();
+
+      // One shared listener, not one per subscription: the transports fan a
+      // notification out to every listener, so per-subscription listeners
+      // would turn one event into M triggers (leading + guaranteed trailing).
+      expect(notifyListenerCount()).toBe(1);
+
+      notify({ method: "events.event", params: { event: { type: "git:commit" } } });
+      await flush();
+
+      expect(gitStatusCalls()).toBe(afterSnapshot + 1);
+      expect(first).toHaveBeenCalledTimes(1);
+      expect(second).toHaveBeenCalledTimes(1);
+      unsubscribeFirst();
+      unsubscribeSecond();
+      await flush();
+      expect(notifyListenerCount()).toBe(0);
+    });
+
+    it("keeps fanning out to the remaining subscribers when one handler throws", async () => {
+      const { notify } = await setupWithRealMatcher();
+      const client = new LiveGitClient();
+      const throwing = vi.fn(() => {
+        throw new Error("subscriber boom");
+      });
+      const healthy = vi.fn();
+
+      const unsubscribeThrowing = client.subscribe(throwing);
+      const unsubscribeHealthy = client.subscribe(healthy);
+      // Let the delayed trailing fetch armed by the second subscribe run.
+      await flushTrailing();
+      throwing.mockClear();
+      healthy.mockClear();
+
+      notify({ method: "events.event", params: { event: { type: "git:commit" } } });
+      await flush();
+
+      expect(throwing).toHaveBeenCalledTimes(1);
+      expect(healthy).toHaveBeenCalledTimes(1);
+      unsubscribeThrowing();
+      unsubscribeHealthy();
+    });
+
+    // A stranded in-flight flag would permanently wedge every later refetch,
+    // so pin that a rejected fetch still clears the guard.
+    it("clears the in-flight flag when a fetch rejects", async () => {
+      const { notify } = await setupWithRealMatcher();
+      let rejectStatus: ((reason: unknown) => void) | undefined;
+      mockedRequest.mockImplementation((method: string) => {
+        if (method !== "git.status") return Promise.resolve({});
+        return new Promise((_resolve, reject) => {
+          rejectStatus = reject;
+        });
+      });
+      const client = new LiveGitClient();
+
+      const unsubscribe = client.subscribe(() => {});
+      await flush();
+      expect(gitStatusCalls()).toBe(1);
+
+      rejectStatus!(new Error("status failed"));
+      await flush();
+
+      mockedRequest.mockResolvedValue(GIT_STATUS_FIXTURE);
+      notify({ method: "events.event", params: { event: { type: "git:commit" } } });
+      await flush();
+
+      expect(gitStatusCalls()).toBe(2);
+      unsubscribe();
+      await flush();
+    });
+
+    it("skips the trailing fetch once the last subscriber has unsubscribed", async () => {
+      const { notify } = await setupWithRealMatcher();
+      const resolvers: Array<() => void> = [];
+      mockedRequest.mockImplementation((method: string) => {
+        if (method !== "git.status") return Promise.resolve({});
+        return new Promise((resolve) => resolvers.push(() => resolve(GIT_STATUS_FIXTURE)));
+      });
+      const client = new LiveGitClient();
+
+      const unsubscribe = client.subscribe(() => {});
+      await flush();
+      expect(gitStatusCalls()).toBe(1);
+
+      // Event lands mid-flight (dirty flag set), then the last subscriber goes.
+      notify({ method: "events.event", params: { event: { type: "git:commit" } } });
+      unsubscribe();
+      await flush();
+
+      resolvers.shift()!();
+      await flushTrailing();
+
+      expect(gitStatusCalls()).toBe(1);
+      resolvers.forEach((resolve) => resolve());
+      await flush();
+    });
+
+    it("routes reconnect refreshes through the same guard", async () => {
+      const { reconnect } = await setupWithRealMatcher();
+      const resolvers: Array<() => void> = [];
+      mockedRequest.mockImplementation((method: string) => {
+        if (method !== "git.status") return Promise.resolve({});
+        return new Promise((resolve) => resolvers.push(() => resolve(GIT_STATUS_FIXTURE)));
+      });
+      const client = new LiveGitClient();
+
+      const unsubscribe = client.subscribe(() => {});
+      await flush();
+      expect(gitStatusCalls()).toBe(1);
+
+      // Two reconnects while the initial fetch is in flight: no extra fetches
+      // now, exactly one trailing fetch once it settles.
+      reconnect();
+      reconnect();
+      await flush();
+      expect(gitStatusCalls()).toBe(1);
+
+      resolvers.shift()!();
+      await flushTrailing();
+      expect(gitStatusCalls()).toBe(2);
+
+      resolvers.forEach((resolve) => resolve());
+      await flush();
+      unsubscribe();
+      await flush();
+    });
   });
 });

@@ -5,8 +5,8 @@
  * No saga needed — this is pure synchronous UI state.
  */
 
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { OnboardingState, OnboardingStep, ProjectConfig, AgentStatus } from './onboarding-types';
 import { STEP_ORDER } from './onboarding-types';
 
@@ -44,28 +44,28 @@ export const resetOnboarding = createAction('onboarding/reset');
 // Reducer
 // =============================================================================
 
-export const onboardingReducer = createReducer<OnboardingState>(initialState)
-  .with(goToStep, (state, { payload: [step] }) => ({
+export const onboardingReducer = createReducer<OnboardingState>(initialState);
+onboardingReducer.with(goToStep, (state, { payload: [step] }) => ({
     ...state,
     step,
-  }))
-  .with(nextStep, (state) => {
+  }));
+onboardingReducer.with(nextStep, (state) => {
     const idx = STEP_ORDER.indexOf(state.step);
     if (idx < STEP_ORDER.length - 1) {
       return { ...state, step: STEP_ORDER[idx + 1] };
     }
     return state;
-  })
-  .with(setProjectConfig, (state, { payload: [config] }) => ({
+  });
+onboardingReducer.with(setProjectConfig, (state, { payload: [config] }) => ({
     ...state,
     projectConfig: { ...state.projectConfig, ...config },
-  }))
-  .with(setAgentStatus, (state, { payload: [status] }) => ({
+  }));
+onboardingReducer.with(setAgentStatus, (state, { payload: [status] }) => ({
     ...state,
     agentStatus: { ...state.agentStatus, ...status },
-  }))
-  .with(setOnboardingWorkspaceId, (state, { payload: [id] }) => ({
+  }));
+onboardingReducer.with(setOnboardingWorkspaceId, (state, { payload: [id] }) => ({
     ...state,
     workspaceId: id,
-  }))
-  .with(resetOnboarding, () => initialState);
+  }));
+onboardingReducer.with(resetOnboarding, () => initialState);

@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import type {
   DeepLinksState,
   DeepLinkActionPayload,
@@ -49,36 +49,36 @@ export const clearPendingDeepLinkAction = createAction(
   "deepLinks/clearPendingDeepLinkAction"
 );
 
-export const deepLinksReducer = createReducer<DeepLinksState>(initialState)
-  .with(requestHomePageInitializer, (state, { payload: [request] }) => ({
-    ...state,
-    homePageInitializerRequest: {
-      nonce: (state.homePageInitializerRequest?.nonce ?? 0) + 1,
-      applyPrefill: request.applyPrefill ?? false,
-      focus: request.focus ?? false,
-    },
-  }))
-  .with(clearHomePageInitializerRequest, (state) => ({
-    ...state,
-    homePageInitializerRequest: null,
-  }))
-  .with(deepLinkReceived, (state, { payload: [action] }) => ({
-    ...state,
-    pendingAction: action,
-    processing: true,
-    error: null,
-  }))
-  .with(deepLinkProcessingComplete, (state) => ({
-    ...state,
-    pendingAction: null,
-    processing: false,
-  }))
-  .with(deepLinkError, (state, { payload: [error] }) => ({
-    ...state,
-    error,
-    processing: false,
-  }))
-  .with(clearPendingDeepLinkAction, (state) => ({
-    ...state,
-    pendingAction: null,
-  }));
+export const deepLinksReducer = createReducer<DeepLinksState>(initialState);
+deepLinksReducer.with(requestHomePageInitializer, (state, { payload: [request] }) => ({
+  ...state,
+  homePageInitializerRequest: {
+    nonce: (state.homePageInitializerRequest?.nonce ?? 0) + 1,
+    applyPrefill: request.applyPrefill ?? false,
+    focus: request.focus ?? false,
+  },
+}));
+deepLinksReducer.with(clearHomePageInitializerRequest, (state) => ({
+  ...state,
+  homePageInitializerRequest: null,
+}));
+deepLinksReducer.with(deepLinkReceived, (state, { payload: [action] }) => ({
+  ...state,
+  pendingAction: action,
+  processing: true,
+  error: null,
+}));
+deepLinksReducer.with(deepLinkProcessingComplete, (state) => ({
+  ...state,
+  pendingAction: null,
+  processing: false,
+}));
+deepLinksReducer.with(deepLinkError, (state, { payload: [error] }) => ({
+  ...state,
+  error,
+  processing: false,
+}));
+deepLinksReducer.with(clearPendingDeepLinkAction, (state) => ({
+  ...state,
+  pendingAction: null,
+}));

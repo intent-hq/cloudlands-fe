@@ -140,9 +140,8 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_RTK, async () => {
 /**
  * `system:check-node` → daemon `host.findBinary` (name `node`).
  *
- * Dedicated lightweight probe for the host-requirements gate (the full
- * `auggie:status` bridge also checks node, but pays for the whole auggie
- * status sweep). `host.findBinary` best-effort version-probes the resolved
+ * Dedicated lightweight probe for the host-requirements gate.
+ * `host.findBinary` best-effort version-probes the resolved
  * binary, so one RPC yields `{ available, version? }`; the version is
  * normalized (leading `v` stripped) and compared against
  * MINIMUM_NODE_VERSION. Mirrors `CHECK_GIT`: a missing node binary — or a

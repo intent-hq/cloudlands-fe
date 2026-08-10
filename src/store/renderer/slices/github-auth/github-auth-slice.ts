@@ -1,6 +1,6 @@
 import type { GitHubUser } from "$features/github-auth/types";
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import type { GitHubAuthState, GitHubDeviceFlowInfo } from "./github-auth-types";
 
 // ============================================================================
@@ -104,60 +104,61 @@ export const logoutCompleted = createAction("githubAuth/logoutCompleted");
 // Reducer
 // ============================================================================
 
-export const githubAuthReducer = createReducer<GitHubAuthState>(initialState)
-  .with(setGitHubAuthState, (state, { payload }) => ({
-    ...state,
-    isAuthenticated: payload.isAuthenticated,
-    requiresDaemonAuth: payload.requiresDaemonAuth,
-    user: payload.user,
-    needsScopeUpdate: payload.needsScopeUpdate,
-    oauthUrl: payload.oauthUrl,
-  }))
-  .with(setAuthenticating, (state, { payload: [isAuthenticating] }) => ({
-    ...state,
-    isAuthenticating,
-    error: isAuthenticating ? null : state.error,
-  }))
-  .with(setOAuthInfo, (state, { payload }) => ({
-    ...state,
-    oauthUrl: payload.oauthUrl,
-    needsScopeUpdate: payload.needsScopeUpdate,
-  }))
-  .with(setDeviceFlowInfo, (state, { payload: [deviceFlow] }) => ({
-    ...state,
-    deviceFlow,
-  }))
-  .with(authCompleted, (state, { payload }) => ({
-    ...state,
-    isAuthenticated: true,
-    isAuthenticating: false,
-    user: payload.user,
-    oauthUrl: null,
-    deviceFlow: null,
-  }))
-  .with(setGitHubAuthError, (state, { payload: [error] }) => ({
-    ...state,
-    error,
-    isAuthenticating: false,
-    oauthUrl: null,
-    deviceFlow: null,
-  }))
-  .with(clearGitHubAuthError, (state) => ({
-    ...state,
-    error: null,
-  }))
-  .with(authCancelled, (state) => ({
-    ...state,
-    isAuthenticating: false,
-    oauthUrl: null,
-    deviceFlow: null,
-  }))
-  .with(logoutCompleted, (state) => ({
-    ...state,
-    isAuthenticated: false,
-    isAuthenticating: false,
-    user: null,
-    oauthUrl: null,
-    deviceFlow: null,
-  }));
+export const githubAuthReducer = createReducer<GitHubAuthState>(initialState);
 
+
+githubAuthReducer.with(setGitHubAuthState, (state, { payload }) => ({
+  ...state,
+  isAuthenticated: payload.isAuthenticated,
+  requiresDaemonAuth: payload.requiresDaemonAuth,
+  user: payload.user,
+  needsScopeUpdate: payload.needsScopeUpdate,
+  oauthUrl: payload.oauthUrl,
+}));
+githubAuthReducer.with(setAuthenticating, (state, { payload: [isAuthenticating] }) => ({
+  ...state,
+  isAuthenticating,
+  error: isAuthenticating ? null : state.error,
+}));
+githubAuthReducer.with(setOAuthInfo, (state, { payload }) => ({
+  ...state,
+  oauthUrl: payload.oauthUrl,
+  needsScopeUpdate: payload.needsScopeUpdate,
+}));
+githubAuthReducer.with(setDeviceFlowInfo, (state, { payload: [deviceFlow] }) => ({
+  ...state,
+  deviceFlow,
+}));
+githubAuthReducer.with(authCompleted, (state, { payload }) => ({
+  ...state,
+  isAuthenticated: true,
+  isAuthenticating: false,
+  user: payload.user,
+  oauthUrl: null,
+  deviceFlow: null,
+}));
+githubAuthReducer.with(setGitHubAuthError, (state, { payload: [error] }) => ({
+  ...state,
+  error,
+  isAuthenticating: false,
+  oauthUrl: null,
+  deviceFlow: null,
+}));
+githubAuthReducer.with(clearGitHubAuthError, (state) => ({
+  ...state,
+  error: null,
+}));
+githubAuthReducer.with(authCancelled, (state) => ({
+  ...state,
+  isAuthenticating: false,
+  oauthUrl: null,
+  deviceFlow: null,
+}));
+githubAuthReducer.with(logoutCompleted, (state) => ({
+  ...state,
+  isAuthenticated: false,
+  isAuthenticating: false,
+  user: null,
+  oauthUrl: null,
+  deviceFlow: null,
+}));

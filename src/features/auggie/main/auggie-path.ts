@@ -43,7 +43,6 @@ export async function findAuggiePathAsync(): Promise<string | null> {
     const result = await getBackendClient().request<{
       available: boolean;
       path?: string;
-      version?: string;
     }>('host.checkAuggie');
     if (result?.available && typeof result.path === 'string' && result.path.trim()) {
       return result.path.trim();

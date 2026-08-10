@@ -63,6 +63,12 @@ export interface Specialist {
    * PROTOCOL §5.11). Absent when the resolved list is empty.
    */
   modelOptions?: SpecialistModelOption[];
+  /**
+   * Reasoning-effort level for the specialist's model (`specialist.list`
+   * reasoningEffort, PROTOCOL §5.11). Absent when the specialist inherits
+   * the model default.
+   */
+  reasoningEffort?: string;
 }
 
 export const SPECIALISTS: Specialist[] = [

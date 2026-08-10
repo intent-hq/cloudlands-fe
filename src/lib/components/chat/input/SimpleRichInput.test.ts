@@ -62,6 +62,13 @@ vi.mock('./ContextPickerButton.svelte', async () => {
   return { default: SlotOnly };
 });
 
+// The effort control has its own suite (EffortPicker.test.ts); stub it here so
+// this suite does not need the reasoning-effort selector surface.
+vi.mock('./EffortPicker.svelte', async () => {
+  const SlotOnly = (await import('../__tests__/mocks/SlotOnly.svelte')).default;
+  return { default: SlotOnly };
+});
+
 vi.mock('$lib/components/ui/tooltip', async () => {
   const SlotOnly = (await import('../__tests__/mocks/SlotOnly.svelte')).default;
   return { TooltipShortcut: SlotOnly };
@@ -443,7 +450,7 @@ describe('SimpleRichInput provider switch sync', () => {
     await fireEvent.click(confirmButton!);
 
     await waitFor(() => {
-      expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1');
+      expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1', 'codex');
     });
     expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
   });
@@ -616,7 +623,9 @@ describe('SimpleRichInput provider switch sync', () => {
       expect(setModelMock).toHaveBeenCalledTimes(1);
     });
 
-    expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1');
+    // The explicit target provider rides along as the 4th wire arg so the
+    // daemon validates the model against it, not the session's provider.
+    expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1', 'codex');
     expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
   });
 

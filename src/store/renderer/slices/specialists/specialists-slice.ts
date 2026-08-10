@@ -1,12 +1,12 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   addItem,
   createCollection,
   removeItem,
   updateItem,
   type Collection,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 import type { SpecialistFileScope, SpecialistModelOption } from "$shared/specialist-file-types";
 
 // ============================================================================
@@ -46,6 +46,8 @@ export interface FileSpecialist {
    * Undefined when the wire omitted the key (resolved list empty/inherited).
    */
   modelOptions?: SpecialistModelOption[];
+  /** Explicit reasoning-effort level; omitted when inheriting the model default. */
+  reasoningEffort?: string;
   /**
    * Daemon-computed default-model preview (`specialist.list` resolvedModel/
    * resolvedProvider, PROTOCOL §5.11). Absent when resolution yields the
@@ -64,6 +66,8 @@ export interface FileSpecialistWritePayload {
   roleReminder?: string;
   /** Empty list is omitted on the wire (undefined) so inheritance is kept. */
   modelOptions?: SpecialistModelOption[];
+  /** Explicit reasoning-effort level; omitted when inheriting the model default. */
+  reasoningEffort?: string;
   behaviorPrompt: string;
   scope?: SpecialistFileScope;
   workspacePath?: string;
@@ -172,6 +176,7 @@ export const switchModelOverridesForProvider = createAction<[newProviderId: stri
 export const exportBuiltinToFile = createAction<[specialistId: string]>("specialists/exportBuiltinToFile");
 export const saveFileSpecialist = createAction<[specialist: FileSpecialistWritePayload]>("specialists/saveFileSpecialist");
 export const deleteFileSpecialist = createAction<[specialist: FileSpecialistReference]>("specialists/deleteFileSpecialist");
+export const openSpecialistsFolder = createAction("specialists/openSpecialistsFolder");
 export const loadFileSpecialists = createAction("specialists/loadFileSpecialists");
 
 
@@ -179,78 +184,78 @@ export const loadFileSpecialists = createAction("specialists/loadFileSpecialists
 // Reducer
 // ============================================================================
 
-export const specialistsReducer = createReducer<SpecialistsState>(initialState)
-  .with(setBundledSpecialists, (state, { payload: [specialists] }) => ({
+export const specialistsReducer = createReducer<SpecialistsState>(initialState);
+specialistsReducer.with(setBundledSpecialists, (state, { payload: [specialists] }) => ({
     ...state,
     bundledSpecialists: specialists,
-  }))
-  .with(setFileSpecialists, (state, { payload: [specialists] }) => ({
+  }));
+specialistsReducer.with(setFileSpecialists, (state, { payload: [specialists] }) => ({
     ...state,
     fileSpecialists: createCollection<FileSpecialist, "id">("id", specialists),
-  }))
-  .with(setUserOverrides, (state, { payload: [overrides] }) => ({
+  }));
+specialistsReducer.with(setUserOverrides, (state, { payload: [overrides] }) => ({
     ...state,
     userOverrides: {
       codingAgentOverrides: overrides.codingAgentOverrides ?? {},
       modelOverrides: overrides.modelOverrides ?? {},
       behaviorPromptOverrides: overrides.behaviorPromptOverrides ?? {},
     },
-  }))
-  .with(setOverridesLoaded, (state, { payload: [loaded] }) => ({
+  }));
+specialistsReducer.with(setOverridesLoaded, (state, { payload: [loaded] }) => ({
     ...state,
     overridesLoaded: loaded,
-  }))
-  .with(setCustomSpecialistsLoaded, (state, { payload: [loaded] }) => ({
+  }));
+specialistsReducer.with(setCustomSpecialistsLoaded, (state, { payload: [loaded] }) => ({
     ...state,
     customSpecialistsLoaded: loaded,
-  }))
-  .with(setFileSpecialistsLoaded, (state, { payload: [loaded] }) => ({
+  }));
+specialistsReducer.with(setFileSpecialistsLoaded, (state, { payload: [loaded] }) => ({
     ...state,
     fileSpecialistsLoaded: loaded,
-  }))
-  .with(setBundledSpecialistsLoaded, (state, { payload: [loaded] }) => ({
+  }));
+specialistsReducer.with(setBundledSpecialistsLoaded, (state, { payload: [loaded] }) => ({
     ...state,
     bundledSpecialistsLoaded: loaded,
-  }))
-  .with(setSpecialistsFolderPath, (state, { payload: [path] }) => ({
+  }));
+specialistsReducer.with(setSpecialistsFolderPath, (state, { payload: [path] }) => ({
     ...state,
     specialistsFolderPath: path,
-  }))
-  .with(setProviderModelOverrides, (state, { payload: [overrides] }) => ({
+  }));
+specialistsReducer.with(setProviderModelOverrides, (state, { payload: [overrides] }) => ({
     ...state,
     providerModelOverrides: overrides,
-  }))
-  .with(setModelOverride, (state, { payload: [specialistId, model] }) => ({
+  }));
+specialistsReducer.with(setModelOverride, (state, { payload: [specialistId, model] }) => ({
     ...state,
     userOverrides: {
       ...state.userOverrides,
       modelOverrides: { ...state.userOverrides.modelOverrides, [specialistId]: model },
     },
-  }))
-  .with(clearModelOverride, (state, { payload: [specialistId] }) => {
+  }));
+specialistsReducer.with(clearModelOverride, (state, { payload: [specialistId] }) => {
      
     const { [specialistId]: _, ...rest } = state.userOverrides.modelOverrides;
     return {
       ...state,
       userOverrides: { ...state.userOverrides, modelOverrides: rest },
     };
-  })
-  .with(setBehaviorPromptOverride, (state, { payload: [specialistId, prompt] }) => ({
+  });
+specialistsReducer.with(setBehaviorPromptOverride, (state, { payload: [specialistId, prompt] }) => ({
     ...state,
     userOverrides: {
       ...state.userOverrides,
       behaviorPromptOverrides: { ...state.userOverrides.behaviorPromptOverrides, [specialistId]: prompt },
     },
-  }))
-  .with(clearBehaviorPromptOverride, (state, { payload: [specialistId] }) => {
+  }));
+specialistsReducer.with(clearBehaviorPromptOverride, (state, { payload: [specialistId] }) => {
      
     const { [specialistId]: _, ...rest } = state.userOverrides.behaviorPromptOverrides;
     return {
       ...state,
       userOverrides: { ...state.userOverrides, behaviorPromptOverrides: rest },
     };
-  })
-  .with(clearAllOverrides, (state, { payload: [specialistId] }) => {
+  });
+specialistsReducer.with(clearAllOverrides, (state, { payload: [specialistId] }) => {
      
     const { [specialistId]: _c, ...codingAgentRest } = state.userOverrides.codingAgentOverrides;
      
@@ -261,26 +266,26 @@ export const specialistsReducer = createReducer<SpecialistsState>(initialState)
       ...state,
       userOverrides: { codingAgentOverrides: codingAgentRest, modelOverrides: modelRest, behaviorPromptOverrides: behaviorRest },
     };
-  })
-  .with(resetAllOverrides, (state) => ({
+  });
+specialistsReducer.with(resetAllOverrides, (state) => ({
     ...state,
     userOverrides: { codingAgentOverrides: {}, modelOverrides: {}, behaviorPromptOverrides: {} },
-  }))
-  .with(createCustomSpecialist, (state, { payload: [specialist, id] }) => {
+  }));
+specialistsReducer.with(createCustomSpecialist, (state, { payload: [specialist, id] }) => {
     const newSpecialist: CustomSpecialist = { id, ...specialist };
     return {
       ...state,
       customSpecialists: addItem(state.customSpecialists, newSpecialist),
     };
-  })
-  .with(updateCustomSpecialist, (state, { payload: [specialistId, updates] }) => {
+  });
+specialistsReducer.with(updateCustomSpecialist, (state, { payload: [specialistId, updates] }) => {
     const customSpecialists = updateItem(state.customSpecialists, { id: specialistId, ...updates });
     if (customSpecialists === state.customSpecialists) {
       return state;
     }
     return { ...state, customSpecialists };
-  })
-  .with(deleteCustomSpecialist, (state, { payload: [specialistId] }) => {
+  });
+specialistsReducer.with(deleteCustomSpecialist, (state, { payload: [specialistId] }) => {
     const customSpecialists = removeItem(state.customSpecialists, specialistId);
     if (customSpecialists === state.customSpecialists) {
       return state;

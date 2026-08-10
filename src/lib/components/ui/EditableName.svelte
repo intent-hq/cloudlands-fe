@@ -44,6 +44,8 @@
   }: Props = $props();
 
   let isEditing = $state(false);
+  // Initial value only; the $effect below syncs on prop changes.
+  // svelte-ignore state_referenced_locally
   let editedValue = $state(value);
   let inputRef: HTMLInputElement | null = $state(null);
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AgentStatus, WorkspaceStatus, type Workspace } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
-import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { buildHardwareLedSnapshot, type LedSnapshotState } from '../snapshot';
 

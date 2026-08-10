@@ -15,6 +15,7 @@
   import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
   import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
+  import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import { resolveCard, type ResolvedCard } from './cards/card-registry';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
@@ -35,6 +36,7 @@
     parseSuggestedPrompts,
     groupParsedBlocks,
     groupContentBlocks,
+    stripThinkingBlocks,
     filterWorkspaceCardsCoveredByIds,
     type ParsedContent,
     type RenderBlock,
@@ -59,9 +61,12 @@
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import { selectShowReasoningBlocks } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('MessageContent');
+
+  const showReasoningBlocks$ = selectShowReasoningBlocks();
 
   interface Props {
     content: ContentBlock[];
@@ -115,9 +120,14 @@
     });
   });
 
-  // Group content blocks by <group:Name> tags at the ContentBlock level
+  // Group content blocks by <group:Name> tags at the ContentBlock level.
+  // Thinking (reasoning) blocks are hidden unless the global
+  // showReasoningBlocks preference is on. This filter runs AFTER grouping
+  // because groupContentBlocks converts legacy <think>…</think> text into
+  // thinking blocks — a pre-grouping filter would miss those.
   const groupedBlocks = $derived.by(() => {
-    return groupContentBlocks(blocks, isStreaming);
+    const grouped = groupContentBlocks(blocks, isStreaming);
+    return $showReasoningBlocks$ ? grouped : stripThinkingBlocks(grouped);
   });
 
   // Build a map of tool results from tool_result blocks, paired by
@@ -519,7 +529,9 @@
     <details class="p-2 bg-muted/50 rounded-md">
       <summary class="cursor-pointer text-sm text-subtle"> {m.chat_messageContent_thinking_label()} </summary>
       <div class="pl-4 mt-2 text-sm opacity-75">
-        <MarkdownViewer content={block.content || m.chat_shared_processing_fallback()} taskBlockRenderMode="content" />
+        <!-- Daemon-emitted thinking blocks carry `text` (PROTOCOL §7.1); the legacy
+             <think>-tag parser path in messageParser emits `content`. -->
+        <MarkdownViewer content={getContentBlockText(block) || m.chat_shared_processing_fallback()} taskBlockRenderMode="content" />
       </div>
     </details>
   {/if}

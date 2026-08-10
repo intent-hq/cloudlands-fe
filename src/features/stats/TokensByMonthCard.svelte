@@ -31,7 +31,9 @@
 
 <div class="month-card" data-stats-card="by-month" data-loading={loading}>
   <div class="head">
-    <div class="brand"><Logo width={26} /><span class="title">{m.stats_monthCard_title_label()}</span></div>
+    <div class="brand">
+      <Logo width={26} /><span class="title">{m.stats_monthCard_title_label()}</span>
+    </div>
     <span class="corner mono">{yearKey}</span>
   </div>
   <div class="rule"></div>
@@ -44,8 +46,17 @@
 
   <div class="chart-block">
     <div class="legend">
-      <span class="legend-item"><span class="swatch swatch-in"></span>{m.stats_card_legendInput_label()}</span>
-      <span class="legend-item"><span class="swatch swatch-out"></span>{m.stats_card_legendOutput_label()}</span>
+      <span class="legend-item"
+        ><span class="swatch swatch-in"></span>{m.stats_card_legendInput_label()}</span
+      >
+      <span class="legend-item"
+        ><span class="swatch swatch-out"></span>{m.stats_card_legendOutput_label()}</span
+      >
+      {#if model.hasThoughts}
+        <span class="legend-item"
+          ><span class="swatch swatch-thought"></span>{m.stats_card_legendThoughts_label()}</span
+        >
+      {/if}
     </div>
     <div class="chart">
       {#each model.grid as line (line.label)}
@@ -58,6 +69,8 @@
       <div class="bars">
         {#each model.bars as bar, i (i)}
           <span class="bar" style:height="{bar.heightPct}%">
+            <span class="bar-thought" class:seg-stub={!bar.active} style:height="{bar.thoughtPct}%"
+            ></span>
             <span class="bar-out" class:seg-stub={!bar.active} style:height="{bar.outPct}%"></span>
             <span class="bar-in" class:bar-in-best={bar.best} class:seg-stub={!bar.active}></span>
           </span>
@@ -194,6 +207,10 @@
     background: hsl(158 100% 34%);
   }
 
+  .swatch-thought {
+    background: hsl(38 90% 50%);
+  }
+
   .chart {
     position: relative;
     height: 144px;
@@ -229,6 +246,10 @@
     flex-direction: column;
     border-radius: 3px 3px 0 0;
     overflow: hidden;
+  }
+
+  .bar-thought {
+    background: hsl(38 90% 50%);
   }
 
   .bar-out {

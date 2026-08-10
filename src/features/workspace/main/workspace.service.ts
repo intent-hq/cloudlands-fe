@@ -7,11 +7,9 @@
 
 import { BrowserWindow } from 'electron';
 import { promises as fs } from 'fs';
-import * as path from 'path';
 
 import { Logger } from '../../../shared/logger';
 import { m } from '$shared/paraglide/messages.js';
-import { WorkspaceConfig } from '../../../shared/main/config';
 import { getChangeHistoryForWorkspace } from './change-history-persistence';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 
@@ -71,7 +69,6 @@ export class WorkspaceService {
   private summaryInvalidationTimer: NodeJS.Timeout | null = null;
   private readonly SUMMARY_INVALIDATION_DEBOUNCE_MS = 100;
   private disposed = false;
-  private readonly LIST_ENRICHMENT_CONCURRENCY = 3;
   private readonly BACKGROUND_ENRICHMENT_CONCURRENCY = 3;
   // Domain event listeners (workspace:deleted, note:created, note:deleted, git:status-changed)
   // are now handled by sagas in domain-event-listener-sagas.ts.
@@ -124,13 +121,66 @@ export class WorkspaceService {
    * FE having to load-and-drop archived rows. Chief is never surfaced by the daemon
    * `workspace.list` — parity with the retired `findAll()` which relied on
    * `getChiefWorkspace()` being fetched via `findById` on demand.
+   *
+   * Single-flighted and cached for a short TTL (keyed by `includeArchived`) so
+   * concurrent/rapid main-process callers (menu rebuilds, quit checks, IPC list
+   * handlers) coalesce onto one in-flight request instead of each firing their
+   * own `workspace.list` round-trip — the `workspace.list` flood fix (monorepo
+   * Phase 2). A cache entry serves both purposes: concurrent callers before the
+   * request resolves share the same in-flight promise (single-flight), and
+   * callers within the TTL window after it resolves reuse the resolved value.
+   * `expiresAt` starts `null` and is only stamped once the request resolves, so
+   * a slow request (>TTL) is never mistaken for "expired while still pending" —
+   * a pending entry (`expiresAt === null`) is always reused regardless of how
+   * long it has been in flight. A rejected promise is evicted immediately so
+   * the next caller retries rather than waiting out the TTL on a cached failure.
+   * Mutation methods (`updateWorkspace`, `duplicateWorkspace`, `deleteWorkspace`,
+   * `archiveWorkspace`, `unarchiveWorkspace`, `restoreWorkspace`) clear this
+   * cache on success so a list requested shortly after a write does not serve
+   * pre-mutation rows.
    */
+  private readonly WORKSPACE_LIST_CACHE_TTL_MS = 2000;
+  private readonly workspaceListCache = new Map<
+    boolean,
+    { expiresAt: number | null; promise: Promise<Workspace[]> }
+  >();
+
   private async fetchWorkspacesFromDaemon(includeArchived: boolean): Promise<Workspace[]> {
-    const response = (await getBackendClient().request('workspace.list', {
-      includeArchived,
-    })) as { workspaces?: unknown[] };
-    const rows = Array.isArray(response?.workspaces) ? response.workspaces : [];
-    return rows.map((raw) => this.normalizeDaemonWorkspace(raw as Record<string, unknown>));
+    const now = Date.now();
+    const cached = this.workspaceListCache.get(includeArchived);
+    if (cached && (cached.expiresAt === null || cached.expiresAt > now)) {
+      return cached.promise;
+    }
+
+    const entry: { expiresAt: number | null; promise: Promise<Workspace[]> } = {
+      expiresAt: null,
+      promise: (async () => {
+        const response = (await getBackendClient().request('workspace.list', {
+          includeArchived,
+        })) as { workspaces?: unknown[] };
+        const rows = Array.isArray(response?.workspaces) ? response.workspaces : [];
+        return rows.map((raw) => this.normalizeDaemonWorkspace(raw as Record<string, unknown>));
+      })(),
+    };
+    this.workspaceListCache.set(includeArchived, entry);
+
+    entry.promise.then(
+      () => {
+        // Start the TTL window only now that the request has actually
+        // resolved, so a request slower than the TTL is never treated as
+        // expired while still pending.
+        if (this.workspaceListCache.get(includeArchived) === entry) {
+          entry.expiresAt = Date.now() + this.WORKSPACE_LIST_CACHE_TTL_MS;
+        }
+      },
+      () => {
+        if (this.workspaceListCache.get(includeArchived) === entry) {
+          this.workspaceListCache.delete(includeArchived);
+        }
+      },
+    );
+
+    return entry.promise;
   }
 
   /**
@@ -285,7 +335,7 @@ export class WorkspaceService {
     limit?: number;
     offset?: number;
     includeArchived?: boolean;
-    lite?: boolean; // Defaults to true; pass false to opt into bounded list enrichment
+    lite?: boolean; // Accepted for caller compatibility; list rows are always metadata-only
   }): Promise<
     Result<{ workspaces: WorkspaceMetadata[]; total: number; hasMore: boolean }, string>
   > {
@@ -316,46 +366,14 @@ export class WorkspaceService {
       const limit = options?.limit || filteredWorkspaces.length;
       const paginatedWorkspaces = filteredWorkspaces.slice(offset, offset + limit);
 
-      let sanitizedWorkspaces: WorkspaceMetadata[];
-      // PERF: Default workspace lists to lite mode so startup and validation flows
-      // never trigger unbounded per-workspace enrichment. Callers must opt into
-      // full enrichment explicitly, and even then we cap concurrency.
-      const useLiteMode = options?.lite ?? true;
-      if (useLiteMode) {
-        // PERF: In lite mode, skip heavy buildListWorkspace() computations.
-        // Workspace payloads are metadata-only; diff/git/task summaries are
-        // fetched on demand via dedicated endpoints.
-        logger.debug('Using lite mode for workspace list - skipping heavy computations');
-
-        // Fetch agent IDs with bounded concurrency — it's cheap (directory listings)
-        // but we still don't want 200 concurrent reads.
-        const AGENT_IDS_CONCURRENCY = 10;
-        const agentIdsResults = new Array<string[]>(paginatedWorkspaces.length);
-        let agentIdsNextIndex = 0;
-        await Promise.all(
-          Array.from(
-            { length: Math.min(AGENT_IDS_CONCURRENCY, paginatedWorkspaces.length) },
-            async () => {
-              while (true) {
-                const idx = agentIdsNextIndex++;
-                if (idx >= paginatedWorkspaces.length) return;
-                const paginatedWorkspace = paginatedWorkspaces[idx];
-                if (!paginatedWorkspace) continue;
-                agentIdsResults[idx] = await this.getWorkspaceAgentIds(paginatedWorkspace.id);
-              }
-            },
-          ),
-        );
-
-        sanitizedWorkspaces = paginatedWorkspaces.map((workspace, i) =>
-          this.toWorkspaceMetadata(workspace, agentIdsResults[i]),
-        );
-      } else {
-        sanitizedWorkspaces = await this.buildListWorkspacesWithConcurrency(
-          paginatedWorkspaces,
-          this.LIST_ENRICHMENT_CONCURRENCY,
-        );
-      }
+      // Workspace payloads are metadata-only; diff/git/task summaries are
+      // fetched on demand via dedicated endpoints, and agent IDs come straight
+      // off the daemon `workspace.list` rows' `agentSummary.agentIds`
+      // (PROTOCOL.md §5.1 card aggregates) — no per-workspace `agent.list`
+      // fan-out (monorepo#1768).
+      const sanitizedWorkspaces = paginatedWorkspaces.map((workspace) =>
+        this.toWorkspaceMetadata(workspace),
+      );
 
       // Hydrate repo/PR data incrementally in the background.
       // This keeps the bulk list response cheap while still filling in richer data.
@@ -394,81 +412,26 @@ export class WorkspaceService {
     return { ok: false, error: (result as any).error };
   }
 
-  private async buildListWorkspace(workspace: Workspace): Promise<WorkspaceMetadata> {
-    // Workspace payloads are metadata-only: agent summary carries IDs only, and
-    // diff/git/task summaries are served by dedicated on-demand endpoints.
-    const agentIds = await this.getWorkspaceAgentIds(workspace.id);
-    return this.toWorkspaceMetadata(workspace, agentIds);
-  }
-
-  private async buildListWorkspacesWithConcurrency(
-    workspaces: Workspace[],
-    concurrency: number,
-  ): Promise<WorkspaceMetadata[]> {
-    if (workspaces.length === 0) {
-      return [];
-    }
-
-    const results = new Array<WorkspaceMetadata>(workspaces.length);
-    let nextIndex = 0;
-    const workerCount = Math.max(1, Math.min(concurrency, workspaces.length));
-
-    await Promise.all(
-      Array.from({ length: workerCount }, async () => {
-        while (true) {
-          const currentIndex = nextIndex++;
-          if (currentIndex >= workspaces.length) {
-            return;
-          }
-
-          const workspace = workspaces[currentIndex];
-          if (!workspace) continue;
-          results[currentIndex] = await this.buildListWorkspace(workspace);
-        }
-      }),
-    );
-
-    return results;
-  }
-
-  /**
-   * Get the agent IDs for a workspace. Workspace payloads carry agent IDs only;
-   * detailed agent state is served by agent endpoints.
-   */
-  private async getWorkspaceAgentIds(workspaceId: WorkspaceId): Promise<string[]> {
-    try {
-      // Route through the daemon (PROTOCOL.md §5.5 `agent.list`) and project
-      // to the ids the workspace payload carries.
-      const result = (await getBackendClient().request('agent.list', {
-        workspaceId,
-      })) as { agents?: Array<{ id: string }> };
-      return (result?.agents ?? []).map((a) => a.id);
-    } catch (error) {
-      logger.warn('Failed to list agent IDs for workspace', {
-        workspaceId,
-        error: (error as Error).message,
-      });
-      return [];
-    }
-  }
-
   /**
    * Convert a workspace to its metadata-only payload shape: high-frequency
-   * summary fields are stripped and agent summary carries IDs only.
+   * summary fields are stripped and agent summary carries IDs only, projected
+   * from the daemon row's `agentSummary.agentIds` (PROTOCOL.md §5.1 card
+   * aggregates) and present only when non-empty.
    */
-  private toWorkspaceMetadata(workspace: Workspace, agentIds?: string[]): WorkspaceMetadata {
+  private toWorkspaceMetadata(workspace: Workspace): WorkspaceMetadata {
     const {
       diffs: _diffs,
       diffSummary: _diffSummary,
-      agentSummary: _agentSummary,
+      agentSummary,
       taskStats: _taskStats,
       gitSummary: _gitSummary,
       ...metadata
     } = workspace;
 
+    const agentIds = agentSummary?.agentIds ?? [];
     return {
       ...metadata,
-      ...(agentIds && agentIds.length > 0 ? { agentSummary: { agentIds } } : {}),
+      ...(agentIds.length > 0 ? { agentSummary: { agentIds } } : {}),
     };
   }
 
@@ -869,8 +832,7 @@ export class WorkspaceService {
       }
 
       const response = (await getBackendClient().request('workspace.update', daemonParams)) as
-        | { workspace?: unknown }
-        | undefined;
+        { workspace?: unknown } | undefined;
       const rawWorkspace =
         response && typeof response === 'object' ? response.workspace : undefined;
       if (!rawWorkspace || typeof rawWorkspace !== 'object') {
@@ -917,6 +879,10 @@ export class WorkspaceService {
       if (requestedPullRequests !== undefined) {
         merged.pullRequests = requestedPullRequests ?? [];
       }
+
+      // Invalidate the workspace.list cache so a list requested shortly after
+      // this write does not serve pre-mutation rows.
+      this.workspaceListCache.clear();
 
       // Emit event
       mainDispatch(
@@ -966,6 +932,10 @@ export class WorkspaceService {
         return { ok: false, error: m.workspaceService_invalidDaemonPayload_error() };
       }
       const newWorkspace = this.normalizeDaemonWorkspace(raw as Record<string, unknown>);
+
+      // Invalidate the workspace.list cache so a list requested shortly after
+      // this write does not serve pre-mutation rows.
+      this.workspaceListCache.clear();
 
       mainDispatch(
         workspaceCreated({
@@ -1025,6 +995,10 @@ export class WorkspaceService {
       // idempotent success.
       await getBackendClient().request('workspace.delete', { workspaceId: id });
 
+      // Invalidate the workspace.list cache so a list requested shortly after
+      // this write does not serve pre-mutation rows.
+      this.workspaceListCache.clear();
+
       // Emit event
       mainDispatch(
         workspaceDeleted({
@@ -1069,6 +1043,10 @@ export class WorkspaceService {
       }
 
       await getBackendClient().request('workspace.archive', { workspaceId: id });
+
+      // Invalidate the workspace.list cache so a list requested shortly after
+      // this write does not serve pre-mutation rows.
+      this.workspaceListCache.clear();
 
       // Refetch to get the daemon-canonical workspace (server-stamped timestamps
       // and archived flags). Fall back to a locally-derived shape if the refetch
@@ -1119,6 +1097,10 @@ export class WorkspaceService {
       }
 
       await getBackendClient().request('workspace.unarchive', { workspaceId: id });
+
+      // Invalidate the workspace.list cache so a list requested shortly after
+      // this write does not serve pre-mutation rows.
+      this.workspaceListCache.clear();
 
       let workspace = await this.fetchWorkspaceFromDaemon(id);
       if (!workspace) {
@@ -1173,6 +1155,10 @@ export class WorkspaceService {
       }
       const workspace = this.normalizeDaemonWorkspace(raw as Record<string, unknown>);
 
+      // Invalidate the workspace.list cache so a list requested shortly after
+      // this write does not serve pre-mutation rows.
+      this.workspaceListCache.clear();
+
       mainDispatch(
         workspaceUpdated({
           workspaceId: id,
@@ -1208,108 +1194,6 @@ export class WorkspaceService {
         ok: false,
         error: this.extractErrorMessage(error),
       };
-    }
-  }
-
-  /**
-   * Migrate workspaces from ~/intent/{id} to ~/intent/workspaces/{id}.
-   * For workspaces that exist in both locations, merges the .workspace/ metadata
-   * (~/intent/{id}/.workspace/ is authoritative) and removes the old location.
-   * Should be called once at startup.
-   */
-  async migrateWorkspacesToCanonicalLocation(): Promise<{
-    migrated: number;
-    errors: number;
-  }> {
-    let migrated = 0;
-    let errors = 0;
-
-    const workspaceRoot = WorkspaceConfig.WORKSPACE_ROOT;
-    const workspacesBase = WorkspaceConfig.WORKSPACES_BASE;
-
-    // Ensure canonical target directory exists
-    await fs.mkdir(workspacesBase, { recursive: true });
-
-    let entries: { name: string; isDirectory: () => boolean }[];
-    try {
-      entries = await fs.readdir(workspaceRoot, { withFileTypes: true });
-    } catch {
-      return { migrated, errors };
-    }
-
-    for (const entry of entries) {
-      if (
-        !entry.isDirectory() ||
-        !WorkspaceConfig.isValidWorkspaceId(entry.name) ||
-        WorkspaceConfig.isVirtualWorkspace(entry.name)
-      ) {
-        continue;
-      }
-
-      const id = entry.name;
-      const sourcePath = path.join(workspaceRoot, id);
-      const targetPath = path.join(workspacesBase, id);
-
-      try {
-        const targetExists = await fs
-          .access(targetPath)
-          .then(() => true)
-          .catch(() => false);
-
-        if (targetExists) {
-          // Target already exists -- merge .workspace/ metadata from source to target.
-          // Source (~/intent/{id}/.workspace/) is authoritative.
-          const sourceMetadata = path.join(sourcePath, WorkspaceConfig.METADATA_FOLDER);
-          const sourceMetadataExists = await fs
-            .access(sourceMetadata)
-            .then(() => true)
-            .catch(() => false);
-
-          if (sourceMetadataExists) {
-            const targetMetadata = path.join(targetPath, WorkspaceConfig.METADATA_FOLDER);
-            await this.mergeDirectoryRecursive(sourceMetadata, targetMetadata);
-          }
-
-          // Remove the old location
-          await fs.rm(sourcePath, { recursive: true, force: true });
-          migrated++;
-          logger.info('Migrated workspace (merged)', { id, from: sourcePath, to: targetPath });
-        } else {
-          // Target doesn't exist -- move the whole directory
-          await fs.rename(sourcePath, targetPath);
-          migrated++;
-          logger.info('Migrated workspace (moved)', { id, from: sourcePath, to: targetPath });
-        }
-      } catch (err) {
-        errors++;
-        logger.warn('Failed to migrate workspace', { id, error: err });
-      }
-    }
-
-    if (migrated > 0 || errors > 0) {
-      logger.info('Workspace migration completed', { migrated, errors });
-    }
-
-    return { migrated, errors };
-  }
-
-  /**
-   * Recursively copy contents of source directory into target directory.
-   * Files in source overwrite files in target (source is authoritative).
-   */
-  private async mergeDirectoryRecursive(source: string, target: string): Promise<void> {
-    await fs.mkdir(target, { recursive: true });
-    const entries = await fs.readdir(source, { withFileTypes: true });
-
-    for (const entry of entries) {
-      const srcPath = path.join(source, entry.name);
-      const tgtPath = path.join(target, entry.name);
-
-      if (entry.isDirectory()) {
-        await this.mergeDirectoryRecursive(srcPath, tgtPath);
-      } else {
-        await fs.copyFile(srcPath, tgtPath);
-      }
     }
   }
 
@@ -1522,6 +1406,7 @@ export class WorkspaceService {
     // Clear metadata/UI-only caches.
     this.lastContextCache.clear();
     this.contextCacheOrder = [];
+    this.workspaceListCache.clear();
 
     logger.debug('WorkspaceService cleaned up');
   }

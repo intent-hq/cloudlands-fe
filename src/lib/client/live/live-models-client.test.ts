@@ -2,8 +2,8 @@
  * Wire-contract tests for the live models domain (PROTOCOL §5.30).
  *
  * Regression: the models catalog was stubbed to the mock client, so the
- * daemon's rich `models.list` view (auggie CLI + 5-minute cache + static
- * fallback) never reached the picker. Asserts (a) the exact JSON-RPC request
+ * daemon's rich `models.list` view (auggie CLI + persistent catalog cache +
+ * static fallback) never reached the picker. Asserts (a) the exact JSON-RPC request
  * the client emits, (b) PROTOCOL §5.30 `ModelInfo` responses map to the FE
  * `AuggieModel` shape (`id → value`, `name → label`) with optional metadata
  * preserved, and (c) transport failures / malformed payloads fold to an empty

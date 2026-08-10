@@ -164,6 +164,8 @@ export interface AgentCreateRequest {
   workspaceId: string;
   prompt?: string;
   model?: string;
+  /** Reasoning effort for the session's model (Option B session field, §5.5). */
+  reasoningEffort?: string;
   specialist?: string | null;
   name?: string;
   nameExplicitlySet?: boolean;
@@ -575,6 +577,20 @@ export interface AgentsClient {
     messageId: string;
   }): Promise<MutationResult>;
   /**
+   * Set or clear the session-level reasoning effort (`agent.update`, §5.5 —
+   * the partial-mutation writer; `reasoningEffort` joins the `changes`
+   * whitelist with the Option B session field). A string sets the level, an
+   * explicit `null` clears it back to the provider default. The daemon
+   * persists the field (survives restarts), applies it on the next prompt
+   * send, and emits `agent:updated` so other windows converge. Transport /
+   * daemon errors fold into `{ success: false, error }`.
+   */
+  setReasoningEffort(params: {
+    agentId: string;
+    workspaceId: string;
+    reasoningEffort: string | null;
+  }): Promise<MutationResult>;
+  /**
    * Rename an agent session (`agent.rename`, §5.5). The daemon persists the
    * new name and an applied rename emits `agent:renamed` (in
    * `AGENT_LIFECYCLE_EVENTS`), so the reactive `subscribe` refetch reconciles
@@ -948,7 +964,8 @@ export interface GitClient {
    * commit's own changes against its first parent (`<commitHash>^..<commitHash>`).
    */
   diffs(workspaceId: string, options?: GitDiffsOptions): Promise<DiffChunk[]>;
-  trackedChanges(workspaceId: string): Promise<TrackedChange[]>;
+  /** Returns `null` when the tracked-change read fails; an empty array is a successful empty result. */
+  trackedChanges(workspaceId: string): Promise<TrackedChange[] | null>;
   /**
    * `file-tracking.loadCommits` — workspace commits with agent attribution.
    * When `includeOlder` is true, fetches commits before and including the workspace boundary.
@@ -1454,7 +1471,13 @@ export interface SpecialistDef {
    * `list`/`get` when the resolved list is non-empty, omitted otherwise
    * (never `null`/`[]` on the wire); accepted in `create`/`edit` spec bodies.
    */
-  modelOptions?: { model: string; hint: string }[];
+  modelOptions?: { model: string; hint: string; reasoningEffort?: string }[];
+  /**
+   * Reasoning-effort level for the specialist's model (additive, PROTOCOL
+   * §5.11): one of the model's catalog `effortLevels`. Omitted when the
+   * specialist inherits the model default (never `null`/`""` on the wire).
+   */
+  reasoningEffort?: string;
   prompt?: string;
   behaviorPrompt?: string;
   source: "project" | "user" | "bundled";
@@ -1517,12 +1540,17 @@ export interface ProvidersClient {
 /** Wire `period` mode for `stats.getUsage`. */
 export type UsageStatsPeriod = "24h" | "month" | "year";
 
-/** The 4 separate token counters for one `stats.getUsage` aggregation cell. */
+/** The separate token counters for one `stats.getUsage` aggregation cell. */
 export interface UsageTokenTotals {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
+  /**
+   * Reasoning ("thought") tokens — **omitted when zero or unreported** (§5.23),
+   * so an absent field means no provider broke reasoning out of `outputTokens`.
+   */
+  thoughtTokens?: number;
 }
 
 /** Per-model rollup row (sorted desc by total tokens by the daemon). */
@@ -1642,6 +1670,17 @@ export interface GitHubBranchListing {
 }
 
 /**
+ * Cached-refs branch listing (`github.branches.listCached`, §5.27): branch
+ * names read from the daemon's local repo cache with zero network I/O.
+ * `cached: false` means the repo has no usable cache entry (cold cache).
+ */
+export interface GitHubCachedBranchListing {
+  cached: boolean;
+  branches: string[];
+  defaultBranch?: string;
+}
+
+/**
  * Remote repo-config read (`github.repoConfig.get`, §5.27 v2.4) for a GitHub
  * repo with no local checkout: the committed `.intent/config.json` fetched
  * via the contents API. `config` is null when the file (or repo/ref) is
@@ -1662,6 +1701,14 @@ export interface IntegrationsClient {
    * explicit error/auth state — never a fabricated branch list.
    */
   githubBranches(owner: string, repo: string): Promise<GitHubBranchListing>;
+  /**
+   * Branch names from the daemon's local repo cache
+   * (`github.branches.listCached`, §5.27) — zero network I/O, purely a fast
+   * first paint for the BranchSelector. NEVER throws: failures fold to a
+   * cold-cache miss (`{ cached: false, branches: [] }`) so `githubBranches`
+   * stays the only error authority.
+   */
+  githubBranchesCached(owner: string, repo: string): Promise<GitHubCachedBranchListing>;
   /**
    * The repo's committed `.intent/config.json` (`github.repoConfig.get`,
    * §5.27 v2.4) for a GitHub repo without a local checkout. `ref` defaults to

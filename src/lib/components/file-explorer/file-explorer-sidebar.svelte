@@ -51,6 +51,7 @@
   // Capture dispatch at component init time (store.dispatch reads the configured app store,
   // which is only valid during component initialization).
 
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const wsIdStore = writable(workspaceId);
   const fileExplorerWorkspacePath$ = selectEffectiveFileExplorerWorkspacePath(wsIdStore);
   const rootNode$ = selectFileExplorerRootNode(wsIdStore);

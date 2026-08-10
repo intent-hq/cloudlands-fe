@@ -39,10 +39,20 @@ import {
   onBackendNotification,
   onBackendReconnected,
 } from '$lib/client/live/backend-transport';
+import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
-import { getItems } from '$lib/store-shim/utils/collections/collection-utils';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { isWorkspaceDisplayStatus, WorkspaceStatus } from '$shared/types';
-import { hydrateAgentsRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import {
+  hydrateAgentsRequested,
+  setAgents,
+  setAgentsLoaded,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import {
+  bulkUpsertSessions,
+  upsertSession,
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import {
   hudActivated,
   hudAttentionChanged,
@@ -50,11 +60,11 @@ import {
   hudDisplayStatusChanged,
   hudFeedEntryReceived,
   hudQuestionCaptured,
-  hudQuestionSuperseded,
   hudRateHistoryFailed,
   hudRateHistoryLoaded,
   hudUsageFailed,
   hudUsageLoaded,
+  hudQuestionsResolvedForWorkspace,
   type HudFeedEntry,
   type HudRateHistorySample,
   type HudRateSample,
@@ -100,8 +110,20 @@ export const HUD_RATE_HISTORY_LIMIT = 40;
 
 function sumTotals(totals: HudUsageTotals): number {
   return (
-    totals.inputTokens + totals.outputTokens + totals.cacheReadTokens + totals.cacheCreationTokens
+    totals.inputTokens +
+    totals.outputTokens +
+    totals.cacheReadTokens +
+    totals.cacheCreationTokens +
+    (totals.thoughtTokens ?? 0)
   );
+}
+
+const QUESTION_HOLD_DISPLAY_STATUSES = new Set(['failed', 'blocked', 'needs_attention']);
+
+function resolveQuestionsForDisplayStatus(workspaceId: string, displayStatus: string): void {
+  if (!QUESTION_HOLD_DISPLAY_STATUSES.has(displayStatus)) {
+    appStore.dispatch(hudQuestionsResolvedForWorkspace(workspaceId));
+  }
 }
 
 /** Fetch the 24h usage rollup (§5.36) and fold it into the slice. */
@@ -149,10 +171,7 @@ async function loadRateHistory(): Promise<void> {
     if (!Array.isArray(samples)) {
       throw new Error('stats.getRateHistory result is missing `samples` (PROTOCOL §5.39)');
     }
-    const mapped: HudRateHistorySample[] = samples.map((sample) => ({
-      bucketUtc: sample.bucketUtc,
-      tokens: sumTotals(sample),
-    }));
+    const mapped: HudRateHistorySample[] = samples.map((sample) => ({ ...sample }));
     appStore.dispatch(hudRateHistoryLoaded({ samples: mapped, fetchedAtMs: Date.now() }));
   } catch (error) {
     appStore.dispatch(hudRateHistoryFailed(error instanceof Error ? error.message : String(error)));
@@ -189,6 +208,23 @@ function hydrateVisibleWorkspaceAgents(): void {
     if (hydratedAgentWorkspaceIds.has(workspaceId)) continue;
     hydratedAgentWorkspaceIds.add(workspaceId);
     appStore.dispatch(hydrateAgentsRequested(workspaceId));
+    void hydrateHudWorkspaceAgents(workspaceId);
+  }
+}
+
+async function hydrateHudWorkspaceAgents(workspaceId: string): Promise<void> {
+  try {
+    const listed = await appClient.agents.list(workspaceId);
+    const agents = listed
+      .filter((agent) => !isAgentDeletionPending(String(agent.id)))
+      .map((agent) => ({ ...agent, messages: agent.messages ?? [] }));
+    appStore.dispatch(setAgentsLoaded(workspaceId, true));
+    if (agents.length === 0) return;
+    appStore.dispatch(setAgents(workspaceId, agents));
+    appStore.dispatch(bulkUpsertSessions(agents));
+    for (const agent of agents) appStore.dispatch(upsertSession(agent));
+  } catch (error) {
+    logger.warn('agent.list hydration failed for HUD workspace', { workspaceId, error });
   }
 }
 
@@ -243,21 +279,6 @@ function handleEvent(event: WorkspaceEvent): void {
       appStore.dispatch(hudQuestionCaptured(question));
     }
   }
-  if (type === 'agent:status-changed') {
-    // Question supersession (§7.1): a question hold breaks only on a
-    // user-origin delivery, and that delivery starts a turn — so a running
-    // transition means the captured question was answered (or explicitly
-    // released) and must stop pending on every HUD surface.
-    const agentId = data.agentId;
-    const status = data.status;
-    if (
-      typeof agentId === 'string' &&
-      typeof status === 'string' &&
-      toHudAgentStateBucket(status) === 'running'
-    ) {
-      appStore.dispatch(hudQuestionSuperseded(agentId));
-    }
-  }
   if (type === 'workspace:attention-changed') {
     const attention = data.attention;
     if (workspaceId && typeof attention === 'string') {
@@ -273,6 +294,7 @@ function handleEvent(event: WorkspaceEvent): void {
     const displayStatus = data.displayStatus;
     if (workspaceId && isWorkspaceDisplayStatus(displayStatus)) {
       appStore.dispatch(hudDisplayStatusChanged(workspaceId, displayStatus));
+      resolveQuestionsForDisplayStatus(workspaceId, displayStatus);
     }
   }
   const entry = mapEventToFeedEntry(event);
@@ -398,6 +420,11 @@ export function startHudSubscription(): () => void {
     const workspaces = state.workspace?.workspaces;
     if (workspaces === lastWorkspaces) return;
     lastWorkspaces = workspaces;
+    for (const workspace of workspaces ? getItems(workspaces) : []) {
+      if (typeof workspace.displayStatus === 'string') {
+        resolveQuestionsForDisplayStatus(String(workspace.id), workspace.displayStatus);
+      }
+    }
     queueMicrotask(() => {
       if (!disposed) hydrateVisibleWorkspaceAgents();
     });

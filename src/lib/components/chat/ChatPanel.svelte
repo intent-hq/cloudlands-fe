@@ -41,6 +41,7 @@
   untrack,
   tick,
 } from 'svelte';
+  import { deepEqual } from 'fast-equals';
   import { writable } from 'svelte/store';
   import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
   import type { AgentMessage } from '$shared/types';
@@ -65,6 +66,7 @@
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
+  import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectAllTabs as selectPanelLayoutAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -150,7 +152,10 @@
   type QuestionAnswer,
 } from './questions/QuestionWizard.svelte';
   import { deriveWizardPendingQuestions } from './questions/wizard-gate';
-  import { flattenAnswersToMessage } from './questions/answer-message';
+  import {
+    buildAnswerMessageMetadata,
+    flattenAnswersToMessage,
+  } from './questions/answer-message';
   import { groupMessagesByDate } from '$lib/utils/timeFormatting';
   import {
   animateScrollTo,
@@ -167,10 +172,8 @@
   faLock,
   faLockOpen,
 } from '@fortawesome/free-solid-svg-icons';
-  import {
-  fade,
-  slide,
-} from 'svelte/transition';
+  import { fade } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
   import { resolvePreviousUserMessageId } from '$lib/utils/message-navigation';
   import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -179,6 +182,7 @@
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
   import BackgroundHooksRow from './BackgroundHooksRow.svelte';
+  import MonitoredPrsRow from './MonitoredPrsRow.svelte';
   import Button from '../ui/button/button.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
@@ -328,7 +332,9 @@
   const isChiefWorkspace = $derived(workspace?.id === CHIEF_WORKSPACE_ID);
 
   // Writable store mirroring workspace.id so Redux selectors re-evaluate reactively
+  // svelte-ignore state_referenced_locally -- store is seeded with the current value; the effects below mirror prop changes.
   const workspaceIdStore = writable(workspace?.id ?? '');
+  // svelte-ignore state_referenced_locally -- store is seeded with the current value; the effects below mirror prop changes.
   const agentIdStore = writable(agentId ?? '');
   $effect(() => {
     workspaceIdStore.set(workspace?.id ?? '');
@@ -407,6 +413,7 @@
 
   // DEBUG: Unique instance ID to detect duplicate ChatPanel mounts
   const instanceId = Math.random().toString(36).substring(2, 8);
+  // svelte-ignore state_referenced_locally -- one-shot creation log; only the initial agentId is relevant.
   logger.debug('[ChatPanel] INSTANCE CREATED', { instanceId, agentId });
 
   let scrollContainer = $state<HTMLDivElement>();
@@ -503,7 +510,7 @@
     }
     // Suggested prompts stay hidden whenever the turn has pending Agent Q&A
     // questions — including while the wizard is Ignore-collapsed. Only
-    // answering (or any superseding user message) brings them back.
+    // answering, dismissing, or a newer question set brings them back.
     if (pendingQuestions) {
       return [];
     }
@@ -520,9 +527,11 @@
     return [];
   });
 
-  // Agent Q&A: question blocks on the LAST assistant message with NO later
-  // user message (and not streaming) replace the composer with the sequential
-  // wizard. Derivation is purely transcript-based (wire contract), so
+  // Agent Q&A: question blocks on the newest question-bearing assistant
+  // message (not streaming) replace the composer with the sequential wizard,
+  // and stay pending across later plain user messages and agent replies until
+  // answered (answer-tagged user row), dismissed, or superseded by a newer
+  // question set. Derivation is purely transcript-based (wire contract), so
   // restored sessions re-surface unanswered questions automatically.
   // The gate (own active turn, NOT the broad running gate — an agent paused
   // on delegated agents has ended its turn and its questions must surface)
@@ -533,8 +542,8 @@
     const showingPendingUserMessage = !!pendingMessage && !hasUserMessage;
     // Reading $agentIsResponding$ keeps this $derived reactive to gate flips
     // that do not change the transcript; the dismissal marker read keeps it
-    // reactive to metadata-only session updates (optimistic dismiss /
-    // agent:updated); the shared helper re-reads both from store state.
+    // reactive to metadata-only session updates (agent:updated); the shared
+    // helper re-reads both from store state.
     void $agentIsResponding$;
     void $agentSession$?.metadata?.dismissedQuestionsMessageId;
     return deriveWizardPendingQuestions(
@@ -574,12 +583,13 @@
     }),
   );
 
-  // Dismiss = persistent, unlike Ignore: the mutation middleware stamps
-  // `dismissedQuestionsMessageId` into session metadata optimistically (the
-  // wizard-gate reads it, so the wizard hides immediately) and forwards
-  // `agent.dismissQuestions` — the daemon persists the marker (survives
-  // reload) and releases the question hold. On failure the middleware rolls
-  // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
+  // Dismiss = persistent, unlike Ignore: the dismiss saga forwards
+  // `agent.dismissQuestions` — the daemon persists
+  // `dismissedQuestionsMessageId` in session metadata (survives reload),
+  // releases the question hold, and pushes the marker back via
+  // `agent:updated` (the wizard-gate reads it, so the wizard hides). On
+  // failure no marker lands, so the wizard stays pending and the saga
+  // surfaces the error toast.
   function handleQuestionWizardDismiss() {
     if (!workspace || !pendingQuestions) return;
     appStore.dispatch(
@@ -588,12 +598,13 @@
   }
 
   // Completing the wizard flattens all answers into ONE plain-text user
-  // message of `Q:`/`A:` pairs (wire contract — no messageMetadata) sent
-  // through the ordinary send path. The resulting user message supersedes
-  // the questions, so the wizard unmounts, the composer restores, and the
-  // in-transcript cards render resolved.
+  // message of `Q:`/`A:` pairs sent through the ordinary send path, tagged
+  // with `messageMetadata { type: "question_answers",
+  // answeredQuestionsMessageId }` (wire contract). That structured tag — not
+  // the text — resolves the pending set, so the wizard unmounts and the
+  // composer restores; an untagged user message leaves the Q&A pending.
   function handleQuestionWizardComplete(answers: QuestionAnswer[]) {
-    if (!workspace || !isActive) return;
+    if (!workspace || !isActive || !pendingQuestions) return;
     const text = flattenAnswersToMessage(answers);
     logger.info('Question wizard completed', { answerCount: answers.length });
     appStore.dispatch(
@@ -603,6 +614,7 @@
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
+        messageMetadata: buildAnswerMessageMetadata(pendingQuestions.messageId),
       }),
     );
     void performLocalSendCleanup({ followBottom: true });
@@ -1102,8 +1114,9 @@
   });
 
   // Draft restore/save lifecycle (gated restore + debounced save); see
-  // chat-panel-draft.svelte.ts. While gateActive the composer blocks typing
-  // and shows the ChatDraftLoadingGate indicator.
+  // chat-panel-draft.svelte.ts. While gateActive the composer rejects focus
+  // and typing; the ChatDraftLoadingGate indicator only appears once the
+  // restore is slow enough for gateVisible to flip.
   const draftManager = createChatDraftManager({
     drafts: appClient.drafts,
     workspaceId: () => workspace?.id,
@@ -1176,13 +1189,23 @@
 
   // Get panel layout manager for reading available panels (not agent tabs)
   const panelLayoutManager = $derived(workspace?.id ? getPanelLayoutManager(workspace.id) : null);
+  let previousAvailablePanelContexts: PanelContextItem[] = [];
+
+  function stabilizeAvailablePanelContexts(panels: PanelContextItem[]): PanelContextItem[] {
+    if (deepEqual(previousAvailablePanelContexts, panels)) {
+      return previousAvailablePanelContexts;
+    }
+
+    previousAvailablePanelContexts = panels;
+    return panels;
+  }
 
   // Derive available panel contexts from all open tabs (excluding agent tabs and this agent's tab)
   // Reading $allPanelLayoutTabs$ creates a reactive dependency on Redux panel-layout state,
   // so this derived recomputes whenever tabs are added, removed, or reordered.
   let availablePanelContexts = $derived.by((): PanelContextItem[] => {
     void $allPanelLayoutTabs$; // reactive dependency on panel layout tab changes
-    if (!panelLayoutManager || !workspace?.id) return [];
+    if (!panelLayoutManager || !workspace?.id) return stabilizeAvailablePanelContexts([]);
 
     const panels: PanelContextItem[] = [];
     const panelIds = panelLayoutManager.getPanelIds();
@@ -1286,23 +1309,27 @@
     }
 
     // Sort panels: active tabs first, then alphabetically by label
-    return panels.sort((a, b) => {
+    const sortedPanels = panels.sort((a, b) => {
       if (a.isActive && !b.isActive) return -1;
       if (!a.isActive && b.isActive) return 1;
       return a.label.localeCompare(b.label);
     });
+
+    return stabilizeAvailablePanelContexts(sortedPanels);
   });
 
   // Update the multi-panel context store when available panels change
-  // Use untrack to prevent infinite loop - we only care about the value, not reactivity of the update
   $effect(() => {
-    if (workspace?.id) {
-      const panels = availablePanelContexts;
-      untrack(() => {
-        appStore.dispatch(setMultiPanelWorkspace(workspace.id));
-        appStore.dispatch(updateMultiPanels(panels));
-      });
+    const workspaceId = workspace?.id ?? null;
+    if (!workspaceId || !isActive) {
+      return;
     }
+
+    const panels = availablePanelContexts;
+    untrack(() => {
+      appStore.dispatch(setMultiPanelWorkspace(workspaceId));
+      appStore.dispatch(updateMultiPanels(panels));
+    });
   });
 
   // Sync selection context from editors to multi-panel context Redux store
@@ -1778,6 +1805,12 @@
         workspaceId: workspace.id,
       });
 
+      // Reconcile the queued-messages mirror from the daemon — a missed
+      // `agent:queue:updated` (e.g. while this panel was unmounted or during a
+      // reconnect gap) would otherwise leave stale drained rows rendered
+      // forever (monorepo#1749).
+      void hydrateAgentQueue(agentId);
+
       // Reconstruct onboarding context entirely from workspace + agent session.
       // No external storage needed — all essential data lives on the workspace object.
       const repoName =
@@ -1898,6 +1931,10 @@
         },
       }),
     );
+
+    // Reconcile the queued-messages mirror alongside the transcript re-init
+    // (monorepo#1749).
+    void hydrateAgentQueue(agentId);
 
     // The saga is fire-and-forget from the component's perspective.
     // End rebind tracking immediately — the saga handles its own cancellation.
@@ -3709,7 +3746,7 @@
                           class="message-nav-target z-10"
                           class:sticky={shouldEnableSticky}
                           class:-top-px={shouldEnableSticky}
-                          transition:slide={{ axis: 'y', duration: 200 }}
+                          transition:safeSlide={{ axis: 'y', duration: 200 }}
                         >
                           <EventWakeupBanner
                             metadata={message.metadata as {
@@ -4019,7 +4056,7 @@
            preventing stale "Waiting for N agents" UI from leaking across switches -->
       {#if workspace?.id}
         {#key `${workspace.id}::${agentId}`}
-          <div class="w-full pb-6" transition:slide={{ axis: 'y', duration: 200 }}>
+          <div class="w-full pb-6" transition:safeSlide={{ axis: 'y', duration: 200 }}>
             <!-- Pending attention request (discussion/blocker) for this agent -->
             {#if agentId}
               <AttentionRequestBanner {agentId} />
@@ -4083,6 +4120,12 @@
     />
   {/if}
 
+  <!-- Monitored PRs (PROTOCOL §6.9): faint chip row above the hooks row,
+       visible only while the active agent has active PR monitors. -->
+  {#if workspace?.id && agentId}
+    <MonitoredPrsRow workspaceId={workspace.id} {agentId} />
+  {/if}
+
   <!-- Background hooks (PROTOCOL §5.40): faint chip row above the input,
        visible only while the active agent has scheduled/running hooks. -->
   {#if workspace?.id && agentId}
@@ -4124,7 +4167,7 @@
       {/key}
     {/if}
     {#if !pendingQuestions || questionWizardCollapsed}
-      {#if draftManager.gateActive}
+      {#if draftManager.gateVisible}
         <ChatDraftLoadingGate />
       {/if}
       <SimpleRichInput
@@ -4136,7 +4179,8 @@
         onstop={handleStop}
         onHistoryPrev={handleHistoryPrev}
         onHistoryNext={handleHistoryNext}
-        disabled={!workspace || !$agentSession$ || draftManager.gateActive}
+        disabled={!workspace || !$agentSession$}
+        inputLocked={draftManager.gateActive}
         isStreaming={$agentSessionIsStreaming$}
         isResponding={$agentIsResponding$}
         {workspace}

@@ -71,6 +71,8 @@
 
   // State for inline editing
   let isEditingTitle = $state(false);
+  // Initial value only; the $effect below syncs on prop changes.
+  // svelte-ignore state_referenced_locally
   let editedTitle = $state(title);
   let titleInputRef: HTMLInputElement | null = $state(null);
 

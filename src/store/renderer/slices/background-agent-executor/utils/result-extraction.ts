@@ -28,6 +28,50 @@ export function cleanModelFallbackMessages(content: string): string {
 }
 
 /**
+ * Extract result from a raw completion text (one-shot `agent.completeOnce`
+ * replies, PROTOCOL §5.32). Same tag semantics as
+ * `extractResultFromMessages`: when `resultTag` is set the tagged block is
+ * required and its absence is an error; without a tag the full cleaned text
+ * is the result.
+ */
+export function extractResultFromText(
+  content: string,
+  resultTag?: string,
+): { result: string | null; error: string | null } {
+  const cleaned = cleanModelFallbackMessages(content ?? '');
+
+  if (!resultTag) {
+    const trimmed = cleaned.trim();
+    return trimmed.length > 0
+      ? { result: trimmed, error: null }
+      : // i18n-ignore (internal extraction diagnostic)
+        { result: null, error: 'Empty response from model' };
+  }
+
+  const tagRegex = new RegExp(`<<<${resultTag}>>>([\\s\\S]*?)<<<\\/${resultTag}>>>`, 'i');
+  const match = cleaned.match(tagRegex);
+  if (match) {
+    return { result: match[1].trim(), error: null };
+  }
+
+  logger.warn(
+    // i18n-ignore (developer log message)
+    `Expected <${resultTag}> tag not found in response. ` +
+      // i18n-ignore (developer log message)
+      'The model did not follow the expected output format.',
+    { contentLength: cleaned.length, contentPreview: cleaned.substring(0, 200) },
+  );
+  return {
+    result: null,
+    error:
+      // i18n-ignore (internal extraction diagnostic)
+      `Expected <${resultTag}> tag not found in response. ` +
+      // i18n-ignore (internal extraction diagnostic)
+      'Please try again or use a different model.',
+  };
+}
+
+/**
  * Extract result from agent messages.
  *
  * @param messages - The agent messages to extract from

@@ -9,10 +9,12 @@
   import { m } from '$shared/paraglide/messages.js';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { isAbsolutePath } from '$lib/utils/path-utils';
   import { writable } from 'svelte/store';
 
   let { tab, workspaceId }: TabTypeComponentProps = $props();
 
+  // svelte-ignore state_referenced_locally
   const workspaceIdStore = writable(workspaceId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);
@@ -29,7 +31,8 @@
   // Normalize file paths
   const normalizedChanges = $derived(
     chatChanges.map((c: any) => {
-      const filePath = c.filePath?.startsWith('/') ? c.filePath : `${workspacePath}/${c.filePath}`;
+      const filePath =
+        c.filePath && isAbsolutePath(c.filePath) ? c.filePath : `${workspacePath}/${c.filePath}`;
       return { ...c, filePath };
     }),
   );

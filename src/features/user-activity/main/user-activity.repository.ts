@@ -2,7 +2,9 @@
  * User Activity Repository
  *
  * Data access layer for user activity (e.g., note read tracking).
- * Stores data in ~/intent/{workspace-id}/.workspace/user-activity.json
+ * Stores data under Electron userData, keyed by backend + workspace:
+ * {userData}/user-activity/{backendId}/{workspaceId}/user-activity.json
+ * (monorepo#1759 — persistence never needed the workspace checkout dir).
  */
 
 import { promises as fs } from 'fs';
@@ -17,7 +19,6 @@ import type { WorkspaceId } from '../../../shared/types';
 const logger = new Logger('UserActivityRepository');
 
 const USER_ACTIVITY_FILENAME = 'user-activity.json';
-const METADATA_FOLDER = '.workspace';
 
 /**
  * Zod schema for validating user activity data on load.
@@ -47,27 +48,22 @@ export interface UserActivityRepository {
  * File system implementation of UserActivityRepository.
  *
  * Accepts either a fixed basePath string (for tests) or a resolver function
- * that returns the correct base path per workspace (for production use with
- * dual-root ~/intent + ~/.workspaces support).
+ * that returns the correct base path per workspace (production passes an
+ * async resolver keying the userData subtree by active backend id).
  */
 export class FileSystemUserActivityRepository implements UserActivityRepository {
-  private readonly resolveBase: (workspaceId: WorkspaceId) => string;
+  private readonly resolveBase: (workspaceId: WorkspaceId) => string | Promise<string>;
 
-  constructor(basePath: string | ((workspaceId: WorkspaceId) => string)) {
+  constructor(basePath: string | ((workspaceId: WorkspaceId) => string | Promise<string>)) {
     this.resolveBase = typeof basePath === 'function' ? basePath : () => basePath;
   }
 
-  private getFilePath(workspaceId: WorkspaceId): string {
-    return path.join(
-      this.resolveBase(workspaceId),
-      workspaceId,
-      METADATA_FOLDER,
-      USER_ACTIVITY_FILENAME,
-    );
+  private async getFilePath(workspaceId: WorkspaceId): Promise<string> {
+    return path.join(await this.resolveBase(workspaceId), workspaceId, USER_ACTIVITY_FILENAME);
   }
 
   async load(workspaceId: WorkspaceId): Promise<UserActivityData | null> {
-    const filePath = this.getFilePath(workspaceId);
+    const filePath = await this.getFilePath(workspaceId);
 
     try {
       const content = await fs.readFile(filePath, 'utf-8');
@@ -110,7 +106,7 @@ export class FileSystemUserActivityRepository implements UserActivityRepository 
   }
 
   async save(workspaceId: WorkspaceId, data: UserActivityData): Promise<void> {
-    const filePath = this.getFilePath(workspaceId);
+    const filePath = await this.getFilePath(workspaceId);
     const dir = path.dirname(filePath);
 
     try {

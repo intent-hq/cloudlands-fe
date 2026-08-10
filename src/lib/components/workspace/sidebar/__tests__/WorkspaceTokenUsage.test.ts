@@ -229,6 +229,90 @@ describe('WorkspaceTokenUsage', () => {
     expect(screen.getByTestId('token-usage-by-agent')).not.toBeNull();
   });
 
+  it('renders a thinking column and summary figure when the daemon reports thoughtTokens', async () => {
+    mocks.state.usage = makeUsage({
+      byAgentId: {
+        'agent-a': {
+          agentId: 'agent-a',
+          sessionId: 'sess-a',
+          lastMessageId: 'msg-1',
+          computedAt: 1000,
+          inputTokens: 10,
+          outputTokens: 20,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          thoughtTokens: 4200,
+          byModel: {},
+        },
+      },
+      totals: {
+        inputTokens: 10,
+        outputTokens: 20,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        thoughtTokens: 4200,
+      },
+      byModel: {
+        'model-big': {
+          inputTokens: 10,
+          outputTokens: 20,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          thoughtTokens: 4200,
+        },
+      },
+      lastScanAt: 5000,
+      isStale: false,
+    });
+    mocks.state.agents = [{ id: 'agent-a', name: 'Alpha' }];
+
+    await renderTokenUsage();
+
+    expect(screen.getByTestId('workspace-token-usage').textContent).toContain(
+      '↑ 10 in · 20 out · 0 cached · 4.2K thinking',
+    );
+
+    const modelSection = screen.getByTestId('token-usage-by-model');
+    const agentSection = screen.getByTestId('token-usage-by-agent');
+    expect(modelSection.className).toContain('grid-cols-[1fr_auto_auto_auto_auto]');
+    expect(modelSection.textContent).toContain('Thinking');
+    expect(modelSection.textContent).toContain('4.2K');
+    expect(agentSection.textContent).toContain('Thinking');
+    expect(agentSection.textContent).toContain('4.2K');
+  });
+
+  it('keeps the pre-thoughtTokens layout when the field is absent', async () => {
+    mocks.state.usage = makeUsage({
+      totals: {
+        inputTokens: 10,
+        outputTokens: 20,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+      byModel: {
+        'model-big': {
+          inputTokens: 10,
+          outputTokens: 20,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        },
+      },
+      lastScanAt: 5000,
+      isStale: false,
+    });
+
+    await renderTokenUsage();
+
+    expect(screen.getByTestId('workspace-token-usage').textContent).toContain(
+      '↑ 10 in · 20 out · 0 cached',
+    );
+    expect(screen.getByTestId('workspace-token-usage').textContent).not.toContain('thinking');
+    const modelSection = screen.getByTestId('token-usage-by-model');
+    expect(modelSection.className).toContain('grid-cols-[1fr_auto_auto_auto]');
+    expect(modelSection.className).not.toContain('grid-cols-[1fr_auto_auto_auto_auto]');
+    expect(modelSection.textContent).not.toContain('Thinking');
+  });
+
   it('hides model and agent rows whose tokens are all zero', async () => {
     mocks.state.usage = makeUsage({
       byAgentId: {

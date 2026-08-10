@@ -113,6 +113,23 @@ describe("agent-ipc-bridge-seeder", () => {
       });
     });
 
+    it("forwards reasoningEffort on the agent.create wire (Option B session field, §5.5)", async () => {
+      mockedRequest.mockResolvedValueOnce({ agent: { id: "agent-42", name: "Coordinator" } });
+      const request = {
+        workspaceId: WORKSPACE_ID,
+        workspacePath: "/tmp/ws",
+        model: "gpt-5.3-codex",
+        reasoningEffort: "xhigh",
+      };
+      expect(() => validateIpcRequest("agent:create", request)).not.toThrow();
+
+      await mockInvoke(AGENT_CHANNELS.CREATE, request);
+
+      const params = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(params.model).toBe("gpt-5.3-codex");
+      expect(params.reasoningEffort).toBe("xhigh");
+    });
+
     it("forwards nameExplicitlySet:false verbatim on the agent.create wire", async () => {
       // PROTOCOL §5.5: `nameExplicitlySet` is a strict boolean — `false`
       // marks a generated placeholder name and must survive the bridge
@@ -266,6 +283,36 @@ describe("agent-ipc-bridge-seeder", () => {
         agentId: "agent-7",
         modelId: "fable-5",
         workspaceId: WORKSPACE_ID,
+      });
+      // No providerId supplied → the field is omitted from the wire body
+      // entirely (the daemon falls back to the session's provider).
+      const params = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect("providerId" in params).toBe(false);
+      expect(result).toEqual({ ok: true, data: { success: true, modelId: "fable-5" } });
+    });
+
+    it("forwards providerId on the agent.setModel wire (cross-provider pick, intent-hq/monorepo#1657)", async () => {
+      // A bare modelId belonging to the default provider, picked while the
+      // session is on another provider, must carry the explicit providerId so
+      // the daemon validates ownership against the picked provider instead of
+      // the session's current one.
+      mockedRequest.mockResolvedValueOnce({ success: true, modelId: "fable-5" });
+
+      const request = {
+        agentId: "agent-7",
+        modelId: "fable-5",
+        workspaceId: WORKSPACE_ID,
+        providerId: "auggie",
+      };
+      expect(() => validateIpcRequest("agent:set-model", request)).not.toThrow();
+
+      const result = await agentClient.setModel("agent-7", "fable-5", WORKSPACE_ID, "auggie");
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.setModel", {
+        agentId: "agent-7",
+        modelId: "fable-5",
+        workspaceId: WORKSPACE_ID,
+        providerId: "auggie",
       });
       expect(result).toEqual({ ok: true, data: { success: true, modelId: "fable-5" } });
     });

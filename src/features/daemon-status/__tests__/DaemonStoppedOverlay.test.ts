@@ -3,7 +3,7 @@
  *
  * Drives the real daemon-health slice through connectionStatusChanged and
  * asserts the overlay's show / grace-period / dismiss / spawn-sidecar flows.
- * The spawn button goes through the real daemon-health middleware to the
+ * The spawn button goes through the real root-owned daemon-health saga to the
  * backend:spawn-sidecar channel (asserted on the stubbed electronAPI.invoke).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -13,12 +13,68 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, screen } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 
+vi.mock('$store/renderer/store', async () => {
+  const { runSaga, stdChannel } = await import('redux-saga');
+  const { daemonHealthReducer, initialState } =
+    await import('$store/renderer/slices/daemon-health/daemon-health-slice');
+  const { initialState: connectionsInitialState } =
+    await import('$store/renderer/slices/connections/connections-slice');
+  let state = { daemonHealth: initialState, connections: connectionsInitialState };
+  const listeners = new Set<() => void>();
+  const channel = stdChannel();
+  const store = {
+    get state() {
+      return state;
+    },
+    init() {
+      state = { daemonHealth: initialState, connections: connectionsInitialState };
+      listeners.forEach((listener) => listener());
+      return () => {};
+    },
+    dispose() {
+      listeners.clear();
+    },
+    dispatch(action: { type: string }) {
+      state = {
+        daemonHealth: daemonHealthReducer(state.daemonHealth, action as never),
+        connections: state.connections,
+      };
+      channel.put(action);
+      listeners.forEach((listener) => listener());
+      return action;
+    },
+    createSelector<T>(select: (value: typeof state) => T) {
+      return Object.assign(
+        () => ({
+          subscribe(run: (value: T) => void) {
+            const update = () => run(select(state));
+            update();
+            listeners.add(update);
+            return () => listeners.delete(update);
+          },
+        }),
+        {
+          select,
+          effect: function* () {
+            return select(state);
+          },
+        },
+      );
+    },
+    runSaga(saga: () => Generator) {
+      const task = runSaga({ channel, dispatch: store.dispatch, getState: () => state }, saga);
+      return () => task.cancel();
+    },
+  };
+  return { store };
+});
+
 import { store as appStore } from '$store/renderer/store';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { mockInvoke, resetMockIpcRouter } from '$shared/ipc-mock-router';
-import { disposeDaemonHealthService } from '$store/renderer/middlewares/daemon-health-service';
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
+import { daemonHealthSaga } from '$store/renderer/slices/daemon-health/sagas/daemon-health-saga';
 
 const route = vi.hoisted(() => ({ pathname: '/' }));
 
@@ -39,7 +95,8 @@ const sidecarTransport: BackendTransportInfo = { mode: 'sidecar-uds', target: '/
 const externalTransport: BackendTransportInfo = { mode: 'external-uds', target: '/tmp/i.sock' };
 
 let invokeMock: ReturnType<typeof vi.fn>;
-// Transport the middleware's boot-time GET_STATUS fetch reports; kept in sync
+let stopDaemonHealthSaga: (() => void) | undefined;
+// Transport the saga's boot-time GET_STATUS fetch reports; kept in sync
 // with the scenario under test so the boot dispatch can't override it.
 let bootTransport: BackendTransportInfo = sidecarTransport;
 
@@ -62,7 +119,7 @@ async function showOverlay(
 ) {
   bootTransport = transport;
   dispatchAndFlush(connectionStatusChanged('connected', transport));
-  // Let the middleware's boot-time GET_STATUS fetch settle before the
+  // Let the saga's boot-time GET_STATUS fetch settle before the
   // disconnect, so its late 'connected' dispatch can't cancel the grace timer.
   await vi.advanceTimersByTimeAsync(10);
   dispatchAndFlush(connectionStatusChanged('disconnected', undefined, extras));
@@ -81,12 +138,16 @@ async function showOverlayNeverConnected(
   transport?: BackendTransportInfo,
   extras?: { sidecarGaveUp?: boolean; sidecarStartupFailed?: boolean; reason?: string },
 ) {
+  stopDaemonHealthSaga?.();
   invokeMock.mockImplementation(async (channel: string, ...args: unknown[]) => {
     if (channel === BACKEND.GET_STATUS) {
       return { status: 'disconnected' };
     }
     return mockInvoke(channel, ...args);
   });
+  appStore.init();
+  stopDaemonHealthSaga = appStore.runSaga(daemonHealthSaga);
+  await vi.advanceTimersByTimeAsync(0);
   dispatchAndFlush(connectionStatusChanged('disconnected', transport, extras));
   await vi.advanceTimersByTimeAsync(DAEMON_STOPPED_GRACE_MS + 50);
   await vi.waitFor(() => {
@@ -108,13 +169,19 @@ describe('DaemonStoppedOverlay', () => {
       }
       return mockInvoke(channel, ...args);
     });
-    vi.stubGlobal('electronAPI', { invoke: invokeMock, on: vi.fn(), off: vi.fn() });
+    vi.stubGlobal('electronAPI', {
+      invoke: invokeMock,
+      on: vi.fn(() => 'daemon-status-listener'),
+      offById: vi.fn(),
+    });
     appStore.init();
+    stopDaemonHealthSaga = appStore.runSaga(daemonHealthSaga);
   });
 
   afterEach(() => {
     cleanup();
-    disposeDaemonHealthService();
+    stopDaemonHealthSaga?.();
+    stopDaemonHealthSaga = undefined;
     resetMockIpcRouter();
     // Dispose the store so session latches (hasEverConnected,
     // sidecarStartupFailed) don't leak into the next test.
@@ -191,10 +258,10 @@ describe('DaemonStoppedOverlay', () => {
     expect(overlay()!.textContent).toContain('may use a different data directory');
   });
 
-  it('hides the spawn button in external-ws mode (the UDS sidecar would never be reached)', async () => {
+  it('offers the local sidecar fallback in external-ws mode', async () => {
     render(DaemonStoppedOverlay);
     await showOverlay({ mode: 'external-ws', target: 'ws://127.0.0.1:5181/ws' });
-    expect(screen.queryByTestId('daemon-stopped-spawn-sidecar')).toBeNull();
+    expect(screen.getByTestId('daemon-stopped-spawn-sidecar')).toBeTruthy();
     expect(overlay()!.textContent).toContain('external intentd daemon was lost');
   });
 
@@ -315,7 +382,7 @@ describe('DaemonStoppedOverlay', () => {
     expect(overlay()!.textContent).not.toContain('was lost');
     // Buttons follow the same transport-mode rules as the lost-connection posture.
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar').textContent).toContain(
-      'Start app-managed sidecar',
+      'Start local intentd',
     );
   });
 
@@ -331,12 +398,12 @@ describe('DaemonStoppedOverlay', () => {
     });
     // Pending until the reconnect status lands.
     await vi.waitFor(() => {
-      expect((screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement).disabled).toBe(
-        true,
-      );
+      expect(
+        (screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement).disabled,
+      ).toBe(true);
     });
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar').textContent).toContain(
-      'Starting sidecar',
+      'Starting intentd',
     );
 
     // Reconnect (backend:status 'connected' via RESUB-1 main-side flow) dismisses.
@@ -361,7 +428,7 @@ describe('DaemonStoppedOverlay', () => {
     dispatchAndFlush(connectionStatusChanged('disconnected', sidecarTransport));
     const button = screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    expect(button.textContent).toContain('Starting sidecar');
+    expect(button.textContent).toContain('Starting intentd');
   });
 
   it('shows the spawn error and re-enables the button when the spawn fails', async () => {
@@ -384,9 +451,9 @@ describe('DaemonStoppedOverlay', () => {
         'intentd binary not found',
       );
     });
-    expect(
-      (screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement).disabled,
-    ).toBe(false);
+    expect((screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement).disabled).toBe(
+      false,
+    );
   });
 
   it('issues no daemon wire requests itself (reconnect resubscription is RESUB-1 main-side)', async () => {
@@ -413,7 +480,8 @@ describe('DaemonStoppedOverlay', () => {
     expect(subscribeCalls.filter(([c]) => c === BACKEND.SUBSCRIBE)).toHaveLength(0);
     expect(
       wireCalls.filter(
-        ([, payload]) => (payload as { method?: string } | undefined)?.method === 'events.subscribe',
+        ([, payload]) =>
+          (payload as { method?: string } | undefined)?.method === 'events.subscribe',
       ),
     ).toHaveLength(0);
   });

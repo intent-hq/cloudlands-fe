@@ -30,7 +30,7 @@ const storeState = vi.hoisted(() => ({
 
 vi.mock('$store/renderer/store', async () => {
   const { createCollection } = await import(
-    '$lib/store-shim/utils/collections/collection-utils'
+    '@augmentcode/themis/utils/collections/collection-utils'
   );
   return {
     store: {

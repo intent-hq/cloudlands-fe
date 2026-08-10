@@ -10,7 +10,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { Snippet } from 'svelte';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
@@ -61,6 +61,12 @@
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
   import MicroKeySlotBadge from '$lib/components/workspace/MicroKeySlotBadge.svelte';
   import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectActivePrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import {
+    prMonitorsSubscribeRequested,
+    prMonitorsUnsubscribeRequested,
+  } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
+  import { countOtherActiveMonitors } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
   import { cn } from '$lib/utils';
   import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
@@ -154,6 +160,19 @@
   });
   const workspaceTaskProgress$ = selectWorkspaceTaskProgress(workspaceIdStore);
 
+  // Agent PR monitors (PROTOCOL §6.9): feed the primary-PR fallback and the
+  // "+N" other-active-PRs indicator. Refcounted subscription shared with the
+  // other pr-monitor surfaces.
+  const activePrMonitors$ = selectActivePrMonitors(workspaceIdStore);
+  $effect(() => {
+    const workspaceId = workspace?.id;
+    if (!workspaceId) return;
+    untrack(() => appStore.dispatch(prMonitorsSubscribeRequested(String(workspaceId))));
+    return () => {
+      appStore.dispatch(prMonitorsUnsubscribeRequested(String(workspaceId)));
+    };
+  });
+
   // Micro-key slot badge/menus: only while a micro is connected (manager
   // status connected — not mere presence).
   const microConnected$ = microConnectedReadable();
@@ -199,6 +218,9 @@
     if (workspace.prStatus) return workspace.prStatus;
     const prs = workspace.pullRequests ?? [];
     if (prs.length > 0) return prs[0].status;
+    // No branch-linked PR: fall back to the first active agent-monitored PR
+    // (PROTOCOL §6.9) so the badge still surfaces it.
+    if ($activePrMonitors$.length > 0) return PullRequestStatus.Open;
     return null;
   });
   const prNumber = $derived.by(() => {
@@ -207,7 +229,12 @@
       appStore.state,
       workspace.id,
     );
-    return activePR?.number ?? workspace.prNumber ?? workspace.pullRequests?.[0]?.number;
+    return (
+      activePR?.number ??
+      workspace.prNumber ??
+      workspace.pullRequests?.[0]?.number ??
+      $activePrMonitors$[0]?.prNumber
+    );
   });
   const isPRMergeable = $derived.by(() => {
     if (!workspace) return false;
@@ -224,6 +251,17 @@
       workspace.id,
     );
     return getPRTooltipContent(activePR ?? undefined);
+  });
+
+  // "+N" indicator: other active monitored PRs beyond the primary badge.
+  const otherActivePrCount = $derived.by(() => {
+    if (!workspace) return 0;
+    return countOtherActiveMonitors(
+      $activePrMonitors$,
+      prNumber,
+      workspace.repositoryOwner,
+      workspace.repositoryName,
+    );
   });
 
   const agentInfos = $derived.by(() => {
@@ -550,6 +588,24 @@
               {m.workspace_card_prBadge_label({ number: prNumber ? ` #${prNumber}` : '' })}
             </span>
           </Tooltip>
+          {#if otherActivePrCount > 0}
+            <Tooltip
+              content={otherActivePrCount === 1
+                ? m.workspace_card_morePrs_tooltip_one()
+                : m.workspace_card_morePrs_tooltip_many({
+                    count: formatInteger(otherActivePrCount),
+                  })}
+              side="bottom"
+              sideOffset={4}
+            >
+              <span
+                class="wc-secondary text-ui font-medium px-1.5 py-0 rounded-full shrink-0 bg-muted-foreground/10 text-muted-foreground"
+                data-testid="workspace-card-more-prs"
+              >
+                {m.workspace_card_morePrs_label({ count: formatInteger(otherActivePrCount) })}
+              </span>
+            </Tooltip>
+          {/if}
         {/if}
 
         <span

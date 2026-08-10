@@ -1,7 +1,8 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
-import { createBooleanPreference } from "$lib/store-shim/utils/store/boolean-preference";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createBooleanPreference } from "@augmentcode/themis/utils/store/boolean-preference";
 import { SYSTEM_LANGUAGE_PREFERENCE } from "$shared/i18n/locale-matcher";
+import type { GithubLinkDefaultAction } from "$shared/utils/link-helpers";
 
 export const SYSTEM_DEFAULT_FONT =
   "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";
@@ -40,6 +41,8 @@ export type UserPreferencesState = {
   showArchived: boolean;
   groupByRepo: boolean;
   hasCompletedProviderSetup: boolean;
+  /** Whether reasoning (thinking) dropdowns are shown in chat transcripts. */
+  showReasoningBlocks: boolean;
   agentFontStyle: AgentFontStyle;
   noteFontStyle: NoteFontStyle;
   codeFontFamily: string;
@@ -51,6 +54,7 @@ export type UserPreferencesState = {
   activityLogPresets: ActivityLogPresetPreference[];
   /** BCP-47 locale tag of an available catalog, or "system" to follow the OS. */
   languagePreference: string;
+  githubLinkDefaultAction: GithubLinkDefaultAction;
 };
 
 export type FontSettingsState = Pick<
@@ -84,10 +88,12 @@ export const initialState: UserPreferencesState = {
   showArchived: false,
   groupByRepo: true,
   hasCompletedProviderSetup: false,
+  showReasoningBlocks: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
   activityLogPresets: [],
   languagePreference: SYSTEM_LANGUAGE_PREFERENCE,
+  githubLinkDefaultAction: "show-choices",
 };
 
 const betaUpdatesPreference = createBooleanPreference<UserPreferencesState>({
@@ -174,6 +180,10 @@ export const setLanguagePreference = createAction<[preference: string]>(
   "userPreferences/setLanguagePreference"
 );
 
+export const setGithubLinkDefaultAction = createAction<[action: GithubLinkDefaultAction]>(
+  "userPreferences/setGithubLinkDefaultAction"
+);
+
 const showArchivedPreference = createBooleanPreference<UserPreferencesState>({
   sliceName: "userPreferences",
   field: "showArchived",
@@ -207,81 +217,94 @@ export const setHasCompletedProviderSetup = hasCompletedProviderSetupPreference.
 
 export const toggleHasCompletedProviderSetup = hasCompletedProviderSetupPreference.toggleAction;
 
-export const userPreferencesReducer = hasCompletedProviderSetupPreference.register(
-  groupByRepoPreference.register(
-    showArchivedPreference.register(
-      spellcheckPreference.register(
-        betaUpdatesPreference.register(createReducer<UserPreferencesState>(initialState))
-      )
-    )
-  )
-)
-  .with(loadBetaUpdatesSettings, (state, { payload: [enabled] }) => ({
+const showReasoningBlocksPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: "userPreferences",
+  field: "showReasoningBlocks",
+  setActionName: "setShowReasoningBlocks",
+  toggleActionName: "toggleShowReasoningBlocks",
+});
+
+export const setShowReasoningBlocks = showReasoningBlocksPreference.setAction;
+
+export const toggleShowReasoningBlocks = showReasoningBlocksPreference.toggleAction;
+
+export const userPreferencesReducer = createReducer<UserPreferencesState>(initialState);
+betaUpdatesPreference.register(userPreferencesReducer);
+spellcheckPreference.register(userPreferencesReducer);
+showArchivedPreference.register(userPreferencesReducer);
+groupByRepoPreference.register(userPreferencesReducer);
+hasCompletedProviderSetupPreference.register(userPreferencesReducer);
+showReasoningBlocksPreference.register(userPreferencesReducer);
+userPreferencesReducer.with(loadBetaUpdatesSettings, (state, { payload: [enabled] }) => ({
     ...state,
     betaUpdatesEnabled: enabled,
-  }))
-  .with(setZoomFactor, (state, { payload: [factor] }) => {
+  }));
+userPreferencesReducer.with(setZoomFactor, (state, { payload: [factor] }) => {
     if (!Number.isFinite(factor) || factor <= 0) return state;
     if (factor === state.zoomFactor) return state;
     return { ...state, zoomFactor: factor };
-	})
-	.with(setAgentFontStyle, (state, { payload: [style] }) => ({
+	});
+userPreferencesReducer.with(setAgentFontStyle, (state, { payload: [style] }) => ({
 	  ...state,
 	  agentFontStyle: style,
-	}))
-	.with(cycleFontStyle, (state) => ({
+	}));
+userPreferencesReducer.with(cycleFontStyle, (state) => ({
 	  ...state,
 	  agentFontStyle: FONT_STYLES[(FONT_STYLES.indexOf(state.agentFontStyle) + 1) % FONT_STYLES.length],
-	}))
-	.with(setNoteFontStyle, (state, { payload: [style] }) => ({
+	}));
+userPreferencesReducer.with(setNoteFontStyle, (state, { payload: [style] }) => ({
 	  ...state,
 	  noteFontStyle: style,
-	}))
-	.with(cycleNoteFontStyle, (state) => ({
+	}));
+userPreferencesReducer.with(cycleNoteFontStyle, (state) => ({
 	  ...state,
 	  noteFontStyle: FONT_STYLES[(FONT_STYLES.indexOf(state.noteFontStyle) + 1) % FONT_STYLES.length],
-	}))
-	.with(setCodeFontFamily, (state, { payload: [fontFamily] }) => ({
+	}));
+userPreferencesReducer.with(setCodeFontFamily, (state, { payload: [fontFamily] }) => ({
 	  ...state,
 	  codeFontFamily: fontFamily,
-	}))
-	.with(setSystemFonts, (state, { payload: [fonts] }) => ({
+	}));
+userPreferencesReducer.with(setSystemFonts, (state, { payload: [fonts] }) => ({
 	  ...state,
 	  systemFonts: fonts,
-	}))
-	.with(setNotificationEnabled, (state, { payload: [value] }) => ({
+	}));
+userPreferencesReducer.with(setNotificationEnabled, (state, { payload: [value] }) => ({
 	  ...state,
 	  enabled: value,
-	}))
-	.with(setSoundEnabled, (state, { payload: [value] }) => ({
+	}));
+userPreferencesReducer.with(setSoundEnabled, (state, { payload: [value] }) => ({
 	  ...state,
 	  soundEnabled: value,
-	}))
-	.with(setSoundOnlyWhenUnfocused, (state, { payload: [value] }) => ({
+	}));
+userPreferencesReducer.with(setSoundOnlyWhenUnfocused, (state, { payload: [value] }) => ({
 	  ...state,
 	  soundOnlyWhenUnfocused: value,
-	}))
-	.with(setVolume, (state, { payload: [value] }) => ({
+	}));
+userPreferencesReducer.with(setVolume, (state, { payload: [value] }) => ({
 	  ...state,
 	  volume: Math.max(0, Math.min(1, value)),
-	}))
-	.with(resetNotificationSettings, (state) => ({
+	}));
+userPreferencesReducer.with(resetNotificationSettings, (state) => ({
 	  ...state,
 	  ...notificationSettingsInitialState,
-		}))
-  .with(hydrateActivityLogPresets, (state, { payload: [presets] }) => ({
+		}));
+userPreferencesReducer.with(hydrateActivityLogPresets, (state, { payload: [presets] }) => ({
     ...state,
     activityLogPresets: presets,
-  }))
-  .with(saveActivityLogPreset, (state, { payload: [preset] }) => ({
+  }));
+userPreferencesReducer.with(saveActivityLogPreset, (state, { payload: [preset] }) => ({
     ...state,
     activityLogPresets: [...state.activityLogPresets, preset],
-  }))
-  .with(deleteActivityLogPreset, (state, { payload: [index] }) => ({
+  }));
+userPreferencesReducer.with(deleteActivityLogPreset, (state, { payload: [index] }) => ({
     ...state,
     activityLogPresets: state.activityLogPresets.filter((_, i) => i !== index),
-  }))
-  .with(setLanguagePreference, (state, { payload: [preference] }) => ({
+  }));
+userPreferencesReducer.with(setLanguagePreference, (state, { payload: [preference] }) => ({
     ...state,
     languagePreference: preference,
+  }));
+userPreferencesReducer.with(setGithubLinkDefaultAction, (state, { payload: [action] }) => ({
+    ...state,
+    githubLinkDefaultAction: action,
   }));

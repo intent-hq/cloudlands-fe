@@ -9,7 +9,10 @@ import { derivePendingQuestions, type PendingQuestionSet } from './pending-quest
  * active turn (`selectAgentIsResponding`) — NOT the broad
  * `selectAgentIsRunning` gate, which stays true while the agent merely waits
  * on delegated agents (isWaitingForOtherAgents) and must not suppress the
- * wizard. A question set the user dismissed never pends: the daemon persists
+ * wizard. Pendingness is persistent (see `derivePendingQuestions`): plain user
+ * messages and the agent's later replies no longer supersede the set — only an
+ * answer-tagged user row, the dismissal marker below, or a newer question set
+ * resolve it. A question set the user dismissed never pends: the daemon persists
  * `dismissedQuestionsMessageId` in session metadata (`agent.dismissQuestions`,
  * PROTOCOL §5.5), so the suppression survives reload/rehydrate; a NEWER
  * question-bearing message (different id) pends normally. Lives outside

@@ -11,7 +11,11 @@
 import { randomUUID } from 'crypto';
 import type { TerminalExitStatus } from '../../../types';
 import { Logger } from '../../../../../shared/logger';
-import { getBackendClient, onBackendReconnected } from '../../../../backend/main/backend.ipc';
+import {
+  getBackendClient,
+  onBackendNotification,
+  onBackendReconnected,
+} from '../../../../backend/main/backend.ipc';
 import type { JsonRpcNotification } from '../../../../backend/main/json-rpc-client';
 
 const logger = new Logger('ACPTerminalHandler');
@@ -110,14 +114,15 @@ export class TerminalHandler {
   private terminals = new Map<string, Terminal>();
   private byDaemonId = new Map<string, string>();
   private subscriptionId?: string;
-  private notificationListener?: (n: JsonRpcNotification) => void;
+  /** Disposer for the stable-forwarder notification listener, once attached. */
+  private notificationDisposer?: () => void;
   /**
    * Sticky reconnect listener, installed on first `ensureSubscription()` so we
-   * never register more than one hook against `getBackendClient()`. On daemon
-   * restart the in-memory subscription registry is dropped; we replay the
-   * `events.subscribe(['terminal:data', 'terminal:exit'])` call so ACP
-   * terminals keep streaming output / exit-status after the reconnect
-   * (RESUB-1). Cleared on `dropSubscription()` (handler dispose).
+   * never register more than one hook against the reconnect forwarder. On
+   * daemon restart / backend switch the in-memory subscription registry is
+   * dropped; we replay the `events.subscribe(['terminal:data', 'terminal:exit'])`
+   * call so ACP terminals keep streaming output / exit-status after the
+   * reconnect (RESUB-1). Cleared on `dropSubscription()` (handler dispose).
    */
   private reconnectDisposer?: () => void;
 
@@ -139,7 +144,10 @@ export class TerminalHandler {
     const terminalId = `term_${randomUUID()}`;
 
     const workingDir =
-      cwd || (this.scope && this.workspacePath ? `${this.workspacePath}/${this.scope}` : this.workspacePath);
+      cwd ||
+      (this.scope && this.workspacePath
+        ? `${this.workspacePath}/${this.scope}`
+        : this.workspacePath);
 
     const longRunningWarning = isLikelyLongRunningCommand(command, args);
     if (longRunningWarning) {
@@ -150,7 +158,6 @@ export class TerminalHandler {
         warning: longRunningWarning,
       });
     }
-
 
     if (env && Object.keys(env).length > 0) {
       logger.warn(
@@ -174,16 +181,13 @@ export class TerminalHandler {
 
     let daemonTerminalId: string;
     try {
-      const result = await getBackendClient().request<{ terminalId?: unknown }>(
-        'terminal.create',
-        {
-          workspaceId: this.workspaceId,
-          cols: DEFAULT_COLS,
-          rows: DEFAULT_ROWS,
-          ...(workingDir ? { cwd: workingDir } : {}),
-          command: commandLine,
-        },
-      );
+      const result = await getBackendClient().request<{ terminalId?: unknown }>('terminal.create', {
+        workspaceId: this.workspaceId,
+        cols: DEFAULT_COLS,
+        rows: DEFAULT_ROWS,
+        ...(workingDir ? { cwd: workingDir } : {}),
+        command: commandLine,
+      });
       if (typeof result?.terminalId !== 'string' || result.terminalId.length === 0) {
         throw new Error(`terminal.create returned no terminalId: ${JSON.stringify(result)}`);
       }
@@ -311,7 +315,7 @@ export class TerminalHandler {
   // --------------------------------------------------------------------------
 
   private async ensureSubscription(): Promise<void> {
-    if (this.subscriptionId || this.notificationListener) return;
+    if (this.subscriptionId || this.notificationDisposer) return;
 
     const client = getBackendClient();
     const listener = (n: JsonRpcNotification): void => {
@@ -347,13 +351,12 @@ export class TerminalHandler {
         }
       }
     };
-    this.notificationListener = listener;
-    client.on('notification', listener);
+    this.notificationDisposer = onBackendNotification(listener);
     if (!this.reconnectDisposer) {
       this.reconnectDisposer = onBackendReconnected(() => {
-        // Notification listener persists on the same singleton client across
-        // reconnects — only re-issue the subscribe. Drop the stale id first
-        // so the notification-scope gate does not accept a foreign
+        // Notification listener persists across reconnects AND client swaps
+        // (stable forwarder) — only re-issue the subscribe. Drop the stale id
+        // first so the notification-scope gate does not accept a foreign
         // subscription's copies that happen to share the old id (RESUB-1).
         this.subscriptionId = undefined;
         if (this.terminals.size === 0) return;
@@ -371,17 +374,20 @@ export class TerminalHandler {
       });
       this.subscriptionId = result?.subscriptionId;
     } catch (error) {
-      logger.warn('[Terminal] events.subscribe failed for terminal:* — output/exit will not stream', {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logger.warn(
+        '[Terminal] events.subscribe failed for terminal:* — output/exit will not stream',
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
     }
   }
 
   private async dropSubscription(): Promise<void> {
     const client = getBackendClient();
-    if (this.notificationListener) {
-      client.off('notification', this.notificationListener);
-      this.notificationListener = undefined;
+    if (this.notificationDisposer) {
+      this.notificationDisposer();
+      this.notificationDisposer = undefined;
     }
     if (this.reconnectDisposer) {
       try {

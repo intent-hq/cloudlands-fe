@@ -3,7 +3,7 @@ import {
   getItem,
   getItems,
   type Collection,
-} from '$lib/store-shim/utils/collections/collection-utils';
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { isModelValidForProvider } from '$shared/utils/compound-model-id';
 import {
@@ -106,6 +106,24 @@ export const selectAllProviderWarnings = store.createSelector((state): Record<st
   return warnings;
 });
 
+/**
+ * Provider ids whose current `warning` accompanies a last-known-good (stale)
+ * model list rather than a degraded static fallback.
+ */
+export const selectAllProviderStaleFlags = store.createSelector(
+  (state): Record<string, boolean> => {
+    const stale: Record<string, boolean> = {};
+
+    for (const [providerId, loadingState] of Object.entries(state.model.loadingState)) {
+      if (loadingState.stale) {
+        stale[providerId] = true;
+      }
+    }
+
+    return stale;
+  },
+);
+
 export const selectRetryAttempt = store.createSelector((state, providerId?: string): number => {
   return selectProviderLoadingState.select(state, providerId)?.retryAttempt ?? 0;
 });
@@ -117,6 +135,14 @@ export const selectModelsLoadedForProvider = selectModelsLoaded;
 /** Select all provider models */
 export const selectProviderModels = store.createSelector((state): Record<string, string> => {
   return state.model.providerModels;
+});
+
+/**
+ * Default reasoning-effort level paired with the default-model setting
+ * (`model.defaultReasoningEffort`), or '' when unset.
+ */
+export const selectDefaultReasoningEffort = store.createSelector((state): string => {
+  return state.model.defaultReasoningEffort;
 });
 
 export const selectModelPickerCollapsedGroups = store.createSelector((state): string[] => {
@@ -143,5 +169,50 @@ export const selectModelDisplayName = store.createSelector(
       return getItem(models, modelId)?.label;
     }
     return undefined;
+  },
+);
+
+/**
+ * Supported reasoning-effort levels for a model id (catalog `effortLevels`
+ * metadata, PROTOCOL §5.30/§6.7 — collapsed codex rows plus claude-code rows
+ * carry them). Accepts bare or `provider:model` ids; a legacy codex compound
+ * `{model}/{effort}` suffix is stripped before the catalog lookup so
+ * pre-migration session models still resolve their base row. `undefined` on
+ * lookup miss (catalog not loaded / model without effort support).
+ */
+export const selectModelEffortLevels = store.createSelector(
+  (state, modelId: string | null | undefined): string[] | undefined => {
+    if (!modelId) return undefined;
+    const models: Collection<AuggieModel, 'value'> | undefined = state.model?.availableModels;
+    if (!models) return undefined;
+    const slashIndex = modelId.indexOf('/');
+    const baseId = slashIndex > 0 ? modelId.slice(0, slashIndex) : modelId;
+    const row = getItem(models, baseId);
+    if (row?.effortLevels) return row.effortLevels;
+    // Bare id from a session may be stored compound in the catalog under the
+    // default provider prefix (see prefixModelsForProvider in model-utils).
+    if (!baseId.includes(':') && state.model.defaultProviderId) {
+      return getItem(models, `${state.model.defaultProviderId}:${baseId}`)?.effortLevels;
+    }
+    return undefined;
+  },
+);
+
+/**
+ * Effort levels for the model an agent session currently uses — the
+ * session-scoped companion to `selectAgentReasoningEffort`. The session's own
+ * daemon-served `effortLevels` (the provider's `thought_level` select
+ * discovered at session open, §5.5) take precedence when present; otherwise
+ * the catalog metadata lookup applies (codex static catalog etc.).
+ * `undefined` when the session is unknown, uses the provider default model,
+ * or neither the session nor the loaded catalog advertises effort support.
+ */
+export const selectAgentModelEffortLevels = store.createSelector(
+  (state, agentId: string): string[] | undefined => {
+    const session = state.agentSessions?.byAgentId[agentId];
+    if (Array.isArray(session?.effortLevels) && session.effortLevels.length > 0) {
+      return session.effortLevels;
+    }
+    return selectModelEffortLevels.select(state, session?.model);
   },
 );

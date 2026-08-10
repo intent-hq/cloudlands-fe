@@ -9,8 +9,8 @@ import {
   toggleTerminalOverlay,
 } from "../terminals/terminals-slice";
 import { workspaceDeleted } from "../workspace-lifecycle/workspace-lifecycle-slice";
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   addItem,
   createCollection,
@@ -19,7 +19,7 @@ import {
   removeItem,
   updateItem,
   upsertItem,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 
 export type WorkspaceUpdatedEvent = {
   workspaceId: string;
@@ -331,57 +331,57 @@ function updateActiveWorkspaceId(state: WorkspaceState, wsId: string): Workspace
 // Reducer
 // ---------------------------------------------------------------------------
 
-export const workspaceReducer = createReducer<WorkspaceState>(initialState)
-  .with(setActiveWorkspaceId, (state, { payload: [wsId] }) => {
+export const workspaceReducer = createReducer<WorkspaceState>(initialState);
+workspaceReducer.with(setActiveWorkspaceId, (state, { payload: [wsId] }) => {
     return updateActiveWorkspaceId(state, wsId);
-  })
-  .with(clearActiveWorkspace, (state) => {
+  });
+workspaceReducer.with(clearActiveWorkspace, (state) => {
     if (state.activeWorkspaceId === null) return state;
     return { ...state, activeWorkspaceId: null };
-  })
-  .with(openTerminalOverlay, (state, { payload: [wsId] }) => {
+  });
+workspaceReducer.with(openTerminalOverlay, (state, { payload: [wsId] }) => {
     return updateActiveWorkspaceId(state, wsId);
-  })
-  .with(toggleTerminalOverlay, (state, { payload: [wsId] }) => {
+  });
+workspaceReducer.with(toggleTerminalOverlay, (state, { payload: [wsId] }) => {
     return updateActiveWorkspaceId(state, wsId);
-  })
-  .with(setWorkspaceLoading, (state, { payload: [loading] }) => {
+  });
+workspaceReducer.with(setWorkspaceLoading, (state, { payload: [loading] }) => {
     if (state.loading === loading) return state;
     return { ...state, loading };
-  })
-  .with(setWorkspaceError, (state, { payload: [error] }) => {
+  });
+workspaceReducer.with(setWorkspaceError, (state, { payload: [error] }) => {
     if (state.error === error) return state;
     return { ...state, error };
-  })
-  .with(setWorkspaceHasLoaded, (state, { payload: [hasLoaded] }) => {
+  });
+workspaceReducer.with(setWorkspaceHasLoaded, (state, { payload: [hasLoaded] }) => {
     if (state.hasLoaded === hasLoaded) return state;
     return { ...state, hasLoaded };
-  })
-  .with(setWorkspaceCreating, (state, { payload: [isCreating] }) => {
+  });
+workspaceReducer.with(setWorkspaceCreating, (state, { payload: [isCreating] }) => {
     if (state.isCreating === isCreating) return state;
     return { ...state, isCreating };
-  })
-  .with(replaceWorkspaceList, (state, { payload: [workspaces] }) => {
+  });
+workspaceReducer.with(replaceWorkspaceList, (state, { payload: [workspaces] }) => {
     const nextVisibleState = buildVisibleWorkspaceState(state, workspaces);
     return {
       ...state,
       workspaces: nextVisibleState.workspaces,
       pendingCreations: nextVisibleState.pendingCreations,
     };
-  })
-  .with(markWorkspacePendingDeletion, (state, { payload: [wsId] }) => {
+  });
+workspaceReducer.with(markWorkspacePendingDeletion, (state, { payload: [wsId] }) => {
     if (state.pendingDeletions[wsId]) return state;
     return {
       ...state,
       pendingDeletions: { ...state.pendingDeletions, [wsId]: true },
     };
-  })
-  .with(clearWorkspacePendingDeletion, (state, { payload: [wsId] }) => {
+  });
+workspaceReducer.with(clearWorkspacePendingDeletion, (state, { payload: [wsId] }) => {
     const next = clearBooleanMapEntry(state.pendingDeletions, wsId);
     if (next === state.pendingDeletions) return state;
     return { ...state, pendingDeletions: next };
-  })
-  .with(setPendingCreation, (state, { payload: [workspace] }) => {
+  });
+workspaceReducer.with(setPendingCreation, (state, { payload: [workspace] }) => {
     const normalized = mergeWorkspaceEnrichment(state.pendingCreations[workspace.id], workspace);
     return {
       ...state,
@@ -390,25 +390,27 @@ export const workspaceReducer = createReducer<WorkspaceState>(initialState)
         [workspace.id]: normalized,
       },
     };
-  })
-  .with(clearPendingCreation, (state, { payload: [wsId] }) => {
+  });
+workspaceReducer.with(clearPendingCreation, (state, { payload: [wsId] }) => {
     const next = clearPendingCreationEntry(state.pendingCreations, wsId);
     if (next === state.pendingCreations) return state;
     return { ...state, pendingCreations: next };
-  })
-  .with(setWorkspaceEntity, (state, { payload: [workspace] }) => {
+  });
+workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace] }) => {
+    if (state.pendingDeletions[workspace.id]) return state;
     const existing = getWorkspaceById(state.workspaces, workspace.id);
     const merged = mergeWorkspaceEnrichment(existing, workspace);
     return {
       ...state,
       workspaces: existing ? upsertItem(state.workspaces, merged) : addItem(state.workspaces, merged),
     };
-  })
-  .with(bulkUpdateWorkspaceEntities, (state, { payload: [actions] }) => {
+  });
+workspaceReducer.with(bulkUpdateWorkspaceEntities, (state, { payload: [actions] }) => {
     let workspaces = state.workspaces;
 
     for (const action of actions) {
       const [wsId, changes] = action.payload;
+      if (state.pendingDeletions[wsId]) continue;
       const existing = getWorkspaceById(workspaces, wsId);
       if (!existing) continue;
 
@@ -433,28 +435,29 @@ export const workspaceReducer = createReducer<WorkspaceState>(initialState)
       ...state,
       workspaces,
     };
-  })
-  .with(removeWorkspaceEntity, (state, { payload: [wsId] }) => {
+  });
+workspaceReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) => {
     if (!getWorkspaceById(state.workspaces, wsId)) return state;
     return {
       ...state,
       activeWorkspaceId: state.activeWorkspaceId === wsId ? null : state.activeWorkspaceId,
       workspaces: removeItem(state.workspaces, wsId as Workspace["id"]),
     };
-  })
-  .with(workspaceDeleted, (state, { payload: [wsId] }) => {
+  });
+workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
     const existsInCollection = !!getWorkspaceById(state.workspaces, wsId);
     const hasPendingState =
-      state.pendingDeletions[wsId] ||
       state.pendingArchives[wsId] ||
       state.pendingCreations[wsId] ||
       state.recency.lastViewedAt[wsId] !== undefined ||
       state.activeWorkspaceId === wsId;
 
-    // No-op if workspace has no trace in state
+    // No-op if workspace has no trace in state. The pendingDeletions tombstone
+    // is deliberately NOT cleared here: a stale workspace.get/workspace.list
+    // response can land after this event, so only the saga grace timer (or an
+    // explicit undo, which never reaches commit) lifts the tombstone.
     if (!existsInCollection && !hasPendingState) return state;
 
-    const { [wsId]: _removedDeletion, ...nextPendingDeletions } = state.pendingDeletions;
     const { [wsId]: _removedArchive, ...nextPendingArchives } = state.pendingArchives;
     const { [wsId]: _removedCreation, ...nextPendingCreations } = state.pendingCreations;
     const { [wsId]: _removedRecency, ...nextLastViewedAt } = state.recency.lastViewedAt;
@@ -462,15 +465,14 @@ export const workspaceReducer = createReducer<WorkspaceState>(initialState)
       ...state,
       activeWorkspaceId: state.activeWorkspaceId === wsId ? null : state.activeWorkspaceId,
       workspaces: existsInCollection ? removeItem(state.workspaces, wsId as Workspace["id"]) : state.workspaces,
-      pendingDeletions: nextPendingDeletions,
       pendingArchives: nextPendingArchives,
       pendingCreations: nextPendingCreations,
       recency: {
         lastViewedAt: nextLastViewedAt,
       },
     };
-  })
-  .with(recordWorkspaceView, (state, { payload: [wsId, viewedAt] }) => {
+  });
+workspaceReducer.with(recordWorkspaceView, (state, { payload: [wsId, viewedAt] }) => {
     if (state.recency.lastViewedAt[wsId] === viewedAt) return state;
     return {
       ...state,
@@ -478,14 +480,14 @@ export const workspaceReducer = createReducer<WorkspaceState>(initialState)
         lastViewedAt: { ...state.recency.lastViewedAt, [wsId]: viewedAt },
       },
     };
-  })
-  .with(loadRecencyData, (state, { payload: [recency] }) => {
+  });
+workspaceReducer.with(loadRecencyData, (state, { payload: [recency] }) => {
     return {
       ...state,
       recency,
     };
-  })
-  .with(cleanupRecency, (state, { payload: [workspaceIds] }) => {
+  });
+workspaceReducer.with(cleanupRecency, (state, { payload: [workspaceIds] }) => {
     const existingWorkspaceIds = new Set(workspaceIds);
     let removed = false;
     const nextLastViewedAt: Record<string, number> = {};
@@ -506,8 +508,8 @@ export const workspaceReducer = createReducer<WorkspaceState>(initialState)
         lastViewedAt: nextLastViewedAt,
       },
     };
-  })
-  .with(resetWorkspaceState, (state) => ({
+  });
+workspaceReducer.with(resetWorkspaceState, (state) => ({
     ...state,
     activeWorkspaceId: null,
     workspaces: createCollection("id"),

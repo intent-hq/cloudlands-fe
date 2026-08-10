@@ -74,6 +74,8 @@ export function feedKindLabel(kind: string, agentStatus?: string): string {
       return m.hud_feedKind_agentDeleted_label();
     case 'agent:status-changed':
       return agentStatusChipLabel(agentStatus);
+    case 'task:created':
+      return m.hud_feedKind_taskCreated_label();
     case 'task:status-changed':
       return m.hud_feedKind_taskStatusChanged_label();
     case 'workspace:displayStatus-changed':

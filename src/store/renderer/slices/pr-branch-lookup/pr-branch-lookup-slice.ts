@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import type {
   PrBranchLookupPayload,
   PrBranchLookupRequest,
@@ -37,22 +37,22 @@ export const prBranchLookupFailed = createAction<
   { key: string; error: string }
 >('prBranchLookup/failed', (request, error) => ({ key: request.key, error }));
 
-export const prBranchLookupReducer = createReducer<PrBranchLookupState>(initialState)
-  .with(prBranchLookupStarted, (state, { payload }) => ({
+export const prBranchLookupReducer = createReducer<PrBranchLookupState>(initialState);
+prBranchLookupReducer.with(prBranchLookupStarted, (state, { payload }) => ({
     ...state,
     byKey: {
       ...state.byKey,
       [payload.key]: { status: 'loading' },
     },
-  }))
-  .with(prBranchLookupSucceeded, (state, { payload }) => ({
+  }));
+prBranchLookupReducer.with(prBranchLookupSucceeded, (state, { payload }) => ({
     ...state,
     byKey: {
       ...state.byKey,
       [payload.key]: { status: 'succeeded', branch: payload.branch },
     },
-  }))
-  .with(prBranchLookupFailed, (state, { payload }) => ({
+  }));
+prBranchLookupReducer.with(prBranchLookupFailed, (state, { payload }) => ({
     ...state,
     byKey: {
       ...state.byKey,

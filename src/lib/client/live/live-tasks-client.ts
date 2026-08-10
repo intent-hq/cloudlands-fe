@@ -5,10 +5,10 @@
  * `WorkspaceTask[]` projection AND the workspace-wide `taskStats` aggregate the
  * BE owns. The FE renders `stats` verbatim — it never re-derives task progress
  * from the task list (or from `note.list`). `subscribe` aggregates tasks
- * across workspaces — converging via one typed per-workspace `task.subscribe`
- * channel per workspace (PROTOCOL §6.9) on liveState daemons, and refetching
- * on legacy `task:*`/`note:*` events otherwise (task status lives in note
- * metadata).
+ * across workspaces, converging via one typed per-workspace `task.subscribe`
+ * channel per workspace (PROTOCOL §6.9) — the sole data path
+ * (intent-hq/monorepo#1697); there is no legacy `task:*`/`note:*`
+ * events-driven refetch.
  */
 import type { TaskStatus, WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
 import type {
@@ -28,8 +28,6 @@ import type {
 import { backendRequest } from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
 import {
-  isEventInFamily,
-  listWorkspaceIds,
   newIdempotencyKey,
   rememberNoteWorkspace,
   resolveNoteWorkspaceId,
@@ -388,20 +386,17 @@ export class LiveTasksClient implements TasksClient {
   /**
    * Subscribe to tasks across every workspace.
    *
-   * Typed §6.9 channel: on liveState daemons one per-workspace
-   * `task.subscribe` (`{ workspaceId }`) is registered per id yielded by
-   * `subscribeWorkspaceIds` — the same enumeration `fetchAll` flattens over.
+   * Typed §6.9 channel: one per-workspace `task.subscribe`
+   * (`{ workspaceId }`) is registered per id yielded by
+   * `subscribeWorkspaceIds` — the sole data path (intent-hq/monorepo#1697).
    * The channel carries task notes; the BE emits `removedIds` when a note is
    * deleted OR demoted (its task metadata removed), which the reconciler
    * drops. Workspace add → a new channel registers and its snapshot merges
    * in; workspace delete → the channel unsubscribes and its tasks are
-   * evicted. While ANY workspace channel lacks a push-confirmed registration
-   * the subscription stays legacy and refetches keep serving (the #775
-   * safety net); daemons without liveState never register channels at all.
+   * evicted.
    */
   subscribe(handler: SubscriptionHandler<WorkspaceTask[]>): Unsubscribe {
     return createDeltaSubscription<WorkspaceTask>({
-      eventTypes: ["task:status-changed", "task:ready-tasks-changed", "note:updated"],
       channel: {
         subscribeMethod: "task.subscribe",
         unsubscribeMethod: "task.unsubscribe",
@@ -409,13 +404,6 @@ export class LiveTasksClient implements TasksClient {
           subscribeIds: subscribeWorkspaceIds,
           paramsForId: (id) => ({ workspaceId: id }),
         },
-      },
-      matchLegacyEvent: (method, params) =>
-        isEventInFamily(method, params, "task") || isEventInFamily(method, params, "note"),
-      fetchAll: async () => {
-        const ids = await listWorkspaceIds();
-        const perWorkspace = await Promise.all(ids.map((id) => this.list(id)));
-        return perWorkspace.flatMap((entry) => entry.tasks);
       },
       getId: (raw) => String(raw.id ?? ""),
       // Push-path entities are the daemon's task-filtered wire `Note` (§6.9),

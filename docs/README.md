@@ -5,6 +5,7 @@ This index lists active documentation in `docs/`; obsolete proposal, spike, and 
 ## 📚 Complete Index
 
 ### Top-level docs
+
 - **[AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md)** - Agent system architecture and design
 - **[agent-message-dedup-and-stream-sagas.md](./agent-message-dedup-and-stream-sagas.md)** - Agent message deduplication and saga-owned stream reconciliation architecture
 - **[AUGGIE_USAGE_TRACKING_AUDIT.md](./AUGGIE_USAGE_TRACKING_AUDIT.md)** - Audit notes for Auggie usage tracking
@@ -17,6 +18,7 @@ This index lists active documentation in `docs/`; obsolete proposal, spike, and 
 - **[IPC_DEBUG_GUIDE.md](./IPC_DEBUG_GUIDE.md)** - IPC debugging guide
 - **[KEYBINDINGS.md](./KEYBINDINGS.md)** - Keyboard shortcuts and bindings reference
 - **[MULTI_ACP_PROVIDER_SPEC.md](./MULTI_ACP_PROVIDER_SPEC.md)** - Multi-provider ACP specification
+- **[MULTI_BACKEND_CONNECT.md](./MULTI_BACKEND_CONNECT.md)** - FE multi-backend connect (remote intentd: transport, store, switch teardown, backend-keyed sessions)
 - **[RELEASING.md](./RELEASING.md)** - Release process and deployment runbook
 - **[RULES_SYSTEM.md](./RULES_SYSTEM.md)** - Rules and instruction system
 - **[STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md)** - State management orientation and links to the Redux skills as the active architecture source
@@ -31,40 +33,48 @@ This index lists active documentation in `docs/`; obsolete proposal, spike, and 
 - **[workspaces-link-handler.md](./workspaces-link-handler.md)** - Workspace link handling behavior
 
 ### `proposals/`
+
 - **[PANEL_TAB_UX_SPEC.md](./proposals/PANEL_TAB_UX_SPEC.md)** - Panel and tab system UX specification
 - **[homepage-progress-cards.md](./proposals/homepage-progress-cards.md)** - Proposal for homepage progress cards
 
 ### `investigations/`
+
 - **[svelte-tiptap-utilities-implementation.md](./investigations/svelte-tiptap-utilities-implementation.md)** - Summary of the shared TipTap utility implementation
 
 ### `real/`
+
 - **[DEPLOYING.md](./real/DEPLOYING.md)** - Deployment notes and operational guidance
 
 ## 📚 Core Documentation
 
 ### Architecture & Design
+
 - **[AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md)** - Agent system architecture and design
 - **[agent-message-dedup-and-stream-sagas.md](./agent-message-dedup-and-stream-sagas.md)** - Agent message deduplication and stream saga architecture
 - **[COMPONENT_RESPONSIBILITIES.md](./COMPONENT_RESPONSIBILITIES.md)** - Component structure and responsibilities
 - **[EVENT_SYSTEM.md](./EVENT_SYSTEM.md)** - Event system architecture
 
 ### Development
+
 - **[DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md)** - Getting started and development workflow
 - **[TYPE_SYSTEM_GUIDE.md](./TYPE_SYSTEM_GUIDE.md)** - TypeScript and type safety
 - **[IPC_DEBUG_GUIDE.md](./IPC_DEBUG_GUIDE.md)** - IPC debugging guide
 
 ### Technical Guides
+
 - **[STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md)** - State management orientation for the local store shim at `src/lib/store-shim/`
 - **[ERROR_HANDLING_SYSTEM.md](./ERROR_HANDLING_SYSTEM.md)** - Error handling patterns
 - **[TROUBLESHOOTING_GUIDE.md](./TROUBLESHOOTING_GUIDE.md)** - Debugging and common issues
 
 ### Features
+
 - **[line-attribution-dataflow.md](./line-attribution-dataflow.md)** - Line attribution system
 - **[chat-session-forking.md](./chat-session-forking.md)** - Chat forking capabilities
 
 ## 🚀 Quick Start
 
 ### For New Developers
+
 1. Start with [DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md)
 2. Review [AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md)
 3. Review [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md), then follow the Redux skills for current implementation rules
@@ -213,5 +223,5 @@ For questions or issues:
 
 ---
 
-*Last Updated: March 2026*
-*Version: 2.2.0*
+_Last Updated: March 2026_
+_Version: 2.2.0_

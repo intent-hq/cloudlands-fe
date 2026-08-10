@@ -4,12 +4,10 @@
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
   import { invoke, shell } from '$lib/electron-bridge';
-  import { selectManagedInstallStatusByProvider } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import { retryLoadModels } from '$store/renderer/slices/model/model-slice';
   import AuggieInstructionsPanel from '$lib/components/AuggieInstructionsPanel.svelte';
 
   import { createLogger } from '$lib/utils/client-logger';
-  import { MINIMUM_AUGGIE_VERSION } from '$shared/constants/auggie';
   import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
   import { selectProviderCatalogEntry } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
@@ -26,16 +24,11 @@
   import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('AuggieSetupGate');
-  const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
 
+  /** Auggie install/auth state, from the generic per-provider check. */
   type AuggieStatus = {
     installed: boolean;
     authenticated: boolean;
-    version?: string;
-    versionOk: boolean;
-    minimumVersion: string;
-    authDetails?: string;
-    binaryInstallAvailable?: boolean;
   };
 
   const STATUS_REFRESH_INTERVAL_MS = 15000;
@@ -91,19 +84,19 @@
     }
   }
 
-  /** Fetch auggie install/auth state from AUGGIE_CHANNELS.STATUS. */
+  /** Fetch auggie install/auth state from the generic per-provider check. */
   async function checkStatus() {
     try {
-      const result = await invoke<{ success: boolean; data?: AuggieStatus; error?: string }>(
-        AUGGIE_CHANNELS.STATUS,
-      );
-      status = result.data ?? {
-        installed: false,
-        authenticated: false,
-        versionOk: false,
-        minimumVersion: MINIMUM_AUGGIE_VERSION,
+      const result = await invoke<{
+        success: boolean;
+        data?: { available: boolean; authenticated?: boolean };
+        error?: string;
+      }>(PROVIDERS_CHANNELS.CHECK_SINGLE, { providerId: 'auggie' });
+      status = {
+        installed: result.data?.available ?? false,
+        authenticated: result.data?.authenticated === true,
       };
-      if (status?.installed && status?.versionOk && status?.authenticated) {
+      if (status.installed && status.authenticated) {
         appStore.dispatch(retryLoadModels());
       }
     } catch (err) {
@@ -201,16 +194,13 @@
     actionInProgress = true;
     try {
       await checkStatus();
-      if (status?.installed && status?.versionOk && status?.authenticated) {
+      if (status?.installed && status?.authenticated) {
         auggieInstructions = null;
         auggieCommand = null;
         toast.success(m.lib_auggieSetup_readyToGo_message());
         return;
       }
-      const channel =
-        status?.installed && status?.versionOk
-          ? AUGGIE_CHANNELS.AUTHENTICATE
-          : AUGGIE_CHANNELS.INSTALL;
+      const channel = status?.installed ? AUGGIE_CHANNELS.AUTHENTICATE : AUGGIE_CHANNELS.INSTALL;
       const args = channel === AUGGIE_CHANNELS.AUTHENTICATE ? [{ action: 'start' }] : [];
       const result = await invoke<InstructionResponse>(channel, ...args);
       if (result.success && result.data?.authenticated) {
@@ -245,14 +235,6 @@
 
   const providerOptions = $derived.by(() => {
     const hidden = providerAvailability?.hiddenProviders ?? [];
-    const codexManagedInstallStatus = $codexManagedInstallStatus$;
-    const codexSetupInProgress = codexManagedInstallStatus?.managedInstallState === 'installing';
-    const codexProgress = codexManagedInstallStatus?.downloadProgress;
-    const codexSetupStatus = codexSetupInProgress
-      ? typeof codexProgress === 'number'
-        ? m.lib_auggieSetup_settingUpCodexPercent_label({ percent: Math.round(codexProgress * 100) })
-        : m.lib_auggieSetup_settingUpCodex_label()
-      : undefined;
     return [
       {
         id: 'auggie',
@@ -268,7 +250,7 @@
         id: 'claude-code',
         name: catalogRow('claude-code').displayName,
         command: catalogRow('claude-code').command,
-        installCommand: 'npm install -g @agentclientprotocol/claude-agent-acp',
+        installCommand: 'curl -fsSL https://claude.ai/install.sh | bash',
         description: m.lib_auggieSetup_claudeCode_description(),
         available: providerAvailability?.providers.claudeCode.available ?? false,
         requiresAuth: false,
@@ -278,10 +260,7 @@
         id: 'codex',
         name: catalogRow('codex').displayName,
         command: catalogRow('codex').command,
-        installCommand: codexSetupInProgress
-          ? undefined
-          : 'npm install -g @agentclientprotocol/codex-acp',
-        setupStatus: codexSetupStatus,
+        installCommand: 'npm i -g @openai/codex',
         description: m.lib_auggieSetup_codex_description(),
         available: providerAvailability?.providers.codex.available ?? false,
         requiresAuth: false,
@@ -396,12 +375,7 @@
                     {/if}
                   </Button>
                 {:else}
-                  {#if provider.setupStatus}
-                    <div class="setup-status" role="status">
-                      <Fa icon={faCircleNotch} class="animate-spin" size="sm" />
-                      <span>{provider.setupStatus}</span>
-                    </div>
-                  {:else if provider.installCommand}
+                  {#if provider.installCommand}
                     {@const installCommand = provider.installCommand}
                     <button
                       class="install-command-button"
@@ -457,7 +431,7 @@
       </section>
 
       <!-- Auggie login section (rendered when installed but not authenticated) -->
-      {#if status?.installed && status?.versionOk && !status?.authenticated}
+      {#if status?.installed && !status?.authenticated}
         <section class="authenticate">
           <h2>{m.lib_auggieSetup_authenticate_title()}</h2>
           <div class="actions">
@@ -570,15 +544,6 @@
 
   .install-command-button:hover :global(.copy-icon) {
     opacity: 1;
-  }
-
-  .setup-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    color: hsl(var(--muted-foreground));
-    font-size: 0.875rem;
   }
 
   .error-message {

@@ -18,6 +18,9 @@ vi.mock('electron', () => ({
     on: vi.fn(),
   },
   BrowserWindow: vi.fn(),
+  ipcMain: {
+    handle: vi.fn(),
+  },
   powerMonitor: {
     on: vi.fn(),
   },
@@ -41,28 +44,26 @@ vi.mock('electron-updater', () => ({
 
 let testUserDataPath: string;
 
+beforeEach(async () => {
+  // Create a temp directory for the test
+  testUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'auto-update-test-'));
+  vi.clearAllMocks();
+  // Reset the module cache to get a fresh service instance
+  vi.resetModules();
+});
+
+afterEach(async () => {
+  // Clean up timers and intervals
+  vi.clearAllTimers();
+  vi.useRealTimers();
+  // Drain any in-flight writes from local-prefs before cleanup
+  const { __drainLocalPrefsWriteChainForTesting } = await import('../../../../main/local-prefs');
+  await __drainLocalPrefsWriteChainForTesting();
+  // Clean up the temp directory
+  await fs.rm(testUserDataPath, { recursive: true, force: true });
+});
+
 describe('AutoUpdateService channel persistence', () => {
-  beforeEach(async () => {
-    // Create a temp directory for the test
-    testUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'auto-update-test-'));
-    vi.clearAllMocks();
-    // Reset the module cache to get a fresh service instance
-    vi.resetModules();
-  });
-
-  afterEach(async () => {
-    // Clean up timers and intervals
-    vi.clearAllTimers();
-    vi.useRealTimers();
-    // Drain any in-flight writes from local-prefs before cleanup
-    const { __drainLocalPrefsWriteChainForTesting } = await import(
-      '../../../../main/local-prefs'
-    );
-    await __drainLocalPrefsWriteChainForTesting();
-    // Clean up the temp directory
-    await fs.rm(testUserDataPath, { recursive: true, force: true });
-  });
-
   it('setChannel(beta) persists betaUpdatesEnabled=true to local-prefs.json', async () => {
     // Import the service after mocks are set up
     const { autoUpdateService } = await import('../auto-update.service');
@@ -137,5 +138,82 @@ describe('AutoUpdateService channel persistence', () => {
     // Get the state and verify the channel defaults to stable
     const state = autoUpdateService.getState();
     expect(state.channel).toBe('stable');
+  });
+});
+
+/**
+ * GET_STATE boot gating: setupAutoUpdateIPC() runs before window creation but
+ * initializeAutoUpdater() only runs later in the deferred secondary-startup
+ * task, so an early renderer GET_STATE must wait for the boot flow to settle
+ * the channel instead of answering the pre-init default (stable).
+ */
+describe('GET_STATE boot gating (early renderer read)', () => {
+  async function registerAndGetStateHandler() {
+    const { ipcMain } = await import('electron');
+    const ipc = await import('../auto-update.ipc');
+    ipc.setupAutoUpdateIPC();
+    const handleMock = ipcMain.handle as unknown as ReturnType<typeof vi.fn>;
+    const getStateHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'auto-update:get-state',
+    )?.[1] as (event: unknown, data?: unknown) => Promise<any>;
+    expect(getStateHandler).toBeTypeOf('function');
+    return { ipc, getStateHandler };
+  }
+
+  it('a GET_STATE issued before initializeAutoUpdater() waits and answers the loaded channel', async () => {
+    // Persisted beta preference that a too-early read used to miss
+    const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
+    await fs.writeFile(prefsPath, JSON.stringify({ betaUpdatesEnabled: true }), 'utf8');
+
+    const { ipc, getStateHandler } = await registerAndGetStateHandler();
+
+    // Renderer read arrives BEFORE initialization has even started — it must
+    // stay pending rather than answering the pre-init default.
+    let settled = false;
+    const pending = getStateHandler({}, undefined).then((result) => {
+      settled = true;
+      return result;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(settled).toBe(false);
+
+    // The deferred secondary-startup task initializes the updater
+    ipc.initializeAutoUpdater({} as any);
+
+    const result = await pending;
+    expect(result.success).toBe(true);
+    expect(result.data.channel).toBe('beta');
+  });
+
+  it('initializeAutoUpdater() with no window (secondary task raced ahead of window creation) still initializes and settles the gate', async () => {
+    // Persisted beta preference — only visible in GET_STATE if initialize()
+    // really ran (intent-hq/monorepo#1848: the pre-window race used to skip
+    // initialization entirely).
+    const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
+    await fs.writeFile(prefsPath, JSON.stringify({ betaUpdatesEnabled: true }), 'utf8');
+
+    const { ipc, getStateHandler } = await registerAndGetStateHandler();
+    const pending = getStateHandler({}, undefined);
+
+    // The deferred secondary-startup task runs before any window exists;
+    // initialization must proceed regardless.
+    ipc.initializeAutoUpdater(null);
+
+    const result = await pending;
+    expect(result.success).toBe(true);
+    expect(result.data.channel).toBe('beta');
+    // Proves initialize() actually ran (currentVersion is set there).
+    expect(result.data.currentVersion).toBe('2.0.0');
+  });
+
+  it('markAutoUpdaterNotInitialized() (dev mode) unblocks GET_STATE with the default state', async () => {
+    const { ipc, getStateHandler } = await registerAndGetStateHandler();
+
+    const pending = getStateHandler({}, undefined);
+    ipc.markAutoUpdaterNotInitialized();
+
+    const result = await pending;
+    expect(result.success).toBe(true);
+    expect(result.data.channel).toBe('stable');
   });
 });

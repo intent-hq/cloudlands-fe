@@ -267,6 +267,7 @@ export function setupSpecialistsIPC(): void {
             roleReminder: bundled.frontmatter.roleReminder,
             hidden: bundled.frontmatter.hidden,
             modelOptions: bundled.frontmatter.modelOptions,
+            reasoningEffort: bundled.frontmatter.reasoningEffort,
             behaviorPrompt: bundled.behaviorPrompt,
           });
 

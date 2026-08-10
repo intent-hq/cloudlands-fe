@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   addItem,
   createCollection,
@@ -9,7 +9,8 @@ import {
   type Collection,
   updateItem,
   upsertItem,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
+import { deepEqual } from "fast-equals";
 
 // ============================================================================
 // Types
@@ -110,34 +111,100 @@ export const addSearchedItem = createAction<[item: { id: string; type: PanelCont
 // Reducer
 // ============================================================================
 
-export const multiPanelContextReducer = createReducer<MultiPanelContextState>(initialState)
-  .with(setWorkspace, (state, { payload: [workspaceId] }) => {
-    if (state.workspaceId === workspaceId) return state;
-    return {
-      panels: createCollection<PanelContextItem, "id">("id"),
-      selections: createCollection<SelectionContextItem, "id">("id"),
-      currentAgentPanelId: null,
-      workspaceId,
-    };
-  })
-  .with(updatePanels, (state, { payload: [panels] }) => {
-    const checkedIds = new Set(getItems(state.panels).filter((p) => p.checked).map((p) => p.id));
-    return {
-      ...state,
-      panels: createCollection<PanelContextItem, "id">(
-        "id",
-        panels.map((p) => ({
-          ...p,
-          checked: checkedIds.has(p.id) || p.checked,
-        }))
-      ),
-    };
-  })
-  .with(togglePanel, (state, { payload: [id] }) => {
-    const panel = getItem(state.panels, id);
-    if (!panel) return state;
+export const multiPanelContextReducer = createReducer<MultiPanelContextState>(initialState);
 
-    const panels = updateItem(state.panels, { ...panel, checked: !panel.checked });
+
+
+multiPanelContextReducer.with(setWorkspace, (state, { payload: [workspaceId] }) => {
+  if (state.workspaceId === workspaceId) return state;
+  return {
+    panels: createCollection<PanelContextItem, 'id'>('id'),
+    selections: createCollection<SelectionContextItem, 'id'>('id'),
+    currentAgentPanelId: null,
+    workspaceId,
+  };
+});
+multiPanelContextReducer.with(updatePanels, (state, { payload: [panels] }) => {
+  const checkedIds = new Set(
+    getItems(state.panels)
+      .filter((p) => p.checked)
+      .map((p) => p.id),
+  );
+  const nextPanels = panels.map((p) => ({
+    ...p,
+    checked: checkedIds.has(p.id) || p.checked,
+  }));
+
+  if (deepEqual(getItems(state.panels), nextPanels)) {
+    return state;
+  }
+
+  return {
+    ...state,
+    panels: createCollection<PanelContextItem, 'id'>('id', nextPanels),
+  };
+});
+multiPanelContextReducer.with(togglePanel, (state, { payload: [id] }) => {
+  const panel = getItem(state.panels, id);
+  if (!panel) return state;
+
+  const panels = updateItem(state.panels, { ...panel, checked: !panel.checked });
+  if (panels === state.panels) {
+    return state;
+  }
+
+  return {
+    ...state,
+    panels,
+  };
+});
+multiPanelContextReducer.with(setSelection, (state, { payload: [selection] }) => {
+  const id = `sel-${selection.panelId}-${selection.tabId}`;
+  const item: SelectionContextItem = {
+    ...selection,
+    id,
+    checked: true,
+  };
+  const selections = upsertItem(state.selections, item);
+  if (selections === state.selections) {
+    return state;
+  }
+
+  return { ...state, selections };
+});
+multiPanelContextReducer.with(clearSelection, (state, { payload: [panelId, tabId] }) => ({
+  ...state,
+  selections: filterCollection(state.selections, (selection): selection is SelectionContextItem => {
+    return !(selection.panelId === panelId && selection.tabId === tabId);
+  }),
+}));
+multiPanelContextReducer.with(toggleSelection, (state, { payload: [id] }) => {
+  const selection = getItem(state.selections, id);
+  if (!selection) return state;
+
+  const selections = updateItem(state.selections, {
+    ...selection,
+    checked: !selection.checked,
+  });
+  if (selections === state.selections) {
+    return state;
+  }
+
+  return {
+    ...state,
+    selections,
+  };
+});
+multiPanelContextReducer.with(uncheckAllSelections, (state) => ({
+  ...state,
+  selections: setCheckedState(state.selections, false),
+}));
+multiPanelContextReducer.with(addSearchedItem, (state, { payload: [item] }) => {
+  const existing = getItem(state.panels, item.id);
+  if (existing) {
+    if (existing.checked) return state;
+
+    const panels = updateItem(state.panels, { ...existing, checked: true });
     if (panels === state.panels) {
       return state;
     }
@@ -146,79 +213,18 @@ export const multiPanelContextReducer = createReducer<MultiPanelContextState>(in
       ...state,
       panels,
     };
-  })
-  .with(setSelection, (state, { payload: [selection] }) => {
-    const id = `sel-${selection.panelId}-${selection.tabId}`;
-    const item: SelectionContextItem = {
-      ...selection,
-      id,
-      checked: true,
-    };
-    const selections = upsertItem(state.selections, item);
-    if (selections === state.selections) {
-      return state;
-    }
+  }
 
-    return { ...state, selections };
-  })
-  .with(clearSelection, (state, { payload: [panelId, tabId] }) => ({
-    ...state,
-    selections: filterCollection(
-      state.selections,
-      (selection): selection is SelectionContextItem => {
-        return !(selection.panelId === panelId && selection.tabId === tabId);
-      }
-    ),
-  }))
-  .with(toggleSelection, (state, { payload: [id] }) => {
-    const selection = getItem(state.selections, id);
-    if (!selection) return state;
+  const newItem: PanelContextItem = {
+    id: item.id,
+    panelId: 'search',
+    tabId: item.id,
+    type: item.type,
+    label: item.label,
+    filePath: item.filePath,
+    noteId: item.noteId,
+    checked: true,
+  };
 
-    const selections = updateItem(state.selections, {
-      ...selection,
-      checked: !selection.checked,
-    });
-    if (selections === state.selections) {
-      return state;
-    }
-
-    return {
-      ...state,
-      selections,
-    };
-  })
-  .with(uncheckAllSelections, (state) => ({
-    ...state,
-    selections: setCheckedState(state.selections, false),
-  }))
-  .with(addSearchedItem, (state, { payload: [item] }) => {
-    const existing = getItem(state.panels, item.id);
-    if (existing) {
-      if (existing.checked) return state;
-
-      const panels = updateItem(state.panels, { ...existing, checked: true });
-      if (panels === state.panels) {
-        return state;
-      }
-
-      return {
-        ...state,
-        panels,
-      };
-    }
-
-    const newItem: PanelContextItem = {
-      id: item.id,
-      panelId: 'search',
-      tabId: item.id,
-      type: item.type,
-      label: item.label,
-      filePath: item.filePath,
-      noteId: item.noteId,
-      checked: true,
-    };
-
-    return { ...state, panels: addItem(state.panels, newItem) };
-  })
-
-
+  return { ...state, panels: addItem(state.panels, newItem) };
+});

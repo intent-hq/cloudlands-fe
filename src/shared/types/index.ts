@@ -110,3 +110,27 @@ export {
   RepoScriptModeSchema,
   RepoScriptCategorySchema,
 } from './repo-config.types';
+
+// Export multi-backend connect IPC contract (shared main ⇄ preload ⇄ renderer)
+export type {
+  ConnectionRecord,
+  ActiveBackendView,
+  ConnectionsListParams,
+  ConnectionsListResult,
+  CaptureFingerprintParams,
+  CaptureFingerprintResult,
+  AddConnectionParams,
+  AddConnectionResult,
+  ForgetConnectionParams,
+  ForgetConnectionResult,
+  SwitchConnectionParams,
+  SwitchConnectionResult,
+  ConnectionsChangedEvent,
+  ConnectionCertMismatchEvent,
+} from './connections';
+export {
+  CONNECTION_CHANNELS,
+  CONNECTIONS_CHANGED_EVENT,
+  CONNECTION_CERT_MISMATCH_EVENT,
+  LOCAL_CONNECTION_ID,
+} from './connections';

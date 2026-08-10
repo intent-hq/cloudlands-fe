@@ -56,6 +56,7 @@
   import KeyboardShortcutsCheatSheet from '$lib/components/layout/KeyboardShortcutsCheatSheet.svelte';
   import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
+  import SetupPromptDialog from '$lib/components/modals/SetupPromptDialog.svelte';
   import ReleaseNotesModal from '$lib/components/modals/ReleaseNotesModal.svelte';
   import Toast from '$lib/components/ui/toast/Toast.svelte';
   import { TooltipProvider } from '$lib/components/ui/tooltip';
@@ -94,11 +95,11 @@
   import {
     selectActiveWorkspaceId,
     selectWorkspaceById,
-    selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
   } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectHasCompletedProviderSetup, selectResolvedLocale } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectResolvedLocale } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectLocalSetupGate } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import {
     clearActiveWorkspace,
     loadWorkspacesRequested,
@@ -118,6 +119,7 @@
 
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
   import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
+  import { wireSplashGate } from '$features/backend/splash-gate';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import { ROOT_WORKSPACE_ID, isValidWorkspaceId } from '$shared/types/branded-ids';
@@ -126,13 +128,11 @@
   import { togglePanel, setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
-  import { initAppStore, store as appStore } from '$store/renderer/store';
-  import { seedMockStore } from '$store/renderer/mock-bootstrap';
-  // Side-effect import: runs every per-domain seeder's registration at startup.
+  import { store as appStore } from '$store/renderer/store';
+  import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { startAllAppSagas } from '$store/renderer/sagas';
+  // Side-effect import: installs bridge-less IPC handlers without running snapshot seeders.
   import '$store/renderer/seeders';
-  import { startGitStatusSubscription } from '$features/git/git-status-subscription';
-  import { startWorkspaceListSubscription } from '$features/workspace/workspace-list-subscription';
-  import { startSpecialistsListSubscription } from '$features/specialists/specialists-list-subscription';
   import {
     installInterruptedAgentsService,
     notifyInterruptedAgentsModalClosed,
@@ -145,21 +145,9 @@
   const logger = createLogger('+layout');
 
   function initStore(): () => void {
-    const storeContext = initAppStore(appStore);
-    void seedMockStore(appStore);
-    // Auto-refresh git status when the daemon reports external git changes.
-    const stopGitStatusSubscription = startGitStatusSubscription();
-    // Live-update the workspace list on daemon workspace:* events (e.g. rename).
-    const stopWorkspaceListSubscription = startWorkspaceListSubscription();
-    // Live-update specialists on daemon specialists:changed events (file edits on disk).
-    const stopSpecialistsListSubscription = startSpecialistsListSubscription();
-
-    return () => {
-      stopGitStatusSubscription();
-      stopWorkspaceListSubscription();
-      stopSpecialistsListSubscription();
-      storeContext.dispose();
-    };
+    return startRootStoreLifecycle(appStore, {
+      startSagas: startAllAppSagas,
+    });
   }
 
   const disposeStore = initStore();
@@ -168,8 +156,7 @@
   const workspaceItems = selectWorkspaceItems();
   const activeWorkspaceId = selectActiveWorkspaceId();
   const workspaceLoading = selectWorkspaceLoading();
-  const workspaceHasLoaded = selectWorkspaceHasLoaded();
-  const hasCompletedProviderSetup = selectHasCompletedProviderSetup();
+  const localSetupGate = selectLocalSetupGate();
   const resolvedLocale$ = selectResolvedLocale(); // {#key} on this re-renders m.*() strings on language change
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
   const workspaceTabOrder = selectWorkspaceTabOrder();
@@ -264,16 +251,13 @@
   });
 
   // Redirect first-time users to the full onboarding experience.
-  // Once workspaces have loaded, if there are none and the user hasn't
-  // completed provider setup, send them to /workspace/new instead of
-  // showing the home page.  The splash screen covers the loading gap.
+  // Backend-aware gate: once the LOCAL backend's setup evaluation resolves
+  // to "no workspaces and no ready providers", send them to /workspace/new
+  // instead of showing the home page. Remote backends get the setup prompt
+  // dialog instead of a silent redirect. The splash screen covers the
+  // loading gap.
   $effect(() => {
-    if (
-      $workspaceHasLoaded &&
-      $workspaceItems.length === 0 &&
-      !$hasCompletedProviderSetup &&
-      window.location.pathname === '/'
-    ) {
+    if ($localSetupGate === 'redirect' && window.location.pathname === '/') {
       goto('/workspace/new');
     }
   });
@@ -296,9 +280,9 @@
     (window as any).__app_goto = goto;
   }
 
-  // Chrome-less HUD pop-out window: suppress SidebarNav/SidebarPanel and the
-  // rounded main chrome (see HudChromelessMain).
-  const isHudRoute = $derived($page.url.pathname === '/hud');
+  // Chrome-less HUD pop-out: suppress sidebar/main chrome (see HudChromelessMain);
+  // prefix match, matching isHudWindow()/isHudWindowRenderer().
+  const isHudRoute = $derived($page.url.pathname.startsWith('/hud'));
 
   // Track last non-settings path for cmd+, toggle behavior
   let lastNonSettingsPath = $state('/');
@@ -317,13 +301,13 @@
   let paletteShortcuts: KeyboardShortcutManager | null = null;
 
   onMount(() => {
-    // Hide the splash screen from app.html now that Svelte has mounted
-    const splash = document.getElementById('splash');
-    if (splash) {
-      splash.classList.add('mounted');
-      // Remove from DOM after fade-out transition completes
-      splash.addEventListener('transitionend', () => splash.remove(), { once: true });
-    }
+    // Gate the splash screen's dismissal on backend connectivity (see
+    // splash-gate.ts): it stays visible past Svelte mount until
+    // backend:get-status resolves 'connected' (or a BACKEND.STATUS push
+    // reports it), with a bounded fallback/startup-failure dismiss so a
+    // dead/never-connecting daemon can't strand it. Non-Electron (browser/
+    // mock) environments dismiss immediately, same as before.
+    const stopSplashGate = wireSplashGate(document.getElementById('splash'));
 
     // Remove the static drag region from app.html now that Svelte's own drag region is active
     document.getElementById('app-drag-region')?.remove();
@@ -357,9 +341,7 @@
     const appClient = new LiveAppClient();
     const disposeInterruptedAgents = installInterruptedAgentsService(appClient, (agents) => {
       interruptedAgents = agents;
-      // An empty list is the cross-window reconciliation closing the modal
-      // silently (all agents resolved elsewhere) — no toast.
-      showInterruptedAgentsModal = agents.length > 0;
+      showInterruptedAgentsModal = true;
     });
 
     // Subscribe to the main-process "show release notes" push. The main process
@@ -782,8 +764,10 @@
     // Mouse X buttons (back/forward) navigate app history, same as Cmd+Left/Right
     const cleanupMouseHistoryNavigation = attachMouseHistoryNavigation(window);
 
-    // Windows: X-button presses arrive as an `app-command` on the BrowserWindow
-    // and never reach the renderer as mouse events; main forwards them over IPC
+    // Main-process gesture paths: Windows X-button presses arrive as an
+    // `app-command` and macOS swipe gestures (incl. Logi Options+ synthesized
+    // swipes for mouse side buttons) as a `swipe` event on the BrowserWindow,
+    // never reaching the renderer as mouse events; main forwards both over IPC
     // ('back' | 'forward') so behavior matches the mouse path above.
     let historyNavigateListenerId: string | null = null;
     if (window.electronAPI?.on) {
@@ -794,6 +778,7 @@
     }
 
     return () => {
+      stopSplashGate();
       paletteShortcuts?.detach();
       paletteShortcuts?.destroy();
       paletteShortcuts = null;
@@ -816,6 +801,8 @@
     };
   });
 
+  // Both modal actions go through the service so it stops the cross-window
+  // watcher (the modal closed locally) before sending the resolve.
   async function handleResumeSelectedAgents(resumeIds: string[], abandonIds: string[]) {
     await resolveInterruptedAgents(new LiveAppClient(), resumeIds, abandonIds);
   }
@@ -966,7 +953,7 @@
     aria-label={m.layout_appShell_shell_ariaLabel()}
     data-testid="app-ready"
   >
-    <!-- Title bar + update indicator (suppressed on the HUD route: its own header is the only top chrome and carries the drag region) -->
+    <!-- Title bar + update indicator (suppressed on HUD: its own header is the only top chrome) -->
     {#if !isHudRoute}
       <WindowTitleBar workspaceId={$activeWorkspaceId || undefined} />
       <div class="absolute top-2 right-3 z-10">
@@ -1025,15 +1012,9 @@
   <!-- Spaces Switcher Overlay (Ctrl+Tab) -->
   <SpacesSwitcherOverlay />
 
-  <!-- Joystick Radial Prompt Picker Overlay (hardware console joystick deflection;
-       suppressed in the HUD pop-out window, which is inert to hardware-console input) -->
+  <!-- Joystick Radial Prompt Picker + Encoder Cycling HUD (suppressed in the HUD pop-out, inert to hardware-console input) -->
   {#if !isHudRoute}
     <RadialPromptPickerOverlay />
-  {/if}
-
-  <!-- Encoder Cycling HUD (hardware console encoder rotation; suppressed in the
-       HUD pop-out window, which is inert to hardware-console input) -->
-  {#if !isHudRoute}
     <EncoderCycleHud />
   {/if}
 
@@ -1104,6 +1085,9 @@
 
   <!-- Redux-owned delete/archive warning hosts (global for all workspace entrypoints) -->
   <WorkspaceWarningDialogs />
+
+  <!-- Remote-backend "Go through setup?" prompt (self-gates on the setup-prompt slice) -->
+  <SetupPromptDialog />
 
   <!-- Release Notes Modal (shown after update) -->
   <ReleaseNotesModal

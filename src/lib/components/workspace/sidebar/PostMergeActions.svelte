@@ -30,6 +30,7 @@
 
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
+  import { isDaemonManagedRepoPath } from '$lib/components/workspace/initializer/recent-repo-display';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import type { PostMergeState } from '$store/renderer/slices/git/git-types';
   import {
@@ -77,6 +78,7 @@
   // Start new workspace with same repo after merge, archiving the current one
   async function handleStartNewSpace() {
     const repo = $workspace?.repositoryPath;
+    const worktree = $workspace?.worktreePath;
     const currentWorkspaceId = $workspace?.id;
 
     // Archive the current workspace first
@@ -89,8 +91,13 @@
       appStore.dispatch(loadWorkspacesRequested());
     }
 
-    // Pre-fill the create form with the current repo info via sessionStorage
-    if (repo) {
+    // Pre-fill the create form with the current repo info via sessionStorage.
+    // Only local-source repos are prefilled (mirrors NewWorkspaceCard):
+    // workspace-owned standalone checkouts (GitHub picks, where
+    // repositoryPath === worktreePath) and daemon-managed paths are not
+    // copyable local sources, so prefilling them would open the Copy-local
+    // tab against a daemon-owned directory.
+    if (repo && repo !== worktree && !isDaemonManagedRepoPath(repo)) {
       sessionStorage.setItem('workspace-prefill', JSON.stringify({ repoPath: repo }));
     }
 

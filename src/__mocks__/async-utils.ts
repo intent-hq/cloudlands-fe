@@ -13,7 +13,6 @@ export const existsAsync = vi.fn().mockResolvedValue(false);
 export const findExecutableAsync = vi.fn().mockResolvedValue(null);
 export const findVSCodeAsync = vi.fn().mockResolvedValue(null);
 export const findAuggieAsync = vi.fn().mockResolvedValue(null);
-export const getNpmGlobalBinAsync = vi.fn().mockResolvedValue(null);
 export const writeJsonAsync = vi.fn().mockResolvedValue(undefined);
 export const readJsonAsync = vi.fn().mockResolvedValue(null);
 export const VSCODE_COMMON_PATHS: string[] = [];

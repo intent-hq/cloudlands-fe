@@ -5,9 +5,9 @@
 
 ## Source of Truth
 
-The store API surface is the local redux/saga-free shim at
-`src/lib/store-shim/`, imported via `$lib/store-shim/...`. When this guide and
-the shim disagree, follow the shim and report the drift.
+The store API surface is provided by Themis, imported via
+`@augmentcode/themis/...`. When this guide and the package disagree, follow
+the package and report the drift.
 
 The shorter topic docs in this directory are secondary companions. Prefer the
 shim source for current mechanics, import paths, and verification expectations.
@@ -15,16 +15,24 @@ shim source for current mechanics, import paths, and verification expectations.
 ## Current App Wiring
 
 The renderer app uses one configured `Store` instance from
-`$lib/store-shim/svelte-store`.
+`@augmentcode/themis/svelte-store`.
 These files are the repository-specific map for how that instance is assembled:
 
-| File | Role |
-| --- | --- |
-| `src/store/renderer/configured-store.ts` | Creates the configured Store from app reducers and middleware. |
-| `src/store/renderer/reducer.ts` | Registers app-owned reducer domains. Package-owned internals are managed by the package. |
-| `src/store/renderer/sagas.ts` | Defines the function-only ordered app saga array and the `startAllAppSagas(store)` startup helper. |
-| `src/store/renderer/store.ts` | Re-exports the configured Store, inferred state types, debug helpers, and a temporary bridge for remaining compatibility surfaces. |
-| `src/routes/+layout.svelte` | Initializes the configured Store, calls `startAllAppSagas(appStore)`, and disposes saga cancels plus the Store context during root teardown. |
+| File                                     | Role                                                                                                                                         |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/store/renderer/configured-store.ts` | Creates the configured Store from app reducers and middleware.                                                                               |
+| `src/store/renderer/reducer.ts`          | Registers app-owned reducer domains. Package-owned internals are managed by the package.                                                     |
+| `src/store/renderer/sagas.ts`            | Defines the function-only ordered app saga array and the `startAllAppSagas(store)` startup helper.                                           |
+| `src/store/renderer/store.ts`            | Re-exports the configured Store, inferred state types, debug helpers, and a temporary bridge for remaining compatibility surfaces.           |
+| `src/routes/+layout.svelte`              | Initializes the configured Store, calls `startAllAppSagas(appStore)`, and disposes saga cancels plus the Store context during root teardown. |
+
+## Side effects
+
+Root-owned sagas are the only business side-effect layer. Store middleware is
+limited to the five infrastructure/diagnostic entries in `middleware.ts`: store
+guards, action batching, logging, state-reference checks, and structured-clone
+checks. Do not add API, IPC, storage, timer, subscription, toast, navigation, or
+persistence work through middleware or a new renderer bridge.
 
 Keep this shape aligned with the skills:
 
@@ -55,9 +63,9 @@ Use the configured Store and shim-owned primitives instead of local wrappers:
 Small app-shape example:
 
 ```ts
-import { store as appStore } from "$store/renderer/store";
-import { selectActiveWorkspaceId } from "$store/renderer/slices/workspace/workspace-selectors";
-import { openPalette } from "$store/renderer/slices/palette/palette-slice";
+import { store as appStore } from '$store/renderer/store';
+import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+import { openPalette } from '$store/renderer/slices/palette/palette-slice';
 
 const activeWorkspaceId = selectActiveWorkspaceId.select(appStore.state);
 if (activeWorkspaceId) {

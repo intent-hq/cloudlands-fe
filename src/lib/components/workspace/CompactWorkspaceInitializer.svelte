@@ -297,12 +297,25 @@
         const data = JSON.parse(prefillData);
         logger.debug('Applying prefill data from sessionStorage', { data });
 
-        // Apply repo and branch settings (skip if onMount already set repoPath)
-        if (data.repoPath && !repoPath) {
+        // Apply repo and branch settings. An explicit prefill wins over form
+        // state restored from persistence, so no `!repoPath` guard here — the
+        // onMount reader applies the same data first, making this idempotent.
+        if (data.repoPath) {
           repoPath = data.repoPath;
+          repoType = 'local';
+          githubUrl = '';
+          clonePath = '';
+          isNewRepo = false;
           isValidPath = true;
           // Reset scope when changing repos - scope is repo-specific
           scope = '';
+          // Clear stale remote/branch state from a persisted prior selection:
+          // submission reads remoteSetup.workspacePath and branch regardless of
+          // repoType, so a leftover value would create against the wrong
+          // checkout or a branch that doesn't exist in the local repo. An
+          // explicit data.branch (applied below) still wins.
+          remoteSetup = null;
+          branch = '';
         } else if (data.githubUrl && !repoPath) {
           // repoPath wasn't resolved at deep-link time (knownRepos may not have loaded yet).
           // Try resolving now via IPC to the repo registry.
@@ -791,12 +804,25 @@
         const data = JSON.parse(prefillData);
         logger.debug('Applying prefill data from sessionStorage', { data });
 
-        // Apply repo and branch settings
+        // Apply repo and branch settings — a repoPath prefill is always a
+        // local repo, so set the full selection (clearing any restored
+        // github/clone state) so the picker opens on the Copy local repo tab
         if (data.repoPath) {
           repoPath = data.repoPath;
+          repoType = 'local';
+          githubUrl = '';
+          clonePath = '';
+          isNewRepo = false;
           isValidPath = true;
           // Reset scope when changing repos - scope is repo-specific
           scope = '';
+          // Clear stale remote/branch state from a persisted prior selection:
+          // submission reads remoteSetup.workspacePath and branch regardless of
+          // repoType, so a leftover value would create against the wrong
+          // checkout or a branch that doesn't exist in the local repo. An
+          // explicit data.branch (applied below) still wins.
+          remoteSetup = null;
+          branch = '';
         }
         if (data.branch) branch = data.branch;
 
@@ -2893,7 +2919,7 @@
         </div>
       {/if}
       <!-- Validation hint -->
-      {#if isExpanded && !isValid && !isCreating && !error}
+      {#if isExpanded && !isValid && !isCreating && !error && (gitAvailable !== true || !repoPath || !isValidPath || (repoType === 'github' && githubAuthNeeded !== 'none'))}
         <div
           class="mt-2 px-4.5 text-sm text-subtle"
           transition:slide={{ axis: 'y', duration: 200 }}
@@ -2908,8 +2934,6 @@
             {m.workspace_compactInitializer_invalidPathHint_label()}
           {:else if repoType === 'github' && githubAuthNeeded !== 'none'}
             {m.workspace_compactInitializer_githubAuthRequired_label()}
-          {:else if !isNewRepo && !branch && repoType !== 'remote'}
-            {m.workspace_compactInitializer_waitingBranchSelection_label()}
           {/if}
         </div>
       {/if}

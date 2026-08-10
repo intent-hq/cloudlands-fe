@@ -55,6 +55,7 @@ export const AgentCreateRequestSchema = z.object({
   agentId: AgentIdSchema.optional(),
   nameExplicitlySet: z.boolean().optional(), // Strict boolean on the wire (PROTOCOL §5.5) — non-boolean values must fail validation
   model: z.string().optional(),
+  reasoningEffort: z.string().optional(), // Option B session field (PROTOCOL §5.5) — provider-interpreted level string
   provider: z.string().optional(), // Provider ID (e.g., 'auggie', 'claude-code', 'codex')
   agentType: z.string().optional(), // Agent type for specialization rules
   behaviorPrompt: z.string().optional(), // Custom behavior instructions for the agent (from specialist)
@@ -91,6 +92,17 @@ export const AgentListRequestSchema = z.object({
 export const AgentDeleteRequestSchema = z.object({
   agentId: AgentIdSchema,
   workspaceId: WorkspaceIdSchema,
+});
+
+// Set agent model (`agent.setModel`, PROTOCOL §5.5). `providerId` is optional
+// and names the provider the picked model belongs to — required to resolve a
+// bare modelId when it targets a provider other than the session's current
+// one (cross-provider model pick).
+export const AgentSetModelRequestSchema = z.object({
+  agentId: AgentIdSchema,
+  modelId: z.string().min(1, 'modelId is required'),
+  workspaceId: WorkspaceIdSchema,
+  providerId: z.string().min(1, 'providerId must be a non-empty string when present').optional(),
 });
 
 // Cancel agent subscriptions (`agent.cancelSubscriptions`, PROTOCOL §5.5).
@@ -161,6 +173,7 @@ const schemas: Record<string, z.ZodSchema<any>> = {
   'agent:get': AgentGetRequestSchema,
   'agent:send-message': AgentSendMessageRequestSchema,
   'agent:list': AgentListRequestSchema,
+  'agent:set-model': AgentSetModelRequestSchema,
   'agent:delete': AgentDeleteRequestSchema,
   'agent:cancel-subscriptions': AgentCancelSubscriptionsRequestSchema,
   'workspace:create': WorkspaceCreateRequestSchema,

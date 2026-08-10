@@ -20,14 +20,9 @@ import {
 } from '../../../shared/main/provider-auth-status';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 import { getBackendClient } from '../../backend/main/backend.ipc';
-import { findBinary } from '../../../shared/main/find-binary';
+import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
 import { findAuggiePathAsync } from '../../auggie/main/auggie.ipc';
-import {
-  CLAUDE_CODE_NPX_MISSING_WARNING,
-  clearClaudeCodeCache,
-  isClaudeCodeInstalled,
-  isNpxAvailableForClaudeCode,
-} from '../../claude-code/main/claude-code-resolver';
+import { CLAUDE_CODE_NPX_MISSING_WARNING } from '../../../shared/constants/claude-code';
 import { clearCodexCache, isCodexInstalled } from '../../codex/main/codex-resolver';
 import { clearCortexCache, isCortexInstalled } from '../../cortex/main/cortex-resolver';
 import { clearOpenCodeCache, isOpenCodeInstalled } from '../../opencode/main/opencode-resolver';
@@ -59,16 +54,35 @@ async function checkAuggieAvailability(): Promise<ProviderStatus> {
 }
 
 /**
+ * Check whether the claude CLI resolves on the daemon host
+ * (`host.findBinary`) — the prerequisite for the claude-code provider.
+ */
+async function isClaudeCliInstalled(): Promise<boolean> {
+  return (
+    (await findBinary('claude', {
+      cache: false,
+      commonPaths: getCommonNpmPaths('claude'),
+    })) !== null
+  );
+}
+
+/**
  * Check if claude-code is available by checking if the claude CLI is installed.
- * The ACP adapter itself always runs via npx (pinned version); when the CLI is
- * installed but npx is missing, the status carries an explicit warning so the
- * UI can tell the user the adapter cannot run.
+ * The ACP adapter itself always runs via npx (intentd pins the package); when
+ * the CLI is installed but npx is missing, the status carries an explicit
+ * warning so the UI can tell the user the adapter cannot run.
  */
 async function checkClaudeCodeAvailability(): Promise<ProviderStatus> {
   try {
-    const installed = await isClaudeCodeInstalled();
+    const installed = await isClaudeCliInstalled();
     const status: ProviderStatus = { available: installed };
-    if (installed && !(await isNpxAvailableForClaudeCode())) {
+    const npxPath = installed
+      ? await findBinary('npx', {
+          cache: false,
+          commonPaths: getCommonNpmPaths('npx'),
+        })
+      : null;
+    if (installed && npxPath === null) {
       status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
     }
     return status;
@@ -224,21 +238,14 @@ interface ProviderDiscoveryResponse {
 
 /**
  * Call intentd's host.providerDiscovery to get base availability + npx status.
- * Returns null on RPC failure (the caller degrades to empty/unavailable state).
+ * Rejects on RPC failure — the daemon could not answer, so callers must not
+ * fabricate an "all unavailable" result from it. `getProviderAvailability`
+ * lets the rejection propagate as an explicit failure; `getProviderPaths`
+ * (a settings-only path lookup, not an install/not-installed verdict)
+ * degrades to empty maps.
  */
-async function callProviderDiscovery(): Promise<ProviderDiscoveryResponse | null> {
-  try {
-    const result = await getBackendClient().request<ProviderDiscoveryResponse>(
-      'host.providerDiscovery',
-      {},
-    );
-    return result;
-  } catch (error) {
-    logger.warn('host.providerDiscovery RPC failed; degrading to empty availability', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
+async function callProviderDiscovery(): Promise<ProviderDiscoveryResponse> {
+  return getBackendClient().request<ProviderDiscoveryResponse>('host.providerDiscovery', {});
 }
 
 /**
@@ -285,7 +292,6 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
   }
 
   // Clear caches to ensure fresh detection (important for refresh button)
-  clearClaudeCodeCache();
   clearCodexCache();
   clearCortexCache();
   clearOpenCodeCache();
@@ -361,14 +367,14 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     getProviderAuthVerdicts(),
   ]);
 
-  // claude-code runs its ACP adapter exclusively via npx (pinned version).
-  // On the discovery path the daemon reports "installed" from npx presence
-  // alone (npx-only provider), so re-gate availability on the claude CLI
-  // prerequisite: without the CLI the provider is unavailable regardless of
-  // npx, and with the CLI but no npx surface an explicit warning instead of
-  // a silently broken provider. The local fallback already handles both.
+  // claude-code runs its ACP adapter exclusively via npx (intentd pins the
+  // package). On the discovery path the daemon reports "installed" from npx
+  // presence alone (npx-only provider), so re-gate availability on the claude
+  // CLI prerequisite: without the CLI the provider is unavailable regardless
+  // of npx, and with the CLI but no npx surface an explicit warning instead
+  // of a silently broken provider. The fallback path already handles both.
   if (discoveryById.has('claude-code')) {
-    if (!(await isClaudeCodeInstalled())) {
+    if (!(await isClaudeCliInstalled())) {
       claudeCodeResult.available = false;
     } else if (!claudeCodeResult.warning && npxStatus?.resolvedPath === null) {
       claudeCodeResult.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
@@ -466,7 +472,14 @@ export interface ProviderPathsResult {
  * avoid the aggregated GET_AVAILABILITY round-trip.
  */
 export async function getProviderPaths(): Promise<ProviderPathsResult> {
-  const discovery = await callProviderDiscovery();
+  let discovery: ProviderDiscoveryResponse | undefined;
+  try {
+    discovery = await callProviderDiscovery();
+  } catch (error) {
+    logger.warn('host.providerDiscovery RPC failed; degrading to empty paths', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   const paths: Record<string, string | null> = {};
   const secondaryPaths: Record<string, string | null> = {};
   for (const provider of discovery?.providers ?? []) {
@@ -526,7 +539,6 @@ export function setupProviderAvailabilityIPC(): void {
             }
             break;
           case 'claude-code':
-            clearClaudeCodeCache();
             status = await checkClaudeCodeAvailability();
             if (status.available) {
               authenticated = await checkAuth();

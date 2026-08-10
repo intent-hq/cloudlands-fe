@@ -8,8 +8,8 @@
  * `workspace:tokenUsage-changed` push.
  */
 
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import type { TokenUsage } from "../../../../features/token-usage/token-usage-types";
 import type { TokenUsageState } from "./token-usage-types";
@@ -53,8 +53,8 @@ const { setWorkspaceState, clearWorkspaceState } =
 // Reducer
 // ---------------------------------------------------------------------------
 
-export const tokenUsageReducer = createReducer<TokenUsageState>(initialState)
-  .with(tokenUsageReceived, (state, { payload: [wsId, usage] }) =>
+export const tokenUsageReducer = createReducer<TokenUsageState>(initialState);
+tokenUsageReducer.with(tokenUsageReceived, (state, { payload: [wsId, usage] }) =>
     setWorkspaceState(state, wsId, {
       byAgentId: usage.byAgentId,
       totals: usage.totals,
@@ -62,13 +62,13 @@ export const tokenUsageReducer = createReducer<TokenUsageState>(initialState)
       lastScanAt: usage.lastScanAt,
       isStale: false,
     }),
-  )
-  .with(tokenUsageFetchFailed, (state, { payload: [wsId] }) => {
+  );
+tokenUsageReducer.with(tokenUsageFetchFailed, (state, { payload: [wsId] }) => {
     const ws = state.byWorkspaceId[wsId];
     if (!ws || ws.isStale) return state;
     return setWorkspaceState(state, wsId, { ...ws, isStale: true });
-  })
-  .with(clearWorkspaceTokenUsage, (state, { payload: [wsId] }) =>
+  });
+tokenUsageReducer.with(clearWorkspaceTokenUsage, (state, { payload: [wsId] }) =>
     clearWorkspaceState(state, wsId),
   );
 

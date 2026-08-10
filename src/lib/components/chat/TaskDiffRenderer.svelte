@@ -10,7 +10,7 @@
   faCircleXmark,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import type { TaskDiffSections, ParsedTask } from './tool-result-parser';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -87,7 +87,7 @@
           </button>
 
           {#if expandedSections[config.key]}
-            <div class="section-content" transition:slide={{ duration: 150 }}>
+            <div class="section-content" transition:safeSlide={{ duration: 150 }}>
               {#each sections[config.key] as task (task.uuid)}
                 <div class="task-item">
                   <span class="task-state-icon" style:color={getTaskStateColor(task.state)}>

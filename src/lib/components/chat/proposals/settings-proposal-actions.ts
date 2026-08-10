@@ -2,6 +2,7 @@ import type { AppSettingApplyPlan, AppSettingDefinition } from '$shared/app-sett
 import { findAppSettingDefinition } from '$shared/app-settings-schema';
 import { m } from '$shared/paraglide/messages.js';
 import type { ProposalActionDetail, SettingsChangeProposal } from '$shared/types/proposal';
+import { isGithubLinkDefaultAction } from '$shared/utils/link-helpers';
 import { appClient } from '$lib/client';
 import { store as appStore } from "$store/renderer/store";
 import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
@@ -33,6 +34,7 @@ import {
   selectBetaUpdatesEnabled,
   selectCodeFontFamily,
   selectGroupByRepo,
+  selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
   selectLanguagePreference,
   selectNotificationEnabled,
@@ -77,6 +79,7 @@ import {
   setBetaUpdatesEnabled,
   setCodeFontFamily,
   setGroupByRepo,
+  setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setLanguagePreference,
   setNotificationEnabled,
@@ -88,7 +91,6 @@ import {
   setVolume,
   type FontStyle,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-import { autoUpdateClient } from '$features/auto-update/auto-update.client';
 import {
   setDefaultModel,
   setTypeOverride,
@@ -272,9 +274,9 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectSoundOnlyWhenUnfocused.select(state);
     case 'notifications.volume':
       return selectNotificationVolume.select(state);
-    case 'backgroundAgents.defaultModel':
+    case 'quickActions.defaultModel':
       return selectBgDefaultModel.select(state);
-    case 'backgroundAgents.typeOverrides':
+    case 'quickActions.typeOverrides':
       return selectBgTypeOverrides.select(state);
     case 'fonts.agent':
       return selectAgentFontStyle.select(state);
@@ -300,6 +302,8 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectIsCollapsed.select(state);
     case 'openIn.defaultAction':
       return selectOpenAction.select(state);
+    case 'githubLinks.defaultAction':
+      return selectGithubLinkDefaultAction.select(state);
     case 'openIn.hiddenEditors':
       return selectHiddenEditorIds.select(state);
     case 'mcp.enableUserServers':
@@ -324,12 +328,10 @@ function isFontStyle(value: unknown): value is FontStyle {
 function dispatchReduxAction(path: string, value: unknown): boolean {
   switch (path) {
     case 'preferences.betaUpdatesEnabled': {
-      const enabled = Boolean(value);
-      appStore.dispatch(setBetaUpdatesEnabled(enabled));
-      // Also call SET_CHANNEL IPC to persist and switch feed immediately
-      autoUpdateClient.setChannel(enabled ? 'beta' : 'stable').catch((error) => {
-        console.error('Failed to set update channel via IPC', error);
-      });
+      // Dispatch only: the beta-updates persistence middleware owns the
+      // SET_CHANNEL write (persist + feed switch) — a direct setChannel here
+      // would duplicate it.
+      appStore.dispatch(setBetaUpdatesEnabled(Boolean(value)));
       return true;
     }
     case 'preferences.spellcheckEnabled':
@@ -388,10 +390,10 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       appStore.dispatch(setVolume(parsed));
       return true;
     }
-    case 'backgroundAgents.defaultModel':
+    case 'quickActions.defaultModel':
       appStore.dispatch(setDefaultModel(String(value ?? '')));
       return true;
-    case 'backgroundAgents.typeOverrides':
+    case 'quickActions.typeOverrides':
       for (const [type, model] of Object.entries(objectValue(value))) {
         appStore.dispatch(
           setTypeOverride({ type: type as BackgroundAgentType, model: String(model ?? '') }),
@@ -441,6 +443,10 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       return true;
     case 'openIn.defaultAction':
       appStore.dispatch(setOpenAction(String(value ?? '')));
+      return true;
+    case 'githubLinks.defaultAction':
+      if (!isGithubLinkDefaultAction(value)) return false;
+      appStore.dispatch(setGithubLinkDefaultAction(value));
       return true;
     default:
       return false;

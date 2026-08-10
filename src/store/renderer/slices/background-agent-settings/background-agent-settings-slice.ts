@@ -1,5 +1,5 @@
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { m } from '$shared/paraglide/messages.js';
 
 // ============================================================================
@@ -137,27 +137,29 @@ export const switchProvider = createAction<
 // Reducer
 // ============================================================================
 
-export const backgroundAgentSettingsReducer = createReducer<BackgroundAgentSettingsState>(
-  initialState,
-)
-  .with(setDefaultModel, (state, { payload: [model] }) => ({
-    ...state,
-    defaultModel: model,
-  }))
-  .with(setTypeOverride, (state, { payload: [{ type, model }] }) => ({
-    ...state,
-    typeOverrides: { ...state.typeOverrides, [type]: model },
-  }))
-  .with(clearTypeOverride, (state, { payload: [type] }) => ({
-    ...state,
-    typeOverrides: { ...state.typeOverrides, [type]: '' },
-  }))
-  .with(resetSettings, () => ({
-    ...initialState,
-    typeOverrides: { ...initialState.typeOverrides },
-    providerSettings: {},
-  }))
-  .with(hydrateSettings, (state, { payload: [{ defaultModel, typeOverrides }] }) => ({
+export const backgroundAgentSettingsReducer =
+  createReducer<BackgroundAgentSettingsState>(initialState);
+
+backgroundAgentSettingsReducer.with(setDefaultModel, (state, { payload: [model] }) => ({
+  ...state,
+  defaultModel: model,
+}));
+backgroundAgentSettingsReducer.with(setTypeOverride, (state, { payload: [{ type, model }] }) => ({
+  ...state,
+  typeOverrides: { ...state.typeOverrides, [type]: model },
+}));
+backgroundAgentSettingsReducer.with(clearTypeOverride, (state, { payload: [type] }) => ({
+  ...state,
+  typeOverrides: { ...state.typeOverrides, [type]: '' },
+}));
+backgroundAgentSettingsReducer.with(resetSettings, () => ({
+  ...initialState,
+  typeOverrides: { ...initialState.typeOverrides },
+  providerSettings: {},
+}));
+backgroundAgentSettingsReducer.with(
+  hydrateSettings,
+  (state, { payload: [{ defaultModel, typeOverrides }] }) => ({
     ...state,
     defaultModel: defaultModel || DEFAULT_BACKGROUND_MODEL,
     typeOverrides: {
@@ -166,16 +168,25 @@ export const backgroundAgentSettingsReducer = createReducer<BackgroundAgentSetti
       review: typeOverrides?.review || '',
       fast: typeOverrides?.fast || '',
     },
-  }))
-  .with(hydrateProviderSettings, (state, { payload: [providerSettings] }) => ({
+  }),
+);
+backgroundAgentSettingsReducer.with(
+  hydrateProviderSettings,
+  (state, { payload: [providerSettings] }) => ({
     ...state,
     providerSettings,
-  }))
-  .with(saveProviderSnapshot, (state, { payload: [{ providerId, settings }] }) => ({
+  }),
+);
+backgroundAgentSettingsReducer.with(
+  saveProviderSnapshot,
+  (state, { payload: [{ providerId, settings }] }) => ({
     ...state,
     providerSettings: { ...state.providerSettings, [providerId]: settings },
-  }))
-  .with(restoreProviderSettings, (state, { payload: [{ defaultModel, typeOverrides }] }) => ({
+  }),
+);
+backgroundAgentSettingsReducer.with(
+  restoreProviderSettings,
+  (state, { payload: [{ defaultModel, typeOverrides }] }) => ({
     ...state,
     defaultModel,
     typeOverrides: {
@@ -184,4 +195,5 @@ export const backgroundAgentSettingsReducer = createReducer<BackgroundAgentSetti
       review: typeOverrides.review || '',
       fast: typeOverrides.fast || '',
     },
-  }));
+  }),
+);

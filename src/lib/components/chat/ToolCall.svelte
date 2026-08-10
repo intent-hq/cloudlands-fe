@@ -6,7 +6,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   faExclamationTriangle,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import ToolDetails from './ToolDetails.svelte';
   import { parseToolResult } from './tool-result-parser';
   import {
@@ -112,7 +112,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   // Transition function for expand/collapse animation
   function expand(node: Element) {
-    return slide(node, { duration: 150 });
+    return safeSlide(node, { duration: 150 });
   }
 
 
@@ -164,10 +164,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           {/if}
         {:else}
           <!-- Standard tool display -->
-          <!-- Verb (never truncates) -->
-          <span class="text-subtle whitespace-nowrap shrink-0">
-            {toolDisplay.verb}
-          </span>
+          <!-- Verb (never truncates) - omitted entirely when empty so it adds no flex gap -->
+          {#if toolDisplay.verb}
+            <span class="text-subtle whitespace-nowrap shrink-0">
+              {toolDisplay.verb}
+            </span>
+          {/if}
 
           <!-- Subject (truncates) - separate from button if it's a note link or file link -->
           {#if toolDisplay.subject && !toolDisplay.noteId && !toolDisplay.filePath}

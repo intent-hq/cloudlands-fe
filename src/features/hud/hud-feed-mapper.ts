@@ -32,6 +32,7 @@ export const HUD_FEED_EVENT_TYPES = [
   'agent:failed',
   'agent:idle',
   'agent:status-changed',
+  'task:created',
   'task:status-changed',
   'workspace:displayStatus-changed',
   'workspace:attention-changed',
@@ -74,6 +75,7 @@ function colorFor(type: string, data: Record<string, unknown>): HudFeedColorClas
   }
   if (type === 'agent:idle') return 'idle';
   if (type === 'agent:completed') return 'ok';
+  if (type === 'task:created') return 'info';
   if (type === 'task:status-changed') {
     return str(data.newStatus) === 'complete' ? 'ok' : 'info';
   }
@@ -112,6 +114,10 @@ function textFor(type: string, data: Record<string, unknown>): string {
       // The chip names the state (AGENT RUNNING / IDLE / FAILED …) off the
       // out-of-band `agentStatus`, so the raw status word is redundant here.
       return '';
+    case 'task:created':
+      // Creation rows just name the new task — its status word is redundant
+      // (the chip already says TASK CREATED).
+      return str(data.noteTitle) ?? str(data.noteId) ?? '';
     case 'task:status-changed':
       return [str(data.noteTitle) ?? str(data.noteId), str(data.newStatus)]
         .filter(Boolean)

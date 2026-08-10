@@ -6,11 +6,7 @@ import {
   vi,
 } from 'vitest';
 import type { ProviderAvailabilityResult } from './provider-availability.client';
-import {
-  clearProviderAvailabilityCache,
-  getAvailableProviderIds,
-  getProviderAvailability,
-} from './provider-availability.client';
+import { getAvailableProviderIds, getProviderAvailability } from './provider-availability.client';
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -51,14 +47,13 @@ function mockAvailability(data: ProviderAvailabilityResult): void {
 describe('provider availability client', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    clearProviderAvailabilityCache();
   });
 
   it('resolves the fetched availability data', async () => {
     const data = createAvailabilityResult({ claudeCode: true });
     mockAvailability(data);
 
-    const result = await getProviderAvailability(true);
+    const result = await getProviderAvailability();
 
     expect(result).toEqual(data);
   });
@@ -66,7 +61,7 @@ describe('provider availability client', () => {
   it('resolves claude-code as available when auggie is unavailable', async () => {
     mockAvailability(createAvailabilityResult({ claudeCode: true }));
 
-    const availableIds = await getAvailableProviderIds(true);
+    const availableIds = await getAvailableProviderIds();
 
     expect(availableIds).toEqual(['claude-code']);
   });
@@ -84,7 +79,7 @@ describe('provider availability client', () => {
       }),
     );
 
-    const availableIds = await getAvailableProviderIds(true);
+    const availableIds = await getAvailableProviderIds();
 
     expect(availableIds).toEqual([
       'auggie',
@@ -95,5 +90,43 @@ describe('provider availability client', () => {
       'cortex',
       'droid',
     ]);
+  });
+
+  it('never caches the result — every call hits the IPC bridge again', async () => {
+    mockAvailability(createAvailabilityResult({ claudeCode: true }));
+    await getProviderAvailability();
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+
+    mockAvailability(createAvailabilityResult({ codex: true }));
+    const second = await getProviderAvailability();
+
+    expect(mocks.invoke).toHaveBeenCalledTimes(2);
+    expect(second.providers.codex.available).toBe(true);
+    expect(second.providers.claudeCode.available).toBe(false);
+  });
+
+  it('coalesces concurrent in-flight calls into a single IPC round-trip', async () => {
+    let resolveInvoke: (value: { success: boolean; data: ProviderAvailabilityResult }) => void;
+    mocks.invoke.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveInvoke = resolve;
+      }),
+    );
+    const data = createAvailabilityResult({ auggie: true });
+
+    const first = getProviderAvailability();
+    const second = getProviderAvailability();
+    resolveInvoke!({ success: true, data });
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(firstResult).toEqual(data);
+    expect(secondResult).toEqual(data);
+  });
+
+  it('propagates a daemon RPC failure instead of returning a fabricated all-unavailable result', async () => {
+    mocks.invoke.mockResolvedValue({ success: false, error: 'daemon unreachable' });
+
+    await expect(getProviderAvailability()).rejects.toThrow('daemon unreachable');
   });
 });

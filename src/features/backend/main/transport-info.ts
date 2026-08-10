@@ -50,7 +50,7 @@ function sanitizeUrl(rawUrl: string): string | undefined {
 
 /** Shape transport config into a renderer-safe payload. */
 export function formatTransportInfo(config: {
-  transport: 'uds' | 'tcp' | 'ws';
+  transport: 'uds' | 'tcp' | 'ws' | 'wss';
   socketPath?: string;
   wsUrl?: string;
   host?: string;
@@ -78,6 +78,11 @@ export function formatTransportInfo(config: {
   if (config.transport === 'ws') {
     const sanitized = config.wsUrl ? sanitizeUrl(config.wsUrl) : undefined;
     return { mode: 'external-ws', target: sanitized };
+  }
+  if (config.transport === 'wss') {
+    // Remote pinned WSS: host:port only — the token and cert fingerprint never
+    // reach the renderer-facing payload.
+    return { mode: 'external-ws', target: `wss:${config.host}:${config.port}` };
   }
   // TCP transport is a remote stub; treat it like external WebSocket for UI purposes.
   return { mode: 'external-ws', target: `tcp:${config.host}:${config.port}` };

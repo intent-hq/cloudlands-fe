@@ -6,15 +6,6 @@
  */
 
 /**
- * Minimum required version of the auggie CLI.
- * Update this when new required features are added to auggie.
- *
- * The version check ignores prerelease suffixes, so 0.13.0-beta.1
- * is treated as meeting the 0.13.0 requirement.
- */
-export const MINIMUM_AUGGIE_VERSION = '0.13.0';
-
-/**
  * Minimum required version of Node.js.
  * Node.js 22+ is required for auggie CLI installation and operation.
  */

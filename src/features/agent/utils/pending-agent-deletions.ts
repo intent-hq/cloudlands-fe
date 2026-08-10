@@ -5,13 +5,12 @@
  * AGENTS.md): the session is hidden locally and the real `agent.delete` is
  * deferred for the undo window. During that window the daemon still returns
  * the agent from `agent.list` / `agent.get`, so every rehydration path
- * (lifecycle-read-service `hydrateWorkspaceAgents`, agent-read-service
- * `ensureAgentSession`, chat-read-service `loadChatTranscript`, and the boot
- * agents-seeder) must consult `isAgentDeletionPending()` to avoid resurrecting
+ * (lifecycle read saga, agent-read-service
+ * `ensureAgentSession`, and chat-read-service `loadChatTranscript`) must consult
+ * `isAgentDeletionPending()` to avoid resurrecting
  * a soft-hidden agent.
  *
- * Extracted from `agent-mutation-service.ts` (which owns the set/remove
- * lifecycle) so those dependency-light read paths can share the registry.
+ * Shared by the agent mutation saga and dependency-light read paths.
  * Entries are transient, UI-only state (per src/store AGENTS.md) — they never
  * enter Redux. Each entry snapshots the removed session so `undo` can restore
  * it without a wire call, and holds the timer that commits the real
@@ -21,7 +20,7 @@
  * wire calls — just a module-level Map with simple accessors and mutators
  * over it (no side effects beyond that Map and its entries' timers).
  */
-import type { AgentSession } from "$shared/types";
+import type { AgentSession } from '$shared/types';
 
 /** A soft-hidden agent deletion awaiting commit. */
 export interface PendingAgentDeletion {

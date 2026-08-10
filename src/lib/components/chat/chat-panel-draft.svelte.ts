@@ -10,18 +10,26 @@
  * re-checks the current value before applying. While a restore is in flight
  * the composer is gated (`gateActive`) so a mount-time empty save cannot
  * erase the persisted draft; a fallback releases the gate after 5s if the
- * daemon doesn't answer.
+ * daemon doesn't answer. The gate's loading indicator is deferred behind
+ * `gateVisible` (500ms) so a fast restore never blinks a spinner.
  *
  * The restore re-runs whenever the `(workspaceId, agentId)` pair changes:
- * the composer resets, the gate re-arms, dirty-tracking resets, and a
- * late-resolving restore for a previous pair is discarded. A debounced save
- * still pending at a pair change or unmount is flushed (persisting the final
- * keystrokes); all other timers are torn down so no editor writes fire after
- * destroy.
+ * the composer resets, dirty-tracking resets, and a late-resolving restore
+ * for a previous pair is discarded. A debounced save still pending at a pair
+ * change or unmount is flushed (persisting the final keystrokes); all other
+ * timers are torn down so no editor writes fire after destroy.
+ *
+ * A process-lifetime `chat-draft-cache` (per `(workspaceId, agentId)`) makes
+ * switch-back instant: a cache hit hydrates the composer synchronously with
+ * no gate, then `drafts.get` still runs in the background to revalidate and
+ * refresh the cache — applying its result to the composer only if the user
+ * hasn't typed since the cache hydrated it. A cache miss (first-ever visit
+ * to the pair) keeps the original gated restore below.
  */
 import { untrack } from 'svelte';
 
 import type { DraftsClient } from '$lib/client/app-client';
+import { getCachedDraft, setCachedDraft } from './chat-draft-cache';
 import { serializeDraftAttachments, deserializeDraftAttachments } from './chat-draft-attachments';
 import type { ContextItem } from './input/context-api';
 
@@ -41,6 +49,11 @@ export interface ChatDraftManagerOptions {
 export interface ChatDraftManager {
   /** True while the initial draft restore gates the composer. */
   readonly gateActive: boolean;
+  /**
+   * True once a gated restore has been in flight for `GATE_VISIBLE_DELAY_MS` —
+   * drives the loading indicator so a fast restore renders no spinner at all.
+   */
+  readonly gateVisible: boolean;
 }
 
 /** Delay before pushing restored text into the editor (lets it mount). */
@@ -49,9 +62,12 @@ const HYDRATE_DELAY_MS = 50;
 const SAVE_DEBOUNCE_MS = 500;
 /** Fallback: release the composer gate if `drafts.get` hasn't settled. */
 const GATE_TIMEOUT_MS = 5000;
+/** Delay before the gate becomes visible as a loading indicator. */
+const GATE_VISIBLE_DELAY_MS = 500;
 
 export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDraftManager {
   let gateActive = $state(false);
+  let gateVisible = $state(false);
   // Last state known to match the daemon's copy (restored or saved). Null
   // until the restore settles — while unknown, empty saves are suppressed so
   // a fresh mount can never erase a persisted draft.
@@ -60,11 +76,20 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
   let restoreKey: string | null = null;
   let destroyed = false;
   let gateTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let gateVisibleTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let hydrateTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let saveTimeoutId: ReturnType<typeof setTimeout> | null = null;
   // Debounced save awaiting its timer; flushed on pair change and unmount so
   // the last keystrokes are persisted instead of dropped.
   let pendingSave: (() => void) | null = null;
+
+  const clearGateVisible = () => {
+    if (gateVisibleTimeoutId) {
+      clearTimeout(gateVisibleTimeoutId);
+      gateVisibleTimeoutId = null;
+    }
+    gateVisible = false;
+  };
 
   const flushPendingSave = () => {
     if (saveTimeoutId) {
@@ -90,6 +115,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
       // A previous pair's restore/hydration no longer applies.
       lastPersisted = null;
       if (gateTimeoutId) clearTimeout(gateTimeoutId);
+      clearGateVisible();
       if (hydrateTimeoutId) {
         clearTimeout(hydrateTimeoutId);
         hydrateTimeoutId = null;
@@ -102,14 +128,68 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
         options.setContextItems([]);
         options.applyEditorContent('');
       }
+
+      const cached = getCachedDraft(workspaceId, agentId);
+      if (cached) {
+        // Cache hit: hydrate synchronously, no gate — switch-back to a
+        // previously visited pair never shows the loading indicator,
+        // regardless of the background revalidation's latency.
+        gateActive = false;
+        const hydratedText = cached.text;
+        const hydratedAttachmentsJson = JSON.stringify(cached.attachments);
+        options.setInputValue(cached.text);
+        options.setContextItems(deserializeDraftAttachments(cached.attachments));
+        options.applyEditorContent(cached.text);
+        lastPersisted = { text: cached.text, attachmentsJson: hydratedAttachmentsJson };
+
+        options.drafts
+          .get(workspaceId, agentId)
+          .then((draft) => {
+            // Discard late revalidations after unmount or a pair change.
+            if (destroyed || restoreKey !== key) return;
+            const freshText = draft?.text ?? '';
+            const freshAttachments = draft?.attachments ?? [];
+            const freshAttachmentsJson = JSON.stringify(freshAttachments);
+            setCachedDraft(workspaceId, agentId, { text: freshText, attachments: freshAttachments });
+
+            // User typing is authoritative — only apply the revalidated
+            // result if the composer still matches what the cache hydrated.
+            const untouched =
+              options.inputValue() === hydratedText &&
+              JSON.stringify(serializeDraftAttachments(options.contextItems())) === hydratedAttachmentsJson;
+            if (!untouched) return;
+            if (freshText !== hydratedText) {
+              options.setInputValue(freshText);
+              options.applyEditorContent(freshText);
+            }
+            if (freshAttachmentsJson !== hydratedAttachmentsJson) {
+              options.setContextItems(deserializeDraftAttachments(freshAttachments));
+            }
+            lastPersisted = { text: freshText, attachmentsJson: freshAttachmentsJson };
+          })
+          .catch(() => {
+            // Keep the cached hydration — nothing to release since the
+            // cache-hit path never gates the composer.
+          });
+        return;
+      }
+
+      // Cache miss (first-ever visit to this pair): gated restore, unchanged.
       gateActive = true;
+      // The spinner only earns its place once the restore is visibly slow.
+      gateVisibleTimeoutId = setTimeout(() => {
+        gateVisibleTimeoutId = null;
+        gateVisible = true;
+      }, GATE_VISIBLE_DELAY_MS);
       gateTimeoutId = setTimeout(() => {
         gateActive = false;
+        clearGateVisible();
       }, GATE_TIMEOUT_MS);
       const release = () => {
         if (restoreKey !== key) return;
         if (gateTimeoutId) clearTimeout(gateTimeoutId);
         gateActive = false;
+        clearGateVisible();
       };
 
       options.drafts
@@ -133,12 +213,14 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
             }, HYDRATE_DELAY_MS);
           }
           // A save that completed before this late restore is newer than the
-          // daemon snapshot we just fetched — keep it.
+          // daemon snapshot we just fetched — keep it. Otherwise this settled
+          // restore seeds the cache (including the empty case) so a future
+          // switch-back to this pair hydrates instantly.
           if (lastPersisted === null) {
-            lastPersisted = {
-              text: draft?.text ?? '',
-              attachmentsJson: JSON.stringify(draft?.attachments ?? []),
-            };
+            const text = draft?.text ?? '';
+            const attachments = draft?.attachments ?? [];
+            lastPersisted = { text, attachmentsJson: JSON.stringify(attachments) };
+            setCachedDraft(workspaceId, agentId, { text, attachments });
           }
           release();
         })
@@ -192,6 +274,10 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
           // Only track dirty state if this pair is still the current one.
           if (restoreKey === saveKey) {
             lastPersisted = { text: currentValue, attachmentsJson };
+            setCachedDraft(workspaceId, agentId, {
+              text: currentValue,
+              attachments: currentAttachments,
+            });
           }
         })
         .catch((err) => {
@@ -208,6 +294,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
     return () => {
       destroyed = true;
       if (gateTimeoutId) clearTimeout(gateTimeoutId);
+      if (gateVisibleTimeoutId) clearTimeout(gateVisibleTimeoutId);
       if (hydrateTimeoutId) clearTimeout(hydrateTimeoutId);
       flushPendingSave();
     };
@@ -216,6 +303,9 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
   return {
     get gateActive() {
       return gateActive;
+    },
+    get gateVisible() {
+      return gateVisible;
     },
   };
 }

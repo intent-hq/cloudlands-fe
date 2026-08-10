@@ -32,7 +32,7 @@ import {
  * factory falls back to the Electron-IPC transport's degraded behavior.
  */
 export function resolveBrowserWsUrl(
-  raw: unknown = import.meta.env.VITE_INTENTD_WS_URL,
+  raw: unknown = process.env.VITE_INTENTD_WS_URL,
 ): string | undefined {
   if (typeof raw !== "string") return undefined;
   const url = raw.trim();

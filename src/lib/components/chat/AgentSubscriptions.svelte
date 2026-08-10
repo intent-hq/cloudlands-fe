@@ -14,7 +14,8 @@
    * agent-subscription-ui read middleware). No IPC listeners, polling, or
    * timers in this component.
    */
-  import { fade, slide } from 'svelte/transition';
+  import { fade } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { flip } from 'svelte/animate';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import {
@@ -55,6 +56,10 @@
 
   const logger = createLogger('AgentSubscriptions');
 
+  function createPropStore(read: () => string) {
+    return writable(read());
+  }
+
   interface Props {
     workspaceId: string;
     agentId: string;
@@ -66,8 +71,8 @@
 
   // Writable stores mirror prop values so Redux selectors re-evaluate
   // when workspaceId or agentId changes.
-  const workspaceIdStore = writable(workspaceId);
-  const agentIdStore = writable(agentId);
+  const workspaceIdStore = createPropStore(() => workspaceId);
+  const agentIdStore = createPropStore(() => agentId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
@@ -135,6 +140,8 @@
   // daemon guarantees watch uniqueness per (parent, target, event), so no
   // client-side dedup beyond the Set here. Merged single-agent groups render
   // here too, so their agents are counted in the "Waiting for…" header.
+  // Sorted by agent id so daemon snapshot iteration-order churn cannot
+  // change `.slice(0, 5)` membership and trigger spurious row enter/exit.
   const oneShotWatchedIds = $derived.by(() => {
     const ids = new Set<string>();
     for (const sub of $subs$) {
@@ -142,7 +149,7 @@
       for (const actorId of sub.actorIds || []) ids.add(actorId);
     }
     for (const id of mergedGroupByAgentId.keys()) ids.add(id);
-    return Array.from(ids);
+    return Array.from(ids).sort();
   });
 
   // Agents that have finished (completed or deleted) across delegation groups
@@ -304,7 +311,7 @@
   <!-- Standalone woken-up indicator: shown only when no subscription row is active -->
   <div
     class="flex items-end gap-2 px-4.5 py-1.5 text-ui text-subtle font-family-child"
-    transition:slide={{ axis: 'y', duration: 200 }}
+    transition:safeSlide={{ axis: 'y', duration: 200 }}
   >
     <Tooltip.Provider delayDuration={0}>
       <Tooltip.Root delayDuration={0}>
@@ -340,7 +347,10 @@
   <div class="w-full font-family-child">
     {#if isCompleted || $wokenUpInfo$}
       <!-- Slim status row: transitional "Completed" state and/or "Woken up" pill -->
-      <div class="flex items-center gap-2 px-3 py-1.5 text-sm text-subtle">
+      <div
+        class="flex items-center gap-2 px-3 py-1.5 text-sm text-subtle"
+        transition:safeSlide={{ axis: 'y', duration: 200 }}
+      >
         {#if isCompleted}
           <span
             class="shrink-0 flex items-center gap-2 whitespace-nowrap text-green-500"
@@ -386,7 +396,7 @@
 
     <!-- One-shot watch rows: individual agent cards, no group chrome -->
     {#if oneShotWatchedIds.length > 0}
-      <div class="w-full" data-testid="one-shot-watches" transition:slide={{ duration: 150 }}>
+      <div class="w-full" data-testid="one-shot-watches" transition:safeSlide={{ duration: 150 }}>
         <!-- Section header: waiting label, collapse toggle, avatar strip when collapsed -->
         <div
           class="flex items-center gap-2 px-3 py-1.5 text-sm text-subtle"
@@ -452,13 +462,13 @@
         {#if !oneShotCollapsed}
           <div
             class="flex flex-col gap-0.5 w-full pl-4.5 pr-2"
-            transition:slide={{ duration: 150 }}
+            transition:safeSlide={{ duration: 150 }}
           >
             {#each oneShotWatchedIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
               <div
                 class="w-full"
                 animate:flip={{ duration: 200 }}
-                transition:slide={{ axis: 'y', duration: 200 }}
+                transition:safeSlide={{ axis: 'y', duration: 200 }}
               >
                 {#snippet oneShotActions()}
                   {#if !isCompleted}
@@ -520,7 +530,7 @@
 
     <!-- One collapsible section per after_all delegation group -->
     {#each delegationGroups as group (group.groupId)}
-      <div transition:slide={{ axis: 'y', duration: 200 }}>
+      <div transition:safeSlide={{ axis: 'y', duration: 200 }}>
         <DelegationGroupSection
           {group}
           workspace={resolvedWorkspace}

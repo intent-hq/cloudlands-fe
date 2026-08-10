@@ -7,10 +7,10 @@
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
 
   import {
-  selectAgentIsResponding,
-  selectAgentIsWaiting,
-  selectAgentSession,
-} from '$store/renderer/slices/agent-session/agent-session-selectors';
+    selectAgentIsResponding,
+    selectAgentIsWaiting,
+    selectAgentSession,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
@@ -32,18 +32,23 @@
 
   let { agentId, workspace = null, isCompleted = false }: Props = $props();
 
+  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by agentId.
   const permissionCount = selectPendingCount(agentId);
 
   // Reactive agent session from Redux; the ensure saga handles the
   // disk restore.
+  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by agentId.
   const agent$ = selectAgentSession(agentId);
+  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by agentId.
   const agentIsResponding$ = selectAgentIsResponding(agentId);
+  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by agentId.
   const agentIsWaiting$ = selectAgentIsWaiting(agentId);
   const agentData = $derived(getAgentPeekData($agent$));
 
   $effect(() => {
     const wsId = workspace?.id;
     if (wsId) {
+      console.log('LOAD');
       appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
     }
   });

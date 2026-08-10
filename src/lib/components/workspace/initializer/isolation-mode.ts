@@ -8,10 +8,10 @@
  * capability independent of any one workspace). Creation-flow copy uses this
  * to say "CoW checkout" vs "worktree".
  */
-import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 import { m } from '$shared/paraglide/messages.js';
+import { readCowIsolationSetting } from './cow-isolation-setting';
 
 export type IsolationMode = 'worktree' | 'cow';
 
@@ -29,6 +29,10 @@ export function isolationNoun(mode: IsolationMode): string {
  * capability, so any workspace carrying it is authoritative). Defaults to
  * `worktree` when the setting is off, capability is unknown, or the read fails.
  *
+ * The settings read is shared across ALL callers via the module-level cache
+ * in `cow-isolation-setting.ts` (single-flight; invalidated on
+ * `settings:changed`), so N concurrent resolutions cost one RPC.
+ *
  * Pass `workspaces` (e.g. a selector readable's current value) so callers can
  * re-resolve when workspace items hydrate after mount; when omitted, falls
  * back to a one-time snapshot of the store.
@@ -37,8 +41,8 @@ export async function resolveEffectiveIsolationMode(
   workspaces?: ReadonlyArray<{ cowSupported?: boolean }>,
 ): Promise<IsolationMode> {
   try {
-    const setting = await appClient.settings.get('workspace.cowIsolation');
-    if (setting?.value !== true) return 'worktree';
+    const settingOn = await readCowIsolationSetting();
+    if (!settingOn) return 'worktree';
     const items = workspaces ?? selectWorkspaceItems.select(appStore.state);
     const cowSupported = items.some((workspace) => workspace.cowSupported === true);
     return cowSupported ? 'cow' : 'worktree';

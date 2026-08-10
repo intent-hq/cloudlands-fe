@@ -80,7 +80,7 @@ afterEach(() => {
 
 describe('settings hash target integration', () => {
   it.each([
-    ['default-model', 'backgroundAgents.defaultModel', 'Agents'],
+    ['default-model', 'quickActions.defaultModel', 'Agents'],
     ['color-theme', 'color-theme', 'Fonts & Colors'],
     ['note-font', 'note-font', 'Fonts & Colors'],
     ['agent-chat-font', 'agent-chat-font', 'Fonts & Colors'],

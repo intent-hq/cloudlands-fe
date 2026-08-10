@@ -177,14 +177,6 @@ export class ProtocolAdapter {
     return await this.workspaceService.cleanupWorkspace(createWorkspaceId(id));
   }
 
-  async migrateWorkspacesToCanonicalLocation(): Promise<{
-    migrated: number;
-    errors: number;
-  }> {
-    logger.info('Protocol: migrateWorkspacesToCanonicalLocation');
-    return await this.workspaceService.migrateWorkspacesToCanonicalLocation();
-  }
-
   async findRepositories(directory: string): Promise<Result<string[], string>> {
     logger.debug('Protocol: findRepositories', { directory });
     return await this.workspaceService.findRepositories(directory);

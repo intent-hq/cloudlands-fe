@@ -60,6 +60,22 @@ describe("token-usage-slice", () => {
     });
   });
 
+  it("tokenUsageReceived mirrors reported thoughtTokens verbatim", () => {
+    const withThoughts: TokenUsage = {
+      ...snapshot,
+      byAgentId: { "agent-1": { ...snapshot.byAgentId["agent-1"], thoughtTokens: 7 } },
+      totals: { ...snapshot.totals, thoughtTokens: 7 },
+      byModel: { "model-a": { ...snapshot.byModel["model-a"], thoughtTokens: 7 } },
+    };
+    const next = tokenUsageReducer(initialState, tokenUsageReceived(WS, withThoughts));
+    expect(next.byWorkspaceId[WS].totals.thoughtTokens).toBe(7);
+    expect(next.byWorkspaceId[WS].byAgentId["agent-1"].thoughtTokens).toBe(7);
+    expect(next.byWorkspaceId[WS].byModel["model-a"].thoughtTokens).toBe(7);
+    // An omitted counter stays omitted — no defensive zero-filling.
+    const plain = tokenUsageReducer(initialState, tokenUsageReceived(WS, snapshot));
+    expect(plain.byWorkspaceId[WS].totals).not.toHaveProperty("thoughtTokens");
+  });
+
   it("tokenUsageFetchFailed marks an existing entry stale and keeps numbers", () => {
     const populated = tokenUsageReducer(initialState, tokenUsageReceived(WS, snapshot));
     const next = tokenUsageReducer(populated, tokenUsageFetchFailed(WS));

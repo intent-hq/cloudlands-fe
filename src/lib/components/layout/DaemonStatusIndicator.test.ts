@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 
 // Create state holder
@@ -20,6 +21,17 @@ let mockStoreState: Partial<StoreState> = {
 };
 let mockDispatch = vi.fn();
 
+// Default connections slice, merged under whatever a test sets on
+// `mockStoreState` so the component's connections selectors always resolve
+// (a test that only sets `daemonHealth` still gets a valid `connections` slice).
+const DEFAULT_CONNECTIONS = {
+  connections: createCollection('id'),
+  activeId: 'local',
+  status: 'idle',
+  error: null,
+  certMismatch: null,
+};
+
 // Mock svelte-fa
 vi.mock('svelte-fa', () => ({
   default: () => null,
@@ -27,7 +39,9 @@ vi.mock('svelte-fa', () => ({
 
 // Mock tooltip with a passthrough component so the real dropdown can render
 vi.mock('$lib/components/ui/tooltip', async () => {
-  const Tooltip = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockTooltip.svelte')).default;
+  const Tooltip = (
+    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockTooltip.svelte')
+  ).default;
   return { Tooltip };
 });
 
@@ -37,7 +51,7 @@ vi.mock('$store/renderer/store', async () => {
   return {
     get store() {
       return createAppStoreMock({
-        state: () => mockStoreState,
+        state: () => ({ connections: { ...DEFAULT_CONNECTIONS }, ...mockStoreState }),
         dispatch: mockDispatch,
       });
     },
@@ -93,7 +107,8 @@ describe('DaemonStatusIndicator', () => {
 
   describe('state selectors', () => {
     it('uses daemon-health selectors from the store', async () => {
-      const selectorsModule = await import('$store/renderer/slices/daemon-health/daemon-health-selectors');
+      const selectorsModule =
+        await import('$store/renderer/slices/daemon-health/daemon-health-selectors');
       expect(selectorsModule.selectDaemonHealth).toBeDefined();
       expect(selectorsModule.selectDaemonHealthStats).toBeDefined();
       expect(selectorsModule.selectDaemonHealthLastUpdated).toBeDefined();
@@ -113,7 +128,8 @@ describe('DaemonStatusIndicator', () => {
     it('dispatches pollSystemStatus when dropdown opens ($effect at line 72)', async () => {
       // This test verifies the $effect at line 72
       // which dispatches pollSystemStatus when dropdownOpen becomes true
-      const { pollSystemStatus } = await import('$store/renderer/slices/daemon-health/daemon-health-slice');
+      const { pollSystemStatus } =
+        await import('$store/renderer/slices/daemon-health/daemon-health-slice');
 
       // Verify the component can trigger the action
       expect(pollSystemStatus).toBeDefined();
@@ -127,16 +143,21 @@ describe('DaemonStatusIndicator', () => {
 
   describe('transport field rendering', () => {
     it('shows "sidecar (UDS)" when mode is sidecar-uds', async () => {
-      type BackendTransportInfo = import('$store/renderer/slices/daemon-health/daemon-health-types').BackendTransportInfo;
+      type BackendTransportInfo =
+        import('$store/renderer/slices/daemon-health/daemon-health-types').BackendTransportInfo;
       // Transport info should render as "sidecar (UDS)" for sidecar mode
       const transport: BackendTransportInfo = { mode: 'sidecar-uds' };
       expect(transport.mode).toBe('sidecar-uds');
     });
 
     it('shows "external (URL)" when mode is external-ws with target', async () => {
-      type BackendTransportInfo = import('$store/renderer/slices/daemon-health/daemon-health-types').BackendTransportInfo;
+      type BackendTransportInfo =
+        import('$store/renderer/slices/daemon-health/daemon-health-types').BackendTransportInfo;
       // Transport info should render as "external (ws://...)" for external mode
-      const transport: BackendTransportInfo = { mode: 'external-ws', target: 'ws://127.0.0.1:5181/ws' };
+      const transport: BackendTransportInfo = {
+        mode: 'external-ws',
+        target: 'ws://127.0.0.1:5181/ws',
+      };
       expect(transport.mode).toBe('external-ws');
       expect(transport.target).toBe('ws://127.0.0.1:5181/ws');
     });
@@ -197,9 +218,10 @@ describe('DaemonStatusIndicator', () => {
       const lastUpdated = new Date().toISOString();
 
       // When uptimeSeconds is undefined, return undefined
-      const liveUptime = uptimeSeconds === undefined
-        ? undefined
-        : uptimeSeconds + Math.floor((Date.now() - new Date(lastUpdated).getTime()) / 1000);
+      const liveUptime =
+        uptimeSeconds === undefined
+          ? undefined
+          : uptimeSeconds + Math.floor((Date.now() - new Date(lastUpdated).getTime()) / 1000);
 
       expect(liveUptime).toBeUndefined();
     });
@@ -538,4 +560,376 @@ describe('DaemonStatusIndicator', () => {
     });
   });
 
+  describe('multi-backend connect menu', () => {
+    const healthy = {
+      health: 'healthy' as const,
+      stats: {
+        clients: 1,
+        agents: 0,
+        listenMode: 'uds',
+        port: null,
+        os: 'macos',
+        arch: 'aarch64',
+      },
+      lastUpdated: new Date().toISOString(),
+      polling: false,
+    };
+
+    const localRecord = {
+      id: 'local',
+      label: 'Local',
+      host: null,
+      port: null,
+      fingerprint: null,
+      isLocal: true,
+    };
+    const remoteRecord = {
+      id: 'r1',
+      label: 'desk:4180',
+      host: '10.0.0.2',
+      port: 4180,
+      fingerprint: 'AA:BB',
+      isLocal: false,
+    };
+
+    function withConnections(activeId: string) {
+      return {
+        connections: createCollection('id', [localRecord, remoteRecord]),
+        activeId,
+        status: 'idle',
+        error: null,
+        certMismatch: null,
+      };
+    }
+
+    it('shows the connect action and the connections list with local first', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      expect(screen.getByText('Connect to another intentd…')).toBeTruthy();
+      expect(screen.getByText('This machine (local)')).toBeTruthy();
+      expect(screen.getByText('desk:4180')).toBeTruthy();
+
+      // Local entry's expand toggle appears before the remote's in DOM order.
+      const toggles = screen.getAllByRole('button', { expanded: false });
+      const localIdx = toggles.findIndex((b) => b.textContent?.includes('This machine (local)'));
+      const remoteIdx = toggles.findIndex((b) => b.textContent?.includes('desk:4180'));
+      expect(localIdx).toBeGreaterThanOrEqual(0);
+      expect(remoteIdx).toBeGreaterThan(localIdx);
+    });
+
+    it('renders each connection as a submenu trigger (side flyout, not inline)', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      // The row is a submenu trigger: collapsed with menu-popup semantics, and no
+      // Switch/Forget rendered until it is opened (no inline expansion).
+      const remoteRow = screen.getByText('desk:4180').closest('button');
+      expect(remoteRow?.getAttribute('aria-haspopup')).toBe('menu');
+      expect(remoteRow?.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.queryByText('Switch')).toBeNull();
+
+      // Opening the row flips aria-expanded and reveals the flyout actions.
+      await fireEvent.click(remoteRow!);
+      expect(remoteRow?.getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByText('Switch')).toBeTruthy();
+      expect(screen.getByText('Forget')).toBeTruthy();
+    });
+
+    it('expands local to Switch only (Forget hidden); remote to Switch + Forget', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      // Local: Switch present, Forget absent (un-forgettable).
+      await fireEvent.click(screen.getByText('This machine (local)'));
+      expect(screen.getByText('Switch')).toBeTruthy();
+      expect(screen.queryByText('Forget')).toBeNull();
+
+      // Remote: both Switch and Forget present.
+      await fireEvent.click(screen.getByText('desk:4180'));
+      expect(screen.getByText('Switch')).toBeTruthy();
+      expect(screen.getByText('Forget')).toBeTruthy();
+    });
+
+    it('dispatches switchConnectionRequested when Switch is chosen on a non-active remote', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      await fireEvent.click(screen.getByText('desk:4180'));
+      await fireEvent.click(screen.getByText('Switch'));
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: ['r1'],
+          type: 'connections/switchRequested',
+          asyncActionType: 'connections/switch',
+        }),
+      );
+    });
+
+    it('disables Switch for the active entry', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('r1') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      await fireEvent.click(screen.getByText('desk:4180'));
+      const switchBtn = screen.getByText('Switch').closest('button');
+      expect(switchBtn?.disabled).toBe(true);
+    });
+
+    it('dispatches forgetConnectionRequested when Forget is chosen on a remote', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      await fireEvent.click(screen.getByText('desk:4180'));
+      await fireEvent.click(screen.getByText('Forget'));
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: ['r1'],
+          type: 'connections/forgetRequested',
+          asyncActionType: 'connections/forget',
+        }),
+      );
+    });
+
+    it('opens the add-connection modal from the connect action', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText('Connect to another intentd…'));
+
+      // Modal header + first-step fields render.
+      expect(screen.getByRole('heading', { name: 'Connect to another intentd' })).toBeTruthy();
+      expect(screen.getByLabelText('Host')).toBeTruthy();
+      expect(screen.getByLabelText('Access token')).toBeTruthy();
+    });
+  });
+
+  describe('connection label (hostname)', () => {
+    it('formatConnectionLabel renders hostname (host:port) when a hostname is captured', async () => {
+      const { formatConnectionLabel } = await import('./DaemonStatusIndicator.svelte');
+      expect(
+        formatConnectionLabel({
+          hostname: 'studio.local',
+          host: '10.0.0.2',
+          port: 4180,
+          label: '10.0.0.2:4180',
+        }),
+      ).toBe('studio.local (10.0.0.2:4180)');
+    });
+
+    it('formatConnectionLabel falls back to host:port when hostname is missing/empty', async () => {
+      const { formatConnectionLabel } = await import('./DaemonStatusIndicator.svelte');
+      const base = { host: '10.0.0.2', port: 4180, label: '10.0.0.2:4180' };
+      expect(formatConnectionLabel({ ...base })).toBe('10.0.0.2:4180');
+      expect(formatConnectionLabel({ ...base, hostname: null })).toBe('10.0.0.2:4180');
+      expect(formatConnectionLabel({ ...base, hostname: '   ' })).toBe('10.0.0.2:4180');
+    });
+
+    it('renders a remote as "hostname (host:port)" in the menu once labeled', async () => {
+      const remoteWithHostname = {
+        id: 'r1',
+        label: '10.0.0.2:4180',
+        host: '10.0.0.2',
+        port: 4180,
+        fingerprint: 'AA:BB',
+        hostname: 'studio.local',
+        isLocal: false,
+      };
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: {
+            clients: 1,
+            agents: 0,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
+        connections: {
+          connections: createCollection('id', [remoteWithHostname]),
+          activeId: 'local',
+          status: 'idle',
+          error: null,
+          certMismatch: null,
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      expect(screen.getByText('studio.local (10.0.0.2:4180)')).toBeTruthy();
+    });
+  });
+
+  describe('connection row overflow (monorepo#1744)', () => {
+    const longTarget = 'wss:100.70.219.113:5181';
+
+    function withTransport(transport?: {
+      mode: 'sidecar-uds' | 'external-uds' | 'external-ws';
+      target?: string;
+    }) {
+      return {
+        daemonHealth: {
+          health: 'healthy' as const,
+          stats: {
+            clients: 1,
+            agents: 0,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+            transport,
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
+      };
+    }
+
+    it('truncates a long external target and exposes the full value via title', async () => {
+      mockStoreState = withTransport({ mode: 'external-ws', target: longTarget });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      const value = screen.getByText(`external (${longTarget})`);
+      // Full value available via tooltip; ellipsis truncation keeps it inside the popover.
+      expect(value.getAttribute('title')).toBe(`external (${longTarget})`);
+      expect(value.classList.contains('truncate')).toBe(true);
+      expect(value.classList.contains('min-w-0')).toBe(true);
+      // Row keeps a gap so the value can never collide with the label.
+      const row = value.parentElement!;
+      expect(row.classList.contains('gap-2')).toBe(true);
+      const label = row.querySelector('.text-subtle')!;
+      expect(label.classList.contains('shrink-0')).toBe(true);
+    });
+
+    it('renders short values unchanged (sidecar mode)', async () => {
+      mockStoreState = withTransport({ mode: 'sidecar-uds' });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      expect(screen.getByText('sidecar (UDS)')).toBeTruthy();
+    });
+
+    it('formatTransportLabel maps transport shapes to display strings', async () => {
+      const { formatTransportLabel } = await import('$lib/utils/daemon-status-format');
+      expect(formatTransportLabel({ mode: 'sidecar-uds' })).toBe('sidecar (UDS)');
+      expect(formatTransportLabel({ mode: 'external-ws', target: longTarget })).toBe(
+        `external (${longTarget})`,
+      );
+      expect(formatTransportLabel({ mode: 'external-ws' })).toBe('external (WebSocket)');
+    });
+  });
+
+  describe('cert-mismatch modal', () => {
+    const mismatch = {
+      id: 'r1',
+      host: '10.0.0.2',
+      port: 4180,
+      expectedFingerprint: 'AA:BB:CC',
+      actualFingerprint: 'DD:EE:FF',
+    };
+
+    function withMismatch() {
+      return {
+        connections: createCollection('id'),
+        activeId: 'local',
+        status: 'idle',
+        error: null,
+        certMismatch: mismatch,
+      };
+    }
+
+    it('renders on a cert-mismatch push, showing stored vs presented fingerprint', async () => {
+      mockStoreState = {
+        daemonHealth: { health: 'healthy', stats: null, lastUpdated: null, polling: false },
+        connections: withMismatch(),
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      // Renders without opening the dropdown — it is driven by the push.
+      expect(screen.getByText('Certificate changed')).toBeTruthy();
+      expect(screen.getByText('AA:BB:CC')).toBeTruthy();
+      expect(screen.getByText('DD:EE:FF')).toBeTruthy();
+      expect(screen.getByText('Switch back to This machine (local)')).toBeTruthy();
+    });
+
+    it('switch-back clears the mismatch and dispatches a local switch request', async () => {
+      mockStoreState = {
+        daemonHealth: { health: 'healthy', stats: null, lastUpdated: null, polling: false },
+        connections: withMismatch(),
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByText('Switch back to This machine (local)'));
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'connections/certMismatchCleared' }),
+      );
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: ['local'],
+          type: 'connections/switchRequested',
+          asyncActionType: 'connections/switch',
+        }),
+      );
+    });
+
+    it('forget & re-pair clears the mismatch and dispatches a forget request', async () => {
+      mockStoreState = {
+        daemonHealth: { health: 'healthy', stats: null, lastUpdated: null, polling: false },
+        connections: withMismatch(),
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByText('Forget & re-pair'));
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'connections/certMismatchCleared' }),
+      );
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: ['r1'],
+          type: 'connections/forgetRequested',
+          asyncActionType: 'connections/forget',
+        }),
+      );
+    });
+  });
 });

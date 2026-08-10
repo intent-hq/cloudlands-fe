@@ -32,8 +32,7 @@ export interface MetadataStat {
 /**
  * Filesystem abstraction for workspace metadata I/O.
  *
- * Every method accepts **absolute** paths — the same paths that
- * `WorkspaceConfig.paths.*` already produces.
+ * Every method accepts **absolute** paths supplied by the caller.
  */
 export interface IMetadataFS {
   // ── Read ──────────────────────────────────────────────────────────────

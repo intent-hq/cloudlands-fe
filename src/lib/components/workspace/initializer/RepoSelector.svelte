@@ -46,12 +46,37 @@
   import DirectoryPickerModal from '$features/onboarding/messages/DirectoryPickerModal.svelte';
   import { pickDirectory } from '$lib/directory-picker-service';
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
+  import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
+  import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
+  import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import {
+    loadGithubRepos,
+    type GithubRepoItem,
+  } from '$store/renderer/slices/github-repos/github-repos-slice';
+  import {
+    selectGithubRepos,
+    selectGithubReposError,
+    selectGithubReposLoaded,
+    selectGithubReposLoading,
+  } from '$store/renderer/slices/github-repos/github-repos-selectors';
+  import { searchGithubRepos } from '$store/renderer/slices/github-repo-search/github-repo-search-slice';
+  import {
+    selectGithubRepoSearchLastQuery,
+    selectGithubRepoSearchLoading,
+    selectGithubRepoSearchResults,
+  } from '$store/renderer/slices/github-repo-search/github-repo-search-selectors';
   import { store as appStore } from '$store/renderer/store';
   import {
     isolationNoun,
     resolveEffectiveIsolationMode,
     type IsolationMode,
   } from './isolation-mode';
+  import {
+    getRecentRepoLabel,
+    getWorkspaceOwnedCheckoutPaths,
+    isDaemonManagedRepoPath,
+    matchesRecentRepoSearch,
+  } from './recent-repo-display';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('RepoSelector');
@@ -69,6 +94,17 @@
   const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
   const workspaceInitializerRecentRepos$ = selectWorkspaceInitializerRecentRepos();
   const workspaceInitializerRemoteSetups$ = selectWorkspaceInitializerRemoteSetups();
+
+  // GitHub autocomplete sources for the "Pick a repo" tab: the user's own
+  // repos (client-side filtered) plus a debounced global search.
+  const isGithubAuthenticated$ = selectGitHubAuthIsAuthenticated();
+  const githubRepos$ = selectGithubRepos();
+  const githubReposLoading$ = selectGithubReposLoading();
+  const githubReposLoaded$ = selectGithubReposLoaded();
+  const githubReposError$ = selectGithubReposError();
+  const githubSearchResults$ = selectGithubRepoSearchResults();
+  const githubSearchLoading$ = selectGithubRepoSearchLoading();
+  const githubSearchLastQuery$ = selectGithubRepoSearchLastQuery();
 
   /** Join parent path + folder name using the platform's native separator */
   function joinNativePath(parent: string, name: string): string {
@@ -141,10 +177,15 @@
   }
 
   // State
+  // svelte-ignore state_referenced_locally - intentional initial capture; prop only seeds the selection
   let selectedValue = $state(value);
+  // svelte-ignore state_referenced_locally - intentional initial capture; prop only seeds the input
   let inputValue = $state(value);
   let searchTerm = $state(''); // Separate search term that starts empty
   let inputElement: any;
+  /** The GitHub tab's owner/repo input, so the window-level Enter interceptor
+   *  can target it exactly rather than matching any focused <input>. */
+  let githubInputElement = $state<HTMLInputElement | null>(null);
   let isOpen = $state(false); // Track dropdown open state
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let isDialogOpen = $state(false); // Track if a native dialog is open (prevents dropdown from closing)
@@ -152,7 +193,8 @@
   let isNewRepo = $state(false); // Track if this is a new repo creation
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let isValidPath = $state(false); // Track if the input is a valid path
-  let selectedRepoType = $state<'local' | 'github' | 'new'>('local'); // Track the type/tab of the selected repo
+  // svelte-ignore state_referenced_locally - intentional initial capture; prop only seeds the tab
+  let selectedRepoType = $state<'local' | 'github' | 'new'>(repoTypeForValue(value)); // Track the type/tab of the selected repo
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let validationMessage = $state(''); // Message to show when path is invalid
   let directoryStatus = $state<{
@@ -340,16 +382,121 @@
     if (searchTerm === '') {
       return typeFiltered;
     }
-    return typeFiltered.filter((repo) => {
-      const search = searchTerm.toLowerCase();
-      return (
-        repo.name.toLowerCase().includes(search) ||
-        repo.path.toLowerCase().includes(search) ||
-        (repo.owner && repo.owner.toLowerCase().includes(search)) ||
-        (repo.owner && `${repo.owner}/${repo.name}`.toLowerCase().includes(search))
-      );
-    });
+    return typeFiltered.filter((repo) => matchesRecentRepoSearch(repo, searchTerm));
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GITHUB AUTOCOMPLETE ("Pick a repo" tab)
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Mirrors the onboarding GitHubRepoTab: the user's own repos filtered
+  // client-side by the typed text, followed by deduped global search results.
+
+  /** Trimmed owner/repo text currently in the GitHub input. */
+  const githubQuery = $derived(githubUrlInput.trim());
+
+  /** `owner/name` keys already shown in the Recent list, so suggestions don't duplicate them. */
+  const recentGithubIds = $derived(
+    new Set(
+      recentRepos
+        .filter((repo) => repo.type === 'github' && repo.owner)
+        .map((repo) => `${repo.owner}/${repo.name}`.toLowerCase()),
+    ),
+  );
+
+  const ownedGithubSuggestions = $derived.by<GithubRepoItem[]>(() => {
+    const all = $githubRepos$;
+    if (!all.length) return [];
+    const q = githubQuery.toLowerCase();
+    const matching = q ? all.filter((r) => `${r.owner}/${r.name}`.toLowerCase().includes(q)) : all;
+    return matching.filter((r) => !recentGithubIds.has(`${r.owner}/${r.name}`.toLowerCase()));
+  });
+
+  const discoverGithubSuggestions = $derived.by<GithubRepoItem[]>(() => {
+    if ($githubSearchLastQuery$ !== githubQuery) return [];
+    const results = $githubSearchResults$;
+    if (!results.length) return [];
+    const ownedIds = new Set($githubRepos$.map((r) => r.id));
+    return results.filter(
+      (r) => !ownedIds.has(r.id) && !recentGithubIds.has(`${r.owner}/${r.name}`.toLowerCase()),
+    );
+  });
+
+  /** Single combined suggestion list rendered under the GitHub input. */
+  const githubSuggestions = $derived.by<GithubRepoItem[]>(() =>
+    activeTab === 'github' && $isGithubAuthenticated$
+      ? [...ownedGithubSuggestions, ...discoverGithubSuggestions]
+      : [],
+  );
+
+  /** Keyboard highlight within the suggestion list (-1 = nothing highlighted). */
+  let suggestionIndex = $state(-1);
+
+  $effect(() => {
+    githubSuggestions; // track
+    suggestionIndex = -1;
+  });
+
+  /**
+   * On-demand repo load: only while the GitHub tab is showing and the user is
+   * authenticated. The guards skip the fetch when a load is in flight, cached,
+   * or previously errored, preventing duplicate or runaway fetches.
+   */
+  $effect(() => {
+    if (
+      activeTab === 'github' &&
+      $isGithubAuthenticated$ &&
+      !$githubReposLoaded$ &&
+      !$githubReposLoading$ &&
+      !$githubReposError$
+    ) {
+      appStore.dispatch(loadGithubRepos());
+    }
+  });
+
+  /** User-initiated retry. The on-demand effect above skips loads while an
+   *  error is present, so this explicit dispatch is what clears it and
+   *  re-fetches (mirrors GitHubRepoTab's "Try again"). */
+  function retryGithubRepos() {
+    appStore.dispatch(loadGithubRepos());
+  }
+
+  /** Confirm a suggestion as a path-less GitHub pick. */
+  function handleSelectGithubSuggestion(repo: GithubRepoItem) {
+    githubUrlInput = `${repo.owner}/${repo.name}`;
+    detectedGitHub = {
+      owner: repo.owner,
+      repo: repo.name,
+      url: `https://github.com/${repo.owner}/${repo.name}`,
+    };
+    handleConfirmGitHubPick();
+  }
+
+  /** Arrow navigation over the suggestion list. Enter is handled by the
+   *  dropdown-wide capture listener (see the keydown $effect below). */
+  function handleGitHubInputKeydown(e: KeyboardEvent) {
+    if (e.key === 'ArrowDown') {
+      if (!githubSuggestions.length) return;
+      e.preventDefault();
+      suggestionIndex = Math.min(suggestionIndex + 1, githubSuggestions.length - 1);
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      if (!githubSuggestions.length) return;
+      e.preventDefault();
+      suggestionIndex = Math.max(suggestionIndex - 1, -1);
+    }
+  }
+
+  /** Enter on the GitHub tab: take the highlighted suggestion when there is
+   *  one, otherwise fall back to confirming the typed owner/repo. */
+  function confirmGitHubFromKeyboard() {
+    const highlighted = suggestionIndex >= 0 ? githubSuggestions[suggestionIndex] : undefined;
+    if (highlighted) {
+      handleSelectGithubSuggestion(highlighted);
+    } else {
+      handleConfirmGitHubPick();
+    }
+  }
 
   // Highlighted index for keyboard navigation (-1 means nothing highlighted)
   let highlightedIndex = $state(-1);
@@ -361,11 +508,19 @@
     highlightedIndex = -1;
   });
 
-  // Update internal state when value prop changes
+  /** Classify a value supplied via the `value` prop: an owner/repo shorthand
+   *  or GitHub URL is a GitHub pick; anything else is a local path. */
+  function repoTypeForValue(val: string): 'local' | 'github' {
+    return val && parseGitHubUrl(val) ? 'github' : 'local';
+  }
+
+  // Update internal state when value prop changes; re-derive the repo type so
+  // the dropdown opens on the tab matching the restored selection.
   $effect(() => {
     if (value && value !== selectedValue) {
       selectedValue = value;
       inputValue = value;
+      selectedRepoType = repoTypeForValue(value);
     }
   });
 
@@ -433,6 +588,12 @@
       if (e.key === 'Enter') {
         // Prevent form submission when dropdown is open
         e.stopPropagation();
+        // This capture-phase listener also prevents the event from reaching
+        // the GitHub input, so the tab's Enter action is driven from here.
+        if (activeTab === 'github' && e.target === githubInputElement) {
+          e.preventDefault();
+          confirmGitHubFromKeyboard();
+        }
       }
     }
 
@@ -501,6 +662,10 @@
   onMount(async () => {
     performanceMonitor.start('loadRecentRepos');
 
+    // Refresh the GitHub auth snapshot so the "Pick a repo" tab knows whether
+    // it can offer autocomplete suggestions.
+    appStore.dispatch(initializeGitHubAuth());
+
     try {
       // Simulate network delay if enabled
       if (debugConfig.get('simulateSlowNetwork')) {
@@ -521,13 +686,18 @@
         appStore.dispatch(replaceWorkspaceList(workspaces));
       }
 
+      // GitHub-pick standalone checkouts are workspace-owned, not repos to copy from
+      const workspaceOwnedCheckouts = getWorkspaceOwnedCheckoutPaths(workspaces ?? []);
+
       // Build a map of repos by path (persistent registry first, then workspace-derived)
       const repoMap = new Map<
         string,
         { path: string; type: 'local' | 'github'; githubUrl?: string; name: string; owner?: string }
       >();
 
+      // Persisted recents may predate the daemon-managed exclusions below.
       for (const repo of $workspaceInitializerRecentRepos$) {
+        if (isDaemonManagedRepoPath(repo.path) || workspaceOwnedCheckouts.has(repo.path)) continue;
         repoMap.set(repo.path, repo);
       }
 
@@ -543,7 +713,11 @@
               name: repo.name,
               owner: repo.owner,
             });
-          } else if (repo.path && !repo.path.includes('/.clones/')) {
+          } else if (
+            repo.path &&
+            !isDaemonManagedRepoPath(repo.path) &&
+            !workspaceOwnedCheckouts.has(repo.path)
+          ) {
             repoMap.set(repo.path, {
               path: repo.path,
               type: 'local' as const,
@@ -563,8 +737,11 @@
             repo.path.startsWith('~') ||
             repo.path.startsWith('.') ||
             repo.path.includes(':\\');
-          const isLegacyClone = repo.path.includes('/.clones/');
-          if (isLocalPath && !isLegacyClone) {
+          if (
+            isLocalPath &&
+            !isDaemonManagedRepoPath(repo.path) &&
+            !workspaceOwnedCheckouts.has(repo.path)
+          ) {
             repoMap.set(repo.path, {
               path: repo.path,
               type: 'local' as const,
@@ -735,6 +912,18 @@
     } else {
       handleInputChange('');
     }
+
+    dispatchGithubSearch(cleaned);
+  }
+
+  /**
+   * Global GitHub search. The search middleware debounces (~300ms), so we can
+   * dispatch on every keystroke; short queries are short-circuited downstream.
+   * Signed-out users get no dispatch at all.
+   */
+  function dispatchGithubSearch(query: string) {
+    if (!$isGithubAuthenticated$) return;
+    appStore.dispatch(searchGithubRepos(query.trim()));
   }
 
   // Handle paste in GitHub input - normalize pasted content
@@ -749,6 +938,7 @@
       if (normalized) {
         handleInputChange(`https://github.com/${normalized}`, normalized);
       }
+      dispatchGithubSearch(normalized);
     }
   }
 
@@ -1265,21 +1455,83 @@
             <!-- i18n-ignore (GitHub path format example placeholder) -->
             <Input placeholder="owner/repo"
               bind:this={inputElement}
+              bind:ref={githubInputElement}
               type="text"
               bind:value={githubUrlInput}
               oninput={(e) => handleGitHubInputChange(e.currentTarget.value)}
               onpaste={handleGitHubPaste}
-              onkeydown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleConfirmGitHubPick();
-                }
-              }}
+              onkeydown={handleGitHubInputKeydown}
               class="bg-sidebar border-none px-1 py-2.5! h-auto"
               noFocusStyle
+              role="combobox"
+              aria-autocomplete="list"
+              aria-controls="repo-selector-github-suggestions"
+              aria-expanded={githubSuggestions.length > 0}
+              aria-activedescendant={githubSuggestions[suggestionIndex]
+                ? `repo-selector-github-suggestion-${suggestionIndex}`
+                : undefined}
             />
           </div>
+          <!--
+            Autocomplete suggestions: the user's own repos filtered by the
+            typed text, then deduped global search results. Signed-out users
+            get a connect hint instead; manual owner/repo entry keeps working.
+          -->
+          {#if !$isGithubAuthenticated$}
+            <GitHubAuthBanner
+              class="mt-2"
+              message={m.workspace_repoSelector_githubSignIn_description()}
+            />
+          {:else if $githubReposError$}
+            <div class="mt-2 px-1 text-sm text-subtle flex items-center gap-2">
+              <span>{m.workspace_repoSelector_suggestionsUnavailable_label()}</span>
+              <button
+                type="button"
+                class="underline underline-offset-2 cursor-pointer hover:no-underline"
+                onclick={retryGithubRepos}
+              >
+                {m.workspace_repoSelector_retrySuggestions_label()}
+              </button>
+            </div>
+          {:else if githubSuggestions.length > 0}
+            <div
+              id="repo-selector-github-suggestions"
+              role="listbox"
+              aria-label={m.workspace_repoSelector_githubSuggestions_ariaLabel()}
+              class="mt-2 max-h-56 overflow-y-auto"
+            >
+              {#each githubSuggestions as repo, index (repo.id)}
+                <button
+                  type="button"
+                  id="repo-selector-github-suggestion-{index}"
+                  role="option"
+                  aria-selected={index === suggestionIndex}
+                  class="w-full flex items-center gap-2 py-1.5 px-2 text-left rounded-md transition-colors cursor-pointer {index ===
+                  suggestionIndex
+                    ? 'bg-accent/20'
+                    : 'hover:bg-muted/50'}"
+                  onclick={() => handleSelectGithubSuggestion(repo)}
+                  onmousemove={() => (suggestionIndex = index)}
+                >
+                  <img
+                    src={getGitHubAvatarUrl(repo.owner, 32)}
+                    alt={repo.owner}
+                    class="w-4 h-4 rounded-full shrink-0"
+                    loading="lazy"
+                    onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
+                  />
+                  <span class="text-sm text-foreground truncate">
+                    <span class="text-subtle mr-1">{repo.owner} /</span>{repo.name}
+                  </span>
+                </button>
+              {/each}
+            </div>
+          {:else if githubQuery && $githubSearchLoading$}
+            <div class="mt-2 flex items-center gap-2 px-1 text-sm text-subtle">
+              <Fa icon={faSpinner} size="xs" class="animate-spin" />
+              <span>{m.workspace_repoSelector_searchingGithub_label({ query: githubQuery })}</span>
+            </div>
+          {/if}
           <!-- Detected repo + select button -->
           {#if detectedGitHub}
             <div class="flex items-center justify-between gap-2 mt-2 px-1">
@@ -1461,6 +1713,7 @@
           {:else}
             <div class="">
               {#each filteredRepos() as repo, index (repo.path || repo.name)}
+                {@const label = getRecentRepoLabel(repo)}
                 <button
                   type="button"
                   class="w-full flex items-center gap-2 py-1.5 text-left hover:bg-muted/50 rounded-md px-2 pl-3 -mx-2 transition-colors cursor-pointer {index ===
@@ -1486,10 +1739,13 @@
                     />
                   {/if}
                   <span class="text-sm text-foreground truncate">
-                    {#if repo.owner}
-                      <span class="text-subtle mr-1">{repo.owner} /</span>
+                    {#if label.ownerPrefix}
+                      <span class="text-subtle mr-1">{label.ownerPrefix} /</span>
                     {/if}
-                    {repo.name}
+                    {label.primary}
+                    {#if label.suffix}
+                      <span class="text-subtle ml-1">({label.suffix})</span>
+                    {/if}
                   </span>
                 </button>
               {/each}

@@ -30,7 +30,12 @@ function modelOptionsEqual(
   const right = b ?? [];
   return (
     left.length === right.length &&
-    left.every((opt, i) => opt.model === right[i].model && opt.hint === right[i].hint)
+    left.every(
+      (opt, i) =>
+        opt.model === right[i].model &&
+        opt.hint === right[i].hint &&
+        normalized(opt.reasoningEffort) === normalized(right[i].reasoningEffort),
+    )
   );
 }
 
@@ -68,6 +73,7 @@ export function isRedundantBuiltInOverride(
     normalized(fileSpec.description) === normalized(bundled.description) &&
     normalized(fileSpec.behaviorPrompt) === normalized(bundled.defaultBehaviorPrompt) &&
     normalized(fileSpec.roleReminder) === normalized(bundled.roleReminder) &&
+    normalized(fileSpec.reasoningEffort) === normalized(bundled.reasoningEffort) &&
     modelOptionsEqual(fileSpec.modelOptions, bundled.modelOptions)
   );
 }

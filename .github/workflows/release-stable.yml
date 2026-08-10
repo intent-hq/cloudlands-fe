@@ -468,6 +468,57 @@ jobs:
           gh release edit stable --repo intent-hq/cloudlands-releases --notes-file "$RUNNER_TEMP/aggregated-notes.md"
           echo "✓ Stable release notes updated"
 
+      # Channel model: versioned releases are published as Pre-releases (the
+      # anchor on cloudlands-fe, the versioned release on cloudlands-releases);
+      # promoting a version clears that flag and hands it the Latest badge, so
+      # Latest always tracks the newest stable version. Both steps are
+      # fail-soft (badges must never block a promotion) and idempotent —
+      # re-promoting the same version re-applies identical flags.
+      #
+      # Runs before the published-date refresh below so that step observes the
+      # post-promotion Latest pointer.
+      - name: Mark promoted version as Latest on cloudlands-fe
+        id: latest_fe
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          REPO=intent-hq/cloudlands-fe
+          TAG="v${VERSION}"
+          MARKED=false
+          if ! RELEASE_ID=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.id'); then
+            echo "::warning::Could not read release ${TAG} on ${REPO}; skipping Latest marking"
+          elif ! gh api -X PATCH "repos/${REPO}/releases/${RELEASE_ID}" \
+              -F prerelease=false -f make_latest=true >/dev/null; then
+            echo "::warning::Could not mark ${TAG} as Latest on ${REPO}"
+          else
+            MARKED=true
+            echo "✓ ${TAG} marked as Latest on ${REPO} (prerelease cleared)"
+          fi
+          echo "marked=$MARKED" >> "$GITHUB_OUTPUT"
+
+      - name: Mark promoted version as Latest on cloudlands-releases
+        id: latest_releases
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          REPO=intent-hq/cloudlands-releases
+          TAG="v${VERSION}"
+          MARKED=false
+          if ! RELEASE_ID=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.id'); then
+            echo "::warning::Could not read release ${TAG} on ${REPO}; skipping Latest marking"
+          elif ! gh api -X PATCH "repos/${REPO}/releases/${RELEASE_ID}" \
+              -F prerelease=false -f make_latest=true >/dev/null; then
+            echo "::warning::Could not mark ${TAG} as Latest on ${REPO}"
+          else
+            MARKED=true
+            echo "✓ ${TAG} marked as Latest on ${REPO} (prerelease cleared)"
+          fi
+          echo "marked=$MARKED" >> "$GITHUB_OUTPUT"
+
       # Re-stamps published_at on the rolling stable release (GitHub renders
       # its "released N ago" from that field, which otherwise sticks at first
       # publication) by toggling draft on→off via the REST API. Reading state
@@ -484,7 +535,9 @@ jobs:
 
           # Read current state so the un-draft re-applies it (re-publishing
           # defaults make_latest to true; the stable release must keep its
-          # current Latest badge behavior)
+          # current Latest badge behavior). With the promoted vX.Y.Z release
+          # now holding Latest, this read resolves MAKE_LATEST=false and the
+          # refresh leaves the badge on the version — which is the point.
           if ! STATE=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '[.id, .prerelease] | @tsv'); then
             echo "::warning::Could not read rolling '${TAG}' release state; skipping published date refresh"
             exit 0
@@ -576,6 +629,8 @@ jobs:
           PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
           IS_FIRST: ${{ steps.stable_version.outputs.is_first_promotion }}
           PROMOTED_FEEDS: ${{ steps.upload_assets.outputs.promoted_feeds }}
+          LATEST_FE: ${{ steps.latest_fe.outputs.marked }}
+          LATEST_RELEASES: ${{ steps.latest_releases.outputs.marked }}
         run: |
           feed_platform() {
             case "$1" in
@@ -585,6 +640,14 @@ jobs:
               latest-linux-arm64.yml) echo "Linux arm64" ;;
               *) echo "$1" ;;
             esac
+          }
+
+          # The Latest-marking steps are fail-soft; report which one landed
+          latest_mark() {
+            if [ "$1" = "true" ]; then echo "✓"; else echo "⚠"; fi
+          }
+          latest_suffix() {
+            if [ "$1" = "true" ]; then echo ""; else echo " - FAILED, mark manually"; fi
           }
 
           read -ra FEEDS <<< "$PROMOTED_FEEDS"
@@ -608,4 +671,6 @@ jobs:
             echo "- ✓ Assets copied from versioned release v$VERSION"
             echo "- ✓ sha512 verification passed for: ${FEEDS[*]}"
             echo "- ✓ Aggregated release notes updated"
+            echo "- $(latest_mark "$LATEST_FE") v$VERSION marked Latest (Pre-release cleared) on intent-hq/cloudlands-fe$(latest_suffix "$LATEST_FE")"
+            echo "- $(latest_mark "$LATEST_RELEASES") v$VERSION marked Latest (Pre-release cleared) on intent-hq/cloudlands-releases$(latest_suffix "$LATEST_RELEASES")"
           } >> "$GITHUB_STEP_SUMMARY"

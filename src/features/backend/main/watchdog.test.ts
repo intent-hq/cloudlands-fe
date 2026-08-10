@@ -24,6 +24,7 @@ import {
   __resetIntentdSidecarForTesting,
   __setSidecarProcessForTesting,
   __startWatchdogForTesting,
+  __SIDECAR_READY_TIMING_FOR_TESTING,
 } from './intentd-sidecar';
 
 // Mock net.connect for socket probe tests
@@ -66,7 +67,10 @@ describe('healthCheckProbe', () => {
           setTimeout(() => handler(), 0);
         } else if (event === 'data') {
           // Simulate daemon response after a short delay
-          setTimeout(() => handler(Buffer.from('{"jsonrpc":"2.0","id":1,"result":{"status":"running"}}')), 100);
+          setTimeout(
+            () => handler(Buffer.from('{"jsonrpc":"2.0","id":1,"result":{"status":"running"}}')),
+            100,
+          );
         }
       }),
     };
@@ -181,6 +185,11 @@ describe('healthCheckProbe', () => {
  * - 3rd consecutive failure triggers SIGTERM
  * - Successful probe resets failure counter
  * - SIGTERM → SIGKILL escalation with ~5s grace period
+ *
+ * The N-strikes regime only applies once the daemon has answered at least one
+ * probe, so these tests start the watchdog with `daemonAlreadyResponded=true`.
+ * The pre-first-response (startup readiness) regime is covered separately in
+ * "Watchdog startup readiness budget" below.
  */
 describe('Watchdog N-strikes policy', () => {
   const mockConnect = vi.mocked(net.connect);
@@ -221,14 +230,17 @@ describe('Watchdog N-strikes policy', () => {
     vi.useFakeTimers();
 
     // Mock socket to make probe fail (no 'data' event)
-    mockConnect.mockImplementation(() => ({
-      write: vi.fn(),
-      destroy: vi.fn(),
-      on: vi.fn((event: string, handler: any) => {
-        if (event === 'connect') setTimeout(() => handler(), 0);
-        // No 'data' event - probe will timeout and fail
-      }),
-    } as any));
+    mockConnect.mockImplementation(
+      () =>
+        ({
+          write: vi.fn(),
+          destroy: vi.fn(),
+          on: vi.fn((event: string, handler: any) => {
+            if (event === 'connect') setTimeout(() => handler(), 0);
+            // No 'data' event - probe will timeout and fail
+          }),
+        }) as any,
+    );
 
     const mockProcess = {
       kill: vi.fn(() => true),
@@ -238,8 +250,8 @@ describe('Watchdog N-strikes policy', () => {
     } as unknown as ChildProcess;
     __setSidecarProcessForTesting(mockProcess);
 
-    // Start watchdog with 100ms delay
-    __startWatchdogForTesting('/test.sock', 100);
+    // Start watchdog with 100ms delay (steady-state regime)
+    __startWatchdogForTesting('/test.sock', 100, true);
 
     // Advance to trigger first probe (100ms + 3000ms timeout)
     await vi.advanceTimersByTimeAsync(3200);
@@ -252,14 +264,17 @@ describe('Watchdog N-strikes policy', () => {
     vi.useFakeTimers();
 
     // Mock socket to make all probes fail
-    mockConnect.mockImplementation(() => ({
-      write: vi.fn(),
-      destroy: vi.fn(),
-      on: vi.fn((event: string, handler: any) => {
-        if (event === 'connect') setTimeout(() => handler(), 0);
-        // No 'data' event - all probes fail
-      }),
-    } as any));
+    mockConnect.mockImplementation(
+      () =>
+        ({
+          write: vi.fn(),
+          destroy: vi.fn(),
+          on: vi.fn((event: string, handler: any) => {
+            if (event === 'connect') setTimeout(() => handler(), 0);
+            // No 'data' event - all probes fail
+          }),
+        }) as any,
+    );
 
     const mockProcess = {
       kill: vi.fn(() => true),
@@ -269,8 +284,8 @@ describe('Watchdog N-strikes policy', () => {
     } as unknown as ChildProcess;
     __setSidecarProcessForTesting(mockProcess);
 
-    // Start watchdog with 100ms delay
-    __startWatchdogForTesting('/test.sock', 100);
+    // Start watchdog with 100ms delay (steady-state regime)
+    __startWatchdogForTesting('/test.sock', 100, true);
 
     // First failure (100ms + 3s timeout)
     await vi.advanceTimersByTimeAsync(3200);
@@ -314,8 +329,8 @@ describe('Watchdog N-strikes policy', () => {
     } as unknown as ChildProcess;
     __setSidecarProcessForTesting(mockProcess);
 
-    // Start watchdog with 100ms delay
-    __startWatchdogForTesting('/test.sock', 100);
+    // Start watchdog with 100ms delay (steady-state regime)
+    __startWatchdogForTesting('/test.sock', 100, true);
 
     // First failure
     await vi.advanceTimersByTimeAsync(3200);
@@ -342,14 +357,17 @@ describe('Watchdog N-strikes policy', () => {
     vi.useFakeTimers();
 
     // Mock socket to make all probes fail
-    mockConnect.mockImplementation(() => ({
-      write: vi.fn(),
-      destroy: vi.fn(),
-      on: vi.fn((event: string, handler: any) => {
-        if (event === 'connect') setTimeout(() => handler(), 0);
-        // No 'data' event - all probes fail
-      }),
-    } as any));
+    mockConnect.mockImplementation(
+      () =>
+        ({
+          write: vi.fn(),
+          destroy: vi.fn(),
+          on: vi.fn((event: string, handler: any) => {
+            if (event === 'connect') setTimeout(() => handler(), 0);
+            // No 'data' event - all probes fail
+          }),
+        }) as any,
+    );
 
     const mockProcess = {
       kill: vi.fn((signal?: NodeJS.Signals | number) => {
@@ -363,8 +381,8 @@ describe('Watchdog N-strikes policy', () => {
     } as unknown as ChildProcess;
     __setSidecarProcessForTesting(mockProcess);
 
-    // Start watchdog with 100ms delay
-    __startWatchdogForTesting('/test.sock', 100);
+    // Start watchdog with 100ms delay (steady-state regime)
+    __startWatchdogForTesting('/test.sock', 100, true);
 
     // Trigger 3 failures to get SIGTERM
     await vi.advanceTimersByTimeAsync(3200); // 1st failure
@@ -385,14 +403,17 @@ describe('Watchdog N-strikes policy', () => {
     vi.useFakeTimers();
 
     // Mock socket to make all probes fail
-    mockConnect.mockImplementation(() => ({
-      write: vi.fn(),
-      destroy: vi.fn(),
-      on: vi.fn((event: string, handler: any) => {
-        if (event === 'connect') setTimeout(() => handler(), 0);
-        // No 'data' event - all probes fail
-      }),
-    } as any));
+    mockConnect.mockImplementation(
+      () =>
+        ({
+          write: vi.fn(),
+          destroy: vi.fn(),
+          on: vi.fn((event: string, handler: any) => {
+            if (event === 'connect') setTimeout(() => handler(), 0);
+            // No 'data' event - all probes fail
+          }),
+        }) as any,
+    );
 
     const mockProcess = {
       kill: vi.fn((signal?: NodeJS.Signals | number) => {
@@ -406,8 +427,8 @@ describe('Watchdog N-strikes policy', () => {
     } as unknown as ChildProcess;
     __setSidecarProcessForTesting(mockProcess);
 
-    // Start watchdog with 100ms delay
-    __startWatchdogForTesting('/test.sock', 100);
+    // Start watchdog with 100ms delay (steady-state regime)
+    __startWatchdogForTesting('/test.sock', 100, true);
 
     // Trigger 3 failures
     await vi.advanceTimersByTimeAsync(3200); // 1st
@@ -426,6 +447,184 @@ describe('Watchdog N-strikes policy', () => {
     // SIGKILL should NOT be sent (only SIGTERM)
     expect(mockProcess.kill).toHaveBeenCalledTimes(1);
     expect(mockProcess.kill).not.toHaveBeenCalledWith('SIGKILL');
+  });
+});
+
+/**
+ * Startup readiness regime: before the daemon has ever answered a probe, a slow
+ * boot (heavy FSEvents/MCP init on a loaded machine) must not be mistaken for an
+ * unhealthy daemon. The watchdog waits out a documented budget, then kills.
+ */
+describe('Watchdog startup readiness budget', () => {
+  const mockConnect = vi.mocked(net.connect);
+  const { budgetMs, probeIntervalMs, probeTimeoutMs } = __SIDECAR_READY_TIMING_FOR_TESTING;
+
+  /** Socket mock: probes fail until `succeedFrom`, then answer system.status. */
+  function mockProbesFailingUntil(succeedFrom: number): { count: () => number } {
+    let probeCount = 0;
+    mockConnect.mockImplementation(() => {
+      probeCount++;
+      const succeed = probeCount >= succeedFrom;
+      return {
+        write: vi.fn(),
+        destroy: vi.fn(),
+        on: vi.fn((event: string, handler: any) => {
+          if (event === 'connect') setTimeout(() => handler(), 0);
+          if (event === 'data' && succeed) {
+            setTimeout(() => handler(Buffer.from('{"result":{}}')), 10);
+          }
+        }),
+      } as any;
+    });
+    return { count: () => probeCount };
+  }
+
+  function mockAliveProcess(): ChildProcess {
+    return {
+      kill: vi.fn(() => true),
+      killed: false,
+      exitCode: null,
+      signalCode: null,
+    } as unknown as ChildProcess;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetIntentdSidecarForTesting();
+  });
+
+  afterEach(() => {
+    __resetIntentdSidecarForTesting();
+    vi.useRealTimers();
+  });
+
+  it('documents a startup budget of at least 60s with sub-budget probe intervals', () => {
+    expect(budgetMs).toBeGreaterThanOrEqual(60_000);
+    expect(probeIntervalMs).toBeGreaterThan(0);
+    expect(probeIntervalMs).toBeLessThan(budgetMs);
+    expect(probeTimeoutMs).toBeLessThan(budgetMs);
+  });
+
+  it('does not kill a daemon that takes 10s to answer its first probe', async () => {
+    vi.useFakeTimers();
+    // 7+s fseventsd registrations: the daemon answers only from the 3rd probe.
+    const probes = mockProbesFailingUntil(3);
+    const mockProcess = mockAliveProcess();
+    __setSidecarProcessForTesting(mockProcess);
+
+    __startWatchdogForTesting('/test.sock', 100);
+
+    // Two failed probes (each ~3s timeout + 1s interval), then a success.
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(probes.count()).toBeGreaterThanOrEqual(3);
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+  });
+
+  it('keeps probing across the whole budget without killing the process', async () => {
+    vi.useFakeTimers();
+    mockProbesFailingUntil(Number.POSITIVE_INFINITY);
+    const mockProcess = mockAliveProcess();
+    __setSidecarProcessForTesting(mockProcess);
+
+    __startWatchdogForTesting('/test.sock', 100);
+
+    // Well past the old ~3s tolerance but inside the readiness budget.
+    await vi.advanceTimersByTimeAsync(budgetMs - probeTimeoutMs - probeIntervalMs);
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+  });
+
+  it('kills the process once the readiness budget is exhausted', async () => {
+    vi.useFakeTimers();
+    mockProbesFailingUntil(Number.POSITIVE_INFINITY);
+    const mockProcess = mockAliveProcess();
+    __setSidecarProcessForTesting(mockProcess);
+
+    __startWatchdogForTesting('/test.sock', 100);
+
+    // Past the budget plus one full probe cycle so the deadline check fires.
+    await vi.advanceTimersByTimeAsync(budgetMs + probeTimeoutMs + probeIntervalMs + 100);
+    expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  it('stops waiting immediately when the daemon process is gone (crash short-circuit)', async () => {
+    vi.useFakeTimers();
+    const probes = mockProbesFailingUntil(Number.POSITIVE_INFINITY);
+    const mockProcess = mockAliveProcess();
+    __setSidecarProcessForTesting(mockProcess);
+
+    __startWatchdogForTesting('/test.sock', 100);
+
+    // First probe fails; the daemon then crashes (the real 'exit' handler
+    // nulls the process handle), so the readiness wait must not continue.
+    await vi.advanceTimersByTimeAsync(probeTimeoutMs + 200);
+    const probesBeforeCrash = probes.count();
+    expect(probesBeforeCrash).toBeGreaterThanOrEqual(1);
+
+    __setSidecarProcessForTesting(null);
+    await vi.advanceTimersByTimeAsync(budgetMs * 2);
+
+    expect(probes.count()).toBe(probesBeforeCrash);
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+  });
+
+  it('never signals a replacement child with a stale probe result after crash + restart', async () => {
+    vi.useFakeTimers();
+    mockProbesFailingUntil(Number.POSITIVE_INFINITY);
+    const crashedProcess = mockAliveProcess();
+    __setSidecarProcessForTesting(crashedProcess);
+
+    __startWatchdogForTesting('/test.sock', 100);
+
+    // Run out the readiness budget and stop mid-probe, so a probe armed against
+    // the old child is still in flight when it crashes.
+    await vi.advanceTimersByTimeAsync(budgetMs + probeIntervalMs);
+    expect(crashedProcess.kill).not.toHaveBeenCalled();
+
+    // Crash + restart backoff installs a fresh child with its own readiness
+    // window while that probe is in flight.
+    const replacementProcess = mockAliveProcess();
+    __setSidecarProcessForTesting(replacementProcess);
+
+    // The stale probe now times out: its result belongs to the dead child and
+    // must not kill the replacement.
+    await vi.advanceTimersByTimeAsync(probeTimeoutMs + 500);
+
+    expect(replacementProcess.kill).not.toHaveBeenCalled();
+    expect(crashedProcess.kill).not.toHaveBeenCalled();
+  });
+
+  it('switches to the 3-strikes steady-state regime after the first response', async () => {
+    vi.useFakeTimers();
+    // First probe succeeds, every later probe fails.
+    let probeCount = 0;
+    mockConnect.mockImplementation(() => {
+      probeCount++;
+      const succeed = probeCount === 1;
+      return {
+        write: vi.fn(),
+        destroy: vi.fn(),
+        on: vi.fn((event: string, handler: any) => {
+          if (event === 'connect') setTimeout(() => handler(), 0);
+          if (event === 'data' && succeed) {
+            setTimeout(() => handler(Buffer.from('{"result":{}}')), 10);
+          }
+        }),
+      } as any;
+    });
+    const mockProcess = mockAliveProcess();
+    __setSidecarProcessForTesting(mockProcess);
+
+    __startWatchdogForTesting('/test.sock', 100);
+
+    // Ready on the first probe, then 3 steady-state failures (10s + 3s each).
+    await vi.advanceTimersByTimeAsync(200);
+    await vi.advanceTimersByTimeAsync(13_100);
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(13_100);
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(13_100);
+    expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
   });
 });
 

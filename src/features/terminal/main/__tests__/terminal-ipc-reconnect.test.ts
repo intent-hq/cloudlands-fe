@@ -29,14 +29,18 @@ vi.mock('electron', () => ({
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mocks.backendRequest, on: mocks.clientOn }),
   onBackendReconnected: vi.fn(() => () => {}),
+  // T9: the registry attaches its notification listener via the stable
+  // forwarder now; these tests don't exercise event delivery, so a no-op
+  // disposer suffices.
+  onBackendNotification: vi.fn(() => () => {}),
+  isRemoteBackendActive: () => false,
 }));
 
-vi.mock('$features/workspace/main/workspace.service', () => ({
-  workspaceService: { getWorkspace: vi.fn(async () => ({ ok: false })) },
-}));
-
-vi.mock('$shared/main/config', () => ({
-  WorkspaceConfig: { paths: { workspace: (id: string) => `/tmp/${id}` } },
+// These tests always pass an explicit cwd, so the daemon-backed path seam
+// (monorepo#1759) is never consulted; a null resolution keeps that honest.
+vi.mock('$features/workspace/main/workspace-path.service', () => ({
+  getWorkspacePathInfo: vi.fn(async () => null),
+  getWorkspacePath: vi.fn(async () => null),
 }));
 
 vi.mock('../../../../store/main/redux-store-bridge', () => ({
@@ -56,8 +60,7 @@ async function setup() {
 }
 
 function countCreateCalls(): number {
-  return mocks.backendRequest.mock.calls.filter(([method]) => method === 'terminal.create')
-    .length;
+  return mocks.backendRequest.mock.calls.filter(([method]) => method === 'terminal.create').length;
 }
 
 describe('terminal.ipc PROFESSIONAL_CREATE reconnect (monorepo#1330)', () => {
@@ -87,7 +90,11 @@ describe('terminal.ipc PROFESSIONAL_CREATE reconnect (monorepo#1330)', () => {
     expect(countCreateCalls()).toBe(1);
 
     const second = await create({}, { terminalId: 'terminal-local-1', workspaceId: WS, cwd: CWD });
-    expect(second).toMatchObject({ success: true, terminalId: 'terminal-local-1', reconnected: true });
+    expect(second).toMatchObject({
+      success: true,
+      terminalId: 'terminal-local-1',
+      reconnected: true,
+    });
     expect(countCreateCalls()).toBe(1);
   });
 

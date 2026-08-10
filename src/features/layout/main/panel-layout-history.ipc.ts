@@ -35,7 +35,7 @@ export function setupPanelLayoutHistoryIPC() {
       async (_event, validated: any): Promise<PanelLayoutHistoryData | null> => {
         try {
           const workspaceId = WorkspaceIdFn(validated.workspaceId);
-          return await repository.load(workspaceId);
+          return await repository.load(workspaceId, validated.backendId);
         } catch (error) {
           logger.error(
             // i18n-ignore (main-process log message, not user-facing)
@@ -59,7 +59,7 @@ export function setupPanelLayoutHistoryIPC() {
       async (_event, validated: any): Promise<boolean> => {
         try {
           const workspaceId = WorkspaceIdFn(validated.workspaceId);
-          await repository.save(workspaceId, validated.data);
+          await repository.save(workspaceId, validated.data, validated.backendId);
           return true;
         } catch (error) {
           logger.error(

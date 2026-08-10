@@ -18,6 +18,7 @@
   import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
   import { refreshFileExplorer } from '$store/renderer/slices/file-explorer/file-explorer-slice';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
+  import { writable } from 'svelte/store';
 
   import { store as appStore } from '$store/renderer/store';
 
@@ -98,7 +99,14 @@
   }: Props = $props();
 
   const effectiveWsId = $derived(workspaceId);
-  const fileExplorerWorkspacePath = selectEffectiveFileExplorerWorkspacePath(workspaceId);
+  // Writable store mirrors the prop so the Redux selector re-evaluates when
+  // workspaceId changes (selector readables are init-time only).
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
+  const fileExplorerWorkspacePath = selectEffectiveFileExplorerWorkspacePath(workspaceIdStore);
 
   // Handle file rename via IPC
   async function handleRenameFile(oldPath: string, newPath: string) {

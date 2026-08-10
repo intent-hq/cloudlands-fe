@@ -162,8 +162,6 @@ export const IPC_CHANNELS = {
   },
 
   // Events System
-  // NOTE: Advanced queries (recent files, agent activity, workspace summary) are handled
-  // via AgentEventTools on the main process side, not via IPC.
   EVENTS: {
     QUERY: 'events:query',
     SUBSCRIBE: 'events:subscribe',
@@ -177,8 +175,6 @@ export const IPC_CHANNELS = {
 
   // Auggie Integration
   AUGGIE: {
-    CHECK_AVAILABILITY: 'auggie:check-availability',
-    STATUS: 'auggie:status',
     INSTALL: 'auggie:install',
     AUTHENTICATE: 'auggie:authenticate',
     GET_MODELS: 'auggie:get-models',
@@ -211,8 +207,6 @@ export const IPC_CHANNELS = {
   CODEX: {
     CHECK_AVAILABILITY: 'codex:check-availability',
     GET_MODELS: 'codex:get-models',
-    MANAGED_INSTALL_STATUS: 'codex/managed-install/status',
-    MANAGED_INSTALL_PROGRESS: 'codex/managed-install/progress',
   },
 
   // Cortex Integration
@@ -518,9 +512,6 @@ export const IPC_CHANNELS = {
     TRACK_FILE_CHANGE: 'log:track-file-change',
     TRACK_AGENT_EVENT: 'log:track-agent-event',
     TRACK_MCP_CALL: 'log:track-mcp-call',
-    GET_EVENTS: 'log:get-events',
-    CLEAR_EVENTS: 'log:clear-events',
-    EVENTS_UPDATED: 'log:events-updated',
     PATHS: 'log:paths',
     READ: 'log:read',
     CLEAR: 'log:clear',
@@ -528,8 +519,6 @@ export const IPC_CHANNELS = {
     EXPORT_DEBUG_BUNDLE: 'log:export-debug-bundle',
     PERSIST_RENDERER_LOGS: 'log:persist-renderer-logs',
   },
-
-
 
   // User Rules
   USER_RULES: {
@@ -610,16 +599,6 @@ export const IPC_CHANNELS = {
     MARK_NOTE_READ: 'user-activity:mark-note-read',
     GET_NOTE_READ_STATUS: 'user-activity:get-note-read-status',
     GET_UNREAD_NOTE_IDS: 'user-activity:get-unread-note-ids',
-  },
-
-
-
-  // Diffs
-  DIFFS: {
-    LIST: 'diffs:list',
-    CREATE: 'diffs:create',
-    UPDATE: 'diffs:update',
-    GET: 'diffs:get',
   },
 
   // Line Attribution
@@ -772,8 +751,6 @@ export const IPC_CHANNELS = {
     DELETE: 'storage:delete',
   },
 
-
-
   // Auto-Update
   AUTO_UPDATE: {
     CHECK_MANUAL: 'auto-update:check-manual',
@@ -812,19 +789,6 @@ export const IPC_CHANNELS = {
     SET_DISCOVERY: 'websocket-api:set-discovery',
   },
 
-  // Workspace Scripts
-  SCRIPTS: {
-    LIST: 'scripts:list',
-    CREATE: 'scripts:create',
-    UPDATE: 'scripts:update',
-    REMOVE: 'scripts:remove',
-    START: 'scripts:start',
-    STOP: 'scripts:stop',
-    RESTART: 'scripts:restart',
-    GET_STATUS: 'scripts:get-status',
-    GET_OUTPUT: 'scripts:get-output',
-  },
-
   // Workspace Token Usage (aggregated agent token consumption)
   TOKEN_USAGE: {
     GET: 'token-usage:get',
@@ -843,7 +807,34 @@ export const IPC_CHANNELS = {
     NOTIFICATION: 'backend:notification',
     STATUS: 'backend:status',
     SPAWN_SIDECAR: 'backend:spawn-sidecar',
+    // Atomic recovery from external/remote mode: switch the active backend to
+    // local AND spawn the app-managed sidecar in ONE main-process action. The
+    // switch destroys every window (captureAndClose) before the switch IPC
+    // returns, so a renderer that switched then dispatched the spawn separately
+    // could be torn down before the second step runs — this single handler keeps
+    // both steps in main so recovery survives the window teardown.
+    SWITCH_LOCAL_AND_SPAWN: 'backend:switch-local-and-spawn',
     GET_SIDECAR_RUN_LOG: 'backend:get-sidecar-run-log',
+  },
+
+  // Multi-backend connect: the "Connect to another intentd" registry.
+  // Request/response channels for the connections list + TOFU pairing +
+  // switch. Handlers land in T3; the renderer-facing contract types live in
+  // `shared/types/connections.ts`. CHANGED / CERT_MISMATCH are main→renderer
+  // push events (also listed in EVENT_CHANNELS for the preload allow-list).
+  CONNECTIONS: {
+    LIST: 'connections:list',
+    CAPTURE_FINGERPRINT: 'connections:capture-fingerprint',
+    ADD: 'connections:add',
+    FORGET: 'connections:forget',
+    SWITCH: 'connections:switch',
+    CHANGED: 'connections:changed',
+    CERT_MISMATCH: 'connections:cert-mismatch',
+    PROTOCOL_MISMATCH: 'connections:protocol-mismatch',
+    // Pull the one-shot boot-restore fallback notice latched in main (T19),
+    // consume-once. The renderer fetches this once on mount and surfaces a
+    // non-blocking toast; the notice never becomes connections-slice state.
+    GET_BOOT_FALLBACK: 'connections:get-boot-fallback',
   },
 
   // Hardware console (Codex Micro / Creator Micro 2)
@@ -940,15 +931,12 @@ export const EVENT_CHANNELS = [
   'terminal:professional:command:finished',
   'terminal:professional:command:executed',
   'terminal:professional:cwd:changed',
-  'codex/managed-install/status',
-  'codex/managed-install/progress',
   'terminal:disposed', // Terminal disposed event (from workspace cleanup)
   'events:new',
-  'events:cleared',
   'app:ready',
   'app:ui:navigate',
   'app:ui:highlight',
-  'app:history-navigate', // Windows app-command X buttons → renderer history back/forward
+  'app:history-navigate', // Windows app-command X buttons / macOS swipe gestures → renderer history back/forward
   'window:ready',
   'window:focus',
   'window:blur',
@@ -1016,12 +1004,6 @@ export const EVENT_CHANNELS = [
   'browser:list-tabs-request',
   // Browser tab open request from main process (agent wants to open a browser tab)
   'browser:open-tab',
-  // Script events (main → renderer)
-  'script:started',
-  'script:stopped',
-  'script:output',
-  'script:error',
-  'script:url-detected',
   // WebSocket API events (main → renderer)
   'websocket-api:discovery-auto-disabled',
   // Workspace token usage changed (main → renderer)
@@ -1032,6 +1014,12 @@ export const EVENT_CHANNELS = [
   'backend:status',
   // Hardware console shutdown handshake (main → renderer)
   'hardware-console:clear-lighting',
+  // Multi-backend connect (main → renderer): connections list/active changed,
+  // a pinned-cert mismatch that must block with a failure modal, and a
+  // protocol-version mismatch that warns non-blockingly (connect still proceeds).
+  'connections:changed',
+  'connections:cert-mismatch',
+  'connections:protocol-mismatch',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

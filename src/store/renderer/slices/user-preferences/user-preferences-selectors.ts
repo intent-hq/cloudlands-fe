@@ -46,6 +46,10 @@ export const selectHasCompletedProviderSetup = store.createSelector((state) => {
   return state.userPreferences.hasCompletedProviderSetup;
 });
 
+export const selectShowReasoningBlocks = store.createSelector((state) => {
+  return state.userPreferences?.showReasoningBlocks ?? false;
+});
+
 export const selectCounterScale = store.createSelector((state) => {
   return 1 / state.userPreferences.zoomFactor;
 });
@@ -134,6 +138,10 @@ export const selectActivityLogPresets = store.createSelector((state) => {
 
 export const selectLanguagePreference = store.createSelector((state) => {
   return state.userPreferences.languagePreference;
+});
+
+export const selectGithubLinkDefaultAction = store.createSelector((state) => {
+  return state.userPreferences?.githubLinkDefaultAction ?? 'show-choices';
 });
 
 /** The concrete catalog locale the preference resolves to (explicit → system → en). */

@@ -140,6 +140,25 @@ export interface AgentSession {
   /** Model identifier (e.g., "sonnet-3.5", "gpt-4"). Null when using provider/settings default (persisted from backend). Undefined when omitted. */
   model?: string | null;
 
+  /**
+   * Reasoning effort level for the session's model (Option B, first-class
+   * session field). Provider-interpreted string (e.g. "low"/"medium"/"high",
+   * plus provider-specific levels like "xhigh"/"max"); valid levels come from
+   * the model's `effortLevels` catalog metadata. Null when explicitly cleared
+   * (provider default); undefined when omitted. Applies on the next prompt
+   * send.
+   */
+  reasoningEffort?: string | null;
+
+  /**
+   * Session-advertised reasoning-effort levels (§5.5, additive): the values
+   * the provider's `thought_level` config select advertised at the most
+   * recent session open, discovered and persisted by the daemon. Omitted when
+   * the provider advertised no such option. Takes precedence over the model's
+   * catalog `effortLevels` metadata in the picker gate; rendered verbatim.
+   */
+  effortLevels?: string[];
+
   /** ACP provider ID (e.g., "auggie", "claude-code", "opencode"). Mutable only until first real session use, then locked. */
   provider?: string;
 
@@ -202,7 +221,15 @@ export interface AgentSession {
   currentTurnNumber?: number;
 
   // ========== Unread Tracking ==========
-  /** Whether the agent has unread messages (new responses since last viewed) */
+  /**
+   * Whether the agent has unread messages. FE-derived at wire ingest
+   * (`normalizeAgent`) from the §5.5 AgentLite freshness fields:
+   * `lastMessageRole === 'assistant' && lastMessageId != null &&
+   * lastMessageId !== metadata.lastSeenMessageId` (an absent seen marker
+   * counts as unread). See `deriveAgentHasUnread` and
+   * intent-hq/monorepo#1597. Always `false` for daemons that omit
+   * `lastMessageId`.
+   */
   hasUnread?: boolean;
 
   /** When the user last viewed this agent's messages */
@@ -219,6 +246,21 @@ export interface AgentSession {
   lastAgentResponse?: string;
 
   /**
+   * Most recent tool call of the in-flight turn (PROTOCOL §7, additive on the
+   * tool-call arm of `agent:stream:activity`). Push-applied by the
+   * daemon-events bridge so a non-viewed agent's preview advances during
+   * tool-only stretches, and cleared by it at each turn boundary and on the
+   * terminal `agent:stream:end` — the field describes a running turn only.
+   * Omitted by older daemons and before the turn's first tool call. Stored
+   * verbatim; only `name` is rendered today (`status` mirrors the wire shape
+   * for the queued footer status indicator).
+   */
+  lastToolUse?: {
+    name: string;
+    status?: string;
+  };
+
+  /**
    * Role of the session's newest user/assistant transcript message
    * (PROTOCOL.md §5.5 `AgentLite` additive field); system rows are
    * transparent. Omitted by older daemons and when the session has no
@@ -226,6 +268,15 @@ export interface AgentSession {
    * the in-flight turn has derivable streamed text. Rendered verbatim.
    */
   lastMessageRole?: 'user' | 'assistant';
+
+  /**
+   * Id of the session's newest user/assistant transcript message
+   * (PROTOCOL.md §5.5 `AgentLite` additive field) — the same message
+   * `lastMessageRole` describes. Omitted by older daemons and when the
+   * session has no user/assistant message. Compared against
+   * `metadata.lastSeenMessageId` to derive `hasUnread`.
+   */
+  lastMessageId?: string;
 
   /** Whether the agent is currently responding */
   isResponding?: boolean;
@@ -252,6 +303,25 @@ export interface AgentSession {
    * Rendered verbatim.
    */
   waitingForAgentIds?: string[];
+
+  /**
+   * Idle-visibility for hook-owning agents (PROTOCOL.md §5.5, within v3.1,
+   * additive): light metadata for the agent's ACTIVE (`scheduled`/`running`)
+   * background hooks (§5.40), omitted when empty (absent, never `[]`) — so
+   * a parent or client can tell a hook-waiting idle agent from a stalled
+   * one. Emitted on `AgentLite` (`agent.list`/`agent.get`), the `agent:idle`
+   * event payload, and `agent.diagnostics` agent rows. Rendered verbatim.
+   */
+  waitingOnHooks?: Array<{ hookId: string; name: string; nextRunAt?: string; expiresAt?: string }>;
+
+  /**
+   * Idle-visibility for PR-monitor-owning agents — the `waitingOnHooks`
+   * companion for centralized PR monitoring (§5.42): light metadata for the
+   * agent's active PR monitors, omitted when empty (absent, never `[]`), so
+   * a parent or client can tell a PR-monitor-waiting idle agent from a
+   * stalled one. Rendered verbatim.
+   */
+  waitingOnPrMonitors?: Array<{ monitorId: string; repo: string; prNumber: number; title?: string }>;
 
   /**
    * Process queue hint (PROTOCOL §6.5 agent:process:queued/resumed).

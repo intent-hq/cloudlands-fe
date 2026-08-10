@@ -292,12 +292,39 @@ describe('WorkspaceProgressCard status message', () => {
     await fireEvent.input(input, { target: { value: 'Ready for review.' } });
     await fireEvent.keyDown(input, { key: 'Enter' });
 
+    // Enter saves without inserting a newline.
+    expect((input as HTMLTextAreaElement).value).toBe('Ready for review.');
     await waitFor(() =>
       expect(mocks.update).toHaveBeenCalledWith({ id: 'ws-1', statusMessage: 'Ready for review.' }),
     );
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'workspace/setWorkspaceEntity' }),
     );
+  });
+
+  it('renders the status editor as a wrapping textarea', async () => {
+    await renderProgressCard({ statusMessage: 'Drafting status.' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit workspace status' }));
+    const input = await screen.findByLabelText('Workspace status');
+
+    expect(input.tagName).toBe('TEXTAREA');
+    expect(input.className).toContain('resize-none');
+    expect(input.className).toContain('whitespace-pre-wrap');
+  });
+
+  it('does not save and allows a newline on Shift+Enter', async () => {
+    await renderProgressCard({ statusMessage: 'First line.' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit workspace status' }));
+    const input = (await screen.findByLabelText('Workspace status')) as HTMLTextAreaElement;
+
+    const notPrevented = await fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    // Shift+Enter is left to the textarea's default newline insertion.
+    expect(notPrevented).toBe(true);
+    await fireEvent.input(input, { target: { value: 'First line.\nSecond line.' } });
+
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Workspace status')).toBeTruthy();
+    expect(input.value).toBe('First line.\nSecond line.');
   });
 
   it('cancels status edits on Escape without saving', async () => {

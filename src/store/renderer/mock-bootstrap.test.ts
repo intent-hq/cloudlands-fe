@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AppClient } from '$lib/client';
-import type { Store } from '$lib/store-shim/svelte-store';
+import type { Store } from '@augmentcode/themis/svelte-store';
 
 import {
   clearMockSeeders,

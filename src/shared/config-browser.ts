@@ -38,18 +38,13 @@ export class WorkspaceConfig extends WorkspaceConfigConstants {
    * Examples:
    * - "/Users/user/intent/abc-123/notes" → "abc-123"
    * - "~/intent/abc-123/.workspace" → "abc-123"
-   * - "/Users/user/.workspaces/abc-123/notes" → "abc-123" (legacy support)
    */
   static extractWorkspaceId(filePath: string): string | null {
     // Replace ~ with a placeholder home directory
     const normalized = filePath.replace(/^~/, '/home/user');
     const parts = normalized.split('/');
 
-    // Try new 'intent' path first, then legacy '.workspaces' for backward compatibility
-    let workspacesIndex = parts.indexOf('intent');
-    if (workspacesIndex === -1) {
-      workspacesIndex = parts.indexOf('.workspaces');
-    }
+    const workspacesIndex = parts.indexOf('intent');
 
     if (workspacesIndex === -1 || workspacesIndex === parts.length - 1) {
       return null;
@@ -98,12 +93,6 @@ export class WorkspaceConfig extends WorkspaceConfigConstants {
         customBase || `${WorkspaceConfig.WORKSPACE_ROOT}/${WorkspaceConfig.WORKTREES_FOLDER}`;
       return `${base}/${id}/${folderName}`;
     },
-
-    firstVisitState: (id: string) =>
-      `${WorkspaceConfig.WORKSPACE_ROOT}/${id}/${WorkspaceConfig.METADATA_FOLDER}/${WorkspaceConfig.FIRST_VISIT_STATE_FILE}`,
-
-    panelLayoutHistory: (id: string) =>
-      `${WorkspaceConfig.WORKSPACE_ROOT}/${id}/${WorkspaceConfig.METADATA_FOLDER}/${WorkspaceConfig.PANEL_LAYOUT_HISTORY_FILE}`,
 
     diffs: (id: string) =>
       `${WorkspaceConfig.WORKSPACE_ROOT}/${id}/${WorkspaceConfig.METADATA_FOLDER}/${WorkspaceConfig.DIFFS_FOLDER}`,

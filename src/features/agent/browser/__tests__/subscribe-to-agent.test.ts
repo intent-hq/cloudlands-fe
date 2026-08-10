@@ -12,40 +12,47 @@ import {
   it,
   vi,
 } from 'vitest';
-import {
-  combineReducers,
-  createStoreCore as createStore,
-  type StoreCore as Store,
-} from '$lib/store-shim/internal/store-core';
+import { Store } from '@augmentcode/themis/svelte-store';
+
+vi.mock('svelte', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('svelte')>()),
+  getContext: () => undefined,
+}));
+
 import {
   agentSessionReducer,
   bulkUpsertSessions,
   renameSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 
-const { storeRef } = vi.hoisted(() => ({
-  storeRef: { current: null as Store | null },
+const { storeRef, stateListeners, selectorSubscribeSpy } = vi.hoisted(() => ({
+  storeRef: { current: null as any },
+  stateListeners: new Set<() => void>(),
+  selectorSubscribeSpy: vi.fn(),
 }));
+
+const synchronousStateMiddleware = (() => (next: any) => (action: any) => {
+  const result = next(action);
+  for (const listener of stateListeners) listener();
+  return result;
+}) as any;
 
 vi.mock('$store/renderer/store', async () => {
   const { createStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
   const readable = <T>(getter: () => T) => ({
     subscribe: (listener: (value: T) => void) => {
+      selectorSubscribeSpy();
       listener(getter());
-      return () => {};
+      const update = () => listener(getter());
+      stateListeners.add(update);
+      return () => stateListeners.delete(update);
     },
   });
   const mockStore = {
     dispatch: (action: unknown) => storeRef.current?.dispatch(action as never),
     get state() {
-      return storeRef.current?.getState();
+      return storeRef.current?.state;
     },
-    getReadableState: () => ({
-      subscribe: (listener: (value?: unknown) => void) => {
-        listener(storeRef.current?.getState());
-        return storeRef.current?.subscribe(() => listener(storeRef.current?.getState())) ?? (() => {});
-      },
-    }),
     createSelector: (selectorFunc: (state: any, ...args: any[]) => any) => Object.assign(
       (...args: any[]) => readable(() => selectorFunc(mockStore.state, ...args)),
       {
@@ -88,23 +95,27 @@ function makeAgent(overrides: Partial<AgentSession> = {}): AgentSession {
 }
 
 function makeStore() {
-  const rootReducer = combineReducers({
+  const store = new Store({
     agentSessions: agentSessionReducer,
     unrelated: unrelatedReducer,
-  });
-  const store = createStore(rootReducer as any);
-  storeRef.current = store as Store;
-  return store as Store;
+  }, synchronousStateMiddleware);
+  store.init();
+  storeRef.current = store;
+  return store;
 }
 
 describe('subscribeToAgent (Redux-reactive)', () => {
-  let store: Store;
+  let store: Store<any, any>;
 
   beforeEach(() => {
     store = makeStore();
   });
 
   afterEach(() => {
+    stateListeners.clear();
+    selectorSubscribeSpy.mockClear();
+    store.dispose();
+    storeRef.current = null;
     vi.restoreAllMocks();
   });
 
@@ -181,7 +192,7 @@ describe('subscribeToAgent (Redux-reactive)', () => {
   });
 
   it('tears down the shared Redux subscription when the last subscriber leaves and re-creates it on the next subscribe', () => {
-    const subscribeSpy = vi.spyOn(store, 'subscribe');
+    const subscribeSpy = selectorSubscribeSpy;
     subscribeSpy.mockClear();
 
     const cb1 = vi.fn();

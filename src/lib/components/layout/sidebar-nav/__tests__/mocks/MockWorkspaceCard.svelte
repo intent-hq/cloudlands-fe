@@ -5,10 +5,11 @@
     workspace?: Workspace;
     isPinned?: boolean;
     isRunning?: boolean;
+    onClick?: (event: MouseEvent) => void;
     [key: string]: unknown;
   }
 
-  let { workspace, isPinned = false, isRunning = false }: Props = $props();
+  let { workspace, isPinned = false, isRunning = false, onClick }: Props = $props();
 </script>
 
 <div
@@ -16,6 +17,8 @@
   data-workspace-id={workspace?.id}
   data-pinned={isPinned}
   data-running={isRunning}
+  onclick={onClick}
+  role="presentation"
 >
   {workspace?.title}
 </div>

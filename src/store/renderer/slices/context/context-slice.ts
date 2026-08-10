@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import {
@@ -7,7 +7,7 @@ import {
   addItem as collectionAddItem,
   removeItem as collectionRemoveItem,
   updateItem as collectionUpdateItem,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 import type { ContextItem } from "$features/context/types";
 import type { ContextState, ContextWorkspaceState } from "./context-types";
 
@@ -63,34 +63,37 @@ export const updateContextItem = createAction<
 // Reducer
 // ============================================================================
 
-export const contextReducer = createReducer<ContextState>(initialState)
-  .with(hydrateContextItems, (state, { payload: [workspaceId, items] }) => {
-    return setWorkspaceState(state, workspaceId, {
-      items: createCollection<ContextItem, "id">("id", items),
-      loading: false,
-      error: null,
-    });
-  })
-  .with(addContextItem, (state, { payload: [workspaceId, item] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      items: collectionAddItem(ws.items, item),
-    });
-  })
-  .with(removeContextItem, (state, { payload: [workspaceId, itemId] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      items: collectionRemoveItem(ws.items, itemId),
-    });
-  })
-  .with(updateContextItem, (state, { payload: [workspaceId, itemId, updates] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      items: collectionUpdateItem(ws.items, { ...updates, id: itemId } as ContextItem),
-    });
-  })
-  .with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
+export const contextReducer = createReducer<ContextState>(initialState);
 
+
+contextReducer.with(hydrateContextItems, (state, { payload: [workspaceId, items] }) => {
+  return setWorkspaceState(state, workspaceId, {
+    items: createCollection<ContextItem, 'id'>('id', items),
+    loading: false,
+    error: null,
+  });
+});
+contextReducer.with(addContextItem, (state, { payload: [workspaceId, item] }) => {
+  const ws = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    ...ws,
+    items: collectionAddItem(ws.items, item),
+  });
+});
+contextReducer.with(removeContextItem, (state, { payload: [workspaceId, itemId] }) => {
+  const ws = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    ...ws,
+    items: collectionRemoveItem(ws.items, itemId),
+  });
+});
+contextReducer.with(updateContextItem, (state, { payload: [workspaceId, itemId, updates] }) => {
+  const ws = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    ...ws,
+    items: collectionUpdateItem(ws.items, { ...updates, id: itemId } as ContextItem),
+  });
+});
+contextReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
+  clearWorkspaceState(state, wsId),
+);

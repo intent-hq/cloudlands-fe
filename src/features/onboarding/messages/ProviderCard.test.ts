@@ -71,7 +71,6 @@ const notInstalledProvider = (): ProviderCardData => ({
 
 const baseProps = () => ({
   brand,
-  auggieNeedsUpdate: false,
   onSelect: vi.fn(),
 });
 
@@ -262,22 +261,6 @@ describe('ProviderCard auggie link-out click behavior', () => {
     expect(openExternal).toHaveBeenCalledWith({ url: AUGGIE_DOCS_URL });
     expect(props.onSelect).not.toHaveBeenCalled();
     expect(instructionsPanel(container)).toBeNull();
-  });
-
-  it('opens the docs URL when auggie needs a version update', async () => {
-    const props = {
-      ...baseProps(),
-      auggieNeedsUpdate: true,
-      provider: auggieProvider(),
-    };
-    const { container } = render(ProviderCard, { props });
-
-    await fireEvent.click(card(container));
-    await Promise.resolve();
-
-    expect(openExternal).toHaveBeenCalledTimes(1);
-    expect(openExternal).toHaveBeenCalledWith({ url: AUGGIE_DOCS_URL });
-    expect(props.onSelect).not.toHaveBeenCalled();
   });
 
   it('selects a ready auggie card instead of opening docs', async () => {

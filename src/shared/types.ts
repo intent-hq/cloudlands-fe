@@ -219,11 +219,17 @@ export const WORKSPACE_STATUS_MESSAGE_MAX_LENGTH = 500;
  *  guard, and every consumer set derive from this array. `idle` (intentd#793)
  *  folds live agent activity into the daemon-side derivation: a running agent
  *  promotes to `in_progress`, and without one the task-stage rollups
- *  (`in_progress`/`not_started`) demote to `idle`. */
+ *  (`in_progress`/`not_started`) demote to `idle`. `failed`, `blocked` and
+ *  `unread` (intentd#945) complete the BE-owned canonical precedence
+ *  `failed > blocked > needs_attention > in_progress > unread > PR/task rollup`,
+ *  so clients no longer synthesize those axes locally. */
 export const WORKSPACE_DISPLAY_STATUS_VALUES = [
+  'failed',
+  'blocked',
   'needs_attention',
   'not_started',
   'in_progress',
+  'unread',
   'idle',
   'complete',
   'pr_ready',

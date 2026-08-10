@@ -36,11 +36,14 @@ export type SpecialistFileScope = Extract<SpecialistSource, 'project' | 'user'>;
  * One entry of a specialist's ordered delegation model-option list
  * (PROTOCOL §5.11 `modelOptions`): `model` is the internal compound model id
  * (e.g. "opencode:kimi-k3") and `hint` the author's free-text guidance for
- * choosing that option (`""` when none was given).
+ * choosing that option (`""` when none was given). `reasoningEffort` is the
+ * optional per-option effort level (one of the model's catalog
+ * `effortLevels`); omitted when the option inherits the model default.
  */
 export interface SpecialistModelOption {
   model: string;
   hint: string;
+  reasoningEffort?: string;
 }
 
 /**
@@ -84,6 +87,12 @@ export interface SpecialistFileFrontmatter {
    * no `modelOptions:` key — an explicit `[]` is the inherit-clearing form.
    */
   modelOptions?: SpecialistModelOption[];
+  /**
+   * Reasoning-effort level for the specialist's model (PROTOCOL §5.11).
+   * Omitted (undefined) when the file has no `reasoningEffort:` key — the
+   * specialist then inherits the model default.
+   */
+  reasoningEffort?: string;
 }
 
 /**

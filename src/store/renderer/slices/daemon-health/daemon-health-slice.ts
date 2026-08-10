@@ -6,8 +6,8 @@
  * into a tri-state health value (healthy/degraded/down) plus stats payload.
  */
 
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   DaemonHealthState,
   DaemonHealthStats,
@@ -72,20 +72,15 @@ export const connectionStatusChanged = createAction<
  * Heartbeat health check failed while connected (heartbeat timeout/error).
  * This transitions health to 'degraded' while status stays 'connected'.
  */
-export const heartbeatFailed = createAction(
-  'daemonHealth/heartbeatFailed',
-);
+export const heartbeatFailed = createAction('daemonHealth/heartbeatFailed');
 
 /**
  * Poll system.status for stats (middleware trigger).
  */
-export const pollSystemStatus = createAction(
-  'daemonHealth/pollSystemStatus',
-);
+export const pollSystemStatus = createAction('daemonHealth/pollSystemStatus');
 
 /**
- * system.status poll succeeded. `receivedAt` is the dispatch-time ISO
- * timestamp — stamped by the caller so the reducer stays deterministic.
+ * system.status poll succeeded.
  */
 export const systemStatusSuccess = createAction<
   [payload: SystemStatusWirePayload, receivedAt: string]
@@ -94,16 +89,20 @@ export const systemStatusSuccess = createAction<
 /**
  * system.status poll failed.
  */
-export const systemStatusFailure = createAction(
-  'daemonHealth/systemStatusFailure',
-);
+export const systemStatusFailure = createAction('daemonHealth/systemStatusFailure');
 
 /**
  * User asked for the app-managed sidecar fallback from the daemon-loss UI
  * (#439). The daemon-health middleware invokes backend:spawn-sidecar.
  */
-export const spawnSidecarRequested = createAction(
-  'daemonHealth/spawnSidecarRequested',
+export const spawnSidecarRequested = createAction('daemonHealth/spawnSidecarRequested');
+
+/**
+ * User asked to switch an external backend back to the local sidecar and spawn
+ * it atomically in the main process so the initiating window can be replaced.
+ */
+export const switchLocalAndSpawnRequested = createAction(
+  'daemonHealth/switchLocalAndSpawnRequested',
 );
 
 /**
@@ -111,18 +110,14 @@ export const spawnSidecarRequested = createAction(
  * spawn has no dedicated action — the pending flag clears when the reconnect
  * lands as a 'connected' backend:status event.
  */
-export const spawnSidecarFailed = createAction<[error: string]>(
-  'daemonHealth/spawnSidecarFailed',
-);
+export const spawnSidecarFailed = createAction<[error: string]>('daemonHealth/spawnSidecarFailed');
 
 /**
  * User asked for the last-run sidecar log from the daemon-loss dialog. The
  * daemon-health middleware invokes backend:get-sidecar-run-log (main-process
  * in-memory capture — no daemon wire request involved).
  */
-export const fetchSidecarRunLogRequested = createAction(
-  'daemonHealth/fetchSidecarRunLogRequested',
-);
+export const fetchSidecarRunLogRequested = createAction('daemonHealth/fetchSidecarRunLogRequested');
 
 /**
  * backend:get-sidecar-run-log resolved with the contract-shaped payload.
@@ -142,9 +137,7 @@ export const fetchSidecarRunLogFailed = createAction<[error: string]>(
  * Poll unsloth.status (middleware trigger). Dispatched by the status
  * dropdown only while it is open — there is no background interval.
  */
-export const pollUnslothStatus = createAction(
-  'daemonHealth/pollUnslothStatus',
-);
+export const pollUnslothStatus = createAction('daemonHealth/pollUnslothStatus');
 
 /**
  * unsloth.status poll succeeded with the wire payload.
@@ -157,17 +150,13 @@ export const unslothStatusSuccess = createAction<[payload: UnslothStatusWirePayl
  * unsloth.status poll failed (older daemon without the method, transport
  * error). The stored status clears so the UI never shows stale server rows.
  */
-export const unslothStatusFailure = createAction(
-  'daemonHealth/unslothStatusFailure',
-);
+export const unslothStatusFailure = createAction('daemonHealth/unslothStatusFailure');
 
 /**
  * User confirmed stopping the managed unsloth server. The middleware invokes
  * unsloth.stop and re-polls unsloth.status when it resolves.
  */
-export const stopUnslothRequested = createAction(
-  'daemonHealth/stopUnslothRequested',
-);
+export const stopUnslothRequested = createAction('daemonHealth/stopUnslothRequested');
 
 /**
  * unsloth.stop resolved (`{ stopped: boolean }` — false is a no-op, not an
@@ -180,16 +169,21 @@ export const stopUnslothSucceeded = createAction<[stopped: boolean]>(
 /**
  * unsloth.stop failed.
  */
-export const stopUnslothFailed = createAction<[error: string]>(
-  'daemonHealth/stopUnslothFailed',
-);
+export const stopUnslothFailed = createAction<[error: string]>('daemonHealth/stopUnslothFailed');
 
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
-export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState)
-  .with(connectionStatusChanged, (state, { payload: [status, transport, extras] }) => {
+export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState);
+daemonHealthReducer.with(
+  connectionStatusChanged,
+  (state, { payload: [status, transport, extras] }) => {
+    const transportChanged =
+      transport !== undefined &&
+      (transport.mode !== state.transport?.mode || transport.target !== state.transport?.target);
+    const hostLocality = transportChanged ? null : state.hostLocality;
+
     if (status === 'connected') {
       // Connection established — health moves to 'healthy'.
       // Update transport info if present (additive) and clear any give-up /
@@ -199,6 +193,10 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
         health: 'healthy',
         stats: transport && state.stats ? { ...state.stats, transport } : state.stats,
         transport: transport ?? state.transport,
+        // A reported locality belongs to the daemon/transport that produced it.
+        // Drop it when switching connections so selectors immediately fall back
+        // to the new transport until that daemon's next system.status response.
+        hostLocality,
         sidecarGaveUp: false,
         sidecarGaveUpReason: null,
         sidecarStartupFailed: false,
@@ -220,6 +218,7 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
         ...state,
         health: 'down',
         transport: transport ?? state.transport,
+        hostLocality,
         sidecarGaveUp: extras?.sidecarGaveUp ? true : state.sidecarGaveUp,
         sidecarGaveUpReason: extras?.sidecarGaveUp
           ? (extras.reason ?? null)
@@ -233,89 +232,91 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
         // fallback button re-enables for a retry instead of sticking on
         // "Starting sidecar…".
         sidecarSpawnPending:
-          extras?.sidecarGaveUp || extras?.sidecarStartupFailed
-            ? false
-            : state.sidecarSpawnPending,
+          extras?.sidecarGaveUp || extras?.sidecarStartupFailed ? false : state.sidecarSpawnPending,
       };
     }
     return state;
-  })
-  .with(heartbeatFailed, (state) => {
-    // Heartbeat failed while connected — health moves to 'degraded'.
-    return { ...state, health: 'degraded' };
-  })
-  .with(pollSystemStatus, (state) => {
-    return { ...state, polling: true };
-  })
-  .with(systemStatusSuccess, (state, { payload: [wirePayload, receivedAt] }) => {
-    // Extract stats payload, treating new fields as optional.
-    const stats: DaemonHealthStats = {
-      clients: wirePayload.clients,
-      agents: wirePayload.agents,
-      maxAgents: wirePayload.maxAgents,
-      listenMode: wirePayload.listenMode,
-      port: wirePayload.port ?? null,
-      version: wirePayload.version,
-      protocolVersion: wirePayload.protocolVersion,
-      uptimeSeconds: wirePayload.uptimeSeconds,
-      cpuPercent: wirePayload.cpuPercent,
-      memoryBytes: wirePayload.memoryBytes,
-      os: wirePayload.host.os,
-      arch: wirePayload.host.arch,
-      transport: state.stats?.transport,
-    };
-    return {
-      ...state,
-      polling: false,
-      stats,
-      // Daemon-reported locality (§5.14) — authoritative for host-shell
-      // gating; falls back to the transport heuristic before the first poll.
-      hostLocality: wirePayload.host.locality ?? state.hostLocality,
-      lastUpdated: receivedAt,
-    };
-  })
-  .with(systemStatusFailure, (state) => {
-    // Health may already be 'down' from connection loss; leave it as-is.
-    return { ...state, polling: false };
-  })
-  .with(spawnSidecarRequested, (state) => {
-    return { ...state, sidecarSpawnPending: true, sidecarSpawnError: null };
-  })
-  .with(spawnSidecarFailed, (state, { payload: [error] }) => {
-    return { ...state, sidecarSpawnPending: false, sidecarSpawnError: error };
-  })
-  .with(fetchSidecarRunLogRequested, (state) => {
-    return { ...state, sidecarRunLogPending: true, sidecarRunLogError: null };
-  })
-  .with(fetchSidecarRunLogSucceeded, (state, { payload: [log] }) => {
-    // A connect reset (pending → false) acts as a cancellation: a fetch that
-    // resolves late must not re-populate the log the connect branch cleared,
-    // or the next failure posture would auto-display a stale log.
-    if (!state.sidecarRunLogPending) return state;
-    return { ...state, sidecarRunLogPending: false, sidecarRunLog: log };
-  })
-  .with(fetchSidecarRunLogFailed, (state, { payload: [error] }) => {
-    if (!state.sidecarRunLogPending) return state;
-    return { ...state, sidecarRunLogPending: false, sidecarRunLogError: error };
-  })
-  .with(pollUnslothStatus, (state) => {
-    return { ...state, unslothPolling: true };
-  })
-  .with(unslothStatusSuccess, (state, { payload: [status] }) => {
-    return { ...state, unslothPolling: false, unslothStatus: status };
-  })
-  .with(unslothStatusFailure, (state) => {
-    // Clear rather than keep a stale snapshot: a failed poll (older daemon,
-    // connection loss) means we no longer know the server state.
-    return { ...state, unslothPolling: false, unslothStatus: null };
-  })
-  .with(stopUnslothRequested, (state) => {
-    return { ...state, unslothStopping: true, unslothStopError: null };
-  })
-  .with(stopUnslothSucceeded, (state) => {
-    // The middleware's follow-up unsloth.status re-poll refreshes the status.
-    return { ...state, unslothStopping: false };
-  })
-  .with(stopUnslothFailed, (state, { payload: [error] }) => {
-    return { ...state, unslothStopping: false, unslothStopError: error };
-  });
+  },
+);
+daemonHealthReducer.with(heartbeatFailed, (state) => {
+  // Heartbeat failed while connected — health moves to 'degraded'.
+  return { ...state, health: 'degraded' };
+});
+daemonHealthReducer.with(pollSystemStatus, (state) => {
+  return { ...state, polling: true };
+});
+daemonHealthReducer.with(systemStatusSuccess, (state, { payload: [wirePayload, receivedAt] }) => {
+  // Extract stats payload, treating new fields as optional.
+  const stats: DaemonHealthStats = {
+    clients: wirePayload.clients,
+    agents: wirePayload.agents,
+    maxAgents: wirePayload.maxAgents,
+    listenMode: wirePayload.listenMode,
+    port: wirePayload.port ?? null,
+    version: wirePayload.version,
+    protocolVersion: wirePayload.protocolVersion,
+    uptimeSeconds: wirePayload.uptimeSeconds,
+    cpuPercent: wirePayload.cpuPercent,
+    memoryBytes: wirePayload.memoryBytes,
+    os: wirePayload.host.os,
+    arch: wirePayload.host.arch,
+    transport: state.stats?.transport,
+  };
+  return {
+    ...state,
+    polling: false,
+    stats,
+    // Daemon-reported locality (§5.14) — authoritative for host-shell
+    // gating; falls back to the transport heuristic before the first poll.
+    hostLocality: wirePayload.host.locality ?? state.hostLocality,
+    lastUpdated: receivedAt,
+  };
+});
+daemonHealthReducer.with(systemStatusFailure, (state) => {
+  // Health may already be 'down' from connection loss; leave it as-is.
+  return { ...state, polling: false };
+});
+daemonHealthReducer.with(spawnSidecarRequested, (state) => {
+  return { ...state, sidecarSpawnPending: true, sidecarSpawnError: null };
+});
+daemonHealthReducer.with(switchLocalAndSpawnRequested, (state) => {
+  return { ...state, sidecarSpawnPending: true, sidecarSpawnError: null };
+});
+daemonHealthReducer.with(spawnSidecarFailed, (state, { payload: [error] }) => {
+  return { ...state, sidecarSpawnPending: false, sidecarSpawnError: error };
+});
+daemonHealthReducer.with(fetchSidecarRunLogRequested, (state) => {
+  return { ...state, sidecarRunLogPending: true, sidecarRunLogError: null };
+});
+daemonHealthReducer.with(fetchSidecarRunLogSucceeded, (state, { payload: [log] }) => {
+  // A connect reset (pending → false) acts as a cancellation: a fetch that
+  // resolves late must not re-populate the log the connect branch cleared,
+  // or the next failure posture would auto-display a stale log.
+  if (!state.sidecarRunLogPending) return state;
+  return { ...state, sidecarRunLogPending: false, sidecarRunLog: log };
+});
+daemonHealthReducer.with(fetchSidecarRunLogFailed, (state, { payload: [error] }) => {
+  if (!state.sidecarRunLogPending) return state;
+  return { ...state, sidecarRunLogPending: false, sidecarRunLogError: error };
+});
+daemonHealthReducer.with(pollUnslothStatus, (state) => {
+  return { ...state, unslothPolling: true };
+});
+daemonHealthReducer.with(unslothStatusSuccess, (state, { payload: [status] }) => {
+  return { ...state, unslothPolling: false, unslothStatus: status };
+});
+daemonHealthReducer.with(unslothStatusFailure, (state) => {
+  // Clear rather than keep a stale snapshot: a failed poll (older daemon,
+  // connection loss) means we no longer know the server state.
+  return { ...state, unslothPolling: false, unslothStatus: null };
+});
+daemonHealthReducer.with(stopUnslothRequested, (state) => {
+  return { ...state, unslothStopping: true, unslothStopError: null };
+});
+daemonHealthReducer.with(stopUnslothSucceeded, (state) => {
+  // The middleware's follow-up unsloth.status re-poll refreshes the status.
+  return { ...state, unslothStopping: false };
+});
+daemonHealthReducer.with(stopUnslothFailed, (state, { payload: [error] }) => {
+  return { ...state, unslothStopping: false, unslothStopError: error };
+});

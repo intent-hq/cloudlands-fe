@@ -15,6 +15,7 @@ function hourCell(
   output = 0,
   cacheRead = 0,
   cacheCreation = 0,
+  thoughts = 0,
 ): UsageHourStats {
   return {
     hour,
@@ -22,16 +23,19 @@ function hourCell(
     outputTokens: output,
     cacheReadTokens: cacheRead,
     cacheCreationTokens: cacheCreation,
+    // Optional-when-zero on the wire (§5.23): only present when reported.
+    ...(thoughts > 0 ? { thoughtTokens: thoughts } : {}),
   };
 }
 
-function monthCell(month: number, input = 0, output = 0): UsageMonthStats {
+function monthCell(month: number, input = 0, output = 0, thoughts = 0): UsageMonthStats {
   return {
     month,
     inputTokens: input,
     outputTokens: output,
     cacheReadTokens: 0,
     cacheCreationTokens: 0,
+    ...(thoughts > 0 ? { thoughtTokens: thoughts } : {}),
   };
 }
 
@@ -83,14 +87,28 @@ describe('hourCardModel (hour-of-day)', () => {
     const m = hourCardModel(byHour, 'hour-of-day');
     expect(m.peakLabel).toBe('14:00');
     expect(m.peakSub).toBe('1K tokens in the 2pm hour');
-    expect(m.bars[14]).toEqual({ heightPct: 100, outPct: 20, peak: true });
-    expect(m.bars[10]).toEqual({ heightPct: 50, outPct: 20, peak: false });
-    expect(m.bars[0]).toEqual({ heightPct: 0, outPct: 0, peak: false });
+    expect(m.bars[14]).toEqual({ heightPct: 100, outPct: 20, thoughtPct: 0, peak: true });
+    expect(m.bars[10]).toEqual({ heightPct: 50, outPct: 20, thoughtPct: 0, peak: false });
+    expect(m.bars[0]).toEqual({ heightPct: 0, outPct: 0, thoughtPct: 0, peak: false });
+    expect(m.hasThoughts).toBe(false);
     // total 1750; hours 09–18 hold 1500 (86%), hours 00–06 hold 250 (14%).
     expect(m.workingHours).toBe('09–18 · 86%');
     expect(m.workingHoursPct).toBe(86);
     expect(m.overnight).toBe('14%');
     expect(m.axis).toEqual(['00', '06', '12', '18', '23']);
+  });
+
+  it('carves a dedicated thoughts segment when thoughtTokens is reported (monorepo#1688)', () => {
+    const withThoughts = Array.from({ length: 24 }, (_, h) => {
+      // 600 in + 200 out + 80 cr + 20 cw + 100 thoughts = 1000 total.
+      if (h === 14) return hourCell(14, 600, 200, 80, 20, 100);
+      if (h === 10) return hourCell(10, 300, 100, 80, 20); // 500, no thoughts
+      return hourCell(h);
+    });
+    const m = hourCardModel(withThoughts, 'hour-of-day');
+    expect(m.hasThoughts).toBe(true);
+    expect(m.bars[14]).toEqual({ heightPct: 100, outPct: 20, thoughtPct: 10, peak: true });
+    expect(m.bars[10]).toEqual({ heightPct: 50, outPct: 20, thoughtPct: 0, peak: false });
   });
 
   it('defaults the working-hours window to 09–18 (regression)', () => {
@@ -114,7 +132,9 @@ describe('hourCardModel (hour-of-day)', () => {
     expect(m.peakSub).toBe('no activity in this period');
     expect(m.grid).toEqual([]);
     expect(m.bars).toHaveLength(24);
-    for (const b of m.bars) expect(b).toEqual({ heightPct: 0, outPct: 0, peak: false });
+    for (const b of m.bars)
+      expect(b).toEqual({ heightPct: 0, outPct: 0, thoughtPct: 0, peak: false });
+    expect(m.hasThoughts).toBe(false);
     expect(m.workingHours).toBe('09–18 · 0%');
     expect(m.workingHoursPct).toBe(0);
     expect(m.overnight).toBe('0%');
@@ -196,9 +216,11 @@ describe('monthCardModel', () => {
 
   it('marks elapsed months as bars and future months as stubs', () => {
     const m = monthCardModel(byMonth, 4);
+    expect(m.hasThoughts).toBe(false);
     expect(m.bars[2]).toEqual({
       heightPct: 100,
       outPct: 20,
+      thoughtPct: 0,
       letter: 'M',
       active: true,
       best: true,
@@ -206,6 +228,7 @@ describe('monthCardModel', () => {
     expect(m.bars[3]).toEqual({
       heightPct: 75,
       outPct: 20,
+      thoughtPct: 0,
       letter: 'A',
       active: true,
       best: false,
@@ -213,10 +236,33 @@ describe('monthCardModel', () => {
     expect(m.bars[11]).toEqual({
       heightPct: 2,
       outPct: 0,
+      thoughtPct: 0,
       letter: 'D',
       active: false,
       best: false,
     });
     expect(m.bars.map((b) => b.letter).join('')).toBe('JFMAMJJASOND');
+  });
+
+  it('ignores thoughtTokens in future-month stubs when gating the legend', () => {
+    // Only a stub month (Mar, beyond monthsElapsed=2) carries thoughts.
+    const stubOnly = [monthCell(1, 300, 100), monthCell(2, 200, 50), monthCell(3, 0, 0, 100)];
+    expect(monthCardModel(stubOnly, 2).hasThoughts).toBe(false);
+  });
+
+  it('carves a dedicated thoughts segment when thoughtTokens is reported (monorepo#1688)', () => {
+    // Jan: 300 in + 100 out + 100 thoughts = 500 total.
+    const withThoughts = [monthCell(1, 300, 100, 100), monthCell(2, 200, 50)];
+    const m = monthCardModel(withThoughts, 2);
+    expect(m.hasThoughts).toBe(true);
+    expect(m.bars[0]).toEqual({
+      heightPct: 100,
+      outPct: 20,
+      thoughtPct: 20,
+      letter: 'J',
+      active: true,
+      best: true,
+    });
+    expect(m.bars[1].thoughtPct).toBe(0);
   });
 });

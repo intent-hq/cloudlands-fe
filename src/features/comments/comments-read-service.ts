@@ -2,9 +2,7 @@
  * Comments read service — live-applies daemon `comment:*` events into the
  * global comments slice per PROTOCOL §6.5 (`comment:added`, `comment:resolved`).
  *
- * Comments hydrate one-shot at boot (`notes-seeder.ts` calls
- * `client.comments.list(noteId)` for every note and dispatches
- * `loadCommentsAction`). After boot, comments added/resolved by agents or
+ * Comments hydrate through the comments saga. Comments added/resolved by agents or
  * other clients used to stay stale until reload because `LiveCommentsClient`'s
  * per-note `subscribe` is never invoked. This service fills that gap in the
  * style of `notes-read-service.applyNoteFromEvent`: the daemon-events bridge
@@ -19,18 +17,18 @@
  * `appStore.state.comments` shape (no selectors, which would evaluate
  * `store.createSelector` mid-middleware-init).
  */
-import type { CommentV2 } from "$features/comments/comment-types-v2";
-import { getItem, getItems } from "$lib/store-shim/utils/collections/collection-utils";
-import { appClient } from "$lib/client";
-import { store as appStore } from "$store/renderer/store";
+import type { CommentV2 } from '$features/comments/comment-types-v2';
+import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { appClient } from '$lib/client';
+import { store as appStore } from '$store/renderer/store';
 import {
   addCommentAction,
   removeCommentAction,
   updateCommentAction,
-} from "$store/renderer/slices/comments/comments-slice";
-import { createLogger } from "$lib/utils/client-logger";
+} from '$store/renderer/slices/comments/comments-slice';
+import { createLogger } from '$lib/utils/client-logger';
 
-const logger = createLogger("CommentsReadService");
+const logger = createLogger('CommentsReadService');
 
 /** In-flight refetches keyed by `note:{noteId}`; coalesces concurrent requests. */
 const inFlight = new Map<string, Promise<void>>();
@@ -65,7 +63,7 @@ function coalesce(key: string, fn: () => Promise<void>): void {
 export function applyCommentFromEvent(
   workspaceId: string,
   noteId: string,
-  _kind: "added" | "resolved",
+  _kind: 'added' | 'resolved',
 ): void {
   if (!workspaceId || !noteId) return;
   coalesce(`comment:${workspaceId}:${noteId}`, async () => {

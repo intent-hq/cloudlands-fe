@@ -7,7 +7,12 @@
   faPencil,
 } from '@fortawesome/free-solid-svg-icons';
 
-  import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
+  import {
+    selectDefaultReasoningEffort,
+    selectModelDisplayName,
+    selectModelEffortLevels,
+    selectSelectedModel,
+  } from '$store/renderer/slices/model/model-selectors';
 
 
   import {
@@ -22,6 +27,7 @@
   selectSpecialistSourceLabel,
   selectSpecialistsFolderPath,
   selectEffectiveCodingAgent,
+  selectExplicitReasoningEffort,
   selectFileSpecialists,
   selectBundledSpecialists,
 } from '$store/renderer/slices/specialists/specialists-selectors';
@@ -32,7 +38,10 @@
   import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-  import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
+  import {
+    reloadModelsForProvider,
+    setDefaultReasoningEffort,
+  } from '$store/renderer/slices/model/model-slice';
   import Button from '$lib/components/ui/button/button.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
@@ -41,6 +50,7 @@
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
+  import EffortSelect from './EffortSelect.svelte';
   import SpecialistModelOptions from './SpecialistModelOptions.svelte';
   import {
     hasExplicitModelPin,
@@ -70,6 +80,7 @@
   const specialists = selectSpecialists();
   const fileSpecialists$ = selectFileSpecialists();
   const selectedModel = selectSelectedModel();
+  const defaultReasoningEffort$ = selectDefaultReasoningEffort();
   const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
 
@@ -166,6 +177,13 @@
   // Local state for specialist model/coding agent selection
   let _specialistCodingAgentValue = $state('');
   let specialistModelValue = $state<string | undefined>(undefined);
+  let specialistEffortValue = $state<string | undefined>(undefined);
+
+  // Model the effort level applies to: the explicit pin when present, else
+  // the daemon-resolved preview of what an inheriting specialist would run.
+  const specialistEffortModel = $derived(
+    specialistModelValue ?? currentSpecialist?.resolvedModel,
+  );
 
   // Saved model options from the resolved specialist view (file override →
   // bundled). Reactive to file specialist changes so the rows resync after
@@ -194,16 +212,56 @@
       void $fileSpecialists$; // track file specialist changes
       _specialistCodingAgentValue = selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id);
       specialistModelValue = selectExplicitModel.select(appStore.state, currentSpecialist.id);
+      specialistEffortValue = selectExplicitReasoningEffort.select(
+        appStore.state,
+        currentSpecialist.id,
+      );
     }
   });
 
   function handleGlobalModelChange(compoundModelId: string) {
     if (!compoundModelId) return;
-    const { providerId } = parseCompoundModelId(compoundModelId);
+    const { providerId, modelId } = parseCompoundModelId(compoundModelId);
+    // The default effort is paired with the default model — drop a level the
+    // newly picked model does not advertise instead of leaving an unsupported
+    // level persisted. Decided BEFORE the provider switch below, because
+    // `reloadModelsForProvider` empties `availableModels` until the new
+    // catalog lands and every lookup would then miss. A model the loaded
+    // catalog does not know (a cross-provider pick) is inconclusive, not
+    // "no levels" — keep the level instead of clearing it blindly.
+    const current = $defaultReasoningEffort$;
+    const isKnownModel =
+      selectModelDisplayName.select(appStore.state, providerId, modelId) !== undefined;
+    if (current && isKnownModel && !effortForModel(compoundModelId, current)) {
+      appStore.dispatch(setDefaultReasoningEffort(''));
+    }
     if (providerId && providerId !== $activeProviderId$) {
       appStore.dispatch(setActiveProvider(providerId));
       appStore.dispatch(reloadModelsForProvider());
     }
+  }
+
+  /**
+   * Persist the default effort level paired with the default model
+   * (`model.defaultReasoningEffort`). Default (undefined) writes '' so the
+   * daemon reads it as unset.
+   */
+  function handleDefaultEffortChange(effort: string | undefined) {
+    appStore.dispatch(setDefaultReasoningEffort(effort ?? ''));
+  }
+
+  /**
+   * Drop an effort level the given model does not advertise, so switching to
+   * a model without that level resets the dropdown to Default instead of
+   * persisting an unsupported level (PROTOCOL §5.11 `reasoningEffort`).
+   */
+  function effortForModel(
+    compoundModelId: string | undefined,
+    effort: string | undefined,
+  ): string | undefined {
+    if (!effort) return undefined;
+    const levels = selectModelEffortLevels.select(appStore.state, compoundModelId);
+    return levels?.includes(effort) ? effort : undefined;
   }
 
   function handleSpecialistModelChange(compoundModelId: string) {
@@ -215,6 +273,13 @@
     // creating a file would only pin other fields).
     if (!compoundModelId) {
       specialistModelValue = undefined;
+      // The effort level now applies to the inherited (daemon-resolved)
+      // model — drop it when that model lacks the level.
+      const nextEffort = effortForModel(
+        currentSpecialist.resolvedModel,
+        specialistEffortValue,
+      );
+      specialistEffortValue = nextEffort;
       if (!isFileBased) return;
       const fileSpec = selectGetFileSpecialist.select(
         appStore.state,
@@ -225,7 +290,13 @@
       // defaults, delete the file instead of rewriting it — a redundant file
       // would keep the built-in reading as "Modified" (monorepo#1450).
       const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
-      if (isRedundantBuiltInOverride(fileSpec, bundledSpecialists, { ignoreModelPin: true })) {
+      if (
+        isRedundantBuiltInOverride(
+          { ...fileSpec, reasoningEffort: nextEffort },
+          bundledSpecialists,
+          { ignoreModelPin: true },
+        )
+      ) {
         appStore.dispatch(
           deleteFileSpecialistAction({ id: fileSpec.id, scope: fileSpec.source }),
         );
@@ -241,6 +312,7 @@
           model: undefined,
           roleReminder: fileSpec.roleReminder,
           modelOptions: fileSpec.modelOptions,
+          reasoningEffort: nextEffort,
           behaviorPrompt: fileSpec.behaviorPrompt,
           scope: fileSpec.source,
           workspacePath,
@@ -252,6 +324,10 @@
     const { providerId: newProvider } = parseCompoundModelId(compoundModelId);
     _specialistCodingAgentValue = newProvider;
     specialistModelValue = compoundModelId;
+    // Reset the effort to Default when the newly picked model does not
+    // advertise the current level.
+    const nextEffort = effortForModel(compoundModelId, specialistEffortValue);
+    specialistEffortValue = nextEffort;
 
     if (isFileBased) {
       // Already a file specialist (user or project) — update in place
@@ -270,6 +346,7 @@
             model: compoundModelId,
             roleReminder: fileSpec.roleReminder,
             modelOptions: fileSpec.modelOptions,
+            reasoningEffort: nextEffort,
             behaviorPrompt: fileSpec.behaviorPrompt,
             scope: fileSpec.source,
             workspacePath,
@@ -291,11 +368,81 @@
           model: compoundModelId,
           roleReminder: currentSpecialist.roleReminder,
           modelOptions: currentSpecialist.modelOptions,
+          reasoningEffort: nextEffort,
           behaviorPrompt: effectivePrompt || currentSpecialist.defaultBehaviorPrompt,
           scope: 'user',
         }),
       );
     }
+  }
+
+  /**
+   * Persist the specialist's reasoning-effort level. Default (undefined)
+   * omits the key on the wire so the model default is inherited; on a
+   * built-in with no override file, picking Default is a no-op and picking a
+   * level exports a user file (mirroring the model-pin export path). Clearing
+   * the level on a user override that then matches the bundled defaults
+   * deletes the file (monorepo#1450).
+   */
+  function handleSpecialistEffortChange(effort: string | undefined) {
+    if (!currentSpecialist) return;
+    specialistEffortValue = effort;
+
+    if (isFileBased) {
+      const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
+      if (!fileSpec) return;
+      const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
+      if (!effort && !fileSpec.model && !fileSpec.codingAgent) {
+        const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
+        if (
+          isRedundantBuiltInOverride(
+            { ...fileSpec, reasoningEffort: undefined },
+            bundledSpecialists,
+          )
+        ) {
+          appStore.dispatch(
+            deleteFileSpecialistAction({ id: fileSpec.id, scope: fileSpec.source, workspacePath }),
+          );
+          return;
+        }
+      }
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: fileSpec.id,
+          name: fileSpec.name,
+          description: fileSpec.description,
+          codingAgent: fileSpec.codingAgent,
+          model: fileSpec.model || undefined,
+          roleReminder: fileSpec.roleReminder,
+          modelOptions: fileSpec.modelOptions,
+          reasoningEffort: effort,
+          behaviorPrompt: fileSpec.behaviorPrompt,
+          scope: fileSpec.source,
+          workspacePath,
+        }),
+      );
+      return;
+    }
+
+    if (!effort) return;
+    const effectivePrompt = selectEffectiveBehaviorPrompt.select(
+      appStore.state,
+      currentSpecialist.id,
+    );
+    appStore.dispatch(
+      saveFileSpecialist({
+        id: currentSpecialist.id,
+        name: currentSpecialist.name,
+        description: currentSpecialist.description,
+        codingAgent: selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id),
+        model: currentSpecialist.defaultModel,
+        roleReminder: currentSpecialist.roleReminder,
+        modelOptions: currentSpecialist.modelOptions,
+        reasoningEffort: effort,
+        behaviorPrompt: effectivePrompt || currentSpecialist.defaultBehaviorPrompt,
+        scope: 'user',
+      }),
+    );
   }
 
   function handleCreateModelChange(compoundModelId: string) {
@@ -328,6 +475,7 @@
             model: fileSpec.model,
             roleReminder: fileSpec.roleReminder,
             modelOptions: fileSpec.modelOptions,
+            reasoningEffort: fileSpec.reasoningEffort,
             behaviorPrompt: prompt,
             scope: fileSpec.source,
             workspacePath,
@@ -352,6 +500,7 @@
           model: currentSpecialist.defaultModel,
           roleReminder: currentSpecialist.roleReminder,
           modelOptions: currentSpecialist.modelOptions,
+          reasoningEffort: currentSpecialist.reasoningEffort,
           behaviorPrompt: prompt,
           scope: 'user',
         }),
@@ -395,6 +544,7 @@
           model: fileSpec.model || undefined,
           roleReminder: fileSpec.roleReminder,
           modelOptions: next,
+          reasoningEffort: fileSpec.reasoningEffort,
           behaviorPrompt: fileSpec.behaviorPrompt,
           scope: fileSpec.source,
           workspacePath,
@@ -422,6 +572,7 @@
         model: currentSpecialist.defaultModel,
         roleReminder: currentSpecialist.roleReminder,
         modelOptions: next,
+        reasoningEffort: currentSpecialist.reasoningEffort,
         behaviorPrompt: effectivePrompt || currentSpecialist.defaultBehaviorPrompt,
         scope: 'user',
       }),
@@ -445,6 +596,7 @@
         model: currentSpecialist.defaultModel,
         roleReminder: currentSpecialist.roleReminder,
         modelOptions: currentSpecialist.modelOptions,
+        reasoningEffort: currentSpecialist.reasoningEffort,
         behaviorPrompt: selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id),
         scope: fileSpec?.source ?? 'user',
         workspacePath: fileSpec?.source === 'project' ? getCurrentWorkspacePath() : undefined,
@@ -469,6 +621,7 @@
         model: currentSpecialist.defaultModel,
         roleReminder: currentSpecialist.roleReminder,
         modelOptions: currentSpecialist.modelOptions,
+        reasoningEffort: currentSpecialist.reasoningEffort,
         behaviorPrompt: selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id),
         scope: fileSpec?.source ?? 'user',
         workspacePath: fileSpec?.source === 'project' ? getCurrentWorkspacePath() : undefined,
@@ -585,6 +738,12 @@
           size="sm"
           updateGlobalDefault
         />
+        <EffortSelect
+          model={$selectedModel}
+          value={$defaultReasoningEffort$ || undefined}
+          onChange={handleDefaultEffortChange}
+          testId="default-effort"
+        />
         {#if anySpecialistHasExplicitModel}
           <button
             type="button"
@@ -695,6 +854,12 @@
             m.settings_aiBehavior_inheritModelPreview_label({ model })}
           size="sm"
           variant="default"
+        />
+        <EffortSelect
+          model={specialistEffortModel}
+          value={specialistEffortValue}
+          onChange={handleSpecialistEffortChange}
+          testId="specialist-effort"
         />
         {#if isBuiltIn && hasFileOverride()}
           <button

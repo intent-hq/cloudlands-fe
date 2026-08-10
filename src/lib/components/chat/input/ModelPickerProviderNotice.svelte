@@ -32,6 +32,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
+  import { cn } from '$lib/utils';
 
   interface Props {
     warning?: string;
@@ -41,6 +42,8 @@
     description?: string;
     linkText?: string;
     variant?: 'warning' | 'progress';
+    /** Extra classes on the notice root (e.g. to break out of a flex row). */
+    class?: string;
   }
 
   let {
@@ -51,6 +54,7 @@
     description = m.chat_modelPicker_installCodex_description(),
     linkText = m.chat_modelPicker_setupDocs_label(),
     variant = 'warning',
+    class: className,
   }: Props = $props();
 
   const shouldRender = $derived(show && (Boolean(warning) || variant === 'progress'));
@@ -66,7 +70,10 @@
 
 {#if shouldRender}
   <div
-    class="max-w-[360px] rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-foreground"
+    class={cn(
+      'max-w-[360px] rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-foreground',
+      className,
+    )}
     role="status"
   >
     <div class="flex items-start gap-2">

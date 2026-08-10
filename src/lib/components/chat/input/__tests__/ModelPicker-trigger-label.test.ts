@@ -183,10 +183,10 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectIsLoadingModels: () => isLoadingModels$,
   selectLoadError: () => writable(null),
   selectAllProviderWarnings: () => providerWarnings$,
+  selectAllProviderStaleFlags: () => writable({}),
 }));
 
 vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
-  selectManagedInstallStatusByProvider: () => writable(null),
   selectHasCheckedOnce: () => writable(true),
 }));
 

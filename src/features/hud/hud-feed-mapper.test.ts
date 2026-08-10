@@ -124,6 +124,34 @@ describe("mapEventToFeedEntry (PROTOCOL §6.3/§6.5-shaped payloads)", () => {
     ).not.toBeNull();
   });
 
+  it("maps task:created { noteId, noteTitle, status, createdAt, agentId? } to an info row naming the task", () => {
+    const entry = mapEventToFeedEntry(
+      wireEvent("task:created", {
+        noteId: "note-1",
+        noteTitle: "Ship HUD",
+        status: "not_started",
+        createdAt: "2026-07-30T12:00:00.000Z",
+        agentId: "agent-1",
+      }),
+    );
+    expect(entry).toMatchObject({
+      colorClass: "info",
+      kind: "task:created",
+      text: "Ship HUD",
+    });
+  });
+
+  it("falls back to the noteId when a task:created payload carries no title", () => {
+    const entry = mapEventToFeedEntry(
+      wireEvent("task:created", {
+        noteId: "note-2",
+        status: "not_started",
+        createdAt: "2026-07-30T12:00:00.000Z",
+      }),
+    );
+    expect(entry?.text).toBe("note-2");
+  });
+
   it("maps task:status-changed with noteTitle → newStatus, ok when complete", () => {
     const entry = mapEventToFeedEntry(
       wireEvent("task:status-changed", {

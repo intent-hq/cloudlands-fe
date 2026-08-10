@@ -13,47 +13,49 @@
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import {
-  selectAgentSession,
-  selectAgentIsResponding,
-  selectAgentSessionHasStreamOwnedMessage,
-  selectAgentSessionStreamingContent,
-  selectAgentIsWaiting,
-} from '$store/renderer/slices/agent-session/agent-session-selectors';
+    selectAgentSession,
+    selectAgentIsResponding,
+    selectAgentSessionHasStreamOwnedMessage,
+    selectAgentSessionStreamingContent,
+    selectAgentIsWaiting,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectChatReceivedFirstChunk } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import {
-  deleteAgentWithUndoRequested,
-  ensureAgentSessionLoaded,
-  renameAgentSessionRequested,
-  stopAgentSessionRequested,
-} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+    deleteAgentWithUndoRequested,
+    ensureAgentSessionLoaded,
+    renameAgentSessionRequested,
+    stopAgentSessionRequested,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import { getLastMeaningfulLine, stripUserMessagePrefixes } from '$lib/utils/text-utils';
+  import { classifyTool } from './tool-classifier';
+  import { deriveAgentCardPreview } from './agent-card-preview';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
-  import { slide } from 'svelte/transition';
+  import { safeSlide } from '$lib/utils/animations';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
-  getPanelLayoutManager,
-  hasPanelLayoutManager,
-} from '$features/layout/panel-layout-adapter';
+    getPanelLayoutManager,
+    hasPanelLayoutManager,
+  } from '$features/layout/panel-layout-adapter';
   import type { Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
 
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
-  faArrowUpRightFromSquare,
-  faFolderOpen,
-  faPen,
-  faStop,
-  faTrash,
-} from '@fortawesome/free-solid-svg-icons';
+    faArrowUpRightFromSquare,
+    faFolderOpen,
+    faPen,
+    faStop,
+    faTrash,
+  } from '@fortawesome/free-solid-svg-icons';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { invoke } from '$lib/electron-bridge';
@@ -140,7 +142,11 @@
     (navigator.userAgentData?.platform === 'macOS' ||
       /Mac|iPhone|iPad|iPod/.test(navigator.userAgent));
   // i18n-ignore (Explorer/Finder are OS brand names)
-  const fileManagerName = isWindows ? 'Explorer' : isMac ? 'Finder' : m.chat_agentCard_fileManager_label();
+  const fileManagerName = isWindows
+    ? 'Explorer'
+    : isMac
+      ? 'Finder'
+      : m.chat_agentCard_fileManager_label();
 
   // Start editing the agent name
   async function startEditing() {
@@ -469,13 +475,25 @@
       .split('\n')[0]
       ?.trim() ?? '',
   );
-  const showUserMessagePreview = $derived(
-    agentData?.lastMessageRole === 'user' && !!userFirstLine && !liveResponseLine,
-  );
 
   // Tool-use block to preview when the latest thing the agent did was a tool
   // call (see agent-peek-utils). Only used when there's no text to display.
   const lastToolUse = $derived(agentData?.lastToolUse);
+  const liveToolUse = $derived(
+    $agent$?.isStreaming && $agent$?.lastToolUse ? lastToolUse : undefined,
+  );
+  const liveToolDisplay = $derived(
+    liveToolUse
+      ? classifyTool(liveToolUse.name, (liveToolUse.input as Record<string, any>) || {})
+      : null,
+  );
+  const hasRenderableLiveTool = $derived(!!liveToolUse && !liveToolDisplay?.hidden);
+  const showUserMessagePreview = $derived(
+    agentData?.lastMessageRole === 'user' &&
+      !!userFirstLine &&
+      !liveResponseLine &&
+      !hasRenderableLiveTool,
+  );
 
   const updatedAt = $derived($agent$?.updatedAt);
 
@@ -516,6 +534,26 @@
       agentData?.digest || completionReport || agentData?.completionReport || lastResponseSummary
     );
   });
+
+  // Single preview value for the persistent container below: the precedence
+  // chain (attention → live text → live tool → user line → digest/report →
+  // persisted fallbacks) collapses into one { kind, text/toolUse } value so
+  // preview-source flips swap content in place instead of unmount/mounting
+  // sibling blocks with height animation.
+  const preview = $derived(
+    deriveAgentCardPreview({
+      attentionRequest,
+      liveResponseLine,
+      liveToolUse,
+      hasRenderableLiveTool,
+      showUserMessagePreview,
+      userFirstLine,
+      effectiveCompletionReport,
+      lastResponse,
+      lastToolUse,
+      lastUserMsg,
+    }),
+  );
 
   // Handle click - navigate to agent
   function handleClick(event: MouseEvent) {
@@ -634,65 +672,42 @@
           </div>
         </div>
 
-        <!-- Message preview - attention request takes precedence, then the newest
-             user message (freshness wins), then completion report (suppressed in
-             favor of this-turn live text while a turn streams, monorepo#1327),
-             then last response -->
-        {#if !hidePreview}
-          {#if attentionRequest}
-            <div class="mt-0.5" transition:slide={{ axis: 'y', duration: 150 }}>
+        <!-- Message preview: one persistent container rendering the derived
+             `preview` value (see agent-card-preview.ts for the precedence
+             chain). Content swaps in place — no per-branch transitions — so
+             source flips don't height-animate; the section as a whole still
+             slides when the preview appears/disappears entirely. -->
+        {#if !hidePreview && preview}
+          <div class="mt-0.5" transition:safeSlide={{ axis: 'y', duration: 150 }}>
+            {#if preview.kind === 'attention'}
               <p
-                class="text-sm truncate {attentionRequest.kind === 'blocker'
+                class="text-sm truncate {preview.attention.kind === 'blocker'
                   ? 'text-red-500'
                   : 'text-amber-500'}"
                 data-testid="agent-card-attention"
               >
-                {attentionRequest.kind === 'blocker'
+                {preview.attention.kind === 'blocker'
                   ? m.chat_agentCard_attentionBlocker_label()
-                  : m.chat_agentCard_attentionDiscussion_label()}{#if attentionRequest.reason}<span
+                  : m.chat_agentCard_attentionDiscussion_label()}{#if preview.attention.reason}<span
                     class="text-subtle"
                   >
-                    · {attentionRequest.reason}</span
+                    · {preview.attention.reason}</span
                   >{/if}
               </p>
-            </div>
-          {:else if showUserMessagePreview}
-            <div class="mt-0.5">
-              <p class="text-sm text-subtle truncate" data-testid="agent-card-preview">
-                {userFirstLine}
-              </p>
-            </div>
-          {:else if effectiveCompletionReport}
-            <div class="mt-0.5">
+            {:else if preview.kind === 'live-tool' || preview.kind === 'last-tool'}
+              <div class="text-sm text-subtle truncate" data-testid="agent-card-preview">
+                <AgentPreviewToolLabel toolUse={preview.toolUse} animate={isRunning} />
+              </div>
+            {:else if preview.kind === 'report'}
               <p class="text-sm text-subtle truncate">
-                {effectiveCompletionReport}
+                {preview.text}
               </p>
-            </div>
-          {:else if lastUserMsg || lastResponse || lastToolUse}
-            <div class="space-y-0.5">
-              {#if lastResponse}
-                <p
-                  class="text-sm text-subtle truncate"
-                  data-testid="agent-card-preview"
-                  transition:slide={{ axis: 'y', duration: 150 }}
-                >
-                  {lastResponse}
-                </p>
-              {:else if lastToolUse}
-                <div
-                  class="text-sm text-subtle truncate"
-                  data-testid="agent-card-preview"
-                  transition:slide={{ axis: 'y', duration: 150 }}
-                >
-                  <AgentPreviewToolLabel toolUse={lastToolUse} animate={isRunning} />
-                </div>
-              {:else if lastUserMsg}
-                <p class="text-sm text-subtle truncate" data-testid="agent-card-preview">
-                  {lastUserMsg}
-                </p>
-              {/if}
-            </div>
-          {/if}
+            {:else}
+              <p class="text-sm text-subtle truncate" data-testid="agent-card-preview">
+                {preview.text}
+              </p>
+            {/if}
+          </div>
         {/if}
       </div>
     </button>

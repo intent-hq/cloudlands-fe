@@ -15,6 +15,7 @@ import {
   vi,
 } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { warmImport } from '../../../../../test/warm-import';
@@ -177,6 +178,15 @@ vi.mock('$lib/components/workspace/shrink-workspace-action', () => ({
   SHRINK_WORKSPACE_PROMPT: '',
 }));
 
+// The pill labels `cow` checkouts "CoW" only while effective CoW agent
+// isolation is active (an async settings read). These tests cover pill
+// placement, not label semantics (CheckoutModePill.test.ts does), so pin
+// the resolver to the active-isolation outcome.
+vi.mock('$lib/components/workspace/initializer/isolation-mode', () => ({
+  isolationNoun: vi.fn(() => ''),
+  resolveEffectiveIsolationMode: vi.fn().mockResolvedValue('cow'),
+}));
+
 async function renderProgressCard(
   overrides: Partial<Workspace> = {},
   props: { compact?: boolean } = {},
@@ -189,9 +199,14 @@ async function renderProgressCard(
     ...overrides,
   } as Workspace;
   const WorkspaceProgressCard = (await import('../WorkspaceProgressCard.svelte')).default;
-  return render(WorkspaceProgressCard, {
+  const result = render(WorkspaceProgressCard, {
     props: { workspaceId: mocks.workspaceEntity.id, ...props },
   });
+  // Flush the pill's async isolation-mode label resolution + re-render.
+  await tick();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await tick();
+  return result;
 }
 
 // Pre-warm the component module graph so the cold dynamic import is not

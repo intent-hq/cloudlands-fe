@@ -18,6 +18,25 @@
     }
     return `${(bytes / MB).toFixed(1)} MB`;
   }
+
+  /**
+   * Display label for a remote connection (T14): prefer the captured hostname,
+   * rendered as `hostname (host:port)` so the address stays visible for
+   * reconnection, and fall back to the record's raw `label` (`host:port`) when
+   * the hostname is unavailable/empty. The local entry is labeled elsewhere.
+   */
+  export function formatConnectionLabel(conn: {
+    hostname?: string | null;
+    host: string | null;
+    port: number | null;
+    label: string;
+  }): string {
+    const hostname = conn.hostname?.trim();
+    if (hostname && conn.host && conn.port != null) {
+      return `${hostname} (${conn.host}:${conn.port})`;
+    }
+    return conn.label;
+  }
 </script>
 
 <script lang="ts">
@@ -30,11 +49,17 @@
 
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
+  import { formatTransportLabel } from '$lib/utils/daemon-status-format';
+  import Fa from 'svelte-fa';
+  import { faPlus, faCheck, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import ConnectBackendModal from './ConnectBackendModal.svelte';
+  import CertMismatchModal from './CertMismatchModal.svelte';
+  import ProtocolMismatchModal from './ProtocolMismatchModal.svelte';
   import {
     selectDaemonHealth,
     selectDaemonHealthStats,
@@ -47,6 +72,22 @@
     pollUnslothStatus,
     stopUnslothRequested,
   } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+  import {
+    selectConnections,
+    selectActiveConnectionId,
+    selectConnectionCertMismatch,
+    selectActiveProtocolMismatch,
+    selectProtocolMismatchModal,
+  } from '$store/renderer/slices/connections/connections-selectors';
+  import {
+    certMismatchCleared,
+    protocolMismatchModalDismissed,
+  } from '$store/renderer/slices/connections/connections-slice';
+  import {
+    switchConnectionRequested,
+    forgetConnectionRequested,
+  } from '$store/renderer/slices/connections/connections-slice';
+  import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import { store as appStore } from '$store/renderer/store';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
@@ -55,10 +96,16 @@
   const lastUpdated$ = selectDaemonHealthLastUpdated();
   const unslothStatus$ = selectUnslothStatus();
   const unslothStopping$ = selectUnslothStopping();
+  const connections$ = selectConnections();
+  const activeConnectionId$ = selectActiveConnectionId();
+  const certMismatch$ = selectConnectionCertMismatch();
+  const activeProtocolMismatch$ = selectActiveProtocolMismatch();
+  const protocolMismatchModal$ = selectProtocolMismatchModal();
 
   let dropdownOpen = $state(false);
   let liveUptimeSeconds = $state<number | undefined>(undefined);
   let stopUnslothDialogOpen = $state(false);
+  let connectModalOpen = $state(false);
 
   // Color mapping for health states
   const healthColors: Record<DaemonHealth, string> = {
@@ -93,7 +140,7 @@
   // Compute live uptime: base uptime + elapsed time since lastUpdated
   function computeLiveUptime(
     uptimeSeconds: number | undefined,
-    lastUpdated: string | null
+    lastUpdated: string | null,
   ): number | undefined {
     if (uptimeSeconds === undefined) return undefined;
     if (!lastUpdated) return uptimeSeconds;
@@ -149,7 +196,9 @@
   // Short model label for the unsloth row: the repo name without the org
   // prefix (e.g. "unsloth/Qwen3-4B-GGUF" → "Qwen3-4B-GGUF").
   const unslothModelLabel = $derived(
-    $unslothStatus$?.repoId ? ($unslothStatus$.repoId.split('/').pop() ?? $unslothStatus$.repoId) : '',
+    $unslothStatus$?.repoId
+      ? ($unslothStatus$.repoId.split('/').pop() ?? $unslothStatus$.repoId)
+      : '',
   );
 
   const stopUnslothDescription = $derived.by(() => {
@@ -165,6 +214,82 @@
 
   function confirmStopUnsloth() {
     appStore.dispatch(stopUnslothRequested());
+  }
+
+  // --- Multi-backend connect: menu actions -------------------------------
+
+  function openConnectModal() {
+    dropdownOpen = false;
+    connectModalOpen = true;
+  }
+
+  async function handleSwitchConnection(id: string) {
+    dropdownOpen = false;
+    try {
+      const action = switchConnectionRequested(id);
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      // The failure is surfaced via the slice's op-status/error; nothing more
+      // to do here (the list/active refresh arrives via connections:changed).
+    }
+  }
+
+  async function handleForgetConnection(id: string) {
+    try {
+      const action = forgetConnectionRequested(id);
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      // Refresh + any error surface via the connections service; no-op here.
+    }
+  }
+
+  // --- Cert-mismatch modal actions ---------------------------------------
+
+  function dismissCertMismatch() {
+    appStore.dispatch(certMismatchCleared());
+  }
+
+  async function switchBackToLocal() {
+    dismissCertMismatch();
+    try {
+      const action = switchConnectionRequested(LOCAL_CONNECTION_ID);
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      // no-op; op-status/error surface via the slice.
+    }
+  }
+
+  async function forgetMismatchedConnection(id: string) {
+    dismissCertMismatch();
+    try {
+      const action = forgetConnectionRequested(id);
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      // no-op; refresh via connections:changed.
+    }
+  }
+
+  // --- Protocol-mismatch modal actions (advisory, non-blocking) ----------
+
+  /** "Continue anyway" — keep the connection; the menu warning persists. */
+  function continueWithProtocolMismatch() {
+    appStore.dispatch(protocolMismatchModalDismissed());
+  }
+
+  /** Switch back to the local sidecar from the advisory modal. */
+  async function switchBackFromProtocolMismatch() {
+    continueWithProtocolMismatch();
+    try {
+      const action = switchConnectionRequested(LOCAL_CONNECTION_ID);
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      // no-op; op-status/error surface via the slice.
+    }
   }
 </script>
 
@@ -205,7 +330,12 @@
         <div class="px-3 py-2 space-y-1.5">
           <div class="flex justify-between text-xs">
             <span class="text-subtle">{m.layout_daemonStatus_status_label()}</span>
-            <span class={cn('font-medium', $health$ === 'healthy' ? 'text-green-500' : 'text-yellow-500')}>
+            <span
+              class={cn(
+                'font-medium',
+                $health$ === 'healthy' ? 'text-green-500' : 'text-yellow-500',
+              )}
+            >
               {$health$ === 'healthy'
                 ? m.layout_daemonStatus_healthyState_label()
                 : m.layout_daemonStatus_degradedState_label()}
@@ -257,7 +387,9 @@
             {#if liveUptimeSeconds !== undefined}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
-                <span class="font-mono text-xs" aria-live="off">{formatUptime(liveUptimeSeconds)}</span>
+                <span class="font-mono text-xs" aria-live="off"
+                  >{formatUptime(liveUptimeSeconds)}</span
+                >
               </div>
             {/if}
 
@@ -265,7 +397,9 @@
             {#if $stats$.cpuPercent !== undefined}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
-                <span class="font-mono text-xs" aria-live="off">{formatCpu($stats$.cpuPercent)}</span>
+                <span class="font-mono text-xs" aria-live="off"
+                  >{formatCpu($stats$.cpuPercent)}</span
+                >
               </div>
             {/if}
 
@@ -273,7 +407,9 @@
             {#if $stats$.memoryBytes !== undefined}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
-                <span class="font-mono text-xs" aria-live="off">{formatMemory($stats$.memoryBytes)}</span>
+                <span class="font-mono text-xs" aria-live="off"
+                  >{formatMemory($stats$.memoryBytes)}</span
+                >
               </div>
             {/if}
 
@@ -285,29 +421,20 @@
 
             <!-- FE connection mode -->
             {#if $stats$.transport}
-              <div class="flex justify-between text-xs">
-                <span class="text-subtle">{m.layout_daemonStatus_connection_label()}</span>
-                <span class="font-mono text-xs">
-                  {#if $stats$.transport.mode === 'sidecar-uds'}
-                    <!-- i18n-ignore (transport mode identifier, not translatable UI copy) -->
-                    sidecar (UDS)
-                  {:else if $stats$.transport.target}
-                    <!-- i18n-ignore (transport mode identifier, not translatable UI copy) -->
-                    external ({$stats$.transport.target})
-                  {:else}
-                    <!-- i18n-ignore (transport mode identifier, not translatable UI copy) -->
-                    external (WebSocket)
-                  {/if}
-                </span>
+              {@const transportLabel = formatTransportLabel($stats$.transport)}
+              <div class="flex justify-between gap-2 text-xs">
+                <span class="text-subtle shrink-0">{m.layout_daemonStatus_connection_label()}</span>
+                <span class="font-mono text-xs min-w-0 truncate" title={transportLabel}
+                  >{transportLabel}</span
+                >
               </div>
             {:else}
-              <div class="flex justify-between text-xs">
-                <span class="text-subtle">{m.layout_daemonStatus_connection_label()}</span>
+              <div class="flex justify-between gap-2 text-xs">
+                <span class="text-subtle shrink-0">{m.layout_daemonStatus_connection_label()}</span>
                 <!-- i18n-ignore (transport mode identifier) -->
                 <span class="font-mono text-xs text-subtle">unknown</span>
               </div>
             {/if}
-
           {:else}
             <div class="h-px bg-border my-1"></div>
             <div class="text-xs text-subtle text-center py-2">
@@ -319,13 +446,15 @@
           {#if $unslothStatus$?.running}
             <div class="h-px bg-border my-1"></div>
 
-            <Header class="pt-1 pb-0.5" size={6}>{m.layout_daemonStatus_unslothServer_header()}</Header>
+            <Header class="pt-1 pb-0.5" size={6}
+              >{m.layout_daemonStatus_unslothServer_header()}</Header
+            >
 
             <!-- Model (HF repo id, shortened) -->
             {#if $unslothStatus$.repoId}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">{m.layout_daemonStatus_model_label()}</span>
-                <Tooltip side="left">
+                <Tooltip side="left" contentClass="z-[10001]">
                   {#snippet content()}
                     <span>{$unslothStatus$.repoId}</span>
                   {/snippet}
@@ -361,7 +490,9 @@
             {#if $unslothStatus$.uptimeSecs !== undefined}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
-                <span class="font-mono text-xs" aria-live="off">{formatUptime($unslothStatus$.uptimeSecs)}</span>
+                <span class="font-mono text-xs" aria-live="off"
+                  >{formatUptime($unslothStatus$.uptimeSecs)}</span
+                >
               </div>
             {/if}
 
@@ -369,7 +500,9 @@
             {#if $unslothStatus$.cpuPercent !== undefined}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
-                <span class="font-mono text-xs" aria-live="off">{formatCpu($unslothStatus$.cpuPercent)}</span>
+                <span class="font-mono text-xs" aria-live="off"
+                  >{formatCpu($unslothStatus$.cpuPercent)}</span
+                >
               </div>
             {/if}
 
@@ -377,7 +510,9 @@
             {#if $unslothStatus$.memoryBytes !== undefined}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
-                <span class="font-mono text-xs" aria-live="off">{formatMemory($unslothStatus$.memoryBytes)}</span>
+                <span class="font-mono text-xs" aria-live="off"
+                  >{formatMemory($unslothStatus$.memoryBytes)}</span
+                >
               </div>
             {/if}
 
@@ -405,6 +540,103 @@
           {/if}
         </div>
       {/if}
+
+      <!-- Multi-backend connect: add action + connections list (Switch/Forget) -->
+      <div class="h-px bg-border my-1"></div>
+      <div class="px-1 pb-1">
+        <button
+          class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1.5 transition-colors cursor-pointer flex items-center gap-2"
+          onclick={openConnectModal}
+        >
+          <span class="text-subtle"><Fa icon={faPlus} /></span>
+          {m.layout_daemonStatus_connectToAnother_action()}
+        </button>
+
+        {#if $connections$.length > 0}
+          <Header class="px-2 pt-1.5 pb-0.5" size={6}
+            >{m.layout_daemonStatus_connections_header()}</Header
+          >
+          {#each $connections$ as conn (conn.id)}
+            {@const isActive = conn.id === $activeConnectionId$}
+            <!--
+              Each connection is its own nested dropdown so Switch/Forget pop out
+              as a side flyout (to the left, since this menu sits at the top-right
+              of the title bar) instead of indenting inline. portal={false} keeps
+              the flyout inside this menu's DOM subtree, so a click inside it does
+              not register as "outside" the parent menu and close it.
+            -->
+            <DropdownMenu
+              side="left"
+              align="start"
+              portal={false}
+              class="block w-full"
+              contentClass="min-w-28"
+            >
+              {#snippet trigger({ toggle, open }: { toggle: () => void; open: boolean })}
+                <button
+                  class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1.5 transition-colors cursor-pointer flex items-center justify-between gap-2"
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                  onclick={toggle}
+                >
+                  <span class="truncate">
+                    {conn.isLocal
+                      ? m.layout_daemonStatus_localConnection_label()
+                      : formatConnectionLabel(conn)}
+                  </span>
+                  <span class="flex items-center gap-1.5 shrink-0">
+                    {#if $activeProtocolMismatch$?.id === conn.id}
+                      <Tooltip side="left" contentClass="z-[10001]">
+                        {#snippet content()}
+                          <span>{m.layout_daemonStatus_protocolMismatch_tooltip()}</span>
+                        {/snippet}
+                        <span
+                          class="text-yellow-600 dark:text-yellow-500"
+                          aria-label={m.layout_daemonStatus_protocolMismatch_ariaLabel()}
+                        >
+                          <Fa icon={faTriangleExclamation} />
+                        </span>
+                      </Tooltip>
+                    {/if}
+                    {#if isActive}
+                      <span
+                        class="text-green-500"
+                        aria-label={m.layout_daemonStatus_connectionActive_label()}
+                      >
+                        <Fa icon={faCheck} />
+                      </span>
+                    {/if}
+                  </span>
+                </button>
+              {/snippet}
+
+              {#snippet content({ close }: { close: () => void })}
+                <button
+                  class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                  disabled={isActive}
+                  onclick={() => {
+                    close();
+                    handleSwitchConnection(conn.id);
+                  }}
+                >
+                  {m.layout_daemonStatus_switch_action()}
+                </button>
+                {#if !conn.isLocal}
+                  <button
+                    class="w-full text-left text-xs text-red-500 hover:bg-muted/50 rounded px-2 py-1 transition-colors cursor-pointer"
+                    onclick={() => {
+                      close();
+                      handleForgetConnection(conn.id);
+                    }}
+                  >
+                    {m.layout_daemonStatus_forget_action()}
+                  </button>
+                {/if}
+              {/snippet}
+            </DropdownMenu>
+          {/each}
+        {/if}
+      </div>
     </div>
   {/snippet}
 </DropdownMenu>
@@ -423,6 +655,40 @@
       confirmText={m.layout_daemonStatus_stopUnsloth_confirm_label()}
       variant="destructive"
       onConfirm={confirmStopUnsloth}
+    />
+  </Portal>
+{/if}
+
+<!-- Add-connection modal (portaled to body, same rationale as the stop dialog). -->
+{#if connectModalOpen}
+  <Portal target="body" zIndex={100}>
+    <ConnectBackendModal bind:open={connectModalOpen} />
+  </Portal>
+{/if}
+
+<!-- Cert-mismatch failure modal — driven by the connections:cert-mismatch push. -->
+{#if $certMismatch$}
+  <Portal target="body" zIndex={100}>
+    <CertMismatchModal
+      event={$certMismatch$}
+      onSwitchBack={switchBackToLocal}
+      onForget={forgetMismatchedConnection}
+      onDismiss={dismissCertMismatch}
+    />
+  </Portal>
+{/if}
+
+<!--
+  Protocol-mismatch advisory modal — driven by connections:protocol-mismatch.
+  Non-blocking: the connection is already live; a persistent menu warning
+  remains after "continue anyway" dismisses this.
+-->
+{#if $protocolMismatchModal$}
+  <Portal target="body" zIndex={100}>
+    <ProtocolMismatchModal
+      event={$protocolMismatchModal$}
+      onSwitchBack={switchBackFromProtocolMismatch}
+      onContinue={continueWithProtocolMismatch}
     />
   </Portal>
 {/if}

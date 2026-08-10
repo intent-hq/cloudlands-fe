@@ -60,7 +60,6 @@ export {
   LOG_CHANNELS,
   AGENT_TESTING_CHANNELS,
   RULES_CHANNELS,
-  SCRIPTS_CHANNELS,
   ALL_CHANNELS,
   type ChannelName,
   createChannelName,
