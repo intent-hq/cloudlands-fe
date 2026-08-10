@@ -50,8 +50,8 @@ describe('getSafeHomeDir', () => {
 });
 
 // Note: getWorkspacesPath and related utility functions were removed during the
-// ~/intent migration. Workspace path resolution is now handled by WorkspaceConfig.paths.*
-// in config.ts (main process) and config-browser.ts (renderer process).
+// ~/intent migration. Workspace paths are daemon-owned and resolved via
+// WorkspacePathService (src/features/workspace/main/workspace-path.service.ts).
 
 /**
  * These tests document the expected behavior of isValidDirectory validation logic
