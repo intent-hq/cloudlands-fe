@@ -11,6 +11,14 @@ export const selectHardwareConsoleEnabled = store.createSelector<[], boolean>(
   (state) => state.hardwareConsole.enabled,
 );
 
+/**
+ * Whether this window owns the hardware console (last-focused non-HUD
+ * window, intent-hq/monorepo#1928). Only the owner acts on decoded input.
+ */
+export const selectIsConsoleOwner = store.createSelector<[], boolean>(
+  (state) => state.hardwareConsole.isConsoleOwner,
+);
+
 /** Top-N surface of the radial prompt picker (device panel setting; clamped 1–12). */
 export const selectPromptPickerLimit = store.createSelector<[], number>(
   (state) => state.hardwareConsole.promptPickerLimit,

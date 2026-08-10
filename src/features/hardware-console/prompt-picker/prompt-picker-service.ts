@@ -46,6 +46,7 @@ import {
   topPromptTexts,
 } from './curation';
 import { insertPromptText } from './insertion';
+import { isConsoleOwner } from '../owner-gate';
 
 const logger = createLogger('HardwareConsolePromptPicker');
 
@@ -64,6 +65,8 @@ export interface PromptPickerJoystickDeps {
   selectDistance?: number;
   /** See {@link DEFAULT_CENTER_DWELL_MS}. */
   centerDwellMs?: number;
+  /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
+  isOwner?: () => boolean;
 }
 
 interface JoystickSession {
@@ -92,6 +95,7 @@ export function installHardwareConsolePromptPickerJoystick(
   const getTopPrompts = deps.getTopPrompts ?? defaultGetTopPrompts;
   const selectDistance = deps.selectDistance ?? DEFAULT_JOYSTICK_ENGAGE_DISTANCE;
   const centerDwellMs = deps.centerDwellMs ?? DEFAULT_CENTER_DWELL_MS;
+  const isOwner = deps.isOwner ?? isConsoleOwner;
 
   let session: JoystickSession | null = null;
   let detachDecoder: (() => void) | null = null;
@@ -112,6 +116,10 @@ export function installHardwareConsolePromptPickerJoystick(
   };
 
   const onEngage = (angle: number, distance: number): void => {
+    // Only the owner opens a session; move/release handlers below stay
+    // session-guarded, so a session already open when ownership is lost
+    // still tracks and closes cleanly in the window that opened it.
+    if (!isOwner()) return;
     const prompts = getTopPrompts();
     if (prompts.length === 0) return;
     const sector = sectorFor(angle, prompts);

@@ -1,7 +1,13 @@
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { eventChannel } from 'redux-saga';
 import { call, delay, fork, join, put, take, takeLatest } from 'typed-redux-saga';
 
 import { installHardwareConsoleKeySwitching } from '$features/hardware-console/assignment/key-switch-service';
+import {
+  getConsoleOwnerBridge,
+  installConsoleOwnerListener,
+  queryConsoleOwnerStatus,
+} from '$features/hardware-console/console-owner-status';
 import type { HardwareConsoleManager } from '$features/hardware-console/device/device-manager';
 import {
   ENCODER_HUD_HIDE_MS,
@@ -20,6 +26,7 @@ import type { HardwareLedSnapshot } from '$features/hardware-console/led/frames'
 import { installHardwareConsoleLedStatus } from '$features/hardware-console/led/led-status-service';
 import { createLogger } from '$lib/utils/client-logger';
 import {
+  consoleOwnerChanged,
   encoderHudHidden,
   encoderHudShown,
   hydrateHardwareConsoleEnabled,
@@ -87,6 +94,30 @@ function* watchIntegrationToggle(
   }
 }
 
+/**
+ * Console-owner tracking (#1928): subscribe to main's per-window
+ * `owner-changed` pushes, then hydrate from the initial owner-status query.
+ * Without a preload bridge (web build / tests) the slice default (`true`)
+ * stands — the single page is always the owner.
+ */
+export function* watchConsoleOwnerStatus() {
+  const ipc = yield* call(getConsoleOwnerBridge);
+  if (ipc === null) return;
+  // Subscribe before querying so no ownership change slips between the two.
+  const pushes = yield* call(() =>
+    eventChannel<boolean>((emit) => installConsoleOwnerListener(ipc, emit)),
+  );
+  try {
+    const isOwner = yield* call(queryConsoleOwnerStatus, ipc);
+    if (isOwner !== null) yield* put(consoleOwnerChanged(isOwner));
+    while (true) {
+      yield* put(consoleOwnerChanged(yield* take(pushes)));
+    }
+  } finally {
+    pushes.close();
+  }
+}
+
 function* hideEncoderHudAfterDelay(
   action: ReturnType<typeof encoderHudShown | typeof encoderHudHidden>,
 ) {
@@ -139,6 +170,7 @@ export function* hardwareConsoleDeviceSaga() {
       persistQueued: false,
     };
     const toggleTask = yield* fork(watchIntegrationToggle, manager, lifecycle);
+    yield* fork(watchConsoleOwnerStatus);
     yield* fork(watchHardwareConsoleEncoderHud);
     yield* call([ledEngine, ledEngine.update], yield* selectHardwareLedSnapshot.effect());
     yield* fork(watchHardwareConsoleLedSnapshot, ledEngine);

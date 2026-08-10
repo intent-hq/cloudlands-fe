@@ -41,6 +41,7 @@ import {
 } from './action-mapping';
 import { normalizeCycleScopeByFamily } from './cycle-scope';
 import { cancelPttRecording } from '../voice/ptt-controller';
+import { isConsoleOwner } from '../owner-gate';
 import { getActionKeyDefinition, type ActionKeyContext } from './action-key-registry';
 import { ENCODER_HUD_HIDE_MS } from '../encoder/encoder-service';
 
@@ -78,6 +79,8 @@ export interface ActionKeyDeps {
   showUnavailableHint?: (message: string) => void;
   /** Focus an agent tab's chat composer. Defaults to `focusAgentComposer`. */
   focusComposer?: (agentId: string) => void;
+  /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
+  isOwner?: () => boolean;
 }
 
 /**
@@ -215,14 +218,23 @@ export function installHardwareConsoleActionKeys(
     detachDecoder = null;
   };
 
+  const isOwner = deps.isOwner ?? isConsoleOwner;
+
   const setupDecoder = (): void => {
     teardownDecoder();
     const model = manager.connectedDevice?.model ?? 'creator-micro-2';
     const decoder = new HardwareInputDecoder({ deviceModel: model });
     const offKeydown = decoder.on('keydown', ({ key }) => {
+      if (!isOwner()) return;
       handleActionKeyPress(key, deps, model);
     });
     const offKeyup = decoder.on('keyup', ({ key }) => {
+      // Releases are never owner-gated: a hold started while this window
+      // owned the console (e.g. an in-flight PTT recording) must end cleanly
+      // even when ownership flipped mid-hold — the recording completes and
+      // transcribes in the window that started it. A window that saw no
+      // keydown no-ops here (the PTT pressed-key count is 0, and press-only
+      // actions have no `executeUp`).
       handleActionKeyRelease(key, deps, model);
     });
     const offRaw = manager.onRawMessage((message) => decoder.handleMessage(message));

@@ -14,11 +14,13 @@ import { normalizeCycleScopeByFamily } from '../cycle-scope';
 const mockState: {
   hardwareConsole: {
     actionMappingByModel: Record<string, string[]>;
+    isConsoleOwner: boolean;
   } & ActionKeyState['hardwareConsole'];
 } & ActionKeyState = {
   hardwareConsole: {
     actionMappingByModel: normalizeActionMappingsByModel(undefined),
     cycleScopeByFamily: normalizeCycleScopeByFamily(undefined),
+    isConsoleOwner: true,
   },
   workspace: {
     activeWorkspaceId: 'ws-1',

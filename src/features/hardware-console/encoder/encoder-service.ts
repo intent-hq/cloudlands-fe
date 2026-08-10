@@ -29,6 +29,7 @@ import type { HardwareConsoleManager } from '../device/device-manager';
 import { HardwareInputDecoder } from '../input/input-decoder';
 import type { EncoderDirection } from '../input/types';
 import { isKeyAssignableWorkspace } from '../assignment/key-assignment';
+import { isConsoleOwner } from '../owner-gate';
 import {
   openPanel,
   setAllSpacesViewMode,
@@ -49,12 +50,15 @@ export interface EncoderDeps {
   navigate?: (route: string) => Promise<void>;
   /** Dispatch into the app store. Defaults to `appStore.dispatch`. */
   dispatch?: (action: unknown) => void;
+  /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
+  isOwner?: () => boolean;
 }
 
 function resolveDeps(deps: EncoderDeps): Required<EncoderDeps> {
   return {
     navigate: deps.navigate ?? navigateToRoute,
     dispatch: deps.dispatch ?? ((action: unknown) => appStore.dispatch(action as never)),
+    isOwner: deps.isOwner ?? isConsoleOwner,
   };
 }
 
@@ -131,16 +135,19 @@ export function installHardwareConsoleEncoder(
     dispatch(encoderHudHidden());
   };
 
+  const isOwner = deps.isOwner ?? isConsoleOwner;
+
   const setupDecoder = (): void => {
     detachDecoder?.();
     const decoder = new HardwareInputDecoder({
       deviceModel: manager.connectedDevice?.model ?? 'creator-micro-2',
     });
     const offRotate = decoder.on('encoderrotate', ({ direction }) => {
+      if (!isOwner()) return;
       handleEncoderRotate(direction, deps);
     });
     const offKeydown = decoder.on('keydown', ({ key }) => {
-      if (key === 'ENC_CLK') handleEncoderClick(deps);
+      if (key === 'ENC_CLK' && isOwner()) handleEncoderClick(deps);
     });
     const offRaw = manager.onRawMessage((message) => decoder.handleMessage(message));
     detachDecoder = () => {

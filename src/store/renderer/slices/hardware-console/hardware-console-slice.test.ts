@@ -3,6 +3,7 @@ import { UNASSIGNED_KEY_PIN } from "$features/hardware-console/assignment/key-as
 import {
   actionHudHidden,
   actionHudShown,
+  consoleOwnerChanged,
   encoderHudHidden,
   encoderHudShown,
   hardwareConsoleReducer,
@@ -197,6 +198,20 @@ describe("hardwareConsoleReducer", () => {
 
     const reenabled = hardwareConsoleReducer(disabled, setHardwareConsoleEnabled(true));
     expect(reenabled.enabled).toBe(true);
+  });
+
+  it("defaults to console owner (web build / bridge-less behavior)", () => {
+    expect(initialState.isConsoleOwner).toBe(true);
+  });
+
+  it("tracks console ownership changes and no-ops on redundant updates", () => {
+    const notOwner = hardwareConsoleReducer(initialState, consoleOwnerChanged(false));
+    expect(notOwner.isConsoleOwner).toBe(false);
+    expect(hardwareConsoleReducer(notOwner, consoleOwnerChanged(false))).toBe(notOwner);
+
+    const ownerAgain = hardwareConsoleReducer(notOwner, consoleOwnerChanged(true));
+    expect(ownerAgain.isConsoleOwner).toBe(true);
+    expect(hardwareConsoleReducer(initialState, consoleOwnerChanged(true))).toBe(initialState);
   });
 
   it("sets the prompt picker limit, clamped to [1, 12]", () => {

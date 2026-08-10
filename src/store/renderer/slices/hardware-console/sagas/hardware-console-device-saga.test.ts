@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   installToasts: vi.fn(),
   ledUpdate: vi.fn(),
   disposers: Array.from({ length: 5 }, () => vi.fn()),
+  /** Preload bridge handed to the owner-status wiring; null = bridge-less. */
+  ownerBridge: { current: null as unknown },
 }));
 
 vi.mock('$lib/client', () => ({
@@ -47,6 +49,12 @@ vi.mock('$features/hardware-console/led/clear-lighting', () => ({
 vi.mock('$features/hardware-console/connection-toast-service', () => ({
   installHardwareConsoleConnectionToasts: mocks.installToasts,
 }));
+vi.mock('$features/hardware-console/console-owner-status', async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import('$features/hardware-console/console-owner-status')
+  >();
+  return { ...actual, getConsoleOwnerBridge: () => mocks.ownerBridge.current };
+});
 
 import {
   encoderHudHidden,
@@ -94,9 +102,33 @@ function createHarness(saga = hardwareConsoleDeviceSaga) {
   };
 }
 
+function makeFakeOwnerBridge(initialIsOwner: boolean) {
+  const listeners = new Map<string, (payload: unknown) => void>();
+  let nextId = 0;
+  return {
+    invoke: vi.fn(async (channel: string) => {
+      if (channel === 'hardware-console:get-owner-status') return { isOwner: initialIsOwner };
+      throw new Error(`unexpected invoke: ${channel}`);
+    }),
+    on: vi.fn((channel: string, handler: (payload: unknown) => void) => {
+      const id = `listener-${++nextId}`;
+      listeners.set(id, handler);
+      return id;
+    }),
+    offById: vi.fn((_channel: string, id: string) => {
+      listeners.delete(id);
+    }),
+    pushOwnerChanged(isOwner: boolean) {
+      for (const handler of listeners.values()) handler({ isOwner });
+    },
+    listenerCount: () => listeners.size,
+  };
+}
+
 describe('hardwareConsoleDeviceSaga', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.ownerBridge.current = null;
     mocks.settingsGet.mockResolvedValue(enabledSetting(true));
     mocks.installKeySwitch.mockReturnValue(mocks.disposers[0]);
     mocks.installEncoder.mockReturnValue(mocks.disposers[1]);
@@ -187,6 +219,33 @@ describe('hardwareConsoleDeviceSaga', () => {
     );
     task.cancel();
     await task.toPromise();
+  });
+
+  it('keeps the default owner=true when no preload bridge exists (web build)', async () => {
+    const { task, getState } = createHarness();
+    await vi.waitFor(() => expect(mocks.manager.start).toHaveBeenCalledTimes(1));
+    expect(getState().hardwareConsole.isConsoleOwner).toBe(true);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('hydrates owner status from the invoke channel and applies owner-changed pushes', async () => {
+    const bridge = makeFakeOwnerBridge(false);
+    mocks.ownerBridge.current = bridge;
+    const { task, getState } = createHarness();
+
+    await vi.waitFor(() => expect(getState().hardwareConsole.isConsoleOwner).toBe(false));
+    expect(bridge.invoke).toHaveBeenCalledWith('hardware-console:get-owner-status');
+    expect(bridge.on).toHaveBeenCalledWith('hardware-console:owner-changed', expect.any(Function));
+
+    bridge.pushOwnerChanged(true);
+    await vi.waitFor(() => expect(getState().hardwareConsole.isConsoleOwner).toBe(true));
+    bridge.pushOwnerChanged(false);
+    await vi.waitFor(() => expect(getState().hardwareConsole.isConsoleOwner).toBe(false));
+
+    task.cancel();
+    await task.toPromise();
+    expect(bridge.listenerCount()).toBe(0);
   });
 
   it('resets and cancels the encoder HUD inactivity timer from actions', async () => {
