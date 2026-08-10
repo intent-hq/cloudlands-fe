@@ -245,21 +245,23 @@ export function getFileName(filePath: string): string {
 }
 
 /**
- * Unwrap a single-field JSON envelope: an object with exactly one key whose
- * value is a string (commonly `output` or `text`) displays as that string
- * instead of the JSON object wrapping it.
+ * Unwrap a single-field JSON envelope: an object whose only key is `output`
+ * with a string value displays as that string instead of the JSON object
+ * wrapping it. Restricted to the known envelope key so legitimate
+ * single-field domain payloads (e.g. `{"title": "..."}` task results) keep
+ * their JSON shape for tool-specific parsers downstream.
  */
 function unwrapSingleStringField(obj: Record<string, unknown>): string | null {
   const keys = Object.keys(obj);
-  if (keys.length === 1 && typeof obj[keys[0]] === 'string') {
+  if (keys.length === 1 && keys[0] === 'output' && typeof obj[keys[0]] === 'string') {
     return obj[keys[0]] as string;
   }
   return null;
 }
 
 /**
- * If `text` is a JSON object with exactly one string field, return that
- * field's value; otherwise return `text` unchanged.
+ * If `text` is a JSON object whose only field is a string `output`, return
+ * that field's value; otherwise return `text` unchanged.
  */
 function unwrapJsonEnvelope(text: string): string {
   const trimmed = text.trim();

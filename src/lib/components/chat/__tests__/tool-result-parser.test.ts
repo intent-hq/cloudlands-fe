@@ -282,10 +282,24 @@ describe('tool-result-parser', () => {
     });
 
     it('does not unwrap a single-field object whose value is not a string', () => {
-      const result = parseToolResult('some_mcp_tool', {}, '{"count": 42}');
+      const result = parseToolResult('some_mcp_tool', {}, '{"output": 42}');
 
       expect(result.type).toBe('confirmation');
-      expect(result.content).toBe('{"count": 42}');
+      expect(result.content).toBe('{"output": 42}');
+    });
+
+    it('does not unwrap a single string field whose key is not output', () => {
+      const result = parseToolResult('some_mcp_tool', {}, '{"title": "My task"}');
+
+      expect(result.type).toBe('confirmation');
+      expect(result.content).toBe('{"title": "My task"}');
+    });
+
+    it('keeps single-field JSON task payloads intact for the task parser', () => {
+      const result = parseToolResult('get_task', { taskId: 't-1' }, '{"title": "My task"}');
+
+      expect(result.type).toBe('task');
+      expect(result.taskTitle).toBe('My task');
     });
 
     it('does not unwrap JSON arrays', () => {
