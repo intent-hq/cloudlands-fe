@@ -23,9 +23,14 @@
     onChange: (effort: string | undefined) => void;
     /** Test hook on the wrapper so suites can scope queries to one row. */
     testId?: string;
+    /**
+     * Render a visible "Effort" label before the dropdown (styled like the
+     * adjacent model labels) instead of the default sr-only one.
+     */
+    showLabel?: boolean;
   }
 
-  let { model, value, onChange, testId }: Props = $props();
+  let { model, value, onChange, testId, showLabel = false }: Props = $props();
 
   const triggerId = `effort-select-${crypto.randomUUID()}`;
 
@@ -51,24 +56,39 @@
   }
 </script>
 
-{#if hasLevels}
-  <div class="shrink-0 w-[110px]" data-testid={testId}>
-    <label class="sr-only" for={triggerId}>{m.settings_aiBehavior_effort_label()}</label>
-    <Select.Root value={selectedValue} onchange={handleChange}>
-      <Select.Trigger id={triggerId} class="h-8 py-1">
-        <span class="truncate">{selectedLabel}</span>
-      </Select.Trigger>
-      <Select.Content portal class="max-h-[300px] w-[110px]">
-        <Select.Item value="">
-          <span class="truncate">{m.settings_aiBehavior_effort_default_label()}</span>
+{#snippet effortDropdown()}
+  <Select.Root value={selectedValue} onchange={handleChange}>
+    <Select.Trigger id={triggerId} class="h-8 py-1">
+      <span class="truncate">{selectedLabel}</span>
+    </Select.Trigger>
+    <Select.Content portal class="max-h-[300px] w-[110px]">
+      <Select.Item value="">
+        <span class="truncate">{m.settings_aiBehavior_effort_default_label()}</span>
+      </Select.Item>
+      {#each levels as level (level)}
+        <Select.Item value={level}>
+          <!-- i18n-ignore (provider-interpreted wire level id) -->
+          <span class="truncate">{level}</span>
         </Select.Item>
-        {#each levels as level (level)}
-          <Select.Item value={level}>
-            <!-- i18n-ignore (provider-interpreted wire level id) -->
-            <span class="truncate">{level}</span>
-          </Select.Item>
-        {/each}
-      </Select.Content>
-    </Select.Root>
-  </div>
+      {/each}
+    </Select.Content>
+  </Select.Root>
+{/snippet}
+
+{#if hasLevels}
+  {#if showLabel}
+    <div class="flex items-center gap-3 shrink-0" data-testid={testId}>
+      <label class="text-sm font-medium text-foreground shrink-0" for={triggerId}>
+        {m.settings_aiBehavior_effort_label()}
+      </label>
+      <div class="w-[110px]">
+        {@render effortDropdown()}
+      </div>
+    </div>
+  {:else}
+    <div class="shrink-0 w-[110px]" data-testid={testId}>
+      <label class="sr-only" for={triggerId}>{m.settings_aiBehavior_effort_label()}</label>
+      {@render effortDropdown()}
+    </div>
+  {/if}
 {/if}
