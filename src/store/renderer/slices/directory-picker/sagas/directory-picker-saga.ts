@@ -1,5 +1,4 @@
-import type { Task } from 'redux-saga';
-import { call, cancel, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, takeLatest, takeLeading, type SagaGenerator } from 'typed-redux-saga';
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
@@ -7,8 +6,8 @@ import { m } from '$shared/paraglide/messages.js';
 import {
   directoryListingFailed,
   directoryListingLoaded,
-	createDirectoryFailed,
-	createDirectoryRequested,
+  createDirectoryFailed,
+  createDirectoryRequested,
   loadDirectoryRequested,
   navigateToPathRequested,
   pathNavigationFailed,
@@ -16,22 +15,12 @@ import {
 } from '../directory-picker-slice';
 
 const logger = createLogger('DirectoryPickerSaga');
-const HOME_KEY = '<home>';
-
-type TrackedTask = { task: Task; token: symbol };
-
-function requestedPathOf(action: { payload?: unknown }): string | null {
-  if (!Array.isArray(action.payload)) return null;
-  const raw = action.payload[0];
-  return typeof raw === 'string' ? raw : null;
-}
-
 function isMissingPathError(message: string): boolean {
   const lower = message.toLowerCase();
   return (
-    lower.includes('enoent')
-    || lower.includes('os error 2')
-    || lower.includes('no such file or directory')
+    lower.includes('enoent') ||
+    lower.includes('os error 2') ||
+    lower.includes('no such file or directory')
   );
 }
 
@@ -48,7 +37,7 @@ function* loadDirectory(requestedPath: string | null): SagaGenerator<void> {
     logger.warn('host.listDirectory failed', { requestedPath, error: message });
     if (requestedPath !== null && isMissingPathError(message)) {
       logger.info('initial path missing; falling back to daemon-host home', { requestedPath });
-      yield* put(loadDirectoryRequested());
+      yield* call(loadDirectory, null);
     } else {
       yield* put(directoryListingFailed(requestedPath, message));
     }
@@ -66,87 +55,41 @@ function* navigateToTypedPath(path: string): SagaGenerator<void> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('host.listDirectory failed for typed path', { path, error: message });
-    const hint = isMissingPathError(message) ? m.onboarding_dirPicker_pathNotFound_error() : message;
+    const hint = isMissingPathError(message)
+      ? m.onboarding_dirPicker_pathNotFound_error()
+      : message;
     yield* put(pathNavigationFailed(path, hint));
   }
 }
 
 function* createDirectory(path: string): SagaGenerator<void> {
-	try {
-		yield* call(backendRequest, 'host.createDirectory', { path });
-		yield* put(loadDirectoryRequested(path));
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		logger.warn('host.createDirectory failed', { path, error: message });
-		yield* put(createDirectoryFailed(path, message));
-	}
+  try {
+    yield* call(backendRequest, 'host.createDirectory', { path });
+    yield* put(loadDirectoryRequested(path));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('host.createDirectory failed', { path, error: message });
+    yield* put(createDirectoryFailed(path, message));
+  }
+}
+
+function* loadDirectoryWorker(action: ReturnType<typeof loadDirectoryRequested>) {
+  const [requestedPath] = action.payload;
+  yield* call(loadDirectory, requestedPath ?? null);
+}
+
+function* navigateToPathWorker(action: ReturnType<typeof navigateToPathRequested>) {
+  const [path] = action.payload;
+  if (path) yield* call(navigateToTypedPath, path);
+}
+
+function* createDirectoryWorker(action: ReturnType<typeof createDirectoryRequested>) {
+  const [path] = action.payload;
+  if (path) yield* call(createDirectory, path);
 }
 
 export function* directoryPickerSaga(): SagaGenerator<void> {
-  const loadTasks = new Map<string, TrackedTask>();
-  let navigationTask: TrackedTask | undefined;
-	let createTask: TrackedTask | undefined;
-
-  try {
-    while (true) {
-      const action: { type: string; payload?: unknown } = yield* take([
-        loadDirectoryRequested,
-        navigateToPathRequested,
-			createDirectoryRequested,
-      ]);
-
-		if (action.type === createDirectoryRequested.type) {
-			const path = requestedPathOf(action);
-			if (!path) continue;
-			if (createTask) yield* cancel(createTask.task);
-
-			const token = Symbol(path);
-			const task = yield* fork(function* () {
-				try {
-					yield* call(createDirectory, path);
-				} finally {
-					if (createTask?.token === token) createTask = undefined;
-				}
-			});
-			createTask = { task, token };
-			continue;
-		}
-
-      if (action.type === navigateToPathRequested.type) {
-        const path = requestedPathOf(action);
-        if (!path) continue;
-        if (navigationTask) yield* cancel(navigationTask.task);
-
-        const token = Symbol(path);
-        const task = yield* fork(function* () {
-          try {
-            yield* call(navigateToTypedPath, path);
-          } finally {
-            if (navigationTask?.token === token) navigationTask = undefined;
-          }
-        });
-        navigationTask = { task, token };
-        continue;
-      }
-
-      const requestedPath = requestedPathOf(action);
-      const key = requestedPath ?? HOME_KEY;
-      if (loadTasks.has(key)) continue;
-
-      const token = Symbol(key);
-      const task = yield* fork(function* () {
-        try {
-          yield* call(loadDirectory, requestedPath);
-        } finally {
-          if (loadTasks.get(key)?.token === token) loadTasks.delete(key);
-        }
-      });
-      loadTasks.set(key, { task, token });
-    }
-  } finally {
-    if (navigationTask) yield* cancel(navigationTask.task);
-		if (createTask) yield* cancel(createTask.task);
-    for (const tracked of loadTasks.values()) yield* cancel(tracked.task);
-    loadTasks.clear();
-  }
+  yield* takeLeading(loadDirectoryRequested, loadDirectoryWorker);
+  yield* takeLatest(navigateToPathRequested, navigateToPathWorker);
+  yield* takeLatest(createDirectoryRequested, createDirectoryWorker);
 }

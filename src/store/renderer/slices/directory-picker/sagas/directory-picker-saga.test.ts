@@ -14,6 +14,7 @@ vi.mock('$lib/utils/client-logger', () => ({
 
 import { m } from '$shared/paraglide/messages.js';
 import {
+  createDirectoryRequested,
   loadDirectoryRequested,
   navigateToPathRequested,
   type DirectoryPickerListing,
@@ -21,10 +22,7 @@ import {
 import { directoryPickerSaga } from './directory-picker-saga';
 
 const settle = async () => {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let index = 0; index < 8; index += 1) await Promise.resolve();
 };
 
 function deferred<T>() {
@@ -76,9 +74,7 @@ describe('directoryPickerSaga', () => {
     channel.put(loadDirectoryRequested('/Users/me/code'));
     await settle();
 
-    expect(mocks.request.mock.calls).toEqual([
-      ['host.listDirectory', { path: '/Users/me/code' }],
-    ]);
+    expect(mocks.request.mock.calls).toEqual([['host.listDirectory', { path: '/Users/me/code' }]]);
     expect(dispatched).toEqual([
       {
         type: 'directoryPicker/listingLoaded',
@@ -138,15 +134,12 @@ describe('directoryPickerSaga', () => {
       ['host.listDirectory', { path: '/gone' }],
       ['host.listDirectory', {}],
     ]);
-    expect(dispatched).toEqual([
-      { type: 'directoryPicker/loadRequested', payload: [] },
-      { type: 'directoryPicker/listingLoaded', payload: [null, home] },
-    ]);
+    expect(dispatched).toEqual([{ type: 'directoryPicker/listingLoaded', payload: [null, home] }]);
     task.cancel();
     await task.toPromise();
   });
 
-  it('coalesces same-path loads but permits different paths concurrently', async () => {
+  it('uses global leading arbitration for loads across different paths', async () => {
     const first = deferred<DirectoryPickerListing>();
     const second = deferred<DirectoryPickerListing>();
     mocks.request.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
@@ -157,23 +150,28 @@ describe('directoryPickerSaga', () => {
     channel.put(loadDirectoryRequested('/two'));
     await settle();
 
-    expect(mocks.request.mock.calls).toEqual([
-      ['host.listDirectory', { path: '/one' }],
-      ['host.listDirectory', { path: '/two' }],
-    ]);
+    expect(mocks.request.mock.calls).toEqual([['host.listDirectory', { path: '/one' }]]);
     first.resolve(listing('/one'));
-    second.resolve(listing('/two'));
     await settle();
     expect(dispatched).toEqual([
       {
         type: 'directoryPicker/listingLoaded',
         payload: ['/one', listing('/one')],
       },
-      {
-        type: 'directoryPicker/listingLoaded',
-        payload: ['/two', listing('/two')],
-      },
     ]);
+
+    channel.put(loadDirectoryRequested('/two'));
+    await settle();
+    expect(mocks.request.mock.calls).toEqual([
+      ['host.listDirectory', { path: '/one' }],
+      ['host.listDirectory', { path: '/two' }],
+    ]);
+    second.resolve(listing('/two'));
+    await settle();
+    expect(dispatched.at(-1)).toEqual({
+      type: 'directoryPicker/listingLoaded',
+      payload: ['/two', listing('/two')],
+    });
     task.cancel();
     await task.toPromise();
   });
@@ -186,9 +184,7 @@ describe('directoryPickerSaga', () => {
     channel.put(navigateToPathRequested('/Users/me/typed'));
     await settle();
 
-    expect(mocks.request.mock.calls).toEqual([
-      ['host.listDirectory', { path: '/Users/me/typed' }],
-    ]);
+    expect(mocks.request.mock.calls).toEqual([['host.listDirectory', { path: '/Users/me/typed' }]]);
     expect(dispatched).toEqual([
       {
         type: 'directoryPicker/listingLoaded',
@@ -233,7 +229,7 @@ describe('directoryPickerSaga', () => {
     await task.toPromise();
   });
 
-  it('cancels stale typed navigation and ignores an empty-path no-op', async () => {
+  it('uses global latest navigation semantics, including an empty latest payload', async () => {
     const stale = deferred<DirectoryPickerListing>();
     const latest = listing('/latest');
     mocks.request.mockReturnValueOnce(stale.promise).mockResolvedValueOnce(latest);
@@ -251,17 +247,35 @@ describe('directoryPickerSaga', () => {
       ['host.listDirectory', { path: '/stale' }],
       ['host.listDirectory', { path: '/latest' }],
     ]);
+    expect(dispatched).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('creates a directory with the exact wire request before loading it', async () => {
+    const created = listing('/Users/me/new-folder');
+    mocks.request.mockResolvedValueOnce(undefined).mockResolvedValueOnce(created);
+    const { channel, dispatched, task } = harness();
+
+    channel.put(createDirectoryRequested('/Users/me/new-folder'));
+    await settle();
+
+    expect(mocks.request.mock.calls).toEqual([
+      ['host.createDirectory', { path: '/Users/me/new-folder' }],
+      ['host.listDirectory', { path: '/Users/me/new-folder' }],
+    ]);
     expect(dispatched).toEqual([
+      { type: 'directoryPicker/loadRequested', payload: ['/Users/me/new-folder'] },
       {
         type: 'directoryPicker/listingLoaded',
-        payload: ['/latest', latest],
+        payload: ['/Users/me/new-folder', created],
       },
     ]);
     task.cancel();
     await task.toPromise();
   });
 
-  it('cleans up pending keyed work without dispatching on root cancellation', async () => {
+  it('cleans up pending work without dispatching on root cancellation', async () => {
     const pending = deferred<DirectoryPickerListing>();
     mocks.request.mockReturnValue(pending.promise);
     const { channel, dispatched, task } = harness();
@@ -273,9 +287,7 @@ describe('directoryPickerSaga', () => {
     pending.resolve(listing('/pending'));
     await settle();
 
-    expect(mocks.request.mock.calls).toEqual([
-      ['host.listDirectory', { path: '/pending' }],
-    ]);
+    expect(mocks.request.mock.calls).toEqual([['host.listDirectory', { path: '/pending' }]]);
     expect(dispatched).toEqual([]);
   });
 });

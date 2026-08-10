@@ -55,22 +55,19 @@ function note(overrides: Partial<Note> = {}): Note {
   };
 }
 
-function harness(seed = note()) {
+function harness(seed: Note | Note[] = note()) {
   const channel = stdChannel();
   const actions: Parameters<typeof workspaceNotesReducer>[1][] = [];
   let workspaceNotes = workspaceNotesReducer(
     undefined,
-    loadWorkspaceNotesSucceeded([WS], { [WS]: [seed] }),
+    loadWorkspaceNotesSucceeded([WS], { [WS]: Array.isArray(seed) ? seed : [seed] }),
   );
   const dispatch = (action: Parameters<typeof workspaceNotesReducer>[1]) => {
     workspaceNotes = workspaceNotesReducer(workspaceNotes, action);
     actions.push(action);
     return action;
   };
-  const task = runSaga(
-    { channel, dispatch, getState: () => ({ workspaceNotes }) },
-    notesWriteSaga,
-  );
+  const task = runSaga({ channel, dispatch, getState: () => ({ workspaceNotes }) }, notesWriteSaga);
   return { actions, channel, getState: () => workspaceNotes, task };
 }
 
@@ -106,27 +103,32 @@ describe('notesWriteSaga', () => {
     await run.task.toPromise();
   });
 
-  it('waits exactly 800 ms and coalesces consecutive content writes to the latest value', async () => {
+  it('waits exactly 800 ms and uses global latest semantics across note payload keys', async () => {
     vi.useFakeTimers();
     const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({ success: true });
-    const run = harness();
+    const run = harness([note(), note({ id: NoteId('note-2'), rev: 9 })]);
 
     run.channel.put(updateNoteContent(WS, NOTE, 'a'));
     run.channel.put(updateNoteContent(WS, NOTE, 'ab'));
-    run.channel.put(updateNoteContent(WS, NOTE, 'abc'));
+    run.channel.put(updateNoteContent(WS, 'note-2', 'latest'));
     await settle();
 
     await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS - 1);
     expect(setContent.mock.calls).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     await settle();
-    expect(setContent.mock.calls).toEqual([[NOTE, 'abc', 4, WS]]);
+    expect(setContent.mock.calls).toEqual([['note-2', 'latest', 9, WS]]);
     run.task.cancel();
     await run.task.toPromise();
   });
 
   it('creates with the exact request and reconciles the optimistic note to the canonical note', async () => {
-    const created = note({ id: NoteId('note-created'), title: 'Fresh', content: '', tags: ['tag'] });
+    const created = note({
+      id: NoteId('note-created'),
+      title: 'Fresh',
+      content: '',
+      tags: ['tag'],
+    });
     const wireCreated = {
       ...created,
       is_pinned: true,
@@ -141,9 +143,9 @@ describe('notesWriteSaga', () => {
     run.channel.put(createNote(WS, { title: 'Fresh', content: '', tags: ['tag'] }));
     await settle();
 
-    expect(create.mock.calls).toEqual([[
-      { workspaceId: WS, title: 'Fresh', content: '', tags: ['tag'] },
-    ]]);
+    expect(create.mock.calls).toEqual([
+      [{ workspaceId: WS, title: 'Fresh', content: '', tags: ['tag'] }],
+    ]);
     expect(list.mock.calls).toEqual([[WS]]);
     expect(run.actions.slice(-2)).toEqual([
       loadWorkspaceNotesSucceeded([WS], { [WS]: [note(), created] }),
@@ -165,9 +167,7 @@ describe('notesWriteSaga', () => {
     run.channel.put(createNote(WS, { title: 'Fresh', content: '' }));
     await settle();
 
-    expect(create.mock.calls).toEqual([[
-      { workspaceId: WS, title: 'Fresh', content: '' },
-    ]]);
+    expect(create.mock.calls).toEqual([[{ workspaceId: WS, title: 'Fresh', content: '' }]]);
     expect(list.mock.calls).toEqual([]);
     expect(run.getState().byWorkspaceId[WS]?.notes.ids.map(String)).toEqual([NOTE]);
     run.task.cancel();
@@ -189,9 +189,9 @@ describe('notesWriteSaga', () => {
     run.channel.put(createNoteRequested(WS));
     await settle();
 
-    expect(create.mock.calls).toEqual([[
-      { workspaceId: WS, title: 'New Note', content: '', tags: [] },
-    ]]);
+    expect(create.mock.calls).toEqual([
+      [{ workspaceId: WS, title: 'New Note', content: '', tags: [] }],
+    ]);
     expect(list.mock.calls).toEqual([[WS]]);
     const orderedSuccess = run.actions.filter((action) => {
       if (action.type === addOptimisticNote.type) {
