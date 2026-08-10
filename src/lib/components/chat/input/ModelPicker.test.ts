@@ -891,6 +891,35 @@ describe('ModelPicker availability gating', () => {
     expect(screen.getByText('No provider available')).toBeTruthy();
   });
 
+  it('passes a stable toast id so no-provider toasts from multiple instances or re-fires collapse into one', async () => {
+    // Regression (intent-hq/monorepo#1856): the per-instance dedupe flag does
+    // not prevent stacking across mounted pickers or condition flickers — the
+    // stable svelte-sonner id is the authoritative dedupe.
+    const { toast } = await import('svelte-sonner');
+    availableProviderOverride$.set([]);
+
+    render(ModelPicker, { props: { portal: false } });
+    render(ModelPicker, { props: { portal: false } });
+
+    await waitFor(() => {
+      expect(vi.mocked(toast.error).mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    // Flicker the condition false -> true to re-fire the toast.
+    availableProviderOverride$.set(['auggie']);
+    await new Promise((r) => setTimeout(r, 20));
+    availableProviderOverride$.set([]);
+
+    const callsSoFar = vi.mocked(toast.error).mock.calls.length;
+    await waitFor(() => {
+      expect(vi.mocked(toast.error).mock.calls.length).toBeGreaterThan(callsSoFar);
+    });
+
+    for (const call of vi.mocked(toast.error).mock.calls) {
+      expect((call[1] as { id?: string } | undefined)?.id).toBe('no-provider-available');
+    }
+  });
+
   it('gives the no-provider toast an action that opens provider settings', async () => {
     const { toast } = await import('svelte-sonner');
     const { navigateToSettings } = await import('$lib/utils/workspace-navigation');

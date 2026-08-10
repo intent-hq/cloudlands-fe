@@ -881,6 +881,9 @@
       $availableEnabledProviderIds$.length === 0,
   );
 
+  // Per-instance call-frequency guard only; the stable toast id below is the
+  // authoritative dedupe — every mounted ModelPicker (and every re-fire of the
+  // condition) updates the same single toast instead of stacking a new one.
   let noProviderToastShown = false;
 
   $effect(() => {
@@ -888,6 +891,7 @@
       if (!noProviderToastShown) {
         noProviderToastShown = true;
         toast.error(m.chat_modelPicker_noProviderAvailable_toast(), {
+          id: 'no-provider-available',
           duration: 6000,
           action: {
             label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
