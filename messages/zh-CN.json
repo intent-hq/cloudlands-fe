@@ -3009,6 +3009,7 @@
   "onboarding_promptStep_promptSuggestions_ariaLabel": "提示词建议",
   "onboarding_promptStep_enhancePrompt_tooltip": "增强提示词  ⌘E",
   "onboarding_promptStep_addFiles_tooltip": "添加文件",
+  "onboarding_promptStep_dropFiles_label": "拖放文件到此处",
   "onboarding_promptStep_branchOffOf_before": "基于以下分支创建",
   "onboarding_promptStep_branchOff_label": "创建分支",
   "onboarding_promptStep_setupEnvWith_before": "设置环境，使用",

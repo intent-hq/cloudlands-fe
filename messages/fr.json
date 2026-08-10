@@ -3009,6 +3009,7 @@
   "onboarding_promptStep_promptSuggestions_ariaLabel": "Suggestions de prompts",
   "onboarding_promptStep_enhancePrompt_tooltip": "Améliorer le prompt  ⌘E",
   "onboarding_promptStep_addFiles_tooltip": "Ajouter des fichiers",
+  "onboarding_promptStep_dropFiles_label": "Déposer les fichiers ici",
   "onboarding_promptStep_branchOffOf_before": "Créer une branche depuis",
   "onboarding_promptStep_branchOff_label": "Créer une branche",
   "onboarding_promptStep_setupEnvWith_before": "Configurer l'environnement avec",

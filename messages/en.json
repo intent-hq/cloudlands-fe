@@ -3010,6 +3010,7 @@
   "onboarding_promptStep_promptSuggestions_ariaLabel": "Prompt suggestions",
   "onboarding_promptStep_enhancePrompt_tooltip": "Enhance prompt  ⌘E",
   "onboarding_promptStep_addFiles_tooltip": "Add files",
+  "onboarding_promptStep_dropFiles_label": "Drop files here",
   "onboarding_promptStep_branchOffOf_before": "Branch off of",
   "onboarding_promptStep_branchOff_label": "Branch off",
   "onboarding_promptStep_setupEnvWith_before": "Set up environment with",

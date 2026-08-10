@@ -3009,6 +3009,7 @@
   "onboarding_promptStep_promptSuggestions_ariaLabel": "프롬프트 제안",
   "onboarding_promptStep_enhancePrompt_tooltip": "프롬프트 개선  ⌘E",
   "onboarding_promptStep_addFiles_tooltip": "파일 추가",
+  "onboarding_promptStep_dropFiles_label": "여기에 파일을 드롭하세요",
   "onboarding_promptStep_branchOffOf_before": "분기 기준:",
   "onboarding_promptStep_branchOff_label": "분기",
   "onboarding_promptStep_setupEnvWith_before": "환경 설정에",

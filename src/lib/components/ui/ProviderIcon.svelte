@@ -1,3 +1,23 @@
+<script context="module" lang="ts">
+  /** Known provider IDs that have icons defined in this component */
+  const KNOWN_PROVIDER_IDS = new Set([
+    'auggie',
+    'claude-code',
+    'codex',
+    'opencode',
+    'droid',
+    'grok',
+    'unsloth',
+    'cortex',
+    'pi',
+  ]);
+
+  /** Check if a provider ID has a known icon */
+  export function hasProviderIcon(providerId: string | undefined): boolean {
+    return providerId !== undefined && KNOWN_PROVIDER_IDS.has(providerId);
+  }
+</script>
+
 <script lang="ts">
   import GrokLogo from '$lib/components/ui/GrokLogo.svelte';
   import Logo from '$lib/components/Logo.svelte';

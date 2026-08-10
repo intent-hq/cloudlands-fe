@@ -149,6 +149,10 @@
   let onboardingFileInput: HTMLInputElement | null = $state(null);
   let richTextareaWrapper: HTMLDivElement | null = $state(null);
 
+  // Drag and drop state
+  let isDragging = $state(false);
+  let dragCounter = $state(0);
+
   // Daemon-resolved default-model preview for the Coordinator (PROTOCOL
   // §5.11): `specialist.list` with the onboarding provider context returns
   // additive `resolvedModel` fields computed by the same resolver a no-model
@@ -209,6 +213,12 @@
     const target = e.target as HTMLInputElement;
     const files = target.files;
     if (!files || files.length === 0) return;
+    await processImageFiles(Array.from(files));
+    target.value = '';
+  }
+
+  /** Process image files from file input or drag-and-drop */
+  async function processImageFiles(files: File[]) {
     const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
     for (const file of files) {
       if (file.size > MAX_FILE_SIZE) {
@@ -224,7 +234,45 @@
         reader.readAsDataURL(file);
       }
     }
-    target.value = '';
+  }
+
+  /** Handle drag enter - track drag state with counter for nested elements */
+  function handleDragEnter(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter++;
+    if (e.dataTransfer?.types.includes('Files')) {
+      isDragging = true;
+    }
+  }
+
+  /** Handle drag leave - decrement counter and clear drag state when leaving container */
+  function handleDragLeave(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter--;
+    if (dragCounter === 0) {
+      isDragging = false;
+    }
+  }
+
+  /** Handle drag over - required to allow drop */
+  function handleDragOver(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  /** Handle drop - process dropped files */
+  async function handleDrop(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    isDragging = false;
+    dragCounter = 0;
+
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+
+    await processImageFiles(Array.from(files));
   }
 
   /**
@@ -305,8 +353,26 @@
         onchange={handleFileChange}
       />
       <div
-        class="relative rich-input-container flex flex-col bg-background rounded-xl border border-border shadow-xs transition-colors overflow-hidden"
+        class="relative rich-input-container flex flex-col bg-background rounded-xl border shadow-xs transition-colors overflow-hidden {isDragging
+          ? 'border-primary border-dashed'
+          : 'border-border'}"
+        ondragenter={handleDragEnter}
+        ondragleave={handleDragLeave}
+        ondragover={handleDragOver}
+        ondrop={handleDrop}
       >
+        <!-- Drop zone overlay -->
+        {#if isDragging}
+          <div
+            class="absolute inset-0 bg-primary/5 z-20 flex items-center justify-center pointer-events-none rounded-xl"
+          >
+            <div class="flex flex-col items-center gap-2 text-primary">
+              <Fa icon={faPaperclip} size={24} />
+              <span class="text-sm font-medium">{m.onboarding_promptStep_dropFiles_label()}</span>
+            </div>
+          </div>
+        {/if}
+
         <div
           class="w-full relative overflow-hidden rounded-t-xl"
           bind:this={richTextareaWrapper}
@@ -560,7 +626,7 @@
 
       <!-- Model picker (initial Coordinator agent) -->
       <div
-        class="flex items-center gap-0.5 text-sm"
+        class="flex items-center gap-1.5 text-sm"
         in:fly={{ y: 10, duration: 200, easing: cubicOut }}
       >
         <span class="text-muted-foreground">{m.onboarding_promptStep_usingModel_before()}</span>

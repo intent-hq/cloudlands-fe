@@ -3009,6 +3009,7 @@
   "onboarding_promptStep_promptSuggestions_ariaLabel": "プロンプトの提案",
   "onboarding_promptStep_enhancePrompt_tooltip": "プロンプトを強化  ⌘E",
   "onboarding_promptStep_addFiles_tooltip": "ファイルを追加",
+  "onboarding_promptStep_dropFiles_label": "ここにファイルをドロップ",
   "onboarding_promptStep_branchOffOf_before": "分岐元:",
   "onboarding_promptStep_branchOff_label": "分岐",
   "onboarding_promptStep_setupEnvWith_before": "環境のセットアップに",
