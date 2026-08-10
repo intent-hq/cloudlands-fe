@@ -513,6 +513,22 @@ describe('cycle-unread-agents HUD remaining count', () => {
     ]);
   });
 
+  it('counts one remaining stop per other unread workspace regardless of its agent count', () => {
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1', 'a-2'], activeAgentId: null },
+        'ws-2': { ids: ['b-1', 'b-2'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-1', 'ws-2'],
+    });
+    const { context, dispatch } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(hudDispatches(dispatch)).toEqual([
+      [m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one({ count: 1 })],
+    ]);
+  });
+
   it('other cycle families keep their plain label regardless of remaining count', () => {
     const state = makeState({
       agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'a-2', 'a-3'], activeAgentId: null } },
@@ -626,6 +642,69 @@ describe('cycle-unread-agents union (unread workspaces + attention requests)', (
     expect(activeAgentDispatches(dispatch)).toEqual([
       ['ws-1', 'a-1'],
       ['ws-1', 'a-1'],
+    ]);
+  });
+});
+
+describe('cycle-unread-agents last-active pick (intent-hq/monorepo#1779)', () => {
+  it('opens the last active top-level agent of an unread workspace, not the first in order', () => {
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'], activeAgentId: 'a-1' },
+        'ws-2': { ids: ['b-1', 'b-2', 'b-3'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-2'],
+      sessionOverrides: {
+        'b-1': { lastActivity: '2026-08-01T08:00:00.000Z' },
+        'b-2': { stopReasonTimestamp: '2026-08-01T12:00:00.000Z' },
+        'b-3': { lastActivity: '2026-08-01T10:00:00.000Z' },
+      },
+    });
+    const { context, dispatch, navigate } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(activeAgentDispatches(dispatch)).toEqual([['ws-2', 'b-2']]);
+  });
+
+  it('falls back to the first foreground agent when no recency signal exists', () => {
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'], activeAgentId: 'a-1' },
+        'ws-2': { ids: ['b-1', 'b-2'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-2'],
+    });
+    const { context, dispatch } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([['ws-2', 'b-1']]);
+  });
+
+  it('each unread workspace contributes exactly one stop — siblings are never visited', () => {
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1', 'a-2'], activeAgentId: null },
+        'ws-2': { ids: ['b-1', 'b-2'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-1', 'ws-2'],
+      sessionOverrides: {
+        'a-2': { lastActivity: '2026-08-01T10:00:00.000Z' },
+        'b-1': { lastActivity: '2026-08-01T11:00:00.000Z' },
+      },
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-1', 'a-2'],
+      ['ws-2', 'b-1'],
+      ['ws-1', 'a-2'],
+      ['ws-2', 'b-1'],
     ]);
   });
 });
