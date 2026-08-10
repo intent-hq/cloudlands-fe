@@ -61,6 +61,7 @@ async function buildState(
     }
   >,
   npxStatus: { resolvedPath: string | null; versionOk: boolean | null } | null = null,
+  enabledProviders: Record<string, boolean> = { auggie: true },
 ) {
   const { initialState: specialistsInitialState } =
     await import('$store/renderer/slices/specialists/specialists-slice');
@@ -83,7 +84,7 @@ async function buildState(
     ),
     providerSettings: {
       activeProviderId: 'auggie',
-      enabledProviders: {},
+      enabledProviders,
       defaultProviderId: MOCK_PROVIDER_CATALOG.defaultProviderId,
       nonDisableableProviderIds: [],
     },
@@ -125,7 +126,7 @@ describe('ProviderSelector progressive rendering', () => {
   });
 
   it('renders catalog rows immediately while every probe is still in flight', async () => {
-    mocks.state.current = await buildState({});
+    mocks.state.current = await buildState({}, null, { codex: true });
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
 
@@ -136,6 +137,22 @@ describe('ProviderSelector progressive rendering', () => {
     }
     expect(result.queryByText('Mock (E2E)')).toBeNull();
     expect(result.queryByText('Snowflake Cortex')).toBeNull();
+
+    expect(
+      result.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent?.trim()),
+    ).toEqual(['Enabled', 'Not Detected']);
+    const enabledCard = result.getByRole('region', { name: 'Enabled' });
+    const enabledText = enabledCard.textContent ?? '';
+    expect(enabledText.indexOf('Augment Auggie')).toBeLessThan(enabledText.indexOf('OpenAI Codex'));
+    expect(result.getByRole('region', { name: 'Not Detected' }).textContent).not.toContain(
+      'Augment Auggie',
+    );
+    expect(result.queryByRole('heading', { name: 'Available' })).toBeNull();
+    expect(
+      result.container.querySelector(
+        '[role="region"][aria-labelledby="provider-group-discovered"]',
+      ),
+    ).toBeNull();
 
     expect(result.queryByTitle('Configure Anthropic Claude Code path')).toBeNull();
     await fireEvent.click(
@@ -154,6 +171,21 @@ describe('ProviderSelector progressive rendering', () => {
     });
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
+
+    const groupHeadings = result.getAllByRole('heading', { level: 2 });
+    expect(groupHeadings.map((heading) => heading.textContent?.trim())).toEqual([
+      'Enabled',
+      'Available',
+      'Not Detected',
+    ]);
+    const providerCards = result.getAllByRole('region');
+    expect(providerCards).toHaveLength(3);
+    expect(providerCards.every((card) => card?.classList.contains('bg-card'))).toBe(true);
+    expect(groupHeadings.every((heading) => heading.closest('[role="region"]') === null)).toBe(
+      true,
+    );
+    const availableText = providerCards[1]?.textContent ?? '';
+    expect(availableText.indexOf('OpenAI Codex')).toBeLessThan(availableText.indexOf('OpenCode'));
 
     // Codex settled → inline enable action; login status/actions stay in menus.
     await waitFor(() => {
