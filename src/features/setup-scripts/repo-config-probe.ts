@@ -232,7 +232,13 @@ export function createRepoConfigProbeScheduler(debounceMs = BRANCH_REPROBE_DEBOU
         preservedRestoredState =
           isInitialMount && !!untrack(probeOptions.getSetupScript).trim();
         onRepoChange({ isInitialMount, preservedRestoredState });
-        inFlight = probeRepoConfigSetupScript({ ...probeOptions, preservedRestoredState });
+        // `.catch` keeps the "never rejects" contract of `settled()`
+        // structural: a throwing probe callback must not fail
+        // `workspace.create`.
+        inFlight = probeRepoConfigSetupScript({
+          ...probeOptions,
+          preservedRestoredState,
+        }).catch(() => {});
         return;
       }
 
@@ -242,7 +248,10 @@ export function createRepoConfigProbeScheduler(debounceMs = BRANCH_REPROBE_DEBOU
       debounceWait = new Promise<void>((r) => (resolveDebounceWait = r));
       timer = setTimeout(() => {
         timer = null;
-        inFlight = probeRepoConfigSetupScript({ ...probeOptions, preservedRestoredState });
+        inFlight = probeRepoConfigSetupScript({
+          ...probeOptions,
+          preservedRestoredState,
+        }).catch(() => {});
         const resolve = resolveDebounceWait;
         resolveDebounceWait = null;
         debounceWait = null;

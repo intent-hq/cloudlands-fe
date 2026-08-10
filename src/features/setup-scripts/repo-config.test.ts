@@ -281,8 +281,9 @@ describe('resolveSetupScriptParam (monorepo#1862)', () => {
 
   it('does not treat another repo\'s cached config script as the repo-config default', () => {
     // Same content but cached for a different repo — the "unedited repo
-    // config" carve-out does not apply; the untouched-default rule still
-    // omits it.
+    // config" carve-out does not apply, so the user-touched rules take over
+    // and the script is sent (an untouched one would still be omitted by
+    // the default rule).
     expect(
       resolveSetupScriptParam({
         ...base,
