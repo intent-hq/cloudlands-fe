@@ -206,7 +206,7 @@ function selectLocalRepo(repoPath: string) {
   });
 }
 
-/** Drive a GitHub-type selection (URL, no local checkout). */
+/** Drive a GitHub-type selection (picked repo: owner/repo shorthand, no local checkout). */
 function selectGitHubRepo(overrides: Record<string, unknown> = {}) {
   const captured = (
     window as unknown as {
@@ -215,7 +215,7 @@ function selectGitHubRepo(overrides: Record<string, unknown> = {}) {
   ).__mockOnboardingPromptStep;
   captured.onProjectChange({
     type: 'github',
-    repoPath: '/clones/repo',
+    repoPath: 'owner/repo',
     githubUrl: 'https://github.com/owner/repo',
     branch: 'main',
     isValid: true,
@@ -450,6 +450,35 @@ describe('onboarding repo-config setup script detection', () => {
     expect(mocks.workspaceCreate).toHaveBeenCalledWith(
       expect.objectContaining({ setupScript: 'echo repo-config && echo edited' }),
     );
+  });
+
+  it('submits a picked-repo create for GitHub selections: githubUrl only, no repositoryPath/clonePath', async () => {
+    // Picked-repo flow: the daemon hydrates the checkout from its repo
+    // cache. The create request must carry the GitHub URL and MUST NOT
+    // carry a local repositoryPath or any clonePath (the selection's
+    // repoPath is the owner/repo shorthand, not a local path).
+    mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+
+    renderPage();
+    selectGitHubRepo();
+
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.setInputValue('build the thing');
+    captured.onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalled());
+    const request = mocks.workspaceCreate.mock.calls[0][0];
+    expect(request.githubUrl).toBe('https://github.com/owner/repo');
+    expect(request.repositoryPath).toBeUndefined();
+    expect(request).not.toHaveProperty('clonePath');
+    expect(request.baseRef).toBe('main');
   });
 
   it('awaits an in-flight probe at submit and never sends the racing generic template (monorepo#1862)', async () => {
