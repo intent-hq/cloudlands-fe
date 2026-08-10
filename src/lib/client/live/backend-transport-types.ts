@@ -37,6 +37,20 @@ export class BackendError extends Error {
   }
 }
 
+/**
+ * Whether a request failure is a structured daemon error response (the daemon
+ * received the request and rejected it) rather than a transport-level failure
+ * (bridge unavailable, socket drop, request timeout). Callers use this to
+ * decide retry-ability: transport failures are transient, daemon rejections
+ * are not. Duck-typed on the numeric JSON-RPC `rpcCode`, which the transports
+ * thread through ONLY for daemon-issued error responses, so it works
+ * regardless of how the transport layer is mocked in tests.
+ */
+export function isDaemonErrorResponse(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  return typeof (error as { rpcCode?: unknown }).rpcCode === "number";
+}
+
 /** Daemon JSON-RPC notification delivered to `onNotification` handlers. */
 export interface BackendNotification {
   method: string;
