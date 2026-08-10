@@ -138,6 +138,8 @@ export class JsonRpcClient extends EventEmitter {
   private readonly pending = new Map<number, PendingRequest>();
   /** Sticky flag so `reconnected` only fires on the 2nd (or later) successful connect. */
   private hasBeenConnected = false;
+  /** Consecutive reconnect attempts since the last successful connect (#1750). */
+  private reconnectAttempts = 0;
   /** Handlers for daemon-initiated (reverse) requests, keyed by method name. */
   private readonly reverseHandlers = new Map<string, ReverseRequestHandler>();
 
@@ -158,6 +160,16 @@ export class JsonRpcClient extends EventEmitter {
   /** Current connection status. */
   getStatus(): ConnectionStatus {
     return this.status;
+  }
+
+  /**
+   * Number of reconnect attempts made since the last successful connect
+   * (0 while connected / before the first retry). Surfaced to the renderer via
+   * the backend:status broadcast so the daemon-loss UI can show retry progress
+   * (#1750).
+   */
+  getReconnectAttempts(): number {
+    return this.reconnectAttempts;
   }
 
   /** Connection config (transport type and target). */
@@ -362,6 +374,7 @@ export class JsonRpcClient extends EventEmitter {
 
   private finishConnect(): void {
     this.currentReconnectDelay = this.reconnectDelayMs;
+    this.reconnectAttempts = 0;
     const wasReconnect = this.hasBeenConnected;
     this.hasBeenConnected = true;
     this.setStatus('connected');
@@ -503,7 +516,12 @@ export class JsonRpcClient extends EventEmitter {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.currentReconnectDelay = Math.min(delay * 2, this.maxReconnectDelayMs);
-      if (!this.disposed) this.connect();
+      if (!this.disposed) {
+        // Count the retry BEFORE connecting so the 'connecting' status
+        // broadcast carries the up-to-date attempt number (#1750).
+        this.reconnectAttempts += 1;
+        this.connect();
+      }
     }, delay);
   }
 

@@ -159,6 +159,26 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
+  it('passes reconnectAttempts from the status payload into the action extras (#1750)', async () => {
+    const { dispatched, task } = startHealthSaga();
+    await settle();
+    statusHandler!({
+      status: 'connecting',
+      transport: { mode: 'external-ws', target: 'wss:192.168.1.20:5181' },
+      reconnectAttempts: 14,
+    });
+    await settle();
+
+    const actions = statusActions(dispatched) as Array<{
+      payload: [string, unknown, { reconnectAttempts?: number } | undefined];
+    }>;
+    const connecting = actions.find(({ payload: [status] }) => status === 'connecting');
+    expect(connecting).toBeDefined();
+    expect(connecting!.payload[2]?.reconnectAttempts).toBe(14);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('backs off repeated disconnected churn with exponential timing', async () => {
     const transport = { mode: 'external-uds' as const, target: '/tmp/intentd.sock' };
     invoke.mockImplementation((channel: string) => {

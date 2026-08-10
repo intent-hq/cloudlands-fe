@@ -26,6 +26,11 @@ export const selectDaemonTransport = store.createSelector(
   (state) => state.daemonHealth.transport,
 );
 
+/** Reconnect attempts since the last successful connect (#1750). */
+export const selectReconnectAttempts = store.createSelector(
+  (state) => state.daemonHealth.reconnectAttempts,
+);
+
 /**
  * Whether a transport reaches a daemon on THIS machine (PROTOCOL §5.14
  * locality: UDS ⇒ local, WebSocket ⇒ remote). A `null` transport — no
