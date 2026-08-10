@@ -1,4 +1,4 @@
-import { all, call, fork, put, take } from 'typed-redux-saga';
+import { all, call, put, takeEvery, takeLeading } from 'typed-redux-saga';
 
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
@@ -82,30 +82,16 @@ function* runHostRequirementsCheck() {
   }
 }
 
+function* ensureHostRequirementsWorker(_action: ReturnType<typeof ensureHostRequirementsChecked>) {
+  const hasCheckedOnce = yield* selectHostRequirementsHasCheckedOnce.effect();
+  if (!hasCheckedOnce) yield* put(checkHostRequirementsRequested());
+}
+
+function* checkHostRequirementsWorker(_action: ReturnType<typeof checkHostRequirementsRequested>) {
+  yield* call(runHostRequirementsCheck);
+}
+
 export function* hostRequirementsSaga() {
-  let running = false;
-  try {
-    while (true) {
-      const action: ReturnType<
-        typeof ensureHostRequirementsChecked | typeof checkHostRequirementsRequested
-      > = yield* take([ensureHostRequirementsChecked, checkHostRequirementsRequested]);
-
-      if (running) continue;
-      if (action.type === ensureHostRequirementsChecked.type) {
-        const hasCheckedOnce = yield* selectHostRequirementsHasCheckedOnce.effect();
-        if (hasCheckedOnce) continue;
-      }
-
-      running = true;
-      yield* fork(function* () {
-        try {
-          yield* call(runHostRequirementsCheck);
-        } finally {
-          running = false;
-        }
-      });
-    }
-  } finally {
-    running = false;
-  }
+  yield* takeEvery(ensureHostRequirementsChecked, ensureHostRequirementsWorker);
+  yield* takeLeading(checkHostRequirementsRequested, checkHostRequirementsWorker);
 }

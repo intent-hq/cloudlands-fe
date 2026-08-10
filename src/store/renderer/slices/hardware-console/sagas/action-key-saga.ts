@@ -1,4 +1,17 @@
-import { all, call, delay, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import { buffers } from 'redux-saga';
+import {
+  actionChannel,
+  all,
+  call,
+  delay,
+  flush,
+  put,
+  race,
+  take,
+  takeEvery,
+  takeLatest,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import {
   ACTION_HUD_HIDE_MS,
@@ -32,22 +45,11 @@ import { HARDWARE_CONSOLE_SETTINGS_PATH } from '$features/hardware-console/assig
 
 const logger = createLogger('HardwareConsoleActionKeys');
 
-interface PersistenceGate {
-  settled: boolean;
-  succeeded: boolean;
-  mappingQueued: boolean;
-  scopesQueued: boolean;
-}
-
 export interface ActionKeySagaDeps extends ActionKeyDeps {
   manager?: HardwareConsoleManager;
 }
 
-function* persistMapping(gate: PersistenceGate): SagaGenerator<void> {
-  if (!gate.settled) {
-    gate.mappingQueued = true;
-    return;
-  }
+function* persistMapping(_action: ReturnType<typeof setActionKeyMapping>): SagaGenerator<void> {
   try {
     yield* call(
       persistHardwareConsoleActionMapping,
@@ -60,11 +62,7 @@ function* persistMapping(gate: PersistenceGate): SagaGenerator<void> {
   }
 }
 
-function* persistScopes(gate: PersistenceGate): SagaGenerator<void> {
-  if (!gate.settled) {
-    gate.scopesQueued = true;
-    return;
-  }
+function* persistScopes(_action: ReturnType<typeof setCycleScope>): SagaGenerator<void> {
   try {
     yield* call(
       persistHardwareConsoleCycleScopes,
@@ -77,7 +75,7 @@ function* persistScopes(gate: PersistenceGate): SagaGenerator<void> {
   }
 }
 
-function* hydrateActionKeys(gate: PersistenceGate): SagaGenerator<void> {
+function* hydrateActionKeys(): SagaGenerator<boolean> {
   try {
     const hydrated = yield* call(loadHardwareConsoleActionKeySettings);
     yield* put(hydrateHardwareConsoleActionMapping(hydrated.actionMappingByModel));
@@ -85,26 +83,25 @@ function* hydrateActionKeys(gate: PersistenceGate): SagaGenerator<void> {
     if (hydrated.migratedDefaults) {
       yield* call(persistHardwareConsoleActionMapping, hydrated.actionMappingByModel);
     }
-    gate.succeeded = true;
+    return true;
   } catch (error) {
     logger.error('Action-mapping hydration failed; dispatching defaults', { error });
     yield* put(hydrateHardwareConsoleActionMapping(normalizeActionMappingsByModel(undefined)));
     yield* put(hydrateHardwareConsoleCycleScopes(normalizeCycleScopeByFamily(undefined)));
-  } finally {
-    gate.settled = true;
-    const mappingQueued = gate.mappingQueued;
-    const scopesQueued = gate.scopesQueued;
-    gate.mappingQueued = false;
-    gate.scopesQueued = false;
-    if (gate.succeeded && mappingQueued) yield* persistMapping(gate);
-    if (gate.succeeded && scopesQueued) yield* persistScopes(gate);
+    return false;
   }
 }
 
-function* actionHudTimer(action: { type: string }): SagaGenerator<void> {
-  if (action.type !== actionHudShown.type) return;
-  yield* delay(ACTION_HUD_HIDE_MS);
-  yield* put(actionHudHidden());
+function* waitForActionHudHidden(): SagaGenerator<void> {
+  const _action: ReturnType<typeof actionHudHidden> = yield* take(actionHudHidden);
+}
+
+function* actionHudShownWorker(_action: ReturnType<typeof actionHudShown>): SagaGenerator<void> {
+  const { timedOut } = yield* race({
+    timedOut: delay(ACTION_HUD_HIDE_MS),
+    hidden: call(waitForActionHudHidden),
+  });
+  if (timedOut) yield* put(actionHudHidden());
 }
 
 function* focusArmedAgentTab(
@@ -117,21 +114,29 @@ function* focusArmedAgentTab(
   }
 }
 
+function* actionKeyPersistenceSaga(): SagaGenerator<void> {
+  const mappingActions = yield* actionChannel(setActionKeyMapping, buffers.sliding(1));
+  const scopeActions = yield* actionChannel(setCycleScope, buffers.sliding(1));
+  try {
+    const hydrationSucceeded = yield* call(hydrateActionKeys);
+    if (!hydrationSucceeded) {
+      yield* flush(mappingActions);
+      yield* flush(scopeActions);
+    }
+    yield* all([takeEvery(mappingActions, persistMapping), takeEvery(scopeActions, persistScopes)]);
+  } finally {
+    mappingActions.close();
+    scopeActions.close();
+  }
+}
+
 export function* actionKeySaga(deps: ActionKeySagaDeps = {}): SagaGenerator<void> {
   const manager = deps.manager ?? (yield* call(getHardwareConsoleManager));
   const teardown = yield* call(installHardwareConsoleActionKeys, manager, deps);
-  const gate: PersistenceGate = {
-    settled: false,
-    succeeded: false,
-    mappingQueued: false,
-    scopesQueued: false,
-  };
   try {
     yield* all([
-      call(hydrateActionKeys, gate),
-      takeEvery(setActionKeyMapping, persistMapping, gate),
-      takeEvery(setCycleScope, persistScopes, gate),
-      takeLatest([actionHudShown, actionHudHidden], actionHudTimer),
+      call(actionKeyPersistenceSaga),
+      takeLatest(actionHudShown, actionHudShownWorker),
       takeEvery(openAgentTabRequested, focusArmedAgentTab),
     ]);
   } finally {

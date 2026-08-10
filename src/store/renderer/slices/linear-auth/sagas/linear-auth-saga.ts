@@ -80,21 +80,40 @@ function* logout(): SagaGenerator<void> {
   }
 }
 
-function* command(action: { type: string; payload: unknown }): SagaGenerator<void> {
-  if (action.type === connectLinear.type) {
-    const [apiKey] = action.payload as ReturnType<typeof connectLinear>['payload'];
-    yield* call(connect, apiKey);
-  } else if (action.type === logoutLinear.type) {
-    yield* call(logout);
-  } else {
-    yield* call(probe);
-  }
+function* initializeLinearWorker(
+  _action: ReturnType<typeof initializeLinearAuth>,
+): SagaGenerator<void> {
+  yield* call(probe);
+}
+
+function* refreshLinearWorker(
+  _action: ReturnType<typeof refreshLinearAuth>,
+): SagaGenerator<void> {
+  yield* call(probe);
+}
+
+function* startLinearWorker(
+  _action: ReturnType<typeof startLinearAuth>,
+): SagaGenerator<void> {
+  yield* call(probe);
+}
+
+function* connectLinearWorker(
+  action: ReturnType<typeof connectLinear>,
+): SagaGenerator<void> {
+  yield* call(connect, action.payload[0]);
+}
+
+function* logoutLinearWorker(
+  _action: ReturnType<typeof logoutLinear>,
+): SagaGenerator<void> {
+  yield* call(logout);
 }
 
 export function* linearAuthSaga(): SagaGenerator<void> {
-  yield* takeEvery(initializeLinearAuth, command);
-  yield* takeEvery(refreshLinearAuth, command);
-  yield* takeEvery(startLinearAuth, command);
-  yield* takeEvery(connectLinear, command);
-  yield* takeEvery(logoutLinear, command);
+  yield* takeEvery(initializeLinearAuth, initializeLinearWorker);
+  yield* takeEvery(refreshLinearAuth, refreshLinearWorker);
+  yield* takeEvery(startLinearAuth, startLinearWorker);
+  yield* takeEvery(connectLinear, connectLinearWorker);
+  yield* takeEvery(logoutLinear, logoutLinearWorker);
 }

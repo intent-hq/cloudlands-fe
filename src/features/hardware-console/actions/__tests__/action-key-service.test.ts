@@ -506,6 +506,29 @@ describe('action HUD inactivity timer', () => {
       vi.useRealTimers();
     }
   });
+
+  it('cancels the pending timeout when the HUD is hidden explicitly', async () => {
+    vi.useFakeTimers();
+    try {
+      (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+        path: 'hardwareConsole.state',
+        value: {},
+      });
+      const { ACTION_HUD_HIDE_MS } = await import('../action-key-service');
+      const invoke = invokeActionKeySaga();
+      const hudHiddenDispatches = () =>
+        dispatched.filter((action) => action.type === 'hardwareConsole/actionHudHidden');
+
+      invoke({ type: 'hardwareConsole/actionHudShown', payload: ['Cycle idle agents'] });
+      await vi.advanceTimersByTimeAsync(ACTION_HUD_HIDE_MS / 2);
+      invoke({ type: 'hardwareConsole/actionHudHidden', payload: [] });
+      await vi.advanceTimersByTimeAsync(ACTION_HUD_HIDE_MS);
+
+      expect(hudHiddenDispatches()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('installHardwareConsoleActionKeys', () => {
@@ -575,6 +598,42 @@ describe('installHardwareConsoleActionKeys', () => {
 });
 
 describe('persistence key on the daemon bag', () => {
+  it('buffers the latest mapping change until hydration settles', async () => {
+    let resolveHydration!: (value: unknown) => void;
+    (appClient.settings.get as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveHydration = resolve;
+        }),
+      )
+      .mockResolvedValue({ path: 'hardwareConsole.state', value: { keyPins: ['ws-1'] } });
+    const invoke = invokeActionKeySaga();
+    mockState.hardwareConsole.actionMappingByModel = {
+      ...normalizeActionMappingsByModel(undefined),
+      'creator-micro-2': new Array(7).fill('stop-agent'),
+    };
+
+    invoke({
+      type: 'hardwareConsole/setActionKeyMapping',
+      payload: ['creator-micro-2', 0, 'stop-agent'],
+    });
+    await Promise.resolve();
+    expect(appClient.settings.update).not.toHaveBeenCalled();
+
+    resolveHydration({ path: 'hardwareConsole.state', value: { keyPins: ['ws-1'] } });
+    await vi.waitFor(() => {
+      expect(appClient.settings.update).toHaveBeenCalledWith([
+        {
+          path: 'hardwareConsole.state',
+          value: {
+            keyPins: ['ws-1'],
+            actionMappingByModel: mockState.hardwareConsole.actionMappingByModel,
+          },
+        },
+      ]);
+    });
+  });
+
   it('reads/writes actionMappingByModel via the shared hardwareConsole.state path', async () => {
     (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       path: 'hardwareConsole.state',

@@ -22,6 +22,16 @@ const settle = async () => {
   await Promise.resolve();
 };
 
+function harness(hasCheckedOnce = false) {
+  const channel = stdChannel();
+  const dispatch = vi.fn((action) => channel.put(action));
+  const task = runSaga(
+    { channel, dispatch, getState: () => ({ hostRequirements: { hasCheckedOnce } }) },
+    hostRequirementsSaga,
+  );
+  return { channel, dispatch, task };
+}
+
 describe('hostRequirementsSaga', () => {
   afterEach(() => vi.clearAllMocks());
 
@@ -38,12 +48,7 @@ describe('hostRequirementsSaga', () => {
         data: { available: true, versionOk: false, version: '18.0', wireOnly: 'drop' },
       };
     });
-    const channel = stdChannel();
-    const dispatch = vi.fn();
-    const task = runSaga(
-      { channel, dispatch, getState: () => ({ hostRequirements: { hasCheckedOnce: false } }) },
-      hostRequirementsSaga,
-    );
+    const { channel, dispatch, task } = harness();
     channel.put(checkHostRequirementsRequested());
     await settle();
 
@@ -61,21 +66,13 @@ describe('hostRequirementsSaga', () => {
     await task.toPromise();
   });
 
-  it('skips ensure after hydration and coalesces overlapping explicit checks', async () => {
-    const skippedChannel = stdChannel();
-    const skipped = runSaga(
-      {
-        channel: skippedChannel,
-        dispatch: vi.fn(),
-        getState: () => ({ hostRequirements: { hasCheckedOnce: true } }),
-      },
-      hostRequirementsSaga,
-    );
-    skippedChannel.put(ensureHostRequirementsChecked());
+  it('skips ensure after hydration and coalesces ensure with an explicit check', async () => {
+    const skippedRun = harness(true);
+    skippedRun.channel.put(ensureHostRequirementsChecked());
     await settle();
     expect(mocks.invoke).not.toHaveBeenCalled();
-    skipped.cancel();
-    await skipped.toPromise();
+    skippedRun.task.cancel();
+    await skippedRun.task.toPromise();
 
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -85,17 +82,9 @@ describe('hostRequirementsSaga', () => {
       await gate;
       return { success: false };
     });
-    const channel = stdChannel();
-    const task = runSaga(
-      {
-        channel,
-        dispatch: vi.fn(),
-        getState: () => ({ hostRequirements: { hasCheckedOnce: false } }),
-      },
-      hostRequirementsSaga,
-    );
+    const { channel, task } = harness();
     channel.put(checkHostRequirementsRequested());
-    channel.put(checkHostRequirementsRequested());
+    channel.put(ensureHostRequirementsChecked());
     await settle();
     expect(mocks.invoke).toHaveBeenCalledTimes(3);
     release();
@@ -106,12 +95,7 @@ describe('hostRequirementsSaga', () => {
 
   it('dispatches group completion when an in-flight check is cancelled', async () => {
     mocks.invoke.mockReturnValue(new Promise(() => {}));
-    const channel = stdChannel();
-    const dispatch = vi.fn();
-    const task = runSaga(
-      { channel, dispatch, getState: () => ({ hostRequirements: { hasCheckedOnce: false } }) },
-      hostRequirementsSaga,
-    );
+    const { channel, dispatch, task } = harness();
     channel.put(checkHostRequirementsRequested());
     await settle();
     task.cancel();
