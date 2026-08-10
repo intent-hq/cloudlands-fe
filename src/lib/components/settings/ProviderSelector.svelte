@@ -451,13 +451,10 @@
 
   {#each providerGroups as group (group.id)}
     {#if group.providers.length > 0}
-      <section
-        class="overflow-hidden rounded-xl bg-card"
-        aria-labelledby={`provider-group-${group.id}`}
-      >
-        <h3
+      <div>
+        <h2
           id={`provider-group-${group.id}`}
-          class="px-6 pt-4 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3"
         >
           {#if group.id === 'enabled'}
             {m.settings_providers_groupEnabled_label()}
@@ -466,8 +463,12 @@
           {:else}
             {m.settings_providers_groupSupported_label()}
           {/if}
-        </h3>
-        <div class="divide-y divide-border/50 border-t border-border/50">
+        </h2>
+        <div
+          class="flex flex-col overflow-hidden rounded-xl bg-card divide-y divide-border"
+          role="region"
+          aria-labelledby={`provider-group-${group.id}`}
+        >
           <!-- Rows render immediately from the catalog; each row's status area fills
                in independently as its own probe settles. -->
           {#each group.providers as provider (provider.id)}
@@ -780,7 +781,7 @@
             </div>
           {/each}
         </div>
-      </section>
+      </div>
     {/if}
   {/each}
 </div>

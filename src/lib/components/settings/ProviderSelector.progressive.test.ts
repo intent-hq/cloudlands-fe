@@ -138,11 +138,13 @@ describe('ProviderSelector progressive rendering', () => {
     expect(result.queryByText('Snowflake Cortex')).toBeNull();
 
     expect(
-      result.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent?.trim()),
+      result.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent?.trim()),
     ).toEqual(['Enabled', 'Not Detected']);
     expect(result.queryByRole('heading', { name: 'Available' })).toBeNull();
     expect(
-      result.container.querySelector('section[aria-labelledby="provider-group-discovered"]'),
+      result.container.querySelector(
+        '[role="region"][aria-labelledby="provider-group-discovered"]',
+      ),
     ).toBeNull();
 
     expect(result.queryByTitle('Configure Anthropic Claude Code path')).toBeNull();
@@ -163,15 +165,18 @@ describe('ProviderSelector progressive rendering', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
 
-    const groupHeadings = result.getAllByRole('heading', { level: 3 });
+    const groupHeadings = result.getAllByRole('heading', { level: 2 });
     expect(groupHeadings.map((heading) => heading.textContent?.trim())).toEqual([
       'Enabled',
       'Available',
       'Not Detected',
     ]);
-    const providerCards = groupHeadings.map((heading) => heading.closest('section'));
+    const providerCards = result.getAllByRole('region');
     expect(providerCards).toHaveLength(3);
     expect(providerCards.every((card) => card?.classList.contains('bg-card'))).toBe(true);
+    expect(groupHeadings.every((heading) => heading.closest('[role="region"]') === null)).toBe(
+      true,
+    );
     const availableText = providerCards[1]?.textContent ?? '';
     expect(availableText.indexOf('OpenAI Codex')).toBeLessThan(availableText.indexOf('OpenCode'));
 
