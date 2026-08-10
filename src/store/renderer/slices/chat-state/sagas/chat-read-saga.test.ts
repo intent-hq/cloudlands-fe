@@ -195,15 +195,24 @@ describe('chatReadSaga', () => {
       .map((action) => action.type);
     expect(hydrationTransitions).toEqual([
       transcriptHydrationStarted.type,
-      transcriptHydrationSettled.type,
       transcriptHydrationStarted.type,
     ]);
+    expect(
+      run.dispatch.mock.calls.filter(
+        ([action]) => action.type === transcriptHydrationSettled.type,
+      ),
+    ).toHaveLength(0);
     expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
 
     resolveSecond({ messages: [message('fresh', 'fresh')], nextToken: null });
     await vi.waitFor(() =>
       expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled'),
     );
+    expect(
+      run.dispatch.mock.calls.filter(
+        ([action]) => action.type === transcriptHydrationSettled.type,
+      ),
+    ).toHaveLength(1);
     expect(run.sessions().byAgentId[AGENT]?.messages.map((item) => item.id)).toEqual(['fresh']);
     run.task.cancel();
     await run.task.toPromise();

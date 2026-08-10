@@ -336,10 +336,10 @@ export const agentStreamResetStreamingMessagesRequested = createAction<
 /**
  * Saga-only trigger: load a single agent session's latest metadata into Redux.
  * Every dispatch is processed independently so unrelated agent loads can run
- * concurrently. Overlapping same-agent reads ignore responses whose daemon
- * `updatedAt` predates the stored session. Existing transcript messages are
- * preserved, and workspace cleanup cancels any matching in-flight load.
- * Handled in sagas/agent-read-saga.ts.
+ * concurrently. A later same-agent dispatch supersedes only its matching
+ * in-flight read before it can upsert, independent of response timestamps.
+ * Existing transcript messages are preserved, and workspace cleanup cancels
+ * any matching in-flight load. Handled in sagas/agent-read-saga.ts.
  */
 export const ensureAgentSessionLoaded = createAction<[wsId: string, agentId: string]>(
   'workspaceAgents/ensureAgentSessionLoaded', (...args) => {

@@ -1,7 +1,6 @@
 import {
   all,
   call,
-  cancelled,
   put,
   race,
   take,
@@ -43,14 +42,17 @@ function identitySet(messages: AgentMessage[]): Set<string> {
   return ids;
 }
 
-function* hydrateAfterPrevious(request: ChatRequest, previous: Promise<void>) {
+function* hydrateAfterPrevious(
+  request: ChatRequest,
+  previous: Promise<void>,
+): SagaGenerator<boolean> {
   yield* call(() => previous);
-  yield* call(hydrateChatTranscriptSaga, request);
+  return yield* call(hydrateChatTranscriptSaga, request);
 }
 
-function* hydrateChatTranscriptSaga(request: ChatRequest) {
+function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<boolean> {
   const { wsId, agentId } = request;
-  if (yield* call(isAgentDeletionPending, agentId)) return;
+  if (yield* call(isAgentDeletionPending, agentId)) return false;
   let started = false;
   try {
     yield* put(transcriptHydrationStarted(agentId));
@@ -61,8 +63,8 @@ function* hydrateChatTranscriptSaga(request: ChatRequest) {
       [appClient.agents, appClient.agents.get],
       agentId,
     );
-    if (!session || String(session.workspaceId) !== wsId) return;
-    if (yield* call(isAgentDeletionPending, agentId)) return;
+    if (!session || String(session.workspaceId) !== wsId) return started;
+    if (yield* call(isAgentDeletionPending, agentId)) return started;
 
     const messages: AgentMessage[] = [];
     let nextToken: string | null = null;
@@ -81,7 +83,7 @@ function* hydrateChatTranscriptSaga(request: ChatRequest) {
       [appClient.chat, appClient.chat.subscribeSnapshot],
       agentId,
     );
-    if (yield* call(isAgentDeletionPending, agentId)) return;
+    if (yield* call(isAgentDeletionPending, agentId)) return started;
 
     const inFlight = snapshot.messages.find(
       (message) => message.role === 'assistant' && message.isStreaming === true,
@@ -109,9 +111,8 @@ function* hydrateChatTranscriptSaga(request: ChatRequest) {
     yield* put(upsertSession(hydrated));
   } catch (error) {
     logger.error('Failed to load agent conversation transcript', error);
-  } finally {
-    if (started && !(yield* cancelled())) yield* put(transcriptHydrationSettled(agentId));
   }
+  return started;
 }
 
 function matchesChatCleanup({ wsId, agentId }: ChatRequest) {
@@ -145,10 +146,13 @@ function* hydrateChatWorker(
   });
 
   try {
-    yield* race({
+    const { read } = yield* race({
       read: call(hydrateAfterPrevious, request, previous),
       cleanup: take(matchesChatCleanup(request)),
     });
+    if (read && hydrationTails.get(request.agentId) === tail) {
+      yield* put(transcriptHydrationSettled(request.agentId));
+    }
   } finally {
     release();
   }
