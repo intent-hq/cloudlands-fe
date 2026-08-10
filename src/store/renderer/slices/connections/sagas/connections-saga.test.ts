@@ -70,7 +70,7 @@ describe('connectionsSaga', () => {
         return { connections: [LOCAL], activeId: LOCAL_CONNECTION_ID };
       if (channel === CONNECTION_CHANNELS.CAPTURE_FINGERPRINT)
         return { fingerprint: 'AB:CD', tokenValid: true };
-      if (channel === CONNECTION_CHANNELS.ADD) return { connection: REMOTE };
+      if (channel === CONNECTION_CHANNELS.ADD) return { connection: REMOTE, switched: false };
       if (channel === CONNECTION_CHANNELS.FORGET) return { id: (params as { id: string }).id };
       if (channel === CONNECTION_CHANNELS.SWITCH)
         return { activeId: (params as { id: string }).id };
@@ -114,6 +114,22 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('replays a sticky auth rejection from the initial list fetch', async () => {
+    const authRejected = { id: 'remote-1', host: '10.0.0.5', port: 8443, statusCode: 401 };
+    invoke.mockImplementation(async (channel: string) =>
+      channel === CONNECTION_CHANNELS.LIST
+        ? { connections: [LOCAL, REMOTE], activeId: REMOTE.id, authRejected }
+        : { fingerprint: 'AB:CD' },
+    );
+    const run = start();
+    await settle();
+
+    expect(run.getState().connections.authRejected).toEqual(authRejected);
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('sends exact command payloads and settles each awaitable action with contract responses', async () => {
     const run = start();
     await settle();
@@ -139,7 +155,7 @@ describe('connectionsSaga', () => {
       token: 'secret',
     });
     run.channel.put(add);
-    await expect(add.promise).resolves.toEqual(REMOTE);
+    await expect(add.promise).resolves.toEqual({ connection: REMOTE, switched: false });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.ADD, {
       label: REMOTE.label,
       host: REMOTE.host,

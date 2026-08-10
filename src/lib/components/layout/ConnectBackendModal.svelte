@@ -127,10 +127,15 @@
         token: token.trim(),
       });
       appStore.dispatch(addAction);
-      const connection = await addAction.promise;
-      const switchAction = switchConnectionRequested(connection.id);
-      appStore.dispatch(switchAction);
-      await switchAction.promise;
+      const { connection, switched } = await addAction.promise;
+      // An active re-pair already rebuilt the live client inside the add
+      // (switched: true) — dispatching another switch would tear it down and
+      // reconnect a second time for nothing.
+      if (!switched) {
+        const switchAction = switchConnectionRequested(connection.id);
+        appStore.dispatch(switchAction);
+        await switchAction.promise;
+      }
       close();
     } catch (e) {
       error = toMessage(e);

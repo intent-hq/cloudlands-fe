@@ -322,8 +322,18 @@ function createWssSocket(config: BackendConnectionConfig): Duplex {
   });
   ws.on('unexpected-response', (_req, response: IncomingMessage) => {
     // Attaching this listener suppresses ws's own generic error, so every
-    // status must be handled here. 401/403 are the daemon's auth rejections
-    // (PROTOCOL §2.1); anything else keeps the generic failure shape.
+    // status must be handled here. Verify the pinned fingerprint FIRST: a
+    // changed or intercepted endpoint can also answer 401/403, and classifying
+    // that as an auth rejection would steer the user into re-pairing (typing a
+    // fresh secret) against an untrusted certificate. The pin decides trust
+    // before any status-code interpretation.
+    const actual = peerFingerprint(response);
+    if (actual !== expected) {
+      duplex.destroy(new PinMismatchError(expected, actual));
+      return;
+    }
+    // 401/403 are the daemon's auth rejections (PROTOCOL §2.1); anything else
+    // keeps the generic failure shape.
     const statusCode = response.statusCode ?? 0;
     if (statusCode === 401 || statusCode === 403) {
       duplex.destroy(new AuthRejectedError(statusCode));

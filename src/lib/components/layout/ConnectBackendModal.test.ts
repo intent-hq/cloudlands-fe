@@ -48,12 +48,15 @@ describe('ConnectBackendModal', () => {
     mocks.addConnectionRequested.mockImplementation((params) => ({
       payload: [params],
       promise: Promise.resolve({
-        id: 'r1',
-        label: '10.0.0.2:4180',
-        host: '10.0.0.2',
-        port: 4180,
-        fingerprint: 'AA:BB:CC:DD',
-        isLocal: false,
+        connection: {
+          id: 'r1',
+          label: '10.0.0.2:4180',
+          host: '10.0.0.2',
+          port: 4180,
+          fingerprint: 'AA:BB:CC:DD',
+          isLocal: false,
+        },
+        switched: false,
       }),
     }));
     mocks.switchConnectionRequested.mockImplementation((id) => ({
@@ -97,6 +100,36 @@ describe('ConnectBackendModal', () => {
       token: 'secret-token',
     });
     await vi.waitFor(() => expect(mocks.switchConnectionRequested).toHaveBeenCalledWith('r1'));
+  });
+
+  it('skips the redundant switch when main already re-paired the active backend', async () => {
+    mocks.addConnectionRequested.mockImplementationOnce((params) => ({
+      payload: [params],
+      promise: Promise.resolve({
+        connection: {
+          id: 'r1',
+          label: '10.0.0.2:4180',
+          host: '10.0.0.2',
+          port: 4180,
+          fingerprint: 'AA:BB:CC:DD',
+          isLocal: false,
+        },
+        switched: true,
+      }),
+    }));
+
+    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+    render(ConnectBackendModal, { props: { open: true } });
+
+    await fillDetails();
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByText('AA:BB:CC:DD');
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+
+    await vi.waitFor(() => expect(mocks.addConnectionRequested).toHaveBeenCalled());
+    // The modal closes without dispatching a second teardown/reconnect cycle.
+    await vi.waitFor(() => expect(screen.queryByLabelText('Host')).toBeNull());
+    expect(mocks.switchConnectionRequested).not.toHaveBeenCalled();
   });
 
   it('surfaces a capture error inline and stays on the details step', async () => {

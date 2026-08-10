@@ -317,6 +317,31 @@ describe('WSS auth-rejection propagation', () => {
     expect(send.mock.calls.filter(([c]) => c === 'connections:auth-rejected')).toHaveLength(1);
   });
 
+  it('latches the rejection and replays it on connections:list for late subscribers', async () => {
+    installWindow();
+    const { mod } = await loadModule();
+    const { AuthRejectedError } = await import('../backend-connection');
+    mod.registerBackendHandlers();
+
+    await mod.switchBackend('remote-1');
+    const client = mod.getBackendClient() as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    client.emit('error', new AuthRejectedError(401));
+
+    // A renderer created/reloaded AFTER the one-shot broadcast still learns the
+    // rejection from its initial list fetch (the sticky #823 pattern).
+    const handler = findHandler('connections:list');
+    await expect(handler!({}, undefined)).resolves.toMatchObject({
+      authRejected: { id: 'remote-1', host: '10.0.0.5', port: 8443, statusCode: 401 },
+    });
+
+    // A fresh client (re-pair / switch) clears the latch: the list stops
+    // replaying a rejection that no longer describes the live client.
+    await mod.switchBackend('remote-1');
+    await expect(handler!({}, undefined)).resolves.toMatchObject({ authRejected: null });
+  });
+
   it('carries the 403 statusCode (WS API disabled) on the payload', async () => {
     const send = installWindow();
     const { mod } = await loadModule();
@@ -382,6 +407,8 @@ describe('connections:* IPC handlers', () => {
       activeId: 'local',
       // No remote handshake has mismatched, so there is no sticky mismatch (#823).
       protocolMismatch: null,
+      // No auth rejection has fired, so there is no sticky rejection either.
+      authRejected: null,
     });
   });
 
@@ -453,7 +480,7 @@ describe('connections:* IPC handlers', () => {
       fingerprint: 'AA:BB:CC:DD',
       token: 'secret-token',
     };
-    await expect(handler!({}, params)).resolves.toEqual({ connection: REMOTE });
+    await expect(handler!({}, params)).resolves.toEqual({ connection: REMOTE, switched: false });
     expect(store.add).toHaveBeenCalledWith(params);
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
   });
@@ -492,7 +519,7 @@ describe('connections:* IPC handlers', () => {
       fingerprint: 'AA:BB:CC:DD',
       token: 'fresh-token',
     };
-    await expect(handler!({}, params)).resolves.toEqual({ connection: REMOTE });
+    await expect(handler!({}, params)).resolves.toEqual({ connection: REMOTE, switched: true });
 
     // Full dispose + rebuild so the refreshed token takes effect immediately.
     // (The fake client's seq counter is file-global, so assert relative order
