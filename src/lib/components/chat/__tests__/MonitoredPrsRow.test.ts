@@ -24,9 +24,8 @@ const { dispatchMock, monitorsState, workspaceState, handleLinkMock } = vi.hoist
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({ theme: { name: 'dark' } }),
     dispatch: dispatchMock,
@@ -59,7 +58,6 @@ import MonitoredPrsRow from '../MonitoredPrsRow.svelte';
 import {
   cancelPrMonitorRequested,
   flushPrMonitorRequested,
-  prMonitorsSubscribeRequested,
 } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
 
 function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
@@ -118,10 +116,12 @@ describe('MonitoredPrsRow', () => {
     expect(chip.textContent).not.toContain('acme/widgets');
   });
 
-  it('subscribes to the workspace pr-monitor feed on mount', () => {
-    monitorsState.monitors = [];
+  it('renders selector data without dispatching lifecycle actions on mount', () => {
+    monitorsState.monitors = [makeMonitor()];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
-    expect(dispatchMock).toHaveBeenCalledWith(prMonitorsSubscribeRequested('ws-1'));
+
+    expect(screen.getByTestId('monitored-pr-chip')).toBeTruthy();
+    expect(dispatchMock).not.toHaveBeenCalled();
   });
 
   it('renders nothing when the agent has only completed monitors', () => {

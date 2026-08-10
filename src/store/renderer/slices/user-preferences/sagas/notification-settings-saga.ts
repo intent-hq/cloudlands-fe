@@ -1,5 +1,4 @@
-import { all, call, cancel, delay, fork, put, take } from 'typed-redux-saga';
-import type { Task } from 'redux-saga';
+import { all, call, delay, put, takeLatest } from 'typed-redux-saga';
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
@@ -69,24 +68,12 @@ type NotificationAction =
   | ReturnType<typeof setVolume>
   | ReturnType<typeof resetNotificationSettings>;
 
-function* watchNotificationWrites(suppressedActions: WeakSet<object>) {
-  let persistenceTask: Task | undefined;
-  try {
-    while (true) {
-      const action: NotificationAction = yield* take([
-        setNotificationEnabled,
-        setSoundEnabled,
-        setSoundOnlyWhenUnfocused,
-        setVolume,
-        resetNotificationSettings,
-      ]);
-      if (suppressedActions.delete(action)) continue;
-      if (persistenceTask) yield* cancel(persistenceTask);
-      persistenceTask = yield* fork(persistNotificationSettingsWorker);
-    }
-  } finally {
-    if (persistenceTask) yield* cancel(persistenceTask);
-  }
+function* persistNotificationAction(
+  suppressedActions: WeakSet<object>,
+  action: NotificationAction,
+) {
+  if (suppressedActions.delete(action)) return;
+  yield* call(persistNotificationSettingsWorker);
 }
 
 export function* persistNotificationSettingsWorker() {
@@ -115,6 +102,16 @@ export function* persistNotificationSettingsWorker() {
 /** Unregistered until the S20 middleware cutover. */
 export function* notificationSettingsSaga() {
   const suppressedActions = new WeakSet<object>();
-  yield* fork(watchNotificationWrites, suppressedActions);
+  yield* takeLatest(
+    [
+      setNotificationEnabled,
+      setSoundEnabled,
+      setSoundOnlyWhenUnfocused,
+      setVolume,
+      resetNotificationSettings,
+    ],
+    persistNotificationAction,
+    suppressedActions,
+  );
   yield* call(hydrateNotificationSettingsWorker, suppressedActions);
 }

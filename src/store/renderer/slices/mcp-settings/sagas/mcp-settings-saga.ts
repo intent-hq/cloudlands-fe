@@ -6,7 +6,7 @@ import {
   delay,
   fork,
   put,
-  take,
+  takeEvery,
   takeLatest,
   type SagaGenerator,
 } from 'typed-redux-saga';
@@ -346,38 +346,57 @@ function* resetAdvancedStatus(): SagaGenerator<void> {
   if (status === 'saved') yield* put(setAdvancedSaveStatus('idle'));
 }
 
-function* mutation(action: { type: string; payload: unknown }): SagaGenerator<void> {
-  const payload = action.payload as unknown[];
-  if (action.type === toggleEnabled.type) yield* call(toggleFeature);
-  else if (action.type === addServer.type) yield* call(add, payload[0] as McpServerConfig);
-  else if (action.type === removeServer.type) yield* call(remove, payload[0] as string);
-  else if (action.type === updateServer.type) yield* call(update, payload[0] as string, payload[1] as McpServerConfig);
-  else if (action.type === importFromJson.type) yield* call(importJson, payload[0] as string);
-  else if (action.type === toggleServer.type) yield* call(toggle, payload[0] as string);
-  else if (action.type === restartServer.type) yield* call(restart, payload[0] as string);
-  else if (action.type === testServerConnection.type) logger.warn('MCP connection test unsupported — no seam method', { name: payload[0] });
-  else yield* call(saveAdvanced, payload[0] as string);
+function* toggleEnabledWorker(
+  _action: ReturnType<typeof toggleEnabled>,
+): SagaGenerator<void> {
+  yield* call(toggleFeature);
 }
 
-function* mutationQueue(): SagaGenerator<void> {
-  const patterns = [
-    toggleEnabled.type,
-    addServer.type,
-    removeServer.type,
-    updateServer.type,
-    importFromJson.type,
-    toggleServer.type,
-    testServerConnection.type,
-    restartServer.type,
-    saveAdvancedJson.type,
-  ];
-  while (true) {
-    const action: { type: string; payload: unknown } = yield* take(patterns);
-    yield* fork(mutation, action);
-  }
+function* addServerWorker(action: ReturnType<typeof addServer>): SagaGenerator<void> {
+  yield* call(add, action.payload[0]);
+}
+
+function* removeServerWorker(action: ReturnType<typeof removeServer>): SagaGenerator<void> {
+  yield* call(remove, action.payload[0]);
+}
+
+function* updateServerWorker(action: ReturnType<typeof updateServer>): SagaGenerator<void> {
+  yield* call(update, action.payload[0], action.payload[1]);
+}
+
+function* importFromJsonWorker(action: ReturnType<typeof importFromJson>): SagaGenerator<void> {
+  yield* call(importJson, action.payload[0]);
+}
+
+function* toggleServerWorker(action: ReturnType<typeof toggleServer>): SagaGenerator<void> {
+  yield* call(toggle, action.payload[0]);
+}
+
+function* testServerConnectionWorker(
+  action: ReturnType<typeof testServerConnection>,
+): SagaGenerator<void> {
+  logger.warn('MCP connection test unsupported — no seam method', { name: action.payload[0] });
+}
+
+function* restartServerWorker(action: ReturnType<typeof restartServer>): SagaGenerator<void> {
+  yield* call(restart, action.payload[0]);
+}
+
+function* saveAdvancedJsonWorker(
+  action: ReturnType<typeof saveAdvancedJson>,
+): SagaGenerator<void> {
+  yield* call(saveAdvanced, action.payload[0]);
 }
 
 export function* mcpSettingsSaga(): SagaGenerator<void> {
   yield* takeLatest(loadServers, load);
-  yield* fork(mutationQueue);
+  yield* takeEvery(toggleEnabled, toggleEnabledWorker);
+  yield* takeEvery(addServer, addServerWorker);
+  yield* takeEvery(removeServer, removeServerWorker);
+  yield* takeEvery(updateServer, updateServerWorker);
+  yield* takeEvery(importFromJson, importFromJsonWorker);
+  yield* takeEvery(toggleServer, toggleServerWorker);
+  yield* takeEvery(testServerConnection, testServerConnectionWorker);
+  yield* takeEvery(restartServer, restartServerWorker);
+  yield* takeEvery(saveAdvancedJson, saveAdvancedJsonWorker);
 }

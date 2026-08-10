@@ -1,14 +1,5 @@
-import { buffers, channel, END, eventChannel, type Channel, type EventChannel } from 'redux-saga';
-import {
-  all,
-  call,
-  join,
-  put,
-  take,
-  takeEvery,
-  takeLatest,
-  type SagaGenerator,
-} from 'typed-redux-saga';
+import { buffers, END, eventChannel, type EventChannel } from 'redux-saga';
+import { all, call, join, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   isOsTranscriptionAvailable,
@@ -74,15 +65,7 @@ import {
 
 const logger = createLogger('VoiceSettingsSaga');
 
-interface SequencedWrite<T> {
-  next: T;
-  previous: T;
-  sequence: number;
-}
-
-interface LatestWrite {
-  sequence: number;
-}
+type VocabularySnapshot = { previous: string[] | null };
 
 function* hydrateVoiceEngineWorker(): SagaGenerator<void> {
   const available = yield* call(isOsTranscriptionAvailable);
@@ -285,107 +268,68 @@ function* watchVoiceDeviceChanges(): SagaGenerator<void> {
   }
 }
 
-function* watchVocabularyEdits(
-  writes: Channel<SequencedWrite<string[]>>,
-  latest: LatestWrite,
-): SagaGenerator<void> {
-  let previous = yield* selectVoiceVocabulary.effect();
-  while (true) {
-    const action = yield* take([
-      addVoiceVocabularyTerm,
-      removeVoiceVocabularyTerm,
-      setVoiceSettingsSnapshot,
-      setVoiceVocabularyValue,
-    ]);
-    const next = yield* selectVoiceVocabulary.effect();
-    const isEdit =
-      action.type === addVoiceVocabularyTerm.type || action.type === removeVoiceVocabularyTerm.type;
-    if (isEdit && previous !== null && next !== null && next !== previous) {
-      const sequence = ++latest.sequence;
-      yield* put(setVoiceSettingsError(null));
-      yield* put(writes, { next, previous, sequence });
-    }
-    previous = next;
+function* captureVocabularySnapshot(snapshot: VocabularySnapshot): SagaGenerator<void> {
+  snapshot.previous = yield* selectVoiceVocabulary.effect();
+}
+
+function* persistVocabularyEdit(snapshot: VocabularySnapshot): SagaGenerator<void> {
+  const previous = snapshot.previous;
+  const next = yield* selectVoiceVocabulary.effect();
+  snapshot.previous = next;
+  if (previous === null || next === null || next === previous) return;
+  yield* put(setVoiceSettingsError(null));
+  try {
+    yield* call(setVoiceVocabulary, next);
+  } catch (error) {
+    yield* put(setVoiceVocabularyValue(previous));
+    yield* put(setVoiceSettingsError(m.settings_voice_vocabulary_saveFailed_error()));
+    logger.error('vocabulary save error', error);
   }
 }
 
-function* persistVocabularyWrites(
-  writes: Channel<SequencedWrite<string[]>>,
-  latest: LatestWrite,
+function* persistWorkspaceVocabularyMaxTerms(
+  action: ReturnType<typeof changeVoiceWorkspaceVocabularyMaxTerms>,
 ): SagaGenerator<void> {
-  while (true) {
-    const write = yield* take(writes);
-    try {
-      yield* call(setVoiceVocabulary, write.next);
-    } catch (error) {
-      if (write.sequence === latest.sequence) {
-        yield* put(setVoiceVocabularyValue(write.previous));
-        yield* put(setVoiceSettingsError(m.settings_voice_vocabulary_saveFailed_error()));
-      }
-      logger.error('vocabulary save error', error);
-    }
-  }
-}
-
-function* watchWorkspaceVocabularyMaxTerms(
-  writes: Channel<SequencedWrite<number>>,
-  latest: LatestWrite,
-): SagaGenerator<void> {
-  while (true) {
-    const action = yield* take(changeVoiceWorkspaceVocabularyMaxTerms);
-    const [next] = action.payload;
-    const previous = yield* selectVoiceWorkspaceVocabularyMaxTerms.effect();
-    if (previous === null || next === previous) continue;
-    const sequence = ++latest.sequence;
-    yield* put(setVoiceSettingsError(null));
-    yield* put(setVoiceWorkspaceVocabularyMaxTermsValue(next));
-    yield* put(writes, { next, previous, sequence });
-  }
-}
-
-function* persistWorkspaceVocabularyMaxTermsWrites(
-  writes: Channel<SequencedWrite<number>>,
-  latest: LatestWrite,
-): SagaGenerator<void> {
-  while (true) {
-    const write = yield* take(writes);
-    try {
-      yield* call(setVoiceWorkspaceVocabularyMaxTerms, write.next);
-      yield* call(resetWorkspaceVocabularyCache);
-    } catch (error) {
-      if (write.sequence === latest.sequence) {
-        yield* put(setVoiceWorkspaceVocabularyMaxTermsValue(write.previous));
-        yield* put(setVoiceSettingsError(m.settings_voice_workspaceVocabulary_saveFailed_error()));
-      }
-      logger.error('workspace vocabulary max terms change error', error);
-    }
+  const [next] = action.payload;
+  const previous = yield* selectVoiceWorkspaceVocabularyMaxTerms.effect();
+  if (previous === null || next === previous) return;
+  yield* put(setVoiceSettingsError(null));
+  yield* put(setVoiceWorkspaceVocabularyMaxTermsValue(next));
+  try {
+    yield* call(setVoiceWorkspaceVocabularyMaxTerms, next);
+    yield* call(resetWorkspaceVocabularyCache);
+  } catch (error) {
+    yield* put(setVoiceWorkspaceVocabularyMaxTermsValue(previous));
+    yield* put(setVoiceSettingsError(m.settings_voice_workspaceVocabulary_saveFailed_error()));
+    logger.error('workspace vocabulary max terms change error', error);
   }
 }
 
 export function* voiceSettingsSaga(): SagaGenerator<void> {
-  const vocabularyWrites = channel<SequencedWrite<string[]>>(buffers.expanding());
-  const maxTermsWrites = channel<SequencedWrite<number>>(buffers.expanding());
-  const latestVocabularyWrite: LatestWrite = { sequence: 0 };
-  const latestMaxTermsWrite: LatestWrite = { sequence: 0 };
-  try {
-    yield* all([
-      call(initializeVoiceSettingsWorker),
-      takeEvery(initializeVoiceSettings, initializeVoiceSettingsWorker),
-      takeEvery(changeVoiceProvider, changeVoiceProviderWorker),
-      takeEvery(changeVoiceEngine, changeVoiceEngineWorker),
-      takeEvery(changeVoiceInputDevice, changeVoiceInputDeviceWorker),
-      takeEvery(changeVoiceOpenAiModel, changeVoiceOpenAiModelWorker),
-      takeEvery(changeVoiceLanguage, changeVoiceLanguageWorker),
-      takeEvery(saveVoiceKey, saveVoiceKeyWorker),
-      takeEvery(clearVoiceKey, clearVoiceKeyWorker),
-      call(watchVoiceDeviceChanges),
-      call(watchVocabularyEdits, vocabularyWrites, latestVocabularyWrite),
-      call(persistVocabularyWrites, vocabularyWrites, latestVocabularyWrite),
-      call(watchWorkspaceVocabularyMaxTerms, maxTermsWrites, latestMaxTermsWrite),
-      call(persistWorkspaceVocabularyMaxTermsWrites, maxTermsWrites, latestMaxTermsWrite),
-    ]);
-  } finally {
-    vocabularyWrites.close();
-    maxTermsWrites.close();
-  }
+  const vocabularySnapshot: VocabularySnapshot = {
+    previous: yield* selectVoiceVocabulary.effect(),
+  };
+  yield* all([
+    call(initializeVoiceSettingsWorker),
+    takeEvery(initializeVoiceSettings, initializeVoiceSettingsWorker),
+    takeEvery(changeVoiceProvider, changeVoiceProviderWorker),
+    takeEvery(changeVoiceEngine, changeVoiceEngineWorker),
+    takeEvery(changeVoiceInputDevice, changeVoiceInputDeviceWorker),
+    takeEvery(changeVoiceOpenAiModel, changeVoiceOpenAiModelWorker),
+    takeEvery(changeVoiceLanguage, changeVoiceLanguageWorker),
+    takeEvery(saveVoiceKey, saveVoiceKeyWorker),
+    takeEvery(clearVoiceKey, clearVoiceKeyWorker),
+    takeEvery(
+      [setVoiceSettingsSnapshot, setVoiceVocabularyValue],
+      captureVocabularySnapshot,
+      vocabularySnapshot,
+    ),
+    takeLatest(
+      [addVoiceVocabularyTerm, removeVoiceVocabularyTerm],
+      persistVocabularyEdit,
+      vocabularySnapshot,
+    ),
+    takeLatest(changeVoiceWorkspaceVocabularyMaxTerms, persistWorkspaceVocabularyMaxTerms),
+    call(watchVoiceDeviceChanges),
+  ]);
 }

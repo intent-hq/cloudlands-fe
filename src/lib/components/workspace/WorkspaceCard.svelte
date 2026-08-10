@@ -10,7 +10,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { Snippet } from 'svelte';
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
@@ -37,7 +37,7 @@
     type WorkspaceAgentDisplayInfo,
   } from './utils/workspace-agent-display';
   import { writable } from 'svelte/store';
-  import { store as appStore } from "$store/renderer/store";
+  import { store as appStore } from '$store/renderer/store';
   import {
     selectAgentIsResponding,
     selectAgentIsWaiting,
@@ -62,10 +62,6 @@
   import MicroKeySlotBadge from '$lib/components/workspace/MicroKeySlotBadge.svelte';
   import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectActivePrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
-  import {
-    prMonitorsSubscribeRequested,
-    prMonitorsUnsubscribeRequested,
-  } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
   import { countOtherActiveMonitors } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
   import { cn } from '$lib/utils';
   import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
@@ -161,17 +157,8 @@
   const workspaceTaskProgress$ = selectWorkspaceTaskProgress(workspaceIdStore);
 
   // Agent PR monitors (PROTOCOL §6.9): feed the primary-PR fallback and the
-  // "+N" other-active-PRs indicator. Refcounted subscription shared with the
-  // other pr-monitor surfaces.
+  // "+N" other-active-PRs indicator.
   const activePrMonitors$ = selectActivePrMonitors(workspaceIdStore);
-  $effect(() => {
-    const workspaceId = workspace?.id;
-    if (!workspaceId) return;
-    untrack(() => appStore.dispatch(prMonitorsSubscribeRequested(String(workspaceId))));
-    return () => {
-      appStore.dispatch(prMonitorsUnsubscribeRequested(String(workspaceId)));
-    };
-  });
 
   // Micro-key slot badge/menus: only while a micro is connected (manager
   // status connected — not mere presence).
@@ -210,10 +197,7 @@
 
   const prStatus = $derived.by(() => {
     if (!workspace) return null;
-    const activePR = selectWorkspaceActivePullRequest.select(
-      appStore.state,
-      workspace.id,
-    );
+    const activePR = selectWorkspaceActivePullRequest.select(appStore.state, workspace.id);
     if (activePR) return activePR.status;
     if (workspace.prStatus) return workspace.prStatus;
     const prs = workspace.pullRequests ?? [];
@@ -225,10 +209,7 @@
   });
   const prNumber = $derived.by(() => {
     if (!workspace) return undefined;
-    const activePR = selectWorkspaceActivePullRequest.select(
-      appStore.state,
-      workspace.id,
-    );
+    const activePR = selectWorkspaceActivePullRequest.select(appStore.state, workspace.id);
     return (
       activePR?.number ??
       workspace.prNumber ??
@@ -238,18 +219,12 @@
   });
   const isPRMergeable = $derived.by(() => {
     if (!workspace) return false;
-    const activePR = selectWorkspaceActivePullRequest.select(
-      appStore.state,
-      workspace.id,
-    );
+    const activePR = selectWorkspaceActivePullRequest.select(appStore.state, workspace.id);
     return checkPRMergeable(activePR ?? undefined);
   });
   const prTooltipContent = $derived.by(() => {
     if (!workspace) return '';
-    const activePR = selectWorkspaceActivePullRequest.select(
-      appStore.state,
-      workspace.id,
-    );
+    const activePR = selectWorkspaceActivePullRequest.select(appStore.state, workspace.id);
     return getPRTooltipContent(activePR ?? undefined);
   });
 
@@ -275,9 +250,7 @@
         return {
           hasLoadedSession: !!loadedSession,
           isWaiting: loadedSession ? selectAgentIsWaiting.select(reduxState, agentId) : false,
-          isResponding: loadedSession
-            ? selectAgentIsResponding.select(reduxState, agentId)
-            : false,
+          isResponding: loadedSession ? selectAgentIsResponding.select(reduxState, agentId) : false,
           isStreamingFallback: loadedSession ? false : streamingAgentIds.includes(agentId),
           sessionStatus: loadedSession?.status as string | undefined,
           specialist: (loadedSession?.metadata?.specialist ??
@@ -664,7 +637,9 @@
             class="flex h-5 w-5 -my-1 cursor-pointer items-center justify-center rounded transition-all hover:bg-muted/50 hover:text-foreground
               {isPinned ? 'text-primary/60' : 'text-ghost'}"
             onclick={onTogglePin}
-            aria-label={isPinned ? m.workspace_card_unpin_ariaLabel() : m.workspace_card_pin_ariaLabel()}
+            aria-label={isPinned
+              ? m.workspace_card_unpin_ariaLabel()
+              : m.workspace_card_pin_ariaLabel()}
             title={isPinned ? m.workspace_card_unpin_tooltip() : m.workspace_card_pin_tooltip()}
           >
             <Fa icon={faThumbtack} size="xs" />

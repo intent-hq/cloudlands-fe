@@ -16,6 +16,8 @@ import { normalizeNoteUpdatePatch } from "./workspace-notes-normalization";
 
 export type { WorkspaceNotesWorkspaceState, WorkspaceNotesState };
 
+export type NoteEventType = 'note:created' | 'note:updated' | 'note:deleted';
+
 export const emptyWorkspaceNotesState: WorkspaceNotesWorkspaceState = {
   notes: createCollection<Note, "id">("id"),
   loading: false,
@@ -62,6 +64,9 @@ export const applyNoteDeleted = createAction<[workspaceId: string, noteId: strin
 export const applyNoteUpdated = createAction<[workspaceId: string, noteId: string, note: Note]>(
   "workspaceNotes/applyNoteUpdated"
 );
+export const noteEventReceived = createAction<
+  [workspaceId: string, noteId: string, eventType: NoteEventType]
+>('workspaceNotes/noteEventReceived');
 
 // ---- New actions from notes.store.svelte.ts migration ----
 

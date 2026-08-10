@@ -74,7 +74,7 @@ describe('filesReadSaga', () => {
     await task.toPromise();
   });
 
-  it('coalesces keyed reads and cancels late completion on workspace cleanup', async () => {
+  it('globally suppresses a different file read and cancels late completion on cleanup', async () => {
     let resolve!: (entry: Awaited<ReturnType<typeof appClient.files.read>>) => void;
     vi.spyOn(appClient.files, 'read').mockReturnValue(
       new Promise((done) => {
@@ -85,9 +85,8 @@ describe('filesReadSaga', () => {
     const actions: unknown[] = [];
     const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, filesReadSaga);
 
-    const request = loadFileContentRequested('ws-1', 'src/a.ts', '/repo/src/a.ts');
-    channel.put(request);
-    channel.put(request);
+    channel.put(loadFileContentRequested('ws-1', 'src/a.ts', '/repo/src/a.ts'));
+    channel.put(loadFileContentRequested('ws-2', 'src/b.ts', '/repo/src/b.ts'));
     await settle();
     channel.put(workspaceUnmounted('ws-1'));
     resolve({ originalContent: 'late', localContent: null, isBinary: false, truncated: false });

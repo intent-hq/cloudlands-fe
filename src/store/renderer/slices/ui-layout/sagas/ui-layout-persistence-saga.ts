@@ -19,15 +19,6 @@ import {
   type ResizablePanelGroupLayoutState,
 } from '../ui-layout-slice';
 
-const UI_LAYOUT_PERSISTENCE_ACTIONS = [
-  requestResizablePanelSize,
-  setResizablePanelSize,
-  requestResizablePanelGroupLayout,
-  setResizablePanelGroupLayout,
-  requestCollapsiblePanelCollapsed,
-  setCollapsiblePanelCollapsed,
-];
-
 function parseStoredNumber(value: string | null): number | null {
   if (!value) return null;
   const parsed = Number.parseFloat(value);
@@ -40,58 +31,78 @@ function isPanelGroupLayout(value: unknown): value is ResizablePanelGroupLayoutS
   return Array.isArray(layout.sizes) && Array.isArray(layout.collapsed);
 }
 
-export function* handleUiLayoutPersistenceAction(action: {
-  type: string;
-  payload?: unknown;
-}): SagaGenerator<void> {
+function* hydratePanelSize(
+  action: ReturnType<typeof requestResizablePanelSize>,
+): SagaGenerator<void> {
   try {
-    const payload = Array.isArray(action.payload) ? action.payload : [];
-    const key = payload[0];
+    const key = action.payload[0];
     if (typeof key !== 'string' || key.length === 0) return;
+    const value = parseStoredNumber(yield* call(getLocalStorageItem, key));
+    if (value !== null) yield* put(hydrateResizablePanelSize(key, value));
+  } catch {
+    // Layout persistence is best-effort and must never terminate its watcher.
+  }
+}
 
-    if (action.type === requestResizablePanelSize.type) {
-      const value = parseStoredNumber(yield* call(getLocalStorageItem, key));
-      if (value !== null) yield* put(hydrateResizablePanelSize(key, value));
-      return;
+function* persistPanelSize(action: ReturnType<typeof setResizablePanelSize>): SagaGenerator<void> {
+  try {
+    const [key, value] = action.payload;
+    if (typeof key === 'string' && key.length > 0 && typeof value === 'number') {
+      yield* call(setLocalStorageItem, key, String(value));
     }
+  } catch {
+    // Layout persistence is best-effort and must never terminate its watcher.
+  }
+}
 
-    if (action.type === setResizablePanelSize.type) {
-      const value = payload[1];
-      if (typeof value === 'number') {
-        yield* call(setLocalStorageItem, key, String(value));
-      }
-      return;
+function* hydratePanelGroupLayout(
+  action: ReturnType<typeof requestResizablePanelGroupLayout>,
+): SagaGenerator<void> {
+  try {
+    const key = action.payload[0];
+    if (typeof key !== 'string' || key.length === 0) return;
+    const layout = yield* call(getLocalStorageJSON<unknown>, key);
+    if (isPanelGroupLayout(layout)) yield* put(hydrateResizablePanelGroupLayout(key, layout));
+  } catch {
+    // Layout persistence is best-effort and must never terminate its watcher.
+  }
+}
+
+function* persistPanelGroupLayout(
+  action: ReturnType<typeof setResizablePanelGroupLayout>,
+): SagaGenerator<void> {
+  try {
+    const [key, layout] = action.payload;
+    if (typeof key === 'string' && key.length > 0 && isPanelGroupLayout(layout)) {
+      yield* call(setLocalStorageJSON, key, layout);
     }
+  } catch {
+    // Layout persistence is best-effort and must never terminate its watcher.
+  }
+}
 
-    if (action.type === requestResizablePanelGroupLayout.type) {
-      const layout = yield* call(getLocalStorageJSON<unknown>, key);
-      if (isPanelGroupLayout(layout)) {
-        yield* put(hydrateResizablePanelGroupLayout(key, layout));
-      }
-      return;
+function* hydratePanelCollapsed(
+  action: ReturnType<typeof requestCollapsiblePanelCollapsed>,
+): SagaGenerator<void> {
+  try {
+    const key = action.payload[0];
+    if (typeof key !== 'string' || key.length === 0) return;
+    const stored = yield* call(getLocalStorageItem, key);
+    if (stored === 'true' || stored === 'false') {
+      yield* put(hydrateCollapsiblePanelCollapsed(key, stored === 'true'));
     }
+  } catch {
+    // Layout persistence is best-effort and must never terminate its watcher.
+  }
+}
 
-    if (action.type === setResizablePanelGroupLayout.type) {
-      const layout = payload[1];
-      if (isPanelGroupLayout(layout)) {
-        yield* call(setLocalStorageJSON, key, layout);
-      }
-      return;
-    }
-
-    if (action.type === requestCollapsiblePanelCollapsed.type) {
-      const stored = yield* call(getLocalStorageItem, key);
-      if (stored === 'true' || stored === 'false') {
-        yield* put(hydrateCollapsiblePanelCollapsed(key, stored === 'true'));
-      }
-      return;
-    }
-
-    if (action.type === setCollapsiblePanelCollapsed.type) {
-      const collapsed = payload[1];
-      if (typeof collapsed === 'boolean') {
-        yield* call(setLocalStorageItem, key, String(collapsed));
-      }
+function* persistPanelCollapsed(
+  action: ReturnType<typeof setCollapsiblePanelCollapsed>,
+): SagaGenerator<void> {
+  try {
+    const [key, collapsed] = action.payload;
+    if (typeof key === 'string' && key.length > 0 && typeof collapsed === 'boolean') {
+      yield* call(setLocalStorageItem, key, String(collapsed));
     }
   } catch {
     // Layout persistence is best-effort and must never terminate its watcher.
@@ -100,5 +111,10 @@ export function* handleUiLayoutPersistenceAction(action: {
 
 /** Unregistered until the S20 middleware cutover. */
 export function* uiLayoutPersistenceSaga(): SagaGenerator<void> {
-  yield* takeEvery(UI_LAYOUT_PERSISTENCE_ACTIONS, handleUiLayoutPersistenceAction);
+  yield* takeEvery(requestResizablePanelSize, hydratePanelSize);
+  yield* takeEvery(setResizablePanelSize, persistPanelSize);
+  yield* takeEvery(requestResizablePanelGroupLayout, hydratePanelGroupLayout);
+  yield* takeEvery(setResizablePanelGroupLayout, persistPanelGroupLayout);
+  yield* takeEvery(requestCollapsiblePanelCollapsed, hydratePanelCollapsed);
+  yield* takeEvery(setCollapsiblePanelCollapsed, persistPanelCollapsed);
 }

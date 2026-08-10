@@ -15,10 +15,11 @@ import {
   applyNoteUpdated,
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
+  noteEventReceived,
   selectNote,
   workspaceNotesReducer,
 } from '../workspace-notes-slice';
-import { noteEventReceived, notesReadSaga } from './notes-read-saga';
+import { notesReadSaga } from './notes-read-saga';
 
 const WS = 'ws-notes-read';
 const NOW = '2026-01-01T00:00:00.000Z';
@@ -59,10 +60,7 @@ function harness(seed: Note[] = []) {
     actions.push(action);
     return action;
   };
-  const task = runSaga(
-    { channel, dispatch, getState: () => ({ workspaceNotes }) },
-    notesReadSaga,
-  );
+  const task = runSaga({ channel, dispatch, getState: () => ({ workspaceNotes }) }, notesReadSaga);
   return { actions, channel, task };
 }
 
@@ -93,7 +91,7 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('coalesces rapid workspace hydration requests while the first fetch is in flight', async () => {
+  it('uses global leading hydration semantics across workspace payload keys', async () => {
     let resolve!: (notes: Note[]) => void;
     const list = vi.spyOn(appClient.notes, 'list').mockReturnValue(
       new Promise((done) => {
@@ -104,7 +102,7 @@ describe('notesReadSaga', () => {
 
     run.channel.put(workspaceMounted(WS));
     run.channel.put(workspaceMounted(WS));
-    run.channel.put(workspaceMounted(WS));
+    run.channel.put(workspaceMounted('ws-ignored'));
     await settle();
 
     expect(list.mock.calls).toEqual([[WS]]);
@@ -141,7 +139,7 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('coalesces a keyed event read and suppresses its late result after cleanup', async () => {
+  it('uses global leading event reads and suppresses the active result after cleanup', async () => {
     let resolve!: (notes: Note[]) => void;
     const list = vi.spyOn(appClient.notes, 'list').mockReturnValue(
       new Promise((done) => {
@@ -153,7 +151,7 @@ describe('notesReadSaga', () => {
 
     run.channel.put(event);
     await settle();
-    run.channel.put(event);
+    run.channel.put(noteEventReceived('ws-ignored', 'note-2', 'note:created'));
     run.channel.put(workspaceUnmounted(WS));
     await settle();
     resolve([note('note-1')]);

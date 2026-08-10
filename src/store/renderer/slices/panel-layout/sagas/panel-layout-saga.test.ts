@@ -31,7 +31,10 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
 
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { connectionsListReceived } from '../../connections/connections-slice';
-import { workspaceMounted, workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceMounted,
+  workspaceUnmounted,
+} from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   clearPanelLayout,
   closeActiveTab,
@@ -143,14 +146,43 @@ async function cancelSaga(task: ReturnType<typeof runSaga>) {
 }
 
 const persistActionCreators = [
-  initializeLayout, openTab, openTabInAdjacentOrSplit, closeTab, closeActiveTab,
-  closeTabsByType, closeTabsByAgentId, reopenClosedTab, setActiveTab, selectNextTab,
-  selectPreviousTab, reorderTabs, moveTabToPanel, moveTabToSplit, moveTabToSplitLevel,
-  closeOtherTabs, closeTabsToRight, closeAllTabs, closeAllOthersEverywhere, focusPanel,
-  splitPanel, closePanel, updateSizes, updateSplitSizes, toggleExpandPanel, resetLayout,
-  goBack, goForward, goBackInFocusHistory, goForwardInFocusHistory, setDeferSpecTab,
-  reconcileStaleAgentTabs, updateTabTitle, updateTabBrowserUrl, updateTabFavicon,
-  updateFileTabPath, consumePendingFocus,
+  initializeLayout,
+  openTab,
+  openTabInAdjacentOrSplit,
+  closeTab,
+  closeActiveTab,
+  closeTabsByType,
+  closeTabsByAgentId,
+  reopenClosedTab,
+  setActiveTab,
+  selectNextTab,
+  selectPreviousTab,
+  reorderTabs,
+  moveTabToPanel,
+  moveTabToSplit,
+  moveTabToSplitLevel,
+  closeOtherTabs,
+  closeTabsToRight,
+  closeAllTabs,
+  closeAllOthersEverywhere,
+  focusPanel,
+  splitPanel,
+  closePanel,
+  updateSizes,
+  updateSplitSizes,
+  toggleExpandPanel,
+  resetLayout,
+  goBack,
+  goForward,
+  goBackInFocusHistory,
+  goForwardInFocusHistory,
+  setDeferSpecTab,
+  reconcileStaleAgentTabs,
+  updateTabTitle,
+  updateTabBrowserUrl,
+  updateTabFavicon,
+  updateFileTabPath,
+  consumePendingFocus,
 ];
 
 describe('panelLayoutSaga', () => {
@@ -167,11 +199,28 @@ describe('panelLayoutSaga', () => {
   it('validates stored tree references, focus, tabs, and active tab ids', () => {
     expect(isStoredLayoutValid(layout)).toBe(true);
     expect(isStoredLayoutValid(null)).toBe(false);
-    expect(isStoredLayoutValid({ ...layout, root: { type: 'panel', panelId: 'missing' } })).toBe(false);
+    expect(isStoredLayoutValid({ ...layout, root: { type: 'panel', panelId: 'missing' } })).toBe(
+      false,
+    );
     expect(isStoredLayoutValid({ ...layout, focusedPanelId: 'missing' })).toBe(false);
-    expect(isStoredLayoutValid({ ...layout, panels: { 'panel-1': { ...layout.panels['panel-1'], tabs: [null] } } })).toBe(false);
-    expect(isStoredLayoutValid({ ...layout, panels: { 'panel-1': { ...layout.panels['panel-1'], activeTabId: 'missing' } } })).toBe(false);
-    expect(isStoredLayoutValid({ ...layout, root: { type: 'split', direction: 'horizontal', children: [layout.root], sizes: [] } })).toBe(false);
+    expect(
+      isStoredLayoutValid({
+        ...layout,
+        panels: { 'panel-1': { ...layout.panels['panel-1'], tabs: [null] } },
+      }),
+    ).toBe(false);
+    expect(
+      isStoredLayoutValid({
+        ...layout,
+        panels: { 'panel-1': { ...layout.panels['panel-1'], activeTabId: 'missing' } },
+      }),
+    ).toBe(false);
+    expect(
+      isStoredLayoutValid({
+        ...layout,
+        root: { type: 'split', direction: 'horizontal', children: [layout.root], sizes: [] },
+      }),
+    ).toBe(false);
   });
 
   it('retroactively restores the active workspace with exact status transitions', async () => {
@@ -188,7 +237,9 @@ describe('panelLayoutSaga', () => {
   });
 
   it('marks missing and malformed mount storage exactly and skips invalid workspace ids', async () => {
-    mocks.getJSON.mockImplementation((key: string) => key.endsWith(WS_1) ? undefined : { bad: true });
+    mocks.getJSON.mockImplementation((key: string) =>
+      key.endsWith(WS_1) ? undefined : { bad: true },
+    );
     const { channel, dispatch, task } = startSaga();
     await settle();
     channel.put(workspaceMounted(WS_1));
@@ -197,22 +248,27 @@ describe('panelLayoutSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      setRestoreStatus(WS_1, 'pending'), setRestoreStatus(WS_1, 'empty'),
-      setRestoreStatus(WS_2, 'pending'), setRestoreStatus(WS_2, 'invalid'),
+      setRestoreStatus(WS_1, 'pending'),
+      setRestoreStatus(WS_1, 'empty'),
+      setRestoreStatus(WS_2, 'pending'),
+      setRestoreStatus(WS_2, 'invalid'),
     ]);
     await cancelSaga(task);
   });
 
-  it.each(persistActionCreators)('persists the exact post-reducer layout for $type', async (creator) => {
-    mocks.getJSON.mockReturnValue(undefined);
-    const { channel, task } = startSaga();
-    await settle();
-    channel.put({ type: creator.type, payload: { wsId: WS_1 } });
-    await settle();
+  it.each(persistActionCreators)(
+    'persists the exact post-reducer layout for $type',
+    async (creator) => {
+      mocks.getJSON.mockReturnValue(undefined);
+      const { channel, task } = startSaga();
+      await settle();
+      channel.put({ type: creator.type, payload: { wsId: WS_1 } });
+      await settle();
 
-    expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, layout]]);
-    await cancelSaga(task);
-  });
+      expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, layout]]);
+      await cancelSaga(task);
+    },
+  );
 
   it('protects a non-empty stored layout from a pre-restore empty-state write', async () => {
     mocks.getJSON.mockReturnValue(layout);
@@ -229,7 +285,9 @@ describe('panelLayoutSaga', () => {
 
   it('survives a local-storage failure and processes the next mutation', async () => {
     mocks.getJSON.mockReturnValue(undefined);
-    mocks.setJSON.mockImplementationOnce(() => { throw new Error('quota'); });
+    mocks.setJSON.mockImplementationOnce(() => {
+      throw new Error('quota');
+    });
     const { channel, task } = startSaga();
     await settle();
     channel.put({ type: focusPanel.type, payload: [WS_1, 'panel-1'] });
@@ -243,7 +301,7 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
-  it('debounces history independently per workspace and reads the latest state', async () => {
+  it('debounces history globally across workspaces and reads the latest state', async () => {
     const { channel, task } = startSaga();
     await settle();
     channel.put({ type: openTab.type, payload: { wsId: WS_1 } });
@@ -256,15 +314,30 @@ describe('panelLayoutSaga', () => {
     const persistedAt = new Date(NOW.getTime() + HISTORY_PERSIST_DEBOUNCE_MS).toISOString();
 
     expect(mocks.saveHistory.mock.calls).toEqual([
-      [WS_1, { version: 1, workspaceId: WS_1, history: [snapshot], historyIndex: 0, lastUpdated: persistedAt }, LOCAL_CONNECTION_ID],
-      [WS_2, { version: 1, workspaceId: WS_2, history: [{ ...snapshot, timestamp: 20 }], historyIndex: 0, lastUpdated: persistedAt }, LOCAL_CONNECTION_ID],
+      [
+        WS_2,
+        {
+          version: 1,
+          workspaceId: WS_2,
+          history: [{ ...snapshot, timestamp: 20 }],
+          historyIndex: 0,
+          lastUpdated: persistedAt,
+        },
+        LOCAL_CONNECTION_ID,
+      ],
     ]);
     await cancelSaga(task);
   });
 
   it('loads valid history after initialization and ignores malformed history', async () => {
     mocks.loadHistory
-      .mockResolvedValueOnce({ version: 1, workspaceId: WS_1, history: [snapshot], historyIndex: 0, lastUpdated: NOW.toISOString() })
+      .mockResolvedValueOnce({
+        version: 1,
+        workspaceId: WS_1,
+        history: [snapshot],
+        historyIndex: 0,
+        lastUpdated: NOW.toISOString(),
+      })
       .mockResolvedValueOnce({ history: 'bad', historyIndex: 0 });
     const { channel, dispatch, task } = startSaga();
     await settle();
@@ -332,20 +405,28 @@ describe('panelLayoutSaga', () => {
       loadLayoutHistory(WS_2, historyData.history, historyData.historyIndex),
     ]);
     expect(mocks.saveHistory.mock.calls).toEqual([
-      [WS_1, {
-        version: 1,
-        workspaceId: WS_1,
-        history: [snapshot],
-        historyIndex: 0,
-        lastUpdated: new Date(NOW.getTime() + HISTORY_PERSIST_DEBOUNCE_MS).toISOString(),
-      }, LOCAL_CONNECTION_ID],
-      [WS_2, {
-        version: 1,
-        workspaceId: WS_2,
-        history: historyData.history,
-        historyIndex: 0,
-        lastUpdated: new Date(NOW.getTime() + HISTORY_PERSIST_DEBOUNCE_MS * 2).toISOString(),
-      }, LOCAL_CONNECTION_ID],
+      [
+        WS_1,
+        {
+          version: 1,
+          workspaceId: WS_1,
+          history: [snapshot],
+          historyIndex: 0,
+          lastUpdated: new Date(NOW.getTime() + HISTORY_PERSIST_DEBOUNCE_MS).toISOString(),
+        },
+        LOCAL_CONNECTION_ID,
+      ],
+      [
+        WS_2,
+        {
+          version: 1,
+          workspaceId: WS_2,
+          history: historyData.history,
+          historyIndex: 0,
+          lastUpdated: new Date(NOW.getTime() + HISTORY_PERSIST_DEBOUNCE_MS * 2).toISOString(),
+        },
+        LOCAL_CONNECTION_ID,
+      ],
     ]);
     expect(mocks.clearAdapter.mock.calls).toEqual([[WS_1], [WS_2]]);
     expect(task.isRunning()).toBe(true);
@@ -376,7 +457,17 @@ describe('panelLayoutSaga', () => {
 
     expect(task.isCancelled()).toBe(true);
     expect(mocks.saveHistory.mock.calls).toEqual([
-      [WS_1, { version: 1, workspaceId: WS_1, history: [snapshot], historyIndex: 0, lastUpdated: NOW.toISOString() }, LOCAL_CONNECTION_ID],
+      [
+        WS_1,
+        {
+          version: 1,
+          workspaceId: WS_1,
+          history: [snapshot],
+          historyIndex: 0,
+          lastUpdated: NOW.toISOString(),
+        },
+        LOCAL_CONNECTION_ID,
+      ],
     ]);
   });
 
