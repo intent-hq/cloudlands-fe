@@ -35,35 +35,30 @@
    * - onChatUpdate: Callback for chat state updates
    */
 
-  import {
-  onMount,
-  onDestroy,
-  untrack,
-  tick,
-} from 'svelte';
+  import { onMount, onDestroy, untrack, tick } from 'svelte';
   import { deepEqual } from 'fast-equals';
   import { writable } from 'svelte/store';
   import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
   import type { AgentMessage } from '$shared/types';
   import { saveAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
-  agentSessionDismissQuestionsRequested,
-  agentSessionEditAndRegenerateRequested,
-  agentSessionForkSessionRequested,
-  agentSessionRegenerateFromMessageRequested,
-  agentSessionRetryLastMessageRequested,
-  agentSessionRetryWithModelRequested,
-  agentSessionStopChatRequested,
-  updateSession as updateAgentSessionFields,
-} from '$store/renderer/slices/agent-session/agent-session-slice';
+    agentSessionDismissQuestionsRequested,
+    agentSessionEditAndRegenerateRequested,
+    agentSessionForkSessionRequested,
+    agentSessionRegenerateFromMessageRequested,
+    agentSessionRetryLastMessageRequested,
+    agentSessionRetryWithModelRequested,
+    agentSessionStopChatRequested,
+    updateSession as updateAgentSessionFields,
+  } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
-  selectAgentSession,
-  selectAgentIsResponding,
-  selectAgentIsRunning,
-  selectAgentSessionIsStreaming,
-  selectAgentSessionStreamingContent,
-  selectAgentMessages,
-} from '$store/renderer/slices/agent-session/agent-session-selectors';
+    selectAgentSession,
+    selectAgentIsResponding,
+    selectAgentIsRunning,
+    selectAgentSessionIsStreaming,
+    selectAgentSessionStreamingContent,
+    selectAgentMessages,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
@@ -71,52 +66,47 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectAllTabs as selectPanelLayoutAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
-  setWorkspace as setMultiPanelWorkspace,
-  updatePanels as updateMultiPanels,
-  setSelection as setMultiPanelSelection,
-  clearSelection as clearMultiPanelSelection,
-  type PanelContextItem,
-} from '$store/renderer/slices/multi-panel-context/multi-panel-context-slice';
+    setWorkspace as setMultiPanelWorkspace,
+    updatePanels as updateMultiPanels,
+    setSelection as setMultiPanelSelection,
+    clearSelection as clearMultiPanelSelection,
+    type PanelContextItem,
+  } from '$store/renderer/slices/multi-panel-context/multi-panel-context-slice';
   import {
-  selectCheckedPanels,
-  selectPanels,
-  selectCheckedSelections,
-} from '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors';
-
+    selectCheckedPanels,
+    selectPanels,
+    selectCheckedSelections,
+  } from '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors';
 
   import { selectWorkspaceSetupTerminal } from '$store/renderer/slices/terminals/terminals-selectors';
 
   import {
-  sendMessage,
-  initializeChatRequested,
-  chatRebindStarted,
-  chatRebindEnded,
-  chatTrackedWorkspaceSet,
-  chatErrorCleared,
-  chatSendFailed,
-  chatQueuedRetryRecordUpdated,
-} from '$store/renderer/slices/chat-state/chat-state-slice';
+    sendMessage,
+    initializeChatRequested,
+    chatRebindStarted,
+    chatRebindEnded,
+    chatTrackedWorkspaceSet,
+    chatErrorCleared,
+    chatSendFailed,
+    chatQueuedRetryRecordUpdated,
+  } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
-  selectChatError,
-  selectChatLastChunkTime,
-  selectChatLiveStreamPhase,
-  selectChatModelUnavailable,
-  selectChatReceivedFirstChunk,
-  selectChatStatusEvents,
-  selectChatStreamingStartTime,
-  selectTranscriptHydration,
-} from '$store/renderer/slices/chat-state/chat-state-selectors';
+    selectChatError,
+    selectChatLastChunkTime,
+    selectChatLiveStreamPhase,
+    selectChatModelUnavailable,
+    selectChatReceivedFirstChunk,
+    selectChatStatusEvents,
+    selectChatStreamingStartTime,
+    selectTranscriptHydration,
+  } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectWorkspaceNavigationMainPanel } from '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors';
   import { appClient } from '$lib/client';
 
   import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
   import type { Workspace, AgentMetadata } from '$shared/types';
-  import {
-  extractAllContent,
-  type SuggestedPrompt,
-  AgentStatus,
-} from '$shared/types';
+  import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
   import { createChatDraftManager } from './chat-panel-draft.svelte';
   import ChatDraftLoadingGate from './ChatDraftLoadingGate.svelte';
@@ -148,30 +138,25 @@
   import ChiefChatEmptyState from './ChiefChatEmptyState.svelte';
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
-  import QuestionWizard, {
-  type QuestionAnswer,
-} from './questions/QuestionWizard.svelte';
+  import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
   import { deriveWizardPendingQuestions } from './questions/wizard-gate';
-  import {
-    buildAnswerMessageMetadata,
-    flattenAnswersToMessage,
-  } from './questions/answer-message';
+  import { buildAnswerMessageMetadata, flattenAnswersToMessage } from './questions/answer-message';
   import { groupMessagesByDate } from '$lib/utils/timeFormatting';
   import {
-  animateScrollTo,
-  followBottom,
-  scrollToBottom as scrollToBottomUtil,
-} from '$lib/utils/smartScroll';
+    animateScrollTo,
+    followBottom,
+    scrollToBottom as scrollToBottomUtil,
+  } from '$lib/utils/smartScroll';
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
   import { formatDistanceToNow } from '$lib/utils/date';
   import {
-  faArrowDown,
-  faSquareCheck,
-  faLock,
-  faLockOpen,
-} from '@fortawesome/free-solid-svg-icons';
+    faArrowDown,
+    faSquareCheck,
+    faLock,
+    faLockOpen,
+  } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
@@ -189,31 +174,25 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import AttentionRequestBanner from './AttentionRequestBanner.svelte';
-  import {
-  groupContentBlocks,
-  parseSuggestedPrompts,
-} from '$lib/utils/messageParser';
+  import { groupContentBlocks, parseSuggestedPrompts } from '$lib/utils/messageParser';
 
   import LazyTurn from './LazyTurn.svelte';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
   import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
   import { selectIsAgentMonospace } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
-  markAgentAsViewed,
-  clearCurrentlyViewedAgent,
-  startDividerSession,
-} from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
+    markAgentAsViewed,
+    clearCurrentlyViewedAgent,
+    startDividerSession,
+  } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
   import { selectDividerSession } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import AuroraBackground from './AuroraBackground.svelte';
+  import { invoke, listenSync } from '$lib/electron-bridge';
   import {
-  invoke,
-  listenSync,
-} from '$lib/electron-bridge';
-  import {
-  selectSpecialists,
-  selectEffectiveBehaviorPrompt,
-  selectEffectiveModel,
-} from '$store/renderer/slices/specialists/specialists-selectors';
+    selectSpecialists,
+    selectEffectiveBehaviorPrompt,
+    selectEffectiveModel,
+  } from '$store/renderer/slices/specialists/specialists-selectors';
 
   import { getAgentProvider } from '$shared/types/agent-session';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -225,10 +204,10 @@
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import { resolveHydratedInputModel } from './input-hydration';
   import {
-  deriveQueuedMessagesVisibility,
-  shouldShowEndOfListStreamingStatus,
-  shouldShowPendingAssistantStatus,
-} from './chat-panel-visibility';
+    deriveQueuedMessagesVisibility,
+    shouldShowEndOfListStreamingStatus,
+    shouldShowPendingAssistantStatus,
+  } from './chat-panel-visibility';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
 
@@ -251,14 +230,11 @@
     // Hide the daemon's dequeue-wait [SYSTEM NOTE] from the sticky header the
     // same way the message body does when structured queueInfo is present.
     const allContent = extractAllContent(message);
-    const rawText = getQueueInfo(message.metadata)
-      ? stripDequeueWaitNote(allContent)
-      : allContent;
+    const rawText = getQueueInfo(message.metadata) ? stripDequeueWaitNote(allContent) : allContent;
 
     // Get context references from metadata
     const contextRefs = message.metadata?.contextReferences as
-      | Array<{ provider?: string; identifier?: string; title?: string }>
-      | undefined;
+      Array<{ provider?: string; identifier?: string; title?: string }> | undefined;
 
     // Build labels from context references
     const pillLabels: string[] = [];
@@ -368,9 +344,7 @@
   const transcriptHydration$ = selectTranscriptHydration(agentIdStore);
   // Latched "New messages" divider viewing session (entry-only, frozen).
   const dividerSession$ = selectDividerSession(agentIdStore);
-  const isDelegatedBackgroundTaskAgent = $derived(
-    isDelegatedBackgroundTaskSession($agentSession$),
-  );
+  const isDelegatedBackgroundTaskAgent = $derived(isDelegatedBackgroundTaskSession($agentSession$));
 
   // Derive error state: combine transient chatError with persisted agent status.
   // After a reload, chatError is null but agent status may be Error — use
@@ -442,14 +416,9 @@
   } | null>(null);
 
   function handleFocusSetupTerminal() {
-    const setupTerminal = selectWorkspaceSetupTerminal.select(
-      appStore.state,
-      workspace.id,
-    );
+    const setupTerminal = selectWorkspaceSetupTerminal.select(appStore.state, workspace.id);
     if (setupTerminal) {
-      appStore.dispatch(
-        openTerminalTabRequested(workspace.id, { terminalId: setupTerminal.id }),
-      );
+      appStore.dispatch(openTerminalTabRequested(workspace.id, { terminalId: setupTerminal.id }));
     }
   }
 
@@ -1246,7 +1215,8 @@
             panelId,
             tabId: tab.id,
             type: isSpec ? 'spec' : 'note',
-            label: tab.title || (isSpec ? m.chat_shared_spec_label() : m.chat_shared_note_fallback()),
+            label:
+              tab.title || (isSpec ? m.chat_shared_spec_label() : m.chat_shared_note_fallback()),
             noteId: tab.noteId,
             checked: false,
             isActive: isActiveTab,
@@ -2291,8 +2261,7 @@
 
   async function handleOpenMessage(event: Event) {
     const detail = (event as CustomEvent).detail as
-      | { agentId: string; messageId: string; query?: string; requestId: string }
-      | undefined;
+      { agentId: string; messageId: string; query?: string; requestId: string } | undefined;
     if (!detail || detail.agentId !== agentId) return;
     // The helper dispatches on a retry ladder (the panel may still be
     // mounting); dedup so a successfully handled request runs exactly once.
@@ -3072,11 +3041,7 @@
   function handleRegenerateFromMessage(assistantMessageId: string) {
     if (!workspace) return;
     appStore.dispatch(
-      agentSessionRegenerateFromMessageRequested(
-        agentId,
-        workspace.id,
-        assistantMessageId,
-      ),
+      agentSessionRegenerateFromMessageRequested(agentId, workspace.id, assistantMessageId),
     );
   }
 
@@ -3314,7 +3279,10 @@
           <ChiefChatEmptyState onSelect={handleSelectSuggestedPrompt} />
         {:else}
           <div class="mt-16"></div>
-          <RegularAgentWelcome onSpecialistChange={handleSpecialistChange} session={$agentSession$} />
+          <RegularAgentWelcome
+            onSpecialistChange={handleSpecialistChange}
+            session={$agentSession$}
+          />
         {/if}
       {:else if isInitialWorkspaceAgent && onboardingContext && !onboardingContext.prompt?.trim() && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && !pendingInitialPrompt}
         <!-- Initial workspace agent with no prompt — show setup card only, no skeletons -->
@@ -3797,7 +3765,9 @@
                             .trim()
                             .startsWith('[WORKSPACE EVENTS]'))}
                       <!-- Daemon-delivered dismissal rows render as a compact chip, not a user bubble -->
-                      {@const isQuestionsDismissed = !!getQuestionsDismissedNotice(turn.userMessage)}
+                      {@const isQuestionsDismissed = !!getQuestionsDismissedNotice(
+                        turn.userMessage,
+                      )}
                       <!-- Sticky compact user message header - shows when scrolled past expanded message -->
                       <!-- Positioned BEFORE expanded message in DOM so it's naturally behind it -->
                       {#if shouldEnableSticky && turn.userMessage && !isEventNotification && !isQuestionsDismissed}
@@ -3872,7 +3842,7 @@
                         />
                       {/if}
                       <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
-                      {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: effectiveError, modelUnavailable: $chatModelUnavailable$ }, )}
+                      {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: effectiveError, modelUnavailable: $chatModelUnavailable$ } )}
                         <div class="mb-8">
                           <StreamingStatus
                             isStreaming={$agentSessionIsStreaming$}

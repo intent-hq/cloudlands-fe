@@ -174,7 +174,7 @@ describe('specialistsSaga', () => {
     expect(mocks.unsubscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('sends an exact create payload and serializes repeated writes for one specialist', async () => {
+  it('sends exact create payloads while global takeEvery processes repeated writes concurrently', async () => {
     mocks.list.mockResolvedValue([fileDef('builtin')]);
     let release!: () => void;
     mocks.create.mockReturnValue(
@@ -203,7 +203,7 @@ describe('specialistsSaga', () => {
     channel.put(action);
     channel.put(action);
     await settle();
-    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(mocks.create).toHaveBeenCalledTimes(2);
     expect(mocks.create.mock.calls[0]).toEqual([
       'builtin',
       {
@@ -225,10 +225,9 @@ describe('specialistsSaga', () => {
     await settle();
     expect(mocks.create).toHaveBeenCalledTimes(2);
     expect(mocks.list.mock.calls).toEqual([[], []]);
-    expect(dispatch.mock.calls.map(([dispatched]) => dispatched)).toEqual([
-      ...expectedListActions(['builtin']),
-      ...expectedListActions(['builtin']),
-    ]);
+    expect(dispatch.mock.calls.map(([dispatched]) => dispatched)).toEqual(
+      expectedListActions(['builtin']),
+    );
     task.cancel();
     await task.toPromise();
   });
