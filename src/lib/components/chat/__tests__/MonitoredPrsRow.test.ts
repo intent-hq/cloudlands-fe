@@ -167,6 +167,24 @@ describe('MonitoredPrsRow', () => {
     );
   });
 
+  it('hover card content renders whitespace-normal, not the tooltip base whitespace-pre-wrap', async () => {
+    monitorsState.monitors = [makeMonitor()];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
+    await fireEvent.focus(trigger);
+
+    await waitFor(() => screen.getByTestId('monitored-pr-hover-card'));
+    const tooltipContent = document.querySelector('[data-tooltip-content]') as HTMLElement;
+    expect(tooltipContent).toBeTruthy();
+    // Regression (intent-hq/monorepo#1913): the Tooltip base class
+    // whitespace-pre-wrap made the markup's literal whitespace render as a
+    // leading space before "No changes pending" and extra vertical gaps.
+    // The hover card must override it with whitespace-normal.
+    expect(tooltipContent.className).toContain('whitespace-normal');
+    expect(tooltipContent.className).not.toContain('whitespace-pre-wrap');
+  });
+
   it('hover card prefers the merge-blocked reason over the mergeable line', async () => {
     monitorsState.monitors = [
       makeMonitor({
