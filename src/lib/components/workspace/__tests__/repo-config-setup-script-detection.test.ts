@@ -39,7 +39,10 @@ vi.mock('$store/renderer/store', async () => {
     '$store/renderer/utils/test-helpers/store-mock'
   );
   return createAppStoreMockModule({
-    state: () => ({ hardwareConsole: { pttRecording: false, voiceTranscribing: false } }),
+    state: () => ({
+      hardwareConsole: { pttRecording: false, voiceTranscribing: false },
+      workspaceCreateProgress: { byProgressId: {} },
+    }),
     dispatch: mocks.dispatch,
   });
 });
