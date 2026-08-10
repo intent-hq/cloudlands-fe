@@ -47,6 +47,22 @@ const RENDERER_STARTUP_CHANNELS = [
 ];
 
 describe('IPC Startup Race Condition', () => {
+  it('initializes auto-update before window creation without requiring a window', () => {
+    const indexPath = path.join(SRC_ROOT, 'main', 'index.ts');
+    const source = fs.readFileSync(indexPath, 'utf-8');
+    const createWindowEnd = source.indexOf("startupMetrics.end('createWindow')");
+    const secondaryStart = source.indexOf('setImmediate(async');
+    const updaterInit = source.indexOf('initializeAutoUpdater(mainWindow)', secondaryStart);
+    const preWindowStartup = source.slice(secondaryStart, createWindowEnd);
+
+    expect(createWindowEnd).toBeGreaterThan(-1);
+    expect(secondaryStart).toBeGreaterThan(-1);
+    expect(updaterInit).toBeGreaterThan(secondaryStart);
+    expect(updaterInit).toBeLessThan(createWindowEnd);
+    expect(preWindowStartup).toContain("if (process.env.NODE_ENV !== 'development')");
+    expect(preWindowStartup).not.toContain("process.env.NODE_ENV !== 'development' && mainWindow");
+  });
+
   it('starts the sidecar before requesting its host environment', () => {
     const indexPath = path.join(SRC_ROOT, 'main', 'index.ts');
     const source = fs.readFileSync(indexPath, 'utf-8');
