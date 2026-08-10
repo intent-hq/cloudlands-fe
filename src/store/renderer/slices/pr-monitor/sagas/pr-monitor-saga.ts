@@ -1,9 +1,11 @@
-import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
+import { END, buffers, channel, eventChannel, type Channel, type EventChannel } from 'redux-saga';
 import type { Task } from 'redux-saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
 import {
   all,
   call,
   cancel,
+  delay,
   fork,
   put,
   take,
@@ -16,10 +18,10 @@ import {
   cancelPrMonitorRequested,
   flushPrMonitorRequested,
   prMonitorsCleared,
-  prMonitorsSubscribeRequested,
-  prMonitorsUnsubscribeRequested,
   prMonitorsUpdated,
+  type PrMonitorState,
 } from '../pr-monitor-slice';
+import { selectPrMonitorSubscriptionDemand } from '../pr-monitor-selectors';
 import {
   cancelPrMonitor,
   flushPrMonitor,
@@ -30,10 +32,13 @@ import {
 const logger = createLogger('PrMonitorSaga');
 
 type SubscriptionEntry = {
-  count: number;
   channel: EventChannel<PrMonitorRow[]>;
   task: Task;
 };
+
+type SubscriptionDemand = PrMonitorState['subscriptionDemandByWorkspaceId'];
+
+const SUBSCRIPTION_RECONCILIATION_DELAY_MS = 100;
 
 function createMonitorChannel(workspaceId: string): EventChannel<PrMonitorRow[]> {
   return eventChannel<PrMonitorRow[]>((emit) => {
@@ -57,42 +62,48 @@ function* forwardMonitorUpdates(
   }
 }
 
-function* watchSubscribe(active: Map<string, SubscriptionEntry>): SagaGenerator<void> {
-  while (true) {
-    const action = yield* take(prMonitorsSubscribeRequested);
-    const [workspaceId] = action.payload;
-    if (!workspaceId) continue;
+function* reconcilePrMonitorSubscriptions(
+  active: Map<string, SubscriptionEntry>,
+  demand: SubscriptionDemand,
+): SagaGenerator<void> {
+  for (const [workspaceId, entry] of active) {
+    if ((demand[workspaceId] ?? 0) > 0) continue;
+    active.delete(workspaceId);
+    yield* cancel(entry.task);
+    yield* put(prMonitorsCleared(workspaceId));
+  }
 
-    const existing = active.get(workspaceId);
-    if (existing) {
-      existing.count += 1;
-      continue;
-    }
-
+  for (const [workspaceId, count] of Object.entries(demand)) {
+    if (count <= 0 || active.has(workspaceId)) continue;
     try {
       const channel = createMonitorChannel(workspaceId);
       const task = yield* fork(forwardMonitorUpdates, workspaceId, channel);
-      active.set(workspaceId, { count: 1, channel, task });
+      active.set(workspaceId, { channel, task });
     } catch (error) {
       logger.error('Failed to subscribe to prMonitor events', { workspaceId, error });
     }
   }
 }
 
-function* watchUnsubscribe(active: Map<string, SubscriptionEntry>): SagaGenerator<void> {
+function* watchSubscriptionDemand(
+  reconciliationChannel: Channel<SubscriptionDemand>,
+): SagaGenerator<void> {
+  yield* takeLatestFromSelector(
+    selectPrMonitorSubscriptionDemand,
+    function* ({ payload }: SelectorChannelPayload<SubscriptionDemand>) {
+      yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
+      yield* put(reconciliationChannel, payload);
+    },
+  );
+}
+
+function* manageSubscriptions(
+  active: Map<string, SubscriptionEntry>,
+  reconciliationChannel: Channel<SubscriptionDemand>,
+): SagaGenerator<void> {
   while (true) {
-    const action = yield* take(prMonitorsUnsubscribeRequested);
-    const [workspaceId] = action.payload;
-    if (!workspaceId) continue;
-
-    const entry = active.get(workspaceId);
-    if (!entry) continue;
-    entry.count -= 1;
-    if (entry.count > 0) continue;
-
-    active.delete(workspaceId);
-    yield* cancel(entry.task);
-    yield* put(prMonitorsCleared(workspaceId));
+    const demand = yield* take(reconciliationChannel);
+    yield* reconcilePrMonitorSubscriptions(active, demand);
   }
 }
 
@@ -128,14 +139,16 @@ function* watchCancel(): SagaGenerator<void> {
 
 export function* prMonitorSaga(): SagaGenerator<void> {
   const active = new Map<string, SubscriptionEntry>();
+  const reconciliationChannel = channel<SubscriptionDemand>(buffers.sliding(1));
   try {
     yield* all([
-      call(watchSubscribe, active),
-      call(watchUnsubscribe, active),
+      call(watchSubscriptionDemand, reconciliationChannel),
+      call(manageSubscriptions, active, reconciliationChannel),
       call(watchFlush),
       call(watchCancel),
     ]);
   } finally {
+    reconciliationChannel.close();
     for (const entry of active.values()) yield* cancel(entry.task);
     active.clear();
   }
