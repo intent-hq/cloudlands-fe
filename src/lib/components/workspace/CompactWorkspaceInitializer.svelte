@@ -2943,10 +2943,14 @@
                 {#if isPulling}
                   {m.workspace_compactInitializer_pullingLatest_label()}
                 {:else if activeCreateProgressId}
-                  <CreateButtonProgress
-                    progressId={activeCreateProgressId}
-                    fallbackLabel={CREATION_STAGES[creationStage]}
-                  />
+                  <!-- Key on the progressId: the component binds its selector at
+                       init, so a new create must destroy/recreate it. -->
+                  {#key activeCreateProgressId}
+                    <CreateButtonProgress
+                      progressId={activeCreateProgressId}
+                      fallbackLabel={CREATION_STAGES[creationStage]}
+                    />
+                  {/key}
                 {:else}
                   {CREATION_STAGES[creationStage]}
                 {/if}

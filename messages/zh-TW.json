@@ -929,6 +929,7 @@
   "workspace_compactInitializer_progressResolving_label": "正在解析差異…",
   "workspace_compactInitializer_progressSubmodulesCounted_label": "正在克隆子模組（{current}/{total}）…",
   "workspace_compactInitializer_progressSubmodules_label": "正在克隆子模組…",
+  "workspace_compactInitializer_progressWithPercent_label": "{label} {percent}",
   "workspace_compactInitializer_progressWorktree_label": "正在創建工作樹…",
   "workspace_compactInitializer_promptEnhanced_toast": "提示詞已增強",
   "workspace_compactInitializer_prompt_placeholder": "你想做點什麼？",

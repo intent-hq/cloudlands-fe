@@ -10,11 +10,9 @@
   anchors the bar.
 -->
 <script lang="ts">
+  import { m } from '$shared/paraglide/messages.js';
   import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
-  import {
-  createProgressLabel,
-  formatCreateProgressPercent,
-} from './create-progress-label';
+  import { createProgressLabel, formatCreateProgressPercent } from './create-progress-label';
 
   let { progressId, fallbackLabel }: { progressId: string; fallbackLabel: string } = $props();
 
@@ -25,10 +23,12 @@
   const entry$ = selectWorkspaceCreateProgress(progressId);
 
   // Monotonic floor: track the highest percent seen so the label and bar
-  // never move backwards even if frames arrive out of order.
+  // never move backwards even if frames arrive out of order. Clamped to 100
+  // at the source so text, bar width, and ARIA can never disagree (negatives
+  // are excluded by the > maxPercent guard against the initial 0).
   let maxPercent = $state(0);
   $effect(() => {
-    const percent = $entry$?.percent ?? 0;
+    const percent = Math.min($entry$?.percent ?? 0, 100);
     if (percent > maxPercent) maxPercent = percent;
   });
 
@@ -37,13 +37,16 @@
 
 {#if live && $entry$}
   <span data-testid="create-progress-label">
-    {createProgressLabel($entry$)}
-    {formatCreateProgressPercent(maxPercent)}
+    {m.workspace_compactInitializer_progressWithPercent_label({
+      label: createProgressLabel($entry$),
+      percent: formatCreateProgressPercent(maxPercent),
+    })}
   </span>
   <div
     class="absolute bottom-0 left-0 h-[2px] bg-white/80 transition-[width] duration-300 ease-out"
     style="width: {maxPercent}%"
     role="progressbar"
+    aria-label={createProgressLabel($entry$)}
     aria-valuemin="0"
     aria-valuemax="100"
     aria-valuenow={maxPercent}

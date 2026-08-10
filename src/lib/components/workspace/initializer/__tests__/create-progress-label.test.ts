@@ -4,10 +4,7 @@
  * formatting.
  */
 import { describe, expect, it } from 'vitest';
-import {
-  createProgressLabel,
-  formatCreateProgressPercent,
-} from '../create-progress-label';
+import { createProgressLabel, formatCreateProgressPercent } from '../create-progress-label';
 import type { WorkspaceCreateProgressEntry } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-types';
 
 function entry(phase: string, message?: string): WorkspaceCreateProgressEntry {
@@ -16,7 +13,7 @@ function entry(phase: string, message?: string): WorkspaceCreateProgressEntry {
 
 describe('createProgressLabel', () => {
   it.each([
-    ['starting', 'Preparing workspace...'],
+    ['starting', 'Preparing workspace…'],
     ['cache', 'Preparing repository cache…'],
     ['counting', 'Counting objects…'],
     ['compressing', 'Compressing objects…'],
@@ -26,13 +23,13 @@ describe('createProgressLabel', () => {
     ['cow-copy', 'Copying repository…'],
     ['worktree', 'Creating worktree…'],
     ['finalizing', 'Finalizing workspace…'],
-    ['complete', 'Almost ready...'],
+    ['complete', 'Almost ready…'],
   ])('maps daemon phase %s', (phase, label) => {
     expect(createProgressLabel(entry(phase))).toBe(label);
   });
 
   it('falls back to the generic preparing label for unknown phases', () => {
-    expect(createProgressLabel(entry('future-phase'))).toBe('Preparing workspace...');
+    expect(createProgressLabel(entry('future-phase'))).toBe('Preparing workspace…');
   });
 
   it('renders the submodule (N/M) counter parsed from the daemon message', () => {

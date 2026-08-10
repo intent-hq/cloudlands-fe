@@ -40,32 +40,27 @@ function setSliceState(state: WorkspaceCreateProgressState) {
 
 function dispatchToSlice(action: Parameters<typeof workspaceCreateProgressReducer>[1]) {
   setSliceState(
-    workspaceCreateProgressReducer(
-      mockStore.sliceState as WorkspaceCreateProgressState,
-      action,
-    ),
+    workspaceCreateProgressReducer(mockStore.sliceState as WorkspaceCreateProgressState, action),
   );
   mockStore.emitState();
 }
 
 describe('CreateButtonProgress', () => {
   beforeEach(() => {
-    setSliceState(
-      workspaceCreateProgressReducer(initialState, beginWorkspaceCreateProgress(PID)),
-    );
+    setSliceState(workspaceCreateProgressReducer(initialState, beginWorkspaceCreateProgress(PID)));
   });
 
   it('renders the fallback label (and no bar) until the first frame arrives', () => {
     render(CreateButtonProgress, {
-      props: { progressId: PID, fallbackLabel: 'Preparing workspace...' },
+      props: { progressId: PID, fallbackLabel: 'Preparing workspace…' },
     });
-    expect(screen.getByText('Preparing workspace...')).toBeTruthy();
+    expect(screen.getByText('Preparing workspace…')).toBeTruthy();
     expect(screen.queryByTestId('create-progress-bar')).toBeNull();
   });
 
   it('shows phase label + percent and a width-matched bar once frames arrive', async () => {
     render(CreateButtonProgress, {
-      props: { progressId: PID, fallbackLabel: 'Preparing workspace...' },
+      props: { progressId: PID, fallbackLabel: 'Preparing workspace…' },
     });
 
     dispatchToSlice(
@@ -89,7 +84,7 @@ describe('CreateButtonProgress', () => {
 
   it('never moves percent or bar backwards on a lower late frame', async () => {
     render(CreateButtonProgress, {
-      props: { progressId: PID, fallbackLabel: 'Preparing workspace...' },
+      props: { progressId: PID, fallbackLabel: 'Preparing workspace…' },
     });
 
     dispatchToSlice(workspaceCreateProgressReceived(PID, { phase: 'receiving', percent: 60 }));
@@ -109,5 +104,19 @@ describe('CreateButtonProgress', () => {
     const bar = screen.getByTestId('create-progress-bar');
     expect(bar.getAttribute('style')).toContain('width: 60%');
     expect(bar.getAttribute('aria-valuenow')).toBe('60');
+  });
+
+  it('clamps an out-of-range daemon percent so text, bar, and ARIA agree at 100', async () => {
+    render(CreateButtonProgress, {
+      props: { progressId: PID, fallbackLabel: 'Preparing workspace…' },
+    });
+
+    dispatchToSlice(workspaceCreateProgressReceived(PID, { phase: 'receiving', percent: 150 }));
+    await waitFor(() => {
+      expect(screen.getByTestId('create-progress-label').textContent).toContain('100%');
+    });
+    const bar = screen.getByTestId('create-progress-bar');
+    expect(bar.getAttribute('style')).toContain('width: 100%');
+    expect(bar.getAttribute('aria-valuenow')).toBe('100');
   });
 });

@@ -5,7 +5,7 @@
  * (`counting`, `compressing`, `receiving`, `resolving`, `checkout`) plus the
  * synthetic milestones (`starting`, `cache`, `submodules`, `cow-copy`,
  * `worktree`, `finalizing`, `complete`). Unknown phases fall back to the
- * generic "Preparing workspace..." label so a daemon that grows new
+ * generic "Preparing workspace…" label so a daemon that grows new
  * milestones never breaks the button.
  */
 import { m } from '$shared/paraglide/messages.js';
