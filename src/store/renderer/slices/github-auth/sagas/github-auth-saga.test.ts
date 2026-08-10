@@ -47,6 +47,7 @@ function harness(seed = initialState) {
   const dispatch = (action: never) => {
     dispatched.push(action);
     state = githubAuthReducer(state, action);
+    channel.put(action);
     return action;
   };
   const task = runSaga({ channel, dispatch, getState: () => ({ githubAuth: state }) }, githubAuthSaga);

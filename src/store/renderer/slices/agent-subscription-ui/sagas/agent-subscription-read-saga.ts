@@ -1,5 +1,4 @@
-import type { Task } from 'redux-saga';
-import { call, cancel, delay, fork, put, spawn, take } from 'typed-redux-saga';
+import { all, call, delay, put, race, take, takeEvery, takeLatest, takeLeading } from 'typed-redux-saga';
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
@@ -43,7 +42,15 @@ interface WireResult {
   agentStatuses?: Record<string, AgentStatus>;
 }
 
-type TrackedTask = { wsId: string; task: Task; token: symbol };
+type WorkspaceCleanupAction =
+  | ReturnType<typeof workspaceDeleted>
+  | ReturnType<typeof workspaceUnmounted>;
+
+function matchesWorkspaceCleanup(wsId: string) {
+  return (action: WorkspaceCleanupAction) =>
+    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    action.payload[0] === wsId;
+}
 
 function mapResult(result: WireResult) {
   const agentStatuses = result.agentStatuses ?? {};
@@ -89,11 +96,7 @@ function* completedCleanupSaga(wsId: string, agentId: string) {
   yield* put(resetSubscriptionUI(wsId, agentId));
 }
 
-function* fetchSnapshotSaga(
-  wsId: string,
-  agentId: string,
-  cleanupTasks: Map<string, TrackedTask>,
-) {
+function* fetchSnapshotSaga(wsId: string, agentId: string) {
   const key = makeKey(wsId, agentId);
   try {
     const previous: WaitingState = yield* selectWaitingState.effect(wsId, agentId);
@@ -110,84 +113,55 @@ function* fetchSnapshotSaga(
         waitingState: completed ? 'completed' : hasData ? 'waiting' : 'idle',
       }),
     );
-    if (!completed) return;
-
-    const prior = cleanupTasks.get(key);
-    if (prior) yield* cancel(prior.task);
-    const token = Symbol(key);
-    const task = yield* spawn(function* () {
-      try {
-        yield* call(completedCleanupSaga, wsId, agentId);
-      } finally {
-        if (cleanupTasks.get(key)?.token === token) cleanupTasks.delete(key);
-      }
-    });
-    cleanupTasks.set(key, { wsId, task, token });
   } catch (error) {
     logger.error(`Failed to fetch agent subscriptions for ${key}`, error);
   }
 }
 
-function* startFetch(
-  wsId: string,
-  agentId: string,
-  fetchTasks: Map<string, TrackedTask>,
-  cleanupTasks: Map<string, TrackedTask>,
-) {
-  const key = makeKey(wsId, agentId);
-  if (fetchTasks.has(key)) return;
-  const token = Symbol(key);
-  const task = yield* fork(function* () {
-    try {
-      yield* call(fetchSnapshotSaga, wsId, agentId, cleanupTasks);
-    } finally {
-      if (fetchTasks.get(key)?.token === token) fetchTasks.delete(key);
-    }
+function* requestSubscriptionFetchWorker(action: ReturnType<typeof requestSubscriptionFetch>) {
+  const [wsId, agentId] = action.payload;
+  if (!wsId || !agentId) return;
+  yield* race({
+    read: call(fetchSnapshotSaga, wsId, agentId),
+    cleanup: take(matchesWorkspaceCleanup(wsId)),
   });
-  fetchTasks.set(key, { wsId, task, token });
+}
+
+function* refreshWorkspaceSubscriptionsWorker(
+  action: ReturnType<typeof refreshWorkspaceSubscriptionEntriesRequested>,
+) {
+  const [wsId] = action.payload;
+  if (!wsId) return;
+  const agentIds: string[] = yield* selectTrackedAgentIds.effect(wsId);
+  yield* race({
+    reads: all(agentIds.map((agentId) => call(fetchSnapshotSaga, wsId, agentId))),
+    cleanup: take(matchesWorkspaceCleanup(wsId)),
+  });
+}
+
+function* completedSnapshotWorker(action: ReturnType<typeof setSubscriptionSnapshot>) {
+  const { workspaceId, agentId, data } = action.payload;
+  if (data.waitingState !== 'completed') return;
+  yield* race({
+    cleanup: call(completedCleanupSaga, workspaceId, agentId),
+    workspaceCleanup: take(matchesWorkspaceCleanup(workspaceId)),
+  });
+}
+
+function* deleteWorkspaceSubscriptionsWorker(action: ReturnType<typeof workspaceDeleted>) {
+  const [wsId] = action.payload;
+  const agentIds: string[] = yield* selectTrackedAgentIds.effect(wsId);
+  for (const agentId of agentIds) yield* put(deleteSubscriptionUI(wsId, agentId));
 }
 
 export function* agentSubscriptionReadSaga() {
-  const fetchTasks = new Map<string, TrackedTask>();
-  const cleanupTasks = new Map<string, TrackedTask>();
-  try {
-    while (true) {
-      const action: { type: string; payload: unknown } = yield* take([
-        requestSubscriptionFetch,
-        refreshWorkspaceSubscriptionEntriesRequested,
-        workspaceDeleted,
-        workspaceUnmounted,
-      ]);
-      if (action.type === requestSubscriptionFetch.type) {
-        const [wsId, agentId] = action.payload as [string, string];
-        yield* fork(startFetch, wsId, agentId, fetchTasks, cleanupTasks);
-        continue;
-      }
-      const [wsId] = action.payload as [string];
-      if (action.type === refreshWorkspaceSubscriptionEntriesRequested.type) {
-        const agentIds: string[] = yield* selectTrackedAgentIds.effect(wsId);
-        for (const agentId of agentIds) {
-          yield* fork(startFetch, wsId, agentId, fetchTasks, cleanupTasks);
-        }
-        continue;
-      }
-
-      for (const tasks of [fetchTasks, cleanupTasks]) {
-        for (const [key, tracked] of tasks) {
-          if (tracked.wsId !== wsId) continue;
-          tasks.delete(key);
-          yield* cancel(tracked.task);
-        }
-      }
-      if (action.type === workspaceDeleted.type) {
-        const agentIds: string[] = yield* selectTrackedAgentIds.effect(wsId);
-        for (const agentId of agentIds) yield* put(deleteSubscriptionUI(wsId, agentId));
-      }
-    }
-  } finally {
-    for (const tasks of [fetchTasks, cleanupTasks]) {
-      for (const tracked of tasks.values()) yield* cancel(tracked.task);
-      tasks.clear();
-    }
-  }
+  yield* all([
+    takeLeading(requestSubscriptionFetch, requestSubscriptionFetchWorker),
+    takeLeading(
+      refreshWorkspaceSubscriptionEntriesRequested,
+      refreshWorkspaceSubscriptionsWorker,
+    ),
+    takeLatest(setSubscriptionSnapshot, completedSnapshotWorker),
+    takeEvery(workspaceDeleted, deleteWorkspaceSubscriptionsWorker),
+  ]);
 }

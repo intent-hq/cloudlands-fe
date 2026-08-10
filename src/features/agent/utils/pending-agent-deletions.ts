@@ -13,12 +13,12 @@
  * Shared by the agent mutation saga and dependency-light read paths.
  * Entries are transient, UI-only state (per src/store AGENTS.md) — they never
  * enter Redux. Each entry snapshots the removed session so `undo` can restore
- * it without a wire call, and holds the timer that commits the real
- * `agent.delete` when the undo window elapses.
+ * it without a wire call. The owning saga expresses the undo window with
+ * native delay/race effects and attached cancellation.
  *
  * Dependency-light per AGENTS.md utils conventions: no stores, services, or
  * wire calls — just a module-level Map with simple accessors and mutators
- * over it (no side effects beyond that Map and its entries' timers).
+ * over it (no side effects beyond that Map).
  */
 import type { AgentSession } from '$shared/types';
 
@@ -27,7 +27,6 @@ export interface PendingAgentDeletion {
   wsId: string;
   agentId: string;
   snapshot: AgentSession;
-  timer: ReturnType<typeof setTimeout> | null;
 }
 
 const pendingAgentDeletions = new Map<string, PendingAgentDeletion>();
@@ -57,10 +56,7 @@ export function listPendingAgentDeletions(): PendingAgentDeletion[] {
   return [...pendingAgentDeletions.values()];
 }
 
-/** Test-only reset: drop all entries (clearing any armed timers first). */
+/** Test-only reset: drop all entries. */
 export function clearPendingAgentDeletions(): void {
-  for (const entry of pendingAgentDeletions.values()) {
-    if (entry.timer) clearTimeout(entry.timer);
-  }
   pendingAgentDeletions.clear();
 }
