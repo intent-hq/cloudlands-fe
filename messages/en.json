@@ -2102,6 +2102,7 @@
   "chat_toolClassifier_drag_label": "Drag",
   "chat_toolClassifier_hover_label": "Hover",
   "chat_toolClassifier_page_subject": "page",
+  "chat_toolClassifier_tab_subject": "tab",
   "chat_toolClassifier_renameWorkspace_label": "Rename workspace",
   "chat_toolClassifier_renameAgent_label": "Rename agent",
   "chat_toolClassifier_createNote_label": "Create note",

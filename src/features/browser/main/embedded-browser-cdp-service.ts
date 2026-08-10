@@ -75,13 +75,27 @@ class EmbeddedBrowserCdpService {
     // Listen for browser tab list responses from renderer
     ipcMain.handle(
       IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE,
-      (_event, data: { tabs: PanelBrowserTab[] }) => {
-        logger.debug('Received browser tab list from renderer', { count: data.tabs.length });
+      (_event, data: { tabs: PanelBrowserTab[]; requestId?: string }) => {
+        logger.debug('Received browser tab list from renderer', {
+          count: data.tabs.length,
+          requestId: data.requestId,
+        });
         this.panelBrowserTabs = data.tabs;
-        // Resolve ALL pending requests with the same data
-        for (const [requestId, resolver] of this.pendingListTabsRequests) {
-          resolver(data.tabs);
-          this.pendingListTabsRequests.delete(requestId);
+        if (data.requestId) {
+          // Resolve only the request this reply answers, so concurrent
+          // requests for different workspaces never consume each other's
+          // tab lists.
+          const resolver = this.pendingListTabsRequests.get(data.requestId);
+          if (resolver) {
+            this.pendingListTabsRequests.delete(data.requestId);
+            resolver(data.tabs);
+          }
+        } else {
+          // Reply without a requestId — resolve all pending requests
+          for (const [requestId, resolver] of this.pendingListTabsRequests) {
+            this.pendingListTabsRequests.delete(requestId);
+            resolver(data.tabs);
+          }
         }
       },
     );
@@ -99,9 +113,11 @@ class EmbeddedBrowserCdpService {
       this.pendingListTabsRequests.set(requestId, resolve);
     });
 
-    // Send to workspace windows (falls back to all windows if no workspaceId)
-    sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST, undefined);
-    logger.debug('Sent LIST_TABS_REQUEST', { workspaceId });
+    // Send to workspace windows (falls back to all windows if no workspaceId).
+    // The renderer echoes requestId back so the reply resolves this request
+    // specifically, not whichever request happens to be pending.
+    sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST, { requestId });
+    logger.debug('Sent LIST_TABS_REQUEST', { workspaceId, requestId });
 
     // Create per-request timeout promise
     const timeoutPromise = new Promise<PanelBrowserTab[]>((resolve) => {
@@ -285,12 +301,16 @@ class EmbeddedBrowserCdpService {
    *
    * Validates against the panel layout's tab list first so unknown /
    * already-closed tabs and non-closable tabs fail with a descriptive error
-   * instead of silently no-oping. On success the renderer removes the tab;
-   * unmounting the webview fires the `destroyed` hook from registerTab, which
-   * cleans the registry, debugger attachment, and lease — we also clean up
-   * proactively here for the unmounted-tab case.
+   * instead of silently no-oping, then confirms the renderer actually removed
+   * the tab before reporting success — the renderer intentionally ignores
+   * closes for tabs that vanished or became non-closable after the pre-check,
+   * and no window may receive the event at all. On success the renderer
+   * removes the tab; unmounting the webview fires the `destroyed` hook from
+   * registerTab, which cleans the registry, debugger attachment, and lease —
+   * we also clean up proactively here for the unmounted-tab case.
    *
-   * @returns the closed tabId on success; throws on unknown or non-closable tabs
+   * @returns the closed tabId on success; throws on unknown or non-closable
+   *          tabs, or when the close could not be confirmed
    */
   async closeTab(tabId: string, workspaceId?: string): Promise<{ tabId: string }> {
     const panelTabs = await this.requestPanelBrowserTabs(workspaceId);
@@ -309,6 +329,24 @@ class EmbeddedBrowserCdpService {
     // workspace's panel layout, not whichever workspace is currently visible.
     sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.CLOSE_TAB, { tabId, workspaceId });
     logger.info('Sent close request for browser tab', { tabId, workspaceId });
+
+    // Confirm the renderer removed the tab. If no window received the event,
+    // the fresh list request times out to the (still-uncleaned) cache; if the
+    // renderer ignored the close, the tab is still in the reply — either way
+    // the tab remains listed and we fail instead of claiming success.
+    let confirmed = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const after = await this.requestPanelBrowserTabs(workspaceId);
+      if (!after.some((t) => t.tabId === tabId)) {
+        confirmed = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!confirmed) {
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      throw new Error(`Tab ${tabId} could not be closed (the UI did not confirm the close).`);
+    }
 
     // Proactive CDP cleanup: detach debugger, drop registry entry and lease.
     // For mounted tabs the webContents `destroyed` hook covers this too, but

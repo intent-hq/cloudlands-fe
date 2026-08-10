@@ -830,7 +830,11 @@
     });
 
     // Listen for browser tab list requests from main process
-    const unsubBrowserListTabs = listenSync('browser:list-tabs-request', () => {
+    const unsubBrowserListTabs = listenSync('browser:list-tabs-request', (event: any) => {
+      // Echo the requestId back so the main process resolves the matching
+      // pending request (concurrent requests must not consume each other's
+      // replies).
+      const requestId = event?.payload?.requestId;
       // Collect all browser tabs from the panel layout
       const browserTabs = selectAllTabs
         .select(appStore.state, workspaceId)
@@ -842,11 +846,14 @@
           closable: t.closable !== false,
         }));
 
-      logger.debug('Responding to browser:list-tabs-request', { count: browserTabs.length });
+      logger.debug('Responding to browser:list-tabs-request', {
+        count: browserTabs.length,
+        requestId,
+      });
 
       // Send the list back to main process
       if (canOpenBrowserPanel) {
-        void ipcInvoke('browser:list-tabs-response', { tabs: browserTabs });
+        void ipcInvoke('browser:list-tabs-response', { tabs: browserTabs, requestId });
       }
     });
 
