@@ -133,6 +133,7 @@ import { attachSwipeHistoryNavigation } from './swipe-navigation';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
 import { requestHardwareConsoleLightingClear } from '../features/hardware-console/main/clear-lighting-shutdown';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
+import { createStackSampleFile } from '../features/debug-export/main/stack-sample.service';
 
 // No custom protocol needed - we'll use file:// protocol
 import { ipcDebugTracker } from '../shared/main/ipc-debug-tracker';
@@ -1086,6 +1087,61 @@ app.whenReady().then(async () => {
           logger.info('Debug bundle exported successfully', { filePath });
         } catch (error) {
           logger.error('Failed to export debug logs', error as Error);
+        }
+      },
+    });
+
+    // Add Sample intentd Process (cross-platform; daemon-side capture via
+    // debug.sampleStacks, PROTOCOL §5.43 — an unsupported-platform daemon
+    // surfaces its own error through the dialog below)
+    helpMenuItems.push({
+      label: m.menu_sample_intentd_process(),
+      click: async () => {
+        let samplePath: string | undefined;
+        try {
+          // Capture the sample into a temp file (blocks for the sampling window)
+          ({ filePath: samplePath } = await createStackSampleFile());
+
+          // Generate suggested filename with date
+          const now = new Date();
+          const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+          const timeStr = now.toTimeString().slice(0, 5).replace(':', ''); // HHmm
+          const suggestedFilename = `intentd-sample-${dateStr}-${timeStr}.txt`;
+
+          // Show save dialog
+          const { filePath, canceled } = await dialog.showSaveDialog({
+            defaultPath: suggestedFilename,
+            filters: [{ name: m.dialog_text_files_filter(), extensions: ['txt'] }],
+          });
+
+          if (canceled || !filePath) {
+            // Clean up temp sample
+            try {
+              await fs.promises.unlink(samplePath);
+            } catch {
+              // Ignore cleanup errors
+            }
+            return;
+          }
+
+          // Move sample to final location
+          await fs.promises.copyFile(samplePath, filePath);
+          await fs.promises.unlink(samplePath);
+
+          logger.info('intentd stack sample exported successfully', { filePath });
+        } catch (error) {
+          logger.error('Failed to sample intentd process', error as Error);
+          if (samplePath) {
+            try {
+              await fs.promises.unlink(samplePath);
+            } catch {
+              // Ignore cleanup errors
+            }
+          }
+          dialog.showErrorBox(
+            m.dialog_sample_intentd_failed_title(),
+            error instanceof Error ? error.message : m.dialog_sample_intentd_failed_message(),
+          );
         }
       },
     });
