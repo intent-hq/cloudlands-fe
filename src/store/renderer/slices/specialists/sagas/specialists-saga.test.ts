@@ -41,6 +41,7 @@ vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
 vi.mock('$lib/components/ui/toast', () => ({ toast: { error: mocks.toastError } }));
 
 import { m } from '$shared/paraglide/messages.js';
+import { settingsChanged } from '../../settings-events/settings-events-slice';
 import {
   deleteFileSpecialist,
   exportBuiltinToFile,
@@ -403,6 +404,51 @@ describe('specialistsSaga', () => {
     ]);
     task.cancel();
     await task.toPromise();
+  });
+
+  describe('settings-driven refetch (monorepo#1925)', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('debounces a model-resolution settings burst into one specialist.list refetch', async () => {
+      vi.useFakeTimers();
+      mocks.list.mockResolvedValue([fileDef('loaded')]);
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => sagaState() }, specialistsSaga);
+
+      channel.put(
+        settingsChanged([{ path: 'model.providerDefaults', value: { 'claude-code': 'fable-5' } }]),
+      );
+      // Unrelated delta inside the debounce window must neither trigger a
+      // refetch nor swallow the pending one (predicate-filtered pattern).
+      channel.put(settingsChanged([{ path: 'mcp.servers', value: [] }]));
+      channel.put(settingsChanged([{ path: 'model.default', value: 'fable-5' }]));
+      channel.put(settingsChanged([{ path: 'providers.active', value: 'claude-code' }]));
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(mocks.list.mock.calls).toEqual([[]]);
+      expect(dispatch.mock.calls.map(([action]) => action)).toEqual(
+        expectedListActions(['loaded']),
+      );
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('does not refetch for settings deltas that do not touch model resolution', async () => {
+      vi.useFakeTimers();
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => sagaState() }, specialistsSaga);
+
+      channel.put(settingsChanged([{ path: 'mcp.servers', value: [] }]));
+      channel.put(settingsChanged([{ path: 'model.defaultReasoningEffort', value: 'high' }]));
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(mocks.list).not.toHaveBeenCalled();
+      expect(dispatch).not.toHaveBeenCalled();
+      task.cancel();
+      await task.toPromise();
+    });
   });
 
   it('suppresses a stale explicit load after a newer subscription snapshot', async () => {

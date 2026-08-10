@@ -1,12 +1,13 @@
 import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
-import { all, call, fork, put, take, takeEvery, takeLatest } from 'typed-redux-saga';
+import { all, call, debounce, fork, put, take, takeEvery, takeLatest } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
-import type { SpecialistDef } from '$lib/client/app-client';
+import type { AppliedSettingChange, SpecialistDef } from '$lib/client/app-client';
 import { SPECIALISTS, type Specialist } from '$lib/constants/specialists';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { SpecialistFileScope } from '$shared/specialist-file-types';
+import { settingsChanged } from '../../settings-events/settings-events-slice';
 import { selectBundledSpecialists, selectGetFileSpecialist } from '../specialists-selectors';
 import {
   deleteFileSpecialist,
@@ -26,6 +27,43 @@ const logger = createLogger('SpecialistsSaga');
 
 interface ListContext {
   generation: number;
+}
+
+/**
+ * Settings paths that feed the daemon-side specialist model-resolution chain:
+ * a change to any of them shifts every specialist's `resolvedModel` /
+ * `resolvedProvider` preview, but the daemon only emits `specialists:changed`
+ * for specialist *file* changes — so the FE refetches `specialist.list` itself
+ * when a `settings:changed` delta touches one of these paths
+ * (intent-hq/monorepo#1925).
+ */
+export const MODEL_RESOLUTION_SETTINGS_PATHS: readonly string[] = [
+  'model.providerDefaults',
+  'model.default',
+  'providers.active',
+];
+
+/**
+ * Trailing debounce for settings-driven refetches so one `specialist.list`
+ * call serves a multi-path delta burst — mirrors the live client's
+ * `specialists:changed` debounce.
+ */
+const SETTINGS_REFETCH_DEBOUNCE_MS = 100;
+
+/**
+ * Predicate pattern (not the action creator) so unrelated settings deltas
+ * neither trigger a refetch nor swallow a pending one via debounce's
+ * take-latest semantics.
+ */
+function touchesModelResolutionSettings(action: { type: string; payload?: unknown }): boolean {
+  if (action.type !== settingsChanged.type) return false;
+  const changes = Array.isArray(action.payload) ? action.payload[0] : undefined;
+  return (
+    Array.isArray(changes) &&
+    changes.some((change: AppliedSettingChange) =>
+      MODEL_RESOLUTION_SETTINGS_PATHS.includes(change.path),
+    )
+  );
 }
 
 function toBundledSpecialist(def: SpecialistDef): Specialist {
@@ -228,6 +266,10 @@ function* handleLoad(context: ListContext, _action: ReturnType<typeof loadFileSp
   yield* call(refetchSpecialists, context);
 }
 
+function* handleModelResolutionSettingsChanged(context: ListContext) {
+  yield* call(refetchSpecialists, context);
+}
+
 export function createSpecialistsChannel(): EventChannel<SpecialistDef[]> {
   return eventChannel<SpecialistDef[]>(
     (emit) => appClient.specialists.subscribe(emit),
@@ -257,5 +299,11 @@ export function* specialistsSaga() {
     takeEvery(deleteFileSpecialist, handleDelete, context),
     takeEvery(exportBuiltinToFile, handleExport, context),
     takeLatest(loadFileSpecialists, handleLoad, context),
+    debounce(
+      SETTINGS_REFETCH_DEBOUNCE_MS,
+      touchesModelResolutionSettings,
+      handleModelResolutionSettingsChanged,
+      context,
+    ),
   ]);
 }
