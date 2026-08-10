@@ -1033,13 +1033,16 @@
     }
 
     // Gitlink (submodule) paths are directories on disk, so the working-tree
-    // file read can only fail (#1739); skip it once the diff identified one.
+    // file read can only fail (#1739). The diff load is what classifies the
+    // entry, so wait for it (`!loading`) before dispatching — otherwise the
+    // initial run fires the read before `isGitlinkChange` could be set.
     if (
       wsId &&
       filePath &&
       absolutePath &&
       change?.stage !== 'committed' &&
       !useProvidedContent &&
+      !loading &&
       !isGitlinkChange
     ) {
       appStore.dispatch(loadFileContentRequested(wsId, filePath, absolutePath));

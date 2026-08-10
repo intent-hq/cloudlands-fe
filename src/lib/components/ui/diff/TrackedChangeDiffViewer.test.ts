@@ -186,11 +186,15 @@ describe('TrackedChangeDiffViewer content loading regressions', () => {
       'Subproject commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n',
     );
     // A gitlink has no blob and its path is a directory: neither the
-    // show-file fallback nor the working-tree file:read may fire.
+    // show-file fallback nor any working-tree read may fire — including the
+    // Redux-dispatched loadFileContentRequested that feeds filesReadSaga.
     expect(testState.dedupedShowFileMock).not.toHaveBeenCalled();
     expect(testState.invokeMock).not.toHaveBeenCalledWith(
       'file:read',
       expect.objectContaining({ path: '/repo/packages/intentd' }),
+    );
+    expect(testState.dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'files/loadFileContentRequested' }),
     );
   });
 
