@@ -16,7 +16,7 @@
  * socket. `electron` is globally mocked in `src/test-setup.ts`.
  */
 
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
@@ -194,6 +194,8 @@ describe('reconcileActiveConnectionOnBoot — T19 restore', () => {
     // Built exactly one client (the restored remote) and did not dispose it.
     expect(lifecycle.events.filter((e) => e.type === 'construct')).toHaveLength(1);
     expect(lifecycle.events.some((e) => e.type === 'dispose')).toBe(false);
+    // The restore emits the menu-rebuild trigger so backend-gated items update (#1889).
+    expect(vi.mocked(app.emit)).toHaveBeenCalledWith('backend-connection-changed');
   });
 
   it('falls back to local with a notice when the remote is unreachable', async () => {
