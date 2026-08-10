@@ -6,6 +6,7 @@ import {
   call,
   cancel,
   delay,
+  fork,
   put,
   spawn,
   take,
@@ -17,10 +18,9 @@ import { createLogger } from '$lib/utils/client-logger';
 import {
   cancelPrMonitorRequested,
   flushPrMonitorRequested,
-  prMonitorsCleared,
   prMonitorsUpdated,
 } from '../pr-monitor-slice';
-import { selectPrMonitorSubscriptionDemand } from '../pr-monitor-selectors';
+import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
 import {
   cancelPrMonitor,
   flushPrMonitor,
@@ -34,8 +34,6 @@ type SubscriptionEntry = {
   channel: EventChannel<PrMonitorRow[]>;
   task: Task;
 };
-
-type SubscriptionDemand = Record<string, number>;
 
 const SUBSCRIPTION_RECONCILIATION_DELAY_MS = 100;
 
@@ -63,31 +61,46 @@ function* forwardMonitorUpdates(
 
 function* reconcilePrMonitorSubscriptions(
   active: Map<string, SubscriptionEntry>,
-  demand: SubscriptionDemand,
+  activeWorkspaceId: string | null,
 ): SagaGenerator<void> {
   for (const [workspaceId, entry] of active) {
-    if ((demand[workspaceId] ?? 0) > 0) continue;
+    if (workspaceId === activeWorkspaceId) continue;
     active.delete(workspaceId);
     yield* cancel(entry.task);
-    yield* put(prMonitorsCleared(workspaceId));
   }
 
-  for (const [workspaceId, count] of Object.entries(demand)) {
-    if (count <= 0 || active.has(workspaceId)) continue;
-    try {
-      const channel = createMonitorChannel(workspaceId);
-      const task = yield* spawn(forwardMonitorUpdates, workspaceId, channel);
-      active.set(workspaceId, { channel, task });
-    } catch (error) {
-      logger.error('Failed to subscribe to prMonitor events', { workspaceId, error });
-    }
+  if (!activeWorkspaceId || active.has(activeWorkspaceId)) return;
+  try {
+    const channel = createMonitorChannel(activeWorkspaceId);
+    const task = yield* spawn(forwardMonitorUpdates, activeWorkspaceId, channel);
+    active.set(activeWorkspaceId, { channel, task });
+  } catch (error) {
+    logger.error('Failed to subscribe to prMonitor events', {
+      workspaceId: activeWorkspaceId,
+      error,
+    });
   }
 }
 
-function* watchSubscriptionDemand(active: Map<string, SubscriptionEntry>): SagaGenerator<void> {
+function* watchActiveWorkspace(active: Map<string, SubscriptionEntry>): SagaGenerator<void> {
+  const initialWorkspaceId = yield* selectActiveWorkspaceId.effect();
+  let initialReconciliation: Task | null = null;
+  initialReconciliation = yield* fork(function* () {
+    try {
+      yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
+      yield* reconcilePrMonitorSubscriptions(active, initialWorkspaceId);
+    } finally {
+      initialReconciliation = null;
+    }
+  });
+
   yield* takeLatestFromSelector(
-    selectPrMonitorSubscriptionDemand,
-    function* ({ payload }: SelectorChannelPayload<SubscriptionDemand>) {
+    selectActiveWorkspaceId,
+    function* ({ payload }: SelectorChannelPayload<string | null>) {
+      if (initialReconciliation) {
+        yield* cancel(initialReconciliation);
+        initialReconciliation = null;
+      }
       yield* delay(SUBSCRIPTION_RECONCILIATION_DELAY_MS);
       yield* reconcilePrMonitorSubscriptions(active, payload);
     },
@@ -127,7 +140,7 @@ function* watchCancel(): SagaGenerator<void> {
 export function* prMonitorSaga(): SagaGenerator<void> {
   const active = new Map<string, SubscriptionEntry>();
   try {
-    yield* all([call(watchSubscriptionDemand, active), call(watchFlush), call(watchCancel)]);
+    yield* all([call(watchActiveWorkspace, active), call(watchFlush), call(watchCancel)]);
   } finally {
     for (const entry of active.values()) yield* cancel(entry.task);
     active.clear();
