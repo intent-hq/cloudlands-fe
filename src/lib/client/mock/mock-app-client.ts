@@ -109,8 +109,6 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   };
 
   readonly setupScripts: AppClient["setupScripts"] = {
-    list: async () => fx.mockSetupScripts,
-    subscribe: (handler) => emitOnce(handler, fx.mockSetupScripts),
     get: async () => null,
     save: async () => null,
     detectProjectType: async () => null,

@@ -1,10 +1,10 @@
 /**
  * Terminals & scripts seeder.
  *
- * Pulls per-workspace terminal tabs and workspace scripts plus the global setup
- * scripts from the `AppClient` seam and dispatches existing slice actions so the
- * terminal overlay and scripts panel render — replacing the work the
- * terminal/scripts/setup-scripts sagas used to do against the real backend.
+ * Pulls per-workspace terminal tabs and workspace scripts from the `AppClient`
+ * seam and dispatches existing slice actions so the terminal overlay and
+ * scripts panel render — replacing the work the terminal/scripts sagas used to
+ * do against the real backend.
  *
  * Also bridges the legacy renderer→main terminal IPC channels to the daemon's
  * unified PTY host (PROTOCOL §5.13) through the `AppClient` terminals seam:

@@ -7,16 +7,9 @@
  * `generate` maps the reference UI's `generateWithAgent`
  * (SetupScriptAgent.svelte) — the daemon returns an AI-assisted draft that is
  * NOT auto-saved; callers persist it via `save`.
- *
- * The renderer's saved-script *library* (the `SetupScript` collection in the
- * setup-scripts slice) is local UI state with no daemon counterpart, so
- * `list()` resolves empty against the live daemon.
  */
-import type { SetupScript } from "$store/renderer/slices/setup-scripts/setup-scripts-types";
 import type {
   SetupScriptsClient,
-  SubscriptionHandler,
-  Unsubscribe,
   WorkspaceSetupScript,
 } from "../app-client";
 import { backendRequest } from "./backend-transport";
@@ -30,16 +23,6 @@ function unwrapSetupScript(result: unknown): WorkspaceSetupScript | null {
 }
 
 export class LiveSetupScriptsClient implements SetupScriptsClient {
-  async list(): Promise<SetupScript[]> {
-    // No daemon-side saved-script library; the local collection starts empty.
-    return [];
-  }
-
-  subscribe(handler: SubscriptionHandler<SetupScript[]>): Unsubscribe {
-    handler([]);
-    return () => {};
-  }
-
   async get(workspaceId: string): Promise<WorkspaceSetupScript | null> {
     try {
       const result = await backendRequest("workspace.getSetupScript", { workspaceId });

@@ -13,7 +13,6 @@ import type { WorkspaceEvent } from "$features/events/types";
 import { SPEC_NOTE_ID } from "$shared/constants/notes";
 import type { TerminalTab } from "$store/renderer/slices/terminals/terminals-slice";
 import type { ScriptWithState } from "$store/renderer/slices/scripts/scripts-types";
-import type { SetupScript } from "$store/renderer/slices/setup-scripts/setup-scripts-types";
 import type { SkillInfo } from "$store/renderer/slices/skills/skills-types";
 import type { SpecialistDef } from "../../app-client";
 import type { AuggieModel } from "$features/auggie/auggie-models.client";
@@ -120,18 +119,6 @@ export const mockSkills: SkillInfo[] = [
     description: "Generic redux-saga API reference for agents.",
     location: ".agents/skills/redux-saga/SKILL.md",
     scope: "user",
-  },
-];
-
-export const mockSetupScripts: SetupScript[] = [
-  {
-    id: "setup-mock-1",
-    name: "Install dependencies",
-    content: "pnpm install",
-    projectType: "node",
-    lastUsedAt: ISO,
-    usageCount: 3,
-    createdAt: ISO,
   },
 ];
 
