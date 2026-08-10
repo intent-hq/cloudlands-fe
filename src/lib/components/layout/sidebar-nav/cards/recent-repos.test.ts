@@ -154,8 +154,8 @@ describe('deriveRecentRepoEntries', () => {
     expect(entries).toHaveLength(2);
   });
 
-  it('falls back to the repo name, then the path, when a github entry has no owner', () => {
-    const byName = deriveRecentRepoEntries([
+  it('keys owner-less github entries by repo name, keeping distinct names distinct', () => {
+    const sameName = deriveRecentRepoEntries([
       { ...githubPick, repositoryOwner: undefined },
       {
         ...githubPick,
@@ -164,13 +164,22 @@ describe('deriveRecentRepoEntries', () => {
         worktreePath: '/Users/me/Intent/workspaces/ws-2/monorepo',
       },
     ]);
-    expect(byName).toHaveLength(1);
+    expect(sameName).toHaveLength(1);
 
-    const byPath = deriveRecentRepoEntries([
+    const byBasename = deriveRecentRepoEntries([
       { repositoryPath: '/Users/me/ws/a', worktreePath: '/Users/me/ws/a' },
       { repositoryPath: '/Users/me/ws/b', worktreePath: '/Users/me/ws/b' },
     ]);
+    expect(byBasename).toHaveLength(2);
+  });
+
+  it('falls back to the path as key when no name can be derived at all', () => {
+    const byPath = deriveRecentRepoEntries([
+      { repositoryPath: '/', worktreePath: '/' },
+      { repositoryPath: '//', worktreePath: '//' },
+    ]);
     expect(byPath).toHaveLength(2);
+    expect(byPath.map((entry) => entry.name)).toEqual([undefined, undefined]);
   });
 
   it('never surfaces a workspace-owned checkout path as a local entry', () => {
