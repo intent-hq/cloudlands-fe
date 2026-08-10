@@ -1,6 +1,6 @@
 /**
  * Unit tests for matchGitHubPrefillRepo: local match via stored metadata and
- * via remote probing, GitHub clone-flow fallback, and the non-fatal 'keep'
+ * via remote probing, picked-repo GitHub fallback, and the non-fatal 'keep'
  * fallback when probing errors.
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -43,13 +43,13 @@ describe('matchGitHubPrefillRepo', () => {
     expect(probeRemote).not.toHaveBeenCalled();
   });
 
-  it('matches a recent github-clone candidate via its githubUrl', async () => {
+  it('matches a recent github candidate via its githubUrl', async () => {
     const result = await matchGitHubPrefillRepo({
       owner: 'Intent-HQ',
       repo: 'monorepo',
       candidates: [
         {
-          path: '~/Developer/monorepo',
+          path: 'intent-hq/monorepo',
           type: 'github',
           githubUrl: 'https://github.com/intent-hq/monorepo.git',
         },
@@ -57,9 +57,9 @@ describe('matchGitHubPrefillRepo', () => {
       probeRemote: noRemote,
     });
     expect(result).toEqual({
-      kind: 'clone',
+      kind: 'github',
       githubUrl: 'https://github.com/intent-hq/monorepo.git',
-      clonePath: '~/Developer/monorepo',
+      path: 'intent-hq/monorepo',
     });
   });
 
@@ -83,35 +83,20 @@ describe('matchGitHubPrefillRepo', () => {
       probeRemote,
     });
     expect(probeRemote).not.toHaveBeenCalled();
-    expect(result.kind).toBe('clone');
+    expect(result.kind).toBe('github');
   });
 
-  it('falls back to the GitHub clone flow when nothing matches', async () => {
+  it('falls back to a picked-repo GitHub selection when nothing matches', async () => {
     const result = await matchGitHubPrefillRepo({
       owner: 'intent-hq',
       repo: 'monorepo',
       candidates: [local('/repos/other')],
-      defaultParentPath: '/Users/me/Code/',
       probeRemote: noRemote,
     });
     expect(result).toEqual({
-      kind: 'clone',
+      kind: 'github',
       githubUrl: 'https://github.com/intent-hq/monorepo',
-      clonePath: '/Users/me/Code/monorepo',
-    });
-  });
-
-  it('defaults the clone parent to ~/Developer', async () => {
-    const result = await matchGitHubPrefillRepo({
-      owner: 'intent-hq',
-      repo: 'monorepo',
-      candidates: [],
-      probeRemote: noRemote,
-    });
-    expect(result).toEqual({
-      kind: 'clone',
-      githubUrl: 'https://github.com/intent-hq/monorepo',
-      clonePath: '~/Developer/monorepo',
+      path: 'intent-hq/monorepo',
     });
   });
 
@@ -140,7 +125,7 @@ describe('matchGitHubPrefillRepo', () => {
       candidates,
       probeRemote,
     });
-    expect(result.kind).toBe('clone');
+    expect(result.kind).toBe('github');
     expect(probeRemote).toHaveBeenCalledTimes(10);
   });
 });

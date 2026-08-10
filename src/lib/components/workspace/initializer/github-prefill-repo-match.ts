@@ -8,9 +8,9 @@
  *     `owner`/`name` or `githubUrl`) or detected git remote (probed via the
  *     injected `probeRemote`, backed by `git-tracking:get-remote-url`)
  *     matches `owner/repo` → that repo.
- *  2. No match → the GitHub clone flow with
- *     `https://github.com/{owner}/{repo}` and a clone path derived from the
- *     default parent path.
+ *  2. No match → a picked-repo GitHub selection with
+ *     `https://github.com/{owner}/{repo}` (the daemon hydrates the checkout
+ *     from its repo cache; `path` carries the `owner/repo` shorthand).
  *  3. Any probe/matching error → `keep` (non-fatal; the caller leaves the
  *     current/last-used repo selected).
  *
@@ -27,23 +27,19 @@ export interface GitHubPrefillRepoCandidate {
 
 export type GitHubPrefillRepoSelection =
   | { kind: 'local'; path: string }
-  | { kind: 'clone'; githubUrl: string; clonePath: string }
+  | { kind: 'github'; githubUrl: string; path: string }
   | { kind: 'keep' };
 
 export interface MatchGitHubPrefillRepoInput {
   owner: string;
   repo: string;
   candidates: GitHubPrefillRepoCandidate[];
-  /** Parent folder for the clone-flow fallback path (defaults to ~/Developer). */
-  defaultParentPath?: string;
   /** Resolve a local repo's GitHub remote; null when none is detected. */
   probeRemote: (repoPath: string) => Promise<{ owner: string; repo: string } | null>;
 }
 
 /** Cap remote probes so a long recent-repos list cannot fan out IPC calls. */
 const MAX_REMOTE_PROBES = 10;
-
-const DEFAULT_CLONE_PARENT = '~/Developer';
 
 function normalizeRepoName(name: string): string {
   return name.replace(/\.git$/i, '').toLowerCase();
@@ -75,19 +71,12 @@ function isMatch(
   );
 }
 
-/** Join parent path + folder name using the platform's native separator. */
-function joinNativePath(parent: string, name: string): string {
-  const sep = parent.includes('\\') ? '\\' : '/';
-  const cleanParent = parent.replace(/[/\\]$/, '');
-  return `${cleanParent}${sep}${name}`;
-}
-
 function toSelection(
   candidate: GitHubPrefillRepoCandidate,
   githubUrl: string,
 ): GitHubPrefillRepoSelection {
   if (candidate.type === 'github') {
-    return { kind: 'clone', githubUrl: candidate.githubUrl ?? githubUrl, clonePath: candidate.path };
+    return { kind: 'github', githubUrl: candidate.githubUrl ?? githubUrl, path: candidate.path };
   }
   return { kind: 'local', path: candidate.path };
 }
@@ -96,7 +85,6 @@ export async function matchGitHubPrefillRepo({
   owner,
   repo,
   candidates,
-  defaultParentPath,
   probeRemote,
 }: MatchGitHubPrefillRepoInput): Promise<GitHubPrefillRepoSelection> {
   const cleanRepoName = repo.replace(/\.git$/i, '');
@@ -126,12 +114,8 @@ export async function matchGitHubPrefillRepo({
       }
     }
 
-    // No local match → GitHub clone flow.
-    return {
-      kind: 'clone',
-      githubUrl,
-      clonePath: joinNativePath(defaultParentPath || DEFAULT_CLONE_PARENT, cleanRepoName),
-    };
+    // No local match → picked-repo GitHub selection (owner/repo shorthand as path).
+    return { kind: 'github', githubUrl, path: `${owner}/${cleanRepoName}` };
   } catch {
     // Matching failed — keep the current/last-used repo (non-fatal).
     return { kind: 'keep' };

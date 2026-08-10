@@ -3,7 +3,7 @@
  *
  * Regression test: a `workspace-prefill` entry with `repoPath` (a local-source
  * "Work on…" click) must set the FULL repo selection — repoType 'local' with
- * githubUrl/clonePath cleared — and must win over form state restored from
+ * githubUrl cleared — and must win over form state restored from
  * persistence, so the modal opens on the Copy local repo tab instead of the
  * github tab left behind by a persisted last selection.
  */
@@ -44,7 +44,6 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
-  selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -170,7 +169,6 @@ function githubFormState() {
     repoPath: 'intent-hq/monorepo',
     repoType: 'github',
     githubUrl: 'https://github.com/intent-hq/monorepo',
-    clonePath: '',
     branch: 'main',
     isNewRepo: false,
     isValidPath: true,
@@ -220,7 +218,6 @@ describe('local repoPath prefill overrides a restored github selection', () => {
         repoPath: LOCAL_REPO,
         repoType: 'local',
         githubUrl: '',
-        clonePath: '',
         isNewRepo: false,
         isValidPath: true,
         scope: '',
@@ -252,7 +249,6 @@ describe('local repoPath prefill overrides a restored github selection', () => {
         repoPath: LOCAL_REPO,
         repoType: 'local',
         githubUrl: '',
-        clonePath: '',
         isNewRepo: false,
         isValidPath: true,
         scope: '',

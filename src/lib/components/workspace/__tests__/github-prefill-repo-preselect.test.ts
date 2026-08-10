@@ -5,8 +5,8 @@
  * CompactWorkspaceInitializer with mock IPC: consuming a pending issue/PR
  * prefill preselects the recent repo whose git remote (probed via
  * `git-tracking:get-remote-url`) matches the link's owner/repo, falls back to
- * the GitHub clone flow when nothing matches, and keeps the current repo when
- * probing errors.
+ * a picked-repo GitHub selection when nothing matches, and keeps the current
+ * repo when probing errors.
  */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -55,7 +55,6 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
       return () => mocks.prefillSubscribers.delete(run);
     },
   }),
-  selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -307,7 +306,7 @@ describe('CompactWorkspaceInitializer GitHub-prefill repo preselection', () => {
     await waitFor(() => expect(textOf(result, 'picker-repo-path')).toBe('/repos/monorepo'));
   });
 
-  it('falls back to the GitHub clone flow when no local repo matches', async () => {
+  it('falls back to a picked-repo GitHub selection when no local repo matches', async () => {
     mocks.pendingPrefill = {
       owner: 'intent-hq',
       repo: 'monorepo',
@@ -321,7 +320,7 @@ describe('CompactWorkspaceInitializer GitHub-prefill repo preselection', () => {
     await waitFor(() => {
       expect(textOf(result, 'picker-repo-type')).toBe('github');
       expect(textOf(result, 'picker-github-url')).toBe('https://github.com/intent-hq/monorepo');
-      expect(textOf(result, 'picker-repo-path')).toBe('~/Developer/monorepo');
+      expect(textOf(result, 'picker-repo-path')).toBe('intent-hq/monorepo');
     });
   });
 

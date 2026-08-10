@@ -24,7 +24,6 @@ export interface WorkspaceInitializerRepoSelection {
   path: string;
   type: WorkspaceInitializerRepoType;
   githubUrl?: string;
-  clonePath?: string;
   isNewRepo?: boolean;
   isValidPath?: boolean;
   scope?: string;
@@ -50,7 +49,6 @@ export interface CompactWorkspaceInitializerFormState extends WorkspaceInitializ
   repoPath?: string;
   repoType?: WorkspaceInitializerRepoType;
   githubUrl?: string;
-  clonePath?: string;
   branch?: string;
   isNewRepo?: boolean;
   isValidPath?: boolean;
@@ -73,7 +71,6 @@ export interface WorkspaceInitializerOnboardingFormState {
     branch?: string;
     scope?: string;
     githubUrl?: string;
-    clonePath?: string;
     projectName?: string;
     isValid?: boolean;
   } | null;
