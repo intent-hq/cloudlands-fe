@@ -220,4 +220,86 @@ describe('tool-result-parser', () => {
       expect(result.content).toBeUndefined();
     });
   });
+
+  describe('single-field JSON envelope unwrapping (#1758)', () => {
+    it('unwraps an object result with a single output field to plain text', () => {
+      const result = parseToolResult(
+        'some_mcp_tool',
+        {},
+        { output: 'line1\nline2' },
+      );
+
+      expect(result.type).toBe('confirmation');
+      expect(result.content).toBe('line1\nline2');
+    });
+
+    it('unwraps a string result that is a single-field JSON envelope', () => {
+      const result = parseToolResult(
+        'some_mcp_tool',
+        {},
+        '{"output": "Here are the results.\\n<return-code>\\n0\\n</return-code>"}',
+      );
+
+      expect(result.type).toBe('confirmation');
+      expect(result.content).toBe('Here are the results.\n<return-code>\n0\n</return-code>');
+    });
+
+    it('unwraps a terminal result wrapped in a single-field JSON envelope', () => {
+      const result = parseToolResult(
+        'launch-process',
+        { command: 'echo hi', wait: true, cwd: '/tmp' },
+        {
+          output:
+            'Here are the results from executing the command.\n<return-code>\n0\n</return-code>\n<output>\nhi\n</output>',
+        },
+      );
+
+      expect(result.type).toBe('terminal');
+      expect(result.content).toBe('hi');
+      expect(result.exitCode).toBe(0);
+    });
+
+    it('unwraps a single MCP text item carrying a single-field JSON envelope', () => {
+      const result = parseToolResult(
+        'some_mcp_tool',
+        {},
+        [{ type: 'text', text: '{"output": "plain text payload"}' }],
+      );
+
+      expect(result.type).toBe('confirmation');
+      expect(result.content).toBe('plain text payload');
+    });
+
+    it('does not unwrap multi-field JSON objects', () => {
+      const result = parseToolResult(
+        'some_mcp_tool',
+        {},
+        '{"output": "text", "exitCode": 0}',
+      );
+
+      expect(result.type).toBe('confirmation');
+      expect(result.content).toBe('{"output": "text", "exitCode": 0}');
+    });
+
+    it('does not unwrap a single-field object whose value is not a string', () => {
+      const result = parseToolResult('some_mcp_tool', {}, '{"count": 42}');
+
+      expect(result.type).toBe('confirmation');
+      expect(result.content).toBe('{"count": 42}');
+    });
+
+    it('does not unwrap JSON arrays', () => {
+      const result = parseToolResult('some_mcp_tool', {}, '["a", "b"]');
+
+      expect(result.type).toBe('confirmation');
+      expect(result.content).toBe('["a", "b"]');
+    });
+
+    it('leaves invalid JSON untouched', () => {
+      const result = parseToolResult('some_mcp_tool', {}, '{"output": broken');
+
+      expect(result.type).toBe('confirmation');
+      expect(result.content).toBe('{"output": broken');
+    });
+  });
 });

@@ -245,17 +245,52 @@ export function getFileName(filePath: string): string {
 }
 
 /**
+ * Unwrap a single-field JSON envelope: an object with exactly one key whose
+ * value is a string (commonly `output` or `text`) displays as that string
+ * instead of the JSON object wrapping it.
+ */
+function unwrapSingleStringField(obj: Record<string, unknown>): string | null {
+  const keys = Object.keys(obj);
+  if (keys.length === 1 && typeof obj[keys[0]] === 'string') {
+    return obj[keys[0]] as string;
+  }
+  return null;
+}
+
+/**
+ * If `text` is a JSON object with exactly one string field, return that
+ * field's value; otherwise return `text` unchanged.
+ */
+function unwrapJsonEnvelope(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const unwrapped = unwrapSingleStringField(parsed);
+        if (unwrapped !== null) return unwrapped;
+      }
+    } catch {
+      // Not valid JSON — leave the text as-is
+    }
+  }
+  return text;
+}
+
+/**
  * Extract text content from result that might be string, object, or array.
  * Handles MCP format where result might be ContentItem[] or an object with text property.
+ * Single-field JSON envelopes (e.g. `{"output": "..."}`) are unwrapped to their
+ * string value so the payload reads as plain text.
  */
 function extractResultText(result: unknown): string | null {
   if (result === null || result === undefined) {
     return null;
   }
 
-  // Already a string
+  // Already a string — unwrap a single-field JSON envelope if present
   if (typeof result === 'string') {
-    return result;
+    return unwrapJsonEnvelope(result);
   }
 
   // Array of content items (MCP format)
@@ -263,6 +298,9 @@ function extractResultText(result: unknown): string | null {
     const textItems = result
       .filter((item: any) => item && typeof item === 'object' && item.type === 'text' && item.text)
       .map((item: any) => item.text);
+    if (textItems.length === 1) {
+      return unwrapJsonEnvelope(textItems[0]);
+    }
     if (textItems.length > 0) {
       return textItems.join('\n');
     }
@@ -278,6 +316,11 @@ function extractResultText(result: unknown): string | null {
     // Object with content array
     if (Array.isArray(obj.content)) {
       return extractResultText(obj.content);
+    }
+    // Single-field envelope like { output: "..." }
+    const unwrapped = unwrapSingleStringField(obj);
+    if (unwrapped !== null) {
+      return unwrapped;
     }
   }
 
