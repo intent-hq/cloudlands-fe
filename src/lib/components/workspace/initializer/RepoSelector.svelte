@@ -394,21 +394,11 @@
   /** Trimmed owner/repo text currently in the GitHub input. */
   const githubQuery = $derived(githubUrlInput.trim());
 
-  /** `owner/name` keys already shown in the Recent list, so suggestions don't duplicate them. */
-  const recentGithubIds = $derived(
-    new Set(
-      recentRepos
-        .filter((repo) => repo.type === 'github' && repo.owner)
-        .map((repo) => `${repo.owner}/${repo.name}`.toLowerCase()),
-    ),
-  );
-
   const ownedGithubSuggestions = $derived.by<GithubRepoItem[]>(() => {
     const all = $githubRepos$;
     if (!all.length) return [];
     const q = githubQuery.toLowerCase();
-    const matching = q ? all.filter((r) => `${r.owner}/${r.name}`.toLowerCase().includes(q)) : all;
-    return matching.filter((r) => !recentGithubIds.has(`${r.owner}/${r.name}`.toLowerCase()));
+    return q ? all.filter((r) => `${r.owner}/${r.name}`.toLowerCase().includes(q)) : all;
   });
 
   const discoverGithubSuggestions = $derived.by<GithubRepoItem[]>(() => {
@@ -416,9 +406,7 @@
     const results = $githubSearchResults$;
     if (!results.length) return [];
     const ownedIds = new Set($githubRepos$.map((r) => r.id));
-    return results.filter(
-      (r) => !ownedIds.has(r.id) && !recentGithubIds.has(`${r.owner}/${r.name}`.toLowerCase()),
-    );
+    return results.filter((r) => !ownedIds.has(r.id));
   });
 
   /** Single combined suggestion list rendered under the GitHub input. */
