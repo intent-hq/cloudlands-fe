@@ -459,6 +459,37 @@ describe("JsonRpcClient reconnect + heartbeat", () => {
     client.dispose();
   });
 
+  // #1750: the daemon-loss overlay shows "Retrying connection… (attempt N)",
+  // fed by this counter through the backend:status broadcast.
+  it("counts reconnect attempts and resets the counter on a successful connect", async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    client.start();
+    expect(client.getReconnectAttempts()).toBe(0);
+
+    // Each backoff retry increments the counter before connecting.
+    sockets[0].emit("close");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sockets).toHaveLength(2);
+    expect(client.getReconnectAttempts()).toBe(1);
+
+    sockets[1].emit("close");
+    await vi.advanceTimersByTimeAsync(200);
+    expect(sockets).toHaveLength(3);
+    expect(client.getReconnectAttempts()).toBe(2);
+
+    // A successful connect resets the counter.
+    sockets[2].open();
+    expect(client.getReconnectAttempts()).toBe(0);
+
+    // A later drop starts counting from scratch.
+    sockets[2].emit("close");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(client.getReconnectAttempts()).toBe(1);
+
+    client.dispose();
+  });
+
   it("resets the backoff after a successful reconnect", async () => {
     vi.useFakeTimers();
     const { client, sockets } = makeReconnectingClient();

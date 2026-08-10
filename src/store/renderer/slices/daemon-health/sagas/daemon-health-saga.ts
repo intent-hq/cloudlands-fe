@@ -53,6 +53,8 @@ interface BackendStatusPayload {
   sidecarGaveUp?: boolean;
   sidecarStartupFailed?: boolean;
   reason?: string;
+  /** Reconnect attempts since the last successful connect (#1750). */
+  reconnectAttempts?: number;
 }
 
 interface BackendStatusSnapshot extends BackendStatusPayload {
@@ -103,6 +105,7 @@ function statusAction(payload: BackendStatusPayload, snapshot: boolean) {
     reason: snapshot
       ? (payload as BackendStatusSnapshot).sidecarStartupFailedReason
       : payload.reason,
+    reconnectAttempts: payload.reconnectAttempts,
   });
 }
 

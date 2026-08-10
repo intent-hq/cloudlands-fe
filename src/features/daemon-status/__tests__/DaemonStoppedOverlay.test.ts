@@ -17,7 +17,7 @@ vi.mock('$store/renderer/store', async () => {
   const { runSaga, stdChannel } = await import('redux-saga');
   const { daemonHealthReducer, initialState } =
     await import('$store/renderer/slices/daemon-health/daemon-health-slice');
-  const { initialState: connectionsInitialState } =
+  const { connectionsReducer, initialState: connectionsInitialState } =
     await import('$store/renderer/slices/connections/connections-slice');
   let state = { daemonHealth: initialState, connections: connectionsInitialState };
   const listeners = new Set<() => void>();
@@ -37,7 +37,7 @@ vi.mock('$store/renderer/store', async () => {
     dispatch(action: { type: string }) {
       state = {
         daemonHealth: daemonHealthReducer(state.daemonHealth, action as never),
-        connections: state.connections,
+        connections: connectionsReducer(state.connections, action as never),
       };
       channel.put(action);
       listeners.forEach((listener) => listener());
@@ -73,6 +73,8 @@ import { store as appStore } from '$store/renderer/store';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { mockInvoke, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import type { ConnectionRecord } from '$shared/types/connections';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
 import { daemonHealthSaga } from '$store/renderer/slices/daemon-health/sagas/daemon-health-saga';
 
@@ -115,7 +117,12 @@ function dispatchAndFlush(action: Parameters<typeof appStore.dispatch>[0]) {
 
 async function showOverlay(
   transport: BackendTransportInfo,
-  extras?: { sidecarGaveUp?: boolean; sidecarStartupFailed?: boolean; reason?: string },
+  extras?: {
+    sidecarGaveUp?: boolean;
+    sidecarStartupFailed?: boolean;
+    reason?: string;
+    reconnectAttempts?: number;
+  },
 ) {
   bootTransport = transport;
   dispatchAndFlush(connectionStatusChanged('connected', transport));
@@ -250,12 +257,15 @@ describe('DaemonStoppedOverlay', () => {
     expect(overlay()!.textContent).toContain('restarting it automatically');
   });
 
-  it('offers the sidecar fallback with the data-dir caveat in external mode', async () => {
+  it('offers the sidecar fallback with the local-instead-of-remote caveat in external mode (#1750)', async () => {
     render(DaemonStoppedOverlay);
     await showOverlay(externalTransport);
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar')).toBeTruthy();
     expect(overlay()!.textContent).toContain('external intentd daemon was lost');
-    expect(overlay()!.textContent).toContain('may use a different data directory');
+    // External mode gets the "local intentd instead of the remote server" note,
+    // not the local data-dir caveat.
+    expect(overlay()!.textContent).toContain('instead of the remote server');
+    expect(overlay()!.textContent).not.toContain('may use a different data directory');
   });
 
   it('offers the local sidecar fallback in external-ws mode', async () => {
@@ -263,6 +273,62 @@ describe('DaemonStoppedOverlay', () => {
     await showOverlay({ mode: 'external-ws', target: 'ws://127.0.0.1:5181/ws' });
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar')).toBeTruthy();
     expect(overlay()!.textContent).toContain('external intentd daemon was lost');
+  });
+
+  it('shows the lost connection details from the active connection record (#1750)', async () => {
+    const remote: ConnectionRecord = {
+      id: 'conn-1',
+      label: '192.168.1.20:5181',
+      host: '192.168.1.20',
+      port: 5181,
+      fingerprint: 'ab:cd',
+      hostname: 'studio.local',
+      isLocal: false,
+    };
+    render(DaemonStoppedOverlay);
+    appStore.dispatch(
+      connectionsListReceived({ connections: [remote], activeId: 'conn-1' }),
+    );
+    await showOverlay({ mode: 'external-ws', target: 'wss:192.168.1.20:5181' });
+    const details = screen.getByTestId('daemon-stopped-connection-details');
+    expect(details.textContent).toContain('Lost connection to studio.local (192.168.1.20:5181)');
+  });
+
+  it('falls back to the transport target for the details line when no remote record is active (#1750)', async () => {
+    render(DaemonStoppedOverlay);
+    await showOverlay(externalTransport);
+    // external-uds adoption: the active connection is the local entry, so the
+    // socket path from the transport is the best available target detail.
+    const details = screen.getByTestId('daemon-stopped-connection-details');
+    expect(details.textContent).toContain('Lost connection to /tmp/i.sock');
+  });
+
+  it('hides the connection-details line in sidecar mode', async () => {
+    render(DaemonStoppedOverlay);
+    await showOverlay(sidecarTransport);
+    expect(screen.queryByTestId('daemon-stopped-connection-details')).toBeNull();
+  });
+
+  it('shows the reconnect attempt count in the retrying line (#1750)', async () => {
+    render(DaemonStoppedOverlay);
+    await showOverlay(externalTransport, { reconnectAttempts: 14 });
+    expect(screen.getByTestId('daemon-stopped-retrying').textContent).toContain(
+      'Retrying connection… (attempt 14)',
+    );
+
+    // A later status push with a higher count updates the line live.
+    dispatchAndFlush(
+      connectionStatusChanged('connecting', undefined, { reconnectAttempts: 15 }),
+    );
+    expect(screen.getByTestId('daemon-stopped-retrying').textContent).toContain('(attempt 15)');
+  });
+
+  it('omits the attempt count before the first retry', async () => {
+    render(DaemonStoppedOverlay);
+    await showOverlay(sidecarTransport);
+    const retrying = screen.getByTestId('daemon-stopped-retrying').textContent!;
+    expect(retrying).toContain('Retrying connection');
+    expect(retrying).not.toContain('attempt');
   });
 
   it('shows the crash-loop posture after the supervisor gave up, with distinct copy and the reason', async () => {
