@@ -1126,7 +1126,11 @@ app.whenReady().then(async () => {
 
           // Move sample to final location
           await fs.promises.copyFile(samplePath, filePath);
-          await fs.promises.unlink(samplePath);
+          try {
+            await fs.promises.unlink(samplePath);
+          } catch {
+            // Ignore cleanup errors — the sample was already saved
+          }
 
           logger.info('intentd stack sample exported successfully', { filePath });
         } catch (error) {
