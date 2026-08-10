@@ -214,7 +214,7 @@
     "cross-env": "^10.1.0",
     "electron": "^42.8.0",
     "electron-builder": "^26.15.3",
-    "eslint": "^9.39.1",
+    "eslint": "^10.8.0",
     "eslint-plugin-svelte": "^3.22.0",
     "eslint-plugin-unused-imports": "^4.4.1",
     "glob": "^13.0.6",
