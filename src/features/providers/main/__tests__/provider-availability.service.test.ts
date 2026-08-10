@@ -538,6 +538,80 @@ describe('provider availability service', () => {
     );
   });
 
+  describe('hiddenProviders gating verdict', () => {
+    /** Schema-valid `providers.catalog` row (PROTOCOL §5.38). */
+    const catalogEntry = (
+      id: string,
+      overrides: Record<string, unknown> = {},
+    ) => ({
+      id,
+      displayName: id,
+      shortName: id,
+      command: id,
+      canBeDisabled: true,
+      visible: true,
+      ...overrides,
+    });
+
+    it('omits hiddenProviders when the catalog fetch fails with no cache (gating verdict unknown)', async () => {
+      routeBackend({
+        'host.providerDiscovery': EMPTY_DISCOVERY,
+        'host.providerAuthStatus': authSweep(),
+        // 'providers.catalog' intentionally unrouted — the fetch fails and
+        // there is no cached catalog, so the gating verdict is unknown. The
+        // result must NOT fabricate an authoritative "nothing hidden" empty
+        // array, or gated providers (cortex, mock) flash in the renderer.
+      });
+
+      const { getProviderAvailability } = await import('../provider-availability.service');
+      const result = await getProviderAvailability();
+
+      expect('hiddenProviders' in result).toBe(false);
+      expect(result.hiddenProviders).toBeUndefined();
+      // Availability also fails closed for the registry-gated providers, so
+      // availability-only consumers (onboarding auto-selection) cannot pick
+      // them while the gating verdict is unknown.
+      expect(result.providers.cortex.available).toBe(false);
+      expect(result.providers.mock.available).toBe(false);
+    });
+
+    it('computes hiddenProviders from a hydrated catalog (gated rows hidden)', async () => {
+      routeBackend({
+        'providers.catalog': {
+          providers: [
+            catalogEntry('auggie', { canBeDisabled: false }),
+            catalogEntry('cortex', { requiresFeatureCode: 'cortex', visible: false }),
+            catalogEntry('mock', { requiresEnvVar: 'INTENTD_TEST_MOCK_GATE', visible: false }),
+          ],
+        },
+        'host.providerDiscovery': EMPTY_DISCOVERY,
+        'host.providerAuthStatus': authSweep(),
+      });
+
+      const { getProviderAvailability } = await import('../provider-availability.service');
+      const result = await getProviderAvailability();
+
+      expect(result.hiddenProviders).toEqual(['cortex', 'mock']);
+    });
+
+    it('returns an empty hiddenProviders array when the catalog has no gated rows', async () => {
+      routeBackend({
+        'providers.catalog': {
+          providers: [catalogEntry('auggie', { canBeDisabled: false }), catalogEntry('codex')],
+        },
+        'host.providerDiscovery': EMPTY_DISCOVERY,
+        'host.providerAuthStatus': authSweep(),
+      });
+
+      const { getProviderAvailability } = await import('../provider-availability.service');
+      const result = await getProviderAvailability();
+
+      // Catalog consulted, nothing hidden — the empty array is a legitimate
+      // authoritative verdict, distinct from the absent field above.
+      expect(result.hiddenProviders).toEqual([]);
+    });
+  });
+
   describe('getProviderPaths (providers:get-paths → host.providerDiscovery)', () => {
     it('maps daemon-resolved paths for every provider, incl. grok and unsloth primary+secondary', async () => {
       routeBackend({
