@@ -220,17 +220,22 @@ function seedDefaultProviderEnablement(): void {
       if (!entry || entry.canBeDisabled === false) return;
       // Re-check against live state: an entry may have landed while the
       // catalog read was in flight, and an explicit false must never flip.
-      if (settings.enabledProviders[defaultProviderId] !== undefined) return;
+      const live = appStore.state.providerSettings.enabledProviders;
+      if (live[defaultProviderId] !== undefined) return;
       logger.info('seeding default-provider enablement entry', {
         providerId: defaultProviderId,
       });
-      appStore.dispatch(ensureEnabledIfUnset(defaultProviderId));
+      // Persist first, dispatch only after the daemon write succeeds: if the
+      // write rejects, the renderer must not diverge from the daemon (which
+      // would still resolve the provider disabled). A failed write simply
+      // retries on the next `providers.enabled` hydration.
       await appClient.settings.update([
         {
           path: 'providers.enabled',
-          value: { ...appStore.state.providerSettings.enabledProviders },
+          value: { ...live, [defaultProviderId]: true },
         },
       ]);
+      appStore.dispatch(ensureEnabledIfUnset(defaultProviderId));
     } catch (error) {
       logger.error('failed to seed default-provider enablement', error);
     } finally {

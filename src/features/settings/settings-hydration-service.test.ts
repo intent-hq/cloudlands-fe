@@ -378,5 +378,24 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       await vi.waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
       expect(enabledProviders()).toEqual({ auggie: true });
     });
+
+    it('does not mutate renderer state when the daemon write fails (persist-first)', async () => {
+      updateSpy.mockRejectedValue(new Error('write failed'));
+      applySettingsChanges([
+        { path: 'providers.active', value: 'auggie' },
+        { path: 'providers.enabled', value: {} },
+      ]);
+
+      await vi.waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
+      await flushAsync();
+      // Renderer stays faithful to the daemon (no entry ⇒ resolves disabled);
+      // the seed retries on the next hydration.
+      expect(enabledProviders()).toEqual({});
+
+      updateSpy.mockResolvedValue({ applied: [] });
+      applySettingsChanges([{ path: 'providers.enabled', value: {} }]);
+      await vi.waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(2));
+      expect(enabledProviders()).toEqual({ auggie: true });
+    });
   });
 });
