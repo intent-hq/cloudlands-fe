@@ -11,7 +11,10 @@
  * hunk lines instead of issuing content reads that can only fail.
  */
 
-const GITLINK_LINE_RE = /^Subproject commit [0-9a-f]{4,64}(-dirty)?\n?$/;
+// Full object ID only: 40 hex chars (sha1) or 64 (sha256) — libgit2 always
+// emits the full OID in the pseudo-line, so anything shorter is a regular
+// file line that merely resembles one.
+const GITLINK_LINE_RE = /^Subproject commit ([0-9a-f]{40}|[0-9a-f]{64})(-dirty)?\n?$/;
 
 interface GitlinkHunkLine {
   type?: unknown;
@@ -24,31 +27,32 @@ function hunkLines(hunk: unknown): unknown[] | null {
 }
 
 /**
- * True when a `git.diffs` chunk is a gitlink (submodule) entry: it has at
- * least one hunk line and every hunk line is a `Subproject commit <sha>`
- * pseudo-line.
+ * True when a `git.diffs` chunk is a gitlink (submodule) entry. A gitlink
+ * delta is structurally constrained: exactly one hunk with one or two lines,
+ * each a Deletion or Addition (never Context — the pseudo-line only appears
+ * when the pin changed) whose content is a full-OID `Subproject commit <sha>`
+ * pseudo-line. Regular files whose changed lines happen to record such text
+ * (e.g. a generated pin manifest) carry context lines and/or more hunks and
+ * are rejected.
  */
 export function isGitlinkDiffChunk(chunk: { chunks?: unknown[] }): boolean {
   const hunks = chunk.chunks;
-  if (!Array.isArray(hunks) || hunks.length === 0) return false;
-  let sawLine = false;
-  for (const hunk of hunks) {
-    const lines = hunkLines(hunk);
-    if (!lines) return false;
-    for (const line of lines) {
-      const content = (line as GitlinkHunkLine | null)?.content;
-      if (typeof content !== 'string' || !GITLINK_LINE_RE.test(content)) return false;
-      sawLine = true;
-    }
+  if (!Array.isArray(hunks) || hunks.length !== 1) return false;
+  const lines = hunkLines(hunks[0]);
+  if (!lines || lines.length === 0 || lines.length > 2) return false;
+  for (const line of lines) {
+    const { type, content } = (line ?? {}) as GitlinkHunkLine;
+    if (type !== 'Deletion' && type !== 'Addition') return false;
+    if (typeof content !== 'string' || !GITLINK_LINE_RE.test(content)) return false;
   }
-  return sawLine;
+  return true;
 }
 
 /**
  * Compose the full-content sides of a gitlink chunk from its hunk lines
- * (Deletion → old, Addition → new, Context → both), mirroring what
- * `git.showFile` would have returned had gitlinks carried blob content. An
- * added (removed) submodule pin yields an empty old (new) side.
+ * (Deletion → old, Addition → new), mirroring what `git.showFile` would have
+ * returned had gitlinks carried blob content. An added (removed) submodule
+ * pin yields an empty old (new) side.
  */
 export function gitlinkSidesFromHunks(hunks: unknown[]): {
   oldContent: string;

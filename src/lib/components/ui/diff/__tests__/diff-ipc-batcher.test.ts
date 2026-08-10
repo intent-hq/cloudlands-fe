@@ -231,6 +231,64 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     ).toEqual([]);
   });
 
+  it('composes an empty old side for an added submodule (one-sided gitlink hunk)', async () => {
+    const addedGitlinkHunk = {
+      oldStart: 0,
+      oldLines: 0,
+      newStart: 1,
+      newLines: 1,
+      lines: [
+        { type: 'Addition', content: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n', newNumber: 1 },
+      ],
+    };
+    mockDaemon({ diffs: [{ path: 'packages/new-sub', hunks: [addedGitlinkHunk] }] });
+
+    const promise = batchedGitDiff('ws-9', false, 'packages/new-sub');
+    await vi.runAllTimersAsync();
+
+    await expect(promise).resolves.toEqual({
+      file: 'packages/new-sub',
+      chunks: [addedGitlinkHunk],
+      oldContent: '',
+      newContent: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n',
+    });
+    expect(
+      mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs'),
+    ).toEqual([]);
+  });
+
+  it('does not classify a regular file with Subproject-commit-looking lines as a gitlink', async () => {
+    // A generated pin-manifest diff: context line + changed lines all match
+    // the pseudo-line text, but a real gitlink delta never carries Context
+    // lines — the normal content-read path must run.
+    const manifestHunk = {
+      oldStart: 1,
+      oldLines: 2,
+      newStart: 1,
+      newLines: 2,
+      lines: [
+        { type: 'Context', content: 'Subproject commit cccccccccccccccccccccccccccccccccccccccc\n', oldNumber: 1, newNumber: 1 },
+        { type: 'Deletion', content: 'Subproject commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n', oldNumber: 2 },
+        { type: 'Addition', content: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n', newNumber: 2 },
+      ],
+    };
+    mockDaemon({
+      diffs: [{ path: 'pins.txt', hunks: [manifestHunk] }],
+      showFiles: { ':0:pins.txt': 'index pins' },
+      files: { 'pins.txt': 'workdir pins' },
+    });
+
+    const promise = batchedGitDiff('ws-9', false, 'pins.txt');
+    await vi.runAllTimersAsync();
+
+    await expect(promise).resolves.toEqual({
+      file: 'pins.txt',
+      chunks: [manifestHunk],
+      oldContent: 'index pins',
+      newContent: 'workdir pins',
+    });
+  });
+
   it('leaves a side undefined (hunk-only fallback) when its git.showFile read fails', async () => {
     mockedRequest.mockImplementation(async (method: string) => {
       if (method === 'git.diffs') return [{ path: 'a.ts', hunks: [HUNK] }];
