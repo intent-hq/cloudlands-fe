@@ -290,7 +290,7 @@ describe('connectionsSaga', () => {
     ).toHaveLength(1);
 
     resolveAdd?.({ connection: REMOTE });
-    await expect(first.promise).resolves.toEqual(REMOTE);
+    await expect(first.promise).resolves.toEqual({ connection: REMOTE });
     run.task.cancel();
     await run.task.toPromise();
   });
