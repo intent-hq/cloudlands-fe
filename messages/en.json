@@ -237,6 +237,7 @@
   "settings_agentRules_placeholder": "Add custom instructions for your agents...\n\nExample:\n# Development Guidelines\n- Always write tests for new features\n- Use TypeScript for type safety\n- Follow the existing code style\n\n# Agent Behavior\n- Be thorough in code reviews\n- Suggest improvements when appropriate\n- Explain complex changes clearly",
   "settings_wsApi_enable_label": "Enable WebSocket API",
   "settings_wsApi_enable_description": "When enabled, external tools can connect to Intent via WebSocket to interact with workspaces and agents programmatically.",
+  "settings_wsApi_remoteInfo_description": "WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.",
   "settings_wsApi_loadStatusError": "Failed to load WebSocket API status: {error}",
   "settings_wsApi_startListenerError": "Failed to start WebSocket listener; setting rolled back",
   "settings_wsApi_toggleError": "Failed to toggle WebSocket API: {error}",

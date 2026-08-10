@@ -237,6 +237,7 @@
   "settings_agentRules_placeholder": "Fügen Sie benutzerdefinierte Anweisungen für Ihre Agenten hinzu...\n\nBeispiel:\n# Entwicklungsrichtlinien\n- Immer Tests für neue Funktionen schreiben\n- TypeScript für Typsicherheit verwenden\n- Dem bestehenden Codestil folgen\n\n# Agentenverhalten\n- Gründlich bei Code-Reviews sein\n- Verbesserungen vorschlagen, wenn angebracht\n- Komplexe Änderungen klar erklären",
   "settings_wsApi_enable_label": "WebSocket-API aktivieren",
   "settings_wsApi_enable_description": "Wenn aktiviert, können sich externe Tools über WebSocket mit Intent verbinden, um programmatisch mit Arbeitsbereichen und Agenten zu interagieren.",
+  "settings_wsApi_remoteInfo_description": "Die WebSocket-API-Einstellungen werden auf dem Rechner verwaltet, auf dem der Daemon läuft, und sind nur bei einer lokalen Verbindung verfügbar.",
   "settings_wsApi_loadStatusError": "WebSocket-API-Status konnte nicht geladen werden: {error}",
   "settings_wsApi_startListenerError": "WebSocket-Listener konnte nicht gestartet werden; Einstellung zurückgesetzt",
   "settings_wsApi_toggleError": "WebSocket-API konnte nicht umgeschaltet werden: {error}",

@@ -9,7 +9,13 @@
    * - server.rotateToken for token regeneration
    *
    * Handles error states (failed start rolls back setting, INTENTD_AUTH_TOKEN
-   * blocks rotation, -32001 on remote calls).
+   * blocks rotation).
+   *
+   * Remote gating: `server.*` methods are local-only by design (the daemon
+   * rejects them with -32001 on non-local connections), and toggling
+   * `server.wsApi.enabled` remotely could sever the FE's own connection. So when
+   * the active connection is remote (activeId !== LOCAL_CONNECTION_ID) this
+   * component renders an info-only panel — no daemon calls, no controls.
    *
    * This component directly calls appClient methods per the restored pattern from
    * commit 27293564. The WebSocket API settings are transient UI state that do not
@@ -30,6 +36,11 @@
   import { toast } from '$lib/components/ui/toast';
   import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
+  import { selectActiveConnectionId } from '$store/renderer/slices/connections/connections-selectors';
+  import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+
+  const activeConnectionId$ = selectActiveConnectionId();
+  const isRemote = $derived($activeConnectionId$ !== LOCAL_CONNECTION_ID);
 
   let enabled = $state(false);
   let token = $state('');
@@ -55,6 +66,12 @@
   );
 
   onMount(async () => {
+    if (isRemote) {
+      // Info-only panel on remote connections — server.* methods are
+      // local-only, so skip loadStatus() entirely.
+      loading = false;
+      return;
+    }
     await loadStatus();
   });
 
@@ -243,6 +260,15 @@
 </script>
 
 <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+  {#if isRemote}
+  <!-- Remote connection: info-only panel — no toggle/port/token/QR controls -->
+  <section class="px-6 py-5">
+    <p class="text-sm font-medium text-foreground">{m.settings_wsApi_enable_label()}</p>
+    <p class="text-xs text-subtle mt-1">
+      {m.settings_wsApi_remoteInfo_description()}
+    </p>
+  </section>
+  {:else}
   <!-- Enable toggle -->
   <section class="px-6 py-5">
     <div class="flex items-center justify-between">
@@ -385,6 +411,7 @@
         </p>
       </section>
     </div>
+  {/if}
   {/if}
 </div>
 
