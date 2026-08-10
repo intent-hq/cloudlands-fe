@@ -5,6 +5,8 @@ import { createCollection } from '@augmentcode/themis/utils/collections/collecti
 const mocks = vi.hoisted(() => ({ update: vi.fn() }));
 vi.mock('$lib/client', () => ({ appClient: { settings: { update: mocks.update } } }));
 
+import { BackendError } from '$lib/client/live/backend-transport-types';
+
 import {
   loadDefaultReasoningEffortFromStorage,
   loadProviderModelsFromStorage,
@@ -100,12 +102,12 @@ describe('modelSelectionSaga', () => {
     ]);
   });
 
-  it('persists the exact daemon settings path with the taken pick overlaid on the map', async () => {
+  it('persists the exact daemon settings path with the session picks overlaid on the map', async () => {
     mocks.update.mockResolvedValue([]);
     const landed = await runSaga(
       { dispatch: vi.fn(), getState: state },
       persistSelectedModelsWorker,
-      setSelectedModel({ providerId: 'codex', model: 'codex:gpt-5' }),
+      { codex: 'codex:gpt-5' },
     ).toPromise();
 
     expect(landed).toBe(true);
@@ -191,6 +193,88 @@ describe('modelSelectionSaga', () => {
       [[{ path: 'model.providerDefaults', value: { auggie: 'one' } }]],
       [[{ path: 'model.providerDefaults', value: { auggie: 'two' } }]],
     ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it("keeps an earlier provider's pick when a stale echo interleaves a different provider's write", async () => {
+    let release!: () => void;
+    mocks.update
+      .mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+      )
+      .mockResolvedValue([]);
+    const current = state();
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => current },
+      modelSelectionSaga,
+    );
+    await settle();
+
+    // Provider A's pick starts a held-in-flight write.
+    current.model.providerModels = { auggie: 'sonnet4.5', codex: 'codex:gpt-5' };
+    channel.put(setSelectedModel({ providerId: 'codex', model: 'codex:gpt-5' }));
+    await settle();
+    // Provider B's pick queues behind it...
+    current.model.providerModels = {
+      auggie: 'sonnet4.5',
+      codex: 'codex:gpt-5',
+      'claude-code': 'claude-code:fable5',
+    };
+    channel.put(setSelectedModel({ providerId: 'claude-code', model: 'claude-code:fable5' }));
+    // ...then a stale boot snapshot resets the SHARED map, wiping A's pick
+    // from state before B's write runs.
+    current.model.providerModels = { auggie: 'sonnet4.5' };
+    channel.put(loadProviderModelsFromStorage({ auggie: 'sonnet4.5' }));
+    release();
+    await settle();
+
+    // Both session picks survive: the second write overlays A's AND B's picks
+    // onto the stale map instead of spreading it with only B applied.
+    expect(mocks.update.mock.calls).toEqual([
+      [
+        [
+          {
+            path: 'model.providerDefaults',
+            value: { auggie: 'sonnet4.5', codex: 'codex:gpt-5' },
+          },
+        ],
+      ],
+      [
+        [
+          {
+            path: 'model.providerDefaults',
+            value: {
+              auggie: 'sonnet4.5',
+              codex: 'codex:gpt-5',
+              'claude-code': 'claude-code:fable5',
+            },
+          },
+        ],
+      ],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not retry a structured daemon error response for providerDefaults', async () => {
+    mocks.update.mockRejectedValue(
+      new BackendError({ code: 'INVALID_PARAMS', message: 'invalid', rpcCode: -32602 }),
+    );
+    const current = state();
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => current },
+      modelSelectionSaga,
+    );
+
+    channel.put(setSelectedModel({ providerId: 'auggie', model: 'picked' }));
+    await settle();
+
+    expect(mocks.update).toHaveBeenCalledTimes(1);
     task.cancel();
     await task.toPromise();
   });

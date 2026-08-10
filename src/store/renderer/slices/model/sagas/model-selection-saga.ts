@@ -2,6 +2,7 @@ import { buffers } from 'redux-saga';
 import { actionChannel, all, call, delay, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
 import { splitCompoundModelId } from '$shared/utils/compound-model-id';
 import {
@@ -59,20 +60,24 @@ export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
 export const PROVIDER_DEFAULTS_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
 
 /**
- * Persist the taken pick to `model.providerDefaults` (PROTOCOL §5.12). The
- * payload is the current provider map with the ACTION's pick overlaid (same
- * normalization the reducer applies), so an interleaved hydration echo of an
- * older snapshot can never displace a newer queued pick — the same guard the
- * reasoning-effort worker below documents. Returns whether the write landed.
+ * Persist the session's picks to `model.providerDefaults` (PROTOCOL §5.12).
+ * The payload is the current provider map with EVERY pick made this session
+ * (`sessionPicks`, newest per provider) overlaid using the same normalization
+ * the reducer applies. Overlaying only the latest action would not be enough:
+ * `model.providerDefaults` is one shared map across providers, so when picks
+ * for providers A and then B queue behind an in-flight write and a stale
+ * hydration echo resets the map in between, a B-only overlay would spread the
+ * stale map and silently drop A's pick. Returns whether the write landed —
+ * a structured daemon error response is a rejection of the payload (not a
+ * transient transport failure) and reports as landed so it is not retried.
  */
-export function* persistSelectedModelsWorker(action: ReturnType<typeof setSelectedModel>) {
-  const { providerId, model } = action.payload[0];
+export function* persistSelectedModelsWorker(sessionPicks: Record<string, string>) {
   const providerModels = yield* selectProviderModels.effect();
   const defaultProviderId = yield* selectDefaultProviderId.effect();
-  const value = {
-    ...providerModels,
-    [providerId]: normalizeModelForProvider(providerId, model, defaultProviderId),
-  };
+  const value = { ...providerModels };
+  for (const [providerId, model] of Object.entries(sessionPicks)) {
+    value[providerId] = normalizeModelForProvider(providerId, model, defaultProviderId);
+  }
   try {
     yield* call(
       [appClient.settings, appClient.settings.update],
@@ -80,6 +85,10 @@ export function* persistSelectedModelsWorker(action: ReturnType<typeof setSelect
     );
     return true;
   } catch (error) {
+    if (isDaemonErrorResponse(error)) {
+      logger.warn('Daemon rejected model.providerDefaults write', { error });
+      return true;
+    }
     logger.error('Failed to persist model.providerDefaults', { error });
     return false;
   }
@@ -87,18 +96,25 @@ export function* persistSelectedModelsWorker(action: ReturnType<typeof setSelect
 
 function* watchSelectedModelPersistence() {
   const channel = yield* actionChannel(setSelectedModel, buffers.sliding(1));
+  // Newest pick per provider made this session. Session-scoped on purpose:
+  // an entry only exists for a provider the user explicitly picked here, and
+  // re-overlaying it on every write keeps the user's in-session intent from
+  // being displaced by stale snapshot echoes (intent-hq/monorepo#1924).
+  const sessionPicks: Record<string, string> = {};
   try {
     let action = yield* take(channel);
     let attempt = 0;
     while (true) {
-      const persisted = yield* call(persistSelectedModelsWorker, action);
+      const { providerId, model } = action.payload[0];
+      sessionPicks[providerId] = model;
+      const persisted = yield* call(persistSelectedModelsWorker, sessionPicks);
       if (persisted) {
         action = yield* take(channel);
         attempt = 0;
         continue;
       }
-      // Failed write: back off and retry the SAME pick, unless a newer pick
-      // arrives first — it supersedes both the payload and the backoff.
+      // Failed write: back off and retry the SAME picks, unless a newer pick
+      // arrives first — it joins the overlay and supersedes the backoff.
       const delayMs =
         PROVIDER_DEFAULTS_RETRY_DELAYS_MS[
           Math.min(attempt, PROVIDER_DEFAULTS_RETRY_DELAYS_MS.length - 1)
