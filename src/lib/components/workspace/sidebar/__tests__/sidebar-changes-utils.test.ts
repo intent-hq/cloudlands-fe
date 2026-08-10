@@ -832,6 +832,20 @@ describe('mergeMonitoredPRs', () => {
     expect(annotated[0].monitorSnapshot).toBe(snapshot);
   });
 
+  it('does not let a snapshotless duplicate monitor clobber an earlier snapshot', () => {
+    const snapshot = makeSnapshot();
+    const result = mergeMonitoredPRs(
+      [makeBasePR()],
+      [
+        makeMonitor({ monitorId: 'mon-1', agentId: 'agent-1', lastSnapshot: snapshot }),
+        makeMonitor({ monitorId: 'mon-2', agentId: 'agent-2', lastSnapshot: undefined }),
+      ],
+      workspaceRepo,
+    );
+    expect(result[0].monitorSnapshot).toBe(snapshot);
+    expect(result[0].monitorAgentId).toBe('agent-2');
+  });
+
   it('renders completed monitors without a snapshot verdict as closed (completion covers merged AND closed)', () => {
     const result = mergeMonitoredPRs(
       [],

@@ -369,7 +369,9 @@ export function mergeMonitoredPRs(
     );
     if (existing) {
       existing.monitorAgentId = monitor.agentId;
-      existing.monitorSnapshot = monitor.lastSnapshot;
+      // `lastSnapshot` is absent until a monitor's first successful poll —
+      // don't let a snapshotless duplicate monitor clobber a present one.
+      existing.monitorSnapshot = monitor.lastSnapshot ?? existing.monitorSnapshot;
       continue;
     }
     const url = monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`;
