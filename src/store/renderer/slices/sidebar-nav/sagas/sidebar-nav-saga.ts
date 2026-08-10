@@ -1,4 +1,4 @@
-import { call, put, take, takeEvery, fork, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, takeEvery, takeLeading, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   namespaceBackendKey,
@@ -48,29 +48,7 @@ import type { AllSpacesViewMode, SidebarNavItem } from '../sidebar-nav-types';
 
 const PINNED_ACTIONS = [setPinnedWorkspaceIds, pinWorkspace, unpinWorkspace, togglePinWorkspace];
 const PANEL_ITEM_ACTIONS = [openPanel, closePanel, togglePanel, closeAll];
-const CARD_PINNED_ACTIONS = [
-  setCardPinned,
-  toggleCardPinned,
-  openPanel,
-  closePanel,
-  togglePanel,
-  closeAll,
-  closeHoverCards,
-];
-const ALL_PERSIST_ACTIONS = [
-  ...PINNED_ACTIONS,
-  setAllSpacesViewMode,
-  setPanelWidth,
-  ...PANEL_ITEM_ACTIONS,
-  setCardPinned,
-  toggleCardPinned,
-  closeHoverCards,
-  setChiefActiveAgentId,
-  setMultiSelectSidebarTabOrder,
-];
-const PINNED_TYPES = new Set(PINNED_ACTIONS.map((action) => action.type));
-const PANEL_ITEM_TYPES = new Set(PANEL_ITEM_ACTIONS.map((action) => action.type));
-const CARD_PINNED_TYPES = new Set(CARD_PINNED_ACTIONS.map((action) => action.type));
+const CARD_PINNED_ACTIONS = [setCardPinned, toggleCardPinned, closeHoverCards];
 
 // Pinned workspace IDs, the multi-select sidebar tab order, and the chief
 // active agent id all reference backend-specific workspace/agent IDs, so they
@@ -171,41 +149,70 @@ export function* hydrateSidebarNavState(): SagaGenerator<void> {
   }
 }
 
-export function* persistSidebarNavState(action: { type: string }): SagaGenerator<void> {
+function* persistPinnedWorkspaces(): SagaGenerator<void> {
   try {
-    if (PINNED_TYPES.has(action.type)) {
-      yield* call(
-        setLocalStorageJSON,
-        pinnedWorkspacesKey(yield* selectActiveBackendId()),
-        yield* selectPinnedWorkspaceIds.effect(),
-      );
-    }
-    if (action.type === setAllSpacesViewMode.type) {
-      yield* call(setLocalStorageJSON, VIEW_MODE_KEY, yield* selectAllSpacesViewMode.effect());
-    }
-    if (action.type === setPanelWidth.type) {
-      yield* call(setLocalStorageJSON, PANEL_WIDTH_KEY, yield* selectPanelWidth.effect());
-    }
-    if (PANEL_ITEM_TYPES.has(action.type)) {
-      yield* call(setLocalStorageJSON, PANEL_ITEM_KEY, yield* selectPanelItem.effect());
-    }
-    if (CARD_PINNED_TYPES.has(action.type)) {
-      yield* call(setLocalStorageJSON, CARD_PINNED_KEY, yield* selectIsCardPinned.effect());
-    }
-    if (action.type === setChiefActiveAgentId.type) {
-      yield* call(
-        setLocalStorageJSON,
-        chiefActiveAgentIdKey(yield* selectActiveBackendId()),
-        yield* selectChiefActiveAgentId.effect(),
-      );
-    }
-    if (action.type === setMultiSelectSidebarTabOrder.type) {
-      yield* call(
-        setLocalStorageJSON,
-        multiSelectTabOrderKey(yield* selectActiveBackendId()),
-        yield* selectMultiSelectSidebarTabOrder.effect(),
-      );
-    }
+    yield* call(
+      setLocalStorageJSON,
+      pinnedWorkspacesKey(yield* selectActiveBackendId()),
+      yield* selectPinnedWorkspaceIds.effect(),
+    );
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
+
+function* persistViewMode(): SagaGenerator<void> {
+  try {
+    yield* call(setLocalStorageJSON, VIEW_MODE_KEY, yield* selectAllSpacesViewMode.effect());
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
+
+function* persistPanelWidth(): SagaGenerator<void> {
+  try {
+    yield* call(setLocalStorageJSON, PANEL_WIDTH_KEY, yield* selectPanelWidth.effect());
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
+
+function* persistPanelAndCardState(): SagaGenerator<void> {
+  try {
+    yield* call(setLocalStorageJSON, PANEL_ITEM_KEY, yield* selectPanelItem.effect());
+    yield* call(setLocalStorageJSON, CARD_PINNED_KEY, yield* selectIsCardPinned.effect());
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
+
+function* persistCardPinned(): SagaGenerator<void> {
+  try {
+    yield* call(setLocalStorageJSON, CARD_PINNED_KEY, yield* selectIsCardPinned.effect());
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
+
+function* persistChiefActiveAgentId(): SagaGenerator<void> {
+  try {
+    yield* call(
+      setLocalStorageJSON,
+      chiefActiveAgentIdKey(yield* selectActiveBackendId()),
+      yield* selectChiefActiveAgentId.effect(),
+    );
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
+
+function* persistMultiSelectTabOrder(): SagaGenerator<void> {
+  try {
+    yield* call(
+      setLocalStorageJSON,
+      multiSelectTabOrderKey(yield* selectActiveBackendId()),
+      yield* selectMultiSelectSidebarTabOrder.effect(),
+    );
   } catch {
     // Storage failures are non-fatal and must not terminate the watcher.
   }
@@ -217,13 +224,11 @@ export function* persistSidebarNavState(action: { type: string }): SagaGenerator
  * backend's namespace, resetting to empty where it has none so the previous
  * backend's pins/tab order don't linger.
  */
-export function* watchBackendSwitch(): SagaGenerator<void> {
-  let lastBackendId = yield* selectActiveBackendId();
-  while (true) {
-    yield* take(connectionsListReceived);
-    const backendId = yield* selectActiveBackendId();
-    if (backendId === lastBackendId) continue;
-    lastBackendId = backendId;
+function* handleBackendSwitch(lastBackend: { id: string }): SagaGenerator<void> {
+  const backendId = yield* selectActiveBackendId();
+  if (backendId === lastBackend.id) return;
+  lastBackend.id = backendId;
+  try {
     const pinned = stringArray(
       yield* call(getLocalStorageJSON<unknown>, pinnedWorkspacesKey(backendId)),
     );
@@ -241,12 +246,22 @@ export function* watchBackendSwitch(): SagaGenerator<void> {
         multiSelectTabOrder: tabOrder ?? [],
       }),
     );
+  } catch {
+    // Backend-specific hydration is best-effort.
   }
 }
 
 /** Unregistered until the S20 middleware cutover. */
 export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* call(hydrateSidebarNavState);
-  yield* fork(watchBackendSwitch);
-  yield* takeEvery(ALL_PERSIST_ACTIONS, persistSidebarNavState);
+  yield* takeLeading(connectionsListReceived, handleBackendSwitch, {
+    id: yield* selectActiveBackendId(),
+  });
+  yield* takeEvery(PINNED_ACTIONS, persistPinnedWorkspaces);
+  yield* takeEvery(setAllSpacesViewMode, persistViewMode);
+  yield* takeEvery(setPanelWidth, persistPanelWidth);
+  yield* takeEvery(PANEL_ITEM_ACTIONS, persistPanelAndCardState);
+  yield* takeEvery(CARD_PINNED_ACTIONS, persistCardPinned);
+  yield* takeEvery(setChiefActiveAgentId, persistChiefActiveAgentId);
+  yield* takeEvery(setMultiSelectSidebarTabOrder, persistMultiSelectTabOrder);
 }

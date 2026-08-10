@@ -1,4 +1,4 @@
-import { runSaga, stdChannel } from 'redux-saga';
+import { CANCEL, runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
@@ -47,11 +47,47 @@ describe('contextSaga', () => {
     await task.toPromise();
   });
 
-  it('coalesces same-workspace mutations into one trailing post-reducer snapshot', async () => {
+  it('cancels an older workspace write when a different workspace triggers global latest', async () => {
     let resolveFirst!: () => void;
-    mocks.updateContext
-      .mockReturnValueOnce(new Promise<void>((resolve) => (resolveFirst = resolve)))
-      .mockResolvedValue(undefined);
+    const cancelFirst = vi.fn();
+    const firstWrite = new Promise<void>((resolve) => (resolveFirst = resolve));
+    Object.assign(firstWrite, { [CANCEL]: cancelFirst });
+    mocks.updateContext.mockReturnValueOnce(firstWrite).mockResolvedValue(undefined);
+    const channel = stdChannel();
+    const first = { id: 'first', kind: 'text' as const, content: 'one', position: 0 };
+    const second = { id: 'second', kind: 'text' as const, content: 'two', position: 0 };
+    const state = {
+      byWorkspaceId: {
+        'ws-1': { items: createCollection('id', [first]), loading: false, error: null },
+        'ws-2': { items: createCollection('id', [second]), loading: false, error: null },
+      },
+    };
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => ({ context: state }) },
+      contextSaga,
+    );
+
+    channel.put(addContextItem('ws-1', first));
+    await settle();
+    channel.put(addContextItem('ws-2', second));
+    await settle();
+
+    expect(cancelFirst).toHaveBeenCalledTimes(1);
+    expect(mocks.updateContext.mock.calls).toEqual([
+      ['ws-1', [first]],
+      ['ws-2', [second]],
+    ]);
+    resolveFirst();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('uses global takeLatest cancellation and starts each latest post-reducer snapshot', async () => {
+    let resolveFirst!: () => void;
+    const cancelFirst = vi.fn();
+    const firstWrite = new Promise<void>((resolve) => (resolveFirst = resolve));
+    Object.assign(firstWrite, { [CANCEL]: cancelFirst });
+    mocks.updateContext.mockReturnValueOnce(firstWrite).mockResolvedValue(undefined);
     const channel = stdChannel();
     const first = { id: 'first', kind: 'text' as const, content: 'one', position: 0 };
     const latest = { ...first, content: 'latest' };
@@ -77,19 +113,21 @@ describe('contextSaga', () => {
     channel.put(updateContextItem('ws-1', 'first', { content: 'middle' }));
     channel.put(updateContextItem('ws-1', 'first', { content: 'latest' }));
     await settle();
-    expect(mocks.updateContext).toHaveBeenCalledTimes(1);
+    expect(cancelFirst).toHaveBeenCalledTimes(1);
+    expect(mocks.updateContext).toHaveBeenCalledTimes(3);
 
     resolveFirst();
     await settle();
     expect(mocks.updateContext.mock.calls).toEqual([
       ['ws-1', [first]],
       ['ws-1', [latest]],
+      ['ws-1', [latest]],
     ]);
     task.cancel();
     await task.toPromise();
   });
 
-  it('cancels in-flight and queued workspace persistence with the root', async () => {
+  it('cancels the globally latest in-flight workspace persistence with the root', async () => {
     let resolveFirst!: () => void;
     mocks.updateContext.mockReturnValue(
       new Promise<void>((resolve) => {
@@ -114,6 +152,6 @@ describe('contextSaga', () => {
     await task.toPromise();
     resolveFirst();
     await settle();
-    expect(mocks.updateContext).toHaveBeenCalledTimes(1);
+    expect(mocks.updateContext).toHaveBeenCalledTimes(2);
   });
 });

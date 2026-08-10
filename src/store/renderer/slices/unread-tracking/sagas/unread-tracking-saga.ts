@@ -1,4 +1,4 @@
-import { all, call, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { all, call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   markAgentSeenAtBoundary,
@@ -67,36 +67,36 @@ export type DividerSessionBoundary =
       nextWorkspaceId: string | null;
     };
 
-const TAB_REMOVAL_ACTION_TYPES = new Set([
-  initializeLayout.type,
-  applyPreset.type,
-  createGridLayout.type,
-  closeTab.type,
-  closeActiveTab.type,
-  closeTabsByType.type,
-  closeTabsByAgentId.type,
-  moveTabToPanel.type,
-  moveTabToSplit.type,
-  moveTabToSplitLevel.type,
-  closeOtherTabs.type,
-  closeTabsToRight.type,
-  closeAllTabs.type,
-  closeAllOthersEverywhere.type,
-  closePanel.type,
-  resetLayout.type,
-  goBack.type,
-  goForward.type,
-  reconcileStaleAgentTabs.type,
-  clearPanelLayout.type,
-]);
-
-const BOUNDARY_STATE_ACTIONS = [
-  ...TAB_REMOVAL_ACTION_TYPES,
+const TAB_REMOVAL_ACTIONS = [
+  initializeLayout,
+  applyPreset,
+  createGridLayout,
+  closeTab,
+  closeActiveTab,
+  closeTabsByType,
+  closeTabsByAgentId,
+  moveTabToPanel,
+  moveTabToSplit,
+  moveTabToSplitLevel,
+  closeOtherTabs,
+  closeTabsToRight,
+  closeAllTabs,
+  closeAllOthersEverywhere,
+  closePanel,
+  resetLayout,
+  goBack,
+  goForward,
+  reconcileStaleAgentTabs,
+  clearPanelLayout,
+];
+const TAB_BOUNDARY_ACTIONS = [
+  ...TAB_REMOVAL_ACTIONS,
   openTab,
   openTabInAdjacentOrSplit,
   reopenClosedTab,
-  setActiveWorkspaceId,
-  clearActiveWorkspace,
+];
+const WORKSPACE_BOUNDARY_ACTIONS = [setActiveWorkspaceId, clearActiveWorkspace];
+const CHIEF_BOUNDARY_ACTIONS = [
   setHoveredItem,
   setExpandedItem,
   closeHoverCards,
@@ -106,33 +106,42 @@ const BOUNDARY_STATE_ACTIONS = [
   closeAllSidebar,
   hydrateSidebarNav,
 ];
+const TAB_REMOVAL_ACTION_TYPES = new Set(TAB_REMOVAL_ACTIONS.map((action) => action.type));
 
-export function detectDividerSessionBoundary(
+type BoundarySnapshotTracker = { previous: DividerBoundarySnapshot };
+
+function detectWorkspaceBoundary(
   previous: DividerBoundarySnapshot,
   current: DividerBoundarySnapshot,
-  actionType: string,
 ): DividerSessionBoundary | null {
-  if (actionType === setActiveWorkspaceId.type || actionType === clearActiveWorkspace.type) {
-    if (previous.activeWorkspaceId === current.activeWorkspaceId) return null;
-    const chiefIds = new Set(current.chiefSessionAgentIds);
-    const agentIds = current.dividerSessionAgentIds.filter((id) => !chiefIds.has(id));
-    return agentIds.length > 0
-      ? {
-          kind: 'workspace-switch',
-          agentIds,
-          previousWorkspaceId: previous.activeWorkspaceId,
-          nextWorkspaceId: current.activeWorkspaceId,
-        }
-      : null;
-  }
-  if (actionType.startsWith('sidebarNav/')) {
-    return previous.chiefCardVisible &&
-      !current.chiefCardVisible &&
-      current.chiefSessionAgentIds.length > 0
-      ? { kind: 'chief-card-close', agentIds: current.chiefSessionAgentIds }
-      : null;
-  }
-  if (!TAB_REMOVAL_ACTION_TYPES.has(actionType)) return null;
+  if (previous.activeWorkspaceId === current.activeWorkspaceId) return null;
+  const chiefIds = new Set(current.chiefSessionAgentIds);
+  const agentIds = current.dividerSessionAgentIds.filter((id) => !chiefIds.has(id));
+  return agentIds.length > 0
+    ? {
+        kind: 'workspace-switch',
+        agentIds,
+        previousWorkspaceId: previous.activeWorkspaceId,
+        nextWorkspaceId: current.activeWorkspaceId,
+      }
+    : null;
+}
+
+function detectChiefCardBoundary(
+  previous: DividerBoundarySnapshot,
+  current: DividerBoundarySnapshot,
+): DividerSessionBoundary | null {
+  return previous.chiefCardVisible &&
+    !current.chiefCardVisible &&
+    current.chiefSessionAgentIds.length > 0
+    ? { kind: 'chief-card-close', agentIds: current.chiefSessionAgentIds }
+    : null;
+}
+
+function detectTabBoundary(
+  previous: DividerBoundarySnapshot,
+  current: DividerBoundarySnapshot,
+): DividerSessionBoundary | null {
   const previouslyOpen = new Set(previous.openAgentTabIds);
   const currentlyOpen = new Set(current.openAgentTabIds);
   const agentIds = current.dividerSessionAgentIds.filter(
@@ -141,28 +150,62 @@ export function detectDividerSessionBoundary(
   return agentIds.length > 0 ? { kind: 'tab-close', agentIds } : null;
 }
 
-function* watchDividerBoundaries(): SagaGenerator<void> {
-  let previous = yield* selectDividerBoundarySnapshot.effect();
-  while (true) {
-    const action: { type: string } = yield* take(BOUNDARY_STATE_ACTIONS);
-    const current = yield* selectDividerBoundarySnapshot.effect();
-    const boundary = detectDividerSessionBoundary(previous, current, action.type);
-    if (boundary) {
-      yield* call(markAgentSeenAtBoundary, boundary.agentIds);
-      for (const agentId of boundary.agentIds) {
-        const hasStreamingTailMessage =
-          yield* selectAgentSessionHasStreamingTailMessage.effect(agentId);
-        if (hasStreamingTailMessage) {
-          const messages = yield* selectAgentMessages.effect(agentId);
-          const messageId = newestPersistedMessageId(messages);
-          if (messageId) yield* put(recordWatchedStreamingTail(agentId, messageId));
-        }
-        yield* put(endDividerSession(agentId));
-      }
-      previous = yield* selectDividerBoundarySnapshot.effect();
-    } else {
-      previous = current;
+export function detectDividerSessionBoundary(
+  previous: DividerBoundarySnapshot,
+  current: DividerBoundarySnapshot,
+  actionType: string,
+): DividerSessionBoundary | null {
+  if (actionType === setActiveWorkspaceId.type || actionType === clearActiveWorkspace.type) {
+    return detectWorkspaceBoundary(previous, current);
+  }
+  if (actionType.startsWith('sidebarNav/')) {
+    return detectChiefCardBoundary(previous, current);
+  }
+  if (!TAB_REMOVAL_ACTION_TYPES.has(actionType)) return null;
+  return detectTabBoundary(previous, current);
+}
+
+function* finishBoundary(boundary: DividerSessionBoundary): SagaGenerator<void> {
+  yield* call(markAgentSeenAtBoundary, boundary.agentIds);
+  for (const agentId of boundary.agentIds) {
+    const hasStreamingTailMessage =
+      yield* selectAgentSessionHasStreamingTailMessage.effect(agentId);
+    if (hasStreamingTailMessage) {
+      const messages = yield* selectAgentMessages.effect(agentId);
+      const messageId = newestPersistedMessageId(messages);
+      if (messageId) yield* put(recordWatchedStreamingTail(agentId, messageId));
     }
+    yield* put(endDividerSession(agentId));
+  }
+}
+
+function* handleTabBoundary(tracker: BoundarySnapshotTracker): SagaGenerator<void> {
+  const current = yield* selectDividerBoundarySnapshot.effect();
+  const boundary = detectTabBoundary(tracker.previous, current);
+  tracker.previous = current;
+  if (boundary) {
+    yield* call(finishBoundary, boundary);
+    tracker.previous = yield* selectDividerBoundarySnapshot.effect();
+  }
+}
+
+function* handleWorkspaceBoundary(tracker: BoundarySnapshotTracker): SagaGenerator<void> {
+  const current = yield* selectDividerBoundarySnapshot.effect();
+  const boundary = detectWorkspaceBoundary(tracker.previous, current);
+  tracker.previous = current;
+  if (boundary) {
+    yield* call(finishBoundary, boundary);
+    tracker.previous = yield* selectDividerBoundarySnapshot.effect();
+  }
+}
+
+function* handleChiefBoundary(tracker: BoundarySnapshotTracker): SagaGenerator<void> {
+  const current = yield* selectDividerBoundarySnapshot.effect();
+  const boundary = detectChiefCardBoundary(tracker.previous, current);
+  tracker.previous = current;
+  if (boundary) {
+    yield* call(finishBoundary, boundary);
+    tracker.previous = yield* selectDividerBoundarySnapshot.effect();
   }
 }
 
@@ -184,8 +227,13 @@ function* handleStreamUpdate(
 }
 
 export function* unreadTrackingSaga(): SagaGenerator<void> {
+  const tracker: BoundarySnapshotTracker = {
+    previous: yield* selectDividerBoundarySnapshot.effect(),
+  };
   yield* all([
-    call(watchDividerBoundaries),
+    takeEvery(TAB_BOUNDARY_ACTIONS, handleTabBoundary, tracker),
+    takeEvery(WORKSPACE_BOUNDARY_ACTIONS, handleWorkspaceBoundary, tracker),
+    takeEvery(CHIEF_BOUNDARY_ACTIONS, handleChiefBoundary, tracker),
     takeEvery(sendMessage, handleSend),
     takeEvery(agentStreamUpdateReceived, handleStreamUpdate),
   ]);
