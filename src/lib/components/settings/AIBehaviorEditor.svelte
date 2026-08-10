@@ -743,6 +743,7 @@
           value={$defaultReasoningEffort$ || undefined}
           onChange={handleDefaultEffortChange}
           testId="default-effort"
+          showLabel
         />
         {#if anySpecialistHasExplicitModel}
           <button
@@ -860,6 +861,7 @@
           value={specialistEffortValue}
           onChange={handleSpecialistEffortChange}
           testId="specialist-effort"
+          showLabel
         />
         {#if isBuiltIn && hasFileOverride()}
           <button

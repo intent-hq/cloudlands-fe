@@ -67,6 +67,9 @@ describe('SpecialistModelOptions effort dropdown', () => {
     const wrapper = screen.getByTestId('option-effort-0');
     expect(wrapper.textContent).toContain('Default');
 
+    // Model-option rows keep the sr-only label — no visible "Effort" text.
+    expect(wrapper.querySelector('label')!.classList.contains('sr-only')).toBe(true);
+
     await fireEvent.click(wrapper.querySelector('button')!);
     expect(screen.getByText('low')).toBeTruthy();
     await fireEvent.click(screen.getByText('high'));
