@@ -68,20 +68,27 @@ describe('saga watcher ownership guard', () => {
 
   it('rejects a manual Redux watcher loop while allowing channel loops', () => {
     const source = [
-      "import { call, take } from 'typed-redux-saga';",
-      "import { start } from '../slice';",
+      "import { all, call, fork, join, take } from 'typed-redux-saga';",
+      "import { start, stop } from '../slice';",
       'function* consumeExternal(channel: unknown) {',
       '  while (true) { const event = yield* take(channel); yield* call(forward, event); }',
       '}',
       'export function* badSaga() {',
-      '  while (true) yield* call(worker, yield* take(start));',
+      '  const handlers = [',
+      '    yield* fork(function* () { while (true) yield* call(startWorker, yield* take(start)); }),',
+      '    yield* fork(function* () { while (true) yield* call(stopWorker, yield* take(stop)); }),',
+      '  ];',
+      '  yield* all(handlers.map((task) => join(task)));',
       '}',
     ].join('\n');
     const result = inspectSagaWatcherOwnership([
       root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
       { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
     ]);
-    expect(result.violations).toEqual([expect.stringContaining('manual Redux watcher loop')]);
+    expect(result.violations).toEqual([
+      expect.stringContaining('manual Redux watcher loop'),
+      expect.stringContaining('manual Redux watcher loop'),
+    ]);
   });
 
   it.each([
