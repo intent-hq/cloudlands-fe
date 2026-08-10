@@ -533,4 +533,77 @@ describe('createRepoConfigProbeScheduler', () => {
     expect(spies.onProbeResult).toHaveBeenCalledWith('echo gh-config');
     expect(spies.applyScript).not.toHaveBeenCalled();
   });
+
+  describe('settled() — submit-time gate (monorepo#1862)', () => {
+    it('resolves immediately when no probe ever ran', async () => {
+      const { scheduler } = makeScheduler(ghIdentity('main'));
+      let resolved = false;
+      void scheduler.settled().then(() => (resolved = true));
+      await vi.runAllTimersAsync();
+      expect(resolved).toBe(true);
+    });
+
+    it('waits for an in-flight probe before resolving', async () => {
+      const probe = deferred<string | null>();
+      fetches.github.mockReturnValue(probe.promise);
+      const { select, scheduler, spies } = makeScheduler(ghIdentity('main'));
+      select(ghIdentity('main'));
+
+      let resolved = false;
+      void scheduler.settled().then(() => (resolved = true));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(resolved).toBe(false);
+
+      probe.resolve('echo gh-config');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(resolved).toBe(true);
+      expect(spies.applyScript).toHaveBeenCalledWith('echo gh-config');
+    });
+
+    it('waits through a pending debounced re-probe and its fetch', async () => {
+      const probeRelease = deferred<string | null>();
+      fetches.github.mockResolvedValueOnce(null).mockReturnValueOnce(probeRelease.promise);
+      const { select, scheduler } = makeScheduler(ghIdentity('main'));
+      select(ghIdentity('main'));
+      await vi.runAllTimersAsync();
+
+      // Branch change arms the debounce timer; submit while it is pending.
+      select(ghIdentity('release-1.x'));
+      let resolved = false;
+      void scheduler.settled().then(() => (resolved = true));
+      await vi.advanceTimersByTimeAsync(DEBOUNCE);
+      expect(resolved).toBe(false); // debounce fired, fetch still in flight
+
+      probeRelease.resolve('echo release-config');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(resolved).toBe(true);
+    });
+
+    it('resolves after the bounded timeout when a probe hangs', async () => {
+      fetches.github.mockReturnValue(new Promise(() => {}));
+      const { select, scheduler } = makeScheduler(ghIdentity('main'));
+      select(ghIdentity('main'));
+
+      let resolved = false;
+      void scheduler.settled(1000).then(() => (resolved = true));
+      await vi.advanceTimersByTimeAsync(999);
+      expect(resolved).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(resolved).toBe(true);
+    });
+
+    it('resolves when dispose() cancels a pending debounced re-probe', async () => {
+      fetches.github.mockResolvedValue(null);
+      const { select, scheduler } = makeScheduler(ghIdentity('main'));
+      select(ghIdentity('main'));
+      await vi.runAllTimersAsync();
+
+      select(ghIdentity('release-1.x'));
+      let resolved = false;
+      void scheduler.settled().then(() => (resolved = true));
+      scheduler.dispose();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(resolved).toBe(true);
+    });
+  });
 });

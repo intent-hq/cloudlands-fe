@@ -81,6 +81,7 @@
     getTemplateContent,
     chooseDefaultSetupScript,
     createRepoConfigProbeScheduler,
+    resolveSetupScriptParam,
     REPO_CONFIG_SCRIPT_NAME,
   } from '$features/setup-scripts';
   import { saveScript } from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
@@ -242,6 +243,7 @@
         // Repo changed — invalidate any cached repo-config script
         repoConfigScript = null;
         repoConfigScriptRepo = null;
+        setupScriptUserTouched = false;
 
         // On initial mount, don't override if there's already a setup script
         // set (e.g., from restored form state). On repo switches, always
@@ -363,6 +365,11 @@
   let showSetupScript = $state(false);
   let setupScriptName = $state('Custom');
   let isCustomSetupScript = $state(false);
+  // True once the user committed the setup-script modal (Done) this session.
+  // Gates sending `setupScript` on workspace.create: an auto-restored default
+  // the user never touched must not be persisted into the repo-tracked
+  // `.intent/config.json` (monorepo#1862).
+  let setupScriptUserTouched = $state(false);
 
   // User-picked model for the initial Coordinator agent (step 3 picker).
   // undefined + false means the auto-resolved default applies (behavior
@@ -870,6 +877,25 @@
           ? selectedPRBranch
           : currentBranch;
 
+      // Await any in-flight repo-config probe (bounded, sub-second) so the
+      // setup-script decision below sees the committed `.intent/config.json`
+      // instead of racing the probe (monorepo#1862).
+      await setupScriptProbeScheduler.settled();
+
+      // Only a user-touched script is sent — the daemon persists an explicit
+      // setupScript into the worktree's tracked .intent/config.json (PROTOCOL
+      // §5.1), so an auto-restored default or the unedited repo-config script
+      // must be omitted (the committed script still executes).
+      const setupScriptParam = resolveSetupScriptParam({
+        setupScript,
+        setupScriptName,
+        isCustomSetupScript,
+        setupScriptUserTouched,
+        repoPath: projectSelection.repoPath,
+        repoConfigScript,
+        repoConfigScriptRepo,
+      });
+
       const result = await workspaceClient.create({
         title: '',
         repositoryPath: projectSelection.repoPath,
@@ -879,7 +905,7 @@
         isNewRepo,
         skipIsolation: onboardingSkipIsolation || undefined,
         scope: projectSelection.scope || undefined,
-        setupScript: setupScript.trim() || undefined,
+        setupScript: setupScriptParam,
         linearIssue,
         sentryIssue,
         initialAgent: {
@@ -1315,6 +1341,7 @@
                           onSkipIsolationChange={(val) => (onboardingSkipIsolation = val)}
                           onBranchBehindChange={(behind) => (onboardingBranchBehind = behind)}
                           onShowSetupScriptChange={(show) => (showSetupScript = show)}
+                          onSetupScriptCommit={() => (setupScriptUserTouched = true)}
                         />
                       {/if}
                     </div>

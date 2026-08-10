@@ -103,6 +103,8 @@
     onSkipIsolationChange: (val: boolean) => void;
     onBranchBehindChange: (behind: number) => void;
     onShowSetupScriptChange: (show: boolean) => void;
+    /** User committed the setup-script modal (Done) — gates sending setupScript on create (monorepo#1862). */
+    onSetupScriptCommit?: () => void;
   }
 
   let {
@@ -142,6 +144,7 @@
     onSkipIsolationChange,
     onBranchBehindChange,
     onShowSetupScriptChange,
+    onSetupScriptCommit = () => {},
   }: Props = $props();
 
   // Refs managed by this component
@@ -553,6 +556,7 @@
           bind:value={setupScript}
           bind:scriptName={setupScriptName}
           bind:isCustomScript={isCustomSetupScript}
+          onchange={() => onSetupScriptCommit()}
           onClose={() => onShowSetupScriptChange(false)}
         />
       {/if}

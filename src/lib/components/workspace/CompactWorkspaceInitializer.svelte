@@ -17,6 +17,7 @@
   getTemplateContent,
   chooseDefaultSetupScript,
   createRepoConfigProbeScheduler,
+  resolveSetupScriptParam,
   REPO_CONFIG_SCRIPT_NAME,
 } from '$features/setup-scripts';
   import { v4 as uuidv4 } from 'uuid';
@@ -496,6 +497,11 @@
   let showSetupScript = $state(false); // Always collapsed on mount
   let setupScriptName = $state(savedState?.setupScriptName ?? 'Custom');
   let isCustomSetupScript = $state(savedState?.isCustomSetupScript ?? false);
+  // True once the user committed the setup-script modal (Done) this session.
+  // Gates sending `setupScript` on workspace.create: an auto-restored default
+  // the user never touched must not be persisted into the repo-tracked
+  // `.intent/config.json` (monorepo#1862).
+  let setupScriptUserTouched = $state(false);
 
   // Repo-committed setup script from <repo>/.intent/config.json (local repos
   // read the file over IPC; GitHub repos use `github.repoConfig.get`).
@@ -1305,6 +1311,7 @@
         // Repo changed — invalidate any cached repo-config script
         repoConfigScript = null;
         repoConfigScriptRepo = null;
+        setupScriptUserTouched = false;
 
         // On initial mount, don't override if there's already a setup script
         // set (e.g., from restored form state). On repo switches, always
@@ -1940,6 +1947,25 @@
       // (repoPath holds the owner/repo shorthand, not a local path).
       const isGithubPick = repoType === 'github' && !!githubUrl && !clonePath;
 
+      // Await any in-flight repo-config probe (bounded, sub-second) so the
+      // setup-script decision below sees the committed `.intent/config.json`
+      // instead of racing the probe (monorepo#1862).
+      await setupScriptProbeScheduler.settled();
+
+      // Only a user-touched script is sent — the daemon persists an explicit
+      // setupScript into the worktree's tracked .intent/config.json (PROTOCOL
+      // §5.1), so an auto-restored default or the unedited repo-config script
+      // must be omitted (the committed script still executes).
+      const setupScriptParam = resolveSetupScriptParam({
+        setupScript,
+        setupScriptName,
+        isCustomSetupScript,
+        setupScriptUserTouched,
+        repoPath,
+        repoConfigScript,
+        repoConfigScriptRepo,
+      });
+
       const result = await workspaceClient.create({
         title: prefillTitle || '', // Use deep-link title if provided, otherwise agent will set it
         repositoryPath: isGithubPick
@@ -1948,7 +1974,7 @@
         githubUrl: repoType === 'github' && githubUrl ? githubUrl : undefined, // GitHub URL to clone
         clonePath: repoType === 'github' && clonePath ? clonePath : undefined, // User-selected clone destination (legacy explicit-clone flow)
         baseRef: String(baseBranch),
-        setupScript: setupScript.trim() || undefined,
+        setupScript: setupScriptParam,
         environmentConfig,
         isNewRepo: Boolean(isNewRepo),
         skipIsolation: skipIsolation || undefined,
@@ -2140,6 +2166,7 @@
     showSetupScript = false;
     setupScriptName = 'Custom';
     isCustomSetupScript = false;
+    setupScriptUserTouched = false;
 
     // When preserving repo (stayOnHomePage), restore the last used setup script
     // so the next workspace creation uses the same script
@@ -3009,6 +3036,7 @@
             bind:value={setupScript}
             bind:scriptName={setupScriptName}
             bind:isCustomScript={isCustomSetupScript}
+            onchange={() => (setupScriptUserTouched = true)}
             onClose={() => (showSetupScript = false)}
           />
         </div>

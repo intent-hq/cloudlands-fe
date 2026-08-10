@@ -361,7 +361,10 @@ describe('onboarding repo-config setup script detection', () => {
     });
   });
 
-  it('sends the silently-applied repo-config script as setupScript on workspace.create', async () => {
+  it('omits setupScript on workspace.create for the unedited repo-config script (monorepo#1862)', async () => {
+    // The committed .intent/config.json is the source of truth: re-sending it
+    // would make the daemon rewrite the tracked file; omitting it still
+    // executes the committed script via the worktree-first read (§5.1).
     mocks.fetchRepoConfig.mockResolvedValue('echo repo-config');
     mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
 
@@ -384,9 +387,102 @@ describe('onboarding repo-config setup script detection', () => {
     captured.onSubmit();
 
     await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalled());
+    const request = mocks.workspaceCreate.mock.calls[0][0];
+    expect(request.setupScript).toBeUndefined();
+  });
+
+  it('omits setupScript for an auto-restored default the user never touched (monorepo#1862)', async () => {
+    // No repo config — the form falls back to the generic template. That
+    // synchronously-restored default must never be sent: the daemon would
+    // persist it into the fresh worktree's tracked .intent/config.json.
+    mocks.fetchRepoConfig.mockResolvedValue(null);
+    mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    const generic = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic')!;
+
+    const result = renderPage();
+    selectLocalRepo('/repo/a');
+    await waitFor(() => {
+      expect(textOf(result, 'setup-script-name')).toBe(generic.name);
+    });
+    expect(textOf(result, 'setup-script')).not.toBe('');
+
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.setInputValue('build the thing');
+    captured.onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalled());
+    const request = mocks.workspaceCreate.mock.calls[0][0];
+    expect(request.setupScript).toBeUndefined();
+    expect('setupScript' in request ? request.setupScript : undefined).toBeUndefined();
+  });
+
+  it('sends setupScript when the user committed an edited script via the modal', async () => {
+    mocks.fetchRepoConfig.mockResolvedValue('echo repo-config');
+    mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+
+    const result = renderPage();
+    selectLocalRepo('/repo/a');
+    await waitFor(() => {
+      expect(textOf(result, 'setup-script')).toBe('echo repo-config');
+    });
+
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+          commitSetupScript: (value: string, isCustom?: boolean) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.commitSetupScript('echo repo-config && echo edited');
+    captured.setInputValue('build the thing');
+    captured.onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalled());
     expect(mocks.workspaceCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ setupScript: 'echo repo-config' }),
+      expect.objectContaining({ setupScript: 'echo repo-config && echo edited' }),
     );
+  });
+
+  it('awaits an in-flight probe at submit and never sends the racing generic template (monorepo#1862)', async () => {
+    // Probe still in flight when the user submits: create must wait for it,
+    // see the repo-config script applied, and omit setupScript — not send the
+    // synchronously-restored generic template.
+    const probe = deferred<string | null>();
+    mocks.fetchRepoConfig.mockReturnValue(probe.promise);
+    mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    await waitFor(() => expect(mocks.fetchRepoConfig).toHaveBeenCalledWith('/repo/a'));
+
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.setInputValue('build the thing');
+    captured.onSubmit();
+
+    // Create is gated on the probe.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mocks.workspaceCreate).not.toHaveBeenCalled();
+
+    probe.resolve('echo repo-config');
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalled());
+    const request = mocks.workspaceCreate.mock.calls[0][0];
+    expect(request.setupScript).toBeUndefined();
   });
 
   it('does not probe remote selections', async () => {
