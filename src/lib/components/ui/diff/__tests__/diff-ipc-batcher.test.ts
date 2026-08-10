@@ -203,6 +203,34 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     });
   });
 
+  it('composes gitlink (submodule) sides from Subproject-commit hunk lines without content reads (#1739)', async () => {
+    const gitlinkHunk = {
+      oldStart: 1,
+      oldLines: 1,
+      newStart: 1,
+      newLines: 1,
+      lines: [
+        { type: 'Deletion', content: 'Subproject commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n', oldNumber: 1 },
+        { type: 'Addition', content: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-dirty\n', newNumber: 1 },
+      ],
+    };
+    mockDaemon({ diffs: [{ path: 'packages/intentd', hunks: [gitlinkHunk] }] });
+
+    const promise = batchedGitDiff('ws-9', false, 'packages/intentd');
+    await vi.runAllTimersAsync();
+
+    await expect(promise).resolves.toEqual({
+      file: 'packages/intentd',
+      chunks: [gitlinkHunk],
+      oldContent: 'Subproject commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n',
+      newContent: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-dirty\n',
+    });
+    // No blob exists for a gitlink, so neither failing read is attempted.
+    expect(
+      mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs'),
+    ).toEqual([]);
+  });
+
   it('leaves a side undefined (hunk-only fallback) when its git.showFile read fails', async () => {
     mockedRequest.mockImplementation(async (method: string) => {
       if (method === 'git.diffs') return [{ path: 'a.ts', hunks: [HUNK] }];

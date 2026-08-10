@@ -28,6 +28,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { store as appStore } from '$store/renderer/store';
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
+import { gitlinkSidesFromHunks, isGitlinkDiffChunk } from './gitlink';
 
 const logger = createLogger('diff-ipc-batcher');
 
@@ -216,12 +217,22 @@ async function readWorkingTreeContent(
  *   unstaged → old = `git.showFile` at ':0', new = `file.read` (working tree)
  * A failed side stays `undefined` so consumers fall back to hunk-only
  * rendering (never a silently-empty full-file diff); the failure is logged.
+ *
+ * Gitlink (submodule) chunks (intent-hq/monorepo#1739) are composed from
+ * their `Subproject commit <sha>` hunk lines instead: a gitlink has no blob,
+ * so `git.showFile` fails (`-32603`) and `file.read` hits a directory.
  */
 async function enrichChunkContents(
   workspaceId: string,
   staged: boolean,
   chunk: DiffChunk,
 ): Promise<void> {
+  if (isGitlinkDiffChunk(chunk)) {
+    const sides = gitlinkSidesFromHunks(chunk.chunks ?? []);
+    chunk.oldContent = sides.oldContent;
+    chunk.newContent = sides.newContent;
+    return;
+  }
   const [oldRes, newRes] = await Promise.all([
     dedupedShowFile(workspaceId, staged ? 'HEAD' : ':0', chunk.file),
     staged

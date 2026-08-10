@@ -144,6 +144,56 @@ describe('TrackedChangeDiffViewer content loading regressions', () => {
     expect(testState.batchedGitDiffMock).not.toHaveBeenCalled();
   });
 
+  it('renders a gitlink (submodule) pseudo-diff from hunk lines without show-file/file:read (#1739)', async () => {
+    testState.batchedGitDiffMock.mockResolvedValue({
+      file: 'packages/intentd',
+      chunks: [
+        {
+          oldStart: 1,
+          oldLines: 1,
+          newStart: 1,
+          newLines: 1,
+          lines: [
+            {
+              type: 'Deletion',
+              content: 'Subproject commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n',
+              oldNumber: 1,
+            },
+            {
+              type: 'Addition',
+              content: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n',
+              newNumber: 1,
+            },
+          ],
+        },
+      ],
+    });
+
+    render(TrackedChangeDiffViewer, {
+      props: {
+        change: createChange({ file: 'packages/intentd', relativePath: 'packages/intentd' }),
+        workspaceId: 'ws-1',
+      },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('new-content').textContent).toBe(
+        'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n',
+      ),
+    );
+
+    expect(screen.getByTestId('old-content').textContent).toBe(
+      'Subproject commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n',
+    );
+    // A gitlink has no blob and its path is a directory: neither the
+    // show-file fallback nor the working-tree file:read may fire.
+    expect(testState.dedupedShowFileMock).not.toHaveBeenCalled();
+    expect(testState.invokeMock).not.toHaveBeenCalledWith(
+      'file:read',
+      expect.objectContaining({ path: '/repo/packages/intentd' }),
+    );
+  });
+
   it('falls back to disk-backed working-tree content instead of unsaved Redux content', async () => {
     testState.originalContentStore.set('unsaved editor buffer');
     testState.batchedGitDiffMock.mockResolvedValue({
