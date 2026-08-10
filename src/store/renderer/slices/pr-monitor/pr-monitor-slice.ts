@@ -15,10 +15,12 @@ import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   createCollection,
+  decreaseRefsCount,
+  getRefsCount,
+  increaseRefsCount,
   type Collection,
 } from "@augmentcode/themis/utils/collections/collection-utils";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
-import { omitKey } from "../../utils/utils";
 import { removeWorkspaceEntity } from "../workspace/workspace-slice";
 import type { PrMonitorRow } from "$features/pr-monitor/pr-monitor-service";
 
@@ -30,7 +32,6 @@ export interface PrMonitorWorkspaceState {
 /** Root pr-monitor state, keyed by workspace ID. */
 export interface PrMonitorState {
   byWorkspaceId: Record<string, PrMonitorWorkspaceState>;
-  subscriptionDemandByWorkspaceId: Record<string, number>;
 }
 
 export const emptyPrMonitorWorkspaceState: PrMonitorWorkspaceState = {
@@ -39,12 +40,24 @@ export const emptyPrMonitorWorkspaceState: PrMonitorWorkspaceState = {
 
 export const initialState: PrMonitorState = {
   byWorkspaceId: {},
-  subscriptionDemandByWorkspaceId: {},
 };
 
-const { setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
+const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
   emptyPrMonitorWorkspaceState,
 );
+
+function replaceMonitorRows(
+  current: Collection<PrMonitorRow, "monitorId">,
+  workspaceId: string,
+  monitors: PrMonitorRow[],
+): Collection<PrMonitorRow, "monitorId"> {
+  const refsCount = getRefsCount(current, workspaceId);
+  let next = createCollection<PrMonitorRow, "monitorId">("monitorId", monitors);
+  for (let remaining = refsCount; remaining > 0; remaining -= 1) {
+    next = increaseRefsCount(next, workspaceId);
+  }
+  return next;
+}
 
 // ── Actions ──
 
@@ -59,24 +72,21 @@ export const prMonitorsUnsubscribeRequested = createAction<[workspaceId: string]
 );
 
 /** Service → reducer: full monitor list after a seed or event fold. */
-export const prMonitorsUpdated = createAction<
-  [workspaceId: string, monitors: PrMonitorRow[]]
->("prMonitor/updated");
+export const prMonitorsUpdated =
+  createAction<[workspaceId: string, monitors: PrMonitorRow[]]>("prMonitor/updated");
 
 /** Service → reducer: last subscriber released — drop the cached list. */
-export const prMonitorsCleared = createAction<[workspaceId: string]>(
-  "prMonitor/cleared",
-);
+export const prMonitorsCleared = createAction<[workspaceId: string]>("prMonitor/cleared");
 
 /** Trigger: `prMonitor.flush` (§6.9) — outcome arrives via `prMonitor:*` events. */
-export const flushPrMonitorRequested = createAction<
-  [workspaceId: string, monitorId: string]
->("prMonitor/flushRequested");
+export const flushPrMonitorRequested = createAction<[workspaceId: string, monitorId: string]>(
+  "prMonitor/flushRequested",
+);
 
 /** Trigger: `prMonitor.cancel` (§6.9) — `prMonitor:cancelled` drops the row. */
-export const cancelPrMonitorRequested = createAction<
-  [workspaceId: string, monitorId: string]
->("prMonitor/cancelRequested");
+export const cancelPrMonitorRequested = createAction<[workspaceId: string, monitorId: string]>(
+  "prMonitor/cancelRequested",
+);
 
 // ── Reducer ──
 
@@ -84,45 +94,40 @@ export const prMonitorReducer = createReducer<PrMonitorState>(initialState);
 
 prMonitorReducer.with(prMonitorsSubscribeRequested, (state, { payload: [workspaceId] }) => {
   if (!workspaceId) return state;
-  return {
-    ...state,
-    subscriptionDemandByWorkspaceId: {
-      ...state.subscriptionDemandByWorkspaceId,
-      [workspaceId]: (state.subscriptionDemandByWorkspaceId[workspaceId] ?? 0) + 1,
-    },
-  };
+  const workspaceState = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    monitors: increaseRefsCount(workspaceState.monitors, workspaceId),
+  });
 });
 
 prMonitorReducer.with(prMonitorsUnsubscribeRequested, (state, { payload: [workspaceId] }) => {
-  const currentDemand = state.subscriptionDemandByWorkspaceId[workspaceId];
-  if (!workspaceId || !currentDemand) return state;
-  return {
-    ...state,
-    subscriptionDemandByWorkspaceId:
-      currentDemand === 1
-        ? omitKey(state.subscriptionDemandByWorkspaceId, workspaceId)
-        : {
-            ...state.subscriptionDemandByWorkspaceId,
-            [workspaceId]: currentDemand - 1,
-          },
-  };
-});
-
-prMonitorReducer.with(prMonitorsUpdated, (state, { payload: [workspaceId, monitors] }) =>
-  setWorkspaceState(state, workspaceId, {
-    monitors: createCollection<PrMonitorRow, "monitorId">("monitorId", monitors),
-  }),
-);
-
-prMonitorReducer.with(prMonitorsCleared, (state, { payload: [workspaceId] }) =>
-  clearWorkspaceState(state, workspaceId),
-);
-
-prMonitorReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) => {
-  const stateWithoutMonitors = clearWorkspaceState(state, wsId);
-  const subscriptionDemandByWorkspaceId = omitKey(state.subscriptionDemandByWorkspaceId, wsId);
-  if (subscriptionDemandByWorkspaceId === state.subscriptionDemandByWorkspaceId) {
-    return stateWithoutMonitors;
+  const workspaceState = state.byWorkspaceId[workspaceId];
+  if (!workspaceId || !workspaceState || getRefsCount(workspaceState.monitors, workspaceId) === 0) {
+    return state;
   }
-  return { ...stateWithoutMonitors, subscriptionDemandByWorkspaceId };
+  return setWorkspaceState(state, workspaceId, {
+    monitors: decreaseRefsCount(workspaceState.monitors, workspaceId),
+  });
 });
+
+prMonitorReducer.with(prMonitorsUpdated, (state, { payload: [workspaceId, monitors] }) => {
+  const workspaceState = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    monitors: replaceMonitorRows(workspaceState.monitors, workspaceId, monitors),
+  });
+});
+
+prMonitorReducer.with(prMonitorsCleared, (state, { payload: [workspaceId] }) => {
+  const workspaceState = state.byWorkspaceId[workspaceId];
+  if (!workspaceState) return state;
+  if (getRefsCount(workspaceState.monitors, workspaceId) === 0) {
+    return clearWorkspaceState(state, workspaceId);
+  }
+  return setWorkspaceState(state, workspaceId, {
+    monitors: replaceMonitorRows(workspaceState.monitors, workspaceId, []),
+  });
+});
+
+prMonitorReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) =>
+  clearWorkspaceState(state, wsId),
+);
