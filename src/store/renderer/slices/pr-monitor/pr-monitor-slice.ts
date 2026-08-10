@@ -102,7 +102,8 @@ prMonitorReducer.with(prMonitorsSubscribeRequested, (state, { payload: [workspac
 
 prMonitorReducer.with(prMonitorsUnsubscribeRequested, (state, { payload: [workspaceId] }) => {
   const workspaceState = state.byWorkspaceId[workspaceId];
-  if (!workspaceId || !workspaceState || getRefsCount(workspaceState.monitors, workspaceId) === 0) {
+  if (!workspaceId || !workspaceState) return state;
+  if (getRefsCount(workspaceState.monitors, workspaceId) === 0) {
     return state;
   }
   return setWorkspaceState(state, workspaceId, {
