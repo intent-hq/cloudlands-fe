@@ -161,7 +161,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   {#if result != null}
     <div class="overflow-hidden rounded">
       <pre
-        class="m-0 p-2 font-mono text-sm leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-subtle">{typeof result ===
+        class="m-0 p-2 font-mono text-sm leading-relaxed whitespace-pre-wrap break-words max-h-72 overflow-y-auto text-subtle">{typeof result ===
         'string'
           ? result
           : JSON.stringify(result, null, 2)}</pre>
@@ -436,7 +436,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               {/if}
               {#if parsedResult.content}
                 <pre
-                  class="m-0 p-2 font-mono text-sm leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-[#a9b1d6]">{parsedResult.content}</pre>
+                  class="m-0 p-2 font-mono text-sm leading-relaxed whitespace-pre-wrap break-words max-h-72 overflow-y-auto text-[#a9b1d6]">{parsedResult.content}</pre>
               {:else}
                 <pre
                   class="m-0 p-2 font-mono text-sm leading-relaxed text-[#a9b1d6]/50">{m.chat_toolDetails_noOutput_label()}</pre>
@@ -925,7 +925,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               {#if parsedResult.content && !parsedResult.screenshotBase64 && !parsedResult.screenshotUrl && !parsedResult.browserTabs?.length && !parsedResult.evaluateResult && !parsedResult.accessibilityTree && !parsedResult.error}
                 <!-- Fallback content for other browser actions -->
                 <div class="overflow-hidden rounded">
-                  <pre class="m-0 p-2 font-mono text-sm leading-relaxed overflow-x-auto max-h-48 overflow-y-auto text-muted-foreground">{parsedResult.content}</pre>
+                  <pre class="m-0 p-2 font-mono text-sm leading-relaxed whitespace-pre-wrap break-words max-h-48 overflow-y-auto text-muted-foreground">{parsedResult.content}</pre>
                 </div>
               {/if}
             </div>
@@ -1160,13 +1160,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             <!-- Confirmation/info result - clean text display -->
             <div class="overflow-hidden rounded">
               <pre
-                class="m-0 p-2 text-sm leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-muted-foreground whitespace-pre-wrap">{parsedResult.content}</pre>
+                class="m-0 p-2 text-sm leading-relaxed max-h-72 overflow-y-auto text-muted-foreground whitespace-pre-wrap break-words">{parsedResult.content}</pre>
             </div>
           {:else if parsedResult.content}
             <!-- Plain text preview (no syntax highlighting for cleaner light/dark mode support) -->
             <div class="overflow-hidden rounded">
               <pre
-                class="m-0 p-2 font-mono text-sm leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-muted-foreground">{parsedResult.content}</pre>
+                class="m-0 p-2 font-mono text-sm leading-relaxed whitespace-pre-wrap break-words max-h-72 overflow-y-auto text-muted-foreground">{parsedResult.content}</pre>
             </div>
           {:else}
             <!-- Rich-typed result with nothing renderable — never leave the container empty -->
