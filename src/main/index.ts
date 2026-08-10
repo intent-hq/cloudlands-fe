@@ -273,7 +273,11 @@ import { setupNotificationIPC } from '../features/notifications/main/notificatio
 import { getNotificationService } from '../features/notifications/main/notification.service';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
-import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
+import {
+  initializeAutoUpdater,
+  markAutoUpdaterNotInitialized,
+  setupAutoUpdateIPC,
+} from '../features/auto-update/main/auto-update.ipc';
 import { setupReleaseNotesIPC } from '../features/release-notes/main/release-notes.ipc';
 import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
 import {
@@ -1463,24 +1467,6 @@ app.whenReady().then(async () => {
       });
     }
 
-    // setupAutoUpdateIPC(); // Already called in critical IPC setup
-    // Initialize auto-updater in production (not needed at startup, depends on
-    // mainWindow). Runs BEFORE any awaited step in this task so the GET_STATE
-    // boot gate is always settled — a rejection in a later awaited import must
-    // not leave boot-time GET_STATE waiters hanging. (auto-update.ipc is
-    // statically imported above, so this dynamic import is a cache hit.)
-    const { initializeAutoUpdater, markAutoUpdaterNotInitialized } = await import(
-      '../features/auto-update/main/auto-update.ipc'
-    );
-    const mainWindow = getMainWindow();
-    if (process.env.NODE_ENV !== 'development' && mainWindow) {
-      initializeAutoUpdater(mainWindow);
-    } else {
-      // Dev mode (or no window): the updater never initializes — unblock
-      // boot-time GET_STATE waiters so they answer the default state.
-      markAutoUpdaterNotInitialized();
-    }
-
     // Setup browser debugger IPC handlers for CDP access to embedded browser tabs
     const { registerBrowserHandlers } = await import('../features/browser/main/browser.ipc');
     registerBrowserHandlers();
@@ -1559,6 +1545,19 @@ app.whenReady().then(async () => {
     }
 
     startupMetrics.end('createWindow');
+  }
+
+  // Initialize only after window creation. The secondary setImmediate task is
+  // scheduled above but can run before the awaited session restore reaches
+  // createWindow(); initializing there could observe no window and permanently
+  // leave electron-updater without its terminal-event handlers.
+  const updaterMainWindow = getMainWindow();
+  if (process.env.NODE_ENV !== 'development' && updaterMainWindow) {
+    initializeAutoUpdater(updaterMainWindow);
+  } else {
+    // Dev mode (or no window): the updater never initializes — unblock
+    // boot-time GET_STATE waiters so they answer the default state.
+    markAutoUpdaterNotInitialized();
   }
 
   // Register intent:// protocol handler with the OS.
