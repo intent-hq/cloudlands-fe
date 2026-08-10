@@ -148,6 +148,27 @@ export function compareLastIdleDesc(a: StoredAgentSession, b: StoredAgentSession
 }
 
 /**
+ * Reduce a walk to one entry per workspace: the entry whose session was most
+ * recently active (`getLastIdleTime`). Ties — including the no-recency-signal
+ * case where every time is 0 — keep the earliest entry, so the deterministic
+ * fallback is that workspace's first entry in walk order (the first
+ * foreground agent for a top-level walk). Workspaces keep the order of their
+ * first occurrence in `entries`.
+ */
+export function pickLastActivePerWorkspace(
+  state: Pick<AgentCycleState, 'agentSessions'>,
+  entries: readonly CycleAgentEntry[],
+): CycleAgentEntry[] {
+  const bestByWsId = new Map<string, { entry: CycleAgentEntry; time: number }>();
+  for (const entry of entries) {
+    const time = getLastIdleTime(state.agentSessions.byAgentId[entry.agentId]);
+    const best = bestByWsId.get(entry.wsId);
+    if (!best || time > best.time) bestByWsId.set(entry.wsId, { entry, time });
+  }
+  return [...bestByWsId.values()].map((item) => item.entry);
+}
+
+/**
  * Collect matching agents across all key-assignable workspaces (the chief
  * virtual workspace and archived/deleted workspaces are skipped), in
  * workspace order. Scope picks the walked list per workspace: `top-level`
