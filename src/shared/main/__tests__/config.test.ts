@@ -106,4 +106,25 @@ describe('regression guard: no legacy workspace-root probing', () => {
 
     expect(offenders).toEqual([]);
   });
+
+  it('no source module derives a workspace root from the home directory', () => {
+    // The daemon owns the workspaces root; the FE must never fabricate it as
+    // ~/intent (the deleted system:workspace-root handler did exactly that,
+    // monorepo#1793). Subpaths like join(homedir(), 'intent', 'logs') are
+    // app-storage locations, not workspace-root guesses, and stay allowed.
+    const files = collectSourceFiles(SRC_ROOT);
+
+    const offenders: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(file, 'utf-8');
+      if (
+        /join\(\s*(os\s*\.\s*)?homedir\(\)\s*,\s*['"]intent['"]\s*\)/.test(source) ||
+        /['"]system:workspace-root['"]/.test(source)
+      ) {
+        offenders.push(path.relative(SRC_ROOT, file));
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
 });

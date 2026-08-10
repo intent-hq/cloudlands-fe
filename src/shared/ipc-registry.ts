@@ -282,7 +282,6 @@ export const IPC_CHANNELS = {
     WRITE_CLIPBOARD: 'system:write-clipboard',
     BEEP: 'system:beep',
     HOME_DIRECTORY: 'system:home-directory',
-    WORKSPACE_ROOT: 'system:workspace-root',
     EXECUTE_COMMAND: 'system:execute-command',
     EXECUTE_COMMAND_STREAMING: 'system:execute-command-streaming',
     CHECK_GIT: 'system:check-git',
