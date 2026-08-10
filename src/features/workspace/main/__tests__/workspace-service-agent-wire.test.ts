@@ -161,6 +161,48 @@ describe('workspace.service ↔ daemon agentSummary card aggregate (PROTOCOL.md 
     expect(listed.data.workspaces[0]?.agentSummary).toEqual({ agentIds: ['agent-a'] });
   });
 
+  it('listWorkspaces carries taskStats from the workspace.list row through the metadata payload (monorepo#1934)', async () => {
+    const now = new Date().toISOString();
+    daemonWorkspaces.push({
+      id: 'wire-test-ws-stats',
+      title: 'Wire Test Stats',
+      branch: 'wire-test-ws-stats',
+      status: 'Active',
+      repositoryPath: '/path/to/repo',
+      createdAt: now,
+      updatedAt: now,
+      // PROTOCOL.md §5.1: cheap daemon-computed task progress rollup.
+      taskStats: { total: 4, completed: 2, inProgress: 1 },
+      // High-frequency summaries stay stripped from the metadata payload.
+      gitSummary: { ahead: 1, behind: 0, hasUnpushed: true },
+      diffSummary: { totalAdditions: 1, totalDeletions: 0, fileCount: 1 },
+    });
+    daemonWorkspaces.push({
+      id: 'wire-test-ws-no-stats',
+      title: 'Wire Test No Stats',
+      branch: 'wire-test-ws-no-stats',
+      status: 'Active',
+      repositoryPath: '/path/to/repo',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    requestMock.mockClear();
+
+    const listed = await service.listWorkspaces({ lite: true });
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+
+    const withStats = listed.data.workspaces.find((w) => w.id === 'wire-test-ws-stats');
+    expect(withStats?.taskStats).toEqual({ total: 4, completed: 2, inProgress: 1 });
+    expect(withStats?.gitSummary).toBeUndefined();
+    expect(withStats?.diffSummary).toBeUndefined();
+
+    // Rows without a daemon-provided rollup simply omit the field.
+    const withoutStats = listed.data.workspaces.find((w) => w.id === 'wire-test-ws-no-stats');
+    expect(withoutStats).toBeDefined();
+    expect(withoutStats?.taskStats).toBeUndefined();
+  });
 
   // NOTE: The former `addAgentActivityCandidates routes through agent.list
   // when repairing activity timestamps` test was retired alongside the FE

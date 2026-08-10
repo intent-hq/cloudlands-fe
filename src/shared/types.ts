@@ -330,8 +330,8 @@ export interface Workspace {
   defaultModel?: string; // Default model for new agents in this workspace
   /** IDs-only agent membership summary; derive counts from `agentIds.length` and fetch agent details from agent/session sources. */
   agentSummary?: WorkspaceAgentIdSummary;
-  /** @deprecated High-frequency data — fetch on demand via WORKSPACE_CHANNELS.GET_TASKS. Excluded from WorkspaceMetadata payloads. */
-  taskStats?: WorkspaceTaskStats; // Task progress for list views (like flame graph)
+  /** Task progress rollup for list views (like flame graph); carried on WorkspaceMetadata payloads when the daemon provides it (PROTOCOL §5.1). */
+  taskStats?: WorkspaceTaskStats;
   /** @deprecated High-frequency data — fetch on demand via WORKSPACE_CHANNELS.GET_GIT_SUMMARY. Excluded from WorkspaceMetadata payloads. */
   gitSummary?: WorkspaceGitSummary; // Git status for list views (commits ahead/behind)
   /** Copy-on-Write filesystem capability of the workspaces root (a machine capability, independent of the workspace or checkout mode). */
@@ -370,18 +370,19 @@ export interface WorkspaceAgentIdSummary {
 /**
  * Metadata-only workspace payload for list/get/open responses.
  * High-frequency summary fields are structurally excluded (`never`) so a
- * metadata payload cannot carry diff/git summaries or task lists/stats;
- * fetch those on demand via the dedicated WORKSPACE_CHANNELS endpoints.
+ * metadata payload cannot carry diff/git summaries; fetch those on demand
+ * via the dedicated WORKSPACE_CHANNELS endpoints. `taskStats` is the cheap
+ * daemon-computed task progress rollup (PROTOCOL §5.1) and rides along when
+ * the daemon provides it.
  */
 export type WorkspaceMetadata = Omit<
   Workspace,
-  'diffSummary' | 'gitSummary' | 'taskStats' | 'agentSummary' | 'diffs'
+  'diffSummary' | 'gitSummary' | 'agentSummary' | 'diffs'
 > & {
   agentSummary?: WorkspaceAgentIdSummary;
   diffs?: never;
   diffSummary?: never;
   gitSummary?: never;
-  taskStats?: never;
 };
 
 export interface EnvironmentConfig {
