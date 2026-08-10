@@ -21,6 +21,11 @@
  */
 import { afterAll } from 'vitest';
 
+// Captured at module evaluation (before any test can install fake timers) so
+// the settle wait always runs on real timers, even if a suite enables
+// vi.useFakeTimers() and fails to restore them.
+const realSetTimeout = globalThis.setTimeout;
+
 const SILENCED_METHODS = ['log', 'info', 'warn', 'error', 'debug', 'trace'] as const;
 
 /**
@@ -40,6 +45,6 @@ export function installConsoleTeardownGuard(settleMs: number = DEFAULT_SETTLE_MS
     for (const method of SILENCED_METHODS) {
       console[method] = () => {};
     }
-    await new Promise((resolve) => setTimeout(resolve, settleMs));
+    await new Promise((resolve) => realSetTimeout(resolve, settleMs));
   });
 }
