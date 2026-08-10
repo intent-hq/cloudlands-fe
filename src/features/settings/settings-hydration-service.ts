@@ -7,10 +7,11 @@
  * snapshot at first paint and so subsequent `settings:changed` notifications
  * (§6.5) only need to apply the delta.
  *
- * READ-ONLY (one exception): this module never invokes `settings.update`,
- * except for the one-time legacy background-model migration below, which
- * writes the normalized values back so the daemon's stored settings are
- * actually migrated. Dependency-light per `src/store/renderer/AGENTS.md` —
+ * READ-ONLY (two exceptions): this module never invokes `settings.update`,
+ * except for the one-time migrations below (the legacy background-model
+ * migration and the default-provider enablement seed), which write the
+ * migrated values back so the daemon's stored settings are actually
+ * migrated. Dependency-light per `src/store/renderer/AGENTS.md` —
  * imports only the AppClient seam, the configured store, slice actions, the
  * typed `settingsChanged` trigger, and the logger (NOT selectors — importing
  * them would evaluate `store.createSelector` while the store module is still
@@ -22,9 +23,11 @@ import { createLogger } from '$lib/utils/client-logger';
 import { store as appStore } from '$store/renderer/store';
 import { settingsChanged } from '$store/renderer/slices/settings-events/settings-events-slice';
 import {
+  ensureEnabledIfUnset,
   hydrateActiveProvider,
   loadEnabledProvidersFromStorage,
 } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { splitCompoundModelId } from '$shared/utils/compound-model-id';
 import {
   hydrateSettings as hydrateBackgroundAgentSettings,
   type BackgroundAgentType,
@@ -164,6 +167,79 @@ function migrateLegacyBackgroundModel(
 }
 
 /**
+ * One-time migration seeding the default provider's enablement entry
+ * (monorepo#1947).
+ *
+ * fe#759 (v2.17.0) removed the "default provider is enabled when unset"
+ * special case from `resolveProviderEnabled`, so every disableable provider
+ * resolves disabled without an explicit entry. Pre-2.17 installs never
+ * persisted an entry for their default provider (the special case covered
+ * it), so after upgrading it resolves disabled until manually re-enabled.
+ * When `providers.enabled` hydrates without an entry for the effective
+ * default provider (the global default-model's provider prefix when it is a
+ * known catalog row, else `providers.active` — mirroring
+ * `selectEffectiveDefaultProviderId`), seed it to `true` and persist the map
+ * back so the daemon's stored settings are migrated too. An explicit
+ * persisted entry (e.g. a deliberate `false`) always wins — the seed only
+ * fills the unset case, which also makes the migration naturally idempotent
+ * (no run-once marker: after the first seed the explicit entry
+ * short-circuits every later hydration).
+ *
+ * The catalog is fetched over the wire instead of read from the
+ * provider-catalog slice because settings hydration races the catalog seeder
+ * at boot; catalog-unknown providers are never seeded and non-disableable
+ * rows need no entry (always enabled).
+ */
+let enablementSeedInFlight = false;
+
+function seedDefaultProviderEnablement(): void {
+  const { activeProviderId, enabledProviders } = appStore.state.providerSettings;
+  const globalModel = activeProviderId
+    ? appStore.state.model?.providerModels?.[activeProviderId]
+    : undefined;
+  const prefixProviderId = globalModel?.includes(':')
+    ? splitCompoundModelId(globalModel).providerId
+    : undefined;
+  // Cheap sync gate: only hit the wire when some default-provider candidate
+  // actually lacks an entry. The async body re-resolves against the catalog.
+  const candidates = [prefixProviderId, activeProviderId].filter((id): id is string => !!id);
+  if (!candidates.some((id) => enabledProviders[id] === undefined)) return;
+  if (enablementSeedInFlight) return;
+  enablementSeedInFlight = true;
+  void (async () => {
+    try {
+      const catalog = await appClient.providers.catalog();
+      const settings = appStore.state.providerSettings;
+      const active = settings.activeProviderId;
+      const model = active ? appStore.state.model?.providerModels?.[active] : undefined;
+      const prefix = model?.includes(':') ? splitCompoundModelId(model).providerId : undefined;
+      const row = (id: string) => catalog.providers.find((entry) => entry.id === id);
+      const defaultProviderId = prefix && row(prefix) ? prefix : active;
+      if (!defaultProviderId) return;
+      const entry = row(defaultProviderId);
+      if (!entry || entry.canBeDisabled === false) return;
+      // Re-check against live state: an entry may have landed while the
+      // catalog read was in flight, and an explicit false must never flip.
+      if (settings.enabledProviders[defaultProviderId] !== undefined) return;
+      logger.info('seeding default-provider enablement entry', {
+        providerId: defaultProviderId,
+      });
+      appStore.dispatch(ensureEnabledIfUnset(defaultProviderId));
+      await appClient.settings.update([
+        {
+          path: 'providers.enabled',
+          value: { ...appStore.state.providerSettings.enabledProviders },
+        },
+      ]);
+    } catch (error) {
+      logger.error('failed to seed default-provider enablement', error);
+    } finally {
+      enablementSeedInFlight = false;
+    }
+  })();
+}
+
+/**
  * Background-agent settings reconcile two dotted paths in one dispatch.
  * Only called when the delta actually includes at least one quickActions.* key.
  */
@@ -209,16 +285,25 @@ export function applySettingsChanges(changes: readonly AppliedSettingChange[]): 
   if (changes.length === 0) return;
   const bundle = new Map<string, unknown>();
   let hasBackgroundAgentPaths = false;
+  let hasEnabledProvidersPath = false;
   for (const change of changes) {
     applyOne(change);
     bundle.set(change.path, change.value);
     if (change.path.startsWith('quickActions.')) {
       hasBackgroundAgentPaths = true;
     }
+    if (change.path === 'providers.enabled') {
+      hasEnabledProvidersPath = true;
+    }
   }
   // Only reconcile quick-action bundle when the delta contains at least one quickActions.* key
   if (hasBackgroundAgentPaths) {
     applyBackgroundAgentBundle(bundle);
+  }
+  // Seed the default provider's enablement entry when the hydrated map lacks
+  // one (upgrade migration, monorepo#1947).
+  if (hasEnabledProvidersPath) {
+    seedDefaultProviderEnablement();
   }
   appStore.dispatch(settingsChanged([...changes]));
 }
