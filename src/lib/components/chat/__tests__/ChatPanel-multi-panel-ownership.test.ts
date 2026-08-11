@@ -70,6 +70,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatLiveStreamPhase: testState.selector(null), selectChatModelUnavailable: testState.selector(null),
   selectChatReceivedFirstChunk: testState.selector(false), selectChatStatusEvents: testState.selector([]),
   selectChatStreamingStartTime: testState.selector(null), selectTranscriptHydration: testState.selector({ isHydrating: false }),
+  selectTranscriptHydratedOnce: testState.selector(false),
 }));
 vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({ selectAgentQueueMessages: testState.selector([]) }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({ selectNoteById: testState.selector(null) }));

@@ -892,7 +892,11 @@ chatStateReducer.with(transcriptHydrationStarted, (state, { payload: [agentId] }
   updateAgent(state, agentId, { agentId, transcriptHydration: 'loading' }),
 );
 chatStateReducer.with(transcriptHydrationSettled, (state, { payload: [agentId] }) =>
-  updateAgent(state, agentId, { agentId, transcriptHydration: 'settled' }),
+  updateAgent(state, agentId, {
+    agentId,
+    transcriptHydration: 'settled',
+    transcriptHydratedOnce: true,
+  }),
 );
 chatStateReducer.with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, phase] }) => {
 	if (phase === null && !state.byAgentId[agentId]) return state;

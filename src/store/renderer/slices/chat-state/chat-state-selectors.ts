@@ -122,6 +122,17 @@ export const selectTranscriptHydration = store.createSelector(
 );
 
 /**
+ * True once transcript hydration has settled at least once for the agent.
+ * Gates ChatPanel's indeterminate first-hydration skeleton: until the first
+ * hydration settles, partial messages must not render as a complete
+ * transcript; after that, refresh re-hydrations keep the messages visible.
+ */
+export const selectTranscriptHydratedOnce = store.createSelector(
+  (state, agentId: string): boolean =>
+    getAgentChatState(state, agentId).transcriptHydratedOnce === true,
+);
+
+/**
  * Select the standing `chat.subscribe` lifecycle phase for the agent, or
  * null when no subscription is open. Drives the pre-live hydration indicator.
  */

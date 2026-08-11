@@ -14,6 +14,7 @@ vi.mock("$lib/client", () => {
     agentId: string;
     handler: (transcript: ChatTranscript) => void;
     onPhase?: (phase: string) => void;
+    options?: { sinceMessageId?: string };
     unsubscribe: ReturnType<typeof vi.fn>;
   }> = [];
   return {
@@ -33,9 +34,10 @@ vi.mock("$lib/client", () => {
             agentId: string,
             handler: (transcript: ChatTranscript) => void,
             onPhase?: (phase: string) => void,
+            options?: { sinceMessageId?: string },
           ) => {
             const unsubscribe = vi.fn();
-            subscriptions.push({ agentId, handler, onPhase, unsubscribe });
+            subscriptions.push({ agentId, handler, onPhase, options, unsubscribe });
             return unsubscribe;
           },
         ),
@@ -47,10 +49,13 @@ vi.mock("$lib/client", () => {
 
 import * as clientModule from "$lib/client";
 import { appClient } from "$lib/client";
+import { takeEvery } from "typed-redux-saga";
 import { store as appStore } from "$store/renderer/store";
 import {
   initializeChatRequested,
+  refreshChatTranscriptRequested,
   transcriptHydrationSettled,
+  transcriptHydrationStarted,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
 import {
   addMessage,
@@ -83,6 +88,7 @@ type FakeSubscription = {
   agentId: string;
   handler: (transcript: ChatTranscript) => void;
   onPhase?: (phase: ChatLiveStreamPhase) => void;
+  options?: { sinceMessageId?: string };
   unsubscribe: ReturnType<typeof vi.fn>;
 };
 
@@ -474,6 +480,86 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     const before = selectAgentMessages.select(appStore.state, agentA);
     subA.handler(transcript([makeMessage("late-a", "stale")]));
     expect(selectAgentMessages.select(appStore.state, agentA)).toBe(before);
+  });
+
+  describe("resume via sinceMessageId (§7.1)", () => {
+    it("opens the first subscription WITHOUT sinceMessageId (no hydrated transcript yet)", () => {
+      const agentId = "agent-sub-resume-first";
+      seedSession(agentId, { messages: [makeMessage("m-existing", "history")] });
+      const sub = openChat(agentId);
+      // Hydration never settled for this agent — full snapshot wanted.
+      expect(sub.options).toBeUndefined();
+    });
+
+    it("re-subscribes with the last fully-persisted message id once hydration has settled", () => {
+      const agentA = "agent-sub-resume-a";
+      const agentB = "agent-sub-resume-b";
+      const persisted = makeMessage("m-a-final", "done");
+      const streaming = makeMessage("m-a-partial", "streaming…", { isStreaming: true });
+      seedSession(agentA, { messages: [persisted, streaming] });
+      seedSession(agentB);
+      appStore.dispatch(transcriptHydrationStarted(agentA));
+      appStore.dispatch(transcriptHydrationSettled(agentA));
+      openChat(agentA);
+
+      // Switch away (closes A's subscription), then back: the reopen must
+      // anchor on the newest fully-persisted row — skipping the
+      // still-streaming tail.
+      appStore.dispatch(markAgentAsViewed(agentB));
+      appStore.dispatch(markAgentAsViewed(agentA));
+
+      const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentA);
+      expect(reopened).toBeDefined();
+      expect(reopened!.options).toEqual({ sinceMessageId: "m-a-final" });
+    });
+
+    it("dispatches refreshChatTranscriptRequested when the daemon replies resumed: false", () => {
+      const refreshes: Array<[string, string]> = [];
+      const stopRecorder = appStore.runSaga(function* recorder() {
+        yield* takeEvery(refreshChatTranscriptRequested, function* record(action) {
+          refreshes.push(action.payload);
+          yield;
+        });
+      });
+      try {
+        const agentId = "agent-sub-resume-fallback";
+        seedSession(agentId);
+        const sub = openChat(agentId);
+
+        // Fallback snapshot: the daemon did not honor the anchor.
+        sub.handler({ ...transcript([makeMessage("m-new", "newest page")]), resumed: false });
+
+        expect(refreshes).toEqual([[WS, agentId]]);
+      } finally {
+        stopRecorder();
+      }
+    });
+
+    it("does not trigger a rehydration on resumed: true or on plain emits", () => {
+      const refreshes: Array<[string, string]> = [];
+      const stopRecorder = appStore.runSaga(function* recorder() {
+        yield* takeEvery(refreshChatTranscriptRequested, function* record(action) {
+          refreshes.push(action.payload);
+          yield;
+        });
+      });
+      try {
+        const agentId = "agent-sub-resume-ok";
+        seedSession(agentId);
+        const sub = openChat(agentId);
+
+        sub.handler({ ...transcript([makeMessage("m-delta", "delta rows")]), resumed: true });
+        sub.handler(transcript([makeMessage("m-delta", "delta rows grown")], true));
+
+        expect(refreshes).toEqual([]);
+        // The resumed delta snapshot still applies to the store.
+        expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+          "m-delta",
+        ]);
+      } finally {
+        stopRecorder();
+      }
+    });
   });
 
   it("clears stale message-level streaming flags when a mid-turn subscription closes (navigate-away)", () => {

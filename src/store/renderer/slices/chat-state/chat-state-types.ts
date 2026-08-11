@@ -135,6 +135,15 @@ export interface ChatAgentState {
    */
   transcriptHydration?: TranscriptHydrationStatus;
   /**
+   * True once transcript hydration has settled at least once for this agent.
+   * Distinguishes the FIRST hydration (ChatPanel keeps the indeterminate
+   * skeleton up even if partial messages have already landed, e.g. the
+   * standing subscription's newest page arriving ahead of the paged history
+   * read) from a refresh re-hydration (messages keep rendering). Never reset
+   * except by chatReset.
+   */
+  transcriptHydratedOnce?: boolean;
+  /**
    * Current standing `chat.subscribe` lifecycle phase for this agent, or
    * null when no subscription is open (teardown resets it). Written by
    * chat-subscribe saga from the live client's onPhase reports.
