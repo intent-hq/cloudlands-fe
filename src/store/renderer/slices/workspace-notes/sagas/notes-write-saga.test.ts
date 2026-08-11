@@ -280,6 +280,73 @@ describe('notesWriteSaga', () => {
     await run.task.toPromise();
   });
 
+  it('preserves cached unmetDependsOn when a conflict note omits the projection', async () => {
+    const cached = note({
+      metadata: {
+        task: {
+          status: 'not_started',
+          dependsOn: [NoteId('dep-1')],
+          unmetDependsOn: [NoteId('dep-1')],
+        },
+      },
+    });
+    const wireCurrent = note({
+      content: 'server body',
+      rev: 8,
+      metadata: { task: { status: 'not_started', dependsOn: [NoteId('dep-1')] } },
+    });
+    vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+      success: false,
+      conflict: { current: wireCurrent },
+    });
+    const run = harness(cached);
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    await settle();
+
+    const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(applied?.content).toEqual('server body');
+    expect(applied?.metadata?.task?.unmetDependsOn).toEqual([NoteId('dep-1')]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('lets an explicit unmetDependsOn on a conflict note win over the cache', async () => {
+    const cached = note({
+      metadata: {
+        task: {
+          status: 'not_started',
+          dependsOn: [NoteId('dep-1'), NoteId('dep-2')],
+          unmetDependsOn: [NoteId('dep-1')],
+        },
+      },
+    });
+    const wireCurrent = note({
+      content: 'server body',
+      rev: 8,
+      metadata: {
+        task: {
+          status: 'not_started',
+          dependsOn: [NoteId('dep-1'), NoteId('dep-2')],
+          unmetDependsOn: [NoteId('dep-2')],
+        },
+      },
+    });
+    vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+      success: false,
+      conflict: { current: wireCurrent },
+    });
+    const run = harness(cached);
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    await settle();
+
+    const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(applied?.metadata?.task?.unmetDependsOn).toEqual([NoteId('dep-2')]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('rolls an optimistic title back when the daemon rejects it', async () => {
     const updateMetadata = vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({
       success: false,

@@ -56,6 +56,29 @@ export function normalizeNoteEventContent(payload: unknown): string | undefined 
   return isRecord(changes) ? asString(changes.content) : undefined;
 }
 
+/**
+ * Preserve the cached transient `metadata.task.unmetDependsOn` projection when
+ * a mutation-response note omits it (monorepo#2001). The daemon computes
+ * `unmetDependsOn` at read/push time only (PROTOCOL §5.2) — mutation-response
+ * notes (conflict `current`, version-restore `note`) never carry it — so a
+ * full-replace upsert from such a payload would transiently clear the
+ * projection until the next refetch. A response that explicitly carries the
+ * field is authoritative and wins over the cache.
+ */
+export function withPreservedUnmetDependsOn(incoming: Note, cached: Note | undefined): Note {
+  const cachedUnmet = cached?.metadata?.task?.unmetDependsOn;
+  if (!cachedUnmet?.length) return incoming;
+  const incomingTask = incoming.metadata?.task;
+  if (!incomingTask || incomingTask.unmetDependsOn !== undefined) return incoming;
+  return {
+    ...incoming,
+    metadata: {
+      ...incoming.metadata,
+      task: { ...incomingTask, unmetDependsOn: [...cachedUnmet] },
+    },
+  };
+}
+
 export function normalizeNoteUpdatePatch(updates: unknown): Partial<Note> {
   if (!isRecord(updates)) return {};
 

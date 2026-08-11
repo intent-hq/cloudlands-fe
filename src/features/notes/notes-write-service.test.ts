@@ -438,6 +438,38 @@ describe('notesWriteService (fake seam, real store)', () => {
     expect(toast.warning).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves cached unmetDependsOn when a conflict note omits the projection', async () => {
+    seed(
+      makeNote('n1', {
+        rev: 3,
+        metadata: {
+          task: {
+            status: 'not_started',
+            dependsOn: [NoteId('dep-1')],
+            unmetDependsOn: [NoteId('dep-1')],
+          },
+        },
+      }),
+    );
+    notesApi.setContent.mockResolvedValueOnce({
+      success: false,
+      conflict: {
+        current: makeNote('n1', {
+          rev: 8,
+          content: 'server',
+          metadata: { task: { status: 'not_started', dependsOn: [NoteId('dep-1')] } },
+        }),
+      },
+    } as never);
+
+    updateNoteContent(WS, 'n1', 'mine-edited', { immediate: true });
+    await vi.advanceTimersByTimeAsync(1);
+
+    const note = selectNoteById.select(appStore.state, WS, 'n1');
+    expect(note?.content).toBe('server');
+    expect(note?.metadata?.task?.unmetDependsOn).toEqual([NoteId('dep-1')]);
+  });
+
   it('reloads to the server note and prompts on a delete conflict (no stale-snapshot restore)', async () => {
     seed(makeNote('n1', { rev: 9, title: 'Old', content: 'mine' }));
     notesApi.delete.mockResolvedValueOnce({
