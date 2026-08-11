@@ -1700,9 +1700,11 @@ export interface IntegrationsClient {
    * with the default branch from `github.repos.get` (best-effort). Unlike the
    * issue reads this THROWS on transport/daemon errors (e.g. "GitHub is not
    * configured.") so the workspace-initializer BranchSelector can render an
-   * explicit error/auth state — never a fabricated branch list.
+   * explicit error/auth state — never a fabricated branch list. An optional
+   * `prefix` narrows the listing server-side (GitHub's `refs/heads/{prefix}`
+   * matching-refs semantics) so branches beyond the first page are findable.
    */
-  githubBranches(owner: string, repo: string): Promise<GitHubBranchListing>;
+  githubBranches(owner: string, repo: string, prefix?: string): Promise<GitHubBranchListing>;
   /**
    * Branch names from the daemon's local repo cache — or its `git ls-remote`
    * fallback on a cache miss (`github.branches.listCached`, §5.27) — purely

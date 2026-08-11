@@ -223,6 +223,36 @@ describe('LiveIntegrationsClient.githubBranches (github.branches.list + github.r
       'GitHub is not configured.',
     );
   });
+
+  it('forwards a non-empty prefix for server-side filtering (matching-refs)', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ branches: ['feat/x', 'feat/y'], nextToken: null })
+      .mockResolvedValueOnce({ repo: { name: 'intent', defaultBranch: 'main' } });
+    const client = new LiveIntegrationsClient();
+
+    const listing = await client.githubBranches('octo', 'intent', 'feat');
+
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'github.branches.list', {
+      owner: 'octo',
+      repo: 'intent',
+      prefix: 'feat',
+    });
+    expect(listing).toEqual({ branches: ['feat/x', 'feat/y'], defaultBranch: 'main' });
+  });
+
+  it('omits prefix from the wire when empty/undefined (unfiltered shape for older daemons)', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ branches: ['main'], nextToken: null })
+      .mockResolvedValueOnce({ repo: { name: 'intent', defaultBranch: 'main' } });
+    const client = new LiveIntegrationsClient();
+
+    await client.githubBranches('octo', 'intent', '');
+
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'github.branches.list', {
+      owner: 'octo',
+      repo: 'intent',
+    });
+  });
 });
 
 describe('LiveIntegrationsClient.githubBranchesCached (github.branches.listCached, §5.27)', () => {

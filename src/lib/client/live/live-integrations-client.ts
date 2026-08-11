@@ -62,11 +62,17 @@ export class LiveIntegrationsClient implements IntegrationsClient {
    * so sequencing them doubles the settle time). Unlike the issue reads,
    * branch-list failures PROPAGATE: the BranchSelector must render an explicit
    * error/auth state, never an empty-or-fabricated list. The default-branch
-   * read is best-effort — its failure degrades to `undefined`.
+   * read is best-effort — its failure degrades to `undefined`. A non-empty
+   * `prefix` is forwarded so the daemon filters server-side (matching-refs);
+   * empty/omitted keeps the unfiltered wire shape for older daemons.
    */
-  async githubBranches(owner: string, repo: string): Promise<GitHubBranchListing> {
+  async githubBranches(owner: string, repo: string, prefix?: string): Promise<GitHubBranchListing> {
     const [result, defaultBranch] = await Promise.all([
-      backendRequest<{ branches?: unknown }>("github.branches.list", { owner, repo }),
+      backendRequest<{ branches?: unknown }>("github.branches.list", {
+        owner,
+        repo,
+        ...(prefix ? { prefix } : {}),
+      }),
       backendRequest<{ repo?: { defaultBranch?: unknown } | null }>("github.repos.get", {
         owner,
         repo,

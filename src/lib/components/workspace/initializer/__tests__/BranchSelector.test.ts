@@ -10,16 +10,21 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const { mockGetBranches, mockGithubBranches, mockGithubBranchesCached, debugFlags, savedBranchByRepo } =
-  vi.hoisted(() => ({
-    mockGetBranches: vi.fn(),
-    mockGithubBranches: vi.fn(),
-    mockGithubBranchesCached: vi.fn(),
-    // Mutable knobs for the module-level mocks below. Tests arm form
-    // persistence + a saved branch; both are reset in beforeEach.
-    debugFlags: {} as Record<string, boolean>,
-    savedBranchByRepo: {} as Record<string, string>,
-  }));
+const {
+  mockGetBranches,
+  mockGithubBranches,
+  mockGithubBranchesCached,
+  debugFlags,
+  savedBranchByRepo,
+} = vi.hoisted(() => ({
+  mockGetBranches: vi.fn(),
+  mockGithubBranches: vi.fn(),
+  mockGithubBranchesCached: vi.fn(),
+  // Mutable knobs for the module-level mocks below. Tests arm form
+  // persistence + a saved branch; both are reset in beforeEach.
+  debugFlags: {} as Record<string, boolean>,
+  savedBranchByRepo: {} as Record<string, string>,
+}));
 
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -248,9 +253,7 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
     const onchange = vi.fn();
     const { container } = render(BranchSelector, { props: { ...githubProps, onchange } });
 
-    await waitFor(() =>
-      expect(mockGithubBranchesCached).toHaveBeenCalledWith('octo', 'intent'),
-    );
+    await waitFor(() => expect(mockGithubBranchesCached).toHaveBeenCalledWith('octo', 'intent'));
     // Cached hit paints instantly: default branch selected, trigger spinner gone â€”
     // all while the authoritative GitHub API request is still in flight.
     await waitFor(() => expect(onchange).toHaveBeenCalled());
@@ -279,9 +282,7 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
     const onchange = vi.fn();
     const { container } = render(BranchSelector, { props: { ...githubProps, onchange } });
 
-    await waitFor(() =>
-      expect(mockGithubBranchesCached).toHaveBeenCalledWith('octo', 'intent'),
-    );
+    await waitFor(() => expect(mockGithubBranchesCached).toHaveBeenCalledWith('octo', 'intent'));
     // Fallback paints like a warm cache: default branch selected, trigger
     // spinner gone â€” all while the authoritative GitHub API request is still
     // in flight.
@@ -304,9 +305,7 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
     const onchange = vi.fn();
     const { container } = render(BranchSelector, { props: { ...githubProps, onchange } });
 
-    await waitFor(() =>
-      expect(mockGithubBranchesCached).toHaveBeenCalledWith('octo', 'intent'),
-    );
+    await waitFor(() => expect(mockGithubBranchesCached).toHaveBeenCalledWith('octo', 'intent'));
     // Cold cache: still loading (inline trigger spinner), nothing selected.
     await waitFor(() => expect(container.querySelector('.animate-spin')).toBeTruthy());
     expect(onchange).not.toHaveBeenCalled();
@@ -403,5 +402,94 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
     fresh.resolve({ branches: ['dev', 'feat/x', 'feat/saved'], defaultBranch: 'dev' });
     await waitFor(() => expect(onchange).toHaveBeenCalledTimes(2));
     expect(onchange.mock.calls[1][0].detail).toEqual({ branch: 'feat/saved' });
+  });
+});
+
+describe('BranchSelector (server-side prefix search, github.branches.list prefix Â§5.27)', () => {
+  beforeEach(() => {
+    mockGetBranches.mockReset();
+    mockGithubBranches.mockReset();
+    mockGithubBranchesCached.mockReset();
+    for (const key of Object.keys(debugFlags)) delete debugFlags[key];
+    for (const key of Object.keys(savedBranchByRepo)) delete savedBranchByRepo[key];
+    mockGithubBranchesCached.mockResolvedValue({ cached: false, branches: [] });
+  });
+
+  const githubProps = {
+    repoPath: 'octo/intent',
+    repoType: 'github' as const,
+    githubUrl: 'https://github.com/octo/intent',
+  };
+
+  it('typing a search prefix asks the daemon for matching branches and merges them into the list', async () => {
+    // First page has no feat/beyond-page â€” it only exists server-side.
+    // Default 'dev' (not 'main') so the trigger text never collides with the
+    // filtered-out assertion below.
+    mockGithubBranches.mockImplementation(async (_owner, _repo, prefix?: string) =>
+      prefix
+        ? { branches: ['feat/beyond-page', 'feat/x'], defaultBranch: undefined }
+        : { branches: ['main', 'dev', 'feat/x'], defaultBranch: 'dev' },
+    );
+    const { container } = render(BranchSelector, { props: githubProps });
+
+    await waitFor(() => expect(mockGithubBranches).toHaveBeenCalledWith('octo', 'intent'));
+    await openDropdown(container);
+    const searchInput = await screen.findByPlaceholderText('Search or enter branch name...');
+    await fireEvent.input(searchInput, { target: { value: 'feat' } });
+
+    // Debounced search fires the prefix-filtered daemon requestâ€¦
+    await waitFor(() => expect(mockGithubBranches).toHaveBeenCalledWith('octo', 'intent', 'feat'));
+    // â€¦and the beyond-first-page branch becomes selectable.
+    await waitFor(() => expect(screen.getByText('feat/beyond-page')).toBeTruthy());
+    expect(screen.getByText('feat/x')).toBeTruthy();
+    // The non-matching first-page branch is filtered out of the view.
+    expect(screen.queryByText('main')).toBeNull();
+  });
+
+  it('clearing the search restores the unfiltered first-page listing', async () => {
+    mockGithubBranches.mockImplementation(async (_owner, _repo, prefix?: string) =>
+      prefix
+        ? { branches: ['feat/beyond-page'], defaultBranch: undefined }
+        : { branches: ['main', 'dev'], defaultBranch: 'dev' },
+    );
+    const { container } = render(BranchSelector, { props: githubProps });
+
+    await waitFor(() => expect(mockGithubBranches).toHaveBeenCalledWith('octo', 'intent'));
+    await openDropdown(container);
+    const searchInput = await screen.findByPlaceholderText('Search or enter branch name...');
+    await fireEvent.input(searchInput, { target: { value: 'feat' } });
+    await waitFor(() => expect(screen.getByText('feat/beyond-page')).toBeTruthy());
+
+    await fireEvent.input(searchInput, { target: { value: '' } });
+    // Back to the first-page view: search results dropped, no extra daemon call
+    // for the empty prefix. ('dev' also renders in the trigger as the selected
+    // default, so assert on 'main' â€” list-only.)
+    await waitFor(() => expect(screen.queryByText('feat/beyond-page')).toBeNull());
+    expect(screen.getByText('main')).toBeTruthy();
+    expect(mockGithubBranches).not.toHaveBeenCalledWith('octo', 'intent', '');
+  });
+
+  it('local repo: typing in the search never issues a GitHub prefix request', async () => {
+    // Empty branch list keeps the local-only "remote branches" section (whose
+    // svelte-fa numeric size crashes under jsdom) out of the render tree; the
+    // search input renders regardless.
+    mockGetBranches.mockResolvedValue({
+      branches: [],
+      remoteBranches: [],
+      defaultBranch: '',
+      currentBranch: '',
+    });
+    const { container } = render(BranchSelector, {
+      props: { repoPath: '/tmp/repo', repoType: 'local' as const },
+    });
+
+    await waitFor(() => expect(mockGetBranches).toHaveBeenCalled());
+    await openDropdown(container);
+    const searchInput = await screen.findByPlaceholderText('Search or enter branch name...');
+    await fireEvent.input(searchInput, { target: { value: 'feat' } });
+
+    // Let the 100ms search debounce (and the effect behind it) settle.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(mockGithubBranches).not.toHaveBeenCalled();
   });
 });
