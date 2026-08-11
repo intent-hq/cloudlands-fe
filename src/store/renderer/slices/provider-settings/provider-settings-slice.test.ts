@@ -4,6 +4,7 @@ import {
   it,
 } from "vitest";
 import {
+  enablementPersistRejected,
   ensureEnabledIfUnset,
   hydrateActiveProvider,
   initialState as bareInitialState,
@@ -216,6 +217,38 @@ describe("providerSettingsReducer", () => {
         loadEnabledProvidersFromStorage({ "claude-code": false })
       );
       expect(disabled.enabledProviders["claude-code"]).toBe(false);
+    });
+
+    it("retires the pending override on daemon rejection so later hydrations apply verbatim", () => {
+      const clicked = providerSettingsReducer(
+        initialState,
+        setProviderEnabled({ providerId: "claude-code", enabled: true })
+      );
+      expect(clicked.pendingEnablementOverrides).toEqual({ "claude-code": true });
+      // The daemon rejected the write — the saga retires the override. The
+      // local map keeps the click's value until the next hydration.
+      const rejected = providerSettingsReducer(
+        clicked,
+        enablementPersistRejected("claude-code")
+      );
+      expect(rejected.pendingEnablementOverrides).toEqual({});
+      expect(rejected.enabledProviders["claude-code"]).toBe(true);
+      // A daemon-originated hydration (e.g. another window's change) now
+      // applies verbatim instead of being masked by the rejected click.
+      const hydrated = providerSettingsReducer(
+        rejected,
+        loadEnabledProvidersFromStorage({ "claude-code": false })
+      );
+      expect(hydrated.enabledProviders["claude-code"]).toBe(false);
+    });
+
+    it("ignores a rejection for a provider with no pending override", () => {
+      const prev = providerSettingsReducer(
+        initialState,
+        loadEnabledProvidersFromStorage({ "claude-code": true })
+      );
+      const state = providerSettingsReducer(prev, enablementPersistRejected("claude-code"));
+      expect(state).toBe(prev);
     });
 
     it("hydrates verbatim when a non-disableable provider click was a reducer no-op", () => {

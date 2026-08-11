@@ -7,7 +7,12 @@ import { createLogger } from '$lib/utils/client-logger';
 import { resolveProviderEnabled } from '$shared/provider-catalog';
 import { selectProviderCatalogEntry } from '../../provider-catalog/provider-catalog-selectors';
 import { selectEnabledProviders } from '../provider-settings-selectors';
-import { setActiveProvider, setProviderEnabled, toggleProvider } from '../provider-settings-slice';
+import {
+  enablementPersistRejected,
+  setActiveProvider,
+  setProviderEnabled,
+  toggleProvider,
+} from '../provider-settings-slice';
 
 const logger = createLogger('ProviderSettingsSaga');
 
@@ -19,6 +24,15 @@ type ProviderSettingsUpdate = {
    * is merged over the live map at write time. A boot settings hydration that
    * replaces the map between dispatch and write therefore cannot drop the
    * click's entry from the persisted value (monorepo#1986).
+   *
+   * This closes the single-window hydration race only. Because the wire value
+   * is still a full map, cross-writer last-writer-wins races remain (and
+   * predate this delta): two windows toggling different providers
+   * concurrently can each persist a map missing the other's entry, and a
+   * delta queued behind a slow prior write can re-impose an older click over
+   * a newer remote change for the same provider once its override was retired
+   * by a confirming hydration. Resolving those needs a per-key wire write,
+   * not a client-side change.
    */
   enabledProviderDelta?: { providerId: string; enabled: boolean };
 };
@@ -113,6 +127,12 @@ function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>)
       } catch (error) {
         if (isDaemonErrorResponse(error)) {
           logger.warn('Daemon rejected provider settings write:', error);
+          if (update.enabledProviderDelta !== undefined) {
+            // Retire the click's pending override: a rejected write must not
+            // keep masking later daemon-originated hydrations for the
+            // provider (the override would otherwise never be confirmed).
+            yield* put(enablementPersistRejected(update.enabledProviderDelta.providerId));
+          }
           break;
         }
         logger.error('Failed to persist provider settings:', error);

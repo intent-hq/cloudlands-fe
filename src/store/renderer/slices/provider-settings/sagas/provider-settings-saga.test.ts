@@ -8,6 +8,7 @@ vi.mock('$lib/client', () => ({ appClient: { settings: { update: mocks.update } 
 import { BackendError } from '$lib/client/live/backend-transport-types';
 
 import {
+  enablementPersistRejected,
   hydrateActiveProvider,
   setActiveProvider,
   setProviderEnabled,
@@ -171,10 +172,8 @@ describe('providerSettingsSaga', () => {
       new BackendError({ code: 'INVALID_PARAMS', message: 'invalid', rpcCode: -32602 }),
     );
     const channel = stdChannel();
-    const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => state() },
-      providerSettingsSaga,
-    );
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => state() }, providerSettingsSaga);
 
     channel.put(setActiveProvider('codex'));
     await settle();
@@ -182,6 +181,27 @@ describe('providerSettingsSaga', () => {
     expect(mocks.update.mock.calls).toEqual([
       [[{ path: 'providers.active', value: 'codex' }]],
     ]);
+    // An active-provider write carries no enablement delta — no rollback.
+    expect(dispatch).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('retires the pending override when the daemon rejects an enablement write (monorepo#1986)', async () => {
+    mocks.update.mockRejectedValue(
+      new BackendError({ code: 'INVALID_PARAMS', message: 'invalid', rpcCode: -32602 }),
+    );
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => state() }, providerSettingsSaga);
+
+    channel.put(setProviderEnabled({ providerId: 'claude-code', enabled: true }));
+    await settle();
+
+    expect(mocks.update.mock.calls).toEqual([
+      [[{ path: 'providers.enabled', value: { codex: true, 'claude-code': true } }]],
+    ]);
+    expect(dispatch).toHaveBeenCalledWith(enablementPersistRejected('claude-code'));
     task.cancel();
     await task.toPromise();
   });

@@ -55,11 +55,27 @@ describe('settingsHydrationSaga', () => {
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
-  it('treats an empty snapshot as a successful no-op', async () => {
-    mocks.list.mockResolvedValue([]);
-    await runSaga({ dispatch: vi.fn() }, hydrateSettingsOnceSaga).toPromise();
-    expect(mocks.apply).not.toHaveBeenCalled();
-    expect(mocks.error).not.toHaveBeenCalled();
+  it('retries an empty snapshot — the live client folds transport failures into [] (monorepo#1986)', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.list
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([
+          { path: 'providers.enabled', value: { 'claude-code': true }, label: '', description: '' },
+        ]);
+      const task = runSaga({ dispatch: vi.fn() }, hydrateSettingsOnceSaga);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.list).toHaveBeenCalledTimes(1);
+      expect(mocks.apply).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(SETTINGS_HYDRATION_RETRY_DELAYS_MS[0]);
+      expect(mocks.list).toHaveBeenCalledTimes(2);
+      expect(mocks.apply).toHaveBeenCalledWith([
+        { path: 'providers.enabled', value: { 'claude-code': true } },
+      ]);
+      await task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('retries a transport-failed boot read with bounded backoff until it lands (monorepo#1986)', async () => {

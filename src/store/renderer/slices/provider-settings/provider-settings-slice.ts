@@ -19,7 +19,10 @@ export type ProviderSettingsState = {
    * snapshot racing a fresh click cannot clobber the entry (monorepo#1986).
    * An entry is cleared once a hydration carries the same value (the daemon
    * confirmed the write); a conflicting hydration keeps the newer local
-   * intent until then.
+   * intent until then. When the daemon REJECTS the enablement write, the
+   * persistence saga dispatches `enablementPersistRejected` to retire the
+   * entry, so a rejected click cannot mask later daemon-originated changes
+   * for that provider for the rest of the session.
    */
   pendingEnablementOverrides: Record<string, boolean>;
 };
@@ -69,6 +72,16 @@ export const ensureEnabledIfUnset = createAction<[providerId: string]>(
 export const loadEnabledProvidersFromStorage = createAction<
   [providers: Record<string, boolean>]
 >("providerSettings/loadEnabledProvidersFromStorage");
+
+/**
+ * Dispatched by the persistence saga when the daemon rejects an enablement
+ * write (structured error response — not a transient transport failure).
+ * Retires the provider's pending override so the renderer re-converges to
+ * daemon state on the next hydration; the local map is left as-is until then.
+ */
+export const enablementPersistRejected = createAction<[providerId: string]>(
+  "providerSettings/enablementPersistRejected"
+);
 
 export const providerSettingsReducer = createReducer<ProviderSettingsState>(initialState);
 providerSettingsReducer.with(providerCatalogLoaded, (state, { payload: [catalog] }) => ({
@@ -122,6 +135,12 @@ providerSettingsReducer.with(ensureEnabledIfUnset, (state, { payload: [providerI
       ...state,
       enabledProviders: { ...state.enabledProviders, [providerId]: true },
     };
+  });
+providerSettingsReducer.with(enablementPersistRejected, (state, { payload: [providerId] }) => {
+    if (!(providerId in state.pendingEnablementOverrides)) return state;
+    const pending = { ...state.pendingEnablementOverrides };
+    delete pending[providerId];
+    return { ...state, pendingEnablementOverrides: pending };
   });
 providerSettingsReducer.with(loadEnabledProvidersFromStorage, (state, { payload: [providers] }) => {
     // Hydration (boot snapshot or settings:changed) never clobbers newer
