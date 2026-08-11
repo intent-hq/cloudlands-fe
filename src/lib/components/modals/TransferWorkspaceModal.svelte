@@ -100,6 +100,17 @@
 
   const canNext = $derived(step === 'destination' && destination != null);
 
+  /**
+   * Closing is locked while finalize is in flight — a close dispatches the
+   * relay cancel, which would race the finalization on the source and
+   * silently discard its outcome.
+   */
+  const canClose = $derived(finalizeStatus !== 'running');
+
+  function requestClose() {
+    if (canClose) onCancel?.();
+  }
+
   const destinationLabel = $derived.by(() => {
     if (!destination) return '';
     if (destination.kind === 'download') return m.workspace_transfer_destinationDownload_label();
@@ -164,7 +175,7 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       e.stopPropagation();
-      onCancel?.();
+      requestClose();
     } else {
       e.stopPropagation();
     }
@@ -178,7 +189,7 @@
   <div
     class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
     role="presentation"
-    onclick={() => onCancel?.()}
+    onclick={() => requestClose()}
     onkeydown={handleKeydown}
   >
     <div
@@ -198,7 +209,8 @@
         <Button
           variant="ghost"
           size="icon"
-          onclick={() => onCancel?.()}
+          onclick={() => requestClose()}
+          disabled={!canClose}
           aria-label={m.workspace_transfer_close_ariaLabel()}
         >
           <Fa icon={faXmark} />

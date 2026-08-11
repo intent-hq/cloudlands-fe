@@ -5606,6 +5606,8 @@
   "workspace_transfer_result_serverSuccess_message": "“{title}” was transferred successfully.",
   "workspace_transfer_result_interrupted_one": "1 in-flight agent will be restarted on the destination.",
   "workspace_transfer_result_interrupted_many": "{count} in-flight agents will be restarted on the destination.",
+  "workspace_transfer_resumeFailed_one": "1 agent could not be restarted on the destination. Resume it there manually.",
+  "workspace_transfer_resumeFailed_many": "{count} agents could not be restarted on the destination. Resume them there manually.",
   "workspace_transfer_result_failed_title": "Transfer failed",
   "workspace_transfer_result_failed_message": "The transfer did not complete: {error}. The source space is unchanged and stays usable; its agents were stopped.",
   "workspace_transfer_retry_label": "Retry",

@@ -88,6 +88,10 @@ const BUILD_TIMEOUT_MS = 600_000;
 /** One in-flight/settled transfer awaiting finalize. */
 interface RelaySession {
   workspaceId: string;
+  /** The SOURCE daemon's client, pinned at start() time — a backend switch
+   * swaps the shared client, and finalize/cancel must keep talking to the
+   * daemon that owns this exportId. */
+  source: RelayRpcClient;
   exportId: string;
   /** Set while chunks are staging on the target (cleared after commit). */
   importId?: string;
@@ -305,6 +309,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     const source = deps.getSourceClient();
     const current: RelaySession = {
       workspaceId,
+      source,
       exportId: '',
       interruptedAgents: [],
       committed: false,
@@ -334,7 +339,11 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
         const sink = await deps.openFileSink(filePath as string);
         try {
           await downloadChunks(source, sink, ready, isCancelled);
+          if (isCancelled()) throw new Error('cancelled');
           await sink.close();
+          // A cancel that raced the final write/close still wins: discard
+          // the completed file instead of reporting success to a reset UI.
+          if (isCancelled()) throw new Error('cancelled');
         } catch (error) {
           await sink.discard();
           throw error;
@@ -357,6 +366,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       current.importId = begin.importId;
       try {
         await relayChunks(source, target, ready, begin.importId, isCancelled);
+        if (isCancelled()) throw new Error('cancelled');
         deps.broadcastProgress({
           workspaceId,
           phase: 'committing',
@@ -371,15 +381,28 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
           { importId: begin.importId },
           { timeoutMs: COMMIT_TIMEOUT_MS },
         );
-        current.committed = true;
         current.importId = undefined;
+        if (isCancelled()) {
+          // The cancel raced the commit and lost: the target already holds
+          // the imported workspace (a commit cannot be undone). Surface the
+          // run as cancelled rather than success against a reset UI.
+          deps.logger.warn(
+            'transfer cancelled during target commit; imported workspace remains on the target',
+            { workspaceId },
+          );
+          throw new Error('cancelled');
+        }
+        current.committed = true;
         current.interruptedAgents = Array.isArray(commit.interruptedAgents)
           ? commit.interruptedAgents
           : [];
         return { success: true, interruptedAgents: current.interruptedAgents };
       } catch (error) {
-        await abortImport(target, begin.importId);
-        current.importId = undefined;
+        // Only staged imports can be aborted — a committed one stays.
+        if (current.importId) {
+          await abortImport(target, current.importId);
+          current.importId = undefined;
+        }
         throw error;
       }
     } catch (error) {
@@ -406,7 +429,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     if (!current || !current.committed) {
       return { success: false, error: 'no committed transfer to finalize' };
     }
-    const source = deps.getSourceClient();
+    const source = current.source;
     const resumeFailed: string[] = [];
 
     // Restart in-flight agents on the TARGET (fail-soft — a resume failure
@@ -456,7 +479,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       // deleted, workspace stays usable) without status message or archive.
       session = null;
       if (current.exportId) {
-        await abortExport(deps.getSourceClient(), current.exportId);
+        await abortExport(current.source, current.exportId);
       }
       return { success: true };
     }
@@ -467,7 +490,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     // The in-flight start() loop observes the flag and aborts both sides; an
     // idle session (start already returned a failure) is cleaned here.
     if (current.exportId) {
-      await abortExport(deps.getSourceClient(), current.exportId);
+      await abortExport(current.source, current.exportId);
     }
     return { success: true };
   }

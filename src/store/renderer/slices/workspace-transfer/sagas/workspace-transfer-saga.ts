@@ -122,6 +122,20 @@ export function* handleTransferProgress(event: TransferProgressEvent): SagaGener
   );
 }
 
+/** Fail-soft warning toast when the target could not resume some agents. */
+async function showResumeFailedToast(count: number): Promise<void> {
+  try {
+    const { toast } = await import('svelte-sonner');
+    toast.warning(
+      count === 1
+        ? m.workspace_transfer_resumeFailed_one()
+        : m.workspace_transfer_resumeFailed_many({ count }),
+    );
+  } catch (error) {
+    logger.warn('Failed to surface resume-failure toast', { error });
+  }
+}
+
 /** Human label for the final status message ("Transferred to <target> …"). */
 function* resolveDestinationLabel(): SagaGenerator<string> {
   const destination = yield* selectTransferDestinationValue.effect();
@@ -165,6 +179,13 @@ export function* finalizeTransfer(
       return;
     }
     yield* put(transferFinalizeSucceeded());
+    // A successful finalize can still carry agents the target failed to
+    // resume — surface them instead of silently closing over the promise
+    // that in-flight agents restart.
+    const resumeFailed = result.resumeFailed ?? [];
+    if (resumeFailed.length > 0) {
+      yield* call(showResumeFailedToast, resumeFailed.length);
+    }
     yield* put(closeTransferModal());
     if (switchToTarget && destination?.kind === 'server') {
       yield* put(switchConnectionRequested(destination.connectionId));

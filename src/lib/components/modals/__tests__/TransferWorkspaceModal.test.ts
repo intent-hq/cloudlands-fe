@@ -387,4 +387,48 @@ describe('TransferWorkspaceModal — result step', () => {
 
     expect(screen.getByTestId('transfer-finalize-error').textContent).toContain('workspace gone');
   });
+
+  it('locks closing while finalize is running', async () => {
+    const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
+    const onCancel = vi.fn();
+
+    render(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        step: 'result',
+        destination: { kind: 'server', connectionId: 'conn-1' },
+        connections: [remote('conn-1', '10.0.0.2')],
+        runStatus: 'succeeded',
+        finalizeStatus: 'running',
+        onCancel,
+      },
+    });
+
+    const closeButton = screen.getByLabelText('Close') as HTMLButtonElement;
+    expect(closeButton.disabled).toBe(true);
+    await fireEvent.click(closeButton);
+    await fireEvent.click(screen.getByRole('presentation'));
+    await fireEvent.keyDown(screen.getByRole('presentation'), { key: 'Escape' });
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('close stays available when finalize is not running', async () => {
+    const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
+    const onCancel = vi.fn();
+
+    render(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        step: 'result',
+        destination: { kind: 'server', connectionId: 'conn-1' },
+        connections: [remote('conn-1', '10.0.0.2')],
+        runStatus: 'succeeded',
+        finalizeStatus: 'idle',
+        onCancel,
+      },
+    });
+
+    await fireEvent.click(screen.getByLabelText('Close'));
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
 });

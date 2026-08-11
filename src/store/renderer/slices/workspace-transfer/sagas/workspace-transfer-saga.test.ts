@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
-const mocks = vi.hoisted(() => ({ request: vi.fn(), invoke: vi.fn() }));
+const mocks = vi.hoisted(() => ({ request: vi.fn(), invoke: vi.fn(), toastWarning: vi.fn() }));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
+vi.mock('svelte-sonner', () => ({ toast: { warning: mocks.toastWarning } }));
 
 import {
   closeTransferModal,
@@ -243,6 +244,30 @@ describe('workspaceTransferSaga — steps 3–4', () => {
       .map(([action]) => action)
       .find((action) => action.type === switchConnectionRequested('conn-1').type);
     expect(switchAction?.payload).toEqual(['conn-1']);
+    h.task.cancel();
+  });
+
+  it('finalize success with resumeFailed surfaces a warning toast and still closes', async () => {
+    mocks.invoke.mockResolvedValue({ success: true, resumeFailed: ['agent-1', 'agent-2'] });
+    let state = workspaceTransferReducer(
+      confirmLoadedState({ kind: 'server', connectionId: 'conn-1' }),
+      transferStartRequested(),
+    );
+    state = workspaceTransferReducer(
+      state,
+      transferRunSucceeded({ interruptedAgents: ['agent-1', 'agent-2'], downloadFilePath: null }),
+    );
+    const h = harness(state);
+
+    h.channel.put(transferFinalizeRequested({ switchToTarget: false }));
+    await settle();
+    // The toast module is dynamically imported — allow a macrotask to settle.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await settle();
+
+    expect(mocks.toastWarning).toHaveBeenCalledOnce();
+    expect(mocks.toastWarning.mock.calls[0][0]).toContain('2');
+    expect(h.dispatch).toHaveBeenCalledWith(closeTransferModal());
     h.task.cancel();
   });
 

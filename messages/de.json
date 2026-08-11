@@ -5606,6 +5606,8 @@
   "workspace_transfer_result_serverSuccess_message": "„{title}“ wurde erfolgreich übertragen.",
   "workspace_transfer_result_interrupted_one": "1 laufender Agent wird auf dem Ziel neu gestartet.",
   "workspace_transfer_result_interrupted_many": "{count} laufende Agenten werden auf dem Ziel neu gestartet.",
+  "workspace_transfer_resumeFailed_one": "1 Agent konnte auf dem Ziel nicht neu gestartet werden. Setzen Sie ihn dort manuell fort.",
+  "workspace_transfer_resumeFailed_many": "{count} Agenten konnten auf dem Ziel nicht neu gestartet werden. Setzen Sie sie dort manuell fort.",
   "workspace_transfer_result_failed_title": "Übertragung fehlgeschlagen",
   "workspace_transfer_result_failed_message": "Die Übertragung wurde nicht abgeschlossen: {error}. Der Quell-Space ist unverändert und bleibt nutzbar; seine Agenten wurden gestoppt.",
   "workspace_transfer_retry_label": "Erneut versuchen",

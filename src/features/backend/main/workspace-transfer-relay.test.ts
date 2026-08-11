@@ -473,6 +473,30 @@ describe('workspace-transfer relay — finalize', () => {
     const result = await relay.finalize({ archiveSource: true });
     expect(result).toMatchObject({ success: false, error: expect.stringContaining('no committed') });
   });
+
+  it('finalize talks to the source pinned at start, not the switched shared client', async () => {
+    const source = makeSource();
+    const target = makeTarget();
+    const other = makeSource();
+    let active = source;
+    const { deps } = makeDeps(source, target, { getSourceClient: () => active.client });
+    const relay = createWorkspaceTransferRelay(deps);
+
+    const startPromise = relay.start({
+      workspaceId: 'ws-1',
+      destination: { kind: 'server', connectionId: 'conn-1' },
+    });
+    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+    await startPromise;
+
+    // Simulate a backend switch swapping the shared client mid-wizard.
+    active = other;
+    const result = await relay.finalize({ archiveSource: true, restartAgents: false });
+
+    expect(result).toEqual({ success: true });
+    expect(source.calls.some((c) => c.method === 'workspace.export.finalize')).toBe(true);
+    expect(other.calls).toEqual([]);
+  });
 });
 
 describe('workspace-transfer relay — cancel', () => {
@@ -528,5 +552,72 @@ describe('workspace-transfer relay — cancel', () => {
     const relay = createWorkspaceTransferRelay(deps);
     expect(await relay.cancel()).toEqual({ success: true });
     expect(source.calls).toEqual([]);
+  });
+
+  it('a cancel racing the target commit resolves canceled and never aborts the committed import', async () => {
+    const source = makeSource();
+    let relayRef: { cancel: () => Promise<unknown> } | null = null;
+    const target = makeTarget({
+      'workspace.import.commit': async () => {
+        // The wizard is dismissed while the commit RPC is in flight.
+        await relayRef!.cancel();
+        return { workspace: { id: 'ws-1' }, interruptedAgents: [] };
+      },
+    });
+    const { deps } = makeDeps(source, target);
+    const relay = createWorkspaceTransferRelay(deps);
+    relayRef = relay;
+
+    const startPromise = relay.start({
+      workspaceId: 'ws-1',
+      destination: { kind: 'server', connectionId: 'conn-1' },
+    });
+    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+    const result = await startPromise;
+
+    expect(result).toMatchObject({ success: false, canceled: true });
+    // The commit landed: it must not be aborted, only surfaced as cancelled.
+    expect(target.calls.some((c) => c.method === 'workspace.import.abort')).toBe(false);
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('cancelled during target commit'),
+      expect.objectContaining({ workspaceId: 'ws-1' }),
+    );
+    expect(target.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('a cancel racing the last download chunk discards the completed file', async () => {
+    let relayRef: { cancel: () => Promise<unknown> } | null = null;
+    const source = makeSource({
+      'workspace.export.read': async ({ seq }: { seq: number }) => {
+        if (seq === 1) await relayRef!.cancel();
+        return {
+          exportId: 'export-1',
+          seq,
+          totalChunks: 2,
+          data: seq === 0 ? CHUNK0 : CHUNK1,
+        };
+      },
+    });
+    const written: Buffer[] = [];
+    const close = vi.fn(async () => undefined);
+    const discard = vi.fn(async () => undefined);
+    const { deps } = makeDeps(source, undefined, {
+      openFileSink: vi.fn(async () => ({
+        write: async (bytes: Buffer) => {
+          written.push(bytes);
+        },
+        close,
+        discard,
+      })),
+    });
+    const relay = createWorkspaceTransferRelay(deps);
+    relayRef = relay;
+
+    const startPromise = relay.start({ workspaceId: 'ws-1', destination: { kind: 'download' } });
+    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+    const result = await startPromise;
+
+    expect(result).toMatchObject({ success: false, canceled: true });
+    expect(discard).toHaveBeenCalledOnce();
   });
 });

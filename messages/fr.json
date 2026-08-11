@@ -5606,6 +5606,8 @@
   "workspace_transfer_result_serverSuccess_message": "« {title} » a été transféré avec succès.",
   "workspace_transfer_result_interrupted_one": "1 agent en cours sera redémarré sur la destination.",
   "workspace_transfer_result_interrupted_many": "{count} agents en cours seront redémarrés sur la destination.",
+  "workspace_transfer_resumeFailed_one": "1 agent n'a pas pu être redémarré sur la destination. Reprenez-le manuellement là-bas.",
+  "workspace_transfer_resumeFailed_many": "{count} agents n'ont pas pu être redémarrés sur la destination. Reprenez-les manuellement là-bas.",
   "workspace_transfer_result_failed_title": "Échec du transfert",
   "workspace_transfer_result_failed_message": "Le transfert ne s'est pas terminé : {error}. L'espace source est inchangé et reste utilisable ; ses agents ont été arrêtés.",
   "workspace_transfer_retry_label": "Réessayer",
