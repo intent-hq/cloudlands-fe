@@ -5,6 +5,7 @@
     faBoxArchive,
     faCheck,
     faKeyboard,
+    faRightLeft,
     faThumbtack,
     faTrash,
   } from '@fortawesome/free-solid-svg-icons';
@@ -49,6 +50,7 @@
     requestArchiveWorkspace,
     requestDeleteWorkspace,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import {
     markKeySlotUnassigned,
     pinWorkspaceToKey,
@@ -388,6 +390,18 @@
         submenu: assignSubmenu,
       });
     }
+
+    items.push({
+      id: 'transfer',
+      label: m.workspace_card_transfer_label(),
+      icon: faRightLeft,
+      onClick: () => {
+        appStore.dispatch(
+          openTransferModal({ workspaceId: workspace.id, workspaceTitle: workspace.title }),
+        );
+        closeContextMenu();
+      },
+    });
 
     items.push({
       id: 'archive',
