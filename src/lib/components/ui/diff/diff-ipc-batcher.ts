@@ -235,7 +235,8 @@ async function readWorkingTreeContent(
  *
  * Gitlink (submodule) chunks (intent-hq/monorepo#1739) are composed from
  * their `Subproject commit <sha>` hunk lines instead: a gitlink has no blob,
- * so `git.showFile` fails (`-32603`) and `file.read` hits a directory.
+ * so `git.showFile` rejects it with the typed `-32602` `not-a-file` error
+ * and `file.read` hits a directory.
  */
 async function enrichChunkContents(
   workspaceId: string,

@@ -55,7 +55,10 @@ export function reconcileGitStatusChanges(
       stage,
       status: displayStatus(file.status),
       // Submodule (gitlink) marking from git.status (mode 160000) — #1739.
-      ...(file.mode !== undefined
+      // Gated on the gitlink mode value (not mere presence) so a future
+      // daemon enrichment carrying mode on regular entries (e.g. 100755)
+      // cannot route them to the submodule pin presentation.
+      ...(file.mode === '160000'
         ? {
             gitlink: {
               mode: file.mode,

@@ -2,8 +2,9 @@
  * Gitlink (submodule) diff-chunk helpers (intent-hq/monorepo#1739).
  *
  * A submodule entry in a git tree (mode 160000) has no blob content, so
- * `git.showFile` fails for it (`-32603`) and `file.read` fails too (the path
- * is a directory in the worktree). libgit2 renders a gitlink delta as
+ * `git.showFile` rejects it with the typed `-32602` `not-a-file` error and
+ * `file.read` fails too (the path is a directory in the worktree). libgit2
+ * renders a gitlink delta as
  * pseudo-content lines of the form `Subproject commit <sha>` (with an
  * optional `-dirty` suffix), which the daemon's `git.diffs` hunks carry
  * verbatim. These helpers let the diff pipeline recognize such chunks from

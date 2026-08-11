@@ -81,6 +81,16 @@ describe('reconcileGitStatusChanges', () => {
     expect(result[1].gitlink).toBeUndefined();
   });
 
+  it('does not attach gitlink for a non-160000 mode entry (forward-compat)', () => {
+    const files: FileStatus[] = [
+      { path: 'src/script.sh', status: GitFileStatus.Modified, staged: false, mode: '100755' },
+    ];
+
+    const result = reconcileGitStatusChanges(files, []);
+
+    expect(result[0].gitlink).toBeUndefined();
+  });
+
   it('omits absent pin SHAs on a newly added submodule entry', () => {
     const files: FileStatus[] = [
       {
