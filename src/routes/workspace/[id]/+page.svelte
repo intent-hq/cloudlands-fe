@@ -85,7 +85,6 @@
     createAgentWithSpecialistRequested,
     setAgents,
     setAgentsLoaded,
-    flushPendingAgentDeletionsRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -782,10 +781,8 @@
     // Cancel any pending loads
     workspaceLoader.clearLoadingState();
 
-    // Flush any pending undo-able agent deletions (permanently delete them now)
-    const flushDeletionsAction = flushPendingAgentDeletionsRequested(workspaceId);
-    appStore.dispatch(flushDeletionsAction);
-    await flushDeletionsAction.promise;
+    // Pending undo-able agent deletions need no flush here: the daemon owns
+    // the delete grace window and commits at the deadline on its own.
 
     // Clear workspace state reference
     workspaceState = null;

@@ -17,6 +17,8 @@ vi.mock("$lib/client", () => ({
   appClient: {
     workspaces: {
       create: vi.fn(),
+      delete: vi.fn(),
+      cancelDelete: vi.fn(),
     },
   },
 }));
@@ -168,5 +170,68 @@ describe("WorkspaceClient.create (AppClient seam, PROTOCOL §5.1)", () => {
 
     expect(result.ok).toBe(true);
     expect(workspaces.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("WorkspaceClient.delete / cancelDelete (AppClient seam, PROTOCOL §5.1 delete grace window)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("forwards undoDelayMs and surfaces the daemon's { scheduled, deleteAt } on the Result data", async () => {
+    workspaces.delete.mockResolvedValueOnce({
+      success: true,
+      scheduled: true,
+      deleteAt: "2026-08-11T00:00:15.000Z",
+    });
+    const client = new WorkspaceClient();
+
+    const result = await client.delete("ws-1" as never, { undoDelayMs: 15_000 });
+
+    expect(workspaces.delete).toHaveBeenCalledExactlyOnceWith("ws-1", { undoDelayMs: 15_000 });
+    expect(result).toEqual({
+      ok: true,
+      data: { scheduled: true, deleteAt: "2026-08-11T00:00:15.000Z" },
+    });
+  });
+
+  it("keeps the immediate-delete Result shape when no grace window is requested", async () => {
+    workspaces.delete.mockResolvedValueOnce({ success: true });
+    const client = new WorkspaceClient();
+
+    const result = await client.delete("ws-1" as never);
+
+    expect(workspaces.delete).toHaveBeenCalledExactlyOnceWith("ws-1", undefined);
+    expect(result).toEqual({ ok: true, data: undefined });
+  });
+
+  it("folds a failed delete into an error Result", async () => {
+    workspaces.delete.mockResolvedValueOnce({ success: false, error: "boom" });
+    const client = new WorkspaceClient();
+
+    expect(await client.delete("ws-1" as never)).toEqual({ ok: false, error: "boom" });
+  });
+
+  it("surfaces both race-safe cancelDelete outcomes on the Result data", async () => {
+    workspaces.cancelDelete
+      .mockResolvedValueOnce({ success: true, cancelled: true })
+      .mockResolvedValueOnce({ success: true, cancelled: false });
+    const client = new WorkspaceClient();
+
+    expect(await client.cancelDelete("ws-1" as never)).toEqual({
+      ok: true,
+      data: { cancelled: true },
+    });
+    expect(await client.cancelDelete("ws-1" as never)).toEqual({
+      ok: true,
+      data: { cancelled: false },
+    });
+    expect(workspaces.cancelDelete).toHaveBeenCalledTimes(2);
+    expect(workspaces.cancelDelete).toHaveBeenCalledWith("ws-1");
+  });
+
+  it("folds a failed cancelDelete into an error Result", async () => {
+    workspaces.cancelDelete.mockResolvedValueOnce({ success: false, error: "offline" });
+    const client = new WorkspaceClient();
+
+    expect(await client.cancelDelete("ws-1" as never)).toEqual({ ok: false, error: "offline" });
   });
 });

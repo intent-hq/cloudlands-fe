@@ -1,20 +1,24 @@
 /**
- * Pending agent-deletion registry — soft-hidden deletions awaiting commit.
+ * Pending agent-deletion registry — soft-hidden deletions awaiting the
+ * daemon-owned commit.
  *
- * Agent deletion is soft-hide-then-commit (see agent-mutation-service.ts /
- * AGENTS.md): the session is hidden locally and the real `agent.delete` is
- * deferred for the undo window. During that window the daemon still returns
- * the agent from `agent.list` / `agent.get`, so every rehydration path
- * (lifecycle read saga, agent-read-service
- * `ensureAgentSession`, and chat-read-service `loadChatTranscript`) must consult
- * `isAgentDeletionPending()` to avoid resurrecting
- * a soft-hidden agent.
+ * Agent deletion uses the daemon delete grace window (PROTOCOL §5.5, v6.7+):
+ * the session is hidden locally and `agent.delete { undoDelayMs }` is sent
+ * immediately, so the daemon owns the 15s window and commits at the deadline
+ * even if the FE quits. During that window the daemon still returns the agent
+ * from `agent.list` / `agent.get` (carrying `pendingDeleteAt`), so every
+ * rehydration path (lifecycle read saga, agent-read-service
+ * `ensureAgentSession`, and chat-read-service `loadChatTranscript`) must
+ * consult `isAgentDeletionPending()` — and drop wire rows carrying
+ * `pendingDeleteAt` — to avoid resurrecting a soft-hidden agent.
  *
  * Shared by the agent mutation saga and dependency-light read paths.
  * Entries are transient, UI-only state (per src/store AGENTS.md) — they never
- * enter Redux. Each entry snapshots the removed session so `undo` can restore
- * it without a wire call. The owning saga expresses the undo window with
- * native delay/race effects and attached cancellation.
+ * enter Redux. Each entry snapshots the removed session so `undo`
+ * (`agent.cancelDelete`) can restore it without a refetch. After the daemon
+ * deadline the entry lingers as a tombstone for a grace window so stale
+ * refetch responses cannot resurrect the deleted agent (the owning saga
+ * clears it).
  *
  * Dependency-light per AGENTS.md utils conventions: no stores, services, or
  * wire calls — just a module-level Map with simple accessors and mutators

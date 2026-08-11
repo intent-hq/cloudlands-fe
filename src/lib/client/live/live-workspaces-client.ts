@@ -22,7 +22,9 @@ import type {
   MutationResult,
   SubscriptionHandler,
   Unsubscribe,
+  WorkspaceCancelDeleteResult,
   WorkspaceCreateResult,
+  WorkspaceDeleteResult,
   WorkspaceDiskUsageResult,
   WorkspacesClient,
   WorkspaceUpdateResult,
@@ -30,7 +32,12 @@ import type {
 import { BackendError } from "./backend-transport-types";
 import { backendRequest } from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
-import { extractConflict, newIdempotencyKey, runMutation } from "./live-support";
+import {
+  extractConflict,
+  mutationErrorMessage,
+  newIdempotencyKey,
+  runMutation,
+} from "./live-support";
 
 /**
  * Transport timeout for `workspace.delete` (PROTOCOL §5.1). Longer than the
@@ -236,8 +243,45 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     }
   }
 
-  async delete(id: string): Promise<MutationResult> {
-    return runMutation("workspace.delete", { workspaceId: id }, { timeoutMs: DELETE_TIMEOUT_MS });
+  /**
+   * `workspace.delete` (§5.1). With `undoDelayMs > 0` the daemon registers the
+   * delete grace window and returns `{ success, scheduled, deleteAt }` —
+   * surfaced verbatim so the caller can render the daemon-owned deadline.
+   * Without it, the immediate-delete request is byte-identical to pre-6.7.
+   */
+  async delete(id: string, options?: { undoDelayMs?: number }): Promise<WorkspaceDeleteResult> {
+    const undoDelayMs = options?.undoDelayMs;
+    try {
+      const result = await backendRequest<{ scheduled?: unknown; deleteAt?: unknown }>(
+        "workspace.delete",
+        undoDelayMs && undoDelayMs > 0 ? { workspaceId: id, undoDelayMs } : { workspaceId: id },
+        { timeoutMs: DELETE_TIMEOUT_MS },
+      );
+      const scheduled = result?.scheduled === true;
+      const deleteAt = typeof result?.deleteAt === "string" ? result.deleteAt : undefined;
+      return scheduled && deleteAt
+        ? { success: true, scheduled: true, deleteAt }
+        : { success: true };
+    } catch (error) {
+      return { success: false, error: mutationErrorMessage(error) };
+    }
+  }
+
+  /**
+   * `workspace.cancelDelete` (§5.1, delete grace window). `{ cancelled: false }`
+   * is a race-safe non-error: the deletion already committed or was never
+   * scheduled — surfaced so the caller can show "could not undo" instead of
+   * resurrecting the workspace.
+   */
+  async cancelDelete(id: string): Promise<WorkspaceCancelDeleteResult> {
+    try {
+      const result = await backendRequest<{ cancelled?: unknown }>("workspace.cancelDelete", {
+        workspaceId: id,
+      });
+      return { success: true, cancelled: result?.cancelled === true };
+    } catch (error) {
+      return { success: false, error: mutationErrorMessage(error) };
+    }
   }
 
   async archive(id: string): Promise<MutationResult> {
