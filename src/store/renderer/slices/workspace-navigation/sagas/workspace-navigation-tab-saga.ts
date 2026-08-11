@@ -7,9 +7,11 @@ import { openTab, openTabInAdjacentOrSplit } from '../../panel-layout/panel-layo
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import {
+  openWorkspaceChatChanges,
   openWorkspaceCommitChangeset,
   openWorkspaceDiff,
   openWorkspaceFile,
+  openWorkspaceLocalChanges,
   openWorkspaceNote,
 } from '../workspace-navigation-slice';
 
@@ -119,9 +121,49 @@ function* openDiff(action: ReturnType<typeof openWorkspaceDiff>): SagaGenerator<
   );
 }
 
+function* openChatChanges(action: ReturnType<typeof openWorkspaceChatChanges>): SagaGenerator<void> {
+  const [workspaceId, changes, title, options] = action.payload;
+  if (!workspaceId || !changes?.length) return;
+  yield* openWorkspaceTab(
+    workspaceId,
+    {
+      type: 'chat-changes',
+      title,
+      workspaceId,
+      closable: true,
+      data: {
+        changes,
+        title,
+        ...(options?.messageId ? { messageId: options.messageId } : {}),
+        ...(options?.isAggregate !== undefined ? { isAggregate: options.isAggregate } : {}),
+        ...(options?.agentId ? { agentId: options.agentId } : {}),
+        ...(options?.turnNumber !== undefined ? { turnNumber: options.turnNumber } : {}),
+      },
+    },
+    false,
+  );
+}
+
+function* openLocalChanges(action: ReturnType<typeof openWorkspaceLocalChanges>): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  if (!workspaceId) return;
+  yield* openWorkspaceTab(
+    workspaceId,
+    {
+      type: 'local-changes',
+      title: m.layout_presetExecutor_allChanges_title(),
+      workspaceId,
+      closable: true,
+    },
+    false,
+  );
+}
+
 export function* workspaceNavigationTabSaga(): SagaGenerator<void> {
   yield* takeEvery(openWorkspaceCommitChangeset, openCommit);
   yield* takeEvery(openWorkspaceFile, openFile);
   yield* takeEvery(openWorkspaceNote, openNote);
   yield* takeEvery(openWorkspaceDiff, openDiff);
+  yield* takeEvery(openWorkspaceChatChanges, openChatChanges);
+  yield* takeEvery(openWorkspaceLocalChanges, openLocalChanges);
 }
