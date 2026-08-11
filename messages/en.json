@@ -914,6 +914,8 @@
   "workspace_compactInitializer_enhancePrompt_tooltip": "Enhance prompt",
   "workspace_compactInitializer_filesTooLarge_error": "Files too large (max 10MB): {files}",
   "workspace_compactInitializer_firstTimeHint_label": "Describe a feature, bug fix, or refactor — the agent will create a branch and start coding.",
+  "workspace_compactInitializer_gitCheckUnknown_description": "The backend couldn't be reached to verify that Git is installed. You can continue — creation will fail if Git is actually missing.",
+  "workspace_compactInitializer_gitCheckUnknown_label": "Unable to verify Git (connection issue)",
   "workspace_compactInitializer_gitNotInstalled_label": "Git is not installed",
   "workspace_compactInitializer_gitRequiredHint_label": "Git is required — install it and restart to continue.",
   "workspace_compactInitializer_gitRequired_description": "Git is required to create workspaces. Please install Git and restart the app.",

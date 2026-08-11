@@ -913,6 +913,8 @@
   "workspace_compactInitializer_enhancePrompt_tooltip": "プロンプトを強化",
   "workspace_compactInitializer_filesTooLarge_error": "ファイルが大きすぎます（最大 10MB）: {files}",
   "workspace_compactInitializer_firstTimeHint_label": "機能、バグ修正、リファクタリングを記述してください — エージェントがブランチを作成してコーディングを開始します。",
+  "workspace_compactInitializer_gitCheckUnknown_description": "バックエンドに接続できず、Git のインストールを確認できませんでした。続行できます — Git が実際にない場合は作成に失敗します。",
+  "workspace_compactInitializer_gitCheckUnknown_label": "Git を確認できません（接続の問題）",
   "workspace_compactInitializer_gitNotInstalled_label": "Git がインストールされていません",
   "workspace_compactInitializer_gitRequiredHint_label": "Git が必要です — インストールして再起動してください。",
   "workspace_compactInitializer_gitRequired_description": "ワークスペースの作成には Git が必要です。Git をインストールしてアプリを再起動してください。",

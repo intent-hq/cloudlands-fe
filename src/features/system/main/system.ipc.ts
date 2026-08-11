@@ -2375,6 +2375,10 @@ export function setupSystemIPC() {
   // Check git availability — delegated to the daemon host so detection
   // matches the machine actually running git (and is consistent across
   // local/remote transports). Mapped back to the existing IPC contract.
+  // Only a daemon-reported probe answer may fold to available:false; a
+  // transport failure (RPC timeout / daemon unreachable) folds to
+  // available:'unknown' so the UI never renders "Git is not installed"
+  // when the check simply couldn't run.
   ipcMain.handle(SYSTEM_CHANNELS.CHECK_GIT, async () => {
     try {
       const result = await getBackendClient().request<{ available: boolean; version?: string }>(
@@ -2390,7 +2394,7 @@ export function setupSystemIPC() {
       logger.warn('host.checkGit failed', {
         error: error instanceof Error ? error.message : String(error),
       });
-      return { success: true, data: { available: false } };
+      return { success: true, data: { available: 'unknown' } };
     }
   });
 

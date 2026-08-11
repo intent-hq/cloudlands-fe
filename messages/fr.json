@@ -913,6 +913,8 @@
   "workspace_compactInitializer_enhancePrompt_tooltip": "Améliorer le prompt",
   "workspace_compactInitializer_filesTooLarge_error": "Fichiers trop volumineux (max 10 Mo) : {files}",
   "workspace_compactInitializer_firstTimeHint_label": "Décrivez une fonctionnalité, une correction de bug ou un refactoring — l'agent créera une branche et commencera à coder.",
+  "workspace_compactInitializer_gitCheckUnknown_description": "Impossible de joindre le backend pour vérifier que Git est installé. Vous pouvez continuer — la création échouera si Git est réellement absent.",
+  "workspace_compactInitializer_gitCheckUnknown_label": "Impossible de vérifier Git (problème de connexion)",
   "workspace_compactInitializer_gitNotInstalled_label": "Git n'est pas installé",
   "workspace_compactInitializer_gitRequiredHint_label": "Git est requis — installez-le et redémarrez pour continuer.",
   "workspace_compactInitializer_gitRequired_description": "Git est requis pour créer des espaces de travail. Veuillez installer Git et redémarrer l'application.",

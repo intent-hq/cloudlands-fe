@@ -913,6 +913,8 @@
   "workspace_compactInitializer_enhancePrompt_tooltip": "增強提示詞",
   "workspace_compactInitializer_filesTooLarge_error": "檔案過大（最大 10MB）：{files}",
   "workspace_compactInitializer_firstTimeHint_label": "描述一個功能、缺陷修復或重構——智慧體會建立分支並開始編碼。",
+  "workspace_compactInitializer_gitCheckUnknown_description": "無法連線後端以驗證 Git 是否已安裝。您可以繼續——如果 Git 確實缺失，建立將會失敗。",
+  "workspace_compactInitializer_gitCheckUnknown_label": "無法驗證 Git（連線問題）",
   "workspace_compactInitializer_gitNotInstalled_label": "Git 未安裝",
   "workspace_compactInitializer_gitRequiredHint_label": "需要 Git——請安裝後重啟以繼續。",
   "workspace_compactInitializer_gitRequired_description": "建立工作區需要 Git。請安裝 Git 並重啟應用程式。",

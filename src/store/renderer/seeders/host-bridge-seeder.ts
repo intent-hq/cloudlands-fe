@@ -62,9 +62,11 @@ function asRecord(arg: unknown): Record<string, unknown> {
  *
  * Call sites (e.g. `CompactWorkspaceInitializer.svelte`) read
  * `result.data.available` + `result.data.version`, so we forward the daemon
- * body verbatim under `data`. Any failure folds to `{ available:false }` (the
- * banner-suppressed default) to preserve the prior IPC contract: a missing
- * git binary is never an RPC error.
+ * body verbatim under `data`. Only a daemon-reported probe answer folds to
+ * `{ available:false }`; a transport failure (RPC timeout / daemon
+ * unreachable) folds to `{ available:'unknown' }` so the UI never renders
+ * "Git is not installed" when the check simply couldn't run. Either way a
+ * failed probe is never an RPC error.
  */
 registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_GIT, async () => {
   try {
@@ -76,7 +78,7 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_GIT, async () => {
       data: available ? { available: true, version } : { available: false },
     };
   } catch {
-    return { success: true, data: { available: false } };
+    return { success: true, data: { available: "unknown" } };
   }
 });
 

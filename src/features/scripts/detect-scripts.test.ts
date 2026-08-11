@@ -45,9 +45,6 @@ function makeFakeFilesClient(byPath: Record<string, string>): FilesClient {
     async gitStatusMap() {
       return {};
     },
-    subscribe() {
-      return () => {};
-    },
     async write() {
       return { success: true };
     },
