@@ -851,24 +851,24 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     await processImageFiles(Array.from(files));
   }
 
-  // Handle clipboard paste for images
+  // Handle clipboard paste for files (images and non-images alike)
   async function handlePaste(e: ClipboardEvent) {
     const items = e.clipboardData?.items;
     if (!items) return;
 
-    const imageFiles: File[] = [];
+    const pastedFiles: File[] = [];
     for (const item of items) {
-      if (item.type.startsWith('image/')) {
+      if (item.kind === 'file') {
         const file = item.getAsFile();
         if (file) {
-          imageFiles.push(file);
+          pastedFiles.push(file);
         }
       }
     }
 
-    if (imageFiles.length > 0) {
-      e.preventDefault(); // Prevent default paste behavior for images
-      await processImageFiles(imageFiles);
+    if (pastedFiles.length > 0) {
+      e.preventDefault(); // Prevent default paste behavior for files
+      await processImageFiles(pastedFiles);
     }
   }
 

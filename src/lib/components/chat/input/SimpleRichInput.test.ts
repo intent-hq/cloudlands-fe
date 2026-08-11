@@ -1326,4 +1326,33 @@ describe('SimpleRichInput oversized attachment placement (monorepo#1948)', () =>
     });
     expect(insertMentionCalls()).toHaveLength(0);
   });
+
+  it('places an oversized non-image file arriving via clipboard paste', async () => {
+    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+    placeAttachmentMock.mockResolvedValueOnce({
+      ok: true,
+      path: '.intent/attachments/trace.log',
+      fileName: 'trace.log',
+      size: 11 * 1024 * 1024,
+    });
+
+    render(SimpleRichInput, { props: baseProps() });
+    const file = makeFile('trace.log', 'text/plain', 11 * 1024 * 1024);
+    const dropZone = screen.getByTestId('message-input');
+    await fireEvent.paste(dropZone, {
+      clipboardData: {
+        items: [{ kind: 'file', type: 'text/plain', getAsFile: () => file }],
+      },
+    });
+
+    await waitFor(() => {
+      expect(placeAttachmentMock).toHaveBeenCalledTimes(1);
+    });
+    const [wsId, fileName] = placeAttachmentMock.mock.calls[0];
+    expect(wsId).toBe('ws-1');
+    expect(fileName).toBe('trace.log');
+    await waitFor(() => {
+      expect(insertMentionCalls()).toHaveLength(1);
+    });
+  });
 });
