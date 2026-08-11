@@ -5537,8 +5537,8 @@
   "workspace_progress_viewMonitoredPrCrossRepo_label": "Voir la PR ({repo})",
   "workspace_progress_viewMonitoredPrCrossRepo_tooltip": "Ouvre la pull request surveillée {repo}#{number} sur GitHub dans votre navigateur.",
   "workspace_card_morePrs_label": "+{count}",
-  "workspace_card_morePrs_tooltip_one": "1 autre PR surveillée active",
-  "workspace_card_morePrs_tooltip_many": "{count} autres PR surveillées actives",
+  "workspace_card_morePrs_tooltip_one": "1 autre PR de l'espace de travail",
+  "workspace_card_morePrs_tooltip_many": "{count} autres PR de l'espace de travail",
   "bgExecutor_service_generateFailed_error": "Échec de la génération",
   "bgExecutor_service_unavailable_error": "La complétion en une seule passe n'est pas disponible pour le fournisseur actuel",
   "bgExecutor_service_noResult_error": "Aucun résultat extrait de la réponse du modèle"

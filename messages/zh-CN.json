@@ -5537,8 +5537,8 @@
   "workspace_progress_viewMonitoredPrCrossRepo_label": "查看 PR({repo})",
   "workspace_progress_viewMonitoredPrCrossRepo_tooltip": "在浏览器中的 GitHub 上打开监控中的拉取请求 {repo}#{number}。",
   "workspace_card_morePrs_label": "+{count}",
-  "workspace_card_morePrs_tooltip_one": "还有 1 个活跃的监控 PR",
-  "workspace_card_morePrs_tooltip_many": "还有 {count} 个活跃的监控 PR",
+  "workspace_card_morePrs_tooltip_one": "还有 1 个工作区 PR",
+  "workspace_card_morePrs_tooltip_many": "还有 {count} 个工作区 PR",
   "bgExecutor_service_generateFailed_error": "生成失败",
   "bgExecutor_service_unavailable_error": "当前提供商不支持一次性补全",
   "bgExecutor_service_noResult_error": "未能从模型响应中提取结果"
