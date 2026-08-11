@@ -18,8 +18,10 @@ import {
   agentSessionReducer,
   bulkUpsertSessions,
   initialState as agentSessionInitialState,
+  replaceMessages,
 } from '../../agent-session/agent-session-slice';
 import {
+  chatLiveStreamPhaseChanged,
   chatStateReducer,
   chatTranscriptSnapshotApplied,
   initializeChatRequested,
@@ -242,6 +244,98 @@ describe('chatReadSaga (single-transfer hydration)', () => {
       'm-r1',
       'm-gap',
       'm-snap',
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('waits for a fresh snapshot on reopen instead of settling off prior-session meta (middle-gap heal)', async () => {
+    // Chat closed with non-truncated meta and retained rows [m1, m2]; the
+    // conversation grew past the snapshot window while closed. On reopen the
+    // hydration must NOT settle off the prior session's meta (teardown
+    // cleared it) — it waits for the new subscription's snapshot. The §7.1
+    // resume fallback (resumed: false) then serves the newest window
+    // [m4, m5]; the window-anchored backward walk fetches the middle gap
+    // (m3) and the retained history, yielding a complete transcript.
+    mocks.get.mockResolvedValue(session());
+    mocks.getConversation
+      .mockResolvedValueOnce(
+        page(
+          [
+            message('m3', 'three', { timestamp: '2026-01-01T00:00:03.000Z' }),
+            message('m4', 'four', { timestamp: '2026-01-01T00:00:04.000Z' }),
+          ],
+          { nextToken: 'older' },
+        ),
+      )
+      .mockResolvedValueOnce(
+        page([
+          message('m1', 'one', { timestamp: '2026-01-01T00:00:01.000Z' }),
+          message('m2', 'two', { timestamp: '2026-01-01T00:00:02.000Z' }),
+        ]),
+      );
+    const run = harness();
+
+    // Prior session: retained rows + settled snapshot meta.
+    run.dispatch(
+      bulkUpsertSessions([
+        session({
+          messages: [
+            message('m1', 'one', { timestamp: '2026-01-01T00:00:01.000Z' }),
+            message('m2', 'two', { timestamp: '2026-01-01T00:00:02.000Z' }),
+          ],
+        }),
+      ]),
+    );
+    run.dispatch(
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: false,
+        totalMessages: 2,
+        oldestMessageId: 'm1',
+        resumed: true,
+      }),
+    );
+    // Chat closes: subscription teardown clears the snapshot meta.
+    run.dispatch(chatLiveStreamPhaseChanged(AGENT, null));
+
+    // Reopen: hydration must wait, not settle instantly off stale meta.
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    await settle();
+    expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
+    expect(mocks.getConversation).not.toHaveBeenCalled();
+
+    // §7.1 resume fallback: the daemon declines the anchor and serves the
+    // newest truncated window; the subscribe saga discards the retained
+    // store-only rows (resumed: false) and records the fresh meta.
+    run.dispatch(
+      replaceMessages(AGENT, [
+        message('m4', 'four', { timestamp: '2026-01-01T00:00:04.000Z' }),
+        message('m5', 'five', { timestamp: '2026-01-01T00:00:05.000Z' }),
+      ]),
+    );
+    run.dispatch(
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: true,
+        totalMessages: 5,
+        oldestMessageId: 'm4',
+        resumed: false,
+      }),
+    );
+    await settle();
+    await settle();
+
+    expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+    expect(mocks.getConversation.mock.calls).toEqual([
+      [AGENT, 200, undefined, 'm4'],
+      [AGENT, 200, 'older'],
+    ]);
+    // Complete transcript — no middle gap.
+    expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
+      'm1',
+      'm2',
+      'm3',
+      'm4',
+      'm5',
     ]);
     run.task.cancel();
     await run.task.toPromise();
