@@ -165,6 +165,27 @@ describe('copyDebugFile', () => {
     const out = await fs.readFile(dest, 'utf8');
     expect(out).toBe('[truncated: last 5 of 15 bytes]\nCCCCC');
   });
+
+  it('uses the actual bytes read when the file shrinks between stat and read', async () => {
+    const src = path.join(dataDir, 'shrinking.log');
+    const dest = path.join(dataDir, 'shrinking.out');
+    await fs.writeFile(src, 'AAAAABBBBBCCCCC'); // 15 bytes on disk
+    const realStat = fs.stat.bind(fs);
+    const statSpy = vi.spyOn(fs, 'stat').mockImplementation(async (p, ...rest) => {
+      const stats = await realStat(p as Parameters<typeof realStat>[0], ...(rest as []));
+      if (p === src) Object.defineProperty(stats, 'size', { value: 20 });
+      return stats;
+    });
+    try {
+      // stat reports 20 bytes → read starts at offset 10 but only 5 remain
+      await copyDebugFile({ sourcePath: src, relativePath: 'x', tailBytes: 10 }, dest);
+      const out = await fs.readFile(dest, 'utf8');
+      expect(out).toBe('[truncated: last 5 of 20 bytes]\nCCCCC');
+      expect(out).not.toContain('\0');
+    } finally {
+      statSpy.mockRestore();
+    }
+  });
 });
 
 

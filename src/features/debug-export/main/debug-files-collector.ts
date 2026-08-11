@@ -66,7 +66,12 @@ export async function copyDebugFile(file: DebugFile, destPath: string): Promise<
     await fs.writeFile(destPath, file.content);
     return;
   }
-  if (!file.sourcePath) return;
+  if (!file.sourcePath) {
+    logger.warn('debug file entry has neither content nor sourcePath; skipping', {
+      relativePath: file.relativePath,
+    });
+    return;
+  }
   if (file.tailBytes === undefined) {
     await fs.copyFile(file.sourcePath, destPath);
     return;
@@ -79,13 +84,21 @@ export async function copyDebugFile(file: DebugFile, destPath: string): Promise<
   const handle = await fs.open(file.sourcePath, 'r');
   try {
     const tail = Buffer.alloc(file.tailBytes);
-    await handle.read(tail, 0, file.tailBytes, stats.size - file.tailBytes);
+    // The file can shrink between the stat above and this read (daily
+    // rotation/retention), so trust bytesRead rather than the requested
+    // length to avoid padding the bundle entry with NUL bytes.
+    const { bytesRead } = await handle.read(
+      tail,
+      0,
+      file.tailBytes,
+      stats.size - file.tailBytes,
+    );
     // i18n-ignore (marker line inside a diagnostic zip, not UI)
     const marker = Buffer.from(
-      `[truncated: last ${file.tailBytes} of ${stats.size} bytes]\n`,
+      `[truncated: last ${bytesRead} of ${stats.size} bytes]\n`,
       'utf8',
     );
-    await fs.writeFile(destPath, Buffer.concat([marker, tail]));
+    await fs.writeFile(destPath, Buffer.concat([marker, tail.subarray(0, bytesRead)]));
   } finally {
     await handle.close();
   }
