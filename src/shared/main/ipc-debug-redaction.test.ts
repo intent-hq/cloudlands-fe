@@ -8,17 +8,25 @@ describe('IPC debug payload redaction', () => {
     );
   });
 
-  it('redacts sensitive fields while retaining diagnostic metadata', () => {
-    expect(
-      redactIpcDebugData('workspace:update', {
-        workspaceId: 'ws-1',
-        path: '/private/repository',
-        nested: { token: 'secret', count: 2 },
-      }),
-    ).toEqual({
+  it('summarizes non-sensitive channels without retaining any payload values', () => {
+    const secret = 'unknown-field-secret';
+    const summary = redactIpcDebugData('workspace:update', {
       workspaceId: 'ws-1',
-      path: '[redacted]',
-      nested: { token: '[redacted]', count: 2 },
+      path: '/private/repository',
+      innocentLookingField: secret,
+      nested: { token: 'nested-secret', count: 2 },
     });
+
+    expect(summary).toEqual({ type: 'object', keyCount: 4 });
+    expect(JSON.stringify(summary)).not.toContain(secret);
+    expect(JSON.stringify(summary)).not.toContain('nested-secret');
+  });
+
+  it('retains only collection size or primitive type metadata', () => {
+    expect(redactIpcDebugData('workspace:list', ['secret-a', 'secret-b'])).toEqual({
+      type: 'array',
+      length: 2,
+    });
+    expect(redactIpcDebugData('workspace:get', 'secret')).toEqual({ type: 'string' });
   });
 });

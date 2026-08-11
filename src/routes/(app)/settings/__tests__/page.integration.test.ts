@@ -123,6 +123,9 @@ type SettingsCatalog = Awaited<ReturnType<typeof appClient.settings.list>>;
 let settingsCatalogResponse: SettingsCatalog;
 
 beforeAll(() => {
+  (window as unknown as { intentFlags?: { enableReduxLogger: boolean } }).intentFlags = {
+    enableReduxLogger: false,
+  };
   storeContext = initAppStore(appStore);
 });
 
@@ -146,9 +149,6 @@ beforeEach(() => {
   (globalThis as typeof globalThis & { __APP_VERSION__: string }).__APP_VERSION__ = '2.0.10';
   window.history.pushState({}, '', '/settings#default-model');
   mocks.page.url = new URL(window.location.href);
-  (window as unknown as { intentFlags?: { enableReduxLogger: boolean } }).intentFlags = {
-    enableReduxLogger: false,
-  };
   (
     window.localStorage.getItem as unknown as { mockReturnValue(value: string | null): void }
   ).mockReturnValue(null);
@@ -571,7 +571,7 @@ describe('settings back and footer behavior', () => {
     expect(mocks.navigateBack).toHaveBeenCalledOnce();
   });
 
-  it('renders version/support state and dispatches install when an update is ready', async () => {
+  it('renders version and support state when the app is up to date', () => {
     renderSettings('/settings?tab=general');
     expect(screen.getByText(/v2\.0\.10/)).toBeTruthy();
     expect(screen.getByText('Up to date')).toBeTruthy();
@@ -579,8 +579,12 @@ describe('settings back and footer behavior', () => {
       'https://www.intentapp.dev/docs',
     );
     expect(screen.getByRole('link', { name: 'Support' }).getAttribute('target')).toBe('_blank');
+  });
+
+  it('dispatches install when an update is ready', async () => {
     appStore.dispatch(simulateSetState({ status: 'downloaded' }));
-    const update = await screen.findByRole('button', { name: 'Update available' });
+    renderSettings('/settings?tab=general');
+    const update = screen.getByRole('button', { name: 'Update available' });
     const dispatchSpy = vi.spyOn(appStore, 'dispatch');
     await fireEvent.click(update);
     expect(dispatchSpy).toHaveBeenCalledWith(installUpdate());

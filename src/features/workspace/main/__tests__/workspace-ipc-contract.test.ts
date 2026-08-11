@@ -59,7 +59,6 @@ vi.mock('../../../notifications/main/notification.service', () => ({
   getNotificationService: vi.fn(() => ({ start: vi.fn() })),
 }));
 vi.mock('../../../metadata-fs/main/metadata-fs-factory', () => ({ clearMetadataFSCache: vi.fn() }));
-vi.mock('../../../notes/main/notes.service', () => ({ notesService: {} }));
 
 import { WORKSPACE_CHANNELS } from '../../../../shared/ipc/channels';
 import { setupWorkspaceIPC } from '../workspace.ipc';

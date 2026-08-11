@@ -18,6 +18,11 @@ import type {
 } from '../../../store/main/slices/agent-subscriptions/types';
 import { emptyWorkspaceSubscriptionState } from '../../../store/main/slices/agent-subscriptions/types';
 
+/**
+ * Canonical main-process compatibility owner for agent subscription state.
+ * Renderer product state is daemon-owned and reads through `agent.getSubscriptions`;
+ * main operations and their legacy IPC snapshot must both use this service.
+ */
 let state: AgentSubscriptionsState = initialState;
 
 function reduce(action: { type: string; payload?: unknown }): void {

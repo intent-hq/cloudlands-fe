@@ -95,9 +95,6 @@ vi.mock('$lib/components/modals/WorkspaceWarningDialogs.svelte', async () => ({
 vi.mock('$lib/components/modals/ReleaseNotesModal.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
-vi.mock('$features/workspace/SpacesSwitcherOverlay.svelte', async () => ({
-  default: (await import('./mocks/Marker.svelte')).default,
-}));
 vi.mock('$features/stats/StatsOverlay.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));

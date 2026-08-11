@@ -235,9 +235,9 @@ export default defineConfig(({ mode }) => {
   // Web profile: `INTENT_BUILD_TARGET=web` (set by the dev:web / build:web
   // scripts) builds the renderer for a plain browser — no Electron main or
   // preload. svelte.config.js switches the adapter output to dist/web for the
-  // same flag. At runtime, VITE_INTENTD_WS_URL selects the live browser
-  // transport when window.electronAPI is absent; without it the app boots on
-  // the browser mock.
+  // same flag. Production gets its live daemon URL from /runtime-config.js so
+  // credentials never enter immutable application chunks. VITE_INTENTD_WS_URL
+  // remains a dev:web convenience; without either URL the app uses the mock.
   const isWebBuild = process.env.INTENT_BUILD_TARGET === 'web';
   const useBundledMessages = mode === 'production';
   const i18nVirtualMessages = '\0intent-paraglide-messages';
@@ -245,12 +245,15 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '');
 
   const webDefines = {};
-  if (isWebBuild && !env.VITE_INTENTD_WS_URL && env.VITE_ENABLE_BROWSER_MOCK === undefined) {
+  const isProductionWebBuild = isWebBuild && mode === 'production';
+  const hasBuildTimeBrowserWsUrl = !isProductionWebBuild && Boolean(env.VITE_INTENTD_WS_URL);
+  if (isWebBuild && !hasBuildTimeBrowserWsUrl && env.VITE_ENABLE_BROWSER_MOCK === undefined) {
     // Production web builds are gated out of the browser mock by default
     // (hooks.client.ts only loads it in DEV or under an explicit opt-in).
     // Default the opt-in ON for web builds with no daemon WS URL configured,
     // so `build:web` output boots standalone on mock data. An explicit
-    // VITE_ENABLE_BROWSER_MOCK or VITE_INTENTD_WS_URL always wins.
+    // VITE_ENABLE_BROWSER_MOCK or a development VITE_INTENTD_WS_URL wins. A
+    // production runtime URL still overrides the installed mock transport.
     webDefines['import.meta.env.VITE_ENABLE_BROWSER_MOCK'] = JSON.stringify('true');
   }
 
@@ -481,7 +484,11 @@ export default defineConfig(({ mode }) => {
 
     define: {
       'process.env.IS_ELECTRON': JSON.stringify(!isWebBuild),
-      'process.env.VITE_INTENTD_WS_URL': JSON.stringify(env.VITE_INTENTD_WS_URL ?? ''),
+      // Never compile production web credentials into versioned static JS.
+      // /runtime-config.js is loaded before the application bootstrap instead.
+      'process.env.VITE_INTENTD_WS_URL': JSON.stringify(
+        isProductionWebBuild ? '' : (env.VITE_INTENTD_WS_URL ?? ''),
+      ),
       ...webDefines,
       __APP_VERSION__: JSON.stringify(packageJson.version),
       __DEV_GIT_BRANCH__: JSON.stringify(

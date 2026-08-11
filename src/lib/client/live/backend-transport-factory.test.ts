@@ -5,7 +5,7 @@
  * module after `vi.resetModules()`. The Electron preload bridge is simulated
  * by stubbing `window.electronAPI` (the global test-setup installs a mock; it
  * is removed for the plain-browser cases) and the WebSocket URL comes from
- * `vi.stubEnv("VITE_INTENTD_WS_URL", ...)`.
+ * runtime configuration or the development-only Vite environment fallback.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -44,6 +44,17 @@ describe("resolveBackendTransport", () => {
   it("picks the browser WebSocket transport when the bridge is absent and a WS URL is set", async () => {
     vi.stubGlobal("window", { ...window, electronAPI: undefined });
     vi.stubEnv("VITE_INTENTD_WS_URL", "ws://localhost:9100/rpc?token=abc");
+    const { transport, BrowserWebSocketTransport } = await resolveFreshTransport();
+    expect(transport).toBeInstanceOf(BrowserWebSocketTransport);
+    expect(transport.isAvailable()).toBe(true);
+  });
+
+  it("picks the browser WebSocket transport from production runtime configuration", async () => {
+    vi.stubGlobal("window", { ...window, electronAPI: undefined });
+    vi.stubGlobal("__INTENT_RUNTIME_CONFIG__", {
+      intentdWsUrl: "wss://daemon.example/rpc?token=runtime",
+    });
+    vi.stubEnv("VITE_INTENTD_WS_URL", "");
     const { transport, BrowserWebSocketTransport } = await resolveFreshTransport();
     expect(transport).toBeInstanceOf(BrowserWebSocketTransport);
     expect(transport.isAvailable()).toBe(true);

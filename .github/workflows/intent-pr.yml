@@ -318,7 +318,7 @@ jobs:
     # pay their own checkout/install overhead (and queued serially in the
     # single-slot era), so one job stays cheaper — vitest parallelism uses
     # the 64 cores within the single job.
-    name: Unit Tests
+    name: Unit & Integration Tests
     needs: route
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
     timeout-minutes: 30
@@ -347,6 +347,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Unit tests
         run: pnpm run test:unit
+      - name: Integration tests
+        run: pnpm run test:integration
 
   # Single required status check for branch protection: fans in pr-title,
   # conflict-markers, and the three heavy jobs (checks / build-web / test).

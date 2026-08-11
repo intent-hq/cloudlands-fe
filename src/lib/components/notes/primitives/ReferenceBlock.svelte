@@ -21,6 +21,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { getNavigationContext } from '$lib/components/layout/panel-system/panel-context';
   import { m } from '$shared/paraglide/messages.js';
+  import { resolveReferenceSnapshot } from './utils/reference-snapshot';
 
   const logger = createLogger('ReferenceBlock');
 
@@ -93,15 +94,12 @@
       loading = false;
       return;
     }
-    if (primitive.snapshot) {
-      resolvedCode = primitive.snapshot.code;
-      editorContent = primitive.snapshot.code;
-      // Some producers emit the legacy `language` field instead of `languageId`.
-      resolvedLanguage =
-        primitive.snapshot.languageId ||
-        (primitive.snapshot as { language?: string }).language ||
-        'text';
-      resolvedRange = primitive.target?.range || null;
+    const snapshot = resolveReferenceSnapshot(primitive);
+    if (snapshot) {
+      resolvedCode = snapshot.code;
+      editorContent = snapshot.code;
+      resolvedLanguage = snapshot.languageId;
+      resolvedRange = snapshot.range;
     } else {
       error = m.notes_referenceBlock_noSnapshot_error();
     }

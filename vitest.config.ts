@@ -45,7 +45,8 @@ export default defineConfig(async () => {
         // vitest doesn't double-collect their test files alongside the primary tree.
         '**/.wt-*/**',
         'test/**', // Exclude Playwright tests directory (package-root only; do not swallow src/test/**)
-        'tests/integration/**', // Dedicated Node integration config owns this suite.
+        // Required CI runs this suite separately with its Node-specific setup.
+        'tests/integration/**',
         '**/*.ct.spec.ts', // Exclude Playwright component tests
         '**/*.visual.spec.ts', // Exclude Playwright visual harnesses (browser-owned environment)
         '**/remote-env.test.ts', // Exclude remote env tests - requires real environment

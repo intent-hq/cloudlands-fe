@@ -7,6 +7,33 @@ export interface AgentLauncherPreview {
   response: string;
 }
 
+export interface AgentLauncherItem {
+  agent: AgentSession;
+  isRunning: boolean;
+  preview: AgentLauncherPreview;
+}
+
+export function deriveAgentLauncherItems(
+  agents: AgentSession[],
+  limit: number,
+  getIsRunning: (agent: AgentSession) => boolean,
+  buildPreview: (agent: AgentSession, isRunning: boolean) => AgentLauncherPreview,
+): { launcherAgents: AgentLauncherItem[]; runningAgents: AgentSession[] } {
+  const agentStates = agents.map((agent) => ({ agent, isRunning: getIsRunning(agent) }));
+  const runningAgents = agentStates.filter(({ isRunning }) => isRunning).map(({ agent }) => agent);
+  const launcherAgents = agentStates
+    .filter(({ agent, isRunning }) => shouldShowAgentInLauncher(agent, isRunning))
+    .sort((a, b) => compareAgentsByLastMessage(a.agent, b.agent))
+    .slice(0, limit)
+    .map(({ agent, isRunning }) => ({
+      agent,
+      isRunning,
+      preview: buildPreview(agent, isRunning),
+    }));
+
+  return { launcherAgents, runningAgents };
+}
+
 export function shouldShowAgentInLauncher(agent: AgentSession, isRunning: boolean): boolean {
   return isRunning || agent.hasUnread === true;
 }

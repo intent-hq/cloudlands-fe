@@ -6,7 +6,6 @@ import List from './breadcrumb-list.svelte';
 import Page from './breadcrumb-page.svelte';
 import Separator from './breadcrumb-separator.svelte';
 
-export { breadcrumbFixtures } from './breadcrumb.fixtures';
 export { breadcrumbMetadata } from './breadcrumb.meta';
 
 export {

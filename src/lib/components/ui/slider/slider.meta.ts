@@ -6,7 +6,7 @@ export const sliderMetadata = parseUiComponentMetadata({
   source: 'src/lib/components/ui/slider/slider.svelte',
   publicImport: '$lib/components/ui/slider',
   legacyImports: [],
-  exports: ['Root', 'Slider', 'sliderFixtures', 'sliderMetadata'],
+  exports: ['Root', 'Slider', 'sliderMetadata'],
   category: 'primitive',
   owner: '008-B',
   callers: ['src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte'],

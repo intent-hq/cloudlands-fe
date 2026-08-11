@@ -6,14 +6,7 @@ export const scrollAreaMetadata = parseUiComponentMetadata({
   source: 'src/lib/components/ui/scroll-area/index.ts',
   publicImport: '$lib/components/ui/scroll-area',
   legacyImports: [],
-  exports: [
-    'Root',
-    'ScrollArea',
-    'ScrollAreaScrollbar',
-    'Scrollbar',
-    'scrollAreaFixtures',
-    'scrollAreaMetadata',
-  ],
+  exports: ['Root', 'ScrollArea', 'ScrollAreaScrollbar', 'Scrollbar', 'scrollAreaMetadata'],
   category: 'primitive',
   owner: '012-F2',
   callers: [

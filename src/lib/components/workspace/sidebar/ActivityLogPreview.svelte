@@ -10,6 +10,7 @@
   import { sharedTimeManager } from '$lib/utils/shared-time-manager.svelte';
   import { cn } from '$lib/utils';
   import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import { Button } from '$lib/components/ui/button';
 
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
@@ -147,10 +148,9 @@
     }
   }
 
-  function handleAvatarClick(mouseEvent: MouseEvent, event: WorkspaceEvent) {
+  function handleAvatarClick(event: WorkspaceEvent) {
     const agentId = getEventAgentId(event);
     if (!onShowAgent || !agentId) return;
-    mouseEvent.stopPropagation();
     onShowAgent(agentId, event);
   }
 </script>
@@ -161,57 +161,62 @@
   {@const time = rowTimes[index]}
   {@const clickable = isEventClickable(row.event)}
   {@const eventAgentId = getEventAgentId(row.event)}
-  <button
-    type="button"
+  <div
     data-activity-preview-item
     class={cn(
       'group relative flex items-start gap-3 w-full text-left py-1 pl-0 pr-2 rounded-md outline-none',
       clickable ? 'cursor-pointer' : 'cursor-default',
     )}
-    onclick={() => handleEventClick(row.event)}
-    disabled={!clickable}
     in:slide={{ duration: 200 }}
   >
-    <!-- Content -->
-    <div class="flex-1 min-w-0 flex items-center gap-1.5">
-      {#if eventAgentId}
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-        <span
-          class="bg-sidebar py-0.5 shrink-0 flex items-center justify-center w-3.5"
-          title="Open agent"
-          onclick={(e) => handleAvatarClick(e, row.event)}
-        >
-          <AuggieAvatar size={14} agentId={eventAgentId} />
-        </span>
-      {:else}
-        <div class="bg-sidebar py-0.5">
-          <Fa
-            {icon}
-            size="xs"
-            class="text-ghost shrink-0 w-3.5 opacity-50 transition-opacity group-hover:opacity-100"
-          />
-        </div>
-      {/if}
+    {#if eventAgentId && onShowAgent}
+      <Button
+        variant="plain"
+        size="icon-xs"
+        iconOnly
+        class="bg-sidebar !h-auto !w-3.5 shrink-0 py-0.5"
+        title={m.workspace_activityPreview_openAgent_ariaLabel()}
+        aria-label={m.workspace_activityPreview_openAgent_ariaLabel()}
+        onclick={() => handleAvatarClick(row.event)}
+      >
+        <AuggieAvatar size={14} agentId={eventAgentId} />
+      </Button>
+    {:else if eventAgentId}
+      <span class="bg-sidebar flex w-3.5 shrink-0 items-center justify-center py-0.5">
+        <AuggieAvatar size={14} agentId={eventAgentId} />
+      </span>
+    {:else}
+      <div class="bg-sidebar py-0.5">
+        <Fa
+          {icon}
+          size="xs"
+          class="text-ghost shrink-0 w-3.5 opacity-50 transition-opacity group-hover:opacity-100"
+        />
+      </div>
+    {/if}
+
+    <button
+      type="button"
+      class="flex min-w-0 flex-1 items-center gap-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      onclick={() => handleEventClick(row.event)}
+      disabled={!clickable}
+    >
       <span
         class={cn(
-          'text-ui-sm truncate text-muted-foreground transition-colors',
+          'text-ui-sm min-w-0 flex-1 truncate text-muted-foreground transition-colors',
           clickable && 'group-hover:text-foreground',
         )}
       >
         {title}
       </span>
-      <!-- {#if row.count > 1}
-        <span class="text-ui-sm text-subtle shrink-0">×{row.count}</span>
-      {/if} -->
-    </div>
 
-    <!-- Time (only when different from the previous row) -->
-    {#if time?.show}
-      <span class="text-ui-sm text-subtle shrink-0 mt-0.75" title={time.full}>
-        {time.label}
-      </span>
-    {/if}
-  </button>
+      {#if time?.show}
+        <span class="text-ui-sm text-subtle shrink-0 mt-0.75" title={time.full}>
+          {time.label}
+        </span>
+      {/if}
+    </button>
+  </div>
 {/snippet}
 
 {#if rows.length > 0 || onViewAll}
@@ -258,7 +263,11 @@
             size="xs"
             class="text-ghost shrink-0 w-3.5 mr-0.5"
           />
-          <div class="flex-1 text-left text-ui-sm">{expanded ? 'Show less' : 'Show more'}</div>
+          <div class="flex-1 text-left text-ui-sm">
+            {expanded
+              ? m.workspace_activityPreview_showLess_label()
+              : m.workspace_activityPreview_showMore_label()}
+          </div>
         </button>
       {/if}
 

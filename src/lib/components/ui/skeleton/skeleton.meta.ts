@@ -9,7 +9,7 @@ export const skeletonMetadata = parseUiComponentMetadata({
     '$lib/components/ui/skeleton/index.js',
     '$lib/components/ui/skeleton/skeleton.svelte',
   ],
-  exports: ['Root', 'Skeleton', 'skeletonFixtures', 'skeletonMetadata'],
+  exports: ['Root', 'Skeleton', 'skeletonMetadata'],
   category: 'primitive',
   owner: '007-B1',
   callers: [

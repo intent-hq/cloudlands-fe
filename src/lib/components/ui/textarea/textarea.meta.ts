@@ -6,7 +6,7 @@ export const textareaMetadata = parseUiComponentMetadata({
   source: 'src/lib/components/ui/textarea/textarea.svelte',
   publicImport: '$lib/components/ui/textarea',
   legacyImports: ['$lib/components/ui/textarea/textarea.svelte'],
-  exports: ['Root', 'Textarea', 'textareaFixtures', 'textareaMetadata'],
+  exports: ['Root', 'Textarea', 'textareaMetadata'],
   category: 'primitive',
   owner: '007-B2',
   callers: [

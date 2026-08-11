@@ -1,4 +1,6 @@
-import { all, call, delay, put, race, take, takeEvery, takeLeading } from 'typed-redux-saga';
+import { buffers, channel, type Channel } from 'redux-saga';
+import type { SagaGenerator } from 'typed-redux-saga';
+import { all, call, delay, flush, fork, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
@@ -38,6 +40,11 @@ interface WireResult {
   delegationGroups?: WireDelegationGroup[];
   agentStatuses?: Record<string, AgentStatus>;
 }
+
+type WorkspaceRefreshMailbox = Channel<true>;
+type WorkspaceRefreshCoordinator = {
+  mailboxes: Map<string, WorkspaceRefreshMailbox>;
+};
 
 function matchesWorkspaceCleanup(wsId: string) {
   return (action: { type: string; payload?: unknown }) =>
@@ -129,16 +136,46 @@ function* requestSubscriptionFetchWorker(action: ReturnType<typeof requestSubscr
   });
 }
 
-function* refreshWorkspaceSubscriptionsWorker(
-  action: ReturnType<typeof refreshWorkspaceSubscriptionEntriesRequested>,
-) {
-  const [wsId] = action.payload;
-  if (!wsId) return;
+function* refreshWorkspaceSubscriptions(wsId: string): SagaGenerator<boolean> {
   const agentIds: string[] = yield* selectTrackedAgentIds.effect(wsId);
-  yield* race({
+  const { cleanup } = yield* race({
     reads: all(agentIds.map((agentId) => call(fetchSnapshotSaga, wsId, agentId))),
     cleanup: take(matchesWorkspaceCleanup(wsId)),
   });
+  return cleanup !== undefined;
+}
+
+function* runWorkspaceRefreshMailbox(
+  coordinator: WorkspaceRefreshCoordinator,
+  wsId: string,
+  mailbox: WorkspaceRefreshMailbox,
+): SagaGenerator<void> {
+  try {
+    while (true) {
+      if (yield* call(refreshWorkspaceSubscriptions, wsId)) return;
+      const pending = yield* flush(mailbox);
+      if (!Array.isArray(pending) || pending.length === 0) return;
+    }
+  } finally {
+    if (coordinator.mailboxes.get(wsId) === mailbox) coordinator.mailboxes.delete(wsId);
+    mailbox.close();
+  }
+}
+
+function* enqueueWorkspaceRefresh(
+  coordinator: WorkspaceRefreshCoordinator,
+  action: ReturnType<typeof refreshWorkspaceSubscriptionEntriesRequested>,
+): SagaGenerator<void> {
+  const [wsId] = action.payload;
+  if (!wsId) return;
+  const existing = coordinator.mailboxes.get(wsId);
+  if (existing) {
+    yield* put(existing, true);
+    return;
+  }
+  const mailbox = channel<true>(buffers.sliding(1));
+  coordinator.mailboxes.set(wsId, mailbox);
+  yield* fork(runWorkspaceRefreshMailbox, coordinator, wsId, mailbox);
 }
 
 function* deleteWorkspaceSubscriptionsWorker(action: ReturnType<typeof workspaceDeleted>) {
@@ -148,9 +185,14 @@ function* deleteWorkspaceSubscriptionsWorker(action: ReturnType<typeof workspace
 }
 
 export function* agentSubscriptionReadSaga() {
+  const refreshCoordinator: WorkspaceRefreshCoordinator = { mailboxes: new Map() };
   yield* all([
-    takeLeading(requestSubscriptionFetch, requestSubscriptionFetchWorker),
-    takeLeading(refreshWorkspaceSubscriptionEntriesRequested, refreshWorkspaceSubscriptionsWorker),
+    takeEvery(requestSubscriptionFetch, requestSubscriptionFetchWorker),
+    takeEvery(
+      refreshWorkspaceSubscriptionEntriesRequested,
+      enqueueWorkspaceRefresh,
+      refreshCoordinator,
+    ),
     takeEvery(workspaceDeleted, deleteWorkspaceSubscriptionsWorker),
   ]);
 }

@@ -31,6 +31,7 @@
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     onActiveTabBoundsChange?: (bounds: { left: number; width: number } | null) => void;
@@ -206,7 +207,10 @@
     if (currentIndex < 0 || !targetId) return;
 
     appStore.dispatch(moveWorkspace(workspaceId, targetId, direction === -1 ? 'before' : 'after'));
-    reorderAnnouncement = `Moved ${workspaceById.get(workspaceId)?.title || 'space'} to position ${targetIndex + 1}`;
+    reorderAnnouncement = m.layout_workspaceTabStrip_reorderAnnouncement({
+      name: workspaceById.get(workspaceId)?.title || m.layout_workspaceTabStrip_untitled_label(),
+      position: targetIndex + 1,
+    });
     requestAnimationFrame(() => tabButtons.get(workspaceId)?.focus());
   }
 
@@ -280,7 +284,10 @@
     if (sourceId && sourceId !== workspaceId && dragOverPlacement) {
       const targetIndex = visibleTabIds.indexOf(workspaceId);
       appStore.dispatch(moveWorkspace(sourceId, workspaceId, dragOverPlacement));
-      reorderAnnouncement = `Moved ${workspaceById.get(sourceId)?.title || 'space'} to position ${targetIndex + 1}`;
+      reorderAnnouncement = m.layout_workspaceTabStrip_reorderAnnouncement({
+        name: workspaceById.get(sourceId)?.title || m.layout_workspaceTabStrip_untitled_label(),
+        position: targetIndex + 1,
+      });
     }
     draggedWorkspaceId = null;
     dragOverWorkspaceId = null;
@@ -299,7 +306,7 @@
 {#if $workspaceTabOrder$.length > 0}
   <div
     class="flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pr-0.5 scrollbar-none"
-    aria-label="Open spaces"
+    aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
     role="tablist"
     data-workspace-tab-strip
   >
@@ -340,7 +347,10 @@
                 {#if taskProgress.total > 0}
                   <div
                     class="flex items-center gap-2"
-                    aria-label={`${taskProgress.completed} of ${taskProgress.total} tasks complete`}
+                    aria-label={m.layout_workspaceTabStrip_tasksComplete_ariaLabel({
+                      completed: taskProgress.completed,
+                      total: taskProgress.total,
+                    })}
                     data-workspace-tab-progress
                   >
                     <div class="flex h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
@@ -362,10 +372,13 @@
                   <div
                     class="flex items-center -space-x-1.5"
                     role="list"
-                    aria-label="Running agents"
+                    aria-label={m.layout_workspaceTabStrip_runningAgents_ariaLabel()}
                   >
                     {#each runningAgentIds.slice(0, 5) as agentId (agentId)}
-                      <span role="listitem" aria-label="Running agent">
+                      <span
+                        role="listitem"
+                        aria-label={m.layout_workspaceTabStrip_runningAgent_ariaLabel()}
+                      >
                         <AugieAvatarWithState {agentId} size={18} state="running" />
                       </span>
                     {/each}
@@ -459,10 +472,14 @@
                 tabindex={isCurrent ? 0 : -1}
               >
                 {#if workspace.activity === 'agent_running'}
-                  <span class="size-1.5 shrink-0 rounded-full bg-success" aria-label="Agent working"
+                  <span
+                    class="size-1.5 shrink-0 rounded-full bg-success"
+                    aria-label={m.layout_workspaceTabStrip_agentWorking_ariaLabel()}
                   ></span>
                 {/if}
-                <span class="truncate">{workspace.title?.trim() || 'Untitled'}</span>
+                <span class="truncate"
+                  >{workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label()}</span
+                >
               </button>
               <button
                 type="button"
@@ -471,7 +488,9 @@
                   isCurrent ? 'opacity-70' : 'opacity-0 group-hover/workspace-tab:opacity-100',
                 )}
                 onclick={(event) => closeWorkspace(workspaceId, event)}
-                aria-label={`Close ${workspace.title?.trim() || 'Untitled'}`}
+                aria-label={m.layout_workspaceTabStrip_close_ariaLabel({
+                  name: workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label(),
+                })}
               >
                 <Fa icon={faXmark} size="xs" />
               </button>
@@ -529,7 +548,7 @@
               onclick={() => openWorkspace(workspaceId)}
               onkeydown={(event) => handleTabKeydown(event, workspaceId)}
               role="tab"
-              aria-label={`Loading workspace ${workspaceId}`}
+              aria-label={m.layout_workspaceTabStrip_loading_ariaLabel({ workspaceId })}
               aria-selected={isCurrent}
               aria-current={isCurrent ? 'page' : undefined}
               tabindex={isCurrent ? 0 : -1}
@@ -543,7 +562,7 @@
               type="button"
               class="mr-1 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle opacity-70 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               onclick={(event) => closeWorkspace(workspaceId, event)}
-              aria-label={`Close ${workspaceId}`}
+              aria-label={m.layout_workspaceTabStrip_close_ariaLabel({ name: workspaceId })}
             >
               <Fa icon={faXmark} size="xs" />
             </button>

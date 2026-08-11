@@ -21,7 +21,6 @@ export const breadcrumbMetadata = parseUiComponentMetadata({
     'Page',
     'Root',
     'Separator',
-    'breadcrumbFixtures',
     'breadcrumbMetadata',
   ],
   category: 'primitive',

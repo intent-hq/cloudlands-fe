@@ -6,7 +6,6 @@ import Header from './card-header.svelte';
 import Title from './card-title.svelte';
 import Action from './card-action.svelte';
 
-export { cardFixtures } from './card.fixtures';
 export { cardMetadata } from './card.meta';
 
 export {

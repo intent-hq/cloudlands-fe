@@ -34,6 +34,11 @@ import {
   rendererSubscriptions,
   windowCloseListeners,
 } from './renderer-subscription-registry';
+import {
+  getAgentSubscriptions,
+  getAgentSubscriptionStatus,
+  getDelegationGroupsForParent,
+} from './agent-subscription-state.service';
 
 const logger = new Logger('EventsIPC');
 
@@ -250,20 +255,8 @@ export function setupEventsIPC(): void {
     EVENTS_CHANNELS.GET_AGENT_SUBSCRIPTIONS,
     async (_event, params: { workspaceId: string; agentId: string }) => {
       try {
-        const { selectAgentSubscriptions, selectDelegationGroupsForParent, selectAgentStatus } =
-          await import('../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
-        const { getMainState } = await import('../../../store/main/redux-store-bridge');
-        const state = getMainState();
-        const subscriptions = selectAgentSubscriptions.select(
-          state,
-          params.workspaceId,
-          params.agentId,
-        );
-        const delegationGroups = selectDelegationGroupsForParent.select(
-          state,
-          params.workspaceId,
-          params.agentId,
-        );
+        const subscriptions = getAgentSubscriptions(params.workspaceId, params.agentId);
+        const delegationGroups = getDelegationGroupsForParent(params.workspaceId, params.agentId);
 
         // Collect all watched agent IDs from subscriptions
         const allWatchedAgentIds = new Set<string>();
@@ -276,7 +269,7 @@ export function setupEventsIPC(): void {
         // Get real-time status for all watched agents
         const agentStatuses: Record<string, string> = {};
         for (const agentId of allWatchedAgentIds) {
-          agentStatuses[agentId] = selectAgentStatus.select(state, params.workspaceId, agentId);
+          agentStatuses[agentId] = getAgentSubscriptionStatus(params.workspaceId, agentId);
         }
 
         logger.info('Returning agent subscriptions', {
@@ -311,7 +304,7 @@ export function setupEventsIPC(): void {
             for (const aid of group.expectedAgentIds) {
               groupAgentStatuses[aid] = group.completedAgentIds.includes(aid)
                 ? 'completed'
-                : selectAgentStatus.select(state, params.workspaceId, aid);
+                : getAgentSubscriptionStatus(params.workspaceId, aid);
             }
             return {
               groupId: group.groupId,

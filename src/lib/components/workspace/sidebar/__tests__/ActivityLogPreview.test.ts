@@ -79,4 +79,29 @@ describe('ActivityLogPreview', () => {
       expect(container.querySelectorAll('[data-activity-preview-item]')).toHaveLength(3);
     });
   });
+
+  it('renders the agent avatar action as a keyboard-accessible sibling control', async () => {
+    const event: WorkspaceEvent = {
+      ...makeEvent(0),
+      type: 'agent:idle',
+      data: { agentId: 'agent-1', agentName: 'Review agent' },
+    };
+    const onShowAgent = vi.fn();
+    const { container } = render(ActivityLogPreview, {
+      props: { events: [event], onShowAgent },
+    });
+
+    const item = container.querySelector('[data-activity-preview-item]')!;
+    const avatarAction = screen.getByRole('button', { name: 'Open agent' });
+    const rowAction = item.querySelector(':scope > button');
+    expect(avatarAction.closest('[data-activity-preview-item]')).toBe(item);
+    expect(rowAction?.parentElement).toBe(item);
+    expect(avatarAction.contains(rowAction)).toBe(false);
+    expect(rowAction?.contains(avatarAction)).toBe(false);
+
+    avatarAction.focus();
+    expect(document.activeElement).toBe(avatarAction);
+    await fireEvent.click(avatarAction);
+    expect(onShowAgent).toHaveBeenCalledWith('agent-1', event);
+  });
 });

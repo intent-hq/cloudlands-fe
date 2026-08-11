@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, describe, expect, it } from 'vitest';
+import { tick } from 'svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildUiComponentInventory } from '../../../../../scripts/ui-component-inventory';
 import { invalidControlContrastCases } from '../../../../../tests/helpers/invalid-control-contrast';
 import ComboboxHarness from './combobox.test-harness.svelte';
@@ -28,6 +29,30 @@ describe('Combobox inventory', () => {
 
 describe('Combobox behavior', () => {
   afterEach(cleanup);
+
+  it('tears down an open primitive without reading inert derived values', async () => {
+    let warningStack = '';
+    const warn = vi.spyOn(console, 'warn').mockImplementation((...args) => {
+      if (args.some((arg) => String(arg).includes('derived_inert'))) {
+        warningStack = new Error('derived_inert').stack ?? '';
+      }
+    });
+    try {
+      render(ComboboxHarness);
+      await fireEvent.focus(screen.getByRole('combobox', { name: 'Search people' }));
+      cleanup();
+
+      render(ComboboxHarness, { props: { multiple: true, value: ['ada'] } });
+      await fireEvent.focus(screen.getByRole('combobox', { name: 'Search people' }));
+      cleanup();
+      await tick();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(warningStack).toBe('');
+    } finally {
+      warn.mockRestore();
+    }
+  });
 
   it('filters, selects by keyboard, dismisses, and restores focus', async () => {
     render(ComboboxHarness);

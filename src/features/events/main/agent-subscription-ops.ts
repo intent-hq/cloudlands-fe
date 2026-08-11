@@ -1,8 +1,9 @@
 /**
- * Agent Subscription Operations — Standalone functions for direct Redux usage.
+ * Agent Subscription Operations — standalone functions over the canonical
+ * process-local subscription state service.
  *
- * Replaces AgentEventSubscriptionService class methods with pure functions
- * that dispatch actions and read selectors directly.
+ * The daemon remains authoritative for renderer reads. This compatibility path
+ * owns only the main-process subscription operations and their local snapshot.
  */
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../../../shared/logger';

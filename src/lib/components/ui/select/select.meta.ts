@@ -13,7 +13,6 @@ export const selectMetadata = parseUiComponentMetadata({
     'SelectRoot',
     'SelectTrigger',
     'SelectValue',
-    'selectFixtures',
     'selectMetadata',
   ],
   category: 'primitive',

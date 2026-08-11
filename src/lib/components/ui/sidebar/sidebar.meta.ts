@@ -53,7 +53,6 @@ export const sidebarMetadata = parseUiComponentMetadata({
     'SidebarSeparator',
     'SidebarTrigger',
     'Trigger',
-    'sidebarFixtures',
     'sidebarMetadata',
     'useSidebar',
   ],

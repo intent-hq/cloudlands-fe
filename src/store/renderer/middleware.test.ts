@@ -68,7 +68,7 @@ describe('renderer middleware ownership', () => {
     delete (window as Window & { intentFlags?: unknown }).intentFlags;
   });
 
-  it('contains only guard, batching, and enabled diagnostics', async () => {
+  it('contains the guard, batching, and enabled diagnostics', async () => {
     const { middleware } = await import('./middleware');
 
     expect(mocks.createStoreGuardMiddleware).toHaveBeenCalledOnce();

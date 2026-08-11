@@ -2,6 +2,7 @@ import {
   call,
   cancelled,
   delay,
+  fork,
   join,
   put,
   takeEvery,
@@ -9,6 +10,7 @@ import {
   takeLeading,
   type SagaGenerator,
 } from 'typed-redux-saga';
+import { buffers, channel, type Channel } from 'redux-saga';
 
 import { clearPanelLayoutAdapter } from '$features/layout/panel-layout-adapter';
 import {
@@ -154,7 +156,23 @@ const HISTORY_ACTIONS = [
 ];
 
 const restoredWorkspaceIds = new Set<string>();
-let pendingHistorySave: { workspaceId: string; backendId: string } | null = null;
+
+type HistorySaveMessage = {
+  action: { type: string; payload?: unknown };
+  generation: number;
+  kind: 'save';
+};
+
+type HistoryMailboxMessage = HistorySaveMessage | { kind: 'cancel' };
+
+type HistoryMailbox = {
+  backendId: string;
+  channel: Channel<HistoryMailboxMessage>;
+  generation: number;
+  key: string;
+  pending: boolean;
+  workspaceId: string;
+};
 
 // Layout keys hold backend-specific workspace IDs, so two backends surfacing
 // the same workspace id would clobber each other without a per-backend
@@ -303,28 +321,71 @@ export function* persistHistoryToDisk(wsId: string, backendId?: string): SagaGen
   }
 }
 
-function* saveHistoryAfterDelay(action: { type: string; payload?: unknown }): SagaGenerator<void> {
+function* saveHistoryAfterDelay(
+  mailbox: HistoryMailbox,
+  message: HistoryMailboxMessage,
+): SagaGenerator<void> {
+  if (message.kind === 'cancel') return;
+  try {
+    if (
+      message.action.type === movePanel.type ||
+      message.action.type === movePanelToRootEdge.type
+    ) {
+      yield* call(persistPanelLayout, message.action);
+    }
+    yield* delay(HISTORY_PERSIST_DEBOUNCE_MS);
+    if (mailbox.backendId !== (yield* selectActiveBackendId())) return;
+    yield* call(persistHistoryToDisk, mailbox.workspaceId, mailbox.backendId);
+  } finally {
+    if (!(yield* cancelled()) && mailbox.generation === message.generation) {
+      mailbox.pending = false;
+    }
+  }
+}
+
+function* watchHistoryMailbox(mailbox: HistoryMailbox): SagaGenerator<void> {
+  yield* takeLatest(mailbox.channel, saveHistoryAfterDelay, mailbox);
+}
+
+function* queueHistorySave(
+  mailboxes: Map<string, HistoryMailbox>,
+  action: { type: string; payload?: unknown },
+): SagaGenerator<void> {
   const wsId = getWsId(action);
-  if (!isValidWorkspaceId(wsId)) {
-    pendingHistorySave = null;
-    return;
-  }
-  if (action.type === movePanel.type || action.type === movePanelToRootEdge.type) {
-    yield* call(persistPanelLayout, action);
-  }
+  if (!isValidWorkspaceId(wsId)) return;
   const backendId = yield* selectActiveBackendId();
-  pendingHistorySave = { workspaceId: wsId, backendId };
-  yield* delay(HISTORY_PERSIST_DEBOUNCE_MS);
-  if (pendingHistorySave?.workspaceId !== wsId || pendingHistorySave.backendId !== backendId) {
-    return;
+  const key = storageKey(wsId, backendId);
+  let mailbox = mailboxes.get(key);
+  if (!mailbox) {
+    mailbox = {
+      backendId,
+      channel: channel<HistoryMailboxMessage>(buffers.expanding()),
+      generation: 0,
+      key,
+      pending: false,
+      workspaceId: wsId,
+    };
+    mailboxes.set(key, mailbox);
+    yield* fork(watchHistoryMailbox, mailbox);
   }
-  if (backendId !== (yield* selectActiveBackendId())) {
-    pendingHistorySave = null;
-    return;
-  }
-  yield* call(persistHistoryToDisk, wsId, backendId);
-  if (pendingHistorySave?.workspaceId === wsId && pendingHistorySave.backendId === backendId) {
-    pendingHistorySave = null;
+  mailbox.generation += 1;
+  mailbox.pending = true;
+  yield* put(mailbox.channel, {
+    action,
+    generation: mailbox.generation,
+    kind: 'save',
+  });
+}
+
+function* cancelHistoryForWorkspace(
+  mailboxes: Map<string, HistoryMailbox>,
+  workspaceId: string,
+): SagaGenerator<void> {
+  for (const [key, mailbox] of mailboxes) {
+    if (mailbox.workspaceId !== workspaceId) continue;
+    mailboxes.delete(key);
+    yield* put(mailbox.channel, { kind: 'cancel' });
+    mailbox.channel.close();
   }
 }
 
@@ -351,11 +412,12 @@ function* loadHistoryForWorkspace(
 }
 
 function* handleWorkspaceUnmounted(
+  historyMailboxes: Map<string, HistoryMailbox>,
   action: ReturnType<typeof workspaceUnmounted> | ReturnType<typeof panelLayoutScopeUnmounted>,
 ): SagaGenerator<void> {
   const [wsId] = action.payload;
   restoredWorkspaceIds.delete(wsId);
-  if (pendingHistorySave?.workspaceId === wsId) pendingHistorySave = null;
+  yield* call(cancelHistoryForWorkspace, historyMailboxes, wsId);
   try {
     yield* call(clearPanelLayoutAdapter, wsId);
   } catch {
@@ -413,24 +475,45 @@ function* handleBackendSwitch(lastBackend: { id: string }): SagaGenerator<void> 
 
 /** Unregistered until the S20 middleware cutover. */
 export function* panelLayoutSaga(): SagaGenerator<void> {
+  const historyMailboxes = new Map<string, HistoryMailbox>();
+  function* queueHistorySaveForAction(action: {
+    type: string;
+    payload?: unknown;
+  }): SagaGenerator<void> {
+    yield* queueHistorySave(historyMailboxes, action);
+  }
+  function* handleWorkspaceUnmountedAction(
+    action: ReturnType<typeof workspaceUnmounted> | ReturnType<typeof panelLayoutScopeUnmounted>,
+  ): SagaGenerator<void> {
+    yield* handleWorkspaceUnmounted(historyMailboxes, action);
+  }
   try {
     yield* takeEvery(PERSIST_ACTIONS, persistPanelLayout);
     yield* takeEvery(clearPanelLayout, clearPersistedLayout);
-    const historyWatcher = yield* takeLatest(HISTORY_ACTIONS, saveHistoryAfterDelay);
+    const historyWatcher = yield* takeEvery(HISTORY_ACTIONS, queueHistorySaveForAction);
     yield* takeLatest(initializeLayout, loadHistoryForWorkspace);
     yield* takeLeading(connectionsListReceived, handleBackendSwitch, {
       id: yield* selectActiveBackendId(),
     });
     yield* takeEvery([workspaceMounted, panelLayoutScopeMounted], handleWorkspaceMountedRestore);
-    yield* takeEvery([workspaceUnmounted, panelLayoutScopeUnmounted], handleWorkspaceUnmounted);
+    yield* takeEvery(
+      [workspaceUnmounted, panelLayoutScopeUnmounted],
+      handleWorkspaceUnmountedAction,
+    );
     yield* call(retroactiveRestore);
     yield* join(historyWatcher);
   } finally {
     const flushHistory = yield* cancelled();
-    const pending = pendingHistorySave;
-    pendingHistorySave = null;
-    if (flushHistory && pending && pending.backendId === (yield* selectActiveBackendId())) {
-      yield* call(persistHistoryToDisk, pending.workspaceId, pending.backendId);
+    const mailboxes = [...historyMailboxes.values()];
+    historyMailboxes.clear();
+    for (const mailbox of mailboxes) mailbox.channel.close();
+    if (flushHistory) {
+      const activeBackendId = yield* selectActiveBackendId();
+      for (const mailbox of mailboxes) {
+        if (mailbox.pending && mailbox.backendId === activeBackendId) {
+          yield* call(persistHistoryToDisk, mailbox.workspaceId, mailbox.backendId);
+        }
+      }
     }
     restoredWorkspaceIds.clear();
   }

@@ -3,6 +3,7 @@
   import { Combobox as ComboboxPrimitive } from 'bits-ui';
   import { cn } from '$lib/utils';
   import type { ComboboxGroup, ComboboxOption } from './types';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     value?: string | string[];
@@ -51,9 +52,9 @@
     portal = true,
     side = 'bottom',
     ariaLabel,
-    placeholder = 'Select an option',
-    searchPlaceholder = 'Search options',
-    emptyText = 'No options available',
+    placeholder = m.ui_combobox_selectOption_placeholder(),
+    searchPlaceholder = m.ui_combobox_searchOptions_placeholder(),
+    emptyText = m.ui_combobox_noOptions_message(),
     class: className = '',
     inputClass = '',
     contentClass = '',
@@ -133,7 +134,6 @@
       .join(', ');
   });
   const visibleInputValue = $derived(open ? query : selectedInputValue);
-
   $effect(() => {
     if (typeof value === 'string' && value !== singleValue) singleValue = value;
   });
@@ -271,7 +271,7 @@
       <ComboboxPrimitive.Viewport class="max-h-72 overscroll-contain overflow-y-auto p-1">
         {#if loading || searching}
           <div class="type-body px-3 py-2 text-muted-foreground" role="status">
-            Loading options…
+            {m.ui_combobox_loadingOptions_message()}
           </div>
         {:else if !hasOptions && groups.length === 0}
           <div class="type-body px-3 py-2 text-muted-foreground">{emptyText}</div>

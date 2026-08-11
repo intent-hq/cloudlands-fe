@@ -13,7 +13,6 @@ const Portal = MenuPrimitive.Portal;
 const CheckboxGroup = MenuPrimitive.CheckboxGroup;
 const RadioGroup = MenuPrimitive.RadioGroup;
 const Sub = MenuPrimitive.Sub;
-export { menuFixtures } from './menu.fixtures';
 export { menuMetadata, menuSemantics } from './menu.meta';
 
 export {

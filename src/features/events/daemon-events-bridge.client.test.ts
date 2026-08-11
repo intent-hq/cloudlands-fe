@@ -146,6 +146,9 @@ vi.mock('$features/terminal/terminal-manager.svelte', () => ({
 const { invokeSpy } = vi.hoisted(() => ({
   invokeSpy: vi.fn(() => Promise.resolve({ success: true })),
 }));
+const { navigateToRouteSpy } = vi.hoisted(() => ({
+  navigateToRouteSpy: vi.fn(() => Promise.resolve()),
+}));
 vi.mock('$lib/electron-bridge', () => ({
   extractEventData: vi.fn((event: any, fieldName?: string) => {
     const payload = event?.payload ?? event;
@@ -170,6 +173,9 @@ vi.mock('$lib/electron-bridge', () => ({
     emit: vi.fn(() => Promise.resolve()),
   },
   IpcTimeoutError: class IpcTimeoutError extends Error {},
+}));
+vi.mock('$lib/utils/navigation.client', () => ({
+  navigateToRoute: navigateToRouteSpy,
 }));
 
 import { store as appStore } from '$store/renderer/store';
@@ -7608,14 +7614,6 @@ describe('daemonEventsBridge (agent:deleted → reconcileWorkspaceAgentSummary)'
 });
 
 describe('DaemonEventsBridge — app-UI events', () => {
-  const { navigateToRouteSpy } = vi.hoisted(() => ({
-    navigateToRouteSpy: vi.fn(() => Promise.resolve()),
-  }));
-
-  vi.mock('$lib/utils/navigation.client', () => ({
-    navigateToRoute: navigateToRouteSpy,
-  }));
-
   beforeAll(() => appStore.init());
   beforeEach(() => {
     appStore.dispatch(clearAllSessions());

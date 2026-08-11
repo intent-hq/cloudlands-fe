@@ -82,10 +82,9 @@
   import { store as appStore } from '$store/renderer/store';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import {
-    compareAgentsByLastMessage,
+    deriveAgentLauncherItems,
     getAgentLauncherPreview,
     getNoteLauncherPreview,
-    shouldShowAgentInLauncher,
   } from './utils/sidebar-launcher-preview';
   import {
     normalizeSelectedTabs,
@@ -148,26 +147,20 @@
   const notesLoading$ = selectNotesLoading(workspaceIdStore);
   const allWorkspaceAgents = selectAllWorkspaceAgents(workspaceIdStore);
   const agentsLoading = selectIsLoadingAgents(workspaceIdStore);
-  const launcherAgents = $derived.by(() =>
-    $allWorkspaceAgents
-      .slice()
-      .sort(compareAgentsByLastMessage)
-      .map((agent) => {
-        const isRunning = selectAgentIsRunning.select(appStore.state, agent.id);
-        return {
+  const launcherAgentState = $derived.by(() =>
+    deriveAgentLauncherItems(
+      $allWorkspaceAgents,
+      LAUNCHER_ICON_LIMIT,
+      (agent) => selectAgentIsRunning.select(appStore.state, agent.id),
+      (agent, isRunning) =>
+        getAgentLauncherPreview(
           agent,
-          isRunning,
-          preview: getAgentLauncherPreview(
-            agent,
-            isRunning ? selectAgentSessionStreamingContent.select(appStore.state, agent.id) : '',
-          ),
-        };
-      })
-      .filter(({ agent, isRunning }) => shouldShowAgentInLauncher(agent, isRunning)),
+          isRunning ? selectAgentSessionStreamingContent.select(appStore.state, agent.id) : '',
+        ),
+    ),
   );
-  const runningLauncherAgents = $derived(
-    launcherAgents.filter(({ isRunning }) => isRunning).map(({ agent }) => agent),
-  );
+  const launcherAgents = $derived(launcherAgentState.launcherAgents);
+  const runningLauncherAgents = $derived(launcherAgentState.runningAgents);
   const launcherAgentNames = $derived.by(() =>
     Object.fromEntries(
       $allWorkspaceAgents.flatMap((agent) =>
@@ -955,7 +948,7 @@
                     data-sidebar-launcher-icons
                   >
                     {#if tab.id === 'agents'}
-                      {#each launcherAgents.slice(0, LAUNCHER_ICON_LIMIT) as { agent, isRunning, preview } (agent.id)}
+                      {#each launcherAgents as { agent, isRunning, preview } (agent.id)}
                         <SidebarLauncherHoverCard
                           title={agent.name ||
                             `${m.workspace_fileChanges_agent_label()} ${agent.id.slice(0, 8)}`}

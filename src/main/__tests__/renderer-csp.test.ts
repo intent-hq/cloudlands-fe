@@ -5,6 +5,12 @@ import path from 'path';
 const appHtml = fs.readFileSync(path.resolve(__dirname, '../../app.html'), 'utf8');
 
 describe('renderer Content Security Policy', () => {
+  it('loads same-origin runtime configuration before application bootstraps', () => {
+    const runtimeConfigTag = '<script src="/runtime-config.js"></script>';
+    expect(appHtml).toContain(runtimeConfigTag);
+    expect(appHtml.indexOf(runtimeConfigTag)).toBeLessThan(appHtml.indexOf('<script>'));
+  });
+
   it('does not load the remote Figma capture script', () => {
     expect(appHtml).not.toContain('mcp.figma.com');
     expect(appHtml).not.toContain('html-to-design/capture.js');

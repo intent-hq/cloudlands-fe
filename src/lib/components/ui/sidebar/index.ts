@@ -23,7 +23,6 @@ import Separator from './sidebar-separator.svelte';
 import Trigger from './sidebar-trigger.svelte';
 import Root from './sidebar.svelte';
 
-export { sidebarFixtures } from './sidebar.fixtures';
 export { sidebarMetadata } from './sidebar.meta';
 
 export {

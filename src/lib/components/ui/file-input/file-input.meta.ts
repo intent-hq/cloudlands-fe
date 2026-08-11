@@ -6,7 +6,7 @@ export const fileInputMetadata = parseUiComponentMetadata({
   source: 'src/lib/components/ui/file-input/file-input.svelte',
   publicImport: '$lib/components/ui/file-input',
   legacyImports: [],
-  exports: ['FileInput', 'Root', 'fileInputFixtures', 'fileInputMetadata'],
+  exports: ['FileInput', 'Root', 'fileInputMetadata'],
   category: 'primitive',
   owner: '008-B',
   callers: ['src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte'],

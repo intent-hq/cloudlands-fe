@@ -7,7 +7,7 @@
  * correlation, error mapping to `BackendError`, timeouts, reconnect with
  * backoff + the `reconnected` signal (RESUB-1), notification fanout
  * (including `subscription.push`), subscribe/unsubscribe semantics, reverse
- * requests, and URL resolution from `VITE_INTENTD_WS_URL`.
+ * requests, and URL resolution from runtime/development configuration.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BackendError } from './backend-transport-types';
@@ -87,9 +87,17 @@ async function flush(): Promise<void> {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('resolveBrowserWsUrl', () => {
+  it('reads deployment-time runtime configuration without a build-time URL', () => {
+    vi.stubGlobal('__INTENT_RUNTIME_CONFIG__', {
+      intentdWsUrl: 'wss://daemon.example/rpc?token=runtime',
+    });
+    expect(resolveBrowserWsUrl()).toBe('wss://daemon.example/rpc?token=runtime');
+  });
+
   it('returns a trimmed ws:// URL', () => {
     expect(resolveBrowserWsUrl(' ws://localhost:9100/rpc ')).toBe('ws://localhost:9100/rpc');
   });

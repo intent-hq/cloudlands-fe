@@ -111,13 +111,15 @@ describe('agentSubscriptionReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('globally suppresses a different direct fetch and refreshes every tracked entry', async () => {
+  it('does not suppress a direct fetch for a different workspace while one is in flight', async () => {
     let resolve!: (value: ReturnType<typeof active>) => void;
-    mocks.request.mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+    mocks.request
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      )
+      .mockResolvedValueOnce(active());
     const seeded = agentSubscriptionUIReducer(
       initialState,
       setSubscriptionSnapshot(WS, AGENT, {
@@ -131,13 +133,12 @@ describe('agentSubscriptionReadSaga', () => {
     run.channel.put(requestSubscriptionFetch(WS, AGENT));
     run.channel.put(requestSubscriptionFetch('ws-other', 'agent-other'));
     await settle();
-    expect(mocks.request).toHaveBeenCalledTimes(1);
+    expect(mocks.request.mock.calls).toEqual([
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: AGENT }],
+      ['agent.getSubscriptions', { workspaceId: 'ws-other', agentId: 'agent-other' }],
+    ]);
     resolve(active());
     await settle();
-    mocks.request.mockResolvedValue(active());
-    run.channel.put(refreshWorkspaceSubscriptionEntriesRequested(WS));
-    await settle();
-    expect(mocks.request).toHaveBeenCalledTimes(2);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -240,6 +241,84 @@ describe('agentSubscriptionReadSaga', () => {
       ['agent.getSubscriptions', { workspaceId: WS, agentId: AGENT }],
       ['agent.getSubscriptions', { workspaceId: WS, agentId: 'agent-second' }],
     ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('runs workspace refreshes independently instead of globally suppressing another workspace', async () => {
+    let resolve!: (value: ReturnType<typeof active>) => void;
+    let seeded = initialState;
+    for (const [workspaceId, agentId] of [
+      [WS, AGENT],
+      ['ws-other', 'agent-other'],
+    ] as const) {
+      seeded = agentSubscriptionUIReducer(
+        seeded,
+        setSubscriptionSnapshot(workspaceId, agentId, {
+          subscriptions: [],
+          delegationGroups: [],
+          agentStatuses: {},
+          waitingState: 'idle',
+        }),
+      );
+    }
+    mocks.request
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      )
+      .mockResolvedValueOnce(active());
+    const run = harness(seeded);
+
+    run.channel.put(refreshWorkspaceSubscriptionEntriesRequested(WS));
+    await settle();
+    run.channel.put(refreshWorkspaceSubscriptionEntriesRequested('ws-other'));
+    await settle();
+
+    expect(mocks.request.mock.calls).toEqual([
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: AGENT }],
+      ['agent.getSubscriptions', { workspaceId: 'ws-other', agentId: 'agent-other' }],
+    ]);
+    resolve(active());
+    await settle();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('coalesces an in-flight workspace event burst into exactly one trailing refresh', async () => {
+    let resolve!: (value: ReturnType<typeof active>) => void;
+    const seeded = agentSubscriptionUIReducer(
+      initialState,
+      setSubscriptionSnapshot(WS, AGENT, {
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'idle',
+      }),
+    );
+    mocks.request
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      )
+      .mockResolvedValue(active());
+    const run = harness(seeded);
+
+    run.channel.put(refreshWorkspaceSubscriptionEntriesRequested(WS));
+    await settle();
+    for (let index = 0; index < 5; index += 1) {
+      run.channel.put(refreshWorkspaceSubscriptionEntriesRequested(WS));
+    }
+    await settle();
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+
+    resolve(active());
+    await settle();
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+    await settle();
+    expect(mocks.request).toHaveBeenCalledTimes(2);
     run.task.cancel();
     await run.task.toPromise();
   });

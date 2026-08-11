@@ -40,7 +40,10 @@ class WorkspaceCreationTest {
 
     try {
       // Check active compact workspace initializer component
-      const initializerPath = path.join(__dirname, '../src/lib/components/workspace/CompactWorkspaceInitializer.svelte');
+      const initializerPath = path.join(
+        __dirname,
+        '../src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
+      );
       const initializerContent = await fs.readFile(initializerPath, 'utf-8');
 
       // Check for initial agent ID generation
@@ -54,7 +57,10 @@ class WorkspaceCreationTest {
       }
 
       // Check workspace service
-      const servicePath = path.join(__dirname, '../src/features/workspace/main/workspace.service.ts');
+      const servicePath = path.join(
+        __dirname,
+        '../src/features/workspace/main/workspace.service.ts',
+      );
       const serviceContent = await fs.readFile(servicePath, 'utf-8');
 
       // Check for initial agent handling
@@ -71,7 +77,6 @@ class WorkspaceCreationTest {
       if (!serviceContent.includes('AgentStatus.Pending')) {
         warnings.push('Initial agent not set to pending status');
       }
-
     } catch (error) {
       issues.push(`Failed to test workspace creation: ${error}`);
     }
@@ -102,7 +107,10 @@ class WorkspaceCreationTest {
       }
 
       // The initial-agent flag is set while persisting the pending initial agent config.
-      const servicePath = path.join(__dirname, '../src/features/workspace/main/workspace.service.ts');
+      const servicePath = path.join(
+        __dirname,
+        '../src/features/workspace/main/workspace.service.ts',
+      );
       const serviceContent = await fs.readFile(servicePath, 'utf-8');
 
       // Check for initial agent metadata preservation
@@ -114,7 +122,6 @@ class WorkspaceCreationTest {
       if (!serviceContent.includes('request.initialAgent.agentId')) {
         issues.push('Workspace service does not preserve pre-generated agent ID');
       }
-
     } catch (error) {
       issues.push(`Failed to test initial agent creation: ${error}`);
     }
@@ -136,7 +143,10 @@ class WorkspaceCreationTest {
 
     try {
       // Check backend handler
-      const handlerPath = path.join(__dirname, '../src/features/agent/main/agent-backend-handler.service.ts');
+      const handlerPath = path.join(
+        __dirname,
+        '../src/features/agent/main/agent-backend-handler.service.ts',
+      );
       const handlerContent = await fs.readFile(handlerPath, 'utf-8');
 
       // Check for activate handler
@@ -149,25 +159,33 @@ class WorkspaceCreationTest {
         warnings.push('Backend handler may not properly handle agent ID as session ID');
       }
 
-      // Check workspace page
-      const pagePath = path.join(__dirname, '../src/routes/workspace/[id]/+page.svelte');
-      const pageContent = await fs.readFile(pagePath, 'utf-8');
+      // Check the current workspace creation owner.
+      const initializerPath = path.join(
+        __dirname,
+        '../src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
+      );
+      const initializerContent = await fs.readFile(initializerPath, 'utf-8');
 
       // Check for initial agent handling
-      if (!pageContent.includes('initialAgentId')) {
-        issues.push('Workspace page does not handle initial agent ID');
+      if (
+        !initializerContent.includes('initialAgentId') ||
+        !initializerContent.includes('setInitialAgentId')
+      ) {
+        issues.push('Workspace initializer does not retain the daemon-assigned initial agent ID');
       }
 
-      // Check for agent restoration
-      if (!pageContent.includes('resumeSession') || !pageContent.includes('restoreAgent')) {
-        warnings.push('Workspace page may not properly restore initial agent');
+      // Check for initial navigation hydration.
+      if (
+        !initializerContent.includes('hydrateWorkspaceNavigation') ||
+        !initializerContent.includes('openWorkspaceTab')
+      ) {
+        warnings.push('Workspace initializer may not hydrate initial agent navigation');
       }
 
       // Check for isInitialAgent flag handling
-      if (!pageContent.includes('isInitialAgent')) {
-        warnings.push('Workspace page may not preserve isInitialAgent flag');
+      if (!initializerContent.includes('isInitialAgent')) {
+        warnings.push('Workspace initializer may not preserve isInitialAgent metadata');
       }
-
     } catch (error) {
       issues.push(`Failed to test agent activation: ${error}`);
     }
@@ -208,13 +226,15 @@ class WorkspaceCreationTest {
       }
 
       // Initial-message dispatch is owned by the Redux chat-state slice and saga graph.
-      const chatStatePath = path.join(__dirname, '../src/store/renderer/slices/chat-state/chat-state-slice.ts');
+      const chatStatePath = path.join(
+        __dirname,
+        '../src/store/renderer/slices/chat-state/chat-state-slice.ts',
+      );
       const chatStateContent = await fs.readFile(chatStatePath, 'utf-8');
 
       if (!chatStateContent.includes('sendInitialMessageRequested')) {
         warnings.push('Chat state slice may not expose initial message handling');
       }
-
     } catch (error) {
       issues.push(`Failed to test message sending: ${error}`);
     }
@@ -236,7 +256,10 @@ class WorkspaceCreationTest {
 
     try {
       // Check streaming message content
-      const streamingPath = path.join(__dirname, '../src/lib/components/chat/StreamingMessageContent.svelte');
+      const streamingPath = path.join(
+        __dirname,
+        '../src/lib/components/chat/StreamingMessageContent.svelte',
+      );
       const streamingContent = await fs.readFile(streamingPath, 'utf-8');
 
       // Check for proper streaming state passing
@@ -250,7 +273,10 @@ class WorkspaceCreationTest {
       }
 
       // Check Redux session store
-      const storePath = path.join(__dirname, '../src/store/renderer/slices/agent-session/agent-session-slice.ts');
+      const storePath = path.join(
+        __dirname,
+        '../src/store/renderer/slices/agent-session/agent-session-slice.ts',
+      );
       const storeContent = await fs.readFile(storePath, 'utf-8');
 
       // Check for state merging
@@ -259,10 +285,12 @@ class WorkspaceCreationTest {
       }
 
       // Check for message preservation
-      if (!storeContent.includes('replaceMessages') || !storeContent.includes('deduplicateAgentMessages')) {
+      if (
+        !storeContent.includes('replaceMessages') ||
+        !storeContent.includes('deduplicateAgentMessages')
+      ) {
         issues.push('Agent session store does not preserve messages during updates');
       }
-
     } catch (error) {
       issues.push(`Failed to test streaming functionality: ${error}`);
     }
@@ -284,8 +312,14 @@ class WorkspaceCreationTest {
 
     try {
       // Check for the active empty-chat welcome component
-      const welcomePath = path.join(__dirname, '../src/lib/components/chat/RegularAgentWelcome.svelte');
-      const welcomeExists = await fs.access(welcomePath).then(() => true).catch(() => false);
+      const welcomePath = path.join(
+        __dirname,
+        '../src/lib/components/chat/RegularAgentWelcome.svelte',
+      );
+      const welcomeExists = await fs
+        .access(welcomePath)
+        .then(() => true)
+        .catch(() => false);
 
       if (!welcomeExists) {
         issues.push('RegularAgentWelcome component not found');
@@ -305,7 +339,6 @@ class WorkspaceCreationTest {
       if (!chatPanelContent.includes('RegularAgentWelcome')) {
         issues.push('ChatPanel does not handle welcome messages');
       }
-
     } catch (error) {
       issues.push(`Failed to test welcome message: ${error}`);
     }
@@ -360,8 +393,8 @@ class WorkspaceCreationTest {
     console.log('==================================================\n');
     console.log('📊 Test Summary\n');
 
-    const passed = this.results.filter(r => r.passed).length;
-    const failed = this.results.filter(r => !r.passed).length;
+    const passed = this.results.filter((r) => r.passed).length;
+    const failed = this.results.filter((r) => !r.passed).length;
     const totalWarnings = this.results.reduce((sum, r) => sum + (r.warnings?.length || 0), 0);
 
     console.log(`Total: ${this.results.length}`);
@@ -384,7 +417,7 @@ class WorkspaceCreationTest {
 
 // Run tests
 const tester = new WorkspaceCreationTest();
-tester.runAllTests().catch(error => {
+tester.runAllTests().catch((error) => {
   logger.error('Test execution failed', error);
   process.exit(1);
 });

@@ -10,7 +10,6 @@ import Trigger from './dialog-trigger.svelte';
 
 const Root = DialogPrimitive.Root;
 const Portal = DialogPrimitive.Portal;
-export { dialogFixtures } from './dialog.fixtures';
 export { dialogMetadata } from './dialog.meta';
 
 export {

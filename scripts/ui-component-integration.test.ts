@@ -59,6 +59,16 @@ describe('Gate C public component contract', () => {
     expect(rootApi).toContain("from './manifest'");
   });
 
+  it('keeps catalog fixtures out of runtime component barrels', () => {
+    for (const publicImport of canonicalImports) {
+      const barrel = readFileSync(
+        path.join(root, `src/lib/components/ui/${publicImport}/index.ts`),
+        'utf8',
+      );
+      expect(barrel, publicImport).not.toMatch(/export\s+\{[^}]*Fixtures[^}]*\}\s+from/);
+    }
+  });
+
   it('aggregates schema-validated source metadata with fixtures and verification owners', () => {
     expect(canonicalComponentManifest.map(({ publicImport }) => publicImport)).toEqual(
       canonicalImports.map((component) => `$lib/components/ui/${component}`).sort(),

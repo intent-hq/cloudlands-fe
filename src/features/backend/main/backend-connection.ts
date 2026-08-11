@@ -28,6 +28,7 @@ import type { IncomingMessage } from 'node:http';
 import type { RawData, WebSocket as WsWebSocket } from 'ws';
 
 import { Logger } from '$shared/logger';
+import { describeBackendUrl } from './backend-log-descriptor';
 import { defaultWindowsSocketPath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
 
 const raceLogger = new Logger('BackendConnection');
@@ -189,7 +190,7 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
 /** Human-readable description of a connection target (for logs). */
 export function describeBackendConfig(config: BackendConnectionConfig): string {
   if (config.transport === 'uds') return `uds:${config.socketPath}`;
-  if (config.transport === 'ws') return `ws:${config.wsUrl}`;
+  if (config.transport === 'ws') return `ws:${describeBackendUrl(config.wsUrl)}`;
   // Deliberately omit the token and fingerprint — this string reaches logs.
   if (config.transport === 'wss') {
     const extra = candidateWssHosts(config).length - 1;

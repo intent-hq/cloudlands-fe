@@ -8,9 +8,10 @@ function source(relativePath: string) {
 describe('sidebar overview status summary', () => {
   it('sorts the Agents card by last message and marks each running avatar', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
+    const preview = source('../utils/sidebar-launcher-preview.ts');
 
     expect(sidebar).toContain('selectAgentIsRunning.select(appStore.state, agent.id)');
-    expect(sidebar).toContain('.sort(compareAgentsByLastMessage)');
+    expect(preview).toContain('compareAgentsByLastMessage(a.agent, b.agent)');
     expect(sidebar).not.toContain('.sort((a, b) => Number(b.isRunning) - Number(a.isRunning))');
     expect(sidebar).toContain("data-sidebar-agent-state={isRunning ? 'running' : 'idle'}");
     expect(sidebar).toContain("state={isRunning ? 'running' : 'idle'}");

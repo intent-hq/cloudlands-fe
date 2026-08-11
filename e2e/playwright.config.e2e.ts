@@ -20,7 +20,7 @@ export default defineConfig({
   // Test execution settings
   fullyParallel: false, // Run tests sequentially for Electron app
   forbidOnly: !!process.env.CI,
-  retries: 0,
+  retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : 2,
 
   // Timeouts
@@ -47,7 +47,7 @@ export default defineConfig({
   // Shared settings
   use: {
     // Trace settings
-    trace: process.env.CI ? 'on-first-retry' : 'retain-on-failure',
+    trace: 'retain-on-failure',
 
     // Screenshot settings
     screenshot: 'only-on-failure',
@@ -120,13 +120,8 @@ export default defineConfig({
     },
     {
       name: 'all-e2e',
-      testMatch: [
-        '**/complete-user-workflows.e2e.ts',
-        '**/multi-agent-scenarios.e2e.ts',
-        '**/error-recovery.e2e.ts',
-        '**/performance-load.e2e.ts',
-        '**/agent-ui-rendering.e2e.ts',
-      ],
+      testMatch: '**/*.e2e.ts',
+      testIgnore: ['**/build-smoke*.e2e.ts', '**/playwright.config.e2e.ts'],
       use: {
         ...devices['Desktop Chrome'],
       },

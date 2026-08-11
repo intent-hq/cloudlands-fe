@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseUiComponentMetadata } from '../component-metadata';
 import SidebarHarness from './SidebarHarness.svelte';
+import { sidebarFixtures } from './sidebar.fixtures';
 import * as sidebarApi from './index';
 
 const originalMatchMedia = window.matchMedia;
@@ -75,7 +76,7 @@ describe('Sidebar', () => {
     expect(sidebarApi.sidebarMetadata.callers).toEqual(
       expect.arrayContaining(['src/lib/components/file-explorer/file-explorer-sidebar.svelte']),
     );
-    expect(sidebarApi.sidebarFixtures[0].states).toEqual(
+    expect(sidebarFixtures[0].states).toEqual(
       expect.arrayContaining(['collapsed', 'mobile-open', 'active-menu-item', 'keyboard-shortcut']),
     );
     expect(Object.keys(sidebarApi).sort()).toEqual([...sidebarApi.sidebarMetadata.exports].sort());

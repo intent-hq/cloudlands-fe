@@ -10,7 +10,6 @@ export const buttonGroupMetadata = parseUiComponentMetadata({
     'ButtonGroup',
     'ButtonGroupVariant',
     'Root',
-    'buttonGroupFixtures',
     'buttonGroupMetadata',
     'buttonGroupVariants',
   ],

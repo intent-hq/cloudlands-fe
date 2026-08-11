@@ -8,7 +8,25 @@ import { WorkspaceStatusEnum } from '$shared/types';
 import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
-  const dispatch = vi.fn();
+  const storeState = {
+    workspace: {
+      pendingTitleMutations: {} as Record<string, { token: number }>,
+    },
+  };
+  const dispatch = vi.fn((action: { type: string; payload?: unknown[] }) => {
+    const [workspaceId, token] = action.payload ?? [];
+    if (action.type === 'workspace/beginWorkspaceTitleMutation') {
+      storeState.workspace.pendingTitleMutations[workspaceId as string] = {
+        token: token as number,
+      };
+    } else if (
+      action.type === 'workspace/completeWorkspaceTitleMutation' ||
+      action.type === 'workspace/failWorkspaceTitleMutation'
+    ) {
+      delete storeState.workspace.pendingTitleMutations[workspaceId as string];
+    }
+    return action;
+  });
   const update = vi.fn();
   const clipboardWrite = vi.fn();
   const toastSuccess = vi.fn();
@@ -50,6 +68,7 @@ const mocks = vi.hoisted(() => {
     workspaceEntity,
     readable,
     selector,
+    storeState,
   };
 });
 
@@ -62,7 +81,7 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => mocks.storeState,
     dispatch: mocks.dispatch,
   });
 });
@@ -93,13 +112,19 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
 
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   loadWorkspacesRequested: vi.fn(() => ({ type: 'workspace/loadWorkspacesRequested' })),
-  updateWorkspaceEntity: vi.fn((id: string, changes: Partial<Workspace>) => ({
-    type: 'workspace/updateWorkspaceEntity',
-    payload: [id, changes],
+  beginWorkspaceTitleMutation: vi.fn(
+    (id: string, token: number, optimisticTitle: string, previousTitle: string) => ({
+      type: 'workspace/beginWorkspaceTitleMutation',
+      payload: [id, token, optimisticTitle, previousTitle],
+    }),
+  ),
+  completeWorkspaceTitleMutation: vi.fn((id: string, token: number, workspace: Workspace) => ({
+    type: 'workspace/completeWorkspaceTitleMutation',
+    payload: [id, token, workspace],
   })),
-  bulkUpdateWorkspaceEntities: vi.fn((actions: unknown[]) => ({
-    type: 'workspace/bulkUpdateWorkspaceEntities',
-    payload: [actions],
+  failWorkspaceTitleMutation: vi.fn((id: string, token: number) => ({
+    type: 'workspace/failWorkspaceTitleMutation',
+    payload: [id, token],
   })),
   setWorkspaceEntity: vi.fn((workspace: Workspace) => ({
     type: 'workspace/setWorkspaceEntity',
@@ -240,6 +265,7 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.clipboardWrite.mockReset();
     mocks.toastSuccess.mockReset();
     mocks.toastError.mockReset();
+    mocks.storeState.workspace.pendingTitleMutations = {};
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
       configurable: true,
@@ -520,6 +546,7 @@ describe('WorkspaceProgressCard status screenshot (intent-hq/monorepo#997)', () 
     mocks.update.mockReset();
     mocks.notes.length = 0;
     mocks.update.mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
+    mocks.storeState.workspace.pendingTitleMutations = {};
   });
 
   it('renders the status screenshot beneath the status message via the workspace-asset URL', async () => {

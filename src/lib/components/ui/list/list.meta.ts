@@ -6,14 +6,7 @@ export const listMetadata = parseUiComponentMetadata({
   source: 'src/lib/components/ui/list/index.ts',
   publicImport: '$lib/components/ui/list',
   legacyImports: [],
-  exports: [
-    'ListContainer',
-    'ListEmpty',
-    'ListItem',
-    'ListSection',
-    'listFixtures',
-    'listMetadata',
-  ],
+  exports: ['ListContainer', 'ListEmpty', 'ListItem', 'ListSection', 'listMetadata'],
   category: 'pattern',
   owner: '012-E',
   callers: [

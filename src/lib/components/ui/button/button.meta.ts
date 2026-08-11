@@ -13,7 +13,6 @@ export const buttonMetadata = parseUiComponentMetadata({
     'ButtonVariant',
     'Props',
     'Root',
-    'buttonFixtures',
     'buttonMetadata',
     'buttonVariants',
   ],

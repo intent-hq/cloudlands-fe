@@ -1,12 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import type { WorkspaceState } from '$store/renderer/slices/workspace/workspace-slice';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   update: vi.fn(),
   toastError: vi.fn(),
-  state: { workspace: { workspaces: { map: {} as Record<string, Workspace> } } },
+  state: { workspace: undefined as unknown as WorkspaceState },
 }));
 
 vi.mock('$store/renderer/store', () => ({
@@ -27,7 +28,12 @@ vi.mock('svelte-sonner', () => ({
 }));
 
 import { renameWorkspaceTitle } from './rename-workspace-title';
-import { resetWorkspaceTitleMutationsForTests } from './workspace-title-mutation-registry';
+import {
+  initialState,
+  replaceWorkspaceList,
+  setWorkspaceEntity,
+  workspaceReducer,
+} from '$store/renderer/slices/workspace/workspace-slice';
 
 const workspace = {
   id: 'ws-1',
@@ -45,23 +51,12 @@ describe('renameWorkspaceTitle', () => {
     mocks.dispatch.mockClear();
     mocks.update.mockReset();
     mocks.toastError.mockReset();
-    mocks.state.workspace.workspaces.map = { [workspace.id]: workspace };
+    mocks.state.workspace = workspaceReducer(initialState, setWorkspaceEntity(workspace));
     mocks.dispatch.mockImplementation((action) => {
-      if (action.type === 'workspace/bulkUpdateWorkspaceEntities') {
-        for (const update of action.payload[0]) {
-          const [workspaceId, changes] = update.payload;
-          const current = mocks.state.workspace.workspaces.map[workspaceId];
-          if (current)
-            mocks.state.workspace.workspaces.map[workspaceId] = { ...current, ...changes };
-        }
-      } else if (action.type === 'workspace/setWorkspaceEntity') {
-        const updated = action.payload[0] as Workspace;
-        mocks.state.workspace.workspaces.map[updated.id] = updated;
-      }
+      mocks.state.workspace = workspaceReducer(mocks.state.workspace, action);
+      return action;
     });
   });
-
-  afterEach(resetWorkspaceTitleMutationsForTests);
 
   it('updates the list immediately, sends the exact request, and reconciles the response', async () => {
     const updated = { ...workspace, title: 'Renamed title' };
@@ -70,21 +65,34 @@ describe('renameWorkspaceTitle', () => {
     await expect(renameWorkspaceTitle(workspace, 'Renamed title')).resolves.toEqual({ ok: true });
 
     expect(mocks.update).toHaveBeenCalledWith({ id: 'ws-1', title: 'Renamed title' });
-    expect(mocks.dispatch.mock.calls.map(([action]) => action)).toEqual([
+    const actions = mocks.dispatch.mock.calls.map(([action]) => action);
+    expect(actions).toEqual([
       {
-        type: 'workspace/bulkUpdateWorkspaceEntities',
-        payload: [
-          [
-            {
-              type: 'workspace/updateWorkspaceEntity',
-              payload: ['ws-1', { title: 'Renamed title' }],
-            },
-          ],
-        ],
+        type: 'workspace/beginWorkspaceTitleMutation',
+        payload: ['ws-1', expect.any(Number), 'Renamed title', 'Original title'],
       },
-      { type: 'workspace/setWorkspaceEntity', payload: [updated] },
+      {
+        type: 'workspace/completeWorkspaceTitleMutation',
+        payload: ['ws-1', expect.any(Number), updated],
+      },
     ]);
+    expect(actions[1].payload[1]).toBe(actions[0].payload[1]);
     expect(mocks.toastError).not.toHaveBeenCalled();
+  });
+
+  it('keeps the optimistic title across an interleaved stale refresh and retires on success', async () => {
+    let resolveUpdate!: (value: { ok: true; data: Workspace }) => void;
+    mocks.update.mockReturnValue(new Promise((resolve) => (resolveUpdate = resolve)));
+
+    const rename = renameWorkspaceTitle(workspace, 'Optimistic title');
+    mocks.dispatch(replaceWorkspaceList([{ ...workspace, title: 'Original title' }]));
+
+    expect(mocks.state.workspace.workspaces.map[workspace.id]?.title).toBe('Optimistic title');
+
+    resolveUpdate({ ok: true, data: { ...workspace, title: 'Optimistic title' } });
+    await expect(rename).resolves.toEqual({ ok: true });
+    mocks.dispatch(setWorkspaceEntity({ ...workspace, title: 'External title' }));
+    expect(mocks.state.workspace.workspaces.map[workspace.id]?.title).toBe('External title');
   });
 
   it('rolls back only the title when the daemon rejects the rename', async () => {
@@ -97,17 +105,14 @@ describe('renameWorkspaceTitle', () => {
 
     const actions = mocks.dispatch.mock.calls.map(([action]) => action);
     expect(actions.at(-1)).toEqual({
-      type: 'workspace/bulkUpdateWorkspaceEntities',
-      payload: [
-        [
-          {
-            type: 'workspace/updateWorkspaceEntity',
-            payload: ['ws-1', { title: 'Original title' }],
-          },
-        ],
-      ],
+      type: 'workspace/failWorkspaceTitleMutation',
+      payload: ['ws-1', expect.any(Number)],
     });
     expect(mocks.toastError).toHaveBeenCalledWith('Rename rejected');
+    mocks.dispatch(setWorkspaceEntity({ ...workspace, title: 'Authoritative after failure' }));
+    expect(mocks.state.workspace.workspaces.map[workspace.id]?.title).toBe(
+      'Authoritative after failure',
+    );
   });
 
   it('keeps the newer optimistic title when an older success resolves last', async () => {

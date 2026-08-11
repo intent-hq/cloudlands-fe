@@ -1,5 +1,4 @@
 import Root from './button.svelte';
-export { buttonFixtures } from './button.fixtures';
 export { buttonMetadata } from './button.meta';
 export {
   buttonVariants,

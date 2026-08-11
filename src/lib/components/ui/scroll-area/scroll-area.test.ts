@@ -3,6 +3,7 @@ import { fireEvent, render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseUiComponentMetadata } from '../component-metadata';
 import ScrollAreaHarness from './ScrollAreaHarness.svelte';
+import { scrollAreaFixtures } from './scroll-area.fixtures';
 import * as scrollAreaApi from './index';
 
 const originalResizeObserver = globalThis.ResizeObserver;
@@ -47,9 +48,9 @@ describe('ScrollArea', () => {
     ).toHaveLength(0);
   });
 
-  it('publishes parseable metadata, fixtures, and the complete public barrel', () => {
+  it('publishes parseable metadata and the complete production public barrel', () => {
     expect(() => parseUiComponentMetadata(scrollAreaApi.scrollAreaMetadata)).not.toThrow();
-    expect(scrollAreaApi.scrollAreaFixtures[0].states).toEqual(
+    expect(scrollAreaFixtures[0].states).toEqual(
       expect.arrayContaining(['vertical', 'horizontal', 'both', 'keyboard-focus', 'no-overflow']),
     );
     expect(Object.keys(scrollAreaApi).sort()).toEqual(

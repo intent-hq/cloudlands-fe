@@ -6,7 +6,7 @@ export const settingsFieldRowMetadata = parseUiComponentMetadata({
   source: 'src/lib/components/ui/settings-field-row/settings-field-row.svelte',
   publicImport: '$lib/components/ui/settings-field-row',
   legacyImports: [],
-  exports: ['Root', 'SettingsFieldRow', 'settingsFieldRowFixtures', 'settingsFieldRowMetadata'],
+  exports: ['Root', 'SettingsFieldRow', 'settingsFieldRowMetadata'],
   category: 'pattern',
   owner: '008-B',
   callers: ['src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte'],

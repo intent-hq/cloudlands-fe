@@ -4,7 +4,7 @@
  * When the renderer runs in a plain browser (no Electron preload bridge) it
  * speaks JSON-RPC 2.0 directly to the intentd daemon over a `WebSocket`
  * (PROTOCOL.md §1–§4): one JSON-RPC object per text frame, bearer token via
- * the `?token=` query param baked into the configured URL. Semantics mirror
+ * the `?token=` query param supplied by runtime configuration. Semantics mirror
  * the main-process `JsonRpcClient`
  * (`src/features/backend/main/json-rpc-client.ts`): request/response
  * id-correlation, default + per-call request timeouts, automatic reconnect
@@ -12,11 +12,11 @@
  * re-established after a drop (RESUB-1) so consumers replay their
  * `events.subscribe` calls, and notification fanout.
  *
- * The URL comes from the `VITE_INTENTD_WS_URL` build-time env var (a full
- * `ws(s)://` URL, optional `?token=`); `backend-transport-factory.ts` selects
- * this transport when `window.electronAPI` is absent and the URL is
- * configured. The WebSocket constructor is injectable (`webSocketFactory`) so
- * unit tests drive the transport with a fake socket.
+ * Production web deployments provide the URL through the same-origin
+ * `/runtime-config.js` asset. `VITE_INTENTD_WS_URL` remains a development-only
+ * convenience. `backend-transport-factory.ts` selects this transport when
+ * `window.electronAPI` is absent and the URL is configured. The WebSocket
+ * constructor is injectable (`webSocketFactory`) so tests use a fake socket.
  */
 import {
   BackendError,
@@ -27,12 +27,21 @@ import {
 } from './backend-transport-types';
 
 /**
- * Resolve the configured browser WebSocket URL from the build-time env.
+ * Resolve the configured browser WebSocket URL. Runtime configuration wins;
+ * the build-time environment fallback exists only for local development.
  * Returns `undefined` when unset, blank, or not a `ws://`/`wss://` URL so the
  * factory falls back to the Electron-IPC transport's degraded behavior.
  */
 export function resolveBrowserWsUrl(
-  raw: unknown = process.env.VITE_INTENTD_WS_URL,
+  raw: unknown = (() => {
+    const runtimeConfig = (
+      globalThis as typeof globalThis & {
+        __INTENT_RUNTIME_CONFIG__?: { readonly intentdWsUrl?: unknown };
+      }
+    ).__INTENT_RUNTIME_CONFIG__;
+    if (runtimeConfig?.intentdWsUrl !== undefined) return runtimeConfig.intentdWsUrl;
+    return typeof process === 'undefined' ? undefined : process.env.VITE_INTENTD_WS_URL;
+  })(),
 ): string | undefined {
   if (typeof raw !== 'string') return undefined;
   const url = raw.trim();
@@ -42,13 +51,13 @@ export function resolveBrowserWsUrl(
     parsed = new URL(url);
   } catch {
     console.warn(
-      '[browser-websocket-transport] Ignoring VITE_INTENTD_WS_URL: expected a ws:// or wss:// URL',
+      '[browser-websocket-transport] Ignoring browser WebSocket URL: expected ws:// or wss://',
     );
     return undefined;
   }
   if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
     console.warn(
-      '[browser-websocket-transport] Ignoring VITE_INTENTD_WS_URL: expected a ws:// or wss:// URL',
+      '[browser-websocket-transport] Ignoring browser WebSocket URL: expected ws:// or wss://',
     );
     return undefined;
   }
@@ -58,7 +67,7 @@ export function resolveBrowserWsUrl(
     parsed.hostname === '[::1]';
   if (parsed.protocol === 'ws:' && !isLoopback) {
     console.warn(
-      '[browser-websocket-transport] Ignoring insecure remote VITE_INTENTD_WS_URL: use wss://',
+      '[browser-websocket-transport] Ignoring insecure remote WebSocket URL: use wss://',
     );
     return undefined;
   }

@@ -46,7 +46,7 @@ const { values: args } = parseArgs({
     retries: {
       type: 'string',
       short: 'r',
-      default: '0',
+      default: process.env.CI ? '1' : '0',
     },
     timeout: {
       type: 'string',
@@ -80,7 +80,7 @@ Options:
   -d, --debug           Run in debug mode with slow motion
   -h, --headed          Run tests in headed mode (show browser)
   -w, --workers <n>     Number of parallel workers (default: 1)
-  -r, --retries <n>     Number of retries for failed tests (default: 1)
+  -r, --retries <n>     Number of retries for failed tests (default: 1 in CI, 0 locally)
   -t, --timeout <ms>    Test timeout in milliseconds (default: 120000)
   -g, --grep <pattern>  Only run tests matching pattern
   --help                Show this help message

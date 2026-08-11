@@ -6,7 +6,7 @@ export const labelMetadata = parseUiComponentMetadata({
   source: 'src/lib/components/ui/label/label.svelte',
   publicImport: '$lib/components/ui/label',
   legacyImports: ['$lib/components/ui/label/label.svelte'],
-  exports: ['Label', 'Root', 'labelFixtures', 'labelMetadata'],
+  exports: ['Label', 'Root', 'labelMetadata'],
   category: 'primitive',
   owner: '007-B2',
   callers: [

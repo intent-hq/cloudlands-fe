@@ -3,7 +3,6 @@ import Trigger from './select-trigger.svelte';
 import Value from './select-value.svelte';
 import Content from './select-content.svelte';
 import Item from './select-item.svelte';
-export { selectFixtures } from './select.fixtures';
 export { selectMetadata } from './select.meta';
 
 // Export individual components

@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AgentSession, Note } from '$shared/types';
 import {
   compareAgentsByLastMessage,
+  deriveAgentLauncherItems,
   getAgentLauncherPreview,
   getNoteLauncherPreview,
   shouldShowAgentInLauncher,
@@ -68,6 +69,48 @@ describe('sidebar launcher hover previews', () => {
     expect(shouldShowAgentInLauncher(unreadAgent, false)).toBe(true);
   });
 
+  it('builds previews only after filtering, ordering, and applying the launcher limit', () => {
+    const agents = Array.from({ length: 8 }, (_, index) => ({
+      id: `agent-${index}`,
+      hasUnread: true,
+      messages: [{ timestamp: `2026-07-28T00:00:0${8 - index}.000Z` }],
+    })) as AgentSession[];
+    const filteredAgent = {
+      id: 'filtered-agent',
+      hasUnread: false,
+      messages: [{ timestamp: '2026-07-28T00:00:09.000Z' }],
+    } as AgentSession;
+    const buildPreview = vi.fn((agent: AgentSession) => ({
+      lastUserMessage: agent.id,
+      response: '',
+    }));
+
+    const result = deriveAgentLauncherItems(
+      [filteredAgent, ...agents],
+      6,
+      (agent) => agent !== filteredAgent,
+      buildPreview,
+    );
+
+    expect(result.launcherAgents.map(({ agent }) => agent.id)).toEqual([
+      'agent-0',
+      'agent-1',
+      'agent-2',
+      'agent-3',
+      'agent-4',
+      'agent-5',
+    ]);
+    expect(result.runningAgents.map(({ id }) => id)).toEqual(agents.map(({ id }) => id));
+    expect(buildPreview.mock.calls.map(([agent]) => agent.id)).toEqual([
+      'agent-0',
+      'agent-1',
+      'agent-2',
+      'agent-3',
+      'agent-4',
+      'agent-5',
+    ]);
+  });
+
   it('wraps both agent and note launcher items in rich hover cards', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
     expect(sidebar).toContain(
@@ -78,7 +121,7 @@ describe('sidebar launcher hover previews', () => {
     expect(sidebar).toContain('rows={[{ text: getNoteLauncherPreview(note) }]}');
     expect(sidebar).toContain('if (open && agent.messages.length === 0)');
     expect(sidebar).toContain('void loadChatTranscript(agent.id)');
-    expect(sidebar).toContain('shouldShowAgentInLauncher(agent, isRunning)');
+    expect(sidebar).toContain('deriveAgentLauncherItems(');
     expect(sidebar).toContain('let openLauncherHoverKey = $state<string | null>(null)');
     expect(sidebar).toContain('open={openLauncherHoverKey === `agent:${agent.id}`}');
     expect(sidebar).toContain('open={openLauncherHoverKey === `note:${note.id}`}');

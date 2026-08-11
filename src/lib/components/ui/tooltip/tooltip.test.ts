@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseUiComponentMetadata } from '../component-metadata';
 import TooltipHarness from './TooltipHarness.svelte';
+import { tooltipFixtures } from './tooltip.fixtures';
 import * as tooltipApi from './index';
 
 const originalResizeObserver = window.ResizeObserver;
@@ -99,9 +100,9 @@ describe('Tooltip', () => {
     ).not.toBeNull();
   });
 
-  it('publishes parseable metadata, fixtures, and the complete public barrel', () => {
+  it('publishes parseable metadata and the complete production public barrel', () => {
     expect(() => parseUiComponentMetadata(tooltipApi.tooltipMetadata)).not.toThrow();
-    expect(tooltipApi.tooltipFixtures[0].states).toEqual(
+    expect(tooltipFixtures[0].states).toEqual(
       expect.arrayContaining([
         'open',
         'hover-delay',

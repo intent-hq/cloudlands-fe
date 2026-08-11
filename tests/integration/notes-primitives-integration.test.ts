@@ -5,19 +5,17 @@
  * and execution of primitives.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { NotesPrimitivesSerializer } from '../../src/lib/utils/notes-primitives-serializer';
-import { ReferenceResolverService } from '../../src/features/notes/main/reference-resolver.service';
-import type { NotePrimitive } from '../../src/shared/types/notes-primitives';
+import { resolveReferenceSnapshot } from '../../src/lib/components/notes/primitives/utils/reference-snapshot';
+import type { NotePrimitive, ReferencePrimitive } from '../../src/shared/types/notes-primitives';
 import { v4 as uuidv4 } from 'uuid';
 
 describe('Note Primitives Integration', () => {
   let serializer: NotesPrimitivesSerializer;
-  let resolver: ReferenceResolverService;
 
   beforeEach(() => {
     serializer = new NotesPrimitivesSerializer();
-    resolver = ReferenceResolverService.getInstance();
   });
 
   describe('Full Flow: Markdown → Primitives → Execution', () => {
@@ -39,6 +37,11 @@ Here's the main class we need to review:
     "kind": "symbol",
     "semanticId": "src/main.ts#symbol:MainClass.init"
   },
+  "snapshot": {
+    "code": "class MainClass { init() { return true; } }",
+    "filePath": "src/main.ts",
+    "languageId": "typescript"
+  },
   "label": "MainClass initialization",
   "description": "The main initialization method"
 }
@@ -52,27 +55,20 @@ This method handles the startup sequence.
       expect(parsed).toHaveLength(1);
       expect(parsed[0].primitive.type).toBe('reference');
 
-      // Mock the resolution
-      vi.spyOn(resolver, 'resolve').mockResolvedValue({
-        ok: true,
-        data: {
-          code: 'class MainClass {\n  init() {\n    console.log("Initializing...");\n  }\n}',
-          filePath: 'src/main.ts',
-          languageId: 'typescript',
-          range: {
-            startLine: 2,
-            endLine: 4,
-          },
-        },
+      const reference = parsed[0].primitive as ReferencePrimitive;
+      expect(reference).toMatchObject({
+        type: 'reference',
+        target: { kind: 'symbol', semanticId: 'src/main.ts#symbol:MainClass.init' },
       });
 
-      // Resolve the reference
-      const result = await resolver.resolve('test-workspace', 'src/main.ts#symbol:MainClass.init');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data.code).toContain('init()');
-        expect(result.data.languageId).toBe('typescript');
-      }
+      // Exercise the same stored-snapshot boundary ReferenceBlock uses; live
+      // filesystem resolution was retired with the legacy reference:resolve channel.
+      const resolved = resolveReferenceSnapshot(reference);
+      expect(resolved).toEqual({
+        code: 'class MainClass { init() { return true; } }',
+        languageId: 'typescript',
+        range: null,
+      });
     });
 
     it('should handle CLI primitive execution flow', async () => {

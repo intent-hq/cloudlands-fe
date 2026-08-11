@@ -9,6 +9,8 @@
       content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: workspace-asset:; connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; worker-src 'self' blob: data:;"
     />
     <title>Intent</title>
+    <!-- Runtime web configuration is a same-origin deployment asset, never a Vite-bundled secret. -->
+    <script src="/runtime-config.js"></script>
     <style>
       html,
       body {

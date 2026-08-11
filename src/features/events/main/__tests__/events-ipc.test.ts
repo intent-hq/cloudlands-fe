@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrowserWindow } from 'electron';
 
 const electronMocks = vi.hoisted(() => {
@@ -34,11 +27,12 @@ vi.mock('electron', () => ({
   },
 }));
 
+vi.mock('../../../agent/main/agent-process-registry', () => ({
+  notifyPendingWorkClearedForAgent: vi.fn(),
+}));
+
 import { EVENTS_CHANNELS } from '../../../../shared/ipc/channels';
-import {
-  cleanupEventsIPC,
-  setupEventsIPC,
-} from '../events.ipc';
+import { cleanupEventsIPC, setupEventsIPC } from '../events.ipc';
 import {
   addRendererSubscription,
   clearRendererSubscriptions,
@@ -47,6 +41,8 @@ import {
   windowCloseListeners,
 } from '../renderer-subscription-registry';
 import type { WorkspaceEvent } from '../../types';
+import { agentSubscribe, updateAgentStatus } from '../agent-subscription-ops';
+import { resetAgentSubscriptionState } from '../agent-subscription-state.service';
 
 function makeWindow(closedListeners: Array<() => void> = []) {
   return {
@@ -78,6 +74,7 @@ describe('events IPC renderer subscription cleanup', () => {
     electronMocks.handlers.clear();
     electronMocks.fromId.mockReset();
     electronMocks.removeHandler.mockClear();
+    resetAgentSubscriptionState();
   });
 
   afterEach(() => {
@@ -128,9 +125,7 @@ describe('events IPC renderer subscription cleanup', () => {
     const oldWindow = makeWindow(oldClosedListeners);
     const newWindow = makeWindow(newClosedListeners);
 
-    electronMocks.fromId
-      .mockReturnValueOnce(oldWindow)
-      .mockReturnValueOnce(newWindow);
+    electronMocks.fromId.mockReturnValueOnce(oldWindow).mockReturnValueOnce(newWindow);
     setupEventsIPC();
 
     const subscribe = electronMocks.handlers.get(EVENTS_CHANNELS.SUBSCRIBE);
@@ -141,6 +136,55 @@ describe('events IPC renderer subscription cleanup', () => {
     expect(rendererSubscriptions.size).toBe(1);
     expect(rendererSubscriptions.get('sub-reused')?.windowId).toBe(43);
     expect(windowCloseListeners.get('sub-reused')?.window).toBe(newWindow);
+  });
+
+  it('reads agent subscriptions from the same canonical state written by production operations', async () => {
+    const subscriptionId = agentSubscribe('ws-agent-subscriptions', 'agent-parent', 'Parent', {
+      eventTypes: ['agent:idle'],
+      actorIds: ['agent-child'],
+      delegationGroup: {
+        groupId: 'group-1',
+        awaitMode: 'all',
+        expectedAgentIds: ['agent-child'],
+      },
+    });
+    updateAgentStatus('ws-agent-subscriptions', 'agent-child', 'responding');
+    setupEventsIPC();
+
+    const readSubscriptions = electronMocks.handlers.get(EVENTS_CHANNELS.GET_AGENT_SUBSCRIPTIONS);
+    const result = await readSubscriptions?.(
+      {},
+      { workspaceId: 'ws-agent-subscriptions', agentId: 'agent-parent' },
+    );
+
+    expect(result).toEqual({
+      success: true,
+      data: [
+        expect.objectContaining({
+          id: subscriptionId,
+          agentId: 'agent-parent',
+          eventTypes: ['agent:idle'],
+          actorIds: ['agent-child'],
+          delegationGroup: {
+            groupId: 'group-1',
+            awaitMode: 'all',
+            expectedAgentIds: ['agent-child'],
+          },
+        }),
+      ],
+      delegationGroups: [
+        {
+          groupId: 'group-1',
+          awaitMode: 'all',
+          expectedAgentIds: ['agent-child'],
+          completedAgentIds: [],
+          deletedAgentIds: [],
+          agentStatuses: { 'agent-child': 'responding' },
+          delivered: false,
+        },
+      ],
+      agentStatuses: { 'agent-child': 'responding' },
+    });
   });
 
   it('prunes stale destroyed-window subscriptions during delivery', () => {

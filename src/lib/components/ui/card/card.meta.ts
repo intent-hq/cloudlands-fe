@@ -21,7 +21,6 @@ export const cardMetadata = parseUiComponentMetadata({
     'Header',
     'Root',
     'Title',
-    'cardFixtures',
     'cardMetadata',
   ],
   category: 'pattern',

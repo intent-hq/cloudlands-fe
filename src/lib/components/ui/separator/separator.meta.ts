@@ -6,7 +6,7 @@ export const separatorMetadata = parseUiComponentMetadata({
   source: 'src/lib/components/ui/separator/separator.svelte',
   publicImport: '$lib/components/ui/separator',
   legacyImports: ['$lib/components/ui/separator/index.js'],
-  exports: ['Root', 'Separator', 'separatorFixtures', 'separatorMetadata'],
+  exports: ['Root', 'Separator', 'separatorMetadata'],
   category: 'primitive',
   owner: 'design-system',
   callers: [

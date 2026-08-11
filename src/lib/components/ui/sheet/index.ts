@@ -10,7 +10,6 @@ import Description from './sheet-description.svelte';
 
 const Root = SheetPrimitive.Root;
 const Portal = SheetPrimitive.Portal;
-export { sheetFixtures } from './sheet.fixtures';
 export { sheetMetadata } from './sheet.meta';
 
 export {

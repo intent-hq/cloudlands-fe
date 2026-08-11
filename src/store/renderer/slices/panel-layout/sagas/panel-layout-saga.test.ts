@@ -359,7 +359,7 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
-  it('debounces history globally across workspaces and reads the latest state', async () => {
+  it('debounces history independently across workspaces', async () => {
     const { channel, task } = startSaga();
     await settle();
     channel.put({ type: openTab.type, payload: { wsId: WS_1 } });
@@ -373,6 +373,17 @@ describe('panelLayoutSaga', () => {
 
     expect(mocks.saveHistory.mock.calls).toEqual([
       [
+        WS_1,
+        {
+          version: 1,
+          workspaceId: WS_1,
+          history: [snapshot],
+          historyIndex: 0,
+          lastUpdated: persistedAt,
+        },
+        LOCAL_CONNECTION_ID,
+      ],
+      [
         WS_2,
         {
           version: 1,
@@ -380,6 +391,34 @@ describe('panelLayoutSaga', () => {
           history: [{ ...snapshot, timestamp: 20 }],
           historyIndex: 0,
           lastUpdated: persistedAt,
+        },
+        LOCAL_CONNECTION_ID,
+      ],
+    ]);
+    await cancelSaga(task);
+  });
+
+  it('coalesces repeated same-key history updates and reads the latest state', async () => {
+    const state = storeState();
+    const { channel, task } = startSaga(state);
+    await settle();
+    channel.put({ type: openTab.type, payload: { wsId: WS_1 } });
+    await settle();
+    state.panelLayout.byWorkspaceId[WS_1] = workspaceState([{ ...snapshot, timestamp: 30 }]);
+    channel.put({ type: closeTab.type, payload: { wsId: WS_1 } });
+    await settle();
+    await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
+    await settle();
+
+    expect(mocks.saveHistory.mock.calls).toEqual([
+      [
+        WS_1,
+        {
+          version: 1,
+          workspaceId: WS_1,
+          history: [{ ...snapshot, timestamp: 30 }],
+          historyIndex: 0,
+          lastUpdated: new Date(NOW.getTime() + HISTORY_PERSIST_DEBOUNCE_MS).toISOString(),
         },
         LOCAL_CONNECTION_ID,
       ],
@@ -529,25 +568,39 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
-  it('clears persisted state and cancels pending history on workspace unmount', async () => {
+  it('clears persisted state and cancels only matching history on panel scope teardown', async () => {
     const { channel, task } = startSaga();
     await settle();
     channel.put(clearPanelLayout(WS_1));
     channel.put({ type: openTab.type, payload: { wsId: WS_1 } });
-    channel.put(workspaceUnmounted(WS_1));
+    channel.put({ type: openTab.type, payload: { wsId: WS_2 } });
+    channel.put(panelLayoutScopeUnmounted(WS_1));
     await settle();
     await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
 
     expect(mocks.removeItem.mock.calls).toEqual([[STORAGE_KEY_1]]);
     expect(mocks.clearAdapter.mock.calls).toEqual([[WS_1]]);
-    expect(mocks.saveHistory.mock.calls).toEqual([]);
+    expect(mocks.saveHistory.mock.calls).toEqual([
+      [
+        WS_2,
+        {
+          version: 1,
+          workspaceId: WS_2,
+          history: [{ ...snapshot, timestamp: 20 }],
+          historyIndex: 0,
+          lastUpdated: new Date(NOW.getTime() + HISTORY_PERSIST_DEBOUNCE_MS).toISOString(),
+        },
+        LOCAL_CONNECTION_ID,
+      ],
+    ]);
     await cancelSaga(task);
   });
 
-  it('flushes pending history with its captured backend when the saga is cancelled', async () => {
+  it('flushes every pending workspace history with its captured backend when cancelled', async () => {
     const { channel, task } = startSaga();
     await settle();
     channel.put({ type: openTab.type, payload: { wsId: WS_1 } });
+    channel.put({ type: openTab.type, payload: { wsId: WS_2 } });
     await settle();
     await cancelSaga(task);
 
@@ -559,6 +612,17 @@ describe('panelLayoutSaga', () => {
           version: 1,
           workspaceId: WS_1,
           history: [snapshot],
+          historyIndex: 0,
+          lastUpdated: NOW.toISOString(),
+        },
+        LOCAL_CONNECTION_ID,
+      ],
+      [
+        WS_2,
+        {
+          version: 1,
+          workspaceId: WS_2,
+          history: [{ ...snapshot, timestamp: 20 }],
           historyIndex: 0,
           lastUpdated: NOW.toISOString(),
         },

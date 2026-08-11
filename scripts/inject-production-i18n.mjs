@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { injectParaglideBundle } from './fix-production-html-utils.mjs';
+import { hardenProductionScriptCsp, injectParaglideBundle } from './fix-production-html-utils.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outputDirectory = process.argv[2];
@@ -25,9 +25,9 @@ if (htmlFiles.length === 0) throw new Error(`No HTML output found in ${outputRoo
 
 for (const file of htmlFiles) {
   const html = readFileSync(file, 'utf8');
-  writeFileSync(file, injectParaglideBundle(html));
+  writeFileSync(file, hardenProductionScriptCsp(injectParaglideBundle(html)));
 }
 
 console.log(
-  `Injected the production i18n bundle into ${htmlFiles.length} HTML file(s) in ${outputDirectory}`,
+  `Injected production i18n and hardened CSP in ${htmlFiles.length} HTML file(s) in ${outputDirectory}`,
 );

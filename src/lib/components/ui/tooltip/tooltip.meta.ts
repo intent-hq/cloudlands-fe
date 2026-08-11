@@ -30,7 +30,6 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'formatUrlForDisplay',
     'hideLinkTooltip',
     'showLinkTooltip',
-    'tooltipFixtures',
     'tooltipMetadata',
   ],
   category: 'pattern',

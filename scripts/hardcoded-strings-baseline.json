@@ -435,60 +435,6 @@
       "count": 1
     },
     {
-      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Agent working",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Close",
-      "count": 2
-    },
-    {
-      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Loading workspace",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Open spaces",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Running agent",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Running agents",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "of tasks complete",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
-      "kind": "fallback literal",
-      "snippet": "Untitled",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
-      "kind": "string literal",
-      "snippet": "Moved to position",
-      "count": 2
-    },
-    {
       "path": "src/lib/components/layout/WorkspaceViewModeToggle.svelte",
       "kind": "attribute title",
       "snippet": "Show open spaces as columns",
@@ -1020,30 +966,6 @@
       "path": "src/lib/components/ui/combobox/combobox.meta.ts",
       "kind": "string literal",
       "snippet": "Retain while callers need the pattern and catalog coverage r",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/ui/combobox/combobox.svelte",
-      "kind": "string literal",
-      "snippet": "No options available",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/ui/combobox/combobox.svelte",
-      "kind": "string literal",
-      "snippet": "Search options",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/ui/combobox/combobox.svelte",
-      "kind": "string literal",
-      "snippet": "Select an option",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/ui/combobox/combobox.svelte",
-      "kind": "template text",
-      "snippet": "Loading options…",
       "count": 1
     },
     {
@@ -2043,18 +1965,6 @@
       "count": 1
     },
     {
-      "path": "src/lib/components/workspace/WorkspaceColumnsView.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Open spaces in columns",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/workspace/WorkspaceColumnsView.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Workspace column",
-      "count": 1
-    },
-    {
       "path": "src/lib/components/workspace/WorkspaceSidebarHeader.svelte",
       "kind": "attribute aria-label",
       "snippet": "Workspace actions",
@@ -2154,12 +2064,6 @@
       "path": "src/lib/components/workspace/multi-select-sidebar-tabs.ts",
       "kind": "string literal",
       "snippet": "Workspace status, progress, and key metrics at a glance.",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/workspace/sidebar/ActivityLogPreview.svelte",
-      "kind": "attribute title",
-      "snippet": "Open agent",
       "count": 1
     },
     {

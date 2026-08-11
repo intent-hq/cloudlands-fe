@@ -154,7 +154,8 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('data-sidebar-change={changePath}');
     expect(sidebar).toContain('const LAUNCHER_ICON_LIMIT = 6');
     expect(sidebar).toContain('grid-cols-[repeat(3,1.75rem)]');
-    expect(sidebar).toContain('launcherAgents.slice(0, LAUNCHER_ICON_LIMIT)');
+    expect(sidebar).toContain('deriveAgentLauncherItems(');
+    expect(sidebar).toContain('LAUNCHER_ICON_LIMIT,');
     expect(sidebar).toContain('$notes.filter((note) => !isChildNote(note, $notes))');
     expect(sidebar).toContain('{#each launcherNotes as note (note.id)}');
     expect(sidebar).not.toContain('$notes.slice(0, LAUNCHER_ICON_LIMIT)');

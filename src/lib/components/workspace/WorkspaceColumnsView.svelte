@@ -374,7 +374,7 @@
       ? 'scale-[0.99] opacity-50 shadow-none'
       : ''}"
     style:view-transition-name={getWorkspaceViewTransitionName(workspaceId)}
-    aria-label={`Workspace column ${workspaceId}`}
+    aria-label={m.workspace_columns_workspaceColumn_ariaLabel({ workspaceId })}
     data-workspace-column={workspaceId}
     data-active={$currentWorkspaceId$ === workspaceId}
     data-titlebar-clearance={titlebarClearance ? '' : undefined}
@@ -474,7 +474,7 @@
 <div
   bind:this={columnsScroller}
   class="scrollbar-none h-full min-h-0 w-full overflow-x-auto overflow-y-hidden bg-transparent"
-  aria-label="Open spaces in columns"
+  aria-label={m.workspace_columns_openSpaces_ariaLabel()}
   data-workspace-columns
 >
   <div class="flex h-full min-h-0 w-max min-w-full gap-2 pl-2 pr-2 pt-2">

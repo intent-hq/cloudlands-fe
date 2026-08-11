@@ -3,6 +3,7 @@ import { render } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import { parseUiComponentMetadata } from '../component-metadata';
 import BreadcrumbHarness from './BreadcrumbHarness.svelte';
+import { breadcrumbFixtures } from './breadcrumb.fixtures';
 import * as breadcrumbApi from './index';
 
 describe('Breadcrumb', () => {
@@ -42,9 +43,9 @@ describe('Breadcrumb', () => {
     expect(link.className).toContain('motion-reduce:transition-none');
   });
 
-  it('publishes parseable metadata, fixtures, and the complete public barrel', () => {
+  it('publishes parseable metadata and the complete production public barrel', () => {
     expect(() => parseUiComponentMetadata(breadcrumbApi.breadcrumbMetadata)).not.toThrow();
-    expect(breadcrumbApi.breadcrumbFixtures[0].states).toEqual(
+    expect(breadcrumbFixtures[0].states).toEqual(
       expect.arrayContaining([
         'navigation',
         'current-page',

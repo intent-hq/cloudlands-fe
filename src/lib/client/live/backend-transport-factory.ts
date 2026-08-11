@@ -18,11 +18,11 @@ let cachedTransport: BackendTransport | null = null;
 function pickTransport(): BackendTransport {
   // Electron IPC when a REAL preload bridge is present. The dev browser mock
   // also installs a `window.electronAPI` (sentinel version `0.0.0-browser`);
-  // `isElectronPlatform()` treats that as web so a configured
-  // VITE_INTENTD_WS_URL is not shadowed by the mock in dev:web.
+  // `isElectronPlatform()` treats that as web so a configured browser
+  // WebSocket URL is not shadowed by the mock in dev:web.
   if (isElectronPlatform()) return createElectronIpcBackendTransport();
   // Plain browser: speak JSON-RPC directly to the daemon over a WebSocket
-  // when VITE_INTENTD_WS_URL is configured.
+  // when runtime configuration (or the development env fallback) provides one.
   const wsUrl = resolveBrowserWsUrl();
   if (wsUrl) {
     const transport = createBrowserWebSocketTransport({ url: wsUrl });

@@ -9,7 +9,7 @@ export const spinnerMetadata = parseUiComponentMetadata({
     '$lib/components/ui/indicators/AgentBadge.svelte',
     '$lib/components/ui/indicators/UnsavedIndicator.svelte',
   ],
-  exports: ['AgentBadge', 'Spinner', 'UnsavedIndicator', 'spinnerFixtures', 'spinnerMetadata'],
+  exports: ['AgentBadge', 'Spinner', 'UnsavedIndicator', 'spinnerMetadata'],
   category: 'pattern',
   owner: '007-B1',
   callers: [
