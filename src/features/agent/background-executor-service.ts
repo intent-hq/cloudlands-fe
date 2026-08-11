@@ -33,9 +33,10 @@
  * Selector access uses selector `.effect()` inside the saga, and all state
  * updates are dispatched through saga effects. The toast lib remains lazy.
  */
-import { all, call, fork, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import { all, call, cancelled, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { BackendError } from '$lib/client/live/backend-transport-types';
+import { takeLatestInContext } from '$store/renderer/utils/context-saga-effects';
 import {
   cancelExecution,
   executeBackgroundAgent,
@@ -222,6 +223,11 @@ function* handleExecute(
       setExecutorState(workspaceId, executorType, { status: 'error', error: message, progress: 0 }),
     );
     yield* fork(showErrorToast, m.bgExecutor_service_generateFailed_error(), message);
+  } finally {
+    if ((yield* cancelled()) && isCurrentGeneration(workspaceId, executorType, generation)) {
+      bumpGeneration(workspaceId, executorType);
+      yield* put(setExecutorState(workspaceId, executorType, { status: 'cancelled' }));
+    }
   }
 }
 
@@ -262,7 +268,11 @@ function* cancelExecutionWorker(action: ReturnType<typeof cancelExecution>): Sag
 /** Owns background executor work under the app saga lifecycle. */
 export function* backgroundExecutorSaga(): SagaGenerator<void> {
   yield* all([
-    takeLatest(executeBackgroundAgent, executeBackgroundAgentWorker),
+    takeLatestInContext(
+      executeBackgroundAgent,
+      (action) => generationKey(action.payload[0], action.payload[1]),
+      executeBackgroundAgentWorker,
+    ),
     takeEvery(cancelExecution, cancelExecutionWorker),
   ]);
 }
