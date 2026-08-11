@@ -139,6 +139,7 @@
   restoreNewWorkspaceDraft,
 } from './initializer/new-workspace-draft';
   import { resolveGitHubPrefillSelection } from './initializer/github-prefill';
+  import { createRepoCacheWarmer } from './initializer/warm-repo-cache';
   import {
   matchGitHubPrefillRepo,
   type GitHubPrefillRepoCandidate,
@@ -1285,6 +1286,15 @@
         logger.debug('Failed to get remote URL for repo', { path, error: err });
       }
     })();
+  });
+
+  // Opportunistically warm the daemon's repo cache whenever a GitHub repo is
+  // selected (restored form state, prefill, or an explicit pick), so a
+  // subsequent create hydrates from an already-fresh cache. Fire-and-forget:
+  // dedupes per githubUrl within this form instance and swallows all errors.
+  const repoCacheWarmer = createRepoCacheWarmer();
+  $effect(() => {
+    repoCacheWarmer.warm({ repoType, githubUrl });
   });
 
   // Auto-restore last used setup script when the repo changes, and re-probe
