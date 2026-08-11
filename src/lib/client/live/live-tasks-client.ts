@@ -58,16 +58,18 @@ function stringArray(field: string, value: unknown): string[] | undefined {
 
 /**
  * Relation fields (v6.8, presence-detected): `dependsOn` / `conflictsWith`
- * from the source shape, plus the daemon-computed `unmetDependsOn` when the
- * row carries it (`task.list` rows do; note-shaped entities do not).
+ * plus the daemon-computed `unmetDependsOn`, all read from the source shape —
+ * top-level on `task.list` rows, `metadata.task` on note-shaped entities
+ * (monorepo#1979).
  */
 function relationFields(
   source: Record<string, unknown>,
-  raw: Record<string, unknown>,
 ): Pick<WorkspaceTask, "dependsOn" | "conflictsWith" | "unmetDependsOn"> {
   const dependsOn = stringArray("dependsOn", source.dependsOn) as NoteId[] | undefined;
   const conflictsWith = stringArray("conflictsWith", source.conflictsWith) as NoteId[] | undefined;
-  const unmetDependsOn = stringArray("unmetDependsOn", raw.unmetDependsOn) as NoteId[] | undefined;
+  const unmetDependsOn = stringArray("unmetDependsOn", source.unmetDependsOn) as
+    | NoteId[]
+    | undefined;
   return {
     ...(dependsOn ? { dependsOn } : {}),
     ...(conflictsWith ? { conflictsWith } : {}),
@@ -93,7 +95,7 @@ function noteToTask(raw: Record<string, unknown>): WorkspaceTask | null {
     // Optimistic-concurrency revision (§11.4-D): carried through when the daemon
     // returns it, left undefined otherwise (no behavior change → last-writer-wins).
     ...(typeof raw.rev === "number" ? { rev: raw.rev } : {}),
-    ...relationFields(task as Record<string, unknown>, raw),
+    ...relationFields(task as Record<string, unknown>),
   };
 }
 
@@ -118,7 +120,7 @@ function normalizeTaskEntity(raw: Record<string, unknown>): WorkspaceTask | null
           ? raw.updated_at
           : undefined,
     ...(typeof raw.rev === "number" ? { rev: raw.rev } : {}),
-    ...relationFields(raw, raw),
+    ...relationFields(raw),
   };
 }
 

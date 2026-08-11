@@ -867,6 +867,13 @@ export interface TaskMetadata {
   dependsOn?: NoteId[];
   /** Task-note ids this task may conflict with (advisory); omitted when empty. */
   conflictsWith?: NoteId[];
+  /**
+   * Daemon-computed at read/push time (never persisted): `dependsOn` ids whose
+   * task note is not `complete` (missing and cancelled deps count as unmet).
+   * Present on note-shaped read/push payloads only (PROTOCOL §5.2, v6.8,
+   * monorepo#1979); omitted when empty and on mutation-response notes.
+   */
+  unmetDependsOn?: NoteId[];
 }
 
 /**

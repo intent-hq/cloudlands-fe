@@ -372,14 +372,19 @@ describe("LiveTasksClient mutations (fake transport)", () => {
     warnSpy.mockRestore();
   });
 
-  it("note-shaped entities carry relations from metadata.task", async () => {
+  it("note-shaped entities carry relations (incl. unmetDependsOn) from metadata.task", async () => {
     mockedRequest.mockResolvedValueOnce({
       tasks: [
         {
           id: "note-1",
           title: "T",
           metadata: {
-            task: { status: "not_started", dependsOn: ["dep-a"], conflictsWith: ["con-b"] },
+            task: {
+              status: "not_started",
+              dependsOn: ["dep-a"],
+              conflictsWith: ["con-b"],
+              unmetDependsOn: ["dep-a"],
+            },
           },
         },
       ],
@@ -390,6 +395,7 @@ describe("LiveTasksClient mutations (fake transport)", () => {
     const { tasks } = await client.list("ws-1");
     expect(tasks[0].dependsOn).toEqual(["dep-a"]);
     expect(tasks[0].conflictsWith).toEqual(["con-b"]);
+    expect(tasks[0].unmetDependsOn).toEqual(["dep-a"]);
   });
 
   // ---- §11.4-D: expectedVersion forwarding (only when defined) --------------

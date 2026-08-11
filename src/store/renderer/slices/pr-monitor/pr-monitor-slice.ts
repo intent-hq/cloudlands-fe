@@ -46,10 +46,11 @@ const { setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
 export const prMonitorsUpdated =
   createAction<[workspaceId: string, monitors: PrMonitorRow[]]>('prMonitor/updated');
 
-/** Trigger: `prMonitor.flush` (§6.9) — outcome arrives via `prMonitor:*` events. */
-export const flushPrMonitorRequested = createAction<[workspaceId: string, monitorId: string]>(
-  'prMonitor/flushRequested',
-);
+/** Trigger: `prMonitor.flush` (§6.9) — outcome arrives via `prMonitor:*` events.
+ * `check: true` asks the daemon to re-poll the PR first (§5.42 additive param). */
+export const flushPrMonitorRequested = createAction<
+  [workspaceId: string, monitorId: string, check?: boolean]
+>('prMonitor/flushRequested');
 
 /** Trigger: `prMonitor.cancel` (§6.9) — `prMonitor:cancelled` drops the row. */
 export const cancelPrMonitorRequested = createAction<[workspaceId: string, monitorId: string]>(

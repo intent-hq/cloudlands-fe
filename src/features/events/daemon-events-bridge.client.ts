@@ -149,6 +149,8 @@ import { eventReceived } from '$store/renderer/slices/workspace-events/workspace
 import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
 import {
   streamStatusReceived,
+  chatErrorCleared,
+  chatModelUnavailableCleared,
   chatQueueProcessingReceived,
   chatSendFailed,
   chatSendStarted,
@@ -1188,12 +1190,20 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
   // displays the failure message and Retry button. Dispatch this even when no
   // stream state exists (e.g., agent spawn failed before streaming started).
   // The failure also lands in the cross-workspace aggregation registry so the
-  // grouped-failure toast layer can surface it. The daemon's turn-correlation
-  // id (PROTOCOL §6.6) rides along when present so the failure can be
-  // attributed to the exact turn (monorepo#1057).
+  // grouped-failure toast layer can surface it — UNLESS the payload carries a
+  // non-empty `parentAgentId` (PROTOCOL §6.5): a delegated agent's failure is
+  // the parent's to handle and escalate, so no failure toast (monorepo#1991).
+  // Gate strictly on the payload field (no local session lookups); absent →
+  // toast shows, which keeps older daemons working. The daemon's
+  // turn-correlation id (PROTOCOL §6.6) rides along when present so the
+  // failure can be attributed to the exact turn (monorepo#1057).
   if (typeof error === 'string' && error.length > 0) {
     const turnId = typeof data?.turnId === 'string' ? data.turnId : undefined;
-    recordAgentFailure({ agentId, workspaceId, error });
+    const parentAgentId = data?.parentAgentId;
+    const hasParent = typeof parentAgentId === 'string' && parentAgentId.length > 0;
+    if (!hasParent) {
+      recordAgentFailure({ agentId, workspaceId, error });
+    }
     appStore.dispatch(chatSendFailed(agentId, error, turnId));
   }
 }
@@ -2858,18 +2868,20 @@ export function routeDaemonEventsNotification(
   // Failure-registry lifecycle: drop an agent from the failure aggregation
   // registry when its status leaves error/failed (recovered or retried) or
   // when it is deleted, so the grouped-failure toast reflects live failures
-  // only. Side effects, never early returns — both events fall through to the
-  // timeline dispatch below.
+  // only. A status-less payload with `isActive: true` counts as leaving the
+  // error state too — the same edge the stale-banner clear below accepts —
+  // so the grouped toast and the inline banner never diverge on it. Side
+  // effects, never early returns — both events fall through to the timeline
+  // dispatch below.
   if (type === 'agent:status-changed') {
     const data = (event as { data?: Record<string, unknown> }).data;
     const agentId = data?.agentId;
     const status = data?.status;
-    if (
-      typeof agentId === 'string' &&
-      typeof status === 'string' &&
-      status !== 'error' &&
-      status !== 'failed'
-    ) {
+    const leavesError =
+      typeof status === 'string'
+        ? status !== 'error' && status !== 'failed'
+        : data?.isActive === true;
+    if (typeof agentId === 'string' && leavesError) {
       removeAgentFailure(agentId);
     }
   }
@@ -2883,6 +2895,55 @@ export function routeDaemonEventsNotification(
     // hydration above does not touch it. Fire-and-forget side effect, falls
     // through to the timeline dispatch below.
     void reconcileWorkspaceAgentSummary(workspaceId);
+  }
+
+  // monorepo#1106/#1989: a redrive that bypasses chat-send-service —
+  // coordinator `agent.sendMessage`, another client's `agent.retry`, or this
+  // FE's own failure-toast Retry (also `agent.retry`, which never routes
+  // through the send lifecycle) — starts a new turn without the #1044
+  // enqueue-success clear, so the previous turn's failure banner persists
+  // over the live turn ("errored" and "processing" simultaneously). Keyed
+  // off the turn-start status edges here (with `agent:stream:start` /
+  // `agent:queue:processing` as the other turn-start clears), NOT the send
+  // path, so every redrive shape is covered. Clear the stale `chatError` /
+  // `modelUnavailable` when the agent leaves the error state for a
+  // turn-starting one. Two wire shapes cover the redrive family:
+  //   - `agent.sendMessage` on an errored agent goes straight error→active;
+  //   - `agent.retry` persists Pending BEFORE draining (persist_retry_status),
+  //     so the FE sees error→pending (isActive:false) first — that edge
+  //     consumes the error prior status, so `pending` must clear too or the
+  //     follow-up pending→active tick reads priorStatus 'pending' and never
+  //     fires. An empty-queue retry goes error→idle instead, which correctly
+  //     keeps the banner (nothing was redriven).
+  // Gated on the PRIOR session status (read before the `eventReceived`
+  // dispatch below applies the transition) so a mid-turn status tick — e.g.
+  // an isStreaming flag change while an enqueue-failure banner is up — never
+  // wipes a banner set while the agent was already active (#1044/#999
+  // semantics preserved). Retry records stay parked: their promotion remains
+  // turnId-exact via `agent:queue:processing` (monorepo#1057). Side effect
+  // only — falls through to the timeline dispatch below.
+  if (type === 'agent:status-changed') {
+    const data = (event as { data?: Record<string, unknown> }).data;
+    const agentId = data?.agentId;
+    const status = typeof data?.status === 'string' ? data.status : undefined;
+    const startsTurn =
+      data?.isActive === true ||
+      status === 'active' ||
+      status === 'responding' ||
+      status === 'pending';
+    if (typeof agentId === 'string' && status !== 'error' && status !== 'failed' && startsTurn) {
+      const priorStatus: string | undefined =
+        appStore.state.agentSessions.byAgentId[agentId]?.status;
+      if (priorStatus === 'error' || priorStatus === 'failed') {
+        const chatAgent = appStore.state.chatState?.byAgentId[agentId];
+        if (chatAgent?.error) {
+          appStore.dispatch(chatErrorCleared(agentId));
+        }
+        if (chatAgent?.modelUnavailable) {
+          appStore.dispatch(chatModelUnavailableCleared(agentId));
+        }
+      }
+    }
   }
 
   // Activity reconciliation: busy-implying agent events may indicate a missed

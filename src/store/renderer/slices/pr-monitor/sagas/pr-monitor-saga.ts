@@ -110,9 +110,9 @@ function* watchActiveWorkspace(active: Map<string, SubscriptionEntry>): SagaGene
 export function* flushPrMonitorWorker(
   action: ReturnType<typeof flushPrMonitorRequested>,
 ): SagaGenerator<void> {
-  const [workspaceId, monitorId] = action.payload;
+  const [workspaceId, monitorId, check] = action.payload;
   try {
-    yield* call(flushPrMonitor, workspaceId, monitorId);
+    yield* call(flushPrMonitor, workspaceId, monitorId, check);
   } catch (error) {
     logger.error('prMonitor.flush failed', { workspaceId, monitorId, error });
   }

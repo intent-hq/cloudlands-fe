@@ -22,6 +22,7 @@ import {
   FileWriteRequestSchema,
   TerminalCreateRequestSchema,
   TerminalWriteRequestSchema,
+  PrMonitorFlushRequestSchema,
   validateIpcRequest,
   tryValidateIpcRequest,
 } from '../request-validation';
@@ -211,6 +212,49 @@ describe('IPC Contracts', () => {
 
       const validated = TerminalWriteRequestSchema.parse(request);
       expect(validated.data).toBe('ls -la\n');
+    });
+  });
+
+  describe('Daemon Wire Method Schemas', () => {
+    it('should validate prMonitor.flush without check (PROTOCOL §5.42 additive param)', () => {
+      const request = {
+        workspaceId: 'amber-forest',
+        monitorId: 'mon-1',
+      };
+
+      const validated = PrMonitorFlushRequestSchema.parse(request);
+      expect(validated.monitorId).toBe('mon-1');
+      expect(validated.check).toBeUndefined();
+    });
+
+    it('should validate prMonitor.flush with check: true', () => {
+      const request = {
+        workspaceId: 'amber-forest',
+        monitorId: 'mon-1',
+        check: true,
+      };
+
+      const validated = PrMonitorFlushRequestSchema.parse(request);
+      expect(validated.check).toBe(true);
+    });
+
+    it('should reject prMonitor.flush with a non-boolean check', () => {
+      const request = {
+        workspaceId: 'amber-forest',
+        monitorId: 'mon-1',
+        check: 'yes',
+      };
+
+      expect(() => PrMonitorFlushRequestSchema.parse(request)).toThrow();
+    });
+
+    it('should reject prMonitor.flush without a monitorId', () => {
+      const request = {
+        workspaceId: 'amber-forest',
+        check: true,
+      };
+
+      expect(() => PrMonitorFlushRequestSchema.parse(request)).toThrow();
     });
   });
 

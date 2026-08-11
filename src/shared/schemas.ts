@@ -277,6 +277,7 @@ export const TaskMetadataSchema = z.object({
   startedAt: z.string().datetime().optional(),
   dependsOn: z.array(z.string()).optional(), // Hard ordering edges (task note ids)
   conflictsWith: z.array(z.string()).optional(), // Advisory conflict edges (task note ids)
+  unmetDependsOn: z.array(z.string()).optional(), // Daemon-computed unmet deps (read/push shapes, v6.8)
 });
 
 // Note: DependencyTypeSchema and NoteDependencySchema removed

@@ -228,6 +228,7 @@ describe('TaskItemNodeView - Basic Rendering', () => {
         task: {
           status: 'in_progress',
           dependsOn: ['dependency-1'],
+          unmetDependsOn: ['dependency-1'],
           conflictsWith: ['conflict-1'],
         },
       },
@@ -578,5 +579,66 @@ describe('TaskItemNodeView - Data Attributes', () => {
 
     const listItem = container.querySelector('li') as HTMLElement;
     expect(listItem.classList.contains('task-checked')).toBe(true);
+  });
+});
+
+describe('TaskItemNodeView - Daemon-provided unmetDependsOn (v6.8, monorepo#1979)', () => {
+  const WS_ID = 'ws-1';
+  const TASK_ID = 'task-note-1';
+
+  function makeTaskNote(overrides: Record<string, unknown> = {}) {
+    return {
+      id: TASK_ID,
+      workspaceId: WS_ID,
+      title: 'Linked task',
+      metadata: {
+        task: {
+          status: 'not_started',
+          dependsOn: ['dep-a', 'dep-b'],
+          ...overrides,
+        },
+      },
+    };
+  }
+
+  function renderLinkedTask() {
+    return render(TestTaskItemNodeView, { props: createLinkedTaskProps(TASK_ID) });
+  }
+
+  it('renders the "Waits on" chip from the daemon-provided metadata.task.unmetDependsOn', async () => {
+    linkedNoteState.set(makeTaskNote({ unmetDependsOn: ['dep-a', 'dep-b'] }));
+    linkedNoteState.setInitialized(true);
+
+    const { container } = renderLinkedTask();
+    await waitFor(() => expect(container.textContent).toContain('Waits on 2'));
+  });
+
+  it('renders no chip when the daemon omits unmetDependsOn, even with dependsOn edges', async () => {
+    // Pre-#1979 the FE re-derived unmet deps from dependsOn + the notes slice;
+    // now an omitted field (all deps met) must render no chip.
+    linkedNoteState.set(makeTaskNote());
+    linkedNoteState.setInitialized(true);
+
+    const { container } = renderLinkedTask();
+    await waitFor(() => expect(container.textContent).toContain('Linked task'));
+    expect(container.textContent).not.toContain('Waits on');
+  });
+
+  it('updates the rendered chip when a note:updated push changes unmetDependsOn', async () => {
+    linkedNoteState.set(makeTaskNote({ unmetDependsOn: ['dep-a', 'dep-b'] }));
+    linkedNoteState.setInitialized(true);
+
+    const { container } = renderLinkedTask();
+    await waitFor(() => expect(container.textContent).toContain('Waits on 2'));
+
+    // Simulate the notes-slice update a `note:updated` push produces after a
+    // dependency completes: the daemon re-announces the dependent note with
+    // the refreshed projection (one dep left).
+    linkedNoteState.set(makeTaskNote({ unmetDependsOn: ['dep-b'] }));
+    await waitFor(() => expect(container.textContent).toContain('Waits on 1'));
+
+    // Second push: the last dep completes and the field is omitted → chip gone.
+    linkedNoteState.set(makeTaskNote());
+    await waitFor(() => expect(container.textContent).not.toContain('Waits on'));
   });
 });
