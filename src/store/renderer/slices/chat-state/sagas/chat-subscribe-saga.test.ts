@@ -798,6 +798,59 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       expect(reopened!.options).toEqual({ sinceMessageId: 'm-a-final' });
     });
 
+    it('clears the resume anchor when workspace deletion names an agent whose slot already retired', () => {
+      const agentId = 'agent-sub-resume-retired-delete';
+      const previous = makeMessage('m-before-delete', 'old workspace message');
+      const recycled = makeMessage('m-after-recycle', 'new workspace message');
+      seedSession(agentId, { messages: [previous] });
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      const first = openChat(agentId);
+      appStore.dispatch(markAgentAsViewed(agentId));
+
+      appStore.dispatch(clearCurrentlyViewedAgent(agentId));
+      expect(first.unsubscribe).toHaveBeenCalledOnce();
+      appStore.dispatch(workspaceDeleted(WS, [agentId]));
+
+      seedSession(agentId, { messages: [previous, recycled] });
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
+      const reopened = [...fakeSubscriptions].reverse().find((sub) => sub.agentId === agentId);
+
+      expect(reopened?.options).toEqual({ sinceMessageId: recycled.id });
+    });
+
+    it('clears an active-slot anchor when deletion queues behind a delayed ordinary close', async () => {
+      const agentId = 'agent-sub-resume-active-delete';
+      const previous = makeMessage('m-active-before-delete', 'old workspace message');
+      const recycled = makeMessage('m-active-after-recycle', 'new workspace message');
+      seedSession(agentId, { messages: [previous] });
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      const first = openChat(agentId);
+      const close = deferred<void>();
+      first.unsubscribe.mockReturnValueOnce(close.promise);
+      appStore.dispatch(markAgentAsViewed(agentId));
+
+      appStore.dispatch(clearCurrentlyViewedAgent(agentId));
+      appStore.dispatch(workspaceDeleted(WS, [agentId]));
+      close.resolve();
+      await vi.waitFor(() => expect(first.unsubscribe).toHaveBeenCalledOnce());
+
+      seedSession(agentId, { messages: [previous, recycled] });
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
+      await vi.waitFor(() => {
+        expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(2);
+      });
+      const reopened = [...fakeSubscriptions].reverse().find((sub) => sub.agentId === agentId);
+
+      expect(reopened?.options).toEqual({ sinceMessageId: recycled.id });
+      expect(first.unsubscribe).toHaveBeenCalledOnce();
+    });
+
     it('dispatches refreshChatTranscriptRequested when the daemon replies resumed: false', () => {
       const refreshes: Array<[string, string]> = [];
       const stopRecorder = appStore.runSaga(function* recorder() {

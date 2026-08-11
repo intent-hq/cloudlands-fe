@@ -536,6 +536,7 @@ function* closeSubscription(
   agentId: string,
   clearResumeAnchor = false,
 ): SagaGenerator<void> {
+  if (clearResumeAnchor) resumeAnchors.delete(agentId);
   const entry = coordinator.subscriptions.get(agentId);
   if (!entry) return;
   coordinator.subscriptions.delete(agentId);
@@ -544,9 +545,7 @@ function* closeSubscription(
   try {
     // Capture the resume anchor BEFORE the streaming flags are normalized
     // below — afterwards a partial row can no longer be told apart.
-    if (clearResumeAnchor) {
-      resumeAnchors.delete(agentId);
-    } else {
+    if (!clearResumeAnchor) {
       const messages = (yield* selectAgentSession.effect(agentId))?.messages ?? [];
       resumeAnchors.set(agentId, newestPersistedMessageId(messages) ?? '');
     }
@@ -786,6 +785,7 @@ function* routeLifecycleAction(
     closeMatchingSlots(coordinator, (_agentId, slot) => slot.wsId === wsId, true);
   } else if (action.type === workspaceDeleted.type) {
     const [wsId, agentIds] = action.payload as ReturnType<typeof workspaceDeleted>['payload'];
+    for (const agentId of agentIds) resumeAnchors.delete(agentId);
     closeMatchingSlots(
       coordinator,
       (agentId, slot) => slot.wsId === wsId || agentIds.includes(agentId),
