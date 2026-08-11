@@ -308,6 +308,12 @@ function buildVisibleWorkspaceState(
       continue;
     }
 
+    // The daemon continues serving scheduled rows until the grace window
+    // expires; keep them hidden while `pendingDeleteAt` is present.
+    if (workspace.pendingDeleteAt) {
+      continue;
+    }
+
     let merged = applyPendingWorkspaceTitle(
       state,
       mergeWorkspaceEnrichment(getItem(state.workspaces, workspace.id), workspace),
@@ -427,6 +433,11 @@ workspaceReducer.with(clearPendingCreation, (state, { payload: [wsId] }) => {
 });
 workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace] }) => {
   if (state.pendingDeletions[workspace.id]) return state;
+  if (workspace.pendingDeleteAt) {
+    const visible = getWorkspaceById(state.workspaces, workspace.id);
+    if (!visible) return state;
+    return { ...state, workspaces: removeItem(state.workspaces, workspace.id) };
+  }
   const existing = getWorkspaceById(state.workspaces, workspace.id);
   const merged = applyPendingWorkspaceTitle(state, mergeWorkspaceEnrichment(existing, workspace));
   return {

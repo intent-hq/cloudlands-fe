@@ -243,6 +243,10 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   );
   const fetched = [] as typeof listed;
   for (const agent of listed) {
+    // Drop rows the FE soft-hid (local pending registry) and rows carrying the
+    // daemon's delete-grace-window deadline (PROTOCOL §5.5 `pendingDeleteAt`,
+    // v6.7+) — e.g. a deletion scheduled by another window.
+    if (agent.pendingDeleteAt) continue;
     if (!(yield* call(isAgentDeletionPending, String(agent.id)))) fetched.push(agent);
   }
   yield* put(setAgentsLoaded(workspaceId, true));

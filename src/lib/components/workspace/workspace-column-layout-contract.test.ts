@@ -95,7 +95,7 @@ describe('workspace column layout contract', () => {
     expect(columns).not.toContain("{#key stack.join(':')}");
     expect(surface).toContain('onDestroy(() => {');
     expect(surface).not.toContain('onDestroy(async () => {');
-    expect(surface).toContain('void flushDeletionsAction.promise.catch');
+    expect(surface).not.toContain('flushPendingAgentDeletionsRequested');
     expect(panelLayout).toContain("contained ? 'overflow-hidden p-2'");
     expect(panelLayout).toContain('panelLayoutScopeMounted(mountedLayoutId)');
     expect(panelLayout).toContain('panelLayoutScopeUnmounted(mountedLayoutId)');

@@ -88,7 +88,6 @@
     createAgentWithSpecialistRequested,
     setAgents,
     setAgentsLoaded,
-    flushPendingAgentDeletionsRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -880,18 +879,6 @@
 
     // Dispose all managed resources (timers, intervals, etc.)
     cleanupManager.dispose();
-
-    // Flush pending undo-able deletions without deferring the teardown above.
-    // An async onDestroy continuation can otherwise clear a replacement
-    // WorkspaceSurface after it has already rehydrated this workspace.
-    const flushDeletionsAction = flushPendingAgentDeletionsRequested(workspaceId);
-    appStore.dispatch(flushDeletionsAction);
-    void flushDeletionsAction.promise.catch((error) => {
-      logger.error('Failed to flush pending agent deletions during cleanup', {
-        workspaceId,
-        error,
-      });
-    });
 
     // Note: file tracking Redux state handles its own cleanup internally
 

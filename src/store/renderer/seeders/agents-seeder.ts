@@ -28,13 +28,12 @@ registerMockSeeder('agents', async ({ store, client }) => {
   const wsId = store.state.workspace.activeWorkspaceId;
   if (!wsId) return;
 
-  // Drop agents with a pending soft-hidden deletion (undo window still
-  // open) so the boot/seed path cannot resurrect a deleted agent — same
-  // guard `hydrateWorkspaceAgents` applies in lifecycle-read-service.ts.
+  // Drop agents hidden by either the local tombstone or the daemon-owned
+  // delete grace window so hydration cannot resurrect them.
   let fetched: AgentSession[];
   try {
     fetched = (await client.agents.list(wsId)).filter(
-      (agent) => !isAgentDeletionPending(String(agent.id)),
+      (agent) => !agent.pendingDeleteAt && !isAgentDeletionPending(String(agent.id)),
     );
   } catch (error) {
     console.error(`Agents seeder: client.agents.list(${wsId}) failed:`, error);

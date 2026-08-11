@@ -258,6 +258,56 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     );
   });
 
+  it("delete forwards undoDelayMs and surfaces the daemon's scheduled deadline", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      success: true,
+      scheduled: true,
+      deleteAt: '2026-08-11T00:00:15.000Z',
+    });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.delete('ws-1', { undoDelayMs: 15_000 })).toEqual({
+      success: true,
+      scheduled: true,
+      deleteAt: '2026-08-11T00:00:15.000Z',
+    });
+    expect(mockedRequest).toHaveBeenCalledWith(
+      'workspace.delete',
+      { workspaceId: 'ws-1', undoDelayMs: 15_000 },
+      { timeoutMs: 120_000 },
+    );
+  });
+
+  it('delete preserves the immediate wire shape when undoDelayMs is 0', async () => {
+    mockedRequest.mockResolvedValueOnce({ success: true });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.delete('ws-1', { undoDelayMs: 0 })).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith(
+      'workspace.delete',
+      { workspaceId: 'ws-1' },
+      { timeoutMs: 120_000 },
+    );
+  });
+
+  it('cancelDelete forwards the request and surfaces race-safe outcomes', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ cancelled: true })
+      .mockResolvedValueOnce({ cancelled: false });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.cancelDelete('ws-1')).toEqual({ success: true, cancelled: true });
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.cancelDelete', { workspaceId: 'ws-1' });
+    expect(await client.cancelDelete('ws-1')).toEqual({ success: true, cancelled: false });
+  });
+
+  it('cancelDelete maps a transport error without throwing', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('daemon offline'));
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.cancelDelete('ws-1')).toEqual({ success: false, error: 'daemon offline' });
+  });
+
   it('setActive forwards workspace.setActive with the workspaceId', async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true });
     const client = new LiveWorkspacesClient();

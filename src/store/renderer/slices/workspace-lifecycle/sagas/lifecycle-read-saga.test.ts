@@ -730,6 +730,7 @@ describe('lifecycleReadSaga', () => {
     mocks.isAgentDeletionPending.mockImplementation((id: string) => id === 'agent-drop');
     mocks.agents.list.mockResolvedValue([
       agent('agent-drop'),
+      agent('agent-daemon-pending', { pendingDeleteAt: '2026-08-11T00:00:15.000Z' }),
       agent('agent-bg', { isBackground: true }),
       agent('agent-keep'),
     ]);

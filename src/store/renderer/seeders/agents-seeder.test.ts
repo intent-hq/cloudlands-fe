@@ -238,6 +238,23 @@ describe("agents-seeder", () => {
         removePendingAgentDeletion(DOOMED);
       }
     });
+
+    it("filters agents carrying the daemon's pendingDeleteAt deadline from the seeded list", async () => {
+      const WORKSPACE_ID = "ws-daemon-pending-seed";
+      const DOOMED = "agent-daemon-doomed-seed";
+      const KEPT = "agent-daemon-kept-seed";
+      const doomed: AgentSession = { id: DOOMED, workspaceId: WORKSPACE_ID, name: "Doomed", isBackground: false, messages: [], status: "idle", pendingDeleteAt: "2026-08-11T00:00:15.000Z" };
+      const kept: AgentSession = { id: KEPT, workspaceId: WORKSPACE_ID, name: "Kept", isBackground: false, messages: [], status: "idle" };
+      store.dispatch(setActiveWorkspaceId(WORKSPACE_ID));
+      mockedClient.agents.list.mockResolvedValueOnce([doomed, kept]);
+
+      const { seedMockStore } = await import("../mock-bootstrap");
+      await seedMockStore(store, appClient);
+
+      expect(selectAgentSession.select(store.state, DOOMED)).toBeUndefined();
+      expect(selectAgentSession.select(store.state, KEPT)).toBeDefined();
+      expect(selectActiveAgentId.select(store.state, WORKSPACE_ID)).toBe(KEPT);
+    });
   });
 
   describe("direct merge logic", () => {

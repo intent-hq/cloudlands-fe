@@ -1,4 +1,4 @@
-import { buffers, channel, eventChannel, type Channel, type EventChannel } from 'redux-saga';
+import { buffers, channel, type Channel } from 'redux-saga';
 import {
   all,
   call,
@@ -88,7 +88,6 @@ export const WORKSPACE_OPERATION_UNDO_DURATION_MS = 15_000;
  * after it; the reducers reject tombstoned ids until this grace window ends.
  */
 export const WORKSPACE_DELETION_TOMBSTONE_TTL_MS = 60_000;
-type Toast = Awaited<ReturnType<typeof getToast>>;
 type RemoveRepoResponse = { success: boolean; data?: { removed: boolean }; error?: string };
 
 async function getToast() {
@@ -151,56 +150,53 @@ function createUndoChannel(): Channel<true> {
   return channel<true>(buffers.sliding(1));
 }
 
-function createUnloadChannel(): EventChannel<Event> {
-  return eventChannel<Event>((emit) => {
-    if (typeof window === 'undefined') return () => {};
-    const handler = (event: Event) => emit(event);
-    window.addEventListener('beforeunload', handler);
-    window.addEventListener('pagehide', handler);
-    return () => {
-      window.removeEventListener('beforeunload', handler);
-      window.removeEventListener('pagehide', handler);
-    };
-  }, buffers.sliding(1));
-}
-
 function* clearTombstoneAfterGrace(workspaceId: string): SagaGenerator<void> {
   yield* delay(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
   yield* put(clearWorkspacePendingDeletion(workspaceId));
 }
 
-function* commitDeletion(workspace: Workspace, toast: Toast): SagaGenerator<void> {
-  try {
-    const result = yield* call([workspaceClient, workspaceClient.delete], workspace.id);
-    if (!result.ok) {
-      yield* put(clearWorkspacePendingDeletion(workspace.id));
-      yield* put(setWorkspaceEntity(workspace));
-      toast.error(m.workspace_ops_deleteFailed_error());
-      return;
-    }
-    // Keep the tombstone for a grace window so stale refetch responses cannot
-    // resurrect the deleted workspace. Detached so it survives task teardown.
-    yield* spawn(clearTombstoneAfterGrace, workspace.id);
-  } catch (error) {
-    logger.error('workspace.delete failed', { workspaceId: workspace.id, error });
-    yield* put(clearWorkspacePendingDeletion(workspace.id));
-    yield* put(setWorkspaceEntity(workspace));
-    toast.error(m.workspace_ops_deleteFailed_error());
-  }
+function* restoreWorkspace(workspace: Workspace): SagaGenerator<void> {
+  yield* put(clearWorkspacePendingDeletion(workspace.id));
+  yield* put(setWorkspaceEntity(workspace));
 }
 
+/**
+ * Daemon-owned delete grace window (PROTOCOL §5.1, delete grace window):
+ * `workspace.delete { undoDelayMs }` is sent IMMEDIATELY, so the deletion
+ * commits daemon-side at the deadline even if the FE quits or crashes. The FE
+ * soft-hides the row and shows the Undo toast; Undo issues the race-safe
+ * `workspace.cancelDelete` — `{ cancelled: true }` restores the workspace,
+ * `{ cancelled: false }` (already committed) surfaces "could not undo"
+ * without resurrecting it.
+ */
 function* deleteWithUndo(workspace: Workspace): SagaGenerator<void> {
   const undo = createUndoChannel();
-  const unload = createUnloadChannel();
-  let toast: Toast | undefined;
-  let committed = false;
+  let settled = false;
   try {
     const activeWorkspaceId = yield* selectActiveWorkspaceId.effect();
     yield* put(removeWorkspaceEntity(workspace.id));
     yield* put(markWorkspacePendingDeletion(workspace.id));
     if (activeWorkspaceId === workspace.id) yield* put(clearActiveWorkspace());
 
-    toast = yield* call(getToast);
+    const toast = yield* call(getToast);
+    try {
+      const result = yield* call([workspaceClient, workspaceClient.delete], workspace.id, {
+        undoDelayMs: WORKSPACE_OPERATION_UNDO_DURATION_MS,
+      });
+      if (!result.ok) {
+        settled = true;
+        yield* restoreWorkspace(workspace);
+        toast.error(m.workspace_ops_deleteFailed_error());
+        return;
+      }
+    } catch (error) {
+      logger.error('workspace.delete failed', { workspaceId: workspace.id, error });
+      settled = true;
+      yield* restoreWorkspace(workspace);
+      toast.error(m.workspace_ops_deleteFailed_error());
+      return;
+    }
+
     toast.warning(
       m.workspace_ops_deleted_toast({ title: workspace.title || m.workspace_ops_space_fallback() }),
       {
@@ -211,21 +207,33 @@ function* deleteWithUndo(workspace: Workspace): SagaGenerator<void> {
     const outcome = yield* race({
       undo: take(undo),
       timeout: delay(WORKSPACE_OPERATION_UNDO_DURATION_MS),
-      unload: take(unload),
     });
     if (outcome.undo) {
-      yield* put(clearWorkspacePendingDeletion(workspace.id));
-      yield* put(setWorkspaceEntity(workspace));
-      return;
+      try {
+        const cancel = yield* call([workspaceClient, workspaceClient.cancelDelete], workspace.id);
+        if (cancel.ok && cancel.data.cancelled) {
+          settled = true;
+          yield* restoreWorkspace(workspace);
+          return;
+        }
+      } catch (error) {
+        logger.error('workspace.cancelDelete failed', { workspaceId: workspace.id, error });
+      }
+      // Race-safe non-error: the daemon already committed (or the cancel RPC
+      // failed) — never resurrect the workspace locally.
+      toast.error(m.workspace_ops_undoFailed_error());
     }
-    committed = true;
-    yield* commitDeletion(workspace, toast);
+    settled = true;
+    // The daemon commits at the deadline. Keep the tombstone for a grace
+    // window so stale refetch responses cannot resurrect the deleted
+    // workspace. Detached so it survives task teardown.
+    yield* spawn(clearTombstoneAfterGrace, workspace.id);
   } finally {
     undo.close();
-    unload.close();
-    if ((yield* cancelled()) && !committed) {
-      toast ??= yield* call(getToast);
-      yield* commitDeletion(workspace, toast);
+    // Teardown mid-window: the daemon still owns the commit; just make sure
+    // the tombstone is eventually lifted.
+    if ((yield* cancelled()) && !settled) {
+      yield* spawn(clearTombstoneAfterGrace, workspace.id);
     }
   }
 }
