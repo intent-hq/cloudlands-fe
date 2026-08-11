@@ -241,8 +241,8 @@ describe('MonitoredPrsRow', () => {
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
-    const flushItem = await waitFor(() => screen.getByTestId('monitored-pr-flush-item'));
-    const menu = flushItem.closest('.flex.w-48.flex-col') as HTMLElement;
+    await waitFor(() => screen.getByTestId('monitored-pr-check-flush-item'));
+    const menu = screen.getByTestId('monitored-pr-menu');
     const items = Array.from(menu.querySelectorAll('button'));
     expect(items.map((item) => item.textContent?.trim())).toEqual([
       'Check and Flush',
@@ -257,7 +257,7 @@ describe('MonitoredPrsRow', () => {
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
-    const flushItem = await waitFor(() => screen.getByTestId('monitored-pr-flush-item'));
+    const flushItem = await waitFor(() => screen.getByTestId('monitored-pr-check-flush-item'));
     await fireEvent.click(flushItem);
 
     expect(dispatchMock).toHaveBeenCalledWith(flushPrMonitorRequested('ws-1', 'mon-1', true));
@@ -268,7 +268,7 @@ describe('MonitoredPrsRow', () => {
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
-    const flushItem = await waitFor(() => screen.getByTestId('monitored-pr-flush-item'));
+    const flushItem = await waitFor(() => screen.getByTestId('monitored-pr-check-flush-item'));
     expect((flushItem as HTMLButtonElement).disabled).toBe(false);
 
     await fireEvent.click(flushItem);
@@ -306,7 +306,7 @@ describe('MonitoredPrsRow', () => {
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
-    const openItem = await waitFor(() => screen.getByTestId('monitored-pr-open-item'));
+    const openItem = await waitFor(() => screen.getByTestId('monitored-pr-open-external-item'));
     await fireEvent.click(openItem);
 
     expect(handleLinkMock).toHaveBeenCalledWith(

@@ -268,12 +268,12 @@
         {/snippet}
 
         {#snippet content({ close }: { close: () => void })}
-          <div class="flex w-48 flex-col p-1">
+          <div class="flex w-48 flex-col p-1" data-testid="monitored-pr-menu">
             <Button
               variant="ghost-light"
               size="xs"
               class="justify-start"
-              data-testid="monitored-pr-flush-item"
+              data-testid="monitored-pr-check-flush-item"
               onclick={() => handleCheckAndFlush(monitor, close)}
             >
               <Fa icon={faArrowsRotate} class="w-2.5 h-2.5" />
@@ -293,7 +293,7 @@
               variant="ghost-light"
               size="xs"
               class="justify-start"
-              data-testid="monitored-pr-open-item"
+              data-testid="monitored-pr-open-external-item"
               onclick={() => handleOpenExternal(monitor, close)}
             >
               <Fa icon={faArrowUpRightFromSquare} class="w-2.5 h-2.5" />
