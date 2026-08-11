@@ -11,6 +11,7 @@
   import { NodeViewWrapper, NodeViewContent } from '$lib/utils/tiptap/svelte-node-view';
   import TaskAgentStatus from './TaskAgentStatus.svelte';
   import TaskNotePreview from './TaskNotePreview.svelte';
+  import TaskRelationLink from '$lib/components/workspace/TaskRelationLink.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToNote } from '$lib/utils/workspace-navigation';
   import Fa from 'svelte-fa';
@@ -119,17 +120,6 @@
   // projection lands in the notes slice without any client-side derivation.
   let linkedTaskConflictsWith = $derived(linkedTaskNote?.metadata?.task?.conflictsWith ?? []);
   let unmetDependsOn = $derived(linkedTaskNote?.metadata?.task?.unmetDependsOn ?? []);
-
-  function relationTitles(ids: NoteId[]): string {
-    // Track notesVersion so tooltip titles refresh when referenced notes change
-    // (e.g. a rename of a note referenced only by conflictsWith).
-    void $notesVersion;
-    const wsId = $activeWorkspaceId;
-    const state = appStore.state;
-    return ids
-      .map((id) => (wsId ? (selectNoteById.select(state, wsId, id)?.title ?? id) : id))
-      .join(', ');
-  }
 
   // Computed display values
   let effectiveAgentId = $derived(isLinkedTask ? linkedTaskAgentId : delegatedAgentId);
@@ -466,28 +456,60 @@
               {linkedTaskTitle}
             </span>
             {#if unmetDependsOn.length > 0 && !effectiveChecked}
-              <span
-                class="shrink-0 inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-subtle"
-                title={m.tiptap_taskItem_waitsOn_tooltip({
-                  titles: relationTitles(unmetDependsOn),
-                })}
-                contenteditable="false"
+              <Tooltip
+                side="bottom"
+                align="end"
+                delayDuration={300}
+                disableHoverableContent={false}
+                class="shrink-0"
+                contentClass="p-1.5"
               >
-                <Fa icon={faHourglassHalf} size="xs" />
-                {m.tiptap_taskItem_waitsOn_label({ count: unmetDependsOn.length })}
-              </span>
+                {#snippet content()}
+                  <div class="flex flex-col items-stretch gap-1 min-w-0">
+                    <div class="px-0.5 text-xs text-muted-foreground">
+                      {m.tiptap_taskItem_waitsOnList_label()}
+                    </div>
+                    {#each unmetDependsOn as depId (depId)}
+                      <TaskRelationLink noteId={depId} unmet />
+                    {/each}
+                  </div>
+                {/snippet}
+                <span
+                  class="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-subtle"
+                  contenteditable="false"
+                >
+                  <Fa icon={faHourglassHalf} size="xs" />
+                  {m.tiptap_taskItem_waitsOn_label({ count: unmetDependsOn.length })}
+                </span>
+              </Tooltip>
             {/if}
             {#if linkedTaskConflictsWith.length > 0 && !effectiveChecked}
-              <span
-                class="shrink-0 inline-flex items-center gap-1 rounded-full bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning"
-                title={m.tiptap_taskItem_conflicts_tooltip({
-                  titles: relationTitles(linkedTaskConflictsWith),
-                })}
-                contenteditable="false"
+              <Tooltip
+                side="bottom"
+                align="end"
+                delayDuration={300}
+                disableHoverableContent={false}
+                class="shrink-0"
+                contentClass="p-1.5"
               >
-                <Fa icon={faTriangleExclamation} size="xs" />
-                {m.tiptap_taskItem_conflicts_label({ count: linkedTaskConflictsWith.length })}
-              </span>
+                {#snippet content()}
+                  <div class="flex flex-col items-stretch gap-1 min-w-0">
+                    <div class="px-0.5 text-xs text-muted-foreground">
+                      {m.tiptap_taskItem_conflictsList_label()}
+                    </div>
+                    {#each linkedTaskConflictsWith as conflictId (conflictId)}
+                      <TaskRelationLink noteId={conflictId} variant="conflict" />
+                    {/each}
+                  </div>
+                {/snippet}
+                <span
+                  class="inline-flex items-center gap-1 rounded-full bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning"
+                  contenteditable="false"
+                >
+                  <Fa icon={faTriangleExclamation} size="xs" />
+                  {m.tiptap_taskItem_conflicts_label({ count: linkedTaskConflictsWith.length })}
+                </span>
+              </Tooltip>
             {/if}
             {#if linkedTaskNotFound}
               <Button
