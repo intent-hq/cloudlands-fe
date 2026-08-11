@@ -368,6 +368,21 @@ export function parseToolResult(
     return { type: 'confirmation' as const, content: resultText || undefined };
   }
 
+  // Terminal tools (also catch tools with command input, e.g., ACP "Run" title).
+  // Checked BEFORE the generic view/edit/save/search substring branches: ACP
+  // prose titles like "Run gh pr view 1091 ..." contain those words and would
+  // otherwise misroute a command-shaped call (intent-hq/monorepo#1992).
+  if (
+    name.includes('launch-process') ||
+    name.includes('read-process') ||
+    name.includes('terminal') ||
+    name.includes('bash') ||
+    (input.command &&
+      (input.wait !== undefined || input.cwd !== undefined || input.max_wait_seconds !== undefined))
+  ) {
+    return parseTerminalResult(input, resultText);
+  }
+
   // View/read tools - directory listing or file view
   if (name.includes('view') || name === 'read' || name.includes('read_file')) {
     // Check if this is a directory listing
@@ -424,18 +439,6 @@ export function parseToolResult(
     name.includes('grep')
   ) {
     return parseSearchResult(input, resultText);
-  }
-
-  // Terminal tools (also catch tools with command input, e.g., ACP "Run" title)
-  if (
-    name.includes('launch-process') ||
-    name.includes('read-process') ||
-    name.includes('terminal') ||
-    name.includes('bash') ||
-    (input.command &&
-      (input.wait !== undefined || input.cwd !== undefined || input.max_wait_seconds !== undefined))
-  ) {
-    return parseTerminalResult(input, resultText);
   }
 
   // ── Git operations → terminal display ──
