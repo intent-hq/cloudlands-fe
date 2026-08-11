@@ -969,12 +969,18 @@ jobs:
             exit 0
           fi
           # The checkout is shallow (fetch-depth 1); the notifier needs the
-          # commit range and both tags to walk it
+          # commit range and both tags to walk it. --force + explicit error
+          # logging mirror the release-stable.yml fix for the silent exit-1
+          # on rejected tag updates (intent-hq/monorepo#1921).
           if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
-            git fetch --quiet --unshallow --tags origin
+            UNSHALLOW=(--unshallow)
           else
-            git fetch --quiet --tags origin
+            UNSHALLOW=()
           fi
+          git fetch --quiet --force --tags "${UNSHALLOW[@]}" origin || {
+            echo "::error::git fetch --tags failed (exit $?); cannot resolve range ${PREV_FE_TAG}..v${VERSION} - issue notifications skipped"
+            exit 1
+          }
           # Prefer the intentdVersion published in this release's manifest
           # (authoritative); fall back to the intentd.version pin
           BUNDLED_INTENTD=$(jq -r '.intentdVersion // empty' release-manifest.json 2>/dev/null || echo "")
