@@ -265,7 +265,7 @@ daemonHealthReducer.with(systemStatusSuccess, (state, { payload: [wirePayload, r
     memoryBytes: wirePayload.memoryBytes,
     os: wirePayload.host.os,
     arch: wirePayload.host.arch,
-    transport: state.stats?.transport,
+    transport: state.stats?.transport ?? state.transport ?? undefined,
   };
   return {
     ...state,
