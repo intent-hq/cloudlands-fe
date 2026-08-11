@@ -26,12 +26,18 @@ import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-no
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+} {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function makeNote(id: string, wsId: string, overrides: Partial<Note> = {}): Note {
@@ -170,5 +176,27 @@ describe('notesReadService (fake seam, real store)', () => {
     expect(notesListMock).toHaveBeenCalledTimes(1);
     const wsState = appStore.state.workspaceNotes.byWorkspaceId[ws];
     expect(wsState?.notes.map['note-cl']?.title).toBe('New');
+  });
+
+  it('trailing refetch still runs when the in-flight fetch rejects', async () => {
+    const ws = 'ws-notes-evt-reject';
+    const existing = makeNote('note-r', ws, { title: 'Old' });
+    appStore.dispatch(loadWorkspaceNotesSucceeded([ws], { [ws]: [existing] }));
+
+    const first = deferred<Note[]>();
+    notesListMock.mockReturnValueOnce(first.promise);
+    notesListMock.mockResolvedValueOnce([makeNote('note-r', ws, { title: 'Final' })]);
+
+    applyNoteFromEvent(ws, 'note-r', 'note:updated');
+    // Event arrives while the (about to fail) fetch is in flight.
+    applyNoteFromEvent(ws, 'note-r', 'note:updated');
+    expect(notesListMock).toHaveBeenCalledTimes(1);
+
+    first.reject(new Error('daemon unavailable'));
+    await flush();
+
+    expect(notesListMock).toHaveBeenCalledTimes(2);
+    const wsState = appStore.state.workspaceNotes.byWorkspaceId[ws];
+    expect(wsState?.notes.map['note-r']?.title).toBe('Final');
   });
 });

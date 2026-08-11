@@ -27,9 +27,10 @@ import { createLogger } from '$lib/utils/client-logger';
 const logger = createLogger('NotesReadService');
 
 /**
- * In-flight loads keyed by `domain:wsId`; coalesces concurrent requests.
- * `dirty` marks that another event arrived while the fetch was in flight,
- * triggering one trailing refetch after the current one settles.
+ * In-flight loads keyed by `note:{workspaceId}:{noteId}:{eventType}`;
+ * coalesces concurrent requests. `dirty` marks that another event arrived
+ * while the fetch was in flight, triggering one trailing refetch after the
+ * current one settles.
  */
 const inFlight = new Map<string, { dirty: boolean }>();
 
@@ -48,6 +49,9 @@ function coalesce(key: string, fn: () => Promise<void>): void {
       logger.error(`Notes refresh failed for ${key}`, error);
     } finally {
       inFlight.delete(key);
+      // The trailing refetch reuses the leading caller's `fn`; callers must
+      // pass an equivalent closure for a given key (the key fully determines
+      // the fetch here), or a mid-flight caller's fetch would be dropped.
       if (entry.dirty) coalesce(key, fn);
     }
   })();
@@ -59,9 +63,9 @@ function coalesce(key: string, fn: () => Promise<void>): void {
  * `note:deleted` dispatches immediately from event data alone; `note:created`
  * and `note:updated` fetch the fresh note payload (`notes.list` returns the
  * full workspace so we pick the target id out) and dispatch the matching
- * `applyNote*` action. Fetches are coalesced per (workspaceId, noteId):
- * single-flight with at most one trailing refetch for events that arrive
- * while a fetch is in flight.
+ * `applyNote*` action. Fetches are coalesced per (workspaceId, noteId,
+ * eventType): single-flight with at most one trailing refetch for events
+ * that arrive while a fetch is in flight.
  */
 export function applyNoteFromEvent(
   workspaceId: string,
