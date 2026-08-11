@@ -170,7 +170,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           m.workspace_noteMetadataBar_changesFromTask_label({
             title: note.title || m.workspace_noteCodeChanges_task_label(),
           }),
-          { isAggregate: true },
+          { isAggregate: true, scopeId: note.id },
         ),
       );
     } catch (error) {

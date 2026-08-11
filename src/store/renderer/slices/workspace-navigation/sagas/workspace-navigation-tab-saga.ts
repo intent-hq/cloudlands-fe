@@ -7,6 +7,7 @@ import { openTab, openTabInAdjacentOrSplit } from '../../panel-layout/panel-layo
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import {
+  chatChangesDedupId,
   openWorkspaceChatChanges,
   openWorkspaceCommitChangeset,
   openWorkspaceDiff,
@@ -126,9 +127,8 @@ function* openChatChanges(action: ReturnType<typeof openWorkspaceChatChanges>): 
   if (!workspaceId || !changes?.length) return;
   // Aggregate summaries omit messageId; derive a stable synthetic dedup id so
   // re-clicks focus (and refresh) the existing tab instead of opening a new one,
-  // mirroring the navigation-history entry id (options?.messageId || 'aggregate').
-  const messageId =
-    options?.messageId || (options?.agentId ? `aggregate:${options.agentId}` : 'aggregate');
+  // mirroring the navigation-history entry id.
+  const messageId = chatChangesDedupId(options);
   yield* openWorkspaceTab(
     workspaceId,
     {
