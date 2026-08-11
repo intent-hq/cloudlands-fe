@@ -47,14 +47,13 @@ describe('Specialist Prompts Verification', () => {
   });
 
   describe('Specialist Definitions', () => {
-    it('should have exactly 9 specialists defined', () => {
-      expect(SPECIALISTS).toHaveLength(9);
+    it('should have exactly 8 specialists defined', () => {
+      expect(SPECIALISTS).toHaveLength(8);
       expect(SPECIALISTS.map((s) => s.id)).toEqual([
         'spec-writer',
         'implementor',
         'verifier',
         'pr-reviewer',
-        'pr-shepherd',
         'ui-designer',
         'developer',
         'chief-of-staff',

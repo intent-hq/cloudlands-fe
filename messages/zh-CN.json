@@ -5148,8 +5148,6 @@
   "specialists_builtin_verifier_description": "审查工作并验证完整性",
   "specialists_builtin_prReviewer_name": "PR 审查员",
   "specialists_builtin_prReviewer_description": "以高置信度、可操作的反馈审查拉取请求",
-  "specialists_builtin_prShepherd_name": "PR 护航员",
-  "specialists_builtin_prShepherd_description": "通过协调修复、CI 和审查，护送 PR 达到可合并状态",
   "specialists_builtin_uiDesigner_name": "UI 设计师",
   "specialists_builtin_uiDesigner_description": "打造优雅、无障碍、生产就绪的用户界面",
   "specialists_builtin_developer_name": "开发者",
