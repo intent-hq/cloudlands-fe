@@ -544,6 +544,40 @@ describe('BranchSelector (server-side prefix search, github.branches.list prefix
     await waitFor(() => expect(screen.getByText('epic/beyond-page')).toBeTruthy());
   });
 
+  it('an out-of-order older response never overwrites the newer prefix results', async () => {
+    // The requestId !== githubSearchRequestId guard: arm two deferred
+    // requests for successive prefixes and resolve them in REVERSE order —
+    // the late first response must be discarded, not rendered.
+    const first = deferred<{ branches: string[]; defaultBranch?: string }>();
+    const second = deferred<{ branches: string[]; defaultBranch?: string }>();
+    mockGithubBranches.mockImplementation((_owner, _repo, prefix?: string) => {
+      if (prefix === 'rel') return first.promise;
+      if (prefix === 'release') return second.promise;
+      return Promise.resolve({ branches: ['main', 'dev'], defaultBranch: 'dev' });
+    });
+    const { container } = render(BranchSelector, { props: githubProps });
+
+    await waitFor(() => expect(mockGithubBranches).toHaveBeenCalledWith('octo', 'intent'));
+    await openDropdown(container);
+    const searchInput = await screen.findByPlaceholderText('Search or enter branch name...');
+    await fireEvent.input(searchInput, { target: { value: 'rel' } });
+    await waitFor(() => expect(mockGithubBranches).toHaveBeenCalledWith('octo', 'intent', 'rel'));
+    await fireEvent.input(searchInput, { target: { value: 'release' } });
+    await waitFor(() =>
+      expect(mockGithubBranches).toHaveBeenCalledWith('octo', 'intent', 'release'),
+    );
+
+    // Newer request settles first…
+    second.resolve({ branches: ['release/beyond-page'], defaultBranch: undefined });
+    await waitFor(() => expect(screen.getByText('release/beyond-page')).toBeTruthy());
+
+    // …then the stale 'rel' response lands late. Its branch locally contains
+    // 'release', so if the guard failed it WOULD render alongside/instead.
+    first.resolve({ branches: ['rel-stale-release-hit'], defaultBranch: undefined });
+    await waitFor(() => expect(screen.getByText('release/beyond-page')).toBeTruthy());
+    expect(screen.queryByText('rel-stale-release-hit')).toBeNull();
+  });
+
   it('local repo: typing in the search never issues a GitHub prefix request', async () => {
     // Empty branch list keeps the local-only "remote branches" section (whose
     // svelte-fa numeric size crashes under jsdom) out of the render tree; the

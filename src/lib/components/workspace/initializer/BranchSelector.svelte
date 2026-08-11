@@ -399,6 +399,7 @@
         showRemoteBranches = false;
         hasAttemptedRemoteFetch = false; // Reset so we can fetch for new repo
         githubAuthNeeded = 'none'; // Reset auth state for new repo
+        githubSearchRequestId++; // Discard in-flight prefix searches from the previous repo
         githubSearchBranches = []; // Drop prefix-search results from the previous repo
         error = null;
         resetBranchStatus(); // Reset stale branch status from previous repo
@@ -1240,7 +1241,13 @@
       return;
     }
     const parsed = parseGithubOwnerRepo();
-    if (!parsed) return;
+    if (!parsed) {
+      // Same as the clear branch: without the bump, a still-in-flight request
+      // from a previous run could land later and repopulate the results.
+      githubSearchRequestId++;
+      githubSearchBranches = [];
+      return;
+    }
     const requestId = ++githubSearchRequestId;
     // Drop the previous prefix's results immediately: while the new request
     // is in flight (or if it fails), only the loaded first page may match —
