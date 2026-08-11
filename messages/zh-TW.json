@@ -5527,7 +5527,6 @@
   "chat_monitoredPrs_hover_lastChange_label": "最後變更 {time}",
   "chat_monitoredPrs_hover_pending_one": "1 項變更等待送出",
   "chat_monitoredPrs_hover_pending_many": "{count} 項變更等待送出",
-  "chat_monitoredPrs_hover_noPending_label": "無待送出變更",
   "chat_monitoredPrs_pendingDot_tooltip": "有變更等待送出",
   "chat_monitoredPrs_flushNow_label": "立即送出",
   "chat_monitoredPrs_openPr_label": "開啟 PR",

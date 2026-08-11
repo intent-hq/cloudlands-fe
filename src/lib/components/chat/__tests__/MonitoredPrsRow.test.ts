@@ -167,22 +167,49 @@ describe('MonitoredPrsRow', () => {
     );
   });
 
-  it('hover card content renders whitespace-normal, not the tooltip base whitespace-pre-wrap', async () => {
+  it('hover card stacks one fact per line without dot separators', async () => {
+    monitorsState.monitors = [
+      makeMonitor({
+        hasPendingChanges: true,
+        pendingChanges: ['checks regressed'],
+        lastChangeAt: '2026-08-07T10:04:00Z',
+      }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
+    await fireEvent.focus(trigger);
+
+    const card = await waitFor(() => screen.getByTestId('monitored-pr-hover-card'));
+    // Facts live in a flex-col block, one <span> per line — no inline
+    // "·" separators that wrap mid-phrase.
+    expect(card.textContent).not.toContain('·');
+    const facts = card.querySelector('.flex.flex-col.text-subtle') as HTMLElement;
+    expect(facts).toBeTruthy();
+    const lines = Array.from(facts.querySelectorAll(':scope > span')).map(
+      (line) => line.textContent,
+    );
+    expect(lines).toEqual([
+      'acme/widgets#42',
+      'checks: 1/4 running',
+      'approvals: REVIEW_REQUIRED (0/1 required)',
+      '2 unresolved threads',
+      'Mergeable',
+      expect.stringContaining('Last change'),
+      '1 change pending emit',
+    ]);
+  });
+
+  it('hover card renders no pending line at all when nothing is pending', async () => {
     monitorsState.monitors = [makeMonitor()];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
     await fireEvent.focus(trigger);
 
-    await waitFor(() => screen.getByTestId('monitored-pr-hover-card'));
-    const tooltipContent = document.querySelector('[data-tooltip-content]') as HTMLElement;
-    expect(tooltipContent).toBeTruthy();
-    // Regression (intent-hq/monorepo#1913): the Tooltip base class
-    // whitespace-pre-wrap made the markup's literal whitespace render as a
-    // leading space before "No changes pending" and extra vertical gaps.
-    // The hover card must override it with whitespace-normal.
-    expect(tooltipContent.className).toContain('whitespace-normal');
-    expect(tooltipContent.className).not.toContain('whitespace-pre-wrap');
+    const card = await waitFor(() => screen.getByTestId('monitored-pr-hover-card'));
+    expect(screen.queryByTestId('monitored-pr-pending')).toBeNull();
+    expect(card.textContent).not.toContain('No changes pending');
   });
 
   it('hover card prefers the merge-blocked reason over the mergeable line', async () => {

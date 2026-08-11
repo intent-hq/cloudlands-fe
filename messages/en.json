@@ -5527,7 +5527,6 @@
   "chat_monitoredPrs_hover_lastChange_label": "Last change {time}",
   "chat_monitoredPrs_hover_pending_one": "1 change pending emit",
   "chat_monitoredPrs_hover_pending_many": "{count} changes pending emit",
-  "chat_monitoredPrs_hover_noPending_label": "No changes pending",
   "chat_monitoredPrs_pendingDot_tooltip": "Changes pending emit",
   "chat_monitoredPrs_flushNow_label": "Flush now",
   "chat_monitoredPrs_openPr_label": "Open PR",

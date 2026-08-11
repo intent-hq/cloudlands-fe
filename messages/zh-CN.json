@@ -5527,7 +5527,6 @@
   "chat_monitoredPrs_hover_lastChange_label": "最后变更 {time}",
   "chat_monitoredPrs_hover_pending_one": "1 项变更等待发送",
   "chat_monitoredPrs_hover_pending_many": "{count} 项变更等待发送",
-  "chat_monitoredPrs_hover_noPending_label": "无待发送变更",
   "chat_monitoredPrs_pendingDot_tooltip": "有变更等待发送",
   "chat_monitoredPrs_flushNow_label": "立即发送",
   "chat_monitoredPrs_openPr_label": "打开 PR",
