@@ -308,6 +308,29 @@ export interface WorkspaceDiskUsageResult {
   refreshing: boolean;
 }
 
+/**
+ * `workspace.delete` outcome (§5.1). When the request carried
+ * `undoDelayMs > 0` the daemon registers an in-memory pending deletion
+ * (protocol 6.5+ delete grace window) and returns
+ * `{ success: true, scheduled: true, deleteAt }` — `deleteAt` is the ISO
+ * commit deadline. An immediate delete (no `undoDelayMs`) keeps the plain
+ * `{ success: true }` shape, so both fields are additive and optional.
+ */
+export interface WorkspaceDeleteResult extends MutationResult {
+  scheduled?: boolean;
+  deleteAt?: string;
+}
+
+/**
+ * `workspace.cancelDelete` outcome (§5.1, delete grace window). The daemon
+ * returns `{ cancelled: bool }` — `false` when nothing is pending (already
+ * committed, or never scheduled): a non-error, race-safe outcome. Folded onto
+ * MutationResult so transport failures surface uniformly via `success`.
+ */
+export interface WorkspaceCancelDeleteResult extends MutationResult {
+  cancelled?: boolean;
+}
+
 export interface WorkspacesClient {
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]>;
   get(id: string): Promise<Workspace | null>;
@@ -332,7 +355,20 @@ export interface WorkspacesClient {
    * without a follow-up `workspace.get`.
    */
   update(request: UpdateWorkspaceRequest): Promise<WorkspaceUpdateResult>;
-  delete(id: string): Promise<MutationResult>;
+  /**
+   * Delete a workspace (`workspace.delete`, §5.1). Optional
+   * `options.undoDelayMs > 0` requests the daemon-owned delete grace window
+   * (protocol 6.5+): the daemon schedules the commit at `now + undoDelayMs`
+   * and returns `{ success: true, scheduled: true, deleteAt }`; the FE cancels
+   * it via `cancelDelete`. Omitted/0 keeps the immediate-delete behavior.
+   */
+  delete(id: string, options?: { undoDelayMs?: number }): Promise<WorkspaceDeleteResult>;
+  /**
+   * Cancel a pending grace-window deletion (`workspace.cancelDelete`, §5.1).
+   * `{ cancelled: false }` means nothing was pending (already committed, or
+   * never scheduled) — a non-error, race-safe outcome.
+   */
+  cancelDelete(id: string): Promise<WorkspaceCancelDeleteResult>;
   /** Archive a workspace (`workspace.archive`, §5.1). */
   archive(id: string): Promise<MutationResult>;
   /** Unarchive a workspace (`workspace.unarchive`, §5.1) — the archive-undo path. */

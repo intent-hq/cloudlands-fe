@@ -327,6 +327,12 @@ export interface Workspace {
   environmentConfig?: EnvironmentConfig;
   archived?: boolean;
   archivedAt?: string;
+  /** ISO deadline of an in-memory pending deletion (PROTOCOL §5.1 delete grace
+   *  window, v6.5+). Present only while a `workspace.delete { undoDelayMs > 0 }`
+   *  grace window is running; cleared by `workspace.cancelDelete` and dropped by
+   *  a daemon restart (the workspace survives). Rows carrying it are hidden
+   *  from the FE workspace list. */
+  pendingDeleteAt?: string;
   defaultModel?: string; // Default model for new agents in this workspace
   /** IDs-only agent membership summary; derive counts from `agentIds.length` and fetch agent details from agent/session sources. */
   agentSummary?: WorkspaceAgentIdSummary;

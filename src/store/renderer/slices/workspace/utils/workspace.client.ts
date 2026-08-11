@@ -352,18 +352,39 @@ export class WorkspaceClient {
     return { ok: false, error: result.error || m.workspace_client_updateFailed_error() };
   }
 
-  async delete(id: WorkspaceId): Promise<Result<void, string>> {
+  async delete(
+    id: WorkspaceId,
+    options?: { undoDelayMs?: number },
+  ): Promise<Result<{ scheduled?: boolean; deleteAt?: string } | void, string>> {
     // Daemon-backed mutation (`workspace.delete`, PROTOCOL §5.1) through the
-    // AppClient seam; the legacy `workspace:delete` IPC path is gone.
-    const result = await appClient.workspaces.delete(id);
+    // AppClient seam; the legacy `workspace:delete` IPC path is gone. With
+    // `undoDelayMs > 0` the daemon registers the delete grace window and
+    // returns `{ scheduled, deleteAt }` — surfaced on the Result data.
+    const result = await appClient.workspaces.delete(id, options);
     // Clear cache for this workspace after deletion
     if (result.success) {
       this.clearCache(id);
       // Also clear list cache since this operation changes which/how workspaces are returned
       this.clearCache();
-      return { ok: true, data: undefined };
+      return result.scheduled && result.deleteAt
+        ? { ok: true, data: { scheduled: true, deleteAt: result.deleteAt } }
+        : { ok: true, data: undefined };
     }
     return { ok: false, error: result.error || m.workspace_client_deleteFailed_error() };
+  }
+
+  async cancelDelete(id: WorkspaceId): Promise<Result<{ cancelled: boolean }, string>> {
+    // `workspace.cancelDelete` (PROTOCOL §5.1, delete grace window).
+    // `cancelled: false` is a race-safe non-error — the deletion already
+    // committed, or was never scheduled.
+    const result = await appClient.workspaces.cancelDelete(id);
+    if (result.success) {
+      this.clearCache(id);
+      // Also clear list cache since cancelling changes which workspaces are returned
+      this.clearCache();
+      return { ok: true, data: { cancelled: result.cancelled === true } };
+    }
+    return { ok: false, error: result.error || m.workspace_client_cancelDeleteFailed_error() };
   }
 
   async archive(id: WorkspaceId): Promise<Result<void, string>> {

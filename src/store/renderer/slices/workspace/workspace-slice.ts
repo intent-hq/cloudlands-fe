@@ -282,6 +282,13 @@ function buildVisibleWorkspaceState(
       continue;
     }
 
+    // Rows carrying the daemon's delete-grace-window deadline (PROTOCOL §5.1
+    // `pendingDeleteAt`, v6.5+) stay hidden: the daemon still serves them while
+    // the window runs, but the FE soft-hid them at delete-request time.
+    if (workspace.pendingDeleteAt) {
+      continue;
+    }
+
     let merged = mergeWorkspaceEnrichment(getItem(state.workspaces, workspace.id), workspace);
     if (state.pendingArchives[workspace.id]) {
       merged = {
@@ -398,6 +405,13 @@ workspaceReducer.with(clearPendingCreation, (state, { payload: [wsId] }) => {
   });
 workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace] }) => {
     if (state.pendingDeletions[workspace.id]) return state;
+    // Hide rows carrying the daemon delete-grace-window deadline (see
+    // buildVisibleWorkspaceState); drop the entity if it was still visible.
+    if (workspace.pendingDeleteAt) {
+      const visible = getWorkspaceById(state.workspaces, workspace.id);
+      if (!visible) return state;
+      return { ...state, workspaces: removeItem(state.workspaces, workspace.id) };
+    }
     const existing = getWorkspaceById(state.workspaces, workspace.id);
     const merged = mergeWorkspaceEnrichment(existing, workspace);
     return {
