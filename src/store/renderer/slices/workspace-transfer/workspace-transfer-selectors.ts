@@ -44,3 +44,39 @@ export const selectTransferTargetConnections = store.createSelector(
     return getItems(connections).filter((c) => !c.isLocal && c.id !== activeId);
   },
 );
+
+export const selectTransferRunStatus = store.createSelector(
+  (state) => state.workspaceTransfer.runStatus,
+);
+
+export const selectTransferProgress = store.createSelector(
+  (state) => state.workspaceTransfer.progress,
+);
+
+export const selectTransferRunError = store.createSelector(
+  (state) => state.workspaceTransfer.runError,
+);
+
+export const selectTransferRestartAgents = store.createSelector(
+  (state) => state.workspaceTransfer.restartAgents,
+);
+
+export const selectTransferDownloadFilePath = store.createSelector(
+  (state) => state.workspaceTransfer.downloadFilePath,
+);
+
+export const selectTransferInterruptedAgents = store.createSelector(
+  (state) => state.workspaceTransfer.interruptedAgents,
+);
+
+export const selectTransferArchiveSource = store.createSelector(
+  (state) => state.workspaceTransfer.archiveSource,
+);
+
+export const selectTransferFinalizeStatus = store.createSelector(
+  (state) => state.workspaceTransfer.finalizeStatus,
+);
+
+export const selectTransferFinalizeError = store.createSelector(
+  (state) => state.workspaceTransfer.finalizeError,
+);

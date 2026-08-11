@@ -80,9 +80,32 @@ export type TransferDestination =
   | { kind: 'server'; connectionId: string }
   | { kind: 'download' };
 
-export type TransferStep = 'destination' | 'confirm';
+export type TransferStep = 'destination' | 'confirm' | 'transferring' | 'result';
 
 export type TransferPlanStatus = 'idle' | 'loading' | 'loaded' | 'error';
+
+/**
+ * Step-3 relay phase, mirroring the main-process `TransferRelayPhase` plus
+ * the terminal outcomes the wizard renders on step 4.
+ */
+export type TransferRunPhase = 'building' | 'relaying' | 'committing';
+
+export type TransferRunStatus = 'idle' | 'running' | 'succeeded' | 'failed';
+
+/** Renderer copy of the `transfer:progress` counters (never archive bytes). */
+export interface TransferProgress {
+  phase: TransferRunPhase;
+  /** Source build stage (`stopping-agents`, `exporting-rows`, …). */
+  stage?: string;
+  /** Actual archive size, known once the source seals the archive. */
+  bytesTotal?: number;
+  bytesDown: number;
+  bytesUp: number;
+  chunksTotal?: number;
+  chunksDone: number;
+}
+
+export type TransferFinalizeStatus = 'idle' | 'running' | 'done' | 'error';
 
 export interface WorkspaceTransferState {
   /** Whether the transfer wizard modal is open. */
@@ -96,4 +119,18 @@ export interface WorkspaceTransferState {
   planStatus: TransferPlanStatus;
   plan: TransferPlan | null;
   planError: string | null;
+  /** Step 3: relay run state + live progress counters. */
+  runStatus: TransferRunStatus;
+  progress: TransferProgress | null;
+  runError: string | null;
+  /** Step 3 toggle: resolve transferred interrupted agents on the target. */
+  restartAgents: boolean;
+  /** Download destination: where the archive was written (result screen). */
+  downloadFilePath: string | null;
+  /** Interrupted agent ids reported by the target's import commit. */
+  interruptedAgents: string[];
+  /** Step 4 checkbox: archive the source workspace on finalize (default ON). */
+  archiveSource: boolean;
+  finalizeStatus: TransferFinalizeStatus;
+  finalizeError: string | null;
 }

@@ -5,13 +5,27 @@ import {
   initialState,
   openTransferModal,
   selectTransferDestination,
+  setTransferArchiveSource,
+  setTransferRestartAgents,
+  transferFinalizeFailed,
+  transferFinalizeRequested,
+  transferFinalizeSucceeded,
   transferPlanFailed,
   transferPlanLoaded,
   transferPlanRequested,
+  transferProgressReceived,
+  transferRunCancelled,
+  transferRunFailed,
+  transferRunSucceeded,
+  transferStartRequested,
   transferWizardBack,
   workspaceTransferReducer,
 } from './workspace-transfer-slice';
-import type { TransferPlan, WorkspaceTransferState } from './workspace-transfer-types';
+import type {
+  TransferPlan,
+  TransferProgress,
+  WorkspaceTransferState,
+} from './workspace-transfer-types';
 
 const plan: TransferPlan = {
   manifest: {
@@ -118,5 +132,135 @@ describe('workspaceTransferReducer', () => {
     expect(state.planStatus).toBe('idle');
     expect(state.plan).toBeNull();
     expect(state.destination).toEqual({ kind: 'download' });
+  });
+});
+
+function confirmLoadedState(): WorkspaceTransferState {
+  return workspaceTransferReducer(confirmLoadingState(), transferPlanLoaded(plan));
+}
+
+function transferringState(): WorkspaceTransferState {
+  return workspaceTransferReducer(confirmLoadedState(), transferStartRequested());
+}
+
+const relayProgress: TransferProgress = {
+  phase: 'relaying',
+  bytesTotal: 10240,
+  bytesDown: 5120,
+  bytesUp: 4096,
+  chunksTotal: 2,
+  chunksDone: 1,
+};
+
+describe('workspaceTransferReducer — steps 3–4', () => {
+  it('transferStartRequested advances confirm → transferring in running', () => {
+    const state = transferringState();
+    expect(state.step).toBe('transferring');
+    expect(state.runStatus).toBe('running');
+    expect(state.progress).toBeNull();
+    expect(state.runError).toBeNull();
+  });
+
+  it('transferStartRequested is ignored outside confirm/failed-result', () => {
+    expect(workspaceTransferReducer(openState(), transferStartRequested()).step).toBe(
+      'destination',
+    );
+    const succeeded = workspaceTransferReducer(
+      transferringState(),
+      transferRunSucceeded({ interruptedAgents: [], downloadFilePath: null }),
+    );
+    expect(workspaceTransferReducer(succeeded, transferStartRequested()).step).toBe('result');
+  });
+
+  it('retry from a failed result restarts the run and clears prior outcome', () => {
+    const failed = workspaceTransferReducer(transferringState(), transferRunFailed('boom'));
+    expect(failed.step).toBe('result');
+    expect(failed.runStatus).toBe('failed');
+    const retried = workspaceTransferReducer(failed, transferStartRequested());
+    expect(retried.step).toBe('transferring');
+    expect(retried.runStatus).toBe('running');
+    expect(retried.runError).toBeNull();
+  });
+
+  it('progress frames update only while running', () => {
+    const state = workspaceTransferReducer(
+      transferringState(),
+      transferProgressReceived(relayProgress),
+    );
+    expect(state.progress).toEqual(relayProgress);
+
+    // Ignored after the run settled.
+    const settled = workspaceTransferReducer(state, transferRunFailed('x'));
+    expect(
+      workspaceTransferReducer(settled, transferProgressReceived(relayProgress)).progress,
+    ).toEqual(settled.progress);
+  });
+
+  it('transferRunSucceeded lands on the result step with the payload', () => {
+    const state = workspaceTransferReducer(
+      transferringState(),
+      transferRunSucceeded({ interruptedAgents: ['a-1'], downloadFilePath: null }),
+    );
+    expect(state.step).toBe('result');
+    expect(state.runStatus).toBe('succeeded');
+    expect(state.interruptedAgents).toEqual(['a-1']);
+    expect(state.archiveSource).toBe(true); // default ON
+  });
+
+  it('transferRunCancelled (dismissed save dialog) returns to confirm', () => {
+    const state = workspaceTransferReducer(transferringState(), transferRunCancelled());
+    expect(state.step).toBe('confirm');
+    expect(state.runStatus).toBe('idle');
+  });
+
+  it('restartAgents and archiveSource toggles update state', () => {
+    let state = transferringState();
+    state = workspaceTransferReducer(state, setTransferRestartAgents(true));
+    expect(state.restartAgents).toBe(true);
+    state = workspaceTransferReducer(state, setTransferArchiveSource(false));
+    expect(state.archiveSource).toBe(false);
+  });
+
+  it('finalize lifecycle: requested → succeeded / failed', () => {
+    const result = workspaceTransferReducer(
+      transferringState(),
+      transferRunSucceeded({ interruptedAgents: [], downloadFilePath: null }),
+    );
+    const running = workspaceTransferReducer(
+      result,
+      transferFinalizeRequested({ switchToTarget: false }),
+    );
+    expect(running.finalizeStatus).toBe('running');
+
+    expect(workspaceTransferReducer(running, transferFinalizeSucceeded()).finalizeStatus).toBe(
+      'done',
+    );
+    const failed = workspaceTransferReducer(running, transferFinalizeFailed('workspace gone'));
+    expect(failed.finalizeStatus).toBe('error');
+    expect(failed.finalizeError).toBe('workspace gone');
+  });
+
+  it('finalize is rejected while transferring or after failure', () => {
+    const transferring = transferringState();
+    expect(
+      workspaceTransferReducer(
+        transferring,
+        transferFinalizeRequested({ switchToTarget: false }),
+      ).finalizeStatus,
+    ).toBe('idle');
+    const failed = workspaceTransferReducer(transferring, transferRunFailed('x'));
+    expect(
+      workspaceTransferReducer(failed, transferFinalizeRequested({ switchToTarget: false }))
+        .finalizeStatus,
+    ).toBe('idle');
+  });
+
+  it('closeTransferModal resets steps 3–4 state too', () => {
+    let state = workspaceTransferReducer(
+      transferringState(),
+      transferRunSucceeded({ interruptedAgents: ['a-1'], downloadFilePath: '/tmp/x.zip' }),
+    );
+    state = workspaceTransferReducer(state, setTransferRestartAgents(true));
+    expect(workspaceTransferReducer(state, closeTransferModal())).toEqual(initialState);
   });
 });
