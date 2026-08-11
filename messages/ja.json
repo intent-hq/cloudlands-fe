@@ -5527,7 +5527,6 @@
   "chat_monitoredPrs_hover_lastChange_label": "最終変更 {time}",
   "chat_monitoredPrs_hover_pending_one": "送信待ちの変更 1 件",
   "chat_monitoredPrs_hover_pending_many": "送信待ちの変更 {count} 件",
-  "chat_monitoredPrs_hover_noPending_label": "保留中の変更なし",
   "chat_monitoredPrs_pendingDot_tooltip": "送信待ちの変更あり",
   "chat_monitoredPrs_flushNow_label": "今すぐ送信",
   "chat_monitoredPrs_openPr_label": "PRを開く",

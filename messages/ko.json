@@ -5527,7 +5527,6 @@
   "chat_monitoredPrs_hover_lastChange_label": "마지막 변경 {time}",
   "chat_monitoredPrs_hover_pending_one": "전송 대기 중인 변경 1건",
   "chat_monitoredPrs_hover_pending_many": "전송 대기 중인 변경 {count}건",
-  "chat_monitoredPrs_hover_noPending_label": "대기 중인 변경 없음",
   "chat_monitoredPrs_pendingDot_tooltip": "전송 대기 중인 변경 있음",
   "chat_monitoredPrs_flushNow_label": "지금 전송",
   "chat_monitoredPrs_openPr_label": "PR 열기",

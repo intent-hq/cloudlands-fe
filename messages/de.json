@@ -5527,7 +5527,6 @@
   "chat_monitoredPrs_hover_lastChange_label": "Letzte Änderung {time}",
   "chat_monitoredPrs_hover_pending_one": "1 Änderung wartet auf Auslieferung",
   "chat_monitoredPrs_hover_pending_many": "{count} Änderungen warten auf Auslieferung",
-  "chat_monitoredPrs_hover_noPending_label": "Keine ausstehenden Änderungen",
   "chat_monitoredPrs_pendingDot_tooltip": "Änderungen warten auf Auslieferung",
   "chat_monitoredPrs_flushNow_label": "Jetzt ausliefern",
   "chat_monitoredPrs_openPr_label": "PR öffnen",
