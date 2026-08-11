@@ -72,6 +72,28 @@ describe('intentd daemon log collection', () => {
     expect(omissions.some((o) => o.startsWith('intentd/:'))).toBe(false);
   });
 
+  it('keeps the surviving logs when a file vanishes between readdir and stat (rotation race)', async () => {
+    const kept = path.join(dataDir, 'intentd.2026-08-11.log');
+    const vanishing = path.join(dataDir, 'intentd.2026-08-10.log');
+    await fs.writeFile(kept, 'kept\n');
+    await fs.writeFile(vanishing, 'vanishing\n');
+    const realStat = fs.stat.bind(fs);
+    const statSpy = vi.spyOn(fs, 'stat').mockImplementation(async (p, ...rest) => {
+      if (p === vanishing) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      return realStat(p as Parameters<typeof realStat>[0], ...(rest as []));
+    });
+    try {
+      const { files, omissions } = await collectDebugFiles();
+      const intentdLogs = files.filter((f) => f.relativePath.startsWith('intentd' + path.sep));
+      expect(intentdLogs.map((f) => f.relativePath)).toEqual([
+        path.join('intentd', 'intentd.2026-08-11.log'),
+      ]);
+      expect(omissions.some((o) => o.startsWith('intentd/:'))).toBe(false);
+    } finally {
+      statSpy.mockRestore();
+    }
+  });
+
   it('records an omission when the data dir has no intentd log files', async () => {
     const { files, omissions } = await collectDebugFiles();
     expect(files.some((f) => f.relativePath.startsWith('intentd' + path.sep))).toBe(false);

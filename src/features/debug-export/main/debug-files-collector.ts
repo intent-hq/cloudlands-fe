@@ -219,11 +219,19 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
         .filter((e) => e.isFile() && e.name.startsWith('intentd') && e.name.endsWith('.log'))
         .map(async (e) => {
           const sourcePath = path.join(intentdDataDir, e.name);
-          const stats = await fs.stat(sourcePath);
-          return { name: e.name, sourcePath, mtimeMs: stats.mtimeMs };
+          try {
+            const stats = await fs.stat(sourcePath);
+            return { name: e.name, sourcePath, mtimeMs: stats.mtimeMs };
+          } catch {
+            // Deleted between readdir and stat (daily rotation/retention
+            // race) — skip it without dropping the other readable logs.
+            logger.debug('intentd log file vanished before stat', { sourcePath });
+            return null;
+          }
         }),
     );
     const newest = logStats
+      .filter((s): s is NonNullable<(typeof logStats)[number]> => s !== null)
       .sort((a, b) => b.mtimeMs - a.mtimeMs)
       .slice(0, INTENTD_LOG_FILE_COUNT);
     if (newest.length === 0) {
