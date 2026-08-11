@@ -8,10 +8,10 @@ import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import type { Workspace } from '$shared/types';
 import {
-  takeLatestByWorkspace,
   takeLeadingByAgent,
   takeLeadingByWorkspace,
   takeLeadingInContext,
+  takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
 import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
@@ -95,6 +95,15 @@ function matchesWorkspaceCleanup(workspaceId: string) {
     (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
     Array.isArray(action.payload) &&
     action.payload[0] === workspaceId;
+}
+
+function isWorkspaceCleanupAction(action: { type: string }): boolean {
+  return action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type;
+}
+
+function workspaceReadContext(action: { type: string; payload: [string, ...unknown[]] }) {
+  const context = action.payload[0];
+  return isWorkspaceCleanupAction(action) ? { context, cancel: true as const } : context;
 }
 
 function* refreshWorkspaces(): SagaGenerator<void> {
@@ -270,13 +279,27 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
 
 type WorkspaceRead = (workspaceId: string) => SagaGenerator<void>;
 
-function* runWorkspaceRead(key: string, workspaceId: string, worker: WorkspaceRead) {
+/**
+ * Coalesced domains pass `false` because their context watcher must be the sole cleanup
+ * owner; racing the same cleanup action here could finish the worker and start its
+ * trailing read before the watcher cancels and retires the context.
+ */
+function* runWorkspaceRead(
+  key: string,
+  workspaceId: string,
+  worker: WorkspaceRead,
+  cancelOnWorkspaceCleanup = true,
+) {
   if (!workspaceId) return;
   try {
-    yield* race({
-      read: call(worker, workspaceId),
-      cleanup: take(matchesWorkspaceCleanup(workspaceId)),
-    });
+    if (cancelOnWorkspaceCleanup) {
+      yield* race({
+        read: call(worker, workspaceId),
+        cleanup: take(matchesWorkspaceCleanup(workspaceId)),
+      });
+    } else {
+      yield* call(worker, workspaceId);
+    }
   } catch (error) {
     logger.error(`Refresh failed for ${key}:${workspaceId}`, error);
   }
@@ -335,18 +358,35 @@ function* loadWorkspacesWorker() {
   }
 }
 
-function* ensureTasksWorker(action: ReturnType<typeof ensureWorkspaceTasksLoaded>) {
-  const [workspaceId] = action.payload;
-  yield* runWorkspaceRead('tasks', workspaceId, function* (id) {
-    yield* refreshTasks(id, true);
-  });
-}
+type TasksReadAction = ReturnType<
+  | typeof ensureWorkspaceTasksLoaded
+  | typeof loadWorkspaceTasksRequested
+  | typeof workspaceDeleted
+  | typeof workspaceUnmounted
+>;
 
-function* loadTasksWorker(action: ReturnType<typeof loadWorkspaceTasksRequested>) {
-  const [workspaceId] = action.payload;
-  yield* runWorkspaceRead('tasks', workspaceId, function* (id) {
-    yield* refreshTasks(id, false);
-  });
+function* tasksWorker(action: TasksReadAction) {
+  if (isWorkspaceCleanupAction(action)) return;
+  const workspaceId = action.payload[0];
+  if (action.type === ensureWorkspaceTasksLoaded.type) {
+    yield* runWorkspaceRead(
+      'tasks',
+      workspaceId,
+      function* (id) {
+        yield* refreshTasks(id, true);
+      },
+      false,
+    );
+  } else if (action.type === loadWorkspaceTasksRequested.type) {
+    yield* runWorkspaceRead(
+      'tasks',
+      workspaceId,
+      function* (id) {
+        yield* refreshTasks(id, false);
+      },
+      false,
+    );
+  }
 }
 
 function* eventsWorker(action: ReturnType<typeof loadEventsRequested>) {
@@ -369,16 +409,28 @@ function* scriptsWorker(action: ReturnType<typeof refreshScripts>) {
   yield* runWorkspaceRead('scripts', action.payload[0], refreshWorkspaceScripts);
 }
 
-function* refreshChangesWorker(action: ReturnType<typeof refreshRequested>) {
-  yield* runWorkspaceRead('changes', action.payload[0], refreshChanges);
+type ChangesReadAction = ReturnType<
+  | typeof refreshRequested
+  | typeof loadWorkspaceDataRequested
+  | typeof workspaceDeleted
+  | typeof workspaceUnmounted
+>;
+
+function* changesWorker(action: ChangesReadAction) {
+  if (isWorkspaceCleanupAction(action)) return;
+  if (action.type === refreshRequested.type || action.type === loadWorkspaceDataRequested.type) {
+    yield* runWorkspaceRead('changes', action.payload[0], refreshChanges, false);
+  }
 }
 
-function* loadChangesWorker(action: ReturnType<typeof loadWorkspaceDataRequested>) {
-  yield* runWorkspaceRead('changes', action.payload[0], refreshChanges);
-}
+type AgentsReadAction = ReturnType<
+  typeof hydrateAgentsRequested | typeof workspaceDeleted | typeof workspaceUnmounted
+>;
 
-function* agentsWorker(action: ReturnType<typeof hydrateAgentsRequested>) {
-  yield* runWorkspaceRead('agents', action.payload[0], hydrateAgents);
+function* coalescedAgentsWorker(action: AgentsReadAction) {
+  if (!isWorkspaceCleanupAction(action)) {
+    yield* runWorkspaceRead('agents', action.payload[0], hydrateAgents, false);
+  }
 }
 
 function* terminalsWorker(action: ReturnType<typeof hydrateTerminalsRequested>) {
@@ -449,8 +501,16 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
   try {
     yield* all([
       takeLeading(loadWorkspacesRequested, loadWorkspacesWorker),
-      takeLatestByWorkspace(ensureWorkspaceTasksLoaded, ensureTasksWorker),
-      takeLatestByWorkspace(loadWorkspaceTasksRequested, loadTasksWorker),
+      takeSingleFlightInContext(
+        [
+          ensureWorkspaceTasksLoaded,
+          loadWorkspaceTasksRequested,
+          workspaceDeleted,
+          workspaceUnmounted,
+        ],
+        workspaceReadContext,
+        tasksWorker,
+      ),
       takeLeadingByWorkspace(loadEventsRequested, eventsWorker),
       takeLeadingByWorkspace(fetchWorkspaceTokenUsage, tokenUsageWorker),
       takeLeadingByWorkspace(initContextForWorkspace, contextWorker, initializedContexts),
@@ -458,15 +518,22 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       takeLeadingByWorkspace(loadSkillsRequested, skillsWorker),
       takeLeadingByWorkspace(refreshScripts, scriptsWorker),
       takeLeadingByWorkspace(refreshPRStatusRequested, prStatusWorker),
-      takeLatestByWorkspace(refreshRequested, refreshChangesWorker),
-      takeLatestByWorkspace(loadWorkspaceDataRequested, loadChangesWorker),
+      takeSingleFlightInContext(
+        [refreshRequested, loadWorkspaceDataRequested, workspaceDeleted, workspaceUnmounted],
+        workspaceReadContext,
+        changesWorker,
+      ),
       takeLeadingInContext(
         loadOlderCommitsRequested,
         (action) => action.payload.wsId,
         olderCommitsWorker,
       ),
       takeLeadingByAgent(requestAgentLineStats, agentLineStatsWorker),
-      takeLatestByWorkspace(hydrateAgentsRequested, agentsWorker),
+      takeSingleFlightInContext(
+        [hydrateAgentsRequested, workspaceDeleted, workspaceUnmounted],
+        workspaceReadContext,
+        coalescedAgentsWorker,
+      ),
       takeLeadingByWorkspace(hydrateTerminalsRequested, terminalsWorker),
       takeEvery(workspaceDeleted, clearDeletedInitializedContext, initializedContexts),
       takeEvery(workspaceUnmounted, clearUnmountedInitializedContext, initializedContexts),
