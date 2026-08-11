@@ -969,7 +969,6 @@ export interface FilesClient {
   listDirectory(workspaceId: string, path: string): Promise<FileNode[]>;
   /** Per-file git status keyed by workspace-relative path, for the explorer overlay. */
   gitStatusMap(workspaceId: string): Promise<Record<string, FileGitStatus>>;
-  subscribe(handler: SubscriptionHandler<FileContentEntry[]>): Unsubscribe;
   /** Write file content (`file.write`); create-ish, so the live client attaches an idempotencyKey (§5.6). */
   write(workspaceId: string, path: string, content: string): Promise<MutationResult>;
   /** Delete a file (`file.delete`). */
