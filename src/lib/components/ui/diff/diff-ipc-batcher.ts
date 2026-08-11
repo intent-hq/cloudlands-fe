@@ -28,7 +28,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { store as appStore } from '$store/renderer/store';
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
-import { gitlinkSidesFromHunks, isGitlinkDiffChunk } from './gitlink';
+import { gitlinkSidesFromHunks, gitlinkSidesFromShas, isGitlinkDiffChunk } from './gitlink';
 
 const logger = createLogger('diff-ipc-batcher');
 
@@ -88,6 +88,17 @@ function isNotAFileError(error: unknown): boolean {
   return code === 'not-a-file' || data?.code === 'not-a-file';
 }
 
+/**
+ * Submodule pin SHAs from a `git.status` mode-160000 entry
+ * (intent-hq/monorepo#1739). Callers that know a request path is a gitlink
+ * pass this so enrichment composes the pin sides from the SHAs instead of
+ * issuing content reads that can only fail.
+ */
+interface GitlinkMeta {
+  oldSha?: string;
+  newSha?: string;
+}
+
 interface PendingDiff {
   paths: Set<string>;
   resolvers: Map<string, Array<(chunk: DiffChunk | undefined) => void>>;
@@ -96,6 +107,9 @@ interface PendingDiff {
   /** Original request path → the (possibly worktree-relative-normalized) path
    * sent on the wire; used by the `git.diffs` batcher only. */
   wirePaths?: Map<string, string>;
+  /** Original request path → caller-provided gitlink metadata; used by the
+   * `git.diffs` batcher only (#1739). */
+  gitlinks?: Map<string, GitlinkMeta>;
 }
 
 const pendingDiffs = new Map<string, PendingDiff>();
@@ -236,15 +250,25 @@ async function readWorkingTreeContent(
  * Gitlink (submodule) chunks (intent-hq/monorepo#1739) are composed from
  * their `Subproject commit <sha>` hunk lines instead: a gitlink has no blob,
  * so `git.showFile` rejects it with the typed `-32602` `not-a-file` error
- * and `file.read` hits a directory.
+ * and `file.read` hits a directory. A status-marked gitlink whose hunks did
+ * not structurally classify (e.g. a dirty-worktree entry with no pin move)
+ * composes from the caller-provided `git.status` pin SHAs instead of issuing
+ * those reads at all.
  */
 async function enrichChunkContents(
   workspaceId: string,
   staged: boolean,
   chunk: DiffChunk,
+  gitlink?: GitlinkMeta,
 ): Promise<void> {
   if (isGitlinkDiffChunk(chunk)) {
     const sides = gitlinkSidesFromHunks(chunk.chunks ?? []);
+    chunk.oldContent = sides.oldContent;
+    chunk.newContent = sides.newContent;
+    return;
+  }
+  if (gitlink) {
+    const sides = gitlinkSidesFromShas(gitlink);
     chunk.oldContent = sides.oldContent;
     chunk.newContent = sides.newContent;
     return;
@@ -376,12 +400,21 @@ async function flushDiffGroup(key: string) {
     }
 
     // Enrichment runs once over the union of narrowed + recovered matches
-    // (the Set dedupes), so no chunk is enriched twice.
+    // (the Set dedupes), so no chunk is enriched twice. Each chunk carries
+    // the gitlink metadata of the request path it matched (if any), so
+    // status-marked gitlinks skip the failing content reads (#1739).
     const matchedChunks = new Set(
       [...matches.values()].filter((chunk): chunk is DiffChunk => chunk !== undefined),
     );
+    const gitlinkByChunk = new Map<DiffChunk, GitlinkMeta>();
+    for (const [path, chunk] of matches) {
+      const gitlink = pending.gitlinks?.get(path);
+      if (chunk && gitlink && !gitlinkByChunk.has(chunk)) gitlinkByChunk.set(chunk, gitlink);
+    }
     await Promise.all(
-      [...matchedChunks].map((chunk) => enrichChunkContents(wsId, staged, chunk)),
+      [...matchedChunks].map((chunk) =>
+        enrichChunkContents(wsId, staged, chunk, gitlinkByChunk.get(chunk)),
+      ),
     );
 
     for (const [path, resolvers] of pending.resolvers) {
@@ -445,11 +478,17 @@ async function flushBranchBaseDiffGroup(key: string) {
  * narrowing matches it; the caller's promise still resolves against the
  * original path. Returns the matching chunk, or `undefined` if the daemon
  * returned no entry for it.
+ *
+ * `options.gitlink` marks the path as a `git.status` mode-160000 submodule
+ * entry (#1739): its chunk's sides are composed from the pin SHAs when the
+ * hunks don't structurally classify, instead of `git.showFile`/`file.read`
+ * calls that can only fail on a gitlink.
  */
 export function batchedGitDiff(
   workspaceId: string,
   staged: boolean,
   filePath: string,
+  options?: { gitlink?: GitlinkMeta },
 ): Promise<DiffChunk | undefined> {
   const key = diffGroupKey(workspaceId, staged);
   const existing = pendingDiffs.get(key);
@@ -459,6 +498,7 @@ export function batchedGitDiff(
     rejecters: [],
     timer: null,
     wirePaths: new Map(),
+    gitlinks: new Map(),
   };
   if (!existing) {
     pendingDiffs.set(key, pending);
@@ -471,6 +511,7 @@ export function batchedGitDiff(
     : filePath;
   pending.paths.add(wirePath);
   pending.wirePaths?.set(filePath, wirePath);
+  if (options?.gitlink) pending.gitlinks?.set(filePath, options.gitlink);
 
   return new Promise<DiffChunk | undefined>((resolve, reject) => {
     let resolvers = pending.resolvers.get(filePath);

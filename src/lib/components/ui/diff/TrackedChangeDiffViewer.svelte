@@ -494,7 +494,11 @@
         // flag via the batcher + show-file dedup cache. Returns true when the
         // diff chunk (or its fallback) populated both sides.
         const tryLoadAtStage = async (stagedFlag: boolean): Promise<boolean> => {
-          const diffChunk = await batchedGitDiff(wsIdForDiff, stagedFlag, filePath);
+          // gitlink metadata lets the batcher skip the content reads that can
+          // only fail on a status-marked submodule entry (#1739).
+          const diffChunk = await batchedGitDiff(wsIdForDiff, stagedFlag, filePath, {
+            gitlink: change.gitlink,
+          });
 
           if (diffChunk) {
             // Gitlink (submodule) entry (intent-hq/monorepo#1739): no blob
