@@ -115,6 +115,24 @@ describe('chatReadSaga', () => {
     await run.task.toPromise();
   });
 
+  // Regression (monorepo#1977): a deletion scheduled by ANOTHER window/client
+  // (or before an FE restart) is not in this window's local pending-delete
+  // registry — the fetched row's daemon-owned `pendingDeleteAt` deadline
+  // (PROTOCOL §5.5, v6.7+) is the only signal, and hydration must skip.
+  it('skips hydration when the fetched session carries pendingDeleteAt', async () => {
+    mocks.get.mockResolvedValue(session({ pendingDeleteAt: '2026-01-01T00:00:15.000Z' }));
+    const run = harness();
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    await settle();
+
+    expect(mocks.get).toHaveBeenCalledWith(AGENT);
+    expect(mocks.getConversation).not.toHaveBeenCalled();
+    expect(mocks.subscribeSnapshot).not.toHaveBeenCalled();
+    expect(run.sessions().byAgentId[AGENT]).toBeUndefined();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('hydrates different agents concurrently and settles both reads', async () => {
     let resolveFirst!: (value: AgentSession) => void;
     mocks.get
