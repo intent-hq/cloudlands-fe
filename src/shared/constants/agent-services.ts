@@ -150,10 +150,9 @@ export const AGENT_LIMITS = {
 // File Paths
 // ============================================================================
 
+// The workspace base directory is daemon-owned (PROTOCOL.md §5.1) and must be
+// resolved via WorkspacePathService — never hardcoded here.
 export const FILE_PATHS = {
-  /** Base workspace directory */
-  WORKSPACE_BASE: '~/intent',
-
   /** Workspace metadata directory */
   WORKSPACE_META: '.workspace',
 
@@ -330,54 +329,6 @@ export function isAtWarningThreshold(activeCount: number): boolean {
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/** Expand tilde in paths to home directory */
-export function expandPath(path: string): string {
-  // In browser environment, we can't expand ~ directly
-  // The backend should handle this via IPC
-  if (typeof window !== 'undefined') {
-    // Frontend - return as-is, backend will handle expansion
-    return path;
-  }
-
-  // Backend Node.js environment
-  if (path.startsWith('~/')) {
-    // Use process.env.HOME, USERPROFILE, or os.homedir() for Windows compatibility
-    const homeDir = process.env.HOME || process.env.USERPROFILE || require('os').homedir() || '';
-    return path.replace('~', homeDir);
-  }
-  return path;
-}
-
-/**
- * Get the full path for an agent session file.
- * @param resolvedBasePath - Optional pre-resolved workspace base path (daemon-reported,
- *   e.g. via WorkspacePathService). Falls back to expanding FILE_PATHS.WORKSPACE_BASE
- *   when not provided (browser / test usage).
- */
-export function getSessionPath(
-  workspaceId: string,
-  agentId: string,
-  resolvedBasePath?: string,
-): string {
-  const basePath = resolvedBasePath ?? expandPath(FILE_PATHS.WORKSPACE_BASE);
-  return `${basePath}/${workspaceId}/${FILE_PATHS.WORKSPACE_META}/${FILE_PATHS.AGENTS_DIR}/${agentId}${FILE_PATHS.EXTENSIONS.SESSION}`;
-}
-
-/**
- * Get the full path for a recovery file.
- * @param resolvedBasePath - Optional pre-resolved workspace base path (daemon-reported,
- *   e.g. via WorkspacePathService). Falls back to expanding FILE_PATHS.WORKSPACE_BASE
- *   when not provided (browser / test usage).
- */
-export function getRecoveryPath(
-  workspaceId: string,
-  agentId: string,
-  resolvedBasePath?: string,
-): string {
-  const basePath = resolvedBasePath ?? expandPath(FILE_PATHS.WORKSPACE_BASE);
-  return `${basePath}/${workspaceId}/${FILE_PATHS.WORKSPACE_META}/${FILE_PATHS.RECOVERY_DIR}/${agentId}${FILE_PATHS.EXTENSIONS.RECOVERY}`;
-}
 
 /** Calculate retry delay with exponential backoff */
 export function calculateRetryDelay(attempt: number): number {
