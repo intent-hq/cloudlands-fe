@@ -1294,7 +1294,10 @@
   // dedupes per githubUrl within this form instance and swallows all errors.
   const repoCacheWarmer = createRepoCacheWarmer();
   $effect(() => {
-    repoCacheWarmer.warm({ repoType, githubUrl });
+    const type = repoType;
+    // Only read githubUrl for GitHub selections so the effect doesn't track
+    // it (and re-run) while a local/remote repo is selected.
+    repoCacheWarmer.warm({ repoType: type, githubUrl: type === 'github' ? githubUrl : '' });
   });
 
   // Auto-restore last used setup script when the repo changes, and re-probe
