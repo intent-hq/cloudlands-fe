@@ -4,6 +4,23 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.26.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.25.0...v2.26.0) (2026-08-11)
+
+
+### 🚀 Features
+
+* **hud:** restore compact peak y-axis label on TOK/S chart ([#1012](https://github.com/intent-hq/cloudlands-fe/issues/1012)) ([6157f4e](https://github.com/intent-hq/cloudlands-fe/commit/6157f4ea4bed5037cf39b1a9eda28aec5869ca0e))
+
+
+### 🐛 Bug Fixes
+
+* hide detected-repo Select row when it duplicates a suggestion ([#1014](https://github.com/intent-hq/cloudlands-fe/issues/1014)) ([810b306](https://github.com/intent-hq/cloudlands-fe/commit/810b30694d68fadc46638b4ee9d791feb5de0305))
+* hydrate sidebar workspace circles from workspace.list taskStats ([#1011](https://github.com/intent-hq/cloudlands-fe/issues/1011)) ([eaeee1b](https://github.com/intent-hq/cloudlands-fe/commit/eaeee1bb25f0bc6a90da48a22aae9db96274ebbc))
+* keep merged monitored PR pills on completed workspace cards ([#1016](https://github.com/intent-hq/cloudlands-fe/issues/1016)) ([8c52fe7](https://github.com/intent-hq/cloudlands-fe/commit/8c52fe7bd4b8f2fc4303463aa6d6a8c8b9eba5f9))
+* **model:** make onboarding model pick durable as the global default ([#1009](https://github.com/intent-hq/cloudlands-fe/issues/1009)) ([e639ac0](https://github.com/intent-hq/cloudlands-fe/commit/e639ac0fd60f1c7e4296e747ebfb3345a6f9b1c0))
+* **settings:** seed default-provider enablement entry on hydration ([#1015](https://github.com/intent-hq/cloudlands-fe/issues/1015)) ([62d7940](https://github.com/intent-hq/cloudlands-fe/commit/62d79402a1d2dc43923dd17e41353502ce899c09))
+* **specialists:** refetch specialist.list when model-resolution settings change ([#1004](https://github.com/intent-hq/cloudlands-fe/issues/1004)) ([7134c91](https://github.com/intent-hq/cloudlands-fe/commit/7134c91fa52a566733a911047c95b36130721d9b))
+
 ## [2.25.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.24.0...v2.25.0) (2026-08-10)
 
 
