@@ -166,12 +166,26 @@ describe('wire requests (§6.9, fake transport)', () => {
     });
   });
 
-  it('flushPrMonitor forwards prMonitor.flush { workspaceId, monitorId }', async () => {
+  it('flushPrMonitor forwards prMonitor.flush { workspaceId, monitorId } (no check key when omitted)', async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true, flushed: true });
     await flushPrMonitor('ws-1', 'mon-1');
     expect(mockedRequest).toHaveBeenCalledWith('prMonitor.flush', {
       workspaceId: 'ws-1',
       monitorId: 'mon-1',
+    });
+    // The additive §5.42 `check` param must be absent, not false/undefined.
+    const params = mockedRequest.mock.calls[0][1] as Record<string, unknown>;
+    expect('check' in params).toBe(false);
+  });
+
+  it('flushPrMonitor with check sends prMonitor.flush { workspaceId, monitorId, check: true } (§5.42)', async () => {
+    // PROTOCOL-shaped response: flushed: false when the fresh check found nothing.
+    mockedRequest.mockResolvedValueOnce({ ok: true, flushed: false });
+    await flushPrMonitor('ws-1', 'mon-1', true);
+    expect(mockedRequest).toHaveBeenCalledWith('prMonitor.flush', {
+      workspaceId: 'ws-1',
+      monitorId: 'mon-1',
+      check: true,
     });
   });
 });
