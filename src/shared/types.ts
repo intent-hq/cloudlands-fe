@@ -661,6 +661,15 @@ export interface WorkspaceTask {
    * then omit `expectedVersion` and last-writer-wins applies.
    */
   rev?: number;
+  /** Task-note ids this task depends on (hard ordering edges); omitted when empty. */
+  dependsOn?: string[];
+  /** Task-note ids this task may conflict with (advisory); omitted when empty. */
+  conflictsWith?: string[];
+  /**
+   * Daemon-computed: `dependsOn` ids whose task is not yet `complete` (missing
+   * and cancelled deps count as unmet). Omitted when empty (PROTOCOL §5.4).
+   */
+  unmetDependsOn?: string[];
 }
 
 /**
@@ -850,6 +859,10 @@ export interface TaskMetadata {
   completedAt?: string;
   startedAt?: string;
   peerOrder?: number; // Order among sibling tasks with same parentId (uses gaps of 100 for easy insertion)
+  /** Task-note ids this task depends on (hard ordering edges); omitted when empty. */
+  dependsOn?: NoteId[];
+  /** Task-note ids this task may conflict with (advisory); omitted when empty. */
+  conflictsWith?: NoteId[];
 }
 
 /**

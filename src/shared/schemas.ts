@@ -275,6 +275,8 @@ export const TaskMetadataSchema = z.object({
   blockedReason: z.string().optional(),
   completedAt: z.string().datetime().optional(),
   startedAt: z.string().datetime().optional(),
+  dependsOn: z.array(z.string()).optional(), // Hard ordering edges (task note ids)
+  conflictsWith: z.array(z.string()).optional(), // Advisory conflict edges (task note ids)
 });
 
 // Note: DependencyTypeSchema and NoteDependencySchema removed

@@ -1216,6 +1216,19 @@ export interface TaskUpdatePatch {
 export interface MarkAsTaskOptions {
   acceptanceCriteria?: string[] | string;
   effort?: string;
+  /** Seed/replace the task's `dependsOn` relation list (v6.8); omitted keeps existing. */
+  dependsOn?: string[];
+  /** Seed/replace the task's `conflictsWith` relation list (v6.8); omitted keeps existing. */
+  conflictsWith?: string[];
+}
+
+/**
+ * Per-list replace params for `task.setRelations` (PROTOCOL §5.4, v6.8):
+ * an omitted list keeps the existing one, `[]` clears it.
+ */
+export interface SetRelationsParams {
+  dependsOn?: string[];
+  conflictsWith?: string[];
 }
 
 /** Options for creating a prerequisite task dependency (`task.createPrerequisite`). */
@@ -1261,6 +1274,13 @@ export interface TasksClient {
     options?: MarkAsTaskOptions,
     expectedVersion?: number,
   ): Promise<MutationResult>;
+  /**
+   * Replace a task note's relation lists (`task.setRelations`, PROTOCOL §5.4,
+   * v6.8). Replace semantics per list: an omitted param keeps the existing
+   * list, `[]` clears it. The daemon validates ids (same-workspace task notes,
+   * no self-edges) and rejects `dependsOn` cycles naming the cycle path.
+   */
+  setRelations(noteId: string, relations: SetRelationsParams): Promise<MutationResult>;
   /** Assign an existing agent to a task note (`task.assignAgent`). `expectedVersion` is optional (§11.4-D). */
   assignAgent(noteId: string, agentId: string, expectedVersion?: number): Promise<MutationResult>;
   /** Create a prerequisite task dependency (`task.createPrerequisite`); carries an idempotencyKey. */

@@ -169,7 +169,20 @@ export const TasksMarkAsTaskSchema = z.object({
     actualEffort: z.string().optional(),
     blockedReason: z.string().optional(),
     peerOrder: z.number().optional(),
+    dependsOn: z.array(z.string()).optional(),
+    conflictsWith: z.array(z.string()).optional(),
   }),
+});
+
+/**
+ * `task.setRelations` (PROTOCOL §5.4, protocol 6.8) — replace semantics per
+ * list: an omitted param keeps the existing list, `[]` clears it.
+ */
+export const TasksSetRelationsSchema = z.object({
+  workspaceId: WorkspaceIdSchema,
+  noteId: z.string(),
+  dependsOn: z.array(z.string()).optional(),
+  conflictsWith: z.array(z.string()).optional(),
 });
 
 export const TasksCreatePrerequisiteSchema = z.object({
@@ -335,6 +348,7 @@ export const TOOL_SCHEMAS = {
   // Task management tools (Phase 1C)
   'tasks.getMyTask': TasksGetMyTaskSchema,
   'tasks.markAsTask': TasksMarkAsTaskSchema,
+  'tasks.setRelations': TasksSetRelationsSchema,
   'tasks.createPrerequisite': TasksCreatePrerequisiteSchema,
   'tasks.assignAgent': TasksAssignAgentSchema,
 
