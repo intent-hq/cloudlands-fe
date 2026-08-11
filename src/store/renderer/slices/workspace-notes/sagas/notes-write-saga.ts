@@ -29,6 +29,7 @@ import {
   workspaceDeleted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { withPreservedUnmetDependsOn } from '../workspace-notes-normalization';
 import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
 import {
   addOptimisticNote,
@@ -146,7 +147,11 @@ function* reconcileConflict(
   const current = result.conflict.current;
   if (current && typeof current === 'object') {
     const note = toRuntimeNote(current as Note);
-    yield* put(applyNoteUpdated(workspaceId, String(note.id || noteId), note));
+    const canonicalId = String(note.id || noteId);
+    // Mutation-response notes omit the transient `unmetDependsOn` projection
+    // (monorepo#2001); keep the cached value so "Waits on" doesn't flicker.
+    const cached = yield* selectNoteById.effect(workspaceId, canonicalId);
+    yield* put(applyNoteUpdated(workspaceId, canonicalId, withPreservedUnmetDependsOn(note, cached)));
   } else {
     yield* call(refetchWorkspaceNotes, workspaceId);
   }
