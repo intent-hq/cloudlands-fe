@@ -995,7 +995,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
    */
   async function placeOversizedFile(file: File) {
     if (!workspace?.id) {
-      toast.error(m.chat_richInput_filesTooLarge_error({ names: file.name }));
+      toast.error(m.chat_richInput_attachmentPlaceFailed_error({ name: file.name }));
       return;
     }
 
@@ -1023,13 +1023,15 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
       // Reference the placed file as a mention chip so the message text
       // carries the workspace-relative path the agent can read directly.
-      tiptap?.insertMention?.({
+      // `fullPath` is what the chip click-to-open handler resolves against.
+      const inserted = tiptap?.insertMention?.({
         id: `attachment-${result.path}`,
         label: result.fileName,
         type: 'file',
         uri: `devspace://file/${encodeURIComponent(result.path)}`,
         meta: {
           path: result.path,
+          fullPath: result.path,
           name: result.fileName,
           size: result.size,
           type: file.type,
@@ -1042,9 +1044,17 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         size: result.size,
         viaSourcePath: !!sourcePath,
       });
-      toast.success(
-        m.chat_richInput_attachmentPlaced_toast({ name: result.fileName, path: result.path }),
-      );
+      if (inserted) {
+        toast.success(
+          m.chat_richInput_attachmentPlaced_toast({ name: result.fileName, path: result.path }),
+        );
+      } else {
+        // The file is placed either way; only the chip failed to land, so
+        // don't claim the message references it.
+        logger.warn('Placed attachment but could not insert its mention chip', {
+          path: result.path,
+        });
+      }
     } catch (error) {
       logger.error('Failed to place oversized attachment', { fileName: file.name, error });
       toast.error(m.chat_richInput_attachmentPlaceFailed_error({ name: file.name }));

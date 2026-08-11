@@ -1262,6 +1262,10 @@ describe('SimpleRichInput oversized attachment placement (monorepo#1948)', () =>
     const mention = insertMentionCalls()[0];
     expect(mention.label).toBe('dump.har');
     expect((mention.meta as Record<string, unknown>).path).toBe('.intent/attachments/dump.har');
+    // fullPath drives the chip click-to-open handler in editor-config.ts.
+    expect((mention.meta as Record<string, unknown>).fullPath).toBe(
+      '.intent/attachments/dump.har',
+    );
     // No rejection toast — the user gets a confirmation instead.
     const { toast } = await import('svelte-sonner');
     expect(toast.error).not.toHaveBeenCalled();
@@ -1324,6 +1328,20 @@ describe('SimpleRichInput oversized attachment placement (monorepo#1948)', () =>
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledTimes(1);
     });
+    expect(insertMentionCalls()).toHaveLength(0);
+  });
+
+  it('rejects a remote file above the wire cap without calling placeAttachment', async () => {
+    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+
+    render(SimpleRichInput, { props: baseProps() });
+    await dropFiles([makeFile('giant.bin', 'application/octet-stream', 26 * 1024 * 1024)]);
+
+    const { toast } = await import('svelte-sonner');
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledTimes(1);
+    });
+    expect(placeAttachmentMock).not.toHaveBeenCalled();
     expect(insertMentionCalls()).toHaveLength(0);
   });
 
