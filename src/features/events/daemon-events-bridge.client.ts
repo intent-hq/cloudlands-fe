@@ -2092,6 +2092,11 @@ function handleWorkspaceDeletedEvent(workspaceId: string): void {
  * blocked from the store for the remainder of the post-delete grace window.
  */
 function handleWorkspaceCreatedEvent(workspaceId: string): void {
+  const tombstoneTimer = workspaceDeleteTombstoneTimers.get(workspaceId);
+  if (tombstoneTimer) {
+    clearTimeout(tombstoneTimer);
+    workspaceDeleteTombstoneTimers.delete(workspaceId);
+  }
   appStore.dispatch(clearWorkspacePendingDeletion(workspaceId));
   const state = appStore.state as {
     agentSessions?: { agentIdsByWorkspace: Record<string, string[]> };

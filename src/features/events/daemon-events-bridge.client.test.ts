@@ -5066,6 +5066,57 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     const state = appStore.state as { workspace: { pendingDeletions: Record<string, boolean> } };
     expect(state.workspace.pendingDeletions[TOMBSTONED_WS]).toBeUndefined();
   });
+
+  it('disarms the pending-delete tombstone timer on a recycled ID', async () => {
+    const TIMER_WS = 'ws-bridge-recycled-timer';
+    const { markWorkspacePendingDeletion, clearWorkspacePendingDeletion } =
+      await import('$store/renderer/slices/workspace/workspace-slice');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    try {
+      // A schedule event arms the self-lift timer…
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-ws-del-scheduled-recycle-timer',
+            workspaceId: TIMER_WS,
+            timestamp: new Date().toISOString(),
+            type: 'workspace:delete-scheduled',
+            actor: { type: 'user', id: 'u1' },
+            data: { workspaceId: TIMER_WS, deleteAt: new Date(Date.now() + 15_000).toISOString() },
+          },
+        },
+      });
+      // …then the ID is recycled by a new create, which must disarm it.
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-workspace-created-recycle-timer',
+            workspaceId: TIMER_WS,
+            timestamp: new Date().toISOString(),
+            type: 'workspace:created',
+            actor: { type: 'user', id: 'u1' },
+            data: { workspaceId: TIMER_WS },
+          },
+        },
+      });
+
+      // A later delete of the recycled workspace sets a fresh tombstone; the
+      // stale timer (had it survived) would fire and wrongly lift it.
+      appStore.dispatch(markWorkspacePendingDeletion(TIMER_WS));
+      vi.advanceTimersByTime(15_000 + 60_000 + 1);
+
+      const state = appStore.state as { workspace: { pendingDeletions: Record<string, boolean> } };
+      expect(state.workspace.pendingDeletions[TIMER_WS]).toBe(true);
+      appStore.dispatch(clearWorkspacePendingDeletion(TIMER_WS));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('daemonEventsBridge (delete grace window schedule/cancel events, monorepo#1977)', () => {
