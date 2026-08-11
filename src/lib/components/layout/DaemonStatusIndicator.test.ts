@@ -684,7 +684,8 @@ describe('DaemonStatusIndicator', () => {
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
-      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      // With r1 active the trigger's accessible name includes the remote name.
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy — desk:4180' }));
 
       // With r1 active, the trigger button also shows "desk:4180" next to the
       // dot — target the connections-list row (the submenu trigger).
@@ -829,7 +830,11 @@ describe('DaemonStatusIndicator', () => {
 
     function withActive(activeId: string) {
       return {
-        connections: createCollection('id', [localRecord, remoteWithHostname, remoteWithoutHostname]),
+        connections: createCollection('id', [
+          localRecord,
+          remoteWithHostname,
+          remoteWithoutHostname,
+        ]),
         activeId,
         status: 'idle',
         error: null,
@@ -843,7 +848,8 @@ describe('DaemonStatusIndicator', () => {
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
 
-      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      // Accessible name includes the visible remote name (WCAG 2.5.3).
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy — studio.local' });
       const label = screen.getByText('studio.local');
       expect(trigger.contains(label)).toBe(true);
       // Subtle, truncated styling so a long name cannot crowd the title bar.
@@ -858,7 +864,7 @@ describe('DaemonStatusIndicator', () => {
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
 
-      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy — 10.0.0.3:4180' });
       const label = screen.getByText('10.0.0.3:4180');
       expect(trigger.contains(label)).toBe(true);
     });

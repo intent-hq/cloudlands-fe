@@ -75,6 +75,7 @@
   import {
     selectConnections,
     selectActiveConnectionId,
+    selectActiveConnection,
     selectConnectionCertMismatch,
     selectActiveProtocolMismatch,
     selectProtocolMismatchModal,
@@ -98,6 +99,7 @@
   const unslothStopping$ = selectUnslothStopping();
   const connections$ = selectConnections();
   const activeConnectionId$ = selectActiveConnectionId();
+  const activeConnection$ = selectActiveConnection();
   const certMismatch$ = selectConnectionCertMismatch();
   const activeProtocolMismatch$ = selectActiveProtocolMismatch();
   const protocolMismatchModal$ = selectProtocolMismatchModal();
@@ -205,10 +207,18 @@
   // connection is remote (name only, no host:port — same preference order as
   // formatConnectionLabel). Null when local/unknown → dot-only trigger.
   const activeRemoteName = $derived.by(() => {
-    const conn = $connections$.find((c) => c.id === $activeConnectionId$);
+    const conn = $activeConnection$;
     if (!conn || conn.isLocal) return null;
     return conn.hostname?.trim() || conn.label;
   });
+
+  // Trigger accessible name: includes the visible remote name when shown so
+  // the label-in-name relationship holds (WCAG 2.5.3).
+  const triggerAriaLabel = $derived(
+    activeRemoteName
+      ? `${healthLabels[$health$]()} — ${activeRemoteName}`
+      : healthLabels[$health$](),
+  );
 
   const stopUnslothDescription = $derived.by(() => {
     const count = $unslothStatus$?.attachedAgentCount ?? 0;
@@ -314,7 +324,7 @@
           'flex items-center justify-center h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer',
           activeRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
         )}
-        aria-label={healthLabels[$health$]()}
+        aria-label={triggerAriaLabel}
       >
         {#if activeRemoteName}
           <span class="text-xs text-subtle truncate max-w-32">{activeRemoteName}</span>
