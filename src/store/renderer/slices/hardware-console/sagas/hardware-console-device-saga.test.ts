@@ -242,6 +242,32 @@ describe('hardwareConsoleDeviceSaga', () => {
     await task.toPromise();
   });
 
+  it('flips to non-owner before the initial owner query resolves (startup race, #1928)', async () => {
+    const bridge = makeFakeOwnerBridge(true);
+    let resolveQuery!: (value: { isOwner: boolean }) => void;
+    bridge.invoke.mockImplementation(
+      () =>
+        new Promise<{ isOwner: boolean }>((resolve) => {
+          resolveQuery = resolve;
+        }),
+    );
+    mocks.ownerBridge.current = bridge;
+    const { task, getState } = createHarness();
+
+    await vi.waitFor(() => expect(bridge.invoke).toHaveBeenCalledTimes(1));
+    expect(getState().hardwareConsole.isConsoleOwner).toBe(false);
+    // Boot is held at the hydration barrier: no handlers, no manager start.
+    expect(mocks.installToasts).not.toHaveBeenCalled();
+    expect(mocks.manager.start).not.toHaveBeenCalled();
+
+    resolveQuery({ isOwner: true });
+    await vi.waitFor(() => expect(getState().hardwareConsole.isConsoleOwner).toBe(true));
+    await vi.waitFor(() => expect(mocks.manager.start).toHaveBeenCalledTimes(1));
+
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('hydrates owner status from the invoke channel and applies owner-changed pushes', async () => {
     const bridge = makeFakeOwnerBridge(false);
     mocks.ownerBridge.current = bridge;
@@ -278,6 +304,10 @@ describe('hardwareConsoleDeviceSaga', () => {
     mocks.manager.client = fakeClient;
     const { task, getState } = createHarness();
     await vi.waitFor(() => expect(mocks.manager.start).toHaveBeenCalledTimes(1));
+    // Settle the startup pessimistic-flip → hydration churn before asserting.
+    await vi.waitFor(() => expect(getState().hardwareConsole.isConsoleOwner).toBe(true));
+    mocks.ledAttach.mockClear();
+    mocks.ledDetach.mockClear();
 
     bridge.pushOwnerChanged(false);
     await vi.waitFor(() => expect(getState().hardwareConsole.isConsoleOwner).toBe(false));

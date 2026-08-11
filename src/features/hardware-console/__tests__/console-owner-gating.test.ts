@@ -326,4 +326,29 @@ describe('prompt-picker joystick (two windows, one owner)', () => {
     // The in-flight session still closes (dispatches radialPromptPickerClosed).
     expect(dispatchA).toHaveBeenCalledTimes(2);
   });
+
+  it('does not insert a prompt on release after ownership was lost mid-session', () => {
+    const insertA = vi.fn().mockReturnValue(true);
+    const manager = makeFakeManager();
+    teardowns.push(
+      installHardwareConsolePromptPickerJoystick(asManager(manager), {
+        getTopPrompts: () => ['p1', 'p2'],
+        dispatch: vi.fn(),
+        insertText: insertA,
+        isOwner: isOwnerA,
+      }),
+    );
+
+    // Owner engages on a prompt sector, then focus moves to another window.
+    manager.emitRaw({ a: 0, d: 1 });
+    owner = 'B';
+    manager.emitRaw({ a: 0, d: 0 });
+    expect(insertA).not.toHaveBeenCalled();
+
+    // Regaining ownership restores normal release insertion.
+    owner = 'A';
+    manager.emitRaw({ a: 0, d: 1 });
+    manager.emitRaw({ a: 0, d: 0 });
+    expect(insertA).toHaveBeenCalledTimes(1);
+  });
 });

@@ -1,6 +1,6 @@
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
-import { eventChannel } from 'redux-saga';
-import { call, delay, fork, join, put, take, takeLatest } from 'typed-redux-saga';
+import { buffers, eventChannel, type EventChannel } from 'redux-saga';
+import { call, cancelled, delay, fork, join, put, take, takeLatest } from 'typed-redux-saga';
 
 import { installHardwareConsoleKeySwitching } from '$features/hardware-console/assignment/key-switch-service';
 import {
@@ -96,21 +96,39 @@ function* watchIntegrationToggle(
 }
 
 /**
- * Console-owner tracking (#1928): subscribe to main's per-window
- * `owner-changed` pushes, then hydrate from the initial owner-status query.
- * Without a preload bridge (web build / tests) the slice default (`true`)
- * stands — the single page is always the owner.
+ * Console-owner hydration (#1928): flip to non-owner, subscribe to main's
+ * per-window `owner-changed` pushes, then hydrate from the initial
+ * owner-status query. Runs to completion before the device saga installs
+ * its handlers and starts the manager, so ownership is settled before the
+ * device stream opens (a connect toast or LED write can't race the query).
+ * A failed query keeps the pessimistic non-owner flip — the safe failure
+ * mode is no input in one window, not duplicate input in two. Without a
+ * preload bridge (web build / tests) the optimistic slice default (`true`)
+ * stands — the single page is always the owner — and no channel is
+ * returned. Otherwise returns the push channel for `watchConsoleOwnerPushes`.
  */
-export function* watchConsoleOwnerStatus() {
+export function* hydrateConsoleOwnerStatus() {
   const ipc = yield* call(getConsoleOwnerBridge);
-  if (ipc === null) return;
-  // Subscribe before querying so no ownership change slips between the two.
+  if (ipc === null) return null;
+  yield* put(consoleOwnerChanged(false));
+  // Subscribe before querying so no ownership change slips between the two;
+  // the sliding buffer holds the latest push that lands mid-query.
   const pushes = yield* call(() =>
-    eventChannel<boolean>((emit) => installConsoleOwnerListener(ipc, emit)),
+    eventChannel<boolean>((emit) => installConsoleOwnerListener(ipc, emit), buffers.sliding(1)),
   );
   try {
     const isOwner = yield* call(queryConsoleOwnerStatus, ipc);
     if (isOwner !== null) yield* put(consoleOwnerChanged(isOwner));
+    return pushes;
+  } finally {
+    // Cancelled mid-query: the push watcher was never forked, so close here.
+    if (yield* cancelled()) pushes.close();
+  }
+}
+
+/** Applies main's per-window `owner-changed` pushes to the slice (#1928). */
+export function* watchConsoleOwnerPushes(pushes: EventChannel<boolean>) {
+  try {
     while (true) {
       yield* put(consoleOwnerChanged(yield* take(pushes)));
     }
@@ -188,6 +206,11 @@ export function* hardwareConsoleDeviceSaga() {
   const disposers: (() => void)[] = [];
 
   try {
+    // Settle console ownership (#1928) before installing device handlers or
+    // starting the manager, so no window acts on an unhydrated owner flag.
+    const ownerPushes = yield* call(hydrateConsoleOwnerStatus);
+    if (ownerPushes !== null) yield* fork(watchConsoleOwnerPushes, ownerPushes);
+
     disposers.push(yield* call(installHardwareConsoleKeySwitching, manager));
     disposers.push(yield* call(installHardwareConsoleEncoder, manager));
     const ledEngine = new HardwareLedEngine();
@@ -209,7 +232,6 @@ export function* hardwareConsoleDeviceSaga() {
     };
     const toggleTask = yield* fork(watchIntegrationToggle, manager, lifecycle);
     yield* fork(watchConsoleOwnerLedGate, manager, ledEngine, ownerRef);
-    yield* fork(watchConsoleOwnerStatus);
     yield* fork(watchHardwareConsoleEncoderHud);
     yield* call([ledEngine, ledEngine.update], yield* selectHardwareLedSnapshot.effect());
     yield* fork(watchHardwareConsoleLedSnapshot, ledEngine);

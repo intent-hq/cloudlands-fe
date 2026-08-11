@@ -118,7 +118,8 @@ export function installHardwareConsolePromptPickerJoystick(
   const onEngage = (angle: number, distance: number): void => {
     // Only the owner opens a session; move/release handlers below stay
     // session-guarded, so a session already open when ownership is lost
-    // still tracks and closes cleanly in the window that opened it.
+    // still tracks and closes cleanly in the window that opened it —
+    // but `onRelease` re-checks ownership before inserting.
     if (!isOwner()) return;
     const prompts = getTopPrompts();
     if (prompts.length === 0) return;
@@ -147,6 +148,9 @@ export function installHardwareConsolePromptPickerJoystick(
     const { prompts, selection, belowSince } = session;
     const dwelledCentered = belowSince !== null && now() - belowSince >= centerDwellMs;
     closeSession();
+    // Ownership moved mid-session (#1928): the session still closes here,
+    // but insertion would target this non-owner window's editor — skip it.
+    if (!isOwner()) return;
     if (selection === null || dwelledCentered) return;
     if (selection === radialCancelSector(prompts.length)) return;
     const prompt = prompts[selection];
