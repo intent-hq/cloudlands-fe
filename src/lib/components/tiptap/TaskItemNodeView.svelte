@@ -111,25 +111,14 @@
     return agentIds[agentIds.length - 1];
   });
 
-  // Task relations (PROTOCOL §5.4, v6.8). `unmetDependsOn` mirrors the daemon's
-  // `unmet_depends_on_ids` projection (intent-services) — a dep is unmet unless
-  // its task note exists and is `complete` (missing and cancelled deps count as
-  // unmet) — recomputed live off the notes slice so dependency status changes
-  // update the indicator without a refetch. Note-shaped push entities do not
-  // carry the computed field; moving this projection BE-side is tracked in
-  // intent-hq/monorepo#1979.
-  let linkedTaskDependsOn = $derived(linkedTaskNote?.metadata?.task?.dependsOn ?? []);
+  // Task relations (PROTOCOL §5.2/§5.4, v6.8). `unmetDependsOn` is the
+  // daemon-computed projection carried on note-shaped read/push payloads
+  // (monorepo#1979) — a dep is unmet unless its task note is `complete`
+  // (missing and cancelled deps count as unmet). A dependency status change
+  // re-announces each dependent note via `note:updated`, so the refreshed
+  // projection lands in the notes slice without any client-side derivation.
   let linkedTaskConflictsWith = $derived(linkedTaskNote?.metadata?.task?.conflictsWith ?? []);
-  let unmetDependsOn = $derived.by(() => {
-    if (linkedTaskDependsOn.length === 0) return [];
-    void $notesVersion;
-    const wsId = $activeWorkspaceId;
-    if (!wsId) return [...linkedTaskDependsOn];
-    const state = appStore.state;
-    return linkedTaskDependsOn.filter(
-      (depId) => selectNoteById.select(state, wsId, depId)?.metadata?.task?.status !== 'complete',
-    );
-  });
+  let unmetDependsOn = $derived(linkedTaskNote?.metadata?.task?.unmetDependsOn ?? []);
 
   function relationTitles(ids: NoteId[]): string {
     // Track notesVersion so tooltip titles refresh when referenced notes change

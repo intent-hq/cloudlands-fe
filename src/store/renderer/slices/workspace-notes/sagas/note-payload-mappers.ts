@@ -21,6 +21,9 @@ function copyTask(task: TaskMetadata): TaskMetadata {
     ...(task.completedAt !== undefined ? { completedAt: task.completedAt } : {}),
     ...(task.startedAt !== undefined ? { startedAt: task.startedAt } : {}),
     ...(task.peerOrder !== undefined ? { peerOrder: task.peerOrder } : {}),
+    ...(task.dependsOn ? { dependsOn: [...task.dependsOn] } : {}),
+    ...(task.conflictsWith ? { conflictsWith: [...task.conflictsWith] } : {}),
+    ...(task.unmetDependsOn ? { unmetDependsOn: [...task.unmetDependsOn] } : {}),
   };
 }
 
