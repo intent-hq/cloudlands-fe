@@ -444,7 +444,7 @@ export class LiveAgentsClient implements AgentsClient {
     // `undoDelayMs > 0` the daemon registers the delete grace window and
     // returns `{ success, scheduled, deleteAt }` — surfaced verbatim so the
     // caller can render the daemon-owned deadline. Without it, the immediate
-    // delete request is byte-identical to pre-6.5.
+    // delete request is byte-identical to pre-6.7.
     const undoDelayMs = options?.undoDelayMs;
     try {
       const result = await backendRequest<{ scheduled?: unknown; deleteAt?: unknown }>(

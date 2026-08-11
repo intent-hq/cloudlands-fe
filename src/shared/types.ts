@@ -328,7 +328,7 @@ export interface Workspace {
   archived?: boolean;
   archivedAt?: string;
   /** ISO deadline of an in-memory pending deletion (PROTOCOL §5.1 delete grace
-   *  window, v6.5+). Present only while a `workspace.delete { undoDelayMs > 0 }`
+   *  window, v6.7+). Present only while a `workspace.delete { undoDelayMs > 0 }`
    *  grace window is running; cleared by `workspace.cancelDelete` and dropped by
    *  a daemon restart (the workspace survives). Rows carrying it are hidden
    *  from the FE workspace list. */

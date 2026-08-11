@@ -247,7 +247,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
    * `workspace.delete` (§5.1). With `undoDelayMs > 0` the daemon registers the
    * delete grace window and returns `{ success, scheduled, deleteAt }` —
    * surfaced verbatim so the caller can render the daemon-owned deadline.
-   * Without it, the immediate-delete request is byte-identical to pre-6.5.
+   * Without it, the immediate-delete request is byte-identical to pre-6.7.
    */
   async delete(id: string, options?: { undoDelayMs?: number }): Promise<WorkspaceDeleteResult> {
     const undoDelayMs = options?.undoDelayMs;

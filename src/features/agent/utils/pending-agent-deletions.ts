@@ -2,7 +2,7 @@
  * Pending agent-deletion registry — soft-hidden deletions awaiting the
  * daemon-owned commit.
  *
- * Agent deletion uses the daemon delete grace window (PROTOCOL §5.5, v6.5+):
+ * Agent deletion uses the daemon delete grace window (PROTOCOL §5.5, v6.7+):
  * the session is hidden locally and `agent.delete { undoDelayMs }` is sent
  * immediately, so the daemon owns the 15s window and commits at the deadline
  * even if the FE quits. During that window the daemon still returns the agent

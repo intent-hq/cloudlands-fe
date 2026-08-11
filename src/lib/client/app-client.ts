@@ -311,7 +311,7 @@ export interface WorkspaceDiskUsageResult {
 /**
  * `workspace.delete` outcome (§5.1). When the request carried
  * `undoDelayMs > 0` the daemon registers an in-memory pending deletion
- * (protocol 6.5+ delete grace window) and returns
+ * (protocol 6.7+ delete grace window) and returns
  * `{ success: true, scheduled: true, deleteAt }` — `deleteAt` is the ISO
  * commit deadline. An immediate delete (no `undoDelayMs`) keeps the plain
  * `{ success: true }` shape, so both fields are additive and optional.
@@ -358,7 +358,7 @@ export interface WorkspacesClient {
   /**
    * Delete a workspace (`workspace.delete`, §5.1). Optional
    * `options.undoDelayMs > 0` requests the daemon-owned delete grace window
-   * (protocol 6.5+): the daemon schedules the commit at `now + undoDelayMs`
+   * (protocol 6.7+): the daemon schedules the commit at `now + undoDelayMs`
    * and returns `{ success: true, scheduled: true, deleteAt }`; the FE cancels
    * it via `cancelDelete`. Omitted/0 keeps the immediate-delete behavior.
    */
@@ -429,7 +429,7 @@ export interface ImageBlock {
 
 /**
  * `agent.delete` outcome (§5.5). When the request carried `undoDelayMs > 0`
- * the daemon registers an in-memory pending deletion (protocol 6.5+ delete
+ * the daemon registers an in-memory pending deletion (protocol 6.7+ delete
  * grace window) and returns `{ success: true, scheduled: true, deleteAt }` —
  * `deleteAt` is the ISO commit deadline. An immediate delete (no
  * `undoDelayMs`) keeps the plain `{ success: true }` shape, so both fields
@@ -672,7 +672,7 @@ export interface AgentsClient {
    * the reactive `subscribe` refetch reconciles the list. `workspaceId` is
    * optional per the contract; the daemon resolves the workspace itself.
    * Optional `options.undoDelayMs > 0` requests the daemon-owned delete grace
-   * window (protocol 6.5+): the daemon schedules the commit at
+   * window (protocol 6.7+): the daemon schedules the commit at
    * `now + undoDelayMs` and returns `{ success: true, scheduled: true,
    * deleteAt }`; the FE cancels it via `cancelDelete`. Omitted/0 keeps the
    * immediate-delete behavior. Scheduling does NOT stop the agent — the

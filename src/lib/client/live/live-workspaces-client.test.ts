@@ -275,7 +275,7 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
     );
   });
 
-  it("delete keeps the pre-6.5 wire shape byte-identical when undoDelayMs is 0", async () => {
+  it("delete keeps the pre-6.7 wire shape byte-identical when undoDelayMs is 0", async () => {
     mockedRequest.mockResolvedValueOnce({ success: true });
     const client = new LiveWorkspacesClient();
 

@@ -174,7 +174,7 @@ reducer runs, calls the `AppClient` seam and dispatches the per-dispatch
 dependency-light (no selector imports — they evaluate `store.createSelector` at chain
 construction); read state directly off `appStore.state` and import the toast lib lazily.
 
-Agent **deletion** uses the **daemon-owned delete grace window** (PROTOCOL §5.5, v6.5+;
+Agent **deletion** uses the **daemon-owned delete grace window** (PROTOCOL §5.5, v6.7+;
 the handlers live in the agent mutation saga):
 
 - `deleteAgentWithUndoRequested` **soft-hides** the session locally (drops it from the

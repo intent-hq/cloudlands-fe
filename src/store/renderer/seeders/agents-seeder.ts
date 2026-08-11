@@ -29,7 +29,7 @@ registerMockSeeder("agents", async ({ store, client }) => {
 
   // Drop agents with a pending soft-hidden deletion (undo window still
   // open) — or carrying the daemon's delete-grace-window deadline
-  // (`pendingDeleteAt`, PROTOCOL §5.5 v6.5+) — so the boot/seed path cannot
+  // (`pendingDeleteAt`, PROTOCOL §5.5 v6.7+) — so the boot/seed path cannot
   // resurrect a deleted agent — same guard `hydrateWorkspaceAgents` applies
   // in lifecycle-read-service.ts.
   const fetched = (await client.agents.list(wsId)).filter(

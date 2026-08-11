@@ -236,7 +236,7 @@ export interface AgentSession {
   lastViewedAt?: Date | string;
 
   /** ISO deadline of an in-memory pending deletion (PROTOCOL §5.5 delete grace
-   *  window, v6.5+). Present only while an `agent.delete { undoDelayMs > 0 }`
+   *  window, v6.7+). Present only while an `agent.delete { undoDelayMs > 0 }`
    *  grace window is running; cleared by `agent.cancelDelete` and dropped by a
    *  daemon restart (the session survives). Rows carrying it are hidden from
    *  the FE agent list. */
