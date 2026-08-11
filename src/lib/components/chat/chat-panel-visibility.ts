@@ -81,6 +81,41 @@ export function shouldStopChatBeforeSending(state: StopChatBeforeSendState): boo
   return Boolean(state.isStreaming || state.isProcessing);
 }
 
+type TranscriptSkeletonState = {
+  isFirstHydrationLoading: boolean;
+  hasSession: boolean;
+  hydrationSettled: boolean;
+  hasBackendSession: boolean;
+  hasMessages: boolean;
+  isStreaming: boolean;
+  hasPendingInitialPrompt: boolean;
+};
+
+/**
+ * Transcript skeleton gate. The FIRST hydration (latch not yet set) always
+ * shows the indeterminate skeleton — even when an in-flight assistant message
+ * has already landed via the standing subscription — so a partially-loaded
+ * transcript never renders as if complete; only the settling hydration
+ * reveals the transcript. After the first hydration, the legacy
+ * empty-transcript cases keep their streaming exception so an in-flight turn
+ * is never hidden behind the skeleton. A pending initial prompt (brand-new
+ * agent, optimistic echo) suppresses the skeleton entirely — there is no
+ * earlier transcript to render partially.
+ */
+export function shouldShowTranscriptSkeleton(state: TranscriptSkeletonState): boolean {
+  if (state.hasPendingInitialPrompt) {
+    return false;
+  }
+  if (state.isFirstHydrationLoading) {
+    return true;
+  }
+  return (
+    (!state.hasSession || !state.hydrationSettled || state.hasBackendSession) &&
+    !state.hasMessages &&
+    !state.isStreaming
+  );
+}
+
 type QueuedMessagesVisibilityState = {
   queueLength: number;
   hasPendingQuestions: boolean;

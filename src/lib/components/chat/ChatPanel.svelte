@@ -208,6 +208,7 @@
     deriveQueuedMessagesVisibility,
     shouldShowEndOfListStreamingStatus,
     shouldShowPendingAssistantStatus,
+    shouldShowTranscriptSkeleton,
   } from './chat-panel-visibility';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -3324,8 +3325,8 @@
             skipIsolation={onboardingContext.skipWorktree}
           />
         </div>
-      {:else if (isFirstHydrationLoading || ((!$agentSession$ || $transcriptHydration$ !== 'settled' || $agentSession$.backendSessionId !== null) && $agentMessages$.length === 0)) && !$agentSessionIsStreaming$ && !pendingInitialPrompt}
-        <!-- Skeleton: FIRST hydration in flight (even with partial messages — never render a partial transcript as complete), or hydration not settled / existing session with zero messages (covers failed-hydration case: settled + empty + backendSessionId !== null) -->
+      {:else if shouldShowTranscriptSkeleton({ isFirstHydrationLoading, hasSession: Boolean($agentSession$), hydrationSettled: $transcriptHydration$ === 'settled', hasBackendSession: $agentSession$?.backendSessionId != null, hasMessages: $agentMessages$.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt) })}
+        <!-- Skeleton: FIRST hydration in flight (even with partial/streaming messages — never render a partial transcript as complete), or hydration not settled / existing session with zero messages (covers failed-hydration case: settled + empty + backendSessionId !== null) -->
         {#if isInitialWorkspaceAgent && onboardingContext}
           <div class="pt-16 pb-6">
             <WorkspaceSetupCard
