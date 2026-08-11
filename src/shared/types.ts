@@ -1151,6 +1151,16 @@ export interface FileStatus {
   path: string;
   status: GitFileStatus;
   staged: boolean;
+  /**
+   * Octal tree-entry mode string, present only for submodule (gitlink)
+   * entries (`"160000"`) so they can route to a dedicated presentation
+   * without probing `git.showFile` (intent-hq/monorepo#1739).
+   */
+  mode?: string;
+  /** Pre-change submodule pin SHA (absent for a newly added submodule). */
+  oldSha?: string;
+  /** Post-change submodule pin SHA (absent for a deleted submodule). */
+  newSha?: string;
 }
 
 export enum GitFileStatus {

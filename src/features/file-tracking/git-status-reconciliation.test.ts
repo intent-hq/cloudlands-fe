@@ -58,6 +58,56 @@ describe('reconcileGitStatusChanges', () => {
     });
   });
 
+  it('carries gitlink (submodule) metadata from mode-160000 status entries (#1739)', () => {
+    const files: FileStatus[] = [
+      {
+        path: 'packages/intentd',
+        status: GitFileStatus.Modified,
+        staged: false,
+        mode: '160000',
+        oldSha: 'a'.repeat(40),
+        newSha: 'b'.repeat(40),
+      },
+      { path: 'src/plain.ts', status: GitFileStatus.Modified, staged: false },
+    ];
+
+    const result = reconcileGitStatusChanges(files, []);
+
+    expect(result[0].gitlink).toEqual({
+      mode: '160000',
+      oldSha: 'a'.repeat(40),
+      newSha: 'b'.repeat(40),
+    });
+    expect(result[1].gitlink).toBeUndefined();
+  });
+
+  it('does not attach gitlink for a non-160000 mode entry (forward-compat)', () => {
+    const files: FileStatus[] = [
+      { path: 'src/script.sh', status: GitFileStatus.Modified, staged: false, mode: '100755' },
+    ];
+
+    const result = reconcileGitStatusChanges(files, []);
+
+    expect(result[0].gitlink).toBeUndefined();
+  });
+
+  it('omits absent pin SHAs on a newly added submodule entry', () => {
+    const files: FileStatus[] = [
+      {
+        path: 'packages/new-sub',
+        status: GitFileStatus.Added,
+        staged: true,
+        mode: '160000',
+        newSha: 'b'.repeat(40),
+      },
+    ];
+
+    const result = reconcileGitStatusChanges(files, []);
+
+    expect(result[0].gitlink).toEqual({ mode: '160000', newSha: 'b'.repeat(40) });
+    expect(result[0].gitlink).not.toHaveProperty('oldSha');
+  });
+
   it('keeps a path present in both index and worktree in both stages', () => {
     const files: FileStatus[] = [
       { path: 'src/dual.ts', status: GitFileStatus.Added, staged: true },

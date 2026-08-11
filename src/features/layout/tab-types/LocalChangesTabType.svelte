@@ -82,6 +82,7 @@
           category: 'unstaged' as const,
           oldContent: c.content?.oldContent,
           newContent: c.content?.newContent,
+          gitlink: c.gitlink,
         };
       }),
       ...staged.map((c) => {
@@ -99,6 +100,7 @@
           category: 'staged' as const,
           oldContent: c.content?.oldContent,
           newContent: c.content?.newContent,
+          gitlink: c.gitlink,
         };
       }),
       ...allCommits.flatMap((commit) =>

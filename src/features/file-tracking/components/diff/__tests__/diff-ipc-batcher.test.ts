@@ -252,6 +252,98 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     expect(mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs')).toEqual([]);
   });
 
+  it('composes a status-marked gitlink from caller-provided pin SHAs without content reads (#1739)', async () => {
+    // Dirty submodule worktree with no pin move: the daemon diff carries no
+    // structurally classifiable hunks, but git.status marked the entry as a
+    // mode-160000 gitlink with pin SHAs — no showFile/file.read is attempted.
+    mockDaemon({ diffs: [{ path: 'packages/intentd', hunks: [] }] });
+
+    const promise = batchedGitDiff('ws-10', false, 'packages/intentd', {
+      gitlink: {
+        oldSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        newSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      },
+    });
+    await vi.runAllTimersAsync();
+
+    await expect(promise).resolves.toEqual({
+      file: 'packages/intentd',
+      chunks: [],
+      oldContent: 'Subproject commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n',
+      newContent: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n',
+    });
+    expect(
+      mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs'),
+    ).toEqual([]);
+  });
+
+  it('gitlink metadata does not suppress content reads for other paths in the same batch', async () => {
+    mockDaemon({
+      diffs: [
+        { path: 'packages/intentd', hunks: [] },
+        { path: 'a.ts', hunks: [HUNK] },
+      ],
+      showFiles: { ':0:a.ts': 'old a' },
+      files: { 'a.ts': 'new a' },
+    });
+
+    const subPromise = batchedGitDiff('ws-10', false, 'packages/intentd', {
+      gitlink: { newSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' },
+    });
+    const filePromise = batchedGitDiff('ws-10', false, 'a.ts');
+    await vi.runAllTimersAsync();
+
+    await expect(subPromise).resolves.toEqual({
+      file: 'packages/intentd',
+      chunks: [],
+      oldContent: '',
+      newContent: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n',
+    });
+    await expect(filePromise).resolves.toEqual({
+      file: 'a.ts',
+      chunks: [HUNK],
+      oldContent: 'old a',
+      newContent: 'new a',
+    });
+    // Content reads ran only for the regular file, never for the gitlink.
+    const contentReads = mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs');
+    expect(contentReads).toEqual([
+      ['git.showFile', { workspaceId: 'ws-10', filePath: 'a.ts', ref: ':0' }],
+      ['file.read', { workspaceId: 'ws-10', path: 'a.ts' }],
+    ]);
+  });
+
+  it('structural hunk classification wins over caller gitlink metadata', async () => {
+    // When the hunks DO classify, the sides come from the hunk lines (which
+    // carry the -dirty suffix) rather than the bare status SHAs.
+    const gitlinkHunk = {
+      oldStart: 1,
+      oldLines: 1,
+      newStart: 1,
+      newLines: 1,
+      lines: [
+        { type: 'Deletion', content: 'Subproject commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n', oldNumber: 1 },
+        { type: 'Addition', content: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-dirty\n', newNumber: 1 },
+      ],
+    };
+    mockDaemon({ diffs: [{ path: 'packages/intentd', hunks: [gitlinkHunk] }] });
+
+    const promise = batchedGitDiff('ws-10', false, 'packages/intentd', {
+      gitlink: {
+        oldSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        newSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      },
+    });
+    await vi.runAllTimersAsync();
+
+    await expect(promise).resolves.toMatchObject({
+      newContent: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-dirty\n',
+    });
+    expect(
+      mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs'),
+    ).toEqual([]);
+  });
+
   it('does not classify a regular file with Subproject-commit-looking lines as a gitlink', async () => {
     // A generated pin-manifest diff: context line + changed lines all match
     // the pseudo-line text, but a real gitlink delta never carries Context
@@ -352,6 +444,26 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     await expect(dedupedShowFile('ws-8', 'nope', 'a.ts')).resolves.toEqual({
       success: false,
       error: 'unresolvable ref',
+    });
+  });
+
+  it('dedupedShowFile marks the typed -32602 not-a-file rejection with notAFile (#1739)', async () => {
+    // PROTOCOL-shaped gitlink rejection: BackendError with the daemon's
+    // `data = { code: "not-a-file", path, mode }` threaded through.
+    const error = Object.assign(
+      new Error('invalid params: path is not a file at this ref: packages/intentd (mode 160000)'),
+      {
+        code: 'not-a-file',
+        rpcCode: -32602,
+        data: { code: 'not-a-file', path: 'packages/intentd', mode: '160000' },
+      },
+    );
+    mockedRequest.mockRejectedValueOnce(error);
+
+    await expect(dedupedShowFile('ws-8', 'HEAD', 'packages/intentd')).resolves.toEqual({
+      success: false,
+      error: 'invalid params: path is not a file at this ref: packages/intentd (mode 160000)',
+      notAFile: true,
     });
   });
 
