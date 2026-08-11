@@ -1,0 +1,696 @@
+name: Manual Signed Build
+
+# Dispatch-only workflow that builds any branch/ref (e.g. a large PR branch)
+# for a selectable set of platforms and uploads the installers as short-lived
+# workflow artifacts. Nothing here publishes to intent-hq/cloudlands-releases
+# and no auto-updater manifest (latest*.yml) is uploaded anywhere — artifacts
+# are for manual install/testing only.
+#
+# The build legs are copied wholesale from release-beta.yml, including the
+# workaround comments (they encode incident fixes: monorepo#1074/#1282/#1340);
+# the dispatch-input + signing-gate + summary pattern follows
+# intent-manual-windows-build.yml. Intended deltas vs release-beta.yml:
+#   - no resolve/publish jobs, no tag guards — the dispatched ref is checked
+#     out as-is
+#   - per-platform opt-in inputs and a sign input (default on)
+#   - a -manual.<run_number> version suffix so an installed manual build is
+#     never version-equal to a real release
+#   - artifacts are installers + blockmaps only, 7-day retention
+#   - the Windows leg gains integrated DigiCert signing (release-beta's
+#     Windows leg is still unsigned; the signing steps come from
+#     intent-manual-windows-build.yml)
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_macos:
+        description: 'Build macOS (arm64 DMG/zip)'
+        required: false
+        type: boolean
+        default: false
+      build_windows:
+        description: 'Build Windows (x64 NSIS installer)'
+        required: false
+        type: boolean
+        default: false
+      build_linux:
+        description: 'Build Linux (x64 AppImage/deb + arm64 AppImage)'
+        required: false
+        type: boolean
+        default: false
+      sign:
+        description: 'Sign the builds (macOS Developer ID + notarization, Windows DigiCert). Off = unsigned builds.'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# Distinct from release-beta.yml's `cloudlands-release` group so manual builds
+# never queue behind (or block) a real release. Per-ref so repeat dispatches
+# on the same branch queue instead of racing on the self-hosted Linux runners.
+concurrency:
+  group: cloudlands-manual-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Copied from release-beta.yml build-macos; the signing steps are gated on
+  # the `sign` input and the version-suffix step is added before packaging.
+  build-macos:
+    if: ${{ inputs.build_macos }}
+    runs-on: macos-15-xlarge
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout dispatched ref
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          # Per-runner-instance dest: on the old self-hosted pool, concurrent
+          # slots shared $HOME and raced on the default ~/setup-pnpm
+          # (monorepo#1239). Hosted macos-15-xlarge runners are one VM per
+          # job so the race can't recur, but the dest is harmless to keep.
+          dest: ~/setup-pnpm-${{ runner.name }}
+
+      - name: Setup Node.js
+        # No cache: 'pnpm' — this job previously ran on a non-ephemeral
+        # self-hosted runner with a persistent pnpm store (same as the
+        # intent-pr.yml jobs). On the hosted macos-15-xlarge runner each job
+        # is a fresh VM with no persistent store, so this is a candidate for
+        # cache: 'pnpm' — left as-is here since only the runner target was
+        # migrated by this change.
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate INTENTD_READ_PAT secret
+        env:
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+        run: |
+          if [ -z "$INTENTD_READ_PAT" ]; then
+            echo "::error::INTENTD_READ_PAT secret is required to fetch the pinned intentd release"
+            exit 1
+          fi
+          echo "INTENTD_READ_PAT is configured"
+
+      # Downloads the pinned intentd release asset, verifies its sha256, and stages
+      # the binary at resources/sidecar/intentd. Fails fast with a clear error when
+      # the pinned release or its per-target assets don't exist on intent-hq/intentd.
+      - name: Fetch pinned intentd sidecar
+        env:
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+        run: node scripts/fetch-sidecar.cjs
+
+      # Written for the non-ephemeral m1mac runner (and equally valid on an
+      # ephemeral hosted one): signing must never touch the login
+      # keychain: the certificate goes into a throwaway keychain under
+      # RUNNER_TEMP, the pre-existing user search list is captured and the
+      # temp keychain prepended to it (rather than replacing the list
+      # outright), and the always() cleanup step at the end of the job
+      # deletes the keychain and restores the captured list exactly (#553).
+      # Gated on the `sign` input: unsigned builds never import the cert.
+      - name: Import code signing certificate
+        if: ${{ inputs.sign }}
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE_PWD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.CLOUDLANDS_KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          # Idempotency: drop any stale keychain left by a crashed run
+          # before creating a fresh one. No-op on the ephemeral
+          # macos-15-xlarge runner (each job gets a clean VM) but harmless
+          # to keep.
+          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12" 2>/dev/null || \
+            echo "$MACOS_CERTIFICATE" | base64 -D > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$MACOS_CERTIFICATE_PWD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # Capture the current search list and prepend the temp keychain to
+          # it, so cleanup can restore exactly what was there before — no
+          # hardcoded login-keychain path, no dropped custom entries.
+          security list-keychains -d user | sed 's/^ *"//;s/"$//' > "$RUNNER_TEMP/keychain-list.orig"
+          KEYCHAINS=()
+          while IFS= read -r kc; do KEYCHAINS+=("$kc"); done < "$RUNNER_TEMP/keychain-list.orig"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "${KEYCHAINS[@]}"
+
+      # Drop build output left by a previous run so the artifact upload can't
+      # pick up stale files (no-op on this ephemeral hosted runner; kept for
+      # parity with the Windows job and the still self-hosted Linux legs).
+      - name: Clean previous build output
+        run: rm -rf dist-electron
+
+      # Compile the Paraglide i18n catalog before dist:mac so the npm `prebuild`
+      # type-check can resolve $shared/paraglide/messages.js on a clean checkout
+      # (intent-hq/monorepo#1046). Kept here in addition to the package.json
+      # `prebuild` fix so the workflow_dispatch fallback can rebuild older tags.
+      - name: Generate i18n catalog
+        run: pnpm run generate:i18n
+
+      # Rewrite package.json to <version>-manual.<run_number> before packaging
+      # so an installed manual build is never version-equal to a real release
+      # and the auto-updater cannot confuse it with one (a semver prerelease
+      # suffix also sorts below the base version). No git commit — the rewrite
+      # only lives in this job's checkout.
+      - name: Suffix version for manual build
+        run: |
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          MANUAL_VERSION="${BASE_VERSION}-manual.${GITHUB_RUN_NUMBER}"
+          npm version "$MANUAL_VERSION" --no-git-tag-version
+          echo "Version set to ${MANUAL_VERSION}"
+
+      - name: Build and package macOS app
+        id: build
+        run: pnpm run dist:mac
+        env:
+          # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
+          # even with sourcemaps disabled (monorepo#1340); same bundle here
+          # (this leg passed at 12288 on m1mac in the v2.13.0 rebuild, run
+          # 30764745052 — don't drop below ~10240). macos-15-xlarge provides
+          # 14 GB RAM, comfortably covering the ~8.2 GB committed heap peak.
+          NODE_OPTIONS: '--max-old-space-size=12288'
+          # Sourcemap generation multiplies rollup's peak heap past the cap
+          # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
+          # leg only, and this leg OOM'd in the v2.13.0 run (monorepo#1340).
+          # Nothing consumes the 'hidden' production maps in release builds,
+          # so skip them like CI build-web.
+          INTENT_DISABLE_SOURCEMAPS: '1'
+          # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
+          # detects the pre-staged binary and leaves it in place.
+          INTENTD_BIN: ${{ github.workspace }}/resources/sidecar/intentd
+          # Signing env is emptied when sign=false: electron-builder ignores
+          # empty CSC_* vars, scripts/notarize.js and scripts/sign-sidecar.js
+          # skip gracefully without the Apple creds, and auto-discovery is
+          # disabled so no stray keychain identity can be picked up.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ inputs.sign && 'true' || 'false' }}
+          # CSC_LINK/CSC_KEY_PASSWORD make electron-builder import the cert
+          # into its own temporary keychain, independent of the one imported
+          # above (which is still load-bearing: scripts/sign-sidecar.js
+          # resolves the identity via the search list). electron-builder's
+          # keychain is not covered by this job's always() cleanup — a crash
+          # mid-build can leave it behind. Consolidating both onto the manual
+          # keychain via CSC_KEYCHAIN is a tracked follow-up.
+          CSC_LINK: ${{ inputs.sign && secrets.CLOUDLANDS_MACOS_CERTIFICATE || '' }}
+          CSC_KEY_PASSWORD: ${{ inputs.sign && secrets.CLOUDLANDS_MACOS_CERTIFICATE_PWD || '' }}
+          CLOUDLANDS_APPLE_ID: ${{ inputs.sign && secrets.CLOUDLANDS_APPLE_ID || '' }}
+          CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD: ${{ inputs.sign && secrets.CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          CLOUDLANDS_APPLE_TEAM_ID: ${{ inputs.sign && secrets.CLOUDLANDS_APPLE_TEAM_ID || '' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List built artifacts
+        run: |
+          echo "Built artifacts:"
+          find dist-electron -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.blockmap" \) -exec ls -lh {} \;
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: manual-macos
+          # Installers + blockmaps only — deliberately no latest-mac.yml, so
+          # nothing that looks like an auto-updater feed leaves this workflow.
+          path: |
+            dist-electron/*.dmg
+            dist-electron/*.zip
+            dist-electron/*.blockmap
+          retention-days: 7
+          if-no-files-found: error
+
+      # Pattern: intent-manual-windows-build.yml "Post summary".
+      - name: Post summary
+        if: always()
+        run: |
+          {
+            echo "## Manual macOS Build"
+            echo ""
+            if [ "${{ steps.build.outcome }}" != "success" ]; then
+              echo "❌ Build failed."
+            elif [ "${{ inputs.sign }}" != "true" ]; then
+              echo "⚠️ Unsigned build completed (sign=false)."
+            else
+              echo "✅ Signed build completed (Developer ID + notarization)."
+            fi
+            echo ""
+            echo "Artifacts:"
+            find dist-electron -maxdepth 1 -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.blockmap" \) -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Always delete the temporary signing keychain, restore the pre-job
+      # keychain search list, and shred the decoded certificate so no
+      # signing material outlives the job (runs on failure and cancellation
+      # too). Ephemeral-safe by design (#553): a no-op cleanup here is
+      # harmless on this hosted macos-15-xlarge runner.
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+          # Restore the exact search list captured by the import step. If
+          # that file is absent the import step never ran, so the search
+          # list was never modified and must be left alone.
+          if [ -f "$RUNNER_TEMP/keychain-list.orig" ]; then
+            KEYCHAINS=()
+            while IFS= read -r kc; do KEYCHAINS+=("$kc"); done < "$RUNNER_TEMP/keychain-list.orig"
+            security list-keychains -d user -s "${KEYCHAINS[@]}"
+          fi
+          rm -f "$RUNNER_TEMP/certificate.p12"
+
+  # Copied from release-beta.yml build-windows, plus the integrated DigiCert
+  # signing steps from intent-manual-windows-build.yml gated on the `sign`
+  # input (release-beta's Windows leg is still unsigned; integrated signing
+  # there is a tracked follow-up).
+  build-windows:
+    if: ${{ inputs.build_windows }}
+    # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
+    # group as gh-linux-16x), fixed at the runner level to the Windows Server
+    # 2022 image. Server 2022 (not 2025) still matters: the windows-2025
+    # image ships Visual Studio 2026 (v18), which node-gyp < 12.1.0 cannot
+    # detect (nodejs/node-gyp#3282), breaking native module builds
+    # (node-pty). Move the runner to a newer image once the Node/npm/node-gyp
+    # stack in use supports VS 18.
+    runs-on: gh-windows-16x
+    # 120 min: the hosted Windows runner is far slower than the old
+    # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
+    # and the job was cancelled at the previous 60-min cap before
+    # electron-builder packaging even started (run 31302887167).
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout dispatched ref
+        uses: actions/checkout@v7
+
+      # On Windows runners C:\WINDOWS\system32\bash.EXE (the WSL stub)
+      # shadows Git Bash in PATH, and WSL bash can't execute the runner's
+      # Windows-path step scripts. Prepend Git's bin dir so every later
+      # `shell: bash` step resolves Git Bash instead (same workaround as
+      # intent-manual-windows-build.yml). Still required on gh-windows-16x,
+      # whose Windows Server 2022 image ships the same WSL stub.
+      - name: Put Git Bash first on PATH
+        shell: cmd
+        run: echo C:\Program Files\Git\bin>>"%GITHUB_PATH%"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          # Space-free per-run dest: hosted Windows runner names contain
+          # spaces ("GitHub Actions NNN") and pnpm/action-setup@v6 breaks on
+          # space-containing paths on Windows (pnpm/action-setup#261), so
+          # runner.name (see build-macos) cannot be used here. run_id +
+          # run_attempt keeps the dest unique per run.
+          dest: ~/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Setup Node.js
+        # No cache: 'pnpm' — this job previously ran on a non-ephemeral
+        # self-hosted runner with a persistent pnpm store, making the GH
+        # Actions cache tarball round-trip redundant. On the hosted
+        # gh-windows-16x runner each job is a fresh VM with no persistent
+        # store, so this is a candidate for cache: 'pnpm' — left as-is here
+        # since only the runner target was migrated by this change.
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate INTENTD_READ_PAT secret
+        shell: bash
+        env:
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+        run: |
+          if [ -z "$INTENTD_READ_PAT" ]; then
+            echo "::error::INTENTD_READ_PAT secret is required to fetch the pinned intentd release"
+            exit 1
+          fi
+          echo "INTENTD_READ_PAT is configured"
+
+      # Downloads the pinned intentd release asset, verifies its sha256, and
+      # stages the binary at resources/sidecar/intentd.exe.
+      # PATH prefix: the runner's PATH resolves GNU tar (Git Bash), which parses
+      # the drive letter in `tar -tf C:\...` as a remote host ("Cannot connect
+      # to C: resolve failed", intent-hq/monorepo#1282). Prefer the System32
+      # bsdtar, which handles Windows paths and .zip natively. Scoped to this
+      # step so bash keeps resolving to Git Bash (see PATH workaround above).
+      # Also load-bearing for workflow_dispatch rebuilds of tags whose checked
+      # -out fetch-sidecar.cjs predates the relative-path tar fix.
+      - name: Fetch pinned intentd sidecar
+        shell: bash
+        env:
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+        run: PATH="/c/Windows/System32:$PATH" node scripts/fetch-sidecar.cjs
+
+      # ── DigiCert signing setup (official action; pattern from ────────────
+      # ── intent-manual-windows-build.yml, gated on the `sign` input) ──────
+      - name: Check integrated signing configuration
+        id: integrated_signing
+        if: ${{ inputs.sign }}
+        shell: bash
+        run: |
+          missing=""
+          for name in INTENT_WINDOWS_SM_HOST INTENT_WINDOWS_SM_KEYPAIR_ALIAS INTENT_WINDOWS_SM_API_KEY INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              missing="${missing:+$missing, }${name}"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Signing requested but missing: $missing"
+            exit 1
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+        env:
+          INTENT_WINDOWS_SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
+          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS }}
+          INTENT_WINDOWS_SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
+          INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}
+          INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
+
+      # The decoded cert lives in the per-run temp dir; a D: scratch drive
+      # (used by an older GH-hosted variant of this job) isn't guaranteed on
+      # every runner image.
+      - name: Decode DigiCert client certificate
+        if: ${{ steps.integrated_signing.outputs.enabled == 'true' }}
+        shell: bash
+        run: |
+          echo "${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > "$RUNNER_TEMP/Certificate_pkcs12.p12"
+
+      - name: Setup DigiCert Software Trust Manager
+        if: ${{ steps.integrated_signing.outputs.enabled == 'true' }}
+        uses: digicert/code-signing-software-trust-action@v1
+        with:
+          simple-signing-mode: true
+        env:
+          SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
+          SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
+
+      # Drop build output left by a previous run so the artifact upload
+      # can't pick up stale files (no-op on this ephemeral hosted runner;
+      # kept for parity with the macOS job and the still self-hosted Linux
+      # legs).
+      - name: Clean previous build output
+        shell: bash
+        run: rm -rf dist-electron
+
+      # Same rationale as the macOS job: keeps the workflow_dispatch fallback
+      # able to rebuild older tags (intent-hq/monorepo#1046).
+      - name: Generate i18n catalog
+        shell: bash
+        run: pnpm run generate:i18n
+
+      # Rewrite package.json to <version>-manual.<run_number> before packaging
+      # so an installed manual build is never version-equal to a real release
+      # and the auto-updater cannot confuse it with one. No git commit — the
+      # rewrite only lives in this job's checkout.
+      - name: Suffix version for manual build
+        shell: bash
+        run: |
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          MANUAL_VERSION="${BASE_VERSION}-manual.${GITHUB_RUN_NUMBER}"
+          npm version "$MANUAL_VERSION" --no-git-tag-version
+          echo "Version set to ${MANUAL_VERSION}"
+
+      # shell: powershell (Windows PowerShell 5.1, present on every Windows
+      # host) rather than pwsh — the old self-hosted runner had no
+      # PowerShell Core ("pwsh: command not found", intent-hq/monorepo#1282
+      # follow-up run). The gh-windows-16x runner's Windows Server 2022 image
+      # ships PowerShell 5.1 too, so this stays valid on the hosted runner.
+      - name: Build and package Windows app
+        id: build
+        shell: powershell
+        env:
+          # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
+          # even with sourcemaps disabled (monorepo#1340); same bundle here.
+          # This leg passed at 12288 in the v2.13.0 rebuild, run 30764745052.
+          # gh-windows-16x is 16 vCPU / 64 GB RAM, so the 12288 cap has
+          # ample headroom there.
+          NODE_OPTIONS: '--max-old-space-size=12288'
+          # Sourcemap generation multiplies rollup's peak heap past the cap
+          # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
+          # leg only, and this leg OOM'd in the v2.13.0 run (monorepo#1340).
+          # Nothing consumes the 'hidden' production maps in release builds,
+          # so skip them like CI build-web.
+          INTENT_DISABLE_SOURCEMAPS: '1'
+          # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
+          # detects the pre-staged binary and leaves it in place.
+          INTENTD_BIN: ${{ github.workspace }}\resources\sidecar\intentd.exe
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signing env (pattern: intent-manual-windows-build.yml). When
+          # sign=false the gate step is skipped, this stays empty, and
+          # scripts/windows-sign.cjs skips silently.
+          INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING: ${{ steps.integrated_signing.outputs.enabled == 'true' && 'true' || '' }}
+          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS }}
+          SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
+          SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
+        run: |
+          pnpm run dist:win
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: List built artifacts
+        shell: bash
+        run: |
+          echo "Built artifacts:"
+          find dist-electron -maxdepth 1 -type f \( -name "*.exe" -o -name "*.blockmap" \) -exec ls -lh {} \;
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: manual-windows
+          # Installers + blockmaps only — deliberately no latest.yml, so
+          # nothing that looks like an auto-updater feed leaves this workflow.
+          path: |
+            dist-electron/*.exe
+            dist-electron/*.exe.blockmap
+          retention-days: 7
+          if-no-files-found: error
+
+      # Pattern: intent-manual-windows-build.yml "Post summary".
+      - name: Post summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Manual Windows Build"
+            echo ""
+            if [ "${{ steps.build.outcome }}" != "success" ]; then
+              echo "❌ Build failed."
+            elif [ "${{ steps.integrated_signing.outputs.enabled }}" != "true" ]; then
+              echo "⚠️ Unsigned build completed (sign=false)."
+            else
+              echo "✅ Signed build completed (DigiCert Authenticode)."
+            fi
+            echo ""
+            echo "Artifacts:"
+            find dist-electron -maxdepth 1 -type f \( -name "*.exe" -o -name "*.exe.blockmap" \) -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Copied from release-beta.yml build-linux. Linux packages are unsigned in
+  # the release pipeline too, so the `sign` input has no effect on this leg.
+  build-linux:
+    if: ${{ inputs.build_linux }}
+    strategy:
+      # Let the other arch finish (and report) even when one fails.
+      fail-fast: false
+      matrix:
+        include:
+          # node_heap: per-arch --max-old-space-size (MB).
+          #
+          # x64 runs on the self-hosted tinybox pool: the bundle outgrew the
+          # 16 GB ubuntu-latest hosted runner in the v2.13.0 rebuilds
+          # (monorepo#1340) — 8192 JS-heap-OOMs (run 30767000964, after
+          # passing at 8192 earlier the same day; the bundle sits right at
+          # that limit), while 12288 (run 30764745052) and later 10240 plus
+          # node/vite overhead trip the OS OOM killer. tinybox has the RAM
+          # for the same 12288 cap as the other self-hosted legs. Fall back
+          # to a hosted runner only if it offers well over 16 GB.
+          - arch: x64
+            runner: [self-hosted, Linux, X64, tinybox]
+            intentd_target: x86_64-unknown-linux-musl
+            targets: AppImage:x64 deb:x64
+            node_heap: 12288
+          # arm64 builds natively on the self-hosted arm64 Linux runner. If it
+          # is unavailable, fall back to cross-building by switching `runner`
+          # to ubuntu-latest — INTENTD_TARGET is set explicitly below, so the
+          # staged intentd matches the package arch regardless of the host.
+          #
+          # TEMPORARY: arm64 ships AppImage-only. electron-builder's bundled
+          # fpm (fpm-1.17.0-ruby-3.4.3-linux-arm64v8) fails to spawn on the
+          # self-hosted runner (ERR_ELECTRON_BUILDER_CANNOT_EXECUTE, exit code
+          # null), killing the deb target. Restore deb:arm64 once the runner
+          # is fixed. Refs intent-hq/monorepo#1286.
+          # node_heap: the arm64 leg OOM'd at the old 8192 cap in the v2.13.0
+          # run even with sourcemaps disabled — committed heap hit ~8.2 GB
+          # ("Ineffective mark-compacts near heap limit", monorepo#1340) — and
+          # the self-hosted runner has the RAM for 12288.
+          - arch: arm64
+            runner: [self-hosted, Linux, ARM64, comfy]
+            intentd_target: aarch64-unknown-linux-musl
+            targets: AppImage:arm64
+            node_heap: 12288
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout dispatched ref
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          # Per-runner-instance dest (see build-macos).
+          dest: ~/setup-pnpm-${{ runner.name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate INTENTD_READ_PAT secret
+        env:
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+        run: |
+          if [ -z "$INTENTD_READ_PAT" ]; then
+            echo "::error::INTENTD_READ_PAT secret is required to fetch the pinned intentd release"
+            exit 1
+          fi
+          echo "INTENTD_READ_PAT is configured"
+
+      - name: Fetch pinned intentd sidecar
+        env:
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+          # Always pass the explicit target (rather than deriving it from the
+          # host) so the staged intentd matches the package arch, including
+          # when cross-building.
+          INTENTD_TARGET: ${{ matrix.intentd_target }}
+        run: node scripts/fetch-sidecar.cjs
+
+      # The self-hosted runners are non-ephemeral; drop build output left by
+      # a previous run so the artifact upload can't pick up stale files
+      # (no-op on ephemeral hosted runners).
+      - name: Clean previous build output
+        run: rm -rf dist-electron
+
+      # electron-builder's bundled fpm builds the deb by shelling out to host
+      # tools — `ar` (binutils), tar, and xz (electron-builder defaults deb
+      # compression to xz, so fpm produces data.tar.xz via tar/xz) —
+      # preinstalled on ubuntu-latest but not guaranteed on a bare
+      # self-hosted box. Fail fast with a clear message instead of a cryptic
+      # fpm error mid-package. AppImage needs no system packages
+      # (app-builder is self-contained — the arm64 leg already builds
+      # AppImages on self-hosted with no extra setup).
+      - name: Verify deb packaging prerequisites
+        if: contains(matrix.targets, 'deb')
+        run: |
+          MISSING=""
+          for TOOL in ar tar xz; do
+            command -v "$TOOL" >/dev/null 2>&1 || MISSING="${MISSING:+$MISSING, }$TOOL"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing tool(s) required by fpm for the deb target: ${MISSING}. Install binutils/tar/xz-utils on this runner (labels: self-hosted, Linux, X64, tinybox)."
+            exit 1
+          fi
+          echo "deb packaging prerequisites present (ar, tar, xz)"
+
+      # Same rationale as the macOS job: keeps the workflow_dispatch fallback
+      # able to rebuild older tags (intent-hq/monorepo#1046).
+      - name: Generate i18n catalog
+        run: pnpm run generate:i18n
+
+      # Rewrite package.json to <version>-manual.<run_number> before packaging
+      # so an installed manual build is never version-equal to a real release
+      # and the auto-updater cannot confuse it with one. No git commit — the
+      # rewrite only lives in this job's checkout.
+      - name: Suffix version for manual build
+        run: |
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          MANUAL_VERSION="${BASE_VERSION}-manual.${GITHUB_RUN_NUMBER}"
+          npm version "$MANUAL_VERSION" --no-git-tag-version
+          echo "Version set to ${MANUAL_VERSION}"
+
+      # Explicit per-arch CLI targets (x64 emits latest-linux.yml; arm64 emits
+      # latest-linux-arm64.yml): a bare --x64/--arm64 flag does NOT override
+      # electron-builder.yml's per-target arch lists, so each matrix job built
+      # BOTH arches — and the cross-arch package embedded this job's (wrong
+      # -arch) staged sidecar. CLI targets fully override the config's target
+      # list; the per-arch list lives in matrix.targets (arm64 is temporarily
+      # AppImage-only, see the matrix comment). The maintainer override
+      # backfills the deb Maintainer field for dispatch rebuilds of tags whose
+      # checked-out package.json author still lacks an email (fixed on main;
+      # both were first exercised by the v2.12.0 rebuild, run 30714120208,
+      # intent-hq/monorepo#1282).
+      - name: Build and package Linux app
+        id: build
+        run: >
+          pnpm run dist:linux
+          ${{ matrix.targets }}
+          -c.linux.maintainer='Intent HQ <intent-hq@users.noreply.github.com>'
+        env:
+          # Per-arch heap cap — see the matrix node_heap comments: 12288 on
+          # both self-hosted legs now that x64 is off the 16 GB hosted
+          # runner (monorepo#1340).
+          NODE_OPTIONS: '--max-old-space-size=${{ matrix.node_heap }}'
+          # Sourcemap generation multiplies rollup's peak heap past the
+          # cap (same OOM as monorepo#1074; both Linux legs died at ~7.6 GB in
+          # the v2.12.0 run, monorepo#1282). Nothing consumes the 'hidden'
+          # production maps in release builds, so skip them like CI build-web.
+          INTENT_DISABLE_SOURCEMAPS: '1'
+          # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
+          # detects the pre-staged binary and leaves it in place.
+          INTENTD_BIN: ${{ github.workspace }}/resources/sidecar/intentd
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List built artifacts
+        run: |
+          echo "Built artifacts:"
+          find dist-electron -maxdepth 1 -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.blockmap" \) -exec ls -lh {} \;
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: manual-linux-${{ matrix.arch }}
+          # Installers + blockmaps only — deliberately no latest-linux*.yml,
+          # so nothing that looks like an auto-updater feed leaves this
+          # workflow.
+          path: |
+            dist-electron/*.AppImage
+            dist-electron/*.deb
+            dist-electron/*.blockmap
+          retention-days: 7
+          if-no-files-found: error
+
+      # Pattern: intent-manual-windows-build.yml "Post summary". Linux
+      # packages are unsigned in the release pipeline too, so signed/unsigned
+      # status is reported as N/A here.
+      - name: Post summary
+        if: always()
+        run: |
+          {
+            echo "## Manual Linux Build (${{ matrix.arch }})"
+            echo ""
+            if [ "${{ steps.build.outcome }}" != "success" ]; then
+              echo "❌ Build failed."
+            else
+              echo "✅ Build completed (Linux packages are unsigned by design; the sign input does not apply)."
+            fi
+            echo ""
+            echo "Artifacts:"
+            find dist-electron -maxdepth 1 -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.blockmap" \) -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
+          } >> "$GITHUB_STEP_SUMMARY"
