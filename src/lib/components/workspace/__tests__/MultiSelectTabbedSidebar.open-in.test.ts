@@ -96,6 +96,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     worktreePath: '/tmp/project',
     skipWorktree: false,
   }),
+  selectWorkspaceActivePullRequest: mocks.selector(null),
 }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectAllNotes: mocks.selector([]),

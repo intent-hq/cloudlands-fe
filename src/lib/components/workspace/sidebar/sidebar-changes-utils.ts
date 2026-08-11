@@ -384,6 +384,11 @@ export function mergeMonitoredPRs(
       url,
       htmlUrl: url,
       status: monitorDisplayStatus(monitor),
+      // Monitor-row timestamps stand in for the PR's own (the snapshot does
+      // not carry them) so selectPrimaryPr's oldest-created / latest-updated
+      // ordering works when multiple monitored PRs compete.
+      createdAt: monitor.createdAt,
+      updatedAt: monitor.updatedAt,
       monitorAgentId: monitor.agentId,
       crossRepo: sameRepo ? undefined : monitor.repo,
       // Same-org repos carry no information in the owner segment — show
@@ -400,6 +405,47 @@ export function mergeMonitoredPRs(
     });
   }
   return merged;
+}
+
+/** Comparator fragment: rows with a timestamp sort before rows without one;
+ * two present timestamps compare via `cmp`. */
+function compareMissingLast(
+  a: string | undefined,
+  b: string | undefined,
+  cmp: (x: string, y: string) => number,
+): number {
+  if (a && b) return cmp(a, b);
+  if (a) return -1;
+  if (b) return 1;
+  return 0;
+}
+
+/**
+ * Pick the primary PR for single-PR surfaces (workspace card/row pill, the
+ * summarized Changes card) from the combined branch-linked + monitored pool
+ * (see {@link mergeMonitoredPRs}): the oldest unmerged (open/draft) PR
+ * (`createdAt` asc, PR number asc as tiebreak); otherwise the latest merged
+ * PR (`updatedAt` desc, PR number desc); otherwise the first remaining
+ * (closed) row. Missing timestamps sort last within their bucket.
+ */
+export function selectPrimaryPr(prs: PRInfo[]): PRInfo | undefined {
+  const unmerged = prs.filter((pr) => pr.status === 'open' || pr.status === 'draft');
+  if (unmerged.length > 0) {
+    return [...unmerged].sort(
+      (a, b) =>
+        compareMissingLast(a.createdAt, b.createdAt, (x, y) => x.localeCompare(y)) ||
+        a.number - b.number,
+    )[0];
+  }
+  const merged = prs.filter((pr) => pr.status === 'merged');
+  if (merged.length > 0) {
+    return [...merged].sort(
+      (a, b) =>
+        compareMissingLast(a.updatedAt, b.updatedAt, (x, y) => y.localeCompare(x)) ||
+        b.number - a.number,
+    )[0];
+  }
+  return prs[0];
 }
 
 /**
@@ -463,38 +509,47 @@ export function getPRStatusTooltip(pr: PRInfo): string {
   return lines.join('\n');
 }
 
-/** `PullRequestStatus` pill value for a monitor-backed PR pill (the
- * WorkspaceCard/WorkspaceTableRow fallback) — the enum projection of
- * {@link monitorDisplayStatus}. */
-export function monitorPillStatus(monitor: PrMonitorRow): PullRequestStatus {
-  const status = monitorDisplayStatus(monitor);
+/** Inverse of {@link toPRDisplayStatus}: `PullRequestStatus` enum value for
+ * a display status — used by the workspace card/row pills. */
+export function toPullRequestStatus(
+  status: 'open' | 'merged' | 'closed' | 'draft',
+): PullRequestStatus {
   if (status === 'merged') return PullRequestStatus.Merged;
   if (status === 'closed') return PullRequestStatus.Closed;
   if (status === 'draft') return PullRequestStatus.Draft;
   return PullRequestStatus.Open;
 }
 
+/** `PullRequestStatus` pill value for a monitor-backed PR pill (the
+ * WorkspaceCard/WorkspaceTableRow fallback) — the enum projection of
+ * {@link monitorDisplayStatus}. */
+export function monitorPillStatus(monitor: PrMonitorRow): PullRequestStatus {
+  return toPullRequestStatus(monitorDisplayStatus(monitor));
+}
+
 /**
- * Count monitored PRs in the displayed pool (active monitors, or the
- * merged-completed fallback pool — PROTOCOL §6.9) beyond the primary PR
- * pill/badge — the "+N" indicator on the workspace card surfaces. A monitor
- * is excluded only when it matches the primary PR by number in the workspace
- * repo (an unknown workspace repo treats all monitors as same-repo).
+ * Count monitored PRs (PROTOCOL §6.9) beyond the primary PR pill/badge —
+ * the "+N" indicator on the workspace card surfaces. A monitor is excluded
+ * only when it matches the primary PR by number in the primary PR's repo —
+ * `primaryCrossRepo` when the primary is a cross-repo monitored row, else
+ * the workspace repo (an unknown repo matches by number alone).
  */
 export function countOtherMonitors(
   monitors: PrMonitorRow[],
   primaryPrNumber: number | undefined,
   repositoryOwner: string | undefined,
   repositoryName: string | undefined,
+  primaryCrossRepo?: string,
 ): number {
   const workspaceRepo =
     repositoryOwner && repositoryName ? `${repositoryOwner}/${repositoryName}` : undefined;
+  const primaryRepo = primaryCrossRepo ?? workspaceRepo;
   return monitors.filter(
     (mon) =>
       !(
         primaryPrNumber !== undefined &&
         mon.prNumber === primaryPrNumber &&
-        (!workspaceRepo || mon.repo === workspaceRepo)
+        (!primaryRepo || mon.repo === primaryRepo)
       ),
   ).length;
 }

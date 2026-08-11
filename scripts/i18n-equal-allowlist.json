@@ -319,7 +319,6 @@
   "workspace_noteMetadataBar_status_label": ["de"],
   "workspace_noteVersionHistory_error_label": ["es"],
   "workspace_overviewTimeline_prNumber_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
-  "workspace_overviewTimeline_pullRequest_label": ["fr", "es"],
   "workspace_page_createFile_placeholder": ["zh-CN", "zh-TW", "ja", "ko"],
   "workspace_page_space_title": ["de"],
   "workspace_prCreator_descriptionField_label": ["fr"],

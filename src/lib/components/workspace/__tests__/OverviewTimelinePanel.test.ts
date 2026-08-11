@@ -11,11 +11,15 @@
  * derived-state patterns in OverviewTimelinePanel.svelte.
  */
 
+import { describe, it, expect } from 'vitest';
+import type { PullRequestInfo } from '$shared/types';
+import { PullRequestStatus } from '$shared/types';
+import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+  mapWorkspacePRs,
+  mergeMonitoredPRs,
+  selectPrimaryPr,
+} from '../sidebar/sidebar-changes-utils';
 
 // ── Types mirroring OverviewTimelinePanel's internal interfaces ──────────────
 
@@ -318,5 +322,149 @@ describe('OverviewTimelinePanel – persistence across workspace switches', () =
 
     const count = getDelegatedCount(agents);
     expect(count).toBe(3); // child + grandchild + great-grandchild
+  });
+});
+
+// ── Primary PR derivation for the Changes card ────────────────────────────────
+// Mirrors MultiSelectTabbedSidebar's `overviewPrimaryPr`: branch-linked PRs
+// (mapWorkspacePRs) merged with agent PR monitors (mergeMonitoredPRs,
+// PROTOCOL §6.9), then picked by the shared selectPrimaryPr rule.
+
+const WORKSPACE_REPO = 'intent-hq/monorepo';
+
+function makeWorkspacePR(overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
+  return {
+    id: 'pr-1',
+    number: 1,
+    url: 'https://github.com/intent-hq/monorepo/pull/1',
+    title: 'Test PR',
+    status: PullRequestStatus.Open,
+    createdAt: '2026-08-01T00:00:00Z',
+    updatedAt: '2026-08-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
+  return {
+    monitorId: 'mon-1',
+    workspaceId: 'ws-1',
+    agentId: 'agent-1',
+    repo: WORKSPACE_REPO,
+    prNumber: 10,
+    state: 'active',
+    pendingChanges: [],
+    hasPendingChanges: false,
+    createdAt: '2026-08-05T00:00:00Z',
+    updatedAt: '2026-08-05T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function derivePrimaryPr(
+  workspacePRs: PullRequestInfo[] | undefined,
+  monitors: PrMonitorRow[],
+  workspaceRepo: string | undefined = WORKSPACE_REPO,
+) {
+  return selectPrimaryPr(
+    mergeMonitoredPRs(
+      mapWorkspacePRs(
+        workspacePRs,
+        null,
+        (prNumber, fallbackUrl) => fallbackUrl ?? `https://example.test/pull/${prNumber}`,
+        (pr) => pr.title,
+      ),
+      monitors,
+      workspaceRepo,
+    ),
+  );
+}
+
+describe('OverviewTimelinePanel primary PR derivation', () => {
+  it('returns undefined for an empty pool', () => {
+    expect(derivePrimaryPr(undefined, [])).toBeUndefined();
+    expect(derivePrimaryPr([], [])).toBeUndefined();
+  });
+
+  it('picks the sole branch-linked PR when there are no monitors', () => {
+    const primary = derivePrimaryPr([makeWorkspacePR({ number: 7 })], []);
+    expect(primary?.number).toBe(7);
+    expect(primary?.status).toBe('open');
+    expect(primary?.crossRepo).toBeUndefined();
+  });
+
+  it('picks a monitor-only PR when there is no branch-linked PR', () => {
+    const primary = derivePrimaryPr(undefined, [makeMonitor({ prNumber: 42 })]);
+    expect(primary?.number).toBe(42);
+    expect(primary?.status).toBe('open');
+    expect(primary?.monitorOnly).toBe(true);
+  });
+
+  it('prefers the oldest unmerged PR over a merged branch PR', () => {
+    const primary = derivePrimaryPr(
+      [
+        makeWorkspacePR({
+          number: 1,
+          status: PullRequestStatus.Merged,
+          createdAt: '2026-08-01T00:00:00Z',
+          updatedAt: '2026-08-09T00:00:00Z',
+        }),
+      ],
+      [makeMonitor({ prNumber: 42, createdAt: '2026-08-05T00:00:00Z' })],
+    );
+    expect(primary?.number).toBe(42);
+    expect(primary?.status).toBe('open');
+  });
+
+  it('falls back to the latest merged PR when nothing is unmerged', () => {
+    const primary = derivePrimaryPr(
+      [
+        makeWorkspacePR({
+          id: 'pr-1',
+          number: 1,
+          status: PullRequestStatus.Merged,
+          updatedAt: '2026-08-02T00:00:00Z',
+        }),
+        makeWorkspacePR({
+          id: 'pr-2',
+          number: 2,
+          status: PullRequestStatus.Merged,
+          updatedAt: '2026-08-08T00:00:00Z',
+        }),
+      ],
+      [],
+    );
+    expect(primary?.number).toBe(2);
+    expect(primary?.status).toBe('merged');
+  });
+
+  it('deduplicates a monitor matching a branch-linked PR by number', () => {
+    const primary = derivePrimaryPr(
+      [makeWorkspacePR({ number: 5 })],
+      [makeMonitor({ prNumber: 5, agentId: 'agent-9' })],
+    );
+    expect(primary?.number).toBe(5);
+    expect(primary?.monitorAgentId).toBe('agent-9');
+    expect(primary?.monitorOnly).toBeUndefined();
+  });
+
+  it('carries crossRepo context for a monitor in another repo', () => {
+    const primary = derivePrimaryPr(undefined, [
+      makeMonitor({ prNumber: 8, repo: 'intent-hq/intentd' }),
+    ]);
+    expect(primary?.number).toBe(8);
+    expect(primary?.crossRepo).toBe('intent-hq/intentd');
+    expect(primary?.crossRepoDisplay).toBe('intentd');
+  });
+
+  it('surfaces draft status from the monitor snapshot', () => {
+    const primary = derivePrimaryPr(undefined, [
+      makeMonitor({
+        prNumber: 3,
+        lastSnapshot: { state: 'open', isDraft: true } as PrMonitorRow['lastSnapshot'],
+      }),
+    ]);
+    expect(primary?.number).toBe(3);
+    expect(primary?.status).toBe('draft');
   });
 });

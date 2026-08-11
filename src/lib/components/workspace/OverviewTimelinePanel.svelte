@@ -4,6 +4,7 @@
   import { shell } from '$lib/electron-bridge';
   import type { Note, Workspace } from '$shared/types';
   import { isSpecNote } from './sidebar';
+  import { toPRDisplayStatus } from './sidebar/sidebar-changes-utils';
   import { getNoteIcon, getNoteTitle, getNoteIconClass, getNoteDepth } from './sidebar/utils';
   import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
@@ -24,7 +25,7 @@
   import { ListItem } from '$lib/components/ui/list';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
-  import type { UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
+  import type { PRInfo, UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import Skeleton from '$lib/components/ui/skeleton/skeleton.svelte';
 
@@ -67,6 +68,9 @@
     workspace?: Workspace;
     phase: WorkspacePhaseInfo;
     stats: WorkspacePhaseStats;
+    /** Primary PR from the combined branch-linked + monitored pool (PROTOCOL §6.9),
+     * picked by the shared oldest-unmerged / latest-merged rule. */
+    primaryPr?: PRInfo | null;
     notes?: Note[];
     agents?: OverviewAgent[];
     changedFiles?: OverviewChange[];
@@ -97,7 +101,8 @@
     workspace,
 
     phase: _phase,
-    stats,
+    stats: _stats,
+    primaryPr = null,
     notes = [],
     agents = [],
     changedFiles = [],
@@ -216,6 +221,24 @@
   // Changes
   let topFiles = $derived(changedFiles.slice(0, 12));
   let moreFilesCount = $derived(Math.max(0, changedFiles.length - 12));
+
+  // PR row: the pool-picked primary PR, else a row synthesized from the
+  // workspace-level prStatus/prNumber scalars — legacy rows predating the
+  // daemon-owned `pullRequests` list (store migration 0035) carry only the
+  // scalars until a PR refresh sweep repopulates the list, and the
+  // card/table-row pills keep the same `ws.prStatus` fallback.
+  const displayPr = $derived.by((): PRInfo | null => {
+    if (primaryPr) return primaryPr;
+    if (!workspace || workspace.prNumber == null || !workspace.prStatus) return null;
+    const url = workspace.prUrl ?? '';
+    return {
+      number: workspace.prNumber,
+      title: `#${workspace.prNumber}`,
+      url,
+      htmlUrl: url,
+      status: toPRDisplayStatus(workspace.prStatus),
+    };
+  });
 
   // Branch copy state
   let copiedWorkingBranch = $state(false);
@@ -702,14 +725,14 @@
             </div>
           {/if}
 
-          <!-- PR status (only show when a PR exists) -->
-          {#if stats.pr.number || stats.pr.hasOpen || stats.pr.hasMerged || stats.pr.hasClosed}
+          <!-- PR status (primary PR from the branch + monitored pool, or the legacy prStatus fallback) -->
+          {#if displayPr}
             <button
               class="flex items-center gap-2 w-full text-left py-0.5 cursor-pointer hover:bg-muted/30 rounded transition-colors"
               onclick={() => {
-                if (stats.pr.url) {
+                if (displayPr?.url) {
                   // eslint-disable-next-line intent/no-component-async-data-fetch -- shell.open is opening an external URL, not fetching domain data; rule misfires on the 'open' method name
-                  void shell.open(stats.pr.url);
+                  void shell.open(displayPr.url);
                 } else {
                   onSwitchTab?.('changes');
                 }
@@ -718,37 +741,38 @@
               <Fa
                 icon={faCodePullRequest}
                 size="xs"
-                class="ml-0.5 {stats.pr.hasMerged
+                class="ml-0.5 {displayPr.status === 'merged'
                   ? 'text-purple-500/70'
-                  : stats.pr.hasOpen
+                  : displayPr.status === 'open'
                     ? 'text-emerald-500/70'
-                    : stats.pr.hasClosed
+                    : displayPr.status === 'closed'
                       ? 'text-red-500/70'
-                      : 'text-ghost'}"
+                      : 'text-subtle'}"
               />
               <span class="text-ui text-muted-foreground truncate">
-                {#if stats.pr.number}
-                  {m.workspace_overviewTimeline_prNumber_label({ number: stats.pr.number })}
-                {:else}
-                  {m.workspace_overviewTimeline_pullRequest_label()}
-                {/if}
+                {#if displayPr.crossRepo}<span class="text-ghost"
+                    >{displayPr.crossRepoDisplay ?? displayPr.crossRepo}:</span
+                  >
+                {/if}{m.workspace_overviewTimeline_prNumber_label({ number: displayPr.number })}
               </span>
-              {#if stats.pr.hasOpen || stats.pr.hasMerged || stats.pr.hasClosed}
-                <span
-                  class="text-ui font-medium px-2 py-px rounded ml-auto shrink-0
-                    {stats.pr.hasMerged
-                    ? 'text-purple-500 bg-purple-500/10'
-                    : stats.pr.hasOpen
-                      ? 'text-emerald-500 bg-emerald-500/10'
-                      : 'text-red-500 bg-red-500/10'}"
-                >
-                  {stats.pr.hasMerged
-                    ? m.workspace_overviewTimeline_prMerged_label()
-                    : stats.pr.hasOpen
-                      ? m.workspace_overviewTimeline_prOpen_label()
-                      : m.workspace_overviewTimeline_prClosed_label()}
-                </span>
-              {/if}
+              <span
+                class="text-ui font-medium px-2 py-px rounded ml-auto shrink-0
+                  {displayPr.status === 'merged'
+                  ? 'text-purple-500 bg-purple-500/10'
+                  : displayPr.status === 'open'
+                    ? 'text-emerald-500 bg-emerald-500/10'
+                    : displayPr.status === 'closed'
+                      ? 'text-red-500 bg-red-500/10'
+                      : 'text-subtle bg-muted/50'}"
+              >
+                {displayPr.status === 'merged'
+                  ? m.workspace_overviewTimeline_prMerged_label()
+                  : displayPr.status === 'open'
+                    ? m.workspace_overviewTimeline_prOpen_label()
+                    : displayPr.status === 'closed'
+                      ? m.workspace_overviewTimeline_prClosed_label()
+                      : m.workspace_overviewTimeline_prDraft_label()}
+              </span>
             </button>
           {/if}
         </div>
