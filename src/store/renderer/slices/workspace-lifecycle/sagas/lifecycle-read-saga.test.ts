@@ -766,29 +766,63 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  it('globally cancels an older agent hydrate for a newer workspace', async () => {
-    let resolveList!: (value: AgentSession[]) => void;
-    mocks.agents.list.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveList = resolve;
-      }),
+  it('does not cancel concurrent agent hydrates across workspaces (#1934)', async () => {
+    const otherWorkspaceId = 'ws-other';
+    const resolvers: Record<string, (value: AgentSession[]) => void> = {};
+    mocks.agents.list.mockImplementation(
+      (workspaceId: string) =>
+        new Promise<AgentSession[]>((resolve) => {
+          resolvers[workspaceId] = resolve;
+        }),
     );
     const run = start();
-    const otherWorkspaceId = 'ws-other';
 
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
     run.channel.put(hydrateAgentsRequested(otherWorkspaceId));
     await settle();
 
-    expect(mocks.agents.list).toHaveBeenCalledTimes(2);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS], [otherWorkspaceId]]);
 
-    resolveList([agent('agent-stale', { status: 'error' as never })]);
+    resolvers[WS]!([]);
+    resolvers[otherWorkspaceId]!([]);
+    await settle();
+
+    expect(run.actions).toContainEqual(setAgentsLoaded(WS, true));
+    expect(run.actions).toContainEqual(setAgentsLoaded(otherWorkspaceId, true));
+    await stop(run.task);
+  });
+
+  it('a newer same-workspace agent hydrate supersedes the in-flight one', async () => {
+    let resolveFirst!: (value: AgentSession[]) => void;
+    mocks.agents.list
+      .mockReturnValueOnce(
+        new Promise<AgentSession[]>((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockResolvedValueOnce([]);
+    const run = start();
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+    run.channel.put(hydrateAgentsRequested(WS));
     await settle();
 
     expect(mocks.agents.list).toHaveBeenCalledTimes(2);
-    expect(run.actions).toContainEqual(setAgentsLoaded(otherWorkspaceId, true));
-    expect(run.actions).not.toContainEqual(setAgentsLoaded(WS, true));
+
+    resolveFirst([agent('agent-stale', { status: 'error' as never })]);
+    await settle();
+
+    // The superseded first read's stale result is discarded; only the second
+    // (empty) read lands.
+    expect(run.actions).toContainEqual(setAgentsLoaded(WS, true));
+    const staleLanded = run.actions.some(
+      (a) =>
+        (a as { type: string }).type === 'workspaceAgents/setAgents' &&
+        JSON.stringify((a as { payload: unknown }).payload).includes('agent-stale'),
+    );
+    expect(staleLanded).toBe(false);
     await stop(run.task);
   });
 

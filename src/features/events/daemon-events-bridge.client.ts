@@ -2201,22 +2201,25 @@ function handleAgentDeleteScheduledEvent(event: WorkspaceEvent, workspaceId: str
   appStore.dispatch(removeSession(agentId));
   appStore.dispatch(removeWatchedAgent(workspaceId, agentId));
   appStore.dispatch(pruneRecentlyClosed(workspaceId, { agentId }));
-  if (snapshot) {
-    setPendingAgentDeletion({ wsId: workspaceId, agentId, snapshot });
-    const existing = agentDeleteTombstoneTimers.get(agentId);
-    if (existing) clearTimeout(existing);
-    const entry = getPendingAgentDeletion(agentId);
-    const timer = setTimeout(() => {
-      agentDeleteTombstoneTimers.delete(agentId);
-      // Only lift the exact entry this timer was armed for — a later
-      // re-delete's fresh entry (own saga or a newer schedule event) must
-      // keep its own lifecycle.
-      if (getPendingAgentDeletion(agentId) === entry) {
-        removePendingAgentDeletion(agentId);
-      }
-    }, tombstoneClearDelayMs(data?.deleteAt));
-    agentDeleteTombstoneTimers.set(agentId, timer);
-  }
+  // Always register the tombstone — even without a locally hydrated session.
+  // An `agent.get`/`agent.list` begun before this event (no `pendingDeleteAt`
+  // on the row) can resolve after it; without an entry that stale read would
+  // resurrect the agent. Snapshot-less entries restore via the cancel
+  // handler's reconcile refetch instead of an instant snapshot.
+  setPendingAgentDeletion({ wsId: workspaceId, agentId, snapshot });
+  const existing = agentDeleteTombstoneTimers.get(agentId);
+  if (existing) clearTimeout(existing);
+  const entry = getPendingAgentDeletion(agentId);
+  const timer = setTimeout(() => {
+    agentDeleteTombstoneTimers.delete(agentId);
+    // Only lift the exact entry this timer was armed for — a later
+    // re-delete's fresh entry (own saga or a newer schedule event) must
+    // keep its own lifecycle.
+    if (getPendingAgentDeletion(agentId) === entry) {
+      removePendingAgentDeletion(agentId);
+    }
+  }, tombstoneClearDelayMs(data?.deleteAt));
+  agentDeleteTombstoneTimers.set(agentId, timer);
 }
 
 /**
@@ -2241,9 +2244,11 @@ function handleAgentDeleteCancelledEvent(event: WorkspaceEvent, workspaceId: str
   const pending = getPendingAgentDeletion(agentId);
   if (pending) {
     removePendingAgentDeletion(agentId);
-    appStore.dispatch(bulkUpsertSessions([pending.snapshot]));
-    appStore.dispatch(upsertSession(pending.snapshot));
-    refreshWorkspaceSubscriptionEntries(workspaceId);
+    if (pending.snapshot) {
+      appStore.dispatch(bulkUpsertSessions([pending.snapshot]));
+      appStore.dispatch(upsertSession(pending.snapshot));
+      refreshWorkspaceSubscriptionEntries(workspaceId);
+    }
   }
   appStore.dispatch(hydrateAgentsRequested(workspaceId));
 }

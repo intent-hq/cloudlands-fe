@@ -5233,6 +5233,33 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
     expect(isAgentDeletionPending(PENDING_AGENT)).toBe(true);
   });
 
+  it('agent:delete-scheduled registers the tombstone even without a hydrated session', async () => {
+    const { isAgentDeletionPending, getPendingAgentDeletion } = await import(
+      '$features/agent/utils/pending-agent-deletions'
+    );
+    // No session hydrated locally for PENDING_AGENT: an agent.get/list begun
+    // before the schedule (row without pendingDeleteAt) could still resolve
+    // after it — the snapshot-less tombstone must block that stale read.
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-del-scheduled-nosnap',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:delete-scheduled',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS, deleteAt: DELETE_AT },
+        },
+      },
+    });
+
+    expect(isAgentDeletionPending(PENDING_AGENT)).toBe(true);
+    expect(getPendingAgentDeletion(PENDING_AGENT)?.snapshot).toBeUndefined();
+  });
+
   it('agent:delete-cancelled restores the snapshot and refetches the canonical list', async () => {
     const { setPendingAgentDeletion } = await import(
       '$features/agent/utils/pending-agent-deletions'
