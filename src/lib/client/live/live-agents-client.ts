@@ -13,7 +13,9 @@ import { deriveAgentHasUnread } from "$shared/utils/agent-unread";
 import type { AgentMessage, AgentSession } from "$shared/types";
 import type { QueuedMessage } from "$shared/types/agent-session";
 import type {
+  AgentCancelDeleteResult,
   AgentCreateRequest,
+  AgentDeleteResult,
   AgentsClient,
   ImageBlock,
   MutationResult,
@@ -430,12 +432,48 @@ export class LiveAgentsClient implements AgentsClient {
     if (options?.skipIfExplicitlySet === true) params.skipIfExplicitlySet = true;
     return runMutation("agent.rename", params);
   }
-  async delete(agentId: string): Promise<MutationResult> {
+  async delete(
+    agentId: string,
+    _workspaceId?: string,
+    options?: { undoDelayMs?: number },
+  ): Promise<AgentDeleteResult> {
     // `agent.delete` (§5.5) takes `agentId` (req) and an optional `workspaceId`;
     // the daemon resolves the workspace itself (agent_delete_op only consumes
     // agent_id) and is idempotent, so we forward just `{ agentId }` and rely on
-    // the emitted `agent:deleted` event to reconcile the list.
-    return runMutation("agent.delete", { agentId });
+    // the emitted `agent:deleted` event to reconcile the list. With
+    // `undoDelayMs > 0` the daemon registers the delete grace window and
+    // returns `{ success, scheduled, deleteAt }` — surfaced verbatim so the
+    // caller can render the daemon-owned deadline. Without it, the immediate
+    // delete request is byte-identical to pre-6.5.
+    const undoDelayMs = options?.undoDelayMs;
+    try {
+      const result = await backendRequest<{ scheduled?: unknown; deleteAt?: unknown }>(
+        "agent.delete",
+        undoDelayMs && undoDelayMs > 0 ? { agentId, undoDelayMs } : { agentId },
+      );
+      const scheduled = result?.scheduled === true;
+      const deleteAt = typeof result?.deleteAt === "string" ? result.deleteAt : undefined;
+      return scheduled && deleteAt
+        ? { success: true, scheduled: true, deleteAt }
+        : { success: true };
+    } catch (error) {
+      return { success: false, error: mutationErrorMessage(error) };
+    }
+  }
+  async cancelDelete(agentId: string): Promise<AgentCancelDeleteResult> {
+    // `agent.cancelDelete` (§5.5, delete grace window). `{ cancelled: false }`
+    // is a race-safe non-error: the deletion already committed or was never
+    // scheduled — surfaced so the caller can show "could not undo" instead of
+    // resurrecting the agent. workspaceId is optional on the wire; the daemon
+    // resolves it, so the seam forwards just `{ agentId }`.
+    try {
+      const result = await backendRequest<{ cancelled?: unknown }>("agent.cancelDelete", {
+        agentId,
+      });
+      return { success: true, cancelled: result?.cancelled === true };
+    } catch (error) {
+      return { success: false, error: mutationErrorMessage(error) };
+    }
   }
   async retry(
     agentId: string,

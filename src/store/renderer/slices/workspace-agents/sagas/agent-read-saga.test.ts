@@ -207,6 +207,26 @@ describe('agentReadSaga', () => {
     await task.toPromise();
   });
 
+  it("skips a row carrying the daemon's pendingDeleteAt deadline (§5.5 delete grace window)", async () => {
+    mocks.get.mockResolvedValue(session({ pendingDeleteAt: '2026-08-11T00:00:15.000Z' }));
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel, dispatch, getState: () => ({ agentSessions: { byAgentId: {} } }) },
+      agentReadSaga,
+    );
+
+    channel.put(ensureAgentSessionLoaded(WS, AGENT));
+    await settle();
+
+    expect(mocks.get).toHaveBeenCalledWith(AGENT);
+    expect(
+      dispatch.mock.calls.find(([action]) => action.type === bulkUpsertSessions.type),
+    ).toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
   // Regression (monorepo#1753): a stale tab/route referencing a deleted agent
   // makes agent.get reject with -32602 "Agent not found". That is an expected
   // condition: one WARN (no ERROR) and the stale agent tabs are closed so the

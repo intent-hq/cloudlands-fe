@@ -427,6 +427,29 @@ export interface ImageBlock {
   mimeType: string;
 }
 
+/**
+ * `agent.delete` outcome (§5.5). When the request carried `undoDelayMs > 0`
+ * the daemon registers an in-memory pending deletion (protocol 6.5+ delete
+ * grace window) and returns `{ success: true, scheduled: true, deleteAt }` —
+ * `deleteAt` is the ISO commit deadline. An immediate delete (no
+ * `undoDelayMs`) keeps the plain `{ success: true }` shape, so both fields
+ * are additive and optional.
+ */
+export interface AgentDeleteResult extends MutationResult {
+  scheduled?: boolean;
+  deleteAt?: string;
+}
+
+/**
+ * `agent.cancelDelete` outcome (§5.5, delete grace window). The daemon
+ * returns `{ cancelled: bool }` — `false` when nothing is pending (already
+ * committed, or never scheduled): a non-error, race-safe outcome. Folded onto
+ * MutationResult so transport failures surface uniformly via `success`.
+ */
+export interface AgentCancelDeleteResult extends MutationResult {
+  cancelled?: boolean;
+}
+
 export interface AgentsClient {
   list(workspaceId: string): Promise<AgentSession[]>;
   get(agentId: string): Promise<AgentSession | null>;
@@ -648,8 +671,24 @@ export interface AgentsClient {
    * already gone — and emits `agent:deleted` (in `AGENT_LIFECYCLE_EVENTS`), so
    * the reactive `subscribe` refetch reconciles the list. `workspaceId` is
    * optional per the contract; the daemon resolves the workspace itself.
+   * Optional `options.undoDelayMs > 0` requests the daemon-owned delete grace
+   * window (protocol 6.5+): the daemon schedules the commit at
+   * `now + undoDelayMs` and returns `{ success: true, scheduled: true,
+   * deleteAt }`; the FE cancels it via `cancelDelete`. Omitted/0 keeps the
+   * immediate-delete behavior. Scheduling does NOT stop the agent — the
+   * deadline commit runs the ordinary teardown, which does.
    */
-  delete(agentId: string, workspaceId?: string): Promise<MutationResult>;
+  delete(
+    agentId: string,
+    workspaceId?: string,
+    options?: { undoDelayMs?: number },
+  ): Promise<AgentDeleteResult>;
+  /**
+   * Cancel a pending grace-window deletion (`agent.cancelDelete`, §5.5).
+   * `{ cancelled: false }` means nothing was pending (already committed, or
+   * never scheduled) — a non-error, race-safe outcome.
+   */
+  cancelDelete(agentId: string, workspaceId?: string): Promise<AgentCancelDeleteResult>;
   /**
    * Retry a failed agent spawn (`agent.retry`). Only valid when the agent
    * status is `error` (after spawn exhaustion); returns `{ ok: false, error }`

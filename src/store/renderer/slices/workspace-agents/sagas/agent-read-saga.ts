@@ -24,6 +24,9 @@ function* loadAgentSessionSaga(wsId: string, agentId: string) {
       agentId,
     );
     if (!session || String(session.workspaceId) !== wsId) return;
+    // Skip rows carrying the daemon's delete-grace-window deadline (PROTOCOL
+    // §5.5 `pendingDeleteAt`, v6.5+) — the deletion is pending daemon-side.
+    if (session.pendingDeleteAt) return;
     if (yield* call(isAgentDeletionPending, agentId)) return;
 
     const existing: AgentSession | undefined = yield* selectAgentSession.effect(agentId);

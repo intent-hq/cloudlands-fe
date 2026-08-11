@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   rename: vi.fn(),
   deleteAgent: vi.fn(),
+  cancelDelete: vi.fn(),
   dismissQuestions: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock('$lib/client', () => ({
       get: mocks.get,
       rename: mocks.rename,
       delete: mocks.deleteAgent,
+      cancelDelete: mocks.cancelDelete,
       dismissQuestions: mocks.dismissQuestions,
     },
   },
@@ -35,20 +37,19 @@ import {
 } from '../../agent-subscription-ui/agent-subscription-ui-slice';
 import {
   activateAgentRequested,
-  commitPendingAgentDeletionRequested,
   deleteAgentWithUndoRequested,
   deleteAgentSessionRequested,
-  flushPendingAgentDeletionsRequested,
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
   undoAgentDeletionRequested,
 } from '../../workspace-agents/workspace-agents-slice';
 import { agentSessionDismissQuestionsRequested, bulkUpsertSessions } from '../agent-session-slice';
-import { agentMutationSaga } from './agent-mutation-saga';
+import { AGENT_DELETION_TOMBSTONE_TTL_MS, agentMutationSaga } from './agent-mutation-saga';
 
 const WS = 'ws-mutation';
 const A1 = 'agent-1';
-const A2 = 'agent-2';
+// Flush microtasks so the forked showUndoToast dynamic import settles before
+// the next dispatch (its in-flight import races showError's otherwise).
 const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
@@ -208,34 +209,61 @@ describe('agentMutationSaga', () => {
     await stop(task);
   });
 
-  it('soft-hides without a wire call and undo wins the timer race', async () => {
+  it('sends agent.delete with undoDelayMs immediately and undo issues the race-safe cancelDelete', async () => {
+    mocks.deleteAgent.mockResolvedValue({
+      success: true,
+      scheduled: true,
+      deleteAt: '2026-08-11T00:00:15.000Z',
+    });
+    mocks.cancelDelete.mockResolvedValue({ success: true, cancelled: true });
     const { channel, dispatched, task } = start();
     const deletion = deleteAgentWithUndoRequested(WS, A1, 'Agent');
     channel.put(deletion);
     await expect(deletion.promise).resolves.toEqual(session());
-    expect(mocks.deleteAgent).not.toHaveBeenCalled();
+    expect(mocks.deleteAgent).toHaveBeenCalledExactlyOnceWith(A1, WS, { undoDelayMs: 15_000 });
     expect(dispatched).toContainEqual(removeWatchedAgent(WS, A1));
 
     const undo = undoAgentDeletionRequested(WS, A1);
     channel.put(undo);
     await expect(undo.promise).resolves.toBe(true);
+    expect(mocks.cancelDelete).toHaveBeenCalledExactlyOnceWith(A1, WS);
     expect(dispatched).toContainEqual(refreshWorkspaceSubscriptionEntriesRequested(WS));
-    await vi.advanceTimersByTimeAsync(15_000);
-    expect(mocks.deleteAgent).not.toHaveBeenCalled();
+    expect(listPendingAgentDeletions()).toEqual([]);
     await stop(task);
   });
 
-  it('refetches subscription entries when a pending delete commit restores on daemon failure', async () => {
-    mocks.deleteAgent.mockResolvedValue({ success: false, error: 'delete rejected' });
+  it('does not resurrect the agent when cancelDelete reports the deletion already committed', async () => {
+    mocks.deleteAgent.mockResolvedValue({
+      success: true,
+      scheduled: true,
+      deleteAt: '2026-08-11T00:00:15.000Z',
+    });
+    mocks.cancelDelete.mockResolvedValue({ success: true, cancelled: false });
     const { channel, dispatched, task } = start();
     const deletion = deleteAgentWithUndoRequested(WS, A1);
     channel.put(deletion);
     await deletion.promise;
-    channel.put(commitPendingAgentDeletionRequested(WS, A1));
     await settle();
 
-    expect(mocks.deleteAgent).toHaveBeenCalledWith(A1, WS);
+    const undo = undoAgentDeletionRequested(WS, A1);
+    channel.put(undo);
+    await expect(undo.promise).resolves.toBe(false);
+    expect(mocks.error).toHaveBeenCalled();
+    expect(dispatched).not.toContainEqual(refreshWorkspaceSubscriptionEntriesRequested(WS));
+    expect(listPendingAgentDeletions()).toHaveLength(1);
+    await stop(task);
+  });
+
+  it('restores the session and rejects when the scheduled delete fails on the wire', async () => {
+    mocks.deleteAgent.mockResolvedValue({ success: false, error: 'delete rejected' });
+    const { channel, dispatched, task } = start();
+    const deletion = deleteAgentWithUndoRequested(WS, A1);
+    channel.put(deletion);
+
+    await expect(deletion.promise).rejects.toThrow('delete rejected');
     expect(dispatched).toContainEqual(refreshWorkspaceSubscriptionEntriesRequested(WS));
+    expect(mocks.error).toHaveBeenCalledWith('delete rejected');
+    expect(listPendingAgentDeletions()).toEqual([]);
     await stop(task);
   });
 
@@ -251,67 +279,54 @@ describe('agentMutationSaga', () => {
     await stop(task);
   });
 
-  it('commits once when explicit commit beats the undo timer', async () => {
+  it('keeps the tombstone through the grace window and clears it afterwards', async () => {
+    mocks.deleteAgent.mockResolvedValue({
+      success: true,
+      scheduled: true,
+      deleteAt: '2026-08-11T00:00:15.000Z',
+    });
     const { channel, task } = start();
     const deletion = deleteAgentWithUndoRequested(WS, A1);
     channel.put(deletion);
     await deletion.promise;
-    channel.put(commitPendingAgentDeletionRequested(WS, A1));
-    await settle();
-    await vi.advanceTimersByTimeAsync(15_000);
 
+    await vi.advanceTimersByTimeAsync(15_000);
+    // The daemon has committed; the tombstone still guards stale refetches.
+    expect(listPendingAgentDeletions()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(AGENT_DELETION_TOMBSTONE_TTL_MS);
+    expect(listPendingAgentDeletions()).toEqual([]);
+    // No FE-side commit: exactly the one scheduling wire call was made.
     expect(mocks.deleteAgent).toHaveBeenCalledTimes(1);
-    expect(mocks.deleteAgent).toHaveBeenCalledWith(A1, WS);
     await stop(task);
   });
 
-  it('commits once when the undo window times out', async () => {
-    const { channel, task } = start();
+  it('does not resurrect the agent when the cancelDelete RPC itself fails', async () => {
+    mocks.deleteAgent.mockResolvedValue({
+      success: true,
+      scheduled: true,
+      deleteAt: '2026-08-11T00:00:15.000Z',
+    });
+    mocks.cancelDelete.mockRejectedValue(new Error('daemon offline'));
+    const { channel, dispatched, task } = start();
     const deletion = deleteAgentWithUndoRequested(WS, A1);
     channel.put(deletion);
     await deletion.promise;
-    await vi.advanceTimersByTimeAsync(15_000);
+    await settle();
 
-    expect(mocks.deleteAgent).toHaveBeenCalledExactlyOnceWith(A1, WS);
-    expect(listPendingAgentDeletions()).toEqual([]);
+    const undo = undoAgentDeletionRequested(WS, A1);
+    channel.put(undo);
+    await expect(undo.promise).resolves.toBe(false);
+    expect(mocks.error).toHaveBeenCalled();
+    expect(dispatched).not.toContainEqual(refreshWorkspaceSubscriptionEntriesRequested(WS));
     await stop(task);
   });
 
-  it('commits repeated same-agent soft deletes only once', async () => {
-    const { channel, task } = start();
-    const first = deleteAgentWithUndoRequested(WS, A1);
-    const second = deleteAgentWithUndoRequested(WS, A1);
-    channel.put(first);
-    channel.put(second);
-    await Promise.all([first.promise, second.promise]);
-    await vi.advanceTimersByTimeAsync(15_000);
-
-    expect(mocks.deleteAgent).toHaveBeenCalledExactlyOnceWith(A1, WS);
-    await stop(task);
-  });
-
-  it('flushes every pending deletion in one workspace and settles', async () => {
-    const { channel, task } = start({ [A1]: session(A1), [A2]: session(A2) });
-    const first = deleteAgentWithUndoRequested(WS, A1);
-    const second = deleteAgentWithUndoRequested(WS, A2);
-    channel.put(first);
-    channel.put(second);
-    await Promise.all([first.promise, second.promise]);
-    const flush = flushPendingAgentDeletionsRequested(WS);
-    channel.put(flush);
-
-    await expect(flush.promise).resolves.toBeUndefined();
-    expect(mocks.deleteAgent.mock.calls).toEqual(
-      expect.arrayContaining([
-        [A1, WS],
-        [A2, WS],
-      ]),
-    );
-    expect(listPendingAgentDeletions()).toEqual([]);
-    await stop(task);
-  });
-
-  it('flushes the soft-hidden deletion when the saga is cancelled', async () => {
+  it('leaves the daemon-owned deletion pending when the saga is cancelled mid-window', async () => {
+    mocks.deleteAgent.mockResolvedValue({
+      success: true,
+      scheduled: true,
+      deleteAt: '2026-08-11T00:00:15.000Z',
+    });
     const { channel, task } = start();
     const deletion = deleteAgentWithUndoRequested(WS, A1);
     channel.put(deletion);
@@ -319,7 +334,11 @@ describe('agentMutationSaga', () => {
     task.cancel();
     await task.toPromise();
 
-    expect(mocks.deleteAgent).toHaveBeenCalledWith(A1, WS);
+    // No FE-side flush: the daemon owns the commit. The tombstone survives
+    // teardown (detached clearer) and lifts after the grace window.
+    expect(mocks.deleteAgent).toHaveBeenCalledTimes(1);
+    expect(listPendingAgentDeletions()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(15_000 + AGENT_DELETION_TOMBSTONE_TTL_MS);
     expect(listPendingAgentDeletions()).toEqual([]);
   });
 });

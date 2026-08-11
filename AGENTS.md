@@ -174,24 +174,25 @@ reducer runs, calls the `AppClient` seam and dispatches the per-dispatch
 dependency-light (no selector imports — they evaluate `store.createSelector` at chain
 construction); read state directly off `appStore.state` and import the toast lib lazily.
 
-Agent **deletion** uses a **soft-hide-then-commit** pattern (the handlers live in that
-same middleware):
+Agent **deletion** uses the **daemon-owned delete grace window** (PROTOCOL §5.5, v6.5+;
+the handlers live in the agent mutation saga):
 
-- `deleteAgentWithUndoRequested` optimistically **soft-hides** the session locally (drops
-  it from the visible list) **without** calling the daemon, shows an Undo toast, and arms a
-  15s commit timer. The action resolves immediately with the removed session.
-- `undoAgentDeletionRequested` cancels the timer and **un-hides** the session — no daemon
-  call, because the delete was never sent.
-- `commitPendingAgentDeletionRequested` / `flushPendingAgentDeletionsRequested` (and the
-  timer elapsing) call the real `appClient.agents.delete` (`agent.delete`, PROTOCOL §5.5).
-  On success the daemon emits `agent:deleted` (in `AGENT_LIFECYCLE_EVENTS`), so the
-  reactive `subscribe` refetch reconciles the list — the FE does not hand-roll list
-  mutation. On failure the session is un-hidden and the error surfaced.
+- `deleteAgentWithUndoRequested` **soft-hides** the session locally (drops it from the
+  visible list) and sends `agent.delete { undoDelayMs: 15000 }` **immediately**, so the
+  daemon owns the 15s window and commits at the deadline even if the FE quits or crashes
+  mid-window. The action resolves with the removed session once the daemon acks the
+  schedule; a wire failure un-hides the session and rejects.
+- `undoAgentDeletionRequested` issues the race-safe `agent.cancelDelete`:
+  `{ cancelled: true }` un-hides the session; `{ cancelled: false }` (already committed)
+  surfaces a "could not undo" toast without resurrecting it.
+- There is **no FE-side commit timer or flush** — the daemon commits at the deadline and
+  emits `agent:deleted` (in `AGENT_LIFECYCLE_EVENTS`), so the reactive `subscribe`
+  refetch reconciles the list — the FE does not hand-roll list mutation.
 
-Why not a true undo? Once `agent.delete` reaches the daemon the deletion is permanent, so
-"undo" can only exist **before** commit. Deferring the wire call for the undo window is the
-only way to offer undo without a daemon-side restore path. The pending deletions are
-transient UI-only state (a module-level `Map`), never Redux.
+The pending deletions are transient UI-only state (a module-level `Map`), never Redux.
+During the window (and for a tombstone grace period after the deadline, so stale
+refetches cannot resurrect the agent) read paths consult `isAgentDeletionPending()` and
+drop wire rows carrying the additive `pendingDeleteAt` field.
 
 ### Testing — every feature/fix against a mock BE
 

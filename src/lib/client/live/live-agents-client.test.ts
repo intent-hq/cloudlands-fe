@@ -962,6 +962,61 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result.error).toContain('delete boom');
   });
 
+  it("delete forwards undoDelayMs and surfaces the daemon's { scheduled, deleteAt } (§5.5 delete grace window)", async () => {
+    backend.onRequest('agent.delete', () => ({
+      success: true,
+      scheduled: true,
+      deleteAt: '2026-08-11T00:00:15.000Z',
+    }));
+    const client = new LiveAgentsClient();
+
+    expect(await client.delete('agent-1', 'ws-1', { undoDelayMs: 15_000 })).toEqual({
+      success: true,
+      scheduled: true,
+      deleteAt: '2026-08-11T00:00:15.000Z',
+    });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.delete',
+      params: { agentId: 'agent-1', undoDelayMs: 15_000 },
+    });
+  });
+
+  it('delete keeps the pre-6.5 wire shape byte-identical when undoDelayMs is 0', async () => {
+    backend.onRequest('agent.delete', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    expect(await client.delete('agent-1', 'ws-1', { undoDelayMs: 0 })).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.delete',
+      params: { agentId: 'agent-1' },
+    });
+  });
+
+  it('cancelDelete forwards agent.cancelDelete and surfaces the race-safe { cancelled } outcomes', async () => {
+    const outcomes = [{ cancelled: true }, { cancelled: false }];
+    backend.onRequest('agent.cancelDelete', () => outcomes.shift()!);
+    const client = new LiveAgentsClient();
+
+    expect(await client.cancelDelete('agent-1')).toEqual({ success: true, cancelled: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.cancelDelete',
+      params: { agentId: 'agent-1' },
+    });
+    // Already committed / never scheduled — non-error, cancelled: false
+    expect(await client.cancelDelete('agent-1')).toEqual({ success: true, cancelled: false });
+  });
+
+  it('cancelDelete maps a transport error to a failed MutationResult without throwing', async () => {
+    backend.onRequest('agent.cancelDelete', () => {
+      throw new Error('daemon offline');
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.cancelDelete('agent-1');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('daemon offline');
+  });
+
   it('maps a daemon error to a failed MutationResult without throwing', async () => {
     // Use a fresh agentId so the module-level workspace cache is guaranteed to
     // miss; the resolver call resolves successfully, then agent.sendMessage
