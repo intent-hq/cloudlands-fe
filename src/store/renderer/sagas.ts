@@ -91,6 +91,7 @@ import { workspaceNavigationTabSaga } from './slices/workspace-navigation/sagas/
 import { workspaceNotesSaga } from './slices/workspace-notes/sagas/workspace-notes-saga';
 import { workspaceOperationsSaga } from './slices/workspace-operations/sagas/workspace-operations-saga';
 import { workspaceSettingsSaga } from './slices/workspace-settings/sagas/workspace-settings-saga';
+import { workspaceTransferSaga } from './slices/workspace-transfer/sagas/workspace-transfer-saga';
 
 export type AppSaga = Parameters<Store<any, any>['runSaga']>[0];
 export type AppSagaCancel = ReturnType<Store<any, any>['runSaga']>;
@@ -137,6 +138,7 @@ export const sagas = [
   workspaceNavigationTabSaga,
   workspaceNavigationLayoutSaga,
   workspaceOperationsSaga,
+  workspaceTransferSaga,
   lifecycleReadSaga,
   lifecycleIpcReadSaga,
   modelSelectionSaga,

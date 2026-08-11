@@ -198,7 +198,6 @@ describe('Specialist Configuration', () => {
         'ui-designer',
         'developer',
         'chief-of-staff',
-        'pr-shepherd',
         'ralph',
       ];
 
@@ -244,7 +243,7 @@ describe('Specialist Configuration', () => {
   });
 
   describe('GitHub-dependent Specialist Gating', () => {
-    // These tests verify that pr-shepherd and pr-reviewer are hidden
+    // These tests verify that pr-reviewer is hidden
     // when GitHub is not connected, using the backend specialists service.
 
     // Lazy-import so mocks are applied before the module loads
@@ -260,19 +259,17 @@ describe('Specialist Configuration', () => {
       await initSpecialistsService();
     });
 
-    it('GITHUB_DEPENDENT_SPECIALIST_IDS contains pr-shepherd and pr-reviewer', () => {
-      expect(GITHUB_DEPENDENT_SPECIALIST_IDS.has('pr-shepherd')).toBe(true);
+    it('GITHUB_DEPENDENT_SPECIALIST_IDS contains pr-reviewer', () => {
       expect(GITHUB_DEPENDENT_SPECIALIST_IDS.has('pr-reviewer')).toBe(true);
     });
 
-    it('should hide pr-shepherd and pr-reviewer when GitHub is not authenticated', async () => {
+    it('should hide pr-reviewer when GitHub is not authenticated', async () => {
       mockIsAuthenticated.mockResolvedValue(false);
       await refreshGitHubAuthStatus();
 
       const specialists = getAllEffectiveSpecialists();
       const ids = specialists.map((s) => s.id);
 
-      expect(ids).not.toContain('pr-shepherd');
       expect(ids).not.toContain('pr-reviewer');
       // Other specialists should still be present
       expect(ids).toContain('spec-writer');
@@ -280,14 +277,13 @@ describe('Specialist Configuration', () => {
       expect(ids).toContain('verifier');
     });
 
-    it('should show pr-shepherd and pr-reviewer when GitHub is authenticated', async () => {
+    it('should show pr-reviewer when GitHub is authenticated', async () => {
       mockIsAuthenticated.mockResolvedValue(true);
       await refreshGitHubAuthStatus();
 
       const specialists = getAllEffectiveSpecialists();
       const ids = specialists.map((s) => s.id);
 
-      expect(ids).toContain('pr-shepherd');
       expect(ids).toContain('pr-reviewer');
     });
 

@@ -73,12 +73,6 @@ export const SPECIALIST_ICONS: Record<SpecialistId, string> = {
 <path d="M6.5 0.5L3.5 4.5H6.5L3.5 8.5" stroke-linecap="round" stroke-linejoin="round" />
 </svg>
 `,
-
-  // PR Shepherd - shepherd's crook/staff icon (guides PRs to merge)
-  'pr-shepherd': `<svg width="100%" viewBox="0 0 10 9" fill="none" stroke="currentColor" stroke-width="1.5">
-<path d="M5 8.5V3C5 2 5.5 1 7 1C8.5 1 8.5 2.5 7.5 3" stroke-linecap="round" stroke-linejoin="round" />
-</svg>
-`,
 };
 
 /**
@@ -101,7 +95,6 @@ export const SPECIALIST_GLOW_COLORS: Record<SpecialistId, string> = {
   'pr-reviewer': '#3B82F6', // Blue for PR reviewer
   'ui-designer': '#EC4899', // Pink for UI designer
   developer: '#06B6D4', // Cyan for developer (plans and builds)
-  'pr-shepherd': '#14B8A6', // Teal for PR shepherd
 };
 
 /**

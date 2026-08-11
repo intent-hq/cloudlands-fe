@@ -118,15 +118,15 @@ describe('Specialist Metadata', () => {
     // with no specialist and the UI fell back to "General" after refetch.
     const workspace = createMockWorkspace('specialist-wire-1');
     const result = await factory.createAgent(workspace, {
-      name: 'PR Shepherd 2',
+      name: 'PR Reviewer 2',
       workspaceId: workspace.id,
-      metadata: { specialist: 'pr-shepherd' },
+      metadata: { specialist: 'pr-reviewer' },
     });
 
     expect(result.success).toBe(true);
     const params = lastCreateParams();
-    expect(params.specialistId).toBe('pr-shepherd');
-    expect(params.metadata).toMatchObject({ specialist: 'pr-shepherd' });
+    expect(params.specialistId).toBe('pr-reviewer');
+    expect(params.metadata).toMatchObject({ specialist: 'pr-reviewer' });
     // Daemon-assigned id is adopted from the PROTOCOL-shaped response.
     expect(result.agent?.id).toMatch(/^agent-daemon-/);
   });

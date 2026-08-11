@@ -16,6 +16,8 @@ import {
   workspaceDeleted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { withPreservedUnmetDependsOn } from '../workspace-notes-normalization';
+import { selectNoteById } from '../workspace-notes-selectors';
 import {
   applyNoteUpdated,
   applyNoteVersions,
@@ -76,7 +78,16 @@ function* restoreVersion(workspaceId: string, noteId: string, versionId: string)
       return;
     }
     if (result.note && String(result.note.workspaceId) === workspaceId) {
-      yield* put(applyNoteUpdated(workspaceId, noteId, toRuntimeNote(result.note)));
+      // Mutation-response notes omit the transient `unmetDependsOn` projection
+      // (monorepo#2001); keep the cached value so "Waits on" doesn't flicker.
+      const cached = yield* selectNoteById.effect(workspaceId, noteId);
+      yield* put(
+        applyNoteUpdated(
+          workspaceId,
+          noteId,
+          withPreservedUnmetDependsOn(toRuntimeNote(result.note), cached),
+        ),
+      );
     }
     yield* call(fetchVersions, workspaceId, noteId);
   } catch (error) {

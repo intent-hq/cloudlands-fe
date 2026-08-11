@@ -48,6 +48,7 @@ import {
   loadWorkspaceNotesSucceeded,
   removeOptimisticNote,
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import { withPreservedUnmetDependsOn } from '$store/renderer/slices/workspace-notes/workspace-notes-normalization';
 import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('NotesWriteService');
@@ -205,7 +206,13 @@ function reconcileNoteConflict(
   if (!result.conflict) return false;
   const current = result.conflict.current as Note | undefined;
   if (current && typeof current === 'object') {
-    appStore.dispatch(applyNoteUpdated(workspaceId, String(current.id ?? noteId), current));
+    const canonicalId = String(current.id ?? noteId);
+    // Mutation-response notes omit the transient `unmetDependsOn` projection
+    // (monorepo#2001); keep the cached value so "Waits on" doesn't flicker.
+    const cached = readNoteById(workspaceId, canonicalId);
+    appStore.dispatch(
+      applyNoteUpdated(workspaceId, canonicalId, withPreservedUnmetDependsOn(current, cached)),
+    );
   } else {
     void refetchWorkspaceNotes(workspaceId);
   }

@@ -16,7 +16,9 @@ import {
   applyNoteVersions,
   applyNoteVersionsError,
   fetchNoteVersions,
+  loadWorkspaceNotesSucceeded,
   restoreNoteVersion,
+  workspaceNotesReducer,
 } from '../workspace-notes-slice';
 import { noteVersionsSaga } from './note-versions-saga';
 
@@ -57,11 +59,23 @@ function note(overrides: Partial<Note> = {}): Note {
   };
 }
 
-function harness() {
+function harness(seed: Note | Note[] = note()) {
   const channel = stdChannel();
   const actions: unknown[] = [];
-  const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, noteVersionsSaga);
-  return { actions, channel, task };
+  let workspaceNotes = workspaceNotesReducer(
+    undefined,
+    loadWorkspaceNotesSucceeded([WS], { [WS]: Array.isArray(seed) ? seed : [seed] }),
+  );
+  const dispatch = (action: Parameters<typeof workspaceNotesReducer>[1]) => {
+    workspaceNotes = workspaceNotesReducer(workspaceNotes, action);
+    actions.push(action);
+    return action;
+  };
+  const task = runSaga(
+    { channel, dispatch, getState: () => ({ workspaceNotes }) },
+    noteVersionsSaga,
+  );
+  return { actions, channel, getState: () => workspaceNotes, task };
 }
 
 describe('noteVersionsSaga', () => {
@@ -170,6 +184,38 @@ describe('noteVersionsSaga', () => {
       applyNoteUpdated(WS, NOTE, restored),
       applyNoteVersions(WS, NOTE, [version(2)]),
     ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('preserves cached unmetDependsOn when the restored note omits the projection', async () => {
+    const cached = note({
+      metadata: {
+        task: {
+          status: 'not_started',
+          dependsOn: [NoteId('dep-1')],
+          unmetDependsOn: [NoteId('dep-1')],
+        },
+      },
+    });
+    const restored = note({
+      content: 'restored body',
+      rev: 5,
+      metadata: { task: { status: 'not_started', dependsOn: [NoteId('dep-1')] } },
+    });
+    vi.spyOn(appClient.notes, 'restoreVersion').mockResolvedValue({
+      success: true,
+      note: restored,
+    });
+    vi.spyOn(appClient.notes, 'listVersions').mockResolvedValue([]);
+    const run = harness(cached);
+
+    run.channel.put(restoreNoteVersion(WS, NOTE, 'version-1'));
+    await settle();
+
+    const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(applied?.content).toEqual('restored body');
+    expect(applied?.metadata?.task?.unmetDependsOn).toEqual([NoteId('dep-1')]);
     run.task.cancel();
     await run.task.toPromise();
   });

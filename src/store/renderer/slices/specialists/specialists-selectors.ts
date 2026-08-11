@@ -34,7 +34,7 @@ export const selectProviderModelOverrides = store.createSelector((state): Record
 // ============================================================================
 /**
  * Check if a specialist should be visible based on Redux state and GitHub auth.
- * Gates GitHub-dependent specialists (pr-shepherd, pr-reviewer).
+ * Gates GitHub-dependent specialists (pr-reviewer).
  */
 const selectIsSpecialistVisible = store.createSelector((state, specialistId: string): boolean => {
     // Gate GitHub-dependent specialists behind GitHub auth
