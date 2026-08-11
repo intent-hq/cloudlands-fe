@@ -8,8 +8,10 @@ vi.mock('$lib/client', () => ({ appClient: { settings: { update: mocks.update } 
 import { BackendError } from '$lib/client/live/backend-transport-types';
 
 import {
+  enablementPersistRejected,
   hydrateActiveProvider,
   setActiveProvider,
+  setProviderEnabled,
   toggleProvider,
 } from '../provider-settings-slice';
 import {
@@ -85,6 +87,40 @@ describe('providerSettingsSaga', () => {
     await task.toPromise();
   });
 
+  it('merges the click intent over the live map at write time after hydration replaced it (monorepo#1986)', async () => {
+    let release!: (value: unknown) => void;
+    mocks.update
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      )
+      .mockResolvedValue([]);
+    const current = state();
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => current },
+      providerSettingsSaga,
+    );
+    channel.put(setActiveProvider('codex'));
+    await settle();
+    channel.put(setProviderEnabled({ providerId: 'claude-code', enabled: true }));
+    await settle();
+    // Boot settings hydration replaces the whole local map while the write is
+    // still queued behind the in-flight active-provider write — the stale
+    // snapshot has no claude-code entry.
+    current.providerSettings.enabledProviders = { auggie: true };
+    release([]);
+    await settle();
+
+    expect(mocks.update.mock.calls).toEqual([
+      [[{ path: 'providers.active', value: 'codex' }]],
+      [[{ path: 'providers.enabled', value: { auggie: true, 'claude-code': true } }]],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('does not echo provider hydration actions', async () => {
     const channel = stdChannel();
     const task = runSaga({ channel, dispatch: vi.fn(), getState: state }, providerSettingsSaga);
@@ -136,10 +172,8 @@ describe('providerSettingsSaga', () => {
       new BackendError({ code: 'INVALID_PARAMS', message: 'invalid', rpcCode: -32602 }),
     );
     const channel = stdChannel();
-    const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => state() },
-      providerSettingsSaga,
-    );
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => state() }, providerSettingsSaga);
 
     channel.put(setActiveProvider('codex'));
     await settle();
@@ -147,6 +181,27 @@ describe('providerSettingsSaga', () => {
     expect(mocks.update.mock.calls).toEqual([
       [[{ path: 'providers.active', value: 'codex' }]],
     ]);
+    // An active-provider write carries no enablement delta — no rollback.
+    expect(dispatch).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('retires the pending override when the daemon rejects an enablement write (monorepo#1986)', async () => {
+    mocks.update.mockRejectedValue(
+      new BackendError({ code: 'INVALID_PARAMS', message: 'invalid', rpcCode: -32602 }),
+    );
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => state() }, providerSettingsSaga);
+
+    channel.put(setProviderEnabled({ providerId: 'claude-code', enabled: true }));
+    await settle();
+
+    expect(mocks.update.mock.calls).toEqual([
+      [[{ path: 'providers.enabled', value: { codex: true, 'claude-code': true } }]],
+    ]);
+    expect(dispatch).toHaveBeenCalledWith(enablementPersistRejected('claude-code'));
     task.cancel();
     await task.toPromise();
   });
