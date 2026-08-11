@@ -33,10 +33,12 @@ import {
   computeTotalStats,
   mapWorkspacePRs,
   mergeMonitoredPRs,
+  selectPrimaryPr,
   getPRStatusTooltip,
   countOtherMonitors,
   monitorDisplayStatus,
   monitorPillStatus,
+  toPullRequestStatus,
 } from '../sidebar-changes-utils';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -968,6 +970,139 @@ describe('mergeMonitoredPRs', () => {
   });
 });
 
+// ─── selectPrimaryPr (single-PR surface pill) ──────────────────────────────────
+
+describe('selectPrimaryPr', () => {
+  function makePR(overrides: Partial<PRInfo> = {}): PRInfo {
+    return {
+      number: 1,
+      title: 'PR',
+      url: 'https://github.com/acme/widgets/pull/1',
+      htmlUrl: 'https://github.com/acme/widgets/pull/1',
+      status: 'open',
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-02T00:00:00Z',
+      ...overrides,
+    };
+  }
+
+  it('returns undefined for an empty pool', () => {
+    expect(selectPrimaryPr([])).toBeUndefined();
+  });
+
+  it('picks the oldest open PR by createdAt', () => {
+    const prs = [
+      makePR({ number: 2, createdAt: '2026-02-01T00:00:00Z' }),
+      makePR({ number: 1, createdAt: '2026-01-01T00:00:00Z' }),
+      makePR({ number: 3, createdAt: '2026-03-01T00:00:00Z' }),
+    ];
+    expect(selectPrimaryPr(prs)?.number).toBe(1);
+  });
+
+  it('treats drafts as unmerged alongside open PRs', () => {
+    const prs = [
+      makePR({ number: 2, status: 'open', createdAt: '2026-02-01T00:00:00Z' }),
+      makePR({ number: 1, status: 'draft', createdAt: '2026-01-01T00:00:00Z' }),
+    ];
+    expect(selectPrimaryPr(prs)?.number).toBe(1);
+  });
+
+  it('prefers an unmerged PR over merged and closed ones regardless of age', () => {
+    const prs = [
+      makePR({ number: 1, status: 'merged', createdAt: '2026-01-01T00:00:00Z' }),
+      makePR({ number: 2, status: 'closed', createdAt: '2026-01-02T00:00:00Z' }),
+      makePR({ number: 3, status: 'open', createdAt: '2026-06-01T00:00:00Z' }),
+    ];
+    expect(selectPrimaryPr(prs)?.number).toBe(3);
+  });
+
+  it('tiebreaks equal createdAt by ascending PR number', () => {
+    const prs = [
+      makePR({ number: 9, createdAt: '2026-01-01T00:00:00Z' }),
+      makePR({ number: 4, createdAt: '2026-01-01T00:00:00Z' }),
+    ];
+    expect(selectPrimaryPr(prs)?.number).toBe(4);
+  });
+
+  it('falls back to the latest merged PR by updatedAt when nothing is unmerged', () => {
+    const prs = [
+      makePR({ number: 1, status: 'merged', updatedAt: '2026-01-05T00:00:00Z' }),
+      makePR({ number: 2, status: 'merged', updatedAt: '2026-03-05T00:00:00Z' }),
+      makePR({ number: 3, status: 'closed', updatedAt: '2026-06-05T00:00:00Z' }),
+    ];
+    expect(selectPrimaryPr(prs)?.number).toBe(2);
+  });
+
+  it('tiebreaks equal updatedAt among merged PRs by descending PR number', () => {
+    const prs = [
+      makePR({ number: 4, status: 'merged', updatedAt: '2026-01-05T00:00:00Z' }),
+      makePR({ number: 9, status: 'merged', updatedAt: '2026-01-05T00:00:00Z' }),
+    ];
+    expect(selectPrimaryPr(prs)?.number).toBe(9);
+  });
+
+  it('returns the first remaining row when the pool is closed-only', () => {
+    const prs = [
+      makePR({ number: 7, status: 'closed' }),
+      makePR({ number: 8, status: 'closed' }),
+    ];
+    expect(selectPrimaryPr(prs)?.number).toBe(7);
+  });
+
+  it('sorts unmerged PRs missing createdAt last within the bucket', () => {
+    const prs = [
+      makePR({ number: 1, createdAt: undefined }),
+      makePR({ number: 2, createdAt: '2026-05-01T00:00:00Z' }),
+    ];
+    expect(selectPrimaryPr(prs)?.number).toBe(2);
+  });
+
+  it('sorts merged PRs missing updatedAt last within the bucket', () => {
+    const prs = [
+      makePR({ number: 1, status: 'merged', updatedAt: undefined }),
+      makePR({ number: 2, status: 'merged', updatedAt: '2026-01-01T00:00:00Z' }),
+    ];
+    expect(selectPrimaryPr(prs)?.number).toBe(2);
+  });
+
+  it('tiebreaks by number when timestamps are missing on both sides', () => {
+    const prs = [
+      makePR({ number: 5, createdAt: undefined }),
+      makePR({ number: 3, createdAt: undefined }),
+    ];
+    expect(selectPrimaryPr(prs)?.number).toBe(3);
+  });
+
+  it('selects from a merged branch-linked + monitored pool (monitored-only rows included)', () => {
+    const monitor: PrMonitorRow = {
+      monitorId: 'mon-1',
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      repo: 'acme/widgets',
+      prNumber: 42,
+      state: 'active',
+      pendingChanges: [],
+      hasPendingChanges: false,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-02T00:00:00Z',
+      title: 'Monitored PR',
+      url: 'https://github.com/acme/widgets/pull/42',
+    };
+    const pool = mergeMonitoredPRs([], [monitor], 'acme/widgets');
+    expect(selectPrimaryPr(pool)?.number).toBe(42);
+    expect(selectPrimaryPr(pool)?.monitorOnly).toBe(true);
+  });
+
+  it('does not mutate the input array', () => {
+    const prs = [
+      makePR({ number: 2, createdAt: '2026-02-01T00:00:00Z' }),
+      makePR({ number: 1, createdAt: '2026-01-01T00:00:00Z' }),
+    ];
+    selectPrimaryPr(prs);
+    expect(prs.map((pr) => pr.number)).toEqual([2, 1]);
+  });
+});
+
 // ─── getPRStatusTooltip (hover status, PROTOCOL §6.9) ──────────────────────────
 
 describe('getPRStatusTooltip', () => {
@@ -1113,6 +1248,30 @@ describe('countOtherMonitors', () => {
       makeMonitor({ monitorId: 'mon-2', prNumber: 7, state: 'completed', lastSnapshot: merged }),
     ];
     expect(countOtherMonitors(monitors, 42, 'acme', 'widgets')).toBe(1);
+  });
+
+  it('excludes the cross-repo monitor matching a cross-repo primary', () => {
+    const monitors = [
+      makeMonitor({ repo: 'other/repo' }),
+      makeMonitor({ monitorId: 'mon-2', prNumber: 7 }),
+    ];
+    expect(countOtherMonitors(monitors, 42, 'acme', 'widgets', 'other/repo')).toBe(1);
+  });
+
+  it('counts the workspace-repo monitor as "other" when the primary is cross-repo', () => {
+    const monitors = [makeMonitor()];
+    expect(countOtherMonitors(monitors, 42, 'acme', 'widgets', 'other/repo')).toBe(1);
+  });
+});
+
+// ─── toPullRequestStatus (display status → enum projection) ────────────────────
+
+describe('toPullRequestStatus', () => {
+  it('maps each display status to the matching enum value', () => {
+    expect(toPullRequestStatus('open')).toBe(PullRequestStatus.Open);
+    expect(toPullRequestStatus('merged')).toBe(PullRequestStatus.Merged);
+    expect(toPullRequestStatus('closed')).toBe(PullRequestStatus.Closed);
+    expect(toPullRequestStatus('draft')).toBe(PullRequestStatus.Draft);
   });
 });
 

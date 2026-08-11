@@ -1211,6 +1211,7 @@
   "workspace_overviewTimeline_moreCommits_label": "他 {count} 件のコミット",
   "workspace_overviewTimeline_moreNotes_label": "他 {count} 件のノート",
   "workspace_overviewTimeline_prClosed_label": "クローズ",
+  "workspace_overviewTimeline_prDraft_label": "下書き",
   "workspace_overviewTimeline_prMerged_label": "マージ済み",
   "workspace_overviewTimeline_prNumber_label": "PR #{number}",
   "workspace_overviewTimeline_prOpen_label": "オープン",

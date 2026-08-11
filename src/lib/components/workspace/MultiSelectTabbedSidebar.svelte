@@ -1,102 +1,103 @@
 <script lang="ts">
-/* eslint-disable max-lines */
+  /* eslint-disable max-lines */
   import { goto } from '$app/navigation';
   import { addContextItem } from '$store/renderer/slices/context/context-slice';
   import { v4 as uuidv4 } from 'uuid';
   import {
-  selectCurrentWorkspaceId,
-  selectCurrentStagedWorkingChanges,
-  selectCurrentUnstagedWorkingChanges,
-  selectCurrentCommits,
-} from '$store/renderer/slices/changes/changes-selectors';
+    selectCurrentWorkspaceId,
+    selectCurrentStagedWorkingChanges,
+    selectCurrentUnstagedWorkingChanges,
+    selectCurrentCommits,
+  } from '$store/renderer/slices/changes/changes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import {
-  type AvatarState,
-  getAvatarState,
-} from '$lib/components/ui/auggie-avatar/avatar-state';
+  import { type AvatarState, getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import { faNote } from '$lib/icons/faNote';
 
   import {
-  markNoteRead,
-  refreshUnreadNotes,
-} from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
+    markNoteRead,
+    refreshUnreadNotes,
+  } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import { initializeNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import {
-  selectAllWorkspaceAgents,
-  selectForegroundWorkspaceAgents,
-  selectIsLoadingAgents,
-} from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+    selectAllWorkspaceAgents,
+    selectForegroundWorkspaceAgents,
+    selectIsLoadingAgents,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { cn } from '$lib/utils';
 
   import {
-  selectAgentIsResponding,
-  selectAgentIsWaiting,
-} from '$store/renderer/slices/agent-session/agent-session-selectors';
+    selectAgentIsResponding,
+    selectAgentIsWaiting,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
   import { locateItemInSidebarConsumed } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingLocateInSidebar } from '$store/renderer/slices/app-layout/app-layout-selectors';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import {
-  faAsterisk,
-  faCompressAlt,
-  faExpandAlt,
-  faFolderTree,
-  faPencil,
-  faPlus,
-  faRobot,
-  faSearch,
-  faTimes,
-} from '@fortawesome/free-solid-svg-icons';
+    faAsterisk,
+    faCompressAlt,
+    faExpandAlt,
+    faFolderTree,
+    faPencil,
+    faPlus,
+    faRobot,
+    faSearch,
+    faTimes,
+  } from '@fortawesome/free-solid-svg-icons';
 
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import {
-  fly,
-  slide,
-} from 'svelte/transition';
+  import { fly, slide } from 'svelte/transition';
   import AnimatedNumber from '../ui/AnimatedNumber.svelte';
   import Input from '../ui/input/input.svelte';
   import CreateAgentSection from './CreateAgentSection.svelte';
   import OverviewTimelinePanel from './OverviewTimelinePanel.svelte';
-  import {
-  FilesPanel,
-  SidebarChangesPanel,
-  isSpecNote,
-} from './sidebar';
+  import { FilesPanel, SidebarChangesPanel, isSpecNote } from './sidebar';
   import AddContextSection from './sidebar/AddContextSection.svelte';
   import ContextPanel from './sidebar/ContextPanel.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
   import {
-  deriveWorkspacePhase,
-  deriveWorkspaceStats,
-  type WorkspacePhaseInfo,
-  type WorkspacePhaseStats,
-} from './workspace-phase';
+    deriveWorkspacePhase,
+    deriveWorkspaceStats,
+    type WorkspacePhaseInfo,
+    type WorkspacePhaseStats,
+  } from './workspace-phase';
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
-  selectAllNotes,
-  selectNotesLoading,
-} from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+    selectWorkspaceActivePullRequest,
+    selectWorkspaceById,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import {
-  openWorkspaceCommitChangeset,
-  openWorkspaceDiff,
-  openWorkspaceLocalChanges,
-} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+    constructPrUrl as constructPrUrlUtil,
+    mapWorkspacePRs,
+    mergeMonitoredPRs,
+    selectPrimaryPr,
+  } from './sidebar/sidebar-changes-utils';
+  import { getPRDisplayTitle } from '$lib/utils/pull-request-utils';
   import {
-  setMultiSelectSidebarSelectedTabs,
-  setMultiSelectSidebarTabOrder,
-} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+    selectAllNotes,
+    selectNotesLoading,
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import {
-  selectMultiSelectSidebarSelectedTabIds,
-  selectMultiSelectSidebarTabOrder,
-} from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+    openWorkspaceCommitChangeset,
+    openWorkspaceDiff,
+    openWorkspaceLocalChanges,
+  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import {
+    setMultiSelectSidebarSelectedTabs,
+    setMultiSelectSidebarTabOrder,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import {
+    selectMultiSelectSidebarSelectedTabIds,
+    selectMultiSelectSidebarTabOrder,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { selectWorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
@@ -125,7 +126,6 @@
     onAcceptChanges,
     class: className,
   }: Props = $props();
-
 
   // Reactive writable store that mirrors workspaceId so Redux selectors
   // re-evaluate whenever the prop changes (called at component init time).
@@ -213,7 +213,10 @@
   }
 
   function normalizeTabOrder(order: string[]): TabId[] {
-    if (order.length === defaultTabOrder.length && defaultTabOrder.every((id) => order.includes(id))) {
+    if (
+      order.length === defaultTabOrder.length &&
+      defaultTabOrder.every((id) => order.includes(id))
+    ) {
       return order.filter(isValidTabId);
     }
     return defaultTabOrder;
@@ -511,7 +514,7 @@
       commits: phaseCommits
         ? {
             total: phaseCommits.length,
-            unpushed: phaseCommits.filter((c) => !(c.isPushed ?? (c.stage !== 'local'))).length,
+            unpushed: phaseCommits.filter((c) => !(c.isPushed ?? c.stage !== 'local')).length,
           }
         : undefined,
     });
@@ -519,6 +522,35 @@
       cachedPhaseStats = next;
     }
     return cachedPhaseStats;
+  });
+  // Primary PR for the Overview card: branch-linked PRs + agent PR monitors
+  // (PROTOCOL §6.9) merged like SidebarChangesPanel, picked by the shared
+  // oldest-unmerged / latest-merged rule.
+  const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
+  const prMonitors$ = selectPrMonitors(workspaceIdStore);
+  const overviewPrimaryPr = $derived.by(() => {
+    const workspaceRepo =
+      $workspace?.repositoryOwner && $workspace?.repositoryName
+        ? `${$workspace.repositoryOwner}/${$workspace.repositoryName}`
+        : undefined;
+    return selectPrimaryPr(
+      mergeMonitoredPRs(
+        mapWorkspacePRs(
+          $workspace?.pullRequests,
+          $activePullRequest$,
+          (prNumber, fallbackUrl) =>
+            constructPrUrlUtil(
+              prNumber,
+              $workspace?.repositoryOwner,
+              $workspace?.repositoryName,
+              fallbackUrl,
+            ),
+          getPRDisplayTitle,
+        ),
+        $prMonitors$,
+        workspaceRepo,
+      ),
+    );
   });
   const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
   // Use reactive selector subscription for focused tab state
@@ -741,7 +773,10 @@
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.metaKey && e.shiftKey && e.key === 'c') {
         e.preventDefault();
-        const workspacePath = selectEffectiveFileExplorerWorkspacePath.select(appStore.state, workspaceId);
+        const workspacePath = selectEffectiveFileExplorerWorkspacePath.select(
+          appStore.state,
+          workspaceId,
+        );
         if (workspacePath) {
           navigator.clipboard.writeText(workspacePath);
           import('$lib/components/ui/toast').then(({ toast }) => {
@@ -1000,7 +1035,9 @@
                       >
                         <span
                           class="text-inherit underline underline-offset-2 decoration-muted-foreground/20"
-                          ><!-- i18n-ignore (file path) -->/{$workspace.path.split(/[/\\]/).slice(-1)[0]}/.workspace</span
+                          ><!-- i18n-ignore (file path) -->/{$workspace.path
+                            .split(/[/\\]/)
+                            .slice(-1)[0]}/.workspace</span
                         >
                       </OpenComboButton></span
                     >.
@@ -1095,6 +1132,7 @@
                     workspace={$workspace}
                     phase={workspacePhaseInfo}
                     stats={workspacePhaseStats}
+                    primaryPr={overviewPrimaryPr}
                     notes={$notes}
                     agents={overviewAgents}
                     changedFiles={overviewChangedFiles}

@@ -1211,6 +1211,7 @@
   "workspace_overviewTimeline_moreCommits_label": "{count} commits de plus",
   "workspace_overviewTimeline_moreNotes_label": "{count} notes de plus",
   "workspace_overviewTimeline_prClosed_label": "fermée",
+  "workspace_overviewTimeline_prDraft_label": "brouillon",
   "workspace_overviewTimeline_prMerged_label": "fusionnée",
   "workspace_overviewTimeline_prNumber_label": "PR #{number}",
   "workspace_overviewTimeline_prOpen_label": "ouverte",

@@ -18,8 +18,13 @@
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { selectDisplayPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import {
+    constructPrUrl,
     countOtherMonitors,
-    monitorPillStatus,
+    getPRStatusTooltip,
+    mapWorkspacePRs,
+    mergeMonitoredPRs,
+    selectPrimaryPr,
+    toPullRequestStatus,
   } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
   import { formatInteger } from '$lib/i18n/format';
 
@@ -90,30 +95,42 @@
   // merged completed monitors (last merged first).
   const displayPrMonitors$ = selectDisplayPrMonitors(workspaceIdStore);
 
-  // PR status
-  const prDisplayStatus = $derived.by(() => {
-    const active = ws.activePullRequest;
-    if (active) return active.status;
-    if (ws.prStatus) return ws.prStatus;
-    const prs = ws.pullRequests ?? [];
-    if (prs.length > 0) return prs[0].status;
-    // No branch-linked PR: fall back to the first displayed agent-monitored
-    // PR (PROTOCOL §6.9). Derive the pill status from the monitor only when
-    // the pill number also resolves from it; a workspace-sourced number with
-    // no status keeps the Open default so status/number never mix sources.
-    if ($displayPrMonitors$.length > 0) {
-      return ws.prNumber == null
-        ? monitorPillStatus($displayPrMonitors$[0])
-        : PullRequestStatus.Open;
-    }
-    return null;
+  // Primary PR for the pill: the shared oldest-unmerged / latest-merged rule
+  // (selectPrimaryPr) over the combined branch-linked + agent-monitored pool
+  // (PROTOCOL §6.9).
+  const primaryPr = $derived.by(() => {
+    const workspaceRepo =
+      ws.repositoryOwner && ws.repositoryName
+        ? `${ws.repositoryOwner}/${ws.repositoryName}`
+        : undefined;
+    return selectPrimaryPr(
+      mergeMonitoredPRs(
+        mapWorkspacePRs(
+          ws.pullRequests,
+          ws.activePullRequest,
+          (prNum, fallbackUrl) =>
+            constructPrUrl(prNum, ws.repositoryOwner, ws.repositoryName, fallbackUrl),
+          (pr) => pr.title,
+        ),
+        $displayPrMonitors$,
+        workspaceRepo,
+      ),
+    );
   });
-  const prDisplayNumber = $derived(
-    ws.activePullRequest?.number ??
-      ws.prNumber ??
-      ws.pullRequests?.[0]?.number ??
-      $displayPrMonitors$[0]?.prNumber,
+  // The branch-linked active PR keeps its tooltip/mergeability treatment only
+  // when it is the chosen primary.
+  const primaryIsActivePr = $derived(
+    primaryPr !== undefined &&
+      ws.activePullRequest != null &&
+      !primaryPr.crossRepo &&
+      !primaryPr.monitorOnly &&
+      primaryPr.number === ws.activePullRequest.number,
   );
+  const prDisplayStatus = $derived.by(() => {
+    if (primaryPr) return toPullRequestStatus(primaryPr.status);
+    return ws.prStatus ?? null;
+  });
+  const prDisplayNumber = $derived(primaryPr?.number ?? ws.prNumber ?? undefined);
 
   // "+N" indicator: other monitored PRs in the displayed pool beyond the
   // primary pill.
@@ -123,12 +140,18 @@
       prDisplayNumber,
       ws.repositoryOwner,
       ws.repositoryName,
+      primaryPr?.crossRepo,
     ),
   );
 
-  const isPRMergeable = $derived.by(() => checkPRMergeable(ws.activePullRequest));
+  const isPRMergeable = $derived(primaryIsActivePr && checkPRMergeable(ws.activePullRequest));
 
-  const prTooltipContent = $derived.by(() => getPRTooltipContent(ws.activePullRequest));
+  const prTooltipContent = $derived.by(() => {
+    if (!primaryPr) return '';
+    return primaryIsActivePr
+      ? getPRTooltipContent(ws.activePullRequest)
+      : getPRStatusTooltip(primaryPr);
+  });
 
   // Hover state for agent cards
   let hoveredWorkspace = $state(false);

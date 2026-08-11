@@ -1211,6 +1211,7 @@
   "workspace_overviewTimeline_moreCommits_label": "還有 {count} 個提交",
   "workspace_overviewTimeline_moreNotes_label": "還有 {count} 條筆記",
   "workspace_overviewTimeline_prClosed_label": "已關閉",
+  "workspace_overviewTimeline_prDraft_label": "草稿",
   "workspace_overviewTimeline_prMerged_label": "已合併",
   "workspace_overviewTimeline_prNumber_label": "PR #{number}",
   "workspace_overviewTimeline_prOpen_label": "開放中",
