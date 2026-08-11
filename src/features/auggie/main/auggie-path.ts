@@ -40,8 +40,13 @@ export async function findAuggiePathStrict(): Promise<string | null> {
     available: boolean;
     path?: string;
   }>('host.checkAuggie');
-  if (result?.available && typeof result.path === 'string' && result.path.trim()) {
-    return result.path.trim();
+  if (result?.available) {
+    if (typeof result.path === 'string' && result.path.trim()) {
+      return result.path.trim();
+    }
+    // available:true without a usable path is a malformed response, not an
+    // authoritative "not installed" verdict — surface it as a probe failure.
+    throw new Error('host.checkAuggie returned available:true without a path');
   }
   logger.debug('host.checkAuggie reported auggie unavailable');
   return null;

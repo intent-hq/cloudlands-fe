@@ -123,6 +123,15 @@ describe('auggie-path — host-backed PATH and binary discovery', () => {
       mockHostRequest.mockRejectedValue(new Error('transport down'));
       await expect(findAuggiePathStrict()).rejects.toThrow('transport down');
     });
+
+    it('treats available:true without a path as a probe failure, not "not found"', async () => {
+      // A malformed/proxy-degraded response is not an authoritative
+      // unavailable verdict — it must not fold to null.
+      mockHostRequest.mockResolvedValue({ available: true });
+      await expect(findAuggiePathStrict()).rejects.toThrow(
+        'available:true without a path',
+      );
+    });
   });
 
   describe('findAuggieInEnhancedPath (alias for daemon-backed discovery)', () => {

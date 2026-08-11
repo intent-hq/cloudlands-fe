@@ -55,8 +55,9 @@ describe('codex-resolver', () => {
     expect(findBinaryStrict).toHaveBeenCalledWith('codex', expect.any(Object));
   });
 
-  it('getCodexPath stays lenient: a probe failure resolves to null', async () => {
-    // Lenient consumers (spawn-path lookups) keep the fold-to-null contract.
+  it('getCodexPath stays on the lenient findBinary lookup', async () => {
+    // Spawn-path consumers keep the lenient contract; the fold-to-null
+    // behavior itself is pinned in find-binary.test.ts.
     vi.mocked(findBinary).mockResolvedValue(null);
 
     expect(await getCodexPath()).toBeNull();

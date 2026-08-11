@@ -223,9 +223,17 @@ export async function findBinaryStrict(
     'host.findBinary',
     params,
   );
-  return result?.available && typeof result.path === 'string' && result.path.length > 0
-    ? result.path
-    : null;
+  if (result?.available) {
+    if (typeof result.path === 'string' && result.path.length > 0) {
+      return result.path;
+    }
+    // available:true without a usable path is a malformed response, not an
+    // authoritative "not installed" verdict — surface it as a probe failure.
+    throw new Error(
+      `host.findBinary returned available:true without a path for "${name}"`,
+    );
+  }
+  return null;
 }
 
 /**

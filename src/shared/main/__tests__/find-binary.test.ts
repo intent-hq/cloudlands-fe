@@ -167,6 +167,16 @@ describe('findBinaryStrict (strict probe semantics)', () => {
     await expect(findBinaryStrict('foo')).rejects.toThrow('transport down');
   });
 
+  it('treats available:true without a path as a probe failure, not "not found"', async () => {
+    // A malformed/proxy-degraded response is not an authoritative
+    // unavailable verdict — it must not fold to null.
+    mockRequest.mockResolvedValue({ available: true });
+
+    await expect(findBinaryStrict('foo')).rejects.toThrow(
+      'available:true without a path',
+    );
+  });
+
   it('still rejects unsafe binary names locally with null (deterministic, not a probe failure)', async () => {
     const result = await findBinaryStrict('foo; rm -rf /');
 
