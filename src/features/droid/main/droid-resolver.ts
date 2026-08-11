@@ -8,7 +8,7 @@
 
 import * as os from 'os';
 import * as path from 'path';
-import { findBinary } from '../../../shared/main/find-binary';
+import { findBinary, findBinaryStrict } from '../../../shared/main/find-binary';
 
 // Common paths to look for droid
 const DROID_PATHS = [
@@ -39,14 +39,15 @@ export function clearDroidCache(): void {
 }
 
 /**
- * Find the droid executable path
+ * Find the droid executable path. `strict` keeps probe failures distinct
+ * from "not found" (the lookup rejects instead of resolving null).
  */
-async function findDroidPath(): Promise<string | null> {
+async function findDroidPath(strict = false): Promise<string | null> {
   if (cachedDroidPath) {
     return cachedDroidPath;
   }
 
-  const result = await findBinary('droid', {
+  const result = await (strict ? findBinaryStrict : findBinary)('droid', {
     commonPaths: DROID_PATHS,
     timeout: 3000,
     useEnhancedPath: false,
@@ -63,9 +64,11 @@ async function findDroidPath(): Promise<string | null> {
 /**
  * Check if droid is installed.
  * Used for accurate status detection in the provider status panel.
+ * Rejects when the probe itself fails (daemon RPC error) — a failed probe
+ * proves nothing about availability, so callers must not fold it to false.
  */
 export async function isDroidInstalled(): Promise<boolean> {
-  const droidPath = await findDroidPath();
+  const droidPath = await findDroidPath(true);
   return droidPath !== null;
 }
 

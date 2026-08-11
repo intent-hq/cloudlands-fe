@@ -11,8 +11,9 @@ import { CLAUDE_CODE_NPX_MISSING_WARNING } from '../../../../shared/constants/cl
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Function>(),
   findBinary: vi.fn(),
+  findBinaryStrict: vi.fn(),
   backendRequest: vi.fn(),
-  findAuggiePathAsync: vi.fn(),
+  findAuggiePathStrict: vi.fn(),
   hostExec: vi.fn(),
 }));
 
@@ -26,6 +27,7 @@ vi.mock('electron', () => ({
 
 vi.mock('../../../../shared/main/find-binary', () => ({
   findBinary: mocks.findBinary,
+  findBinaryStrict: mocks.findBinaryStrict,
   getCommonNpmPaths: vi.fn(() => []),
 }));
 
@@ -33,8 +35,8 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mocks.backendRequest }),
 }));
 
-vi.mock('../../../auggie/main/auggie.ipc', () => ({
-  findAuggiePathAsync: mocks.findAuggiePathAsync,
+vi.mock('../../../auggie/main/auggie-path', () => ({
+  findAuggiePathStrict: mocks.findAuggiePathStrict,
 }));
 
 vi.mock('../../../../shared/main/host-exec', () => ({
@@ -112,7 +114,8 @@ describe('provider availability service', () => {
     vi.clearAllMocks();
     mocks.handlers.clear();
     mocks.findBinary.mockResolvedValue(null);
-    mocks.findAuggiePathAsync.mockResolvedValue(null);
+    mocks.findBinaryStrict.mockResolvedValue(null);
+    mocks.findAuggiePathStrict.mockResolvedValue(null);
     mocks.hostExec.mockResolvedValue({ stdout: '', stderr: '', exitCode: 1 });
     mocks.backendRequest.mockRejectedValue(new Error('unrouted daemon method'));
   });
@@ -130,7 +133,92 @@ describe('provider availability service', () => {
       providerId: 'codex',
       data: { available: false, hasNpxFallback: true },
     });
-    expect(mocks.findBinary).toHaveBeenCalledWith('codex', expect.any(Object));
+    expect(mocks.findBinaryStrict).toHaveBeenCalledWith('codex', expect.any(Object));
+  });
+
+  describe('transient probe failures (CHECK_SINGLE returns a failure envelope, never available:false)', () => {
+    // A daemon RPC failure/timeout during a probe proves nothing about
+    // availability. The handler must return success:false — which the saga
+    // maps to checkSingleProviderFailure, preserving the last-known status —
+    // instead of success:true with a fabricated available:false.
+    const setup = async () => {
+      const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+      setupProviderAvailabilityIPC();
+      const handler = mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE);
+      if (!handler) throw new Error('provider check handler was not registered');
+      return handler;
+    };
+
+    it.each(['codex', 'cortex', 'opencode', 'pi', 'droid', 'grok', 'unsloth', 'claude-code'])(
+      'returns a failure envelope when the %s binary probe RPC fails',
+      async (providerId) => {
+        routeBackend({});
+        mocks.findBinaryStrict.mockRejectedValue(new Error('transport down'));
+        const handler = await setup();
+
+        const result = await handler({}, providerId);
+
+        expect(result).toEqual({
+          success: false,
+          providerId,
+          error: 'transport down',
+        });
+      },
+    );
+
+    it('returns a failure envelope when the auggie host.checkAuggie RPC fails', async () => {
+      routeBackend({});
+      mocks.findAuggiePathStrict.mockRejectedValue(new Error('transport down'));
+      const handler = await setup();
+
+      const result = await handler({}, 'auggie');
+
+      expect(result).toEqual({
+        success: false,
+        providerId: 'auggie',
+        error: 'transport down',
+      });
+    });
+
+    it('claude-code: a failed npx probe after a resolved CLI fails the check instead of fabricating a warning', async () => {
+      routeBackend({});
+      mocks.findBinaryStrict.mockImplementation(async (name: string) => {
+        if (name === 'claude') return '/usr/local/bin/claude';
+        throw new Error('npx probe failed');
+      });
+      const handler = await setup();
+
+      const result = await handler({}, 'claude-code');
+
+      expect(result).toEqual({
+        success: false,
+        providerId: 'claude-code',
+        error: 'npx probe failed',
+      });
+    });
+  });
+
+  it('aggregate path: a failed claude CLI re-gate probe fails the whole check instead of downgrading availability', async () => {
+    // Discovery said claude-code is installed; the FE-side CLI re-gate probe
+    // then failed. Folding that to available:false would erase a working
+    // provider — the aggregate must reject so the saga keeps prior state.
+    routeBackend({
+      'host.providerDiscovery': {
+        ...EMPTY_DISCOVERY,
+        providers: EMPTY_DISCOVERY.providers.map((p) =>
+          p.id === 'claude-code'
+            ? { ...p, installed: true, resolvedPath: '/usr/local/bin/npx' }
+            : p,
+        ),
+        npx: { resolvedPath: '/usr/local/bin/npx', version: '10.0.0', versionOk: true },
+      },
+      'host.providerAuthStatus': authSweep(),
+    });
+    mocks.findBinaryStrict.mockRejectedValue(new Error('transport down'));
+
+    const { getProviderAvailability } = await import('../provider-availability.service');
+
+    await expect(getProviderAvailability()).rejects.toThrow('transport down');
   });
 
   it('surfaces the npx-missing warning on the discovery path when the claude CLI is installed', async () => {
@@ -141,7 +229,7 @@ describe('provider availability service', () => {
       'host.providerDiscovery': EMPTY_DISCOVERY,
       'host.providerAuthStatus': authSweep(),
     });
-    mocks.findBinary.mockImplementation(async (name: string) =>
+    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
       name === 'claude' ? '/usr/local/bin/claude' : null,
     );
 
@@ -174,7 +262,7 @@ describe('provider availability service', () => {
       },
       'host.providerAuthStatus': authSweep(),
     });
-    mocks.findBinary.mockImplementation(async (name: string) =>
+    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
       name === 'claude' ? '/usr/local/bin/claude' : null,
     );
 
@@ -221,7 +309,7 @@ describe('provider availability service', () => {
       },
       'host.providerAuthStatus': authSweep(),
     });
-    mocks.findBinary.mockImplementation(async (name: string) =>
+    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
       name === 'claude' ? '/usr/local/bin/claude' : null,
     );
 
@@ -375,7 +463,7 @@ describe('provider availability service', () => {
     routeBackend({
       'host.providerAuthStatus': { providers: [{ id: 'codex', authenticated: true }] },
     });
-    mocks.findBinary.mockImplementation(async (name: string) =>
+    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
       name === 'codex' ? '/usr/local/bin/codex' : null,
     );
 
@@ -404,7 +492,7 @@ describe('provider availability service', () => {
     routeBackend({
       'host.providerAuthStatus': { providers: [{ id: 'codex', authenticated: true }] },
     });
-    mocks.findBinary.mockImplementation(async (name: string) =>
+    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
       name === 'codex' ? '/usr/local/bin/codex' : null,
     );
 
@@ -432,7 +520,7 @@ describe('provider availability service', () => {
     routeBackend({
       'host.providerAuthStatus': { providers: [{ id: 'droid', authenticated: false }] },
     });
-    mocks.findBinary.mockImplementation(async (name: string) =>
+    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
       name === 'droid' ? '/usr/local/bin/droid' : null,
     );
 
@@ -452,7 +540,7 @@ describe('provider availability service', () => {
 
   it('single recheck resolves unsloth off both opencode and unsloth binaries without an auth probe', async () => {
     routeBackend({});
-    mocks.findBinary.mockImplementation(async (name: string) =>
+    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
       name === 'opencode' || name === 'unsloth' ? `/usr/local/bin/${name}` : null,
     );
 
@@ -477,7 +565,7 @@ describe('provider availability service', () => {
 
   it('single recheck reports unsloth unavailable when opencode is missing', async () => {
     routeBackend({});
-    mocks.findBinary.mockImplementation(async (name: string) =>
+    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
       name === 'unsloth' ? '/usr/local/bin/unsloth' : null,
     );
 
@@ -493,7 +581,7 @@ describe('provider availability service', () => {
 
   it('single recheck reports unsloth unavailable when the unsloth CLI is missing', async () => {
     routeBackend({});
-    mocks.findBinary.mockImplementation(async (name: string) =>
+    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
       name === 'opencode' ? '/usr/local/bin/opencode' : null,
     );
 
@@ -509,7 +597,7 @@ describe('provider availability service', () => {
 
   it('single recheck reports unsloth unavailable when neither binary is present', async () => {
     routeBackend({});
-    mocks.findBinary.mockResolvedValue(null);
+    mocks.findBinaryStrict.mockResolvedValue(null);
 
     const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
     setupProviderAvailabilityIPC();
@@ -540,7 +628,7 @@ describe('provider availability service', () => {
 
   it('single recheck probes cortex directly (no feature-code gate)', async () => {
     routeBackend({});
-    mocks.findBinary.mockImplementation(async (name: string) =>
+    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
       name === 'cortex' ? '/usr/local/bin/cortex' : null,
     );
 
@@ -683,7 +771,8 @@ describe('provider availability service', () => {
       expect(mocks.backendRequest).toHaveBeenCalledWith('host.providerDiscovery', {});
       // No FE-local binary resolution on the GET_PATHS path.
       expect(mocks.findBinary).not.toHaveBeenCalled();
-      expect(mocks.findAuggiePathAsync).not.toHaveBeenCalled();
+      expect(mocks.findBinaryStrict).not.toHaveBeenCalled();
+      expect(mocks.findAuggiePathStrict).not.toHaveBeenCalled();
       expect(result.paths).toEqual({
         auggie: '/usr/local/bin/auggie',
         'claude-code': null,

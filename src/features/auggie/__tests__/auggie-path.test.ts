@@ -44,6 +44,7 @@ vi.mock('../../../shared/main/find-binary', () => ({
 import {
   findAuggieInEnhancedPath,
   findAuggiePathAsync,
+  findAuggiePathStrict,
   getEnhancedPath,
 } from '../main/auggie-path';
 
@@ -95,6 +96,41 @@ describe('auggie-path — host-backed PATH and binary discovery', () => {
       mockHostRequest.mockRejectedValue(new Error('transport down'));
       const result = await findAuggiePathAsync();
       expect(result).toBeNull();
+    });
+  });
+
+  describe('findAuggiePathStrict (strict probe semantics)', () => {
+    it('sends host.checkAuggie and returns the daemon-resolved path', async () => {
+      mockHostRequest.mockResolvedValue({
+        available: true,
+        path: '/Users/test/.augment/bin/auggie',
+      });
+
+      const result = await findAuggiePathStrict();
+
+      expect(result).toBe('/Users/test/.augment/bin/auggie');
+      expect(mockHostRequest).toHaveBeenCalledWith('host.checkAuggie');
+    });
+
+    it('returns null when the daemon authoritatively reports auggie unavailable', async () => {
+      mockHostRequest.mockResolvedValue({ available: false });
+      expect(await findAuggiePathStrict()).toBeNull();
+    });
+
+    it('propagates a daemon RPC failure instead of folding it to null', async () => {
+      // A rejected host.checkAuggie proves nothing about availability —
+      // availability checks must not read it as "not installed".
+      mockHostRequest.mockRejectedValue(new Error('transport down'));
+      await expect(findAuggiePathStrict()).rejects.toThrow('transport down');
+    });
+
+    it('treats available:true without a path as a probe failure, not "not found"', async () => {
+      // A malformed/proxy-degraded response is not an authoritative
+      // unavailable verdict — it must not fold to null.
+      mockHostRequest.mockResolvedValue({ available: true });
+      await expect(findAuggiePathStrict()).rejects.toThrow(
+        'available:true without a path',
+      );
     });
   });
 
