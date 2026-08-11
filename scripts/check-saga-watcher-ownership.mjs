@@ -131,6 +131,35 @@ function effectForExpression(expression, effectNames, effectNamespaces) {
   return specifier && isEffectImport({ imported, specifier }) ? imported : undefined;
 }
 
+function importBindingForPattern(pattern, imports, namespaces) {
+  if (ts.isIdentifier(pattern)) {
+    const binding = imports.get(pattern.text);
+    return binding && { local: pattern.text, ...binding };
+  }
+  if (!ts.isPropertyAccessExpression(pattern) || !ts.isIdentifier(pattern.expression))
+    return undefined;
+  const specifier = namespaces.get(pattern.expression.text);
+  return specifier && { local: pattern.name.text, imported: pattern.name.text, specifier };
+}
+
+function isExternalChannelBinding(binding) {
+  if (/(?:^|\/)(?:[^/]*-)?slice(?:\.[cm]?[jt]s)?$/i.test(binding.specifier)) return false;
+  return (
+    /channels?$/i.test(binding.local) ||
+    /channels?$/i.test(binding.imported) ||
+    /(?:^|\/)(?:[^/]*-)?channels?(?:\/index)?(?:\.[cm]?[jt]s)?$/i.test(binding.specifier)
+  );
+}
+
+function isImportedReduxPattern(pattern, actions, imports, namespaces) {
+  const patterns = actions.length > 0 ? actions : [pattern];
+  return patterns.some((candidate) => {
+    if (ts.isStringLiteralLike(candidate)) return true;
+    const binding = importBindingForPattern(candidate, imports, namespaces);
+    return binding && !isExternalChannelBinding(binding);
+  });
+}
+
 function localArray(source, expression) {
   if (ts.isArrayLiteralExpression(expression)) return expression.elements;
   if (!ts.isIdentifier(expression)) return [];
@@ -430,11 +459,7 @@ export function inspectSagaWatcherOwnership(files) {
         (enclosingWorkerCall(node, effectNames, effectNamespaces) ||
           laterWorkerCall(source, node, effectNames, effectNamespaces))
       ) {
-        const importedPattern =
-          ts.isStringLiteralLike(pattern) ||
-          actions.some((action) => ts.isIdentifier(action) && imports.has(action.text)) ||
-          (ts.isIdentifier(pattern) && imports.has(pattern.text));
-        if (importedPattern)
+        if (isImportedReduxPattern(pattern, actions, imports, effectNamespaces))
           violations.push(
             `${filePath}:${lineFor(source, node)}: manual Redux watcher loop; use a native watcher effect`,
           );
