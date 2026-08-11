@@ -5,15 +5,41 @@ import {
   describe,
   it,
   expect,
+  afterEach,
   vi,
 } from 'vitest';
 import {
   render,
   fireEvent,
+  waitFor,
 } from '@testing-library/svelte';
 
 // ─── Mock Redux selectors and dispatch bridge ───────────────────────────────
-// TaskItemNodeView.svelte calls these at component init time (readable form)
+// TaskItemNodeView.svelte calls these at component init time (readable form).
+// The selector state is mutable so tests can simulate a `note:updated` push
+// landing in the notes slice (update the note map + bump notesVersion).
+const mockState = vi.hoisted(() => {
+  const versionSubscribers = new Set<(v: number) => void>();
+  return {
+    workspaceId: null as string | null,
+    notes: new Map<string, any>(),
+    version: 0,
+    versionSubscribers,
+    /** Simulate the notes-slice update a `note:updated` push produces. */
+    applyNoteUpdated(note: any) {
+      this.notes.set(String(note.id), note);
+      this.version += 1;
+      for (const fn of versionSubscribers) fn(this.version);
+    },
+    reset() {
+      this.workspaceId = null;
+      this.notes.clear();
+      this.version = 0;
+      versionSubscribers.clear();
+    },
+  };
+});
+
 const mockReadable = (value: any) => ({
   subscribe: (fn: (v: any) => void) => {
     fn(value);
@@ -22,17 +48,30 @@ const mockReadable = (value: any) => ({
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: () => mockReadable(null),
+  selectActiveWorkspaceId: () => ({
+    subscribe: (fn: (v: any) => void) => {
+      fn(mockState.workspaceId);
+      return () => {};
+    },
+  }),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: Object.assign(() => mockReadable(undefined), {
-    select: () => undefined,
+    select: (_state: unknown, _wsId: string, noteId: string) => mockState.notes.get(noteId),
   }),
   selectSelectedNoteId: Object.assign(() => mockReadable(null), {
     select: () => null,
   }),
-  selectNotesVersion: () => mockReadable(0),
+  selectNotesVersion: () => ({
+    subscribe: (fn: (v: number) => void) => {
+      fn(mockState.version);
+      mockState.versionSubscribers.add(fn);
+      return () => {
+        mockState.versionSubscribers.delete(fn);
+      };
+    },
+  }),
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -145,6 +184,30 @@ function createMockProps(overrides: any = {}) {
     deleteNode: overrides.deleteNode || vi.fn(),
   } as any;
 }
+
+/**
+ * Create a mock node whose content carries an intent://local/task/{noteId}
+ * link so the component renders in linked-task mode.
+ */
+function createLinkedTaskNode(noteId: string) {
+  const linkText = {
+    isText: true,
+    marks: [{ type: { name: 'link' }, attrs: { href: `intent://local/task/${noteId}` } }],
+  };
+  const paragraph = {
+    content: { forEach: (fn: (child: any) => void) => fn(linkText) },
+  };
+  return {
+    attrs: { checked: false, status: 'todo' },
+    nodeSize: 10,
+    content: { forEach: (fn: (child: any) => void) => fn(paragraph) },
+    toJSON: () => ({ type: 'taskItem', attrs: { checked: false, status: 'todo' } }),
+  };
+}
+
+afterEach(() => {
+  mockState.reset();
+});
 
 describe('TaskItemNodeView - Basic Rendering', () => {
   it('should render a list item with checkbox', () => {
@@ -438,5 +501,67 @@ describe('TaskItemNodeView - Data Attributes', () => {
 
     const listItem = container.querySelector('li') as HTMLElement;
     expect(listItem.classList.contains('task-checked')).toBe(true);
+  });
+});
+
+describe('TaskItemNodeView - Daemon-provided unmetDependsOn (v6.8, monorepo#1979)', () => {
+  const WS_ID = 'ws-1';
+  const TASK_ID = 'task-note-1';
+
+  function makeTaskNote(overrides: Record<string, unknown> = {}) {
+    return {
+      id: TASK_ID,
+      workspaceId: WS_ID,
+      title: 'Linked task',
+      metadata: {
+        task: {
+          status: 'not_started',
+          dependsOn: ['dep-a', 'dep-b'],
+          ...overrides,
+        },
+      },
+    };
+  }
+
+  function renderLinkedTask() {
+    const node = createLinkedTaskNode(TASK_ID);
+    const props = createMockProps({ node, editor: createMockEditor(node) });
+    return render(TestTaskItemNodeView, { props });
+  }
+
+  it('renders the "Waits on" chip from the daemon-provided metadata.task.unmetDependsOn', () => {
+    mockState.workspaceId = WS_ID;
+    mockState.notes.set(TASK_ID, makeTaskNote({ unmetDependsOn: ['dep-a', 'dep-b'] }));
+
+    const { container } = renderLinkedTask();
+    expect(container.textContent).toContain('Waits on 2');
+  });
+
+  it('renders no chip when the daemon omits unmetDependsOn, even with dependsOn edges', () => {
+    // Pre-#1979 the FE re-derived unmet deps from dependsOn + the notes slice;
+    // now an omitted field (all deps met) must render no chip.
+    mockState.workspaceId = WS_ID;
+    mockState.notes.set(TASK_ID, makeTaskNote());
+
+    const { container } = renderLinkedTask();
+    expect(container.textContent).not.toContain('Waits on');
+  });
+
+  it('updates the rendered chip when a note:updated push changes unmetDependsOn', async () => {
+    mockState.workspaceId = WS_ID;
+    mockState.notes.set(TASK_ID, makeTaskNote({ unmetDependsOn: ['dep-a', 'dep-b'] }));
+
+    const { container } = renderLinkedTask();
+    expect(container.textContent).toContain('Waits on 2');
+
+    // Simulate the notes-slice update a `note:updated` push produces after a
+    // dependency completes: the daemon re-announces the dependent note with
+    // the refreshed projection (one dep left).
+    mockState.applyNoteUpdated(makeTaskNote({ unmetDependsOn: ['dep-b'] }));
+    await waitFor(() => expect(container.textContent).toContain('Waits on 1'));
+
+    // Second push: the last dep completes and the field is omitted → chip gone.
+    mockState.applyNoteUpdated(makeTaskNote());
+    await waitFor(() => expect(container.textContent).not.toContain('Waits on'));
   });
 });
