@@ -124,6 +124,11 @@ function* openDiff(action: ReturnType<typeof openWorkspaceDiff>): SagaGenerator<
 function* openChatChanges(action: ReturnType<typeof openWorkspaceChatChanges>): SagaGenerator<void> {
   const [workspaceId, changes, title, options] = action.payload;
   if (!workspaceId || !changes?.length) return;
+  // Aggregate summaries omit messageId; derive a stable synthetic dedup id so
+  // re-clicks focus (and refresh) the existing tab instead of opening a new one,
+  // mirroring the navigation-history entry id (options?.messageId || 'aggregate').
+  const messageId =
+    options?.messageId || (options?.agentId ? `aggregate:${options.agentId}` : 'aggregate');
   yield* openWorkspaceTab(
     workspaceId,
     {
@@ -134,7 +139,7 @@ function* openChatChanges(action: ReturnType<typeof openWorkspaceChatChanges>): 
       data: {
         changes,
         title,
-        ...(options?.messageId ? { messageId: options.messageId } : {}),
+        messageId,
         ...(options?.isAggregate !== undefined ? { isAggregate: options.isAggregate } : {}),
         ...(options?.agentId ? { agentId: options.agentId } : {}),
         ...(options?.turnNumber !== undefined ? { turnNumber: options.turnNumber } : {}),
