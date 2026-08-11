@@ -384,6 +384,11 @@ export function mergeMonitoredPRs(
       url,
       htmlUrl: url,
       status: monitorDisplayStatus(monitor),
+      // Monitor-row timestamps stand in for the PR's own (the snapshot does
+      // not carry them) so selectPrimaryPr's oldest-created / latest-updated
+      // ordering works when multiple monitored PRs compete.
+      createdAt: monitor.createdAt,
+      updatedAt: monitor.updatedAt,
       monitorAgentId: monitor.agentId,
       crossRepo: sameRepo ? undefined : monitor.repo,
       // Same-org repos carry no information in the owner segment — show
@@ -523,12 +528,11 @@ export function monitorPillStatus(monitor: PrMonitorRow): PullRequestStatus {
 }
 
 /**
- * Count monitored PRs in the displayed pool (active monitors, or the
- * merged-completed fallback pool — PROTOCOL §6.9) beyond the primary PR
- * pill/badge — the "+N" indicator on the workspace card surfaces. A monitor
- * is excluded only when it matches the primary PR by number in the primary
- * PR's repo — `primaryCrossRepo` when the primary is a cross-repo monitored
- * row, else the workspace repo (an unknown repo matches by number alone).
+ * Count monitored PRs (PROTOCOL §6.9) beyond the primary PR pill/badge —
+ * the "+N" indicator on the workspace card surfaces. A monitor is excluded
+ * only when it matches the primary PR by number in the primary PR's repo —
+ * `primaryCrossRepo` when the primary is a cross-repo monitored row, else
+ * the workspace repo (an unknown repo matches by number alone).
  */
 export function countOtherMonitors(
   monitors: PrMonitorRow[],

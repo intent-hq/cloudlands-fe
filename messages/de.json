@@ -1217,7 +1217,6 @@
   "workspace_overviewTimeline_prMerged_label": "gemergt",
   "workspace_overviewTimeline_prNumber_label": "PR #{number}",
   "workspace_overviewTimeline_prOpen_label": "offen",
-  "workspace_overviewTimeline_pullRequest_label": "Pull Request",
   "workspace_overviewTimeline_repoCopy_label": "Der Arbeitsbereich enthält eine Kopie Ihres Repos.",
   "workspace_overviewTimeline_seeAll_label": "Alle anzeigen...",
   "workspace_overviewTimeline_trunkBranch_tooltip": "Trunk-Branch. Zum Kopieren klicken.",

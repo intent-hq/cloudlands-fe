@@ -4,9 +4,9 @@
 import { describe, expect, it } from 'vitest';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
-import type { PrMonitorRow, PrMonitorSnapshot } from '$features/pr-monitor/pr-monitor-service';
+import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import { initialState, prMonitorReducer, prMonitorsUpdated } from './pr-monitor-slice';
-import { selectDisplayPrMonitors } from './pr-monitor-selectors';
+import { selectPrMonitors } from './pr-monitor-selectors';
 
 function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
   return {
@@ -107,115 +107,20 @@ describe('prMonitorReducer', () => {
   });
 });
 
-describe('selectDisplayPrMonitors', () => {
-  function makeSnapshot(overrides: Partial<PrMonitorSnapshot> = {}): PrMonitorSnapshot {
-    return {
-      state: 'open',
-      isDraft: false,
-      hasConflicts: false,
-      isBehind: false,
-      checks: {
-        total: 0,
-        passed: 0,
-        failed: 0,
-        pending: 0,
-        failingRequired: 0,
-        pendingRequired: 0,
-        requiredKnown: false,
-      },
-      approvals: { decision: '', have: 0, changesRequested: 0 },
-      threads: { unresolved: 0 },
-      rulesKnown: false,
-      ...overrides,
-    };
-  }
-
+describe('selectPrMonitors', () => {
   function stateWith(monitors: PrMonitorRow[]) {
     return prMonitorReducer(initialState, prMonitorsUpdated('ws-1', monitors));
   }
 
-  function select(monitors: PrMonitorRow[]): PrMonitorRow[] {
-    return selectDisplayPrMonitors.select({ prMonitor: stateWith(monitors) }, 'ws-1');
-  }
-
   it('returns an empty list for unknown workspaces', () => {
-    expect(selectDisplayPrMonitors.select({ prMonitor: initialState }, 'ws-1')).toEqual([]);
+    expect(selectPrMonitors.select({ prMonitor: initialState }, 'ws-1')).toEqual([]);
   });
 
-  it('returns only active monitors when any exist', () => {
+  it('returns all monitors (active + completed) in seed order', () => {
     const active = makeMonitor();
-    const mergedCompleted = makeMonitor({
-      monitorId: 'mon-2',
-      state: 'completed',
-      lastSnapshot: makeSnapshot({ state: 'merged' }),
-    });
-    expect(select([active, mergedCompleted])).toEqual([active]);
-  });
-
-  it('falls back to merged completed monitors when there are no active ones', () => {
-    const merged = makeMonitor({
-      monitorId: 'mon-2',
-      state: 'completed',
-      lastSnapshot: makeSnapshot({ state: 'merged' }),
-    });
-    const closed = makeMonitor({
-      monitorId: 'mon-3',
-      state: 'completed',
-      lastSnapshot: makeSnapshot({ state: 'closed' }),
-    });
-    const noVerdict = makeMonitor({ monitorId: 'mon-4', state: 'completed' });
-    expect(select([closed, merged, noVerdict])).toEqual([merged]);
-  });
-
-  it('matches the merged snapshot state case-insensitively', () => {
-    const merged = makeMonitor({
-      state: 'completed',
-      lastSnapshot: makeSnapshot({ state: 'Merged' }),
-    });
-    expect(select([merged])).toEqual([merged]);
-  });
-
-  it('sorts merged completed monitors updatedAt desc so index 0 is the last merged PR', () => {
-    const older = makeMonitor({
-      monitorId: 'mon-old',
-      prNumber: 7,
-      state: 'completed',
-      updatedAt: '2026-08-07T10:00:00Z',
-      lastSnapshot: makeSnapshot({ state: 'merged' }),
-    });
-    const newer = makeMonitor({
-      monitorId: 'mon-new',
-      prNumber: 42,
-      state: 'completed',
-      updatedAt: '2026-08-08T10:00:00Z',
-      lastSnapshot: makeSnapshot({ state: 'merged' }),
-    });
-    expect(select([older, newer]).map((m) => m.monitorId)).toEqual(['mon-new', 'mon-old']);
-  });
-
-  it('breaks updatedAt ties by PR number desc', () => {
-    const lower = makeMonitor({
-      monitorId: 'mon-lower',
-      prNumber: 7,
-      state: 'completed',
-      updatedAt: '2026-08-08T10:00:00Z',
-      lastSnapshot: makeSnapshot({ state: 'merged' }),
-    });
-    const higher = makeMonitor({
-      monitorId: 'mon-higher',
-      prNumber: 42,
-      state: 'completed',
-      updatedAt: '2026-08-08T10:00:00Z',
-      lastSnapshot: makeSnapshot({ state: 'merged' }),
-    });
-    expect(select([lower, higher]).map((m) => m.monitorId)).toEqual(['mon-higher', 'mon-lower']);
-  });
-
-  it('returns an empty list when completions all ended closed', () => {
-    const closed = makeMonitor({
-      state: 'completed',
-      lastSnapshot: makeSnapshot({ state: 'closed' }),
-    });
-    expect(select([closed])).toEqual([]);
+    const completed = makeMonitor({ monitorId: 'mon-2', state: 'completed' });
+    expect(selectPrMonitors.select({ prMonitor: stateWith([active, completed]) }, 'ws-1')).toEqual(
+      [active, completed],
+    );
   });
 });

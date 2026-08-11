@@ -16,7 +16,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { selectWorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
-  import { selectDisplayPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import {
     constructPrUrl,
     countOtherMonitors,
@@ -90,10 +90,10 @@
     return completed / total;
   });
 
-  // Agent PR monitors (PROTOCOL §6.9): feed the primary-PR fallback and the
-  // "+N" other-monitored-PRs indicator. Active monitors when any exist, else
-  // merged completed monitors (last merged first).
-  const displayPrMonitors$ = selectDisplayPrMonitors(workspaceIdStore);
+  // Agent PR monitors (PROTOCOL §6.9): all monitors (active + completed) feed
+  // the primary-PR pool and the "+N" other-monitored-PRs indicator — the same
+  // pool every primary-PR surface uses, so pill and Overview never disagree.
+  const prMonitors$ = selectPrMonitors(workspaceIdStore);
 
   // Primary PR for the pill: the shared oldest-unmerged / latest-merged rule
   // (selectPrimaryPr) over the combined branch-linked + agent-monitored pool
@@ -112,7 +112,7 @@
             constructPrUrl(prNum, ws.repositoryOwner, ws.repositoryName, fallbackUrl),
           (pr) => pr.title,
         ),
-        $displayPrMonitors$,
+        $prMonitors$,
         workspaceRepo,
       ),
     );
@@ -132,11 +132,10 @@
   });
   const prDisplayNumber = $derived(primaryPr?.number ?? ws.prNumber ?? undefined);
 
-  // "+N" indicator: other monitored PRs in the displayed pool beyond the
-  // primary pill.
+  // "+N" indicator: other monitored PRs in the pool beyond the primary pill.
   const otherMonitoredPrCount = $derived(
     countOtherMonitors(
-      $displayPrMonitors$,
+      $prMonitors$,
       prDisplayNumber,
       ws.repositoryOwner,
       ws.repositoryName,

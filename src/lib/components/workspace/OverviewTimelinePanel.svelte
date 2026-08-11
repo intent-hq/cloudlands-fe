@@ -4,6 +4,7 @@
   import { shell } from '$lib/electron-bridge';
   import type { Note, Workspace } from '$shared/types';
   import { isSpecNote } from './sidebar';
+  import { toPRDisplayStatus } from './sidebar/sidebar-changes-utils';
   import { getNoteIcon, getNoteTitle, getNoteIconClass, getNoteDepth } from './sidebar/utils';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
@@ -100,7 +101,7 @@
     workspace,
 
     phase: _phase,
-    stats,
+    stats: _stats,
     primaryPr = null,
     notes = [],
     agents = [],
@@ -220,6 +221,24 @@
   // Changes
   let topFiles = $derived(changedFiles.slice(0, 12));
   let moreFilesCount = $derived(Math.max(0, changedFiles.length - 12));
+
+  // PR row: the pool-picked primary PR, else a row synthesized from the
+  // workspace-level prStatus/prNumber scalars — legacy rows predating the
+  // daemon-owned `pullRequests` list (store migration 0035) carry only the
+  // scalars until a PR refresh sweep repopulates the list, and the
+  // card/table-row pills keep the same `ws.prStatus` fallback.
+  const displayPr = $derived.by((): PRInfo | null => {
+    if (primaryPr) return primaryPr;
+    if (!workspace || workspace.prNumber == null || !workspace.prStatus) return null;
+    const url = workspace.prUrl ?? '';
+    return {
+      number: workspace.prNumber,
+      title: `#${workspace.prNumber}`,
+      url,
+      htmlUrl: url,
+      status: toPRDisplayStatus(workspace.prStatus),
+    };
+  });
 
   // Branch copy state
   let copiedWorkingBranch = $state(false);
@@ -706,14 +725,14 @@
             </div>
           {/if}
 
-          <!-- PR status (only show when the branch + monitored pool has a primary PR) -->
-          {#if primaryPr}
+          <!-- PR status (primary PR from the branch + monitored pool, or the legacy prStatus fallback) -->
+          {#if displayPr}
             <button
               class="flex items-center gap-2 w-full text-left py-0.5 cursor-pointer hover:bg-muted/30 rounded transition-colors"
               onclick={() => {
-                if (primaryPr?.url) {
+                if (displayPr?.url) {
                   // eslint-disable-next-line intent/no-component-async-data-fetch -- shell.open is opening an external URL, not fetching domain data; rule misfires on the 'open' method name
-                  void shell.open(primaryPr.url);
+                  void shell.open(displayPr.url);
                 } else {
                   onSwitchTab?.('changes');
                 }
@@ -722,35 +741,35 @@
               <Fa
                 icon={faCodePullRequest}
                 size="xs"
-                class="ml-0.5 {primaryPr.status === 'merged'
+                class="ml-0.5 {displayPr.status === 'merged'
                   ? 'text-purple-500/70'
-                  : primaryPr.status === 'open'
+                  : displayPr.status === 'open'
                     ? 'text-emerald-500/70'
-                    : primaryPr.status === 'closed'
+                    : displayPr.status === 'closed'
                       ? 'text-red-500/70'
                       : 'text-subtle'}"
               />
               <span class="text-ui text-muted-foreground truncate">
-                {#if primaryPr.crossRepo}<span class="text-ghost"
-                    >{primaryPr.crossRepoDisplay ?? primaryPr.crossRepo}:</span
+                {#if displayPr.crossRepo}<span class="text-ghost"
+                    >{displayPr.crossRepoDisplay ?? displayPr.crossRepo}:</span
                   >
-                {/if}{m.workspace_overviewTimeline_prNumber_label({ number: primaryPr.number })}
+                {/if}{m.workspace_overviewTimeline_prNumber_label({ number: displayPr.number })}
               </span>
               <span
                 class="text-ui font-medium px-2 py-px rounded ml-auto shrink-0
-                  {primaryPr.status === 'merged'
+                  {displayPr.status === 'merged'
                   ? 'text-purple-500 bg-purple-500/10'
-                  : primaryPr.status === 'open'
+                  : displayPr.status === 'open'
                     ? 'text-emerald-500 bg-emerald-500/10'
-                    : primaryPr.status === 'closed'
+                    : displayPr.status === 'closed'
                       ? 'text-red-500 bg-red-500/10'
                       : 'text-subtle bg-muted/50'}"
               >
-                {primaryPr.status === 'merged'
+                {displayPr.status === 'merged'
                   ? m.workspace_overviewTimeline_prMerged_label()
-                  : primaryPr.status === 'open'
+                  : displayPr.status === 'open'
                     ? m.workspace_overviewTimeline_prOpen_label()
-                    : primaryPr.status === 'closed'
+                    : displayPr.status === 'closed'
                       ? m.workspace_overviewTimeline_prClosed_label()
                       : m.workspace_overviewTimeline_prDraft_label()}
               </span>

@@ -1217,7 +1217,6 @@
   "workspace_overviewTimeline_prMerged_label": "マージ済み",
   "workspace_overviewTimeline_prNumber_label": "PR #{number}",
   "workspace_overviewTimeline_prOpen_label": "オープン",
-  "workspace_overviewTimeline_pullRequest_label": "プルリクエスト",
   "workspace_overviewTimeline_repoCopy_label": "ワークスペースにはリポジトリのコピーが含まれています。",
   "workspace_overviewTimeline_seeAll_label": "すべて表示...",
   "workspace_overviewTimeline_trunkBranch_tooltip": "トランクブランチ。クリックでコピー。",

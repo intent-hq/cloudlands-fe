@@ -74,7 +74,7 @@ vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
   selectActivePrMonitors: Object.assign(() => mocks.readable(() => []), {
     select: () => [],
   }),
-  selectDisplayPrMonitors: Object.assign(() => mocks.readable(() => []), {
+  selectPrMonitors: Object.assign(() => mocks.readable(() => []), {
     select: () => [],
   }),
 }));

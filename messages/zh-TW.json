@@ -1217,7 +1217,6 @@
   "workspace_overviewTimeline_prMerged_label": "已合併",
   "workspace_overviewTimeline_prNumber_label": "PR #{number}",
   "workspace_overviewTimeline_prOpen_label": "開放中",
-  "workspace_overviewTimeline_pullRequest_label": "拉取請求",
   "workspace_overviewTimeline_repoCopy_label": "此工作區包含你儲存庫的一個副本。",
   "workspace_overviewTimeline_seeAll_label": "檢視全部…",
   "workspace_overviewTimeline_trunkBranch_tooltip": "主幹分支。點選複製。",

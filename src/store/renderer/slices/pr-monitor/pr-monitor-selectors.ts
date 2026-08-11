@@ -23,24 +23,6 @@ export const selectActivePrMonitors = store.createSelector(
     selectPrMonitors.select(state, workspaceId).filter((m) => m.state === 'active'),
 );
 
-/** Monitor pool backing the workspace card/row PR pill fallback: active
- * monitors when any exist, otherwise completed monitors whose last snapshot
- * ended merged (case-insensitive), sorted `updatedAt` desc (PR number desc as
- * tiebreak) so index 0 is the last merged PR. Completed-but-closed monitors
- * never resurrect a pill. */
-export const selectDisplayPrMonitors = store.createSelector(
-  (state, workspaceId: string): PrMonitorRow[] => {
-    const monitors = selectPrMonitors.select(state, workspaceId);
-    const active = monitors.filter((m) => m.state === 'active');
-    if (active.length > 0) return active;
-    return monitors
-      .filter(
-        (m) => m.state === 'completed' && m.lastSnapshot?.state?.toLowerCase() === 'merged',
-      )
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.prNumber - a.prNumber);
-  },
-);
-
 /** One agent's monitors (active + completed) for the chat chip row. */
 export const selectAgentPrMonitors = store.createSelector(
   (state, workspaceId: string, agentId: string): PrMonitorRow[] =>

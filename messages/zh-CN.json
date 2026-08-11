@@ -1217,7 +1217,6 @@
   "workspace_overviewTimeline_prMerged_label": "已合并",
   "workspace_overviewTimeline_prNumber_label": "PR #{number}",
   "workspace_overviewTimeline_prOpen_label": "开放中",
-  "workspace_overviewTimeline_pullRequest_label": "拉取请求",
   "workspace_overviewTimeline_repoCopy_label": "此工作区包含你仓库的一个副本。",
   "workspace_overviewTimeline_seeAll_label": "查看全部…",
   "workspace_overviewTimeline_trunkBranch_tooltip": "主干分支。点击复制。",

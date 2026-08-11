@@ -908,6 +908,53 @@ describe('mergeMonitoredPRs', () => {
     expect(result[0].url).toBe('https://github.com/acme/widgets/pull/42');
   });
 
+  it('copies the monitor createdAt/updatedAt onto appended rows for selectPrimaryPr sorting', () => {
+    const result = mergeMonitoredPRs(
+      [],
+      [makeMonitor({ createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-02T00:00:00Z' })],
+      workspaceRepo,
+    );
+    expect(result[0].createdAt).toBe('2026-08-01T00:00:00Z');
+    expect(result[0].updatedAt).toBe('2026-08-02T00:00:00Z');
+  });
+
+  it('selectPrimaryPr picks the oldest-created of multiple open monitored PRs', () => {
+    const pool = mergeMonitoredPRs(
+      [],
+      [
+        makeMonitor({ monitorId: 'mon-1', prNumber: 50, createdAt: '2026-08-06T00:00:00Z' }),
+        makeMonitor({ monitorId: 'mon-2', prNumber: 43, createdAt: '2026-08-04T00:00:00Z' }),
+        makeMonitor({ monitorId: 'mon-3', prNumber: 47, createdAt: '2026-08-05T00:00:00Z' }),
+      ],
+      workspaceRepo,
+    );
+    expect(selectPrimaryPr(pool)?.number).toBe(43);
+  });
+
+  it('selectPrimaryPr picks the latest-updated of multiple merged monitored PRs', () => {
+    const pool = mergeMonitoredPRs(
+      [],
+      [
+        makeMonitor({
+          monitorId: 'mon-1',
+          prNumber: 50,
+          state: 'completed',
+          lastSnapshot: makeSnapshot({ state: 'merged' }),
+          updatedAt: '2026-08-06T00:00:00Z',
+        }),
+        makeMonitor({
+          monitorId: 'mon-2',
+          prNumber: 43,
+          state: 'completed',
+          lastSnapshot: makeSnapshot({ state: 'merged' }),
+          updatedAt: '2026-08-08T00:00:00Z',
+        }),
+      ],
+      workspaceRepo,
+    );
+    expect(selectPrimaryPr(pool)?.number).toBe(43);
+  });
+
   it('treats all monitors as same-repo when the workspace repo is unknown', () => {
     const result = mergeMonitoredPRs(
       [makeBasePR({ number: 42 })],

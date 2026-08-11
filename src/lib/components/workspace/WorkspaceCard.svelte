@@ -61,7 +61,7 @@
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
   import MicroKeySlotBadge from '$lib/components/workspace/MicroKeySlotBadge.svelte';
   import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectDisplayPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import {
     constructPrUrl,
     countOtherMonitors,
@@ -164,10 +164,10 @@
   });
   const workspaceTaskProgress$ = selectWorkspaceTaskProgress(workspaceIdStore);
 
-  // Agent PR monitors (PROTOCOL §6.9): feed the primary-PR fallback and the
-  // "+N" other-monitored-PRs indicator. Active monitors when any exist, else
-  // merged completed monitors (last merged first).
-  const displayPrMonitors$ = selectDisplayPrMonitors(workspaceIdStore);
+  // Agent PR monitors (PROTOCOL §6.9): all monitors (active + completed) feed
+  // the primary-PR pool and the "+N" other-monitored-PRs indicator — the same
+  // pool every primary-PR surface uses, so pill and Overview never disagree.
+  const prMonitors$ = selectPrMonitors(workspaceIdStore);
 
   // Micro-key slot badge/menus: only while a micro is connected (manager
   // status connected — not mere presence).
@@ -227,7 +227,7 @@
             constructPrUrl(prNum, ws.repositoryOwner, ws.repositoryName, fallbackUrl),
           (pr) => pr.title,
         ),
-        $displayPrMonitors$,
+        $prMonitors$,
         workspaceRepo,
       ),
     );
@@ -260,12 +260,11 @@
       : getPRStatusTooltip(primaryPr);
   });
 
-  // "+N" indicator: other monitored PRs in the displayed pool beyond the
-  // primary badge.
+  // "+N" indicator: other monitored PRs in the pool beyond the primary badge.
   const otherMonitoredPrCount = $derived.by(() => {
     if (!workspace) return 0;
     return countOtherMonitors(
-      $displayPrMonitors$,
+      $prMonitors$,
       prNumber,
       workspace.repositoryOwner,
       workspace.repositoryName,
