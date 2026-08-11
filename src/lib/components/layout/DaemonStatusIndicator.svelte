@@ -75,6 +75,7 @@
   import {
     selectConnections,
     selectActiveConnectionId,
+    selectActiveConnection,
     selectConnectionCertMismatch,
     selectActiveProtocolMismatch,
     selectProtocolMismatchModal,
@@ -98,6 +99,7 @@
   const unslothStopping$ = selectUnslothStopping();
   const connections$ = selectConnections();
   const activeConnectionId$ = selectActiveConnectionId();
+  const activeConnection$ = selectActiveConnection();
   const certMismatch$ = selectConnectionCertMismatch();
   const activeProtocolMismatch$ = selectActiveProtocolMismatch();
   const protocolMismatchModal$ = selectProtocolMismatchModal();
@@ -201,6 +203,23 @@
       : '',
   );
 
+  // Compact machine name shown next to the status dot when the active
+  // connection is remote (name only, no host:port — same preference order as
+  // formatConnectionLabel). Null when local/unknown → dot-only trigger.
+  const activeRemoteName = $derived.by(() => {
+    const conn = $activeConnection$;
+    if (!conn || conn.isLocal) return null;
+    return conn.hostname?.trim() || conn.label;
+  });
+
+  // Trigger accessible name: includes the visible remote name when shown so
+  // the label-in-name relationship holds (WCAG 2.5.3).
+  const triggerAriaLabel = $derived(
+    activeRemoteName
+      ? `${healthLabels[$health$]()} — ${activeRemoteName}`
+      : healthLabels[$health$](),
+  );
+
   const stopUnslothDescription = $derived.by(() => {
     const count = $unslothStatus$?.attachedAgentCount ?? 0;
     const model = $unslothStatus$?.repoId ?? m.layout_daemonStatus_unslothFallbackModel_label();
@@ -301,10 +320,16 @@
       {/snippet}
       <button
         onclick={toggle}
-        class="flex items-center justify-center w-6 h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer"
-        aria-label={healthLabels[$health$]()}
+        class={cn(
+          'flex items-center justify-center h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer',
+          activeRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
+        )}
+        aria-label={triggerAriaLabel}
       >
-        <div class={cn('w-2 h-2 rounded-full', healthColors[$health$])}></div>
+        {#if activeRemoteName}
+          <span class="text-xs text-subtle truncate max-w-32">{activeRemoteName}</span>
+        {/if}
+        <div class={cn('w-2 h-2 rounded-full shrink-0', healthColors[$health$])}></div>
       </button>
     </Tooltip>
   {/snippet}
