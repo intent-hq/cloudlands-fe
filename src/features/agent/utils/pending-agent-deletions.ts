@@ -26,11 +26,17 @@
  */
 import type { AgentSession } from '$shared/types';
 
-/** A soft-hidden agent deletion awaiting commit. */
+/**
+ * A soft-hidden agent deletion awaiting commit. `snapshot` is absent when the
+ * registering window never hydrated the session (e.g. the events bridge saw
+ * `agent:delete-scheduled` for an agent it only knew from a list row) — the
+ * entry still tombstones the id for read paths; restore then relies on a
+ * refetch instead of the snapshot.
+ */
 export interface PendingAgentDeletion {
   wsId: string;
   agentId: string;
-  snapshot: AgentSession;
+  snapshot?: AgentSession;
 }
 
 const pendingAgentDeletions = new Map<string, PendingAgentDeletion>();

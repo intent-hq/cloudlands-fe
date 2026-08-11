@@ -127,6 +127,10 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
     try {
       const session = await appClient.agents.get(agentId);
       if (!session) return;
+      // Skip rows carrying the daemon's delete-grace-window deadline (PROTOCOL
+      // §5.5 `pendingDeleteAt`, v6.7+) — a deletion scheduled by another
+      // window/client (or before an FE restart) is not in the local registry.
+      if (session.pendingDeleteAt) return;
       // Re-check after the fetch: a deletion may have become pending while
       // `agent.get` was in flight; hydrating now would resurrect the
       // soft-hidden session (and paging the transcript would be wasted work).

@@ -116,6 +116,54 @@ describe("LiveTasksClient mutations (fake transport)", () => {
     });
   });
 
+  it("markAsTask forwards dependsOn/conflictsWith relation seeds when provided (v6.8)", async () => {
+    mockedRequest.mockResolvedValue({ ok: true });
+    const client = new LiveTasksClient();
+
+    await client.markAsTask("note-1", "not_started", {
+      dependsOn: ["dep-a"],
+      conflictsWith: ["con-b"],
+    });
+    expect(mockedRequest).toHaveBeenLastCalledWith("task.markAsTask", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      status: "not_started",
+      dependsOn: ["dep-a"],
+      conflictsWith: ["con-b"],
+    });
+  });
+
+  it("setRelations forwards task.setRelations with only the provided lists (replace semantics)", async () => {
+    mockedRequest.mockResolvedValue({ ok: true });
+    const client = new LiveTasksClient();
+
+    expect(await client.setRelations("note-1", { dependsOn: ["dep-a", "dep-b"] })).toEqual({
+      success: true,
+    });
+    expect(mockedRequest).toHaveBeenLastCalledWith("task.setRelations", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      dependsOn: ["dep-a", "dep-b"],
+    });
+
+    await client.setRelations("note-1", { conflictsWith: [] });
+    expect(mockedRequest).toHaveBeenLastCalledWith("task.setRelations", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      conflictsWith: [],
+    });
+  });
+
+  it("setRelations maps a daemon validation error (e.g. cycle) to a failed MutationResult", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("dependsOn would create a cycle: a -> b -> a"));
+    const client = new LiveTasksClient();
+
+    expect(await client.setRelations("note-1", { dependsOn: ["dep-a"] })).toEqual({
+      success: false,
+      error: "dependsOn would create a cycle: a -> b -> a",
+    });
+  });
+
   it("assignAgent forwards task.assignAgent with the agentId", async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true });
     const client = new LiveTasksClient();
@@ -261,6 +309,87 @@ describe("LiveTasksClient mutations (fake transport)", () => {
 
     const { tasks } = await client.list("ws-1");
     expect(tasks[0].rev).toBeUndefined();
+  });
+
+  // ---- v6.8: relation fields (dependsOn / conflictsWith / unmetDependsOn) ---
+
+  it("list carries dependsOn/conflictsWith/unmetDependsOn from the wire row (v6.8)", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      tasks: [
+        {
+          id: "note-1",
+          title: "T",
+          status: "not_started",
+          dependsOn: ["dep-a", "dep-b"],
+          conflictsWith: ["con-c"],
+          unmetDependsOn: ["dep-a"],
+        },
+      ],
+      stats: { total: 0, completed: 0, inProgress: 0 },
+    });
+    const client = new LiveTasksClient();
+
+    const { tasks } = await client.list("ws-1");
+    expect(tasks[0].dependsOn).toEqual(["dep-a", "dep-b"]);
+    expect(tasks[0].conflictsWith).toEqual(["con-c"]);
+    expect(tasks[0].unmetDependsOn).toEqual(["dep-a"]);
+  });
+
+  it("list omits relation fields when the daemon omits them (presence-detected)", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      tasks: [{ id: "note-1", title: "T", status: "not_started" }],
+      stats: { total: 0, completed: 0, inProgress: 0 },
+    });
+    const client = new LiveTasksClient();
+
+    const { tasks } = await client.list("ws-1");
+    expect(tasks[0].dependsOn).toBeUndefined();
+    expect(tasks[0].conflictsWith).toBeUndefined();
+    expect(tasks[0].unmetDependsOn).toBeUndefined();
+  });
+
+  it("list discards a malformed relation list (non-string member) with a warn", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockedRequest.mockResolvedValueOnce({
+      tasks: [
+        {
+          id: "note-1",
+          title: "T",
+          status: "not_started",
+          dependsOn: ["dep-a", 42],
+        },
+      ],
+      stats: { total: 0, completed: 0, inProgress: 0 },
+    });
+    const client = new LiveTasksClient();
+
+    const { tasks } = await client.list("ws-1");
+    expect(tasks[0].dependsOn).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("discarding malformed dependsOn"),
+      expect.anything(),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("note-shaped entities carry relations from metadata.task", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      tasks: [
+        {
+          id: "note-1",
+          title: "T",
+          metadata: {
+            task: { status: "not_started", dependsOn: ["dep-a"], conflictsWith: ["con-b"] },
+          },
+        },
+      ],
+      stats: { total: 0, completed: 0, inProgress: 0 },
+    });
+    const client = new LiveTasksClient();
+
+    const { tasks } = await client.list("ws-1");
+    expect(tasks[0].dependsOn).toEqual(["dep-a"]);
+    expect(tasks[0].conflictsWith).toEqual(["con-b"]);
   });
 
   // ---- §11.4-D: expectedVersion forwarding (only when defined) --------------

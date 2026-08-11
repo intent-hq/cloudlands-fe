@@ -7,25 +7,15 @@
  * resolves via the additive `file.tree` read (PROTOCOL §5.9), anchored at the
  * workspace root; transport/daemon errors fold to `null` so the explorer
  * degrades cleanly. `list` returns an empty content cache (the daemon's
- * directory listing is not a `FileContentEntry` collection). `subscribe`
- * refetches on `file:*` events.
+ * directory listing is not a `FileContentEntry` collection). File-event
+ * subscription is owned by daemon-events-saga's scoped `file:*` lease — this
+ * client has no subscribe surface.
  */
 import type { FileGitStatus, FileNode } from "$shared/types";
 import type { FileContentEntry } from "$store/renderer/slices/files/files-types";
-import type {
-  FilesClient,
-  MutationResult,
-  SubscriptionHandler,
-  Unsubscribe,
-} from "../app-client";
-import {
-  backendRequest,
-  backendSubscribe,
-  backendUnsubscribe,
-  onBackendNotification,
-  onBackendReconnected,
-} from "./backend-transport";
-import { isEventInFamily, newIdempotencyKey, runMutation } from "./live-support";
+import type { FilesClient, MutationResult } from "../app-client";
+import { backendRequest } from "./backend-transport";
+import { newIdempotencyKey, runMutation } from "./live-support";
 
 /** Map raw daemon file content into a `FileContentEntry`. */
 function toFileContentEntry(path: string, content: string): FileContentEntry {
@@ -161,9 +151,10 @@ export class LiveFilesClient implements FilesClient {
 
   // ---- Mutations ----------------------------------------------------------
   // Each forwards to the daemon (§7.6) and folds the outcome into a
-  // MutationResult; the subscribe→refetch loop reconciles store state from the
-  // resulting `file:*` events. All file mutations are workspace-scoped and use
-  // workspace-relative paths. `write`/`mkdir`/`rename` are create-ish, so they
+  // MutationResult; daemon-events-saga's scoped `file:*` lease reconciles
+  // store state from the resulting `file:*` events. All file mutations are
+  // workspace-scoped and use workspace-relative paths. `write`/`mkdir`/`rename`
+  // are create-ish, so they
   // carry an idempotencyKey (§5.6: required on create, best-effort elsewhere).
   // DATA SAFETY: these are destructive against the user's real files; they are
   // only ever exercised against the FAKE socket in tests.
@@ -192,50 +183,5 @@ export class LiveFilesClient implements FilesClient {
       newPath,
       idempotencyKey: newIdempotencyKey(),
     });
-  }
-
-  subscribe(handler: SubscriptionHandler<FileContentEntry[]>): Unsubscribe {
-    let disposed = false;
-    let subscriptionId: string | undefined;
-
-    const emit = () => {
-      if (!disposed) handler([]);
-    };
-
-    emit();
-
-    const off = onBackendNotification((n) => {
-      if (isEventInFamily(n.method, n.params, "file")) emit();
-    });
-
-    const doSubscribe = () =>
-      backendSubscribe<{ subscriptionId?: string }>({
-        eventTypes: ["file:changed", "file:created", "file:deleted", "file:renamed"],
-      })
-        .then((result) => {
-          subscriptionId = result?.subscriptionId;
-          if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
-        })
-        .catch(() => {
-          // Without a daemon subscription we still serve the initial snapshot.
-        });
-
-    doSubscribe();
-
-    // Reconnect replay (RESUB-1): daemon restart dropped the subscription
-    // registry; the notification handler is still wired, so only the
-    // subscribe call needs to be re-issued.
-    const offReconnect = onBackendReconnected(() => {
-      subscriptionId = undefined;
-      void doSubscribe();
-      emit();
-    });
-
-    return () => {
-      disposed = true;
-      off();
-      offReconnect();
-      if (subscriptionId) void backendUnsubscribe(subscriptionId);
-    };
   }
 }

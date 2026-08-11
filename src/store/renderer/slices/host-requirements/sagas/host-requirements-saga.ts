@@ -18,7 +18,9 @@ const logger = createLogger('HostRequirementsSaga');
 
 interface CheckGitResponse {
   success: boolean;
-  data?: { available: boolean; version?: string };
+  // `available:'unknown'` = transport failure (RPC timeout / daemon
+  // unreachable); treated the same as unavailable by this gate.
+  data?: { available: boolean | 'unknown'; version?: string };
 }
 
 interface CheckNodeResponse {
