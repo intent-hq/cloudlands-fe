@@ -155,7 +155,7 @@ interface SubscriptionCoordinator {
 }
 
 function createCompletion(): TransitionCompletion {
-  let settlePromise: () => void = () => undefined;
+  let settlePromise: (value: void | PromiseLike<void>) => void = () => undefined;
   const promise = new Promise<void>((settle) => {
     settlePromise = settle;
   });
@@ -165,7 +165,7 @@ function createCompletion(): TransitionCompletion {
     resolve: () => {
       if (completion.settled) return;
       completion.settled = true;
-      settlePromise();
+      settlePromise(undefined);
     },
   };
   return completion;
