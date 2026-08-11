@@ -967,7 +967,7 @@
    */
   function setInternalBranch(branchName: string) {
     internalSelectedBranch = branchName;
-    searchValue = '';
+    clearSearch();
     // Notify parent so form validation knows about the auto-selected default
     logger.debug('setInternalBranch called', {
       branchName,
@@ -997,7 +997,7 @@
    */
   function selectBranch(branch: string, keepSkipIsolation = false) {
     internalSelectedBranch = branch;
-    searchValue = '';
+    clearSearch();
     try {
       if (typeof onchange === 'function') {
         onchange(new CustomEvent('change', { detail: { branch } }));
@@ -1037,6 +1037,20 @@
     searchDebounceTimer = setTimeout(() => {
       debouncedSearchValue = value;
     }, 100); // 100ms debounce for smoother experience
+  }
+
+  /**
+   * Reset the search box AND its debounced mirror — a pending debounce tick
+   * or a lingering debounced value would otherwise keep the filtered view
+   * (and the server-side prefix results) active behind a blank search field.
+   */
+  function clearSearch() {
+    searchValue = '';
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+    }
+    debouncedSearchValue = '';
   }
 
   async function handleRefresh() {
@@ -1200,8 +1214,10 @@
    * `owner/repo` repoPath) parsing fetchBranches applies.
    */
   function parseGithubOwnerRepo(): { owner: string; repo: string } | null {
+    // `||` (not `??`): fetchBranches treats an empty githubUrl as absent and
+    // reconstructs it from a shorthand repoPath (lines 541-546) — match that.
     const url =
-      githubUrl ??
+      githubUrl ||
       (repoPath && /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+$/.test(repoPath)
         ? `https://github.com/${repoPath}`
         : undefined);
@@ -1226,6 +1242,10 @@
     const parsed = parseGithubOwnerRepo();
     if (!parsed) return;
     const requestId = ++githubSearchRequestId;
+    // Drop the previous prefix's results immediately: while the new request
+    // is in flight (or if it fails), only the loaded first page may match —
+    // stale beyond-page branches must not linger under a different prefix.
+    githubSearchBranches = [];
     void appClient.integrations
       .githubBranches(parsed.owner, parsed.repo, prefix)
       .then((listing) => {
